@@ -24,6 +24,7 @@ import type { ChildProcessSpawner } from "effect/unstable/process/ChildProcessSp
 import { McpError } from "../McpError.ts"
 import * as DiagnosticReporter from "./DiagnosticReporter.ts"
 import * as JsonLimits from "./JsonLimits.ts"
+import * as Limits from "./Limits.ts"
 import * as Rpc from "./Rpc.ts"
 
 /**
@@ -115,9 +116,6 @@ const timeout = (server: string, method: string, timeoutMs: number): McpError =>
     server
   })
 
-const protocol = (server: string, message: string): McpError =>
-  new McpError({ code: "protocol_error", message, server })
-
 const diagnosticErrorCodes: ReadonlySet<string> = new Set(["spawn_failed", "timeout", "connection_closed"])
 const cancellationReason = "request no longer awaited"
 // Exit and stdout EOF can precede the parent's final stderr read. Await the
@@ -146,11 +144,6 @@ type ConnectionState = {
   readonly _tag: "Closed"
   readonly error: Deferred.Deferred<McpError>
 }
-
-const positiveInteger = (value: number): boolean => Number.isSafeInteger(value) && value > 0
-
-const limitError = (server: string, name: string): McpError =>
-  protocol(server, `MCP option "${name}" must be a positive integer`)
 
 const replyError = (
   server: string,
@@ -208,14 +201,14 @@ const frames = (
         let start = 0
         for (let end = chunk.indexOf(0x0a); end !== -1; end = chunk.indexOf(0x0a, start)) {
           if (!append(chunk.subarray(start, end))) {
-            return Effect.fail(protocol(server, `MCP frame exceeded ${maxFrameBytes} bytes`))
+            return Effect.fail(Limits.protocolError(server, `MCP frame exceeded ${maxFrameBytes} bytes`))
           }
           complete.push(decode(partial))
           partial = { pieces: [], bytes: 0 }
           start = end + 1
         }
         if (!append(chunk.subarray(start))) {
-          return Effect.fail(protocol(server, `MCP frame exceeded ${maxFrameBytes} bytes`))
+          return Effect.fail(Limits.protocolError(server, `MCP frame exceeded ${maxFrameBytes} bytes`))
         }
         return Effect.succeed([partial, complete] as const)
       },
@@ -250,16 +243,13 @@ export const connect = (
     const maxFrameBytes = options.maxFrameBytes ?? defaultMaxFrameBytes
     const maxOutboundFrameBytes = options.maxOutboundFrameBytes ?? defaultMaxOutboundFrameBytes
     const maxStderrBytes = options.maxStderrBytes ?? defaultMaxStderrBytes
-    const invalidLimit = [
+    yield* Limits.checkPositiveIntegers(options.server, [
       ["requestTimeoutMs", requestTimeoutMs],
       ["queueCapacity", queueCapacity],
       ["maxFrameBytes", maxFrameBytes],
       ["maxOutboundFrameBytes", maxOutboundFrameBytes],
       ["maxStderrBytes", maxStderrBytes]
-    ].find(([, value]) => !positiveInteger(value as number))
-    if (invalidLimit !== undefined) {
-      return yield* Effect.fail(limitError(options.server, invalidLimit[0] as string))
-    }
+    ])
 
     const handle = yield* ChildProcess.make(options.command, options.args, {
       cwd: options.cwd,
@@ -335,13 +325,14 @@ export const connect = (
     const frameOf = (method: string, message: Rpc.OutboundMessage): Effect.Effect<Uint8Array, McpError> =>
       Effect.try({
         try: () => Rpc.encode(message),
-        catch: () => protocol(options.server, `MCP server "${options.server}" could not encode a ${method} frame`)
+        catch: () =>
+          Limits.protocolError(options.server, `MCP server "${options.server}" could not encode a ${method} frame`)
       }).pipe(
         Effect.flatMap((frame) =>
           frame.byteLength <= maxOutboundFrameBytes
             ? Effect.succeed(frame)
             : Effect.fail(
-              protocol(
+              Limits.protocolError(
                 options.server,
                 `MCP server "${options.server}" tried to send a ${method} frame larger than ${maxOutboundFrameBytes} bytes`
               )
@@ -408,7 +399,7 @@ export const connect = (
           const jsonIssue = JsonLimits.checkParsed(message)
           if (jsonIssue !== undefined) {
             return yield* Effect.fail(
-              protocol(options.server, `MCP server "${options.server}" sent invalid JSON: ${jsonIssue}`)
+              Limits.protocolError(options.server, `MCP server "${options.server}" sent invalid JSON: ${jsonIssue}`)
             )
           }
           const reply = Rpc.classify(message)
@@ -430,7 +421,7 @@ export const connect = (
           }
           if (reply._tag === "Malformed") {
             return yield* Effect.fail(
-              protocol(
+              Limits.protocolError(
                 options.server,
                 `MCP server "${options.server}" sent a malformed JSON-RPC reply: ${reply.reason}`
               )
@@ -497,8 +488,10 @@ export const connect = (
       timeoutMs = requestTimeoutMs
     ): Effect.Effect<unknown, McpError> =>
       Effect.gen(function*() {
-        if (!positiveInteger(timeoutMs)) {
-          return yield* Effect.fail(protocol(options.server, "MCP request timeout must be a positive integer"))
+        if (!Limits.isPositiveInteger(timeoutMs)) {
+          return yield* Effect.fail(
+            Limits.protocolError(options.server, "MCP request timeout must be a positive integer")
+          )
         }
         const id = yield* Ref.updateAndGet(nextId, (n) => n + 1)
         const deferred = yield* Deferred.make<unknown, McpError>()
@@ -542,8 +535,8 @@ export const connect = (
       params?: unknown,
       timeoutMs = requestTimeoutMs
     ): Effect.Effect<void, McpError> => {
-      if (!positiveInteger(timeoutMs)) {
-        return Effect.fail(protocol(options.server, "MCP notification timeout must be a positive integer"))
+      if (!Limits.isPositiveInteger(timeoutMs)) {
+        return Effect.fail(Limits.protocolError(options.server, "MCP notification timeout must be a positive integer"))
       }
       return Effect.gen(function*() {
         const current = yield* Ref.get(state)

@@ -15,6 +15,7 @@ import { Effect, Exit, Result, Schema, Scope } from "effect"
 import type { ChildProcessSpawner } from "effect/unstable/process/ChildProcessSpawner"
 import * as DiagnosticReporter from "./internal/DiagnosticReporter.ts"
 import * as JsonLimits from "./internal/JsonLimits.ts"
+import * as Limits from "./internal/Limits.ts"
 import * as StdioTransport from "./internal/StdioTransport.ts"
 import { McpError } from "./McpError.ts"
 
@@ -73,26 +74,11 @@ export interface McpClient {
  * @category models
  * @since 1.0.0-rc.0
  */
-export interface ConnectOptions {
+export interface ConnectOptions extends StdioTransport.ConnectOptions {
   /** The name this server is known by, for flow naming and error messages. */
   readonly server: string
-  readonly command: string
-  readonly args: ReadonlyArray<string>
-  readonly cwd?: string | undefined
-  /** Values merged into the bootstrap allowlist rather than the full host environment. */
-  readonly env?: Record<string, string | undefined> | undefined
   /** Deadline for each initialize/catalog request. See {@link defaultHandshakeTimeoutMs}. */
   readonly handshakeTimeoutMs?: number | undefined
-  /** Deadline for each later tool request. See {@link defaultRequestTimeoutMs}. */
-  readonly requestTimeoutMs?: number | undefined
-  /** Maximum outbound frames waiting to be written. See {@link defaultQueueCapacity}. */
-  readonly queueCapacity?: number | undefined
-  /** Maximum UTF-8 bytes in one inbound JSON-RPC frame. See {@link defaultMaxFrameBytes}. */
-  readonly maxFrameBytes?: number | undefined
-  /** Maximum UTF-8 bytes in one outbound JSON-RPC frame. See {@link defaultMaxOutboundFrameBytes}. */
-  readonly maxOutboundFrameBytes?: number | undefined
-  /** Maximum diagnostic stderr bytes retained in memory. See {@link defaultMaxStderrBytes}. */
-  readonly maxStderrBytes?: number | undefined
   /** Maximum tools accepted across every catalog page. See {@link defaultMaxTools}. */
   readonly maxTools?: number | undefined
   /**
@@ -240,26 +226,21 @@ export const maxJsonDepth = JsonLimits.maxDepth
 const invalidResponse = (server: string, message: string): McpError =>
   new McpError({ code: "invalid_response", message, server })
 
-const protocolError = (server: string, message: string): McpError =>
-  new McpError({ code: "protocol_error", message, server })
-
-const positiveInteger = (value: number): boolean => Number.isSafeInteger(value) && value > 0
-
 const asInitialize = (server: string, result: unknown): Result.Result<void, McpError> => {
   if (!isRecord(result)) {
-    return Result.fail(protocolError(
+    return Result.fail(Limits.protocolError(
       server,
       `MCP server "${server}" returned a malformed initialize result: result is not an object`
     ))
   }
   if (typeof result.protocolVersion !== "string") {
-    return Result.fail(protocolError(
+    return Result.fail(Limits.protocolError(
       server,
       `MCP server "${server}" returned a malformed initialize result: protocolVersion is not a string`
     ))
   }
   if (!supportedProtocolVersions.includes(result.protocolVersion)) {
-    return Result.fail(protocolError(
+    return Result.fail(Limits.protocolError(
       server,
       `MCP server "${server}" speaks an unsupported protocol version; this client speaks ${
         supportedProtocolVersions.join(", ")
@@ -267,13 +248,13 @@ const asInitialize = (server: string, result: unknown): Result.Result<void, McpE
     ))
   }
   if (!isRecord(result.capabilities)) {
-    return Result.fail(protocolError(
+    return Result.fail(Limits.protocolError(
       server,
       `MCP server "${server}" returned a malformed initialize result: capabilities is not an object`
     ))
   }
   if (!Object.hasOwn(result.capabilities, "tools") || !isRecord(result.capabilities.tools)) {
-    return Result.fail(protocolError(
+    return Result.fail(Limits.protocolError(
       server,
       `MCP server "${server}" does not serve tools: its initialize result declares no tools capability`
     ))
@@ -764,13 +745,13 @@ const snapshotArguments = (
   const snapshot = snapshotJson(args, "arguments", new Set(), { remaining: maxBytes })
   if (Result.isFailure(snapshot)) {
     diagnostic("invalid-arguments", snapshot.failure)
-    return Result.fail(protocolError(
+    return Result.fail(Limits.protocolError(
       server,
       `MCP server "${server}" was sent a tool argument that is not JSON: ${snapshot.failure.reason}; property path withheld`
     ))
   }
   if (!isRecord(snapshot.success)) {
-    return Result.fail(protocolError(server, `MCP server "${server}" tool arguments must be a JSON object`))
+    return Result.fail(Limits.protocolError(server, `MCP server "${server}" tool arguments must be a JSON object`))
   }
   return Result.succeed(snapshot.success)
 }
@@ -808,18 +789,12 @@ export const connect = (
         const maxTools = options.maxTools ?? defaultMaxTools
         const maxToolNameBytes = options.maxToolNameBytes ?? defaultMaxToolNameBytes
         const maxCatalogPages = options.maxCatalogPages ?? defaultMaxCatalogPages
-        const invalidOption = [
+        yield* Limits.checkPositiveIntegers(options.server, [
           ["handshakeTimeoutMs", handshakeTimeoutMs],
           ["maxTools", maxTools],
           ["maxToolNameBytes", maxToolNameBytes],
           ["maxCatalogPages", maxCatalogPages]
-        ].find(([, value]) => !positiveInteger(value as number))
-        if (invalidOption !== undefined) {
-          return yield* Effect.fail(protocolError(
-            options.server,
-            `MCP option "${invalidOption[0]}" must be a positive integer`
-          ))
-        }
+        ])
 
         const transport = yield* StdioTransport.connect(options)
 

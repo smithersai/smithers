@@ -644,6 +644,25 @@ describe("McpClient.connect", () => {
     })
   })
 
+  it("bounds every numeric ConnectOptionsSchema field before spawning", async () => {
+    const nonNumeric = ["server", "command", "args", "cwd", "env"]
+    const numeric = Object.keys(McpClient.ConnectOptionsSchema.fields).filter((name) => !nonNumeric.includes(name))
+    expect(numeric).toHaveLength(9)
+
+    for (const name of numeric) {
+      const error = await withFakeServer(
+        respondToEcho,
+        Effect.flip(McpClient.connect({ server: "schema-limit", command: "mcp", args: [], [name]: 0 }))
+      )
+
+      expect(error).toMatchObject({
+        code: "protocol_error",
+        server: "schema-limit",
+        message: `MCP option "${name}" must be a positive integer`
+      })
+    }
+  })
+
   it("treats an explicit undefined nextCursor as the end of the catalog", async () => {
     const client = await withFakeServer(
       (request) => {
