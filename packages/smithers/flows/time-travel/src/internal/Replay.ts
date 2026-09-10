@@ -21,7 +21,7 @@
  */
 import * as EngineEvent from "@smthrs/journal/EngineEvent"
 import * as Journal from "@smthrs/journal/Journal"
-import type { Entry, RunId, Seq } from "@smthrs/journal/JournalEvent"
+import type { Entry } from "@smthrs/journal/JournalEvent"
 import * as CacheStore from "@smthrs/step-cache/CacheStore"
 import * as Effect from "effect/Effect"
 import * as Option from "effect/Option"
@@ -29,6 +29,7 @@ import * as Schema from "effect/Schema"
 import type { Frame } from "../Frame.ts"
 import { error, type TimeTravelError } from "../TimeTravelError.ts"
 import * as HistoryLimit from "./HistoryLimit.ts"
+import * as JournalPages from "./JournalPages.ts"
 
 /**
  * A pure fold over durable journal evidence.
@@ -102,7 +103,6 @@ export const rederive = <S>(
             )
           return projection.reduce(state, entry, sealed)
         })
-      let after: Seq | undefined
       let state = projection.initial
       let foundLineage = false
       let folded = 0
@@ -117,64 +117,60 @@ export const rederive = <S>(
        */
       const seen = new Set<number>()
       let lastSeq = -1
-      let pastFrame = false
-      while (!pastFrame) {
-        const page = yield* journal.entries({
-          runId: options.runId as RunId,
-          ...(after === undefined ? {} : { after }),
-          limit: options.pageSize ?? 100
-        }).pipe(Effect.mapError((cause) => error("unknown", "could not read journal", cause)))
-        const ordered = [...page.entries].sort((left, right) => left.seq - right.seq)
-        for (const entry of ordered) {
-          if (seen.has(entry.seq)) continue
-          if (entry.seq < lastSeq) {
-            return yield* Effect.fail(
-              error("invalid", `journal replay returned seq ${entry.seq} after seq ${lastSeq} for ${options.runId}`)
-            )
-          }
-          if (entry.seq > frame.seq) {
-            pastFrame = true
-            break
-          }
-          seen.add(entry.seq)
-          lastSeq = entry.seq
-          folded += 1
-          if (folded > maxEntries) {
-            return yield* Effect.fail(HistoryLimit.exceeded("replay", options.runId, maxEntries))
-          }
-          let lineageId: string | undefined
-          if (/^flows\.engine\.v[0-9]+(?:\.|$)/.test(entry.eventType)) {
-            const consumer = options.engineEvents
-            if (consumer === undefined || consumer.runId !== options.runId || consumer.lineageId !== frame.lineageId) {
-              return yield* Effect.fail(
-                error("invalid", "versioned engine replay requires the matching lineage and source contract", {
-                  runId: entry.runId,
-                  seq: entry.seq,
-                  eventId: entry.eventId,
-                  eventType: entry.eventType,
-                  expected: { runId: options.runId, lineageId: frame.lineageId }
-                })
-              )
+      yield* JournalPages.forEachPage(
+        journal,
+        {
+          runId: options.runId,
+          pageSize: options.pageSize ?? 100,
+          label: "journal replay",
+          readFailure: "could not read journal"
+        },
+        (entries) =>
+          Effect.gen(function*() {
+            const ordered = [...entries].sort((left, right) => left.seq - right.seq)
+            for (const entry of ordered) {
+              if (seen.has(entry.seq)) continue
+              if (entry.seq < lastSeq) {
+                return yield* Effect.fail(
+                  error("invalid", `journal replay returned seq ${entry.seq} after seq ${lastSeq} for ${options.runId}`)
+                )
+              }
+              if (entry.seq > frame.seq) return JournalPages.Stop
+              seen.add(entry.seq)
+              lastSeq = entry.seq
+              folded += 1
+              if (folded > maxEntries) {
+                return yield* Effect.fail(HistoryLimit.exceeded("replay", options.runId, maxEntries))
+              }
+              let lineageId: string | undefined
+              if (/^flows\.engine\.v[0-9]+(?:\.|$)/.test(entry.eventType)) {
+                const consumer = options.engineEvents
+                if (
+                  consumer === undefined || consumer.runId !== options.runId || consumer.lineageId !== frame.lineageId
+                ) {
+                  return yield* Effect.fail(
+                    error("invalid", "versioned engine replay requires the matching lineage and source contract", {
+                      runId: entry.runId,
+                      seq: entry.seq,
+                      eventId: entry.eventId,
+                      eventType: entry.eventType,
+                      expected: { runId: options.runId, lineageId: frame.lineageId }
+                    })
+                  )
+                }
+                yield* EngineEvent.decodeEntry(entry, consumer).pipe(
+                  Effect.mapError((cause) => error("invalid", "invalid versioned engine history", cause))
+                )
+                lineageId = consumer.lineageId
+              } else {
+                lineageId = Option.getOrUndefined(Schema.decodeUnknownOption(LineageMetadata)(entry.meta))?.lineageId
+              }
+              if (lineageId !== undefined && lineageId !== frame.lineageId) continue
+              if (lineageId === frame.lineageId) foundLineage = true
+              state = yield* fold(entry, state)
             }
-            yield* EngineEvent.decodeEntry(entry, consumer).pipe(
-              Effect.mapError((cause) => error("invalid", "invalid versioned engine history", cause))
-            )
-            lineageId = consumer.lineageId
-          } else {
-            lineageId = Option.getOrUndefined(Schema.decodeUnknownOption(LineageMetadata)(entry.meta))?.lineageId
-          }
-          if (lineageId !== undefined && lineageId !== frame.lineageId) continue
-          if (lineageId === frame.lineageId) foundLineage = true
-          state = yield* fold(entry, state)
-        }
-        if (pastFrame || !page.hasMore) break
-        const pageTail = ordered.at(-1)?.seq
-        const previous = after ?? -1
-        if (pageTail === undefined || pageTail <= previous) {
-          return yield* Effect.fail(error("invalid", "journal replay pagination did not advance"))
-        }
-        after = pageTail
-      }
+          })
+      )
       if (!foundLineage) {
         return yield* Effect.fail(error("not_found", `lineage ${frame.lineageId} is not present in ${options.runId}`))
       }

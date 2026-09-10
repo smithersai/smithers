@@ -25,6 +25,7 @@ import { ArchiveResult, type Audit, TimeTravelStore } from "../TimeTravelStore.t
 import * as Compensation from "./Compensation.ts"
 import type { EffectHandlerRegistry } from "./EffectHandlerRegistry.ts"
 import * as HistoryLimit from "./HistoryLimit.ts"
+import * as JournalPages from "./JournalPages.ts"
 
 /**
  * The eight fault-injection points pinned by the rewind parity suite.
@@ -319,8 +320,8 @@ const tailUnmoved = (
  * FAIL CLOSED on a page that claims more and delivers nothing. The destructive
  * paths used to treat an empty continuation as the end of history, so a journal
  * returning a transient empty page would let boundary assessment see part of
- * the suffix while the archive still deleted the real one. `Replay.rederive`
- * already refuses such a page; the truncating side has more to lose by not.
+ * the suffix while the archive still deleted the real one. That refusal lives
+ * in `JournalPages.forEachPage` now, shared with every other read.
  */
 const scan = (
   journal: Journal.Service,
@@ -331,42 +332,30 @@ const scan = (
   TimeTravelFailure
 > =>
   Effect.gen(function*() {
-    let after: JournalEvent.Seq | undefined
     let tail: Tail | undefined
     let atFrame = false
     let suffixCount = 0
-    while (true) {
-      const page = yield* journal.entries({
-        runId: options.runId as JournalEvent.RunId,
-        ...(after === undefined ? {} : { after }),
-        limit: options.pageSize ?? 100
-      }).pipe(
-        Effect.mapError((cause) => error("unknown", `could not read journal for ${options.runId}`, cause))
-      )
-      let pageTail: JournalEvent.Seq | undefined
-      for (const entry of page.entries) {
-        if (pageTail === undefined || entry.seq > pageTail) pageTail = entry.seq
-        if (tail === undefined || entry.seq > tail.seq) tail = { seq: entry.seq, lineageId: lineageOf(entry) }
-        if (entry.seq > options.frame.seq) suffixCount += 1
-        if (entry.seq === options.frame.seq) {
-          const lineage = lineageOf(entry)
-          if (lineage === undefined || lineage === options.frame.lineageId) atFrame = true
-        }
-      }
-      if (!page.hasMore) return { tail, atFrame, suffixCount }
-      if (page.entries.length === 0) {
-        return yield* Effect.fail(
-          error("invalid", `journal ${label} returned an empty continuation page for ${options.runId}`)
-        )
-      }
-      const previous = after ?? -1
-      if (pageTail === undefined || pageTail <= previous) {
-        return yield* Effect.fail(
-          error("invalid", `journal ${label} pagination did not advance for ${options.runId}`)
-        )
-      }
-      after = pageTail
-    }
+    yield* JournalPages.forEachPage(
+      journal,
+      {
+        runId: options.runId,
+        pageSize: options.pageSize ?? 100,
+        label: `journal ${label}`,
+        readFailure: `could not read journal for ${options.runId}`
+      },
+      (entries) =>
+        Effect.sync(() => {
+          for (const entry of entries) {
+            if (tail === undefined || entry.seq > tail.seq) tail = { seq: entry.seq, lineageId: lineageOf(entry) }
+            if (entry.seq > options.frame.seq) suffixCount += 1
+            if (entry.seq === options.frame.seq) {
+              const lineage = lineageOf(entry)
+              if (lineage === undefined || lineage === options.frame.lineageId) atFrame = true
+            }
+          }
+        })
+    )
+    return { tail, atFrame, suffixCount }
   })
 
 /**
@@ -479,38 +468,25 @@ const readSuffix = (
     const boundary: Array<JournalEvent.Entry> = []
     let count = 0
     let tailSeq: number | undefined
-    let after = frame.seq as JournalEvent.Seq
-    while (true) {
-      const page = yield* journal.entries({
-        runId: runId as JournalEvent.RunId,
-        after,
-        limit: pageSize
-      }).pipe(
-        Effect.mapError((cause) => error("unknown", `could not read suffix for ${runId}`, cause))
-      )
-      for (const entry of page.entries) {
-        count += 1
-        if (count > maxEntries) {
-          return yield* Effect.fail(HistoryLimit.exceeded("rewind", runId, maxEntries))
-        }
-        if (tailSeq === undefined || entry.seq > tailSeq) tailSeq = entry.seq
-        if (entry.eventType === EffectBoundary.eventType) boundary.push(entry)
-      }
-      if (!page.hasMore) return { boundary, count, tailSeq }
-      // Fail closed: a page that claims more and delivers nothing would hide
-      // part of the suffix from boundary assessment while the archive still
-      // deleted all of it.
-      if (page.entries.length === 0) {
-        return yield* Effect.fail(
-          error("invalid", `journal suffix returned an empty continuation page for ${runId}`)
-        )
-      }
-      const next = page.entries.reduce((tail, entry) => entry.seq > tail ? entry.seq : tail, after)
-      if (next <= after) {
-        return yield* Effect.fail(error("invalid", `journal suffix pagination did not advance for ${runId}`))
-      }
-      after = next
-    }
+    // Fail closed: a page that claims more and delivers nothing would hide
+    // part of the suffix from boundary assessment while the archive still
+    // deleted all of it. The pager refuses it.
+    yield* JournalPages.forEachPage(
+      journal,
+      { runId, after: frame.seq, pageSize, label: "journal suffix", readFailure: `could not read suffix for ${runId}` },
+      (entries) =>
+        Effect.gen(function*() {
+          for (const entry of entries) {
+            count += 1
+            if (count > maxEntries) {
+              return yield* Effect.fail(HistoryLimit.exceeded("rewind", runId, maxEntries))
+            }
+            if (tailSeq === undefined || entry.seq > tailSeq) tailSeq = entry.seq
+            if (entry.eventType === EffectBoundary.eventType) boundary.push(entry)
+          }
+        })
+    )
+    return { boundary, count, tailSeq }
   })
 
 const snapshotOf = (row: RunStore.RunRow): RunStore.RunSnapshot => ({

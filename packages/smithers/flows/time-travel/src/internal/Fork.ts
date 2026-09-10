@@ -24,6 +24,7 @@ import { type Fork as ForkResult, TimeTravelStore } from "../TimeTravelStore.ts"
 import * as Compensation from "./Compensation.ts"
 import type { EffectHandlerRegistry } from "./EffectHandlerRegistry.ts"
 import * as HistoryLimit from "./HistoryLimit.ts"
+import * as JournalPages from "./JournalPages.ts"
 
 /**
  * What a fork needs to know: which parent frame to branch from, and which lane
@@ -170,27 +171,29 @@ const suffixAfter = (
   Effect.gen(function*() {
     const boundary: Array<JournalEvent.Entry> = []
     let count = 0
-    let after = frame.seq as JournalEvent.Seq
-    while (true) {
-      const page = yield* journal.entries({
-        runId: runId as JournalEvent.RunId,
-        after,
-        limit: pageSize
-      }).pipe(Effect.mapError((cause) => error("unknown", `could not read fork suffix for ${runId}`, cause)))
-      for (const entry of page.entries) {
-        count += 1
-        if (count > maxEntries) {
-          return yield* Effect.fail(HistoryLimit.exceeded("fork", runId, maxEntries))
-        }
-        if (entry.eventType === EffectBoundary.eventType) boundary.push(entry)
-      }
-      if (!page.hasMore || page.entries.length === 0) return boundary
-      const next = page.entries.reduce((tail, entry) => entry.seq > tail ? entry.seq : tail, after)
-      if (next <= after) {
-        return yield* Effect.fail(error("invalid", "journal fork pagination did not advance"))
-      }
-      after = next
-    }
+    // The pager fails closed on a malformed page, so a transient empty page
+    // never lets the fork commit with an incomplete disclosure.
+    yield* JournalPages.forEachPage(
+      journal,
+      {
+        runId,
+        after: frame.seq,
+        pageSize,
+        label: "journal fork",
+        readFailure: `could not read fork suffix for ${runId}`
+      },
+      (entries) =>
+        Effect.gen(function*() {
+          for (const entry of entries) {
+            count += 1
+            if (count > maxEntries) {
+              return yield* Effect.fail(HistoryLimit.exceeded("fork", runId, maxEntries))
+            }
+            if (entry.eventType === EffectBoundary.eventType) boundary.push(entry)
+          }
+        })
+    )
+    return boundary
   })
 
 const runHook = (options: ForkOptions, step: ForkStep): Effect.Effect<void, TimeTravelError> => {

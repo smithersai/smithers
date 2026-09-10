@@ -26,6 +26,7 @@ import * as Schema from "effect/Schema"
 import { error, type TimeTravelError } from "../TimeTravelError.ts"
 import { type Snapshot, TimeTravelStore } from "../TimeTravelStore.ts"
 import * as HistoryLimit from "./HistoryLimit.ts"
+import * as JournalPages from "./JournalPages.ts"
 
 /**
  * The anchor facts one lineage has put in force.
@@ -193,22 +194,6 @@ export interface ProjectOptions {
 
 const planEventTypes = [EventTypes.planRecorded, EventTypes.subgraphAppended] as const
 
-const readPage = (
-  journal: Journal.Service,
-  runId: string,
-  options: {
-    readonly after: number | undefined
-    readonly limit: number
-    readonly eventTypes?: ReadonlyArray<string> | undefined
-  }
-) =>
-  journal.entries({
-    runId: runId as JournalEvent.RunId,
-    ...(options.after === undefined ? {} : { after: options.after as JournalEvent.Seq }),
-    ...(options.eventTypes === undefined ? {} : { eventTypes: options.eventTypes }),
-    limit: options.limit
-  }).pipe(Effect.mapError((cause) => error("unknown", `could not read ${runId} for anchoring`, cause)))
-
 /**
  * The fold's state at the anchored high-water mark, rebuilt from the store.
  *
@@ -235,22 +220,28 @@ const resume = (
     let state: State = { lineages, anchors: 0 }
     if (highWater === undefined) return { state, highWater }
     const mark = highWater
-    let after: number | undefined
-    while (true) {
-      const page = yield* readPage(journal, runId, { after, limit: pageSize, eventTypes: planEventTypes })
-      for (const entry of page.entries) {
-        if (entry.seq > mark) return { state, highWater }
-        // A journal double may ignore the filter; the fold ignores the rest.
-        if (!planEventTypes.includes(entry.eventType as (typeof planEventTypes)[number])) continue
-        state = (yield* step(state, entry)).state
-      }
-      const tail = page.entries.at(-1)?.seq
-      if (!page.hasMore || tail === undefined || tail >= mark) return { state, highWater }
-      if (tail <= (after ?? -1)) {
-        return yield* Effect.fail(error("invalid", `snapshot pagination did not advance for ${runId}`))
-      }
-      after = tail
-    }
+    yield* JournalPages.forEachPage(
+      journal,
+      {
+        runId,
+        pageSize,
+        eventTypes: planEventTypes,
+        label: "snapshot",
+        readFailure: `could not read ${runId} for anchoring`
+      },
+      (entries) =>
+        Effect.gen(function*() {
+          for (const entry of entries) {
+            if (entry.seq > mark) return JournalPages.Stop
+            // A journal double may ignore the filter; the fold ignores the rest.
+            if (!planEventTypes.includes(entry.eventType as (typeof planEventTypes)[number])) continue
+            state = (yield* step(state, entry)).state
+          }
+          const tail = entries.at(-1)?.seq
+          if (tail !== undefined && tail >= mark) return JournalPages.Stop
+        })
+    )
+    return { state, highWater }
   })
 
 /**
@@ -288,32 +279,36 @@ export const project = (
     if (options.upTo !== undefined && resumed.highWater !== undefined && resumed.highWater >= options.upTo) {
       return state
     }
-    let after = resumed.highWater
     let read = 0
-    while (true) {
-      const page = yield* readPage(journal, runId, { after, limit: pageSize })
-      const anchors: Array<Snapshot> = []
-      let reachedBound = false
-      for (const entry of page.entries) {
-        if (options.upTo !== undefined && entry.seq > options.upTo) {
-          reachedBound = true
-          break
-        }
-        read += 1
-        if (options.maxEntries !== undefined && read > options.maxEntries) {
-          return yield* Effect.fail(HistoryLimit.exceeded("anchor refresh", runId, options.maxEntries))
-        }
-        const next = yield* step(state, entry)
-        state = next.state
-        if (next.anchor !== undefined) anchors.push(next.anchor)
-      }
-      if (anchors.length > 0) yield* store.recordSnapshots(anchors)
-      if (reachedBound || !page.hasMore) return state
-      const tail = page.entries.at(-1)?.seq
-      const previous = after ?? -1
-      if (tail === undefined || tail <= previous) {
-        return yield* Effect.fail(error("invalid", `snapshot pagination did not advance for ${runId}`))
-      }
-      after = tail
-    }
+    yield* JournalPages.forEachPage(
+      journal,
+      {
+        runId,
+        after: resumed.highWater,
+        pageSize,
+        label: "snapshot",
+        readFailure: `could not read ${runId} for anchoring`
+      },
+      (entries) =>
+        Effect.gen(function*() {
+          const anchors: Array<Snapshot> = []
+          let reachedBound = false
+          for (const entry of entries) {
+            if (options.upTo !== undefined && entry.seq > options.upTo) {
+              reachedBound = true
+              break
+            }
+            read += 1
+            if (options.maxEntries !== undefined && read > options.maxEntries) {
+              return yield* Effect.fail(HistoryLimit.exceeded("anchor refresh", runId, options.maxEntries))
+            }
+            const next = yield* step(state, entry)
+            state = next.state
+            if (next.anchor !== undefined) anchors.push(next.anchor)
+          }
+          if (anchors.length > 0) yield* store.recordSnapshots(anchors)
+          if (reachedBound) return JournalPages.Stop
+        })
+    )
+    return state
   })

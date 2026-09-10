@@ -214,7 +214,7 @@ describe("Fork.fork", () => {
         dependencies
       ))
 
-      expect(failure).toMatchObject({ code: "invalid", message: "journal fork pagination did not advance" })
+      expect(failure).toMatchObject({ code: "invalid", message: "journal fork pagination did not advance for parent" })
     }))
 
   it.effect("creates the fork workspace and always forgets it when the scope closes", () =>

@@ -211,6 +211,62 @@ describe("fork boundary assessment", () => {
       ])
     }))
 
+  // The suffix read fails closed exactly as the rewind's does: an empty page
+  // that still claims more would otherwise let the fork commit with only the
+  // boundary records it happened to see, and disclose an incomplete list of
+  // effects that may execute again on the child.
+  it.effect("refuses an empty continuation page instead of committing an incomplete disclosure", () =>
+    Effect.gen(function*() {
+      const calls: Array<string> = []
+      let pages = 0
+      const journal = Layer.succeed(
+        Journal.Journal,
+        Journal.makeNoop({
+          entries: () =>
+            Effect.sync(() => {
+              pages += 1
+              return pages === 1
+                ? { entries: [boundaryEntry(1, "charge-1", "billing/Charge")], hasMore: true }
+                : { entries: [], hasMore: true }
+            })
+        })
+      )
+      const store = MemoryTimeTravelStore.make({
+        snapshots: [{ runId: "parent", frame, changeId: "change-at-frame" }]
+      })
+
+      const failure = yield* Effect.flip(
+        Effect.scoped(
+          Fork.fork({ parentRunId: "parent", frame, workspaceRoot: "/tmp/lanes", pageSize: 1 }).pipe(
+            Effect.provide(Layer.succeed(RunStore.RunStore, RunStore.makeNoop({ get: () => Effect.succeed(row()) }))),
+            Effect.provide(Layer.succeed(TimeTravelStore, store)),
+            Effect.provide(
+              Layer.succeed(
+                Jj.Jj,
+                Jj.makeNoop({
+                  workspaceAdd: (name) => Effect.sync(() => void calls.push(`add:${name}`)),
+                  workspaceForget: (name) => Effect.sync(() => void calls.push(`forget:${name}`))
+                })
+              )
+            ),
+            Effect.provide(journal),
+            Effect.provide(Layer.succeed(CacheStore.CacheStore, CacheStore.makeNoop())),
+            Effect.provide(EffectHandlerRegistry.layerNoop)
+          )
+        )
+      )
+
+      expect(pages).toBe(2)
+      expect(failure).toMatchObject({
+        code: "invalid",
+        message: "journal fork returned an empty continuation page for parent"
+      })
+      // Refused before anything was minted or provisioned.
+      expect(calls).toEqual([])
+      expect(store.state().forkIntents).toEqual([])
+      expect(store.state().edges).toEqual([])
+    }))
+
   it.effect("says so, rather than restoring a wrong tree, when the frame has no pointer", () =>
     Effect.gen(function*() {
       const { calls, result } = yield* runFork({ entries: [noise(1)] })

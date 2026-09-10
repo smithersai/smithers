@@ -613,6 +613,25 @@ describe("TimeTravel replay and history caps", () => {
       expect(store.state().edges).toEqual([])
     }))
 
+  // The cap is inclusive: a suffix of exactly `maxHistoryEntries` records is
+  // read in full and the fork proceeds, the same boundary replay and rewind pin.
+  it.effect("forks a suffix of exactly the capped length and provisions one lane", () =>
+    Effect.gen(function*() {
+      const store = MemoryTimeTravelStore.make({ records: [record(0, 10), record(1, 20), record(2, 30)] })
+      const workspaces: Array<string> = []
+
+      const fork = yield* run(
+        store,
+        (timeTravel) => timeTravel.fork({ runId: "run", frame: { lineageId, seq: 0 } }, { maxHistoryEntries: 2 }),
+        workspaces
+      )
+
+      expect(fork.edge).toMatchObject({ parentRunId: "run", parentSeq: 0, kind: "fork" })
+      const lane = Fork.workspaceNameFor(fork.runId)
+      expect(workspaces).toEqual([`${lane}@.flows/forks/${lane}`])
+      expect(store.state().edges).toHaveLength(1)
+    }))
+
   it.effect("refuses a service-level cap that is not a positive integer at build", () =>
     Effect.gen(function*() {
       const store = MemoryTimeTravelStore.make({ records: [record(0, 10)] })
