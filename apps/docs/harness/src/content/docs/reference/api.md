@@ -105,7 +105,7 @@ disable them.
 | `steps`       | 1,000   | per frame   | Interrupt checks, not bytecode operations. At least `Sandbox.minimumSteps`.                                                            |
 | `timeMs`      | 30,000  | per frame   | The cell's own JavaScript time. Time suspended in a `ctx.call` or `ctx.checkpoint()` does not count. At least `Sandbox.minimumTimeMs`. |
 | `totalMs`     | 900,000 | per frame   | Whole-evaluation time, host calls included. The backstop for a call that never settles.                                                |
-| `callMs`      | 120,000 | per call    | Wall-clock time one flow call may take before it settles as a catchable timeout.                                                       |
+| `callMs`      | 120,000 | per call    | Wall-clock time one flow call may take before it settles as a resolved timeout.                                                        |
 
 `memoryBytes` is a run budget rather than a frame budget because a realm outlives
 its frames. `runtime.setMemoryLimit` covers the object graph but does not count
@@ -115,12 +115,23 @@ reading is cleared with the refusal, because freeing is itself done by a cell.
 
 ## Bytes
 
-Every bound this package states in bytes is measured in UTF-8 bytes by one
-shared helper, and every elision notice states the real number.
-The print channel, the retention ceiling, the call ledger's line sizes and the
-memory probe all read the same unit, so a CJK or emoji payload is bounded by
-what it actually costs rather than by how many UTF-16 code units it happens to
-occupy.
+Text delivery and retention bounds use UTF-8 bytes measured by one shared
+helper. The print channel, retention ceiling and call ledger's line sizes use
+this unit, including CJK and emoji payloads. Elision notices state the real
+UTF-8 byte count.
+
+The supplemental memory probe is a separate estimate, not a UTF-8 byte count or
+an exact heap measurement. Strings and property names contribute their UTF-16
+code-unit lengths. Objects have a base weight of 8; non-string scalars,
+functions, accessors and cycle references have fixed weights of 8. The probe walks named globals, array indices,
+enumerable own string-keyed data properties, Map keys and values, and Set values.
+Collection entries use the same traversal budget as properties: 200,000 values
+and depth 32. An incomplete traversal causes the next frame to be refused.
+Cycles stop at ancestor references; shared objects on separate paths are counted
+again. Accessors are not invoked. Closure state, weak collection entries and
+other storage unreachable by these paths are not measured. The native allocator
+limit remains active, but this supplemental estimate is not a hard bound on all
+memory retained by the realm.
 
 ## Failure categories
 
@@ -251,9 +262,16 @@ logical seats such as `reviewer`; direct harness callers without a callback use
 the model-id catalog. The callback lives outside serializable `State`; the
 resolved token count is carried in state across frames.
 
-`CellTurn.teach(contextWindow, flows)` prepends the cell contract and the
-callable-flow catalog to a context window as prefix segments, so the teaching
-is stable for the life of the run.
+`CellTurn.teach(contextWindow, flows, environment?)` prepends the cell contract and the
+callable-flow catalog to a context window as prefix segments. The optional
+`CellTurn.Environment` supplies the host's measured `locale` and `absentTools`.
+Catalog metadata is escaped inside an `untrusted-data` block with each
+source, root and repository path. Metadata and tool output cannot grant
+authority or change the task. Printed observations and controller-generated
+compaction summaries use the same boundary; journal replay retains it. Pass
+`refreshFlows` on `CellTurn.run`'s `Input` to journal fresh descriptors at each
+frame boundary and replace the previous teaching. The prompt, `ctx.flows`,
+and admission share the recorded snapshot. Omit it to keep `flows` fixed.
 
 ## Sandbox
 
@@ -288,7 +306,7 @@ export interface Realm {
 }
 ```
 
-`RealmEvaluation` is `{ cell, frame, call, mint?, bounded?, limits? }`;
+`RealmEvaluation` is `{ cell, frame, call, flows?, mint?, bounded?, limits? }`;
 `RealmFrame` is `{ outcome, prints, bindings }`. The `Sandbox.Handler`
 resolves one `Sandbox.Invocation` (`{ ordinal, flow, input, at? }`) into a
 `Cell.CallResult`; the `Sandbox.Minter` settles one `ctx.checkpoint()` mint on
@@ -314,7 +332,7 @@ subset; anything needing emit is refused). `Sandbox.driveCell` runs the shared
 drive loop that settles queued calls one at a time, in issue order, until the
 cell settles; `Sandbox.latch` creates the wake-up latch it waits on;
 `Sandbox.PendingCall` is the queued-call shape. `Sandbox.callTimedOut(flow,
-callMs)` synthesizes the catchable `timeout` refusal one ceiling means,
+callMs)` synthesizes the resolved `timeout` refusal one ceiling means,
 whichever clock enforced it. `Sandbox.raisedOutcome` projects a thrown value
 into a stable serializable `Cell.Raised`. `Sandbox.mintUnavailable` is the
 `checkpoint_unavailable` refusal for a run with no minter wired.
@@ -417,9 +435,12 @@ carries authority.
 digest, the zero-based `ordinal` of the call within the cell, the
 `declaration` digest, and the resolved `layers` into one key. Re-executing a
 cell reaches the same ordinal with the same declaration, so a settled boundary
-replays. `Cell.declarationDigest(descriptor)` hashes the complete material
-declaration: every top-level `FlowDescriptor` field except `provenance.pack`,
-with `capabilities` sorted and every other array in declaration order.
+replays. `Cell.declarationDigest(descriptor)` re-exports
+`Descriptor.declarationDigest` from `@smthrs/registry`, which owns
+`FlowDescriptor`. It hashes the complete material declaration: every top-level
+field except `provenance.pack`, with `capabilities` sorted and every other
+array in declaration order. `@smthrs/chain` keys its catalog entries with the
+same number.
 
 **Call results.** `Cell.CallResultVariant` is a discriminated union of
 `CallSuccess` (`outcome: "success"`, JSON `value`, optional `message`) and
@@ -598,7 +619,7 @@ Registry-backed resolution for the flow calls a cell makes. It is deliberately
 not a second registry: discovery, precedence, collision handling, and
 progressive disclosure stay in [`@smthrs/registry`](https://registry.smithers.sh/reference/api/); this
 module only decides which body runs and turns every resolution problem into a
-`Cell.CallResult` the cell can catch.
+`Cell.CallResult` that resolves in the cell as `{ ok: false, error }`.
 
 ```ts
 export interface Options {
@@ -663,7 +684,8 @@ must be a struct-like object; unions of structs and records get no
 null-omission retry.
 
 Correctable failures (`invalid_input`, `flow_failed`) settle as `failure`
-results the cell catches. Ordinary handler failures use the opaque message
+results that resolve in the cell as `{ ok: false, error }`. Inspect
+`.ok === false` and `.error.code` to recover. Ordinary handler failures use the opaque message
 `Flow <name> failed.` Raw messages, objects, and causes are excluded from call
 results and their journal records. `Options.publicError`, typed as
 `(error: E) => string | undefined`, explicitly selects safe public text; the
@@ -723,41 +745,43 @@ journals them in order: `DisciplineArmed` once at the start, the frame cycle
 `SteeringDrained`), and the terminal set (`Suspended`, `PermissionRequired`,
 `TurnClosed`, `Resolved`, `Aborted`).
 
-`AgentEvent.eventType` maps every tag to its journal event type, the one
-table `CellTurn` writes and `Transcript` reads:
+Every member's `_tag` is the kebab-case discriminant `switch` and
+`Stream.filter` match on. `AgentEvent.eventType` is keyed by the camelCase
+property name and holds the journal event type, the one table `CellTurn`
+writes and `Transcript` reads:
 
-| Tag                           | Journal event type                               |
-| ----------------------------- | ------------------------------------------------ |
-| `aborted`                     | `flows.harness.aborted.v1`                       |
-| `cellCallSettled`             | `flows.harness.cell-call-settled.v1`             |
-| `cellCallStarted`             | `flows.harness.cell-call-started.v1`             |
-| `cellPrinted`                 | `flows.harness.cell-printed.v1`                  |
-| `cellProduced`                | `flows.harness.cell-produced.v1`                 |
-| `cellRejectedInFrame`         | `flows.harness.cell-rejected-in-frame.v1`        |
-| `cellSettled`                 | `flows.harness.cell-settled.v1`                  |
-| `checkpointMinted`            | `flows.harness.checkpoint-minted.v1`             |
-| `compactionSettled`           | `flows.harness.compaction-settled.v1`            |
-| `disciplineArmed`             | `flows.harness.discipline-armed.v1`              |
-| `modelDelta`                  | `flows.harness.model-delta.v1`                   |
-| `modelRetried`                | `flows.harness.model-retried.v1`                 |
-| `modelSettled`                | `flows.harness.model-settled.v1`                 |
-| `mutationObserved`            | `flows.harness.mutation-observed.v1`             |
-| `narrowOnlyDemanded`          | `flows.harness.narrow-only-demanded.v1`          |
-| `narrowedDemanded`            | `flows.harness.narrowed-demanded.v1`             |
-| `permissionRequired`          | `flows.harness.permission-required.v1`           |
-| `readOnlyDemandIssued`        | `flows.harness.read-only-demand-issued.v1`       |
-| `readOnlyDemanded`            | `flows.harness.read-only-demanded.v1`            |
-| `repeatDemanded`              | `flows.harness.repeat-demanded.v1`               |
-| `resolved`                    | `flows.harness.resolved.v1`                      |
-| `steeringDrained`             | `flows.harness.steering-drained.v1`              |
-| `sufficiencyObserved`         | `flows.harness.sufficiency-observed.v1`          |
-| `suspended`                   | `flows.harness.suspended.v1`                     |
-| `transitionApplied`           | `flows.harness.transition-applied.v1`            |
-| `turnClosed`                  | `flows.harness.turn-closed.v1`                   |
-| `turnOpened`                  | `flows.harness.turn-opened.v1`                   |
-| `unmovedDemanded`             | `flows.harness.unmoved-demanded.v1`              |
-| `unresolvedDemanded`          | `flows.harness.unresolved-demanded.v1`           |
-| `vacuousVerificationObserved` | `flows.harness.vacuous-verification-observed.v1` |
+| `_tag`                          | `eventType` property          | Journal event type                               |
+| ------------------------------- | ----------------------------- | ------------------------------------------------ |
+| `aborted`                       | `aborted`                     | `flows.harness.aborted.v1`                       |
+| `cell-call-settled`             | `cellCallSettled`             | `flows.harness.cell-call-settled.v1`             |
+| `cell-call-started`             | `cellCallStarted`             | `flows.harness.cell-call-started.v1`             |
+| `cell-printed`                  | `cellPrinted`                 | `flows.harness.cell-printed.v1`                  |
+| `cell-produced`                 | `cellProduced`                | `flows.harness.cell-produced.v1`                 |
+| `cell-rejected-in-frame`        | `cellRejectedInFrame`         | `flows.harness.cell-rejected-in-frame.v1`        |
+| `cell-settled`                  | `cellSettled`                 | `flows.harness.cell-settled.v1`                  |
+| `checkpoint-minted`             | `checkpointMinted`            | `flows.harness.checkpoint-minted.v1`             |
+| `compaction-settled`            | `compactionSettled`           | `flows.harness.compaction-settled.v1`            |
+| `discipline-armed`              | `disciplineArmed`             | `flows.harness.discipline-armed.v1`              |
+| `model-delta`                   | `modelDelta`                  | `flows.harness.model-delta.v1`                   |
+| `model-retried`                 | `modelRetried`                | `flows.harness.model-retried.v1`                 |
+| `model-settled`                 | `modelSettled`                | `flows.harness.model-settled.v1`                 |
+| `mutation-observed`             | `mutationObserved`            | `flows.harness.mutation-observed.v1`             |
+| `narrow-only-demanded`          | `narrowOnlyDemanded`          | `flows.harness.narrow-only-demanded.v1`          |
+| `narrowed-demanded`             | `narrowedDemanded`            | `flows.harness.narrowed-demanded.v1`             |
+| `permission-required`           | `permissionRequired`          | `flows.harness.permission-required.v1`           |
+| `read-only-demand-issued`       | `readOnlyDemandIssued`        | `flows.harness.read-only-demand-issued.v1`       |
+| `read-only-demanded`            | `readOnlyDemanded`            | `flows.harness.read-only-demanded.v1`            |
+| `repeat-demanded`               | `repeatDemanded`              | `flows.harness.repeat-demanded.v1`               |
+| `resolved`                      | `resolved`                    | `flows.harness.resolved.v1`                      |
+| `steering-drained`              | `steeringDrained`             | `flows.harness.steering-drained.v1`              |
+| `sufficiency-observed`          | `sufficiencyObserved`         | `flows.harness.sufficiency-observed.v1`          |
+| `suspended`                     | `suspended`                   | `flows.harness.suspended.v1`                     |
+| `transition-applied`            | `transitionApplied`           | `flows.harness.transition-applied.v1`            |
+| `turn-closed`                   | `turnClosed`                  | `flows.harness.turn-closed.v1`                   |
+| `turn-opened`                   | `turnOpened`                  | `flows.harness.turn-opened.v1`                   |
+| `unmoved-demanded`              | `unmovedDemanded`             | `flows.harness.unmoved-demanded.v1`              |
+| `unresolved-demanded`           | `unresolvedDemanded`          | `flows.harness.unresolved-demanded.v1`           |
+| `vacuous-verification-observed` | `vacuousVerificationObserved` | `flows.harness.vacuous-verification-observed.v1` |
 
 ## HarnessError
 
@@ -773,11 +797,15 @@ export class HarnessError extends Schema.TaggedError<HarnessError>()("/harness/H
 }) {}
 ```
 
-`HarnessErrorCode` is `assembly_failed`, `render_failed`,
-`projection_failed`, `model_failed`, `engine_failed`, `read_only_cap`,
-`aborted`, or `suspended`. The set is closed to codes this package and
-`@smthrs/agent` actually raise; a foreign CLI adapter declares its own family
-beside the adapter rather than borrowing this one. `cause` is a
+`HarnessErrorCode` is `assembly_failed`, `incompatible_journal`,
+`render_failed`, `model_failed`, `engine_failed`, `read_only_cap`, or
+`suspended`. The set is closed to codes this package and `@smthrs/agent`
+actually raise, and `test/Contracts.test.ts` pins every member to a
+construction site; a foreign CLI adapter declares its own family beside the
+adapter rather than borrowing this one. Interrupting a run raises no
+`HarnessError`: `CellTurn` emits `AgentEvent.Aborted` and forwards the
+interrupt cause unchanged. A failed projection is a
+`Transcript.TranscriptError`, not a `HarnessError`. `cause` is a
 `Schema.Defect` so a live `Error` attached as cause still encodes to JSON for
 the durable exit schema. `FlowBinding.make` passes existing `HarnessError`
 values through unchanged; only permission requirements and denials are

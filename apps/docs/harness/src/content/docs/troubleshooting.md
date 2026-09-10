@@ -41,15 +41,16 @@ A rejection means the cell never produced a transition. The outcome is
 `Cell.Rejected` with a `Cell.RejectionCode`; the model is told, and the run
 continues unless the frame budget says otherwise.
 
-| Code                   | Cause                                                                                                                                       | What to do                                                                                                                                |
-| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
-| `no_cell`              | `Cell.extract` found no fenced `cell` block in the model's reply.                                                                           | The next request restates the contract; a host driving `Cell.extract` itself teaches the fenced-block shape.                              |
-| `imports_forbidden`    | `Sandbox.compile` found module syntax in the cell.                                                                                          | Cells have no module loader; a quoted import inside a string is data and runs.                                                            |
-| `compile_failed`       | The cell does not parse. The message names the line and column and quotes the offending line.                                               | The controller answers in-frame up to the `revalidations` budget; check `CellProduced.blocks` when a multi-block reply redeclares a name. |
-| `invalid_transition`   | The cell produced something that is not a transition. The message carries the decoder's own report.                                         | A cell states intent by calling `ctx.done` or `ctx.park`, never by returning.                                                             |
-| `unsupported_language` | A binding could not compile the cell's language.                                                                                            | Neither shipped binding raises it; cells are JavaScript or erasable TypeScript.                                                           |
-| `limit_exceeded`       | The cell spent a ceiling: `calls`, `steps`, `timeMs`, `totalMs`, or heap. A result refused before materialization carries `reason: "heap"`. | Raise the specific ceiling, narrow the cell's work, or request less output; see [limits](/reference/api/#limits).                                |
-| `stalled`              | "The cell awaited something that never settles."                                                                                            | Inside a cell the only thing worth awaiting is `ctx.call`; find the awaited promise that nothing settles.                                 |
+| Code                   | Cause                                                                                                                                       | What to do                                                                                                                                  |
+| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| `no_cell`              | `Cell.extract` found no fenced `cell` block in the model's reply.                                                                           | The next request restates the contract; a host driving `Cell.extract` itself teaches the fenced-block shape.                                |
+| `output_truncated`     | The reply ends inside an open fence, or the provider stopped on `length`. No block ran.                                                     | The model is told to emit the complete program with every fence closed; raise the provider's output limit if it keeps stopping on `length`. |
+| `imports_forbidden`    | `Sandbox.compile` found module syntax in the cell.                                                                                          | Cells have no module loader; a quoted import inside a string is data and runs.                                                              |
+| `compile_failed`       | The cell does not parse. The message names the line and column and quotes the offending line.                                               | The controller answers in-frame up to the `revalidations` budget; check `CellProduced.blocks` when a multi-block reply redeclares a name.   |
+| `invalid_transition`   | The cell produced something that is not a transition. The message carries the decoder's own report.                                         | A cell states intent by calling `ctx.done` or `ctx.park`, never by returning.                                                               |
+| `unsupported_language` | A binding could not compile the cell's language.                                                                                            | Neither shipped binding raises it; cells are JavaScript or erasable TypeScript.                                                             |
+| `limit_exceeded`       | The cell spent a ceiling: `calls`, `steps`, `timeMs`, `totalMs`, or heap. A result refused before materialization carries `reason: "heap"`. | Raise the specific ceiling, narrow the cell's work, or request less output; see [limits](/reference/api/#limits).                                  |
+| `stalled`              | "The cell awaited something that never settles."                                                                                            | Inside a cell the only thing worth awaiting is `ctx.call`; find the awaited promise that nothing settles.                                   |
 
 **A frame is refused before it runs, naming names to free.** The realm opened
 over its `memoryBytes` run budget, weighed by the panel probe at the previous
@@ -95,16 +96,20 @@ either way; what the run pays for twice is the interrupted call. See
 The controller's own failures are `HarnessError`s, with
 `HarnessError.HarnessErrorCode`:
 
-| Code                | Meaning                                                                                                           |
-| ------------------- | ----------------------------------------------------------------------------------------------------------------- |
-| `assembly_failed`   | Composition refused something: two bindings under one name, or an unnamed binding.                                |
-| `render_failed`     | A boundary could not render what it had to show.                                                                  |
-| `projection_failed` | A projection from durable records failed.                                                                         |
-| `model_failed`      | The sealed model step failed.                                                                                     |
-| `engine_failed`     | The engine boundary failed, including a realm that could not open.                                                |
-| `read_only_cap`     | The run spent its read-only budget: the cap demanded an edit or a justification, and twice the cap stops the run. |
-| `aborted`           | A normalized harness abort; interrupting the stream reports one.                                                  |
-| `suspended`         | The run parked: a permission requirement, a durable wait, or an engine suspension.                                |
+| Code                   | Meaning                                                                                                                                      |
+| ---------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| `assembly_failed`      | Composition refused something: two bindings under one name, or an unnamed binding.                                                           |
+| `incompatible_journal` | The journal predates the current harness journal format, or a resumed frame is missing a record it needs. Start a new run; no repair exists. |
+| `render_failed`        | A boundary could not render what it had to show.                                                                                             |
+| `model_failed`         | The sealed model step failed.                                                                                                                |
+| `engine_failed`        | The engine boundary failed, including a realm that could not open.                                                                           |
+| `read_only_cap`        | The run spent its read-only budget: the cap demanded an edit or a justification, and twice the cap stops the run.                            |
+| `suspended`            | The run parked: a permission requirement, a durable wait, or an engine suspension.                                                           |
+
+Interrupting a run raises no `HarnessError`: the stream ends with an
+`AgentEvent.Aborted` event and the interrupt cause is forwarded unchanged. A
+projection that fails is a `Transcript.TranscriptError` with code
+`projection_failed`, not a `HarnessError`.
 
 **A `park` transition comes back refused.** `CellTurn.make` defaults
 `approvalChannel` to `false`, which means nobody can answer the run, so a

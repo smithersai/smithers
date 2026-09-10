@@ -3,6 +3,7 @@ import * as Permission from "@smthrs/capability/Permission"
 import * as ModelEvent from "@smthrs/model/ModelEvent"
 import * as ModelRequest from "@smthrs/model/ModelRequest"
 import { Cause, Effect, Exit, Option, Schema, Stream } from "effect"
+import { readdirSync, readFileSync } from "node:fs"
 import { describe, expect, it } from "vitest"
 import * as AgentEvent from "../src/AgentEvent.ts"
 import * as Cell from "../src/Cell.ts"
@@ -409,11 +410,9 @@ describe("HarnessError", () => {
       "assembly_failed",
       "incompatible_journal",
       "render_failed",
-      "projection_failed",
       "model_failed",
       "engine_failed",
       "read_only_cap",
-      "aborted",
       "suspended"
     ] as const
 
@@ -424,6 +423,20 @@ describe("HarnessError", () => {
         Schema.decodeUnknownSync(HarnessError)(Schema.encodeSync(HarnessError)(error))
       ).toEqual(error)
     }
+  })
+
+  it("keeps the set closed to codes some source file actually constructs", () => {
+    // A code the package cannot raise is a promise it cannot keep, so every
+    // member must have a `new HarnessError({ code: "..." })` site under src,
+    // and every such site must name a member.
+    const constructed = new Set<string>()
+    for (const file of readdirSync(new URL("../src/", import.meta.url), { recursive: true })) {
+      if (!String(file).endsWith(".ts")) continue
+      const text = readFileSync(new URL(`../src/${String(file)}`, import.meta.url), "utf8")
+      for (const match of text.matchAll(/new HarnessError\(\{\s*code: "([a-z_]+)"/g)) constructed.add(match[1]!)
+    }
+
+    expect([...constructed].sort()).toEqual([...HarnessErrorCode.literals].sort())
   })
 })
 

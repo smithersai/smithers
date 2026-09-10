@@ -8,8 +8,11 @@ import { Schema } from "effect"
 /**
  * Stable harness failure codes.
  *
- * The set is closed to codes this package and `@smthrs/agent` actually raise.
- * A foreign CLI adapter declares its own error family beside the adapter in
+ * The set is closed to codes this package and `@smthrs/agent` actually raise;
+ * `test/Contracts.test.ts` pins every member to a construction site under
+ * `src`. Interrupting a run does not raise one: `CellTurn` emits
+ * `AgentEvent.Aborted` and forwards the interrupt cause unchanged, and a
+ * failed projection is `Transcript.TranscriptError`. A foreign CLI adapter declares its own error family beside the adapter in
  * `@smthrs/agent` rather than borrowing this one.
  *
  * @category models
@@ -20,11 +23,9 @@ export const HarnessErrorCode = Schema.Literals([
   "assembly_failed",
   "incompatible_journal",
   "render_failed",
-  "projection_failed",
   "model_failed",
   "engine_failed",
   "read_only_cap",
-  "aborted",
   "suspended"
 ])
 

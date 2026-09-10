@@ -592,7 +592,7 @@ describe("FlowBinding.make", () => {
 
   it("keeps a permission denial and a harness failure in the typed channel too", async () => {
     const denied = Permission.permissionDenied(Capability.make("fs:write", "**"), "policy")
-    const harness = new HarnessError({ code: "aborted", message: "the run was cancelled" })
+    const harness = new HarnessError({ code: "engine_failed", message: "the realm could not open" })
 
     let rendered = false
     const publicError = () => {

@@ -744,41 +744,43 @@ journals them in order: `DisciplineArmed` once at the start, the frame cycle
 `SteeringDrained`), and the terminal set (`Suspended`, `PermissionRequired`,
 `TurnClosed`, `Resolved`, `Aborted`).
 
-`AgentEvent.eventType` maps every tag to its journal event type, the one
-table `CellTurn` writes and `Transcript` reads:
+Every member's `_tag` is the kebab-case discriminant `switch` and
+`Stream.filter` match on. `AgentEvent.eventType` is keyed by the camelCase
+property name and holds the journal event type, the one table `CellTurn`
+writes and `Transcript` reads:
 
-| Tag                           | Journal event type                               |
-| ----------------------------- | ------------------------------------------------ |
-| `aborted`                     | `flows.harness.aborted.v1`                       |
-| `cellCallSettled`             | `flows.harness.cell-call-settled.v1`             |
-| `cellCallStarted`             | `flows.harness.cell-call-started.v1`             |
-| `cellPrinted`                 | `flows.harness.cell-printed.v1`                  |
-| `cellProduced`                | `flows.harness.cell-produced.v1`                 |
-| `cellRejectedInFrame`         | `flows.harness.cell-rejected-in-frame.v1`        |
-| `cellSettled`                 | `flows.harness.cell-settled.v1`                  |
-| `checkpointMinted`            | `flows.harness.checkpoint-minted.v1`             |
-| `compactionSettled`           | `flows.harness.compaction-settled.v1`            |
-| `disciplineArmed`             | `flows.harness.discipline-armed.v1`              |
-| `modelDelta`                  | `flows.harness.model-delta.v1`                   |
-| `modelRetried`                | `flows.harness.model-retried.v1`                 |
-| `modelSettled`                | `flows.harness.model-settled.v1`                 |
-| `mutationObserved`            | `flows.harness.mutation-observed.v1`             |
-| `narrowOnlyDemanded`          | `flows.harness.narrow-only-demanded.v1`          |
-| `narrowedDemanded`            | `flows.harness.narrowed-demanded.v1`             |
-| `permissionRequired`          | `flows.harness.permission-required.v1`           |
-| `readOnlyDemandIssued`        | `flows.harness.read-only-demand-issued.v1`       |
-| `readOnlyDemanded`            | `flows.harness.read-only-demanded.v1`            |
-| `repeatDemanded`              | `flows.harness.repeat-demanded.v1`               |
-| `resolved`                    | `flows.harness.resolved.v1`                      |
-| `steeringDrained`             | `flows.harness.steering-drained.v1`              |
-| `sufficiencyObserved`         | `flows.harness.sufficiency-observed.v1`          |
-| `suspended`                   | `flows.harness.suspended.v1`                     |
-| `transitionApplied`           | `flows.harness.transition-applied.v1`            |
-| `turnClosed`                  | `flows.harness.turn-closed.v1`                   |
-| `turnOpened`                  | `flows.harness.turn-opened.v1`                   |
-| `unmovedDemanded`             | `flows.harness.unmoved-demanded.v1`              |
-| `unresolvedDemanded`          | `flows.harness.unresolved-demanded.v1`           |
-| `vacuousVerificationObserved` | `flows.harness.vacuous-verification-observed.v1` |
+| `_tag`                          | `eventType` property          | Journal event type                               |
+| ------------------------------- | ----------------------------- | ------------------------------------------------ |
+| `aborted`                       | `aborted`                     | `flows.harness.aborted.v1`                       |
+| `cell-call-settled`             | `cellCallSettled`             | `flows.harness.cell-call-settled.v1`             |
+| `cell-call-started`             | `cellCallStarted`             | `flows.harness.cell-call-started.v1`             |
+| `cell-printed`                  | `cellPrinted`                 | `flows.harness.cell-printed.v1`                  |
+| `cell-produced`                 | `cellProduced`                | `flows.harness.cell-produced.v1`                 |
+| `cell-rejected-in-frame`        | `cellRejectedInFrame`         | `flows.harness.cell-rejected-in-frame.v1`        |
+| `cell-settled`                  | `cellSettled`                 | `flows.harness.cell-settled.v1`                  |
+| `checkpoint-minted`             | `checkpointMinted`            | `flows.harness.checkpoint-minted.v1`             |
+| `compaction-settled`            | `compactionSettled`           | `flows.harness.compaction-settled.v1`            |
+| `discipline-armed`              | `disciplineArmed`             | `flows.harness.discipline-armed.v1`              |
+| `model-delta`                   | `modelDelta`                  | `flows.harness.model-delta.v1`                   |
+| `model-retried`                 | `modelRetried`                | `flows.harness.model-retried.v1`                 |
+| `model-settled`                 | `modelSettled`                | `flows.harness.model-settled.v1`                 |
+| `mutation-observed`             | `mutationObserved`            | `flows.harness.mutation-observed.v1`             |
+| `narrow-only-demanded`          | `narrowOnlyDemanded`          | `flows.harness.narrow-only-demanded.v1`          |
+| `narrowed-demanded`             | `narrowedDemanded`            | `flows.harness.narrowed-demanded.v1`             |
+| `permission-required`           | `permissionRequired`          | `flows.harness.permission-required.v1`           |
+| `read-only-demand-issued`       | `readOnlyDemandIssued`        | `flows.harness.read-only-demand-issued.v1`       |
+| `read-only-demanded`            | `readOnlyDemanded`            | `flows.harness.read-only-demanded.v1`            |
+| `repeat-demanded`               | `repeatDemanded`              | `flows.harness.repeat-demanded.v1`               |
+| `resolved`                      | `resolved`                    | `flows.harness.resolved.v1`                      |
+| `steering-drained`              | `steeringDrained`             | `flows.harness.steering-drained.v1`              |
+| `sufficiency-observed`          | `sufficiencyObserved`         | `flows.harness.sufficiency-observed.v1`          |
+| `suspended`                     | `suspended`                   | `flows.harness.suspended.v1`                     |
+| `transition-applied`            | `transitionApplied`           | `flows.harness.transition-applied.v1`            |
+| `turn-closed`                   | `turnClosed`                  | `flows.harness.turn-closed.v1`                   |
+| `turn-opened`                   | `turnOpened`                  | `flows.harness.turn-opened.v1`                   |
+| `unmoved-demanded`              | `unmovedDemanded`             | `flows.harness.unmoved-demanded.v1`              |
+| `unresolved-demanded`           | `unresolvedDemanded`          | `flows.harness.unresolved-demanded.v1`           |
+| `vacuous-verification-observed` | `vacuousVerificationObserved` | `flows.harness.vacuous-verification-observed.v1` |
 
 ## HarnessError
 
@@ -794,11 +796,15 @@ export class HarnessError extends Schema.TaggedError<HarnessError>()("/harness/H
 }) {}
 ```
 
-`HarnessErrorCode` is `assembly_failed`, `render_failed`,
-`projection_failed`, `model_failed`, `engine_failed`, `read_only_cap`,
-`aborted`, or `suspended`. The set is closed to codes this package and
-`@smthrs/agent` actually raise; a foreign CLI adapter declares its own family
-beside the adapter rather than borrowing this one. `cause` is a
+`HarnessErrorCode` is `assembly_failed`, `incompatible_journal`,
+`render_failed`, `model_failed`, `engine_failed`, `read_only_cap`, or
+`suspended`. The set is closed to codes this package and `@smthrs/agent`
+actually raise, and `test/Contracts.test.ts` pins every member to a
+construction site; a foreign CLI adapter declares its own family beside the
+adapter rather than borrowing this one. Interrupting a run raises no
+`HarnessError`: `CellTurn` emits `AgentEvent.Aborted` and forwards the
+interrupt cause unchanged. A failed projection is a
+`Transcript.TranscriptError`, not a `HarnessError`. `cause` is a
 `Schema.Defect` so a live `Error` attached as cause still encodes to JSON for
 the durable exit schema. `FlowBinding.make` passes existing `HarnessError`
 values through unchanged; only permission requirements and denials are
