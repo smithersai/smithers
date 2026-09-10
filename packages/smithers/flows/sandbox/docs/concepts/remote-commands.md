@@ -33,8 +33,9 @@ redirects the command from it.
 
 ## There is no process identity
 
-`pid` is a module counter, not a pid on either side of the seam, and `unref`
-is a no-op, because this process holds no reference to a remote one.
+`pid` is a synthetic id allocated per spawner layer, not a pid on either side
+of the seam, and `unref` is a no-op, because this process holds no reference
+to a remote one.
 
 ## Signals exist only where a provider declares kill
 
@@ -75,8 +76,10 @@ These cannot be refused, because nothing in the call says they are happening.
   crosses the seam, so only the `env` overrides travel, and `extendEnv: false`
   cannot clear an environment this side never held.
 - **`isRunning` answers from what this side has observed.** Nothing pushes an
-  exit across the seam, so it turns `false` when a caller observes `exitCode`
-  rather than when the remote process actually ends.
+  exit across the seam, so the adapter forks a scoped observer of the
+  provider's exit at spawn and memoizes it. Liveness turns `false` when that
+  observation lands, which can lag the remote process by a scheduler tick, and
+  does not depend on a caller reading `exitCode`.
 
 ## A pipeline is one line
 

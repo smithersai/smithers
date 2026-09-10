@@ -25,15 +25,20 @@
  *   remote command reading EOF instead is a silent divergence. `"pipe"`,
  *   `"ignore"`, and `"overlapped"` are accepted, and all three mean the
  *   command reads no input.
- * - **No signals.** A remote process ends by closing its scope, which runs the
- *   provider's cancellation finalizer; there is no signal to deliver, so `kill`
- *   fails rather than pretending to have delivered one.
- * - **No process identity.** `pid` is a module counter, not a pid on either
- *   side of the seam, and `unref` is a no-op: this process holds no reference to
- *   a remote one. `isRunning` answers from what this side has observed, not from
- *   the remote process table — nothing pushes an exit across the seam, so it
- *   turns `false` when a caller observes `exitCode` rather than when the remote
- *   process actually ends.
+ * - **Signals are optional, not impossible.** A remote process ends by closing
+ *   its scope, which runs the provider's cancellation finalizer. A provider
+ *   that declares `kill` receives `ChildProcessHandle.kill` calls and a signal
+ *   for a still-running command whose scope closes; a provider that does not
+ *   refuses `kill` with a `BadArgument` rather than pretending to have
+ *   delivered a signal.
+ * - **No process identity.** `pid` is a synthetic id allocated per spawner
+ *   layer, not a pid on either side of the seam, and `unref` is a no-op: this
+ *   process holds no reference to a remote one. `isRunning` answers from what
+ *   this side has observed, not from the remote process table: the adapter
+ *   forks a scoped observer of the provider's exit at spawn and memoizes it,
+ *   so liveness turns `false` when that observation lands, which can lag the
+ *   remote process by a scheduler tick and never depends on a caller reading
+ *   `exitCode` (`RemoteChildProcessSpawner.test.ts` pins this).
  * - **No pipeline routing between processes.** A `PipedCommand` is rendered
  *   into the single command line the remote side parses, so the `|` reaches the
  *   remote shell rather than this adapter. A non-default `from` or `to` cannot

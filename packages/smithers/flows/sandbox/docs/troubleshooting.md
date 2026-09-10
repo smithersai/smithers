@@ -168,11 +168,13 @@ directory) answer with the platform's own refusal.
 ## `isRunning` turned false too early, or `extendEnv` did nothing
 
 **What happened.** Both are divergences the error channel cannot report.
-`isRunning` answers from what this side has observed, so it turns `false` when
-a caller observes `exitCode` rather than when the remote process ends. The
-remote session's ambient environment never crosses the seam, so only `env`
-overrides travel and `extendEnv: false` cannot clear an environment this side
-never held.
+`isRunning` answers from what this side has observed: the adapter observes
+the provider's exit in a scoped fiber forked at spawn and memoizes the
+result, so liveness turns `false` when that observation lands, which can lag
+the remote process by a scheduler tick. Await `exitCode` when the code
+itself matters. The remote session's ambient environment never crosses the
+seam, so only `env` overrides travel and `extendEnv: false` cannot clear an
+environment this side never held.
 
 **What to change.** Do not treat `isRunning` as a liveness question about the
 guest; use `SandboxHealth` for that. Pass the environment you want explicitly,
