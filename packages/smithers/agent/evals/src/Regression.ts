@@ -13,6 +13,7 @@ import * as Effect from "effect/Effect"
 import type { Baseline, BaselineRecord } from "./Baseline.ts"
 import { EvalError } from "./EvalError.ts"
 import { compareText } from "./internal/canonical.ts"
+import { tupleKey } from "./internal/tupleKey.ts"
 import type { Observation, RunResult } from "./Runner.ts"
 
 /**
@@ -98,7 +99,7 @@ type Score = Extract<Observation, { readonly kind: "score" }>
 // Injective: two distinct (case, scorer) pairs can never encode to one key,
 // which a delimiter join could not promise once a name may contain the
 // delimiter.
-const key = (caseName: string, scorer: string): string => JSON.stringify([caseName, scorer])
+const key = (caseName: string, scorer: string): string => tupleKey(caseName, scorer)
 const validTolerance = (value: number): boolean => Number.isFinite(value) && value >= 0
 
 const groupBy = <A>(items: ReadonlyArray<A>, of: (item: A) => string): Map<string, Array<A>> => {

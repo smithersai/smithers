@@ -63,7 +63,9 @@ declaration, and it is what a baseline matches on: change the declaration and
 the old scores no longer claim to describe the new scorer.
 `Observation.scorerName` is the human name from the same declaration, carried
 alongside so a report can be read without grepping for the digest. A Markdown
-report prints `name (first 8 of the key)`.
+report prints `name (first 8 of the key)`, and the bare key when the
+declaration carries no name. Report cells, gate summaries, and runner
+diagnostics share that one rule, so a report never names one scorer two ways.
 
 For the scorer, binding, and sampling types themselves, see the
 [scorers API](/api/scorers).

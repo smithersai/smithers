@@ -14,6 +14,7 @@ import {
 } from "@smthrs/scorers/ScoreGate"
 import * as Effect from "effect/Effect"
 import { flattenControlCharacters } from "./internal/controlCharacters.ts"
+import { scorerLabel } from "./internal/scorerLabel.ts"
 import type { Report } from "./Regression.ts"
 
 /**
@@ -53,9 +54,6 @@ const samples = (report: Report): ReadonlyArray<ScoreSample> =>
       }
   )
 
-const scorerLabel = (scorer: string, scorerName: string | undefined): string =>
-  scorerName === undefined ? scorer : `${scorerName} (${scorer.slice(0, 8)})`
-
 /**
  * An environment fault: something the comparison needed was never observed, so
  * the harness owes an answer it cannot give. A fault withholds a decision;
@@ -66,7 +64,7 @@ const environmentFaults = (report: Report): ReadonlyArray<string> => [
     result.error === undefined ? [] : [`case '${result.case}' failed: ${result.error.code}: ${result.error.message}`]
   ),
   ...report.missing.map((item) =>
-    `missing ${item.side} observation for ${item.case}/${scorerLabel(item.scorer, item.scorerName)}/${item.stepKey}`
+    `missing ${item.side} observation for ${item.case}/${scorerLabel(item)}/${item.stepKey}`
   )
 ]
 
@@ -77,10 +75,10 @@ const environmentFaults = (report: Report): ReadonlyArray<string> => [
  */
 const findings = (report: Report): ReadonlyArray<string> => [
   ...report.regressions.map((item) =>
-    `regression for ${item.case}/${scorerLabel(item.scorer, item.actual.scorerName)}`
+    `regression for ${item.case}/${scorerLabel({ scorer: item.scorer, scorerName: item.actual.scorerName })}`
   ),
   ...report.nondeterminism.map((item) =>
-    `nondeterminism for ${item.case}/${scorerLabel(item.scorer, item.actual.scorerName)}`
+    `nondeterminism for ${item.case}/${scorerLabel({ scorer: item.scorer, scorerName: item.actual.scorerName })}`
   )
 ]
 

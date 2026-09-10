@@ -9,6 +9,7 @@
  */
 import type { Baseline } from "./Baseline.ts"
 import { maxStringLength, stringify } from "./internal/canonical.ts"
+import { scorerLabel } from "./internal/scorerLabel.ts"
 import type { MissingObservation, Nondeterminism, Regression, Report as RegressionReport } from "./Regression.ts"
 import type { CaseResult, Observation, RunResult } from "./Runner.ts"
 
@@ -151,8 +152,7 @@ const cell = (value: unknown): string => {
   return escaped
 }
 
-const scorerCell = (scorer: string, scorerName: string | undefined): string =>
-  cell(scorerName === undefined ? scorer : `${scorerName} (${scorer.slice(0, 8)})`)
+const scorerCell = (scorer: string, scorerName: string | undefined): string => cell(scorerLabel({ scorer, scorerName }))
 
 const section = (
   heading: string,

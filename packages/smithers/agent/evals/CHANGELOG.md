@@ -11,6 +11,12 @@
 
 ### Changed
 
+- Report cells, gate summaries, and runner diagnostics share one scorer label.
+  A scorer declared without a name now labels as its key in runner
+  diagnostics, the way report cells and gate summaries already labelled it,
+  rather than as `scorer (first 8 of the key)`. One unnamed scorer no longer
+  appears under two spellings in one report.
+
 - **Breaking:** `Report.json` serializes `Report.Data` rather than the
   in-memory `Regression.Report` graph. `run.observations` is now the
   observation table and everything else refers to a row by index:

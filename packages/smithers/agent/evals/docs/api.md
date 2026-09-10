@@ -79,7 +79,9 @@ Four rules decide what a comparison reports, and none of them are obvious:
 - **`Observation.scorer` is a digest, not a name.** It is the scorer key, derived
   from the scorer's own `{ id, version, config }`, and it is what a baseline
   matches on. `Observation.scorerName` carries the readable name beside it, and a
-  Markdown report prints `name (first 8 of the key)`.
+  Markdown report prints `name (first 8 of the key)`, or the bare key for a
+  scorer declared without a name. Report cells, gate summaries, and runner
+  diagnostics all use that one label.
 - **A binding matches its target by reference identity.** `binding.appliesTo` has
   to be the same flow value the execution reports as its `target`; a structurally
   equal copy grades nothing.

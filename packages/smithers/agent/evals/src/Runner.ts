@@ -19,6 +19,8 @@ import * as Layer from "effect/Layer"
 import { CaseExecutor, type Execution, type Service as CaseExecutorService } from "./CaseExecutor.ts"
 import { EvalError } from "./EvalError.ts"
 import { flattenControlCharacters } from "./internal/controlCharacters.ts"
+import { scorerLabel } from "./internal/scorerLabel.ts"
+import { tupleKey } from "./internal/tupleKey.ts"
 import type { Binding, Case, Suite } from "./Suite.ts"
 
 /**
@@ -196,13 +198,8 @@ const scorerNameOf = (binding: Binding): string | undefined => {
   return name === undefined || name.length === 0 ? undefined : name
 }
 
-const label = (binding: Binding): string => `${scorerNameOf(binding) ?? "scorer"} (${scorerKeyOf(binding).slice(0, 8)})`
-
-// One injective encoder for every tuple key this package builds. Joining
-// caller-supplied strings on a delimiter is not injective: ["a", "b\u0000c"]
-// and ["a\u0000b", "c"] produce the same key, so two distinct jobs could share
-// one identity.
-const tupleKey = (...parts: ReadonlyArray<string>): string => JSON.stringify(parts)
+const label = (binding: Binding): string =>
+  scorerLabel({ scorer: scorerKeyOf(binding), scorerName: scorerNameOf(binding) })
 
 const inconclusive = (request: ScoreRequest, reason: string, at: string): Observation => {
   const name = scorerNameOf(request.binding)

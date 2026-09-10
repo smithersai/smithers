@@ -677,7 +677,7 @@ describe("Runner", () => {
     const observation = result.observations[0]
     expect(observation?.scorerName).toBeUndefined()
     expect(observation?.kind === "inconclusive" && observation.reason).toBe(
-      `Scorer scorer (${anonymous.scorerKey.slice(0, 8)}) returned a score outside [0, 1]: 7`
+      `Scorer ${anonymous.scorerKey} returned a score outside [0, 1]: 7`
     )
   })
 

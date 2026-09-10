@@ -2375,15 +2375,9 @@ importers:
       '@effect/language-service':
         specifier: 0.87.2
         version: 0.87.2
-      '@effect/vitest':
-        specifier: 4.0.0-rc.112
-        version: 4.0.0-rc.112(effect@4.0.0-rc.112)(vitest@4.1.9)
       '@eslint/js':
         specifier: 9.39.5
         version: 9.39.5
-      '@smthrs/testing':
-        specifier: 1.0.0-rc.0
-        version: link:../../../testing
       '@types/node':
         specifier: 26.4.1
         version: 26.4.1

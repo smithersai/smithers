@@ -136,9 +136,7 @@
   },
   "devDependencies": {
     "@effect/language-service": "0.87.2",
-    "@effect/vitest": "4.0.0-rc.112",
     "@eslint/js": "9.39.5",
-    "@smthrs/testing": "1.0.0-rc.0",
     "@types/node": "26.4.1",
     "@vitest/coverage-v8": "4.1.9",
     "dprint": "0.57.1",
