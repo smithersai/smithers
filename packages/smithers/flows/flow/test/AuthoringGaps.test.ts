@@ -198,18 +198,28 @@ describe("Action infrastructure-interrupt retry", () => {
   })
 
   effect("a non-infrastructure failure is propagated untouched", () => {
+    let attempts = 0
     const action = Action.make({
       name: "Gaps/other",
       success: Schema.Void,
       error: Schema.String,
       interruptRetryPolicy: Schedule.recurs(2),
-      execute: Effect.fail("plain")
+      execute: Effect.suspend(() => {
+        attempts++
+        return Effect.fail("plain")
+      })
     })
     const layer = hosted(() => Effect.asVoid(action).pipe(Effect.orDie))
     return Effect.gen(function*() {
       const exit = yield* Host.execute({ id: "other" }).pipe(Effect.exit)
       expect(Exit.isFailure(exit)).toBe(true)
-      expect(JSON.stringify(exit)).toContain("plain")
+      if (Exit.isFailure(exit)) {
+        // untouched: the failure the implementation died on, not the
+        // exhaustion error the interrupt policy raises for its own kind
+        expect(exit.cause.reasons.find(Cause.isDieReason)?.defect).toBe("plain")
+        expect(Cause.hasInterrupts(exit.cause)).toBe(false)
+      }
+      expect(attempts).toBe(1)
     }).pipe(Effect.provide(layer))
   })
 })
@@ -257,39 +267,87 @@ describe("Flow annotations", () => {
     return Effect.gen(function*() {
       const exit = yield* Uncaptured.execute({ id: "defect" }).pipe(Effect.exit)
       expect(Exit.isFailure(exit)).toBe(true)
+      // `execute` reports a failed exit under either setting, so the annotation
+      // is read where the two differ: an uncaptured defect fails the round's
+      // own fiber, while the captured default settles that round as a
+      // `Complete` carrying the die.
+      const die = Effect.die("boom") as Effect.Effect<void>
+      const uncaptured = yield* Flow.intoResult(die).pipe(
+        Effect.provideService(FlowRuntime.FlowInstance, makeInstance(Uncaptured, "uncaptured")),
+        Effect.exit
+      )
+      expect(Exit.isFailure(uncaptured) && Cause.hasDies(uncaptured.cause)).toBe(true)
+      const captured = yield* Flow.intoResult(die).pipe(
+        Effect.provideService(FlowRuntime.FlowInstance, makeInstance(Host, "captured"))
+      )
+      expect(captured._tag).toBe("Complete")
+      expect(
+        captured._tag === "Complete" && Exit.isFailure(captured.exit) &&
+          Cause.hasDies(captured.exit.cause)
+      ).toBe(true)
     }).pipe(Effect.provide(layer))
   })
 })
 
+/** Reads back what `into` persisted, once the effect that wrote it has settled. */
+const recordInto = <Success extends Schema.Constraint, Error extends Schema.Constraint>(
+  gate: DurableDeferred.DurableDeferred<Success, Error>,
+  onRecorded: (result: Option.Option<Exit.Exit<unknown, unknown>>) => void
+) =>
+<A, E, R>(effect: Effect.Effect<A, E, R>) =>
+  effect.pipe(
+    Effect.onExit(() =>
+      Effect.gen(function*() {
+        const engine = yield* FlowRuntime.FlowRuntime
+        onRecorded(yield* engine.deferredResult(gate))
+      })
+    )
+  )
+
+/** The record holds exactly one failure reason, carrying `error`. */
+const expectRecordedFailure = (
+  recorded: Option.Option<Exit.Exit<unknown, unknown>> | undefined,
+  error: string
+) => {
+  const exit = recorded === undefined || Option.isNone(recorded) ? undefined : recorded.value
+  expect(exit !== undefined && Exit.isFailure(exit)).toBe(true)
+  if (exit === undefined || !Exit.isFailure(exit)) return
+  expect(exit.cause.reasons.map((reason) => reason._tag)).toEqual(["Fail"])
+  expect(exit.cause.reasons.find(Cause.isFailReason)?.error).toBe(error)
+}
+
 describe("DurableDeferred.into", () => {
   effect("strips interrupt reasons from a mixed cause before recording it", () => {
     const gate = DurableDeferred.make("Gaps/mixed", { error: Schema.String })
+    let recorded: Option.Option<Exit.Exit<unknown, unknown>> | undefined
     const layer = hosted(() =>
       DurableDeferred.into(
         Effect.failCause(
           Cause.combine(Cause.fail("real"), Cause.interrupt(1))
         ) as Effect.Effect<void, string>,
         gate
-      ).pipe(Effect.orDie)
+      ).pipe(Effect.orDie, recordInto(gate, (result) => void (recorded = result)))
     )
     return Effect.gen(function*() {
       const exit = yield* Host.execute({ id: "mixed" }).pipe(Effect.exit)
       expect(Exit.isFailure(exit)).toBe(true)
-      expect(JSON.stringify(exit)).toContain("real")
+      expectRecordedFailure(recorded, "real")
     }).pipe(Effect.provide(layer))
   })
 
   effect("a plain failure is recorded verbatim", () => {
     const gate = DurableDeferred.make("Gaps/plain", { error: Schema.String })
+    let recorded: Option.Option<Exit.Exit<unknown, unknown>> | undefined
     const layer = hosted(() =>
       DurableDeferred.into(Effect.fail("just failed") as Effect.Effect<void, string>, gate).pipe(
-        Effect.orDie
+        Effect.orDie,
+        recordInto(gate, (result) => void (recorded = result))
       )
     )
     return Effect.gen(function*() {
       const exit = yield* Host.execute({ id: "plain-fail" }).pipe(Effect.exit)
       expect(Exit.isFailure(exit)).toBe(true)
-      expect(JSON.stringify(exit)).toContain("just failed")
+      expectRecordedFailure(recorded, "just failed")
     }).pipe(Effect.provide(layer))
   })
 
@@ -372,6 +430,5 @@ describe("FlowRuntime.annotateWaiting", () => {
     })
     expect(error.code).toBe("flow_cycle_detected")
     expect(error.path).toEqual(["a", "b"])
-    expect(Option.isSome(Option.some(error))).toBe(true)
   })
 })

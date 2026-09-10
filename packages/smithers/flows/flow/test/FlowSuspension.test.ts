@@ -23,6 +23,31 @@ const pollUntil = <A, E, R>(
     return result
   })
 
+/**
+ * A step that keeps working until something cancels it, so a case can tell a
+ * cancelled step from one the fixture merely left running.
+ */
+const ticking = () => {
+  let cancelled = 0
+  let ticks = 0
+  return {
+    execute: Effect.forever(Effect.andThen(Effect.sync(() => void ticks++), Effect.yieldNow)).pipe(
+      Effect.onInterrupt(() => Effect.sync(() => void cancelled++))
+    ) as Effect.Effect<string>,
+    get cancelled() {
+      return cancelled
+    },
+    /** Ticks the step took over ten more turns of the scheduler. */
+    get ticksAfter() {
+      return Effect.gen(function*() {
+        const before = ticks
+        for (let i = 0; i < 10; i++) yield* Effect.yieldNow
+        return ticks - before
+      })
+    }
+  }
+}
+
 const isSuspended = (result: Flow.Result<any, any>) => result._tag === "Suspended"
 const isComplete = (result: Flow.Result<any, any>) => result._tag === "Complete"
 
@@ -97,7 +122,8 @@ describe("SuspendOnFailure", () => {
     }).pipe(Effect.provide(layer))
   })
 
-  effect("interrupting a suspend-on-failure flow discards the execution rather than suspending it", () => {
+  effect("interrupting a live flow cancels its step and settles the round as an interruption", () => {
+    const step = ticking()
     const Step = Action.make("Suspend/interrupted/step", {
       payload: { id: Schema.String },
       success: Schema.String
@@ -107,18 +133,57 @@ describe("SuspendOnFailure", () => {
       success: Schema.String,
       idempotencyKey: ({ id }) => id,
       body: (payload) => Step.call(payload)
-    }).annotate(Flow.SuspendOnFailure, true)
+    })
     const layer = layerWired(Layer.mergeAll(
-      Step.toLayer(() => Effect.never as Effect.Effect<string>),
+      Step.toLayer(() => step.execute),
       Interpreter.layer(flow)
     ))
     return Effect.gen(function*() {
       const executionId = yield* flow.execute({ id: "h" }, { discard: true })
       yield* Effect.yieldNow
-      yield* flow.interrupt(executionId).pipe(Effect.exit)
-      for (let i = 0; i < 10; i++) yield* Effect.yieldNow
-      // external interruption is terminal for the memory engine: nothing is left to resume
-      expect(Option.isNone(yield* flow.poll(executionId))).toBe(true)
+      yield* flow.interrupt(executionId)
+      const polled = yield* pollUntil(flow.poll(executionId), isComplete)
+      // the cancellation reaches the step itself, so its finalizers run
+      expect(step.cancelled).toBe(1)
+      // and the round settles as a completion carrying the interruption:
+      // terminal, with no suspension left for a driver to resume
+      expect(Option.isSome(polled) && polled.value._tag).toBe("Complete")
+      if (Option.isSome(polled) && polled.value._tag === "Complete") {
+        expect(
+          Exit.isFailure(polled.value.exit) && Cause.hasInterruptsOnly(polled.value.exit.cause)
+        ).toBe(true)
+      }
+      expect(yield* step.ticksAfter).toBe(0)
+    }).pipe(Effect.provide(layer))
+  })
+
+  effect("a suspend-on-failure flow cancels its step too, and reads as suspended", () => {
+    const step = ticking()
+    const Step = Action.make("Suspend/interrupted-annotated/step", {
+      payload: { id: Schema.String },
+      success: Schema.String
+    })
+    const flow = Flow.make("Suspend/interrupted-annotated", {
+      payload: { id: Schema.String },
+      success: Schema.String,
+      idempotencyKey: ({ id }) => id,
+      body: (payload) => Step.call(payload)
+    }).annotate(Flow.SuspendOnFailure, true)
+    const layer = layerWired(Layer.mergeAll(
+      Step.toLayer(() => step.execute),
+      Interpreter.layer(flow)
+    ))
+    return Effect.gen(function*() {
+      const executionId = yield* flow.execute({ id: "h" }, { discard: true })
+      yield* Effect.yieldNow
+      yield* flow.interrupt(executionId)
+      const polled = yield* pollUntil(flow.poll(executionId), isSuspended)
+      expect(step.cancelled).toBe(1)
+      // the annotation catches the cancellation along with every other cause,
+      // so this round is classified as suspended rather than as the interrupted
+      // completion above; the step stops either way
+      expect(Option.isSome(polled) && polled.value._tag).toBe("Suspended")
+      expect(yield* step.ticksAfter).toBe(0)
     }).pipe(Effect.provide(layer))
   })
 })

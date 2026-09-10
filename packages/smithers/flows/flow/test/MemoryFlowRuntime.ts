@@ -87,6 +87,7 @@ type ExecutionState = {
   readonly parent: string | undefined
   instance: FlowRuntime.FlowInstance["Service"]
   fiber: Fiber.Fiber<Flow.Result<unknown, unknown>> | undefined
+  bodyFiber: Fiber.Fiber<unknown, unknown> | undefined
 }
 
 /**
@@ -127,6 +128,15 @@ const makeRuntime = (durable: MemoryState) =>
       instance.interrupted = state.instance.interrupted
       state.instance = instance
       state.fiber = yield* state.handler(state.payload, executionId).pipe(
+        // Runs as the forked body fiber's first instruction, so `interrupt`
+        // has the fiber the body runs in, and a cancellation that landed
+        // before the body started is answered by self-interrupting rather
+        // than by dispatching work whose cancellation was already requested.
+        (body) =>
+          Effect.withFiber<unknown, unknown, FlowRuntime.FlowInstance | FlowRuntime.FlowRuntime>((fiber) => {
+            state.bodyFiber = fiber
+            return instance.interrupted ? Effect.interrupt : body
+          }),
         Effect.onExit(() => {
           if (!instance.interrupted) return Effect.void
           instance.suspended = false
@@ -159,6 +169,7 @@ const makeRuntime = (durable: MemoryState) =>
           handler: entry.handler,
           instance: makeInstance(flow, executionId),
           fiber: undefined,
+          bodyFiber: undefined,
           parent
         }
         executions.set(executionId, state)
@@ -222,6 +233,23 @@ const makeRuntime = (durable: MemoryState) =>
         const state = executions.get(executionId)
         if (!state) return
         state.instance.interrupted = true
+        const exit = state.fiber?.pollUnsafe()
+        if (state.fiber && !exit) {
+          // The round is LIVE, so the interruption is delivered to the BODY
+          // fiber and the round fiber converts it into the recorded
+          // cancellation: a `Complete` carrying an interrupt cause, raised
+          // after the body's finalizers ran. Interrupting the round fiber
+          // itself would leave `poll` dying on a bare interrupt exit.
+          // Delivery is a send, not an await: the contract is a cancellation
+          // REQUEST. `@smthrs/engine`'s memory engine takes the same posture.
+          const bodyFiber = state.bodyFiber
+          if (bodyFiber !== undefined) {
+            yield* Effect.withFiber((fiber) => Effect.sync(() => bodyFiber.interruptUnsafe(fiber.id)))
+          }
+          return
+        }
+        // A round that has already settled into a suspension has no live body:
+        // driving it once more ends it as interrupted rather than resuming it.
         yield* drive(executionId)
       }),
       interruptUnsafe: Effect.fnUntraced(function*(_flow, executionId) {
