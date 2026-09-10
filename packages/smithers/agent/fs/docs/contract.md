@@ -80,6 +80,14 @@ pattern reach the authoritative Effect decoder, which refuses them with
 `decode_failed`. A flag value is never coerced by shape, so `""`, `null`, and
 `[]` are refused for a numeric field instead of becoming `0`.
 
+A flow whose input is a single value rather than an object takes that value
+from the first positional or from `input`, as a flag, a query parameter, a JSON
+body field, or an MCP argument. Every other token is refused with
+`decode_failed` instead of being dropped: an unknown flag, a second positional,
+and a positional beside a named `input`. Only an omitted value counts as absent,
+so an explicit `null` reaches the flow schema, which decides whether it is
+accepted.
+
 The published schema is the flow's, so it also inherits what that schema says
 about values this package will not carry. Effect renders a number's JSON form
 as `number | "Infinity" | "-Infinity" | "NaN"`, and a date as a string, while

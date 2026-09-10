@@ -220,6 +220,32 @@ const positionalText = (args: Positional): unknown => {
   return values.every((value) => typeof value === "string") ? values.join(" ") : values
 }
 
+/**
+ * Merges a scalar command's tokens into the one object its strict schema checks.
+ *
+ * A scalar flow takes its value from the first positional or the named
+ * `input`, and every other token has to reach the strict `{ input }` object so
+ * it is refused rather than dropped: a surplus positional is kept under
+ * `args`, an unknown flag under its own name, and a positional beside a named
+ * input is kept as a second `input` entry under `--input`, because keeping
+ * either one alone would silently invoke the flow with half the input. Only
+ * `undefined` counts as absent, so an explicit `null` reaches the flow schema,
+ * which decides whether it is accepted.
+ */
+const scalarRecord = (args: Positional, options: Readonly<Record<string, unknown>>): Record<string, unknown> => {
+  const positional: Readonly<Record<string, unknown>> = Array.isArray(args)
+    ? args.length === 0 ? {} : { input: args[0], ...(args.length > 1 ? { args: args.slice(1) } : {}) }
+    : args as Readonly<Record<string, unknown>>
+  const merged: Record<string, unknown> = {}
+  for (const [key, value] of Object.entries(positional)) {
+    if (value !== undefined) merged[key] = value
+  }
+  for (const [key, value] of Object.entries(options)) {
+    if (value !== undefined) merged[Object.hasOwn(merged, key) ? `--${key}` : key] = value
+  }
+  return merged
+}
+
 const decodeWith = (
   schema: Schema.Top,
   zodSchema: z.ZodType,
@@ -321,10 +347,8 @@ export const toCommandSchema = (
       return Object.freeze({
         args: z.object({ input: value.optional() }),
         options: z.object({ input: value.optional() }).strict(),
-        assemble: (args: Positional, options: Readonly<Record<string, unknown>>) => {
-          const positional = Array.isArray(args) ? args[0] : (args as Readonly<Record<string, unknown>>).input
-          return Object.freeze({ value: { input: options.input ?? positional } })
-        },
+        assemble: (args: Positional, options: Readonly<Record<string, unknown>>) =>
+          Object.freeze({ value: scalarRecord(args, options) }),
         decode: (assembly: Assembly) =>
           Effect.flatMap(
             Effect.suspend(() => {

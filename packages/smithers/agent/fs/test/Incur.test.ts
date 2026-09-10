@@ -1,9 +1,11 @@
+import { Flow } from "@smthrs/core"
 import * as Descriptor from "@smthrs/registry/Descriptor"
 import { Cause, Effect, Layer, Logger, Option, References, Schema } from "effect"
 import { describe, expect, it, vi } from "vitest"
 import * as FlowInvoker from "../src/FlowInvoker.ts"
 import { FsError } from "../src/FsError.ts"
 import * as Incur from "../src/Incur.ts"
+import * as Route from "../src/Route.ts"
 import visible from "./fixtures/command/visible.ts"
 import { makeRoute, recordedImports, recordedModule, refinedModule } from "./helpers.ts"
 
@@ -118,6 +120,36 @@ describe("Incur projection", () => {
     }
     expect(seen[0]?.input).toEqual({ number: 44 })
     expect(writes.join("")).toContain("44")
+  })
+
+  it("carries an explicit null scalar input over a JSON body and MCP arguments", async () => {
+    const flow = Flow.make({
+      name: "scalar",
+      input: Schema.NullOr(Schema.String),
+      output: Schema.NullOr(Schema.String)
+    })
+    vi.spyOn(Route, "load").mockReturnValue(Effect.succeed(flow))
+    try {
+      const inputs: Array<unknown> = []
+      const { cli } = await makeCli([makeRoute("scalar")], ({ input }) =>
+        Effect.sync(() => {
+          inputs.push(input)
+          return input
+        }))
+      const post = await cli.fetch(
+        new Request("http://localhost/scalar", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ input: null })
+        })
+      )
+      expect(post.status).toBe(200)
+      const called = await tool(cli, "call_write_tool", { name: "scalar", arguments: { input: null } })
+      expect(called.result.isError).not.toBe(true)
+      expect(inputs).toEqual([null, null])
+    } finally {
+      vi.restoreAllMocks()
+    }
   })
 
   it("advertises the real input schema on every discovery surface", async () => {

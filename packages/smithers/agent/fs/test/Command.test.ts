@@ -209,6 +209,22 @@ describe("Command.call decoded boundary", () => {
     expect(invoke).toHaveBeenCalledTimes(2)
   })
 
+  it("refuses scalar tokens that execute would otherwise drop", async () => {
+    const surface = await surfaceFor(Schema.Number, Schema.NumberFromString)
+    const invoke = vi.fn(() => Effect.succeed(42))
+    const invoker = FlowInvoker.layerNoop({ invoke })
+    for (const command of ["scalar 1 --typo x", "scalar 1 2", "scalar 1 --input 2", "scalar --input 1 --typo x"]) {
+      const exit = await Effect.runPromise(Effect.exit(surface.execute(command).pipe(Effect.provide(invoker))))
+      expect(exit._tag, command).toBe("Failure")
+      if (exit._tag === "Failure") {
+        const error = Option.getOrThrow(Cause.findErrorOption(exit.cause))
+        expect(error, command).toMatchObject({ code: "decode_failed" })
+      }
+    }
+    expect(invoke).not.toHaveBeenCalled()
+    expect(await Effect.runPromise(surface.execute("scalar --input 1").pipe(Effect.provide(invoker)))).toBe("42")
+  })
+
   it("preserves native decoded values on both sides of call", async () => {
     const surface = await surfaceFor(Schema.DateFromString, Schema.DateFromString)
     const date = new Date("2026-01-01T00:00:00.000Z")

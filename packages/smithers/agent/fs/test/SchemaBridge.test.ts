@@ -240,6 +240,33 @@ describe("SchemaBridge", () => {
     })
   })
 
+  it("refuses scalar tokens the command object would otherwise drop", async () => {
+    const finite = await Effect.runPromise(SchemaBridge.toCommandSchema(moduleRef, Schema.Finite))
+    for (
+      const [args, options] of [
+        [["1", "2"], {}],
+        [["1"], { typo: "x" }],
+        [[], { input: "1", typo: "x" }],
+        [["1"], { input: "2" }],
+        [{ input: "1", extra: "x" }, {}],
+        [{ input: "1" }, { input: "2" }]
+      ] as const
+    ) {
+      expect((await failure(finite.decode(finite.assemble(args, options)))).code).toBe("decode_failed")
+    }
+  })
+
+  it("keeps an explicit null scalar input for the flow schema to judge", async () => {
+    const nullable = await Effect.runPromise(SchemaBridge.toCommandSchema(moduleRef, Schema.NullOr(Schema.String)))
+    expect(await Effect.runPromise(nullable.decode(nullable.assemble([], { input: null })))).toBeNull()
+    expect(await Effect.runPromise(nullable.decode(nullable.assemble({ input: null }, {})))).toBeNull()
+    expect(await Effect.runPromise(nullable.decode(nullable.assemble(["a"], { input: undefined })))).toBe("a")
+    expect(await Effect.runPromise(nullable.decode(nullable.assemble({ input: undefined }, { input: "b" })))).toBe("b")
+    expect((await failure(nullable.decode(nullable.assemble(["a"], { input: null })))).code).toBe("decode_failed")
+    const finite = await Effect.runPromise(SchemaBridge.toCommandSchema(moduleRef, Schema.Finite))
+    expect((await failure(finite.decode(finite.assemble([], { input: null })))).code).toBe("decode_failed")
+  })
+
   it.each([
     { name: "empty tuple", schema: Schema.Tuple([]), value: [] },
     {
