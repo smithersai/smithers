@@ -63,6 +63,7 @@ export type {
   Options,
   Position,
   Projection,
+  RateLimitDecision,
   ReplayOptions,
   RewindOptions,
   RewindResult,

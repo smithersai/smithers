@@ -67,3 +67,15 @@ it("tells a handler author that receipts persist unredacted and must not carry c
   expect(guide).toContain("without the redaction pass")
   expect(guide).toContain("A receipt must never carry a credential.")
 })
+
+it("documents the rewind rate limiter as a knob the composition supplies", () => {
+  const api = read("../docs/api.md")
+  expect(api).toContain("`rateLimit` | `(input) => Effect<RateLimitDecision, TimeTravelError>`")
+  expect(api).toContain("TimeTravel.layerWith({")
+  expect(read("../docs/troubleshooting.md")).toContain("TimeTravel.layerWith({ rateLimit })")
+  // The code is only raised by a limiter a build supplied, so no page may
+  // describe it as something the package applies on its own.
+  for (const path of ["../docs/api.md", "../docs/troubleshooting.md", "../docs/guides/rewind-a-run.md"]) {
+    expect(read(path), `${path} omits Options.rateLimit beside rate_limited`).toContain("`Options.rateLimit`")
+  }
+})

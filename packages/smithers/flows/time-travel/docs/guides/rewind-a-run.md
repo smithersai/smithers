@@ -124,18 +124,18 @@ in the Smithers examples on GitHub.
 
 ## Failures
 
-| Code                  | Cause                                                                                                      |
-| --------------------- | ---------------------------------------------------------------------------------------------------------- |
-| `busy`                | Another owner holds the run, the journal tail moved under the claim, or ownership was lost before the end. |
-| `live_child`          | An attached descendant is still executing, or a detached child is blocked by policy or owner liveness.     |
-| `not_found`           | The run, the frame, or the audit addresses nothing.                                                        |
-| `invalid`             | A malformed option, or a durable payload that does not decode. Refused before anything is touched.         |
-| `rate_limited`        | The supplied rate limiter rejected the attempt. The audit row records the decision.                        |
-| `irreversible`        | A crossed effect cannot be undone: no handler, or a sealed result whose cache entry is gone.               |
-| `compensation_failed` | A rollback handler or the workspace restore failed, so the rewind stopped rather than half revert.         |
-| `fence_lost`          | Ownership of the run or of an attached child was superseded before the commit, so nothing was written.     |
-| `limit_exceeded`      | The suffix is longer than the cap allows. Raised before the run is claimed.                                |
-| `unknown`             | The store, the journal, or an unmapped host failure. The cause is attached.                                |
+| Code                  | Cause                                                                                                                |
+| --------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| `busy`                | Another owner holds the run, the journal tail moved under the claim, or ownership was lost before the end.           |
+| `live_child`          | An attached descendant is still executing, or a detached child is blocked by policy or owner liveness.               |
+| `not_found`           | The run, the frame, or the audit addresses nothing.                                                                  |
+| `invalid`             | A malformed option, or a durable payload that does not decode. Refused before anything is touched.                   |
+| `rate_limited`        | The `Options.rateLimit` limiter the service was built with rejected the attempt. The audit row records the decision. |
+| `irreversible`        | A crossed effect cannot be undone: no handler, or a sealed result whose cache entry is gone.                         |
+| `compensation_failed` | A rollback handler or the workspace restore failed, so the rewind stopped rather than half revert.                   |
+| `fence_lost`          | Ownership of the run or of an attached child was superseded before the commit, so nothing was written.               |
+| `limit_exceeded`      | The suffix is longer than the cap allows. Raised before the run is claimed.                                          |
+| `unknown`             | The store, the journal, or an unmapped host failure. The cause is attached.                                          |
 
 If a rewind fails after claiming the run but before commit, successful rollback
 restores the saved run state and releases ownership as `suspended`, including

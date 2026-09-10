@@ -307,6 +307,16 @@ const mintOwner: Effect.Effect<OwnerId> = Effect.gen(function*() {
 })
 
 /**
+ * What a rewind rate limiter answers: whether one more rewind may start, and
+ * an optional `detail` the audit row records in place of the default
+ * `{ allowed, checkedAtMs }`.
+ *
+ * @since 0.1.0
+ * @category models
+ */
+export type RateLimitDecision = Rewind.RateLimitDecision
+
+/**
  * How the service is composed.
  *
  * @since 0.1.0
@@ -340,6 +350,20 @@ export interface Options {
    * is a positive integer.
    */
   readonly maxHistoryEntries?: number | undefined
+  /**
+   * Whether one more rewind of this run may start, asked once per rewind under
+   * the claim and before the audit row is written, so the decision is durable
+   * whichever way it goes. A decision that is not `allowed` fails the rewind
+   * `rate_limited` before anything is compensated, archived, or truncated.
+   *
+   * Defaults to no limiter: every rewind is allowed, and the audit records
+   * `{ allowed: true, checkedAtMs }`.
+   */
+  readonly rateLimit?: (input: {
+    readonly runId: string
+    readonly frame: Frame
+    readonly nowMs: number
+  }) => Effect.Effect<RateLimitDecision, TimeTravelError> | undefined
 }
 
 /**
@@ -398,6 +422,7 @@ export const makeWith = (
     const historyLimit = yield* HistoryLimit.resolve(options.maxHistoryEntries, HistoryLimit.defaultMaxHistoryEntries)
     const owner = yield* mintOwner
     const liveness = recoveryEvidence(options.isAlive ?? Ownership.leaseLiveness())
+    const rateLimit = options.rateLimit
     // The contribution door (`docs/specs/Concepts/Time Travel Service.md`
     // §"The open gap this leaves"):
     // handlers come from the composition that owns the effect boundary, and the
@@ -608,6 +633,7 @@ export const makeWith = (
                         // claim: nothing else binds the refusal to the
                         // truncation it was asked about.
                         expectedTail: { tail: expectedTail },
+                        ...(rateLimit === undefined ? {} : { rateLimit }),
                         ...(options?.pageSize === undefined ? {} : { pageSize: options.pageSize })
                       }))
                     )

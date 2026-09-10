@@ -26,8 +26,8 @@ const program = Effect.gen(function*() {
 The barrel exports `TimeTravel` and `ReadOnlyTimeTravel` flat, and
 the other modules as namespaces. It re-exports the rest of the `TimeTravel`
 module with them: the types `Position`, `Projection`, `Service`, `Options`,
-`ReplayOptions`, `ForkOptions`, `RewindOptions`, `ForkResult` and
-`RewindResult`, and the constants `defaultMaxHistoryEntries` and
+`ReplayOptions`, `ForkOptions`, `RewindOptions`, `RateLimitDecision`,
+`ForkResult` and `RewindResult`, and the constants `defaultMaxHistoryEntries` and
 `forkWorkspaceName`. Every module under `src/` is also published at
 `@smthrs/time-travel/<Module>` by the package `exports` map, which is where the
 remaining members of the `TimeTravel` module live: `make` and `makeWith` are
@@ -112,10 +112,33 @@ interface Service {
 
 How the service is composed.
 
-| Field               | Type                      | Meaning                                                                                                                                                                                                         |
-| ------------------- | ------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `isAlive`           | `Ownership.LivenessCheck` | Whether the owner recorded on a run is still working, asked before startup recovery takes an interrupted rewind's run over. Defaults to `Ownership.leaseLiveness()` from [`@smthrs/run-store`](/api/run-store). |
-| `maxHistoryEntries` | `number`                  | The most journal entries one replay, fork, or rewind may read. Defaults to `defaultMaxHistoryEntries`. Refused `invalid` at build unless it is a positive integer.                                              |
+| Field               | Type                                                    | Meaning                                                                                                                                                                                                         |
+| ------------------- | ------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `isAlive`           | `Ownership.LivenessCheck`                               | Whether the owner recorded on a run is still working, asked before startup recovery takes an interrupted rewind's run over. Defaults to `Ownership.leaseLiveness()` from [`@smthrs/run-store`](/api/run-store). |
+| `maxHistoryEntries` | `number`                                                | The most journal entries one replay, fork, or rewind may read. Defaults to `defaultMaxHistoryEntries`. Refused `invalid` at build unless it is a positive integer.                                              |
+| `rateLimit`         | `(input) => Effect<RateLimitDecision, TimeTravelError>` | Whether one more rewind may start. Defaults to no limiter: every rewind is allowed. See [Rate limiting rewinds](#rate-limiting-rewinds).                                                                        |
+
+### Rate limiting rewinds
+
+```ts
+type RateLimitDecision = {
+  readonly allowed: boolean
+  readonly detail?: unknown
+}
+
+const layer = TimeTravel.layerWith({
+  rateLimit: ({ frame, nowMs, runId }) => Effect.succeed({ allowed: true })
+})
+```
+
+The limiter is asked once per rewind, under the ownership claim and before the
+audit row is written, so its decision is durable whichever way it goes. A
+decision that is not `allowed` fails the rewind `rate_limited` before anything
+is compensated, archived, or truncated. The audit row records `detail` when the
+decision carries one, and `{ allowed, checkedAtMs }` when it does not, where
+`checkedAtMs` is the `nowMs` the limiter was asked on. A limiter that fails
+rather than decides fails the rewind with its own `TimeTravelError`, abandons
+the claim, and writes no audit row at all.
 
 ### ReplayOptions, ForkOptions, RewindOptions
 
@@ -502,7 +525,7 @@ so a caller's branch stays exhaustive.
 | `not_found`           | all verbs              | The run, the frame, or the audit does not address anything: a coordinate past the journal tail, a lineage this run is not on, or a run row that is gone.                                                                           |
 | `invalid`             | all verbs              | A caller-supplied option is malformed, or a durable payload does not decode. Refused before the operation touches anything.                                                                                                        |
 | `already_crossed`     | `EffectBoundary.guard` | The effect already recorded a durable `intended` boundary, so executing it a second time was refused.                                                                                                                              |
-| `rate_limited`        | `rewind`               | The supplied rate limiter rejected the attempt. The audit row records the decision.                                                                                                                                                |
+| `rate_limited`        | `rewind`               | The `Options.rateLimit` limiter the service was built with rejected the attempt. The audit row records the decision.                                                                                                               |
 | `compensation_failed` | `rewind`, recovery     | A rollback handler or the workspace restore failed, so the rewind stopped rather than leave the world half reverted.                                                                                                               |
 | `irreversible`        | `rewind`               | An effect in the truncated range cannot be undone at all: no handler, or a sealed result whose cache entry is gone.                                                                                                                |
 | `fence_lost`          | `rewind`               | The caller's ownership of the run was superseded before a mutation committed, so the mutation was refused rather than written behind the live owner.                                                                               |

@@ -134,11 +134,13 @@ outcome instead of re-running the action.
 
 ## rate_limited
 
-**What happened.** The rate limiter supplied to the rewind rejected the
-attempt. The decision is recorded on the audit row.
+**What happened.** The rate limiter supplied as `Options.rateLimit` rejected
+the attempt. The decision is recorded on the audit row.
 
-**What to change.** Back off and retry, or raise the limit. Nothing durable was
-compensated or truncated.
+**What to change.** Back off and retry, or raise the limit in the
+`TimeTravel.layerWith({ rateLimit })` the composition builds the service with.
+Nothing durable was compensated or truncated. A build that supplies no limiter
+never raises this code.
 
 ## limit_exceeded
 

@@ -21,9 +21,10 @@ the process dies at this exact line, what does the next process see?
    could have claimed the idle row, appended records, and released it inside
    that window. A moved tail is `busy`, not a silent truncation of records
    validation would have refused.
-4. **Apply the rate limiter and write the audit row**, carrying the decision.
-   The audit exists before anything is compensated or truncated, so a crash
-   always leaves a row recovery can find.
+4. **Apply the `Options.rateLimit` limiter and write the audit row**, carrying
+   the decision. The audit exists before anything is compensated or truncated,
+   so a crash always leaves a row recovery can find. A build that supplies no
+   limiter allows every rewind and records `{ allowed: true, checkedAtMs }`.
 5. **Read the frame's anchor, the descendants, and the suffix**, and fold the
    effect-boundary evidence in it.
 6. **Assess.** An attached child that is still executing refuses the rewind; so

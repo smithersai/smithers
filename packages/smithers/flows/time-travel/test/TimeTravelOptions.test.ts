@@ -325,3 +325,118 @@ describe("TimeTravel rewind history cap", () => {
       expect(before.records).toHaveLength(3)
     }))
 })
+
+/**
+ * The rewind rate limiter is a knob the reference and the troubleshooting page
+ * tell an operator to raise, so it has to be reachable through the composition
+ * rather than only through the internal operation the `exports` map blocks.
+ */
+describe("TimeTravel rewind rate limiter", () => {
+  const journalRecord = (seq: number): MemoryTimeTravelStore.JournalRecord => ({
+    runId: "run",
+    seq,
+    eventId: `event-${seq}`,
+    lineageId: "run/root",
+    payload: { eventType: "test", payload: {}, meta: { lineageId: "run/root" } }
+  })
+
+  const composed = (
+    store: ReturnType<typeof MemoryTimeTravelStore.make>,
+    options: Parameters<typeof layerWith>[0]
+  ) => {
+    const entries: ReadonlyArray<JournalEvent.Entry> = store.state().records.map((record) => ({
+      runId: record.runId as JournalEvent.RunId,
+      seq: record.seq as JournalEvent.Seq,
+      eventId: record.eventId,
+      sourceId: "options" as JournalEvent.SourceId,
+      sourceSeq: record.seq as JournalEvent.SourceSeq,
+      emittedAtMs: record.seq,
+      eventType: "test",
+      payload: {},
+      meta: { lineageId: record.lineageId }
+    }))
+    return layerWith(options).pipe(
+      Layer.provide(
+        Layer.mergeAll(
+          Layer.succeed(TimeTravelStore)(store),
+          Layer.succeed(RunStore.RunStore)(
+            RunStore.makeNoop({
+              get: () => Effect.succeed(row),
+              claim: (_runId, _expected, _owner, nowMs) =>
+                Effect.succeed({ _tag: "Claimed" as const, claimedAtMs: nowMs }),
+              activate: () => Effect.succeed({ _tag: "Activated" as const }),
+              transitionOwned: () => Effect.succeed({ _tag: "Transitioned" as const })
+            })
+          ),
+          Layer.succeed(Journal.Journal)(
+            Journal.makeNoop({
+              entries: ({ after, limit }) =>
+                Effect.sync(() => {
+                  const remaining = entries.filter((entry) => entry.seq > (after ?? -1))
+                  const page = remaining.slice(0, limit)
+                  return { entries: page, hasMore: remaining.length > page.length }
+                })
+            })
+          ),
+          Layer.succeed(Jj.Jj)(Jj.makeNoop({ snapshot: () => Effect.succeed({ changeId: "current" }) })),
+          CacheStore.layerNoop()
+        )
+      )
+    )
+  }
+
+  it.effect("refuses `rate_limited` through the composition and records the decision", () =>
+    Effect.gen(function*() {
+      const store = MemoryTimeTravelStore.make({ records: [journalRecord(0), journalRecord(1)] })
+      const asked: Array<{ readonly runId: string; readonly lineageId: string; readonly seq: number }> = []
+      const layer = composed(store, {
+        rateLimit: ({ frame, runId }) =>
+          Effect.sync(() => {
+            asked.push({ runId, lineageId: frame.lineageId, seq: frame.seq })
+            return { allowed: false, detail: { reason: "quota" } }
+          })
+      })
+      const refused = yield* Effect.scoped(
+        Effect.gen(function*() {
+          const timeTravel = yield* TimeTravel
+          return yield* Effect.flip(timeTravel.rewind({ runId: "run", frame: { lineageId: "run/root", seq: 0 } }))
+        }).pipe(Effect.provide(layer))
+      )
+
+      expect(refused).toMatchObject({ code: "rate_limited", message: "rewind rate limit exceeded for run" })
+      // The limiter is asked about the position the caller named, once.
+      expect(asked).toEqual([{ runId: "run", lineageId: "run/root", seq: 0 }])
+      expect(store.state().audits[0]).toMatchObject({ status: "failed", rateLimit: { reason: "quota" } })
+      // The refusal precedes the archive: the suffix is still there.
+      expect(store.state().records).toHaveLength(2)
+      expect(store.state().archived).toHaveLength(0)
+    }))
+
+  it.effect("stamps an allowing decision on the audit and truncates the suffix", () =>
+    Effect.gen(function*() {
+      const store = MemoryTimeTravelStore.make({ records: [journalRecord(0), journalRecord(1)] })
+      const checkedAt: Array<number> = []
+      const layer = composed(store, {
+        rateLimit: ({ nowMs }) =>
+          Effect.sync(() => {
+            checkedAt.push(nowMs)
+            return { allowed: true }
+          })
+      })
+      const result = yield* Effect.scoped(
+        Effect.gen(function*() {
+          const timeTravel = yield* TimeTravel
+          return yield* timeTravel.rewind({ runId: "run", frame: { lineageId: "run/root", seq: 0 } })
+        }).pipe(Effect.provide(layer))
+      )
+
+      expect(result.archive.archived).toBe(1)
+      // The audit records the clock the limiter was asked on, not a second reading.
+      expect(checkedAt).toHaveLength(1)
+      expect(store.state().audits[0]).toMatchObject({
+        status: "completed",
+        rateLimit: { allowed: true, checkedAtMs: checkedAt[0] }
+      })
+      expect(store.state().records).toHaveLength(1)
+    }))
+})
