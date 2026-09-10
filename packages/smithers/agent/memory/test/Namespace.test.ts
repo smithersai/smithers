@@ -159,6 +159,21 @@ describe("Namespace", () => {
     expect(() => decode(nestedAndOr(Namespace.MAX_TAG_GROUP_NODES + 1))).toThrow(/node count exceeds/u)
   })
 
+  // The schema and `matches` share one walk, so their budget boundaries must be
+  // the same boundary. This pins the depth ceiling the way the case above pins
+  // the node ceiling: a group the decoder accepts at exactly
+  // MAX_TAG_GROUP_DEPTH has to evaluate, never be refused on budget grounds.
+  it("evaluates decoded groups at the depth budget exactly as a reference evaluator does", () => {
+    const decode = Schema.decodeUnknownSync(Namespace.TagGroup)
+    for (const depth of [1, 2, Namespace.MAX_TAG_GROUP_DEPTH - 1, Namespace.MAX_TAG_GROUP_DEPTH]) {
+      const group = decode(nested(depth))
+      // `nested` adds one `not` per level, so an odd depth keeps the leaf's
+      // answer and an even depth inverts it.
+      expect(Namespace.matches(group, ["scope:project"])).toBe(depth % 2 === 1)
+      expect(Namespace.matches(group, ["branch:main"])).toBe(depth % 2 === 0)
+    }
+  })
+
   it("evaluates an undecoded over-budget group as false without recursive stack growth", () => {
     expect(Namespace.matches(nested(500), ["scope:project"])).toBe(false)
   })

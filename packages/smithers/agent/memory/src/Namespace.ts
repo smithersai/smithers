@@ -193,75 +193,115 @@ const TagGroupSchema: Schema.Codec<TagGroup> = Schema.suspend(
 const isTags = Schema.is(Tags)
 const isMatchMode = Schema.is(MatchMode)
 
-const isTagGroupShape = (input: unknown): input is TagGroup => {
-  const pending: Array<{ readonly value: unknown; readonly depth: number }> = [{ value: input, depth: 1 }]
-  let nodes = 0
-  while (pending.length > 0) {
-    const { depth, value: current } = pending.pop()!
-    nodes += 1
-    if (depth > MAX_TAG_GROUP_DEPTH || nodes > MAX_TAG_GROUP_NODES) return true
-    if (typeof current !== "object" || current === null) return false
-    if ("tags" in current) {
-      if (!isTags(current.tags)) return false
-      if ("match" in current && current.match !== undefined && !isMatchMode(current.match)) return false
-      continue
-    }
-    if ("and" in current) {
-      if (!Array.isArray(current.and)) return false
-      if (nodes + pending.length + current.and.length > MAX_TAG_GROUP_NODES) return true
-      for (let index = current.and.length - 1; index >= 0; index--) {
-        pending.push({ value: current.and[index], depth: depth + 1 })
-      }
-      continue
-    }
-    if ("or" in current) {
-      if (!Array.isArray(current.or)) return false
-      if (nodes + pending.length + current.or.length > MAX_TAG_GROUP_NODES) return true
-      for (let index = current.or.length - 1; index >= 0; index--) {
-        pending.push({ value: current.or[index], depth: depth + 1 })
-      }
-      continue
-    }
-    if ("not" in current) {
-      pending.push({ value: current.not, depth: depth + 1 })
-      continue
-    }
-    return false
-  }
-  return true
+/** A tag-group leaf with its match mode resolved to the default. */
+type Leaf = {
+  readonly tags: Tags
+  readonly match: MatchMode
 }
 
-const tagGroupBudgetIssue = (root: TagGroup): string | undefined => {
-  const pending: Array<{ readonly group: TagGroup; readonly depth: number }> = [{ group: root, depth: 1 }]
+/** The operators a tag group folds its children with. */
+type Operator = "and" | "or" | "not"
+
+/**
+ * Why a tag-group tree was refused: `shape` for a value that is not a tag
+ * group, `budget` for one that overruns a ceiling, carrying the message the
+ * schema filter reports.
+ */
+type Refusal =
+  | { readonly kind: "shape" }
+  | { readonly kind: "budget"; readonly message: string }
+
+const shapeRefusal: Refusal = { kind: "shape" }
+
+const depthRefusal: Refusal = {
+  kind: "budget",
+  message: `invalid_tag: tag-group depth exceeds ${MAX_TAG_GROUP_DEPTH}`
+}
+
+const nodesRefusal: Refusal = {
+  kind: "budget",
+  message: `invalid_tag: tag-group node count exceeds ${MAX_TAG_GROUP_NODES}`
+}
+
+const ignore = () => {}
+
+/**
+ * The one traversal of a tag-group tree.
+ *
+ * The walk is iterative, so an arbitrarily deep untrusted tree cannot grow the
+ * call stack, and it charges every node against {@link MAX_TAG_GROUP_DEPTH} and
+ * {@link MAX_TAG_GROUP_NODES} exactly once. The schema preflight, the budget
+ * filter and {@link matches} all read their answer from this walk, so none of
+ * them can drift from the others on the budget rule or the operator set.
+ *
+ * `onLeaf` sees each leaf in pre-order; `onOperator` sees each operator after
+ * its children, which is the hook {@link matches} folds child values with.
+ * Returns the first refusal, or `undefined` for a well-formed tag group within
+ * budget.
+ */
+const walkTagGroup = (
+  root: unknown,
+  onLeaf: (leaf: Leaf) => void,
+  onOperator: (operator: Operator, arity: number) => void
+): Refusal | undefined => {
+  type Frame =
+    | { readonly close: false; readonly value: unknown; readonly depth: number }
+    | { readonly close: true; readonly operator: Operator; readonly arity: number }
+  const pending: Array<Frame> = [{ close: false, depth: 1, value: root }]
   let nodes = 0
+  // Close frames wait on `pending` for their children's values and are never
+  // charged, so the child-count look-ahead counts unvisited frames instead of
+  // `pending.length`.
+  let unvisited = 1
   while (pending.length > 0) {
-    const { depth, group } = pending.pop()!
+    const frame = pending.pop()!
+    if (frame.close) {
+      onOperator(frame.operator, frame.arity)
+      continue
+    }
+    const value = frame.value
     nodes += 1
-    if (depth > MAX_TAG_GROUP_DEPTH) {
-      return `invalid_tag: tag-group depth exceeds ${MAX_TAG_GROUP_DEPTH}`
+    unvisited -= 1
+    if (frame.depth > MAX_TAG_GROUP_DEPTH) return depthRefusal
+    if (nodes > MAX_TAG_GROUP_NODES) return nodesRefusal
+    if (typeof value !== "object" || value === null) return shapeRefusal
+    if ("tags" in value) {
+      const match = "match" in value ? value.match : undefined
+      if (!isTags(value.tags)) return shapeRefusal
+      if (match !== undefined && !isMatchMode(match)) return shapeRefusal
+      onLeaf({ match: match ?? "any", tags: value.tags })
+      continue
     }
-    if (nodes > MAX_TAG_GROUP_NODES) {
-      return `invalid_tag: tag-group node count exceeds ${MAX_TAG_GROUP_NODES}`
+    const node = "and" in value
+      ? { children: value.and, operator: "and" as const }
+      : "or" in value
+      ? { children: value.or, operator: "or" as const }
+      : "not" in value
+      ? { children: [value.not], operator: "not" as const }
+      : undefined
+    if (node === undefined) return shapeRefusal
+    const children = node.children
+    if (!Array.isArray(children)) return shapeRefusal
+    // `and` and `or` can overrun the ceiling in a single step, so their whole
+    // child array is charged before it is pushed. `not` adds the one node that
+    // the next pop charges, against the depth ceiling first.
+    if (node.operator !== "not" && nodes + unvisited + children.length > MAX_TAG_GROUP_NODES) return nodesRefusal
+    pending.push({ arity: children.length, close: true, operator: node.operator })
+    for (let index = children.length - 1; index >= 0; index--) {
+      pending.push({ close: false, depth: frame.depth + 1, value: children[index] })
     }
-    if ("and" in group) {
-      if (nodes + pending.length + group.and.length > MAX_TAG_GROUP_NODES) {
-        return `invalid_tag: tag-group node count exceeds ${MAX_TAG_GROUP_NODES}`
-      }
-      for (let index = group.and.length - 1; index >= 0; index--) {
-        pending.push({ group: group.and[index]!, depth: depth + 1 })
-      }
-    } else if ("or" in group) {
-      if (nodes + pending.length + group.or.length > MAX_TAG_GROUP_NODES) {
-        return `invalid_tag: tag-group node count exceeds ${MAX_TAG_GROUP_NODES}`
-      }
-      for (let index = group.or.length - 1; index >= 0; index--) {
-        pending.push({ group: group.or[index]!, depth: depth + 1 })
-      }
-    } else if ("not" in group) {
-      pending.push({ group: group.not, depth: depth + 1 })
-    }
+    unvisited += children.length
   }
   return undefined
+}
+
+// A tree over budget is accepted here and refused by the filter below, which is
+// the only place that can report why.
+const isTagGroupShape = (input: unknown): input is TagGroup => walkTagGroup(input, ignore, ignore)?.kind !== "shape"
+
+const tagGroupBudgetIssue = (root: TagGroup): string | undefined => {
+  const refusal = walkTagGroup(root, ignore, ignore)
+  return refusal?.kind === "budget" ? refusal.message : undefined
 }
 
 const TagGroupPreflight = Schema.declare<TagGroup>(isTagGroupShape, {
@@ -285,12 +325,28 @@ const TagGroupPreflight = Schema.declare<TagGroup>(isTagGroupShape, {
  */
 export const TagGroup = TagGroupPreflight.pipe(Schema.decodeTo(TagGroupSchema))
 
+const matchesLeaf = (leaf: Leaf, tags: ReadonlyArray<string>, actual: ReadonlySet<string>): boolean => {
+  switch (leaf.match) {
+    case "all":
+      return tags.length === 0 || leaf.tags.every((tag) => actual.has(tag))
+    case "any_strict":
+      return tags.length > 0 && leaf.tags.some((tag) => actual.has(tag))
+    case "all_strict":
+      return tags.length > 0 && leaf.tags.every((tag) => actual.has(tag))
+    case "exact":
+      return actual.size === new Set(leaf.tags).size && leaf.tags.every((tag) => actual.has(tag))
+    case "any":
+      return tags.length === 0 || leaf.tags.some((tag) => actual.has(tag))
+  }
+}
+
 /**
  * Evaluates a tag-group against a record's tags.
  *
  * Non-strict `any` and `all` preserve Smithers' wildcard behavior for
  * untagged records. Strict modes require the record to carry at least one tag.
- * The walk is iterative and returns `false` for an undecoded expression that
+ * Evaluation rides {@link walkTagGroup}, so it shares one budget rule with the
+ * schema and returns `false` for an undecoded expression that is malformed or
  * exceeds {@link MAX_TAG_GROUP_DEPTH} or {@link MAX_TAG_GROUP_NODES}, keeping
  * the boolean signature used by store consumers without exposing a defect.
  *
@@ -300,63 +356,22 @@ export const TagGroup = TagGroupPreflight.pipe(Schema.decodeTo(TagGroupSchema))
  */
 export const matches = (tagGroup: TagGroup, tags: ReadonlyArray<string>): boolean => {
   const actual = new Set(tags)
-  const evaluateLeaf = (group: Extract<TagGroup, { readonly tags: Tags }>): boolean => {
-    const expected = new Set(group.tags)
-    switch (group.match ?? "any") {
-      case "all":
-        return tags.length === 0 || group.tags.every((tag) => actual.has(tag))
-      case "any_strict":
-        return tags.length > 0 && group.tags.some((tag) => actual.has(tag))
-      case "all_strict":
-        return tags.length > 0 && group.tags.every((tag) => actual.has(tag))
-      case "exact":
-        return actual.size === expected.size && group.tags.every((tag) => actual.has(tag))
-      case "any":
-        return tags.length === 0 || group.tags.some((tag) => actual.has(tag))
-    }
-  }
-
-  type Frame = { readonly group: TagGroup; readonly depth: number; readonly expanded: boolean }
-  const pending: Array<Frame> = [{ group: tagGroup, depth: 1, expanded: false }]
   const values: Array<boolean> = []
-  let nodes = 0
-  // Expanded frames wait on `pending` for their children's values, so they are
-  // not part of the node budget: the lookahead counts only unvisited frames,
-  // matching the decoder's count so a schema-valid group is never refused here.
-  let unvisited = 1
-  while (pending.length > 0) {
-    const frame = pending.pop()!
-    const group = frame.group
-    if (!frame.expanded) {
-      nodes += 1
-      unvisited -= 1
-      if (frame.depth > MAX_TAG_GROUP_DEPTH || nodes > MAX_TAG_GROUP_NODES) return false
-      if ("tags" in group) {
-        if (!isTags(group.tags) || (group.match !== undefined && !isMatchMode(group.match))) return false
-        values.push(evaluateLeaf(group))
-        continue
-      }
-      pending.push({ ...frame, expanded: true })
-      const children = "and" in group ? group.and : "or" in group ? group.or : "not" in group ? [group.not] : undefined
-      if (children === undefined || !Array.isArray(children)) return false
-      if (nodes + unvisited + children.length > MAX_TAG_GROUP_NODES) return false
-      for (let index = children.length - 1; index >= 0; index--) {
-        pending.push({ group: children[index]!, depth: frame.depth + 1, expanded: false })
-      }
-      unvisited += children.length
-      continue
+  const refusal = walkTagGroup(
+    tagGroup,
+    (leaf) => {
+      values.push(matchesLeaf(leaf, tags, actual))
+    },
+    (operator, arity) => {
+      const children = values.splice(values.length - arity, arity)
+      values.push(
+        operator === "and"
+          ? children.every(Boolean)
+          : operator === "or"
+          ? children.some(Boolean)
+          : !children[0]
+      )
     }
-    if ("not" in group) {
-      const value = values.pop()
-      if (value === undefined) return false
-      values.push(!value)
-      continue
-    }
-    const children = "and" in group ? group.and : "or" in group ? group.or : undefined
-    if (children === undefined) return false
-    const childValues = values.splice(values.length - children.length, children.length)
-    if (childValues.length !== children.length) return false
-    values.push("and" in group ? childValues.every(Boolean) : childValues.some(Boolean))
-  }
-  return values.length === 1 ? values[0]! : false
+  )
+  return refusal === undefined && values.length === 1 ? values[0]! : false
 }
