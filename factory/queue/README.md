@@ -30,22 +30,13 @@ The prompt: what to change and why, in plain prose.
 
 ## Operating it today
 
-Until the factory flow ships (item 0003), the operator is the local smithers
-workflow `queue-driver` (`.smithers/workflows/queue-driver.tsx`, UI at
-`.smithers/ui/queue-driver.tsx`; both untracked). Run it from the repo root:
+The only operator path is a factory flow: `bun factory/flows/<name>.ts` from
+the repo root (see `../README.md`). No tracked flow consumes this queue yet;
+item 0003 tracks the one that will. The earlier `queue-driver` workflow and
+the `smithers workflow` verb are retired and are not an operator path.
 
-```sh
-smithers workflow run queue-driver                                # highest-priority queued item
-smithers workflow run queue-driver --input '{"item":"<slug>"}'    # a specific item
-```
-
-`--input` takes an inline JSON value. Pass
-`--input '{"requireApproval":true}'` to add a human approval gate before
-landing. One run processes one item: pick flips its `status` to
-`in-progress`, then docs → implement → verify → land run in an isolated
-worktree lane (`.smithers/workflows/.worktrees/queue-<slug>`, branch
-`queue/<slug>`, based on `main`). Land rebases the lane onto `origin/main`
-and pushes `main` only while `vibe` is parked; a final wrap step flips the
-item's `status` to `landed` or `blocked` and pushes that bookkeeping commit.
-The workflow owns the `status` field; do not edit it by hand while a run is
-active.
+Until item 0003 lands, an operator works an item by hand: flip its `status`
+to `in-progress`, run docs → implement → verify in a short-lived worktree
+lane based on `main`, land on `main`, then flip `status` to `landed` or
+`blocked` in the same change. Only the operator of an active item edits its
+`status` field.

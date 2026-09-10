@@ -13,12 +13,13 @@ planes).
 - `flows/` — factory production lines: flows that run on the Smithers library
   itself (`harness.ts` holds the `AgentTask`/`ShellTask` atoms). Launch with
   `bun factory/flows/<name>.ts`.
-- `reports/` — each flow's output: a summary markdown per flow plus tailable
-  per-task logs.
+- `reports/` — created at run time by `flows/harness.ts` (`REPORTS_DIR`) and
+  not tracked: a summary markdown per flow plus tailable per-task logs.
 
 ## Planned
 
-Factory tooling consolidates here over time. The queue-driver workflow
-(`.smithers/workflows/queue-driver.tsx`, untracked today) and the factory
-flow that replaces it (queue item `0003-factory-flow`) move under this
-directory when they become tracked code.
+Factory tooling consolidates here over time. `bun factory/flows/<name>.ts` is
+the only operator path. The `queue-driver` workflow that once consumed the
+queue is retired with the `smithers workflow` verb; the factory flow that
+replaces it (queue item `0003-factory-flow`) lands under `flows/` when it
+becomes tracked code.

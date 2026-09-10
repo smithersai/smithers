@@ -150,3 +150,36 @@ for (const section of ["guides", "reference"]) {
     }
   })
 }
+
+test("operator docs describe the declared soak, PR evidence upload, and factory operator", () => {
+  const page = read("apps/site/src/content/docs/docs/reference/support-matrix.mdx")
+  const reliability = read(".github/workflows/reliability.yml")
+  const soakRow = /^\| Soak\s+\|(.+)$/m.exec(page)?.[1] ?? ""
+  assert.doesNotMatch(soakRow, /No nightly soak runner/, "the soak row no longer denies the scheduled runner")
+  assert.match(reliability, /^\s+sync-long-soak:$/m, "reliability.yml declares the sync-long-soak job")
+  assert.ok(soakRow.includes("sync-long-soak"), "the soak row names the scheduled job")
+  const minutes = /SMITHERS_SOAK_MINUTES: '(\d+)'/.exec(reliability)?.[1]
+  assert.ok(soakRow.includes(`${minutes} minute`), `the soak row states the ${minutes} minute duration`)
+  assert.match(soakRow, /reliability\.yml/, "the soak row cites its workflow")
+  assert.match(soakRow, /not run evidence|declaration, not/, "the soak row keeps the declaration-only caveat")
+
+  const ci = read(".github/workflows/ci.yml")
+  const collect = /- name: Collect ci-test-tier-evidence\n\s+if: (\S+)/.exec(ci)?.[1]
+  const upload = /- name: Upload ci-test-tier-evidence\n\s+if: (\S+)/.exec(ci)?.[1]
+  assert.equal(collect, "always()")
+  assert.equal(upload, "always()")
+  const bench = read("scripts/bench/README.md")
+  assert.doesNotMatch(bench, /collects\s+evidence only after successful steps/, "stale success-only claim")
+  assert.match(bench, /`if: always\(\)`/, "the bench guide states the always() upload")
+  assert.match(bench, /if-no-files-found: ignore/, "the bench guide keeps the missing-files caveat")
+
+  const removed = JSON.parse(read("apps/site/src/data/removed-commands.json"))
+  const removedVerbs = new Set(JSON.stringify(removed).match(/"workflows?"/g)?.map((verb) => JSON.parse(verb)) ?? [])
+  assert.ok(removedVerbs.has("workflow"), "the workflow verb is recorded as removed")
+  for (const readme of ["factory/README.md", "factory/queue/README.md"]) {
+    const text = read(readme)
+    assert.doesNotMatch(text, /smithers workflow run/, `${readme}: retired verb`)
+    assert.doesNotMatch(text, /\.smithers\/workflows\/queue-driver/, `${readme}: untracked workflow path`)
+    assert.match(text, /bun factory\/flows\/<name>\.ts/, `${readme}: current operator`)
+  }
+})

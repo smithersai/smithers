@@ -66,8 +66,9 @@ sync soak is a separate lifecycle/growth tier; its receipt verifier is
 `scripts/check-soak-campaign.mjs`.
 
 The upload-on-failure and 30-day retention policy above applies to the scheduled
-`benchmark-observations` job. The generated PR workflow currently collects
-evidence only after successful steps and permits missing files; its generator
-does not expose failure-upload or retention controls. Local failed receipts
-remain on disk, but a failed PR job's upload is not guaranteed. Extending that
-generator is tracked as a foreign finding in the lane G evidence.
+`benchmark-observations` job. The generated PR workflow collects and uploads
+`ci-test-tier-evidence`, including `/tmp/smithers-benchmark-*`, under
+`if: always()`, so a failed PR step still uploads whatever receipts exist. It
+permits missing files (`if-no-files-found: ignore`) and its generator exposes
+no retention control, so a lost runner or an unwritten receipt yields no
+artifact and no error. Local failed receipts remain on disk.
