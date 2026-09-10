@@ -418,6 +418,8 @@ export const compile = (plan: Plan, options: CompileOptions): Node.Node<unknown,
  * @since 0.1.0
  */
 export interface MakeOptions {
+  readonly name?: string | undefined
+  readonly description?: string | undefined
   readonly author: Flow.Any
   readonly leaf: Flow.Any
   readonly envelope: Envelope
@@ -444,7 +446,14 @@ export const make = (options: MakeOptions): Flow.Flow<typeof Schema.Unknown, typ
   const invalid = admissionRefusal({ envelope })
   if (invalid !== undefined) throw invalid
   const captured = { fuel: envelope.fuel, depth: envelope.depth, fanout: envelope.fanout }
+  const { name, description } = Compose.label("trellis", {
+    fuel: envelope.fuel,
+    depth: envelope.depth,
+    fanout: envelope.fanout
+  }, options)
   return Flow.make({
+    name,
+    description,
     input: Schema.Unknown,
     output: Schema.Unknown,
     body: Node.capture(captured, (input) =>

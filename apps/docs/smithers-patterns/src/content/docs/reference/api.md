@@ -22,12 +22,37 @@ Every container exports a pair.
 | `make(options)`       | A `Flow` whose body is the **conservative topology**: every rung, round, member, and compensation that the pattern could reach, declared before anything runs | Branch on a value. Core plans continuations against symbolic values, so a plan-time `if` on a result is always the same arm |
 | `run(input, options)` | The `Effect` that performs the value-dependent branch at runtime, short-circuiting the parts the topology reserved                                            | Change the shape the declaration promised                                                                                   |
 
-A planner reads `make`. A handler runs `run`. The paired surfaces use the same
-behavioral option names with call-shape differences: `Kanban` passes `items` as
-the first argument to `run` and reserves `until` and `maxIterations` for
-runtime branching; `MergeQueue` passes `members` as the first argument to
-`make`. `Trellis` is the remaining exception: `run` additionally accepts
-`continue` and `concurrency`.
+A planner reads `make`. A handler runs `run`. Every `make` takes one options
+object, and every `MakeOptions` accepts an optional `name` and `description`
+for the returned `Flow`. An unnamed pattern is named after its kind and its
+declared bounds, the way the decorators name theirs: `reviewLoop(maxRounds=3)`,
+`saga(steps=reserve,charge, onFailure=compensate)`. The paired surfaces use the
+same behavioral option names with call-shape differences: `Kanban` declares
+`items` in its `make` options, because a static declaration needs them to lay
+out the board, and `run` receives them as its first argument, the runtime
+input, reserving `until` and `maxIterations` for runtime branching. `Trellis`
+is the remaining exception: `run` additionally accepts `continue` and
+`concurrency`.
+
+`Intervene` uses the same stage payloads in `make` and `run`:
+
+| Stage     | Payload                                                 |
+| --------- | ------------------------------------------------------- |
+| `read`    | `{ phase: "read", input }`                              |
+| `propose` | `{ phase: "propose", input, context }`                  |
+| `apply`   | `{ phase: "apply", input, proposal }`                   |
+| `report`  | `{ phase: "report", input, proposal, applied, dryRun }` |
+
+A dry run omits `apply` and reports `applied: undefined`. The optional approval
+callback retains its separate contract described in [Teams](/teams/#intervene).
+
+`Kanban` columns receive `{ item, column, previous }`. Successful predecessors
+are the card values, unwrapped from the quarantine protocol. A declared later
+column still receives a `Quarantined` marker after a failure; `run` skips that
+card instead. Both completion callbacks receive `{ items, board }`, where
+`board` contains `board`, `completed`, `failed`, and `iterations`. The declared
+pass reports `iterations: 1`, retains each successful column value, and records
+each card's first failure. Runtime iterations report the final pass.
 
 Declaration-time misuse raises `PatternError` from `make`: an empty ladder, a
 fractional concurrency, a compensation that is not a flow. The same condition
@@ -109,6 +134,7 @@ optional `cause` with the reported error or errors.
 | --------------------- | ------------------------------------------------------------------------------------------------------------------- |
 | `missing_slot`        | A required `Pattern.slot` was neither bound nor defaulted                                                           |
 | `invalid_decorator`   | A decorator broke a schema or authority contract, or an option was out of range                                     |
+| `invalid_input`       | A flow input, a `Supervisor` plan, an `Optimizer` or `Sidecar` score, or a `Quarantine.settle` entry was malformed  |
 | `envelope_conflict`   | A supplied flow declares authority its template excludes                                                            |
 | `recursion_bound`     | `Recursion.recurse` hit its declared depth                                                                          |
 | `exhausted`           | A runtime pattern reached its declared iteration or round limit, or `MapReduce` was configured to fail on no shards |
@@ -122,10 +148,21 @@ optional `cause` with the reported error or errors.
 fault was found at (`root`, or a path such as `root.parallel[1].sequence[0]`),
 a message, and an optional `cause`. `Trellis.validate` returns every refusal
 it finds as an array and attaches no cause. `Trellis.make` throws one, and
-`Trellis.execute` and `Trellis.run` fail with one; a refusal `run` reports
-carries `{ rounds, remaining }` as its cause, the rounds already executed and
-the fuel left. `DelegationChain.run` fails with the same error when the
-derisked plan does not fit its envelope.
+`Trellis.execute` and `Trellis.run` fail with one for admission errors.
+A plan validation failure from `Trellis.run` preserves the first refusal's code,
+path, and message and carries `{ rounds, remaining, refusals }` as its cause.
+`refusals` contains every validation reason. A later round that exceeds the
+remaining fuel carries `{ rounds, remaining }`.
+
+Typed leaf failures in `Trellis.run` become `leaf_failed` at the leaf's path,
+with `{ rounds, remaining, error }` as the cause. `error` is the original leaf
+failure. `rounds` contains completed rounds only; `remaining` is the fuel left
+after those rounds, before charging the failed round. `Trellis.execute`
+continues to propagate typed leaf failures unchanged.
+
+`DelegationChain.run` reports the first refusal with all `refusals` in the
+same cause when the derisked plan does not fit its envelope. Its `rounds` is
+empty and `remaining` is the envelope fuel because execution has not started.
 
 | Code               | Path          | Raised when                                                                                                                                                                      |
 | ------------------ | ------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -134,6 +171,7 @@ derisked plan does not fit its envelope.
 | `depth_exceeded`   | the node      | A node nests deeper than the envelope `depth`                                                                                                                                    |
 | `fanout_exceeded`  | the container | A container holds more members than the envelope `fanout`                                                                                                                        |
 | `fuel_exhausted`   | `root`        | A plan needs more leaf calls than the envelope `fuel`, or than the fuel left after earlier rounds                                                                                |
+| `leaf_failed`      | the leaf      | A leaf effect fails during `Trellis.run`                                                                                                                                         |
 
 ### `DelegationError`
 
@@ -215,11 +253,11 @@ The input must explicitly declare effects with `mode: "hermetic"` and a
 `"sealed"` or omitted tier. A pure body without an effects declaration is
 rejected. Every option is optional:
 
-| Field | Contract |
-| --- | --- |
-| `ttlMs` | Positive safe integer in milliseconds, measured from when the result was recorded. Omit for no age bound. |
-| `scope` | `"run"`, `"flow"`, or `"shared"`. Omit to retain the composition's reach. |
-| `version` | Nonblank string naming the body revision. Omit for no extra revision in the key. |
+| Field     | Contract                                                                                                  |
+| --------- | --------------------------------------------------------------------------------------------------------- |
+| `ttlMs`   | Positive safe integer in milliseconds, measured from when the result was recorded. Omit for no age bound. |
+| `scope`   | `"run"`, `"flow"`, or `"shared"`. Omit to retain the composition's reach.                                 |
+| `version` | Nonblank string naming the body revision. Omit for no extra revision in the key.                          |
 
 Invalid effects, TTL, or version throw `PatternError` with code
 `invalid_decorator` synchronously when the decorator is applied.
@@ -249,7 +287,10 @@ const echo = Flow.make({
   input: Schema.String,
   output: Schema.String,
   effects: Effects.make({
-    reads: [], writes: [], mode: "hermetic", onConflict: "serialize"
+    reads: [],
+    writes: [],
+    mode: "hermetic",
+    onConflict: "serialize"
   }),
   body: (input) => Node.succeed(input)
 })
@@ -356,9 +397,12 @@ round.
 
 `review` receives `(output, round)` and `revise` receives
 `{ output, review, round }`. `ReviewLoop.accepted` is the acceptance reader:
-`true`, `"approved"`, `{ approved: true }`, or `{ accepted: true }`. A run that
-spends every round returns `{ output, review, approved: false, exhausted: true }`
-rather than failing, so the caller decides what an unapproved result is worth.
+`true`, `"approved"`, `{ approved: true }`, or `{ accepted: true }`. Both
+outcomes are tagged and nest the produced value: an approved round returns
+`{ _tag: "Approved", output }` and a run that spends every round returns
+`{ _tag: "Exhausted", output, review }` rather than failing, so the caller
+branches on `_tag` and decides what an unapproved result is worth. The value
+the loop produced never forges the other arm, whatever shape it has.
 `maxRounds` must be a positive safe integer.
 
 Use `ReviewLoop` when one artifact is revised in place. When every issue needs
@@ -372,10 +416,12 @@ rung decides for itself. `accept` decides every rung that declares no
 `escalateIf`; `fallback` is the last rung and runs only after all of them
 escalated, which is where a human approval flow belongs.
 
-`Escalation.run(input, options)` returns `{ level, result }` naming the rung
-that settled, counting from zero. A fallback result carries the rung count. If
-every rung escalates and no fallback is declared, the last result comes back as
-`{ level, result, accepted: false, exhausted: true }`.
+`Escalation.run(input, options)` returns `{ level, result, exhausted: false }`
+naming the rung that settled, counting from zero. A fallback result carries the
+rung count. If every rung escalates and no fallback is declared, the last
+result comes back as `{ level, result, accepted: false, exhausted: true }`.
+`exhausted` is present on both arms, so a caller reads it without a property
+check.
 
 `defaultEscalate` is the predicate used by `Escalation.run` when a rung has
 neither an `escalateIf` nor a shared `accept`. `Escalation.make` instead
@@ -388,8 +434,8 @@ fallback belong to model routing, before a flow is selected.
 
 ## `TryCatchFinally`
 
-`TryCatchFinally.make({ try, catch?, catchErrors?, finally? })` declares the
-protected call, the recovery arm `catchErrors` selects, and a finalizer call on
+`TryCatchFinally.make({ try, catch?, catchSchema?, finally? })` declares the
+protected call, the recovery arm `catchSchema` selects, and a finalizer call on
 the settled arm and on the arm no handler claimed. The unhandled arm ends in
 `Node.fail`, so the plan states that the finalizer cleans up and hands the
 failure back rather than absorbing it. A finalizer that fails on that arm is
@@ -398,8 +444,8 @@ boundary reports; the failed finalizer call remains a step of its own. Both
 arms are wrapped in `Node.capture`, so the boundary keys the same way on every
 build.
 
-`TryCatchFinally.run(input, options)` takes `catchErrors` as a predicate,
-because the runtime form already holds the decoded typed error. The finalizer
+`TryCatchFinally.run(input, options)` takes `catchErrors`, a predicate rather
+than a schema, because the runtime form already holds the decoded typed error. The finalizer
 runs after success, after recovery, after an unclaimed failure, and after
 interruption. A finalizer that fails on its own becomes `finalizer_failed`; a
 body failure outranks it, so cleanup trouble never hides the reason the body
@@ -415,10 +461,19 @@ arm calls that step's compensation and re-raises, so a failure deeper in the
 chain unwinds one step at a time, most recent first, and the plan lists the
 compensation calls in reverse order. `onFailure` defaults to `compensate` in
 both halves. `make` refuses a step whose action or compensation is not a flow.
+Both compensation policies continue unwinding after an undo fails and report
+`PatternError { code: "compensation_failed" }`. Its cause holds the original
+`failure` and the failed undos in `residue`, sorted by step id. A chain that
+runs to the end returns `{ _tag: "Completed", values }`, where `values` holds
+each step's value keyed by step id. A clean unwind returns
+`{ _tag: "Compensated", failure }` under `compensate` and re-raises the
+original failure under `compensate-and-fail`. Step values are nested under
+`values`, so a step id can never forge the compensated arm.
 
 `Saga.run(input, { steps, onFailure })` registers one scope finalizer per
 completed step, so the unwind is LIFO and runs on interruption as well as on
-failure. A compensation that dies is recorded as a failed compensation rather
+failure. A compensation that dies or whose callback throws before returning an
+effect is recorded as a failed compensation rather
 than raised as a defect, so the residue still names it and the finalizers
 behind it still run. See
 [Undo work with compensation](https://smithers.sh/docs/guides/compensation/).
@@ -442,6 +497,16 @@ batches, `Trellis` envelope fuel, and `DelegationChain.maxDepth` together with
 calls. A very large bound builds a very large graph before anything runs. For
 an unbounded loop, use the `run` half under an external scheduler instead of
 unrolling it in `make`.
+
+A bound that unrolls into a sequenced chain is capped a second way. Core
+refuses a plan nested past `Graph.maximumGraphDepth`, which is 512 levels, and
+each chained call costs one level, so a chain reaches 511 declared calls, or
+255 when a unit declares two of them. `Loop.make` refuses a `maxIterations`
+past that limit at the declaration, with an `invalid_decorator` `PatternError`
+naming the option and the limit. Every other pattern reaches the ceiling as a
+`plan_too_deep` `GraphBuildError` from `Graph.build`, which carries no
+message. The limit counts the chain alone, so deeper member flows or an
+enclosing unrolled pattern lower it.
 
 ## Entry points
 

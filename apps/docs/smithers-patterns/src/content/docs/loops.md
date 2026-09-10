@@ -85,6 +85,13 @@ reads `previous`. See [Inline callbacks and inference](#inline-callbacks-and-inf
 `invalid_decorator` at declaration; `run` fails with the same error before the
 first body runs.
 
+`make` unrolls the bound, so it is capped a second time by the plan depth
+limit: 511 iterations for a body alone, 255 when an `until` flow is declared
+too. `make` refuses a bound past that with the same `invalid_decorator` error,
+naming the limit. `run` takes any positive safe integer, because it iterates
+instead of unrolling. See
+[Declaration size](/reference/api/#declaration-size).
+
 ### Ralph
 
 `Loop.ralph` and `Loop.runRalph` are the loop with no separate predicate flow:
@@ -139,6 +146,7 @@ A later attempt has to beat the standing best rather than match it, so `best` is
 the earliest of equal scores wherever the tie falls. `converged` is true when
 `best` reached `targetScore`.
 
+`onMaxReached` defaults to `"return-last"`, as it does in `Loop`.
 `onMaxReached: "fail"` requires a `targetScore`: without one there is nothing
 for the search to fall short of, so `make` throws and `run` fails
 `invalid_decorator` before generating anything. With a target, exhausting the
@@ -173,10 +181,10 @@ const report = yield* ScanFixVerify.run({ path: "src" }, {
 ```
 
 `scan` receives `{ input, iteration }` and returns the issues. `fix` receives
-`{ issue, index, iteration }` and runs once per issue through `MapReduce.run`,
-so `concurrency` is the real in-flight bound. `verify` receives
-`{ input, issues, fixes, iteration }` and answers `true` or an object carrying
-`resolved: true`; `ScanFixVerify.resolved` is that reader.
+`{ issue, index, iteration }` and runs once per issue over a snapshot of what
+the scan returned, so `concurrency` is the real in-flight bound. `verify`
+receives `{ input, issues, fixes, iteration }` and answers `true` or an
+object carrying `resolved: true`; `ScanFixVerify.resolved` is that reader.
 
 An empty scan is the only terminal. A verification is evidence about the round
 it closes, so a round the verifier calls resolved is followed by one confirming

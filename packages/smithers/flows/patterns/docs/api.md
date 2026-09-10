@@ -21,12 +21,17 @@ Every container exports a pair.
 | `make(options)`       | A `Flow` whose body is the **conservative topology**: every rung, round, member, and compensation that the pattern could reach, declared before anything runs | Branch on a value. Core plans continuations against symbolic values, so a plan-time `if` on a result is always the same arm |
 | `run(input, options)` | The `Effect` that performs the value-dependent branch at runtime, short-circuiting the parts the topology reserved                                            | Change the shape the declaration promised                                                                                   |
 
-A planner reads `make`. A handler runs `run`. The paired surfaces use the same
-behavioral option names with call-shape differences: `Kanban` passes `items` as
-the first argument to `run` and reserves `until` and `maxIterations` for
-runtime branching; `MergeQueue` passes `members` as the first argument to
-`make`. `Trellis` is the remaining exception: `run` additionally accepts
-`continue` and `concurrency`.
+A planner reads `make`. A handler runs `run`. Every `make` takes one options
+object, and every `MakeOptions` accepts an optional `name` and `description`
+for the returned `Flow`. An unnamed pattern is named after its kind and its
+declared bounds, the way the decorators name theirs: `reviewLoop(maxRounds=3)`,
+`saga(steps=reserve,charge, onFailure=compensate)`. The paired surfaces use the
+same behavioral option names with call-shape differences: `Kanban` declares
+`items` in its `make` options, because a static declaration needs them to lay
+out the board, and `run` receives them as its first argument, the runtime
+input, reserving `until` and `maxIterations` for runtime branching. `Trellis`
+is the remaining exception: `run` additionally accepts `continue` and
+`concurrency`.
 
 `Intervene` uses the same stage payloads in `make` and `run`:
 
@@ -428,8 +433,8 @@ fallback belong to model routing, before a flow is selected.
 
 ## `TryCatchFinally`
 
-`TryCatchFinally.make({ try, catch?, catchErrors?, finally? })` declares the
-protected call, the recovery arm `catchErrors` selects, and a finalizer call on
+`TryCatchFinally.make({ try, catch?, catchSchema?, finally? })` declares the
+protected call, the recovery arm `catchSchema` selects, and a finalizer call on
 the settled arm and on the arm no handler claimed. The unhandled arm ends in
 `Node.fail`, so the plan states that the finalizer cleans up and hands the
 failure back rather than absorbing it. A finalizer that fails on that arm is
@@ -438,8 +443,8 @@ boundary reports; the failed finalizer call remains a step of its own. Both
 arms are wrapped in `Node.capture`, so the boundary keys the same way on every
 build.
 
-`TryCatchFinally.run(input, options)` takes `catchErrors` as a predicate,
-because the runtime form already holds the decoded typed error. The finalizer
+`TryCatchFinally.run(input, options)` takes `catchErrors`, a predicate rather
+than a schema, because the runtime form already holds the decoded typed error. The finalizer
 runs after success, after recovery, after an unclaimed failure, and after
 interruption. A finalizer that fails on its own becomes `finalizer_failed`; a
 body failure outranks it, so cleanup trouble never hides the reason the body

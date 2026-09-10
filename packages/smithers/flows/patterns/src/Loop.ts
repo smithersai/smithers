@@ -21,7 +21,7 @@
 import { Flow, Node } from "@smthrs/core"
 import * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
-import { sequencedBoundRefusal } from "./internal/Compose.ts"
+import * as Compose from "./internal/Compose.ts"
 import { PatternError } from "./PatternError.ts"
 
 /**
@@ -51,6 +51,8 @@ export type OnMaxReached = "fail" | "return-last"
  * @since 0.1.0
  */
 export interface MakeOptions {
+  readonly name?: string | undefined
+  readonly description?: string | undefined
   readonly body: Flow.Any
   readonly until?: Flow.Any | undefined
   readonly maxIterations: number
@@ -165,7 +167,7 @@ export const make = (options: MakeOptions): Flow.Flow<typeof Schema.Unknown, typ
   // One node per declared call, chained, so the plan nests one level per call:
   // a body alone spends one level an iteration, a body plus `until` two.
   const invalid = bound(maxIterations) ??
-    sequencedBoundRefusal("Loop", "maxIterations", maxIterations, declared.until === undefined ? 1 : 2)
+    Compose.sequencedBoundRefusal("Loop", "maxIterations", maxIterations, declared.until === undefined ? 1 : 2)
   if (invalid !== undefined) throw invalid
   const onMaxReached = options.onMaxReached ?? defaultOnMaxReached
   const captures = {
@@ -174,7 +176,10 @@ export const make = (options: MakeOptions): Flow.Flow<typeof Schema.Unknown, typ
     onMaxReached,
     predicate: declared.until === undefined ? "body" : "flow"
   }
+  const { name, description } = Compose.label("loop", { maxIterations, onMaxReached }, options)
   return Flow.make({
+    name,
+    description,
     input: Schema.Unknown,
     output: Schema.Unknown,
     flows: declared.until === undefined ? [declared.body] : [declared.body, declared.until],

@@ -8,6 +8,7 @@
 import { Flow, Node } from "@smthrs/core"
 import * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
+import * as Compose from "./internal/Compose.ts"
 import { PatternError } from "./PatternError.ts"
 
 /**
@@ -70,6 +71,8 @@ export interface RuntimeOptions<I, Proponent, Opponent, Judge, E, R, E2, R2, E3,
  * @since 0.1.0
  */
 export interface MakeOptions {
+  readonly name?: string | undefined
+  readonly description?: string | undefined
   readonly proponent: Flow.Any
   readonly opponent: Flow.Any
   readonly judge: Flow.Any
@@ -100,7 +103,10 @@ export const make = (options: MakeOptions): Flow.Flow<typeof Schema.Unknown, typ
   const participants = { proponent: options.proponent, opponent: options.opponent, judge: options.judge }
   const rounds = options.rounds
   if (!Number.isSafeInteger(rounds) || rounds < 1) invalidRounds(rounds)
+  const { name, description } = Compose.label("debate", { rounds }, options)
   return Flow.make({
+    name,
+    description,
     input: Schema.Unknown,
     output: Schema.Unknown,
     flows: [participants.proponent, participants.opponent, participants.judge],

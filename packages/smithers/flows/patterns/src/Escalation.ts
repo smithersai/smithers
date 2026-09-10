@@ -48,6 +48,8 @@ export interface Rung {
  * @since 0.1.0
  */
 export interface MakeOptions {
+  readonly name?: string | undefined
+  readonly description?: string | undefined
   readonly rungs: ReadonlyArray<Flow.Any | Rung>
   readonly accept?: Flow.Any | undefined
   readonly fallback?: Flow.Any | undefined
@@ -190,7 +192,14 @@ export const make = (options: MakeOptions): Flow.Flow<typeof Schema.Unknown, typ
     ...(accept === undefined ? [] : [accept]),
     ...(fallback === undefined ? [] : [fallback])
   ]
+  const { name, description } = Compose.label(
+    "escalation",
+    { rungs: rungs.length, fallback: fallback !== undefined },
+    options
+  )
   return Flow.make({
+    name,
+    description,
     input: Schema.Unknown,
     output: Schema.Unknown,
     flows,

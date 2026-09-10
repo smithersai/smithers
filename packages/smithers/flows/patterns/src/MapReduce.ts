@@ -9,6 +9,7 @@
 import { Flow, Node } from "@smthrs/core"
 import * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
+import * as Compose from "./internal/Compose.ts"
 import { PatternError } from "./PatternError.ts"
 
 /**
@@ -33,6 +34,8 @@ export type OnEmpty = "reduce" | "succeed" | "fail"
  * @since 0.1.0
  */
 export interface MakeOptions {
+  readonly name?: string | undefined
+  readonly description?: string | undefined
   readonly map: Flow.Any
   readonly reduce: Flow.Any
   readonly concurrency: number
@@ -85,7 +88,10 @@ export const make = (options: MakeOptions): Flow.Flow<typeof Schema.Unknown, typ
       message: "MapReduce concurrency must be a positive safe integer"
     })
   }
+  const { name, description } = Compose.label("mapReduce", { concurrency, onEmpty }, options)
   return Flow.make({
+    name,
+    description,
     input: Schema.Unknown,
     output: Schema.Unknown,
     flows: [stages.map, stages.reduce],

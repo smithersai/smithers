@@ -20,6 +20,7 @@
 import { Flow, Node } from "@smthrs/core"
 import * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
+import * as Compose from "./internal/Compose.ts"
 import * as Loop from "./Loop.ts"
 import { PatternError } from "./PatternError.ts"
 
@@ -69,17 +70,19 @@ export interface Evaluation {
  * and is absent on the first. `evaluate` is called with `{ value, iteration }`
  * and answers `{ score, feedback? }`. `onMaxReached: "fail"` requires a
  * `targetScore`, because without one there is nothing for the search to fall
- * short of.
+ * short of. `onMaxReached` defaults to `"return-last"`, as it does in `Loop`.
  *
  * @category models
  * @since 0.1.0
  */
 export interface MakeOptions {
+  readonly name?: string | undefined
+  readonly description?: string | undefined
   readonly generate: Flow.Any
   readonly evaluate: Flow.Any
   readonly targetScore?: number | undefined
   readonly maxIterations: number
-  readonly onMaxReached: OnMaxReached
+  readonly onMaxReached?: OnMaxReached | undefined
 }
 
 /**
@@ -100,7 +103,7 @@ export interface RuntimeOptions<I, C, E, R, E2, R2> {
   }) => Effect.Effect<Evaluation, E2, R2>
   readonly targetScore?: number | undefined
   readonly maxIterations: number
-  readonly onMaxReached: OnMaxReached
+  readonly onMaxReached?: OnMaxReached | undefined
 }
 
 /**
@@ -119,10 +122,12 @@ export interface Result<C> {
   readonly converged: boolean
 }
 
+const defaultOnMaxReached: OnMaxReached = "return-last"
+
 const validate = (options: {
   readonly targetScore?: number | undefined
   readonly maxIterations: number
-  readonly onMaxReached: OnMaxReached
+  readonly onMaxReached?: OnMaxReached | undefined
 }): PatternError | undefined => {
   if (options.targetScore !== undefined && !Number.isFinite(options.targetScore)) {
     return new PatternError({ code: "invalid_decorator", message: "Optimizer targetScore must be a finite number" })
@@ -180,12 +185,20 @@ export const make = (options: MakeOptions): Flow.Flow<typeof Schema.Unknown, typ
   // these snapshots and never the caller's options again.
   const stages = { generate: options.generate, evaluate: options.evaluate }
   const maxIterations = options.maxIterations
+  const onMaxReached = options.onMaxReached ?? defaultOnMaxReached
   const captures = {
     ...options.targetScore === undefined ? {} : { targetScore: options.targetScore },
     maxIterations,
-    onMaxReached: options.onMaxReached
+    onMaxReached
   }
+  const { name, description } = Compose.label("optimizer", {
+    maxIterations,
+    targetScore: options.targetScore,
+    onMaxReached
+  }, options)
   return Flow.make({
+    name,
+    description,
     input: Schema.Unknown,
     output: Schema.Unknown,
     flows: [stages.generate, stages.evaluate],
@@ -243,7 +256,7 @@ export const run = <I, C, E, R, E2, R2>(
   const stages = { generate: options.generate, evaluate: options.evaluate }
   const targetScore = options.targetScore
   const maxIterations = options.maxIterations
-  const onMaxReached = options.onMaxReached
+  const onMaxReached = options.onMaxReached ?? defaultOnMaxReached
   return Effect.gen(function*() {
     const loop = yield* Loop.run<I, Generation<C>, E | E2 | PatternError, R | R2, never, never>(input, {
       maxIterations,

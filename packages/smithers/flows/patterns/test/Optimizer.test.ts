@@ -357,4 +357,35 @@ describe("Optimizer", () => {
       expect(nonFinite.message).toBe("Optimizer targetScore must be a finite number")
       expect(generated).toBe(0)
     }))
+
+  // Loop defaults `onMaxReached` to "return-last"; Optimizer required it, so a
+  // reader who learned one bound could not predict the other.
+  it("defaults onMaxReached to return-last in make, as Loop does", () => {
+    const optimizer = Optimizer.make({ generate, evaluate, targetScore: 0.8, maxIterations: 2 })
+    const explicit = Optimizer.make({
+      generate,
+      evaluate,
+      targetScore: 0.8,
+      maxIterations: 2,
+      onMaxReached: "return-last"
+    })
+
+    const material = (flow: typeof optimizer) =>
+      Graph.nodes(Graph.build(flow, "prompt")).map((node) => node.keyMaterial)
+    expect(material(optimizer)).toEqual(material(explicit))
+  })
+
+  it.effect("defaults onMaxReached to return-last in run, as Loop does", () =>
+    Effect.gen(function*() {
+      const result = yield* Optimizer.run("prompt", {
+        maxIterations: 2,
+        targetScore: 1,
+        generate: ({ iteration }) => Effect.succeed(`draft ${iteration}`),
+        evaluate: ({ iteration }: { readonly iteration: number }) => Effect.succeed({ score: iteration / 10 })
+      })
+
+      expect(result.converged).toBe(false)
+      expect(result.iterations).toBe(2)
+      expect(result.best.candidate).toBe("draft 2")
+    }))
 })

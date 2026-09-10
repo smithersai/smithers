@@ -10,6 +10,7 @@
 import { Flow, Node } from "@smthrs/core"
 import * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
+import * as Compose from "./internal/Compose.ts"
 import { PatternError } from "./PatternError.ts"
 import * as Quarantine from "./Quarantine.ts"
 
@@ -37,6 +38,8 @@ export type Strategy = "all-pass" | "majority" | "any-pass"
  * @since 0.1.0
  */
 export interface MakeOptions {
+  readonly name?: string | undefined
+  readonly description?: string | undefined
   readonly checks: Readonly<Record<string, Flow.Any>>
   readonly strategy: Strategy
   readonly concurrency: number
@@ -225,7 +228,10 @@ export const make = (options: MakeOptions): Flow.Flow<typeof Schema.Unknown, typ
     concurrency,
     continueOnFail
   }
+  const { name, description } = Compose.label("checkSuite", { checks: ids, strategy, concurrency }, options)
   return Flow.make({
+    name,
+    description,
     input: Schema.Unknown,
     output: Schema.Unknown,
     flows: declared.map(([, flow]) => flow),

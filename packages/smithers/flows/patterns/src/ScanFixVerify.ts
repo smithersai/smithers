@@ -19,6 +19,7 @@
 import { Flow, Node } from "@smthrs/core"
 import * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
+import * as Compose from "./internal/Compose.ts"
 import * as Loop from "./Loop.ts"
 import { PatternError } from "./PatternError.ts"
 
@@ -35,6 +36,8 @@ import { PatternError } from "./PatternError.ts"
  * @since 0.1.0
  */
 export interface MakeOptions {
+  readonly name?: string | undefined
+  readonly description?: string | undefined
   readonly scan: Flow.Any
   readonly fix: Flow.Any
   readonly verify: Flow.Any
@@ -153,7 +156,10 @@ export const make = (options: MakeOptions): Flow.Flow<typeof Schema.Unknown, typ
   const maxIssues = options.maxIssues
   const concurrency = options.concurrency
   const captures = { maxRetries, maxIssues, concurrency }
+  const { name, description } = Compose.label("scanFixVerify", { maxRetries, maxIssues, concurrency }, options)
   return Flow.make({
+    name,
+    description,
     input: Schema.Unknown,
     output: Schema.Unknown,
     flows: [stages.scan, stages.fix, stages.verify],

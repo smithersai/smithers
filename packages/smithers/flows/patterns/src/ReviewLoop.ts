@@ -23,6 +23,8 @@ import { PatternError } from "./PatternError.ts"
  * @since 0.1.0
  */
 export interface MakeOptions {
+  readonly name?: string | undefined
+  readonly description?: string | undefined
   readonly produce: Flow.Any
   readonly review: Flow.Any
   readonly revise: Flow.Any
@@ -117,7 +119,10 @@ export const make = (options: MakeOptions): Flow.Flow<typeof Schema.Unknown, typ
       message: "ReviewLoop maxRounds must be a positive safe integer"
     })
   }
+  const { name, description } = Compose.label("reviewLoop", { maxRounds }, options)
   return Flow.make({
+    name,
+    description,
     input: Schema.Unknown,
     output: Schema.Unknown,
     flows: [stages.produce, stages.review, stages.revise],

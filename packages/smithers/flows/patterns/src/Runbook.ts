@@ -11,6 +11,7 @@
 import { Flow, Node } from "@smthrs/core"
 import * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
+import * as Compose from "./internal/Compose.ts"
 import { PatternError } from "./PatternError.ts"
 import * as WithApproval from "./WithApproval.ts"
 
@@ -57,6 +58,8 @@ export interface Step {
  * @since 0.1.0
  */
 export interface MakeOptions {
+  readonly name?: string | undefined
+  readonly description?: string | undefined
   readonly steps: ReadonlyArray<Step>
   /**
    * Called with `{ input, reason, scope }`; its declared input must be that
@@ -209,7 +212,10 @@ export const make = (options: MakeOptions): Flow.Flow<typeof Schema.Unknown, typ
       }
       : { step, flow: step.flow }
   )
+  const { name, description } = Compose.label("runbook", { steps: ids }, options)
   return Flow.make({
+    name,
+    description,
     input: Schema.Unknown,
     output: Schema.Unknown,
     flows: declared.map((entry) => entry.flow),

@@ -9,6 +9,7 @@
 import { Flow, Node } from "@smthrs/core"
 import type { Node as FlowNode } from "@smthrs/core/Node"
 import * as Schema from "effect/Schema"
+import * as Compose from "./internal/Compose.ts"
 import { PatternError } from "./PatternError.ts"
 
 /**
@@ -33,6 +34,8 @@ export interface Envelope {
  * @since 0.1.0
  */
 export interface RecurseOptions extends Envelope {
+  readonly name?: string | undefined
+  readonly description?: string | undefined
   readonly child: Flow.Any
   readonly parent?: Envelope | undefined
 }
@@ -90,7 +93,14 @@ export const recurse = (options: RecurseOptions): Flow.Flow<typeof Schema.Unknow
       return boundError("Nested recursion may attenuate but cannot widen its parent envelope")
     }
   }
+  const { name, description } = Compose.label("recurse", {
+    fuel: envelope.fuel,
+    depth: envelope.depth,
+    fanout: envelope.fanout
+  }, options)
   return Flow.make({
+    name,
+    description,
     input: Schema.Unknown,
     output: Schema.Unknown,
     flows: [child],

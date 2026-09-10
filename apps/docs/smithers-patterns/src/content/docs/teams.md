@@ -261,14 +261,14 @@ Land a set of members in one prioritized order, at a concurrency the queue owns 
 ```ts
 import * as MergeQueue from "@smthrs/patterns/MergeQueue"
 
-const queue = MergeQueue.make(
-  [
+const queue = MergeQueue.make({
+  members: [
     { id: "docs", flow: land },
     { id: "hotfix", flow: land, priority: 5000 },
     { id: "feature", flow: land }
   ],
-  { failurePolicy: "quarantine" }
-)
+  failurePolicy: "quarantine"
+})
 ```
 
 ### Order

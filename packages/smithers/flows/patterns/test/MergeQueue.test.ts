@@ -47,7 +47,7 @@ describe("MergeQueue", () => {
   })
 
   it("declares a serial chain at concurrency 1 in priority order", () => {
-    const graph = Graph.build(MergeQueue.make(members, { failurePolicy: "halt" }), "land")
+    const graph = Graph.build(MergeQueue.make({ members: members, failurePolicy: "halt" }), "land")
 
     expect(Graph.diagnostics(graph)).toEqual([])
     expect(Graph.nodes(graph).filter((node) => node.kind === "All")).toHaveLength(0)
@@ -55,7 +55,7 @@ describe("MergeQueue", () => {
   })
 
   it("gives every member the default priority unless it sets its own, as an annotation", () => {
-    const graph = Graph.build(MergeQueue.make(members, { failurePolicy: "halt" }), "land")
+    const graph = Graph.build(MergeQueue.make({ members: members, failurePolicy: "halt" }), "land")
 
     // The scheduler reads the annotation. A priority carried as call input
     // would instead be key material, and re-prioritizing a queue that lands in
@@ -69,7 +69,8 @@ describe("MergeQueue", () => {
     const body = (priority: number) =>
       Graph.nodes(
         Graph.build(
-          MergeQueue.make([{ id: "docs", flow: land }, { id: "hotfix", flow: land, priority }], {
+          MergeQueue.make({
+            members: [{ id: "docs", flow: land }, { id: "hotfix", flow: land, priority }],
             failurePolicy: "halt"
           }),
           "land"
@@ -80,12 +81,12 @@ describe("MergeQueue", () => {
   })
 
   it("declares one recovery arm per member under the quarantine policy", () => {
-    const serial = Graph.build(MergeQueue.make(members, { failurePolicy: "quarantine" }), "land")
+    const serial = Graph.build(MergeQueue.make({ members: members, failurePolicy: "quarantine" }), "land")
     const batched = Graph.build(
-      MergeQueue.make(members, { concurrency: 2, failurePolicy: "quarantine" }),
+      MergeQueue.make({ members: members, concurrency: 2, failurePolicy: "quarantine" }),
       "land"
     )
-    const halting = Graph.build(MergeQueue.make(members, { failurePolicy: "halt" }), "land")
+    const halting = Graph.build(MergeQueue.make({ members: members, failurePolicy: "halt" }), "land")
 
     expect(Graph.nodes(serial).filter((node) => node.kind === "Catch")).toHaveLength(3)
     expect(Graph.nodes(serial).filter((node) => node.kind === "All")).toHaveLength(0)
@@ -97,7 +98,7 @@ describe("MergeQueue", () => {
 
   it("settles a declared quarantine with a tagged wire marker", () => {
     const graph = Graph.build(
-      MergeQueue.make([{ id: "docs", flow: land }], { failurePolicy: "quarantine" }),
+      MergeQueue.make({ members: [{ id: "docs", flow: land }], failurePolicy: "quarantine" }),
       "land"
     )
     const marker = Graph.nodes(graph)
@@ -119,7 +120,10 @@ describe("MergeQueue", () => {
   })
 
   it("batches by two at concurrency 2", () => {
-    const graph = Graph.build(MergeQueue.make(members, { concurrency: 2, failurePolicy: "quarantine" }), "land")
+    const graph = Graph.build(
+      MergeQueue.make({ members: members, concurrency: 2, failurePolicy: "quarantine" }),
+      "land"
+    )
 
     expect(Graph.nodes(graph).filter((node) => node.kind === "All")).toHaveLength(2)
     expect(Graph.nodes(graph).filter((node) => node.kind === "FlowCall")).toHaveLength(3)
@@ -127,19 +131,19 @@ describe("MergeQueue", () => {
   })
 
   it("rejects an empty queue, a duplicate id, and an invalid bound", () => {
-    expect(() => MergeQueue.make([], { failurePolicy: "halt" })).toThrow(
+    expect(() => MergeQueue.make({ members: [], failurePolicy: "halt" })).toThrow(
       expect.objectContaining({ code: "invalid_decorator", message: "MergeQueue requires at least one member" })
     )
-    expect(() => MergeQueue.make([members[0]!, members[0]!], { failurePolicy: "halt" })).toThrow(
+    expect(() => MergeQueue.make({ members: [members[0]!, members[0]!], failurePolicy: "halt" })).toThrow(
       expect.objectContaining({ code: "invalid_decorator", message: "MergeQueue member ids must be unique" })
     )
-    expect(() => MergeQueue.make(members, { concurrency: 0, failurePolicy: "halt" })).toThrow(
+    expect(() => MergeQueue.make({ members: members, concurrency: 0, failurePolicy: "halt" })).toThrow(
       expect.objectContaining({
         code: "invalid_decorator",
         message: "MergeQueue concurrency must be a positive safe integer"
       })
     )
-    expect(() => MergeQueue.make(members, { priority: 1.5, failurePolicy: "halt" })).toThrow(
+    expect(() => MergeQueue.make({ members: members, priority: 1.5, failurePolicy: "halt" })).toThrow(
       expect.objectContaining({
         code: "invalid_decorator",
         message: "MergeQueue priority for member \"docs\" must be a safe integer, received 1.5"
@@ -148,21 +152,21 @@ describe("MergeQueue", () => {
   })
 
   it("refuses halt above concurrency 1, because a member behind a failure must never have started", () => {
-    expect(() => MergeQueue.make(members, { concurrency: 2, failurePolicy: "halt" })).toThrow(
+    expect(() => MergeQueue.make({ members: members, concurrency: 2, failurePolicy: "halt" })).toThrow(
       expect.objectContaining({
         code: "invalid_decorator",
         message: "MergeQueue halt requires concurrency 1"
       })
     )
-    expect(Flow.isFlow(MergeQueue.make(members, { concurrency: 1, failurePolicy: "halt" }))).toBe(true)
-    expect(Flow.isFlow(MergeQueue.make(members, { concurrency: 2, failurePolicy: "quarantine" }))).toBe(true)
+    expect(Flow.isFlow(MergeQueue.make({ members: members, concurrency: 1, failurePolicy: "halt" }))).toBe(true)
+    expect(Flow.isFlow(MergeQueue.make({ members: members, concurrency: 2, failurePolicy: "quarantine" }))).toBe(true)
   })
 
   it("declares from the snapshot make took of its members and options", () => {
     const other = Flow.make({ input: Schema.Unknown, output: Schema.Unknown, body: () => Node.succeed("other") })
     const mutableMembers = members.map((member) => ({ ...member }))
-    const options: MergeQueue.MakeOptions = { failurePolicy: "quarantine" }
-    const queue = MergeQueue.make(mutableMembers, options)
+    const options: MergeQueue.MakeOptions = { members: mutableMembers, failurePolicy: "quarantine" }
+    const queue = MergeQueue.make(options)
     const before = Graph.nodes(Graph.build(queue, "land")).map((node) => node.keyMaterial.body)
 
     // A swapped flow, a re-prioritized member, an appended member, and a
@@ -186,12 +190,13 @@ describe("MergeQueue", () => {
           message: `MergeQueue priority for member "unstable" must be a safe integer, received ${priority}`
         })
       )
-      expect(() => MergeQueue.make([{ id: "unstable", flow: land, priority }], { failurePolicy: "halt" })).toThrow(
-        expect.objectContaining({
-          code: "invalid_decorator",
-          message: `MergeQueue priority for member "unstable" must be a safe integer, received ${priority}`
-        })
-      )
+      expect(() => MergeQueue.make({ members: [{ id: "unstable", flow: land, priority }], failurePolicy: "halt" }))
+        .toThrow(
+          expect.objectContaining({
+            code: "invalid_decorator",
+            message: `MergeQueue priority for member "unstable" must be a safe integer, received ${priority}`
+          })
+        )
     }
   })
 
@@ -229,7 +234,7 @@ describe("MergeQueue", () => {
     Effect.gen(function*() {
       const ids = ["__proto__", "constructor", "toString", "normal"]
       const declared = ids.map((id) => ({ id, flow: land }))
-      const graph = Graph.build(MergeQueue.make(declared, { failurePolicy: "halt" }), "land")
+      const graph = Graph.build(MergeQueue.make({ members: declared, failurePolicy: "halt" }), "land")
       expect(literals(graph).map((value) => value.id)).toEqual(ids)
 
       const result = yield* MergeQueue.run("main", {
@@ -452,7 +457,7 @@ describe("MergeQueue", () => {
 
   it("gives a halting queue and a quarantining queue different topology and identity", () => {
     const material = (failurePolicy: MergeQueue.FailurePolicy) =>
-      Graph.nodes(Graph.build(MergeQueue.make(members, { failurePolicy }), "land"))
+      Graph.nodes(Graph.build(MergeQueue.make({ members: members, failurePolicy }), "land"))
 
     const halting = material("halt")
     const quarantining = material("quarantine")

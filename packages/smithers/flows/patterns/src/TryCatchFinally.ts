@@ -16,30 +16,34 @@ import { Flow, Node } from "@smthrs/core"
 import * as Effect from "effect/Effect"
 import * as Exit from "effect/Exit"
 import * as Schema from "effect/Schema"
+import * as Compose from "./internal/Compose.ts"
 import { PatternError } from "./PatternError.ts"
 
 /**
  * Configuration for {@link make}.
  *
  * `catch` receives `{ error, input }`; `finally` receives `{ input }`.
- * `catchErrors` selects which typed failures reach `catch`; without it the
- * whole error channel does. Supplying `catchErrors` requires `catch`.
+ * `catchSchema` selects which typed failures reach `catch`; without it the
+ * whole error channel does. Supplying `catchSchema` requires `catch`.
  *
  * @category models
  * @since 0.1.0
  */
 export interface MakeOptions {
+  readonly name?: string | undefined
+  readonly description?: string | undefined
   readonly try: Flow.Any
   readonly catch?: Flow.Any | undefined
-  readonly catchErrors?: Schema.Top | undefined
+  readonly catchSchema?: Schema.Top | undefined
   readonly finally?: Flow.Any | undefined
 }
 
 /**
  * Operational callbacks for {@link run}.
  *
- * `catchErrors` is a predicate rather than a schema, because the runtime form
- * already holds the decoded typed error. Supplying it requires `catch`.
+ * `catchErrors` is a predicate where `make` takes a `catchSchema`, because
+ * the runtime form already holds the decoded typed error. Supplying it
+ * requires `catch`.
  *
  * @category models
  * @since 0.1.0
@@ -77,14 +81,20 @@ const call = (flow: Flow.Any, input: unknown): Node.Node<unknown, unknown> =>
 export const make = (options: MakeOptions): Flow.Flow<typeof Schema.Unknown, typeof Schema.Unknown, unknown> => {
   // The body runs when the graph builds, later than this call, so it reads
   // these snapshots and never the caller's options again.
-  const arms = { try: options.try, catch: options.catch, catchErrors: options.catchErrors, finally: options.finally }
-  if (arms.catchErrors !== undefined && arms.catch === undefined) {
+  const arms = { try: options.try, catch: options.catch, catchSchema: options.catchSchema, finally: options.finally }
+  if (arms.catchSchema !== undefined && arms.catch === undefined) {
     throw new PatternError({
       code: "invalid_decorator",
-      message: "TryCatchFinally catchErrors requires catch"
+      message: "TryCatchFinally catchSchema requires catch"
     })
   }
+  const { name, description } = Compose.label("tryCatchFinally", {
+    catch: arms.catch !== undefined,
+    finally: arms.finally !== undefined
+  }, options)
   return Flow.make({
+    name,
+    description,
     input: Schema.Unknown,
     output: Schema.Unknown,
     flows: [
@@ -107,7 +117,7 @@ export const make = (options: MakeOptions): Flow.Flow<typeof Schema.Unknown, typ
             { handled: true },
             (error: unknown): Node.Node<unknown, unknown> => call(handled, { error, input })
           )
-          const filter = arms.catchErrors as Schema.Schema<unknown> | undefined
+          const filter = arms.catchSchema as Schema.Schema<unknown> | undefined
           return filter === undefined
             ? Node.catch(attempt, { onFailure })
             : Node.catch(attempt, { error: filter, onFailure })

@@ -10,6 +10,7 @@
 import { Flow, Node } from "@smthrs/core"
 import * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
+import * as Compose from "./internal/Compose.ts"
 import * as WithApproval from "./WithApproval.ts"
 
 const DEFAULT_REASON = "apply the proposed intervention"
@@ -26,6 +27,8 @@ const DEFAULT_REASON = "apply the proposed intervention"
  * @since 0.1.0
  */
 export interface MakeOptions {
+  readonly name?: string | undefined
+  readonly description?: string | undefined
   readonly read: Flow.Any
   readonly propose: Flow.Any
   readonly apply: Flow.Any
@@ -105,7 +108,10 @@ export const make = (options: MakeOptions): Flow.Flow<typeof Schema.Unknown, typ
     ? options.apply
     : WithApproval.withApproval(options.apply, { reason, approval: options.approval })
   const captures = { dryRun, gated: options.approval !== undefined, reason }
+  const { name, description } = Compose.label("intervene", { dryRun }, options)
   return Flow.make({
+    name,
+    description,
     input: Schema.Unknown,
     output: Schema.Unknown,
     flows: [stages.read, stages.propose, apply, stages.report],

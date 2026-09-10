@@ -145,6 +145,7 @@ A later attempt has to beat the standing best rather than match it, so `best` is
 the earliest of equal scores wherever the tie falls. `converged` is true when
 `best` reached `targetScore`.
 
+`onMaxReached` defaults to `"return-last"`, as it does in `Loop`.
 `onMaxReached: "fail"` requires a `targetScore`: without one there is nothing
 for the search to fall short of, so `make` throws and `run` fails
 `invalid_decorator` before generating anything. With a target, exhausting the

@@ -24,6 +24,19 @@
 
 ### Changed
 
+- Every `MakeOptions` accepts an optional `name` and `description` for the
+  `Flow` it returns. An unnamed pattern is named after its kind and declared
+  bounds, `reviewLoop(maxRounds=3)`, so a plan, a journal, or a decorator over
+  it no longer reads `anonymous`.
+- `MergeQueue.make` takes its `members` inside the options object, the way
+  every other `make` takes one options object and `MergeQueue.run` already
+  took them. `MergeQueue.make(members, options)` becomes
+  `MergeQueue.make({ members, ...options })`.
+- `Optimizer` defaults `onMaxReached` to `"return-last"` in `make` and `run`,
+  as `Loop` does.
+- `TryCatchFinally.make` names its error filter `catchSchema`. `run` keeps
+  `catchErrors` for the predicate, so the two forms no longer share one name
+  with two types.
 - `Saga`, `ReviewLoop`, and `Escalation` return discriminated settled results,
   the way `Quarantine` and `Supervisor` already did. `Saga` returns
   `{ _tag: "Completed", values }` or `{ _tag: "Compensated", failure }`,

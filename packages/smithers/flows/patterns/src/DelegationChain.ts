@@ -119,6 +119,8 @@ export interface Bounds {
  * @since 0.1.0
  */
 export interface MakeOptions extends Bounds {
+  readonly name?: string | undefined
+  readonly description?: string | undefined
   readonly refine: Flow.Any
   readonly plan: Flow.Any
   readonly derisk: Flow.Any
@@ -427,7 +429,13 @@ export const make = (caller: MakeOptions): Flow.Flow<typeof Schema.Unknown, type
     maxAttempts: options.maxAttempts,
     budget: options.budget ?? null
   }
+  const { name, description } = Compose.label("delegationChain", {
+    tierOrder: captured.tierOrder,
+    maxDepth: captured.maxDepth
+  }, caller)
   return Flow.make({
+    name,
+    description,
     input: Schema.Unknown,
     output: Schema.Unknown,
     body: Node.capture(captured, (input) =>

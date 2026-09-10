@@ -18,6 +18,7 @@
 import { Flow, Node } from "@smthrs/core"
 import * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
+import * as Compose from "./internal/Compose.ts"
 
 /**
  * Configuration for {@link make}.
@@ -34,6 +35,8 @@ import * as Schema from "effect/Schema"
  * @since 0.1.0
  */
 export interface MakeOptions {
+  readonly name?: string | undefined
+  readonly description?: string | undefined
   readonly capture: Flow.Any
   readonly compare: Flow.Any
   readonly alert?: Flow.Any | undefined
@@ -130,7 +133,10 @@ export const make = (options: MakeOptions): Flow.Flow<typeof Schema.Unknown, typ
   const capture = options.capture
   const compare = options.compare
   const baseline = options.baseline
+  const { name, description } = Compose.label("driftDetector", { alerts: alert !== undefined }, options)
   return Flow.make({
+    name,
+    description,
     input: Schema.Unknown,
     output: Schema.Unknown,
     flows: alert === undefined ? [capture, compare] : [capture, compare, alert],

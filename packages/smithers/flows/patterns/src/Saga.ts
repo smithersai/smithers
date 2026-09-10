@@ -16,6 +16,7 @@ import * as Effect from "effect/Effect"
 import * as Exit from "effect/Exit"
 import * as Option from "effect/Option"
 import * as Schema from "effect/Schema"
+import * as Compose from "./internal/Compose.ts"
 import { PatternError } from "./PatternError.ts"
 
 /**
@@ -58,6 +59,8 @@ export interface Step {
  * @since 0.1.0
  */
 export interface MakeOptions {
+  readonly name?: string | undefined
+  readonly description?: string | undefined
   readonly steps: ReadonlyArray<Step>
   readonly onFailure?: OnFailure | undefined
 }
@@ -217,7 +220,14 @@ export const make = (options: MakeOptions): Flow.Flow<typeof Schema.Unknown, typ
   const flows = policy === "fail"
     ? steps.map((step) => step.action)
     : steps.flatMap((step) => [step.action, step.compensation])
+  const { name, description } = Compose.label(
+    "saga",
+    { steps: steps.map((step) => step.id), onFailure: policy },
+    options
+  )
   return Flow.make({
+    name,
+    description,
     input: Schema.Unknown,
     output: Schema.Unknown,
     flows,

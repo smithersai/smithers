@@ -52,12 +52,16 @@ export interface Member {
  * `halt` queue promises that no member behind a failure lands, and a batch
  * starts its members before any of them has failed, so `halt` above
  * concurrency 1 is refused. `priority` sets the default a member without its
- * own priority receives.
+ * own priority receives. `members` land in the order {@link ordered}
+ * resolves.
  *
  * @category models
  * @since 0.1.0
  */
 export interface MakeOptions {
+  readonly name?: string | undefined
+  readonly description?: string | undefined
+  readonly members: ReadonlyArray<Member>
   readonly concurrency?: number | undefined
   readonly priority?: number | undefined
   readonly failurePolicy: FailurePolicy
@@ -262,13 +266,10 @@ const validate = (
  * @category constructors
  * @since 0.1.0
  */
-export const make = (
-  members: ReadonlyArray<Member>,
-  options: MakeOptions
-): Flow.Flow<typeof Schema.Unknown, typeof Schema.Unknown, unknown> => {
+export const make = (options: MakeOptions): Flow.Flow<typeof Schema.Unknown, typeof Schema.Unknown, unknown> => {
   // The body runs when the graph builds, later than this call, so it reads
   // these snapshots and never the caller's members or options again.
-  const snapshot: ReadonlyArray<Member> = members.map((member) => ({
+  const snapshot: ReadonlyArray<Member> = options.members.map((member) => ({
     id: member.id,
     flow: member.flow,
     priority: member.priority
@@ -287,7 +288,14 @@ export const make = (
     concurrency,
     failurePolicy
   }
+  const { name, description } = Compose.label(
+    "mergeQueue",
+    { members: captures.members, concurrency, failurePolicy },
+    options
+  )
   return Flow.make({
+    name,
+    description,
     input: Schema.Unknown,
     output: Schema.Unknown,
     flows: queue.map((entry) => entry.member.flow),

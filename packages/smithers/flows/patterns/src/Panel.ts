@@ -14,6 +14,7 @@ import { Flow, Node } from "@smthrs/core"
 import * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
 import * as Bounded from "./Bounded.ts"
+import * as Compose from "./internal/Compose.ts"
 import { PatternError } from "./PatternError.ts"
 
 /**
@@ -32,6 +33,8 @@ import { PatternError } from "./PatternError.ts"
  * @since 0.1.0
  */
 export interface MakeOptions {
+  readonly name?: string | undefined
+  readonly description?: string | undefined
   readonly panelists: Readonly<Record<string, Flow.Any>>
   readonly moderator: Flow.Any
   readonly roles?: Readonly<Record<string, string>> | undefined
@@ -111,7 +114,10 @@ export const make = (options: MakeOptions): Flow.Flow<typeof Schema.Unknown, typ
     ...(roles === undefined ? {} : { roles: names.map((name) => roles.get(name) ?? null) }),
     ...(concurrency === undefined ? {} : { concurrency })
   }
+  const { name, description } = Compose.label("panel", { panelists: names }, options)
   return Flow.make({
+    name,
+    description,
     input: Schema.Unknown,
     output: Schema.Unknown,
     flows: [...panelists.map(([, flow]) => flow), moderator],

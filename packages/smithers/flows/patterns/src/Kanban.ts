@@ -10,6 +10,7 @@
 import { Flow, Node } from "@smthrs/core"
 import * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
+import * as Compose from "./internal/Compose.ts"
 import { PatternError } from "./PatternError.ts"
 import * as Quarantine from "./Quarantine.ts"
 
@@ -44,6 +45,8 @@ export interface Column {
  * @since 0.1.0
  */
 export interface MakeOptions {
+  readonly name?: string | undefined
+  readonly description?: string | undefined
   readonly columns: ReadonlyArray<Column>
   readonly items: ReadonlyArray<Item>
   readonly concurrency: number
@@ -269,7 +272,10 @@ export const make = (options: MakeOptions): Flow.Flow<typeof Schema.Unknown, typ
     }
     return batches
   }
+  const { name, description } = Compose.label("kanban", { columns: names, items: ids.length, concurrency }, options)
   return Flow.make({
+    name,
+    description,
     input: Schema.Unknown,
     output: Schema.Unknown,
     flows: onComplete === undefined

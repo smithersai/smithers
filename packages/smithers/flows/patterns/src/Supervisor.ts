@@ -10,6 +10,7 @@
 import { Flow, Node } from "@smthrs/core"
 import * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
+import * as Compose from "./internal/Compose.ts"
 import { PatternError } from "./PatternError.ts"
 
 /**
@@ -50,6 +51,8 @@ export interface Plan {
  * @since 0.1.0
  */
 export interface MakeOptions {
+  readonly name?: string | undefined
+  readonly description?: string | undefined
   readonly plan: Flow.Any
   readonly workers: Readonly<Record<string, Flow.Any>>
   readonly review: Flow.Any
@@ -247,7 +250,10 @@ export const make = (options: MakeOptions): Flow.Flow<typeof Schema.Unknown, typ
   const concurrency = options.concurrency
   const names = workers.map(([name]) => name)
   const captures = { maxRounds, concurrency, workers: names }
+  const { name, description } = Compose.label("supervisor", { workers: names, maxRounds, concurrency }, options)
   return Flow.make({
+    name,
+    description,
     input: Schema.Unknown,
     output: Schema.Unknown,
     flows: [boss.plan, ...workers.map(([, flow]) => flow), boss.review, boss.finalize],

@@ -363,3 +363,43 @@ export const displayName = (flow: Flow.Any): string => {
   const name = details(flow).name
   return name === undefined || name.length === 0 ? "anonymous" : name
 }
+
+/**
+ * The name and description a pattern's `MakeOptions` may carry.
+ *
+ * @since 1.0.0
+ * @private
+ */
+export interface Labeled {
+  readonly name?: string | undefined
+  readonly description?: string | undefined
+}
+
+/**
+ * @since 1.0.0
+ * @private
+ */
+export interface Label {
+  readonly name: string
+  readonly description: string | undefined
+}
+
+const labelValue = (value: unknown): string => Array.isArray(value) ? value.map(String).join(",") : String(value)
+
+/**
+ * Names a pattern flow the way the decorators name theirs: the pattern kind
+ * and its declared bounds, `reviewLoop(maxRounds=3)`, unless the caller
+ * supplied a `name`. An `undefined` field is left out of the label.
+ *
+ * @since 1.0.0
+ * @private
+ */
+export const label = (kind: string, fields: Readonly<Record<string, unknown>>, options: Labeled): Label => ({
+  name: options.name ?? `${kind}(${
+    Object.entries(fields)
+      .filter(([, value]) => value !== undefined)
+      .map(([key, value]) => `${key}=${labelValue(value)}`)
+      .join(", ")
+  })`,
+  description: options.description
+})

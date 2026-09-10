@@ -57,7 +57,7 @@ describe("TryCatchFinally", () => {
       TryCatchFinally.make({
         try: named("try"),
         catch: named("catch"),
-        catchErrors: Timeout,
+        catchSchema: Timeout,
         finally: named("finally")
       }),
       "request"
@@ -83,7 +83,7 @@ describe("TryCatchFinally", () => {
       TryCatchFinally.make({
         try: named("try"),
         catch: named("catch"),
-        catchErrors: Timeout,
+        catchSchema: Timeout,
         finally: named("finally")
       }),
       "request"
@@ -150,14 +150,14 @@ describe("TryCatchFinally", () => {
   it("refuses a declaration that filters errors without a catch", () => {
     let refusal: unknown
     try {
-      TryCatchFinally.make({ try: named("try"), catchErrors: Timeout })
+      TryCatchFinally.make({ try: named("try"), catchSchema: Timeout })
     } catch (error) {
       refusal = error
     }
 
     expect(refusal).toBeInstanceOf(PatternError)
     expect((refusal as PatternError).code).toBe("invalid_decorator")
-    expect((refusal as PatternError).message).toBe("TryCatchFinally catchErrors requires catch")
+    expect((refusal as PatternError).message).toBe("TryCatchFinally catchSchema requires catch")
   })
 
   // Content-addressed step identity requires that the same declaration key the
@@ -169,7 +169,7 @@ describe("TryCatchFinally", () => {
     const boundary = TryCatchFinally.make({
       try: named("try"),
       catch: named("catch"),
-      catchErrors: Timeout,
+      catchSchema: Timeout,
       finally: named("finally")
     })
     const material = () => Graph.nodes(Graph.build(boundary, "request")).map((node) => node.keyMaterial)

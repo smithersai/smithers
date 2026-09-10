@@ -90,11 +90,15 @@ describe("pattern declaration execution", () => {
 
     const land = flow("land", (input) => (input as { readonly id: string }).id)
     expect(evaluate(
-      MergeQueue.make([
-        { id: "a", flow: land },
-        { id: "b", flow: land },
-        { id: "c", flow: land }
-      ], { concurrency: 2, failurePolicy: "quarantine" }),
+      MergeQueue.make({
+        members: [
+          { id: "a", flow: land },
+          { id: "b", flow: land },
+          { id: "c", flow: land }
+        ],
+        concurrency: 2,
+        failurePolicy: "quarantine"
+      }),
       "main"
     )).toEqual({ a: "a", b: "b", c: "c" })
 
