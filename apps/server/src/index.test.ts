@@ -2950,6 +2950,29 @@ describe("the /api/cloud bridge", () => {
     })
   })
 
+  test("the 256 KiB cap refuses a declared length before reading and cancels a chunked body at the cap", async () => {
+    await withUpstreams(() => jsonAnswer({}), async (calls) => {
+      const declared = await worker.fetch(new Request("https://mvp.test/api/repos/will/flows/contents/file", {
+        method: "PUT", headers: { cookie: "smithers_session=sealed", "content-length": String(8 * 1024 * 1024) }, body: "{}"
+      }), signedInEnv)
+      expect(declared.status).toBe(413)
+      let pulled = 0, cancelled = false
+      const stream = new ReadableStream<Uint8Array>({
+        pull(controller) { pulled += 1; controller.enqueue(new Uint8Array(64 * 1024)) },
+        cancel() { cancelled = true }
+      }, { highWaterMark: 0 })
+      const streamed = await worker.fetch(new Request("https://mvp.test/api/cloud/api/repos/will/flows/contents/file", {
+        method: "PUT", headers: { cookie: "smithers_session=sealed" }, body: stream
+      }), signedInEnv)
+      expect(streamed.status).toBe(413)
+      // 4 chunks fill the cap exactly; the 5th crosses it and cancels — an
+      // 8 MiB body is never buffered the way request.arrayBuffer() buffered it.
+      expect(cancelled).toBe(true)
+      expect(pulled).toBe(5)
+      expect(cloudCalls(calls)).toHaveLength(0)
+    })
+  })
+
   test("/api/cloud/api/user/repos bridges with the user's cloud bearer and the inner path arrives without the prefix", async () => {
     await withUpstreams(() => jsonAnswer([{ full_name: "will/smithers" }]), async (calls) => {
       const response = await worker.fetch(
