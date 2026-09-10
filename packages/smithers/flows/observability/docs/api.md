@@ -374,8 +374,10 @@ Installs a caller-supplied logger under the same two rules.
 ## JournalLogger
 
 Non-blocking forwarding of bounded operational logs to the durable journal. The
-callback snapshots and redacts a bounded record synchronously, then performs
-only queue admission; a forked worker drains the queue into the journal.
+callback reads the queue's remaining room, snapshots and redacts a bounded
+record synchronously only when a slot is free, then performs only queue
+admission; a forked worker drains the queue into the journal. A record a full
+queue cannot take is counted and discarded without being snapshotted.
 
 ### JournalLogger.Options
 

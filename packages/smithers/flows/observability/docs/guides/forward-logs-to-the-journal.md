@@ -93,8 +93,9 @@ identity.
 
 ## Choose the queue depth
 
-The logger callback never blocks. It snapshots the record synchronously, then
-offers it to a bounded queue that a forked worker drains into the journal.
+The logger callback never blocks. It snapshots the record synchronously when the
+bounded queue has room, then offers it to that queue, which a forked worker
+drains into the journal.
 
 ```ts
 const journalLogs = JournalLogger.layerJournalForwarding({
@@ -107,7 +108,8 @@ const journalLogs = JournalLogger.layerJournalForwarding({
 
 - `capacity` defaults to 256 and accepts 1 through
   `JournalLogger.maximumCapacity` (65,536). Raise it for a chatty run on a slow
-  journal; a full queue drops the incoming record.
+  journal; a full queue drops the incoming record before snapshotting it, so
+  saturation costs no traversal of the logged value.
 - `minimumLogLevel` pins `References.MinimumLogLevel` for the whole
   application. Omitted, the layer leaves that reference alone and Effect's own
   `Info` default applies.

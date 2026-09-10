@@ -1060,6 +1060,49 @@ describe("JournalLogger", () => {
     expect(dropped).toBe(1)
   })
 
+  it("never traverses a record the saturated queue cannot admit", async () => {
+    const entered = Deferred.makeUnsafe<void>()
+    const release = Deferred.makeUnsafe<void>()
+    let traversals = 0
+    // A proxy counts the own-key walk the snapshot performs, so an admitted
+    // record and a dropped one are told apart by the work each one costs.
+    const diagnostic = new Proxy({ detail: "content" }, {
+      ownKeys: (target) => {
+        traversals++
+        return Reflect.ownKeys(target)
+      }
+    })
+    const counted = await run(
+      Effect.gen(function*() {
+        const before = yield* Metric.value(droppedLogRecords)
+        yield* Effect.logInfo(diagnostic)
+        yield* Deferred.await(entered)
+        yield* Effect.logInfo(diagnostic)
+        const admitted = traversals
+        yield* Effect.logInfo(diagnostic)
+        const saturated = traversals
+        yield* Deferred.succeed(release, undefined)
+        yield* Effect.sleep("20 millis")
+        return {
+          admitted,
+          saturated,
+          dropped: (yield* Metric.value(droppedLogRecords)).count - before.count
+        }
+      }).pipe(
+        Effect.provide(
+          Layer.provide(
+            layerJournalForwarding({ runId: runId("saturated-traversal-run"), capacity: 1 }),
+            acceptingJournal(() => Deferred.succeed(entered, undefined).pipe(Effect.andThen(Deferred.await(release))))
+          )
+        )
+      )
+    )
+
+    expect(counted.admitted).toBeGreaterThan(0)
+    expect(counted.saturated).toBe(counted.admitted)
+    expect(counted.dropped).toBe(1)
+  })
+
   it("leaves an application-chosen minimum level alone and replaces the ambient loggers by default", async () => {
     const seen: Array<unknown> = []
     const ambient = Logger.make<unknown, void>((options) => seen.push(options.message))

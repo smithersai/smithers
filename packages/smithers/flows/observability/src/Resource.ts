@@ -8,6 +8,7 @@ import type { Attributes as OtelAttributes } from "@opentelemetry/api"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
 import * as Schema from "effect/Schema"
+import { schemaIssuePath } from "./internal/schemaIssuePath.ts"
 
 /**
  * Largest service-name or service-version field accepted by a resource.
@@ -130,27 +131,8 @@ export class InvalidResourceConfiguration extends Schema.TaggedError<InvalidReso
   }
 ) {}
 
-const issuePath = (error: unknown): string => {
-  let issue = (error as { readonly issue?: unknown } | null)?.issue
-  const segments: Array<string> = []
-  for (let depth = 0; depth < 64 && typeof issue === "object" && issue !== null; depth++) {
-    const node = issue as { readonly path?: unknown; readonly issue?: unknown; readonly issues?: unknown }
-    if (Array.isArray(node.path)) segments.push(...node.path.map(String))
-    if (node.issue !== undefined) {
-      issue = node.issue
-      continue
-    }
-    if (Array.isArray(node.issues) && node.issues[0] !== undefined) {
-      issue = node.issues[0]
-      continue
-    }
-    break
-  }
-  return segments.join(".") || "resource"
-}
-
 const invalid = (cause: unknown): InvalidResourceConfiguration => {
-  const path = issuePath(cause)
+  const path = schemaIssuePath(cause, "resource")
   return new InvalidResourceConfiguration({
     code: "invalid_resource_configuration",
     path,

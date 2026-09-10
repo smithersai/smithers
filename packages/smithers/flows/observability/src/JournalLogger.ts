@@ -15,6 +15,7 @@ import * as EffectMetric from "effect/Metric"
 import * as Queue from "effect/Queue"
 import * as References from "effect/References"
 import * as Schema from "effect/Schema"
+import { schemaIssuePath } from "./internal/schemaIssuePath.ts"
 import { droppedLogRecords } from "./Metric.ts"
 
 /**
@@ -217,29 +218,10 @@ const OptionsSchema = Schema.Struct({
   mergeWithExisting: Schema.optional(Schema.Boolean)
 })
 
-const schemaPath = (error: unknown): string => {
-  let issue = (error as { readonly issue?: unknown } | null)?.issue
-  const segments: Array<string> = []
-  for (let depth = 0; depth < 64 && typeof issue === "object" && issue !== null; depth++) {
-    const node = issue as { readonly path?: unknown; readonly issue?: unknown; readonly issues?: unknown }
-    if (Array.isArray(node.path)) segments.push(...node.path.map(String))
-    if (node.issue !== undefined) {
-      issue = node.issue
-      continue
-    }
-    if (Array.isArray(node.issues) && node.issues[0] !== undefined) {
-      issue = node.issues[0]
-      continue
-    }
-    break
-  }
-  return segments.join(".") || "options"
-}
-
 const validateOptions = (options: Options) =>
   Schema.decodeUnknownEffect(OptionsSchema)(options).pipe(
     Effect.mapError((cause) => {
-      const path = schemaPath(cause)
+      const path = schemaIssuePath(cause, "options")
       return new InvalidJournalLoggerOptions({
         code: "invalid_journal_logger_options",
         path,
@@ -505,9 +487,11 @@ const makeLog = (options: Logger.Options<unknown>, runId: JournalEvent.RunId): J
 /**
  * Installs a bounded, drop-on-overflow logger forwarder for one explicit run.
  *
- * Configuration is decoded before a worker starts. The callback snapshots and
- * redacts a bounded DTO synchronously, then performs only non-blocking queue
- * admission. Queue overflow, journal `Dropped` receipts, delivery failures,
+ * Configuration is decoded before a worker starts. The callback reads the
+ * queue's remaining room first, snapshots and redacts a bounded DTO
+ * synchronously only when a slot is free, then performs only non-blocking
+ * queue admission. A record a saturated queue cannot take is counted and
+ * discarded without being snapshotted. Queue overflow, journal `Dropped` receipts, delivery failures,
  * and journal defects each advance `Metric.droppedLogRecords`. The two failure
  * paths also warn through the ambient loggers with a fixed code and run id,
  * and the worker keeps draining. `Accepted` and `Duplicate` do not advance the
@@ -577,7 +561,14 @@ export const layerJournalForwarding = (
             ).pipe(Effect.forkScoped)
 
             const logger = Logger.make<unknown, void>((logOptions) => {
-              const accepted = Queue.offerUnsafe(queue, makeLog(logOptions, configured.runId))
+              // Snapshotting and redacting the record is the expensive half of
+              // admission, and saturation is exactly when that work is thrown
+              // away, so a queue with no room refuses before the record is
+              // built. Nothing else runs between this read and the offer, so
+              // the check cannot refuse a record the queue would have taken,
+              // and the offer still reports a queue that closed underneath it.
+              const accepted = !Queue.isFullUnsafe(queue)
+                && Queue.offerUnsafe(queue, makeLog(logOptions, configured.runId))
               if (!accepted) droppedLogRecords.updateUnsafe(1, logOptions.fiber.context)
             })
             const current = yield* Effect.withFiber((fiber) => Effect.sync(() => fiber.getRef(Logger.CurrentLoggers)))
