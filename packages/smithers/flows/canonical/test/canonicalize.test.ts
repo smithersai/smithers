@@ -211,6 +211,45 @@ describe("digest-unsafe built-ins", () => {
     rejects({ xs: trapped }, "canonical_getter_threw", "$.xs")
   })
 
+  describe("proxy array length follows JSON.stringify ToLength", () => {
+    const withLength = (length: unknown) =>
+      new Proxy([10, 20, 30], {
+        get(target, key, receiver) {
+          return key === "length" ? length : Reflect.get(target, key, receiver)
+        }
+      })
+
+    it.each([
+      ["a fractional length", 2.5],
+      ["a numeric string length", "2"],
+      ["a NaN length", Number.NaN],
+      ["a negative length", -1],
+      ["a null length", null],
+      ["an undefined length", undefined]
+    ])("matches JSON.stringify for %s", (_name, length) => {
+      const value = withLength(length)
+      expect(canonicalize(value)).toBe(JSON.stringify(value))
+    })
+
+    it("reads the integer indices 0 and 1 for a fractional length", () => {
+      expect(canonicalize(withLength(2.5))).toBe("[10,20]")
+    })
+
+    it("yields an empty array for a NaN length", () => {
+      expect(canonicalize(withLength(Number.NaN))).toBe("[]")
+    })
+
+    it("wraps a length whose coercion throws as canonical_getter_threw", () => {
+      const length = {
+        valueOf() {
+          throw new Error("len")
+        }
+      }
+      expect(() => JSON.stringify(withLength(length))).toThrow("len")
+      rejects({ xs: withLength(length) }, "canonical_getter_threw", "$.xs")
+    })
+  })
+
   it("keeps Date governed by toJSON", () => {
     expect(canonicalize(new Date(0))).toBe("\"1970-01-01T00:00:00.000Z\"")
   })

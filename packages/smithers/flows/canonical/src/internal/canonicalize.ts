@@ -113,6 +113,13 @@ type Task = { readonly kind: "leave"; readonly value: object } | {
   readonly slot: Slot
 }
 
+// ECMAScript ToLength (ES2026 §7.1.20): Number, NaN -> 0, truncate, clamp to [0, 2^53 - 1].
+const toLength = (value: unknown): number => {
+  const number = Math.trunc(Number(value))
+  if (Number.isNaN(number) || number <= 0) return 0
+  return Math.min(number, Number.MAX_SAFE_INTEGER)
+}
+
 const caused = (
   code: "canonical_getter_threw" | "canonical_tojson_threw",
   cause: unknown,
@@ -235,11 +242,14 @@ export const canonicalize = (input: unknown): string => {
       continue
     }
     if (Array.isArray(value)) {
-      // `value.length` on a proxy runs its get trap; a throwing trap is a
-      // getter failure like any other and must not escape as the raw error.
+      // `value.length` on a proxy runs its get trap and may return anything;
+      // JSON.stringify applies ToLength once and reads the integer indices
+      // below it, so normalize once here and use the same integer for both
+      // allocation and iteration. A throwing trap or coercion is a getter
+      // failure like any other and must not escape as the raw error.
       let length: number
       try {
-        length = value.length
+        length = toLength(value.length)
       } catch (cause) {
         throw caused("canonical_getter_threw", cause, path)
       }
