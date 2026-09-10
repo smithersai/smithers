@@ -34,23 +34,26 @@ const Coordinate: CoordinateFlow = Flow.make("coding/CoordinateRequest", {
   payload: Cursor, success: RequestResult, error: PrepareWithWiki.errorSchema,
   maxRounds: maximumPlanningPasses,
   body: cursor => PrepareWithWiki.child({ prompt: cursor.prompt, feedback: cursor.feedback }).pipe(
-    Node.bindPlanned(plan => ReceiveFeedback.call({ boundary: "before-implementation", revision: cursor.revision }).pipe(
+    // bindPlanned exposes a reference and permits independent descendants.
+    // Explicit sequencing makes each entire feedback subtree wait for the
+    // referenced producer, even though the drain payload is only a boundary.
+    Node.bindPlanned(plan => Node.succeed(plan).pipe(Node.andThen(ReceiveFeedback.call({ boundary: "before-implementation", revision: cursor.revision }).pipe(
       Node.branch({
         if: receipt => receipt.messages.length > 0,
         then: receipt => MergeFeedback.call({ cursor, receipt, advance: true }).pipe(Node.bindPlanned(next => Coordinate.to(next))),
         else: () => AdmitSource.call({ plan }).pipe(
           Node.bindPlanned(plan => CorrectPlan.child({ plan, maxRounds: cursor.maxRounds }).pipe(
-            Node.bindPlanned(outcome => ReceiveFeedback.call({ boundary: "after-correction", revision: cursor.revision }).pipe(
+            Node.bindPlanned(outcome => Node.succeed(outcome).pipe(Node.andThen(ReceiveFeedback.call({ boundary: "after-correction", revision: cursor.revision }).pipe(
               Node.branch({
                 if: receipt => receipt.messages.length > 0,
                 then: receipt => MergeFeedback.call({ cursor, receipt, advance: true }).pipe(Node.bindPlanned(next => Coordinate.to(next))),
                 else: () => Flow.done({ plan, outcome })
               })
-            ))
+            ))))
           ))
         )
       })
-    ))
+    ))))
   )
 })
 
@@ -59,10 +62,11 @@ export const Request = Flow.make("coding/Request", {
   body: input => PrepareWithWiki.child({ prompt: input.prompt, feedback: input.feedback ?? "" }).pipe(
     Node.bindPlanned(plan => AdmitSource.call({ plan })),
     Node.bindPlanned(plan => Poc.child({ plan, source: plan.observedHead }).pipe(
-      Node.bindPlanned(poc => AdmitSource.call({ plan }).pipe(Node.andThen(Node.succeed(poc.feedback))))
+      Node.bindPlanned(poc => Node.succeed(poc.feedback).pipe(Node.andThen(AdmitSource.call({ plan })), Node.andThen(Node.succeed(poc.feedback))))
     )),
     Node.map(feedback => input.feedback ? `${input.feedback}\n\n${feedback}` : feedback),
-    Node.bindPlanned(feedback => ReceiveFeedback.call({ boundary: "after-poc", revision: 0 }).pipe(
+    Node.bindPlanned(feedback => Node.succeed(feedback).pipe(
+      Node.andThen(ReceiveFeedback.call({ boundary: "after-poc", revision: 0 })),
       Node.bindPlanned(receipt => MergeFeedback.call({ cursor: { prompt: input.prompt, feedback,
         maxRounds: input.maxRounds ?? 3, revision: 0 }, receipt, advance: false }))
     )),

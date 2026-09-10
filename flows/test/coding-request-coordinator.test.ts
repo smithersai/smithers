@@ -21,7 +21,7 @@ const input = { prompt: "Keep the requested behavior", feedback: "Keep the verif
 
 /** Real flow engine/interpreter with explicitly scripted child work. These
  * tests check coordination, not native JJ, notification routing or model quality. */
-const fixture = (arrivals: (boundary: string, revision: number) => ReadonlyArray<string>, stale = false) => {
+const fixture = (arrivals: (boundary: string, revision: number) => ReadonlyArray<string>, stale = false, pocMutates = false) => {
   const events: string[] = [], feedback: string[] = []
   let plans = 0, implementations = 0, prototypes = 0
   let head = revision("initial")
@@ -36,6 +36,7 @@ const fixture = (arrivals: (boundary: string, revision: number) => ReadonlyArray
     }))
     yield* runtime.register(Poc, value => Effect.sync(() => {
       events.push("poc"); prototypes++
+      if (pocMutates) head = revision("unexpected-poc-mutation")
       return { status: "drafted-unvalidated" as const, source: value.source,
         changes: { sourceDigest: "source", transactionBase: "scratch", files: [], preview: { mediaType: "text/html" as const, content: "" } },
         findings: ["Try the compact layout"], feedback: "POC evidence: compact layout" }
@@ -52,14 +53,14 @@ const fixture = (arrivals: (boundary: string, revision: number) => ReadonlyArray
     AdmitSource.toLayer(({ plan }) => Effect.gen(function*() {
       events.push("admit")
       if (stale && plans > 1) return yield* Effect.fail(new CodingError({ code: "stale_revision", message: "fixture source moved" }))
-      assert.deepEqual(plan.observedHead, head)
+      if (plan.observedHead?.commitId !== head.commitId) return yield* Effect.fail(new CodingError({ code: "stale_revision", message: "fixture POC changed original source" }))
       return { ...plan, observedHead: head }
     })),
     ReceiveFeedback.toLayer(({ boundary, revision }) => Effect.sync(() => {
       events.push(`${boundary}:${revision}`)
       return { boundary: JSON.stringify([boundary, revision]), messages: arrivals(boundary, revision).map(message) }
     }))
-  ).pipe(Layer.provideMerge(Action.layerImplementations), Layer.provideMerge(FlowEngine.layerMemory), Layer.provide(NodeCrypto.layer))
+  ).pipe(Layer.provideMerge(Action.layerImplementations), Layer.provideMerge(FlowEngine.layerMemory), Layer.provideMerge(NodeCrypto.layer))
   return { host: ManagedRuntime.make(layer), events, feedback,
     counts: () => ({ plans, implementations, prototypes }), head: () => head }
 }
@@ -104,4 +105,12 @@ test("a changed prepared source refuses before implementation", { timeout: 60_00
   t.after(() => f.host.dispose())
   await assert.rejects(f.host.runPromise(Request.execute(input, { executionId: "request-stale" })), /fixture source moved/)
   assert.deepEqual(f.counts(), { plans: 2, implementations: 0, prototypes: 1 })
+})
+
+test("the post-POC source check runs after the prototype and prevents replanning over its unexpected mutation", { timeout: 60_000 }, async t => {
+  const f = fixture(() => [], false, true)
+  t.after(() => f.host.dispose())
+  await assert.rejects(f.host.runPromise(Request.execute(input, { executionId: "request-poc-mutated" })), /fixture POC changed original source/)
+  assert.deepEqual(f.counts(), { plans: 1, implementations: 0, prototypes: 1 })
+  assert.deepEqual(f.events, ["plan:0", "admit", "poc", "admit"])
 })

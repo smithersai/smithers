@@ -22,7 +22,7 @@ import type { PageSpec } from "../wiki/schema.ts"
 const source = process.env.PLUE_CODING_ADAPTER_SOURCE
 const exporter = process.env.PLUE_JJ_EXPORT_BINARY
 const authoring = process.env.SMITHERS_ACCEPTANCE_SOURCE_ROOT ?? new URL("../", import.meta.url).pathname
-test("configured request host verifies wiki, prototypes, replans and implements through native correction", {
+test("configured request host verifies wiki, prototypes, consumes steering, replans and implements through native correction", {
   skip: source === undefined || exporter === undefined ? "Set PLUE_CODING_ADAPTER_SOURCE and PLUE_JJ_EXPORT_BINARY to Plue's native artifacts" : false,
   timeout: 1_200_000
 }, async t => {
@@ -83,6 +83,10 @@ test("configured request host verifies wiki, prototypes, replans and implements 
     Effect.provide(nativeLayer(options)), Effect.provide(platform.host), Effect.scoped))
   assert.equal(initial.head.kind, "resolved")
   const calls: string[] = []
+  const planningEntered = await Effect.runPromise(Deferred.make<void>())
+  const steeringAdmitted = await Effect.runPromise(Deferred.make<void>())
+  const feedbackText = "Keep the exact greeting and describe the compact layout in the revised plan."
+  let planningPasses = 0
   t.after(() => passed ? Promise.resolve() : writeFile(join(temporary, "model-requests.json"), JSON.stringify(calls.map(value => JSON.parse(value)), null, 2)))
   const hello = join(root, "hello.txt")
   const cell = `
@@ -115,12 +119,19 @@ test("configured request host verifies wiki, prototypes, replans and implements 
       const forbidden = await ctx.call("write", ${JSON.stringify({path:join(root,"planner-mutation.txt"),content:"must not persist"})});
       if (forbidden.ok !== false) throw new Error("planning unexpectedly had mutation authority");
       ctx.done(${JSON.stringify(response)});` : cell
-    return Stream.fromIterable([
+    const events = Stream.fromIterable([
       ModelEvent.TextStart({ type: "text-start", id: "cell" }),
       ModelEvent.TextDelta({ type: "text-delta", id: "cell", text: "```cell\n" + emitted + "\n```" }),
       ModelEvent.TextEnd({ type: "text-end", id: "cell" }),
       ModelEvent.Settle({ type: "settle", stopReason: "stop" })
     ])
+    // Hold the second planning response while the actual Control operation
+    // admits a root message. The coordinator must consume it after this plan
+    // completes and replan before any implementation begins.
+    return planning && ++planningPasses === 2
+      ? Stream.fromEffect(Deferred.succeed(planningEntered, undefined).pipe(
+        Effect.andThen(Deferred.await(steeringAdmitted)))).pipe(Stream.flatMap(() => events))
+      : events
   }) })
   const seats = { resolve: (id: string) => Effect.succeed({ id, modelId: "scripted", model, contextWindowTokens: 100_000,
     route: { prepare: () => Effect.succeed({ routeId: "fixture", protocolId: "fixture", method: "POST" as const,
@@ -149,6 +160,13 @@ test("configured request host verifies wiki, prototypes, replans and implements 
     const receipt = yield* control.run({ _tag: "Plan", planId: card.planId, digest: card.digest, envelope: card.envelope, idempotencyKey: "native-request-host" })
     assert.equal(receipt._tag, "Accepted")
     if (receipt._tag !== "Accepted" || receipt.runId === undefined) throw new Error("expected accepted native run")
+    const runId = receipt.runId
+    yield* Effect.forkScoped(Deferred.await(planningEntered).pipe(Effect.andThen(Effect.gen(function*() {
+      const steering = yield* control.steer({ runId, message: { runId, messageId: "native-request-poc-feedback", body: feedbackText,
+        principal: { id: "native-host-fixture", kind: "human", stampedAt: 0 }, createdAt: 0 }, idempotencyKey: "native-request-poc-feedback" })
+      assert.equal(steering._tag, "Accepted")
+      yield* Deferred.succeed(steeringAdmitted, undefined)
+    }))))
     return yield* control.watch({ runId: receipt.runId, follow: true }).pipe(
       Stream.tap(event => Effect.promise(() => appendFile(join(temporary, "control-events.ndjson"), JSON.stringify(event) + "\n"))),
       Stream.takeUntil(event => event.kind === "control.engine.projection-settled"), Stream.runCollect,
@@ -163,11 +181,15 @@ test("configured request host verifies wiki, prototypes, replans and implements 
   assert.equal(await readFile(join(root, "ignored.txt"), "utf8").catch(() => null), null)
   assert.equal(await readFile(join(root, "planner-mutation.txt"), "utf8").catch(() => null), null)
   await writeFile(join(temporary, "model-requests.json"), JSON.stringify(calls.map(value => JSON.parse(value)), null, 2))
-  assert.equal(calls.length, 8, "One wiki review, two planning passes, POC draft/review and one implementation; the second wiki refresh reuses its review")
+  assert.equal(calls.length, 10, "One wiki review, three planning passes, POC draft/review and one implementation; unchanged wiki reviews reuse actual receipts")
   const planningCalls = calls.filter(value => value.includes("Plan one linear mythical coding progression"))
-  assert.equal(planningCalls.length, 2)
+  assert.equal(planningCalls.length, 3)
   assert(planningCalls[1]!.includes("Keep the verifier unchanged."))
   assert(planningCalls[1]!.includes("Saved disposable file-level POC: drafted-unvalidated"))
+  assert(!planningCalls[1]!.includes(feedbackText), "a root request message must not be consumed by the in-flight model turn")
+  for (const text of [feedbackText, "Keep the verifier unchanged.", "Saved disposable file-level POC: drafted-unvalidated", "request message"]) {
+    assert(planningCalls[2]!.includes(text), `replanning must retain ${text}`)
+  }
   assert.ok(calls.some(call => call.includes("The verifier reads hello.txt.")), "planning must receive verified repository memory")
   const completed = Schema.Struct({ payload: Schema.Struct({ state: Schema.Struct({
     flowName: Schema.Literal("coding/Request"), result: Schema.Struct({ _tag: Schema.Literal("Complete"),
