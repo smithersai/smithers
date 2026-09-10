@@ -86,15 +86,19 @@ try {
 ## Roots that come from input
 
 A root read from an environment variable, a request, or a configuration file is
-untrusted text, and it lands in a log line the moment it is refused. A root of
-64 code points or fewer is quoted in full. A longer one is cut: the message
-carries the first 64 code points, quoted, then `... (N characters)` with the
-root's true length. The whole message stays under 256 characters for a root of
-any length, so a hostile root cannot flood the line.
+untrusted text, and it lands in a log line the moment it is refused. The whole
+message stays under 256 UTF-16 code units for a root of any content and any
+length, so a hostile root cannot flood the line. A root is quoted in full when
+it is 64 code points or fewer and its quoted form fits that bound. Otherwise
+it is cut: the message carries a quoted excerpt of at most 64 code points,
+then `... (N characters)` with the root's true length in code points.
 
-The cut is counted in code points rather than UTF-16 units, so it never splits
-a surrogate pair, and the excerpt is passed through `JSON.stringify`, so a
-newline in the root cannot break the line it lands on.
+The excerpt is passed through `JSON.stringify`, so a newline in the root
+cannot break the line it lands on. Escaping widens some characters: a control
+character becomes a six-character `\u0001`, so a root made of them is cut
+well before 64 code points. The cut is counted in code points rather than
+UTF-16 units and lands between escapes, so it never splits a surrogate pair
+or an escape, and the excerpt is always one valid JSON string.
 
 ## Related
 
