@@ -69,7 +69,12 @@ export const AppBootstrapSchema = z.object({
   authFlow: z.enum(["redirect", "native-handoff", "both", "none"]),
   sandbox: z.object({
     platform: z.string(),
-    mode: z.enum(["enforced", "trusted-only", "unavailable"])
+    mode: z.enum(["enforced", "trusted-only", "unavailable"]),
+    /** What this host actually enforces per child: the loader profile is macOS-only and target runs are never wrapped. */
+    policies: z.object({
+      loader: z.enum(["enforced", "unenforced"]),
+      targetRun: z.enum(["enforced", "unenforced"])
+    }).optional()
   }).nullable()
 })
 /**

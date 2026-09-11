@@ -103,6 +103,32 @@ describe("the local origin", () => {
     })
   })
 
+  test("the bootstrap reports per-policy enforcement: a non-darwin host enforces neither the loader nor target runs", async () => {
+    /* ui-bun-host/security/4: "trusted-only" alone read as if the loader policy applied. */
+    const linux = await startLocalServer({
+      port: 0,
+      distDir: dist,
+      chatStub: true,
+      node: { path: "/fake/node", version: "v22.19.0" },
+      home: "/fake/home",
+      harnesses: async () => [],
+      sandboxHost: { platform: "linux", disabled: false, log: () => {} },
+      log: () => {}
+    })
+    try {
+      const bootstrap = (await (await fetch(`${linux.origin}/api/bootstrap`, {
+        headers: { [LOCAL_SESSION_HEADER]: linux.sessionToken }
+      })).json()) as { sandbox: unknown }
+      expect(bootstrap.sandbox).toEqual({
+        platform: process.platform,
+        mode: "trusted-only",
+        policies: { loader: "unenforced", targetRun: "unenforced" }
+      })
+    } finally {
+      await linux.stop()
+    }
+  })
+
   test("serves the SPA with an index.html fallback and hashed assets", async () => {
     const root = await fetch(`${server.origin}/`)
     expect(root.status).toBe(200)

@@ -65,9 +65,57 @@ export const buildCliNodePath = (
   return inherited === undefined || inherited.trim() === "" ? nodeModules : `${nodeModules}${delimiter}${inherited}`
 }
 
-export const buildCliEnvironment = (cli: string): NodeJS.ProcessEnv | undefined => {
-  const nodePath = buildCliNodePath(cli)
-  return nodePath === undefined ? undefined : { ...process.env, NODE_PATH: nodePath }
+/**
+ * The host variables a loader, target run or CI preview child keeps. These
+ * children evaluate the repository's own WORKSPACE.ts / PACKAGE.ts and run its
+ * build commands, so they get what a toolchain needs to resolve and cache, and
+ * never the app's credentials (SMITHERS_CLOUD_TOKEN, GITHUB_TOKEN, cloud keys).
+ */
+export const BUILD_CLI_ENV_KEYS: ReadonlyArray<string> = [
+  "HOME",
+  "USER",
+  "LOGNAME",
+  "SHELL",
+  "PATH",
+  "TMPDIR",
+  "LANG",
+  "LANGUAGE",
+  "LC_ALL",
+  "LC_CTYPE",
+  "TZ",
+  "TERM",
+  "NO_COLOR",
+  "FORCE_COLOR",
+  "CI",
+  "XDG_CONFIG_HOME",
+  "XDG_DATA_HOME",
+  "XDG_CACHE_HOME",
+  "XDG_STATE_HOME",
+  // Toolchains installed outside their default homes.
+  "CARGO_HOME",
+  "RUSTUP_HOME",
+  "GOPATH",
+  "GOCACHE",
+  "GOMODCACHE",
+  "JAVA_HOME",
+  "BUN_INSTALL",
+  "PNPM_HOME"
+]
+
+/** The build-cli child environment: BUILD_CLI_ENV_KEYS from `source`, plus NODE_PATH. Never inherits the rest. */
+export const buildCliEnvironment = (
+  cli: string,
+  source: Readonly<Record<string, string | undefined>> = process.env,
+  exists: (path: string) => boolean = existsSync
+): Record<string, string> => {
+  const env: Record<string, string> = {}
+  for (const key of BUILD_CLI_ENV_KEYS) {
+    const value = source[key]
+    if (value !== undefined && value !== "") env[key] = value
+  }
+  const nodePath = buildCliNodePath(cli, source.NODE_PATH, exists)
+  if (nodePath !== undefined && nodePath !== "") env.NODE_PATH = nodePath
+  return env
 }
 
 /**
@@ -164,7 +212,7 @@ const queryWorkspace = async (
     const environment = buildCliEnvironment(options.cli)
     child = Bun.spawn([...wrapped.argv], {
       cwd,
-      ...(environment === undefined ? {} : { env: environment }),
+      env: environment,
       stdout: "pipe",
       stderr: "pipe",
       stdin: "ignore"
@@ -715,7 +763,7 @@ export const createTargetRunner = (options: TargetRunnerOptions): TargetRunner =
       const environment = buildCliEnvironment(cli)
       child = Bun.spawn([live.node.path, cli, ...argv], {
         cwd,
-        ...(environment === undefined ? {} : { env: environment }),
+        env: environment,
         stdout: "pipe",
         stderr: "pipe",
         stdin: "ignore",

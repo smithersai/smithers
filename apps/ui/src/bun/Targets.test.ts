@@ -5,6 +5,7 @@ import { delimiter, join } from "node:path"
 import type { TargetRunFrame } from "@smthrs/rpc/LocalApp"
 import type { SandboxHost } from "./Sandbox"
 import {
+  buildCliEnvironment,
   buildCliNodePath,
   createTargetRunner,
   mapTargets,
@@ -100,6 +101,27 @@ describe("resolveBuildCli and sandbox paths", () => {
     expect(buildCliNodePath(cli, "/workspace/node_modules", (path) => path === manifest))
       .toBe(`${nodeModules}${delimiter}/workspace/node_modules`)
     expect(buildCliNodePath(cli, "/workspace/node_modules", () => false)).toBe("/workspace/node_modules")
+  })
+
+  test("the build-cli env is an allowlist with or without a colocated authoring manifest", () => {
+    /* ui-bun-host/security/4: undefined (inherit everything) or { ...process.env, NODE_PATH } before. */
+    const source = {
+      HOME: "/home/u",
+      PATH: "/usr/bin",
+      NODE_PATH: "/workspace/node_modules",
+      SMITHERS_CLOUD_TOKEN: "smithers_pat_SECRET",
+      GITHUB_TOKEN: "ghp_SECRET",
+      AWS_SECRET_ACCESS_KEY: "aws-SECRET",
+      ANTHROPIC_API_KEY: "sk-ant-SECRET"
+    }
+    const cli = "/Applications/Smithers.app/Contents/Resources/app/build-cli/launcher.mjs"
+    const manifest = "/Applications/Smithers.app/Contents/Resources/app/build-cli/node_modules/@smthrs/targets/package.json"
+    expect(buildCliEnvironment(cli, source, () => false)).toEqual({ HOME: "/home/u", PATH: "/usr/bin", NODE_PATH: "/workspace/node_modules" })
+    expect(buildCliEnvironment(cli, source, (path) => path === manifest)).toEqual({
+      HOME: "/home/u",
+      PATH: "/usr/bin",
+      NODE_PATH: `/Applications/Smithers.app/Contents/Resources/app/build-cli/node_modules${delimiter}/workspace/node_modules`
+    })
   })
 })
 
@@ -205,6 +227,36 @@ describe("createTargetRunner", () => {
         })
     }
   }
+
+  test("a target run child never sees the app's credentials, even beside a colocated authoring manifest", async () => {
+    const dir = await scratch()
+    await mkdir(join(dir, "node_modules", "@smthrs", "targets"), { recursive: true })
+    await writeFile(join(dir, "node_modules", "@smthrs", "targets", "package.json"), "{}")
+    const cli = join(dir, "env-cli.js")
+    const names = ["SMITHERS_CLOUD_TOKEN", "GITHUB_TOKEN", "AWS_SECRET_ACCESS_KEY", "HOME", "NODE_PATH"]
+    await writeFile(cli, `console.log(${JSON.stringify(names)}.map((name) => name + "=" + (name in process.env)).join(" "))`)
+    const seeded = { SMITHERS_CLOUD_TOKEN: "smithers_pat_SECRET", GITHUB_TOKEN: "ghp_SECRET", AWS_SECRET_ACCESS_KEY: "aws-SECRET" }
+    const previous = Object.fromEntries(Object.keys(seeded).map((key) => [key, process.env[key]]))
+    Object.assign(process.env, seeded)
+    const sink = collect()
+    const runner = createTargetRunner({ publish: sink.publish, cli, autoStartMs: 60_000 })
+    try {
+      const run = runner.start({ repoId: "r1", repo: dir, workspace: ".", label: "//:x", node: bunSidecar })
+      runner.attach(run.runId)
+      await sink.exited(run.runId)
+      const stdout = sink.frames
+        .filter((entry) => entry.runId === run.runId && entry.frame.type === "stdout")
+        .map((entry) => (entry.frame as { data: string }).data)
+        .join("")
+      expect(stdout).toBe("SMITHERS_CLOUD_TOKEN=false GITHUB_TOKEN=false AWS_SECRET_ACCESS_KEY=false HOME=true NODE_PATH=true\n")
+    } finally {
+      await runner.stop()
+      for (const [key, value] of Object.entries(previous)) {
+        if (value === undefined) delete process.env[key]
+        else process.env[key] = value
+      }
+    }
+  })
 
   test("an unarmed reservation never spawns, even on attach; arming enables auto-start once", async () => {
     const dir = await scratch()

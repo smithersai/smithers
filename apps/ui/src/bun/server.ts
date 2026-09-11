@@ -74,7 +74,7 @@ import { registerLspRoutes } from "./routes/lsp"
 import { registerPtyRoutes } from "./routes/pty"
 import { createLspHost } from "./lsp/LspHost"
 import type { LspHost, LspHostOptions } from "./lsp/LspHost"
-import { currentSandboxHost, sandboxEnforced } from "./Sandbox"
+import { currentSandboxHost, sandboxEnforced, type SandboxHost } from "./Sandbox"
 
 /** chat.smithers.sh accepts this origin anonymously (verified 2026-08-26). */
 export const DEFAULT_CHAT_ORIGIN = "https://canary.smithers.sh"
@@ -158,6 +158,8 @@ export interface LocalServerOptions {
   /** The harness table behind `GET /api/harnesses` and harness tabs; default `detectHarnesses`. */
   readonly harnesses?: HarnessDetector
   /** The PTY manager behind `/api/pty*`; the default spawns real sessions. `roles` is the agents store (custom-agents.md). */
+  /** The sandbox this host reports and wraps with; defaults to currentSandboxHost(). */
+  readonly sandboxHost?: SandboxHost
   readonly pty?: (deps: {
     readonly publish: LocalServer["publish"]
     readonly harnesses: HarnessDetector
@@ -553,7 +555,7 @@ export const startLocalServer = async (options: LocalServerOptions): Promise<Loc
   const log = options.log ?? ((line: string) => console.log(line))
   const distDir = resolve(options.distDir)
   const version = options.version ?? APP_VERSION
-  const sandboxHost = currentSandboxHost()
+  const sandboxHost = options.sandboxHost ?? currentSandboxHost()
   const nodeProbe: Promise<NodeSidecar | null> = options.node === undefined ? findNode() : Promise.resolve(options.node)
   const remoteEnabled = options.cloudMode === "hybrid"
   const identityUpstream = options.chatStub === true || !remoteEnabled
@@ -625,7 +627,9 @@ export const startLocalServer = async (options: LocalServerOptions): Promise<Loc
       authFlow: identityUpstream === null ? "none" : "both",
       sandbox: {
         platform: process.platform,
-        mode: enforced ? "enforced" : sandboxHost.disabled ? "unavailable" : "trusted-only"
+        mode: enforced ? "enforced" : sandboxHost.disabled ? "unavailable" : "trusted-only",
+        // The loader profile exists only where seatbelt does; a target run is never wrapped.
+        policies: { loader: enforced ? "enforced" : "unenforced", targetRun: "unenforced" }
       }
     })
   })
