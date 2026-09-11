@@ -11,22 +11,16 @@
  * its whole life, which is what makes `card.update` the right frame: the shell
  * replaces a card it already has rather than growing the transcript per step.
  *
- * Like `turnImpl.ts`, this ships a mock path and a live path.
+ * Like `turnImpl.ts`, this ships only the mock path.
  * `env.APP_MOCK_TURN !== "0"` walks the stages without calling a model; `"0"`
- * asks for {@link liveRun}, which is written out in full and does not run under
- * workerd yet, for the reasons `liveRuntimeUnsupported` in `worker/turnImpl.ts`
- * states.
+ * asks for the live path, which does not run under workerd yet, so the card
+ * settles `failed` with the reasons `liveRuntimeUnsupported` in
+ * `worker/turnImpl.ts` states.
  */
 import type { AgentSpec, AnyFlowSpec, SandboxSpec, ToolsSpec } from "@smthrs/create-app/app"
-import { layerFor, materializeFlow } from "@smthrs/create-app/runtime"
 import type { FlowRunCard } from "@smthrs/create-app/ui"
-import * as Effect from "effect/Effect"
-import * as Option from "effect/Option"
-import * as Schema from "effect/Schema"
 import type { FlowRunRequest, TurnFrame } from "../src/api.ts"
-import { layerCrypto } from "./crypto.ts"
 import type { Env } from "./env.ts"
-import { seatsFor } from "./seats.ts"
 import { liveRuntimeUnsupported } from "./turnImpl.ts"
 
 /** How a run ended, which is what the session's row in the Recent column reports. */
@@ -186,7 +180,7 @@ export const runFlowRun = async (options: FlowRunOptions): Promise<Phase> => {
  * repeated here; any other flow gets a single step named after itself.
  *
  * TODO(milestone-3): this table goes away with the mock path. A live run reads
- * its steps from the flow's own output ({@link declaredSteps}).
+ * its steps from the flow's own output, as `BuildPlan.steps` declares them.
  */
 const MOCK_STEPS: Readonly<Record<string, ReadonlyArray<string>>> = {
   build: ["describe", "plan", "generate", "validate", "smoke"]
@@ -212,95 +206,4 @@ const mockRun = async (options: FlowRunOptions, route: FlowRoute, card: RunCard)
   return card.settle("completed", {
     result: { flowId: route.id, payload: options.request.payload, steps: names }
   })
-}
-
-// ---------------------------------------------------------------------------
-// The real run
-// ---------------------------------------------------------------------------
-
-/** The step list shape a pipeline flow may return, as `BuildPlan` does. */
-const DeclaredSteps = Schema.Struct({
-  steps: Schema.Array(Schema.Struct({
-    name: Schema.String,
-    status: Schema.Literals(["pending", "running", "done", "failed", "cached"])
-  }))
-})
-
-const decodeDeclaredSteps = Schema.decodeUnknownOption(DeclaredSteps)
-
-/**
- * The steps a flow's own output declares, or none.
- *
- * A pipeline flow reports what it did in its typed output; `BuildPlan.steps` is
- * exactly this shape. A flow whose output has no `steps` field runs as one
- * step, so the read is optional rather than required.
- */
-const declaredSteps = (output: unknown): ReadonlyArray<Step> => {
-  const decoded = decodeDeclaredSteps(output)
-  return Option.isNone(decoded) ? [] : decoded.value.steps.map((step) => ({ ...step }))
-}
-
-const failureMessage = (cause: unknown): string =>
-  cause instanceof Error ? cause.message : typeof cause === "string" ? cause : "The run failed."
-
-/**
- * One run on the real agent.
- *
- * A pipeline flow runs to completion from its payload, so unlike a turn there
- * is nothing to stream token by token: the card moves once when the run starts
- * and once when it settles, and the settled card carries the flow's typed
- * output as `result`.
- *
- * TODO: this path cannot run inside workerd yet, for the two reasons
- * `liveTurn` in `worker/turnImpl.ts` names: the QuickJS build `layerFor`
- * selects, and the absent Durable Object journal driver.
- */
-// Exported, and unreachable from `runFlowRun`, on purpose: it is the
-// written-out shape the fix will take, kept compiling against the current
-// package APIs so those two blockers are the only thing left to land.
-export const liveRun = async (options: FlowRunOptions, route: FlowRoute, card: RunCard): Promise<Phase> => {
-  const { env, request, signal } = options
-  // `AnyFlowSpec` erases the payload's field types, so the struct built from it
-  // reports `unknown` decoding services and no usable value type. The cast
-  // states what the erased type already guarantees: a flow payload is a struct
-  // of plain schemas, decodable with no services. `materializeFlow` erases the
-  // same way, which is why `execute` takes the decoded value back untyped.
-  const PayloadOf = Schema.Struct(route.spec.payload) as unknown as Schema.Codec<Record<string, unknown>>
-  const payload = Schema.decodeUnknownOption(PayloadOf)(request.payload)
-  if (Option.isNone(payload)) {
-    return card.settle("failed", {
-      error: `The payload does not match what "${route.id}" declares. Expected keys: ${
-        Object.keys(route.spec.payload).join(", ")
-      }.`
-    })
-  }
-
-  card.plan([route.id])
-  card.step(route.id, "running")
-
-  const materialized = materializeFlow(route.id, route.spec, route.agent)
-  const layer = layerFor({
-    agent: route.agent,
-    sandbox: route.sandbox,
-    tools: route.tools,
-    seats: seatsFor(env),
-    crypto: layerCrypto
-  })
-
-  const program = materialized.flow
-    .execute(payload.value, { executionId: options.executionId })
-    .pipe(Effect.provide(layer))
-
-  try {
-    const output = await Effect.runPromise(program, { signal })
-    const steps = declaredSteps(output)
-    if (steps.length > 0) for (const step of steps) card.step(step.name, step.status)
-    return card.settle("completed", { result: output })
-  } catch (cause) {
-    // An abort and a failure land on the same rejection, and the shell renders
-    // them differently: a cancelled run is the user's doing, a failed one is
-    // the app's.
-    if (signal.aborted) return card.settle("cancelled")
-    return card.settle("failed", { error: failureMessage(cause) })
-  }
 }

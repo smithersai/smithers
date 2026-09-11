@@ -4,7 +4,8 @@ import { flows } from "../routes.gen.ts"
 import { panes } from "../routes.ui.gen.ts"
 import { type AppCard, type Message, type SessionSummary, TurnFrame } from "../src/api.ts"
 import type { Env } from "../worker/env.ts"
-import { runTurn, type TurnSession } from "../worker/turnImpl.ts"
+import { type FlowRoute, runFlowRun } from "../worker/flowRunImpl.ts"
+import { liveRuntimeUnsupported, runTurn, type TurnSession } from "../worker/turnImpl.ts"
 
 // The mock path never calls a chain tool. Keep the real flow registry and
 // pane definitions, without initializing Tevm's live client dependencies.
@@ -96,5 +97,52 @@ describe("the real mock turn", () => {
     } finally {
       if (empty) registry.push(...saved)
     }
+  })
+})
+
+// The template ships no live implementation, so APP_MOCK_TURN=0 has exactly
+// one answer on both entry points: the shared unsupported-runtime refusal.
+describe("APP_MOCK_TURN=0", () => {
+  const live = { APP_NAME: "mock-turn-test", APP_MOCK_TURN: "0" } as Env
+
+  it("refuses a turn with one error frame and settles failed", async () => {
+    const sink = memorySession()
+    const body = runTurn({
+      env: live,
+      session: sink.session,
+      request: { sessionId: "session-1", flowId: "chat", message: "Check the balance" },
+      signal: new AbortController().signal
+    })
+    const text = await new Response(body).text()
+    const frames = text.trim().split("\n").map((line) => Schema.decodeUnknownSync(TurnFrame)(JSON.parse(line)))
+    expect(frames).toEqual([{ type: "error", message: liveRuntimeUnsupported }])
+    expect(liveRuntimeUnsupported.startsWith("unsupported_runtime:")).toBe(true)
+    expect(sink.statuses).toEqual(["failed"])
+    expect(sink.messages).toEqual([])
+  })
+
+  it("refuses a pipeline run by settling its card failed", async () => {
+    const frames: Array<TurnFrame> = []
+    const phase = await runFlowRun({
+      env: live,
+      request: { sessionId: "session-1", flowId: "build", payload: {} },
+      executionId: "exec-1",
+      routes: async () => [{ id: "build" }] as unknown as ReadonlyArray<FlowRoute>,
+      signal: new AbortController().signal,
+      emit: (frame) => { frames.push(frame) }
+    })
+    expect(phase).toBe("failed")
+    expect(frames).toEqual([{
+      type: "card.update",
+      card: {
+        kind: "flow-run",
+        id: "exec-1",
+        flowId: "build",
+        executionId: "exec-1",
+        phase: "failed",
+        steps: [],
+        error: liveRuntimeUnsupported
+      }
+    }])
   })
 })

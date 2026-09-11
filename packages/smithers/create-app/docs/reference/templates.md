@@ -154,8 +154,10 @@ Card ids include the turn's persisted user-message id, so later turns retain
 earlier cards. An unrouted flow emits one error frame and settles as `failed`,
 including when the flow registry is empty.
 
-Setting it to `0` asks for the real agent path, which is written out in full
-but refuses with a message naming two blockers. The Worker passes `layerFor`
+Setting it to `0` asks for the real agent path, which the template does not
+ship. The turn and the pipeline run both refuse it with an
+`unsupported_runtime` message naming two blockers, and `worker/README.md`
+records the shape the live path will take. The Worker passes `layerFor`
 no `sandboxVariant`, so the QuickJS sandbox compiles its WebAssembly from
 bytes, which workerd refuses; the `layerFor` doc comment in
 `@smthrs/create-app/runtime` is the one statement of that seam. And there is

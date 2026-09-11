@@ -173,9 +173,12 @@ config declares it. Neither field changes as part of a routine deploy.
 
 `APP_MOCK_TURN` defaults to `1` and `worker/turn.ts` streams a fixed sequence —
 deltas, one `tevm/getBalance` call, a `chain-balance` pane card, `done` — so the
-shell, the pane host, and cancel all work end to end. Setting it to `0` selects
-the real `Agent.run` path, which is written out in full in `liveTurn` and does
-not run under workerd yet.
+shell, the pane host, and cancel all work end to end. Setting it to `0` asks
+for the real `Agent.run` path, which does not run under workerd yet. Both
+`runTurn` (`worker/turnImpl.ts`) and `runFlowRun` (`worker/flowRunImpl.ts`)
+refuse it with the `liveRuntimeUnsupported` message: a turn streams one `error`
+frame and settles `failed`, and a pipeline run settles its `flow-run` card
+`failed` with the same text. The template ships no live implementation.
 
 Two items block it:
 
@@ -195,6 +198,29 @@ The model transport itself is clear: `@smthrs/model` reaches no Node builtin on
 the Worker path, `@smthrs/kernel/HttpClient` re-exports Effect's own
 `HttpClient` tag rather than declaring one, and `seats.ts` satisfies it with
 `FetchHttpClient.layer`.
+
+### The shape of the live path
+
+When both blockers land, the live path replaces the refusal in each entry
+point:
+
+- **Turn.** Wrap `Agent.run` in one `Action` inside a one-step `Flow`, because
+  `Agent.run` needs the engine port a running flow body provides, and
+  `materializeFlow(...).action` buffers the events a turn has to stream.
+  Provide it with `layerFor({ agent, sandbox, tools, seats: seatsFor(env),
+  crypto: layerCrypto, sandboxVariant })`. Rebind the `ui` and `flows` tool
+  sources to the session (`uiSource` over a `CardSink` that calls
+  `appendCard`, and `promoteSource` over `FlowStore` and `CellHistory`), and
+  keep every other source as `TOOLS.ts` declares it. Project each
+  `AgentEvent` onto frames: `model-delta` becomes `delta`, `cell-produced`
+  becomes `cell`, `cell-call-settled` becomes `call` (with the input from its
+  `cell-call-started`), a `complete` transition becomes `done`, `suspended`
+  becomes `park`, and `aborted` becomes `error`.
+- **Pipeline run.** Decode the request payload against the flow's declared
+  payload, fail the card with the expected keys if it does not match, then
+  run `materializeFlow(...).flow.execute` under the same `layerFor`. Read the
+  settled steps from the output's `steps` field (the `BuildPlan.steps`
+  shape) and settle the card `cancelled` when the signal aborted.
 
 ## Cancellation
 
