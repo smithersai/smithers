@@ -10,6 +10,10 @@
  * origin is where the setup key can land; `session` answers it to the
  * renderer, and the first well-formed callback claims the attempt (a replay
  * or a racing local process answers 409, matching the cloud sign-in).
+ * Like the cloud sign-in listener, the callback answers only a GET on the
+ * exact loopback Host (no DNS rebinding), from no foreign Origin, carrying
+ * the attempt's own `handoff` random (compared in constant time), so an open
+ * web page cannot race its own key in across the port range.
  *
  * The setup key is an opaque, one-time, user-bound handle — never a token;
  * nothing here touches the OS keychain. Against a backend that cannot
@@ -17,7 +21,7 @@
  * the handoff did not come back; no route is faked.
  */
 import type { Server } from "bun"
-import { randomBytes } from "node:crypto"
+import { randomBytes, timingSafeEqual } from "node:crypto"
 import type { LinearAuthSession } from "@smthrs/rpc/LocalApp"
 
 export interface LinearAuthOptions {
@@ -45,6 +49,9 @@ export const LINEAR_AUTH_WAIT_TIMEOUT_MS = 5 * 60 * 1000
 const RETURN_PAGE =
   "<!doctype html><meta charset=\"utf-8\"><title>Linear authorized</title>" +
   "<p>Linear authorized — return to Smithers to pick the team.</p>"
+
+const matchesSecret = (value: string | null, expected: string): boolean =>
+  value !== null && Buffer.byteLength(value) === Buffer.byteLength(expected) && timingSafeEqual(Buffer.from(value), Buffer.from(expected))
 
 interface PendingHandoff {
   readonly url: string
@@ -84,14 +91,23 @@ export const createLinearAuth = (options: LinearAuthOptions): LinearAuth => {
       // listener dies and a stale key can never be claimed twice.
       clearPending()
       setupKey = null
+      const handoff = randomBytes(32).toString("base64url")
       let server: Server<undefined>
       try {
         server = Bun.serve({
           hostname: "127.0.0.1",
           port: 0,
           fetch: (request) => {
+            const localOrigin = `http://127.0.0.1:${server.port}`
+            if (request.headers.get("host") !== `127.0.0.1:${server.port}`) return new Response("invalid host", { status: 403 })
             const url = new URL(request.url)
             if (url.pathname !== "/callback") return new Response("not found", { status: 404 })
+            if (request.method !== "GET") return new Response("method not allowed", { status: 405 })
+            const origin = request.headers.get("origin")
+            if (origin !== null && origin !== localOrigin) return new Response("invalid origin", { status: 403 })
+            if (!matchesSecret(url.searchParams.get("handoff"), handoff)) {
+              return new Response("this callback does not belong to the current authorization attempt", { status: 403 })
+            }
             const key = url.searchParams.get("setup") ?? ""
             if (key.trim() === "") {
               return new Response("expected ?setup=<key>", { status: 400 })
@@ -111,7 +127,7 @@ export const createLinearAuth = (options: LinearAuthOptions): LinearAuth => {
         log("linear-auth: the callback never arrived; the attempt expired")
         clearPending()
       }, waitTimeoutMs)
-      const url = `${options.origin().replace(/\/+$/, "")}/api/cloud/api/auth/linear?callback_port=${server.port}&handoff=${randomBytes(32).toString("base64url")}`
+      const url = `${options.origin().replace(/\/+$/, "")}/api/cloud/api/auth/linear?callback_port=${server.port}&handoff=${handoff}`
       pending = { url, server, timeout, navigationClaimed: false }
       return { url }
     },
