@@ -75,6 +75,7 @@ import * as HttpClient from "effect/unstable/http/HttpClient"
 import * as HttpClientRequest from "effect/unstable/http/HttpClientRequest"
 import type * as HttpClientResponse from "effect/unstable/http/HttpClientResponse"
 import * as CacheStore from "./CacheStore.ts"
+import * as CacheAdmission from "./internal/CacheAdmission.ts"
 
 /**
  * How to reach the shared step-result tier.
@@ -121,7 +122,7 @@ export const defaultRequestTimeout = Duration.seconds(60)
  * @category constants
  * @since 1.0.0-rc.0
  */
-export const maximumEntryBytes = CacheStore.maximumJsonBytes
+export const maximumEntryBytes = CacheAdmission.maximumJsonBytes
 
 const decoder = new TextDecoder("utf-8", { fatal: true })
 
@@ -352,9 +353,9 @@ export const make = (
     const get: CacheStore.Service["get"] = Effect.fn("RemoteCacheStore.get")((keyDigest, getOptions) =>
       withDeadline(Effect.gen(function*() {
         yield* Effect.annotateCurrentSpan({ keyDigest })
-        yield* CacheStore.validateKey(keyDigest)
-        const recordedBy = yield* CacheStore.validateRecordedBy(getOptions?.recordedBy)
-        const maxAgeMs = yield* CacheStore.validateAge("maxAgeMs", getOptions?.maxAgeMs)
+        yield* CacheAdmission.validateKey(keyDigest)
+        const recordedBy = yield* CacheAdmission.validateRecordedBy(getOptions?.recordedBy)
+        const maxAgeMs = yield* CacheAdmission.validateAge("maxAgeMs", getOptions?.maxAgeMs)
         const floorMs = maxAgeMs === undefined
           ? undefined
           : (yield* Clock.currentTimeMillis) - maxAgeMs
@@ -373,7 +374,7 @@ export const make = (
           try: () => JSON.parse(decoder.decode(bytes)) as unknown,
           catch: (cause) => transportFailure("a lookup body", cause)
         })
-        const entry = yield* CacheStore.snapshotEntry(body as CacheStore.CacheEntry).pipe(
+        const entry = yield* CacheAdmission.snapshotEntry(body as CacheStore.CacheEntry).pipe(
           Effect.mapError(() =>
             new CacheStore.CacheStoreError({
               code: "decode_failed",
@@ -406,7 +407,7 @@ export const make = (
 
     const put: CacheStore.Service["put"] = Effect.fn("RemoteCacheStore.put")((candidate: CacheStore.CacheEntry) =>
       withDeadline(Effect.gen(function*() {
-        const entry = yield* CacheStore.snapshotEntry(candidate)
+        const entry = yield* CacheAdmission.snapshotEntry(candidate)
         yield* Effect.annotateCurrentSpan({ keyDigest: entry.keyDigest })
         // The wire bytes are the canonical form itself. Besides refusing
         // values JSON cannot represent, this gives structurally equal entries
@@ -420,7 +421,7 @@ export const make = (
         // byte bound is enforced on the encoding itself. `get` admits an entry
         // field-by-field under the same byte bound, so a publication never
         // refuses an entry a lookup could have returned.
-        const body = yield* CacheStore.encodeEntryCanonical(entry)
+        const body = yield* CacheAdmission.encodeEntryCanonical(entry)
         const response = yield* send(
           "a publication",
           HttpClientRequest.put(acUrl(entry.keyDigest)).pipe(
@@ -439,8 +440,8 @@ export const make = (
         // An empty key would aim the protocol's one destructive verb at the
         // `/ac/` collection root instead of a single entry, so the preflight
         // that guards `get` guards the DELETE all the more.
-        yield* CacheStore.validateKey(keyDigest)
-        const fenced = yield* CacheStore.validateFence(evictOptions?.ifRecordedBy)
+        yield* CacheAdmission.validateKey(keyDigest)
+        const fenced = yield* CacheAdmission.validateFence(evictOptions?.ifRecordedBy)
         // The provenance fence rides in the request the same way it rides in
         // the SQL `DELETE`: the server compares before deleting, so a fresher
         // entry recorded by another machine between this caller's lookup and
@@ -467,7 +468,7 @@ export const make = (
         // same reason `CombinedCacheStore.evict` never reaches across. The
         // argument is still validated, so a caller mistake is reported here
         // rather than silently absorbed.
-        Effect.as(CacheStore.validateAge("olderThanMs", olderThanMs), 0)
+        Effect.as(CacheAdmission.validateAge("olderThanMs", olderThanMs), 0)
     )
 
     return { get, put, evict, sweepExpired }

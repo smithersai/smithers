@@ -31,6 +31,7 @@ import * as Metric from "effect/Metric"
 import * as Option from "effect/Option"
 import * as CacheStore from "./CacheStore.ts"
 import * as CacheStoreMetrics from "./CacheStoreMetrics.ts"
+import * as CacheAdmission from "./internal/CacheAdmission.ts"
 
 /**
  * The two tiers to compose.
@@ -133,7 +134,7 @@ export const make = (options: Options): CacheStore.Service => {
       // answered for both. Reading `keyDigest` off the argument first had the
       // same shape of problem: a throwing accessor became a defect instead of
       // the `invalid_cache` this package promises.
-      const entry = yield* CacheStore.snapshotEntry(candidate)
+      const entry = yield* CacheAdmission.snapshotEntry(candidate)
       yield* Effect.annotateCurrentSpan({ keyDigest: entry.keyDigest })
       // Local first, and the local outcome is the answer: first-writer-wins
       // conflict detection is what drives the `Inconsistency` receiver, and it

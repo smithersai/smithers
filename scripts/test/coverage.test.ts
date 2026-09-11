@@ -602,10 +602,11 @@ describe("coverage conformance", () => {
       // discharges noUncheckedIndexedAccess before the type lookup.
       "smithers/flows/sandbox/src/Sandbox/fileSystem.ts": 1,
       // Bounded inert JSON is exactly `@smthrs/canonical`'s accepted domain,
-      // so the encoder's refusal arm is unreachable from an admitted row; the
-      // other two are conflict arms whose blocking row is read inside the same
+      // so the encoder's refusal arm is unreachable from an admitted row.
+      "smithers/flows/step-cache/src/internal/CacheAdmission.ts": 1,
+      // Two conflict arms whose blocking row is read inside the same
       // serialized write transaction that saw the insert fail.
-      "smithers/flows/step-cache/src/CacheStore.ts": 3,
+      "smithers/flows/step-cache/src/internal/SqlCacheStore.ts": 2,
       // One defensive normalization for a future `Duration` input that throws,
       // and one path guard that `KeyDigest` already satisfies by excluding
       // every path separator and dot segment.

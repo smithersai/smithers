@@ -16,6 +16,7 @@ import * as HttpClientError from "effect/unstable/http/HttpClientError"
 import * as HttpClientRequest from "effect/unstable/http/HttpClientRequest"
 import * as HttpClientResponse from "effect/unstable/http/HttpClientResponse"
 import * as CacheStore from "../src/CacheStore.ts"
+import * as CacheAdmission from "../src/internal/CacheAdmission.ts"
 import * as RemoteCacheStore from "../src/RemoteCacheStore.ts"
 
 const entry: CacheStore.CacheEntry = {
@@ -732,9 +733,10 @@ describe("publications", () => {
       // under the per-field policy, so the only encoding a publication needs
       // is the whole-entry one whose bytes go on the wire. Any extra per-field
       // encoding is repeated work whose string is discarded, measured at
-      // 10,000 records as most of the publication's CPU time.
-      const fieldEncodings = vi.spyOn(CacheStore, "encodeCanonical")
-      const entryEncodings = vi.spyOn(CacheStore, "encodeEntryCanonical")
+      // 10,000 records as most of the publication's CPU time. The spies sit on
+      // the admission module, which is where the tier takes its encoders from.
+      const fieldEncodings = vi.spyOn(CacheAdmission, "encodeCanonical")
+      const entryEncodings = vi.spyOn(CacheAdmission, "encodeEntryCanonical")
       try {
         const tier = tierOf(() => new Response(null, { status: 201 }))
         expect(yield* Effect.flatMap(tier.store, (store) => store.put(entry))).toEqual({ _tag: "Inserted" })
