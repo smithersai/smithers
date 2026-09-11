@@ -51,16 +51,6 @@ export interface Service {
 }
 
 /**
- * Implementation accepted by {@link make}: an object naming the callback `run`.
- *
- * @category models
- * @since 0.1.0
- */
-export interface Implementation {
-  readonly run: Run
-}
-
-/**
  * Injectable execution boundary for a target flow.
  *
  * @category services
@@ -69,7 +59,7 @@ export interface Implementation {
 export class CaseExecutor extends Context.Service<CaseExecutor, Service>()("flows/evals/CaseExecutor") {}
 
 /**
- * Builds an executor from a callback, or from an object naming it `run`.
+ * Builds an executor from its one callback.
  *
  * Throws a `TypeError` when there is no callback. An executor that silently
  * degraded to {@link makeNoop} turned one wiring mistake into a whole suite of
@@ -79,10 +69,9 @@ export class CaseExecutor extends Context.Service<CaseExecutor, Service>()("flow
  * @category constructors
  * @since 0.1.0
  */
-export const make = (implementation: Implementation | Run): Service => {
-  const run = typeof implementation === "function" ? implementation : implementation.run
+export const make = (run: Run): Service => {
   if (typeof run !== "function") {
-    throw new TypeError("CaseExecutor.make needs a callback, or an object with a `run` callback")
+    throw new TypeError("CaseExecutor.make needs a callback")
   }
   return CaseExecutor.of({ run })
 }

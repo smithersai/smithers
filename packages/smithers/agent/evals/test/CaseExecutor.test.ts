@@ -8,30 +8,30 @@ const execution = { output: 1, stepKey: "step", latencyMs: 0, target }
 const suiteCase = { name: "a", input: 1 }
 
 describe("CaseExecutor", () => {
-  it("accepts a bare callback and a `run` object alike", async () => {
-    const callback = CaseExecutor.make(() => Effect.succeed(execution))
-    const named = CaseExecutor.make({ run: () => Effect.succeed(execution) })
-    for (const executor of [callback, named]) {
-      expect(await Effect.runPromise(executor.run(suiteCase))).toEqual(execution)
-    }
+  it("runs a case through its callback", async () => {
+    const executor = CaseExecutor.make(() => Effect.succeed(execution))
+    expect(await Effect.runPromise(executor.run(suiteCase))).toEqual(execution)
   })
 
-  // The 1.0.0-rc.0 notes retired the `execute` spelling; `run` is the one name.
-  it("refuses the retired `execute` spelling", () => {
-    // @ts-expect-error `execute` is not an implementation field.
-    expect(() => CaseExecutor.make({ execute: () => Effect.succeed(execution) })).toThrow(
-      "CaseExecutor.make needs a callback, or an object with a `run` callback"
+  // A callback is the one construction form; the `{ run }` and `{ execute }`
+  // object aliases are gone.
+  it("refuses the retired object forms", () => {
+    // @ts-expect-error `make` takes the callback itself.
+    expect(() => CaseExecutor.make({ run: () => Effect.succeed(execution) })).toThrow(
+      "CaseExecutor.make needs a callback"
     )
+    // @ts-expect-error `make` takes the callback itself.
+    expect(() => CaseExecutor.make({ execute: () => Effect.succeed(execution) })).toThrow(TypeError)
     expect("CaseInput" in CaseExecutor).toBe(false)
+    expect("Implementation" in CaseExecutor).toBe(false)
   })
 
   // Degrading to the unavailable executor turned one wiring mistake into a
   // whole suite of cases failing with `executor`, which reads as a broken
   // target rather than a missing one.
-  it("refuses an implementation carrying no callback", () => {
-    expect(() => CaseExecutor.make({} as CaseExecutor.Implementation)).toThrow(TypeError)
-    expect(() => CaseExecutor.make({ run: undefined } as unknown as CaseExecutor.Implementation)).toThrow(
-      "CaseExecutor.make needs a callback, or an object with a `run` callback"
+  it("refuses a missing callback", () => {
+    expect(() => CaseExecutor.make(undefined as unknown as CaseExecutor.Run)).toThrow(
+      "CaseExecutor.make needs a callback"
     )
   })
 

@@ -254,15 +254,14 @@ says what to run; this service says how.
   a copy of it.
 - `Run`: `(suiteCase: Suite.Case) => Effect.Effect<Execution, EvalError>`.
 - `Service`: `{ run: Run }`.
-- `Implementation`: `{ run: Run }`.
 - `CaseExecutor`: the `Context.Service` tag, `flows/evals/CaseExecutor`.
 
 ```ts
-const make = (implementation: Implementation | Run): Service
+const make = (run: Run): Service
 ```
 
-Builds an executor from a callback, or from an object naming it `run`. Throws
-a `TypeError` when there is no callback: an executor that
+Builds an executor from its one callback. Throws a `TypeError` when `run` is
+not a function: an executor that
 silently degraded would turn one wiring mistake into a whole suite of cases
 failing with `executor`, which reads as a broken target rather than a missing
 one.
@@ -528,9 +527,8 @@ terminal escape.
 | `CaseExecutor.Execution`        | models        | The result of executing one target-flow case.                                       |
 | `CaseExecutor.Run`              | models        | The one callback a case executor is.                                                |
 | `CaseExecutor.Service`          | services      | Runtime shape for an injectable target-flow executor.                               |
-| `CaseExecutor.Implementation`   | models        | Implementation accepted by `make`.                                                  |
 | `CaseExecutor.CaseExecutor`     | services      | Injectable execution boundary for a target flow.                                    |
-| `CaseExecutor.make`             | constructors  | Builds an executor from a callback, or from an object naming it `run`.              |
+| `CaseExecutor.make`             | constructors  | Builds an executor from its one callback.                                           |
 | `CaseExecutor.makeNoop`         | constructors  | Builds an executor that fails every case with a typed executor error.               |
 | `CaseExecutor.layerNoop`        | layers        | Provides the unavailable executor.                                                  |
 | `Runner.Observation`            | models        | One score observation emitted by a suite run.                                       |

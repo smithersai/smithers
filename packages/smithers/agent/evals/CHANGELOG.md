@@ -17,10 +17,12 @@
   rather than as `scorer (first 8 of the key)`. One unnamed scorer no longer
   appears under two spellings in one report.
 
-- **Breaking:** `CaseExecutor.make` accepts only a callback or `{ run }`, and
-  `CaseExecutor.CaseInput` is gone; use `Suite.Case`. 1.0.0-rc.0 retired the
-  `execute` spelling from `CaseExecutor.Service` but kept it as a `make`
-  alias, so the package still had two names for one callback.
+- **Breaking:** `CaseExecutor.make(run)` takes only the callback. The
+  `{ run }` and `{ execute }` object forms and `CaseExecutor.Implementation`
+  are gone; pass the function itself. `CaseExecutor.CaseInput` is gone too;
+  use `Suite.Case`. 1.0.0-rc.0 retired the `execute` spelling from
+  `CaseExecutor.Service` but kept it as a `make` alias, so the package still
+  had three spellings for one callback.
 
 - **Breaking:** `Report.json` serializes `Report.Data` rather than the
   in-memory `Regression.Report` graph. `run.observations` is now the
