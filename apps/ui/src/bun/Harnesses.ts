@@ -17,6 +17,7 @@ import type { HarnessModelSpec } from "@smthrs/rpc/AgentRoles"
 import { HARNESS_IDS } from "@smthrs/rpc/LocalApp"
 import type { Harness } from "@smthrs/rpc/LocalApp"
 import { currentSandboxHost, probePolicy, wrapSandbox } from "./Sandbox"
+import type { SandboxHost } from "./Sandbox"
 
 export type HarnessId = (typeof HARNESS_IDS)[number]
 
@@ -447,12 +448,59 @@ export const detectHarnessesWith = async (host: HarnessHost): Promise<Array<Harn
 const versionCache = new Map<string, Promise<string | null>>()
 
 /**
- * Binaries whose `--version` fails under the probe seatbelt profile and runs
- * unwrapped instead (LOCAL-APP.md, "Sandbox", documented exceptions).
+ * Probes that fail under the probe seatbelt profile and run unwrapped
+ * instead. An entry is a binary basename (every probe of it) or
+ * `<basename> <subcommand>` (that probe only).
  * amp: writes under `~/.cache` (beyond `~/.cache/amp`) on every invocation
  * and aborts when `(deny file-write*)` blocks it.
+ * opencode models: opens `~/.local/share/opencode/log/opencode.log` for
+ * writing and exits 1 when the profile blocks it (1.18.30); its
+ * `--version` runs sandboxed.
  */
-const PROBE_SANDBOX_EXCEPTIONS: ReadonlySet<string> = new Set(["amp"])
+const PROBE_SANDBOX_EXCEPTIONS: ReadonlySet<string> = new Set(["amp", "opencode models"])
+
+/**
+ * The environment a probe child gets: these keys and nothing else, so a
+ * session token (SMITHERS_CLOUD_TOKEN, GITHUB_TOKEN) never reaches a CLI
+ * that only reports its version or its models.
+ */
+export const PROBE_ENV_KEYS = [
+  // Resolving the binary, its interpreter (`#!/usr/bin/env node`) and its own config.
+  "HOME",
+  "PATH",
+  "TMPDIR",
+  // Output encoding.
+  "LANG",
+  "LANGUAGE",
+  "LC_ALL",
+  "LC_CTYPE",
+  "TZ",
+  // Where opencode keeps its config, auth.json and model cache.
+  "XDG_CONFIG_HOME",
+  "XDG_DATA_HOME",
+  "XDG_CACHE_HOME",
+  "XDG_STATE_HOME",
+  "OPENCODE_CONFIG",
+  // `opencode models` lists a provider only when its credential is present; these are the ones DETECTORS reads.
+  "OPENCODE_API_KEY",
+  "ANTHROPIC_API_KEY",
+  "OPENAI_API_KEY",
+  "GEMINI_API_KEY",
+  "GOOGLE_API_KEY",
+  "KIMI_API_KEY",
+  "CEREBRAS_API_KEY",
+  "OPENROUTER_API_KEY"
+] as const
+
+/** The probe child environment: PROBE_ENV_KEYS from `source`, plus NO_COLOR. */
+export const probeEnv = (source: Readonly<Record<string, string | undefined>>): Record<string, string> => {
+  const env: Record<string, string> = { NO_COLOR: "1" }
+  for (const key of PROBE_ENV_KEYS) {
+    const value = source[key]
+    if (value !== undefined && value !== "") env[key] = value
+  }
+  return env
+}
 
 /** Seatbelt matches resolved paths, so the scratch dir the probe may write is canonicalised. */
 const probeTmpdir = (): string => {
@@ -463,22 +511,29 @@ const probeTmpdir = (): string => {
   }
 }
 
+/**
+ * A read-only probe argv (`<binary> --version`, `<binary> models`) under the
+ * probe policy: no network, writes confined to scratch. A PROBE_SANDBOX_EXCEPTIONS
+ * entry runs unwrapped.
+ */
+export const wrapProbe = (argv: ReadonlyArray<string>, host: SandboxHost = currentSandboxHost()): ReadonlyArray<string> => {
+  const name = basename(argv[0] ?? "")
+  if (PROBE_SANDBOX_EXCEPTIONS.has(name) || PROBE_SANDBOX_EXCEPTIONS.has(`${name} ${argv[1] ?? ""}`)) return argv
+  return wrapSandbox(argv, probePolicy({ tmpdir: probeTmpdir() }), host).argv
+}
+
 const runVersion = (binary: string): Promise<string | null> => {
   const cached = versionCache.get(binary)
   if (cached !== undefined) return cached
   const probe = (async (): Promise<string | null> => {
     try {
-      // Read-only probe: no network, writes confined to scratch (LOCAL-APP.md, "Sandbox").
-      const wrapped = PROBE_SANDBOX_EXCEPTIONS.has(basename(binary))
-        ? { argv: [binary, "--version"] as ReadonlyArray<string> }
-        : wrapSandbox([binary, "--version"], probePolicy({ tmpdir: probeTmpdir() }), currentSandboxHost())
-      const child = Bun.spawn([...wrapped.argv], {
+      const child = Bun.spawn([...wrapProbe([binary, "--version"])], {
         stdout: "pipe",
         stderr: "ignore",
         stdin: "ignore",
         timeout: VERSION_TIMEOUT_MS,
         killSignal: "SIGKILL",
-        env: { ...process.env, NO_COLOR: "1" }
+        env: probeEnv(process.env)
       })
       const [code, stdout] = await Promise.all([child.exited, new Response(child.stdout).text()])
       return code === 0 ? parseVersionLine(stdout) : null

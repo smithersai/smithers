@@ -33,8 +33,9 @@ import { HARNESS_IDS } from "@smthrs/rpc/LocalApp"
 import type { Harness } from "@smthrs/rpc/LocalApp"
 import { z } from "zod"
 import { atomicWriteJson } from "../atomicWriteJson"
-import { DETECTORS, harnessModels } from "../Harnesses"
+import { DETECTORS, harnessModels, probeEnv, wrapProbe } from "../Harnesses"
 import { json, jsonError, readJson, Router } from "../routes"
+import type { SandboxHost } from "../Sandbox"
 import type { HarnessDetector } from "./harnesses"
 
 export const AGENTS_PATH = "/api/agents"
@@ -244,15 +245,30 @@ export const listHarnessModels = async (
   }
 }
 
+/**
+ * The list command as spawned: the probe sandbox (or its documented
+ * exception) around the argv, and the probe environment, the same as the
+ * version probe for the same binary.
+ */
+export const modelListCommand = (
+  argv: ReadonlyArray<string>,
+  source: Readonly<Record<string, string | undefined>>,
+  host?: SandboxHost
+): { readonly argv: ReadonlyArray<string>; readonly env: Record<string, string> } => ({
+  argv: wrapProbe(argv, host),
+  env: probeEnv(source)
+})
+
 /** Runs a list argv under the timeout; the caller owns the argv (the table's, with the resolved binary). */
 const spawnList = async (argv: ReadonlyArray<string>): Promise<{ readonly code: number | null; readonly stdout: string; readonly stderr: string }> => {
-  const child = Bun.spawn([...argv], {
+  const command = modelListCommand(argv, process.env)
+  const child = Bun.spawn([...command.argv], {
     stdout: "pipe",
     stderr: "pipe",
     stdin: "ignore",
     timeout: MODEL_LIST_TIMEOUT_MS,
     killSignal: "SIGKILL",
-    env: { ...process.env, NO_COLOR: "1" }
+    env: command.env
   })
   const [code, stdout, stderr] = await Promise.all([child.exited, new Response(child.stdout).text(), new Response(child.stderr).text()])
   if (child.signalCode === "SIGKILL") return { code: null, stdout, stderr: `timed out after ${MODEL_LIST_TIMEOUT_MS} ms` }

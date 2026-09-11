@@ -8,7 +8,8 @@ import { LOCAL_SESSION_HEADER } from "@smthrs/rpc/LocalSession"
 import { atomicWriteJson } from "../atomicWriteJson"
 import { createPtyManager } from "../Pty"
 import { startLocalServer } from "../server"
-import { createAgentStore, parseModelLines } from "./agents"
+import { SANDBOX_EXEC } from "../Sandbox"
+import { createAgentStore, modelListCommand, parseModelLines } from "./agents"
 
 /*
  * Agents as data over a real local origin with a temp state dir
@@ -83,6 +84,8 @@ const setup = async () => {
     [
       "#!/bin/sh",
       "if [ \"$1\" = \"models\" ] && [ -z \"$2\" ]; then",
+      // A session token that reached the child would show up as a model id.
+      "  [ -n \"$GITHUB_TOKEN$SMITHERS_CLOUD_TOKEN\" ] && echo \"leak/$GITHUB_TOKEN$SMITHERS_CLOUD_TOKEN\"",
       "  printf 'kimi-for-coding/k3\\n\\ncerebras/gpt-oss-120b\\n  cerebras/gemma-4-31b  \\nnot a model id\\n'",
       "  exit 0",
       "fi",
@@ -248,7 +251,18 @@ describe("the agents routes", () => {
   test("GET /api/harnesses/{id}/models runs the harness's list command, falls back to the table's suggestions, and states failures", async () => {
     await using fixture = await setup()
     const { apiFetch } = fixture
-    const listed = HarnessModelsResponseSchema.parse(await (await apiFetch("/api/harnesses/opencode/models")).json())
+    const saved = { github: process.env.GITHUB_TOKEN, cloud: process.env.SMITHERS_CLOUD_TOKEN }
+    process.env.GITHUB_TOKEN = "ghp_probe"
+    process.env.SMITHERS_CLOUD_TOKEN = "smithers_probe"
+    let listed
+    try {
+      listed = HarnessModelsResponseSchema.parse(await (await apiFetch("/api/harnesses/opencode/models")).json())
+    } finally {
+      if (saved.github === undefined) delete process.env.GITHUB_TOKEN
+      else process.env.GITHUB_TOKEN = saved.github
+      if (saved.cloud === undefined) delete process.env.SMITHERS_CLOUD_TOKEN
+      else process.env.SMITHERS_CLOUD_TOKEN = saved.cloud
+    }
     expect(listed).toEqual({
       harnessId: "opencode",
       models: ["kimi-for-coding/k3", "cerebras/gpt-oss-120b", "cerebras/gemma-4-31b"],
@@ -293,6 +307,18 @@ describe("the agents routes", () => {
     })
     expect(timedOut.models).toEqual([])
     expect(timedOut.reason).toContain("timed out")
+  })
+
+  test("the list command runs under the probe sandbox with the probe environment", () => {
+    const darwin = { platform: "darwin", disabled: false, log: () => {} }
+    const source = { HOME: "/Users/u", PATH: "/usr/bin", KIMI_API_KEY: "kimi", GITHUB_TOKEN: "ghp", SMITHERS_CLOUD_TOKEN: "pat" }
+    const wrapped = modelListCommand(["/opt/bin/fakelist", "models"], source, darwin)
+    expect(wrapped.argv[0]).toBe(SANDBOX_EXEC)
+    expect(wrapped.argv.slice(-2)).toEqual(["/opt/bin/fakelist", "models"])
+    expect(wrapped.env).toEqual({ HOME: "/Users/u", PATH: "/usr/bin", KIMI_API_KEY: "kimi", NO_COLOR: "1" })
+    // opencode writes its log outside scratch on `models`: the documented exception.
+    expect(modelListCommand(["/opt/bin/opencode", "models", "cerebras"], source, darwin).argv).toEqual(["/opt/bin/opencode", "models", "cerebras"])
+    expect(modelListCommand(["/opt/bin/opencode", "--version"], source, darwin).argv[0]).toBe(SANDBOX_EXEC)
   })
 
   test("parseModelLines keeps one id per line and drops noise", () => {
