@@ -6,7 +6,7 @@
  * Chromium.
  */
 import type { Server, ServerWebSocket } from "bun"
-import { randomBytes } from "node:crypto"
+import { createHash, randomBytes, timingSafeEqual } from "node:crypto"
 import { existsSync, statSync } from "node:fs"
 import { homedir } from "node:os"
 import { join, normalize, resolve } from "node:path"
@@ -23,6 +23,7 @@ import {
   IDENTITY_ROUTE_PREFIX,
   TURN_PATH
 } from "@smthrs/rpc/AgentApiRoutes"
+import * as Redaction from "@smthrs/journal/Redaction"
 import type { AgentRole } from "@smthrs/rpc/AgentRoles"
 import { APP_API_VERSION, APP_BOOTSTRAP_PATH } from "@smthrs/rpc/AppBootstrap"
 import { AgentRuntimeContextSchema } from "@smthrs/rpc/AgentContext"
@@ -85,6 +86,18 @@ export const DEFAULT_CLOUD_API = "https://api.jjhub.tech"
 export const APP_VERSION = "0.0.1"
 /** Where the SPA posts uncaught errors; the client half is state/ClientErrors.ts. */
 export const CLIENT_ERRORS_PATH = "/api/client-errors"
+
+/**
+ * Constant-time comparison for the local session capability, the same
+ * discipline PackagedE2EBridge and CloudAuth apply to their secrets. Hashing
+ * both sides first gives timingSafeEqual equal lengths, so it never throws.
+ */
+const sameSecret = (supplied: string, expected: string): boolean =>
+  timingSafeEqual(createHash("sha256").update(supplied).digest(), createHash("sha256").update(expected).digest())
+
+/** Renderer error text can carry tokens from the failing call; the journal's redactor strips them before the log. */
+const redactClientErrorText = Redaction.make()
+const redactClientError = (text: string): string => String(redactClientErrorText(text))
 /** Bytes on the wire, the unit the client bounds its report in. */
 export const CLIENT_ERROR_MAX_BODY = 16 * 1024
 
@@ -796,7 +809,7 @@ export const startLocalServer = async (options: LocalServerOptions): Promise<Loc
     if (body.byteLength > CLIENT_ERROR_MAX_BODY) {
       return jsonError(413, "body_too_large", `Client error reports are capped at ${CLIENT_ERROR_MAX_BODY} bytes.`)
     }
-    log(`client-error: ${new TextDecoder().decode(body)}`)
+    log(`client-error: ${redactClientError(new TextDecoder().decode(body))}`)
     return json({ status: "accepted" }, 202)
   })
 
@@ -860,7 +873,7 @@ export const startLocalServer = async (options: LocalServerOptions): Promise<Loc
       const protocols = (request.headers.get("sec-websocket-protocol") ?? "")
         .split(",")
         .map((value) => value.trim())
-      if (!protocols.includes(websocketProtocol)) {
+      if (!protocols.some((protocol) => sameSecret(protocol, websocketProtocol))) {
         return jsonError(401, "local_session_required", "The local session capability is required.")
       }
       const upgraded = bunServer.upgrade(request, {
@@ -886,7 +899,7 @@ export const startLocalServer = async (options: LocalServerOptions): Promise<Loc
       const protocols = (request.headers.get("sec-websocket-protocol") ?? "")
         .split(",")
         .map((value) => value.trim())
-      if (!protocols.includes(websocketProtocol)) {
+      if (!protocols.some((protocol) => sameSecret(protocol, websocketProtocol))) {
         return jsonError(401, "local_session_required", "The local session capability is required.")
       }
       if (cloudUpstream === null) {
@@ -946,7 +959,7 @@ export const startLocalServer = async (options: LocalServerOptions): Promise<Loc
       const linearNavigation = request.method === "GET" && linearAuth?.claimNavigation(url) === true
       if (linearNavigation) url.searchParams.delete("handoff")
       if (pathname !== HEALTH_PATH && !oauthNavigation && !linearNavigation) {
-        if (request.headers.get(LOCAL_SESSION_HEADER) !== sessionToken) {
+        if (!sameSecret(request.headers.get(LOCAL_SESSION_HEADER) ?? "", sessionToken)) {
           return jsonError(401, "local_session_required", "The local session capability is required.")
         }
         const requestOrigin = request.headers.get("origin")

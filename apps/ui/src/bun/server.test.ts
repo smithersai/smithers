@@ -194,6 +194,34 @@ describe("the local origin", () => {
     expect(plain.status).toBe(415)
   })
 
+  test("a wrong-length or same-length wrong capability is refused on the header, /ws and /api/cloud-ws", async () => {
+    const token = server.sessionToken
+    const sameLength = `${token.slice(0, -1)}${token.endsWith("A") ? "B" : "A"}`
+    for (const wrong of [`${token}x`, token.slice(0, 8), sameLength]) {
+      const header = await fetch(`${server.origin}/api/repos`, { headers: { [LOCAL_SESSION_HEADER]: wrong } })
+      expect(header.status).toBe(401)
+      const protocol = server.websocketProtocol.replace(token, wrong)
+      for (const path of ["/ws", "/api/cloud-ws/repos/will/smithers/workspace/sessions/s1/terminal"]) {
+        const upgrade = await fetch(`${server.origin}${path}`, { headers: { "sec-websocket-protocol": `other, ${protocol}` } })
+        expect(upgrade.status).toBe(401)
+      }
+    }
+  })
+
+  test("POST /api/client-errors logs the report with its secrets redacted", async () => {
+    const report = JSON.stringify({
+      name: "TypeError",
+      message: "fetch https://api.example.test/v1/items?key=live_c4p4b1l1ty failed with Authorization: Bearer abcdef0123456789token"
+    })
+    const response = await apiFetch("/api/client-errors", { method: "POST", headers: { "content-type": "application/json" }, body: report })
+    expect(response.status).toBe(202)
+    const line = logs.find((entry) => entry.startsWith("client-error: ") && entry.includes("TypeError"))
+    expect(line).toBeDefined()
+    expect(line).not.toContain("live_c4p4b1l1ty")
+    expect(line).not.toContain("abcdef0123456789token")
+    expect(line).toContain("Bearer [REDACTED_TOKEN]")
+  })
+
   test("GET /api/harnesses answers the detector's table", async () => {
     const body = (await (await apiFetch("/api/harnesses")).json()) as { harnesses: Array<{ id: string; status: string }> }
     expect(body.harnesses).toHaveLength(1)
