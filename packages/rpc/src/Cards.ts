@@ -26,14 +26,8 @@ import {
 import { FactoryRuleSchema } from "./FactoryProjection.ts"
 import { GatewayWorkspaceIdSchema } from "./GatewayWorkspace.ts"
 import { HomeBlockSchema } from "./HomePane.ts"
-import {
-  HARNESS_IDS,
-  LSP_DIAGNOSTICS_CAP,
-  LspDiagnosticSchema,
-  LspHoverSchema,
-  RepoSchema,
-  TargetSchema
-} from "./LocalApp.ts"
+import { HARNESS_IDS, RepoSchema, TargetSchema } from "./LocalApp.ts"
+import { LSP_DIAGNOSTICS_CAP, LspDiagnosticSchema, LspHoverSchema } from "./LocalLsp.ts"
 import {
   AffectedCardPayloadSchema,
   CiMatrixCardPayloadSchema,

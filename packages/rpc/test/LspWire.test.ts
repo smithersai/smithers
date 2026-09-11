@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest"
-import { LSP_HOVER_CAP_CHARS } from "../src/LocalApp.ts"
+import { LSP_HOVER_CAP_CHARS } from "../src/LocalLsp.ts"
 import {
   hoverContents,
   LSP_CLIENT_CAPABILITIES,

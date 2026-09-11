@@ -6,7 +6,7 @@
 /*
  * The Language Server Protocol shapes as far as Smithers reads them (LSP
  * 3.17), and the one conversion of each into the typed answers of
- * `LocalApp.ts`: 0-based, end-exclusive ranges become 1-based; a hover's
+ * `LocalLsp.ts`: 0-based, end-exclusive ranges become 1-based; a hover's
  * contents become one markdown string cut at the cap; a diagnostic's numeric
  * severity becomes its word. Two adapters speak the wire — the Bun host's
  * stdio session (`apps/ui/src/bun/lsp/LspSession.ts`) and the renderer's
@@ -15,8 +15,8 @@
  * server runs on. Runtime-free: strings and numbers only.
  */
 import { isRecord } from "@smthrs/canonical/Record"
-import { LSP_HOVER_CAP_CHARS } from "./LocalApp.ts"
-import type { LspDiagnostic, LspHover, LspRange, LspSeverity } from "./LocalApp.ts"
+import { LSP_HOVER_CAP_CHARS } from "./LocalLsp.ts"
+import type { LspDiagnostic, LspHover, LspRange, LspSeverity } from "./LocalLsp.ts"
 
 /**
  * The lsp position wire contract shared by the host and its clients.

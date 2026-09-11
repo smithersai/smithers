@@ -8,7 +8,7 @@ import {
   TargetDetailSchema,
   TargetsViewSchema
 } from "../src/Cards.ts"
-import { LSP_DIAGNOSTICS_CAP } from "../src/LocalApp.ts"
+import { LSP_DIAGNOSTICS_CAP } from "../src/LocalLsp.ts"
 import { AgentTurnFrameSchema } from "../src/NativeAgent.ts"
 
 const base = { id: "card-r1", title: "Aomi", status: "active", createdAt: 0, ordinal: 0 }

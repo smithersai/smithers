@@ -1,43 +1,10 @@
 import { describe, expect, test } from "vitest"
+import * as CloudTunnel from "../src/CloudTunnel.ts"
+import * as LinearAuth from "../src/LinearAuth.ts"
+import * as LocalApp from "../src/LocalApp.ts"
 import {
-  CLOUD_LSP_FRAME_CAP_BYTES,
-  CLOUD_LSP_REASSEMBLY_CAP_BYTES,
-  CLOUD_LSP_ROOT_URI,
-  CLOUD_LSP_SUBPROTOCOL,
-  CLOUD_TERMINAL_FRAME_CAP_BYTES,
-  CLOUD_WS_NOT_READY_CLOSE_CODE,
-  CLOUD_WS_PENDING_CLOSE_CODE,
-  CLOUD_WS_SESSION_KINDS,
-  CloudAuthStartResponseSchema,
-  CloudLspFragmentSchema,
-  CloudLspSessionSchema,
-  CloudSessionSchema,
   HarnessesResponseSchema,
   HarnessSchema,
-  LinearAuthSessionSchema,
-  LSP_DEFINITION_PATH,
-  LSP_DIAGNOSTICS_CAP,
-  LSP_DIAGNOSTICS_PATH,
-  LSP_HOVER_CAP_CHARS,
-  LSP_HOVER_PATH,
-  LSP_LANGUAGE_SERVER_MISSING,
-  LSP_LOCATIONS_CAP,
-  LSP_SERVERS_PATH,
-  LSP_SEVERITIES,
-  LspDefinitionResponseSchema,
-  LspDiagnosticSchema,
-  LspDiagnosticsMessageSchema,
-  LspDiagnosticsResponseSchema,
-  LspErrorResponseSchema,
-  LspFileRequestSchema,
-  LspHoverResponseSchema,
-  lspLanguageFor,
-  LspLocationSchema,
-  LspPositionRequestSchema,
-  LspRangeSchema,
-  LspServersResponseSchema,
-  LspSeveritySchema,
-  lspTopic,
   patternRunTitle,
   PtyCreateResponseSchema,
   PtyOutputResponseSchema,
@@ -45,7 +12,6 @@ import {
   RepoFilesRequestSchema,
   RepoFilesResponseSchema,
   RepoSchema,
-  retryAfterOf,
   splitLabel,
   TARGET_LABEL,
   TARGET_PATTERN,
@@ -55,9 +21,9 @@ import {
   TargetRunResponseSchema,
   TargetRunVerbSchema,
   TargetSchema,
-  TargetsQueryResponseSchema,
-  withRetryAfter
+  TargetsQueryResponseSchema
 } from "../src/LocalApp.ts"
+import * as LocalLsp from "../src/LocalLsp.ts"
 import { RunReplayResponseSchema, TargetRunEventSchema } from "../src/TargetGraph.ts"
 
 /*
@@ -122,205 +88,6 @@ test("the pattern grammar accepts labels and subtrees and refuses the rest", () 
   for (const pattern of ["//packages", "//packages/...:lint", "//a b/...", "packages/..."]) {
     expect(TARGET_PATTERN.test(pattern)).toBe(false)
   }
-})
-
-/*
- * Code intelligence on the local origin (apps/ui/docs/code-intel/PLAN.md §3):
- * positions are 1-based on the wire, paths are repository-relative, and the
- * host's caps are the schemas' bounds, so an answer past them fails to parse
- * instead of rendering.
- */
-describe("the code-intelligence wire model", () => {
-  const position = { repoId: "r1", path: "src/index.ts", line: 12, character: 5 }
-  const range = { line: 12, character: 5, endLine: 12, endCharacter: 9 }
-  const diagnostic = { ...range, severity: "error" as const, message: "boom", source: "ts", code: "2551" }
-  const digest = "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08"
-
-  test("the routes hang off /api/lsp and a repository's diagnostics ride lsp:<repoId>", () => {
-    expect([LSP_HOVER_PATH, LSP_DEFINITION_PATH, LSP_DIAGNOSTICS_PATH, LSP_SERVERS_PATH])
-      .toEqual(["/api/lsp/hover", "/api/lsp/definition", "/api/lsp/diagnostics", "/api/lsp/servers"])
-    expect(lspTopic("r1")).toBe("lsp:r1")
-  })
-
-  test("a position request is 1-based and carries nothing the routes did not ask for", () => {
-    expect(LspPositionRequestSchema.parse(position)).toEqual(position)
-    expect(LspPositionRequestSchema.safeParse({ ...position, line: 0 }).success).toBe(false)
-    expect(LspPositionRequestSchema.safeParse({ ...position, character: 0 }).success).toBe(false)
-    expect(LspPositionRequestSchema.safeParse({ ...position, line: 1.5 }).success).toBe(false)
-    expect(LspPositionRequestSchema.safeParse({ ...position, cwd: "/" }).success).toBe(false)
-    expect(LspFileRequestSchema.parse({ repoId: "r1", path: "src/index.ts" })).toEqual({
-      repoId: "r1",
-      path: "src/index.ts"
-    })
-    expect(LspFileRequestSchema.safeParse({ repoId: "r1", path: "" }).success).toBe(false)
-    expect(LspFileRequestSchema.safeParse({ repoId: "r1", path: "a".repeat(4097) }).success).toBe(false)
-  })
-
-  test("a range is four 1-based ordinals, a location is a repository-relative path plus that range, and severity is a closed set", () => {
-    expect(LspRangeSchema.parse(range)).toEqual(range)
-    // Every ordinal is whole and at least 1; column 0 and a fractional line are protocol errors, not "near enough".
-    for (const key of ["line", "character", "endLine", "endCharacter"] as const) {
-      expect(LspRangeSchema.safeParse({ ...range, [key]: 0 }).success).toBe(false)
-      expect(LspRangeSchema.safeParse({ ...range, [key]: 1.5 }).success).toBe(false)
-    }
-    const location = { path: "src/lib.ts", ...range }
-    expect(LspLocationSchema.parse(location)).toEqual(location)
-    expect(LspLocationSchema.safeParse({ ...location, path: "" }).success).toBe(false)
-    expect(LspLocationSchema.safeParse(range).success).toBe(false)
-    expect(LSP_SEVERITIES).toEqual(["error", "warning", "information", "hint"])
-    for (const severity of LSP_SEVERITIES) expect(LspSeveritySchema.parse(severity)).toBe(severity)
-    expect(LspSeveritySchema.safeParse("fatal").success).toBe(false)
-  })
-
-  test("a hover is the server's markdown cut at the cap and says when it was cut, or null when the server had nothing there", () => {
-    expect(LspHoverResponseSchema.parse({ hover: null, digest })).toEqual({ hover: null, digest })
-    const hover = { contents: "const x: number", truncated: false, range }
-    expect(LspHoverResponseSchema.parse({ hover, digest })).toEqual({ hover, digest })
-    expect(
-      LspHoverResponseSchema.safeParse({
-        hover: { contents: "x".repeat(LSP_HOVER_CAP_CHARS + 1), truncated: true },
-        digest
-      }).success
-    ).toBe(false)
-    // The cut is stated, never inferred from the length; an answer without a digest names no file.
-    expect(LspHoverResponseSchema.safeParse({ hover: { contents: "x" }, digest }).success).toBe(false)
-    expect(LspHoverResponseSchema.safeParse({ hover }).success).toBe(false)
-  })
-
-  test("definitions are repository-relative locations, at most the cap, with the server's total and the count outside the repository", () => {
-    const location = { path: "src/lib.ts", ...range }
-    expect(LspDefinitionResponseSchema.parse({ locations: [location], total: 1, omitted: 0, digest }).locations)
-      .toEqual([location])
-    // An empty list with omitted targets is a definition elsewhere, and the shape carries that fact.
-    expect(LspDefinitionResponseSchema.parse({ locations: [], total: 1, omitted: 1, digest }).omitted).toBe(1)
-    expect(LspDefinitionResponseSchema.safeParse({ locations: [], digest }).success).toBe(false)
-    expect(
-      LspDefinitionResponseSchema.safeParse({
-        locations: Array.from({ length: LSP_LOCATIONS_CAP + 1 }, () => location),
-        total: 21,
-        omitted: 0,
-        digest
-      }).success
-    )
-      .toBe(false)
-  })
-
-  test("diagnostics distinguish an empty publication from none within the wait, and carry the total behind the cap", () => {
-    expect(
-      LspDiagnosticsResponseSchema.parse({ path: "src/index.ts", version: 1, items: [diagnostic], total: 1, digest })
-        .items
-    ).toEqual([diagnostic])
-    expect(LspDiagnosticsResponseSchema.parse({ path: "src/index.ts", version: 2, items: [], total: 0, digest }).items)
-      .toEqual([])
-    expect(
-      LspDiagnosticsResponseSchema.parse({ path: "src/index.ts", version: null, items: null, total: null, digest })
-        .items
-    ).toBeNull()
-    expect(
-      LspDiagnosticsResponseSchema.parse({ path: "src/index.ts", version: 1, items: [diagnostic], total: 132, digest })
-        .total
-    ).toBe(132)
-    expect(
-      LspDiagnosticsResponseSchema.safeParse({ path: "src/index.ts", version: 1, items: [diagnostic], digest }).success
-    ).toBe(false)
-    expect(
-      LspDiagnosticsResponseSchema.safeParse({
-        path: "src/index.ts",
-        version: 1,
-        items: Array.from({ length: LSP_DIAGNOSTICS_CAP + 1 }, () => diagnostic),
-        total: LSP_DIAGNOSTICS_CAP + 1,
-        digest
-      }).success
-    ).toBe(false)
-    expect(LspDiagnosticSchema.safeParse({ ...diagnostic, severity: 1 }).success).toBe(false)
-  })
-
-  test("the language table names the extensions each server handles, so the renderer knows which cards code intelligence serves", () => {
-    expect(lspLanguageFor("src/App.tsx")).toBe("typescript")
-    expect(lspLanguageFor("lib/index.MJS")).toBe("typescript")
-    expect(lspLanguageFor("README.md")).toBeNull()
-    expect(lspLanguageFor("package.json")).toBeNull()
-    expect(lspLanguageFor("Makefile")).toBeNull()
-  })
-
-  test("the bus frame and the server list carry the same shapes", () => {
-    const frame = {
-      type: "lsp.diagnostics" as const,
-      repoId: "r1",
-      path: "src/index.ts",
-      version: 3,
-      items: [diagnostic],
-      total: 3,
-      digest
-    }
-    expect(LspDiagnosticsMessageSchema.parse(frame)).toEqual(frame)
-    expect(
-      LspServersResponseSchema.parse({ servers: [{ repoId: "r1", language: "typescript", state: "ready" }] }).servers[0]
-        ?.state
-    )
-      .toBe("ready")
-    expect(
-      LspServersResponseSchema.safeParse({ servers: [{ repoId: "r1", language: "cobol", state: "ready" }] }).success
-    ).toBe(false)
-  })
-
-  test("a failure names its code, and a missing server carries the install line verbatim", () => {
-    const missing = LspErrorResponseSchema.parse({
-      error: {
-        code: LSP_LANGUAGE_SERVER_MISSING,
-        message: "No TypeScript language server on this machine.",
-        install: "npm i -g typescript-language-server typescript"
-      }
-    })
-    expect(missing.error.code).toBe("language_server_missing")
-    expect(missing.error.install).toBe("npm i -g typescript-language-server typescript")
-    expect(LspErrorResponseSchema.parse({ error: { code: "timeout", message: "No answer within 5 s." } }).error.install)
-      .toBeUndefined()
-  })
-})
-
-/*
- * Lane L6: the cloud language-server relay through the tunnel (plue #505).
- * The renderer reads plue's fragments and the tunnel's close reasons; what
- * the two sides agree on is pinned here.
- */
-describe("the cloud LSP relay contract", () => {
-  test("the lsp branch has its own subprotocol, frame cap and reassembly cap, and the checkout is the root", () => {
-    expect(CLOUD_WS_SESSION_KINDS).toEqual(["terminal", "lsp"])
-    expect(CLOUD_LSP_SUBPROTOCOL).toBe("lsp")
-    expect(CLOUD_TERMINAL_FRAME_CAP_BYTES).toBe(64 * 1024)
-    expect(CLOUD_LSP_FRAME_CAP_BYTES).toBe(1024 * 1024)
-    expect(CLOUD_LSP_REASSEMBLY_CAP_BYTES).toBe(16 * 1024 * 1024)
-    expect(CLOUD_LSP_ROOT_URI).toBe("file:///home/developer/workspace")
-  })
-
-  test("a fragment is exactly { seq ≥ 1, last, data }; a session row is an lsp session with its language", () => {
-    expect(CloudLspFragmentSchema.parse({ seq: 1, last: false, data: "{" })).toEqual({ seq: 1, last: false, data: "{" })
-    expect(CloudLspFragmentSchema.safeParse({ seq: 0, last: true, data: "" }).success).toBe(false)
-    expect(CloudLspFragmentSchema.safeParse({ seq: 1, last: true, data: "", extra: 1 }).success).toBe(false)
-    expect(
-      CloudLspSessionSchema.parse({
-        id: "s1",
-        workspace_id: "ws-1",
-        status: "running",
-        kind: "lsp",
-        language: "typescript",
-        idle_timeout_secs: 600
-      })
-    )
-      .toEqual({ id: "s1", status: "running", kind: "lsp", language: "typescript" })
-    expect(CloudLspSessionSchema.safeParse({ id: "s1", status: "running", kind: "terminal" }).success).toBe(false)
-  })
-
-  test("a refusal's Retry-After rides the close reason in words and reads back as seconds", () => {
-    expect(CLOUD_WS_PENDING_CLOSE_CODE).toBe(4425)
-    expect(CLOUD_WS_NOT_READY_CLOSE_CODE).toBe(4503)
-    const reason = withRetryAfter("workspace_session_pending: session pending", 2)
-    expect(reason).toBe("workspace_session_pending: session pending (retry after 2 s)")
-    expect(retryAfterOf(reason)).toBe(2)
-    expect(retryAfterOf("access revoked: token expired")).toBeNull()
-    expect(retryAfterOf("guest_not_ready: activating (retry after 30 s) ")).toBe(30)
-  })
 })
 
 /*
@@ -615,50 +382,30 @@ describe("the targets query and run wire model", () => {
 })
 
 /*
- * The sign-in answers on the local origin (apps/ui/docs/decisions/0001-piper-one-truth.md
- * and apps/ui/docs/decisions/0005-linear-github-sync.md). Neither carries a token: the cloud session carries only what
- * a person sees, and the Linear session carries the setup key only once the
- * handoff is authorized. `scopes: "degraded"` is the one word for a legacy
- * token set that lacks the workspace scopes, so acts that need them can say
- * "sign in again to enable" instead of failing at the call.
+ * Code intelligence, the Smithers Cloud seam and the Linear handoff live in
+ * their own modules. LocalApp re-exports the names it had at the move for one
+ * release: each is its home's own value, never a second declaration, and
+ * LocalApp declares nothing of those domains itself.
  */
-describe("the cloud and Linear sign-in wire model", () => {
-  test("a signed-out session is three nulls and no scope verdict", () => {
-    const signedOut = { state: "signed-out" as const, username: null, expiresAt: null }
-    const parsed = CloudSessionSchema.parse(signedOut)
-    expect(parsed).toEqual(signedOut)
-    expect(parsed.scopes).toBeUndefined()
-  })
+describe("the names that moved out of LocalApp", () => {
+  const homes = { LocalLsp, CloudTunnel, LinearAuth }
+  const localApp: Record<string, unknown> = LocalApp
 
-  test("a signed-in session names the person and its expiry, and says when the token set is degraded", () => {
-    const signedIn = {
-      state: "signed-in" as const,
-      username: "williamcory",
-      expiresAt: "2026-10-01T00:00:00.000Z",
-      scopes: "degraded" as const
+  test("still import from LocalApp, as the value their home declares", () => {
+    expect(localApp.LspHoverSchema).toBe(LocalLsp.LspHoverSchema)
+    expect(localApp.CloudSessionSchema).toBe(CloudTunnel.CloudSessionSchema)
+    expect(localApp.LinearAuthSessionSchema).toBe(LinearAuth.LinearAuthSessionSchema)
+    for (const [home, exports] of Object.entries(homes)) {
+      for (const [name, value] of Object.entries(exports)) {
+        if (name in localApp) expect(localApp[name], `${home}.${name}`).toBe(value)
+      }
     }
-    expect(CloudSessionSchema.parse(signedIn)).toEqual(signedIn)
-    // "degraded" is the only verdict the wire carries; full scopes are said by leaving it out.
-    expect(CloudSessionSchema.safeParse({ ...signedIn, scopes: "full" }).success).toBe(false)
-    expect(CloudSessionSchema.safeParse({ ...signedIn, state: "expired" }).success).toBe(false)
-    const { username: _username, ...withoutUsername } = signedIn
-    expect(CloudSessionSchema.safeParse(withoutUsername).success).toBe(false)
-    // A bearer never reaches the renderer, so it is stripped rather than carried through.
-    expect(CloudSessionSchema.parse({ ...signedIn, token: "secret" })).toEqual(signedIn)
   })
 
-  test("starting a browser login answers with the url to open", () => {
-    expect(CloudAuthStartResponseSchema.parse({ url: "https://jjhub.tech/login?x=1" }).url)
-      .toBe("https://jjhub.tech/login?x=1")
-    expect(CloudAuthStartResponseSchema.safeParse({}).success).toBe(false)
-  })
-
-  test("the Linear handoff is three states and carries the setup key only once authorized", () => {
-    expect(LinearAuthSessionSchema.parse({ state: "idle" })).toEqual({ state: "idle" })
-    expect(LinearAuthSessionSchema.parse({ state: "waiting" }).setupKey).toBeUndefined()
-    expect(LinearAuthSessionSchema.parse({ state: "authorized", setupKey: "k1" }))
-      .toEqual({ state: "authorized", setupKey: "k1" })
-    expect(LinearAuthSessionSchema.safeParse({ state: "done" }).success).toBe(false)
-    expect(LinearAuthSessionSchema.safeParse({}).success).toBe(false)
+  test("LocalApp declares no code-intelligence, Cloud or Linear name of its own", () => {
+    const domain = /^(?:LSP_|Lsp|lsp|CLOUD_|Cloud|withRetryAfter$|retryAfterOf$|LINEAR_|Linear)/
+    const strays = Object.keys(localApp)
+      .filter((name) => domain.test(name) && !Object.values(homes).some((home) => name in home))
+    expect(strays).toEqual([])
   })
 })
