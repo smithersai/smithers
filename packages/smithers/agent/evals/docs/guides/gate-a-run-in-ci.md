@@ -15,9 +15,11 @@ into an exit code.
 and reports what moved:
 
 ```ts
-const comparison = yield * Regression.compare(baseline, run, {
-  absolute: 0.05,
-  relative: 0.1
+Effect.gen(function*() {
+  const comparison = yield* Regression.compare(baseline, run, {
+    absolute: 0.05,
+    relative: 0.1
+  })
 })
 ```
 
@@ -49,10 +51,12 @@ secrets must not print the report where the log is readable.
 [@smthrs/scorers/ScoreGate](/api/scorers):
 
 ```ts
-const verdict = yield * Gate.check(comparison, {
-  mean: 0.9,
-  min: 0.5,
-  perCase: { "adds numbers": 0.8 }
+Effect.gen(function*() {
+  const verdict = yield* Gate.check(comparison, {
+    mean: 0.9,
+    min: 0.5,
+    perCase: { "adds numbers": 0.8 }
+  })
 })
 ```
 
@@ -72,15 +76,17 @@ a `ScoreGateError`, code `invalid_threshold`. Catch it and report it rather
 than crashing the CI job:
 
 ```ts
-const graded = yield * Gate.check(comparison, { mean: 1 }).pipe(
-  Effect.map(Gate.ciGrade),
-  Effect.catch((error) =>
-    Effect.succeed({
-      exitCode: 1 as const,
-      summary: `${error.code}: threshold ${error.threshold}, actual ${error.actual}`
-    })
+Effect.gen(function*() {
+  const graded = yield* Gate.check(comparison, { mean: 1 }).pipe(
+    Effect.map(Gate.ciGrade),
+    Effect.catch((error) =>
+      Effect.succeed({
+        exitCode: 1 as const,
+        summary: `${error.code}: threshold ${error.threshold}, actual ${error.actual}`
+      })
+    )
   )
-)
+})
 ```
 
 ## Grade to an exit code

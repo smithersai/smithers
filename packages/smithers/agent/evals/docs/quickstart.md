@@ -44,14 +44,16 @@ validation.
 import { Suite } from "@smthrs/evals"
 import { Binding } from "@smthrs/scorers"
 
-const suite = yield* Suite.make({
-  name: "greetings",
-  cases: [
-    { name: "ada", input: { name: "Ada" }, expected: "Hello, Ada" },
-    { name: "grace", input: { name: "Grace" }, expected: "Hello, Grace" }
-  ],
-  bindings: [Binding.make({ scorer: polite, appliesTo: greet })],
-  concurrency: 2
+Effect.gen(function*() {
+  const suite = yield* Suite.make({
+    name: "greetings",
+    cases: [
+      { name: "ada", input: { name: "Ada" }, expected: "Hello, Ada" },
+      { name: "grace", input: { name: "Grace" }, expected: "Hello, Grace" }
+    ],
+    bindings: [Binding.make({ scorer: polite, appliesTo: greet })],
+    concurrency: 2
+  })
 })
 ```
 
@@ -92,9 +94,11 @@ so a re-run over the same inputs produces identical observations.
 ```ts
 import { Runner } from "@smthrs/evals"
 
-const run = yield* Runner.run(suite, {
-  runId: "quickstart-1",
-  at: "2026-01-01T00:00:00.000Z"
+Effect.gen(function*() {
+  const run = yield* Runner.run(suite, {
+    runId: "quickstart-1",
+    at: "2026-01-01T00:00:00.000Z"
+  })
 })
 ```
 
@@ -111,8 +115,10 @@ serializes them as canonical JSON to commit beside the suite.
 import { Baseline } from "@smthrs/evals"
 import { writeFile } from "node:fs/promises"
 
-const baseline = yield* Baseline.fromRun(run)
-yield* Effect.promise(() => writeFile("baseline.json", Baseline.write(baseline)))
+Effect.gen(function*() {
+  const baseline = yield* Baseline.fromRun(run)
+  yield* Effect.promise(() => writeFile("baseline.json", Baseline.write(baseline)))
+})
 ```
 
 Inconclusive observations are dropped: a baseline records what was measured,
@@ -127,13 +133,15 @@ render the report, and grade the comparison.
 import { Gate, Regression, Report } from "@smthrs/evals"
 import { readFile } from "node:fs/promises"
 
-const committed = yield* Baseline.load(
-  yield* Effect.promise(() => readFile("baseline.json", "utf8"))
-)
-const comparison = yield* Regression.compare(committed, run)
-yield* Effect.sync(() => process.stdout.write(Report.markdown(comparison)))
-const verdict = yield* Gate.check(comparison, { mean: 1 })
-const grade = Gate.ciGrade(verdict)
+Effect.gen(function*() {
+  const committed = yield* Baseline.load(
+    yield* Effect.promise(() => readFile("baseline.json", "utf8"))
+  )
+  const comparison = yield* Regression.compare(committed, run)
+  yield* Effect.sync(() => process.stdout.write(Report.markdown(comparison)))
+  const verdict = yield* Gate.check(comparison, { mean: 1 })
+  const grade = Gate.ciGrade(verdict)
+})
 ```
 
 ## 7. Put it together

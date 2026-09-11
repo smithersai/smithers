@@ -33,20 +33,12 @@ export interface Execution {
 }
 
 /**
- * Input accepted by a case executor.
- *
- * @category models
- * @since 0.1.0
- */
-export type CaseInput = Case
-
-/**
  * The one callback a case executor is.
  *
  * @category models
  * @since 0.1.0
  */
-export type Run = (suiteCase: CaseInput) => Effect.Effect<Execution, EvalError>
+export type Run = (suiteCase: Case) => Effect.Effect<Execution, EvalError>
 
 /**
  * Runtime shape for an injectable target-flow executor.
@@ -59,18 +51,14 @@ export interface Service {
 }
 
 /**
- * Implementation accepted by {@link make}.
- *
- * `run` and `execute` name the same callback; the union accepts exactly one of
- * them, so an object supplying both is a type error instead of a service whose
- * two halves can disagree.
+ * Implementation accepted by {@link make}: an object naming the callback `run`.
  *
  * @category models
  * @since 0.1.0
  */
-export type Implementation =
-  | { readonly run: Run; readonly execute?: undefined }
-  | { readonly execute: Run; readonly run?: undefined }
+export interface Implementation {
+  readonly run: Run
+}
 
 /**
  * Injectable execution boundary for a target flow.
@@ -81,10 +69,9 @@ export type Implementation =
 export class CaseExecutor extends Context.Service<CaseExecutor, Service>()("flows/evals/CaseExecutor") {}
 
 /**
- * Builds an executor from a callback, or from an object naming it `run` or
- * `execute`.
+ * Builds an executor from a callback, or from an object naming it `run`.
  *
- * Throws a `TypeError` when neither is a function. An executor that silently
+ * Throws a `TypeError` when there is no callback. An executor that silently
  * degraded to {@link makeNoop} turned one wiring mistake into a whole suite of
  * cases failing with `executor`, which reads as a broken target rather than a
  * missing one.
@@ -93,13 +80,9 @@ export class CaseExecutor extends Context.Service<CaseExecutor, Service>()("flow
  * @since 0.1.0
  */
 export const make = (implementation: Implementation | Run): Service => {
-  const run = typeof implementation === "function"
-    ? implementation
-    : typeof implementation.run === "function"
-    ? implementation.run
-    : implementation.execute
+  const run = typeof implementation === "function" ? implementation : implementation.run
   if (typeof run !== "function") {
-    throw new TypeError("CaseExecutor.make needs a callback, or an object with a `run` or `execute` callback")
+    throw new TypeError("CaseExecutor.make needs a callback, or an object with a `run` callback")
   }
   return CaseExecutor.of({ run })
 }

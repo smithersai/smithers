@@ -3,16 +3,23 @@ title: "Installation"
 description: "Add @smthrs/evals to a workspace package, plus its runtime requirements and entry points."
 ---
 
-Install the current release candidate from the `next` dist-tag:
+The package is at 1.0.0-rc.0 and is not on the npm registry yet. It is a
+workspace package of https://github.com/smithersai/smithers, so use it from a
+package in a clone of that repository:
 
 ```bash
-pnpm add @smthrs/evals@next
+git clone https://github.com/smithersai/smithers
+cd smithers
+pnpm install
 ```
+
+Then depend on it through the workspace protocol in your package's
+`package.json` and run `pnpm install` again:
 
 ```json
 {
   "dependencies": {
-    "@smthrs/evals": "1.0.0-rc.0"
+    "@smthrs/evals": "workspace:*"
   }
 }
 ```

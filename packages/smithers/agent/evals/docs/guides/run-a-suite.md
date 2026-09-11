@@ -28,7 +28,7 @@ const executor = CaseExecutor.make((suiteCase) =>
 ```
 
 `CaseExecutor.make` accepts the bare callback, or an object naming the
-callback `run` or `execute`. An object carrying neither throws a `TypeError`:
+callback `run`. An object without one throws a `TypeError`:
 a wiring mistake fails loudly instead of degrading to an executor that fails
 every case.
 
@@ -74,9 +74,11 @@ observation with them, so two runs over the same inputs produce identical
 observations:
 
 ```ts
-const run = yield * Runner.run(suite, {
-  runId: "nightly-2026-01-01",
-  at: "2026-01-01T00:00:00.000Z"
+Effect.gen(function*() {
+  const run = yield* Runner.run(suite, {
+    runId: "nightly-2026-01-01",
+    at: "2026-01-01T00:00:00.000Z"
+  })
 })
 ```
 

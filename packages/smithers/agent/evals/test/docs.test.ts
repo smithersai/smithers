@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs"
+import { readdirSync, readFileSync } from "node:fs"
 import { describe, expect, it } from "vitest"
 
 const read = (path: string): string => readFileSync(new URL(path, import.meta.url), "utf8")
@@ -42,6 +42,32 @@ describe("documentation", () => {
     const readme = read("../README.md")
     expect(readme).toContain("https://evals.smithers.sh/reference/api/")
     expect(readme).not.toContain("npm install")
+  })
+
+  // The README says the package is not on the npm registry, so an install page
+  // that tells a reader to `pnpm add` it sends them to a registry 404.
+  it("installs the package the way the README does", () => {
+    expect(read("../README.md")).toContain("not on the npm registry")
+    const installation = read("../docs/installation.md")
+    expect(installation).not.toMatch(/(?:pnpm add|npm install|yarn add) @smthrs\/evals/)
+    expect(installation).toContain(`"@smthrs/evals": "workspace:*"`)
+  })
+
+  // A formatter spaces `yield*` into `yield *` in a fragment it cannot parse
+  // as a generator body, so every `yield*` fence has to sit inside one.
+  it("shows every yield* inside a generator", () => {
+    const pages = [
+      "../README.md",
+      ...readdirSync(new URL("../docs/", import.meta.url), { recursive: true, encoding: "utf8" })
+        .filter((path) => path.endsWith(".md"))
+        .map((path) => `../docs/${path}`)
+    ]
+    for (const page of pages) {
+      for (const [, fence] of read(page).matchAll(/```ts\n([\s\S]*?)```/g)) {
+        expect(fence, page).not.toContain("yield *")
+        if (fence!.includes("yield*")) expect(fence, page).toContain("function*")
+      }
+    }
   })
 
   it("files the release notes under the released version", () => {

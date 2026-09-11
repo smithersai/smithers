@@ -8,13 +8,21 @@ const execution = { output: 1, stepKey: "step", latencyMs: 0, target }
 const suiteCase = { name: "a", input: 1 }
 
 describe("CaseExecutor", () => {
-  it("accepts a bare callback, a `run` object, and an `execute` object alike", async () => {
+  it("accepts a bare callback and a `run` object alike", async () => {
     const callback = CaseExecutor.make(() => Effect.succeed(execution))
     const named = CaseExecutor.make({ run: () => Effect.succeed(execution) })
-    const aliased = CaseExecutor.make({ execute: () => Effect.succeed(execution) })
-    for (const executor of [callback, named, aliased]) {
+    for (const executor of [callback, named]) {
       expect(await Effect.runPromise(executor.run(suiteCase))).toEqual(execution)
     }
+  })
+
+  // The 1.0.0-rc.0 notes retired the `execute` spelling; `run` is the one name.
+  it("refuses the retired `execute` spelling", () => {
+    // @ts-expect-error `execute` is not an implementation field.
+    expect(() => CaseExecutor.make({ execute: () => Effect.succeed(execution) })).toThrow(
+      "CaseExecutor.make needs a callback, or an object with a `run` callback"
+    )
+    expect("CaseInput" in CaseExecutor).toBe(false)
   })
 
   // Degrading to the unavailable executor turned one wiring mistake into a
@@ -23,7 +31,7 @@ describe("CaseExecutor", () => {
   it("refuses an implementation carrying no callback", () => {
     expect(() => CaseExecutor.make({} as CaseExecutor.Implementation)).toThrow(TypeError)
     expect(() => CaseExecutor.make({ run: undefined } as unknown as CaseExecutor.Implementation)).toThrow(
-      "CaseExecutor.make needs a callback, or an object with a `run` or `execute` callback"
+      "CaseExecutor.make needs a callback, or an object with a `run` callback"
     )
   })
 
