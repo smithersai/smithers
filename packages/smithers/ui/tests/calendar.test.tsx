@@ -146,6 +146,35 @@ describe("Calendar week view", () => {
     expect(count(html, 'sui-cal-week-event"')).toBe(1);
   });
 
+  test("splits an overnight event at local midnight into one segment per day", () => {
+    // Tue 23:00 -> Wed 02:00: 60 minutes on Tuesday, 120 minutes on Wednesday.
+    const html = renderToStaticMarkup(
+      <Calendar events={[event("night", at(28, 23), { end: at(29, 2) })]} view="week" now={NOW} />,
+    );
+    const segments = html.match(/<button[^>]*sui-cal-week-event"[^>]*>/g) ?? [];
+    expect(segments).toHaveLength(2);
+    expect(segments[0]).toContain("top:1012px;height:44px");
+    expect(segments[0]).toContain('data-continues-after="true"');
+    expect(segments[0]).not.toContain("data-continues-before");
+    expect(segments[1]).toContain("top:0;height:88px");
+    expect(segments[1]).toContain('data-continues-before="true"');
+    expect(segments[1]).not.toContain("data-continues-after");
+  });
+
+  test("renders a full-height middle segment for a three-day event", () => {
+    // Tue 20:00 -> Thu 04:00: Tuesday 4h, Wednesday all 24h, Thursday 4h.
+    const html = renderToStaticMarkup(
+      <Calendar events={[event("long", at(28, 20), { end: at(30, 4) })]} view="week" now={NOW} />,
+    );
+    const segments = html.match(/<button[^>]*sui-cal-week-event"[^>]*>/g) ?? [];
+    expect(segments).toHaveLength(3);
+    expect(segments[0]).toContain("top:880px;height:176px");
+    expect(segments[1]).toContain("top:0;height:1056px");
+    expect(segments[1]).toContain('data-continues-before="true"');
+    expect(segments[1]).toContain('data-continues-after="true"');
+    expect(segments[2]).toContain("top:0;height:176px");
+  });
+
   test("omits the now-line when today is outside the visible week", () => {
     const html = renderToStaticMarkup(
       <Calendar events={[]} view="week" now={NOW} date={at(27, 0) + 14 * 86_400_000} />,

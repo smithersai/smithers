@@ -177,6 +177,55 @@ export function atMinutesIntoDay(dayMs: number, minutes: number): number {
   return new Date(d.getFullYear(), d.getMonth(), d.getDate(), 0, minutes).getTime();
 }
 
+/**
+ * Local midnight at the start of the day after the one containing `dayMs`,
+ * built from wall-clock fields. `startOfDay(dayMs) + DAY_MS` is 23 or 25
+ * hours off on a daylight-saving transition day.
+ */
+export function startOfNextDay(dayMs: number): number {
+  const d = new Date(dayMs);
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate() + 1).getTime();
+}
+
+export type DaySegment = {
+  /** Wall-clock minutes past midnight where the segment starts on this day. */
+  startMin: number;
+  /** Wall-clock minutes past midnight where the segment ends; 1440 when it runs to midnight. */
+  endMin: number;
+  /** The event started on an earlier day. */
+  continuesBefore: boolean;
+  /** The event ends on a later day. */
+  continuesAfter: boolean;
+};
+
+/**
+ * The part of a timed event that falls on the local day containing `dayMs`,
+ * or undefined when the event does not touch that day. The event's
+ * `[start, end)` interval is intersected with the day's local
+ * `[midnight, next midnight)`, so an overnight or multi-day event yields one
+ * segment per day it covers. An event without a later `end` covers only its
+ * start instant.
+ */
+export function daySegment(event: CalendarEvent, dayMs: number): DaySegment | undefined {
+  const dayStart = startOfDay(dayMs);
+  const dayEnd = startOfNextDay(dayMs);
+  const end = event.end !== undefined && event.end > event.start ? event.end : undefined;
+  if (end === undefined) {
+    if (event.start < dayStart || event.start >= dayEnd) return undefined;
+    const startMin = minutesIntoDay(event.start);
+    return { startMin, endMin: startMin, continuesBefore: false, continuesAfter: false };
+  }
+  if (event.start >= dayEnd || end <= dayStart) return undefined;
+  const continuesBefore = event.start < dayStart;
+  const continuesAfter = end > dayEnd;
+  return {
+    startMin: continuesBefore ? 0 : minutesIntoDay(event.start),
+    endMin: end >= dayEnd ? 24 * 60 : minutesIntoDay(end),
+    continuesBefore,
+    continuesAfter,
+  };
+}
+
 /** Snap minutes down to the nearest 30-minute slot (week-grid rendering). */
 export function snapDown30(minutes: number): number {
   return Math.floor(minutes / 30) * 30;

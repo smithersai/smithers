@@ -23,6 +23,7 @@ import {
   agendaGroups,
   atMinutesIntoDay,
   dayKey,
+  daySegment,
   eventsOnDay,
   fullDayLabel,
   hashSource,
@@ -357,17 +358,22 @@ function WeekView({ anchorMs, events, nowMs, weekStartsOn, onEventClick, onSlotC
               ))}
             </div>
             {days.map((dayMs) => {
-              const timed = eventsOnDay(events, dayMs).filter((event) => !event.allDay);
+              // An overnight or multi-day event renders one segment in every day it covers.
+              const timed = events
+                .filter((event) => !event.allDay)
+                .flatMap((event) => {
+                  const segment = daySegment(event, dayMs);
+                  return segment ? [{ event, segment }] : [];
+                })
+                .sort((a, b) => a.event.start - b.event.start || a.event.title.localeCompare(b.event.title));
               const isToday = isSameDay(dayMs, nowMs);
               return (
                 // Click targets the column backdrop only; chips stopPropagation.
                 // eslint-disable-next-line jsx-a11y/no-static-element-interactions, jsx-a11y/click-events-have-key-events
                 <div key={dayMs} className="sui-cal-week-col" onClick={(event) => onColumnClick(dayMs, event)}>
-                  {timed.map((event) => {
-                    const startMin = snapDown30(minutesIntoDay(event.start));
-                    const endMin = snapUp30(
-                      event.end !== undefined && event.end > event.start ? minutesIntoDay(event.end) : startMin + 30,
-                    );
+                  {timed.map(({ event, segment }) => {
+                    const startMin = snapDown30(segment.startMin);
+                    const endMin = snapUp30(segment.endMin);
                     const height = Math.max(endMin - startMin, 30);
                     return eventElement(
                       event,
@@ -375,6 +381,8 @@ function WeekView({ anchorMs, events, nowMs, weekStartsOn, onEventClick, onSlotC
                       {
                         className: "sui-cal-week-event",
                         "data-tint": event.color ? undefined : tintFor(event),
+                        "data-continues-before": segment.continuesBefore || undefined,
+                        "data-continues-after": segment.continuesAfter || undefined,
                         style: {
                           top: (startMin / 60) * HOUR_PX,
                           height: (height / 60) * HOUR_PX,
