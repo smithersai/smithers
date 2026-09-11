@@ -11,7 +11,12 @@ import { Cli, z } from "incur"
 import { existsSync, readFileSync } from "node:fs"
 import { resolve } from "node:path"
 import { withCredentials } from "./Credentials.ts"
-import { execute, localFields, type LocalOptions, localRoot } from "./Store.ts"
+import { localFields, type LocalOptions, localRoot } from "./Store.ts"
+import * as Presentation from "../cli/Presentation.ts"
+
+// Every operator command reports failures as operator_failed.
+const execute = <A>(context: Presentation.Failing, body: () => Promise<A>) =>
+  Presentation.guard(context, body, { code: "operator_failed", next: Presentation.runs({ otherwise: [{ command: "integrations list", description: "Inspect configured integrations" }] }) })
 
 const provider = z.enum(["github", "linear", "telegram"])
 const endpoint = z.string().url().refine((text) => {

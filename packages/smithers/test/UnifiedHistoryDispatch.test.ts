@@ -5,6 +5,7 @@ import { join, relative, resolve } from "node:path"
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import type * as Bridge from "../src/cli/ControlBridge.ts"
 import { appendHistoryCommands, prepareHistoryRun, reconcileHistory } from "../src/cli/HistoryCommands.ts"
+import * as CliError from "../src/CliError.ts"
 
 const ports = vi.hoisted(() => ({
   read: vi.fn(),
@@ -228,6 +229,13 @@ describe("unified historical command dispatch", () => {
     expect(result.stdout).toContain("[REDACTED_TOKEN]")
     expect(result.stdout).not.toContain("private-fixture")
     expect(result.stdout).not.toContain("auditId")
+  })
+
+  it("exits 2 for a usage error, like every other guarded command", async () => {
+    ports.read.mockRejectedValue(new CliError.UsageError({ message: "The path must be a directory" }))
+    const result = await invoke(["inspect", "run-1", "--root", directory], { environment: {} })
+    expect(result.codes).toEqual([2])
+    expect(JSON.parse(result.stdout)).toEqual({ code: "history_failed", message: "The path must be a directory" })
   })
 
   it("renders non-Error rejections through the same failure contract", async () => {

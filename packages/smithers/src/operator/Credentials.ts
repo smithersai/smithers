@@ -11,7 +11,12 @@ import { Effect, Redacted } from "effect"
 import { Cli, z } from "incur"
 import { readFileSync } from "node:fs"
 import { resolve } from "node:path"
-import { databaseLayer, execute, localFields, type LocalOptions, localRoot } from "./Store.ts"
+import { databaseLayer, localFields, type LocalOptions, localRoot } from "./Store.ts"
+import * as Presentation from "../cli/Presentation.ts"
+
+// Every operator command reports failures as operator_failed.
+const execute = <A>(context: Presentation.Failing, body: () => Promise<A>) =>
+  Presentation.guard(context, body, { code: "operator_failed", next: Presentation.runs({ otherwise: [{ command: "credentials list", description: "Inspect credential metadata without revealing secrets" }] }) })
 
 /**
  * Selects exactly one source for a credential secret.

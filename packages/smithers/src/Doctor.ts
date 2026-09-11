@@ -22,6 +22,7 @@ import * as Legacy from "./Legacy.ts"
 import * as NodeControl from "./NodeControl.ts"
 import * as Project from "./Project.ts"
 import { starterSeats } from "./Providers.ts"
+import * as Ui from "./Ui.ts"
 
 /**
  * The outcome of one check.
@@ -345,10 +346,8 @@ const describeLegacyDatabase = (path: string): string => {
 export const render = (report: Report): string =>
   [
     `smthrs doctor: ${report.root}`,
-    ...report.checks.map((check) => `${symbol(check.level)} ${check.name}: ${check.detail}`)
+    ...report.checks.map((check) => `${Ui.levelWord(check.level)} ${check.name}: ${check.detail}`)
   ].join("\n")
-
-const symbol = (level: Level): string => level === "ok" ? "ok  " : level === "warn" ? "warn" : "fail"
 
 /**
  * Whether the report contains a failing check, which decides the exit status.

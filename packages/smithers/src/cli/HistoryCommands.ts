@@ -2,7 +2,6 @@
  * Time-travel commands mounted on the durable runs namespace.
  * @since 1.0.0
  */
-import * as Redaction from "@smthrs/journal/Redaction"
 import { type Cli, z } from "incur"
 import * as Environment from "../Environment.ts"
 import * as History from "../history/History.ts"
@@ -20,15 +19,7 @@ const mutationOptions = options.extend({
   at: z.number().int().nonnegative().describe("Exact journal sequence to branch or rewind to")
 })
 const parameters = (parsed: z.output<typeof options>): History.Options => ({ ...parsed, sequence: parsed.at })
-const failed = (
-  c: { readonly error: (value: { code: string; message: string; exitCode?: number }) => never },
-  cause: unknown
-): never =>
-  c.error({
-    code: "history_failed",
-    message: String(Redaction.redact(cause instanceof Error ? cause.message : String(cause))),
-    exitCode: 1
-  })
+const refusal = { code: "history_failed" } as const
 
 /**
  * Mount the read and mutation commands on an existing runs group.
@@ -41,63 +32,57 @@ export const appendHistoryCommands = (cli: Cli.Cli, runtime: Bridge.Runtime = {}
       description: "Inspect the state and event counts recorded at one historical frame",
       args,
       options,
-      async run(c) {
-        try {
-          return Presentation.finish(
-            c,
-            await History.read(
+      run(c) {
+        return Presentation.guard(
+          c,
+          () =>
+            History.read(
               Project.localRoot(c.options, runtime.environment ?? process.env),
               c.args.run,
               parameters(c.options),
               false,
               runtime.signal
-            )
-          )
-        } catch (cause) {
-          return failed(c, cause)
-        }
+            ),
+          refusal
+        )
       }
     })
     .command("replay", {
       description: "Replay committed history and sealed results without re-executing any actions",
       args,
       options,
-      async run(c) {
-        try {
-          return Presentation.finish(
-            c,
-            await History.read(
+      run(c) {
+        return Presentation.guard(
+          c,
+          () =>
+            History.read(
               Project.localRoot(c.options, runtime.environment ?? process.env),
               c.args.run,
               parameters(c.options),
               true,
               runtime.signal
-            )
-          )
-        } catch (cause) {
-          return failed(c, cause)
-        }
+            ),
+          refusal
+        )
       }
     })
     .command("fork", {
       description: "Branch a parked run at a historical frame into a durable, isolated workspace",
       args,
       options: mutationOptions,
-      async run(c) {
-        try {
-          return Presentation.finish(
-            c,
-            await History.mutate(
+      run(c) {
+        return Presentation.guard(
+          c,
+          () =>
+            History.mutate(
               Project.localRoot(c.options, runtime.environment ?? process.env),
               c.args.run,
               parameters(c.options),
               "fork",
               runtime.signal
-            )
-          )
-        } catch (cause) {
-          return failed(c, cause)
-        }
+            ),
+          refusal
+        )
       }
     })
     .command("rewind", {
@@ -108,7 +93,7 @@ export const appendHistoryCommands = (cli: Cli.Cli, runtime: Bridge.Runtime = {}
         yes: z.boolean().default(false).describe("Confirm archiving the suffix and restoring the historical frame")
       }),
       destructive: true,
-      async run(c) {
+      run(c) {
         if (!c.options.preview && !c.options.yes) {
           return c.error({
             code: "confirmation_required",
@@ -116,21 +101,11 @@ export const appendHistoryCommands = (cli: Cli.Cli, runtime: Bridge.Runtime = {}
             message: "Use --preview to inspect the rewind, then --yes to apply it"
           })
         }
-        try {
+        return Presentation.guard(c, async () => {
           const root = Project.localRoot(c.options, runtime.environment ?? process.env)
-          if (c.options.preview) {
-            return Presentation.finish(
-              c,
-              await History.preview(root, c.args.run, parameters(c.options), runtime.signal)
-            )
-          }
-          return Presentation.finish(
-            c,
-            await History.mutate(root, c.args.run, parameters(c.options), "rewind", runtime.signal)
-          )
-        } catch (cause) {
-          return failed(c, cause)
-        }
+          if (c.options.preview) return await History.preview(root, c.args.run, parameters(c.options), runtime.signal)
+          return await History.mutate(root, c.args.run, parameters(c.options), "rewind", runtime.signal)
+        }, refusal)
       }
     })
 

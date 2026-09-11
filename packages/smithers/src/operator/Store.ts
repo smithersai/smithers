@@ -1,13 +1,11 @@
 /**
- * Shared local persistence and error boundaries for operator commands.
+ * Shared local persistence for operator commands.
  *
  * @since 1.0.0
  */
 import { NodeCrypto } from "@effect/platform-node"
-import * as Redaction from "@smthrs/journal/Redaction"
-import { Effect, Layer } from "effect"
+import { Layer } from "effect"
 import { z } from "incur"
-import * as Presentation from "../cli/Presentation.ts"
 import type * as Environment from "../Environment.ts"
 import * as ControlDatabase from "../internal/ControlDatabase.ts"
 import * as NodeControl from "../NodeControl.ts"
@@ -50,36 +48,3 @@ export const localRoot = (options: LocalOptions, environment?: Environment.Sourc
  */
 export const databaseLayer = (root: string) =>
   Layer.mergeAll(ControlDatabase.layer(NodeControl.databasePath(root)), NodeCrypto.layer)
-
-/**
- * Minimal Incur error boundary used by operator commands.
- * @category models
- * @since 1.0.0
- */
-export interface ErrorContext extends Presentation.Context {
-  readonly error: (error: { readonly code: string; readonly message: string; readonly exitCode: number }) => never
-}
-
-/**
- * Keeps typed Effect failures readable and lets Incur own structured output.
- * @category constructors
- * @since 1.0.0
- */
-export const execute = async <A>(context: ErrorContext, operation: () => Promise<A>): Promise<A> => {
-  try {
-    return Presentation.finish(context, await operation())
-  } catch (cause) {
-    return context.error({
-      code: "operator_failed",
-      message: String(Redaction.redact(cause instanceof Error ? cause.message : String(cause))),
-      exitCode: 1
-    })
-  }
-}
-
-/**
- * Executes a service-free Effect for an Incur handler.
- * @category constructors
- * @since 1.0.0
- */
-export const runEffect = <A, E>(effect: Effect.Effect<A, E>) => Effect.runPromise(effect)

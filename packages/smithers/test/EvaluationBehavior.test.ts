@@ -163,7 +163,9 @@ describe("evaluation suite discovery and execution", () => {
   it("rejects missing project roots before discovery", async () => {
     const root = await fixture()
     const response = await serve(join(root, "missing"), ["list"])
-    expect(response.code).toBe(1)
+    // A missing root is a UsageError, which every guarded command exits 2 for.
+    expect(response.code).toBe(2)
+    expect(response.output).toContain("eval_list_failed")
     expect(response.output).toContain("is not an accessible directory")
     expect(await readdir(root)).toEqual([])
   })

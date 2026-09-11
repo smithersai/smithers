@@ -8,7 +8,8 @@ import { join } from "node:path"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { makeCli } from "../src/Cli.ts"
 import type * as Bridge from "../src/cli/ControlBridge.ts"
-import { createRunsCli, safe } from "../src/cli/ControlCommands.ts"
+import { createRunsCli } from "../src/cli/ControlCommands.ts"
+import * as Presentation from "../src/cli/Presentation.ts"
 
 const ports = vi.hoisted(() => ({
   invoke: vi.fn(),
@@ -514,9 +515,9 @@ describe("unified control dispatch", () => {
     expect(JSON.parse(result.stdout)).toMatchObject(page)
   })
 
-  it("keeps safe usable directly without a presentation session", async () => {
+  it("keeps the guard usable directly without a presentation session", async () => {
     const error = vi.fn<(cause: { code: string; message: string; exitCode?: number }) => never>()
-    expect(await safe({ error }, async () => ({ answer: 42 }))).toEqual({ answer: 42 })
+    expect(await Presentation.guard({ error }, async () => ({ answer: 42 }))).toEqual({ answer: 42 })
     expect(error).not.toHaveBeenCalled()
   })
 })

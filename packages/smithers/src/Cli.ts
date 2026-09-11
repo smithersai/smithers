@@ -12,7 +12,8 @@ import { resolve } from "node:path"
 import * as Agents from "./Agents.ts"
 import * as Argv from "./cli/Argv.ts"
 import * as Bridge from "./cli/ControlBridge.ts"
-import { createApprovalsCli, createFlowCli, createRunsCli, safe } from "./cli/ControlCommands.ts"
+import { createApprovalsCli, createFlowCli, createRunsCli } from "./cli/ControlCommands.ts"
+import * as Generate from "./cli/Generate.ts"
 import { createGenerateCli, initialize } from "./cli/Generate.ts"
 import { appendHistoryCommands } from "./cli/HistoryCommands.ts"
 import * as Presentation from "./cli/Presentation.ts"
@@ -66,7 +67,7 @@ export const makeCli = (config: Bridge.Runtime = {}): ReturnType<typeof makeBuil
     mcp: false,
     options: options.extend({ agent: z.string().optional() }),
     run: (c) =>
-      safe(c, async () => {
+      Presentation.guard(c, async () => {
         const requested = c.options.agent
         const targets = requested === undefined
           ? Agents.agents
@@ -112,17 +113,17 @@ export const makeCli = (config: Bridge.Runtime = {}): ReturnType<typeof makeBuil
         global: z.boolean().default(false).describe("Removed; initialize a workspace instead")
       }),
       run: (c) =>
-        safe(c, () => {
+        Presentation.guard(c, () => {
           if (c.options.global) throw Unsupported.flagError(Unsupported.findFlag("init", "global"))
           const root = resolve(c.options.root ?? process.cwd())
           return initialize(root, c.args.name ?? Init.defaultName(root), config.environment ?? process.env)
-        })
+        }, { next: Generate.scaffolded })
     })
     .command("doctor", {
       description: "Check project discovery, providers, tools, and durable-state compatibility",
       options,
       run: (c) =>
-        safe(c, async () => {
+        Presentation.guard(c, async () => {
           const globals = globalsOf(c.options, config)
           // Local diagnostics read the discovery snapshot without opening
           // execution databases; a remote host answers with its own catalog.
@@ -132,7 +133,7 @@ export const makeCli = (config: Bridge.Runtime = {}): ReturnType<typeof makeBuil
           // The complete report stays available to scripts on a nonzero exit.
           if (Doctor.failed(report)) config.exit?.(1)
           return report
-        })
+        }, { next: [{ command: "info", description: "Inspect workspace and host configuration" }] })
     })
     .command("serve", {
       aliases: ["gateway"],
@@ -144,7 +145,7 @@ export const makeCli = (config: Bridge.Runtime = {}): ReturnType<typeof makeBuil
         listen: z.boolean().default(false)
       }),
       run: (c) =>
-        safe(
+        Presentation.guard(
           c,
           () =>
             Bridge.host(
@@ -164,7 +165,7 @@ export const makeCli = (config: Bridge.Runtime = {}): ReturnType<typeof makeBuil
       destructive: true,
       options: options.extend({ olderThan: z.string().default("30d"), dryRun: z.boolean().default(false) }),
       run: (c) =>
-        safe(c, async () => {
+        Presentation.guard(c, async () => {
           localRoot(c.options)
           const swept = await Bridge.local(
             GcCmd.sweep({ olderThan: c.options.olderThan, dryRun: c.options.dryRun }, globalsOf(c.options, config)),
@@ -181,7 +182,7 @@ export const makeCli = (config: Bridge.Runtime = {}): ReturnType<typeof makeBuil
       args: z.object({ path: z.string().optional() }),
       options: z.object({ root: z.string().optional(), seat: z.string().optional(), list: z.boolean().default(false) }),
       run: (c) =>
-        safe(c, async () => {
+        Presentation.guard(c, async () => {
           const root = c.args.path === undefined ? localRoot(c.options) : resolve(c.args.path)
           if (!Suggest.isDirectory(root)) {
             throw new CliError.UsageError({ message: `The path must be a directory: ${root}` })
@@ -238,7 +239,7 @@ export const makeCli = (config: Bridge.Runtime = {}): ReturnType<typeof makeBuil
         verifyTest: z.string().optional()
       }),
       run: (c) =>
-        safe(c, async () => {
+        Presentation.guard(c, async () => {
           localRoot(c.options)
           const outcome = await Bridge.local(
             Effect.gen(function*() {
@@ -278,7 +279,7 @@ export const makeCli = (config: Bridge.Runtime = {}): ReturnType<typeof makeBuil
       description: "Check the registry for newer CLI versions; does not install them",
       options,
       run: (c) =>
-        safe(
+        Presentation.guard(
           c,
           async () =>
             Update.render(await Bridge.local(UpdateCmd.check(globalsOf(c.options, config)), c.options, config))
@@ -293,7 +294,7 @@ export const makeCli = (config: Bridge.Runtime = {}): ReturnType<typeof makeBuil
         dryRun: z.boolean().default(false).describe("Preview the redacted report without posting")
       }),
       run: (c) =>
-        safe(c, () =>
+        Presentation.guard(c, () =>
           Bridge.query(
             BugCmd.submit({
               summary: c.args.summary.join(" "),

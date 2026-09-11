@@ -4,7 +4,6 @@
  * @since 1.0.0
  */
 import type { RuntimeConfig } from "@smthrs/build-cli/Cli"
-import * as Redaction from "@smthrs/journal/Redaction"
 import { Cli, z } from "incur"
 import { randomUUID } from "node:crypto"
 import { readFile } from "node:fs/promises"
@@ -19,8 +18,7 @@ const localOptions = {
   remote: z.string().optional().describe("Not supported: evaluations execute local modules")
 }
 const runArgument = z.object({ run: z.string().describe("Evaluation run ID or saved run JSON file") })
-const message = (cause: unknown): string =>
-  String(Redaction.redact(cause instanceof Error ? cause.message : String(cause)))
+const next = [{ command: "eval compare --help", description: "Compare results with a baseline" }]
 
 /**
  * Builds the fixed-suite evaluation command group.
@@ -34,15 +32,10 @@ export const createEvalCli = (runtime: RuntimeConfig = {}) =>
     .command("list", {
       description: "List evals/**/*.eval.ts modules without executing them",
       options: z.object(localOptions),
-      async run(context) {
-        try {
-          return Presentation.finish(context, {
-            suites: await Evaluation.list(Project.localRoot(context.options, runtime.environment ?? process.env))
-          })
-        } catch (cause) {
-          return context.error({ code: "eval_list_failed", message: message(cause) })
-        }
-      }
+      run: (context) =>
+        Presentation.guard(context, async () => ({
+          suites: await Evaluation.list(Project.localRoot(context.options, runtime.environment ?? process.env))
+        }), { code: "eval_list_failed", next })
     })
     .command("run", {
       description: "Execute a suite's CaseExecutor and bound scorers, then persist its results",
@@ -76,7 +69,7 @@ export const createEvalCli = (runtime: RuntimeConfig = {}) =>
             if (output !== file) await Evaluation.writeJson(output, source, false, runtime.signal)
           }
         } catch (cause) {
-          return context.error({ code: "eval_run_failed", exitCode: 5, message: message(cause) })
+          return Presentation.fail(context, cause, { code: "eval_run_failed", exitCode: 5 })
         }
         const failed = result.cases.some((entry) => entry.error !== undefined) ||
           result.observations.some((entry) => entry.kind === "inconclusive") || result.observations.length === 0
@@ -87,7 +80,7 @@ export const createEvalCli = (runtime: RuntimeConfig = {}) =>
             message: `Evaluation is inconclusive; results saved to ${file}`
           })
         }
-        return Presentation.finish(context, { file, ...result })
+        return Presentation.finish(context, { file, ...result }, { next })
       }
     })
     .command("baseline", {
@@ -98,8 +91,8 @@ export const createEvalCli = (runtime: RuntimeConfig = {}) =>
         output: z.string().optional().describe("Baseline file; defaults to evals/<suite>.baseline.json"),
         force: z.boolean().default(false).describe("Replace an existing baseline")
       }),
-      async run(context) {
-        try {
+      run: (context) =>
+        Presentation.guard(context, async () => {
           const root = Project.localRoot(context.options, runtime.environment ?? process.env)
           const run = await Evaluation.readRun(root, context.args.run)
           if (
@@ -112,16 +105,8 @@ export const createEvalCli = (runtime: RuntimeConfig = {}) =>
             ? Evaluation.defaultBaselinePath(root, run.suite)
             : resolve(root, context.options.output)
           await Evaluation.writeJson(file, await Evaluation.baseline(run), context.options.force, runtime.signal)
-          return Presentation.finish(context, {
-            file,
-            suite: run.suite,
-            runId: run.runId,
-            observations: run.observations.length
-          })
-        } catch (cause) {
-          return context.error({ code: "eval_baseline_failed", message: message(cause) })
-        }
-      }
+          return { file, suite: run.suite, runId: run.runId, observations: run.observations.length }
+        }, { code: "eval_baseline_failed", next })
     })
     .command("compare", {
       description: "Compare a saved run with a baseline; exit 1 for regressions and 5 for inconclusive results",
@@ -154,7 +139,7 @@ export const createEvalCli = (runtime: RuntimeConfig = {}) =>
             )
           }
         } catch (cause) {
-          return context.error({ code: "eval_compare_failed", exitCode: 5, message: message(cause) })
+          return Presentation.fail(context, cause, { code: "eval_compare_failed", exitCode: 5 })
         }
         if (result.exitCode !== 0) {
           return context.error({
@@ -164,6 +149,6 @@ export const createEvalCli = (runtime: RuntimeConfig = {}) =>
               `${result.summary}; regressions=${result.report.regressions.length}, nondeterminism=${result.report.nondeterminism.length}, missing=${result.report.missing.length}; use --output to save the full report`
           })
         }
-        return Presentation.finish(context, result)
+        return Presentation.finish(context, result, { next })
       }
     })

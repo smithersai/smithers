@@ -13,7 +13,21 @@ import { join } from "node:path"
 import { pathToFileURL } from "node:url"
 import * as Init from "../Init.ts"
 import * as Project from "../Project.ts"
-import { safe } from "./ControlCommands.ts"
+import * as Presentation from "./Presentation.ts"
+
+/**
+ * Follow-ups after a workspace or target is scaffolded.
+ * @category constants
+ * @since 1.0.0
+ */
+export const scaffolded: Presentation.FollowUps = Presentation.runs({
+  otherwise: [
+    { command: "targets", description: "Inspect available workspace targets" },
+    { command: "flow list", description: "Inspect discovered workflows" }
+  ]
+})
+const safe = <A>(context: Presentation.Failing, body: () => Promise<A>) =>
+  Presentation.guard(context, body, { next: scaffolded })
 
 const localOptions = z.object({ root: z.string().optional().describe("Project directory") })
 

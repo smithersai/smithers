@@ -6,10 +6,12 @@
 import * as clack from "@clack/prompts"
 import * as Audience from "@smthrs/build-cli/Audience"
 import type { RuntimeConfig } from "@smthrs/build-cli/Cli"
+import * as NodeDatabase from "@smthrs/database/node/NodeDatabase"
 import * as Redaction from "@smthrs/journal/Redaction"
 import { AsyncLocalStorage } from "node:async_hooks"
 import { Writable } from "node:stream"
 import { stripVTControlCharacters } from "node:util"
+import * as Failure from "../internal/Failure.ts"
 
 interface Session {
   readonly transport: "mcp" | "cli"
@@ -98,19 +100,69 @@ const isMcp = (context: Context, runtime: RuntimeConfig): boolean =>
   runtime.presentation?.source === "mcp" || context.request !== undefined ||
   (context.agent === true && context.formatExplicit === true && Object.keys(context.globals ?? {}).length === 0)
 
-const quote = (value: string) => /^[a-zA-Z0-9_./:@-]+$/.test(value) ? value : `'${value.replaceAll("'", "'\\''")}'`
+/**
+ * One follow-up command, written without the `smthrs` prefix. The connection
+ * options of the invocation are appended when it is shown.
+ * @category models
+ * @since 1.0.0
+ */
+export interface Next {
+  readonly command: string
+  readonly description: string
+}
+
+/**
+ * The follow-ups a command declares: a fixed list, or one derived from its
+ * result and arguments.
+ * @category models
+ * @since 1.0.0
+ */
+export type FollowUps =
+  | ReadonlyArray<Next>
+  | ((data: Readonly<Record<string, unknown>>, args: Readonly<Record<string, unknown>>) => ReadonlyArray<Next>)
+
+/**
+ * Quote one argument for a copyable follow-up command.
+ * @category formatting
+ * @since 1.0.0
+ */
+export const quote = (value: string) => /^[a-zA-Z0-9_./:@-]+$/.test(value) ? value : `'${value.replaceAll("'", "'\\''")}'`
 const record = (value: unknown): Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value) ? value as Record<string, unknown> : {}
 const text = (value: unknown): string | undefined => typeof value === "string" && value.length > 0 ? value : undefined
 
 /**
- * Contextual, bounded next actions. Never echo credentials or approval payloads.
+ * Follow-ups for a result that names a durable run, falling back to
+ * `otherwise` when it names none. Every command gets `runs()` unless it
+ * declares its own `next`.
  * @category constructors
  * @since 1.0.0
  */
-export const nextActions = (command: string, value: unknown, context: Context = {}) => {
-  const data = record(value)
-  const args = context.args ?? {}
+export const runs = (
+  options: { readonly show?: boolean; readonly otherwise?: ReadonlyArray<Next> } = {}
+): FollowUps =>
+(data, args) => {
+  const runId = text(data["runId"]) ?? text(args["run"])
+  if (runId === undefined) return options.otherwise ?? []
+  const actions: Array<Next> = []
+  if (options.show !== false) {
+    actions.push({ command: `runs show ${quote(runId)}`, description: "Inspect status and the reason execution stopped" })
+  }
+  actions.push({ command: `runs logs ${quote(runId)} --format jsonl`, description: "Read detailed events only when needed" })
+  if (data["status"] === "waiting-approval" || data["_tag"] === "Parked") {
+    actions.push({ command: "approvals list", description: "Inspect pending approval payloads" })
+  }
+  return actions
+}
+
+/**
+ * Resolve declared follow-ups against one result: at most three, each with
+ * the invocation's root and credential-free remote. Never echo credentials or
+ * approval payloads.
+ * @category constructors
+ * @since 1.0.0
+ */
+export const nextActions = (value: unknown, context: Context = {}, next: FollowUps = runs()): Array<Next> => {
   const options = context.options ?? {}
   const root = text(options["root"])
   const remote = text(options["remote"])
@@ -121,38 +173,8 @@ export const nextActions = (command: string, value: unknown, context: Context = 
       if (!url.username && !url.password && !url.search && !url.hash) connection += ` --remote ${quote(remote)}`
     } catch { /* Malformed connection arguments are handled before execution. */ }
   }
-  const actions: Array<{ command: string; description: string }> = []
-  const add = (action: string, description: string) => actions.push({ command: action + connection, description })
-  const runId = text(data["runId"]) ?? text(args["run"])
-  if (runId !== undefined) {
-    if (command !== "runs show") add(`runs show ${quote(runId)}`, "Inspect status and the reason execution stopped")
-    add(`runs logs ${quote(runId)} --format jsonl`, "Read detailed events only when needed")
-    if (data["status"] === "waiting-approval" || data["_tag"] === "Parked") {
-      add("approvals list", "Inspect pending approval payloads")
-    }
-  } else if (command === "flow list") {
-    const first = Array.isArray(data["items"]) ? record(data["items"][0]) : {}
-    const flowId = text(first["flowId"])
-    if (flowId !== undefined) add(`flow show ${quote(flowId)}`, "Inspect a discovered flow")
-    add("flow plan --help", "See how to preview a flow before starting it")
-  } else if (command === "flow plan") {
-    add("approvals approve --help", "Approve the returned plan.approval payload or an @file")
-    add("flow execute --help", "Execute that same payload after approval")
-  } else if (command.startsWith("runs")) add("runs list", "List the current durable run records")
-  else if (command === "init" || command.startsWith("generate")) {
-    add("targets", "Inspect available workspace targets")
-    add("flow list", "Inspect discovered workflows")
-  } else if (command.startsWith("triggers")) {
-    add("triggers list", "Inspect schedules and active launches")
-    add("triggers show --help", "Inspect the exact approval card for a scheduled launch")
-  } else if (command.startsWith("approvals")) add("runs list", "Check the run after the decision")
-  else if (command === "doctor") add("info", "Inspect workspace and host configuration")
-  else if (command.startsWith("credentials")) {
-    add("credentials list", "Inspect credential metadata without revealing secrets")
-  } else if (command.startsWith("eval")) add("eval compare --help", "Compare results with a baseline")
-  else if (command.startsWith("memory")) add("memory recall --help", "Recall relevant stored context")
-  else if (command.startsWith("integrations")) add("integrations list", "Inspect configured integrations")
-  return actions.slice(0, 3)
+  const declared = typeof next === "function" ? next(record(value), context.args ?? {}) : next
+  return declared.slice(0, 3).map((action) => ({ command: action.command + connection, description: action.description }))
 }
 
 const clean = (value: unknown): string =>
@@ -190,6 +212,8 @@ export interface Rendering {
    * key/value summary. The command title and the Next actions still frame it.
    */
   readonly human?: string | undefined
+  /** The command's follow-ups; results naming a run default to `runs()`. */
+  readonly next?: FollowUps | undefined
 }
 
 /**
@@ -201,7 +225,7 @@ export interface Rendering {
 export const finish = <A>(context: Context, value: A, rendering: Rendering = {}): A => {
   const session = current()
   if (session === undefined || context.ok === undefined || value === undefined) return value
-  const actions = nextActions(session.command, value, context)
+  const actions = nextActions(value, context, rendering.next)
   if (session.policy.structured) {
     // Incur merges CTA fields into arrays as numeric object keys. Preserve
     // existing array result contracts rather than changing their shape.
@@ -218,4 +242,66 @@ export const finish = <A>(context: Context, value: A, rendering: Rendering = {})
     else session.stdout.write(`Next:\n${next}\n`)
   }
   return context.ok(undefined)
+}
+
+/**
+ * The Incur failure channel a guarded command reports through.
+ * @category models
+ * @since 1.0.0
+ */
+export interface Failing extends Context {
+  readonly error: (error: { code: string; message: string; exitCode?: number }) => never
+}
+
+/**
+ * How a guarded command names its failures.
+ * @category models
+ * @since 1.0.0
+ */
+export interface Refusal {
+  /** Stable code for failures without a database code; defaults to the error tag, then `command_failed`. */
+  readonly code?: string | undefined
+  /** Exit status for failures other than a UsageError, which always exits 2. */
+  readonly exitCode?: number | undefined
+}
+
+/**
+ * Report one failure through Incur: a stable code, a redacted sentence, and
+ * exit 2 for a UsageError.
+ * @category constructors
+ * @since 1.0.0
+ */
+export const fail = (context: Failing, cause: unknown, refusal: Refusal = {}): never => {
+  const error = cause as { _tag?: string; message?: string } | null
+  return context.error({
+    code: NodeDatabase.isUnsupportedDatabase(cause) ?
+      cause.code :
+      refusal.code ?? error?._tag?.split("/").pop() ?? "command_failed",
+    message: String(
+      Redaction.redact(cause instanceof Error ? Failure.sentence(cause) : error?.message ?? String(cause))
+    ),
+    exitCode: error?._tag === "/cli/UsageError" ? 2 : refusal.exitCode ?? 1
+  })
+}
+
+/**
+ * The one Incur error boundary: run the handler, finish its result with the
+ * declared follow-ups, and report any failure through `fail`.
+ * @category constructors
+ * @since 1.0.0
+ */
+export const guard = async <A>(
+  context: Failing,
+  body: () => Promise<A>,
+  options: Refusal & {
+    readonly next?: FollowUps | undefined
+    readonly render?: ((value: A) => Rendering) | undefined
+  } = {}
+): Promise<A> => {
+  try {
+    const value = await body()
+    return finish(context, value, { next: options.next, ...options.render?.(value) })
+  } catch (cause) {
+    return fail(context, cause, options)
+  }
 }

@@ -3,14 +3,12 @@
  * @since 1.0.0
  */
 import { Control, type ControlSchema } from "@smthrs/control"
-import * as NodeDatabase from "@smthrs/database/node/NodeDatabase"
 import * as Redaction from "@smthrs/journal/Redaction"
 import { Effect } from "effect"
 import { Cli, z } from "incur"
 import { readFile } from "node:fs/promises"
 import * as Forensics from "../Forensics.ts"
 import { defaultApprovalScope } from "../internal/ApprovalScope.ts"
-import * as Failure from "../internal/Failure.ts"
 import * as FeaturedFlows from "../internal/FeaturedFlows.ts"
 import * as History from "../internal/History.ts"
 import * as Bridge from "./ControlBridge.ts"
@@ -23,34 +21,9 @@ const runArgs = z.object({ run: z.string().min(1).describe("Durable run ID") })
 const flowArgs = z.object({ flow: z.string().min(1).describe("Discovered flow name") })
 const statuses = ["accepted", "running", "parked", "waiting-approval", "cancelled", "completed", "failed"] as const
 
-interface ErrorContext extends Presentation.Context {
-  readonly error: (error: { code: string; message: string; exitCode?: number }) => never
-}
-
-/**
- * Gives typed backend errors a stable, redacted CLI rendering.
- * @category constructors
- * @since 1.0.0
- */
-export const safe = async <A>(
-  context: ErrorContext,
-  body: () => Promise<A>,
-  rendering: (value: A) => Presentation.Rendering = () => ({})
-): Promise<A> => {
-  try {
-    const value = await body()
-    return Presentation.finish(context, value, rendering(value))
-  } catch (cause) {
-    const error = cause as { _tag?: string; message?: string }
-    return context.error({
-      code: NodeDatabase.isUnsupportedDatabase(cause) ? cause.code : error?._tag?.split("/").pop() ?? "command_failed",
-      message: String(
-        Redaction.redact(cause instanceof Error ? Failure.sentence(cause) : error?.message ?? String(cause))
-      ),
-      exitCode: error?._tag === "/cli/UsageError" ? 2 : 1
-    })
-  }
-}
+const guard = Presentation.guard
+const runsList = { command: "runs list", description: "List the current durable run records" }
+const afterDecision = Presentation.runs({ otherwise: [{ command: "runs list", description: "Check the run after the decision" }] })
 
 const dataArgs = (data: string | undefined) => data === undefined ? [] : ["--data", data]
 
@@ -67,14 +40,25 @@ export const createFlowCli = (runtime: Bridge.Runtime = {}) =>
       description: "List project flows",
       options,
       run: (c) =>
-        safe(
+        guard(
           c,
           () => Bridge.invoke(["ls"], c.options, runtime),
           // A person reads one line per flow, featured rows starred, so the
           // recommended set is visible without a table, then the same Next
           // actions every listing offers. Agents and `--json` keep the flow
           // page document unchanged.
-          (page) => FeaturedFlows.isFlowPage(page) ? { human: FeaturedFlows.human(page.items) } : {}
+          {
+            render: (page) => FeaturedFlows.isFlowPage(page) ? { human: FeaturedFlows.human(page.items) } : {},
+            next: (page) => {
+              const first = Array.isArray(page["items"]) ? page["items"][0] as { flowId?: unknown } | undefined : undefined
+              return [
+                ...(typeof first?.flowId === "string" && first.flowId.length > 0
+                  ? [{ command: `flow show ${Presentation.quote(first.flowId)}`, description: "Inspect a discovered flow" }]
+                  : []),
+                { command: "flow plan --help", description: "See how to preview a flow before starting it" }
+              ]
+            }
+          }
         )
     })
     .command("show", {
@@ -82,7 +66,7 @@ export const createFlowCli = (runtime: Bridge.Runtime = {}) =>
       args: flowArgs,
       options,
       run: (c) =>
-        safe(c, () =>
+        guard(c, () =>
           Bridge.query(
             Effect.gen(function*() {
               const control = yield* Control.Control
@@ -105,8 +89,13 @@ export const createFlowCli = (runtime: Bridge.Runtime = {}) =>
       args: flowArgs.extend({ input: z.array(z.string()).default([]).describe("Input fields as key=value") }),
       options: options.extend({ data: z.string().optional().describe("JSON input object") }),
       run: (c) =>
-        safe(c, () =>
-          Bridge.invoke(["plan", c.args.flow, ...c.args.input, ...dataArgs(c.options.data)], c.options, runtime))
+        guard(c, () =>
+          Bridge.invoke(["plan", c.args.flow, ...c.args.input, ...dataArgs(c.options.data)], c.options, runtime), {
+          next: [
+            { command: "approvals approve --help", description: "Approve the returned plan.approval payload or an @file" },
+            { command: "flow execute --help", description: "Execute that same payload after approval" }
+          ]
+        })
     })
     .command("start", {
       description: "Plan, approve, and start one flow; optionally detach after durable admission",
@@ -115,7 +104,7 @@ export const createFlowCli = (runtime: Bridge.Runtime = {}) =>
       options: options.extend({ data: z.string().optional(), detached: z.boolean().default(false) }),
       alias: { detached: "d" },
       run: (c) =>
-        safe(c, () =>
+        guard(c, () =>
           Bridge.invoke(
             ["up", c.args.flow, ...dataArgs(c.options.data), ...(c.options.detached ? ["--detached"] : [])],
             c.options,
@@ -127,7 +116,7 @@ export const createFlowCli = (runtime: Bridge.Runtime = {}) =>
       args: z.object({ approval: z.string().describe("Serialized payload or @file") }),
       options,
       run: (c) =>
-        safe(c, async () => Bridge.invoke(["run", await payload(c.args.approval)], c.options, runtime))
+        guard(c, async () => Bridge.invoke(["run", await payload(c.args.approval)], c.options, runtime))
     })
 
 /**
@@ -172,7 +161,7 @@ export const createRunsCli = (runtime: Bridge.Runtime = {}) =>
       description: "List durable runs filtered by flow or status",
       options: options.extend({ flow: z.string().optional(), status: z.enum(statuses).optional() }),
       run: (c) =>
-        safe(c, () => {
+        guard(c, () => {
           reconcileHistory(c.options, runtime)
           return Bridge.invoke(
             [
@@ -183,14 +172,14 @@ export const createRunsCli = (runtime: Bridge.Runtime = {}) =>
             c.options,
             runtime
           )
-        })
+        }, { next: Presentation.runs({ otherwise: [runsList] }) })
     })
     .command("show", {
       description: "Show a run's current status and diagnosis",
       args: runArgs,
       options,
       run: (c) =>
-        safe(c, () => {
+        guard(c, () => {
           reconcileHistory(c.options, runtime)
           return Bridge.query(
             Effect.gen(function*() {
@@ -207,7 +196,7 @@ export const createRunsCli = (runtime: Bridge.Runtime = {}) =>
             c.options,
             runtime
           )
-        })
+        }, { next: Presentation.runs({ show: false }) })
     })
     .command("logs", {
       description: "Read run events or follow new events as they commit",
@@ -240,13 +229,12 @@ export const createRunsCli = (runtime: Bridge.Runtime = {}) =>
             if (count >= limit) break
           }
           if (renderer === undefined && after !== undefined && count >= limit) {
-            const more = Presentation.nextActions("runs show", { runId: c.args.run }, c)[0]!
             return c.ok({ events: count, after }, {
               cta: {
-                commands: [{
-                  command: more.command.replace(" --format jsonl", ` --after ${after} --format jsonl`),
+                commands: Presentation.nextActions({}, c, [{
+                  command: `runs logs ${Presentation.quote(c.args.run)} --after ${after} --format jsonl`,
                   description: "Continue from the last returned event"
-                }]
+                }])
               }
             })
           }
@@ -266,20 +254,20 @@ export const createRunsCli = (runtime: Bridge.Runtime = {}) =>
       args: runArgs.extend({ node: z.string().optional() }),
       options,
       run: (c) =>
-        safe(c, () => Bridge.invoke(["output", c.args.run, ...(c.args.node ? [c.args.node] : [])], c.options, runtime))
+        guard(c, () => Bridge.invoke(["output", c.args.run, ...(c.args.node ? [c.args.node] : [])], c.options, runtime))
     })
     .command("cancel", {
       description: "Cancel one durable run",
       args: runArgs,
       options,
-      run: (c) => safe(c, () => Bridge.invoke(["cancel", c.args.run], c.options, runtime))
+      run: (c) => guard(c, () => Bridge.invoke(["cancel", c.args.run], c.options, runtime))
     })
     .command("cancel-all", {
       description: "Cancel every nonterminal run in this project",
       options,
       destructive: true,
       run: (c) =>
-        safe(c, () => {
+        guard(c, () => {
           reconcileHistory(c.options, runtime)
           return Bridge.query(cancelAll(), c.options, runtime)
         })
@@ -289,7 +277,7 @@ export const createRunsCli = (runtime: Bridge.Runtime = {}) =>
       args: runArgs,
       options,
       run: (c) =>
-        safe(c, () =>
+        guard(c, () =>
           Bridge.invoke(["resume", c.args.run], c.options, {
             ...runtime,
             ...prepareHistoryRun(c.args.run, c.options, runtime)
@@ -299,14 +287,14 @@ export const createRunsCli = (runtime: Bridge.Runtime = {}) =>
       description: "Deliver a durable JSON signal",
       args: runArgs.extend({ payload: z.string() }),
       options,
-      run: (c) => safe(c, () => Bridge.invoke(["signal", c.args.run, c.args.payload], c.options, runtime))
+      run: (c) => guard(c, () => Bridge.invoke(["signal", c.args.run, c.args.payload], c.options, runtime))
     })
     .command("steer", {
       description: "Send an attributed operator message",
       args: runArgs,
       options: options.extend({ message: z.string().min(1) }),
       run: (c) =>
-        safe(c, () => Bridge.invoke(["steer", c.args.run, "--message", c.options.message], c.options, runtime))
+        guard(c, () => Bridge.invoke(["steer", c.args.run, "--message", c.options.message], c.options, runtime))
     })
 
 const payload = async (value: string): Promise<string> =>
@@ -358,7 +346,7 @@ export const createApprovalsCli = (runtime: Bridge.Runtime = {}) =>
     .command("list", {
       description: "List pending in-run approvals with their exact authorization payloads",
       options: options.extend({ run: z.string().optional() }),
-      run: (c) => safe(c, () => Bridge.query(pendingApprovals(c.options.run), c.options, runtime))
+      run: (c) => guard(c, () => Bridge.query(pendingApprovals(c.options.run), c.options, runtime), { next: afterDecision })
     })
     .command("approve", {
       description: "Approve the exact serialized payload or @file",
@@ -366,10 +354,11 @@ export const createApprovalsCli = (runtime: Bridge.Runtime = {}) =>
       args: z.object({ approval: z.string() }),
       options: options.extend({ scope: z.enum(["once", "run", "remembered"]).default(defaultApprovalScope) }),
       run: (c) =>
-        safe(
+        guard(
           c,
           async () =>
-            Bridge.invoke(["approve", await payload(c.args.approval), "--scope", c.options.scope], c.options, runtime)
+            Bridge.invoke(["approve", await payload(c.args.approval), "--scope", c.options.scope], c.options, runtime),
+          { next: afterDecision }
         )
     })
     .command("deny", {
@@ -377,5 +366,8 @@ export const createApprovalsCli = (runtime: Bridge.Runtime = {}) =>
       mcp: false,
       args: z.object({ approval: z.string() }),
       options,
-      run: (c) => safe(c, async () => Bridge.invoke(["deny", await payload(c.args.approval)], c.options, runtime))
+      run: (c) =>
+        guard(c, async () => Bridge.invoke(["deny", await payload(c.args.approval)], c.options, runtime), {
+          next: afterDecision
+        })
     })

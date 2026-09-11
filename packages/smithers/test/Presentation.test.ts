@@ -1,8 +1,17 @@
 import * as Audience from "@smthrs/build-cli/Audience"
 import type { RuntimeConfig } from "@smthrs/build-cli/Cli"
-import { describe, expect, it } from "vitest"
+import { Cli } from "incur"
+import { mkdtempSync, rmSync } from "node:fs"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
+import { afterAll, describe, expect, it } from "vitest"
 import { agentArguments, formattedLogArguments, legacyArguments } from "../src/cli/Compatibility.ts"
 import * as Presentation from "../src/cli/Presentation.ts"
+import { createEvalCli } from "../src/evaluation/Cli.ts"
+import { createCredentialsCli } from "../src/operator/Credentials.ts"
+import { createIntegrationsCli } from "../src/operator/Integrations.ts"
+import { createMemoryCli } from "../src/operator/Memory.ts"
+import { createTriggersCli } from "../src/operator/Triggers.ts"
 
 const fixture = (audience: "human" | "agent", tty = true, silent = false) => {
   const output: Array<string> = []
@@ -29,6 +38,10 @@ const fixture = (audience: "human" | "agent", tty = true, silent = false) => {
   return { runtime, output, progress }
 }
 const ok = (data: unknown, meta?: unknown): never => ({ data, meta }) as never
+const flowNext = [
+  { command: "flow show review", description: "Inspect a discovered flow" },
+  { command: "flow plan --help", description: "See how to preview a flow before starting it" }
+]
 
 describe("shared command presentation", () => {
   it("keeps agent PTY output structured with bounded contextual Incur CTAs", async () => {
@@ -71,7 +84,8 @@ describe("shared command presentation", () => {
     let result: unknown
     await Presentation.scope({ command: "flow list" }, host.runtime, async () => {
       result = Presentation.finish({ ok }, { _tag: "flows", items: [{ flowId: "review", description: "Reviews." }] }, {
-        human: "* review  Review the change.\n"
+        human: "* review  Review the change.\n",
+        next: flowNext
       })
     })
     expect(host.output.join("")).toBe(
@@ -84,7 +98,7 @@ describe("shared command presentation", () => {
     let result: unknown
     const page = { _tag: "flows", items: [{ flowId: "review", description: "Reviews." }] }
     await Presentation.scope({ command: "flow list" }, host.runtime, async () => {
-      result = Presentation.finish({ ok }, page, { human: "* review  Review the change.\n" })
+      result = Presentation.finish({ ok }, page, { human: "* review  Review the change.\n", next: flowNext })
     })
     expect(host.output).toEqual([])
     expect(result).toMatchObject({
@@ -120,54 +134,70 @@ describe("shared command presentation", () => {
     expect(agent.output).toEqual([])
   })
   it("does not put credentials or whole approval payloads in next actions", () => {
-    const actions = Presentation.nextActions("flow plan", { approval: { secret: "private" } }, {
+    const actions = Presentation.nextActions({ approval: { secret: "private" } }, {
       options: { remote: "https://user:secret@example.invalid/?token=secret", credential: "private" }
-    })
+    }, [{ command: "approvals approve --help", description: "Approve" }, { command: "flow execute --help", description: "Execute" }])
     expect(actions).toHaveLength(2)
     expect(JSON.stringify(actions)).not.toMatch(/secret|private|example/)
   })
 
+  it("derives follow-ups from a declared function and bounds them to three", () => {
+    const declared: Presentation.FollowUps = (data) =>
+      ["a", "b", "c", "d"].map((name) => ({ command: `${name} ${String(data["flowId"])}`, description: name }))
+    expect(Presentation.nextActions({ flowId: "review" }, {}, declared).map((action) => action.command))
+      .toEqual(["a review", "b review", "c review"])
+  })
+
   it.each(
     [
-      ["flow list", { items: [{ flowId: "review" }] }, ["flow show review", "flow plan --help"]],
-      ["flow list", { items: [] }, ["flow plan --help"]],
-      ["runs list", {}, ["runs list"]],
-      ["init", {}, ["targets", "flow list"]],
-      ["generate package", {}, ["targets", "flow list"]],
-      ["triggers create", {}, ["triggers list", "triggers show --help"]],
-      ["approvals approve", {}, ["runs list"]],
-      ["doctor", {}, ["info"]],
-      ["credentials set", {}, ["credentials list"]],
-      ["eval run", {}, ["eval compare --help"]],
-      ["memory remember", {}, ["memory recall --help"]],
-      ["integrations add", {}, ["integrations list"]],
-      ["info", {}, []]
+      [{ runId: "run-1" }, {}, ["runs show run-1", "runs logs run-1 --format jsonl"]],
+      [{}, { run: "run-2" }, ["runs show run-2", "runs logs run-2 --format jsonl"]],
+      [{}, {}, ["runs list"]]
     ] as const
-  )("provides usable next actions after %s", (command, result, expected) => {
-    expect(Presentation.nextActions(command, result).map((action) => action.command)).toEqual(expected)
+  )("names a run from its result or arguments before falling back (%j %j)", (data, args, expected) => {
+    const next = Presentation.runs({ otherwise: [{ command: "runs list", description: "List" }] })
+    expect(Presentation.nextActions(data, { args }, next).map((action) => action.command)).toEqual(expected)
   })
 
   it("quotes run and connection arguments without exposing authenticated URLs", () => {
-    const actions = Presentation.nextActions("runs show", { status: "waiting-approval" }, {
+    const actions = Presentation.nextActions({ status: "waiting-approval" }, {
       args: { run: "run one's" },
       options: { root: "/a project", remote: "https://example.invalid/api" }
-    })
+    }, Presentation.runs({ show: false }))
     expect(actions.map((action) => action.command)).toEqual([
       "runs logs 'run one'\\''s' --format jsonl --root '/a project' --remote https://example.invalid/api",
       "approvals list --root '/a project' --remote https://example.invalid/api"
     ])
     for (const remote of ["not a url", "https://example.invalid/#secret", "https://example.invalid/?key=secret"]) {
-      expect(Presentation.nextActions("runs show", { runId: "run-1" }, { options: { remote } }))
+      expect(Presentation.nextActions({ runId: "run-1" }, { options: { remote } }, Presentation.runs({ show: false })))
         .toEqual([{ command: "runs logs run-1 --format jsonl", description: "Read detailed events only when needed" }])
     }
   })
 
   it("retains bounded approval guidance for a parked run and ignores non-record results", () => {
-    expect(Presentation.nextActions("flow start", { runId: "run-1", _tag: "Parked" }).map((action) => action.command))
+    expect(Presentation.nextActions({ runId: "run-1", _tag: "Parked" }).map((action) => action.command))
       .toEqual(["runs show run-1", "runs logs run-1 --format jsonl", "approvals list"])
     for (const value of [null, undefined, [], "run-1", 0]) {
-      expect(Presentation.nextActions("info", value)).toEqual([])
+      expect(Presentation.nextActions(value)).toEqual([])
     }
+  })
+
+  it.each(
+    [
+      [{ _tag: "/cli/UsageError", message: "bad flag" }, {}, "UsageError", 2],
+      [{ _tag: "/cli/UsageError", message: "bad flag" }, { code: "operator_failed", exitCode: 5 }, "operator_failed", 2],
+      [{ _tag: "/control/Unavailable", message: "down" }, {}, "Unavailable", 1],
+      [new Error("Authorization: Bearer private-fixture"), { code: "history_failed" }, "history_failed", 1],
+      ["plain", { exitCode: 5 }, "command_failed", 5]
+    ] as const
+  )("reports %j through the one guard with a stable code and exit status", async (cause, refusal, code, exitCode) => {
+    const errors: Array<unknown> = []
+    const error = (value: unknown): never => {
+      errors.push(value)
+      return undefined as never
+    }
+    await Presentation.guard({ ok, error }, () => Promise.reject(cause), refusal)
+    expect(errors).toEqual([{ code, exitCode, message: expect.not.stringContaining("private-fixture") }])
   })
 
   it("preserves raw results outside a rendering invocation or without an ok adapter", async () => {
@@ -259,5 +289,40 @@ describe("agent-friendly compatibility spellings", () => {
     expect(agentArguments(["up", "hello", "--serve"])).toBeUndefined()
     expect(agentArguments(["internal", "claude", "tick"])).toBeUndefined()
     expect(agentArguments(["up", "--help"])).toBeUndefined()
+  })
+})
+
+describe("declared follow-ups per command group", () => {
+  const root = mkdtempSync(join(tmpdir(), "smithers-presentation-next-"))
+  afterAll(() => rmSync(root, { recursive: true, force: true }))
+  it.each(
+    [
+      [["credentials", "list"], "smthrs credentials list --root"],
+      [["integrations", "list"], "smthrs integrations list --root"],
+      [["triggers", "list"], "smthrs triggers list --root"],
+      [["memory", "list", "--namespace", "user:alpha"], "smthrs memory recall --help --root"],
+      [["eval", "list"], "smthrs eval compare --help --root"]
+    ] as const
+  )("%j shows the group's declared follow-up", async (argv, expected) => {
+    const host = fixture("human", true, true)
+    const codes: Array<number> = []
+    let document = ""
+    const cli = Cli.create("smthrs")
+      .command(createCredentialsCli())
+      .command(createIntegrationsCli())
+      .command(createTriggersCli())
+      .command(createMemoryCli())
+      .command(createEvalCli(host.runtime))
+    cli.use((context, next) => Presentation.scope(context, host.runtime, next))
+    await cli.serve([...argv, "--root", root], {
+      stdout: (text) => {
+        document += text
+      },
+      exit: (code) => {
+        codes.push(code)
+      }
+    })
+    expect(codes, document).toEqual([])
+    expect(host.output.join("")).toContain(`Next:\n${expected} ${root}`)
   })
 })

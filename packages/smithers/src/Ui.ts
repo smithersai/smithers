@@ -207,7 +207,12 @@ export const isInteractive = (
     stderr: output.isTTY === true
   }).interactive
 
-const levelWord = (level: Check["level"]): string => level === "ok" ? "ok  " : level === "warn" ? "warn" : "fail"
+/**
+ * The fixed-width word a checklist line leads with.
+ * @category formatting
+ * @since 1.0.0
+ */
+export const levelWord = (level: Check["level"]): string => level === "ok" ? "ok  " : level === "warn" ? "warn" : "fail"
 
 const write = (output: Writable, line: string): void => {
   output.write(`${line}\n`)

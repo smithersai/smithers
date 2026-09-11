@@ -1,11 +1,11 @@
-import { Effect, Redacted } from "effect"
+import { Redacted } from "effect"
 import * as Fs from "node:fs/promises"
 import * as Os from "node:os"
 import * as Path from "node:path"
 import { afterAll, afterEach, describe, expect, it, vi } from "vitest"
+import * as Presentation from "../src/cli/Presentation.ts"
 import { withCredentials } from "../src/operator/Credentials.ts"
 import { createIntegrationsCli, probe, readIntegrations } from "../src/operator/Integrations.ts"
-import * as Store from "../src/operator/Store.ts"
 
 const directories: Array<string> = []
 afterAll(async () => {
@@ -199,17 +199,16 @@ describe("integration CLI", () => {
     expect(fetch).not.toHaveBeenCalled()
   })
 
-  it("preserves service-free effects and redacts non-Error failures at the operator boundary", async () => {
-    expect(await Store.runEffect(Effect.succeed(42))).toBe(42)
+  it("redacts non-Error failures at the operator boundary", async () => {
     let rendered: unknown
-    const result = await Store.execute({
+    const result = await Presentation.guard({
       error: (error) => {
         rendered = error
         return undefined as never
       }
     }, async () => {
       throw "Authorization: Bearer operator-fixture-secret"
-    })
+    }, { code: "operator_failed" })
     expect(result).toBeUndefined()
     expect(rendered).toEqual({
       code: "operator_failed",
