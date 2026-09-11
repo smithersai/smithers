@@ -16,7 +16,8 @@ const enterFileLesson = async (page: Page, root: string) => {
   await page.goto("/")
   await stage(page, 1)
   await slash(page, `/repo.open ${root}`)
-  for (const [index, signal] of ["identity.signed-in", "repository.ready", "issues.opened"].entries()) {
+  // Script v4: the file beat is 4, after the issues list, issue #3 and the pull requests.
+  for (const [index, signal] of ["issues.opened", "issue.opened", "prs.opened"].entries()) {
     await stage(page, index + 1)
     await slash(page, `/onboarding.act signal ${signal}`)
     await stage(page, index + 2)

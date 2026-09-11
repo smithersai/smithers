@@ -2,7 +2,7 @@ import { expect, test, type Page } from "@playwright/test"
 import { GUIDE_STAGES } from "../../src/mainview/onboarding/lessons"
 
 // This acceptance needs an authenticated workspace with both Librarian native
-// delegates installed. No intercepted launch receipts or synthetic lesson-7 signals.
+// delegates installed. No intercepted launch receipts or synthetic beat-12 signals.
 const repo = process.env.SMITHERS_TUTORIAL_REPO ?? "smithersai/smithers"
 if (process.env.SMITHERS_TUTORIAL_STORAGE_STATE) test.use({ storageState: process.env.SMITHERS_TUTORIAL_STORAGE_STATE })
 const slash = async (page: Page, command: string) => {
@@ -12,16 +12,18 @@ const slash = async (page: Page, command: string) => {
 }
 const stage = (page: Page, value: number) => expect(page.locator(".guide-shell")).toHaveAttribute("data-stage", String(value))
 const reachBackgroundLesson = async (page: Page) => {
-  await page.goto(`/${repo}`)
+  // A repository path (/owner/name) opens the repository app alone (AppIsland); the tutorial lives on "/".
+  await page.goto("/")
   await page.locator(".guide-shell").waitFor()
   await page.keyboard.press("Shift")
   // Prerequisite lesson state only. This does not supply identity, a selected
   // repository, run IDs, run results, or the background completion signal.
-  while (Number(await page.locator(".guide-shell").getAttribute("data-stage")) < 6) {
+  while (Number(await page.locator(".guide-shell").getAttribute("data-stage")) < 12) {
     const step = Number(await page.locator(".guide-shell").getAttribute("data-stage"))
     const lesson = GUIDE_STAGES[step]!
+    // The guide ignores ArrowRight while the composer is open (the slash helper leaves it open), as the sibling walkers know.
+    if (await page.getByTestId("composer-input").isVisible()) await page.keyboard.press("Escape")
     if (lesson.kind === "say") await page.keyboard.press("ArrowRight")
-    else if (step === 5) await slash(page, "/plugins.install librarian")
     else await slash(page, `/onboarding.act signal ${lesson.completion}`)
     await stage(page, step + 1)
     await page.keyboard.press("Shift")
@@ -30,7 +32,7 @@ const reachBackgroundLesson = async (page: Page) => {
 const runIds = async (page: Page) => page.locator('[data-testid^="run-trace-"]').evaluateAll(nodes =>
   nodes.filter(node => node.classList.contains("run-trace")).map(node => node.getAttribute("data-testid")!.slice("run-trace-".length)))
 
-test("two real background receipts can be monitored while chatting, survive reload, and complete only after both inspections", async ({ page }) => {
+test("two real background launches complete the lesson without opening either run, and survive reload", async ({ page }) => {
   await reachBackgroundLesson(page)
   await slash(page, "/wiki.create")
   // Root's shared schema-derived form supplies the real repository options.
@@ -46,18 +48,11 @@ test("two real background receipts can be monitored while chatting, survive relo
   await expect.poll(async () => (await runIds(page)).length).toBe(2)
   const ids = await runIds(page)
   expect(new Set(ids).size).toBe(2)
-  await stage(page, 6)
-  await slash(page, "Keep working while the Librarian runs.")
-  await expect(page.getByText("Keep working while the Librarian runs.", { exact: true }).first()).toBeVisible()
-  await slash(page, `/runs.open ${ids[0]} ${repo}`)
-  await stage(page, 6)
+  // Script v4 beat 12: both launched is the lesson; the user never has to open a run card.
+  await stage(page, 13)
   await page.reload()
-  await stage(page, 6)
+  await stage(page, 13)
   expect(new Set(await runIds(page))).toEqual(new Set(ids))
-  await slash(page, `/runs.open ${ids[1]} ${repo}`)
-  await stage(page, 7)
-  await page.reload()
-  await stage(page, 7)
 })
 
 test("a refused launch never checks the background lesson", async ({ page }) => {
@@ -66,6 +61,6 @@ test("a refused launch never checks the background lesson", async ({ page }) => 
   await slash(page, "/history.bootstrap definitely-missing/tutorial-repository")
   await page.keyboard.press("Escape")
   await page.keyboard.press("ArrowRight")
-  await stage(page, 6)
-  await expect(page.locator('[data-message-step="6"] .guide-step-done')).toHaveCount(0)
+  await stage(page, 12)
+  await expect(page.locator('[data-message-step="12"] .guide-step-done')).toHaveCount(0)
 })

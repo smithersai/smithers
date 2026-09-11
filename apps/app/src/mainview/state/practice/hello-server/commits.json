@@ -1,0 +1,402 @@
+{
+  "base": {
+    "commitId": "ffba9a8b6c5ecb72eb14c6a67f09fbf78f572477"
+  },
+  "branch": "smithers/fix-hello-3",
+  "commits": [
+    {
+      "index": 1,
+      "commitId": "39f0e2ae8a386e8ae2867bf767cce4c496257f14",
+      "changeId": "vztqlsrp",
+      "message": "Document the /hello default in README",
+      "intent": "Tell readers what /hello answers without a name.",
+      "tag": "optional",
+      "hint": "Docs could ship separately.",
+      "locked": false,
+      "files": [
+        "README.md"
+      ],
+      "additions": 2,
+      "deletions": 0
+    },
+    {
+      "index": 2,
+      "commitId": "403621e91240d8672bd1b83d0e859f02696763f1",
+      "changeId": "sonryzll",
+      "message": "Default greet() name to \"world\"",
+      "intent": "Line 2 prints null when the name is missing; default it to world.",
+      "tag": "required",
+      "hint": "The fix for #3",
+      "locked": true,
+      "files": [
+        "src/hello.ts"
+      ],
+      "additions": 1,
+      "deletions": 1
+    },
+    {
+      "index": 3,
+      "commitId": "1a1b55cc64525d03c85c66be2c05ccea4cf8ec4c",
+      "changeId": "tvymolup",
+      "message": "Test /hello without a name",
+      "intent": "Pin the default with a test that failed on the old code.",
+      "tag": "recommended",
+      "hint": "Keeps #3 from coming back.",
+      "locked": false,
+      "files": [
+        "src/hello.test.ts"
+      ],
+      "additions": 4,
+      "deletions": 0
+    }
+  ],
+  "branches": {
+    "main": [
+      "ffba9a8b6c5ecb72eb14c6a67f09fbf78f572477",
+      "402f48bb12c540ecdd3f808968fa96bbf4a40e39",
+      "8e4f763d3c76f8014aa01c2e107884d0be1f8735",
+      "a3e78d4bdf5171541e027576c5bc072d184ba03f",
+      "5cd68cd323b68b99a59a773d852ddb82f8ba8049",
+      "1107f89da7114bcd85fac053001899dae08a1d7c",
+      "06110017413788ea1f8d6a41118cf8bfdf97fd77",
+      "339993f93fa0d7136ba23414546f9638e9683d33"
+    ],
+    "smithers/fix-hello-3": [
+      "1a1b55cc64525d03c85c66be2c05ccea4cf8ec4c",
+      "403621e91240d8672bd1b83d0e859f02696763f1",
+      "39f0e2ae8a386e8ae2867bf767cce4c496257f14",
+      "ffba9a8b6c5ecb72eb14c6a67f09fbf78f572477",
+      "402f48bb12c540ecdd3f808968fa96bbf4a40e39",
+      "8e4f763d3c76f8014aa01c2e107884d0be1f8735",
+      "a3e78d4bdf5171541e027576c5bc072d184ba03f",
+      "5cd68cd323b68b99a59a773d852ddb82f8ba8049",
+      "1107f89da7114bcd85fac053001899dae08a1d7c",
+      "06110017413788ea1f8d6a41118cf8bfdf97fd77",
+      "339993f93fa0d7136ba23414546f9638e9683d33"
+    ]
+  },
+  "details": {
+    "ffba9a8b6c5ecb72eb14c6a67f09fbf78f572477": {
+      "commitId": "ffba9a8b6c5ecb72eb14c6a67f09fbf78f572477",
+      "changeId": "omwzpolv",
+      "title": "Run tests on pushes",
+      "message": "Run tests on pushes",
+      "author": {
+        "name": "Ada Park",
+        "email": "ada@example.com",
+        "login": "adapark",
+        "avatarUrl": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI0MCIgaGVpZ2h0PSI0MCIgdmlld0JveD0iMCAwIDQwIDQwIj48cmVjdCB3aWR0aD0iNDAiIGhlaWdodD0iNDAiIHJ4PSIyMCIgZmlsbD0iaHNsKDI5MSA1NSUgNDIlKSIvPjx0ZXh0IHg9IjIwIiB5PSIyNSIgZm9udC1mYW1pbHk9InN5c3RlbS11aSxzYW5zLXNlcmlmIiBmb250LXNpemU9IjE1IiBmb250LXdlaWdodD0iNjAwIiBmaWxsPSIjZmZmIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIj5BUDwvdGV4dD48L3N2Zz4="
+      },
+      "authoredAt": "2026-08-09T10:00:00.000Z",
+      "parents": [
+        {
+          "commitId": "402f48bb12c540ecdd3f808968fa96bbf4a40e39",
+          "changeId": "pvttvrvq"
+        }
+      ],
+      "files": [
+        {
+          "path": ".github/workflows/test.yml",
+          "changeType": "added",
+          "isBinary": false,
+          "additions": 11,
+          "deletions": 0,
+          "patch": "+++ b/.github/workflows/test.yml\n@@ -0,0 +1,11 @@\n+name: test\n+on: push\n+jobs:\n+  test:\n+    runs-on: ubuntu-latest\n+    steps:\n+      - uses: actions/checkout@v4\n+      - uses: actions/setup-node@v4\n+        with:\n+          node-version: 22\n+      - run: npm test"
+        }
+      ]
+    },
+    "402f48bb12c540ecdd3f808968fa96bbf4a40e39": {
+      "commitId": "402f48bb12c540ecdd3f808968fa96bbf4a40e39",
+      "changeId": "pvttvrvq",
+      "title": "Add test for greet",
+      "message": "Add test for greet",
+      "author": {
+        "name": "Ada Park",
+        "email": "ada@example.com",
+        "login": "adapark",
+        "avatarUrl": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI0MCIgaGVpZ2h0PSI0MCIgdmlld0JveD0iMCAwIDQwIDQwIj48cmVjdCB3aWR0aD0iNDAiIGhlaWdodD0iNDAiIHJ4PSIyMCIgZmlsbD0iaHNsKDI5MSA1NSUgNDIlKSIvPjx0ZXh0IHg9IjIwIiB5PSIyNSIgZm9udC1mYW1pbHk9InN5c3RlbS11aSxzYW5zLXNlcmlmIiBmb250LXNpemU9IjE1IiBmb250LXdlaWdodD0iNjAwIiBmaWxsPSIjZmZmIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIj5BUDwvdGV4dD48L3N2Zz4="
+      },
+      "authoredAt": "2026-08-08T10:00:00.000Z",
+      "parents": [
+        {
+          "commitId": "8e4f763d3c76f8014aa01c2e107884d0be1f8735",
+          "changeId": "poyorvwn"
+        }
+      ],
+      "files": [
+        {
+          "path": "src/hello.test.ts",
+          "changeType": "added",
+          "isBinary": false,
+          "additions": 5,
+          "deletions": 0,
+          "patch": "+++ b/src/hello.test.ts\n@@ -0,0 +1,5 @@\n+import { test } from \"node:test\"\n+import assert from \"node:assert/strict\"\n+import { greet } from \"./hello.ts\"\n+\n+test(\"greets by name\", () => assert.equal(greet(\"Ada\"), \"Hello, Ada!\"))"
+        }
+      ]
+    },
+    "8e4f763d3c76f8014aa01c2e107884d0be1f8735": {
+      "commitId": "8e4f763d3c76f8014aa01c2e107884d0be1f8735",
+      "changeId": "poyorvwn",
+      "title": "fix typo",
+      "message": "fix typo",
+      "author": {
+        "name": "Mira Chen",
+        "email": "mira@example.com",
+        "login": "mirachen",
+        "avatarUrl": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI0MCIgaGVpZ2h0PSI0MCIgdmlld0JveD0iMCAwIDQwIDQwIj48cmVjdCB3aWR0aD0iNDAiIGhlaWdodD0iNDAiIHJ4PSIyMCIgZmlsbD0iaHNsKDI2OSA1NSUgNDIlKSIvPjx0ZXh0IHg9IjIwIiB5PSIyNSIgZm9udC1mYW1pbHk9InN5c3RlbS11aSxzYW5zLXNlcmlmIiBmb250LXNpemU9IjE1IiBmb250LXdlaWdodD0iNjAwIiBmaWxsPSIjZmZmIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIj5NQzwvdGV4dD48L3N2Zz4="
+      },
+      "authoredAt": "2026-08-07T10:00:00.000Z",
+      "parents": [
+        {
+          "commitId": "a3e78d4bdf5171541e027576c5bc072d184ba03f",
+          "changeId": "oquuxomo"
+        }
+      ],
+      "files": [
+        {
+          "path": "src/hello.ts",
+          "changeType": "modified",
+          "isBinary": false,
+          "additions": 1,
+          "deletions": 1,
+          "patch": "@@ -1,3 +1,3 @@\n export function greet(name: string | null): string {\n-  return `Helo, ${name}!`\n+  return `Hello, ${name}!`\n }"
+        }
+      ]
+    },
+    "a3e78d4bdf5171541e027576c5bc072d184ba03f": {
+      "commitId": "a3e78d4bdf5171541e027576c5bc072d184ba03f",
+      "changeId": "oquuxomo",
+      "title": "Add /hello greeting",
+      "message": "Add /hello greeting",
+      "author": {
+        "name": "Jonas Weber",
+        "email": "jonas@example.com",
+        "login": "jonasweber",
+        "avatarUrl": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI0MCIgaGVpZ2h0PSI0MCIgdmlld0JveD0iMCAwIDQwIDQwIj48cmVjdCB3aWR0aD0iNDAiIGhlaWdodD0iNDAiIHJ4PSIyMCIgZmlsbD0iaHNsKDI0MSA1NSUgNDIlKSIvPjx0ZXh0IHg9IjIwIiB5PSIyNSIgZm9udC1mYW1pbHk9InN5c3RlbS11aSxzYW5zLXNlcmlmIiBmb250LXNpemU9IjE1IiBmb250LXdlaWdodD0iNjAwIiBmaWxsPSIjZmZmIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIj5KVzwvdGV4dD48L3N2Zz4="
+      },
+      "authoredAt": "2026-08-06T15:00:00.000Z",
+      "parents": [
+        {
+          "commitId": "5cd68cd323b68b99a59a773d852ddb82f8ba8049",
+          "changeId": "tvyxkuyt"
+        }
+      ],
+      "files": [
+        {
+          "path": "src/server.ts",
+          "changeType": "modified",
+          "isBinary": false,
+          "additions": 3,
+          "deletions": 0,
+          "patch": "@@ -1,9 +1,12 @@\n import { createServer } from \"node:http\"\n+import { greet } from \"./hello.ts\"\n \n const server = createServer((req, res) => {\n   const url = new URL(req.url ?? \"/\", \"http://localhost\")\n   if (url.pathname === \"/health\") {\n     res.end(\"ok\")\n+  } else if (url.pathname === \"/hello\") {\n+    res.end(greet(url.searchParams.get(\"name\")))\n   } else {\n     res.statusCode = 404\n     res.end(\"not found\")"
+        }
+      ]
+    },
+    "5cd68cd323b68b99a59a773d852ddb82f8ba8049": {
+      "commitId": "5cd68cd323b68b99a59a773d852ddb82f8ba8049",
+      "changeId": "tvyxkuyt",
+      "title": "wip hello",
+      "message": "wip hello",
+      "author": {
+        "name": "Jonas Weber",
+        "email": "jonas@example.com",
+        "login": "jonasweber",
+        "avatarUrl": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI0MCIgaGVpZ2h0PSI0MCIgdmlld0JveD0iMCAwIDQwIDQwIj48cmVjdCB3aWR0aD0iNDAiIGhlaWdodD0iNDAiIHJ4PSIyMCIgZmlsbD0iaHNsKDI0MSA1NSUgNDIlKSIvPjx0ZXh0IHg9IjIwIiB5PSIyNSIgZm9udC1mYW1pbHk9InN5c3RlbS11aSxzYW5zLXNlcmlmIiBmb250LXNpemU9IjE1IiBmb250LXdlaWdodD0iNjAwIiBmaWxsPSIjZmZmIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIj5KVzwvdGV4dD48L3N2Zz4="
+      },
+      "authoredAt": "2026-08-06T10:00:00.000Z",
+      "parents": [
+        {
+          "commitId": "1107f89da7114bcd85fac053001899dae08a1d7c",
+          "changeId": "syytzrnk"
+        }
+      ],
+      "files": [
+        {
+          "path": "src/hello.ts",
+          "changeType": "added",
+          "isBinary": false,
+          "additions": 3,
+          "deletions": 0,
+          "patch": "+++ b/src/hello.ts\n@@ -0,0 +1,3 @@\n+export function greet(name: string | null): string {\n+  return `Helo, ${name}!`\n+}"
+        }
+      ]
+    },
+    "1107f89da7114bcd85fac053001899dae08a1d7c": {
+      "commitId": "1107f89da7114bcd85fac053001899dae08a1d7c",
+      "changeId": "syytzrnk",
+      "title": "Document how to run the server (closes #1)",
+      "message": "Document how to run the server (closes #1)",
+      "author": {
+        "name": "Mira Chen",
+        "email": "mira@example.com",
+        "login": "mirachen",
+        "avatarUrl": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI0MCIgaGVpZ2h0PSI0MCIgdmlld0JveD0iMCAwIDQwIDQwIj48cmVjdCB3aWR0aD0iNDAiIGhlaWdodD0iNDAiIHJ4PSIyMCIgZmlsbD0iaHNsKDI2OSA1NSUgNDIlKSIvPjx0ZXh0IHg9IjIwIiB5PSIyNSIgZm9udC1mYW1pbHk9InN5c3RlbS11aSxzYW5zLXNlcmlmIiBmb250LXNpemU9IjE1IiBmb250LXdlaWdodD0iNjAwIiBmaWxsPSIjZmZmIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIj5NQzwvdGV4dD48L3N2Zz4="
+      },
+      "authoredAt": "2026-08-05T10:00:00.000Z",
+      "parents": [
+        {
+          "commitId": "06110017413788ea1f8d6a41118cf8bfdf97fd77",
+          "changeId": "ytwppxpr"
+        }
+      ],
+      "files": [
+        {
+          "path": "README.md",
+          "changeType": "modified",
+          "isBinary": false,
+          "additions": 2,
+          "deletions": 0,
+          "patch": "@@ -1,2 +1,4 @@\n # hello-server\n Practice repository for the Smithers tutorial.\n+Run `npm start` to serve on port 3000.\n+Run `npm test` to run the tests."
+        }
+      ]
+    },
+    "06110017413788ea1f8d6a41118cf8bfdf97fd77": {
+      "commitId": "06110017413788ea1f8d6a41118cf8bfdf97fd77",
+      "changeId": "ytwppxpr",
+      "title": "Add HTTP server with /health",
+      "message": "Add HTTP server with /health",
+      "author": {
+        "name": "Ada Park",
+        "email": "ada@example.com",
+        "login": "adapark",
+        "avatarUrl": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI0MCIgaGVpZ2h0PSI0MCIgdmlld0JveD0iMCAwIDQwIDQwIj48cmVjdCB3aWR0aD0iNDAiIGhlaWdodD0iNDAiIHJ4PSIyMCIgZmlsbD0iaHNsKDI5MSA1NSUgNDIlKSIvPjx0ZXh0IHg9IjIwIiB5PSIyNSIgZm9udC1mYW1pbHk9InN5c3RlbS11aSxzYW5zLXNlcmlmIiBmb250LXNpemU9IjE1IiBmb250LXdlaWdodD0iNjAwIiBmaWxsPSIjZmZmIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIj5BUDwvdGV4dD48L3N2Zz4="
+      },
+      "authoredAt": "2026-08-04T10:00:00.000Z",
+      "parents": [
+        {
+          "commitId": "339993f93fa0d7136ba23414546f9638e9683d33",
+          "changeId": "zylruqxx"
+        }
+      ],
+      "files": [
+        {
+          "path": "src/server.ts",
+          "changeType": "added",
+          "isBinary": false,
+          "additions": 13,
+          "deletions": 0,
+          "patch": "+++ b/src/server.ts\n@@ -0,0 +1,13 @@\n+import { createServer } from \"node:http\"\n+\n+const server = createServer((req, res) => {\n+  const url = new URL(req.url ?? \"/\", \"http://localhost\")\n+  if (url.pathname === \"/health\") {\n+    res.end(\"ok\")\n+  } else {\n+    res.statusCode = 404\n+    res.end(\"not found\")\n+  }\n+})\n+\n+server.listen(3000)"
+        }
+      ]
+    },
+    "339993f93fa0d7136ba23414546f9638e9683d33": {
+      "commitId": "339993f93fa0d7136ba23414546f9638e9683d33",
+      "changeId": "zylruqxx",
+      "title": "Initial commit",
+      "message": "Initial commit",
+      "author": {
+        "name": "Ada Park",
+        "email": "ada@example.com",
+        "login": "adapark",
+        "avatarUrl": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI0MCIgaGVpZ2h0PSI0MCIgdmlld0JveD0iMCAwIDQwIDQwIj48cmVjdCB3aWR0aD0iNDAiIGhlaWdodD0iNDAiIHJ4PSIyMCIgZmlsbD0iaHNsKDI5MSA1NSUgNDIlKSIvPjx0ZXh0IHg9IjIwIiB5PSIyNSIgZm9udC1mYW1pbHk9InN5c3RlbS11aSxzYW5zLXNlcmlmIiBmb250LXNpemU9IjE1IiBmb250LXdlaWdodD0iNjAwIiBmaWxsPSIjZmZmIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIj5BUDwvdGV4dD48L3N2Zz4="
+      },
+      "authoredAt": "2026-08-03T10:00:00.000Z",
+      "parents": [],
+      "files": [
+        {
+          "path": "README.md",
+          "changeType": "added",
+          "isBinary": false,
+          "additions": 2,
+          "deletions": 0,
+          "patch": "+++ b/README.md\n@@ -0,0 +1,2 @@\n+# hello-server\n+Practice repository for the Smithers tutorial."
+        },
+        {
+          "path": "package.json",
+          "changeType": "added",
+          "isBinary": false,
+          "additions": 1,
+          "deletions": 0,
+          "patch": "+++ b/package.json\n@@ -0,0 +1 @@\n+{\"name\":\"hello-server\",\"type\":\"module\",\"scripts\":{\"start\":\"node src/server.ts\",\"test\":\"node --test\"}}"
+        }
+      ]
+    },
+    "1a1b55cc64525d03c85c66be2c05ccea4cf8ec4c": {
+      "commitId": "1a1b55cc64525d03c85c66be2c05ccea4cf8ec4c",
+      "changeId": "tvymolup",
+      "title": "Test /hello without a name",
+      "message": "Test /hello without a name",
+      "author": {
+        "name": "Smithers",
+        "email": "smithers@smithers.sh",
+        "login": "smithers",
+        "avatarUrl": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI0MCIgaGVpZ2h0PSI0MCIgdmlld0JveD0iMCAwIDQwIDQwIj48cmVjdCB3aWR0aD0iNDAiIGhlaWdodD0iNDAiIHJ4PSIyMCIgZmlsbD0iaHNsKDQ1IDU1JSA0MiUpIi8+PHRleHQgeD0iMjAiIHk9IjI1IiBmb250LWZhbWlseT0ic3lzdGVtLXVpLHNhbnMtc2VyaWYiIGZvbnQtc2l6ZT0iMTUiIGZvbnQtd2VpZ2h0PSI2MDAiIGZpbGw9IiNmZmYiIHRleHQtYW5jaG9yPSJtaWRkbGUiPlM8L3RleHQ+PC9zdmc+"
+      },
+      "authoredAt": "2026-09-10T12:02:00.000Z",
+      "parents": [
+        {
+          "commitId": "403621e91240d8672bd1b83d0e859f02696763f1",
+          "changeId": "sonryzll"
+        }
+      ],
+      "files": [
+        {
+          "path": "src/hello.test.ts",
+          "changeType": "modified",
+          "isBinary": false,
+          "additions": 4,
+          "deletions": 0,
+          "patch": "@@ -3,3 +3,7 @@ import assert from \"node:assert/strict\"\n import { greet } from \"./hello.ts\"\n \n test(\"greets by name\", () => assert.equal(greet(\"Ada\"), \"Hello, Ada!\"))\n+\n+test(\"greets the world when no name is given\", () => {\n+  assert.equal(greet(null), \"Hello, world!\")\n+})"
+        }
+      ]
+    },
+    "403621e91240d8672bd1b83d0e859f02696763f1": {
+      "commitId": "403621e91240d8672bd1b83d0e859f02696763f1",
+      "changeId": "sonryzll",
+      "title": "Default greet() name to \"world\"",
+      "message": "Default greet() name to \"world\"",
+      "author": {
+        "name": "Smithers",
+        "email": "smithers@smithers.sh",
+        "login": "smithers",
+        "avatarUrl": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI0MCIgaGVpZ2h0PSI0MCIgdmlld0JveD0iMCAwIDQwIDQwIj48cmVjdCB3aWR0aD0iNDAiIGhlaWdodD0iNDAiIHJ4PSIyMCIgZmlsbD0iaHNsKDQ1IDU1JSA0MiUpIi8+PHRleHQgeD0iMjAiIHk9IjI1IiBmb250LWZhbWlseT0ic3lzdGVtLXVpLHNhbnMtc2VyaWYiIGZvbnQtc2l6ZT0iMTUiIGZvbnQtd2VpZ2h0PSI2MDAiIGZpbGw9IiNmZmYiIHRleHQtYW5jaG9yPSJtaWRkbGUiPlM8L3RleHQ+PC9zdmc+"
+      },
+      "authoredAt": "2026-09-10T12:01:00.000Z",
+      "parents": [
+        {
+          "commitId": "39f0e2ae8a386e8ae2867bf767cce4c496257f14",
+          "changeId": "vztqlsrp"
+        }
+      ],
+      "files": [
+        {
+          "path": "src/hello.ts",
+          "changeType": "modified",
+          "isBinary": false,
+          "additions": 1,
+          "deletions": 1,
+          "patch": "@@ -1,3 +1,3 @@\n export function greet(name: string | null): string {\n-  return `Hello, ${name}!`\n+  return `Hello, ${name || \"world\"}!`\n }"
+        }
+      ]
+    },
+    "39f0e2ae8a386e8ae2867bf767cce4c496257f14": {
+      "commitId": "39f0e2ae8a386e8ae2867bf767cce4c496257f14",
+      "changeId": "vztqlsrp",
+      "title": "Document the /hello default in README",
+      "message": "Document the /hello default in README",
+      "author": {
+        "name": "Smithers",
+        "email": "smithers@smithers.sh",
+        "login": "smithers",
+        "avatarUrl": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI0MCIgaGVpZ2h0PSI0MCIgdmlld0JveD0iMCAwIDQwIDQwIj48cmVjdCB3aWR0aD0iNDAiIGhlaWdodD0iNDAiIHJ4PSIyMCIgZmlsbD0iaHNsKDQ1IDU1JSA0MiUpIi8+PHRleHQgeD0iMjAiIHk9IjI1IiBmb250LWZhbWlseT0ic3lzdGVtLXVpLHNhbnMtc2VyaWYiIGZvbnQtc2l6ZT0iMTUiIGZvbnQtd2VpZ2h0PSI2MDAiIGZpbGw9IiNmZmYiIHRleHQtYW5jaG9yPSJtaWRkbGUiPlM8L3RleHQ+PC9zdmc+"
+      },
+      "authoredAt": "2026-09-10T12:00:00.000Z",
+      "parents": [
+        {
+          "commitId": "ffba9a8b6c5ecb72eb14c6a67f09fbf78f572477",
+          "changeId": "omwzpolv"
+        }
+      ],
+      "files": [
+        {
+          "path": "README.md",
+          "changeType": "modified",
+          "isBinary": false,
+          "additions": 2,
+          "deletions": 0,
+          "patch": "@@ -2,3 +2,5 @@\n Practice repository for the Smithers tutorial.\n Run `npm start` to serve on port 3000.\n Run `npm test` to run the tests.\n+\n+`GET /hello` without a name replies `Hello, world!`."
+        }
+      ]
+    }
+  }
+}

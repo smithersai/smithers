@@ -186,7 +186,8 @@ export const runsFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> => 
   flow({
     name: "runs.trace.select",
     summary: "Select a node of a run's trace, optionally scrubbing to a journal seq",
-    runtime: ["cloud"],
+    /* Selection reads the journal already on the card; the practice run's card is bundled. */
+    runtimeAny: ["cloud", "practice"],
     hidden: true,
     args: "[sourceCard=id] <runId> <nodeId> [seq]",
     input: Schema.Struct({ sourceCard: Schema.optional(Schema.String), runId: Schema.String, nodeId: Schema.String, seq: Schema.optional(Schema.Number) }),

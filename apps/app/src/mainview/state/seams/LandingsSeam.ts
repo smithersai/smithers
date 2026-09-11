@@ -1,4 +1,5 @@
-import { tutorialRepositoryRead, type RepositoryForm } from "./tutorial2-issues_prs"
+import { practiceViewLanding, tutorialRepositoryRead, type RepositoryForm } from "./tutorial2-issues_prs"
+import { isPracticeRepo } from "../practice/PracticeRepository"
 /*
  * The landings seam ("PRs"): /api/repos/{owner}/{repo}/landings* through the
  * product Worker's platform proxy. Landing a PR QUEUES it (202 Accepted) — the
@@ -8,6 +9,11 @@ import { tutorialRepositoryRead, type RepositoryForm } from "./tutorial2-issues_
  * src/landings/landingsStore.ts executeCreate + src/smithersCloud/repoChanges.ts.
  */
 import type { Card } from "../AppState"
+
+type PrPayload = Extract<Card, { kind: "pr" }>["payload"]
+type FileRow = NonNullable<PrPayload["files"]>[number]
+/** The most changes a PR card reads (two requests each); a taller stack shows its top. */
+const STACK_CAP = 20
 import { resolveTargetRepo } from "../RepoContext"
 import { fetchAllBookmarks } from "./BookmarksSeam"
 import type { SeamContext } from "./SeamContext"
@@ -48,6 +54,8 @@ interface LandingDetail extends LandingRow {
   readonly body: string
   /** The jj change ids (bottom → top); the tip is the checks status ref. */
   readonly changeIds: readonly string[]
+  readonly targetBookmark: string | null
+  readonly createdAt: string | null
 }
 
 /**
@@ -75,7 +83,9 @@ const parseLandingDetail = (value: unknown): LandingDetail | null => {
     body: typeof value.body === "string" ? value.body : "",
     changeIds: Array.isArray(value.change_ids)
       ? value.change_ids.filter((id): id is string => typeof id === "string")
-      : []
+      : [],
+    targetBookmark: stringOrNull(value.target_bookmark),
+    createdAt: stringOrNull(value.created_at)
   }
 }
 
@@ -280,6 +290,68 @@ export const createLandingsSeam = (ctx: SeamContext, renderRepositoryForm?: Repo
   }
 
   /*
+   * The landing's stack for the PR card's Commits and Files changed tabs: each
+   * change (GET …/changes/{id}) and its diff (GET …/changes/{id}/diff,
+   * `file_diffs[]`), the routes the commit card reads. Files merge by path:
+   * counts add up, and the patch rides only when one change touched the file
+   * (a later change's patch alone is not the file's diff). A tab's field is
+   * set only when every read answered, so a failed read never looks empty.
+   */
+  const fetchStack = async (repo: string, changeIds: readonly string[]): Promise<Pick<PrPayload, "commits" | "files">> => {
+    const root = `${ctx.baseUrl}${repoApiRoot(repo)}/changes`
+    const read = async (url: string): Promise<unknown> => {
+      try {
+        const response = await ctx.http(url)
+        return response.ok ? await response.json().catch(() => undefined) : undefined
+      } catch {
+        return undefined
+      }
+    }
+    const ids = changeIds.slice(-STACK_CAP)
+    const rows = await Promise.all(ids.map(async (id) => {
+      const [change, diff] = await Promise.all([read(`${root}/${encodeURIComponent(id)}`), read(`${root}/${encodeURIComponent(id)}/diff`)])
+      return { id, change, diff }
+    }))
+    const commits: NonNullable<PrPayload["commits"]> = rows.flatMap(({ id, change }) => isRecord(change) ? [{
+      changeId: id,
+      ...(typeof change.commit_id === "string" && change.commit_id !== "" ? { commitId: change.commit_id } : {}),
+      message: typeof change.description === "string" ? change.description : "",
+      author: stringOrNull(change.author_name),
+      timestamp: stringOrNull(change.timestamp)
+    }] : [])
+    const count = (value: unknown): number => typeof value === "number" && Number.isInteger(value) && value >= 0 ? value : 0
+    const statusOf = (value: unknown): FileRow["status"] =>
+      value === "added" || value === "renamed" ? value : value === "deleted" || value === "removed" ? "removed" : value === "modified" ? "modified" : undefined
+    const files = new Map<string, FileRow & { touched: number }>()
+    let diffsRead = 0
+    for (const { diff } of rows) {
+      if (!isRecord(diff) || !Array.isArray(diff.file_diffs)) continue
+      diffsRead++
+      for (const value of diff.file_diffs) {
+        if (!isRecord(value) || typeof value.path !== "string" || value.path === "") continue
+        const prior = files.get(value.path)
+        const oldPath = stringOrNull(value.old_path)
+        const status = statusOf(value.change_type)
+        const patch = stringOrNull(value.patch)
+        const touched = (prior?.touched ?? 0) + 1
+        files.set(value.path, {
+          path: value.path,
+          ...(oldPath !== null ? { oldPath } : prior?.oldPath !== undefined ? { oldPath: prior.oldPath } : {}),
+          ...(status !== undefined ? { status } : {}),
+          additions: (prior?.additions ?? 0) + count(value.additions),
+          deletions: (prior?.deletions ?? 0) + count(value.deletions),
+          ...(touched === 1 && patch !== null ? { patch } : {}),
+          touched
+        })
+      }
+    }
+    return {
+      ...(commits.length === ids.length ? { commits } : {}),
+      ...(diffsRead === ids.length ? { files: [...files.values()].map(({ touched: _touched, ...file }) => file) } : {})
+    }
+  }
+
+  /*
    * The one detail door: GET the landing, its reviews, and its checks, then
    * upsert the "pr" card. `stateOverride` lets a mutation pin the state the
    * platform just answered (a land pins "queued") over a racing re-read.
@@ -302,11 +374,12 @@ export const createLandingsSeam = (ctx: SeamContext, renderRepositoryForm?: Repo
     if (landing === null) {
       return `Pull request #${number} on ${repo} answered with a payload this app couldn't read.`
     }
-    const [reviews, checks] = await Promise.all([
+    const [reviews, checks, stack] = await Promise.all([
       fetchReviews(repo, number),
-      fetchChecks(repo, landing.changeIds.at(-1))
+      fetchChecks(repo, landing.changeIds.at(-1)),
+      fetchStack(repo, landing.changeIds)
     ])
-    const payload = {
+    const payload: PrPayload = {
       repo,
       number,
       title: landing.title,
@@ -314,7 +387,10 @@ export const createLandingsSeam = (ctx: SeamContext, renderRepositoryForm?: Repo
       author: landing.author,
       prBody: landing.body,
       reviews,
-      checks
+      checks,
+      ...(landing.targetBookmark !== null ? { baseBranch: landing.targetBookmark } : {}),
+      ...(landing.createdAt !== null ? { createdAt: landing.createdAt } : {}),
+      ...stack
     }
     await upsert({
       id: `pr-${repo}-${number}`,
@@ -330,7 +406,9 @@ export const createLandingsSeam = (ctx: SeamContext, renderRepositoryForm?: Repo
       `Author: ${payload.author ?? "unknown"}`,
       payload.prBody,
       ...payload.reviews.map((review) => `Review by ${review.author ?? "unknown"} · ${review.type}:\n${review.reviewBody}`),
-      ...payload.checks.map((check) => `Check: ${check.context} · ${check.state}`)
+      ...payload.checks.map((check) => `Check: ${check.context} · ${check.state}`),
+      ...(payload.commits ?? []).map((commit) => `Commit ${commit.changeId?.slice(0, 8) ?? ""}: ${commit.message.split("\n")[0] ?? ""}`),
+      ...(payload.files ?? []).map((file) => `File: ${file.path} +${file.additions ?? 0} −${file.deletions ?? 0}`)
     ].join("\n"))
   }
 
@@ -376,6 +454,7 @@ export const createLandingsSeam = (ctx: SeamContext, renderRepositoryForm?: Repo
     }),
 
     viewLanding: async (number, repoArg) => {
+      if (isPracticeRepo(repoArg)) return practiceViewLanding(ctx, number)
       const target = resolveTargetRepo(ctx.store, repoArg)
       if ("error" in target) return target.error
       return surfaceLanding(target.repo, number)

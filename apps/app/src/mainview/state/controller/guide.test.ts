@@ -14,15 +14,17 @@ const setup = async (step: number, rawHttp: FetchLike) => {
 }
 
 
-test("only the current real signal completes a lesson; PRs and issues share one gate", async () => {
+test("only the current real signal completes a lesson; issues and PRs are separate beats", async () => {
   const { store, controller } = await setup(3, fetch)
   await controller.guideAct("next")
   await controller.guideAct("signal", "file.opened")
+  // Script v4: issues (beat 1) and pull requests (beat 3) no longer share one gate.
+  await controller.guideAct("signal", "issues.opened")
   await controller.guideAct("advance", "0:3")
   expect(store.session().guide?.step).toBe(3)
   expect(store.session().guide?.completed).toEqual([])
   await controller.guideAct("signal", "prs.opened")
-  expect(store.session().guide?.completed).toContain("issues.opened")
+  expect(store.session().guide?.completed).toEqual(["prs.opened"])
   expect(store.session().guide?.step).toBe(3)
   await controller.guideAct("advance", "0:3")
   expect(store.session().guide?.step).toBe(4)

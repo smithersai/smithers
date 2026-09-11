@@ -16,7 +16,7 @@ test("user and agent select the same persisted payload and emit trace.opened onl
     } })
     await store.dispatch({ type: "repositories.loaded", actor: "system", repositories: [{ id: "owner/repo", org: "owner", ownerKind: "user", name: "repo", head: null }] }).isPersisted.promise
     await store.dispatch({ type: "repo.selected", actor: "user", id: "owner/repo" }).isPersisted.promise
-    await store.dispatch({ type: "guide.changed", actor: "user", guide: { ...initialGuide(), step: 8, completed: ["change.committed"], playthrough: 2 } }).isPersisted.promise
+    await store.dispatch({ type: "guide.changed", actor: "user", guide: { ...initialGuide(), step: 7, completed: ["commits.made"], playthrough: 2 } }).isPersisted.promise
     await store.dispatch({ type: "card.upsert", actor: "system", card: {
       id: "flow-run-change", kind: "run-trace", title: "Change", status: "active", createdAt: 1, ordinal: 1,
       payload: { repo: "owner/repo", runId: "change", workflow: "tutorial-change", kind: "change", input: { plan: CODING_PLAN, tutorialScope: { repoKey: "owner/repo", playthrough: 2 }, tutorialReceipt: { runId: "change", repo: "owner/repo", base: "a".repeat(40), parent: "a".repeat(40), sha: "e".repeat(40), subject: "Recorded change", files: ["src/index.ts"] } }, phase: "completed", steps: [], result: null, lastSeq: 3, events: [

@@ -292,9 +292,10 @@ describe("explainAbsent — an exact miss classified against the unfiltered cata
       ...WEB,
       capabilities: cloudCapabilities({ identity: true, cloud: false, agent: true, checkout: false, terminal: false })
     })
-    expect(offline.controller.commands.explainAbsent("issues.list")).toEqual({
+    // issues.list also answers from the bundled practice repository (state/practice), so it is never absent; a write is.
+    expect(offline.controller.commands.explainAbsent("issues.create")).toEqual({
       door: "origin",
-      reason: "/issues.list is not available on this origin yet."
+      reason: "/issues.create is not available on this origin yet."
     })
   })
 

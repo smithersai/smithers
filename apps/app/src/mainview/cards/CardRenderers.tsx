@@ -18,6 +18,8 @@ import { billingCardFamily } from "./BillingCards"
 import { branchesCardFamily } from "./BranchesCard"
 import type { CardActions, CardFamily, CardFamilyEntry } from "./CardFamily"
 import { changeCardFamily } from "./ChangeCards"
+import { commitPickCardFamily } from "./CommitPickCard"
+import { commitCardFamily } from "./CommitCards"
 import { ciMatrixCardFamily } from "./CiMatrixCard"
 import { conversationCardFamily } from "./ConversationCards"
 import { envCardFamily } from "./EnvCard"
@@ -104,7 +106,9 @@ export const CARD_FAMILIES: ReadonlyArray<CardFamily<never>> = [
   searchResultsCardFamily,
   repositoryChoiceCardFamily,
   pluginLibraryCardFamily,
-  wikiCardFamily
+  wikiCardFamily,
+  commitPickCardFamily,
+  commitCardFamily
 ]
 
 /** One entry per card kind. Written as a literal so a missing kind fails to compile. */
@@ -123,6 +127,8 @@ export const CARD_RENDERERS: CardFamily<Card["kind"]> = {
   ...issueCardFamily,
   ...landingCardFamily,
   ...changeCardFamily,
+  ...commitPickCardFamily,
+  ...commitCardFamily,
   ...notificationsCardFamily,
   ...envCardFamily,
   ...secretsCardFamily,

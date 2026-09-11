@@ -13,6 +13,8 @@ import type { AppStore } from "./AppStore"
 import { cardContainsRun, runScopeFromCard, sameRunScope, type RunScope } from "./RunReference"
 
 const REPO_TOKEN = /^[\w.-]+\/[\w.-]+$/
+/* The bundled practice repository's key (state/practice/PracticeRepository.ts): a target, never a hosted repo. */
+const PRACTICE_TOKEN = /^practice:[\w.-]+\/[\w.-]+$/
 
 /**
  * The repositories a trailing token may name in argument text: every
@@ -48,9 +50,9 @@ export const splitTrailingRepo = (
   if (text === "") return { rest: "" }
   const parts = text.split(/\s+/)
   const last = parts[parts.length - 1] ?? ""
-  if (parts.length > 0 && REPO_TOKEN.test(last)) {
+  if (parts.length > 0 && (REPO_TOKEN.test(last) || PRACTICE_TOKEN.test(last))) {
     const rest = parts.slice(0, -1).join(" ")
-    if (known !== undefined && !known.has(last)) return { rest: text }
+    if (known !== undefined && !PRACTICE_TOKEN.test(last) && !known.has(last)) return { rest: text }
     return { rest, repo: last }
   }
   return { rest: text }
@@ -97,7 +99,7 @@ export const resolveTargetRepo = (
   explicit: string | undefined
 ): { readonly repo: string } | { readonly error: string } => {
   if (explicit !== undefined && explicit !== "") {
-    if (!REPO_TOKEN.test(explicit)) {
+    if (!REPO_TOKEN.test(explicit) && !PRACTICE_TOKEN.test(explicit)) {
       return { error: `"${explicit}" is not an owner/repo name` }
     }
     return { repo: explicit }

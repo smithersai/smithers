@@ -1,30 +1,41 @@
 /*
- * The branches (bookmarks) card: INFORMATIONAL rows — bookmark name plus the
- * short head commit. A row binds no command: prs.create requires a title the
- * row cannot supply, so a button here could not carry a complete registered
- * invocation (the launch-law parity gate). The footer states the follow-up
- * command in words instead.
+ * The branches (bookmarks) card: bookmark name plus the short head commit.
+ * A row opens that branch's commits (commits.list <branch> <owner/repo>);
+ * arrow keys, j and k move between rows. Opening a pull request needs a
+ * title the row cannot supply, so the footer states that command in words.
  */
 import { GitBranch } from "lucide-react"
 import type { Card } from "../state/AppState"
 import type { CardFamily } from "./CardFamily"
 import { settledPill } from "./CardFamily"
+import { moveRowFocus } from "./CommitCards"
 
 export const BranchesCardBody = ({
-  card
+  card,
+  onRunCommand
 }: {
   readonly card: Extract<Card, { kind: "branches" }>
+  readonly onRunCommand: (name: string, args?: string) => void
 }) => (
   <div className="world-card-list">
-    <ul className="world-card-list">
+    <ul className="world-card-list" onKeyDown={moveRowFocus}>
       {card.payload.bookmarks.length === 0 ?
         <li className="world-card-empty">No branches in {card.payload.repo} yet.</li> :
         (
           card.payload.bookmarks.map((bookmark) => (
             <li key={bookmark.name} className="world-card-row">
-              <GitBranch size={14} aria-hidden="true" />
-              <span className="world-card-title">{bookmark.name}</span>
-              {bookmark.head !== null ? <span className="world-card-path">{bookmark.head.slice(0, 8)}</span> : null}
+              <button
+                type="button"
+                className="branches-row-open"
+                data-row-open
+                data-flow="commits.list"
+                aria-label={`Commits on ${bookmark.name}`}
+                onClick={() => onRunCommand("commits.list", `${bookmark.name} ${card.payload.repo}`)}
+              >
+                <GitBranch size={14} aria-hidden="true" />
+                <span className="world-card-title">{bookmark.name}</span>
+                {bookmark.head !== null ? <span className="world-card-path">{bookmark.head.slice(0, 8)}</span> : null}
+              </button>
             </li>
           ))
         )}
@@ -40,5 +51,5 @@ export const BranchesCardBody = ({
 )
 
 export const branchesCardFamily: CardFamily<"branches"> = {
-  branches: { render: (card) => <BranchesCardBody card={card} />, pill: settledPill }
+  branches: { render: (card, actions) => <BranchesCardBody card={card} onRunCommand={actions.onRunCommand} />, pill: settledPill }
 }

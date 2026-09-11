@@ -27,6 +27,8 @@ export type PaletteRow =
   | { readonly kind: "item"; readonly item: SearchItem; readonly group: string; readonly recommended: boolean }
   | { readonly kind: "action"; readonly action: SearchAction; readonly item: SearchItem }
   | { readonly kind: "help"; readonly row: PrefixRow & { readonly available: boolean } }
+  /* "Ask Smithers": the composer itself, the first row of an empty ⌘K (onboarding SCRIPT v4, open decision). */
+  | { readonly kind: "ask" }
 
 /** The overlay's rows for one draft, plus where each group starts (Tab walks groups). */
 export interface PaletteRows {
@@ -42,7 +44,14 @@ export const PALETTE_LEGEND = "↑↓ move · → actions · ?"
 /** A slash row the overlay lists as a choice: a note is a caption, not a row. */
 export type SlashLeafRow = Exclude<SlashRow<CatalogItem>, { readonly kind: "note" }>
 
-export const paletteRows = (answer: PaletteAnswer, slashRows: ReadonlyArray<SlashRow<CatalogItem>>, actionsRef: string | null): PaletteRows => {
+export const paletteRows = (answer: PaletteAnswer, slashRows: ReadonlyArray<SlashRow<CatalogItem>>, actionsRef: string | null, ask = false): PaletteRows => {
+  const shown = paletteRowsOf(answer, slashRows, actionsRef)
+  // An empty bare ⌘K leads with "Ask Smithers": typing a question is the first thing the palette offers.
+  if (!ask || answer.parsed.mode !== "all" || answer.parsed.query !== "" || shown.actionsFor !== undefined) return shown
+  return { ...shown, rows: [{ kind: "ask" }, ...shown.rows], groups: shown.groups.map((group) => ({ ...group, start: group.start + 1 })) }
+}
+
+const paletteRowsOf = (answer: PaletteAnswer, slashRows: ReadonlyArray<SlashRow<CatalogItem>>, actionsRef: string | null): PaletteRows => {
   if (answer.parsed.mode === "flows") {
     // A note row is a caption over the rows that follow it, never a choice: it renders as a group label.
     const rows: Array<PaletteRow> = []
@@ -224,6 +233,14 @@ export function PaletteOverlay({ answer, rows, highlighted, slashBranch, onHighl
         }
         // Unreachable (a leaf row is a namespace or a flow); it narrows `row` for the branches below.
         if (row.kind === "slash") return null
+        if (row.kind === "ask") {
+          return (
+            <button {...common} key="ask" data-ask="" className="slash-menu-item palette-ask-row" onClick={() => onChoose(row)}>
+              <span className="slash-menu-name">Ask Smithers</span>
+              <span className="slash-menu-description">Type a question or a task, then press Enter</span>
+            </button>
+          )
+        }
         if (row.kind === "help") {
           const { prefix, label: shown, searches, available } = row.row
           return (

@@ -1,6 +1,7 @@
 import { guideClock, type GuideClock } from "./advance"
 
-export const REEL_BUTTON = { label: "What else can you do?", command: "tut.more", key: "W" } as const
+/* E, not W: W is Create Wiki in the lessons (onboarding SCRIPT v4). */
+export const REEL_BUTTON = { label: "What else can you do?", command: "tut.more", key: "E" } as const
 
 export const REEL_STAGES = [
   { id: "theme", kind: "say", message: "I can change the theme, and put it back when I'm done.", demo: "theme" },

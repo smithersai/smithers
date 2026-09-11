@@ -11,6 +11,32 @@ import { ArrowLeft, ArrowRight, GitFork, Maximize2, Minimize2, PanelTop } from "
 import { memo, useRef } from "react"
 import type { CardActions } from "./cards/CardFamily"
 import { pillStatus, renderCardBody } from "./cards/CardRenderers"
+import { Component, type ErrorInfo, type ReactNode } from "react"
+
+/*
+ * One card's body failing to render stays inside that card: a lazy viewer
+ * chunk that no longer loads (an old tab after a deploy, or the dev server
+ * re-optimizing its dependencies) or a renderer that cannot read a payload.
+ * Without this the error reaches the app's startup boundary and the whole
+ * app reads "Smithers failed to start".
+ */
+class CardBodyBoundary extends Component<{ readonly cardId: string; readonly children: ReactNode }, { readonly error: Error | null }> {
+  override state: { readonly error: Error | null } = { error: null }
+  static getDerivedStateFromError(error: Error) { return { error } }
+  override componentDidCatch(error: Error, info: ErrorInfo) {
+    console.error(`Card ${this.props.cardId} could not render`, error, info.componentStack)
+  }
+  override render() {
+    const { error } = this.state
+    if (error === null) return this.props.children
+    const chunk = /dynamically imported module|Loading chunk|Importing a module script failed/i.test(error.message)
+    return (
+      <p className="world-card-empty" role="alert" data-card-error="">
+        {chunk ? "This card's viewer did not load; the app was updated. Reload the page to see it." : `This card could not be shown: ${error.message}`}
+      </p>
+    )
+  }
+}
 import type { Card } from "./state/AppState"
 import { timeLabel as clockLabel } from "./Timestamps"
 
@@ -98,6 +124,10 @@ export const CardView = memo(function CardView({
       >
         <header className="smithers-card-header">
           <span className="smithers-card-title">{card.title}</span>
+          {/* The bundled practice repository's cards say so (onboarding SCRIPT v4). */}
+          {typeof (card.payload as { repo?: unknown }).repo === "string" && ((card.payload as { repo: string }).repo).startsWith("practice:") ?
+            <span className="smithers-card-practice" data-practice="">Practice</span> :
+            null}
           <StatusPill status={pillStatus(card)} />
           <span className="smithers-card-meta" data-testid={`card-kind-${card.kind}`}>
             {card.kind} · {clockLabel(card.createdAt)}
@@ -194,6 +224,7 @@ export const CardView = memo(function CardView({
             )}
         </header>
         <div className="smithers-card-body">
+          <CardBodyBoundary cardId={card.id}>
           {renderCardBody(card, {
             onDecideApproval,
             onGrantConfirm,
@@ -213,6 +244,7 @@ export const CardView = memo(function CardView({
             workflowCatalogs,
             signedOut
           })}
+          </CardBodyBoundary>
         </div>
       </section>
     </>

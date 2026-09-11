@@ -1,0 +1,60 @@
+[
+  {
+    "number": 4,
+    "title": "Add request logging",
+    "state": "open",
+    "draft": false,
+    "author": "Mira Chen",
+    "authorLogin": "mirachen",
+    "authorAvatar": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI0MCIgaGVpZ2h0PSI0MCIgdmlld0JveD0iMCAwIDQwIDQwIj48cmVjdCB3aWR0aD0iNDAiIGhlaWdodD0iNDAiIHJ4PSIyMCIgZmlsbD0iaHNsKDI2OSA1NSUgNDIlKSIvPjx0ZXh0IHg9IjIwIiB5PSIyNSIgZm9udC1mYW1pbHk9InN5c3RlbS11aSxzYW5zLXNlcmlmIiBmb250LXNpemU9IjE1IiBmb250LXdlaWdodD0iNjAwIiBmaWxsPSIjZmZmIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIj5NQzwvdGV4dD48L3N2Zz4=",
+    "branch": "mira/request-logging",
+    "baseBranch": "main",
+    "commitId": "f63cbabc20e1f8c1693a474eb0d99f0891e6686a",
+    "files": [
+      "src/server.ts"
+    ],
+    "commits": [
+      {
+        "changeId": "xuzzqvyz",
+        "commitId": "f63cbabc20e1f8c1693a474eb0d99f0891e6686a",
+        "message": "Add request logging",
+        "author": "Mira Chen",
+        "timestamp": "2026-08-12T10:00:00Z"
+      }
+    ],
+    "filesDetail": [
+      {
+        "path": "src/server.ts",
+        "status": "modified",
+        "additions": 1,
+        "deletions": 0,
+        "patch": "@@ -3,6 +3,7 @@ import { greet } from \"./hello.ts\"\n \n const server = createServer((req, res) => {\n   const url = new URL(req.url ?? \"/\", \"http://localhost\")\n+  console.log(req.method, url.pathname)\n   if (url.pathname === \"/health\") {\n     res.end(\"ok\")\n   } else if (url.pathname === \"/hello\") {"
+      }
+    ],
+    "additions": 1,
+    "deletions": 0,
+    "labels": [
+      "enhancement"
+    ],
+    "labelColors": {
+      "enhancement": "a2eeef"
+    },
+    "comments": 1,
+    "reviewsRequested": 1,
+    "reviewers": [
+      {
+        "login": "adapark",
+        "avatar": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI0MCIgaGVpZ2h0PSI0MCIgdmlld0JveD0iMCAwIDQwIDQwIj48cmVjdCB3aWR0aD0iNDAiIGhlaWdodD0iNDAiIHJ4PSIyMCIgZmlsbD0iaHNsKDI5MSA1NSUgNDIlKSIvPjx0ZXh0IHg9IjIwIiB5PSIyNSIgZm9udC1mYW1pbHk9InN5c3RlbS11aSxzYW5zLXNlcmlmIiBmb250LXNpemU9IjE1IiBmb250LXdlaWdodD0iNjAwIiBmaWxsPSIjZmZmIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIj5BUDwvdGV4dD48L3N2Zz4="
+      }
+    ],
+    "assignees": [
+      {
+        "login": "mirachen",
+        "avatar": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI0MCIgaGVpZ2h0PSI0MCIgdmlld0JveD0iMCAwIDQwIDQwIj48cmVjdCB3aWR0aD0iNDAiIGhlaWdodD0iNDAiIHJ4PSIyMCIgZmlsbD0iaHNsKDI2OSA1NSUgNDIlKSIvPjx0ZXh0IHg9IjIwIiB5PSIyNSIgZm9udC1mYW1pbHk9InN5c3RlbS11aSxzYW5zLXNlcmlmIiBmb250LXNpemU9IjE1IiBmb250LXdlaWdodD0iNjAwIiBmaWxsPSIjZmZmIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIj5NQzwvdGV4dD48L3N2Zz4="
+      }
+    ],
+    "createdAt": "2026-08-12T10:00:00Z",
+    "updatedAt": "2026-08-12T10:00:00Z",
+    "body": "Logs each request's method and path, so we can see what the status page calls.\n\n```\nGET /health\nGET /hello\n```"
+  }
+]

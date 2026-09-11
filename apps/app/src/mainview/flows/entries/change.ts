@@ -155,3 +155,39 @@ export const changeFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> =
     handler: ({ changeId, snapshotId }) => actions.openChangeComputer(changeId, snapshotId)
   })
 ]
+
+/*
+ * Onboarding SCRIPT v4 beat 8: open a Change from picked commits. The picker
+ * card's button, the M pill and the agent all call `change.open`; `change.pick`
+ * is the picker's checkbox. The practice repository answers from its
+ * precomputed stacks; a hosted repository needs the rebase in the box first
+ * (SCRIPT.md §4 "What plue has and lacks"), and says so.
+ */
+export const changeOpenFlows = (actions: import("../../state/controller/tutorialChange").TutorialChangeController): ReadonlyArray<FlowEntry> => [
+  flow({
+    name: "change.open",
+    summary: "Open a Change with the picked commits, bottom to top",
+    args: "<repo> <commit…>",
+    confirm: "open a Change with these commits",
+    grammar: (args) => {
+      const [repo, ...commits] = (args ?? "").trim().split(/\s+/).filter(Boolean)
+      if (repo === undefined) return { error: "change.open needs a repository and the commits to include" }
+      if (commits.length === 0) return { error: "change.open needs at least one commit" }
+      return { payload: { repo, commits } }
+    },
+    input: Schema.Struct({ repo: Schema.String, commits: Schema.Array(Schema.String) }),
+    handler: ({ repo, commits }) => actions.openChange(repo, commits)
+  }),
+  flow({
+    name: "change.pick",
+    hidden: true,
+    summary: "Check or uncheck one commit in the commit picker",
+    args: "<row>",
+    grammar: (args) => {
+      const row = Number((args ?? "").trim())
+      return Number.isInteger(row) && row > 0 ? { payload: { row } } : { error: "change.pick needs a row number, 1 from the bottom" }
+    },
+    input: Schema.Struct({ row: Schema.Number }),
+    handler: ({ row }) => actions.pickCommit(row)
+  })
+]

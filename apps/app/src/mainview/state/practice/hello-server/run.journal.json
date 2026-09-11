@@ -1,0 +1,356 @@
+{
+  "source": "scripted",
+  "runId": "practice-fix-hello-3",
+  "editFrame": "frame-2",
+  "result": "3 commits on smithers/fix-hello-3",
+  "steps": [
+    {
+      "at": 0,
+      "text": "Writing the test…"
+    },
+    {
+      "at": 2600,
+      "text": "Fails on the old code: Hello, null! (expected)"
+    },
+    {
+      "at": 3400,
+      "text": "Fixing line 2…"
+    },
+    {
+      "at": 6200,
+      "text": "2 tests pass"
+    },
+    {
+      "at": 7000,
+      "text": "Documenting…"
+    },
+    {
+      "at": 9600,
+      "text": "3 commits on smithers/fix-hello-3"
+    }
+  ],
+  "events": [
+    {
+      "sequence": 1,
+      "kind": "control.agent.turn-opened",
+      "payload": {},
+      "occurredAt": 1757505600000
+    },
+    {
+      "sequence": 2,
+      "kind": "control.agent.model-settled",
+      "payload": {
+        "text": "Write the test first, so the bug shows up as a failure."
+      },
+      "occurredAt": 1757505600400
+    },
+    {
+      "sequence": 3,
+      "kind": "control.agent.cell-produced",
+      "payload": {
+        "language": "ts",
+        "text": "await ctx.call(\"edit\", { path: \"src/hello.test.ts\", append: TEST })\nawait ctx.call(\"test\", { target: \"npm test\" })"
+      },
+      "occurredAt": 1757505600500
+    },
+    {
+      "sequence": 4,
+      "kind": "control.agent.cell-call-started",
+      "payload": {
+        "flowName": "edit",
+        "input": {
+          "path": "src/hello.test.ts"
+        }
+      },
+      "occurredAt": 1757505600600
+    },
+    {
+      "sequence": 5,
+      "kind": "control.agent.cell-call-settled",
+      "payload": {
+        "flowName": "edit",
+        "outcome": "success",
+        "value": "src/hello.test.ts +4"
+      },
+      "occurredAt": 1757505600900
+    },
+    {
+      "sequence": 6,
+      "kind": "control.agent.cell-call-started",
+      "payload": {
+        "flowName": "test",
+        "input": {
+          "target": "npm test"
+        }
+      },
+      "occurredAt": 1757505601000
+    },
+    {
+      "sequence": 7,
+      "kind": "control.agent.cell-call-settled",
+      "payload": {
+        "flowName": "test",
+        "outcome": "failure",
+        "message": "✖ greets the world when no name is given\n  expected 'Hello, world!'\n  actual   'Hello, null!'"
+      },
+      "occurredAt": 1757505602600
+    },
+    {
+      "sequence": 8,
+      "kind": "control.agent.cell-settled",
+      "payload": {
+        "outcome": "success"
+      },
+      "occurredAt": 1757505602700
+    },
+    {
+      "sequence": 9,
+      "kind": "control.agent.turn-opened",
+      "payload": {},
+      "occurredAt": 1757505603400
+    },
+    {
+      "sequence": 10,
+      "kind": "control.agent.model-settled",
+      "payload": {
+        "text": "Edit src/hello.ts: default a missing name to \"world\" on line 2."
+      },
+      "occurredAt": 1757505603800
+    },
+    {
+      "sequence": 11,
+      "kind": "control.agent.cell-produced",
+      "payload": {
+        "language": "ts",
+        "text": "const file = await ctx.call(\"files.read\", { path: \"src/hello.ts\" })\nawait ctx.call(\"edit\", { path: \"src/hello.ts\", line: 2, text: 'return `Hello, ${name || \"world\"}!`' })\nawait ctx.call(\"test\", { target: \"npm test\" })"
+      },
+      "occurredAt": 1757505603900
+    },
+    {
+      "sequence": 12,
+      "kind": "control.agent.cell-call-started",
+      "payload": {
+        "flowName": "files.read",
+        "input": {
+          "path": "src/hello.ts"
+        }
+      },
+      "occurredAt": 1757505604000
+    },
+    {
+      "sequence": 13,
+      "kind": "control.agent.cell-call-settled",
+      "payload": {
+        "flowName": "files.read",
+        "outcome": "success",
+        "value": "export function greet(name: string | null): string {\n  return `Hello, ${name}!`\n}\n"
+      },
+      "occurredAt": 1757505604200
+    },
+    {
+      "sequence": 14,
+      "kind": "control.agent.cell-call-started",
+      "payload": {
+        "flowName": "edit",
+        "input": {
+          "path": "src/hello.ts",
+          "line": 2
+        }
+      },
+      "occurredAt": 1757505604300
+    },
+    {
+      "sequence": 15,
+      "kind": "control.agent.cell-call-settled",
+      "payload": {
+        "flowName": "edit",
+        "outcome": "success",
+        "value": "src/hello.ts −1 +1"
+      },
+      "occurredAt": 1757505604600
+    },
+    {
+      "sequence": 16,
+      "kind": "control.agent.cell-call-started",
+      "payload": {
+        "flowName": "test",
+        "input": {
+          "target": "npm test"
+        }
+      },
+      "occurredAt": 1757505604700
+    },
+    {
+      "sequence": 17,
+      "kind": "control.agent.cell-call-settled",
+      "payload": {
+        "flowName": "test",
+        "outcome": "success",
+        "value": "✔ greets by name\n✔ greets the world when no name is given\n2 tests pass"
+      },
+      "occurredAt": 1757505606200
+    },
+    {
+      "sequence": 18,
+      "kind": "control.agent.cell-settled",
+      "payload": {
+        "outcome": "success"
+      },
+      "occurredAt": 1757505606300
+    },
+    {
+      "sequence": 19,
+      "kind": "control.agent.turn-opened",
+      "payload": {},
+      "occurredAt": 1757505607000
+    },
+    {
+      "sequence": 20,
+      "kind": "control.agent.model-settled",
+      "payload": {
+        "text": "Document the default in the README."
+      },
+      "occurredAt": 1757505607300
+    },
+    {
+      "sequence": 21,
+      "kind": "control.agent.cell-produced",
+      "payload": {
+        "language": "ts",
+        "text": "await ctx.call(\"edit\", { path: \"README.md\", append: NOTE })"
+      },
+      "occurredAt": 1757505607400
+    },
+    {
+      "sequence": 22,
+      "kind": "control.agent.cell-call-started",
+      "payload": {
+        "flowName": "edit",
+        "input": {
+          "path": "README.md"
+        }
+      },
+      "occurredAt": 1757505607500
+    },
+    {
+      "sequence": 23,
+      "kind": "control.agent.cell-call-settled",
+      "payload": {
+        "flowName": "edit",
+        "outcome": "success",
+        "value": "README.md +2"
+      },
+      "occurredAt": 1757505607800
+    },
+    {
+      "sequence": 24,
+      "kind": "control.agent.cell-settled",
+      "payload": {
+        "outcome": "success"
+      },
+      "occurredAt": 1757505607900
+    },
+    {
+      "sequence": 25,
+      "kind": "control.agent.turn-opened",
+      "payload": {},
+      "occurredAt": 1757505608400
+    },
+    {
+      "sequence": 26,
+      "kind": "control.agent.model-settled",
+      "payload": {
+        "text": "Split the work into three commits, ordered for review."
+      },
+      "occurredAt": 1757505608700
+    },
+    {
+      "sequence": 27,
+      "kind": "control.agent.cell-produced",
+      "payload": {
+        "language": "ts",
+        "text": "await ctx.call(\"commit\", { message: \"Document the /hello default in README\" })\nawait ctx.call(\"commit\", { message: \"Default greet() name to \\\"world\\\"\" })\nawait ctx.call(\"commit\", { message: \"Test /hello without a name\" })"
+      },
+      "occurredAt": 1757505608800
+    },
+    {
+      "sequence": 28,
+      "kind": "control.agent.cell-call-started",
+      "payload": {
+        "flowName": "commit",
+        "input": {
+          "message": "Document the /hello default in README"
+        }
+      },
+      "occurredAt": 1757505608900
+    },
+    {
+      "sequence": 29,
+      "kind": "control.agent.cell-call-settled",
+      "payload": {
+        "flowName": "commit",
+        "outcome": "success",
+        "value": "vztqlsrp 39f0e2ae8a38"
+      },
+      "occurredAt": 1757505609000
+    },
+    {
+      "sequence": 30,
+      "kind": "control.agent.cell-call-started",
+      "payload": {
+        "flowName": "commit",
+        "input": {
+          "message": "Default greet() name to \"world\""
+        }
+      },
+      "occurredAt": 1757505609100
+    },
+    {
+      "sequence": 31,
+      "kind": "control.agent.cell-call-settled",
+      "payload": {
+        "flowName": "commit",
+        "outcome": "success",
+        "value": "sonryzll 403621e91240"
+      },
+      "occurredAt": 1757505609200
+    },
+    {
+      "sequence": 32,
+      "kind": "control.agent.cell-call-started",
+      "payload": {
+        "flowName": "commit",
+        "input": {
+          "message": "Test /hello without a name"
+        }
+      },
+      "occurredAt": 1757505609300
+    },
+    {
+      "sequence": 33,
+      "kind": "control.agent.cell-call-settled",
+      "payload": {
+        "flowName": "commit",
+        "outcome": "success",
+        "value": "tvymolup 1a1b55cc6452"
+      },
+      "occurredAt": 1757505609400
+    },
+    {
+      "sequence": 34,
+      "kind": "control.agent.cell-settled",
+      "payload": {
+        "outcome": "success"
+      },
+      "occurredAt": 1757505609500
+    },
+    {
+      "sequence": 35,
+      "kind": "control.agent.resolved",
+      "payload": {
+        "text": "3 commits on smithers/fix-hello-3"
+      },
+      "occurredAt": 1757505609600
+    }
+  ]
+}

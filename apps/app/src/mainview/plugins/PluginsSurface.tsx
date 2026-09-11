@@ -5,7 +5,6 @@ import { SurfaceHeader } from "../SurfaceChrome"
 import { loadedApp } from "./appSurface"
 import { PluginGallery } from "./PluginGallery"
 import { PluginRail } from "./PluginRail"
-import { LESSON_PLUGIN, LIBRARIAN_LESSON_STEP } from "../onboarding/pluginLesson"
 import { manifests } from "./catalog"
 
 /*
@@ -25,7 +24,6 @@ export function PluginsSurface() {
       guide: session.guide
     }))
   )
-  const tutorial = sessionRows[0]?.guide?.step === LIBRARIAN_LESSON_STEP
   const installed = sessionRows[0]?.plugins ?? []
   /* What the shelf actually added here: the loader's own answer, recomputed each render. */
   const { surface, problem } = loadedApp(installed, (name) => controller.commands.find(name) !== undefined)
@@ -45,7 +43,6 @@ export function PluginsSurface() {
         {problem === undefined ? null : <p className="plugin-problem" role="status">{problem}</p>}
         <PluginGallery
           installed={installed}
-          asked={tutorial ? LESSON_PLUGIN : undefined}
           onInstall={(id) => controller.runCommand("plugins.install", id)}
           onRemove={(id) => controller.runCommand("plugins.remove", id)}
         />

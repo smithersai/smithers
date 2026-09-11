@@ -38,6 +38,13 @@ interface PersistedTransaction {
 export interface CollectionPersistence {
   readonly register: (id: string) => ReadonlyArray<unknown>
   readonly persist: (transaction: PersistedTransaction) => Promise<void>
+  /**
+   * Every durable write accepted so far, settled. Writes are serialized and a
+   * backend flush is asynchronous, so a caller about to leave the page (the
+   * OAuth hop, the GitHub App install) waits for this first; otherwise the
+   * navigation outruns the queue and the state that click just changed is lost.
+   */
+  readonly settled: () => Promise<void>
 }
 
 const storageKey = (id: string): string => `smithers-mvp.${id}`
@@ -176,7 +183,8 @@ export const createCollectionPersistence = (options: {
       if (options.rows !== undefined) projected.set(id, rows)
       return [...rows.values()].map((row) => row.data)
     },
-    persist
+    persist,
+    settled: () => tail.then(() => undefined, () => undefined)
   }
 }
 

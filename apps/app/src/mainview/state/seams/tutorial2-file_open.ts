@@ -1,9 +1,33 @@
-import { completeGuide } from "../../onboarding/completion"
+import { completeGuide, lessonCompletion } from "../../onboarding/completion"
+import { isPracticeRepo, PRACTICE_CARD, PRACTICE_NAME, PRACTICE_REPO, practiceFile, practiceSnapshot } from "../practice/PracticeRepository"
 import { GUIDE_STAGES } from "../../onboarding/lessons"
 import type { AppStore } from "../AppStore"
 import type { SeamContext } from "./SeamContext"
-import { readErrorMessage } from "./SeamContext"
+import { readErrorMessage, readResult } from "./SeamContext"
 import { encodeRepoPath, parseEntry, requestLocalFiles, resolveFileTarget, unsafePath } from "./FilesSeam"
+
+/** files.read on the practice repository: the bundled file, anchored, then the lesson's `file.opened`. */
+export const practiceReadFile = async (ctx: SeamContext, path: string, anchor?: { readonly line: number; readonly column?: number }): Promise<string | { readonly value: string }> => {
+  const normalized = path.replace(/^\/+/, "")
+  const content = practiceFile(normalized)
+  if (content === undefined) return `Path not found: ${normalized} in ${PRACTICE_NAME}`
+  const playthrough = ctx.store.session().guide?.playthrough
+  await ctx.dispatch({ type: "card.upsert", actor: ctx.actor(), card: {
+    id: PRACTICE_CARD.file(normalized), kind: "file", title: `${normalized} · ${PRACTICE_NAME}`, status: "active",
+    createdAt: Date.now(), ordinal: ctx.nextOrdinal(),
+    payload: { repo: PRACTICE_REPO, path: normalized, content, truncated: false,
+      readAt: { changeId: null, commitId: practiceSnapshot.base.commitId, source: "head" },
+      ...(anchor === undefined ? {} : { line: anchor.line, ...(anchor.column === undefined ? {} : { column: anchor.column }) }) }
+  } }).isPersisted.promise
+  const guide = ctx.store.session().guide
+  const next = guide?.playthrough === playthrough ? lessonCompletion(guide, "file.opened") : undefined
+  if (next !== undefined) await ctx.dispatch({ type: "guide.changed", actor: ctx.actor(), guide: next }).isPersisted.promise
+  const line = anchor === undefined ? undefined : content.split("\n")[anchor.line - 1]
+  return readResult(line === undefined ? content : `${normalized}:${anchor!.line}  ${line}`)
+}
+
+/** Whether a files.read target is the bundled practice repository. */
+export const practiceTarget = (repo?: string): boolean => isPracticeRepo(repo)
 
 export const fileTargetKey = (store: AppStore, repo?: string): string | undefined => {
   const target = resolveFileTarget(store, "", repo)

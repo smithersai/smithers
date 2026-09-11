@@ -70,6 +70,7 @@ const PRESENTATION_ONLY = [
   "setSelectedPath", // world card doc selection: which note the embedded editor shows — local presentation state
   "onDismissDrawer(", // graph card detail drawer close: local presentation state (which node is focused)
   "setOpenLog(", // run timeline log panel: which row's log is open — local presentation state
+  "setPrTab(", // PR card tab bar: which section (conversation, commits, checks, files) shows — local presentation state; the acts ride prs.land / prs.review
   "setDeleteDraft", // workspace card delete: the typed-confirm row's open state and its draft — local presentation state; the act itself rides workspace.delete
   "setDisconnectArmed", // connector-setup card disconnect: the confirm row's open state — local presentation state; the act itself rides linear.disconnect
   "onRunCommand(", // delegated: App.tsx binds it to the registry's runCommand
@@ -163,7 +164,7 @@ describe("launch-law parity: every affordance is a command", () => {
         .filter(([, count]) => count > 0)
     )
     expect(counts).toEqual({
-      "../onboarding/GuideShell.tsx": 7,
+      "../onboarding/GuideShell.tsx": 9, // + Skip practice (onboarding.act) and the secondary pill (Not now, Later)
       // The optional capability reel after the last lesson: its launch pill and its Back.
       "../onboarding/Reel.tsx": 2, // Delegates to the shared onboarding and existing app flows; the Command-K overlay is the summoned composer with no chrome of its own. The sidebar lists Wiki and Mythical history only — no Library entry.
       /*
@@ -215,13 +216,13 @@ describe("launch-law parity: every affordance is a command", () => {
        */
       "../cards/WorkflowCards.tsx": 12,
       "../DevtoolsPanel.tsx": 1,
-      "../SearchPalette.tsx": 5,
+      "../SearchPalette.tsx": 6, // + Ask Smithers, the first row of an empty ⌘K
       "../SurfaceChrome.tsx": 3,
       "../ToastStack.tsx": 1,
       /* The multi-parity domain cards: every handler routes through onRunCommand. */
       /* 3 = 2 + the issue card's Link to Linear…, the door onto issues.link-linear's form (lane sync). */
-      "../cards/IssueCards.tsx": 3,
-      "../cards/LandingCards.tsx": 4,
+      "../cards/IssueCards.tsx": 4, // + the detail's comment box submit (issues.comment)
+      "../cards/LandingCards.tsx": 5, // + the PR detail's tab bar (setPrTab, presentation only)
       "../cards/FileCards.tsx": 3,
       /* Mark-all-read. */
       "../cards/NotificationsCard.tsx": 1,
@@ -314,6 +315,10 @@ describe("launch-law parity: every affordance is a command", () => {
       "../cards/ChangeCards.tsx": 21,
       "../cards/CodingPlanCard.tsx": 3, // runs.coding.select, runs.trace.select, and the tutorial plan's Start (agent.change.start)
       "../cards/CodingPocCard.tsx": 2, // Native execution inspection and existing steering form.
+      "../cards/CommitPickCard.tsx": 1, // change.open (the checkboxes are change.pick inputs, counted as fields)
+      /* The commits cards: a row's and a parent's commits.read, and the sha chip's chat.copy-message — all through onRunCommand. */
+      "../cards/CommitCards.tsx": 3,
+      "../cards/BranchesCard.tsx": 1, // a row opens that branch's commits (commits.list)
       /*
        * Connection, world and browser card interactions, plus the embedded
        * wiki collaboration cards (ad438463a6): page Previous/Next and the

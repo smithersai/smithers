@@ -6,6 +6,7 @@ import type { GuideState } from "../AppState"
 import type { TraceModel } from "../../cards/RunTrace"
 import { spanPath } from "../../cards/RunTrace"
 import { GUIDE_STAGES } from "../../onboarding/lessons"
+import { isPracticeRepo } from "../practice/PracticeRepository"
 
 /** Persisted by the change producer after a verified commit; root supplies this read seam. */
 export interface TutorialTraceScope {
@@ -24,8 +25,9 @@ export function canCompleteTutorialTrace(
   model: TraceModel,
   nodeId: string
 ): boolean {
-  if (!guide || !scope || scope.runId !== runId || scope.repo !== repo || activeRepo !== repo ||
-      scope.playthrough !== (guide.playthrough ?? 0) || !guide.completed?.includes("change.committed")) return false
+  // The practice repository is never the active selection; its run is scoped by key and playthrough alone.
+  if (!guide || !scope || scope.runId !== runId || scope.repo !== repo || (activeRepo !== repo && !isPracticeRepo(repo)) ||
+      scope.playthrough !== (guide.playthrough ?? 0) || !guide.completed?.includes("commits.made")) return false
   const stage = GUIDE_STAGES[guide.step]
   if (stage?.kind !== "do" || stage.completion !== "trace.opened") return false
   const frame = spanPath(model, nodeId).find(span => span.kind === "frame")
@@ -43,6 +45,11 @@ export function tutorialTraceScopeFor(store: AppStore, runId?: string): Tutorial
         (runId !== undefined && card.payload.runId !== runId)) continue
     const input = card.payload.input
     const scope = input?.tutorialScope as { repoKey?: unknown; playthrough?: unknown } | undefined
+    /* The practice run's receipt is its bundled fixture: same key, same playthrough. */
+    if (input?.practice === true && isPracticeRepo(card.payload.repo) && scope?.repoKey === card.payload.repo &&
+        scope.playthrough === (session.guide?.playthrough ?? 0)) {
+      return { runId: card.payload.runId, repo: card.payload.repo, playthrough: session.guide?.playthrough ?? 0 }
+    }
     if (!scope || scope.repoKey !== session.activeRepoKey || scope.playthrough !== (session.guide?.playthrough ?? 0)) continue
     try {
       const receipt = decodeChangeReceipt(input?.tutorialReceipt)

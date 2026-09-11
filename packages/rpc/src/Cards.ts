@@ -605,6 +605,30 @@ export const SearchItemSchema = z.object({
  */
 export type SearchItem = z.infer<typeof SearchItemSchema>
 
+/** A commit's author or committer as the source stated them; login and avatar only when derivable. */
+const CommitPersonSchema = z.object({
+  name: z.string().nullable(),
+  email: z.string().nullable(),
+  login: z.string().optional(),
+  avatarUrl: z.string().optional()
+})
+
+/** One commit row: the commits list's row and the commit card's head. */
+const CommitSummarySchema = z.object({
+  commitId: z.string(),
+  /** The jj change id; null when the source is plain git. */
+  changeId: z.string().nullable(),
+  /** The description's first line. */
+  title: z.string(),
+  author: CommitPersonSchema,
+  /** ISO time the author wrote it; null when the source did not say. */
+  authoredAt: z.string().nullable(),
+  /** The combined commit status (newest per context) when it was read. */
+  status: z.enum(["success", "failure", "pending"]).optional(),
+  /** Signature verification, only when the source reported it. */
+  verified: z.boolean().optional()
+})
+
 /**
  * Validates card values at the RPC boundary.
  *
@@ -613,6 +637,33 @@ export type SearchItem = z.infer<typeof SearchItemSchema>
  */
 const CurrentCardSchema = z.discriminatedUnion("kind", [
   /* The tutorial's ranked repository chooser and its local-creation receipt. */
+  z.object({
+    ...cardBaseShape,
+    /*
+     * The onboarding tutorial's commit picker (apps/app SCRIPT v4 beat 8):
+     * the commits a run made, bottom to top, each with a checkbox. The
+     * checked set becomes `change.open`'s commits; a locked row stays in.
+     */
+    kind: z.literal("commit-pick"),
+    payload: z.object({
+      repo: z.string(),
+      branch: z.string(),
+      targetBookmark: z.string(),
+      rows: z.array(z.object({
+        /** 1-based from the bottom, like `jj log`. */
+        index: z.number().int().positive(),
+        commitId: z.string(),
+        changeId: z.string(),
+        message: z.string(),
+        additions: z.number().int().nonnegative(),
+        deletions: z.number().int().nonnegative(),
+        locked: z.boolean(),
+        hint: z.string().optional()
+      })),
+      /** The checked rows' indexes, ascending. */
+      picked: z.array(z.number().int().positive())
+    })
+  }),
   z.object({
     ...cardBaseShape,
     kind: z.literal("repository-choice"),
@@ -1113,7 +1164,20 @@ const CurrentCardSchema = z.discriminatedUnion("kind", [
           updatedAt: z.string().nullable(),
           /** Where the row came from: Smithers Cloud's own tracker, or GitHub for a mirrored repo. Optional so older cards parse. */
           source: z.enum(["smithers-cloud", "github"]).optional(),
-          htmlUrl: z.string().optional()
+          htmlUrl: z.string().optional(),
+          /** The issue's labels when the read carried them; absent renders none. */
+          labels: z.array(z.string()).optional(),
+          /*
+           * GitHub facts the restyled issue cards render when a read carries
+           * them (cards/IssueCards.tsx IssueExtras; the onboarding practice
+           * repository does). Optional: a field the source did not state
+           * renders nothing. Avatars are URLs or data: URIs; label colors
+           * are hex, keyed by label name.
+           */
+          createdAt: z.string().nullable().optional(),
+          assignees: z.array(z.object({ login: z.string(), avatar: z.string().optional() })).optional(),
+          labelColors: z.record(z.string(), z.string()).optional(),
+          authorAvatar: z.string().optional()
         })
       ),
       /**
@@ -1153,9 +1217,15 @@ const CurrentCardSchema = z.discriminatedUnion("kind", [
         z.object({
           author: z.string().nullable(),
           commentBody: z.string(),
-          createdAt: z.string().nullable()
+          createdAt: z.string().nullable(),
+          authorAvatar: z.string().optional()
         })
-      )
+      ),
+      /* The restyled issue card's GitHub facts (cards/IssueCards.tsx IssueExtras); see the issue-list row. */
+      createdAt: z.string().nullable().optional(),
+      assignees: z.array(z.object({ login: z.string(), avatar: z.string().optional() })).optional(),
+      labelColors: z.record(z.string(), z.string()).optional(),
+      authorAvatar: z.string().optional()
     })
   }),
   z.object({
@@ -1169,7 +1239,22 @@ const CurrentCardSchema = z.discriminatedUnion("kind", [
           title: z.string(),
           state: z.string(),
           author: z.string().nullable(),
-          updatedAt: z.string().nullable()
+          updatedAt: z.string().nullable(),
+          /** The source branch and the files it touches, when the read carried them; absent renders none. */
+          branch: z.string().optional(),
+          files: z.array(z.string()).optional(),
+          /* The restyled PR row's GitHub facts (cards/LandingCards.tsx LandingRowExtras); optional, absent renders nothing. */
+          draft: z.boolean().optional(),
+          reviewsRequested: z.number().int().nonnegative().optional(),
+          createdAt: z.string().nullable().optional(),
+          comments: z.number().int().nonnegative().optional(),
+          baseBranch: z.string().optional(),
+          labels: z.array(z.string()).optional(),
+          labelColors: z.record(z.string(), z.string()).optional(),
+          additions: z.number().int().nonnegative().optional(),
+          deletions: z.number().int().nonnegative().optional(),
+          assignees: z.array(z.object({ login: z.string(), avatar: z.string().optional() })).optional(),
+          reviewers: z.array(z.object({ login: z.string(), avatar: z.string().optional() })).optional()
         })
       )
     })
@@ -1192,7 +1277,37 @@ const CurrentCardSchema = z.discriminatedUnion("kind", [
           reviewBody: z.string()
         })
       ),
-      checks: z.array(z.object({ context: z.string(), state: z.string() }))
+      checks: z.array(z.object({ context: z.string(), state: z.string() })),
+      /*
+       * GitHub-like facts and the Commits / Files changed tabs, when the read
+       * carried them (see the issue-list row). All optional: an absent field
+       * renders "this read carried no …", never an empty stack. Commits run
+       * bottom → top (GET …/changes/{id}); files merge the stack's diffs
+       * (GET …/changes/{id}/diff) by path, with a patch only when one change
+       * touched the file.
+       */
+      branch: z.string().optional(),
+      baseBranch: z.string().optional(),
+      draft: z.boolean().optional(),
+      createdAt: z.string().nullable().optional(),
+      authorAvatar: z.string().optional(),
+      labels: z.array(z.string()).optional(),
+      labelColors: z.record(z.string(), z.string()).optional(),
+      commits: z.array(z.object({
+        changeId: z.string().optional(),
+        commitId: z.string().optional(),
+        message: z.string(),
+        author: z.string().nullable().optional(),
+        timestamp: z.string().nullable().optional()
+      })).optional(),
+      files: z.array(z.object({
+        path: z.string(),
+        oldPath: z.string().optional(),
+        status: z.enum(["added", "modified", "removed", "renamed"]).optional(),
+        additions: z.number().int().nonnegative().optional(),
+        deletions: z.number().int().nonnegative().optional(),
+        patch: z.string().optional()
+      })).optional()
     })
   }),
   z.object({
@@ -1501,6 +1616,50 @@ const CurrentCardSchema = z.discriminatedUnion("kind", [
     })
   }),
   /*
+   * A repository's commits (commits.list): one branch's first-parent history,
+   * newest first, the way GitHub's Commits page lists them. Fields the source
+   * did not state stay null or absent; nothing is invented (plue names an
+   * author by name and email, never by login, and carries no signature).
+   */
+  z.object({
+    ...cardBaseShape,
+    kind: z.literal("commit-list"),
+    payload: z.object({
+      repo: z.string(),
+      /** The branch (bookmark) the history was walked from; null when the repository has none. */
+      branch: z.string().nullable(),
+      commits: z.array(CommitSummarySchema),
+      /** True when the walk stopped at its cap before the root commit. */
+      truncated: z.boolean().optional(),
+      error: z.string().optional()
+    })
+  }),
+  /* One commit (commits.read): the full message, its people, its parents and its diff. */
+  z.object({
+    ...cardBaseShape,
+    kind: z.literal("commit"),
+    payload: z.object({
+      repo: z.string(),
+      commit: CommitSummarySchema,
+      /** The full description, title line included. */
+      message: z.string(),
+      committer: CommitPersonSchema.nullable().optional(),
+      parents: z.array(z.object({ changeId: z.string().nullable(), commitId: z.string().nullable() })),
+      files: z.array(z.object({
+        path: z.string(),
+        oldPath: z.string().optional(),
+        changeType: z.string(),
+        isBinary: z.boolean(),
+        additions: z.number().int().nonnegative(),
+        deletions: z.number().int().nonnegative(),
+        patch: z.string().optional()
+      })),
+      /** Why the diff is missing, when it could not be read; the commit itself still renders. */
+      diffError: z.string().optional(),
+      error: z.string().optional()
+    })
+  }),
+  /*
    * Lane piper (ADR 0001): file cards carry the GLOBAL path
    * (`/org/repo/path`) and the position they were read at. `readAt.commitId`
    * is what "head moved" compares — a change id survives a rebase, a commit
@@ -1669,7 +1828,20 @@ const CurrentCardSchema = z.discriminatedUnion("kind", [
         /** plue#452: how many changes from the bottom may land now; null when the list did not state it. */
         landablePrefix: z.number().int().nonnegative().nullable().optional(),
         /** plue#452: the gate's blocks for THIS change, in the gate's own fields. */
-        blockedBy: z.array(LandingBlockSchema).optional()
+        blockedBy: z.array(LandingBlockSchema).optional(),
+        /**
+         * The stack's commits, bottom to top, when the opener knows them (the
+         * tutorial's practice Change). `rebased` names a row that moved onto
+         * the target: absent means it did not move, and no chip renders.
+         */
+        rows: z.array(z.object({
+          changeId: z.string(),
+          commitId: z.string(),
+          message: z.string(),
+          additions: z.number().int().nonnegative(),
+          deletions: z.number().int().nonnegative(),
+          rebased: z.object({ from: z.string(), to: z.string() }).optional()
+        })).optional()
       }).nullable(),
       /** Whose turn it is on the landing request (plue#460); absent when the DTO carried none. */
       turn: ChangeTurnSchema.nullable().optional(),

@@ -38,9 +38,10 @@ import { approvalsFlows } from "./entries/approvals"
 import { authFlows } from "./entries/auth"
 import { billingBalanceFlows, billingPlanFlows } from "./entries/billing"
 import { branchesFlows } from "./entries/branches"
+import { commitsFlows } from "./entries/commits"
 import { browserFlows } from "./entries/browser"
 import { cardFlows } from "./entries/card"
-import { changeFlows } from "./entries/change"
+import { changeFlows, changeOpenFlows } from "./entries/change"
 import { chatCopyFlows, chatFlows, chatReloadFlows, chatSurfacesFlows } from "./entries/chat"
 import { cloudFlows } from "./entries/cloud"
 import { codeFlows } from "./entries/code"
@@ -156,6 +157,7 @@ export const baseFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> => 
   ...secretsFlows(actions),
   ...historyFlows(actions),
   ...branchesFlows(actions),
+  ...commitsFlows(actions),
   ...filesFlows(actions),
   ...codeFlows(actions),
   ...githubFlows(actions),
@@ -172,6 +174,7 @@ export const baseFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> => 
   ...tabHarnessFlows(actions),
   ...agentFlows(actions),
   ...tutorialChangeFlows(actions),
+  ...changeOpenFlows(actions),
   ...formFlows(actions),
   ...agentEditFlows(actions),
   ...tabFlows(actions),

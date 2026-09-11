@@ -644,7 +644,21 @@ export const DEFAULT_PALETTE: Palette = "night-owl"
 export const isPalette = (value: string): value is Palette => (PALETTES as ReadonlyArray<string>).includes(value)
 
 export const GuideSchema = z.object({
-  sequence: z.literal("repository-v3").optional(),
+  sequence: z.enum(["repository-v3", "practice-v4"]).optional(),
+  /*
+   * Onboarding SCRIPT v4 (onboarding/lessons.ts). All optional so a guide
+   * row written before them stays readable.
+   *   said:     the producer's success line per signal ("Signed in as @ada.")
+   *   declined: the escape hatches taken (Skip practice, Not now, Later)
+   *   repo:     the user's repository once the GitHub App is installed
+   *   pick:     the commit picker's last checked set, restored by Back
+   *   notice:   why the current beat could not finish ("Nothing came back from GitHub.")
+   */
+  said: z.record(z.string(), z.string()).optional(),
+  declined: z.array(z.enum(["practice", "login", "install"])).optional(),
+  repo: z.string().optional(),
+  pick: z.array(z.number().int().positive()).optional(),
+  notice: z.string().optional(),
   completed: z.array(z.string()).optional(),
   autoPaused: z.boolean().optional(),
   responseId: z.string().uuid().optional(),
@@ -678,7 +692,7 @@ export const GuideSchema = z.object({
   sound: z.boolean()
 })
 export type GuideState = z.infer<typeof GuideSchema>
-export const initialGuide = (): GuideState => ({ version: 3, sequence: "repository-v3", step: 0, completed: [], autoPaused: false, conversationOpen: false,
+export const initialGuide = (): GuideState => ({ version: 3, sequence: "practice-v4", step: 0, completed: [], autoPaused: false, conversationOpen: false,
   library: false, librarian: false, heard: "", project: "", prototypeTitle: "A little room for big ideas", revised: false, sound: false })
 
 export const SessionSchema = z.object({

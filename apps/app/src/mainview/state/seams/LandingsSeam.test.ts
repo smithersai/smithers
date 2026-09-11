@@ -247,8 +247,43 @@ describe("landings seam — prs.view", () => {
       checks: [
         { context: "ci/test", state: "success" },
         { context: "ci/lint", state: "failure" }
-      ]
+      ],
+      baseBranch: "main",
+      createdAt: "2026-08-10T10:00:00.000Z"
+      /* No commits or files: the stack's change reads 404 here, so both tabs stay "not carried", never empty. */
     })
+  })
+
+  test("reads the stack for the Commits and Files tabs: commits bottom → top, files merged by path, a patch only for a file one change touched", async () => {
+    const CHANGES = "/api/repos/will/flows/changes"
+    const change = (id: string, sha: string, description: string) => ({ change_id: id, commit_id: sha, description, author_name: "Will", timestamp: "2026-08-10T10:00:00.000Z" })
+    const fileDiff = (path: string, additions: number, deletions: number, patch: string) => ({ path, change_type: "modified", additions, deletions, patch })
+    const { store, controller } = await ready(
+      backend({
+        [`${LANDINGS}/3`]: json(200, landing(3, "open")),
+        [`${LANDINGS}/3/reviews`]: json(200, []),
+        [STATUSES]: json(200, []),
+        [`${CHANGES}/chg-a`]: json(200, change("chg-a", "aaa111", "Add the logger\n\nbody")),
+        [`${CHANGES}/chg-b`]: json(200, change("chg-b", "bbb222", "Wire it")),
+        [`${CHANGES}/chg-a/diff`]: json(200, { file_diffs: [fileDiff("src/log.ts", 10, 0, "@@ a"), fileDiff("src/server.ts", 2, 1, "@@ b")] }),
+        [`${CHANGES}/chg-b/diff`]: json(200, { file_diffs: [fileDiff("src/server.ts", 3, 0, "@@ c")] })
+      })
+    )
+    const outcome = await controller.commands.run("prs.view", "3 will/flows")
+    expect(outcome.status).toBe("executed")
+    const value = outcome.status === "executed" ? outcome.value : undefined
+    expect(value).toContain("File: src/server.ts +5 −1")
+    await settled()
+    const card = store.collections.cards.get("pr-will/flows-3")
+    if (card === undefined || card.kind !== "pr") throw new Error("expected the pr card")
+    expect(card.payload.commits).toEqual([
+      { changeId: "chg-a", commitId: "aaa111", message: "Add the logger\n\nbody", author: "Will", timestamp: "2026-08-10T10:00:00.000Z" },
+      { changeId: "chg-b", commitId: "bbb222", message: "Wire it", author: "Will", timestamp: "2026-08-10T10:00:00.000Z" }
+    ])
+    expect(card.payload.files).toEqual([
+      { path: "src/log.ts", status: "modified", additions: 10, deletions: 0, patch: "@@ a" },
+      { path: "src/server.ts", status: "modified", additions: 5, deletions: 1 }
+    ])
   })
 
   test("a network throw answers an honest string, never an exception", async () => {

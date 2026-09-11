@@ -21,13 +21,13 @@ test("one grounded sentence per real turn, including calls-only and empty turns"
   expect(model.rows.find(row => row.id === "call-1")?.detail.message).toBe("Permission denied")
 })
 test("trace completion requires this playthrough's committed change, selected repo and actual source/call subtree", () => {
-  const guide = { ...initialGuide(), step: 8, playthrough: 3, completed: ["change.committed"] }
+  const guide = { ...initialGuide(), step: 7, playthrough: 3, completed: ["commits.made"] }
   const scope = { runId: "change", repo: "owner/repo", playthrough: 3 }
   const check = (g = guide, s: typeof scope | undefined = scope, active: string | null = scope.repo, run = scope.runId, node = "frame-1") =>
     canCompleteTutorialTrace(g, s, active, run, scope.repo, model, node)
   expect(check()).toBe(true)
   expect(check(guide, scope, scope.repo, scope.runId, "call-1")).toBe(true)
-  expect(check({ ...guide, step: 7 })).toBe(false)
+  expect(check({ ...guide, step: 6 })).toBe(false)
   expect(check({ ...guide, completed: [] })).toBe(false)
   expect(check({ ...guide, playthrough: 4 })).toBe(false)
   expect(check(guide, scope, "other/repo")).toBe(false)
@@ -44,6 +44,6 @@ test("structured redaction metadata never becomes recorded executable source", (
     record(3, "control.agent.cell-call-started", { flowName: "files.read" })
   ])
   expect(redacted.rows.find(row => row.kind === "cell")?.detail.source).toBeUndefined()
-  expect(canCompleteTutorialTrace({ ...initialGuide(), step: 8, completed: ["change.committed"] },
+  expect(canCompleteTutorialTrace({ ...initialGuide(), step: 7, completed: ["commits.made"] },
     { runId: "r", repo: "owner/repo", playthrough: 0 }, "owner/repo", "r", "owner/repo", redacted, "frame-1")).toBe(false)
 })

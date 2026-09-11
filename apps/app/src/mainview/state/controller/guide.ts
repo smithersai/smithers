@@ -1,10 +1,31 @@
-import { GUIDE_STAGES, GUIDE_LAST_STEP, GUIDE_SIGNAL_ALIASES } from "../../onboarding/lessons"
-import { completeGuide } from "../../onboarding/completion"
-import { LESSON_PLUGIN, libraryOpened, pluginInstalled } from "../../onboarding/pluginLesson"
+import { GUIDE_BRIDGE, GUIDE_LAST_STEP, GUIDE_STAGES } from "../../onboarding/lessons"
 import { createReelController } from "../../onboarding/reelController"
 import { initialGuide } from "../AppState"
 import type { GuideState } from "../AppState"
+import { PRACTICE_BRANCH, PRACTICE_CARD, practicePicker } from "../practice/PracticeRepository"
 import type { ControllerContext } from "./context"
+
+/** Where the escape hatches land: the ⌘K lesson, which every path still runs. */
+const PALETTE_STEP = GUIDE_STAGES.findIndex((stage) => stage.kind === "do" && stage.completion === "palette.opened")
+
+/** Whether an escape hatch took away what a beat needs (login declined, install declined). */
+const unreachable = (guide: GuideState, step: number): boolean => {
+  const stage = GUIDE_STAGES[step]
+  if (stage?.kind !== "do" || stage.requires === undefined) return false
+  const declined = guide.declined ?? []
+  return stage.requires === "signed-in" ? declined.includes("login") : declined.includes("login") || declined.includes("install")
+}
+/** The next beat from `step`, stepping over beats an escape hatch made unreachable. */
+const forward = (guide: GuideState, step: number): number => {
+  let next = Math.min(GUIDE_LAST_STEP, step)
+  while (next < GUIDE_LAST_STEP && unreachable(guide, next)) next += 1
+  return next
+}
+const backward = (guide: GuideState, step: number): number => {
+  let previous = Math.max(0, step)
+  while (previous > 0 && unreachable(guide, previous)) previous -= 1
+  return previous
+}
 
 /** Durable, replayable onboarding. Practice artifacts never enter repository/run tables. */
 export function createGuideController(ctx: ControllerContext) {
@@ -22,7 +43,6 @@ export function createGuideController(ctx: ControllerContext) {
     /* Reducer cases: reel-start, reel-next <epoch:index>, reel-demo <demo>, reel-exit. */
     if (await reelAct(action, value)) return
     const guide: GuideState = migrateGuideV3(ctx.store.session().guide ?? initialGuide())
-    const complete = (signal: string) => Object.assign(guide, completeGuide(guide, signal))
     switch (action) {
       case "pause":
         guide.autoPaused = true
@@ -32,34 +52,69 @@ export function createGuideController(ctx: ControllerContext) {
         if (value !== `${guide.playthrough ?? 0}:${guide.step}` || guide.autoPaused) return
         const lesson = GUIDE_STAGES[guide.step]
         if (!lesson || (lesson.kind === "say" ? lesson.terminal : !guide.completed?.includes(lesson.completion))) return
-        guide.step = Math.min(GUIDE_LAST_STEP, guide.step + 1)
+        guide.step = forward(guide, guide.step + 1)
         break
       }
       case "signal": {
-        // Stub integration door: never called by a timer or by lesson navigation.
-        // Producers must validate repo/run/playthrough scope before emitting.
-        const signal = GUIDE_SIGNAL_ALIASES[value] ?? value
+        // Test-only integration door: never called by a timer, a pill or lesson navigation.
         const stage = GUIDE_STAGES[guide.step]
-        if (stage?.kind !== "do" || stage.completion !== signal) return "This signal does not complete the current lesson."
-        complete(signal)
+        if (stage?.kind !== "do" || stage.completion !== value) return "This signal does not complete the current lesson."
+        guide.completed = [...new Set([...(guide.completed ?? []), value])]
+        guide.autoPaused = false
         break
       }
       case "next": {
         const stage = GUIDE_STAGES[guide.step]
         if (stage?.kind === "do" && !guide.completed?.includes(stage.completion)) return "Complete this lesson's action first."
         guide.autoPaused = false
-        guide.step = Math.min(GUIDE_LAST_STEP, guide.step + 1)
+        guide.step = forward(guide, guide.step + 1)
         break
       }
-      case "back":
+      case "back": {
         guide.autoPaused = true
-        guide.step = Math.max(0, guide.step - 1)
+        guide.notice = undefined
+        const stage = GUIDE_STAGES[guide.step]
+        /*
+         * Back from the stack view reopens the picker with the previous pick (SCRIPT v4 "Back"). The stack view on
+         * screen is the test, not the recorded completion: change.open persists the Change before it records the
+         * signal, and a Back pressed in between must still reopen the picker rather than rewind a beat.
+         */
+        const shown = ctx.store.collections.cards.get(PRACTICE_CARD.commits)
+        if (stage?.kind === "do" && stage.completion === "change.opened" && (guide.completed?.includes("change.opened") || shown?.kind === "change")) {
+          const card = shown
+          await ctx.store.dispatch({ type: "card.upsert", actor: ctx.commandActor, card: {
+            id: PRACTICE_CARD.commits, kind: "commit-pick", title: `Commits on ${PRACTICE_BRANCH}`, status: "active",
+            createdAt: card?.createdAt ?? Date.now(), ordinal: card?.ordinal ?? 0, payload: practicePicker(guide.pick)
+          } }).isPersisted.promise
+          guide.completed = (guide.completed ?? []).filter((signal) => signal !== "change.opened")
+          break
+        }
+        guide.step = backward(guide, guide.step - 1)
         break
+      }
+      case "skip-practice": {
+        const stage = GUIDE_STAGES[guide.step]
+        if (stage?.kind !== "do" || stage.practice !== true) return "Skip practice is offered on the practice lessons."
+        guide.declined = [...new Set([...(guide.declined ?? []), "practice" as const])]
+        guide.autoPaused = false
+        guide.step = GUIDE_BRIDGE
+        break
+      }
+      case "decline": {
+        // "Not now" at login, "Later" at install: the ⌘K lesson still runs, and the terminal line says where to pick up.
+        const stage = GUIDE_STAGES[guide.step]
+        const wants = value === "login" ? "identity.signed-in" : value === "install" ? "github.app.installed" : undefined
+        if (wants === undefined) return "Decline takes login or install."
+        if (stage?.kind !== "do" || stage.completion !== wants) return `There is no ${value} step to decline here.`
+        guide.declined = [...new Set([...(guide.declined ?? []), value as "login" | "install"])]
+        guide.autoPaused = false
+        guide.notice = undefined
+        guide.step = PALETTE_STEP
+        break
+      }
       case "restart": {
         const playthrough = (guide.playthrough ?? 0) + 1
-        delete guide.acceptedPracticeTitle
-        delete guide.responseId
-        delete guide.demoRun
+        for (const field of ["acceptedPracticeTitle", "responseId", "demoRun", "said", "declined", "repo", "pick", "notice"] as const) delete guide[field]
         Object.assign(guide, initialGuide(), { playthrough })
         break
       }
@@ -111,27 +166,6 @@ export function createGuideController(ctx: ControllerContext) {
         await ctx.store.dispatch({ type: "theme.changed", actor: ctx.commandActor === "smithers" ? "system" : ctx.commandActor, theme: flipped }).isPersisted.promise
         break
       }
-      /*
-       * The two plugin lessons are finished by the REAL flows — `/plugins`
-       * opens the Library and `/plugins.install librarian` installs from it,
-       * and the plugins controller advances the lesson through the same two
-       * helpers used here. These actions stay as the older door onto the same
-       * transition; both read one definition so they cannot drift.
-       */
-      case "library": {
-        const opened = libraryOpened(guide)
-        if (opened === undefined) return "Meet the Library in the plugin lesson."
-        Object.assign(guide, opened)
-        break
-      }
-      case "librarian": {
-        const added = pluginInstalled(guide, LESSON_PLUGIN)
-        if (added === undefined) return "Open the Library first."
-        /* The lesson installs for real; the shelf is the workspace's, not the tutorial's. */
-        ctx.store.dispatch({ type: "plugin.installed", actor: ctx.commandActor, plugin: LESSON_PLUGIN })
-        Object.assign(guide, added)
-        break
-      }
       case "finish":
         guide.step = GUIDE_LAST_STEP
         guide.conversationOpen = false
@@ -144,14 +178,18 @@ export function createGuideController(ctx: ControllerContext) {
   return { guideAct }
 }
 
-/** Old tutorials have no repository context: unfinished readers restart at login.
- * Finished readers stay in the workspace. Preserve drafts and installed plugins.
- * sequence distinguishes the interrupted v3 Library reorder from this v3 brief.
+/**
+ * Bring any older guide row onto script v4 (sequence `practice-v4`). An
+ * unfinished reader restarts at the greeting — the practice repository needs
+ * no account, so there is nothing to resume. A finished reader stays in the
+ * workspace. Drafts, sound and the reel's state survive. (The name stays for
+ * AppStore's seed, which calls it on every hydrated guide.)
  */
 export function migrateGuideV3(guide: GuideState): GuideState {
-  if (guide.version === 3 && guide.sequence === "repository-v3") return { ...guide }
-  const finished = guide.step >= (guide.version === 1 ? 15 : 14)
-  return { ...guide, version: 3, sequence: "repository-v3",
-    step: finished ? GUIDE_LAST_STEP : guide.step === 0 ? 0 : 1,
+  if (guide.sequence === "practice-v4") return { ...guide }
+  const finished = guide.sequence === "repository-v3" ? guide.step >= 9 : guide.step >= (guide.version === 1 ? 15 : 14)
+  const { said: _said, declined: _declined, repo: _repo, pick: _pick, notice: _notice, ...kept } = guide
+  return { ...kept, version: 3, sequence: "practice-v4",
+    step: finished ? GUIDE_LAST_STEP : 0,
     completed: [], autoPaused: false, conversationOpen: false }
 }

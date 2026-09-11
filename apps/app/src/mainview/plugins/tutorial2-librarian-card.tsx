@@ -1,6 +1,5 @@
 import { useLiveQuery } from "@tanstack/react-db"
 import { useController } from "../ControllerContext"
-import { LESSON_PLUGIN } from "../onboarding/pluginLesson"
 import { PluginGallery } from "./PluginGallery"
 import { PluginRail } from "./PluginRail"
 import { loadedApp } from "./appSurface"
@@ -15,7 +14,7 @@ export function LibrarianLibraryCard({ tutorial = false }: { readonly tutorial?:
   return <div className="plugins-content">
     {surface.rail.length > 0 && <PluginRail entries={surface.rail} onOpen={flow => controller.runCommand(flow)} />}
     {problem !== undefined && <p role="status">{problem}</p>}
-    <PluginGallery installed={installed} asked={tutorial ? LESSON_PLUGIN : undefined}
+    <PluginGallery installed={installed} asked={undefined}
       onInstall={id => controller.runCommand("plugins.install", id)}
       onRemove={tutorial ? undefined : id => controller.runCommand("plugins.remove", id)} />
   </div>

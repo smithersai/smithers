@@ -1392,3 +1392,66 @@
 .guide-app > [data-reel-stage] > button {
   align-self: flex-start;
 }
+
+/* ---- Onboarding script v4 (onboarding/lessons.ts) ---- */
+.guide-repo-chip { display: inline-flex; align-items: center; gap: .4rem; font-weight: 600; }
+.guide-practice-badge, .smithers-card-practice {
+  display: inline-block; padding: .05rem .45rem; border-radius: 999px; font-size: .72rem; font-weight: 600;
+  letter-spacing: .02em; color: var(--accent, #6b4fd8); background: color-mix(in srgb, var(--accent, #6b4fd8) 12%, transparent);
+}
+.smithers-card-practice { margin-inline-start: .5rem; }
+.guide-goal {
+  margin: 0 0 .75rem; padding: .7rem .9rem; border: 1px solid var(--border, rgba(0,0,0,.12)); border-radius: 12px;
+  background: var(--surface, rgba(255,255,255,.7)); animation: guide-goal-in .35s ease-out both;
+}
+.guide-goal[data-goal-state="complete"] { border-color: var(--success, #1a7f37); }
+.guide-goal-title { margin: 0; font-weight: 600; }
+.guide-goal-line { margin: .15rem 0 .5rem; opacity: .8; }
+.guide-goal-checkpoints { display: flex; flex-wrap: wrap; gap: .4rem .9rem; margin: 0; padding: 0; list-style: none; }
+.guide-goal-checkpoints li { display: inline-flex; align-items: center; gap: .35rem; opacity: .7; }
+.guide-goal-checkpoints li[data-done="true"] { opacity: 1; font-weight: 600; }
+.guide-goal-mark {
+  display: inline-grid; place-items: center; width: 1.05rem; height: 1.05rem; border-radius: 999px;
+  border: 1.5px solid currentColor;
+}
+.guide-goal-checkpoints li[data-done="true"] .guide-goal-mark { color: #fff; background: var(--success, #1a7f37); border-color: var(--success, #1a7f37); }
+@keyframes guide-goal-in { from { opacity: 0; transform: translateY(-6px); } }
+.guide-followup { display: flex; align-items: center; gap: .4rem; margin-top: .35rem; }
+.guide-followup .guide-step-done { color: var(--success, #1a7f37); flex: none; }
+.guide-notice { margin-top: .35rem; color: var(--danger, #b42318); }
+.guide-primary-label { display: inline-flex; flex-direction: column; align-items: flex-start; }
+.guide-primary-subtitle { font-size: .72rem; opacity: .75; font-weight: 400; }
+.guide-secondary {
+  border: 0; background: transparent; color: inherit; opacity: .75; cursor: pointer; padding: .4rem .6rem;
+  display: inline-flex; align-items: center; gap: .4rem;
+}
+.guide-secondary:hover { opacity: 1; text-decoration: underline; }
+.guide-run-chips { display: inline-flex; gap: .4rem; margin-inline-start: .75rem; flex-wrap: wrap; }
+.guide-run-chip { padding: .1rem .5rem; border-radius: 999px; font-size: .75rem; background: color-mix(in srgb, currentColor 8%, transparent); }
+.guide-footer [data-pulse="true"] { animation: guide-pulse 1.4s ease-in-out infinite; }
+@keyframes guide-pulse { 50% { box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent, #6b4fd8) 30%, transparent); } }
+
+.world-card-label { padding: 0 .4rem; border-radius: 999px; font-size: .72rem; background: color-mix(in srgb, currentColor 9%, transparent); }
+.world-card-row[data-good-first="true"] { border-radius: 8px; box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent, #6b4fd8) 35%, transparent); animation: guide-glow 1.6s ease-in-out 2; }
+@keyframes guide-glow { 50% { box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent, #6b4fd8) 20%, transparent); } }
+
+.coding-plan-tag { font-size: .72rem; padding: 0 .4rem; border-radius: 999px; background: color-mix(in srgb, currentColor 9%, transparent); }
+
+.commit-pick-head, .change-stack-header { margin: 0 0 .4rem; font-weight: 600; }
+.commit-pick-rows, .change-stack-rows { margin: 0; padding: 0; list-style: none; display: grid; gap: .3rem; }
+.commit-pick-row label, .change-stack-row {
+  display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; padding: .35rem .5rem; border-radius: 8px;
+  border: 1px solid var(--border, rgba(0,0,0,.1));
+}
+.commit-pick-row[data-picked="false"] label { opacity: .55; text-decoration: line-through; }
+.commit-pick-hint { font-size: .72rem; opacity: .75; font-style: italic; }
+.commit-pick-stat, .change-stack-stat { font-variant-numeric: tabular-nums; opacity: .75; }
+.commit-pick-open { margin-top: .5rem; }
+.change-stack-row { animation: change-stack-drop .45s ease-out both; animation-delay: var(--stack-delay, 0ms); }
+.change-stack-rebased { font-size: .72rem; padding: 0 .45rem; border-radius: 999px; color: var(--accent, #6b4fd8); background: color-mix(in srgb, var(--accent, #6b4fd8) 12%, transparent); }
+.change-stack-target { margin: .3rem 0 0; opacity: .8; }
+.change-stack-target code::before { content: "◆ "; }
+@keyframes change-stack-drop { from { opacity: 0; transform: translateY(-14px); } }
+@media (prefers-reduced-motion: reduce) {
+  .guide-goal, .change-stack-row, .world-card-row[data-good-first="true"], .guide-footer [data-pulse="true"] { animation: none; }
+}

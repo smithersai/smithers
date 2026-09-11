@@ -31,6 +31,7 @@ import * as approvals from "./entries/approvals"
 import * as auth from "./entries/auth"
 import * as billing from "./entries/billing"
 import * as branches from "./entries/branches"
+import * as commits from "./entries/commits"
 import * as browser from "./entries/browser"
 import * as card from "./entries/card"
 import * as change from "./entries/change"
@@ -104,7 +105,7 @@ export interface FlowMetadata {
    * two hosts (a Cloud repository via Smithers Cloud, or a repository opened in the
    * local app) names both; `runtime` alone cannot say "either".
    */
-  readonly runtimeAny?: ReadonlyArray<RuntimeCapability>
+  readonly runtimeAny?: ReadonlyArray<FlowCapability>
   /**
    * The bootstrap hosts this flow exists on; absent means every host. A flow
    * about one host itself (the web app's download door) names it here, so the
@@ -195,8 +196,20 @@ export const itemOf = (entry: FlowEntry): CatalogItem => ({
   ...entry.metadata
 })
 
+/**
+ * A door a flow may name in `runtimeAny`: a host capability from the
+ * bootstrap, or `practice` — the bundled practice repository
+ * (state/practice/PracticeRepository.ts), which ships inside the client, so
+ * every host holds it and no bootstrap ever names it.
+ */
+export type FlowCapability = RuntimeCapability | "practice"
+
+/** Whether this bootstrap holds a flow door; `practice` is always held. */
+export const flowCapabilityHeld = (bootstrap: Pick<AppBootstrap, "capabilities">, capability: FlowCapability): boolean =>
+  capability === "practice" || bootstrap.capabilities.includes(capability)
+
 /** A door only the native host opens: a local service, or the host-held Smithers Cloud PAT session. */
-const nativeDoor = (capability: RuntimeCapability): boolean =>
+const nativeDoor = (capability: FlowCapability): boolean =>
   capability.startsWith("local.") || capability === "cloud.pat"
 
 /**
@@ -232,12 +245,12 @@ export type MissingDoor = "local" | "cloud.pat" | "origin"
 export const absentDoor = (metadata: FlowMetadata, bootstrap: AppBootstrap): MissingDoor | undefined => {
   const { hosts, runtime = [], runtimeAny } = metadata
   if (hosts !== undefined && !hosts.includes(bootstrap.host)) return undefined
-  const has = (capability: RuntimeCapability): boolean => bootstrap.capabilities.includes(capability)
+  const has = (capability: FlowCapability): boolean => flowCapabilityHeld(bootstrap, capability)
   const missing = runtime.filter((capability) => !has(capability))
   const alternatives = runtimeAny !== undefined && runtimeAny.length > 0 && !runtimeAny.some(has) ? runtimeAny : []
   if (missing.length === 0 && alternatives.length === 0) return undefined
   if (bootstrap.host !== "cloud") return "origin"
-  const local = (capability: RuntimeCapability): boolean => capability.startsWith("local.")
+  const local = (capability: FlowCapability): boolean => capability.startsWith("local.")
   if (missing.some(local) || (alternatives.length > 0 && alternatives.every(local))) return "local"
   if (missing.includes("cloud.pat") || (alternatives.length > 0 && alternatives.every(nativeDoor))) return "cloud.pat"
   return "origin"
@@ -417,6 +430,7 @@ export const NAMESPACES: ReadonlyArray<Namespace> = [
   palette.namespace,
   plugins.namespace,
   branches.namespace,
+  commits.namespace,
   env.namespace,
   secrets.namespace,
   history.namespace,

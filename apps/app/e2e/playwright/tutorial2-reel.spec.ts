@@ -17,8 +17,7 @@ const slash = async (page: Page, command: string) => {
 const complete = async (page: Page, step: number) => {
   const stage = GUIDE_STAGES[step]
   if (stage.kind !== "do") { await page.keyboard.press("ArrowRight"); return }
-  if (step === 5) await slash(page, "/plugins.install librarian")
-  else await slash(page, `/onboarding.act signal ${stage.completion}`)
+  await slash(page, `/onboarding.act signal ${stage.completion}`)
   await expect(page.locator(`[data-message-step="${step}"] .guide-step-done`).first()).toBeVisible()
   if (await page.getByTestId("composer-input").isVisible()) await page.keyboard.press("Escape")
   await expectStage(page, step + 1)
@@ -37,11 +36,11 @@ const walkTo = async (page: Page, target: number) => {
 // Named signals exercise plumbing; this does not claim real OAuth/agent work.
 test("optional reel advances without input, demonstrates theme and toast, and Escape exits", async ({ page }) => {
   await page.goto("/")
-  await walkTo(page, 9)
+  await walkTo(page, 14)
   const shell = page.locator(".guide-shell")
   const originalTheme = await shell.getAttribute("data-theme")
   await expect(page.getByRole("button", { name: "What else can you do?" })).toBeVisible()
-  await page.keyboard.press("w")
+  await page.keyboard.press("e")
   await expect(page.locator("[data-reel-stage='0']")).toBeVisible()
   await expect(shell).toHaveAttribute("data-theme", originalTheme === "dark" ? "light" : "dark")
   await expect(page.locator("[data-reel-stage='1']")).toBeVisible()
@@ -50,7 +49,7 @@ test("optional reel advances without input, demonstrates theme and toast, and Es
   await expect(page.locator("[data-reel-stage='2']")).toBeVisible()
   await page.keyboard.press("Escape")
   await expect(page.locator("[data-reel-stage]")).toHaveCount(0)
-  await expectStage(page, 9)
+  await expectStage(page, 14)
   await expect(shell).toHaveAttribute("data-conversation-open", "false")
   await expect(page.getByTestId("composer-input")).toBeHidden()
 })

@@ -145,6 +145,14 @@ export const RunTraceBody = ({
       <CodingPlanBody card={card} onRunCommand={onRunCommand} workflowCatalogs={workflowCatalogs} />
       <CodingPocBody card={card} onRunCommand={onRunCommand} />
       <CodingVibeBody card={card} onRunCommand={onRunCommand} />
+      {/* The run's progress words (payload.steps, a short tail the pump and replays write), newest last. */}
+      {card.payload.steps.length > 0 ?
+        (
+          <ol className="run-trace-steps" aria-label="Progress" data-run-steps="">
+            {card.payload.steps.slice(-6).map((step, index) => <li key={`${index}:${step}`}>{step}</li>)}
+          </ol>
+        ) :
+        null}
       <div className="run-trace-bar" role="group" aria-label="Trace filters">
         <div className="run-trace-views" role="group" aria-label="Trace presentation">
           {(["turns", "timeline"] as const).map((mode) => (

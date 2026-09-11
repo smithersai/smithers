@@ -23,17 +23,20 @@ for (const stale of [false, true]) test(`review before execution; ${stale ? "sta
       verb === "plan" ? plan : verb === "preflight" ? stale ? { message: "HEAD moved; request a new plan." } : { ready: true } :
         { repo: REPO, runId: RUN_ID, base: plan.base.commitId, parent: plan.base.commitId, sha, subject: "Store repository memory", files: ["src/memory.ts", "src/memory.test.ts"] }) })
   })
-  await page.goto(`/${REPO}`)
+  // A repository path (/owner/name) opens the repository app alone (AppIsland); the tutorial lives on "/".
+  await page.goto("/")
   await expect(page.locator(".guide-shell")).toBeVisible()
-  const prerequisites = ["", "identity.signed-in", "repository.ready", "issues.opened", "file.opened", "librarian", "librarian.runs.monitored"]
+  const prerequisites = ["", "issues.opened", "issue.opened", "prs.opened", "file.opened"]
   for (let attempt = 0; attempt < 9; attempt++) {
     const step = Number(await page.locator(".guide-shell").getAttribute("data-stage"))
-    if (step === 7) break
+    if (step === 5) break
     if (step === 0) await page.keyboard.press("ArrowRight")
     else await slash(page, `/onboarding.act signal ${prerequisites[step]}`)
     await expect(page.locator(".guide-shell")).toHaveAttribute("data-stage", String(step + 1))
   }
   await slash(page, `/agent.change ${REPO}`)
+  // The plan itself finishes beat 5 (plan.ready); the verified commit finishes beat 6 (commits.made).
+  await expect(page.locator(".guide-shell")).toHaveAttribute("data-stage", "6")
   const body = page.getByRole("region", { name: "Coding plan" }).last()
   await expect(body).toContainText(plan.changes[0]!.title)
   await expect(body).toContainText(plan.base.commitId)
@@ -44,8 +47,8 @@ for (const stale of [false, true]) test(`review before execution; ${stale ? "sta
   if (stale) {
     await expect(page.getByText("HEAD moved; request a new plan.", { exact: false }).first()).toBeVisible()
     expect(rpc.some(call => call.procedure === "Run")).toBe(false)
-    await expect(page.locator(".guide-shell")).toHaveAttribute("data-stage", "7")
-    await expect(page.locator('[data-message-step="7"] .guide-step-done')).toHaveCount(0)
+    await expect(page.locator(".guide-shell")).toHaveAttribute("data-stage", "6")
+    await expect(page.locator('[data-message-step="6"] .guide-step-done')).toHaveCount(0)
     await expect(page.getByRole("region", { name: "Resulting commit" })).toHaveCount(0)
   } else {
     await expect.poll(() => rpc.some(call => call.procedure === "Run")).toBe(true)
@@ -56,7 +59,7 @@ for (const stale of [false, true]) test(`review before execution; ${stale ? "sta
     await expect(strip.getByRole("list", { name: "Changed files" })).toContainText("src/memory.test.ts")
     /* The tutorial's own projection of the run card; the covered workspace is inert. */
     await expect(page.locator("[data-tutorial-cards]").getByTestId(`card-flow-run-${RUN_ID}`)).toHaveAttribute("data-maximized", "false")
-    await expect(page.locator(".guide-shell")).toHaveAttribute("data-stage", "8")
+    await expect(page.locator(".guide-shell")).toHaveAttribute("data-stage", "7")
     await page.reload()
     await expect(page.getByRole("region", { name: "Resulting commit" })).toHaveAttribute("data-commit", sha)
   }

@@ -1,3 +1,6 @@
+import { lessonCompletion } from "../../onboarding/completion"
+import { GUIDE_STAGES } from "../../onboarding/lessons"
+import { actorSharedState } from "../ActorBindings"
 /*
  * The GitHub seam (lane sync, ADR 0005; lane L5 against the live routes),
  * behind the `/api/cloud/*` proxy. Every path was read off plue's own router
@@ -43,7 +46,7 @@
  */
 import { CLOUD_ROUTE_PREFIX } from "@smthrs/rpc/LocalApp"
 import type { Card, GitHubAppStatusInput } from "../AppState"
-import { resolveTargetRepo } from "../RepoContext"
+import { activeRepositoryId, resolveTargetRepo } from "../RepoContext"
 import { createRunEpochs } from "./RunEpochs"
 import { readGitHubRefusal, trustedHttpsUrl } from "./SeamContext"
 import type { GitHubRefusal, SeamContext } from "./SeamContext"
@@ -76,6 +79,15 @@ export interface GitHubSeam {
   readonly app: (repo?: string) => Promise<string | void | { readonly value: string }>
   /** Hidden, card-scoped: open the App's install page in the browser. */
   readonly openInstall: (repo?: string) => Promise<string | void>
+  /**
+   * Consume a GitHub App setup-URL return (`?installation_id=…&setup_action=…`).
+   * The query is never trusted: the installation is verified with the
+   * user's own session on the server before any repository is adopted.
+   * Answers whether the search string carried a return.
+   */
+  readonly handleInstallReturn: (search: string) => boolean
+  /** Finish the tutorial's install lesson from what Smithers already sees (exactly one repository). */
+  readonly settleInstallLesson: () => Promise<void>
   /** `github.reconcile [repo]`: re-derive the wiring, then re-read the status. */
   readonly reconcile: (repo?: string) => Promise<string | void | { readonly value: string }>
   /** `github.mirror-sync [repo]`: start a mirror run and track its per-ref results. */
@@ -101,6 +113,18 @@ const intOrNull = (value: unknown): number | null =>
   typeof value === "number" && Number.isInteger(value) ? value : null
 
 const wait = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms))
+
+/** GitHub's own install page for the Smithers App: the repository choice happens there. */
+export const GITHUB_APP_INSTALL_URL = "https://github.com/apps/smithers/installations/new"
+/**
+ * Verifies a setup-URL return with the user's session (GitHub's setup-URL
+ * docs: never trust `installation_id`). Answers `{ repos: [{ fullName,
+ * pushedAt }] }` or `{ repo }`. The route belongs to apps/server and is not
+ * deployed yet (TUTORIAL2_INTEGRATION.md); until it is, the lesson says so.
+ */
+export const INSTALL_VERIFY_PATH = "/api/user/github-app/installations"
+/** The lesson that waits on the install, keyed by its signal. */
+const INSTALL_SIGNAL = "github.app.installed"
 
 /** Only the github.com https install origin is worth linking (multi githubInstallUrl.ts). */
 export const trustedInstallUrl = (value: string): string | null => trustedHttpsUrl(value, "github.com")
@@ -324,7 +348,96 @@ export const createGitHubSeam = (ctx: SeamContext, deps: GitHubSeamDeps = {}): G
     }
   }
 
+  const installLesson = (): boolean => {
+    const guide = ctx.store.session().guide
+    const stage = guide === undefined ? undefined : GUIDE_STAGES[guide.step]
+    return guide !== undefined && stage?.kind === "do" && stage.completion === INSTALL_SIGNAL && !guide.completed?.includes(INSTALL_SIGNAL)
+  }
+  /** A line under the install lesson: why it could not finish, in words the user can act on. */
+  const installNotice = async (text: string): Promise<void> => {
+    const guide = ctx.store.session().guide
+    if (guide === undefined || !installLesson()) return
+    await ctx.dispatch({ type: "guide.changed", actor: "system", guide: { ...guide, notice: text } }).isPersisted.promise
+  }
+  /*
+   * One adoption at a time, shared by every actor's projection of this seam.
+   * Adopting writes the repositories collection, and the install lesson's
+   * settle subscription listens to that collection: without this, each write
+   * started another adoption and the queue never reached the completion.
+   */
+  const adoption = actorSharedState(ctx, "install-adoption", () => ({ current: undefined as Promise<void> | undefined }))
+  /** Select the installed repository and finish the lesson with it. */
+  const adoptInstalled = (repo: string): Promise<void> => {
+    if (adoption.current !== undefined) return adoption.current
+    const run = adopt(repo).finally(() => { adoption.current = undefined })
+    adoption.current = run
+    return run
+  }
+  const adopt = async (repo: string): Promise<void> => {
+    const [org = "", name = ""] = repo.split("/")
+    if (!ctx.store.collections.repositories.has(repo)) {
+      await ctx.dispatch({ type: "repositories.loaded", actor: "system", repositories: [
+        ...ctx.store.collections.repositories.values(), { id: repo, org, name, ownerKind: "user", head: null }
+      ] }).isPersisted.promise
+    }
+    if (activeRepositoryId(ctx.store) !== repo) await ctx.dispatch({ type: "repo.selected", actor: "system", id: repo }).isPersisted.promise
+    const guide = ctx.store.session().guide
+    const next = lessonCompletion(guide, INSTALL_SIGNAL, `I can see ${repo}.`)
+    if (next !== undefined) await ctx.dispatch({ type: "guide.changed", actor: "system", guide: { ...next, repo } }).isPersisted.promise
+  }
+  const verifyInstall = async (installationId: string): Promise<void> => {
+    let response: Response
+    try {
+      response = await ctx.http(`${ctx.baseUrl}${INSTALL_VERIFY_PATH}/${encodeURIComponent(installationId)}`)
+    } catch (error) {
+      return installNotice(`Nothing came back from GitHub that I could confirm (${error instanceof Error ? error.message : String(error)}). Try again?`)
+    }
+    if (!response.ok) {
+      await response.body?.cancel()
+      return installNotice(response.status === 404 || response.status === 501
+        ? "GitHub sent you back, but this Smithers server can't confirm installs yet, so I won't guess which repository you chose. Try again later, or choose Later."
+        : `GitHub sent you back, but Smithers couldn't confirm the install (${response.status}). Try again?`)
+    }
+    const body: unknown = await response.json().catch(() => null)
+    const rows = isRecord(body) && Array.isArray(body.repos) ? body.repos : isRecord(body) && typeof body.repo === "string" ? [{ fullName: body.repo }] : []
+    const repos = rows.flatMap((row) => {
+      if (!isRecord(row)) return []
+      const fullName = str(row.fullName) ?? str(row.full_name)
+      return fullName === null ? [] : [{ fullName, pushedAt: str(row.pushedAt) ?? str(row.pushed_at) ?? "" }]
+    })
+    // Several picked: the most recently pushed becomes active (SCRIPT v4 beat 11).
+    const chosen = [...repos].sort((a, b) => b.pushedAt.localeCompare(a.pushedAt))[0]
+    if (chosen === undefined) return installNotice("The install came back without a repository. Choose at least one on GitHub and try again.")
+    await adoptInstalled(chosen.fullName)
+  }
+  const handleInstallReturn: GitHubSeam["handleInstallReturn"] = (search) => {
+    const params = new URLSearchParams(search)
+    const installationId = params.get("installation_id")
+    if (installationId === null && !params.has("setup_action")) return false
+    if (installationId === null || !/^\d+$/.test(installationId)) void installNotice("Nothing came back from GitHub. Try again?")
+    else void verifyInstall(installationId)
+    return true
+  }
+  const settleInstallLesson: GitHubSeam["settleInstallLesson"] = async () => {
+    if (!installLesson() || adoption.current !== undefined) return
+    // Exactly one repository in the user's own inventory. A public-catalog row (a /owner/name visit) is not an install.
+    const repos = [...ctx.store.collections.repositories.values()].filter((repository) => repository.catalog !== true)
+    if (repos.length === 1) await adoptInstalled(repos[0]!.id)
+  }
+  /** GitHub's own chooser: the tutorial's install lesson, where the user has no repository yet. */
+  const openChooser = async (): Promise<string | void> => {
+    if (ctx.store.collections.identitySessions.get("identity")?.state !== "signed-in") return "Log in to GitHub first; the install page asks as you."
+    // `onboarding:<playthrough>`: GitHub echoes it back; a colon keeps it out of the app's id-prefix vocabulary (conformance/LiteralPin).
+    const url = `${GITHUB_APP_INSTALL_URL}?state=${encodeURIComponent(`onboarding:${ctx.store.session().guide?.playthrough ?? 0}`)}`
+    if (deps.openExternal !== undefined) { void deps.openExternal(url); return }
+    // Same tab, like the OAuth hop: GitHub returns to the App's setup URL, which lands back here.
+    // The durable queue settles first, or the lesson this beat is on never reaches storage.
+    await ctx.store.settled?.()
+    if (typeof window !== "undefined") window.location.assign(url)
+  }
+
   const openInstall: GitHubSeam["openInstall"] = async (explicit) => {
+    if (explicit === undefined && installLesson()) return openChooser()
     const refusal = gate()
     if (refusal !== undefined) return refusal
     const target = resolveTargetRepo(ctx.store, explicit)
@@ -582,5 +695,5 @@ export const createGitHubSeam = (ctx: SeamContext, deps: GitHubSeamDeps = {}): G
     })
   }
 
-  return { app, openInstall, reconcile, mirrorSync, retryMirrorRef }
+  return { app, openInstall, handleInstallReturn, settleInstallLesson, reconcile, mirrorSync, retryMirrorRef }
 }

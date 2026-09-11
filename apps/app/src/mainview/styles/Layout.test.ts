@@ -121,3 +121,36 @@ describe("the maximized card keeps Restore reachable (ask 8)", () => {
     )
   })
 })
+
+describe("the shell shrinks to a phone viewport (no sideways scroll)", () => {
+  test("the shell is a flex item that may shrink below its min-content width", () => {
+    const shell = /\.app-shell\s*\{[^}]*\}/.exec(chat)?.[0] ?? ""
+    expect(shell).toContain("min-width: 0;")
+  })
+
+  test("below 556px the sidebar tracks the viewport instead of pinning 200px", () => {
+    expect(chat).toMatch(
+      /@media \(max-width: 555px\)\s*\{\s*\.app-shell\s*\{[^}]*--chrome-bar-width:\s*min\(200px, 36vw\);/
+    )
+  })
+})
+
+describe("the shared card frame fits the phone column", () => {
+  test("the card header may shrink, so its title and meta shrink rules apply", () => {
+    const header = /\.smithers-card-header\s*\{[^}]*\}/.exec(cards)?.[0] ?? ""
+    expect(header).toContain("min-width: 0;")
+  })
+
+  test("the title truncates and the meta gives way before the status pill", () => {
+    const title = /\.smithers-card-title\s*\{\s*flex: 0 1 auto;[^}]*\}/.exec(cards)?.[0] ?? ""
+    expect(title).toContain("min-width: 0;")
+    expect(title).toContain("text-overflow: ellipsis;")
+    const meta = /\.smithers-card-meta\s*\{\s*flex: 0 1 auto;[^}]*\}/.exec(cards)?.[0] ?? ""
+    expect(meta).toContain("min-width: 0;")
+  })
+
+  test("a run's action pills wrap instead of running past the card edge", () => {
+    const actions = /\.flow-run-actions\s*\{[^}]*\}/.exec(cards)?.[0] ?? ""
+    expect(actions).toContain("flex-wrap: wrap;")
+  })
+})

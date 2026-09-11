@@ -10,7 +10,7 @@ const fixture = async () => {
   const storage = { getItem: (key: string) => data.get(key) ?? null,
     setItem: (key: string, value: string) => { data.set(key, value) }, removeItem: (key: string) => { data.delete(key) } }
   const store = await createAppStore({ kind: "localStorage", storage })
-  await store.dispatch({ type: "guide.changed", actor: "user", guide: { ...initialGuide(), step: 6 } }).isPersisted.promise
+  await store.dispatch({ type: "guide.changed", actor: "user", guide: { ...initialGuide(), step: 12 } }).isPersisted.promise
   let repo = "will/demo", next = 0, refused = false
   const ctx = { store, commandActor: "user" } as ControllerContext
   const launches: string[] = []
@@ -31,19 +31,17 @@ const fixture = async () => {
     select: (value: string) => { repo = value }, refuse: () => { refused = true } }
 }
 
-describe("Librarian run monitoring", () => {
-  test("only inspecting both distinct persisted launch receipts completes; a new controller reattaches", async () => {
+describe("Librarian background runs (onboarding beat 12)", () => {
+  test("launching both distinct runs completes without opening either; a new controller dedupes", async () => {
     const f = await fixture()
-    await Promise.all([f.controller.createWiki("will/demo"), f.controller.bootstrapHistory("will/demo")])
-    expect(f.launches).toHaveLength(2)
+    await f.controller.createWiki("will/demo")
     expect(f.store.session().guide?.completed).not.toContain(LIBRARIAN_SIGNAL)
-    await f.controller.inspectLibrarianRun(f.launches[0]!)
-    expect(f.store.session().guide?.completed).not.toContain(LIBRARIAN_SIGNAL)
-    const reattached = createLibrarianRunsController(f.ctx, f.runs)
-    await reattached.createWiki("will/demo")
+    await f.controller.bootstrapHistory("will/demo")
     expect(f.launches).toHaveLength(2)
-    await reattached.inspectLibrarianRun(f.launches[1]!)
     expect(f.store.session().guide?.completed).toContain(LIBRARIAN_SIGNAL)
+    const reattached = createLibrarianRunsController(f.ctx, f.runs)
+    expect(await reattached.createWiki("will/demo")).toMatchObject({ value: expect.stringContaining("already recorded") })
+    expect(f.launches).toHaveLength(2)
     const reloaded = await createAppStore({ kind: "localStorage", storage: f.storage })
     expect(reloaded.session().guide?.completed).toContain(LIBRARIAN_SIGNAL)
     expect([...reloaded.collections.cards.values()].filter(card => card.kind === "run-trace")).toHaveLength(2)
@@ -54,32 +52,34 @@ describe("Librarian run monitoring", () => {
     expect(f.launches).toHaveLength(1)
     f.refuse()
     expect(await f.controller.bootstrapHistory("will/demo")).toContain("refused")
+    // Beat 12 degrades honestly: the reason is written under the lesson, not only into a chat line the guide never shows.
+    expect(f.store.session().guide?.notice).toBe("Create Mythical history didn't start: The gateway refused the launch.")
     await f.controller.inspectLibrarianRun(f.launches[0]!)
     expect(f.store.session().guide?.completed).not.toContain(LIBRARIAN_SIGNAL)
   })
-  test("unrelated repo and stale playthrough cannot complete", async () => {
+  test("launches outside the lesson, or split across repositories, do not complete", async () => {
     const f = await fixture()
+    await f.store.dispatch({ type: "guide.changed", actor: "user", guide: { ...initialGuide(), step: 11 } }).isPersisted.promise
     await f.controller.createWiki("will/demo")
     await f.controller.bootstrapHistory("will/demo")
-    f.select("other/repo")
-    for (const id of f.launches) await f.controller.inspectLibrarianRun(id)
     expect(f.store.session().guide?.completed).not.toContain(LIBRARIAN_SIGNAL)
-    f.select("will/demo")
-    await f.store.dispatch({ type: "guide.changed", actor: "user", guide: { ...initialGuide(), step: 6, playthrough: 1 } }).isPersisted.promise
-    for (const id of f.launches) await f.controller.inspectLibrarianRun(id)
-    expect(f.store.session().guide?.completed).not.toContain(LIBRARIAN_SIGNAL)
+    const g = await fixture()
+    await g.controller.createWiki("will/demo")
+    g.select("other/repo")
+    await g.controller.bootstrapHistory("other/repo")
+    expect(g.store.session().guide?.completed).not.toContain(LIBRARIAN_SIGNAL)
   })
-  test("failed runs remain inspectable with their error and still count as launched", async () => {
+  test("a run that fails after launching still counted, and stays inspectable with its error", async () => {
     const f = await fixture()
     await f.controller.createWiki("will/demo")
     await f.controller.bootstrapHistory("will/demo")
+    expect(f.store.session().guide?.completed).toContain(LIBRARIAN_SIGNAL)
     const id = `flow-run-${f.launches[1]}`
     const card = f.store.collections.cards.get(id)!
     if (card.kind !== "run-trace") throw new Error("missing run")
     await f.store.dispatch({ type: "card.updated", actor: "system", id,
       patch: { payload: { ...card.payload, phase: "failed", error: "Git refused the update." } } }).isPersisted.promise
     for (const runId of f.launches) await f.controller.inspectLibrarianRun(runId)
-    expect(f.store.session().guide?.completed).toContain(LIBRARIAN_SIGNAL)
     expect(f.store.collections.cards.get(id)).toMatchObject({ payload: { phase: "failed", error: "Git refused the update." } })
   })
 })

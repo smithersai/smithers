@@ -37,6 +37,7 @@ import { TabBodies } from "./tabs/TabBodies"
 import { timeLabel } from "./Timestamps"
 import { ToastStack } from "./ToastStack"
 import { useCardRows, useWorkflowCatalogRows } from "./state/useCardRows"
+import { InTutorial, tutorialTranscript } from "./onboarding/transcriptScope"
 import { StorageRecoveryButton } from "./StorageRecoveryButton"
 import { STORAGE_RECOVERY_EXPORT } from "./state/StorageRecoveryContract"
 import { WorldSurface } from "./WorldSurface"
@@ -165,7 +166,10 @@ function App() {
    */
   const conversationTabId = conversationTabIdOf(session)
   const messages = messageRows.filter((message) => inConversation(message, conversationTabId))
-  const conversationCards = cardRows.filter((card) => inConversation(card, conversationTabId))
+  // Beneath the tutorial, a repository route's entry cards stay with that route (onboarding/transcriptScope.ts).
+  const inTutorial = useContext(InTutorial)
+  const conversationRows = cardRows.filter((card) => inConversation(card, conversationTabId))
+  const conversationCards = inTutorial ? tutorialTranscript(conversationRows) : conversationRows
   /*
    * A stable array: CardView is memoized, and re-sorting the same rows into a
    * fresh array on every render would re-render every card body regardless.

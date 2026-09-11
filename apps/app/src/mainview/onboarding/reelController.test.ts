@@ -5,7 +5,7 @@ import type { ControllerContext } from "../state/controller/context"
 import { REEL_STAGES, type ReelState } from "./reel.ts"
 
 const setup = () => {
-  const session: { theme: "light" | "dark"; guide: GuideState & ReelState } = { theme: "light", guide: { ...initialGuide(), step: 9 } }
+  const session: { theme: "light" | "dark"; guide: GuideState & ReelState } = { theme: "light", guide: { ...initialGuide(), step: 14 } }
   const events: Record<string, unknown>[] = []
   let wait = () => {}, dispose = () => {}
   const ctx = { store: { session: () => session, dispatch: (event: Record<string, unknown>) => {
@@ -37,7 +37,7 @@ test("all agent demos persist through guide.changed; real theme, notification, c
     expect(h.session.guide.conversationOpen).toBe(false)
   }
   expect(h.session.guide.reelIndex).toBeUndefined()
-  expect(h.session.guide.step).toBe(9)
+  expect(h.session.guide.step).toBe(14)
   expect(h.events.filter(e => e.type === "guide.changed").every(e => e.actor === "smithers")).toBe(true)
   h.dispose()
 })

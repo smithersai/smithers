@@ -1,5 +1,4 @@
 import { expect, test } from "bun:test"
-import { LESSON_PLUGIN, LIBRARIAN_LESSON_STEP, PLUGINS_LESSON_STEP } from "../../onboarding/pluginLesson"
 import { createAppStore } from "../AppStore"
 import { initialGuide } from "../AppState"
 import { createPluginsController } from "./plugins"
@@ -19,7 +18,7 @@ const setup = async (guideStep?: number) => {
     await store.dispatch({
       type: "guide.changed",
       actor: "user",
-      guide: { ...initialGuide(), step: guideStep, library: guideStep > PLUGINS_LESSON_STEP }
+      guide: { ...initialGuide(), step: guideStep, library: false }
     }).isPersisted.promise
   }
   const controller = createPluginsController({ store, commandActor: "user" } as unknown as ControllerContext)
@@ -75,29 +74,5 @@ test("the Library pane toggles, and back to the conversation", async () => {
   expect(store.session().surface).toBe("plugins")
   controller.showPlugins()
   expect(store.session().surface).toBe("chat")
-  await store.dispose?.()
-})
-
-test("during its lesson, opening the Library and installing the plugin advance the guide", async () => {
-  const { store, controller } = await setup(PLUGINS_LESSON_STEP)
-  controller.showPlugins()
-  expect(store.session().guide?.library).toBe(true)
-  expect(store.session().guide?.step).toBe(PLUGINS_LESSON_STEP)
-  expect(store.session().guide?.completed).toContain("library")
-  await store.dispatch({ type: "guide.changed", actor: "system", guide: { ...store.session().guide!, step: LIBRARIAN_LESSON_STEP } }).isPersisted.promise
-  controller.installPlugin(LESSON_PLUGIN)
-  expect(store.session().plugins).toEqual([LESSON_PLUGIN])
-  expect(store.session().guide?.librarian).toBe(true)
-  expect(store.session().guide?.step).toBe(LIBRARIAN_LESSON_STEP)
-  expect(store.session().guide?.completed).toContain("librarian")
-  await store.dispose?.()
-})
-
-test("outside the lesson the same flows leave the guide alone", async () => {
-  const { store, controller } = await setup(0)
-  controller.showPlugins()
-  controller.installPlugin(LESSON_PLUGIN)
-  expect(store.session().guide?.step).toBe(0)
-  expect(store.session().guide?.librarian).toBe(false)
   await store.dispose?.()
 })

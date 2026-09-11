@@ -132,13 +132,33 @@ const RESOLVES_ELSEWHERE: ReadonlyArray<Excuse> = [
   },
   {
     literal: "do",
-    file: "e2e/playwright/tutorial2-reel.spec.ts",
-    reason: "the GuideLesson kind from src/mainview/onboarding/lessons.ts, which the walk switches on; it is a lesson kind and never a card kind"
+    file: "e2e/playwright/tutorial2-walk.spec.ts",
+    reason: "the GuideLesson kind from src/mainview/onboarding/lessons.ts, which the script v4 walk switches on; a lesson kind, never a card kind"
   },
   {
-    literal: "plugin-rail-history.show",
-    file: "e2e/playwright/tutorial2-librarian.spec.ts",
-    reason: "PluginRail stamps data-testid={`plugin-rail-${entry.flow}`}, so the composed id exists only at runtime and the derivation sees the template, not this instance"
+    literal: "say",
+    file: "e2e/playwright/tutorial2-walk.spec.ts",
+    reason: "the GuideLesson kind from src/mainview/onboarding/lessons.ts (a say-beat); a lesson kind, never a card kind"
+  },
+  {
+    literal: "call",
+    file: "e2e/playwright/tutorial2-walk.spec.ts",
+    reason: "RunTraceCard stamps a trace span's kind on data-kind (cards/RunTraceCard.tsx), and the walk selects the call spans of the practice run's trace"
+  },
+  {
+    literal: "plan-",
+    file: "e2e/playwright/tutorial-stubs.ts",
+    reason: "the workflow gateway double's plan id, echoed back to the launch path; a gateway value, never a card id"
+  },
+  {
+    literal: "librarian-run-",
+    file: "e2e/playwright/tutorial-stubs.ts",
+    reason: "the workflow gateway double's run id for the beat 12 launches; the app wraps it as flow-run-<runId>, so the bare prefix is never a card id"
+  },
+  {
+    literal: "do",
+    file: "e2e/playwright/tutorial2-reel.spec.ts",
+    reason: "the GuideLesson kind from src/mainview/onboarding/lessons.ts, which the walk switches on; it is a lesson kind and never a card kind"
   },
   {
     literal: "data-char",

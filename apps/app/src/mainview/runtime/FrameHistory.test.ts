@@ -77,6 +77,19 @@ describe("browser frame history", () => {
     expect(seen).toEqual([root, card])
   })
 
+  test("mounted with keepUrl at /, push and replace leave / in the address bar and back/forward still report frames", () => {
+    const { host, entries } = browser("/")
+    const history = createBrowserFrameHistory(host, { keepUrl: true })
+    history.replace(root)
+    history.push(card)
+    expect(entries()).toEqual(["/", "/"])
+    expect(history.current()).toEqual(card)
+    history.back()
+    expect(history.current()).toEqual(root)
+    history.forward()
+    expect(history.current()).toEqual(card)
+  })
+
   test("booted from /, push and replace write the frame path and read it back", () => {
     const { host, entries } = browser("/")
     const history = createBrowserFrameHistory(host)

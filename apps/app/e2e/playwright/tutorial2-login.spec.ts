@@ -21,12 +21,18 @@ const setup = async (page: Page, host: "local" | "cloud", outcome = "success") =
     signedIn = outcome === "success"
     return route.fulfill({ json: { status: signedIn ? "ready" : "failed" } })
   })
-  await page.context().route("**/api/auth/github/start?*", route => {
+  // With or without a query: from "/" the app sends no return_to at all.
+  await page.context().route(/\/api\/auth\/github\/start(\?.*)?$/, route => {
     if (host === "local") return route.fulfill({ contentType: "text/html", body: "GitHub handoff fixture" })
     signedIn = outcome === "success"
     const returnTo = new URL(route.request().url()).searchParams.get("return_to") ?? "/"
     return route.fulfill({ status: 302, headers: { location: `${returnTo}?${signedIn ? "signed-in=github" : "auth=failed"}` } })
   })
+}
+/* Script v4: login is beat 10, after the practice repository; Skip practice (Q) goes straight to it. */
+const skipPractice = async (page: Page) => {
+  await expect(page.locator(".guide-shell")).toHaveAttribute("data-stage", "1")
+  await page.keyboard.press("q")
 }
 const signIn = async (page: Page) => {
   await page.keyboard.press("Control+k")
@@ -34,28 +40,34 @@ const signIn = async (page: Page) => {
   await page.keyboard.press("Enter")
 }
 for (const host of ["local", "cloud"] as const) {
-  test(`${host}: keyboard login preserves repo path and completes only after session validation`, async ({ page }) => {
+  test(`${host}: keyboard login returns to the same path and completes only after session validation`, async ({ page }) => {
     await setup(page, host)
-    await page.goto("/will/tutorial")
-    await expect(page.locator(".guide-shell")).toHaveAttribute("data-stage", "1")
-    await expect(page.locator('[data-message-step="1"] .guide-step-done')).toHaveCount(0)
+    // A repository path (/owner/name) opens the repository app alone (AppIsland), so the tutorial lives on "/".
+    await page.goto("/")
+    await skipPractice(page)
+    const before = new URL(page.url()).pathname
+    await expect(page.locator(".guide-shell")).toHaveAttribute("data-stage", "10")
+    await expect(page.locator('[data-message-step="10"] .guide-step-done')).toHaveCount(0)
     await signIn(page)
-    await expect(page.locator('[data-message-step="1"] .guide-step-done').first()).toBeVisible()
-    await expect(page.locator(".guide-shell")).toHaveAttribute("data-stage", "2")
-    expect(new URL(page.url()).pathname).toBe("/will/tutorial")
+    await expect(page.locator('[data-message-step="10"] .guide-step-done').first()).toBeVisible()
+    await expect(page.locator(".guide-shell")).toHaveAttribute("data-stage", "11")
+    expect(new URL(page.url()).pathname).toBe(before)
     await page.reload()
-    await expect(page.locator(".guide-shell")).toHaveAttribute("data-stage", "2")
+    await expect(page.locator(".guide-shell")).toHaveAttribute("data-stage", "11")
   })
   for (const outcome of ["unknown", "unavailable", "cancelled", "501"]) {
     test(`${host}: ${outcome} never completes login`, async ({ page }) => {
       await setup(page, host, outcome)
-      await page.goto("/will/tutorial")
-      await expect(page.locator(".guide-shell")).toHaveAttribute("data-stage", "1")
+      // A repository path (/owner/name) opens the repository app alone (AppIsland), so the tutorial lives on "/".
+    await page.goto("/")
+    await skipPractice(page)
+    const before = new URL(page.url()).pathname
+      await expect(page.locator(".guide-shell")).toHaveAttribute("data-stage", "10")
       await signIn(page)
       await page.waitForTimeout(2500) // exceed the handoff poll and check animation window
-      await expect(page.locator(".guide-shell")).toHaveAttribute("data-stage", "1")
-      await expect(page.locator('[data-message-step="1"] .guide-step-done')).toHaveCount(0)
-      expect(new URL(page.url()).pathname).toBe("/will/tutorial")
+      await expect(page.locator(".guide-shell")).toHaveAttribute("data-stage", "10")
+      await expect(page.locator('[data-message-step="10"] .guide-step-done')).toHaveCount(0)
+      expect(new URL(page.url()).pathname).toBe(before)
     })
   }
 }

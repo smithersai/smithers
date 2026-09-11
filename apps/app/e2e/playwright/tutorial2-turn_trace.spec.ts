@@ -161,7 +161,7 @@ test("change turns expose grounded explanations and exact source/results through
   await expect(page.locator(".guide-shell")).toBeVisible()
   // Shared GuideShell currently hides the app during lessons; root handoff restores it.
   await send(page, "/onboarding.act finish")
-  await expect(page.locator(".guide-shell")).toHaveAttribute("data-stage", "9")
+  await expect(page.locator(".guide-shell")).toHaveAttribute("data-stage", "14")
   await send(page, `/runs.open ${RUN_ID} ${REPO}`)
   const card = page.getByTestId(`card-flow-run-${RUN_ID}`)
   const turns = card.getByRole("list", { name: "Turn explanations" })

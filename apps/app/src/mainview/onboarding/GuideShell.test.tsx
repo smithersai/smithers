@@ -11,7 +11,7 @@ import { initialGuide } from "../state/AppState"
 import { createAppStore } from "../state/AppStore"
 import type { GuideClock } from "./advance"
 import { GuideShell } from "./GuideShell"
-import { GUIDE_STAGES } from "./lessons"
+import { GUIDE_BRIDGE, GUIDE_LAST_STEP, GUIDE_STAGES, lessonText } from "./lessons"
 
 
 GlobalRegistrator.register()
@@ -56,7 +56,7 @@ const unavailableRepositories: NativeRepositories = {
 
 const text = (node: Element | null): string => (node?.textContent ?? "").replace(/\s+/g, " ").trim()
 
-const mountGuide = async (step: number, clock?: GuideClock, answers = { heard: "", project: "" }, observe?: (controller: ReturnType<typeof createAppController>) => void): Promise<HTMLElement> => {
+const mountGuide = async (step: number, clock?: GuideClock, answers: Record<string, unknown> = { heard: "", project: "" }, observe?: (controller: ReturnType<typeof createAppController>) => void): Promise<HTMLElement> => {
   const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
   const controller = createAppController(store, unavailableRepositories, silentAgent)
   observe?.(controller)
@@ -81,52 +81,63 @@ const mountGuide = async (step: number, clock?: GuideClock, answers = { heard: "
 }
 
 
-test("all nine lessons have keyboard navigation and numbered do instructions", async () => {
-  for (let step = 0; step < 9; step++) {
-    const host = await mountGuide(step, { setTimeout: () => 1, clearTimeout: () => {} })
-    const back = host.querySelector('[aria-keyshortcuts="ArrowLeft"]')
-    expect(back).not.toBeNull()
-    expect(text(back)).toContain("←")
-    const instruction = host.querySelector(`[data-message-step="${step}"] .guide-steps`)
-    if (step > 0) expect(instruction).not.toBeNull()
+const still: GuideClock = { setTimeout: () => 1, clearTimeout: () => {} }
+const settle = async () => {
+  await new Promise(resolve => setTimeout(resolve, 0))
+  flushSync(() => {})
+}
+
+test("every beat has keyboard navigation, one pill shape, and no numbered instruction rows", async () => {
+  for (let step = 0; step <= GUIDE_LAST_STEP; step++) {
+    const host = await mountGuide(step, still, { repo: "acme/api" })
+    if (step < GUIDE_LAST_STEP) {
+      const back = host.querySelector('[aria-keyshortcuts="ArrowLeft"]')
+      expect(back).not.toBeNull()
+      expect(text(back)).toContain("←")
+    }
+    // SCRIPT v4 principle 1: the pill is the instruction; numbered "Click X" rows are gone.
+    expect(host.querySelector(".guide-steps")).toBeNull()
     for (const button of host.querySelectorAll<HTMLButtonElement>(".guide-navigation button, .guide-actions button")) {
       expect(button.getAttribute("aria-keyshortcuts")).toBeTruthy()
       expect(button.querySelector("kbd")?.closest("button")).toBe(button)
     }
-    const lesson = GUIDE_STAGES[step]
+    const lesson = GUIDE_STAGES[step]!
     if (lesson.kind === "do") {
-      for (const copy of [lesson.instruction, ...(lesson.instructions ?? [])]) {
-        expect(copy).not.toMatch(/\/[a-z][a-z.-]*/i)
-        expect(copy).not.toMatch(/Cmd K|Ctrl K/)
-      }
-      expect(host.querySelectorAll(".guide-actions button").length).toBe(lesson.actions?.length ?? 0)
-      for (const action of lesson.actions ?? []) {
-        expect(action.key).toMatch(/^[A-Z]$/)
-        expect(["C", "N", "R", "S", "W"]).not.toContain(action.key)
+      // No slash command in copy ("type /issues"); a path like src/hello.ts is fine.
+      expect(lesson.instruction).not.toMatch(/(^|\s)\/[a-z][a-z.-]*/i)
+      const primaries = host.querySelectorAll(".guide-actions .guide-primary")
+      expect(primaries.length).toBe(lesson.actions.length)
+      for (const action of lesson.actions) {
         const button = host.querySelector(`.guide-actions [data-flow="${action.flow}"]`)
-        expect(text(button)).toContain(action.label)
+        expect(text(button)).toContain(lessonText(action.label, { repo: "acme/api" }))
         expect(text(button?.querySelector("kbd") ?? null)).toBe(action.key)
-        expect(button?.getAttribute("aria-keyshortcuts")).toBe(action.key.toLowerCase())
+        expect(button?.getAttribute("aria-keyshortcuts")).toBe(action.key.length === 1 ? action.key.toLowerCase() : "Meta+K Control+K")
+        expect(button?.getAttribute("aria-describedby")).toBe(`guide-instruction-${step}`)
       }
+      if (lesson.secondary !== undefined) expect(text(host.querySelector(".guide-actions [data-secondary]"))).toContain(lesson.secondary.label)
+      // Skip practice (Q) sits beside Back on the practice beats only.
+      expect(host.querySelector(".guide-skip") !== null).toBe(lesson.practice === true)
     }
+    // The goal card is pinned through the practice beats.
+    expect(host.querySelector(".guide-goal") !== null).toBe(step <= 9)
     mounted.pop()?.()
   }
 })
-test("a real persisted completion checks the instruction before advancing", async () => {
+
+test("a real persisted completion shows the check and the follow-up line before advancing", async () => {
   let controller!: ReturnType<typeof createAppController>
-  const host = await mountGuide(3, { setTimeout: () => 1, clearTimeout: () => {} }, { heard: "", project: "" }, c => { controller = c })
+  const host = await mountGuide(3, still, {}, c => { controller = c })
   await controller.guideAct("signal", "prs.opened")
-  await new Promise(resolve => setTimeout(resolve, 0))
-  flushSync(() => {})
+  await settle()
   expect(host.querySelector('[data-message-step="3"] [aria-label="Done"]')).not.toBeNull()
+  expect(text(host.querySelector('[data-message-step="3"] [data-followup]'))).toBe("Mira's on logging, not greetings. It's ours.")
   expect(controller.store.session().guide?.step).toBe(3)
 })
-
 
 test("lesson shortcuts share the button dispatch and preserve keyboard guards", async () => {
   const calls: string[] = []
   let controller!: ReturnType<typeof createAppController>
-  const host = await mountGuide(1, { setTimeout: () => 1, clearTimeout: () => {} }, undefined, c => {
+  const host = await mountGuide(GUIDE_BRIDGE, still, undefined, c => {
     controller = c
     spyOn(c, "runCommand").mockImplementation(name => { calls.push(name); return true })
   })
@@ -142,29 +153,54 @@ test("lesson shortcuts share the button dispatch and preserve keyboard guards", 
   host.querySelector<HTMLButtonElement>('[data-flow="auth.sign-in"]')!.click()
   expect(calls).toEqual(["auth.sign-in", "auth.sign-in"])
   await controller.guideAct("open")
-  await new Promise(resolve => setTimeout(resolve, 0))
-  flushSync(() => {})
+  await settle()
   press()
   expect(calls).toHaveLength(2)
 })
 
-
-test("every action click and letter dispatch the same flow and arguments", async () => {
-  for (let step = 1; step < 9; step++) {
+test("every pill click and its letter dispatch the same flow and arguments", async () => {
+  for (let step = 1; step < GUIDE_LAST_STEP; step++) {
+    const lesson = GUIDE_STAGES[step]!
+    if (lesson.kind !== "do") continue
     const calls: Array<[string, string?]> = []
-    const host = await mountGuide(step, { setTimeout: () => 1, clearTimeout: () => {} }, undefined, c => {
+    const host = await mountGuide(step, still, { repo: "acme/api" }, c => {
       spyOn(c, "runCommand").mockImplementation(name => { calls.push([name]); return true })
       spyOn(c, "runCommand").mockImplementation((name, args) => { calls.push([name, args]); return true })
     })
-    const lesson = GUIDE_STAGES[step]
-    if (lesson.kind === "do") for (const action of lesson.actions ?? []) {
+    for (const action of [...lesson.actions, ...(lesson.secondary === undefined ? [] : [lesson.secondary])]) {
+      // The picker's set and the ⌘K chord are covered end to end (e2e/playwright/tutorial2-walk.spec.ts).
+      if (action.args === "{picked}" || action.key.length > 1) continue
       calls.length = 0
-      host.querySelector<HTMLButtonElement>(`.guide-actions [data-flow="${action.flow}"]`)!.click()
+      host.querySelector<HTMLButtonElement>(`.guide-actions [data-flow="${action.flow}"]${action === lesson.secondary ? "[data-secondary]" : ".guide-primary"}`)!.click()
       document.dispatchEvent(new KeyboardEvent("keydown", { key: action.key.toLowerCase(), bubbles: true }))
-      const args = action.flow === "plugins.install" ? "librarian" : action.args
+      const args = action.args?.replaceAll("{repo}", "acme/api")
       const expected: [string, string?] = args === undefined ? [action.flow] : [action.flow, args]
       expect(calls).toEqual([expected, expected])
     }
     mounted.pop()?.()
   }
+})
+
+test("Not now at login skips the repository beats; Later at install skips the background runs", async () => {
+  let controller!: ReturnType<typeof createAppController>
+  await mountGuide(GUIDE_BRIDGE, still, {}, c => { controller = c })
+  await controller.guideAct("decline", "login")
+  expect(controller.store.session().guide?.step).toBe(13)
+  await controller.guideAct("back")
+  expect(controller.store.session().guide?.step).toBe(GUIDE_BRIDGE)
+  mounted.pop()?.()
+  await mountGuide(11, still, {}, c => { controller = c })
+  await controller.guideAct("decline", "install")
+  expect(controller.store.session().guide?.step).toBe(13)
+  expect(controller.store.session().guide?.declined).toEqual(["install"])
+})
+
+test("Skip practice lands on the bridge and marks the goal skipped", async () => {
+  let controller!: ReturnType<typeof createAppController>
+  const host = await mountGuide(3, still, {}, c => { controller = c })
+  await controller.guideAct("skip-practice")
+  await settle()
+  expect(controller.store.session().guide?.step).toBe(GUIDE_BRIDGE)
+  expect(host.querySelector(".guide-goal")?.getAttribute("data-goal-state")).toBe("skipped")
+  expect(text(host.querySelector(".guide-goal"))).toContain("Skipped")
 })

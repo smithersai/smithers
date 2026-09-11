@@ -659,6 +659,8 @@ export interface AppStore {
   readonly readRecovery: () => Promise<StorageRecoverySnapshot>
   /** Commit a pending draft, then release persistence resources acquired for this store. */
   readonly dispose?: () => void | Promise<void>
+  /** Durable writes accepted so far, settled (chain/DurableCollection.ts); awaited before a navigation that leaves the page. */
+  readonly settled?: () => Promise<void>
 }
 
 /** A persisted collection declares its storage identity and row schema once. */
@@ -829,7 +831,8 @@ const seed = async (collections: StoredCollections, persistence: CollectionPersi
         })
       }
       const persistedGuide = collections.sessions.get(SESSION_ID)?.guide
-      if (persistedGuide !== undefined && (persistedGuide.version < 3 || persistedGuide.sequence !== "repository-v3")) {
+      // Anything but the current script (onboarding v4, "practice-v4") is remapped once, including the 10-lesson repository-v3 rows.
+      if (persistedGuide !== undefined && (persistedGuide.version < 3 || persistedGuide.sequence !== "practice-v4")) {
         collections.sessions.update(SESSION_ID, draft => { draft.guide = migrateGuideV3(persistedGuide) })
       }
     }
@@ -3188,6 +3191,7 @@ const initializeAppStore = async (resolved: ResolvedPersistence): Promise<AppSto
         : browserSqliteRecoveryReader(),
       ...(resolved.mode === "memory" ? { memory: recoveryStorage(persistedLocally) } : {})
     }),
+    settled: () => collectionPersistence.settled(),
     dispose: async () => {
       page?.removeEventListener("pagehide", commitDraft)
       const draft = pendingDraft?.transaction

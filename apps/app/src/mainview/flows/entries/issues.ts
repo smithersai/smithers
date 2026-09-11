@@ -19,7 +19,7 @@ export const issuesFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> =
     hidden: true,
     grammar: args => payloadFor("issues.list", args),
     summary: "List a repository's issues",
-    runtimeAny: ["cloud", "local.repositories"],
+    runtimeAny: ["cloud", "local.repositories", "practice"],
     args: "[open|closed|all] [owner/repo]",
     input: Schema.Struct({
       filter: Schema.optional(Schema.Literals(["open", "closed", "all"])),
@@ -30,7 +30,7 @@ export const issuesFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> =
   flow({
     name: "issues.list",
     summary: "List a repository's issues",
-    runtimeAny: ["cloud", "local.repositories"],
+    runtimeAny: ["cloud", "local.repositories", "practice"],
     args: "[open|closed|all] [owner/repo]",
     input: Schema.Struct({
       filter: Schema.optional(Schema.Literals(["open", "closed", "all"])),
@@ -41,7 +41,8 @@ export const issuesFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> =
   flow({
     name: "issues.view",
     summary: "Open an issue with its comments",
-    runtime: ["cloud"],
+    /* The practice repository (state/practice) answers without the cloud; its key also skips the sign-in gate. */
+    runtimeAny: ["cloud", "practice"],
     args: "<number> [owner/repo]",
     requires: ["signed-in"],
     input: NumberedTarget,

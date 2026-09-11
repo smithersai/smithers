@@ -1,10 +1,65 @@
-import { completeGuide } from "../../onboarding/completion"
+import { lessonCompletion } from "../../onboarding/completion"
+import { isPracticeRepo, PRACTICE_CARD, PRACTICE_NAME, practiceIssue, practiceIssueList, practicePr, practicePrList } from "../practice/PracticeRepository"
 import { activeRepositoryId, resolveOpenRepo, resolveTargetRepo } from "../RepoContext"
 import type { FormsController } from "../controller/forms"
 import type { SeamContext } from "./SeamContext"
 import { readResult } from "./SeamContext"
 
 export type RepositoryForm = FormsController["renderFlowForm"]
+
+const signalOf = (kind: "issues" | "prs") => kind === "issues" ? "issues.opened" : "prs.opened"
+
+/** Complete the current lesson when it waits on `signal`; a later lesson or another playthrough is untouched. */
+const finishLesson = async (ctx: SeamContext, signal: string, playthrough: number | undefined): Promise<void> => {
+  const guide = ctx.store.session().guide
+  if (guide === undefined || guide.playthrough !== playthrough) return
+  const next = lessonCompletion(guide, signal)
+  if (next !== undefined) await ctx.dispatch({ type: "guide.changed", actor: ctx.actor(), guide: next }).isPersisted.promise
+}
+
+/** The practice repository answers from its bundle: no identity, no request. */
+const practiceRead = async (ctx: SeamContext, kind: "issues" | "prs", filter: "open" | "closed" | "all"): Promise<{ readonly value: string }> => {
+  const playthrough = ctx.store.session().guide?.playthrough
+  const actor = ctx.actor()
+  const common = { status: "active" as const, createdAt: Date.now(), ordinal: ctx.nextOrdinal() }
+  if (kind === "issues") {
+    const payload = practiceIssueList(filter)
+    await ctx.dispatch({ type: "card.upsert", actor, card: { ...common, id: PRACTICE_CARD.issues, kind: "issue-list", title: `Issues · ${PRACTICE_NAME}`, payload } }).isPersisted.promise
+    await finishLesson(ctx, signalOf(kind), playthrough)
+    return readResult(payload.issues.map(issue => `#${issue.number} ${issue.title} [${(issue.labels ?? []).join(", ")}]`).join("\n"))
+  }
+  const payload = practicePrList()
+  await ctx.dispatch({ type: "card.upsert", actor, card: { ...common, id: PRACTICE_CARD.prs, kind: "pr-list", title: `Pull requests · ${PRACTICE_NAME}`, payload } }).isPersisted.promise
+  await finishLesson(ctx, signalOf(kind), playthrough)
+  return readResult(payload.landings.map(pr => `#${pr.number} ${pr.title} by ${pr.author} (touches ${(pr.files ?? []).join(", ")})`).join("\n"))
+}
+
+/** issues.view on the practice repository: the bundled issue, then the lesson's `issue.opened`. */
+export async function practiceViewIssue(ctx: SeamContext, number: number): Promise<string | { readonly value: string }> {
+  const payload = practiceIssue(number)
+  if (payload === undefined) return `No issue #${number} in ${PRACTICE_NAME}.`
+  const playthrough = ctx.store.session().guide?.playthrough
+  await ctx.dispatch({ type: "card.upsert", actor: ctx.actor(), card: {
+    id: PRACTICE_CARD.issue(number), kind: "issue", title: `#${number} ${payload.title}`, status: "active",
+    createdAt: Date.now(), ordinal: ctx.nextOrdinal(), payload
+  } }).isPersisted.promise
+  await finishLesson(ctx, "issue.opened", playthrough)
+  return readResult(`#${number} ${payload.title}\n${payload.issueBody}`)
+}
+
+/** prs.view on the practice repository: the bundled PR with its branch, commits and per-file patches. No lesson waits on it. */
+export async function practiceViewLanding(ctx: SeamContext, number: number): Promise<string | { readonly value: string }> {
+  const payload = practicePr(number)
+  if (payload === undefined) return `No pull request #${number} in ${PRACTICE_NAME}.`
+  await ctx.dispatch({ type: "card.upsert", actor: ctx.actor(), card: {
+    id: `practice-pr-${number}`, kind: "pr", title: `#${number} ${payload.title}`, status: "active",
+    createdAt: Date.now(), ordinal: ctx.nextOrdinal(), payload
+  } }).isPersisted.promise
+  return readResult(`#${number} ${payload.title} by ${payload.author}\n${payload.prBody}`)
+}
+
+/** Emitted by a hosted issues.view after its card persists: the lesson key, not a step number. */
+export const finishIssueLesson = (ctx: SeamContext, playthrough: number | undefined) => finishLesson(ctx, "issue.opened", playthrough)
 
 /** A list receipt is scoped to the selection and playthrough that requested it. */
 export async function tutorialRepositoryRead(
@@ -15,6 +70,7 @@ export async function tutorialRepositoryRead(
   renderForm: RepositoryForm | undefined,
   read: (repo: string) => Promise<string | { readonly value: string }>,
 ): Promise<string | { readonly value: string }> {
+  if (isPracticeRepo(explicit)) return practiceRead(ctx, kind, filter)
   const session = ctx.store.session()
   const key = session.activeRepoKey
   const guide = session.guide
@@ -50,9 +106,8 @@ export async function tutorialRepositoryRead(
   const selected = local && "repo" in local ? local.repo.path : activeRepositoryId(ctx.store)
   if (typeof result !== "string" && !refused && card && selected === repo && current.activeRepoKey === key &&
     identity?.login === currentIdentity?.login && identity?.state === currentIdentity?.state &&
-    guide?.step === 3 && current.guide?.step === 3 && current.guide.playthrough === guide.playthrough) {
-    // prs.opened normalizes to issues.opened in the guide's single issues/PR lesson.
-    await ctx.dispatch({ type: "guide.changed", actor, guide: completeGuide(current.guide, "issues.opened") }).isPersisted.promise
+    guide?.step === current.guide?.step) {
+    await finishLesson(ctx, signalOf(kind), guide?.playthrough)
   }
   return result
 }

@@ -17,8 +17,7 @@ const slash = async (page: Page, command: string) => {
 const complete = async (page: Page, step: number) => {
   const stage = GUIDE_STAGES[step]
   if (stage.kind !== "do") { await page.keyboard.press("ArrowRight"); return }
-  if (step === 5) await slash(page, "/plugins.install librarian")
-  else await slash(page, `/onboarding.act signal ${stage.completion}`)
+  await slash(page, `/onboarding.act signal ${stage.completion}`)
   await expect(page.locator(`[data-message-step="${step}"] .guide-step-done`).first()).toBeVisible()
   if (await page.getByTestId("composer-input").isVisible()) await page.keyboard.press("Escape")
   await expectStage(page, step + 1)
@@ -33,11 +32,14 @@ const walkTo = async (page: Page, target: number) => {
   }
 }
 
-test("the greeting auto-advances to login and navigation cannot complete login", async ({ page }) => {
+test("the greeting auto-advances to the first practice beat and navigation cannot complete it", async ({ page }) => {
   await page.goto("/")
   await expectStage(page, 1)
-  await expect(page.locator('[data-message-step="0"]')).toContainText("I'm Smithers, I help your team manage your repository.")
-  await expect(page.locator('[data-message-step="1"] .guide-steps')).toContainText("Click Log in to GitHub")
+  await expect(page.locator('[data-message-step="0"] p[data-line="1"]')).toHaveText("I'm Smithers, I help your team manage your repository.")
+  await expect(page.locator('[data-message-step="0"] p[data-line="2"]')).toHaveText("Let's warm up on a practice repo. One goal: fix a bug and send it for review as a Change.")
+  // Script v4 principle 1: the pill is the instruction; there are no numbered "Click X" rows.
+  await expect(page.locator(".guide-steps")).toHaveCount(0)
+  await expect(page.locator('.guide-actions [data-flow="issues.list"]')).toContainText("Show issues")
   await page.keyboard.press("ArrowRight")
   await page.keyboard.press("Enter")
   await expectStage(page, 1)
@@ -46,9 +48,9 @@ test("the greeting auto-advances to login and navigation cannot complete login",
 
 test("all lessons walk end-to-end through named skeleton signals and the real plugin install", async ({ page }) => {
   await page.goto("/")
-  await walkTo(page, 9)
+  await walkTo(page, 14)
   await page.reload()
-  await expectStage(page, 9)
+  await expectStage(page, 14)
   await expect(page.getByTestId("composer-input")).toBeHidden()
   await slash(page, "/tut")
   await page.keyboard.press("Escape")
@@ -72,27 +74,27 @@ test("Back pauses, only ArrowRight navigates, composer restores focus", async ({
   await expectStage(page, 1)
 })
 
-test("plugin opening alone cannot complete installation", async ({ page }) => {
+test("a practice beat needs no account: Show issues reads the bundled repository", async ({ page }) => {
   await page.goto("/")
-  await walkTo(page, 5)
-  await slash(page, "/plugins")
-  await expect(page.locator(".guide-library .plugin-card").first()).toBeVisible()
-  await expectStage(page, 5)
-  await expect(page.locator('[data-message-step="5"] .guide-step-done')).toHaveCount(0)
-  await complete(page, 5)
+  await expectStage(page, 1)
+  await page.keyboard.press("i")
+  await expect(page.locator('[data-tutorial-cards] [data-kind="issue-list"] [data-issue="3"]')).toBeVisible()
+  await expect(page.locator('[data-message-step="1"] .guide-step-done')).toBeVisible()
+  await expectStage(page, 2)
 })
 
-test("reduced motion and a narrow viewport preserve the login instruction", async ({ page }) => {
+test("reduced motion and a narrow viewport keep the first pill and the goal card", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 })
   await page.emulateMedia({ reducedMotion: "reduce" })
   await page.goto("/")
   await expectStage(page, 1)
   expect(await page.locator(".guide-shell").evaluate(node => node.scrollWidth <= node.clientWidth)).toBe(true)
-  await expect(page.locator('[data-message-step="1"] .guide-steps')).toBeVisible()
+  await expect(page.locator('.guide-actions [data-flow="issues.list"]')).toBeVisible()
+  await expect(page.locator(".guide-goal")).toBeVisible()
 })
 
 
-test("lesson 2 login pill carries L and L dispatches the GitHub sign-in route", async ({ page }) => {
+test("the login pill (beat 10) carries L and L dispatches the GitHub sign-in route", async ({ page }) => {
   await page.route("**/api/bootstrap", route => route.fulfill({ json: {
     apiVersion: 1, host: "cloud", version: "test", buildSha: "test",
     capabilities: ["identity"], authFlow: "redirect", sandbox: null
@@ -103,6 +105,8 @@ test("lesson 2 login pill carries L and L dispatches the GitHub sign-in route", 
   }))
   await page.goto("/")
   await expectStage(page, 1)
+  await page.keyboard.press("q")
+  await expectStage(page, 10)
   const login = page.getByRole("button", { name: "Log in to GitHub", exact: true })
   await expect(login).toBeVisible()
   await expect(login).toHaveAttribute("data-flow", "auth.sign-in")
@@ -115,10 +119,10 @@ test("lesson 2 login pill carries L and L dispatches the GitHub sign-in route", 
 })
 
 
-test("Open a file dispatches the missing-input form inside the tutorial", async ({ page }) => {
+test("Open hello.ts reads the bundled practice file anchored on line 2", async ({ page }) => {
   await page.goto("/")
   await walkTo(page, 4)
-  await page.getByRole("button", { name: "Open a file", exact: true }).click()
-  await expect(page.locator('.guide-transcript [data-kind="flow-form"]')).toBeVisible()
-  await expectStage(page, 4)
+  await page.getByRole("button", { name: /Open hello\.ts/ }).click()
+  await expect(page.locator('.guide-transcript [data-kind="file"] [data-line="2"]')).toBeVisible()
+  await expect(page.locator('[data-message-step="4"] .guide-step-done')).toBeVisible()
 })

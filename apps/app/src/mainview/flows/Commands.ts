@@ -29,6 +29,7 @@ import { adminFlows, baseFlows } from "./Flows"
 import { repositoryFlowLeaves } from "./entries/flow"
 import type { CatalogItem, CommandState, FlowEntry, MissingDoor, SlashItem, SlashRow } from "./registry"
 import {
+  flowCapabilityHeld,
   absentDoor,
   confirmLabel,
   flowRequirements,
@@ -44,6 +45,7 @@ import {
 } from "./registry"
 import type { Parsed } from "./SlashPayload"
 import { payloadFor } from "./SlashPayload"
+import { namesPractice } from "../state/practice/PracticeRepository"
 
 export type { CommandActions, CommandResult } from "./Flows"
 
@@ -273,7 +275,7 @@ export const createCommandRegistry = (actions: CommandActions, agentActions: Com
     if (bootstrap === undefined) return true
     const { runtime = [], runtimeAny } = entry.metadata
     return runtime.every((capability) => hasCapability(bootstrap, capability)) &&
-      (runtimeAny === undefined || runtimeAny.some((capability) => hasCapability(bootstrap, capability)))
+      (runtimeAny === undefined || runtimeAny.some((capability) => flowCapabilityHeld(bootstrap, capability)))
   }
 
   const entries = (): ReadonlyArray<FlowEntry> =>
@@ -450,7 +452,12 @@ export const createCommandRegistry = (actions: CommandActions, agentActions: Com
       return { status: "failed", error: userOnlyError(nameOf(target), target.metadata.userOnlyReason) }
     }
     const acting = invoker === "agent" ? agentActions : actions
-    const unmet = unmetRequirements(target.metadata, actions.snapshot(), flowRequirements)[0]
+    /*
+     * The practice repository needs no account (onboarding SCRIPT v4 §4): a
+     * flow aimed at the bundled practice key skips its identity gates, and
+     * only that key does — every other target keeps them.
+     */
+    const unmet = namesPractice(args) ? undefined : unmetRequirements(target.metadata, actions.snapshot(), flowRequirements)[0]
     if (unmet !== undefined) {
       if (invoker === "agent") {
         /*

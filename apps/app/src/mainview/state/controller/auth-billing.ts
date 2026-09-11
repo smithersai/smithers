@@ -14,8 +14,7 @@ import {
   BILLING_BALANCE_PATH,
   IDENTITY_REQUEST_ACCESS_PATH
 } from "@smthrs/rpc/AgentApiRoutes"
-import { completeGuide } from "../../onboarding/completion"
-import { GUIDE_STAGES } from "../../onboarding/lessons"
+import { lessonCompletion } from "../../onboarding/completion"
 import { signInReturnTo } from "../../RepoLink"
 import type { Card } from "../AppState"
 import type { ControllerContext } from "./context"
@@ -61,9 +60,9 @@ export const createAuthBillingController = (
     const identity = store.collections.identitySessions.get("identity")
     const guide = store.session().guide
     if (disposed || !validatedLogin || identity?.state !== "signed-in" || identity.login !== validatedLogin || !guide) return
-    const stage = GUIDE_STAGES[guide.step]
-    if (stage?.kind !== "do" || stage.completion !== "identity.signed-in" || guide.completed?.includes("identity.signed-in")) return
-    store.dispatch({ type: "guide.changed", actor: "system", guide: completeGuide(guide, "identity.signed-in") })
+    // Keyed on the lesson's signal: an already signed-in reader finishes the login beat on arrival.
+    const next = lessonCompletion(guide, "identity.signed-in", `Signed in as @${identity.login}.`)
+    if (next !== undefined) store.dispatch({ type: "guide.changed", actor: "system", guide: next })
   }
   const guideSubscription = store.collections.sessions.subscribeChanges(() => queueMicrotask(completeLoginLesson))
   ctx.onDispose(() => { disposed = true; guideSubscription.unsubscribe() })
@@ -503,7 +502,8 @@ export const createAuthBillingController = (
     // validates the path against its own origin and ignores anything else).
     const returnTo = signInReturnTo(window.location)
     const query = returnTo === null ? "" : `?${AUTH_RETURN_TO_PARAM}=${encodeURIComponent(returnTo)}`
-    window.location.assign(`${baseUrl}${AUTH_SIGN_IN_PATH}${query}`)
+    // The hop leaves the page: let the durable queue settle, or the state this click just changed is lost.
+    void store.settled?.().finally(() => { window.location.assign(`${baseUrl}${AUTH_SIGN_IN_PATH}${query}`) })
   }
 
   /*

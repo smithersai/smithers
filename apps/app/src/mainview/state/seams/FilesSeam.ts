@@ -12,6 +12,8 @@
  * decodeContent :117). Parsing is defensive: unknown JSON in, typed card
  * payload out, malformed rows drop; failures are honest strings, never throws.
  */
+import { isPracticeRepo } from "../practice/PracticeRepository"
+import { practiceReadFile } from "./tutorial2-file_open"
 import { REPO_FILES_PATH, RepoFilesResponseSchema } from "@smthrs/rpc/LocalApp"
 import type { Repo, RepoFilesResponse } from "@smthrs/rpc/LocalApp"
 import type { Card } from "../AppState"
@@ -460,6 +462,7 @@ export const createFilesSeam = (ctx: SeamContext): FilesSeam => {
     },
 
     readFile: async (pathArg, explicitRepoArg, anchor) => {
+      if (isPracticeRepo(explicitRepoArg)) return practiceReadFile(ctx, pathArg, anchor)
       const target = resolveFileTarget(ctx.store, pathArg, explicitRepoArg)
       if ("error" in target) return target.error
       if (target.kind === "local") return readLocal(target.repo, target.path, anchor)

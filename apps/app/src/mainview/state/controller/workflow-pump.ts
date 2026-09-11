@@ -56,6 +56,8 @@ export const createWorkflowPumpController = (
     [...store.collections.cards.values()].filter(
       (card) =>
         card.kind === "run-trace" &&
+        // A practice run (state/practice) is a bundled replay: no workspace to ask.
+        !card.payload.repo.startsWith("practice:") &&
         (card.payload.phase === "launching" ||
           card.payload.phase === "running" ||
           card.payload.phase === "waiting-approval" ||

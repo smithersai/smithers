@@ -532,6 +532,19 @@ const GRAMMAR: Readonly<Record<string, Grammar>> = {
   "history.amend": (args) => repoOnly("history.amend", args),
   "history.fold": (args) => repoOnly("history.fold", args),
   "branches.list": (args) => repoOnly("branches.list", args),
+  /* A lone token with a slash is the repository; name both to list a branch whose name has one. */
+  "commits.list": (args) => {
+    const { rest, repo } = splitTrailingRepo(args)
+    const tokens = rest === "" ? [] : rest.split(/\s+/)
+    if (tokens.length > 1) return no("commits.list takes a branch and optionally an owner/repo")
+    return ok({ ...(tokens[0] === undefined ? {} : { branch: tokens[0] }), ...(repo === undefined ? {} : { repo }) })
+  },
+  "commits.read": (args) => {
+    const { rest, repo } = splitTrailingRepo(args)
+    if (rest === "") return no("commits.read needs a change id or commit id")
+    if (/\s/.test(rest)) return no("commits.read takes one change id and optionally an owner/repo")
+    return ok(repo === undefined ? { ref: rest } : { ref: rest, repo })
+  },
   /*
    * Lane citc: the workspace flows. An id is always one token; fork's and
    * snapshot's optional name is the rest of the line; template's name is one

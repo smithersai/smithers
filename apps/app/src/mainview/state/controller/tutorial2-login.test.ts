@@ -41,7 +41,7 @@ const fixture = async (body: unknown, status = 200) => {
   })
   ctx.withToast = createFailureController(ctx).withToast
   const controller = createAuthBillingController(ctx, () => 0)
-  const enter = (step = 1, playthrough = 0) => store.dispatch({ type: "guide.changed", actor: "user", guide: { ...(store.session().guide ?? initialGuide()), step, playthrough, completed: [] } })
+  const enter = (step = 10, playthrough = 0) => store.dispatch({ type: "guide.changed", actor: "user", guide: { ...(store.session().guide ?? initialGuide()), step, playthrough, completed: [] } })
   return { store, ctx, controller, enter }
 }
 const tick = () => new Promise(resolve => setTimeout(resolve, 20))
@@ -60,7 +60,7 @@ describe("tutorial identity completion", () => {
     enter(0, 1)
     await tick()
     expect(completed(store)).toBe(false)
-    enter(1, 1)
+    enter(10, 1)
     await tick()
     expect(completed(store)).toBe(true)
   })

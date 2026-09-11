@@ -1,3 +1,4 @@
+import { lessonCompletion } from "../onboarding/completion"
 import { createGuideController } from "./controller/guide"
 import type { CommandActions } from "../flows/Flows"
 import { createActorBindings } from "./ActorBindings"
@@ -72,6 +73,9 @@ import type { GitHubSeam } from "./seams/GitHubSeam"
 import { createBillingSeam } from "./seams/BillingSeam"
 import type { BillingSeam } from "./seams/BillingSeam"
 import { createBookmarksSeam } from "./seams/BookmarksSeam"
+import { createCommitsSeam } from "./seams/CommitsSeam"
+import { practiceCommitsSource } from "./practice/PracticeRepository"
+import type { CommitsSeam } from "./seams/CommitsSeam"
 import type { BookmarksSeam } from "./seams/BookmarksSeam"
 import { createCloudSeam } from "./seams/CloudSeam"
 import type { CloudSeam } from "./seams/CloudSeam"
@@ -388,6 +392,8 @@ export interface AppController extends TutorialChangeController {
    * never a bare page. Answers whether the search string carried one.
    */
   readonly handleAuthReturn: (search: string) => boolean
+  /** Consume a GitHub App setup-URL return (GitHubSeam.handleInstallReturn): verified on the server, never trusted from the query. */
+  readonly handleInstallReturn: (search: string) => boolean
   /*
    * The requirement axis (registry.ts commandRequirements): park a
    * user-invoked command on an unmet requirement, and resume it when the
@@ -467,6 +473,9 @@ export interface AppController extends TutorialChangeController {
   readonly importRepository: RepoImportSeam["importRepository"]
   readonly retryImport: RepoImportSeam["retryImport"]
   readonly listBookmarks: BookmarksSeam["listBookmarks"]
+  /** A branch's commits and one commit (seams/CommitsSeam.ts). */
+  readonly listCommits: CommitsSeam["listCommits"]
+  readonly readCommit: CommitsSeam["readCommit"]
   readonly listFiles: FilesSeam["listFiles"]
   readonly readFile: FilesSeam["readFile"]
   /* Code intelligence (docs/code-intel/PLAN.md §4): the three code.* reads against the local language server (seams/CodeIntelSeam.ts). */
@@ -757,6 +766,8 @@ export const createAppController = (
   const triggersSeam = actors.pair(seamCtx, (context) => createTriggersSeam(context))
   const repoImportSeam = actors.pair(seamCtx, (context) => createRepoImportSeam(context))
   const bookmarksSeam = actors.pair(seamCtx, (context) => createBookmarksSeam(context))
+  /* The practice repository answers the commits views from its bundle (state/practice). */
+  const commitsSeam = actors.pair(seamCtx, (context) => createCommitsSeam(context, { practice: practiceCommitsSource }))
   const filesSeam = actors.pair(seamCtx, (context) => createFilesSeam(context))
   const repoTreeSeam = actors.pair(seamCtx, (context) => createRepoTreeSeam(context))
   /*
@@ -767,6 +778,10 @@ export const createAppController = (
   const gitHubSeam = actors.pair(seamCtx, (context) => createGitHubSeam(context, {
     ...(services.openExternal === undefined ? {} : { openExternal: services.openExternal })
   }))
+  /* Onboarding SCRIPT v4 beat 11: a reader whose repository Smithers already sees finishes the install lesson on arrival. */
+  const settleInstall = () => queueMicrotask(() => { void gitHubSeam.settleInstallLesson() })
+  const installLessonSubscriptions = [store.collections.sessions.subscribeChanges(settleInstall), store.collections.repositories.subscribeChanges(settleInstall)]
+  ctx.onDispose(() => { for (const subscription of installLessonSubscriptions) subscription.unsubscribe() })
   const linearSeam = actors.pair(seamCtx, (context) => createLinearSeam(context, {
     ...(services.openExternal === undefined ? {} : { openExternal: services.openExternal })
   }))
@@ -1080,6 +1095,9 @@ export const createAppController = (
   const openPalette = (prefix?: string): void => {
     if (prefix !== undefined && prefix !== "") store.dispatch({ type: "composer.changed", actor: "user", draft: prefix })
     if (store.session().paletteOpen !== true) store.dispatch({ type: "palette.toggled", actor: "user", open: true })
+    // The ⌘K lesson (onboarding SCRIPT v4 beat 13) finishes on the real open.
+    const learned = lessonCompletion(store.session().guide, "palette.opened")
+    if (learned !== undefined) store.dispatch({ type: "guide.changed", actor: "user", guide: learned })
   }
   const closePalette = (lastQuery?: string): void => {
     if (store.session().paletteOpen !== true) return
@@ -1483,6 +1501,7 @@ export const createAppController = (
     signOut,
     requestAccess,
     handleAuthReturn,
+    handleInstallReturn: gitHubSeam.handleInstallReturn,
     deferCommand,
     resumeDeferredCommand,
     noteCommandRun,
@@ -1531,6 +1550,8 @@ export const createAppController = (
     importRepository: repoImportSeam.importRepository,
     retryImport: repoImportSeam.retryImport,
     listBookmarks: bookmarksSeam.listBookmarks,
+    listCommits: commitsSeam.listCommits,
+    readCommit: commitsSeam.readCommit,
     listFiles: filesSeam.listFiles,
     readFile: filesSeam.readFile,
     codeHover,

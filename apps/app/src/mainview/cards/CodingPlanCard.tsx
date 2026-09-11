@@ -78,7 +78,16 @@ export const CodingPlanBody = ({ card, onRunCommand: sendRunCommand, workflowCat
         <h4>{plan.changes[0]?.title}</h4>
         <p>{plan.changes[0]?.intent}</p>
         <p>Base HEAD <code>{plan.base.commitId}</code></p>
-        <ol aria-label="Planned commits">{plan.changes.flatMap(change => change.atoms).map((atom, index) => <li key={index}>{atom.message}</li>)}</ol>
+        <ol aria-label="Planned commits">{plan.changes.flatMap(change => change.atoms).map((atom, index) => {
+          /* The practice plan tags each commit (optional / required / recommended); a real plan carries none. */
+          const tag = (card.payload.input?.atomTags as ReadonlyArray<string> | undefined)?.[index]
+          return <li key={index} data-planned-commit={index + 1} data-tag={tag}>
+            <strong>{atom.message}</strong>
+            {tag !== undefined ? <span className="coding-plan-tag"> {tag}</span> : null}
+            {atom.writes.length > 0 ? <span className="coding-plan-meta"> · {atom.writes.join(", ")}</span> : null}
+          </li>
+        })}</ol>
+        {plan.changes[0]?.checks.filter(check => check.tier === "fast").map(check => <p key={check.id} className="coding-plan-meta" data-plan-check={check.id}>Check: <code>{check.target}</code></p>)}
         {card.payload.kind === "change-plan" && card.status === "active" ?
           <button type="button" data-flow="agent.change.start" onClick={() => onRunCommand("agent.change.start", card.id)}>Start the change</button> : null}
       </> : null}

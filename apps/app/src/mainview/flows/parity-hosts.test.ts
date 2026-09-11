@@ -305,7 +305,13 @@ const proxied = (path: string, method?: string): boolean =>
  * repository WRITER `POST /api/repos/{o}/{r}/github/reconcile`, a path the
  * Worker already proxies, so `/github.reconcile` works on the web.
  */
-const KNOWN_UNPROXIED: ReadonlyArray<{ readonly path: string; readonly flows: ReadonlyArray<string>; readonly why: string }> = []
+const KNOWN_UNPROXIED: ReadonlyArray<{ readonly path: string; readonly flows: ReadonlyArray<string>; readonly why: string }> = [
+  {
+    path: "/api/user/github-app/installations",
+    flows: ["github.app", "github.app.open", "github.mirror-sync", "github.mirror.retry-ref", "github.reconcile"],
+    why: "the onboarding install beat's setup-URL verification (GitHubSeam.INSTALL_VERIFY_PATH); the route belongs in apps/server and is not deployed yet, so the lesson says so honestly (TUTORIAL2_INTEGRATION.md)"
+  }
+]
 
 describe("host parity — the web and native catalogs against the servers' own capability tables", () => {
   const registries = (async () => ({
@@ -493,7 +499,8 @@ describe("host parity — the web and native catalogs against the servers' own c
 
   test("drift: every capability a flow declares is one the bootstrap schema knows", () => {
     const source = registrySources()
-    const known = new Set<string>(RuntimeCapabilitySchema.options)
+    // "practice" is the bundled practice repository (registry.ts FlowCapability): a client-only door no bootstrap names.
+    const known = new Set<string>([...RuntimeCapabilitySchema.options, "practice"])
     const named = new Set<string>()
     for (const match of source.matchAll(/\bruntime(?:Any)?:\s*\[([^\]]*)\]/g)) {
       for (const literal of (match[1] as string).matchAll(/"([^"]+)"/g)) named.add(literal[1] as string)

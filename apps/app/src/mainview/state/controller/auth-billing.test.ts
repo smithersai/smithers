@@ -168,6 +168,8 @@ describe("sign-in return path", () => {
     const { controller } = await signedOutController()
     await withWindow("/smithersai/smithers", "?tab=issues", async (assigned) => {
       controller.signIn()
+      // The redirect waits for the durable queue first (DurableCollection.settled), so it lands a tick later.
+      await new Promise((resolve) => setTimeout(resolve, 0))
       expect(assigned).toEqual(["/api/auth/github/start?return_to=%2Fsmithersai%2Fsmithers%3Ftab%3Dissues"])
     })
   })
@@ -176,6 +178,8 @@ describe("sign-in return path", () => {
     const { controller } = await signedOutController()
     await withWindow("/", "?repo=smithersai/smithers", async (assigned) => {
       controller.signIn()
+      // The redirect waits for the durable queue first (DurableCollection.settled), so it lands a tick later.
+      await new Promise((resolve) => setTimeout(resolve, 0))
       expect(assigned).toEqual(["/api/auth/github/start"])
     })
   })

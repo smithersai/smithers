@@ -48,7 +48,7 @@ export function ReelShell({ clock = guideClock }: { clock?: GuideClock }) {
     if (!node) return
     if (guide?.reelSeen) node.focus()
     const keydown = (event: KeyboardEvent) => {
-      if (event.isComposing || event.repeat || event.metaKey || event.ctrlKey || event.altKey || event.shiftKey || event.key.toLowerCase() !== "w") return
+      if (event.isComposing || event.repeat || event.metaKey || event.ctrlKey || event.altKey || event.shiftKey || event.key.toLowerCase() !== REEL_BUTTON.key.toLowerCase()) return
       if ((event.target as Element | null)?.closest?.('input,textarea,select,[contenteditable="true"]')) return
       event.preventDefault(); controller.runCommand(REEL_BUTTON.command)
     }
@@ -57,7 +57,7 @@ export function ReelShell({ clock = guideClock }: { clock?: GuideClock }) {
   }, [controller, guide?.reelSeen])
   if (guide?.step !== GUIDE_LAST_STEP) return null
   if (guide.reelIndex !== undefined) return <Reel index={guide.reelIndex} epoch={guide.reelEpoch} demo={guide.reelDemo} dispatch={dispatch} clock={clock} />
-  return <button ref={launchRef} className="guide-primary" style={{ border: "1px solid currentColor", borderRadius: 999 }} data-flow="tut.more" aria-keyshortcuts="w" onClick={() => controller.runCommand(REEL_BUTTON.command)}>
+  return <button ref={launchRef} className="guide-primary" style={{ border: "1px solid currentColor", borderRadius: 999 }} data-flow="tut.more" aria-keyshortcuts={REEL_BUTTON.key.toLowerCase()} onClick={() => controller.runCommand(REEL_BUTTON.command)}>
     {REEL_BUTTON.label} <kbd className="guide-button-key" aria-hidden="true">{REEL_BUTTON.key}</kbd>
   </button>
 }

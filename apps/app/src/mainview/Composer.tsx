@@ -983,7 +983,7 @@ export function Composer({
   const slashMenuLive = slashMenu.draft === overlayKey ? slashMenu : { draft: overlayKey, index: 0, dismissed: false }
   const overlayWanted = paletteOpen || (slashQuery !== undefined && slashRows.length > 0)
   const answer = overlayWanted ? controller.searchPalette(draft) : undefined
-  const rows = answer === undefined ? undefined : paletteRows(answer, slashRows, actionsRef)
+  const rows = answer === undefined ? undefined : paletteRows(answer, slashRows, actionsRef, true)
   const slashOpen = rows !== undefined && !slashMenuLive.dismissed
   const slashHighlighted = rows === undefined ? 0 : Math.max(0, Math.min(slashMenuLive.index, rows.rows.length - 1))
   /* The branch the draft is inside (`/tab.` → "tab"), when it is exactly one. */
@@ -1055,6 +1055,12 @@ export function Composer({
   }
 
   const chooseRow = (row: PaletteRow): void => {
+    if (row.kind === "ask") {
+      // The composer IS Ask Smithers: close the overlay and leave the caret in it.
+      controller.closePalette(draft)
+      requestAnimationFrame(() => document.querySelector<HTMLTextAreaElement>('[data-testid="composer-input"]')?.focus())
+      return
+    }
     if (row.kind === "slash") {
       if (row.row.kind === "namespace") openNamespace(row.row.namespace.id)
       else runSlashCommand(row.row.flow.name)

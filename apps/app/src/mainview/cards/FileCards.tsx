@@ -9,7 +9,7 @@ import { fileArgs } from "../flows/FileArgs"
 import { lspLanguageFor } from "@smthrs/rpc/LocalApp"
 import { Button } from "@smthrs/ui"
 import { FileText, Folder } from "lucide-react"
-import { lazy, Suspense, useContext } from "react"
+import { Component, lazy, Suspense, useContext } from "react"
 import type { ReactNode } from "react"
 import { useLiveQuery } from "@tanstack/react-db"
 import type { Card } from "../state/AppState"
@@ -35,6 +35,18 @@ const MarkdownEditorSurface = lazy(() =>
  * entry. The plain block is the complete first state while the chunk loads.
  */
 const CodeSurface = lazy(() => import("./CodeSurface").then((module) => ({ default: module.CodeSurface })))
+
+/*
+ * A lazy viewer whose chunk fails to load (an old tab after a deploy, or the
+ * dev server re-optimizing its dependencies) falls back to the plain view its
+ * loading state already shows: the file stays readable, and the failure stays
+ * inside this card.
+ */
+class LazyViewerBoundary extends Component<{ readonly fallback: ReactNode; readonly children: ReactNode }, { readonly failed: boolean }> {
+  override state: { readonly failed: boolean } = { failed: false }
+  static getDerivedStateFromError() { return { failed: true } }
+  override render() { return this.state.failed ? this.props.fallback : this.props.children }
+}
 
 /** Markdown by extension: the editor renders these; code goes through the code view; the rest is a plain block. */
 export const isMarkdownPath = (path: string): boolean => /\.(md|mdx|markdown)$/i.test(path)
@@ -355,14 +367,16 @@ export const FileCardBody = ({
         isMarkdownPath(card.payload.path) ?
         (
           <div className="world-card-doc" data-file-markdown="">
-            <Suspense fallback={<p className="smithers-card-note">Loading editor…</p>}>
-              <MarkdownEditorSurface
-                value={card.payload.content}
-                resetKey={`${card.id}:${contentKey(card.payload.content)}`}
-                label={`${card.payload.path} in ${card.payload.repo}`}
-                readOnly
-              />
-            </Suspense>
+            <LazyViewerBoundary fallback={<pre className="world-card-path" data-viewer-fallback="">{card.payload.content}</pre>}>
+              <Suspense fallback={<p className="smithers-card-note">Loading editor…</p>}>
+                <MarkdownEditorSurface
+                  value={card.payload.content}
+                  resetKey={`${card.id}:${contentKey(card.payload.content)}`}
+                  label={`${card.payload.path} in ${card.payload.repo}`}
+                  readOnly
+                />
+              </Suspense>
+            </LazyViewerBoundary>
           </div>
         ) :
         /*
@@ -372,9 +386,11 @@ export const FileCardBody = ({
          * split, and the language server reads the file from disk, not the card.
          */
         (
-          <Suspense fallback={<pre className="world-card-path">{card.payload.content}</pre>}>
-            <CodeSurface payload={card.payload} codeIntel={codeIntel} onRunCommand={onRunCommand} />
-          </Suspense>
+          <LazyViewerBoundary fallback={<pre className="world-card-path" data-viewer-fallback="">{card.payload.content}</pre>}>
+            <Suspense fallback={<pre className="world-card-path">{card.payload.content}</pre>}>
+              <CodeSurface payload={card.payload} codeIntel={codeIntel} onRunCommand={onRunCommand} />
+            </Suspense>
+          </LazyViewerBoundary>
         )}
       {card.payload.truncated ?
         <p className="world-card-empty">Truncated — the full file stays in the repository.</p> :

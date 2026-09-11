@@ -9,8 +9,6 @@
  * time it renders.
  */
 import { CATALOG, pluginById } from "../../plugins/catalog"
-import { libraryOpened, pluginInstalled, LIBRARIAN_LESSON_STEP, LESSON_PLUGIN } from "../../onboarding/pluginLesson"
-import type { GuideState } from "../AppState"
 import type { ControllerContext } from "./context"
 
 export interface PluginsController {
@@ -24,12 +22,6 @@ export const createPluginsController = (ctx: ControllerContext): PluginsControll
   const installed = (): ReadonlyArray<string> => ctx.store.session().plugins ?? []
 
   /* A lesson finished by a real flow: the guide moves on, everywhere else nothing happens. */
-  const advanceGuide = (next: (guide: GuideState) => GuideState | undefined): void => {
-    const guide = ctx.store.session().guide
-    if (guide === undefined) return
-    const advanced = next(guide)
-    if (advanced !== undefined) ctx.store.dispatch({ type: "guide.changed", actor: ctx.commandActor, guide: advanced })
-  }
 
   /*
    * Toggles toggle (§2c): `/plugins` on the Library returns to the chat. The
@@ -42,7 +34,6 @@ export const createPluginsController = (ctx: ControllerContext): PluginsControll
       actor: ctx.commandActor,
       surface: ctx.store.session().surface === "plugins" ? "chat" : "plugins"
     })
-    advanceGuide(libraryOpened)
   }
 
   const installPlugin = (id: string): string | void => {
@@ -50,7 +41,6 @@ export const createPluginsController = (ctx: ControllerContext): PluginsControll
     if (plugin === undefined) return `No plugin named “${id}”. Open the Library with /plugins to see the shelf.`
     const shelf = installed()
     if (shelf.includes(id)) {
-      advanceGuide(guide => pluginInstalled(guide, id))
       return `${plugin.manifest.name} is already installed.`
     }
     /*
@@ -61,11 +51,9 @@ export const createPluginsController = (ctx: ControllerContext): PluginsControll
     for (const required of plugin.manifest.dependsOn ?? []) {
       if (!shelf.includes(required)) {
         ctx.store.dispatch({ type: "plugin.installed", actor: ctx.commandActor, plugin: required })
-        advanceGuide((guide) => pluginInstalled(guide, required))
       }
     }
     ctx.store.dispatch({ type: "plugin.installed", actor: ctx.commandActor, plugin: id })
-    advanceGuide((guide) => pluginInstalled(guide, id))
   }
 
   const removePlugin = (id: string): string | void => {
@@ -93,10 +81,10 @@ export const createPluginsController = (ctx: ControllerContext): PluginsControll
     ctx.store.dispatch({ type: "card.upsert", actor: ctx.commandActor, card: {
       id: "plugin-library", kind: "plugin-library", title: "Library", status: "active",
       createdAt: existing?.createdAt ?? Date.now(), ordinal,
-      payload: { tutorial: ctx.store.session().guide?.step === LIBRARIAN_LESSON_STEP }
+      payload: { tutorial: false }
     } })
     return {
-      value: CATALOG.filter((plugin) => ctx.store.session().guide?.step !== LIBRARIAN_LESSON_STEP || plugin.manifest.id === LESSON_PLUGIN).map((plugin) => {
+      value: CATALOG.map((plugin) => {
         const { id, name, summary, recommended } = plugin.manifest
         const state = shelf.includes(id) ? "installed" : recommended === undefined ? "available" : `recommended #${recommended}`
         return `${id} — ${name} (${state}): ${summary}`

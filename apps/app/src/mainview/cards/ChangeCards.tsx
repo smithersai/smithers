@@ -1,3 +1,4 @@
+import type React from "react"
 /*
  * The change and diff cards (lane change, ADR 0003 — the change is the
  * unit; ADR 0004 — review on the change card; lane L1 — the live plue
@@ -826,11 +827,56 @@ const ChangeFacetBody = ({
   return <ChangeHistoryFacet card={card} onRunCommand={onRunCommand} />
 }
 
+type ChangeStack = NonNullable<ChangeCard["payload"]["stack"]>
+
+/*
+ * The stack view (onboarding SCRIPT v4 beat 8): the stack's commits as rows,
+ * top first, standing on the target bookmark, like `jj log`. A row that moved
+ * onto the target wears a "rebased" chip with its old and new ids; a row that
+ * did not move wears none (a field the opener did not state renders nothing).
+ */
+export const ChangeStackView = ({ payload, stack }: { readonly payload: ChangeCard["payload"]; readonly stack: ChangeStack & { readonly rows: NonNullable<ChangeStack["rows"]> } }) => {
+  const checksOk = payload.checks !== null && payload.checks.length > 0 && payload.checks.every((check) => check.state === "success")
+  const rows = stack.rows
+  return (
+    <section className="change-stack" aria-label="Change stack" data-stack-size={stack.size} data-target={stack.targetBookmark}>
+      <p className="change-stack-header" data-testid="change-stack-header">
+        Change #{stack.landingNumber} · stack of {stack.size} · target {stack.targetBookmark}
+        {checksOk ? " · checks ✓" : ""}
+        {payload.repo.startsWith("practice:") ? " · Practice" : ""}
+      </p>
+      <ol className="change-stack-rows" aria-label="Commits, top of the stack first">
+        {rows.map((row, index) => ({ row, position: index + 1 })).reverse().map(({ row, position }) => (
+          <li key={row.changeId} className="change-stack-row" data-stack-row={position} data-change-id={row.changeId}
+            data-rebased={row.rebased !== undefined} style={{ "--stack-delay": `${(rows.length - position) * 90}ms` } as React.CSSProperties}>
+            <code className="change-stack-id">{shortId(row.commitId)}</code>
+            <span className="change-stack-message">{row.message}</span>
+            <span className="change-stack-stat">+{row.additions} −{row.deletions}</span>
+            {row.rebased !== undefined ?
+              (
+                <span className="change-stack-rebased" data-from={row.rebased.from} data-to={row.rebased.to}>
+                  rebased {shortId(row.rebased.from)} → {shortId(row.rebased.to)}
+                </span>
+              ) :
+              null}
+          </li>
+        ))}
+      </ol>
+      <p className="change-stack-target"><code>{stack.targetBookmark}</code></p>
+    </section>
+  )
+}
+
 export const ChangeCardBody = ({
   card,
   onRunCommand
 }: { readonly card: ChangeCard } & ChangeCardActions) => {
   const { payload } = card
+  const stackRows = payload.stack?.rows
+  /* Nothing but the stack was read (the practice Change): the stack view is the whole card. */
+  if (payload.stack !== null && stackRows !== undefined && payload.revisions.length === 0 && payload.diff === null) {
+    return <ChangeStackView payload={payload} stack={{ ...payload.stack, rows: stackRows }} />
+  }
   const facets = facetsOf(payload)
   const wanted: ChangeFacet = payload.facet ?? "diff"
   /* A facet whose data is absent (a walkthrough that vanished, no owners) falls back to the diff rather than an empty tab. */

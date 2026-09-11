@@ -11,7 +11,7 @@ export type ChangeReceipt = typeof ChangeReceipt.Type
 export const decodeChangeReceipt = Schema.decodeUnknownSync(ChangeReceipt)
 export const validateTutorialPlan = (plan: Plan): Plan => {
   validatePlan(plan)
-  if (plan.changes.length !== 1 || plan.changes[0]!.atoms.length !== 1) throw new Error("The tutorial change must plan exactly one commit.")
+  if (plan.changes.length !== 1) throw new Error("The tutorial must plan exactly one Change.")
   if (!/^[a-f0-9]{40,64}$/.test(plan.base.commitId)) throw new Error("The plan needs the captured Git HEAD.")
   return plan
 }

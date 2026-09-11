@@ -37,7 +37,7 @@ export const filesFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> =>
       args: (payload) => fileArgs([text(payload, "path"), text(payload, "line"), text(payload, "column")].filter((part) => part !== undefined).join(":"), text(payload, "repo"))
     },
     summary: "Read a file from a repository",
-    runtimeAny: ["cloud", "local.repositories"],
+    runtimeAny: ["cloud", "local.repositories", "practice"],
     /* `:line[:col]` (docs/code-intel/PLAN.md §1): the card scrolls to and marks the line; the parser strips it off the path token. */
     args: "<path>[:<line>[:<col>]] [owner/repo]",
     requires: ["repo-source"],

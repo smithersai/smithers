@@ -647,6 +647,8 @@ describe("command registry bindings", () => {
       "history.amend",
       "history.fold",
       "branches.list",
+      "commits.list",
+      "commits.read",
       "files.list",
       "files.read",
       "code.hover",
@@ -730,6 +732,8 @@ describe("command registry bindings", () => {
       "agent.new",
       "agent.change",
       "agent.change.start",
+    "change.open",
+    "change.pick",
       // THE FORM LAW (docs/workbench-lanes/flow-forms.md): the generic form card's acts.
       "form.set",
       "form.submit",

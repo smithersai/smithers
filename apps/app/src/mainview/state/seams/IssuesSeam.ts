@@ -1,4 +1,5 @@
-import { tutorialRepositoryRead, type RepositoryForm } from "./tutorial2-issues_prs"
+import { isPracticeRepo } from "../practice/PracticeRepository"
+import { finishIssueLesson, practiceViewIssue, tutorialRepositoryRead, type RepositoryForm } from "./tutorial2-issues_prs"
 /*
  * The issues seam: /api/repos/{owner}/{repo}/issues* through the product
  * Worker's platform proxy. List and detail render as cards ("issue-list",
@@ -395,9 +396,13 @@ export const createIssuesSeam = (ctx: SeamContext, renderRepositoryForm?: Reposi
     }),
 
     viewIssue: async (number, explicitRepo) => {
+      if (isPracticeRepo(explicitRepo)) return practiceViewIssue(ctx, number)
       const target = resolveTargetRepo(ctx.store, explicitRepo)
       if ("error" in target) return target.error
-      return showIssue(target.repo, number)
+      const playthrough = ctx.store.session().guide?.playthrough
+      const shown = await showIssue(target.repo, number)
+      if (typeof shown !== "string") await finishIssueLesson(ctx, playthrough)
+      return shown
     },
 
     createIssue: async (title, explicitRepo) => {
