@@ -41,185 +41,38 @@ import { appendFileSync, createWriteStream, existsSync, readFileSync, writeFileS
 import { mkdir, mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
+import YAML from "yaml"
 
 const repoRoot = resolve(import.meta.dirname, "..")
 
 // ---------------------------------------------------------------------------
-// A block-YAML reader for the workflow subset: mappings, sequences, block
-// scalars, and plain or single/double quoted scalars. Workflow files are the
-// only input, and adding a YAML dependency to a release script would put an
-// unpinned parser on the publication path.
+// Workflow files are read by the same YAML 1.2 rules GitHub applies, through
+// the `yaml` package pinned as an exact root devDependency, so folded blocks,
+// quoted escapes and flow collections mean here what they mean on the runner.
 // ---------------------------------------------------------------------------
 
-const indentOf = (line) => line.length - line.trimStart().length
-
-const skippable = (line) => line.trim() === "" || line.trimStart().startsWith("#")
-
 /**
- * Drops a trailing `# comment` from a plain scalar, ignoring `#` inside quotes.
- */
-export const stripComment = (text) => {
-  let quote
-  for (let index = 0; index < text.length; index += 1) {
-    const character = text[index]
-    if (quote !== undefined) {
-      if (character === quote) quote = undefined
-      continue
-    }
-    if (character === "'" || character === "\"") {
-      quote = character
-      continue
-    }
-    if (character === "#" && (index === 0 || /\s/.test(text[index - 1]))) {
-      return text.slice(0, index).trimEnd()
-    }
-  }
-  return text.trimEnd()
-}
-
-const unquote = (text) => {
-  if (text.length >= 2 && text[0] === "'" && text.at(-1) === "'") {
-    return text.slice(1, -1).replaceAll("''", "'")
-  }
-  if (text.length >= 2 && text[0] === "\"" && text.at(-1) === "\"") {
-    return text.slice(1, -1).replaceAll("\\\"", "\"")
-  }
-  if (text === "true") return true
-  if (text === "false") return false
-  if (text === "null" || text === "~") return null
-  return text
-}
-
-/**
- * Reads the scalar-only flow sequences used by workflow trigger filters.
- * Nested flow collections are rejected rather than silently treated as a
- * string, which keeps this small reader fail-closed as workflows evolve.
- */
-const parseFlowSequence = (text) => {
-  if (!text.startsWith("[") || !text.endsWith("]")) {
-    throw new Error(`invalid flow sequence: ${text}`)
-  }
-  const body = text.slice(1, -1).trim()
-  if (body === "") return []
-  const values = []
-  let quote
-  let start = 0
-  for (let index = 0; index <= body.length; index += 1) {
-    const character = body[index]
-    if (quote !== undefined) {
-      if (character === quote) quote = undefined
-      continue
-    }
-    if (character === "'" || character === "\"") {
-      quote = character
-      continue
-    }
-    if (character === "[" || character === "{") {
-      throw new Error(`nested flow collections are unsupported: ${text}`)
-    }
-    if (character === "," || index === body.length) {
-      const value = body.slice(start, index).trim()
-      if (value === "") throw new Error(`invalid flow sequence: ${text}`)
-      values.push(unquote(value))
-      start = index + 1
-    }
-  }
-  if (quote !== undefined) throw new Error(`unterminated quote in flow sequence: ${text}`)
-  return values
-}
-
-const parseScalar = (text) => {
-  if (text.startsWith("[")) return parseFlowSequence(text)
-  if (text.startsWith("{")) throw new Error(`flow mappings are unsupported: ${text}`)
-  return unquote(text)
-}
-
-const advance = (lines, state) => {
-  while (state.index < lines.length && skippable(lines[state.index])) state.index += 1
-}
-
-/**
- * Reads a `|` block scalar. Chomping indicators are accepted and ignored: a
- * trailing newline on a shell body changes nothing about how bash runs it.
- */
-const readBlockScalar = (lines, state, indent) => {
-  const collected = []
-  while (state.index < lines.length) {
-    const line = lines[state.index]
-    if (line.trim() !== "" && indentOf(line) <= indent) break
-    collected.push(line)
-    state.index += 1
-  }
-  while (collected.length > 0 && collected.at(-1).trim() === "") collected.pop()
-  const bodyIndent = Math.min(
-    ...collected.filter((line) => line.trim() !== "").map(indentOf)
-  )
-  return `${collected.map((line) => line.slice(bodyIndent)).join("\n")}\n`
-}
-
-const parseNode = (lines, state, indent) => {
-  advance(lines, state)
-  if (state.index >= lines.length) return null
-  if (indentOf(lines[state.index]) < indent) return null
-  return lines[state.index].trimStart().startsWith("- ")
-    ? parseSequence(lines, state, indentOf(lines[state.index]))
-    : parseMapping(lines, state, indentOf(lines[state.index]))
-}
-
-const parseSequence = (lines, state, indent) => {
-  const items = []
-  while (true) {
-    advance(lines, state)
-    if (state.index >= lines.length) break
-    const line = lines[state.index]
-    if (indentOf(line) !== indent || !line.trimStart().startsWith("- ")) break
-    const rest = line.trimStart().slice(2)
-    if (/^[A-Za-z_][\w.-]*:(\s|$)/.test(rest)) {
-      // Rewrite `- key: value` as a mapping line so the item parses as one.
-      lines[state.index] = `${" ".repeat(indent + 2)}${rest}`
-      items.push(parseMapping(lines, state, indent + 2))
-    } else {
-      state.index += 1
-      items.push(unquote(stripComment(rest)))
-    }
-  }
-  return items
-}
-
-const parseMapping = (lines, state, indent) => {
-  const mapping = {}
-  while (true) {
-    advance(lines, state)
-    if (state.index >= lines.length) break
-    const line = lines[state.index]
-    if (indentOf(line) !== indent) break
-    const entry = /^([A-Za-z_][\w.-]*):(?:\s+(.*))?$/.exec(line.trim())
-    if (entry === null) break
-    const [, key, rawValue] = entry
-    if (Object.hasOwn(mapping, key)) throw new Error(`duplicate mapping key: ${key}`)
-    state.index += 1
-    const value = rawValue === undefined ? "" : stripComment(rawValue)
-    if (value === "|" || value === "|-" || value === ">") {
-      mapping[key] = readBlockScalar(lines, state, indent)
-    } else if (value === "") {
-      mapping[key] = parseNode(lines, state, indent + 1)
-    } else {
-      mapping[key] = parseScalar(value)
-    }
-  }
-  return mapping
-}
-
-/**
- * Parses a workflow file into plain JavaScript values.
+ * Parses a workflow file into plain JavaScript values and checks the shape the
+ * driver relies on: a top-level mapping whose `jobs` are mappings with `steps`
+ * lists of mappings. Malformed YAML, including duplicate keys, is refused.
  */
 export const parseWorkflow = (source) => {
-  const lines = source.split("\n")
-  const state = { index: 0 }
-  const workflow = parseMapping(lines, state, 0)
-  advance(lines, state)
-  if (state.index < lines.length) {
-    throw new Error(`unsupported workflow syntax at line ${state.index + 1}: ${lines[state.index].trim()}`)
+  let workflow
+  try {
+    workflow = YAML.parse(source)
+  } catch (error) {
+    throw new Error(`invalid workflow YAML: ${error.message}`, { cause: error })
+  }
+  const isMapping = (value) => value !== null && typeof value === "object" && !Array.isArray(value)
+  if (!isMapping(workflow)) throw new Error("invalid workflow: the document must be a mapping")
+  if (workflow.jobs !== undefined) {
+    if (!isMapping(workflow.jobs)) throw new Error("invalid workflow: jobs must be a mapping")
+    for (const [id, job] of Object.entries(workflow.jobs)) {
+      if (!isMapping(job)) throw new Error(`invalid workflow: job ${id} must be a mapping`)
+      if (job.steps !== undefined && !(Array.isArray(job.steps) && job.steps.every(isMapping))) {
+        throw new Error(`invalid workflow: job ${id} steps must be a list of mappings`)
+      }
+    }
   }
   return workflow
 }

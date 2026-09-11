@@ -81,6 +81,6 @@ test("scheduled soak executes the scaled producer, verifies even on failure and 
   const upload = job.steps.find((step) => step.uses?.startsWith("actions/upload-artifact@"))
   assert.equal(upload.if, "always()")
   assert.equal(upload.with["if-no-files-found"], "error")
-  assert.equal(upload.with["retention-days"], "30")
+  assert.equal(upload.with["retention-days"], 30)
   assert.ok(upload.with.name.includes("${{ matrix.node }}"))
 })

@@ -1,5 +1,5 @@
 import assert from "node:assert/strict"
-import { chmodSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs"
+import { chmodSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs"
 import { spawnSync } from "node:child_process"
 import { tmpdir } from "node:os"
 import { dirname, join, resolve } from "node:path"
@@ -10,14 +10,24 @@ import {
   interpolate,
   localEquivalents,
   parseWorkflow,
-  rehearsalContexts,
-  stripComment
+  rehearsalContexts
 } from "./release-rehearsal.mjs"
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..")
 const release = parseWorkflow(
   readFileSync(join(repoRoot, ".github", "workflows", "release.yml"), "utf8")
 )
+
+/**
+ * Copies the driver into a fixture root so its steps run against that tree,
+ * and links the repository's node_modules beside it so the copy still resolves
+ * the pinned `yaml` parser.
+ */
+const installDriver = (root) => {
+  mkdirSync(join(root, "scripts"))
+  cpSync(join(repoRoot, "scripts/release-rehearsal.mjs"), join(root, "scripts/release-rehearsal.mjs"))
+  symlinkSync(join(repoRoot, "node_modules"), join(root, "node_modules"))
+}
 
 /** The contexts the runner would build for a tag push. */
 const pushContexts = (tag, runAttempt = "1") => ({
@@ -76,24 +86,40 @@ test("parseWorkflow reads mappings, sequences, block scalars, and comments", () 
   assert.equal(parsed.jobs.publish.steps[1].run, "echo one  # not a yaml comment\n\necho two\n")
 })
 
-test("parseWorkflow reads scalar flow sequences and rejects unsupported flow collections", () => {
-  const parsed = parseWorkflow("on:\n  push:\n    branches: [main, 'release/*']\n")
+test("parseWorkflow reads flow sequences and flow mappings the way the runner does", () => {
+  const parsed = parseWorkflow("on:\n  push:\n    branches: [main, 'release/*']\n  workflow_dispatch: {}\n")
   assert.deepEqual(parsed.on.push.branches, ["main", "release/*"])
-  assert.throws(
-    () => parseWorkflow("on:\n  push:\n    branches: [[main]]\n"),
-    /nested flow collections are unsupported/
-  )
+  assert.deepEqual(parsed.on.workflow_dispatch, {})
+  assert.deepEqual(parseWorkflow("on:\n  push:\n    branches: [[main]]\n").on.push.branches, [["main"]])
 })
 
-test("parseWorkflow fails closed on duplicate keys and unconsumed syntax", () => {
-  assert.throws(() => parseWorkflow("name: one\nname: two\n"), /duplicate mapping key: name/)
-  assert.throws(() => parseWorkflow("name: one\nunsupported syntax\njobs: {}\n"), /unsupported workflow syntax at line 2/)
+test("parseWorkflow reads folded blocks, chomping indicators and double-quoted escapes by YAML 1.2 rules", () => {
+  // root-infra/simplicity/1: the hand-written reader took `>` as a literal
+  // block and left `\\n` in a double-quoted scalar undecoded, so the command
+  // rehearsed differed from the command GitHub runs.
+  const parsed = parseWorkflow([
+    'name: "release\\nrehearsal"',
+    "jobs:",
+    "  publish:",
+    "    steps:",
+    "      - run: >",
+    "          printf",
+    "          hello",
+    "      - run: |-",
+    "          printf hello",
+    "      - run: |",
+    "          printf hello",
+    ""
+  ].join("\n"))
+  assert.equal(parsed.name, "release\nrehearsal")
+  assert.deepEqual(parsed.jobs.publish.steps.map((step) => step.run), ["printf hello\n", "printf hello", "printf hello\n"])
 })
 
-test("stripComment leaves a hash inside quotes alone", () => {
-  assert.equal(stripComment("value # trailing"), "value")
-  assert.equal(stripComment("\"a # b\" # trailing"), "\"a # b\"")
-  assert.equal(stripComment("no-comment"), "no-comment")
+test("parseWorkflow fails closed on duplicate keys, malformed YAML and the wrong document shape", () => {
+  assert.throws(() => parseWorkflow("name: one\nname: two\n"), /invalid workflow YAML: Map keys must be unique at line 2/)
+  assert.throws(() => parseWorkflow("name: one\nunsupported syntax\njobs: {}\n"), /invalid workflow YAML: .* at line 2/)
+  assert.throws(() => parseWorkflow("- a list\n"), /the document must be a mapping/)
+  assert.throws(() => parseWorkflow("jobs:\n  publish:\n    steps: run\n"), /job publish steps must be a list of mappings/)
 })
 
 test("evaluateExpression implements the GitHub operator subset", () => {
@@ -389,8 +415,7 @@ test("ordinary PR CI gates executable examples before workspace checks", () => {
 test("a failed gate retains diagnostic files and failure status while skipping later gates", () => {
   const root = realpathSync(mkdtempSync(join(tmpdir(), "release-failure-artifacts-")))
   try {
-    mkdirSync(join(root, "scripts"))
-    cpSync(join(repoRoot, "scripts/release-rehearsal.mjs"), join(root, "scripts/release-rehearsal.mjs"))
+    installDriver(root)
     writeFileSync(join(root, "workflow.yml"), [
       "name: Fixture", "jobs:", "  publish:", "    steps:",
       "      - name: Failing gate",
@@ -437,9 +462,8 @@ test("release rebuilds and byte-compares the committed wasm before packing", () 
 test("a colocated rehearsal skips initialization and continues to the next gate", () => {
   const root = realpathSync(mkdtempSync(join(tmpdir(), "release-colocated-")))
   try {
-    mkdirSync(join(root, "scripts"))
+    installDriver(root)
     mkdirSync(join(root, ".jj"))
-    cpSync(join(repoRoot, "scripts/release-rehearsal.mjs"), join(root, "scripts/release-rehearsal.mjs"))
     writeFileSync(join(root, "workflow.yml"), [
       "name: Fixture", "jobs:", "  publish:", "    steps:",
       "      - name: Initialize colocated jj repository",
@@ -466,8 +490,7 @@ test("a colocated rehearsal skips initialization and continues to the next gate"
 test("the driver switches PATH to the toolchain each setup-node step pins", () => {
   const root = realpathSync(mkdtempSync(join(tmpdir(), "release-toolchain-switch-")))
   try {
-    mkdirSync(join(root, "scripts"))
-    cpSync(join(repoRoot, "scripts/release-rehearsal.mjs"), join(root, "scripts/release-rehearsal.mjs"))
+    installDriver(root)
     const toolchain = (version) => {
       const bin = join(root, `node-${version}`, "bin")
       mkdirSync(bin, { recursive: true })
