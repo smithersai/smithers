@@ -167,7 +167,7 @@ const buildArgv = (attrs: Attrs): ReadonlyArray<string> => {
     case "tsc":
       return PackageManager.exec(attrs.packageManager, ["tsc", "-p", attrs.tsconfig.path])
     case "program":
-      return Runtime.run(attrs.packageManager?.runtime, [attrs.tool.entry.path])
+      return Runtime.run(attrs.packageManager?.runtime, [Input.rootRelative(attrs.cwd, attrs.tool.entry.path)])
     case "tsup":
       return PackageManager.exec(attrs.packageManager, [
         "tsup",

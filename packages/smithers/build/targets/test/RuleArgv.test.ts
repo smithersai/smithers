@@ -262,6 +262,15 @@ describe("TsBuild", () => {
     expect(Target.metadata(target).outputs?.paths).toEqual(["dist/esm", "dist/cjs"])
   })
 
+  it("walks a workspace-rooted program back out of the package cwd", () => {
+    const target = TsBuild({
+      ...base,
+      tool: { name: "program", entry: Input.file("//packages/repo-targets/scripts/build.mjs") },
+      format: "dual"
+    })
+    expect(plannedArgv(target)).toEqual(["node", "../repo-targets/scripts/build.mjs"])
+  })
+
   it("derives a single output directory for a single format", () => {
     const target = TsBuild({ ...base, tool: { name: "tsc" }, format: "esm" })
     expect(plannedArgv(target)).toEqual(["pnpm", "exec", "tsc", "-p", "tsconfig.build.json"])
