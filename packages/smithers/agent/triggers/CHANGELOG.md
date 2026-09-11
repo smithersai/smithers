@@ -120,10 +120,11 @@
 - A supersede claim records the run it is displacing on the occurrence that
   displaced it, so a claimant that dies before it can cancel leaves the
   predecessor's run id behind for the next incarnation to find.
-- The package documentation is colocated. `packages/triggers/docs/` and the
-  JSDoc in `src/` own the contract, and `packages/triggers/scripts/docs.mjs`
-  generates `README.md` from them. `//packages/triggers:docsPages` drift-checks
-  it in CI.
+- The package documentation is colocated and hand-maintained.
+  `packages/smithers/agent/triggers/README.md`, its `docs/` directory, and the
+  JSDoc in `src/` own the contract. The `docs` and `docsFiles` targets in
+  `PACKAGE.ts` expose them, and `apps/site/scripts/sync-api-docs.mjs` owns the
+  site copy.
 
 ### Fixed
 
