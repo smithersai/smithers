@@ -84,7 +84,7 @@ describe("packages/smithers/build prose", () => {
       "Package",
       "Runtime.Node",
       "PackageManager.Pnpm",
-      "RustToolchain.Pinned",
+      "Rust.Pinned",
       "PackageJsonTemplate.make",
       "PackageJson"
     ])

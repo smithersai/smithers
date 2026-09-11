@@ -1453,21 +1453,6 @@ export interface Targets {
 }
 
 /**
- * The name suffix each synthesized target carries.
- *
- * A declaration exported as `packageJson` becomes `packageJsonCheck`,
- * `packageJsonWrite`, and `packageJsonRefresh`.
- *
- * @category constants
- * @since 0.1.0
- */
-export const targetSuffixes: ReadonlyArray<readonly [keyof Targets, string]> = [
-  ["check", "Check"],
-  ["write", "Write"],
-  ["refresh", "Refresh"]
-]
-
-/**
  * Expands one declaration into its check, write, and refresh targets.
  *
  * `label` resolves a script or publish target to its workspace label and must

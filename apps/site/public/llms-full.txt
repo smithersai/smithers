@@ -9713,10 +9713,8 @@ const rustByChannel = S.Rust.Toolchain({
   workspace: S.file("//Cargo.toml"),
   channel: "1.91"
 })
-const pinnedRust = S.RustToolchain.Pinned({
-  channel: "1.91.0",
-  components: ["clippy", "rustfmt"],
-  targets: ["wasm32-unknown-unknown"]
+const pinnedRust = S.Rust.Pinned({
+  pin: S.file("//rust-toolchain.toml")
 })
 
 // Foundry and Go toolchains
@@ -10737,11 +10735,7 @@ const foundry = S.CiToolchain.Foundry({ release: "v1.8.1" })
 const docker = S.CiToolchain.Docker({ imageStore: "containerd" })
 const jj = S.CiToolchain.Jj({ release: "0.39.0" })
 const rust = S.CiToolchain.Rust({
-  toolchain: S.RustToolchain.Pinned({
-    channel: "1.91.0",
-    components: ["clippy", "rustfmt"],
-    targets: ["wasm32-unknown-unknown"]
-  })
+  toolchain: S.Rust.Pinned({ pin: S.file("//rust-toolchain.toml") })
 })
 const browser = S.CiToolchain.Browser({
   executable: "/usr/bin/google-chrome",
@@ -11213,8 +11207,7 @@ Every other export of `Smithers.ts`, in source order:
 | `Smithers.readOutputManifest`     | function           | Reads an untrusted value as the exact output manifest the target declared.                                                                                                        |
 | `Smithers.verifyOutputs`          | function           | Re-measures every declared output and compares it to a manifest.                                                                                                                  |
 | `Smithers.Verb`                   | namespace and type | The CLI verbs a generated pipeline may run across a target graph.                                                                                                                 |
-| `Smithers.RustToolchain`          | namespace and type | Declared Rust toolchains and the argv they install and run cargo with.                                                                                                            |
-| `Smithers.Rust`                   | namespace and type | The workspace Rust surface, `Rust.Toolchain({ workspace, channel })` or `Rust.Toolchain({ toolchain, lockfile })`.                                                                |
+| `Smithers.Rust`                   | namespace and type | The Rust surface: `Rust.Toolchain({ workspace, channel })` or `Rust.Toolchain({ toolchain, lockfile })`, and the CI pin `Rust.Pinned({})`.                                        |
 | `Smithers.CiToolchain`            | namespace and type | What one generated CI job requires before its targets run.                                                                                                                        |
 | `Smithers.SecretProxy`            | namespace          | Placeholder minting and outbound secret substitution.                                                                                                                             |
 | `Smithers.Mise`                   | namespace          | mise version authority and pinned binary references.                                                                                                                              |

@@ -129,10 +129,8 @@ const rustByChannel = S.Rust.Toolchain({
   workspace: S.file("//Cargo.toml"),
   channel: "1.91"
 })
-const pinnedRust = S.RustToolchain.Pinned({
-  channel: "1.91.0",
-  components: ["clippy", "rustfmt"],
-  targets: ["wasm32-unknown-unknown"]
+const pinnedRust = S.Rust.Pinned({
+  pin: S.file("//rust-toolchain.toml")
 })
 
 // Foundry and Go toolchains
@@ -1153,11 +1151,7 @@ const foundry = S.CiToolchain.Foundry({ release: "v1.8.1" })
 const docker = S.CiToolchain.Docker({ imageStore: "containerd" })
 const jj = S.CiToolchain.Jj({ release: "0.39.0" })
 const rust = S.CiToolchain.Rust({
-  toolchain: S.RustToolchain.Pinned({
-    channel: "1.91.0",
-    components: ["clippy", "rustfmt"],
-    targets: ["wasm32-unknown-unknown"]
-  })
+  toolchain: S.Rust.Pinned({ pin: S.file("//rust-toolchain.toml") })
 })
 const browser = S.CiToolchain.Browser({
   executable: "/usr/bin/google-chrome",

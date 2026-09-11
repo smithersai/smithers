@@ -236,9 +236,9 @@ const lintApps = S.Cargo.Clippy({ crates: allApps })
 at most one of `workspace: true` or `crates: <set>`; omitting both uses the
 current workspace.
 
-The BUILD-era `RustToolchain.Pinned` declaration follows the same content rule:
-`pin` defaults to `S.file("//rust-toolchain.toml")`, and Cargo targets digest it
-without callers also listing it in `srcs`.
+`S.Rust.Pinned`, the pin a generated CI job installs, follows the same content
+rule: `pin` defaults to `S.file("//rust-toolchain.toml")`, and Cargo targets
+digest it without callers also listing it in `srcs`.
 
 A build target may be a tool edge. `S.Shell.Build({ bin: sdk.buildCli })` and
 `S.Generate({ bin: sdk.buildCli })` spawn the one binary that build declares

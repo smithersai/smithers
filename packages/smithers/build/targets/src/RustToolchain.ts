@@ -149,7 +149,7 @@ const declaredFile = (value: unknown, what: string): Input.File => {
  * ```ts
  * import { Smithers } from "@smthrs/targets"
  *
- * export const rust = Smithers.RustToolchain.Pinned({})
+ * export const rust = Smithers.Rust.Pinned({})
  * ```
  *
  * @category constructors
@@ -166,17 +166,6 @@ export const Pinned = (options: PinnedOptions = {}): PinnedRustToolchain =>
     rustup: options.rustup === undefined ? "rustup" : usable(options.rustup, "rustup executable"),
     cargo: options.cargo === undefined ? "cargo" : usable(options.cargo, "cargo executable")
   })
-
-/**
- * Checks whether a value is a declared Rust toolchain.
- *
- * The guard is the schema itself, so it admits exactly the values a
- * constructor can produce.
- *
- * @category guards
- * @since 0.1.0
- */
-export const isRustToolchain: (value: unknown) => value is RustToolchain = Schema.is(RustToolchain)
 
 /**
  * Builds the argv that installs the declared toolchain.

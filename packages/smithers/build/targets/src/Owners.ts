@@ -46,14 +46,6 @@ export const maximumPatterns = 128
 export const loginShape = /^[A-Za-z0-9][A-Za-z0-9._-]{0,62}$/
 
 /**
- * A team reference: `team:` followed by a login-shaped name.
- *
- * @category constants
- * @since 0.1.0
- */
-export const teamShape = /^team:[A-Za-z0-9][A-Za-z0-9._-]{0,62}$/
-
-/**
  * Schema for one owner: a login or a `team:<name>` reference.
  *
  * @category schemas

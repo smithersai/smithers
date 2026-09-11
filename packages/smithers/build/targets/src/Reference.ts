@@ -103,7 +103,7 @@ export const RuntimeBin = Schema.TaggedStruct("RuntimeBin", {})
 export type RuntimeBin = typeof RuntimeBin.Type
 
 /**
- * Schema for the workspace Rust toolchain's cargo binary, `S.Rust.bin`.
+ * Schema for the workspace Rust toolchain's cargo binary.
  *
  * The reference names no executable path: the planner resolves it against the
  * workspace `toolchains` layer, so a workspace without one refuses every cargo
@@ -121,14 +121,6 @@ export const CargoBin = Schema.TaggedStruct("CargoBin", {})
  * @since 0.1.0
  */
 export type CargoBin = typeof CargoBin.Type
-
-/**
- * The workspace cargo binary as an inert reference value.
- *
- * @category constructors
- * @since 0.1.0
- */
-export const cargoBin: CargoBin = Object.freeze(CargoBin.make({}))
 
 /**
  * Schema for an npx-style one-shot tool reference, `S.Runtime.npx(spec)`.

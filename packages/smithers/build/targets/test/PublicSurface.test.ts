@@ -5,6 +5,11 @@ import { createRequire } from "node:module"
 import { fileURLToPath } from "node:url"
 import { describe, expect, it } from "vitest"
 import * as Exec from "../src/Exec.ts"
+import * as Owners from "../src/Owners.ts"
+import * as PackageJson from "../src/PackageJson.ts"
+import * as Reference from "../src/Reference.ts"
+import * as RemoteCache from "../src/RemoteCache.ts"
+import * as RustToolchain from "../src/RustToolchain.ts"
 import * as Shell from "../src/Shell.ts"
 import * as S from "../src/Smithers.ts"
 import * as Target from "../src/Target.ts"
@@ -39,6 +44,24 @@ describe("published policy boundary", () => {
       }
     }
     expect(typeof S.LlmLint).toBe("function")
+  })
+
+  it.each(
+    [
+      ["RemoteCache", "publicReadTokenPrefix", RemoteCache],
+      ["PackageJson", "targetSuffixes", PackageJson],
+      ["RustToolchain", "isRustToolchain", RustToolchain],
+      ["Reference", "cargoBin", Reference],
+      ["Owners", "teamShape", Owners]
+    ] as const
+  )("%s does not export the unused %s", (_, name, module) => {
+    expect(name in module).toBe(false)
+  })
+
+  it("names the Rust toolchain module once, as Rust", () => {
+    expect("RustToolchain" in S).toBe(false)
+    expect(S.Rust.Toolchain).toBe(RustToolchain.Toolchain)
+    expect(S.Rust.Pinned).toBe(RustToolchain.Pinned)
   })
 })
 
@@ -145,5 +168,11 @@ const authoringContract = () => {
   Shell.Test({ bun: "true", runtimeArgs: [] })
   Shell.Test({ shell: "true" })
   Shell.Test({ bin: S.Runtime.bin, args: ["--version"] })
+  // @ts-expect-error The Rust toolchain module has one facade name, Rust.
+  void S.RustToolchain
+  const pinned: RustToolchain.RustToolchain = S.Rust.Pinned({})
+  const layer: S.Rust = S.Rust.Toolchain({ channel: "1.91" })
+  void pinned
+  void layer
 }
 void authoringContract

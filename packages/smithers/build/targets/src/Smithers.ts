@@ -318,33 +318,14 @@ export const Verb = VerbModule
 export type Verb = VerbModule.Verb
 
 /**
- * Declared Rust toolchains and the argv they install and run cargo with.
- *
- * The name is both the namespace the constructors live under and the type they
- * return, so a declaration writes `RustToolchain.Pinned({})` and annotates the
- * result `RustToolchain`.
- *
- * @category namespace exports
- * @since 0.1.0
- */
-export const RustToolchain = RustToolchainModule
-
-/**
- * One declared Rust toolchain.
- *
- * @category models
- * @since 0.1.0
- */
-export type RustToolchain = RustToolchainModule.RustToolchain
-
-/**
- * The WORKSPACE.ts Rust surface: `Rust.Toolchain({ workspace, channel })` or
+ * The Rust surface: `Rust.Toolchain({ workspace, channel })` or
  * `Rust.Toolchain({ toolchain, lockfile })`, the layer a Cargo workspace
- * declares in place of the JavaScript runtime and package manager.
+ * declares in place of the JavaScript runtime and package manager, and
+ * `Rust.Pinned({})`, the checked-in `rustup` pin a generated CI job installs.
  *
- * The namespace is the same module {@link RustToolchain} names; the two
- * spellings coexist because the BUILD-era `RustToolchain.Pinned` declaration
- * predates the layer and keeps working unchanged.
+ * The name is both the namespace the constructors live under and the type
+ * `Rust.Toolchain` returns. The module's remaining types are reachable at
+ * `@smthrs/targets/RustToolchain`.
  *
  * @category namespace exports
  * @since 0.1.0

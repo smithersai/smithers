@@ -34,6 +34,15 @@ describe("public surface documentation", () => {
       expect(doc).toContain("Target.plan(target)")
     }
   )
+
+  it.each(["README.md", "docs/reference/targets.md", "docs/reference/cheat-sheet.md"])(
+    "%s names the Rust toolchain facade Rust, not the removed RustToolchain alias",
+    (path) => {
+      const doc = readDoc(path)
+      expect(doc).not.toMatch(/\b(?:S|Smithers)\.RustToolchain\b|BUILD-era/)
+      expect(doc).toContain("Rust.Toolchain")
+    }
+  )
 })
 
 const fencedBlocks = (doc: string): Array<string> =>

@@ -80,17 +80,12 @@ export interface RemoteCache {
   readonly publicReadToken: string | undefined
 }
 
-/**
- * The prefix every public read token carries; the rest is 40 lowercase hex
- * characters. Anything else offered as a literal is refused, so a personal
- * token pasted by mistake never lands in a committed file.
- *
- * @category constants
- * @since 0.1.0
- */
-export const publicReadTokenPrefix = "smithers_cachero_"
+// The prefix every public read token carries; the rest is 40 lowercase hex
+// characters. Anything else offered as a literal is refused, so a personal
+// token pasted by mistake never lands in a committed file.
+const publicReadTokenPrefix = "smithers_cachero_"
 
-const publicReadTokenShape = /^smithers_cachero_[0-9a-f]{40}$/
+const publicReadTokenShape = new RegExp(`^${publicReadTokenPrefix}[0-9a-f]{40}$`)
 
 /**
  * Validates a public read token literal.
@@ -103,7 +98,7 @@ export const normalizePublicReadToken = (value: string): string => {
   const trimmed = value.trim()
   if (!publicReadTokenShape.test(trimmed)) {
     throw new Error(
-      "remote cache publicReadToken must be a Smithers Cloud public read token (smithers_cachero_ followed by 40 hex characters); " +
+      `remote cache publicReadToken must be a Smithers Cloud public read token (${publicReadTokenPrefix} followed by 40 hex characters); ` +
         "any other credential belongs in the environment, never in legacy declaration"
     )
   }

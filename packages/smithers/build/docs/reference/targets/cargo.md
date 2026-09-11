@@ -11,7 +11,7 @@ call site.
 ```ts
 import { Smithers } from "@smthrs/targets"
 
-export const rustToolchain = Smithers.RustToolchain.Pinned({})
+export const rustToolchain = Smithers.Rust.Pinned({})
 
 const srcs = [
   Smithers.glob("//crates/flows-jj/**/*.rs"),
@@ -59,9 +59,9 @@ Bazel's `rules_rust` models the same gates as `rustfmt_test`, `rust_clippy`, and
 the same executable over the same declared crate sources and differ only in
 argv, so the split is one level down.
 
-## RustToolchain
+## Rust.Pinned
 
-`RustToolchain.Pinned({})` declares that the toolchain comes from a checked-in
+`Rust.Pinned({})` declares that the toolchain comes from a checked-in
 `rustup` pin. `rustup` reads `rust-toolchain.toml` and installs exactly what it
 pins, components and targets included. The pin is an `Input.File`, so its
 content digest is key material and a channel change cannot reuse Cargo results
@@ -73,9 +73,9 @@ from the previous compiler.
 | `rustup` | `string`     | `"rustup"`                      | The installer executable.                                    |
 | `cargo`  | `string`     | `"cargo"`                       | The build-tool executable.                                   |
 
-The declaration is inert data. `RustToolchain.install(toolchain)` renders
+The declaration is inert data. `Rust.install(toolchain)` renders
 `rustup toolchain install`, which is what [GithubCiGen](github-ci-gen.md)
-derives its bootstrap step from, and `RustToolchain.cargo(toolchain, args)`
+derives its bootstrap step from, and `Rust.cargo(toolchain, args)`
 renders the argv these targets run.
 
 ## Checks

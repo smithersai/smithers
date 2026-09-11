@@ -495,7 +495,7 @@ export const Rust = (options: {
    * pin, which is the same file the workspace `S.Rust.Toolchain` declaration
    * names, so a PACKAGE.ts never restates it.
    *
-   * @default Smithers.RustToolchain.Pinned({})
+   * @default Smithers.Rust.Pinned({})
    */
   readonly toolchain?: RustToolchain.RustToolchain | undefined
   /** @default true */
