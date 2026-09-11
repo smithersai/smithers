@@ -226,10 +226,10 @@ export interface ToolsSpec {
   /**
    * The capability envelope every cell of every flow runs under.
    *
-   * The default is the appliance grant: an app trusts the tools it ships, so
-   * everything a shipped binding declares is granted. Without it the harness
-   * refuses every call that declares a capability, `tevm/*` included. Narrow
-   * it when the app embeds tools it does not own.
+   * The default is the empty envelope: the harness refuses every call that
+   * declares a capability, `tevm/*` included, until `TOOLS.ts` grants it.
+   * Grant the patterns the bound tools declare. The all-action grant
+   * `[{ action: "*", resource: "*" }]` is an opt-in for trusted local use.
    *
    * The field is required here and defaulted by {@link defineTools}: a spec
    * built by hand — which the aomi Worker does when it re-binds a routed
@@ -277,7 +277,7 @@ export const defineTools = (
 ): ToolsSpec => ({
   _tag: "ToolsSpec",
   sources: options.sources,
-  grant: options.grant ?? [{ action: "*", resource: "*" }]
+  grant: options.grant ?? []
 })
 
 /**

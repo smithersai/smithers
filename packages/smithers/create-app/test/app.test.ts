@@ -56,7 +56,7 @@ describe("defineTools", () => {
     expect(defineTools({ sources: [first, second] })).toEqual({
       _tag: "ToolsSpec",
       sources: [first, second],
-      grant: [{ action: "*", resource: "*" }]
+      grant: []
     })
   })
 })
@@ -96,8 +96,13 @@ describe("defaults", () => {
 })
 
 describe("defineTools grant", () => {
-  it("defaults to the appliance grant", () => {
+  it("defaults to the empty envelope", () => {
     const tools = defineTools({ sources: [] })
+    expect(tools.grant).toEqual([])
+  })
+
+  it("keeps the all-action grant only when declared", () => {
+    const tools = defineTools({ sources: [], grant: [{ action: "*", resource: "*" }] })
     expect(tools.grant).toEqual([{ action: "*", resource: "*" }])
   })
 

@@ -120,9 +120,9 @@ export const Tools = defineTools({ sources: [ledger] })
 named `ui/pane` is called as `ui/pane`.
 
 `grant` is the capability envelope every cell under this layer runs under.
-`defineTools` defaults it to the appliance grant, `[{ action: "*", resource: "*" }]`:
-an app trusts the tools it ships. Narrow it when the app embeds tools it does
-not own:
+`defineTools` defaults it to the empty envelope, `[]`, so a bound tool's
+declared capability is refused until the layer grants it. Grant the patterns
+the bound tools declare:
 
 ```ts
 export const Tools = defineTools({
@@ -137,8 +137,11 @@ union, so an action the kernel does not know is a compile error in the
 string bounded at 4096 characters. A grant that breaks either rule is refused
 with `LayerError` and the code `invalid_grant`, naming the index and the field.
 
+`[{ action: "*", resource: "*" }]` grants every capability. Use it only for
+trusted local use, where the app runs tools it owns on its own machine.
+
 Without a grant, the harness refuses every call that declares a capability.
-This is why a hand-built `ToolsSpec` must state its envelope: the field is
+A hand-built `ToolsSpec` must state its envelope: the field is
 required on the type and defaulted only by `defineTools`, so a spec assembled
 by a host states its envelope rather than inheriting one silently.
 

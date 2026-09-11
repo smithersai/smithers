@@ -214,6 +214,83 @@ describe("runtime budget boundaries", () => {
 })
 
 /**
+ * `defineTools` without a grant is the empty envelope, so a bound tool's
+ * declared capability is refused until `TOOLS.ts` grants it. The all-action
+ * grant is an explicit opt-in.
+ */
+describe("defineTools default envelope", () => {
+  const run = async (grant: ReadonlyArray<ToolsGrant> | undefined) => {
+    const calls: Array<string> = []
+    const events: Array<AgentEvent.AgentEvent> = []
+    const tool = FlowBinding.make({
+      flow: {
+        name: "test/read",
+        input: Schema.Struct({ path: Schema.String }),
+        output: Schema.String,
+        capabilities: ["fs:read:**"],
+        effects: undefined
+      },
+      handler: ({ path }) =>
+        Effect.sync(() => {
+          calls.push(path)
+          return path
+        })
+    })
+    // A refused call resolves to the refusal, so the answer carries it.
+    const cell = `const result = await ctx.call("test/read", { path: "a" });
+       await ctx.done({ answer: JSON.stringify(result) })`
+    const model = Model.make({
+      stream: () =>
+        Stream.fromIterable([
+          ModelEvent.ModelEvent.TextStart({ type: "text-start", id: "cell" }),
+          ModelEvent.ModelEvent.TextDelta({ type: "text-delta", id: "cell", text: "```cell\n" + cell + "\n```" }),
+          ModelEvent.ModelEvent.TextEnd({ type: "text-end", id: "cell" }),
+          ModelEvent.ModelEvent.Settle({ type: "settle", stopReason: "stop" })
+        ])
+    })
+    const declaredAgent = defineAgent({ seat: "test:scripted", system: [], maxFrames: 1 })
+    const materialized = materializeFlow("grant", spec, declaredAgent)
+    const sources = [FlowBinding.source("test", [tool])]
+    const host = layerFor({
+      agent: declaredAgent,
+      sandbox: defineSandbox({ limits: { heapBytes: 32 * 1024 * 1024, wallClockMs: 10_000 } }),
+      tools: grant === undefined ? defineTools({ sources }) : defineTools({ sources, grant }),
+      seats: { resolve: () => Effect.succeed({ model, route: { prepare: () => Effect.succeed(preparedRequest) } }) },
+      crypto: NodeCrypto.layer
+    })
+    const runtime = Layer.mergeAll(materialized.action.layer, Interpreter.layer(materialized.flow)).pipe(
+      Layer.provideMerge(host)
+    )
+    await Effect.runPromise(
+      materialized.flow.execute({ topic: "grants" }, { executionId: `grant/${grant === undefined}` }).pipe(
+        Effect.provide(runtime),
+        Effect.provideService(EventSink.EventSink, {
+          emit: (event) =>
+            Effect.sync(() => {
+              events.push(event)
+            })
+        }),
+        Effect.exit
+      )
+    )
+    const outcomes = events.filter((event) => event._tag === "cell-settled").map((event) => event.outcome)
+    return { calls, outcomes }
+  }
+
+  it("refuses a bound tool's declared capability when TOOLS.ts omits the grant", async () => {
+    const { calls, outcomes } = await run(undefined)
+    expect(calls).toEqual([])
+    expect(JSON.stringify(outcomes)).toContain("capability_refused")
+  })
+
+  it("admits the declared capability under an explicit all-action grant", async () => {
+    const { calls, outcomes } = await run([{ action: "*", resource: "*" }])
+    expect(calls).toEqual(["a"])
+    expect(JSON.stringify(outcomes)).not.toContain("capability_refused")
+  })
+})
+
+/**
  * A `TOOLS.ts` grant reaches the kernel's pattern grammar, and the two ways it
  * can be wrong are refused where the author can act on them.
  *

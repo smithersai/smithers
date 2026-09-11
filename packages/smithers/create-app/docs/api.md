@@ -109,9 +109,11 @@ The browser-safe half: types and plain data constructors only.
 | `defineTools`   | `(options: Omit<ToolsSpec, "_tag" \| "grant"> & { grant?: ReadonlyArray<ToolsGrant> }) => ToolsSpec`              |
 | `defineFlow`    | `<P extends Schema.Struct.Fields, O extends Schema.Top>(options: Omit<FlowSpec<P, O>, "_tag">) => FlowSpec<P, O>` |
 
-`defineTools` defaults `grant` to `[{ action: "*", resource: "*" }]`, the
-appliance grant. The field is required on `ToolsSpec` itself, so a spec built
-by hand states its envelope rather than inheriting one silently.
+`defineTools` defaults `grant` to `[]`, the empty envelope: the harness refuses
+every call that declares a capability. `[{ action: "*", resource: "*" }]` grants
+every capability and is an opt-in for trusted local use. The field is required
+on `ToolsSpec` itself, so a spec built by hand states its envelope rather than
+inheriting one silently.
 
 ### Specs
 
