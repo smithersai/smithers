@@ -1,6 +1,7 @@
 /** @jsxImportSource react */
 import { afterEach, describe, expect, spyOn, test } from "bun:test";
 import { act, useState, type ReactElement } from "react";
+import { createRef } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import {
   WebPreview,
@@ -475,5 +476,31 @@ describe("WebPreview", () => {
     await render(<WebPreview url="https://example.com" />);
     expect(container!.querySelector('[data-slot="web-preview"]')).not.toBeNull();
     expect(document.querySelector(`style[${SMITHERS_UI_STYLE_ATTR}]`)?.textContent).toContain(sandboxCss.trim());
+  });
+});
+
+describe("WebPreviewToolbar caller ref", () => {
+  test("hands a caller ref its element and keeps roving focus", async () => {
+    const ref = createRef<HTMLDivElement>();
+    await render(
+      <WebPreview url="https://example.com">
+        <WebPreviewToolbar ref={ref} onBack={() => {}} onForward={() => {}} />
+      </WebPreview>,
+    );
+    const toolbar = container!.querySelector<HTMLDivElement>('[data-slot="web-preview-toolbar"]')!;
+    expect(ref.current).toBe(toolbar);
+    const [back, forward] = [...toolbar.querySelectorAll<HTMLButtonElement>("button")];
+    back!.focus();
+    const right = new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true, cancelable: true });
+    await act(async () => {
+      back!.dispatchEvent(right);
+    });
+    expect(right.defaultPrevented).toBe(true);
+    expect(document.activeElement).toBe(forward);
+    expect([back!.tabIndex, forward!.tabIndex]).toEqual([-1, 0]);
+    await act(async () => {
+      forward!.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowLeft", bubbles: true, cancelable: true }));
+    });
+    expect(document.activeElement).toBe(back);
   });
 });

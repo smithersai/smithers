@@ -158,7 +158,7 @@ export function SourcesTrigger({ count, children, className, onClick, type, ...p
   );
 }
 
-export type SourcesContentProps = ComponentProps<"div">;
+export type SourcesContentProps = ComponentProps<"ul">;
 
 /** Collapsible source list region for a compound Sources; renders a <ul>. */
 export function SourcesContent({ className, children, role, ...props }: SourcesContentProps) {
@@ -173,7 +173,7 @@ export function SourcesContent({ className, children, role, ...props }: SourcesC
       role={role ?? "region"}
       aria-labelledby={context?.triggerId}
       className={cn("sui-sources-content", className)}
-      {...(props as ComponentProps<"ul">)}
+      {...props}
     >
       {children}
     </ul>

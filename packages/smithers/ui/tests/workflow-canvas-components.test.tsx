@@ -1,6 +1,7 @@
 /** @jsxImportSource react */
 import { afterEach, describe, expect, test } from "bun:test";
 import { act, type ReactElement } from "react";
+import { createRef } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { SMITHERS_UI_STYLE_ATTR } from "../src/index";
 import * as WorkflowCanvasModule from "../src/canvas/WorkflowCanvas";
@@ -421,5 +422,52 @@ describe("workflow-canvas provenance accuracy", () => {
     const declared = new Set(entry!.exports);
     const runtime = new Set(Object.keys(WorkflowCanvasModule));
     expect(runtime).toEqual(declared);
+  });
+});
+
+async function expectCallerRefKeepsRoving(toolbar: HTMLElement): Promise<void> {
+  const buttons = [...toolbar.querySelectorAll<HTMLButtonElement>("button")];
+  expect(buttons.map((button) => button.tabIndex)).toEqual([0, -1, -1]);
+  buttons[0]!.focus();
+  const right = new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true, cancelable: true });
+  await act(async () => {
+    buttons[0]!.dispatchEvent(right);
+  });
+  expect(right.defaultPrevented).toBe(true);
+  expect(document.activeElement).toBe(buttons[1]);
+  await act(async () => {
+    buttons[1]!.dispatchEvent(new KeyboardEvent("keydown", { key: "End", bubbles: true, cancelable: true }));
+  });
+  expect(document.activeElement).toBe(buttons[2]);
+  await act(async () => {
+    buttons[2]!.dispatchEvent(new KeyboardEvent("keydown", { key: "Home", bubbles: true, cancelable: true }));
+  });
+  expect(document.activeElement).toBe(buttons[0]);
+  expect(buttons.map((button) => button.tabIndex)).toEqual([0, -1, -1]);
+}
+
+describe("toolbar caller refs", () => {
+  test("WorkflowToolbar hands a caller ref its element and keeps roving focus", async () => {
+    const ref = createRef<HTMLDivElement>();
+    const host = await render(
+      <WorkflowToolbar ref={ref}>
+        <button type="button">one</button>
+        <button type="button">two</button>
+        <button type="button">three</button>
+      </WorkflowToolbar>,
+    );
+    const toolbar = host.querySelector<HTMLDivElement>("[data-slot='workflow-toolbar']")!;
+    expect(ref.current).toBe(toolbar);
+    await expectCallerRefKeepsRoving(toolbar);
+  });
+
+  test("WorkflowControls hands a caller ref its element and keeps roving focus", async () => {
+    const elements: Array<HTMLDivElement | null> = [];
+    const host = await render(
+      <WorkflowControls ref={(node) => void elements.push(node)} onZoomIn={() => {}} onZoomOut={() => {}} onFitView={() => {}} />,
+    );
+    const toolbar = host.querySelector<HTMLDivElement>("[data-slot='workflow-controls']")!;
+    expect(elements.at(-1)).toBe(toolbar);
+    await expectCallerRefKeepsRoving(toolbar);
   });
 });

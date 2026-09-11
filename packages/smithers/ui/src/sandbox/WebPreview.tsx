@@ -14,6 +14,7 @@ import {
 import { cn } from "../cn";
 import { EmptyState } from "../empty-state";
 import { Input } from "../input";
+import { composeRefs } from "../internal/composeRefs";
 import { Skeleton } from "../skeleton";
 import { useInjectUiCss } from "../styles";
 
@@ -275,6 +276,7 @@ export function WebPreviewToolbar({
   className,
   children,
   onKeyDown,
+  ref: callerRef,
   ...props
 }: WebPreviewToolbarProps) {
   useInjectUiCss();
@@ -282,7 +284,7 @@ export function WebPreviewToolbar({
   const rovingKeyDown = useRovingTabIndex(ref);
   return (
     <div
-      ref={ref}
+      ref={composeRefs(ref, callerRef)}
       data-slot="web-preview-toolbar"
       role="toolbar"
       aria-label="Preview controls"

@@ -9,6 +9,7 @@ import {
 } from "react";
 import { Badge } from "../badge";
 import { cn } from "../cn";
+import { composeRefs } from "../internal/composeRefs";
 import { formatStatus, statusClass, type StatusClass } from "../status";
 import { StatusPill } from "../status-pill";
 import { useInjectUiCss } from "../styles";
@@ -309,6 +310,7 @@ export function WorkflowControls({
   className,
   children,
   onKeyDown,
+  ref: callerRef,
   ...props
 }: WorkflowControlsProps) {
   useCanvasCss();
@@ -316,7 +318,7 @@ export function WorkflowControls({
   const rove = useRovingTabIndex(ref);
   return (
     <div
-      ref={ref}
+      ref={composeRefs(ref, callerRef)}
       data-slot="workflow-controls"
       role="toolbar"
       aria-label="Canvas controls"
@@ -371,6 +373,7 @@ export function WorkflowToolbar({
   role,
   "aria-label": ariaLabel,
   onKeyDown,
+  ref: callerRef,
   ...props
 }: ComponentProps<"div">) {
   useCanvasCss();
@@ -378,7 +381,7 @@ export function WorkflowToolbar({
   const rove = useRovingTabIndex(ref);
   return (
     <div
-      ref={ref}
+      ref={composeRefs(ref, callerRef)}
       data-slot="workflow-toolbar"
       role={role ?? "toolbar"}
       aria-label={ariaLabel ?? "Workflow toolbar"}

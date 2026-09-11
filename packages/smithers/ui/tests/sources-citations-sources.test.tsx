@@ -1,6 +1,7 @@
 /** @jsxImportSource react */
 import { afterEach, describe, expect, test } from "bun:test";
 import { act, type ReactElement } from "react";
+import { createRef } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { SMITHERS_UI_STYLE_ATTR } from "../src/index";
 import { Source, Sources, SourcesContent, SourcesTrigger } from "../src/agentic/Sources";
@@ -164,5 +165,17 @@ describe("Sources compound anatomy", () => {
     );
     expect(container!.querySelector('[data-slot="sources"]')?.getAttribute("data-state")).toBe("open");
     expect(container!.querySelector('[data-slot="source"]')).not.toBeNull();
+  });
+});
+
+describe("SourcesContent host props", () => {
+  test("hands its ref the rendered list element", async () => {
+    const ref = createRef<HTMLUListElement>();
+    await render(
+      <SourcesContent ref={ref}>
+        <Source title="Alpha" />
+      </SourcesContent>,
+    );
+    expect(ref.current).toBeInstanceOf(HTMLUListElement);
   });
 });

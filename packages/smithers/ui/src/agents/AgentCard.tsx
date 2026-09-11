@@ -1,10 +1,10 @@
 /** @jsxImportSource react */
-import type { ComponentProps, MouseEvent, ReactNode } from "react";
+import type { ComponentProps, ReactNode } from "react";
 import { cn } from "../cn";
 import { useInjectUiCss } from "../styles";
 import { AgentAvailabilityBadge, type AgentAvailability } from "./AgentDefinition";
 
-export type AgentCardProps = Omit<ComponentProps<"div">, "children" | "title" | "onSelect"> & {
+type AgentCardIdentity = {
   name: string;
   provider?: string;
   model?: string;
@@ -12,29 +12,26 @@ export type AgentCardProps = Omit<ComponentProps<"div">, "children" | "title" | 
   availability?: AgentAvailability;
   selected?: boolean;
   disabled?: boolean;
-  onSelect?: () => void;
   children?: ReactNode;
 };
+
+/**
+ * With `onSelect` the card renders a `<button>` and takes button props; without
+ * it the card renders a `<div>` and takes div props.
+ */
+export type AgentCardProps =
+  | (Omit<ComponentProps<"button">, keyof AgentCardIdentity | "title" | "onSelect" | "type"> &
+    AgentCardIdentity & { onSelect: () => void })
+  | (Omit<ComponentProps<"div">, keyof AgentCardIdentity | "title" | "onSelect"> &
+    AgentCardIdentity & { onSelect?: undefined });
 
 /**
  * Compact agent identity card. When `onSelect` is provided the card renders
  * as a real `<button aria-pressed>` toggle; otherwise it is a plain div.
  */
-export function AgentCard({
-  name,
-  provider,
-  model,
-  description,
-  availability = "unknown",
-  selected = false,
-  disabled = false,
-  onSelect,
-  onClick,
-  className,
-  children,
-  ...props
-}: AgentCardProps) {
+export function AgentCard(props: AgentCardProps) {
   useInjectUiCss();
+  const { name, provider, model, description, availability = "unknown", selected = false, children } = props;
   const body = (
     <>
       <span className="sui-agentcard-header">
@@ -56,7 +53,21 @@ export function AgentCard({
       {children}
     </>
   );
-  if (onSelect) {
+  if (props.onSelect) {
+    const {
+      name: _name,
+      provider: _provider,
+      model: _model,
+      description: _description,
+      availability: _availability,
+      selected: _selected,
+      disabled = false,
+      onSelect,
+      onClick,
+      className,
+      children: _children,
+      ...rest
+    } = props;
     return (
       <button
         type="button"
@@ -67,24 +78,36 @@ export function AgentCard({
         disabled={disabled}
         onClick={(event) => {
           onSelect();
-          onClick?.(event as unknown as MouseEvent<HTMLDivElement>);
+          onClick?.(event);
         }}
         className={cn("sui-agentcard sui-agentcard-selectable", className)}
-        {...(props as ComponentProps<"button">)}
+        {...rest}
       >
         {body}
       </button>
     );
   }
+  const {
+    name: _name,
+    provider: _provider,
+    model: _model,
+    description: _description,
+    availability: _availability,
+    selected: _selected,
+    disabled = false,
+    onSelect: _onSelect,
+    className,
+    children: _children,
+    ...rest
+  } = props;
   return (
     <div
       data-slot="agent-card"
       data-availability={availability}
       data-selected={selected ? "true" : "false"}
       aria-disabled={disabled || undefined}
-      onClick={onClick}
       className={cn("sui-agentcard", className)}
-      {...props}
+      {...rest}
     >
       {body}
     </div>

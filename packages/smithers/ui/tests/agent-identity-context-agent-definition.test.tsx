@@ -1,6 +1,7 @@
 /** @jsxImportSource react */
 import { afterEach, describe, expect, test } from "bun:test";
 import { act, type MouseEvent, type ReactElement } from "react";
+import { createRef } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { renderToStaticMarkup } from "react-dom/server";
 import { SMITHERS_UI_STYLE_ATTR } from "../src/index";
@@ -231,6 +232,24 @@ describe("AgentCard", () => {
     const card = container!.querySelector<HTMLElement>('[data-slot="agent-card"]')!;
     expect(card.tagName).toBe("DIV");
     await act(async () => card.click());
+    expect(clicks).toBe(1);
+  });
+});
+
+describe("AgentCard host props", () => {
+  test("a selectable card hands its ref the rendered button", async () => {
+    const ref = createRef<HTMLButtonElement>();
+    await render(<AgentCard ref={ref} name="coder" onSelect={() => {}} />);
+    expect(ref.current).toBeInstanceOf(HTMLButtonElement);
+    expect(ref.current).toBe(container!.querySelector('[data-slot="agent-card"]'));
+  });
+
+  test("a static card hands its ref the rendered div and keeps host onClick", async () => {
+    const ref = createRef<HTMLDivElement>();
+    let clicks = 0;
+    await render(<AgentCard ref={ref} name="coder" onClick={() => clicks++} />);
+    expect(ref.current).toBeInstanceOf(HTMLDivElement);
+    await act(async () => ref.current!.click());
     expect(clicks).toBe(1);
   });
 });
