@@ -1,12 +1,12 @@
 /**
- * Records the product UI (apps/ui, served by its own local origin with the
+ * Records the product UI (apps/app, served by its own local origin with the
  * target-graph fixture seam on) once per color scheme, and turns each
  * recording into public/media/ui-<scheme>.gif and .webm.
  *
- * Prerequisites: `pnpm --filter smithers-ui run build:web`, then a running
+ * Prerequisites: `pnpm --filter smithers-app run build:web`, then a running
  * `SMITHERS_SKIP_SPA_BUILD=1 SMITHERS_LOCAL_PORT=47399 SMITHERS_CHAT_STUB=1
- * bun e2e/playwright/webserver.ts` from apps/ui. Playwright's Chromium comes
- * from apps/ui's own dependency. ffmpeg must be on PATH.
+ * bun e2e/playwright/webserver.ts` from apps/app. Playwright's Chromium comes
+ * from apps/app's own dependency. ffmpeg must be on PATH.
  *
  * Usage: node scripts/record-ui.mjs [dark|light]   (default: both)
  */
@@ -18,7 +18,7 @@ import { resolve } from "node:path"
 
 const here = fileURLToPath(new URL(".", import.meta.url))
 const root = resolve(here, "../../..")
-const uiRequire = createRequire(resolve(root, "apps/ui/package.json"))
+const uiRequire = createRequire(resolve(root, "apps/app/package.json"))
 const { chromium } = uiRequire("@playwright/test")
 
 const BASE = process.env.SMITHERS_UI_ORIGIN ?? "http://127.0.0.1:47399"

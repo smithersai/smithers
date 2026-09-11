@@ -148,7 +148,7 @@ Run it after a deploy, not on a schedule.
 
 Proving that a real human, invited today, can sign in and reach a working chat
 needs a real GitHub account and a browser. That is the sign-in journey
-`apps/ui/scripts/live-signed-in-check.ts` drives (CN-9), and it is a human
+`apps/app/scripts/live-signed-in-check.ts` drives (CN-9), and it is a human
 drill, not an automated probe: seed the invitee with the one-command seed
 above, have them sign in, and confirm they reach the chat rather than the
 waiting-state reply.

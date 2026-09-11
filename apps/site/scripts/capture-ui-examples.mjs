@@ -6,7 +6,7 @@
 import { createRequire } from "node:module"
 import { readFileSync, writeFileSync } from "node:fs"
 import { fileURLToPath } from "node:url"
-const require = createRequire(new URL("../../ui/package.json", import.meta.url))
+const require = createRequire(new URL("../../app/package.json", import.meta.url))
 const { chromium } = require("playwright")
 const ts = require("typescript")
 const origin = process.env.DOCS_EXAMPLE_ORIGIN ?? "http://127.0.0.1:4325"
@@ -32,7 +32,7 @@ const journal = [
 ]
 
 async function fixture(name) {
-  const path = new URL(`../../ui/e2e/playwright/${name}.spec.ts`, import.meta.url)
+  const path = new URL(`../../app/e2e/playwright/${name}.spec.ts`, import.meta.url)
   const source = readFileSync(path, "utf8").split("test.beforeEach")[0]
     .replace(/^import .*\n/gm, "")
     .replaceAll('"will"', '"docs-example"')

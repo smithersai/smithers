@@ -5,15 +5,15 @@ import {
   buildStampAssetSource,
   buildStampMetaTags,
   buildStampValues
-} from "../../ui/scripts/build-stamp.ts"
+} from "../../app/scripts/build-stamp.ts"
 
 /*
  * CN-1 for the Astro host: the app page this site prerenders must state which
- * commit it was built from, the same way apps/ui's own Vite build does, because
+ * commit it was built from, the same way apps/app's own Vite build does, because
  * apps/server/scripts/canary/build-probe.ts reads the `smithers-build-sha`
  * meta on the served HTML and the `__build.json` asset next to it. The values,
  * the meta names, the asset name and the JSON shape all come from
- * apps/ui/scripts/build-stamp.ts, so the two builds cannot disagree on the
+ * apps/app/scripts/build-stamp.ts, so the two builds cannot disagree on the
  * contract; only the wiring differs. Astro has no `transformIndexHtml`, so the
  * meta tags travel through the `virtual:smithers-build-stamp` module and
  * src/layouts/AppShell.astro renders them into the app page's head. The asset

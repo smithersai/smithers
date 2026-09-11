@@ -451,9 +451,9 @@ const renderFailureJson = (value: object): string | undefined => {
  * marker naming what it was, and a value larger than one diagnostic may hold
  * is truncated where it overruns. Refusing instead — which is what the cache
  * encoder does, and what this shared with it — cost an operator the whole
- * reason: a `//apps/ui:unitTests` failure carrying a 64 KiB stderr tail and a
+ * reason: a `//apps/app:unitTests` failure carrying a 64 KiB stderr tail and a
  * 64 KiB stdout tail overran the byte budget, the clone threw, and the CI log
- * read `//apps/ui:unitTests  failed  86.1s  target failed` and nothing else.
+ * read `//apps/app:unitTests  failed  86.1s  target failed` and nothing else.
  *
  * Members are rendered in sorted key order, so `argv`, `code`, `cwd` and
  * `exitCode` all precede the stream tails and survive any later truncation.

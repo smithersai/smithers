@@ -4,7 +4,7 @@ import { createRequire } from "node:module"
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs"
 import { fileURLToPath } from "node:url"
 
-const { chromium } = createRequire(new URL("../../ui/package.json", import.meta.url))("playwright")
+const { chromium } = createRequire(new URL("../../app/package.json", import.meta.url))("playwright")
 const output = fileURLToPath(new URL("../public/images/app/", import.meta.url))
 const origin = process.env.DOCS_APP_ORIGIN ?? "https://smithers.sh"
 const url = `${origin.replace(/\/$/, "")}/smithersai/smithers`

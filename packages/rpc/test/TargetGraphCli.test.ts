@@ -14,7 +14,7 @@ import {
  * The captured force workspace (packages/rpc/fixtures/force/): 82 targets,
  * 94 edges. This is the dev fixture stream's read of the CLI envelope, so
  * the counts pin it end to end. The backend's own reader is held to the same
- * answer by apps/ui/src/bun/TargetGraph.test.ts ("the backend's text parse
+ * answer by apps/app/src/bun/TargetGraph.test.ts ("the backend's text parse
  * and the CLI envelope adapter agree").
  */
 

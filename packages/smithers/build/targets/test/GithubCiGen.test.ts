@@ -912,7 +912,7 @@ describe("render", () => {
             sources: [{ from: "/tmp/shot-*.png" }, { from: "apps/reports", as: "reports" }]
           })
         }),
-        steps: [{ verb: Verb.Test, pattern: "//apps/ui" }]
+        steps: [{ verb: Verb.Test, pattern: "//apps/app" }]
       }]
     }))
     expect(rendered).toContain("          if [ ! -x '/usr/bin/google-chrome' ]; then\n")
@@ -1026,7 +1026,7 @@ describe("render", () => {
         toolchain: CiToolchain.Needs({
           artifacts: CiToolchain.Artifacts({ artifact: "test-evidence", sources })
         }),
-        steps: [{ verb: Verb.Test, pattern: "//apps/ui" }]
+        steps: [{ verb: Verb.Test, pattern: "//apps/app" }]
       }]
     }))
     expect(rendered).toContain("if-no-files-found: error")

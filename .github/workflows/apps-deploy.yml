@@ -45,17 +45,17 @@ jobs:
       # this pipeline offers when no credential is configured.
       - name: Typecheck apps
         run: |
-          for app in smithers-ui smithers-server @smthrs/rpc; do
+          for app in smithers-app smithers-server @smthrs/rpc; do
             pnpm --filter "$app" run typecheck
           done
       - name: Test apps
         run: |
-          for app in smithers-ui smithers-server @smthrs/rpc; do
+          for app in smithers-app smithers-server @smthrs/rpc; do
             pnpm --filter "$app" run test
           done
       # Issue I-4: the deploy is gated on end-to-end behaviour, not only on
       # unit suites. The UI gate is the Playwright T1 tier
-      # (apps/ui/docs/LOCAL-APP.md "Test tiers"): the local origin in
+      # (apps/app/docs/LOCAL-APP.md "Test tiers"): the local origin in
       # headless Chromium with the chat stub on, so this needs no Cloudflare
       # credential and spends nothing on a model.
       #
@@ -63,9 +63,9 @@ jobs:
       # purpose: the deploy has to wait for them either way, and a second job
       # would only pay for a second `pnpm install`.
       - name: Install the Playwright browser
-        run: pnpm --filter smithers-ui exec playwright install --with-deps chromium
+        run: pnpm --filter smithers-app exec playwright install --with-deps chromium
       - name: Browser e2e (Playwright T1)
-        run: pnpm --filter smithers-ui run test:e2e
+        run: pnpm --filter smithers-app run test:e2e
       - name: Collect e2e artifacts
         if: failure()
         run: |

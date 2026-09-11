@@ -33,7 +33,7 @@ Read that as: of 129 required e2e tests, 40 are genuinely asserted end to end
 today — and none of those 40 run in CI.
 
 Unit tests are healthy and not the problem: 667 pass, 0 fail
-(526 `apps/ui`, 108 `apps/server`, 33 `packages/rpc`).
+(526 `apps/app`, 108 `apps/server`, 33 `packages/rpc`).
 
 The problem is above unit level:
 
@@ -290,7 +290,7 @@ Run after every deploy, then on a schedule.
 
 These block the tests above from being worth anything, and should land first.
 
-**I-1. No e2e job in CI.** Add a job that runs `pnpm --filter smithers-ui run
+**I-1. No e2e job in CI.** Add a job that runs `pnpm --filter smithers-app run
 test:e2e:worker`. It is already self-contained: it builds the SPA, boots
 `wrangler dev` twice against `scripts/stub-backends.ts`, and asserts 26 named
 outcomes. It is the single highest-value thing in the tree that never runs.
@@ -311,7 +311,7 @@ devDependency.
 builds, deploys. A deploy that breaks the app is indistinguishable from one
 that does not.
 
-**I-5. `apps/ui/scripts/` is not typechecked.** `tsconfig.json` covers `src`
+**I-5. `apps/app/scripts/` is not typechecked.** `tsconfig.json` covers `src`
 only, so the e2e and canary scripts drift silently.
 
 **I-6. The nine backing Workers are not in this repo.** They live in a dirty

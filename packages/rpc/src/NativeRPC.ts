@@ -14,7 +14,7 @@ import type { PickLocalRepositoryResult, RepositoryAccess } from "./NativeReposi
 /*
  * Structurally an Electrobun `ElectrobunRPCSchema` (`{ bun, webview }`, each
  * with `requests` and `messages`); packages/rpc does not depend on the SDK,
- * which in 2.x lives only in apps/ui's Hutch devkit. apps/ui's
+ * which in 2.x lives only in apps/app's Hutch devkit. apps/app's
  * `BrowserView.defineRPC<SmithersNativeRPC>` checks the shape at the use site.
  */
 /**

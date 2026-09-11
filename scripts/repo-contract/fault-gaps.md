@@ -35,7 +35,7 @@ Every row here is a gap in coverage, not a gap in the product unless it says so.
 | 0.x case | Outcome |
 | --- | --- |
 | 07 continue-as-new lineage | Continue-as-new is not supported. A case for it would assert a feature the release does not ship. |
-| 10 ghost state on unmount, 13 collapsed-ancestor failure marker, 26 diff review mode | Inspector GUI behaviour. The UI is `apps/ui`, whose own Playwright tiers own these; a fault case here could only assert the DTOs, which the gateway family already does. |
+| 10 ghost state on unmount, 13 collapsed-ancestor failure marker, 26 diff review mode | Inspector GUI behaviour. The UI is `apps/app`, whose own Playwright tiers own these; a fault case here could only assert the DTOs, which the gateway family already does. |
 | 17 webhook bad signature | Owned by the integrations lane, which holds the webhook contract tests. |
 | 18 cron manual overlap | Trigger scheduling is `@smthrs/triggers`; the overlap policy is not an RC commitment. |
 | 19 auth persistence, 20 browser automation in a hosted workspace, 23 network policy, 30 hosted soak | All need hosted-provider credentials. Owned by the providers-hosts lane where a real provider exists to run them against. |

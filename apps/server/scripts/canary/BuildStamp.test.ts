@@ -453,19 +453,19 @@ describe("the probe's exit code moves with the deployment", () => {
 })
 
 /*
- * The producer of the stamp is apps/ui/scripts/build-stamp.ts (wired into
- * apps/ui/vite.config.ts) and the reader is this directory; apps/ui does not
+ * The producer of the stamp is apps/app/scripts/build-stamp.ts (wired into
+ * apps/app/vite.config.ts) and the reader is this directory; apps/app does not
  * depend on apps/server, so the two constants are spelled twice. This holds
  * them equal: renaming the meta tag or the asset in the plugin reds here
  * instead of silently retiring the probe.
  */
 describe("the probe reads what the build writes", () => {
   const stampSource = readFileSync(
-    fileURLToPath(new URL("../../../ui/scripts/build-stamp.ts", import.meta.url)),
+    fileURLToPath(new URL("../../../app/scripts/build-stamp.ts", import.meta.url)),
     "utf8"
   )
   const viteConfig = readFileSync(
-    fileURLToPath(new URL("../../../ui/vite.config.ts", import.meta.url)),
+    fileURLToPath(new URL("../../../app/vite.config.ts", import.meta.url)),
     "utf8"
   )
 

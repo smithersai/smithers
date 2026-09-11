@@ -47,7 +47,7 @@ const STATUS_CLASS_BY_STATUS = {
   accepted: "muted",
   parked: "warn",
   /*
-   * The run-card phases apps/ui renders beside the engine's own statuses. A
+   * The run-card phases apps/app renders beside the engine's own statuses. A
    * card is launching before the engine has a run to report, reconnecting
    * while the read path is down, quiet when a run stopped moving, stopped
    * when the human stopped watching, and no-capacity when the workspace could
@@ -186,8 +186,8 @@ export function formatStatus(status: string | undefined): string {
     launching: "Launching",
     reconnecting: "Reconnecting",
     // `quiet` is deliberately absent: the mechanical fallback already renders
-    // "Quiet", which is the pill apps/ui's run card has always worn
-    // (apps/ui CardFrames.test.tsx, "a quiet or stopped run card never wears a
+    // "Quiet", which is the pill apps/app's run card has always worn
+    // (apps/app CardFrames.test.tsx, "a quiet or stopped run card never wears a
     // Running pill"). A label entry here would change a rendered string, and
     // this table's additions are additive only.
     stopped: "Stopped",

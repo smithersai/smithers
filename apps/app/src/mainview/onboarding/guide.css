@@ -1,0 +1,1394 @@
+/* The glow denotes Smithers control; it does not claim a background run. */
+.guide-shell {
+  /* The title strip's height, shared with the navigation pinned below it. */
+  --g-strip: 44px;
+  --g-bg: #f7f6f1;
+  --g-panel: rgba(255, 255, 252, 0.73);
+  --g-ink: #243b3b;
+  --g-muted: #74817c;
+  --g-line: rgba(53, 85, 74, 0.14);
+  --g-accent: #3a756b;
+  --g-gold: #b69660;
+  position: relative;
+  isolation: isolate;
+  flex: 1;
+  min-width: 0;
+  min-height: 100dvh;
+  color: var(--g-ink);
+  background: var(--g-bg);
+  font-family: Inter, sans-serif;
+  overflow: auto;
+  transition:
+    background 900ms ease,
+    color 700ms ease;
+  outline: none;
+}
+.guide-shell[data-theme="dark"] {
+  --g-bg: #101e24;
+  --g-panel: rgba(25, 43, 49, 0.78);
+  --g-ink: #e6e9df;
+  --g-muted: #94aaa7;
+  --g-line: rgba(189, 218, 201, 0.15);
+  --g-accent: #9bd5c6;
+  --g-gold: #dfc18c;
+}
+.guide-shell button,
+.guide-shell input {
+  font: inherit;
+}
+.guide-shell button {
+  cursor: pointer;
+  color: inherit;
+}
+.guide-shell button:focus-visible,
+.guide-shell input:focus-visible {
+  outline: 2px solid var(--g-accent);
+  outline-offset: 5px;
+}
+.guide-shell h1,
+.guide-shell h2,
+.guide-shell h3,
+.guide-shell p {
+  margin: 0;
+}
+.guide-shell button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.guide-atmosphere {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  z-index: -1;
+  background:
+    radial-gradient(ellipse at 50% 29%, rgba(166, 209, 190, 0.15), transparent 47%),
+    radial-gradient(ellipse at 80% 75%, rgba(208, 190, 145, 0.1), transparent 40%);
+}
+.guide-atmosphere::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  opacity: 0.18;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 180 180' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.86' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Cpath fill='%237a826a' opacity='.16' filter='url(%23n)' d='M0 0h180v180H0z'/%3E%3C/svg%3E");
+}
+.guide-atmosphere i {
+  position: absolute;
+  width: 3px;
+  height: 3px;
+  background: var(--g-gold);
+  border-radius: 50%;
+  box-shadow: 0 0 20px 4px #c6b38933;
+  left: 22%;
+  top: 36%;
+  animation: guide-mote 12s ease-in-out infinite;
+  opacity: 0.4;
+}
+.guide-atmosphere i:nth-child(2) {
+  left: 76%;
+  top: 65%;
+  animation-delay: -4s;
+}
+.guide-atmosphere i:nth-child(3) {
+  left: 68%;
+  top: 24%;
+  animation-delay: -8s;
+}
+.guide-header {
+  height: var(--g-strip);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 12px;
+  /* The title strip stays put while the lesson scrolls under it. */
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  background: var(--g-bg);
+}
+.guide-location {
+  margin-left: 128px;
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  color: var(--g-muted);
+}
+.guide-wordmark {
+  position: absolute;
+  left: 12px;
+  top: 12px;
+  color: var(--g-accent);
+  transform-origin: center;
+  animation: none;
+}
+.guide-wordmark pre {
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 2.75px;
+  line-height: 1.07;
+  letter-spacing: 0;
+  margin: 0;
+  font-weight: 400;
+}
+.guide-wordmark span {
+  animation: none;
+}
+.guide-main {
+  max-width: 760px;
+  margin: 0 auto;
+  padding: 8px 35px 12px;
+}
+.guide-chapter {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  justify-content: center;
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 9px;
+  letter-spacing: 0.16em;
+  color: var(--g-muted);
+  margin-bottom: 39px;
+  animation: none;
+}
+.guide-chapter-line {
+  width: 36px;
+  height: 1px;
+  background: var(--g-line);
+}
+.guide-lesson {
+  text-align: center;
+  animation: none;
+  /*
+   * The lesson is a column that fills the window: the transcript takes every
+   * row the cards, the interactive example and the actions do not, so the
+   * actions land immediately above the footer instead of floating mid-page.
+   */
+  display: flex;
+  flex-direction: column;
+  /*
+   * Never shrink: the box always contains its rows, so the pinned navigation
+   * (PIN_NAV.md) keeps a sticky range as long as the lesson itself.
+   */
+  flex: 1 0 auto;
+}
+/* Only the transcript gives up height; every other row keeps its own size. */
+.guide-lesson > * {
+  flex-shrink: 0;
+}
+.guide-shell[data-step="0"] .guide-lesson {
+  animation-delay: 0s;
+}
+.guide-eyebrow {
+  font-size: 11px;
+  color: var(--g-muted);
+  letter-spacing: 0.04em;
+  margin-bottom: 12px !important;
+}
+.guide-lesson h1 {
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: clamp(30px, 4vw, 43px);
+  line-height: 1.15;
+  font-weight: 400;
+  letter-spacing: -0.045em;
+  margin-bottom: 29px;
+}
+.guide-dialogue {
+  position: relative;
+  border: 1px solid var(--g-line);
+  border-radius: 14px;
+  background: var(--g-panel);
+  padding: 25px 30px 28px;
+  text-align: left;
+  box-shadow: 0 9px 26px #283f3406;
+  backdrop-filter: blur(18px);
+}
+.smithers-control {
+  position: relative;
+  isolation: isolate;
+}
+.smithers-control[data-controlled="true"] {
+  border-color: color-mix(in srgb, var(--g-accent) 30%, transparent);
+  animation: smithers-control-breathe 4s ease-in-out infinite;
+}
+.smithers-control[data-controlled="true"]::after {
+  content: "";
+  position: absolute;
+  inset: -1px;
+  border: 1px solid transparent;
+  border-radius: inherit;
+  background: linear-gradient(120deg, transparent 18%, #9dcbbb88 38%, #e4d2a899 52%, transparent 76%)
+    border-box;
+  mask:
+    linear-gradient(#fff 0 0) padding-box,
+    linear-gradient(#fff 0 0);
+  mask-composite: exclude;
+  pointer-events: none;
+  opacity: 0.6;
+}
+.guide-speaker {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 9px;
+  letter-spacing: 0.15em;
+  color: var(--g-accent);
+  margin-bottom: 13px;
+}
+.guide-speaker > span,
+.guide-status-dot {
+  width: 5px;
+  height: 5px;
+  display: inline-block;
+  border-radius: 50%;
+  background: var(--g-accent);
+  box-shadow: 0 0 9px #86bfa877;
+}
+.guide-dialogue > p {
+  font-size: 14px;
+  line-height: 1.85;
+  color: var(--g-ink);
+  text-wrap: pretty;
+}
+/*
+ * Back and Next are pinned: the lesson scroller is `.guide-content`, and the
+ * navigation sticks to its top so the two controls stay reachable however far
+ * the transcript is scrolled. The background is opaque so cards pass under it,
+ * and the z-index outranks the cards (and the header it slides over).
+ */
+.guide-navigation {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 16px;
+  margin-bottom: 8px;
+  position: sticky;
+  /* Directly under the pinned title strip: the row never moves, ever. The
+     negative margin lets its background meet the strip, so no card shows
+     through between them, while the buttons keep their resting position. */
+  top: var(--g-strip);
+  margin-top: -8px;
+  padding: 8px 0;
+  z-index: 4;
+  background: var(--g-bg);
+}
+.guide-navigation .guide-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--g-line);
+  border-radius: 999px;
+  padding: 6px 12px;
+  background: var(--g-panel);
+  box-shadow: 0 4px 9px #1e393019;
+  transition:
+    transform 0.18s,
+    box-shadow 0.18s;
+}
+.guide-navigation .guide-button-key,
+.guide-primary .guide-button-key {
+  margin-left: auto;
+  border: 0;
+  background: color-mix(in srgb, var(--g-panel), white 12%);
+}
+.guide-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 18px 28px;
+  /* The transcript's -10px bottom margin leaves a 12px visual gap. */
+  margin-top: 22px;
+}
+.guide-primary {
+  border: 1px solid var(--g-line);
+  background: var(--g-panel);
+  color: var(--g-ink) !important;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 20px;
+  padding: 6px 12px;
+  font-size: 12px !important;
+  min-height: 44px;
+  box-shadow: 0 4px 9px #1e393019;
+  transition:
+    transform 0.18s,
+    box-shadow 0.18s;
+}
+.guide-button-key {
+  flex-shrink: 0;
+  white-space: nowrap;
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 10px;
+  font-weight: 400;
+  line-height: 1.4;
+  border: 1px solid currentColor;
+  border-radius: 4px;
+  padding: 2px 6px;
+  opacity: 0.75;
+}
+.guide-primary:hover,
+.guide-navigation .guide-back:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 18px #1e393028;
+}
+.guide-primary:active,
+.guide-navigation .guide-back:active:not(:disabled) {
+  transform: translateY(0);
+}
+.guide-back,
+.guide-text-button {
+  border: 0;
+  background: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  font-size: 11px !important;
+  color: var(--g-muted) !important;
+  padding: 5px;
+}
+.guide-text-button {
+  color: var(--g-accent) !important;
+  padding: 0;
+}
+.guide-footer {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  min-height: 65px;
+  display: flex;
+  align-items: center;
+  padding: 12px 40px;
+  gap: 24px;
+}
+.guide-footer button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: none;
+  border: 0;
+  padding: 8px 0;
+  font-size: 10px;
+  color: var(--g-muted);
+}
+.guide-progress {
+  display: flex;
+  gap: 5px;
+  margin: auto;
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+}
+.guide-progress span {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--g-line);
+  transition: background 0.4s;
+}
+.guide-progress span[data-passed="true"] {
+  background: var(--g-gold);
+}
+.guide-footer button:nth-of-type(2) {
+  margin-left: auto;
+}
+.guide-form {
+  margin-top: 15px;
+  background: var(--g-panel);
+  border: 1px solid var(--g-line);
+  border-radius: 12px;
+  padding: 24px;
+  text-align: left;
+  display: grid;
+  gap: 18px;
+}
+.guide-form label,
+.guide-edit-label {
+  display: grid;
+  gap: 9px;
+  font-size: 11px;
+  color: var(--g-muted);
+}
+.guide-form input,
+.guide-edit-label input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 12px;
+  border: 1px solid var(--g-line);
+  border-radius: 7px;
+  background: var(--g-bg);
+  color: var(--g-ink);
+  font-size: 12px;
+}
+.guide-form > p,
+.guide-practice-note {
+  font-size: 10px !important;
+  line-height: 1.6;
+  color: var(--g-muted);
+}
+.guide-steps {
+  margin: 18px 0 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 10px;
+  text-align: left;
+}
+.guide-steps li {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 14px 18px;
+  background: var(--g-panel);
+  border: 1px solid var(--g-line);
+  border-radius: 10px;
+  font-size: 12px;
+  color: var(--g-ink);
+}
+.guide-step-number {
+  flex-shrink: 0;
+  width: 22px;
+  height: 22px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 10px;
+  color: var(--g-accent);
+  border: 1px solid var(--g-line);
+  border-radius: 50%;
+}
+.guide-steps .guide-button-key {
+  font-size: 9px;
+}
+.guide-tag {
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 8px;
+  letter-spacing: 0.08em;
+  color: var(--g-muted);
+  white-space: nowrap;
+  margin-left: auto;
+}
+.guide-sidebar {
+  position: absolute;
+  left: 28px;
+  top: 52px;
+  width: 170px;
+  display: grid;
+  gap: 8px;
+  animation: guide-rise 0.6s both;
+}
+.guide-sidebar nav button {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+  background: none;
+  border: 0;
+  text-align: left;
+  padding: 12px 9px;
+  border-radius: 7px;
+  font-size: 12px;
+}
+.guide-sidebar nav button:hover {
+  background: var(--g-panel);
+}
+.guide-sidebar p {
+  color: var(--g-muted);
+  font-size: 10px;
+  line-height: 1.8;
+  margin: 20px 9px 0;
+}
+.guide-section-label {
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 8px;
+  letter-spacing: 0.14em;
+  color: var(--g-muted);
+  padding: 0 9px 12px;
+}
+.guide-background-flows {
+  margin-top: 20px;
+  display: grid;
+  gap: 12px;
+  text-align: left;
+}
+.guide-background-flows > div {
+  display: flex;
+  align-items: center;
+  gap: 17px;
+  padding: 22px;
+  border: 1px solid var(--g-line);
+  border-radius: 10px;
+  background: var(--g-panel);
+}
+.guide-background-flows strong {
+  font-size: 12px;
+  font-weight: 500;
+}
+.guide-background-flows p {
+  font-size: 10px;
+  line-height: 1.7;
+  color: var(--g-muted);
+  margin-top: 7px;
+}
+.guide-prototype,
+.guide-history {
+  margin-top: 20px;
+  border: 1px solid var(--g-line);
+  border-radius: 12px;
+  background: var(--g-panel);
+  overflow: hidden;
+  text-align: left;
+}
+.guide-artifact-bar {
+  display: flex;
+  justify-content: space-between;
+  padding: 13px 17px;
+  border-bottom: 1px solid var(--g-line);
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 8px;
+  letter-spacing: 0.04em;
+  color: var(--g-muted);
+}
+.guide-status-dot {
+  width: 4px;
+  height: 4px;
+  margin-right: 8px;
+}
+.guide-board {
+  padding: 30px;
+  background: linear-gradient(160deg, #f0eddc, #e6ebda);
+  color: #3b4837;
+}
+.guide-board-overline {
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 8px;
+  letter-spacing: 0.14em;
+  color: #75816c;
+}
+.guide-board h2 {
+  font-family: Georgia, serif;
+  font-weight: 400;
+  letter-spacing: -0.025em;
+  font-size: 27px;
+  line-height: 1.2;
+  margin: 10px 0 24px;
+  overflow-wrap: anywhere;
+}
+.guide-board-cards {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+}
+.guide-board-cards article {
+  padding: 17px 13px;
+  background: #fffdf0aa;
+  border: 1px solid #a6b29238;
+  border-radius: 6px;
+  animation: guide-rise 0.6s both;
+  animation-delay: calc(var(--card) * 120ms);
+}
+.guide-board-cards article > span {
+  font-size: 9px;
+  color: #83916d;
+}
+.guide-board-cards h3 {
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1.5;
+  margin: 16px 0 7px;
+}
+.guide-board-cards p {
+  font-size: 10px;
+  line-height: 1.7;
+  color: #78836e;
+}
+.guide-edit-label {
+  padding: 18px;
+}
+.guide-history-row {
+  display: flex;
+  gap: 20px;
+  padding: 17px 24px;
+  border-bottom: 1px solid var(--g-line);
+  align-items: center;
+}
+.guide-history-row > span:first-child {
+  font-family: "IBM Plex Mono", monospace;
+  color: var(--g-gold);
+  font-size: 11px;
+}
+.guide-history-row strong {
+  font-size: 12px;
+  font-weight: 500;
+}
+.guide-history-row p {
+  font-size: 11px;
+  margin-top: 5px;
+  color: var(--g-muted);
+  overflow-wrap: anywhere;
+}
+.guide-artifact-foot {
+  padding: 16px 24px;
+  font-size: 10px !important;
+  line-height: 1.7;
+  color: var(--g-muted);
+}
+.guide-pr {
+  display: flex;
+  gap: 20px;
+  text-align: left;
+  margin-top: 20px;
+  padding: 25px;
+  border: 1px solid var(--g-line);
+  border-radius: 12px;
+  background: var(--g-panel);
+}
+.guide-pr > svg {
+  color: var(--g-accent);
+  flex-shrink: 0;
+}
+.guide-pr h2 {
+  font-size: 15px;
+  font-weight: 500;
+  margin-bottom: 8px;
+}
+.guide-pr p {
+  font-size: 12px;
+  color: var(--g-muted);
+}
+.guide-pr small {
+  font-size: 10px;
+  color: var(--g-muted);
+}
+.guide-pr-steps {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin: 20px 0;
+  font-size: 10px;
+  color: var(--g-accent);
+}
+.guide-pr-steps span:not(:last-child)::after {
+  content: " →";
+  color: var(--g-muted);
+  margin-left: 10px;
+}
+.guide-start-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 12px;
+  margin-top: 27px;
+}
+.guide-secondary {
+  display: inline-flex;
+  align-items: center;
+  gap: 15px;
+  padding: 12px 18px;
+  border: 1px solid var(--g-line);
+  border-radius: 8px;
+  background: var(--g-panel);
+  font-size: 12px !important;
+}
+.guide-start-actions p {
+  font-size: 11px;
+  line-height: 1.8;
+  color: var(--g-muted);
+  max-width: 460px;
+  margin-top: 10px;
+}
+/*
+ * The Command-K palette: a fixed overlay anchored near the top of the window,
+ * the way a command palette opens. It floats over the workspace (nothing is
+ * resized) behind a soft scrim; clicking the scrim or Escape dismisses it.
+ */
+.guide-composer-dock {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: clamp(24px, 12dvh, 120px) 16px 16px;
+  background: color-mix(in srgb, var(--g-ink) 28%, transparent);
+  backdrop-filter: blur(3px);
+  visibility: hidden;
+  opacity: 0;
+  transition: opacity 180ms ease, visibility 0s 180ms;
+}
+.guide-shell[data-conversation-open="true"] .guide-composer-dock {
+  visibility: visible;
+  opacity: 1;
+  transition-delay: 0s;
+}
+.guide-composer-clip {
+  width: min(720px, 100%);
+  min-height: 0;
+  max-height: 100%;
+  display: flex;
+}
+.guide-composer-layer {
+  width: 100%;
+  display: flex;
+  max-height: 70dvh;
+  overflow: hidden;
+  padding: 8px;
+  border: 1px solid var(--g-line);
+  border-radius: 16px;
+  background: var(--g-bg);
+  box-shadow: 0 24px 80px #102a3340, 0 2px 8px #102a3326;
+  transform: translateY(-14px) scale(.985);
+  transition: transform 220ms cubic-bezier(.2, .7, .2, 1);
+}
+.guide-shell[data-conversation-open="true"] .guide-composer-layer {
+  transform: translateY(0) scale(1);
+}
+.guide-composer-host {
+  display: contents;
+}
+/* The palette card owns the border and shadow; the input inside sits flat. */
+.guide-composer-layer .composer-wrap {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: transparent;
+  border: 0;
+  padding: 0;
+  box-shadow: none;
+}
+.guide-composer-layer .composer-flow-stamp {
+  flex-shrink: 0;
+}
+.guide-composer-layer .smithers-composer {
+  border-color: transparent;
+  border-radius: 10px;
+  background: transparent;
+  box-shadow: none;
+}
+.guide-sidebar { z-index: 25; }
+.guide-sidebar .composer-menu-list { top: calc(100% + 4px); bottom: auto; left: 0; }
+.guide-sidebar .composer-connect-label { max-width: 150px; }
+.guide-sidebar .composer-connect { margin-bottom: 18px; }
+.guide-sidebar nav { display: grid; }
+/* Results scroll below the input, which stays visible at the top of the card. */
+.guide-composer-layer .composer-wrap > .slash-menu {
+  order: 1;
+  min-height: 0;
+  position: relative;
+  top: auto;
+  bottom: auto;
+  right: auto;
+  left: auto;
+  margin-top: 4px;
+  max-height: none;
+  border-top: 1px solid var(--g-line);
+  border-radius: 0 0 10px 10px;
+  box-shadow: none;
+}
+.guide-summoned {
+  padding: 30px 36px;
+  background: var(--g-panel);
+  backdrop-filter: blur(18px);
+  border: 1px solid var(--g-line);
+  border-radius: 14px;
+  box-shadow: 0 18px 60px #102a3322;
+}
+.guide-summoned p {
+  font-size: 15px;
+  line-height: 1.9;
+  margin-bottom: 20px;
+}
+.guide-summoned .guide-primary {
+  margin-top: 16px;
+}
+/*
+ * The app is the default full-screen UI: mounted live under the guide chrome,
+ * hidden during the lessons, and revealed when the guide reaches the
+ * workspace step — where the outro and the footer float above it.
+ */
+.guide-app {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  display: flex;
+  visibility: hidden;
+  opacity: 0;
+  transition:
+    opacity 0.5s ease,
+    visibility 0s linear 0.5s;
+}
+.guide-app > .app-shell {
+  flex: 1;
+  min-width: 0;
+}
+.guide-shell[data-step="14"] .guide-app {
+  visibility: visible;
+  opacity: 1;
+  transition-delay: 0s;
+}
+/*
+ * The workspace step hands the window to the app: the tutorial chrome
+ * (transcript, header, atmosphere, plugin shelf, progress) retires, and only
+ * the outro card and the footer float above the full-screen UI.
+ */
+.guide-shell[data-step="14"] .guide-atmosphere,
+.guide-shell[data-step="14"] .guide-header,
+.guide-shell[data-step="14"] .guide-transcript,
+.guide-shell[data-step="14"] .guide-progress {
+  display: none;
+}
+.guide-shell[data-step="14"] .guide-start-actions {
+  background: var(--g-panel);
+  backdrop-filter: blur(18px);
+  border: 1px solid var(--g-line);
+  border-radius: 14px;
+  padding: 24px 28px;
+  box-shadow: 0 18px 60px #102a3322;
+}
+.guide-shell[data-step="14"] .guide-main {
+  pointer-events: none;
+}
+.guide-shell[data-step="14"] .guide-lesson > * {
+  pointer-events: auto;
+}
+.guide-shell[data-step="14"] .guide-footer {
+  background: var(--g-panel);
+  backdrop-filter: blur(18px);
+  border-top: 1px solid var(--g-line);
+}
+.guide-toasts {
+  position: fixed;
+  bottom: 76px;
+  right: 26px;
+  width: min(360px, calc(100vw - 40px));
+  z-index: 90;
+  display: grid;
+  gap: 10px;
+  max-height: calc(100dvh - 100px);
+  overflow-y: auto;
+}
+.guide-toast {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  border: 1px solid var(--g-line);
+  border-radius: 12px;
+  padding: 14px 16px;
+  background: var(--g-bg);
+  backdrop-filter: blur(20px);
+  box-shadow: 0 12px 40px #223f3214;
+  animation: guide-rise 0.35s both;
+}
+.guide-toast > svg {
+  color: var(--g-gold);
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+.guide-toast > div { flex: 1; min-width: 0; }
+.guide-toast strong {
+  font-size: 12px;
+  font-weight: 500;
+}
+.guide-toast p {
+  font-size: 11px;
+  color: var(--g-muted);
+  line-height: 1.7;
+  margin-top: 7px;
+}
+.guide-toast button {
+  background: none;
+  border: 0;
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  margin-left: auto;
+}
+@keyframes guide-logo-arrive {
+  0%,
+  35% {
+    left: calc(50% - 60px);
+    top: 38vh;
+    transform: scale(4);
+    filter: blur(2px);
+    opacity: 0;
+  }
+  45% {
+    opacity: 1;
+    filter: blur(0);
+  }
+  58% {
+    left: calc(50% - 60px);
+    top: 38vh;
+    transform: scale(4);
+  }
+  100% {
+    left: 12px;
+    top: 12px;
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+@keyframes guide-logo-row {
+  0% {
+    opacity: 0;
+  }
+  40% {
+    opacity: 0.2;
+  }
+  65% {
+    opacity: 1;
+  }
+  75% {
+    opacity: 0.3;
+  }
+  100% {
+    opacity: 1;
+  }
+}
+@keyframes guide-rise {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+@keyframes guide-fade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@keyframes guide-mote {
+  50% {
+    transform: translate(10px, -26px);
+    opacity: 0.15;
+  }
+}
+@keyframes smithers-control-breathe {
+  0%,
+  100% {
+    box-shadow:
+      0 0 0 1px #81bca410,
+      0 0 24px #81bca41c,
+      0 7px 35px #aecea41a;
+  }
+  50% {
+    box-shadow:
+      0 0 0 1px #81bca422,
+      0 0 36px #81bca42d,
+      0 7px 40px #d1b97e20;
+  }
+}
+@media (min-width: 1150px) {
+  .guide-shell:has(.guide-sidebar) .guide-main {
+    transform: translateX(65px);
+  }
+}
+@media (max-width: 1000px) {
+  .guide-sidebar {
+    /* Keep the plugin rail in the title strip, out of the lesson flow. */
+    position: absolute;
+    top: 2px;
+    right: 12px;
+    left: auto;
+    width: auto;
+    margin: 0;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .guide-sidebar p,
+  .guide-section-label {
+    display: none;
+  }
+  .guide-sidebar nav button {
+    font-size: 10px;
+  }
+  .guide-chapter {
+    margin-bottom: 26px;
+  }
+}
+@media (max-width: 600px) {
+  .guide-location {
+    font-size: 9px;
+    max-width: 120px;
+  }
+  .guide-main {
+    padding: 8px 20px 12px;
+  }
+  .guide-dialogue {
+    padding: 23px;
+  }
+  .guide-dialogue > p {
+    font-size: 13px;
+  }
+  .guide-footer {
+    padding: 12px 20px;
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+  .guide-footer button {
+    font-size: 9px;
+  }
+  .guide-progress {
+    bottom: 8px;
+  }
+  .guide-board {
+    padding: 23px 18px;
+  }
+  .guide-board-cards {
+    gap: 6px;
+  }
+  .guide-board-cards article {
+    padding: 12px 9px;
+  }
+  .guide-composer-dock {
+    padding: 12px;
+  }
+  .guide-background-flows > div {
+    padding: 17px;
+  }
+  .guide-form {
+    padding: 20px;
+  }
+}
+@keyframes guide-logo-mobile {
+  0%,
+  35% {
+    left: calc(50% - 60px);
+    top: 35vh;
+    transform: scale(2.4);
+    opacity: 0;
+  }
+  45%,
+  58% {
+    left: calc(50% - 60px);
+    top: 35vh;
+    transform: scale(2.4);
+    opacity: 1;
+  }
+  100% {
+    left: 12px;
+    top: 12px;
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .guide-shell,
+  .guide-shell *,
+  .guide-shell *::before,
+  .guide-shell *::after {
+    animation: none !important;
+    transition: none !important;
+    scroll-behavior: auto !important;
+  }
+  .guide-wordmark {
+    opacity: 1;
+  }
+  .guide-primary:hover,
+  .guide-navigation .guide-back:hover:not(:disabled) {
+    transform: none;
+  }
+}
+/*
+ * The shell is a fixed-height column: the lesson area scrolls and the footer
+ * is pinned below it. The Command-K palette is a fixed overlay above both.
+ */
+.guide-shell {
+  height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.guide-content {
+  /* Maximized frames resize with this area, including fixed descendants. */
+  contain: layout;
+  position: relative;
+  isolation: isolate;
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+}
+.guide-header {
+  flex-shrink: 0;
+}
+.guide-main {
+  width: 100%;
+  flex: 1 0 auto;
+  display: flex;
+  flex-direction: column;
+  padding-bottom: 12px;
+}
+.guide-footer {
+  position: relative;
+  flex-shrink: 0;
+}
+
+
+
+/* The first card and lesson controls are readable and interactive at mount. */
+
+.guide-word {
+  opacity: 0;
+  animation: guide-fade 160ms ease both;
+  animation-delay: calc(.1s + var(--word-delay));
+}
+.guide-shell[data-step="0"] .guide-lesson { animation: none; }
+.guide-shell[data-step="0"] .guide-lesson h1 { animation: none; }
+.guide-shell[data-step="0"] .guide-message[data-enter="true"] { animation: none; }
+.guide-shell[data-step="0"] .guide-message[data-enter="true"] > .guide-dialogue { overflow: visible; animation: none; }
+.guide-shell[data-step="0"] .guide-speaker { animation: none; }
+.guide-shell[data-step="0"] .guide-word { opacity: 1; animation: none; }
+.guide-shell[data-step="0"] .guide-actions { animation: none; }
+@media (prefers-reduced-motion: reduce) { .guide-word { opacity: 1; } }
+/* Tabbing to the invitation reveals it immediately, including its focus ring. */
+.guide-shell[data-step="0"] .guide-actions:has(:focus-visible) { animation: none; }
+
+.guide-review-diff { display: grid; gap: 6px; margin: 20px 0; padding: 16px; border: 1px solid var(--g-line); border-radius: 8px; overflow-wrap: anywhere; }
+.guide-review-diff span { font-size: 9px; color: var(--g-muted); }
+.guide-review-diff del,.guide-review-diff ins { font-size: 12px; }
+.guide-review-diff ins { text-decoration: none; color: var(--g-accent); }
+.guide-review-diff span:nth-of-type(2) { margin-top: 10px; }
+.guide-review-explanation { line-height: 1.8; }
+.guide-pr .guide-text-button { margin-bottom: 18px; }
+.guide-pr small { display: block; }
+.guide-review-accepted { flex-basis: 100%; display: flex; align-items: center; justify-content: center; gap: 8px; overflow-wrap: anywhere; }
+
+/* One stable transcript; only the newly appended message enters. */
+.guide-transcript {
+  display: grid;
+  gap: 16px;
+  /*
+   * No cap: the chat takes the whole window. It is the only row that flexes,
+   * so it grows to the footer and scrolls inside itself. The floor keeps a
+   * readable log when a lesson's example widget is unusually tall.
+   */
+  flex: 1 1 0;
+  min-height: 200px;
+  align-content: start;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scroll-behavior: smooth;
+  padding: 10px;
+  margin: -10px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--g-line) transparent;
+  /* A passive log, not a control: focusable for arrow-key scrolling, never ringed. */
+  outline: none;
+}
+/* Outranks the app-wide :focus-visible ring (base.css) for the transcript. */
+.guide-shell .guide-transcript:focus-visible { outline: none; }
+/*
+ * A new message OPENS its place: the wrapper's grid track grows 0fr → 1fr, so
+ * the messages above shift up while the actions below move down as one stable
+ * row — nothing jumps, nothing crossfades. Browsers without animatable grid
+ * tracks show the message instantly, the same content either way.
+ */
+.guide-message { display: grid; grid-template-rows: 1fr; }
+.guide-message > .guide-dialogue { min-height: 0; }
+.guide-message[data-enter="true"] { animation: guide-message-open .45s cubic-bezier(.2, .7, .2, 1) both; }
+.guide-message[data-enter="true"] > .guide-dialogue { overflow: hidden; animation: guide-message-in .35s .08s ease both; }
+@keyframes guide-message-open { from { grid-template-rows: 0fr; } to { grid-template-rows: 1fr; } }
+@keyframes guide-message-in { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+/* The lesson's interactive example arrives with the message, in place. */
+.guide-lesson > .guide-form,
+.guide-lesson > .guide-library,
+.guide-lesson > .guide-practice-note,
+.guide-lesson > .guide-background-flows,
+.guide-lesson > .guide-prototype,
+.guide-lesson > .guide-history,
+.guide-lesson > .guide-pr,
+.guide-lesson > .guide-start-actions {
+  animation: guide-rise .45s ease both;
+}
+.guide-transcript .guide-dialogue[data-current="false"] .guide-word { animation: none; opacity: 1; }
+
+/* Repository controls keep their own sizing; navigation styles must not wrap menu rows. */
+.guide-sidebar .composer-connect { min-width: 0; width: 100%; }
+.guide-sidebar .composer-connect-trigger {
+  display: flex;
+  width: 100%;
+  min-height: 36px;
+  padding: 8px 10px;
+  gap: 8px;
+  border: 1px solid var(--g-line);
+  border-radius: 8px;
+  background: var(--g-panel);
+  color: var(--g-ink);
+  font-size: 12px;
+  text-align: left;
+}
+.guide-sidebar .composer-connect-label { flex: 1; min-width: 0; max-width: none; }
+.guide-sidebar .composer-connect-trigger svg { flex-shrink: 0; }
+.guide-sidebar .composer-connect-list {
+  width: min(320px, calc(100vw - 60px));
+  max-height: min(360px, 60vh);
+  overflow-y: auto;
+}
+.guide-sidebar .composer-menu-item { flex-wrap: nowrap; font-size: 12px; }
+.guide-sidebar .composer-connect-trigger:focus-visible { outline: 2px solid var(--g-accent); outline-offset: 2px; }
+
+/*
+ * The Library, inside the lesson. It is the real gallery (plugins/), so only
+ * its palette changes here: the app's tokens would drop a white card onto the
+ * guide's paper.
+ */
+.guide-library {
+  margin: 18px 0 12px;
+  max-height: 46vh;
+  overflow: auto;
+  border: 1px solid var(--g-line);
+  border-radius: 12px;
+  background: var(--g-panel);
+}
+.guide-library .plugin-gallery {
+  padding: 16px;
+  gap: 14px;
+}
+.guide-library .plugin-start {
+  background: color-mix(in srgb, var(--g-gold) 12%, transparent);
+  border-color: color-mix(in srgb, var(--g-gold) 40%, transparent);
+}
+.guide-library .plugin-start h2,
+.guide-library .plugin-start li strong,
+.guide-library .plugin-body h3 {
+  color: var(--g-ink);
+}
+.guide-library .plugin-start li,
+.guide-library .plugin-summary {
+  color: var(--g-muted);
+}
+.guide-library .plugin-start > p,
+.guide-library .plugin-description,
+.guide-library .plugin-publisher,
+.guide-library .plugin-tags li,
+.guide-library .plugin-version,
+.guide-library .plugin-requires,
+.guide-library .plugin-steps {
+  color: var(--g-muted);
+  opacity: 0.85;
+}
+.guide-library .plugin-card {
+  background: var(--g-bg);
+  border-color: var(--g-line);
+}
+.guide-library .plugin-card[data-asked="true"] {
+  border-color: var(--g-accent);
+}
+.guide-library .plugin-icon {
+  background: color-mix(in srgb, var(--g-accent) 12%, transparent);
+  color: var(--g-accent);
+}
+.guide-library .plugin-installed {
+  color: var(--g-accent);
+}
+/* What the installed plugins added, in the workspace sidebar. */
+.guide-plugin-rail {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.guide-plugin-rail .plugin-rail {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.guide-profile-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+}
+
+/* A completed instruction acknowledges the real action before the next lesson. */
+.guide-step-done { animation: guide-step-done 200ms ease-out both; }
+@keyframes guide-step-done {
+  from { opacity: 0; transform: scale(.6); }
+  to { opacity: 1; transform: scale(1); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .guide-step-done { animation: none; }
+}
+
+/*
+ * The optional capability reel (onboarding/Reel.tsx), offered after the last
+ * lesson. It is mounted inside .guide-app so the terminal CSS does not retire
+ * it with the tutorial transcript — but .guide-app is a flex row whose only
+ * other child is the full-width workspace, so both the launch pill and the
+ * playing card are taken out of that row and floated above it at conversation
+ * width. The reel never replaces the workspace or maximizes over it.
+ */
+.guide-app > [data-flow="tut.more"],
+.guide-app > [data-reel-stage] {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 2;
+  box-sizing: border-box;
+  width: min(720px, calc(100% - 48px));
+}
+.guide-app > [data-flow="tut.more"] {
+  bottom: 92px;
+  width: auto;
+  max-width: calc(100% - 48px);
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 18px;
+  background: var(--g-panel);
+  backdrop-filter: blur(18px);
+  color: inherit;
+  font: inherit;
+  box-shadow: 0 12px 40px #102a3322;
+}
+/* Centred over the workspace, clear of the footer and of any settling toast. */
+.guide-app > [data-reel-stage] {
+  top: 50%;
+  transform: translate(-50%, -50%);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 22px 26px;
+  background: var(--g-panel);
+  backdrop-filter: blur(18px);
+  border: 1px solid var(--g-line);
+  border-radius: 14px;
+  box-shadow: 0 18px 60px #102a3322;
+}
+.guide-app > [data-reel-stage] .guide-message p {
+  margin: 0;
+}
+.guide-app > [data-reel-stage] form,
+.guide-app > [data-reel-stage] [role="group"] {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 12px;
+}
+.guide-app > [data-reel-stage] pre {
+  margin: 12px 0 0;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: var(--g-line);
+  overflow-x: auto;
+}
+.guide-app > [data-reel-stage] > button {
+  align-self: flex-start;
+}

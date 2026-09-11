@@ -212,7 +212,7 @@ describe("ci conformance", () => {
     assert.deepEqual(root.scripts, {
       browser: "node scripts/browser-check.mjs",
       check: "pnpm --recursive --if-present run check",
-      checklist: "pnpm --filter smithers-ui run checklist",
+      checklist: "pnpm --filter smithers-app run checklist",
       "check:npm-dedupe": "node scripts/check-npm-dedupe.mjs",
       circular: "pnpm --recursive --if-present run circular",
       "deploy:dry": "pnpm --filter smithers-server run deploy:dry",
@@ -221,7 +221,7 @@ describe("ci conformance", () => {
         "node apps/docs/shared/gen-sites.mjs --check && node apps/docs/shared/sync-content.mjs --all --check",
       "docs:deploy": "pnpm --filter \"@smithers/docs-*\" --filter \"!@smithers/docs-shared\" -r run deploy",
       "docs:sync": "node apps/docs/shared/sync-content.mjs --all",
-      dev: "pnpm --filter smithers-ui run start",
+      dev: "pnpm --filter smithers-app run start",
       lint: "pnpm --recursive --if-present run lint",
       "lint:jsdoc":
         "eslint --config eslint.config.js \"packages/*/src/**/*.ts\" \"packages/*/*/src/**/*.ts\" \"packages/*/*/*/src/**/*.ts\" --max-warnings=0",
@@ -230,7 +230,7 @@ describe("ci conformance", () => {
       "release:status": "node --experimental-strip-types flows/release-support/main.ts status",
       "release:workflow": "node --experimental-strip-types flows/release-support/main.ts release",
       test: "pnpm --recursive --if-present run test",
-      "test:e2e": "bun apps/ui/e2e/packaged/run.ts",
+      "test:e2e": "bun apps/app/e2e/packaged/run.ts",
       "test:examples": "pnpm --filter @smthrs/examples run test",
       "test:jsdoc": "node --test eslint.jsdoc.test.mjs"
     })

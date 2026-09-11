@@ -159,7 +159,7 @@ describe("FileTree", () => {
 });
 
 /*
- * The lazy, controlled tree a host drives from its own state (apps/ui's
+ * The lazy, controlled tree a host drives from its own state (apps/app's
  * sidebar loads one directory per fetch): `directories` names directories
  * whose children are not loaded yet, `collapsed` makes collapse state the
  * host's, `onToggle` reports the next state, `renderDirectoryEmpty` is the one

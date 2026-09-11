@@ -27,7 +27,7 @@ const FIRST_FRAME_MAX_BYTES = 64 * 1024
 
 /**
  * The end-to-end product bar this repo already states: row A-2's
- * `FIRST_MESSAGE_BUDGET_MS` in apps/ui/src/launch-checklist/Probes.ts. It is
+ * `FIRST_MESSAGE_BUDGET_MS` in apps/app/src/launch-checklist/Probes.ts. It is
  * the only latency contract written down anywhere in the tree, so every budget
  * below is derived from it rather than invented.
  */
@@ -383,7 +383,7 @@ export interface ScopedIdentityExpectation {
   /**
    * The login the deployment declares for this cookie: $CANARY_SESSION_LOGIN,
    * else $SMITHERS_E2E_USER, the same scoped account the browser sign-in probe
-   * signs in as (apps/ui/e2e/probes/signin-roundtrip.mjs).
+   * signs in as (apps/app/e2e/probes/signin-roundtrip.mjs).
    */
   readonly expectedLogin: string | undefined
   /** The hand-seeded closed-alpha roster, $CANARY_ALLOWLIST_LOGINS. */
@@ -614,7 +614,7 @@ export interface Endpoint {
   readonly body: string | undefined
 }
 
-/** The body shape apps/ui/scripts/canary-seam-probe.ts sends to the turn seam. */
+/** The body shape apps/app/scripts/canary-seam-probe.ts sends to the turn seam. */
 export const turnRequestBody = (runId: string): string =>
   JSON.stringify({
     runId,
@@ -634,7 +634,7 @@ export const endpointPlan = (runId: string): ReadonlyArray<Endpoint> => [
   },
   {
     // Signed out the turn seam answers 401 (asserted by
-    // apps/ui/scripts/canary-seam-probe.ts). This measures the GATE, not a
+    // apps/app/scripts/canary-seam-probe.ts). This measures the GATE, not a
     // model turn: requireTurnSession refuses before the rate limiter and
     // before any upstream call, so these samples cost nothing and cannot
     // consume the login's turn ceiling.

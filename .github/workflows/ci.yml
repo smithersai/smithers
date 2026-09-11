@@ -364,19 +364,19 @@ jobs:
           fi
         shell: bash
       - name: UI typecheck
-        run: pnpm exec smthrs build '//apps/ui:check' --verbose
+        run: pnpm exec smthrs build '//apps/app:check' --verbose
         env:
           SMITHERS_CACHE_URL: "${{ secrets.SMITHERS_CACHE_URL }}"
           SMITHERS_CACHE_READ_TOKEN: "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
           SMITHERS_CACHE_NAMESPACE: "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
       - name: UI unit tests
-        run: pnpm exec smthrs test '//apps/ui:unitTests' --verbose
+        run: pnpm exec smthrs test '//apps/app:unitTests' --verbose
         env:
           SMITHERS_CACHE_URL: "${{ secrets.SMITHERS_CACHE_URL }}"
           SMITHERS_CACHE_READ_TOKEN: "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
           SMITHERS_CACHE_NAMESPACE: "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
       - name: UI browser end-to-end suite
-        run: pnpm exec smthrs test '//apps/ui:browserE2e' --verbose
+        run: pnpm exec smthrs test '//apps/app:browserE2e' --verbose
         env:
           SMITHERS_CACHE_URL: "${{ secrets.SMITHERS_CACHE_URL }}"
           SMITHERS_CACHE_READ_TOKEN: "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
@@ -387,8 +387,8 @@ jobs:
           mkdir -p "$RUNNER_TEMP/apps-e2e-artifacts"
           for f in '/tmp/smithers-'*'.png'; do if [ -e "$f" ]; then cp -R -- "$f" "$RUNNER_TEMP/apps-e2e-artifacts"; fi; done
           if [ -e 'apps/reports' ]; then cp -R -- 'apps/reports' "$RUNNER_TEMP/apps-e2e-artifacts/reports"; fi
-          if [ -e 'apps/ui/test-results' ]; then cp -R -- 'apps/ui/test-results' "$RUNNER_TEMP/apps-e2e-artifacts/playwright-test-results"; fi
-          if [ -e 'apps/ui/playwright-report' ]; then cp -R -- 'apps/ui/playwright-report' "$RUNNER_TEMP/apps-e2e-artifacts/playwright-report"; fi
+          if [ -e 'apps/app/test-results' ]; then cp -R -- 'apps/app/test-results' "$RUNNER_TEMP/apps-e2e-artifacts/playwright-test-results"; fi
+          if [ -e 'apps/app/playwright-report' ]; then cp -R -- 'apps/app/playwright-report' "$RUNNER_TEMP/apps-e2e-artifacts/playwright-report"; fi
       - name: Upload apps-e2e-artifacts
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02

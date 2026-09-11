@@ -17,13 +17,13 @@ import project from "./src/data/project.json" with { type: "json" }
  * carries the /docs prefix and the root stays a plain Astro page. Add a page
  * there and list it in the sidebar below.
  *
- * The app page mounts apps/ui's AppIsland as a `client:only="react"` island,
+ * The app page mounts apps/app's AppIsland as a `client:only="react"` island,
  * so this build also carries the app's Vite settings: its Tailwind entry
- * (apps/ui/src/mainview/index.css) builds through @tailwindcss/vite and stays
+ * (apps/app/src/mainview/index.css) builds through @tailwindcss/vite and stays
  * inside the island's CSS chunk; react, react-dom and effect are deduped so
  * the app and the site share one copy of each; `electrobun/view` resolves to
  * a web shim because no Electrobun SDK exists here; the Vue flags are the
- * ones apps/ui/vite.config.ts injects for the Milkdown editor.
+ * ones apps/app/vite.config.ts injects for the Milkdown editor.
  *
  * @since 1.0.0
  * @category configuration
@@ -34,11 +34,31 @@ export default defineConfig({
   prefetch: { defaultStrategy: "hover" },
   experimental: { clientPrerender: true },
   vite: {
+    server: {
+      /*
+       * Dev only: forward the app's API families to a local apps/server
+       * (`wrangler dev`). Both timeouts are deliberate. Vite's proxy defaults
+       * to none, so a `wrangler dev` that accepts the socket but stops
+       * answering — it wedges while it rebuilds — makes /api/bootstrap hang
+       * forever, and the app shows a bare wordmark until the 60 s startup
+       * watchdog fires. Bounded, the same wedge aborts the request after ten
+       * seconds, so the boot rejects and the startup boundary names the failure
+       * instead of leaving a blank page.
+       */
+      proxy: process.env.SMITHERS_DEV_API_ORIGIN
+        ? Object.fromEntries(["/api", "/v1", "/workflows"].map((path) => [path, {
+          target: process.env.SMITHERS_DEV_API_ORIGIN,
+          ws: true,
+          timeout: 10_000,
+          proxyTimeout: 10_000
+        }]))
+        : undefined
+    },
     plugins: [tailwindcss()],
     resolve: {
       dedupe: ["react", "react-dom", "effect"],
       alias: {
-        "electrobun/view": fileURLToPath(new URL("../ui/src/mainview/native/electrobun-view.web.ts", import.meta.url))
+        "electrobun/view": fileURLToPath(new URL("../app/src/mainview/native/electrobun-view.web.ts", import.meta.url))
       }
     },
     define: {

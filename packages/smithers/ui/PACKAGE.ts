@@ -1,7 +1,7 @@
 /**
  * Targets for the private Smithers component kit.
  *
- * The product UI (`apps/ui`) imports `@smthrs/ui`, which ships its sources
+ * The product UI (`apps/app`) imports `@smthrs/ui`, which ships its sources
  * directly and uses Bun for its tests.
  *
  * Its presence here is what this file is for. The root `packageDefaults`
@@ -81,6 +81,12 @@ const docsFiles = Smithers.Filegroup({
   cwd
 })
 
+/** Complete React source input for the reproducible Solid projection. */
+const solidCodegenInputs = Smithers.Filegroup({
+  srcs: [Smithers.glob("src/**/*"), Smithers.file("package.json")],
+  cwd
+})
+
 export const Package = Smithers.Package({
-  targets: { check, docsFiles, unitTests }
+  targets: { solidCodegenInputs, check, docsFiles, unitTests }
 })

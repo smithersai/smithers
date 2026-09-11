@@ -6,7 +6,7 @@ members (`apps/*` in `pnpm-workspace.yaml`). Formerly one package,
 
 | Package           | Name              | What it is                                                                                                                                                                                       |
 | ----------------- | ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `apps/ui/`        | `smithers-ui`     | The Electrobun + React native app and pure-web UI. Vite builds to `ui/dist`. `src/dev/` is the vite dev/preview AgentApi middleware (not a deployable).                                          |
+| `apps/app/`        | `smithers-app`     | The Electrobun + React native app and pure-web UI. Vite builds to `ui/dist`. `src/dev/` is the vite dev/preview AgentApi middleware (not a deployable).                                          |
 | `apps/server/`    | `smithers-server` | The Cloudflare Worker deployable (`smithers-mvp-web`, canary.smithers.sh). Serves `../ui/dist` assets and the `/api`, `/v1`, `/workflows` seams.                                                 |
 | `packages/rpc/`   | `@smthrs/rpc`     | The agent contract both sides import (`AgentContext`, `AgentApiRoutes`, `NativeAgent` frames, `Cards`, ...). Import as `@smthrs/rpc/<Module>`.                                                   |
 
@@ -29,13 +29,13 @@ different repository and are what a broken sign-in usually means.
 
 | Command                               | From            | What runs                                                                                                                                                     |
 | ------------------------------------- | --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `pnpm dev`                            | repository root | The Electrobun app. Forwards to `pnpm --filter smithers-ui run start` (devkit projection, `vite build --configLoader runner`, `electrobun dev`), so the launch lives in one place. |
-| `pnpm --filter smithers-ui run build` | anywhere        | The Electrobun bundle: `vite build` into `apps/ui/dist`, then `electrobun build`.                                                                             |
+| `pnpm dev`                            | repository root | The Electrobun app. Forwards to `pnpm --filter smithers-app run start` (devkit projection, `vite build --configLoader runner`, `electrobun dev`), so the launch lives in one place. |
+| `pnpm --filter smithers-app run build` | anywhere        | The Electrobun bundle: `vite build` into `apps/app/dist`, then `electrobun build`.                                                                             |
 
 The app serves the SPA from a Bun local origin on `127.0.0.1` and forwards
 `/api/auth/*` and `/api/identity/*` to `https://canary.smithers.sh`; chat calls
 `chat.smithers.sh` with no login. Ports, env flags (`SMITHERS_LOCAL_PORT`,
 `SMITHERS_CHAT_STUB`, ...), the HTTP and WebSocket API, and the test tiers are
-specified in `apps/ui/docs/LOCAL-APP.md`. Signed-in state completes on the
+specified in `apps/app/docs/LOCAL-APP.md`. Signed-in state completes on the
 canary origin: the session cookie and the GitHub OAuth callback are bound
 there.

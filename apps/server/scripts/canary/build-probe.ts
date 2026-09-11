@@ -6,7 +6,7 @@
  *                                     [--allow-unstamped-html]
  *
  * Reads the build stamp the deployment carries (the site build writes it,
- * apps/site/scripts/build-stamp-integration.ts over apps/ui/scripts/build-stamp.ts)
+ * apps/site/scripts/build-stamp-integration.ts over apps/app/scripts/build-stamp.ts)
  * and compares it with the sha the caller expects. No credential is needed:
  * the stamp is a static asset on a public deployment.
  *

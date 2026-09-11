@@ -61,10 +61,10 @@ const builtinPackages = new Set(["bun", ...builtinModules, ...builtinModules.map
 // the list only shrinks.
 const knownReachThroughs = new Set([
   "PACKAGE.ts -> ./apps/site/src/data/project.json",
-  "apps/site/src/AppIsland.tsx -> ../../ui/src/mainview/AppIsland",
+  "apps/site/src/AppIsland.tsx -> ../../app/src/mainview/AppIsland",
   "apps/site/src/components/repoStats.ts -> ../../../server/src/publicRepoCatalog",
-  "apps/ui/src/mainview/cards/EngineTrace.test.ts -> ../../../../../packages/smithers/flows/engine-store/src/internal/JournalRecords.ts",
-  "apps/ui/src/mainview/cards/fixtures/CodingJournal.ts -> ../../../../../../packages/smithers/flows/engine-store/src/internal/JournalRecords.ts",
+  "apps/app/src/mainview/cards/EngineTrace.test.ts -> ../../../../../packages/smithers/flows/engine-store/src/internal/JournalRecords.ts",
+  "apps/app/src/mainview/cards/fixtures/CodingJournal.ts -> ../../../../../../packages/smithers/flows/engine-store/src/internal/JournalRecords.ts",
   "packages/smithers/build/infra/worker/test/action-cache.test.ts -> ../../../../flows/step-cache/src/CacheStore.ts",
 ])
 

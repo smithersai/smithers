@@ -16,8 +16,8 @@ import type { GraphNode, TargetGraphResponse } from "./TargetGraph.ts"
  * CLI on the force workspace live in `packages/rpc/fixtures/force/`.
  *
  * Who reads this: the UI's dev fixture stream
- * (`apps/ui/src/mainview/dev/fixtureRunStream.ts`). The local backend
- * (`apps/ui/src/bun/TargetGraph.ts`) answers the same envelopes by parsing
+ * (`apps/app/src/mainview/dev/fixtureRunStream.ts`). The local backend
+ * (`apps/app/src/bun/TargetGraph.ts`) answers the same envelopes by parsing
  * the TEXT rendering instead, because it merges several envelopes, the
  * separate `query` listing's kinds, and the declaration sources into one
  * response. The two share {@link isPrivateLabel} so they cannot disagree

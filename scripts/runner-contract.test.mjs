@@ -90,10 +90,10 @@ test("coverage failure reaches Vitest and the real target runner despite passing
 })
 
 test("browser assertion failure travels through the PR entrypoint, Playwright and NodeTest", () => {
-  const directory = fixture("apps/ui/node_modules")
+  const directory = fixture("apps/app/node_modules")
   try {
     declaration(directory, 'S.NodeTest({ runner: S.entrypoint(S.file("scripts/run-pr-e2e.mjs")), srcs: [S.glob("tests/**"), S.file("playwright.config.ts")], deps: [] })')
-    write(directory, "scripts/run-pr-e2e.mjs", readFileSync(join(root, "apps/ui/scripts/run-pr-e2e.mjs")))
+    write(directory, "scripts/run-pr-e2e.mjs", readFileSync(join(root, "apps/app/scripts/run-pr-e2e.mjs")))
     write(directory, "playwright.config.ts", 'export default { testDir: "tests", workers: 1, retries: 0, reporter: [["list"], ["json", { outputFile: "browser-results.json" }]], use: { headless: true } }\n')
     write(directory, "tests/sentinel.spec.ts", 'import { test, expect } from "@playwright/test"; test("browser sentinel", async ({ page }) => { await page.setContent("<h1>actual page</h1>"); await expect(page.locator("h1")).toHaveText("wrong page", { timeout: 100 }); })\n')
     const result = run(directory, "browser")

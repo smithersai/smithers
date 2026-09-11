@@ -90,7 +90,7 @@ const testScriptWiring = Smithers.NodeTest({
 })
 
 /**
- * The apps/ui required CI tier: selected once in its own job, a Playwright
+ * The apps/app required CI tier: selected once in its own job, a Playwright
  * wrapper that propagates failure, and a typecheck the real scheduler skips
  * when strict devkit preparation fails.
  *
@@ -103,13 +103,13 @@ const uiCiTier = Smithers.NodeTest({
     sources,
     Smithers.file("//scripts/release-rehearsal.mjs"),
     Smithers.file("//.github/workflows/ci.yml"),
-    Smithers.file("//apps/ui/PACKAGE.ts"),
-    Smithers.file("//apps/ui/scripts/ensure-devkit.mjs"),
-    Smithers.file("//apps/ui/scripts/run-pr-e2e.mjs"),
-    Smithers.file("//apps/ui/package.json"),
-    Smithers.file("//apps/ui/electrobun.config.ts"),
-    Smithers.file("//apps/ui/hutch.config.ts"),
-    Smithers.file("//apps/ui/tsconfig.json"),
+    Smithers.file("//apps/app/PACKAGE.ts"),
+    Smithers.file("//apps/app/scripts/ensure-devkit.mjs"),
+    Smithers.file("//apps/app/scripts/run-pr-e2e.mjs"),
+    Smithers.file("//apps/app/package.json"),
+    Smithers.file("//apps/app/electrobun.config.ts"),
+    Smithers.file("//apps/app/hutch.config.ts"),
+    Smithers.file("//apps/app/tsconfig.json"),
     Smithers.file("//package.json"),
     Smithers.file("//pnpm-lock.yaml")
   ],

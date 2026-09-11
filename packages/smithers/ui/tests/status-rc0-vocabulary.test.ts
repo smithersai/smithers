@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { formatStatus, hasStatusTone, isTerminalRunStatus, statusClass } from "../src/status";
 
 /**
- * The rc.0 run vocabulary and the run-card phases apps/ui renders beside it.
+ * The rc.0 run vocabulary and the run-card phases apps/app renders beside it.
  *
  * Every addition here is additive: no status that already had a tone changed
  * one, which is what keeps a consumer's colors stable across the upgrade.
@@ -19,7 +19,7 @@ const RUN_STATUSES = [
   "failed",
 ] as const;
 
-/** The run-card phases apps/ui passes beside the engine's own statuses. */
+/** The run-card phases apps/app passes beside the engine's own statuses. */
 const CARD_PHASES = [
   "launching",
   "running",
@@ -68,7 +68,7 @@ describe("the rc.0 run status vocabulary", () => {
 });
 
 describe("the run-card phases", () => {
-  test("every phase apps/ui passes has a tone", () => {
+  test("every phase apps/app passes has a tone", () => {
     expect(CARD_PHASES.map(statusClass)).toEqual([
       "run", // launching
       "run",
@@ -84,7 +84,7 @@ describe("the run-card phases", () => {
   });
 
   test("every phase has a human label rather than a title-cased slug", () => {
-    // `quiet` keeps the mechanical fallback on purpose. apps/ui's run card has
+    // `quiet` keeps the mechanical fallback on purpose. apps/app's run card has
     // always worn a "Quiet" pill and its CardFrames suite pins that string, so
     // a label entry here would have changed a rendered label rather than added
     // a missing one.

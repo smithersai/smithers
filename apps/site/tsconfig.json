@@ -6,7 +6,7 @@
     // The app imports `electrobun/view`, which no package provides in this
     // tree; astro.config.mjs aliases it to the same web shim for the bundle.
     "paths": {
-      "electrobun/view": ["../ui/src/mainview/native/electrobun-view.web.ts"]
+      "electrobun/view": ["../app/src/mainview/native/electrobun-view.web.ts"]
     }
   },
   "include": [".astro/types.d.ts", "**/*"],

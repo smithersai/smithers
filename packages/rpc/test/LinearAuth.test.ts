@@ -3,7 +3,7 @@ import { LinearAuthSessionSchema } from "../src/LinearAuth.ts"
 
 /*
  * The Linear OAuth handoff on the local origin
- * (apps/ui/docs/decisions/0005-linear-github-sync.md). The session carries no
+ * (apps/app/docs/decisions/0005-linear-github-sync.md). The session carries no
  * token: it carries the setup key only once the handoff is authorized.
  */
 describe("the Linear sign-in wire model", () => {

@@ -27,7 +27,7 @@ import * as LocalLsp from "../src/LocalLsp.ts"
 import { RunReplayResponseSchema, TargetRunEventSchema } from "../src/TargetGraph.ts"
 
 /*
- * The local-app wire model (apps/ui/docs/LOCAL-APP.md "Targets: load and
+ * The local-app wire model (apps/app/docs/LOCAL-APP.md "Targets: load and
  * run"): a repository carries its detected workspaces, and a target carries
  * the workspace its loader ran in plus the presentation its declaration
  * stated. There is no repository manifest: a target's summary and featured
@@ -137,7 +137,7 @@ describe("TargetRunFrameSchema", () => {
 })
 
 /*
- * The harness table (apps/ui/docs/workbench-lanes/custom-agents.md): a row
+ * The harness table (apps/app/docs/workbench-lanes/custom-agents.md): a row
  * says which binary the app found, whether that binary is signed in, and
  * whether it can be pointed at a model. The account and the model table are
  * the two facts a row may not have, and they say so differently: `account`

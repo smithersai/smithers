@@ -2,7 +2,7 @@
  * Renders public/media/og.png, the 1200x630 social card that Base.astro
  * references from og:image and twitter:image. The card uses the site's dark
  * palette from src/styles/site.css so it reads as the same brand as the page.
- * Playwright's Chromium comes from apps/ui's own dependency, as record-ui.mjs.
+ * Playwright's Chromium comes from apps/app's own dependency, as record-ui.mjs.
  *
  * Usage: node scripts/render-og.mjs
  */
@@ -13,7 +13,7 @@ import { resolve } from "node:path"
 
 const here = fileURLToPath(new URL(".", import.meta.url))
 const root = resolve(here, "../../..")
-const uiRequire = createRequire(resolve(root, "apps/ui/package.json"))
+const uiRequire = createRequire(resolve(root, "apps/app/package.json"))
 const { chromium } = uiRequire("@playwright/test")
 
 const OUT = resolve(here, "../public/media/og.png")

@@ -13,8 +13,8 @@ test("CI command discovery retains diagnostic options and refuses unknown select
       verb: "ci", pattern: "//packages/...", jobs: 2, verbose: true
     })
   }
-  assert.deepEqual(targetInvocation("pnpm exec smthrs build '//apps/ui:check' --verbose"), {
-    verb: "build", pattern: "//apps/ui:check", jobs: undefined, verbose: true
+  assert.deepEqual(targetInvocation("pnpm exec smthrs build '//apps/app:check' --verbose"), {
+    verb: "build", pattern: "//apps/app:check", jobs: undefined, verbose: true
   })
   assert.equal(targetInvocation("node scripts/generate-ci.mjs"), undefined)
   for (const options of ["--include-exclusive", "--jobs", "--jobs 0", "--jobs 2 --jobs 3", "--plan"])
@@ -23,10 +23,10 @@ test("CI command discovery retains diagnostic options and refuses unknown select
 })
 
 test("UI typecheck plans strict devkit preparation as an uncached prerequisite", async () => {
-  const plan = planned("build", "//apps/ui:check")
-  assert.deepEqual(plan.roots, ["//apps/ui:check"])
-  const check = plan.targets.find((target) => target.label === "//apps/ui:check")
-  const devkit = plan.targets.find((target) => target.label === "//apps/ui:devkit")
+  const plan = planned("build", "//apps/app:check")
+  assert.deepEqual(plan.roots, ["//apps/app:check"])
+  const check = plan.targets.find((target) => target.label === "//apps/app:check")
+  const devkit = plan.targets.find((target) => target.label === "//apps/app:devkit")
   assert.ok(check)
   assert.ok(devkit, "a clean checkout has no ignored devkit for TypeScript to extend")
   assert.ok(check.dependencies.includes(devkit.label))
@@ -49,7 +49,7 @@ test("required CI resolves package, app, script, evaluation and fault suites to 
   assert.deepEqual(inventory.selectionErrors, [], "every required command must successfully plan")
   const selected = (label, job) => inventory.rows.filter((row) => row.label === label && row.job === job && row.required && row.selectedRoot)
   for (const [label, job] of [
-    ["//apps/ui:check", "apps-e2e"], ["//apps/ui:unitTests", "apps-e2e"], ["//apps/ui:browserE2e", "apps-e2e"],
+    ["//apps/app:check", "apps-e2e"], ["//apps/app:unitTests", "apps-e2e"], ["//apps/app:browserE2e", "apps-e2e"],
     ["//apps/server:check", "test"], ["//apps/server:unitTests", "test"],
     ["//apps/review:unitTests", "test"], ["//apps/bug-worker:unitTests", "test"], ["//apps/status-site:unitTests", "test"],
     ["//apps/review:check", "test"], ["//apps/review:checkTests", "test"],
@@ -64,7 +64,7 @@ test("required CI resolves package, app, script, evaluation and fault suites to 
     ["//scripts:webBundleContract", "browser"],
     ["//packages/smithers/gateway:test", "test"], ["//packages/smithers/flows/jj:test", "packages"]
   ]) assert.ok(selected(label, job).length, `${label} must be a required root of ${job}`)
-  const uiUnits = inventory.rows.filter((row) => row.label === "//apps/ui:unitTests" && row.required && row.selectedRoot)
+  const uiUnits = inventory.rows.filter((row) => row.label === "//apps/app:unitTests" && row.required && row.selectedRoot)
   assert.equal(uiUnits.length, 1, "the UI unit tier runs once in required CI")
   assert.deepEqual(uiUnits[0].runner, ["bun", "test", "src", "e2e/contracts", "scripts"])
   const packageTests = inventory.rows.filter((row) => row.job === "packages" && row.required && row.selectedRoot)
@@ -91,7 +91,7 @@ test("required CI resolves package, app, script, evaluation and fault suites to 
       // One required UI job owns three distinct tiers; its unit step must
       // still name and execute the unit runner, never claim browser coverage.
       assert.doesNotMatch(row.step, /e2e|end.to.end/i)
-      if (row.job === "apps-e2e") assert.equal(row.label, "//apps/ui:unitTests")
+      if (row.job === "apps-e2e") assert.equal(row.label, "//apps/app:unitTests")
     }
     if (/browserE2e$/.test(row.label)) {
       assert.equal(row.rule, "NodeTest")

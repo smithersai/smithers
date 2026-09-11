@@ -371,17 +371,17 @@ const ci = Smithers.GithubCiGen({
           sources: [
             { from: "/tmp/smithers-*.png" },
             { from: "apps/reports", as: "reports" },
-            { from: "apps/ui/test-results", as: "playwright-test-results" },
-            { from: "apps/ui/playwright-report", as: "playwright-report" }
+            { from: "apps/app/test-results", as: "playwright-test-results" },
+            { from: "apps/app/playwright-report", as: "playwright-report" }
           ]
         })
       }),
       // Fail the UI's Linux checks promptly, without waiting behind the
       // workspace graph. Each tier remains a required, separate command.
       steps: [
-        { name: "UI typecheck", verb: Smithers.Verb.Build, pattern: "//apps/ui:check" },
-        { name: "UI unit tests", verb: Smithers.Verb.Test, pattern: "//apps/ui:unitTests" },
-        { name: "UI browser end-to-end suite", verb: Smithers.Verb.Test, pattern: "//apps/ui:browserE2e" }
+        { name: "UI typecheck", verb: Smithers.Verb.Build, pattern: "//apps/app:check" },
+        { name: "UI unit tests", verb: Smithers.Verb.Test, pattern: "//apps/app:unitTests" },
+        { name: "UI browser end-to-end suite", verb: Smithers.Verb.Test, pattern: "//apps/app:browserE2e" }
       ]
     },
     {

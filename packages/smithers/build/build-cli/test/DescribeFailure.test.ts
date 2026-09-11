@@ -13,7 +13,7 @@ const execError = (overrides: Record<string, unknown> = {}): Record<string, unkn
   _tag: "smithers-build/ExecError",
   argv: ["bun", "test", "src"],
   code: "exit_status",
-  cwd: "apps/ui",
+  cwd: "apps/app",
   exitCode: 1,
   stderr: "3 fail\n  routes > agents > spawns a session",
   stdout: "",
@@ -65,7 +65,7 @@ describe("describeFailure", () => {
       stdout: "o".repeat(tail)
     }))
     namesTheRun(rendered)
-    expect(rendered).toContain("apps/ui")
+    expect(rendered).toContain("apps/app")
     expect(rendered).toContain("truncated")
     expect(rendered.length).toBeLessThanOrEqual(Diagnostic.maximumMessageCodeUnits)
   })
@@ -83,7 +83,7 @@ describe("describeFailure", () => {
       _tag: "smithers-build/ExecError",
       argv: ["bun", "test", "src"],
       code: "exit_status",
-      cwd: "apps/ui",
+      cwd: "apps/app",
       exitCode: 1
     })
     expect(decoded[stream].startsWith(start)).toBe(true)

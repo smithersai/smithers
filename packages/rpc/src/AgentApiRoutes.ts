@@ -308,7 +308,7 @@ export const RECOMMEND_OUTCOME_PATH = "/api/recommend/outcome"
 export const ADMIN_RECOMMEND_LOG_PATH = "/api/admin/recommend/log"
 
 /*
- * The local app's own chat boundary (apps/ui/docs/LOCAL-APP.md): the Bun
+ * The local app's own chat boundary (apps/app/docs/LOCAL-APP.md): the Bun
  * main process serves these on http://127.0.0.1:<port> and the SPA streams
  * the same NDJSON AgentTurnFrames the native bridge used to carry.
  */

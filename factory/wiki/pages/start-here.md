@@ -11,7 +11,7 @@ Smithers combines typed durable flows, a coding agent, a repository build graph 
 | Attach Node or Bun host implementations | `NodeRuntime` or `BunRuntime` in the same package |
 | Run a schema-bound model step | `packages/smithers/agent/src/AgentAction.ts` |
 | Declare repository dependencies and checks | `PACKAGE.ts`, using `@smthrs/targets` |
-| Add a product interaction | `apps/ui/AGENTS.md`, then the existing flow registry and card family |
+| Add a product interaction | `apps/app/AGENTS.md`, then the existing flow registry and card family |
 
 The runtime and UI laws are boundaries for contributors. They are not evidence that every desired coding feature already exists.
 

@@ -2,7 +2,7 @@
  * CN-1: is the deployed bundle the git sha the deploy receipt claims?
  *
  * The live canary served a build 13 commits old and nothing detected it,
- * because the deployment could not state what it was. `apps/ui/vite.config.ts`
+ * because the deployment could not state what it was. `apps/app/vite.config.ts`
  * now stamps the sha into the SPA bundle at build time, twice: a
  * `__build.json` asset and a `<meta name="smithers-build-sha">` tag on the
  * HTML. Both travel inside the artifact, so a stale bundle serves a stale

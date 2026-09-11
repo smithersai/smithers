@@ -68,6 +68,6 @@ export const Workspace = S.Workspace("smithers", {
     "fixture-viem-node-spec": S.LocalRepository("packages/smithers/build/build-cli/test/fixtures/viem-node-spec"),
     "template-aomi": S.LocalRepository("packages/smithers/create-app/template/aomi"),
     "template-default": S.LocalRepository("packages/smithers/create-app/template/default"),
-    "ui-e2e-repo-plugin": S.LocalRepository("apps/ui/e2e/fixtures/repo-plugin")
+    "ui-e2e-repo-plugin": S.LocalRepository("apps/app/e2e/fixtures/repo-plugin")
   }
 })

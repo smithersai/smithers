@@ -8,7 +8,7 @@ import { z } from "zod"
 
 /*
  * The Smithers Cloud seam on the local origin
- * (apps/ui/docs/decisions/0001-piper-one-truth.md): `/api/cloud/*` proxies to
+ * (apps/app/docs/decisions/0001-piper-one-truth.md): `/api/cloud/*` proxies to
  * the cloud API (SMITHERS_CLOUD_API, default https://api.jjhub.tech) with the
  * Bun-held bearer attached, and the `/api/cloud-auth/*` routes run the CLI's
  * browser login. The token NEVER reaches the renderer: the session answer
@@ -36,7 +36,7 @@ export const CLOUD_ROUTE_PREFIX = "/api/cloud/"
  */
 export const CLOUD_WS_ROUTE_PREFIX = "/api/cloud-ws/"
 /*
- * Lane L6 — the cloud language-server relay (plue #505; apps/ui/docs/code-intel/
+ * Lane L6 — the cloud language-server relay (plue #505; apps/app/docs/code-intel/
  * PLAN.md "Live"): the same tunnel carries `…/workspace/sessions/{id}/lsp`
  * with plue's `lsp` subprotocol. One JSON-RPC 2.0 message per text frame,
  * 1 MiB per frame; a larger message crosses as `{ seq, last, data }`

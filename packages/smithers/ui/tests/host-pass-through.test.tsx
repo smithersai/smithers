@@ -1,5 +1,5 @@
 /** @jsxImportSource react */
-// The three library changes apps/ui asked for (LIBRARY-CHANGE-REQUESTS §3-§5),
+// The three library changes apps/app asked for (LIBRARY-CHANGE-REQUESTS §3-§5),
 // each proven at the boundary the app reaches for: pass-through attributes on
 // the buttons ChatComposer and FileTree render, Tab leaving MarkdownEditor,
 // and a GitHub-flavored table rendered as a table.

@@ -306,7 +306,7 @@ test("every gate in ci.yml also runs in release.yml", () => {
   const actual = jobSteps(workflow("release.yml"), "publish").filter(isGate)
 
   // The gates the release adds on top of the mirrored jobs, pinned so an
-  // extra step is a decision here rather than a silent addition. The apps/ui
+  // extra step is a decision here rather than a silent addition. The apps/app
   // pair mirrors the `apps-e2e` job without its browser suite; the other two
   // are release-only targets the roster comment in release.yml explains. The
   // 2026-09-05 rename added `smthrs` copies of two gates beside their older
@@ -314,8 +314,8 @@ test("every gate in ci.yml also runs in release.yml", () => {
   // not see the duplicates, the dropped cache env on two gates, or a step
   // ci.yml gained that the release never mirrored.
   const releaseOnly = [
-    "pnpm exec smthrs build '//apps/ui:check' --verbose",
-    "pnpm exec smthrs test '//apps/ui:unitTests' --verbose",
+    "pnpm exec smthrs build '//apps/app:check' --verbose",
+    "pnpm exec smthrs test '//apps/app:unitTests' --verbose",
     "pnpm exec smthrs test '//packages/smithers/flows/engine-store:disasterRecovery' --verbose",
     "pnpm exec smthrs test '//scripts:releaseVersion' --verbose"
   ]

@@ -1,5 +1,5 @@
 /** @jsxImportSource react */
-// The code-view adapter (apps/ui/docs/code-intel/PLAN.md §1): one repository
+// The code-view adapter (apps/app/docs/code-intel/PLAN.md §1): one repository
 // file rendered by `@pierre/diffs` `File`, Shiki underneath, exported through
 // `@smthrs/ui/adapters/code-view` and never the base barrel. Tokenizing is
 // asynchronous (the grammar and the theme load on first use), so the live
@@ -500,7 +500,7 @@ describe("CodeFileView token model (happy-dom, main thread)", () => {
 });
 
 /*
- * Code intelligence L4 (apps/ui/docs/code-intel/PLAN.md §5): the view's
+ * Code intelligence L4 (apps/app/docs/code-intel/PLAN.md §5): the view's
  * interaction contract. Annotations render under their line as light-DOM
  * children pierre slots into the shadow root (a diagnostic, a hover box);
  * a pointer at rest on a token for `restMs` is one `onTokenRest` with the

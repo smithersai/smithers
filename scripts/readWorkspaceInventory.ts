@@ -45,7 +45,7 @@ export const readWorkspaceInventory = (root = resolve(import.meta.dirname, "..")
   const nestedNonLibraries = new Set(["smithers/build/infra"])
   // A fourth carve-out, for the private contract package the two apps share.
   // `@smthrs/rpc` is runtime-free zod schemas and route constants imported by
-  // `apps/ui` and `apps/server`; it runs `bun test src` beside its sources,
+  // `apps/app` and `apps/server`; it runs `bun test src` beside its sources,
   // ships no `src/index.ts` barrel and no publication exports, and is never
   // published. It is named rather than derived for the same reason the UI kits
   // are: a smaller universe, not a smaller assertion.

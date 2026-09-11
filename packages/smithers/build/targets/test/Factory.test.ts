@@ -44,7 +44,7 @@ describe("Smithers.label", () => {
     const ci = Smithers.label("//:ci")
     expect(ci).toEqual({ _tag: "Label", label: "//:ci" })
     expect(Object.isFrozen(ci)).toBe(true)
-    expect(Reference.label("//apps/ui:dev")).toEqual({ _tag: "Label", label: "//apps/ui:dev" })
+    expect(Reference.label("//apps/app:dev")).toEqual({ _tag: "Label", label: "//apps/app:dev" })
     expect(Reference.Label.make({ label: "//packages/smithers/build:targets" }).label).toBe(
       "//packages/smithers/build:targets"
     )

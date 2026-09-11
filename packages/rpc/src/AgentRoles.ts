@@ -7,8 +7,8 @@ import { z } from "zod"
 import { HARNESS_IDS } from "./LocalApp.ts"
 
 /*
- * The agent roles (apps/ui/docs/LOCAL-APP.md "Tabs" → "Agents";
- * apps/ui/docs/workbench-lanes/custom-agents.md): every role is a job
+ * The agent roles (apps/app/docs/LOCAL-APP.md "Tabs" → "Agents";
+ * apps/app/docs/workbench-lanes/custom-agents.md): every role is a job
  * description bound to one model and to the local harness that runs that
  * model. Roles are DATA — the `+` menus, the PTY route, the subagent card, the
  * Agents card, and the orchestrator's instructions all read one list — so a
@@ -176,7 +176,7 @@ export const AGENT_ROLES: ReadonlyArray<AgentRole> = [
    * "start cheap and escalate". Cost control is parallelism, caching and the
    * prototype-first decision, never a cheaper model for the implementation
    * itself. The pin is
-   * apps/ui/src/mainview/state/controller/implementSeat.test.ts.
+   * apps/app/src/mainview/state/controller/implementSeat.test.ts.
    */
   seeded({
     id: "implementation",
@@ -386,7 +386,7 @@ export const agentRoleTitle = (role: AgentRole): string => `${role.label} · ${r
 /**
  * What a harness needs to launch a role: its binary name and the flag that
  * takes a model id (`claude --model`, `codex -m`, `opencode --model`). The
- * Bun host's harness table (apps/ui/src/bun/Harnesses.ts) states these,
+ * Bun host's harness table (apps/app/src/bun/Harnesses.ts) states these,
  * verified against each installed binary's `--help`; this module only
  * composes with them.
  * @since 1.0.0
@@ -427,7 +427,7 @@ export const roleLaunchArgv = (
 }
 
 /*
- * The wire (apps/ui/docs/LOCAL-APP.md "HTTP and WebSocket surface"):
+ * The wire (apps/app/docs/LOCAL-APP.md "HTTP and WebSocket surface"):
  * `GET /api/agents` answers the list; `PUT /api/agents/{id}` creates or
  * edits one row from this body; `GET /api/harnesses/{id}/models` answers
  * what the harness's own list command printed, or the table's verified

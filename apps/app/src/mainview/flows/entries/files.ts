@@ -1,0 +1,63 @@
+/*
+ * The `files` flows. One module per namespace: a lane that adds or edits a
+ * flow here touches no other flow module, and Flows.ts registers each block in
+ * the aggregator order.
+ */
+import { Schema } from "effect"
+import { fileArgs } from "../FileArgs"
+import { text } from "../FlowForms"
+import { flow, NoPayload } from "./Declare"
+import type { FlowEntry, Namespace } from "../registry"
+import type { CommandActions } from "./Declare"
+
+/** The `files` namespace row: the slash tree lists it in registry.ts NAMESPACES order. */
+export const namespace: Namespace = { id: "files", label: "Files", summary: "Read repository files" }
+
+/** `files.list` and `files.read`. */
+export const filesFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> => [
+  flow({
+    /*
+     * Files flows parse the PATH as the first token, always — a lone `src/x`
+     * is a path, never a repo (deterministic beats clever); name the repo as a
+     * second token to cross repositories.
+     */
+    name: "files.list",
+    form: { args: (payload) => fileArgs(text(payload, "path") ?? "/", text(payload, "repo")) },
+    summary: "List a repository directory",
+    runtimeAny: ["cloud", "local.repositories"],
+    args: "[path] [owner/repo]",
+    requires: ["repo-source"],
+    input: Schema.Struct({ path: Schema.String, repo: Schema.optional(Schema.String) }),
+    handler: ({ path, repo }) => actions.listFiles(path, repo)
+  }),
+  flow({
+    name: "files.read",
+    form: {
+      fields: { path: { kind: "select" }, repo: { optionsFrom: "cloud-repos", kind: "text" } },
+      args: (payload) => fileArgs([text(payload, "path"), text(payload, "line"), text(payload, "column")].filter((part) => part !== undefined).join(":"), text(payload, "repo"))
+    },
+    summary: "Read a file from a repository",
+    runtimeAny: ["cloud", "local.repositories"],
+    /* `:line[:col]` (docs/code-intel/PLAN.md §1): the card scrolls to and marks the line; the parser strips it off the path token. */
+    args: "<path>[:<line>[:<col>]] [owner/repo]",
+    requires: ["repo-source"],
+    input: Schema.Struct({
+      path: Schema.String,
+      repo: Schema.optional(Schema.String),
+      line: Schema.optional(Schema.Number),
+      column: Schema.optional(Schema.Number)
+    }),
+    handler: ({ path, repo, line, column }) =>
+      actions.readFile(path, repo, line === undefined ? undefined : { line, ...(column === undefined ? {} : { column }) })
+  })
+]
+
+/** `files.add`, registered beside `composer.add`. */
+export const filesAddFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> => [
+  flow({
+    name: "files.add",
+    summary: "Add files to the conversation",
+    input: NoPayload,
+    handler: () => actions.addFiles()
+  })
+]

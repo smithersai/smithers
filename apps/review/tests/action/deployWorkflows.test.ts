@@ -75,10 +75,10 @@ describe("apps-deploy.yml names apps this workspace still has", () => {
     // apps left the tree, and it read as "eight or more" long after only three
     // remained. Dropping or adding a gated app is a decision this line records.
     expect(pairs).toEqual([
-      "smithers-ui:typecheck",
+      "smithers-app:typecheck",
       "smithers-server:typecheck",
       "@smthrs/rpc:typecheck",
-      "smithers-ui:test",
+      "smithers-app:test",
       "smithers-server:test",
       "@smthrs/rpc:test"
     ]);

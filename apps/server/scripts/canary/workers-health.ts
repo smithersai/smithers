@@ -3,7 +3,7 @@
  *
  *   bun scripts/canary/workers-health.ts [--timeout <ms>]
  *
- * apps/ui/scripts/canary-seam-probe.ts already probes the seams THROUGH the
+ * apps/app/scripts/canary-seam-probe.ts already probes the seams THROUGH the
  * product Worker, which is the right test for "is the product honest about its
  * upstreams". It cannot tell a healthy upstream from a proxy that never called
  * one, and it says nothing at all about the five Workers apps/server does not

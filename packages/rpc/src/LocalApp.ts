@@ -7,7 +7,7 @@ import { z } from "zod"
 import { type TargetRunEvent, TargetRunEventSchema } from "./TargetGraph.ts"
 
 /*
- * The local-app wire model (apps/ui/docs/LOCAL-APP.md "HTTP and WebSocket
+ * The local-app wire model (apps/app/docs/LOCAL-APP.md "HTTP and WebSocket
  * API"): the harness, repository, and PTY session records the local server
  * answers and the SPA stores. Runtime-free zod, like Cards.ts, so the Bun
  * server, the SPA, and the Playwright doubles validate the same shapes.
@@ -50,7 +50,7 @@ export const HarnessSchema = z.object({
   launch: z.object({ argv: z.array(z.string()) }),
   /**
    * How this harness takes a model
-   * (apps/ui/docs/workbench-lanes/custom-agents.md): the table's verified
+   * (apps/app/docs/workbench-lanes/custom-agents.md): the table's verified
    * suggestions and whether it has a list command
    * (`GET /api/harnesses/{id}/models` runs it). Absent when the binary's
    * `--help` names no model flag the app has verified — such a harness runs

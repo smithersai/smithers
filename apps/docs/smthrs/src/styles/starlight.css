@@ -2,7 +2,7 @@
  * Smithers branding for the Starlight documentation at /docs.
  *
  * The palette is `night-owl`, the product UI's default, read from
- * apps/ui/src/mainview/styles/tokens.css and mapped onto Starlight's own
+ * apps/app/src/mainview/styles/tokens.css and mapped onto Starlight's own
  * variables. Starlight carries its dark values on bare `:root` and its light
  * values on `:root[data-theme='light']`, so this file follows that shape: the
  * dark block is the base and the light block overrides it.

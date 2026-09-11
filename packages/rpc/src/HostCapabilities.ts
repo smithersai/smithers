@@ -9,7 +9,7 @@ import type { RuntimeCapability } from "./AppBootstrap.ts"
  * The one place each host's bootstrap capability list is spelled out.
  *
  * The Worker (`apps/server/src/index.ts`, host `cloud`) and the Bun server
- * (`apps/ui/src/bun/server.ts`, host `local`) call these with what they have
+ * (`apps/app/src/bun/server.ts`, host `local`) call these with what they have
  * configured, and the parity test builds its registries from the same two
  * functions, so the matrix cannot drift from production. Each table is the
  * emission order; a row is kept only when its flag is on.

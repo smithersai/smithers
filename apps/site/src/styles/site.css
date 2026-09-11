@@ -1,6 +1,6 @@
 /*
  * smithers.sh design tokens. The palette is the product UI's default
- * (apps/ui/src/mainview/styles/tokens.css, Night Owl), so the site and the
+ * (apps/app/src/mainview/styles/tokens.css, Night Owl), so the site and the
  * app read as one thing. Light is the base; dark follows the viewer's scheme.
  */
 :root {

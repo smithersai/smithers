@@ -59,7 +59,7 @@ export const releaseGates = [
  */
 export const releaseGateExclusions = [
   { job: "rust", reason: "Native Rust tests need cargo and the crate toolchain; the release ships only the committed WASM, which the byte-compare gate proves." },
-  { job: "apps-e2e", reason: "The app browser suite needs the runner's Chrome; the release runs the apps/ui typecheck and unit tests instead." }
+  { job: "apps-e2e", reason: "The app browser suite needs the runner's Chrome; the release runs the apps/app typecheck and unit tests instead." }
 ]
 
 /**

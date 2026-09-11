@@ -1,5 +1,5 @@
 /**
- * The highlighter's worker pool (apps/ui/docs/code-intel/PLAN.md §1 "Where
+ * The highlighter's worker pool (apps/app/docs/code-intel/PLAN.md §1 "Where
  * the work runs"). Shiki's JavaScript regex engine compiles a grammar inside
  * the first synchronous tokenize: measured at 2.6 s for a 16 KiB TypeScript
  * file under JavaScriptCore (the native shell's WebKit) and ~300 ms once

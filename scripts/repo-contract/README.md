@@ -34,7 +34,7 @@ production denominator across Worker, CLI, React and static assets.
 | Owner | Required behavior | Missing coverage evidence |
 | --- | --- | --- |
 | `apps/server` | Worker unit and canary-wiring assertions | Whole Worker/script source denominator and failure-branch measurement. |
-| `apps/ui` | Typecheck, Bun units, offline Playwright | TSX/host/React denominator; packaged native host and live provider acceptance. |
+| `apps/app` | Typecheck, Bun units, offline Playwright | TSX/host/React denominator; packaged native host and live provider acceptance. |
 | `apps/review` | Node/Bun typechecks and unit contracts | Mixed CLI/Worker denominator; credentialed review case is optional and cannot close offline coverage. |
 | `apps/bug-worker` | Real fetch handler against in-memory KV | Complete Worker branch measurement, including transport failures. |
 | `apps/status-site` | Worker and published-surface/static-page contracts | Worker denominator and browser rendering coverage. |
@@ -102,7 +102,7 @@ pnpm exec smithers-build test '//scripts/repo-contract/...'
 | `barrels.test.mjs` | `@smthrs/flows` re-exports exactly the namespaces it lists, declares every package it re-exports, and every published root export points at a file that exists. |
 | `public-export-maps.test.mjs` | Explicit development/publication allowlists retain reviewed entrypoints, deny internal migrations and future files, and resolve equivalently through Node's ESM and CommonJS resolvers. |
 | `test-script-wiring.test.mjs` | Every workspace member with tests has a `test` script, and the pnpm workspace and the root manifest name the same members. |
-| `ui-ci-tier.test.mjs` | The required PR workflow selects the apps/ui typecheck, units and Playwright once each in their own Ubuntu job; the Playwright wrapper propagates failure; the real scheduler skips TypeScript when strict devkit preparation fails. |
+| `ui-ci-tier.test.mjs` | The required PR workflow selects the apps/app typecheck, units and Playwright once each in their own Ubuntu job; the Playwright wrapper propagates failure; the real scheduler skips TypeScript when strict devkit preparation fails. |
 | `reliability-workflow.test.mjs` | The scheduled `signal-state-machine` job in `reliability.yml` records its seed, preserves histories and results on failure, verifies the evidence and proves mutation sensitivity. |
 | `ci-inventory.test.mjs` | The planned CI commands cover every package, app, script, eval and fault root, with a retained row per selected target and platform. |
 | `cli-verbs.test.mjs` | The CLI reference indexes every canonical command, retains the compatibility pages, and documents only flags the public parser accepts. |

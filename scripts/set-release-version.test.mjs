@@ -95,7 +95,7 @@ test("workspace discovery follows every pnpm-workspace package glob", () => {
   assert.equal(directories.has("examples"), true)
   assert.equal(directories.has("apps/server"), true)
   assert.equal(directories.has("packages/rpc"), true)
-  assert.equal(directories.has("apps/ui"), true)
+  assert.equal(directories.has("apps/app"), true)
 })
 
 test("retargetSource rewrites the version literal and nothing else", () => {

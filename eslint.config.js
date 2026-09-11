@@ -4,7 +4,7 @@ import { jsdocConvention } from "./eslint.jsdoc.js"
 // Package source modules inherit the convention by location. Keep this list as explicit opt-outs,
 // so a newly added package inherits the public documentation contract.
 // UI packages retain their frontend conventions and are outside the rc.0 audit.
-const optedOut = ["packages/smithers/ui/**", "packages/ui-core/**", "apps/ui/**"]
+const optedOut = ["packages/smithers/ui/**", "packages/ui-core/**", "apps/app/**"]
 const sources = ["packages/*/src/**/*.ts", "packages/*/*/src/**/*.ts", "packages/*/*/*/src/**/*.ts"]
 
 export default [

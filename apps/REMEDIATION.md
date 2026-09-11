@@ -63,7 +63,7 @@ Fixed in `App.tsx` + `chat.css`. Caught by `e2e/suites/auth-session.e2e.ts`.
 
 Root cause of why the fix needed a focus shortcut rather than a DOM reorder:
 `@smthrs/ui`'s `MessageScrollerViewport` hardcodes `tabIndex={0}` and nothing the
-host passes reaches it. `apps/ui` pins `@smthrs/ui: 0.33.0` from npm with no
+host passes reaches it. `apps/app` pins `@smthrs/ui: 0.33.0` from npm with no
 alias and no patch, so no change in this repo can reach it. Filed upstream.
 
 ## The rot that started this
@@ -164,7 +164,7 @@ version was created 2026-08-13, and the probe reds against it today.
 
 | Workspace     | Before | After |
 | ------------- | -----: | ----: |
-| `apps/ui`     |    526 |   628 |
+| `apps/app`     |    526 |   628 |
 | `apps/server` |    108 |   371 |
 | `packages/rpc` |     33 |    33 |
 
@@ -217,7 +217,7 @@ aborting before them. The a11y suite went from 4 of 16 sections reached to 20 of
 Seventeen suites in one process, on a quiet machine, after every fix above:
 
 ```
-PASS: apps/ui e2e — 17 suites, 184 checks, 68/68 checklist ids proven, 0 skipped.
+PASS: apps/app e2e — 17 suites, 184 checks, 68/68 checklist ids proven, 0 skipped.
 ```
 
 Exit 0. Nothing skipped, nothing deferred, no hang.

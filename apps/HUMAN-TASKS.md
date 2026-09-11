@@ -24,7 +24,7 @@ of done and the alpha bar, with no shared context.
 Round 1's failure spawned a fix lane, which rewrote the checklist runner so all
 32 rows carry a real probe (headless Chrome over the DevTools protocol for the
 §A/§B/§C/§F rows plus D-3 and D-4's pause half, HTTP for D-1/D-2 and §E), moved
-the row catalog and CLI contract under `apps/ui/src/launch-checklist/` so
+the row catalog and CLI contract under `apps/app/src/launch-checklist/` so
 `bun test src` covers them, and added the root `checklist` script. The panel
 loop was configured for up to three rounds; it converged on round 2 and did not
 exhaust its rounds. No panel node failed or ran out of retries. Both panelists
@@ -37,10 +37,10 @@ U1–U8 plus the evals lane, each implemented in an isolated worktree, reviewed
 once by a claude agent, and landed on `main` individually.
 
 - **U1/U2** — recommendation card renders proposes / why-now / what-happens
-  (`apps/ui/src/mainview/RecoCard.test.tsx`); Escape dismisses it in one
+  (`apps/app/src/mainview/RecoCard.test.tsx`); Escape dismisses it in one
   keypress and the app-shell fallback respects `defaultPrevented`
-  (`apps/ui/src/mainview/RecoEscapeDismiss.test.tsx`).
-- **U3** — `apps/ui/src/mainview/state/RunClaims.ts` substitutes a deterministic
+  (`apps/app/src/mainview/RecoEscapeDismiss.test.tsx`).
+- **U3** — `apps/app/src/mainview/state/RunClaims.ts` substitutes a deterministic
   line whenever a launch turn's prose claims run state; `Wave12.test.ts` replays
   the wave-11 overclaim and asserts it is gone.
 - **U4** — `apps/server/scripts/deploy.ts`, `.github/workflows/apps-deploy.yml`,
@@ -51,10 +51,10 @@ once by a claude agent, and landed on `main` individually.
 - **U6** — zero-balance guard short-circuits `flow.run` / `flow.create` before
   any seam call and posts an embedded transcript notice naming
   `/billing.upgrade`; chat stays complimentary at $0
-  (`apps/ui/src/mainview/ZeroBalanceLaunch.test.ts`).
+  (`apps/app/src/mainview/ZeroBalanceLaunch.test.ts`).
 - **U7** — `pnpm run checklist -- --target <origin>`, runbook at
-  `apps/ui/scripts/README.md`. See H4.
-- **U8** — `apps/ui/.gitignore` reconciled, `@smthrs/chain` added to
+  `apps/app/scripts/README.md`. See H4.
+- **U8** — `apps/app/.gitignore` reconciled, `@smthrs/chain` added to
   `scripts/browser-check.mjs`.
 - **Evals** — `.smithers/evals` suite (17 cases) with a committed baseline
   report at 17/17.
@@ -65,15 +65,15 @@ once by a claude agent, and landed on `main` individually.
 to the brief after the workflow was authored. Neither is an alpha blocker;
 both are cheap follow-ups.
 
-- **U9 — local dev-run robustness.** `apps/ui/vite.config.ts:41` still sets
+- **U9 — local dev-run robustness.** `apps/app/vite.config.ts:41` still sets
   `root: "src/mainview"` as a CWD-relative literal, so `vite` launched from the
   repository root serves 404s. There is no root `pnpm dev` script encoding
   `--configLoader runner`. `@playwright/test` is not a devDependency.
-  `SMITHERS_DEV_UPSTREAM` is referenced only in `apps/ui/vite.config.ts` and is
+  `SMITHERS_DEV_UPSTREAM` is referenced only in `apps/app/vite.config.ts` and is
   not documented in `apps/README.md`. Workarounds today: run `pnpm --filter
-  smithers-ui run web` from `apps/ui`, and `pnpm --filter smithers-ui run
+  smithers-app run web` from `apps/app`, and `pnpm --filter smithers-app run
   serve:local` for the UI-plus-Worker pairing.
-- **U10 — exact slash-command dispatch.** `apps/ui/src/mainview/flows/registry.ts:202-209`
+- **U10 — exact slash-command dispatch.** `apps/app/src/mainview/flows/registry.ts:202-209`
   still matches a needle against both `command.name` and `command.summary` with
   no exact-name precedence, so typing `/flows` and pressing Enter can highlight
   and run `/flow.list`. Affects the catalog affordance, not sign-in, billing, or
@@ -246,9 +246,9 @@ approve with `/admin.queue.approve <login>`. That path is covered end to end by
 
 U7 landed the headless runner; it has never been run against a live origin
 (this track was forbidden from touching live canary). Runbook:
-**`apps/ui/scripts/README.md`**. Needs a real GitHub session.
+**`apps/app/scripts/README.md`**. Needs a real GitHub session.
 
-Mint the session cookies from a real browser sign-in — `apps/ui/scripts/launch-mint-session.ts`
+Mint the session cookies from a real browser sign-in — `apps/app/scripts/launch-mint-session.ts`
 writes a storage-state file you can format as `name=value; name2=value2`. You
 need **two** sessions: a normal one, and one parked at $0 for D-4.
 

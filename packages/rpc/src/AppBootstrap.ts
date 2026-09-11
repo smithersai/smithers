@@ -42,7 +42,7 @@ export const RuntimeCapabilitySchema = z.enum([
   "local.targets",
   "local.terminal",
   "local.harnesses",
-  // The code-intelligence routes (/api/lsp/*, apps/ui/docs/code-intel/PLAN.md §3): a
+  // The code-intelligence routes (/api/lsp/*, apps/app/docs/code-intel/PLAN.md §3): a
   // local.* door, so `code.*` flows hide on the web and the refusal names the native app.
   "local.lsp"
 ])

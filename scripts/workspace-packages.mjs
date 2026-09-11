@@ -67,7 +67,7 @@ export const readWorkspacePatterns = (path = join(repoRoot, "pnpm-workspace.yaml
  * Every workspace member, as `{ dir, name, manifestPath, manifest }`.
  *
  * `dir` is the member's repository-relative posix directory — `packages/smithers/flows/flow`,
- * `packages/smithers/flows/canonical`, `apps/ui` — and it is the key every caller should
+ * `packages/smithers/flows/canonical`, `apps/app` — and it is the key every caller should
  * use to reach the package on disk. `name` is the npm name, which is what the
  * registry, the lockfiles, and every dependency edge speak.
  *

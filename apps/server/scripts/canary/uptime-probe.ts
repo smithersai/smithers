@@ -21,7 +21,7 @@
  *   $CANARY_SESSION_LOGIN   the login that cookie must belong to. Falls back to
  *                           $SMITHERS_E2E_USER, the same scoped account the
  *                           browser sign-in probe uses
- *                           (apps/ui/e2e/probes/signin-roundtrip.mjs). Unset,
+ *                           (apps/app/e2e/probes/signin-roundtrip.mjs). Unset,
  *                           and with a deployment that states no `admin` field,
  *                           the identity check fails rather than guess.
  *   $CANARY_ALLOWLIST_LOGINS the hand-seeded closed-alpha roster, the same
@@ -109,7 +109,7 @@ const report = await runUptimeProbe(
   }
 )
 
-// The same three prefixes apps/ui/scripts/canary-seam-probe.ts prints, so a
+// The same three prefixes apps/app/scripts/canary-seam-probe.ts prints, so a
 // human reading two canary logs side by side reads one format.
 const print = (check: Check): void => {
   const prefix = check.status === "pass" ? "ok" : check.status === "fail" ? "FAIL" : "skip"

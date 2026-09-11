@@ -62,7 +62,7 @@ describe("the cloud LSP relay contract", () => {
 
 /*
  * The cloud sign-in answers on the local origin
- * (apps/ui/docs/decisions/0001-piper-one-truth.md). The session carries no
+ * (apps/app/docs/decisions/0001-piper-one-truth.md). The session carries no
  * token, only what a person sees. `scopes: "degraded"` is the one word for a
  * legacy token set that lacks the workspace scopes, so acts that need them
  * can say "sign in again to enable" instead of failing at the call.

@@ -65,7 +65,7 @@ import { Package as testingPackage } from "../../packages/testing/PACKAGE.ts"
 import { workspacePackages } from "../../scripts/workspace-packages.mjs"
 import { sites as docsSites } from "../docs/shared/manifest.mjs"
 import { Package as docsSharedPackage } from "../docs/shared/PACKAGE.ts"
-import { Package as uiPackage } from "../ui/PACKAGE.ts"
+import { Package as uiPackage } from "../app/PACKAGE.ts"
 
 const cwd = "apps/site"
 
@@ -117,7 +117,7 @@ const check = Smithers.ToolRun({
 
 /**
  * Build the site and verify its links against the CLI and release changelog.
- * Vite transforms the island's apps/ui sources under apps/ui/tsconfig.json,
+ * Vite transforms the island's apps/app sources under apps/app/tsconfig.json,
  * which extends the projected Electrobun devkit, so a fresh checkout fails
  * with "Tsconfig not found .hutch/devkit/tsconfig.json" until that projection
  * exists: it is a prerequisite here as it is for the app's own typecheck.

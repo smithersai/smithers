@@ -40,7 +40,7 @@ import { codeViewWorkerPool, currentCodeViewPool, subscribeCodeViewPool } from "
  * never tokenizes the file again (a remount paid the whole tokenize and
  * flashed the plain text in between).
  *
- * Code intelligence (apps/ui/docs/code-intel/PLAN.md §5) enters through three
+ * Code intelligence (apps/app/docs/code-intel/PLAN.md §5) enters through three
  * props and no state: `annotations` render under their lines as light-DOM
  * children pierre slots into the shadow root; a pointer at rest on a token
  * for `restMs` is one `onTokenRest`; ⌘/Ctrl-click on a token is one
