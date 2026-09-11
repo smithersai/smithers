@@ -435,7 +435,8 @@ export interface Service {
    * host files after a crash or failed rollback before resuming work.
    *
    * Filesystem coordination reserves `.smithers-workspace-lock` under the
-   * root. A killed process can leave this advisory lock directory behind;
+   * root, and copy-back refuses the `.flows` engine state directory plus any
+   * `FileSystemOptions.reservedPaths`, whatever the write set or mode. A killed process can leave this advisory lock directory behind;
    * remove it only after confirming the owner has stopped and reconciling
    * the workspace. Writers that ignore the lock are outside this guarantee.
    */
@@ -1186,12 +1187,23 @@ export interface FileSystemOptions {
    * `StepBoundary`'s evidence bound.
    */
   readonly maxInlineBytes?: number | undefined
+  /**
+   * Root-relative paths copy-back refuses to write or remove, in addition to
+   * the always-reserved `.smithers-workspace-lock` and `.flows` directories.
+   * Name the engine database, its `-wal`/`-shm` siblings, and the artifact
+   * directory here when they live under the root outside `.flows`. A
+   * reserved directory also reserves every path beneath it.
+   */
+  readonly reservedPaths?: ReadonlyArray<string> | undefined
 }
 
 // Shared across separately constructed sandboxes. Entries live only while a
 // commit is running or waiting, so short-lived workspace roots do not leak.
 const commitCoordinators = new Map<string, { semaphore: Semaphore.Semaphore; users: number }>()
 const commitLockName = ".smithers-workspace-lock"
+// The conventional engine state directory: the SQLite store, its WAL/SHM
+// siblings, and the artifact objects. A step body must never replace them.
+const engineStateName = ".flows"
 
 const coordinateCommit = <A, E, R>(root: string, effect: Effect.Effect<A, E, R>): Effect.Effect<A, E, R> =>
   Effect.acquireUseRelease(
@@ -1256,7 +1268,10 @@ const escapesWorkspace = (path: string, resolved: string): WorkspaceError =>
  * rollback. A crash or rollback failure can leave partial changes; see
  * {@link Service.materialize} for the caller's reconciliation obligations.
  * Hosts must implement exclusive non-recursive `makeDirectory` creation and
- * removal of the reserved `.smithers-workspace-lock` directory.
+ * removal of the reserved `.smithers-workspace-lock` directory. Copy-back
+ * also refuses the `.flows` engine state directory and any
+ * {@link FileSystemOptions.reservedPaths}, so no write set or boundary mode
+ * lets a step body replace the engine database or its artifact blobs.
  *
  * @category constructors
  * @since 0.1.0
@@ -1269,6 +1284,16 @@ export const makeFileSystem = (
 ): Service => {
   const maxInlineBytes = options.maxInlineBytes ?? defaultMaxInlineBytes
   const root = workspaceRoot.replaceAll(/\/+$/g, "")
+  const reserved = [
+    commitLockName,
+    engineStateName,
+    ...(options.reservedPaths ?? []).map((path) => path.replace(/^(\.\/)+/, "").replaceAll(/\/+$/g, ""))
+  ].filter((path) => path !== "" && path !== ".")
+  // The reserved entry `path` targets or lies beneath, if any; `prefix` is
+  // "" for root-relative paths or the canonical root plus "/" for resolved ones.
+  const reservedAt = (prefix: string, path: string): string | undefined =>
+    reserved.find((name) => path === `${prefix}${name}` || path.startsWith(`${prefix}${name}/`))
+  const refuseReserved = (name: string): WorkspaceError => hostFailure(`the workspace path ${name} is reserved`)
   const hostPath = (path: string) => root === "" ? path : `${root}/${path}`
   // One host call, not two: the read reports an absent path itself, exactly
   // as `realPathIfPresent` below reads its own refusal. On the confined host
@@ -1319,9 +1344,8 @@ export const makeFileSystem = (
       const target = hostPath(path)
       const resolved = yield* realPathIfPresent(target)
       if (resolved !== undefined) {
-        if (resolved === `${canonical}/${commitLockName}` || resolved.startsWith(`${canonical}/${commitLockName}/`)) {
-          return yield* Effect.fail(hostFailure("the workspace coordination path is reserved"))
-        }
+        const hit = reservedAt(`${canonical}/`, resolved)
+        if (hit !== undefined) return yield* Effect.fail(refuseReserved(hit))
         if (root !== "" && !contained(canonical, resolved)) return yield* Effect.fail(escapesWorkspace(path, resolved))
         return
       }
@@ -1337,11 +1361,8 @@ export const makeFileSystem = (
         }
       }
       const speculative = `${anchor}/${remaining}`
-      if (
-        speculative === `${canonical}/${commitLockName}` || speculative.startsWith(`${canonical}/${commitLockName}/`)
-      ) {
-        return yield* Effect.fail(hostFailure("the workspace coordination path is reserved"))
-      }
+      const hit = reservedAt(`${canonical}/`, speculative)
+      if (hit !== undefined) return yield* Effect.fail(refuseReserved(hit))
       if (root !== "" && !contained(canonical, speculative)) {
         return yield* Effect.fail(escapesWorkspace(path, speculative))
       }
@@ -1372,8 +1393,9 @@ export const makeFileSystem = (
   })
   const withCommitLock = <E, R>(effect: Effect.Effect<void, E, R>, changes: ReadonlyArray<FileChange>) =>
     Effect.gen(function*() {
-      if (changes.some((change) => change.path === commitLockName || change.path.startsWith(`${commitLockName}/`))) {
-        return yield* Effect.fail(hostFailure("the workspace coordination path is reserved"))
+      for (const change of changes) {
+        const hit = reservedAt("", change.path)
+        if (hit !== undefined) return yield* Effect.fail(refuseReserved(hit))
       }
       // mkdir without recursive is an exclusive create on filesystem hosts.
       // Unlike a file write, acquisition cannot leave a partly written lock.

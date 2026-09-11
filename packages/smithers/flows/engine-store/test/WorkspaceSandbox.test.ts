@@ -1382,6 +1382,93 @@ describe("WorkspaceSandbox filesystem host confinement", () => {
       ))
   }
 
+  const engineState = (
+    sandbox: WorkspaceSandbox.Service,
+    path: string,
+    boundary: Partial<FileBoundary>
+  ) =>
+    sandbox.execute({
+      descriptor: descriptor(boundary),
+      workflow: Effect.gen(function*() {
+        const workspace = yield* WorkspaceSandbox.Workspace
+        yield* workspace.writeFile("src/app.ts", encoder.encode("export const x = 2\n"))
+        yield* workspace.writeFile(path, encoder.encode("REPLACED BY A SEALED STEP BODY"))
+        return null
+      })
+    })
+
+  for (
+    const [label, boundary] of [
+      ["a broad ** hard write set", { writeSet: [{ _tag: "Glob", include: ["**"] }] }],
+      ["an undeclared expected-mode write", { writeSet: ["src/app.ts"], boundaryMode: "expected" }]
+    ] as const
+  ) {
+    it.effect(`reserves the .flows engine state directory under ${label}`, () =>
+      withCrypto(
+        Effect.scoped(Effect.gen(function*() {
+          const { fs, root } = yield* temp
+          yield* fs.makeDirectory(`${root}/.flows/objects`, { recursive: true })
+          yield* fs.makeDirectory(`${root}/src`)
+          yield* fs.writeFileString(`${root}/.flows/state.sqlite`, "LIVE ENGINE DATABASE")
+          yield* fs.writeFileString(`${root}/src/app.ts`, "export const x = 1\n")
+          const sandbox = WorkspaceSandbox.makeFileSystem(fs, yield* ArtifactStore.ArtifactStore, root)
+          const result = yield* engineState(sandbox, ".flows/state.sqlite", boundary as Partial<FileBoundary>)
+          expect(result._tag).toBe("Accepted")
+          if (result._tag !== "Accepted") return
+          expect(yield* Effect.flip(sandbox.materialize(result))).toMatchObject({
+            code: "host_unavailable",
+            cause: "the workspace path .flows is reserved"
+          })
+          expect(yield* fs.readFileString(`${root}/.flows/state.sqlite`)).toBe("LIVE ENGINE DATABASE")
+          expect(yield* fs.readFileString(`${root}/src/app.ts`)).toBe("export const x = 1\n")
+        })).pipe(Effect.provide(nodeLayer))
+      ))
+  }
+
+  it.effect("invalidates an undeclared hard-mode engine state write before copy-back", () =>
+    withCrypto(
+      Effect.scoped(Effect.gen(function*() {
+        const { fs, root } = yield* temp
+        yield* fs.makeDirectory(`${root}/.flows`)
+        yield* fs.writeFileString(`${root}/.flows/state.sqlite`, "LIVE ENGINE DATABASE")
+        const sandbox = WorkspaceSandbox.makeFileSystem(fs, yield* ArtifactStore.ArtifactStore, root)
+        const result = yield* engineState(sandbox, ".flows/state.sqlite", { writeSet: ["src/app.ts"] })
+        expect(result._tag).toBe("Invalidated")
+        expect(yield* fs.readFileString(`${root}/.flows/state.sqlite`)).toBe("LIVE ENGINE DATABASE")
+      })).pipe(Effect.provide(nodeLayer))
+    ))
+
+  for (const path of ["engine.db", "engine.db-wal", "objects/blob", "alias/blob"]) {
+    it.effect(`reserves configured engine state paths through ${path}`, () =>
+      withCrypto(
+        Effect.scoped(Effect.gen(function*() {
+          const { fs, root } = yield* temp
+          yield* fs.makeDirectory(`${root}/objects`)
+          yield* fs.writeFileString(`${root}/engine.db`, "LIVE")
+          yield* fs.symlink(`${root}/objects`, `${root}/alias`)
+          const sandbox = WorkspaceSandbox.makeFileSystem(fs, yield* ArtifactStore.ArtifactStore, root, {
+            reservedPaths: ["./engine.db", "engine.db-wal", "engine.db-shm", "objects/"]
+          })
+          const accepted = yield* write(sandbox, [[path, "new"]], [path])
+          expect(yield* Effect.flip(sandbox.materialize(accepted))).toMatchObject({ code: "host_unavailable" })
+          expect(yield* fs.readFileString(`${root}/engine.db`)).toBe("LIVE")
+          expect(yield* fs.exists(`${root}/objects/blob`)).toBe(false)
+          expect(yield* fs.exists(`${root}/engine.db-wal`)).toBe(false)
+        })).pipe(Effect.provide(nodeLayer))
+      ))
+  }
+
+  it.effect("keeps an unreserved sibling of a reserved name writable", () =>
+    withCrypto(
+      Effect.scoped(Effect.gen(function*() {
+        const { fs, root } = yield* temp
+        const sandbox = WorkspaceSandbox.makeFileSystem(fs, yield* ArtifactStore.ArtifactStore, root)
+        const accepted = yield* write(sandbox, [[".flowsheet", "ok"]], [".flowsheet"])
+        yield* sandbox.materialize(accepted)
+        expect(yield* fs.readFileString(`${root}/.flowsheet`)).toBe("ok")
+      })).pipe(Effect.provide(nodeLayer))
+    ))
+
   it.effect("reserves lock aliases on unrooted hosts without confining their other symlinks", () =>
     withCrypto(
       Effect.scoped(Effect.gen(function*() {

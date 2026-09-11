@@ -73,7 +73,13 @@ other cooperating commits. A semaphore is shared by workspace root in the
 process. An exclusively created `.smithers-workspace-lock` directory under the
 root coordinates separate processes, including callers using symlink aliases
 of the same root. This path is reserved: bundles cannot materialize it or its
-children. Filesystem hosts must support exclusive non-recursive directory
+children. The `.flows` engine state directory is reserved the same way, so no
+write set, `**` glob, or `expected` boundary mode lets a step body replace the
+engine database, its `-wal` and `-shm` siblings, or artifact objects kept
+there. Add other state paths under the root with the `reservedPaths` option.
+A write, removal, or symlink alias that targets a reserved path or lies
+beneath one fails `materialize` with `host_unavailable` before any file
+changes. Filesystem hosts must support exclusive non-recursive directory
 creation and removal. Writers that ignore the advisory lock are not serialized.
 
 The undo journal exists only in memory. A process crash can leave partial file

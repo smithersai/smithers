@@ -373,7 +373,9 @@ interface Service {
 files. The filesystem host serializes cooperating commits through preflight,
 apply, and rollback, using a workspace-root semaphore and the exclusively
 created `.smithers-workspace-lock` advisory directory. The directory and its
-children are reserved. Hosts must support exclusive non-recursive directory
+children are reserved, as are the `.flows` engine state directory and every
+`reservedPaths` entry, under any write set or boundary mode. A change that
+targets or lies beneath a reserved path fails with `host_unavailable`. Hosts must support exclusive non-recursive directory
 creation and removal; writers that ignore the lock are outside this guarantee.
 
 Rollback uses in-memory file pre-images. Copy-back is not crash-atomic, and
@@ -419,7 +421,7 @@ stopped and reconciling the workspace. Lock waits are interruptible.
 | `MemorySandbox`            | `{ service, files }`, where `files` observes host state, changed only by `materialize`                             |
 | `HostFile`                 | `{ path, content }`                                                                                                |
 | `InitialFiles`             | `Readonly<Record<string, string \| Uint8Array>>`                                                                   |
-| `FileSystemOptions`        | `{ maxInlineBytes? }`, defaulting to 1 MiB and matching `StepBoundary`'s evidence bound                            |
+| `FileSystemOptions`        | `{ maxInlineBytes?, reservedPaths? }`. `maxInlineBytes` defaults to 1 MiB, matching `StepBoundary`'s evidence bound. `reservedPaths` lists root-relative engine state paths copy-back refuses, beyond `.smithers-workspace-lock` and `.flows`. |
 
 ### Errors
 

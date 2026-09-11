@@ -83,7 +83,7 @@ const stores = (filename: string, root: string) =>
     DurableEngineState.layer,
     OwnerIdentity.layer,
     Workspace.layer(root),
-    ArtifactStore.layerFileSystem({ directory: `${root}/objects` })
+    ArtifactStore.layerFileSystem({ directory: `${root}/.flows/objects` })
   ).pipe(Layer.provideMerge(database(filename)))
 ```
 
@@ -181,7 +181,7 @@ export const main = (filename: string, root: string): Effect.Effect<{
 Run it against a real file and print the result:
 
 ```ts
-console.log(await Effect.runPromise(main("./.quickstart/engine.db", "./.quickstart")))
+console.log(await Effect.runPromise(main("./.quickstart/.flows/engine.db", "./.quickstart")))
 ```
 
 ```text
