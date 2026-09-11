@@ -10,7 +10,15 @@ import { Smithers } from "@smthrs/targets"
 const { check, circular, docs, docsFiles, fmt, lib, lint, test } = BuildAndCheckTypeScriptPackage({
   deps: [],
   cwd: "packages/smithers/flows/database",
-  tests: Smithers.glob("test/**/*.test.ts", { exclude: ["test/faults/**"] })
+  tests: Smithers.glob("test/**/*.test.ts", { exclude: ["test/faults/**"] }),
+  buildProgram: Smithers.file("//packages/repo-targets/scripts/build.mjs"),
+  circularScript: Smithers.file("//packages/repo-targets/scripts/circular.mjs"),
+  eslintConfigs: [
+    Smithers.file("eslint.config.js"),
+    Smithers.file("//eslint.package.js"),
+    Smithers.file("//eslint.jsdoc.js"),
+    Smithers.file("//eslint.invariants.js")
+  ]
 })
 
 /**

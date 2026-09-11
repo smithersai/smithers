@@ -5177,6 +5177,14 @@
       },
       {
         "kind": "file",
+        "path": "apps/docs/shared/alchemy-site.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "apps/docs/shared/alchemy-site.test.mjs"
+      },
+      {
+        "kind": "file",
         "path": "apps/docs/shared/starlight.css"
       },
       {
@@ -19336,7 +19344,7 @@
     "inputs": [
       {
         "kind": "file",
-        "path": "packages/smithers/flows/database/scripts/circular.mjs"
+        "path": "packages/repo-targets/scripts/circular.mjs"
       },
       {
         "kind": "glob",
@@ -19497,7 +19505,7 @@
       },
       {
         "kind": "file",
-        "path": "packages/smithers/flows/database/scripts/build.mjs"
+        "path": "packages/repo-targets/scripts/build.mjs"
       }
     ],
     "outputs": [
@@ -19530,7 +19538,15 @@
       },
       {
         "kind": "file",
+        "path": "eslint.package.js"
+      },
+      {
+        "kind": "file",
         "path": "eslint.jsdoc.js"
+      },
+      {
+        "kind": "file",
+        "path": "eslint.invariants.js"
       }
     ],
     "outputs": [],

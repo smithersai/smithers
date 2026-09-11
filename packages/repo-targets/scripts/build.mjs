@@ -1,11 +1,16 @@
+// The shared dual-format build program for a conventional package. It runs
+// from the package directory, which is where `pnpm run build` and the `lib`
+// target start it, and resolves `typescript` and `esbuild` from that package,
+// so each package keeps building with the versions it pins.
 import { spawnSync } from "node:child_process"
 import { mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs"
-import { dirname, resolve } from "node:path"
-import { fileURLToPath } from "node:url"
-import { build } from "esbuild"
+import { createRequire } from "node:module"
+import { resolve } from "node:path"
 
-const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..")
+const packageRoot = process.cwd()
+const packageRequire = createRequire(resolve(packageRoot, "package.json"))
 const tsc = resolve(packageRoot, "node_modules/typescript/bin/tsc")
+const { build } = packageRequire("esbuild")
 
 const filesWithExtension = (directory, extension) =>
   readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {

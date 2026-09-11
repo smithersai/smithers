@@ -26,7 +26,7 @@ describe("built artifacts", () => {
   it(
     "preserves constructor identity between root and subpath exports",
     () => {
-      run("scripts/build.mjs", budgets.build)
+      run("../../../repo-targets/scripts/build.mjs", budgets.build)
       run("test/fixtures/artifact-esm.mjs", budgets.runtime)
       run("test/fixtures/artifact-cjs.cjs", budgets.runtime)
       // Runtime identity is only half of what is published. This type-checks a

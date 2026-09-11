@@ -160,9 +160,9 @@
   "scripts": {
     "lint": "eslint src --max-warnings=0 && dprint check",
     "format": "dprint fmt",
-    "build": "node scripts/build.mjs",
+    "build": "node ../../../repo-targets/scripts/build.mjs",
     "check": "tsc -b tsconfig.json && tsc -p tsconfig.test.json --noEmit",
-    "circular": "node scripts/circular.mjs",
+    "circular": "node ../../../repo-targets/scripts/circular.mjs",
     "test": "vitest",
     "coverage": "vitest --coverage"
   },
