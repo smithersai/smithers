@@ -27,6 +27,17 @@ it("typechecks the guide's lifecycle-to-supervision example", () => {
   checkFences(block!)
 }, 60_000)
 
+it("typechecks the guide's host-side lookup of a provider by name", () => {
+  const block = fences(read("docs/guides/choose-a-provider.md"))
+    .find((source) => source.includes("Record<string, Sandbox.Provider>"))
+  expect(block).toBeDefined()
+  checkFences([
+    "declare const microVm: import(\"@smthrs/sandbox\").Sandbox.Provider",
+    "declare const local: import(\"@smthrs/sandbox\").Sandbox.Provider",
+    block!
+  ].join("\n"))
+}, 60_000)
+
 it("links README limits to the authored limits page without copying its table", () => {
   const limits = read("README.md").split("## Limits\n")[1]!
   expect(limits).toMatch(/\[Limits\]\(https:\/\/sandbox\.smithers\.sh\/limits\/\)/)

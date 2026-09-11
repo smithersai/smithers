@@ -31,7 +31,7 @@ A provider is the value that turns a session key into a machine. Nine ship in `@
 | `AwsSandbox` | one Fargate task from `RunTask` |
 | `CloudflareSandbox` | one Sandbox Durable Object behind a Worker binding |
 
-When a flow or agent names no provider, `Sandbox.selectProvider(registry, name?)` picks one. The default is `"microsandbox"`, and every other provider stays selectable by name (`"directory"`, `"container"`, `"kubernetes"`, `"just-bash"`, `"vercel"`, `"daytona"`, `"aws"`, `"cloudflare"`). A name the registry does not hold fails with `ProviderError.code === "unavailable"` listing what is registered; nothing falls back to a weaker sandbox silently.
+The engine takes a provider as a value and never looks one up by name. `MicrosandboxSandbox` is the recommended default: a microVM is the only bundled backend that can hold a declared Nix environment. A host that lets an operator name a provider keeps a `Record<string, Sandbox.Provider>` at its own composition root and refuses a name it does not hold instead of falling back to a weaker sandbox.
 
 Every bundled provider derives the machine's name from the session key the same way: the key's leading name-safe characters plus a 64-bit digest of the whole key. The digest keeps `a/b` and `a-b` on separate machines, and the stable name is what lets a provider reattach a machine a crashed process left behind.
 

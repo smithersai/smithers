@@ -1,6 +1,6 @@
 ---
 title: "Troubleshooting"
-description: "The refusals and failures @smthrs/sandbox reports, what each one means, and what to change: stdin, signals, environment names, provider selection, retirement, and conformance violations."
+description: "The refusals and failures @smthrs/sandbox reports, what each one means, and what to change: stdin, signals, environment names, retirement, and conformance violations."
 ---
 
 Most failures here are a refusal, not a fault: the seam declines to pretend it
@@ -80,15 +80,6 @@ command through a shell, and a shell rebuilds its environment from those names
 when it starts, so `a-b` is dropped by dash and kept by bash. A silent drop
 would be invisible to the host and land only on the platform the machines
 actually run.
-
-## "sandbox: the default provider microsandbox is not registered on this host"
-
-**What happened.** `Sandbox.selectProvider` was asked for a name the registry
-does not hold, and the default counts. The message lists what is registered.
-
-**What to change.** Register that provider, or name one you did register.
-Nothing falls back to a weaker sandbox silently, because a run that asked for a
-microVM and quietly got a host directory has lost the property it asked for.
 
 ## "the sandbox session is not open, so it cannot spawn a command"
 

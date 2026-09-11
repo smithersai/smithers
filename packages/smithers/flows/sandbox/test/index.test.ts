@@ -28,6 +28,21 @@ describe("@smthrs/sandbox barrel", () => {
   })
 
   /**
+   * The engine takes a `Sandbox.Provider` value and never resolves a name, so
+   * the namespace holds the machine contract and its projections and no name
+   * registry beside them.
+   */
+  it("exposes the machine contract and its projections, and no name registry", () => {
+    expect(Object.keys(Sandbox.Sandbox).sort()).toEqual([
+      "Provider",
+      "TestSession",
+      "commandProvider",
+      "fileSystem",
+      "layerHost"
+    ])
+  })
+
+  /**
    * The schema `_tag`s round-trip through the journal, so renames here
    * invalidate recorded runs.
    */

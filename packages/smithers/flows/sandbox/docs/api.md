@@ -196,10 +196,6 @@ The layer also serves `SandboxHealth`, built with `SandboxHealth.make` over the 
 
 What `layerHost` deliberately does not do is what `SandboxSupervision` does for the spawn-only seam: retire an unhealthy session and open a fresh one behind the caller's back. That is right for a transport, where a command is the whole unit of work, and wrong here, because the body holding these services has been writing to this machine. Swapping it mid-action would silently discard those writes and hand the body an empty tree that still looks like its workspace. A dead machine surfaces as a failure instead, and re-provisioning belongs to whoever retries the action, which acquires the session key again.
 
-### Default provider
-
-`Sandbox.selectProvider(registry, name?)` picks the provider a host composes when a flow or agent names none. `Sandbox.defaultProviderName` is `"microsandbox"`: a microVM, which is the strongest boundary a bundled provider offers and the one that can hold a Nix environment its composer supplies. Every other provider stays selectable by name (`"directory"`, `"container"`, `"kubernetes"`, `"just-bash"`, `"vercel"`, `"daytona"`, `"aws"`, `"cloudflare"`). A name the registry does not hold, the default included, fails with `ProviderError.code === "unavailable"` listing what is registered; nothing falls back to a weaker sandbox silently.
-
 ## SandboxConformance
 
 ```ts
