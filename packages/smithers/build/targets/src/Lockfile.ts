@@ -18,6 +18,7 @@
  */
 import * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
+import * as Exec from "./Exec.ts"
 import * as Input from "./Input.ts"
 import * as PackageManager from "./PackageManager.ts"
 import * as Target from "./Target.ts"
@@ -109,7 +110,7 @@ export const Lockfile = Target.make("Lockfile", {
   outputs: (attrs) => ({ cwd: attrs.cwd, paths: [lockfilePathOf(attrs)] }),
   implementation: (attrs) =>
     captureOutputs(
-      Target.runTool({
+      Exec.runTool({
         cwd: attrs.cwd,
         argv: PackageManager.install(attrs.packageManager, {
           frozen: false,

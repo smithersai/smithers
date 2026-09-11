@@ -16,7 +16,6 @@ import { fileURLToPath } from "node:url"
 import { getCallSites } from "node:util"
 import * as NodeUtil from "node:util/types"
 import * as Config from "./Config.ts"
-import * as Exec from "./Exec.ts"
 import * as Input from "./Input.ts"
 
 /**
@@ -552,19 +551,6 @@ export const notImplemented = (
  * @since 0.1.0
  */
 export const catalogNotImplemented = () => notImplemented("catalog target")
-
-/**
- * Declares one tool run through the shared {@link Exec.Exec} action.
- *
- * Target implementations call this in their pure plan-time bodies to record an
- * exec node. Executing the resulting plan requires {@link Exec.ExecLive}.
- *
- * @category constructors
- * @since 0.1.0
- */
-export const runTool = (
-  payload: Exec.CallPayload
-): Node.Node<Exec.Result, Exec.ExecError, Action.Requirement<"smithers-build/exec">> => Exec.Exec.call(payload)
 
 /**
  * Checks whether a value is a legacy declaration target.

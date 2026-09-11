@@ -12,6 +12,7 @@
  */
 import * as Schema from "effect/Schema"
 import * as Attr from "./Attr.ts"
+import * as Exec from "./Exec.ts"
 import * as Input from "./Input.ts"
 import * as Mise from "./Mise.ts"
 import * as Reference from "./Reference.ts"
@@ -127,21 +128,21 @@ const buildDefinition = Target.make("Foundry.Build", {
   kinds: ["build"],
   cache: true,
   outputs: (attrs) => ({ cwd: ".", paths: attrs.outDirs }),
-  implementation: (attrs) => Target.runTool(Shell.execPayload({ bin: forge, args: ["build", ...(attrs.skip ?? [])] }))
+  implementation: (attrs) => Exec.runTool(Shell.execPayload({ bin: forge, args: ["build", ...(attrs.skip ?? [])] }))
 })
 
 const testDefinition = Target.make("Foundry.Test", {
   attrs: TestAttrs,
   kinds: ["test"],
   cache: true,
-  implementation: () => Target.runTool(Shell.execPayload({ bin: forge, args: ["test"] }))
+  implementation: () => Exec.runTool(Shell.execPayload({ bin: forge, args: ["test"] }))
 })
 
 const fmtDefinition = Target.make("Foundry.Fmt", {
   attrs: FmtAttrs,
   kinds: ["lint", "run"],
   cache: (attrs) => attrs.changes.length > 0,
-  implementation: () => Target.runTool(Shell.execPayload({ bin: forge, args: ["fmt", "--check"] }))
+  implementation: () => Exec.runTool(Shell.execPayload({ bin: forge, args: ["fmt", "--check"] }))
 })
 
 /**

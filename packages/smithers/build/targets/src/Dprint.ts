@@ -62,7 +62,7 @@ export const Dprint = Target.make("Dprint", {
   error: Exec.ExecError,
   cache: false,
   implementation: (attrs) =>
-    Target.runTool({
+    Exec.runTool({
       cwd: attrs.cwd,
       argv: PackageManager.exec(attrs.packageManager, [
         "dprint",

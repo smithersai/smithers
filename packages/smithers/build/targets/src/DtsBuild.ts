@@ -5,6 +5,7 @@
  */
 import * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
+import * as Exec from "./Exec.ts"
 import * as Input from "./Input.ts"
 import * as PackageManager from "./PackageManager.ts"
 import * as Target from "./Target.ts"
@@ -137,7 +138,7 @@ const declarationArgv = (attrs: Attrs): ReadonlyArray<string> =>
  * `tsup --dts-only`.
  *
  * The plan runs the selected tool in `cwd` through the shared
- * {@link Target.runTool}, then the shared output-capture step that digests
+ * {@link Exec.runTool}, then the shared output-capture step that digests
  * `outDir` into the {@link Outputs} success payload. Source and tsconfig
  * digests are declared through the attrs, and dependency target keys, entries,
  * declaration-map policy, output directory, and tool identity complete the
@@ -156,7 +157,7 @@ export const DtsBuild = Target.make("DtsBuild", {
   outputs: (attrs) => ({ cwd: attrs.cwd, paths: [attrs.outDir] }),
   implementation: (attrs) =>
     captureOutputs(
-      Target.runTool({ cwd: attrs.cwd, argv: declarationArgv(attrs) }),
+      Exec.runTool({ cwd: attrs.cwd, argv: declarationArgv(attrs) }),
       attrs.cwd,
       [attrs.outDir]
     )

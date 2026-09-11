@@ -108,7 +108,7 @@ export const DepsLint = Target.make("DepsLint", {
   implementation: (attrs) => {
     if (attrs.tool === "depcheck") {
       const ignores = [...new Set([...attrs.ignoreDependencies, ...attrs.ignoreBinaries])]
-      return Target.runTool({
+      return Exec.runTool({
         cwd: attrs.cwd,
         argv: PackageManager.exec(attrs.packageManager, [
           "depcheck",
@@ -117,19 +117,19 @@ export const DepsLint = Target.make("DepsLint", {
       })
     }
     if (attrs.ignoreDependencies.length === 0 && attrs.ignoreBinaries.length === 0) {
-      return Target.runTool({
+      return Exec.runTool({
         cwd: attrs.cwd,
         argv: PackageManager.exec(attrs.packageManager, ["knip", "--dependencies"])
       })
     }
     const config = knipConfig(attrs)
     const configPath = `${Exec.cacheDirectoryToken}/knip-${fingerprint(config)}.json`
-    return Target.runTool({
+    return Exec.runTool({
       cwd: ".",
       argv: Runtime.evaluate(attrs.runtime, writeProgram, [configPath, config])
     }).pipe(
       Node.bindPlanned((written) =>
-        Target.runTool({
+        Exec.runTool({
           cwd: attrs.cwd,
           argv: PackageManager.exec(attrs.packageManager, ["knip", "--dependencies", "--config", configPath]),
           after: written

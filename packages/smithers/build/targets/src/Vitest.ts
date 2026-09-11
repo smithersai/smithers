@@ -97,7 +97,7 @@ export const Vitest = Target.make("Vitest", {
   success: Exec.Result,
   error: Exec.ExecError,
   implementation: (attrs) =>
-    Target.runTool({
+    Exec.runTool({
       cwd: attrs.cwd,
       timeoutMs: attrs.timeoutMs,
       argv: PackageManager.exec(PackageManager.under(attrs.packageManager, attrs.runtime), [

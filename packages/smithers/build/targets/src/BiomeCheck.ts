@@ -118,13 +118,13 @@ export const BiomeCheck = Target.make("BiomeCheck", {
     ]
     if (!attrs.lint) {
       return attrs.format
-        ? Target.runTool({
+        ? Exec.runTool({
           cwd: attrs.cwd,
           argv: PackageManager.exec(attrs.packageManager, ["biome", "format", ...shared])
         }).pipe(Node.map((format) => ({ check: null, format })))
         : Node.succeed({ check: null, format: null })
     }
-    const checked = Target.runTool({
+    const checked = Exec.runTool({
       cwd: attrs.cwd,
       argv: PackageManager.exec(attrs.packageManager, [
         "biome",
@@ -138,7 +138,7 @@ export const BiomeCheck = Target.make("BiomeCheck", {
     }
     return checked.pipe(
       Node.bindPlanned((check) =>
-        Target.runTool({
+        Exec.runTool({
           cwd: attrs.cwd,
           argv: PackageManager.exec(attrs.packageManager, ["biome", "format", ...shared]),
           after: check

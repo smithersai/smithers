@@ -9,6 +9,7 @@
  * @since 0.1.0
  */
 import { Action, type FlowRuntime } from "@smthrs/flow"
+import type * as Node from "@smthrs/plan/Node"
 import * as ScopedProcess from "@smthrs/platform-node/ScopedProcess"
 import * as Effect from "effect/Effect"
 import type * as Layer from "effect/Layer"
@@ -390,6 +391,19 @@ export const Exec = Action.make("smithers-build/exec", {
   error: ExecError,
   tier: "sealed"
 })
+
+/**
+ * Declares one tool run through the shared {@link Exec} action.
+ *
+ * Target implementations call this in their pure plan-time bodies to record an
+ * exec node. Executing the resulting plan requires {@link ExecLive}.
+ *
+ * @category constructors
+ * @since 0.1.0
+ */
+export const runTool = (
+  payload: CallPayload
+): Node.Node<Result, ExecError, Action.Requirement<"smithers-build/exec">> => Exec.call(payload)
 
 /**
  * Reports whether slicing `text` at `index` would split a surrogate pair.

@@ -5,6 +5,7 @@
  */
 import * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
+import * as Exec from "./Exec.ts"
 import * as Input from "./Input.ts"
 import * as PackageManager from "./PackageManager.ts"
 import * as Target from "./Target.ts"
@@ -72,7 +73,7 @@ export const SortPackageJson = Target.make("SortPackageJson", {
   implementation: (attrs) => {
     const manifests = attrs.manifests.map((manifest) => manifest.path)
     return captureOutputs(
-      Target.runTool({
+      Exec.runTool({
         cwd: attrs.cwd,
         argv: PackageManager.exec(attrs.packageManager, [
           "sort-package-json",

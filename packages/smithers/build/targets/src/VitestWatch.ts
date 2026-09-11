@@ -65,7 +65,7 @@ export const VitestWatch = Target.make("VitestWatch", {
   error: Exec.ExecError,
   cache: false,
   implementation: (attrs) =>
-    Target.runTool({
+    Exec.runTool({
       cwd: attrs.cwd,
       timeoutMs: attrs.timeoutMs,
       argv: PackageManager.exec(attrs.packageManager, [

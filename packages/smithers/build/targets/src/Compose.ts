@@ -954,7 +954,7 @@ const generateDefinition = Target.make("Generate", {
     if (attrs.mode !== "check") {
       return changes.length === 0
         ? Target.notImplemented("Generate stdout form in a legacy declaration workspace")
-        : Target.runTool(payload)
+        : Exec.runTool(payload)
     }
     return changes.length === 0
       ? Target.notImplemented("Generate check without declared changes")

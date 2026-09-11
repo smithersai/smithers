@@ -1137,7 +1137,7 @@ export const ToolBuild = Target.make("ToolBuild", {
   outputs: (attrs) => ({ cwd: attrs.cwd, paths: attrs.outputs }),
   implementation: (attrs) =>
     captureOutputs(
-      Target.runTool({
+      Exec.runTool({
         cwd: attrs.cwd,
         argv: [attrs.command, ...attrs.args],
         env: attrs.env

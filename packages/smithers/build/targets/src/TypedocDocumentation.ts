@@ -4,6 +4,7 @@
  * @since 0.1.0
  */
 import * as Schema from "effect/Schema"
+import * as Exec from "./Exec.ts"
 import * as Input from "./Input.ts"
 import * as PackageManager from "./PackageManager.ts"
 import * as Target from "./Target.ts"
@@ -74,6 +75,6 @@ export const TypedocDocs = Target.make("TypedocDocs", {
     if (attrs.config !== null) argv.push("--options", Input.rootRelative(".", attrs.config.path))
     for (const plugin of attrs.plugin) argv.push("--plugin", plugin)
     for (const entry of attrs.entryPoints) argv.push(Input.rootRelative(".", entry.path))
-    return captureOutputs(Target.runTool({ cwd: ".", argv }), ".", [attrs.outDir])
+    return captureOutputs(Exec.runTool({ cwd: ".", argv }), ".", [attrs.outDir])
   }
 })

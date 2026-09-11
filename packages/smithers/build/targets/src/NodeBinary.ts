@@ -83,5 +83,5 @@ export const NodeBinary = Target.make("NodeBinary", {
   success: Exec.Result,
   error: Exec.ExecError,
   cache: false,
-  implementation: (attrs) => Target.runTool({ cwd: attrs.cwd, argv: runArgv(attrs), env: attrs.env })
+  implementation: (attrs) => Exec.runTool({ cwd: attrs.cwd, argv: runArgv(attrs), env: attrs.env })
 })

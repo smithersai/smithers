@@ -81,5 +81,5 @@ export const Typecheck = Target.make("Typecheck", {
   kinds: ["build"],
   success: Exec.Result,
   error: Exec.ExecError,
-  implementation: (attrs) => Target.runTool({ cwd: attrs.cwd, argv: checkArgv(attrs) })
+  implementation: (attrs) => Exec.runTool({ cwd: attrs.cwd, argv: checkArgv(attrs) })
 })

@@ -95,7 +95,7 @@ export const VitestCoverage = Target.make("VitestCoverage", {
   error: ToolBuild.BuildError,
   outputs: (attrs) => ({ cwd: attrs.cwd, paths: [attrs.reportsDirectory] }),
   implementation: (attrs) =>
-    Target.runTool({
+    Exec.runTool({
       cwd: attrs.cwd,
       timeoutMs: attrs.timeoutMs,
       argv: PackageManager.exec(attrs.packageManager, [

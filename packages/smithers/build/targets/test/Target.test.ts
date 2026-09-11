@@ -307,7 +307,7 @@ describe("Target implementation contract", () => {
   })
 
   it("infers either omitted channel while retaining the supplied schema", () => {
-    const implementation = () => Target.runTool({ cwd: ".", argv: ["true"], env: {} })
+    const implementation = () => Exec.runTool({ cwd: ".", argv: ["true"], env: {} })
     const SuccessOnly = Target.make("SuccessOnly", {
       attrs: Schema.Struct({}),
       kinds: ["test"],
@@ -369,7 +369,7 @@ describe("Target implementation contract", () => {
     const plan = Target.plan(Shell.Test({ shell: "true" }))
     expectTypeOf<Node.Success<typeof plan>>().toEqualTypeOf<Exec.Result>()
     expectTypeOf<Node.Error<typeof plan>>().toEqualTypeOf<Exec.ExecError>()
-    expectTypeOf(plan).toEqualTypeOf<ReturnType<typeof Target.runTool>>()
+    expectTypeOf(plan).toEqualTypeOf<ReturnType<typeof Exec.runTool>>()
   })
 })
 
@@ -501,7 +501,7 @@ const implementationContract = () => {
     success: Exec.Result,
     error: Schema.Never,
     // @ts-expect-error An ExecError implementation cannot satisfy a Never schema.
-    implementation: () => Target.runTool({ cwd: ".", argv: ["true"], env: {} })
+    implementation: () => Exec.runTool({ cwd: ".", argv: ["true"], env: {} })
   })
 }
 void implementationContract

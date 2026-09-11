@@ -75,7 +75,7 @@ export const EsLint = Target.make("EsLint", {
   cache: false,
   implementation: (attrs) => {
     const config = attrs.configs[0]
-    return Target.runTool({
+    return Exec.runTool({
       cwd: attrs.cwd,
       argv: PackageManager.exec(attrs.packageManager, [
         "eslint",

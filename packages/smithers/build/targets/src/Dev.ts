@@ -62,7 +62,7 @@ export const Dev = Target.make("Dev", {
   error: Exec.ExecError,
   cache: false,
   implementation: (attrs) =>
-    Target.runTool({
+    Exec.runTool({
       cwd: attrs.cwd,
       argv: [attrs.command, ...attrs.args],
       timeoutMs: "unbounded"

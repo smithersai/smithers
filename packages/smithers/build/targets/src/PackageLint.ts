@@ -84,7 +84,7 @@ export const PackageLint = Target.make("PackageLint", {
   success: PackageReport,
   error: Exec.ExecError,
   implementation: (attrs) => {
-    const publint = Target.runTool({
+    const publint = Exec.runTool({
       cwd: attrs.cwd,
       argv: PackageManager.exec(attrs.packageManager, [
         "publint",
@@ -97,7 +97,7 @@ export const PackageLint = Target.make("PackageLint", {
     }
     return publint.pipe(
       Node.bindPlanned((publint) =>
-        Target.runTool({
+        Exec.runTool({
           cwd: attrs.cwd,
           argv: PackageManager.exec(attrs.packageManager, ["attw", "--pack", "."]),
           after: publint

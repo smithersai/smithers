@@ -235,5 +235,5 @@ export const NodeTest = Target.make("NodeTest", {
   kinds: ["test"],
   success: Exec.Result,
   error: Exec.ExecError,
-  implementation: (attrs) => Target.runTool({ cwd: attrs.cwd, argv: runArgv(attrs), env: attrs.env })
+  implementation: (attrs) => Exec.runTool({ cwd: attrs.cwd, argv: runArgv(attrs), env: attrs.env })
 })

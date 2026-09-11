@@ -3,7 +3,7 @@
  * `S.Shell.Run`, `S.Shell.Serve`, and `S.Shell.Diff`.
  *
  * Phase W2 gives `Build`, `Test`, `Run`, and `Diff` real plan-time bodies:
- * each plans the one shared {@link Target.runTool} exec node whose payload is
+ * each plans the one shared {@link Exec.runTool} exec node whose payload is
  * built by {@link execPayload}. Tool references, flag references, and bun
  * templates appear in the payload as sentinel argv tokens; the package
  * executor resolves them against the workspace immediately before spawn and
@@ -313,7 +313,7 @@ export const execPayload = (attrs: ExecAttrs): Exec.CallPayload => {
 
 /** Plans the shared exec node for one shell-shaped declaration. */
 const planExec = (attrs: ExecAttrs) =>
-  Target.runTool({
+  Exec.runTool({
     ...execPayload(attrs),
     secrets: attrs.secrets === undefined ? [] : [...attrs.secrets]
   })

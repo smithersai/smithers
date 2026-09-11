@@ -29,7 +29,7 @@ export const Typecheck = Target.make("Typecheck", {
   success: Exec.Result,
   error: Exec.ExecError,
   implementation: (attrs) =>
-    Target.runTool({
+    Exec.runTool({
       cwd: attrs.cwd,
       argv: ["pnpm", "exec", "tsc", "-p", attrs.tsconfig.path, "--noEmit"]
     })
@@ -111,10 +111,10 @@ const checkArgv = (attrs: Attrs): ReadonlyArray<string> =>
 
 ### Running a tool
 
-`Target.runTool(payload)` records one call to the shared exec action:
+`Exec.runTool(payload)` records one call to the shared exec action:
 
 ```ts
-Target.runTool({
+Exec.runTool({
   cwd: attrs.cwd,
   argv: PackageManager.exec(attrs.packageManager, ["eslint", "--max-warnings", String(attrs.maxWarnings)]),
   env: { CI: "1" }, // optional, merged over process.env
@@ -134,12 +134,12 @@ import * as Node from "@smthrs/plan/Node"
 
 // Run several nodes and collect a record.
 Node.all({
-  check: attrs.lint ? Target.runTool({/* ... */}) : Node.succeed(null),
-  format: attrs.format ? Target.runTool({/* ... */}) : Node.succeed(null)
+  check: attrs.lint ? Exec.runTool({/* ... */}) : Node.succeed(null),
+  format: attrs.format ? Exec.runTool({/* ... */}) : Node.succeed(null)
 })
 
 // Sequence one action behind another.
-Target.runTool({ cwd, argv: buildArgv(attrs) }).pipe(
+Exec.runTool({ cwd, argv: buildArgv(attrs) }).pipe(
   Node.andThen(CaptureOutputs.call({ cwd: attrs.cwd, paths: [attrs.outDir] }))
 )
 ```
@@ -165,7 +165,7 @@ export const TsBuild = Target.make("TsBuild", {
   error: BuildError,
   implementation: (attrs) =>
     captureOutputs(
-      Target.runTool({ cwd: attrs.cwd, argv: buildArgv(attrs) }),
+      Exec.runTool({ cwd: attrs.cwd, argv: buildArgv(attrs) }),
       attrs.cwd,
       [attrs.outDir]
     )

@@ -6,6 +6,7 @@
 import * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
 import * as NodePath from "node:path"
+import * as Exec from "./Exec.ts"
 import * as Input from "./Input.ts"
 import * as PackageManager from "./PackageManager.ts"
 import * as Runtime from "./Runtime.ts"
@@ -248,7 +249,7 @@ export const outputPaths = (attrs: Attrs): ReadonlyArray<string> =>
  * package's own build program.
  *
  * The plan runs the selected tool in `cwd` through the shared
- * {@link Target.runTool}, then the shared output-capture step that digests
+ * {@link Exec.runTool}, then the shared output-capture step that digests
  * {@link outputPaths} into the {@link Outputs} success payload. Source and
  * tsconfig digests are declared through the attrs, and dependency target keys,
  * entries, output format, external packages, and tool identity complete the
@@ -271,7 +272,7 @@ export const TsBuild = Target.make("TsBuild", {
   outputs: (attrs) => ({ cwd: attrs.cwd, paths: outputPaths(attrs) }),
   implementation: (attrs) =>
     captureOutputs(
-      Target.runTool({ cwd: attrs.cwd, argv: buildArgv(attrs) }),
+      Exec.runTool({ cwd: attrs.cwd, argv: buildArgv(attrs) }),
       attrs.cwd,
       outputPaths(attrs)
     )
