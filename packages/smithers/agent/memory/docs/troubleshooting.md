@@ -45,7 +45,7 @@ A `compactMessages` source row disappeared or its `role`, `text`, or `at` change
 
 ### `embedding_unavailable`
 
-The embedding provider failed or answered an invalid batch: a count that differs from the input count, zero or non-uniform dimensions, or a non-finite component. `Embedding.layerNoop` raises it for every call with the message "no embedding provider is configured".
+The embedding provider failed or answered an invalid batch: a count that differs from the input count, zero or non-uniform dimensions, or a non-finite component. `Embedding.makeNoop` and `Embedding.layerNoop` raise it for every non-empty request with the message "no embedding provider is configured"; an empty batch returns `{ embeddings: [] }`.
 
 ### `vector_model_mismatch`
 

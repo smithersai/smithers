@@ -51,7 +51,7 @@ const layers = Layer.provideMerge(RecallKeyword.layer, TestMemory.layer)
 
 ## What the freeze promises
 
-Every source has an in-process memo (`Source.make` accepts a `capacity`, defaulting to 1,024 identities). With no recorder in context, that memo is the whole guarantee: two reads through one source return the same text, while a second source refetches live memory. Only the first read for an identity honors the banks, query, tag groups, primer banks, and budgets; a later read that changes them logs a warning naming the changed fields and answers the frozen text.
+Every source has an in-process memo (`Source.make` accepts a `capacity`, defaulting to 1,024 identities). With no recorder in context, that memo is the whole guarantee: reads of one identity through one source return the same text while that identity stays within the capacity. The memo evicts the least recently used identity once it holds more than `capacity`, and the next read of an evicted identity fetches current memory. A second source always refetches live memory. Supply a durable `SnapshotRecorder` for retry stability beyond the memo's lifetime. Only the first read for an identity honors the banks, query, tag groups, primer banks, and budgets; a later read that changes them logs a warning naming the changed fields and answers the frozen text.
 
 The snapshot degrades rather than fails: a fetch that exceeds two seconds or fails with a typed error yields empty text and a warning log. The warning includes elapsed milliseconds, requested primer and recall bank counts, and per-bank candidate limits and observed row counts (`null` means the read did not finish). These are bounded read sizes, not total bank sizes. Fiber interruption propagates unchanged, so cancellation still cancels.
 
