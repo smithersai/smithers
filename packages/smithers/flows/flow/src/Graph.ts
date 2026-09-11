@@ -356,8 +356,8 @@ const maximumPayloadDepth = 1_000
 
 /**
  * How one payload walk behaves: where it is walking, for refusal attribution;
- * how a placeholder-like leaf resolves; the member order of a plain object;
- * and whether a mapped copy is built at all.
+ * how a placeholder-like leaf resolves; and the member order of a plain
+ * object.
  *
  * @private
  */
@@ -365,12 +365,11 @@ interface PayloadWalk {
   readonly at: string
   readonly resolve: (value: unknown) => { readonly value: unknown } | undefined
   readonly keysOf: (keys: ReadonlyArray<string>) => ReadonlyArray<string>
-  readonly rebuild: boolean
 }
 
 /**
- * One container being walked: the source, the copy being filled when the walk
- * rebuilds, and the member position reached. `keys` is `undefined` for an
+ * One container being walked: the source, the copy being filled, and the
+ * member position reached. `keys` is `undefined` for an
  * array, whose members are positional.
  *
  * @private
@@ -379,7 +378,7 @@ interface PayloadFrame {
   readonly source: Record<string, unknown> | ReadonlyArray<unknown>
   readonly keys: ReadonlyArray<string> | undefined
   readonly members: ReadonlyArray<unknown>
-  readonly output: Record<string, unknown> | Array<unknown> | undefined
+  readonly output: Record<string, unknown> | Array<unknown>
   index: number
 }
 
@@ -456,7 +455,7 @@ const walkPayload = (root: unknown, walk: PayloadWalk): unknown => {
         }
         return descriptor.value
       })
-      return { source, keys: undefined, members, output: walk.rebuild ? [] : undefined, index: 0 }
+      return { source, keys: undefined, members, output: [], index: 0 }
     }
     const keys = walk.keysOf(
       Object.keys(descriptors).filter((key) => descriptors[key]?.enumerable === true)
@@ -477,7 +476,7 @@ const walkPayload = (root: unknown, walk: PayloadWalk): unknown => {
       source,
       keys,
       members,
-      output: walk.rebuild ? Object.create(null) as Record<string, unknown> : undefined,
+      output: Object.create(null) as Record<string, unknown>,
       index: 0
     }
   }
@@ -496,7 +495,6 @@ const walkPayload = (root: unknown, walk: PayloadWalk): unknown => {
     const key = frame.keys?.[position]
     const member = frame.members[position]
     const place = (produced: unknown): void => {
-      if (frame.output === undefined) return
       if (key === undefined) {
         const members = frame.output as Array<unknown>
         members.push(produced)
@@ -556,7 +554,6 @@ const walkPayload = (root: unknown, walk: PayloadWalk): unknown => {
 const hydrate = (value: unknown, substitutions: ReadonlyMap<string, string>, at: string): unknown =>
   walkPayload(value, {
     at,
-    rebuild: true,
     keysOf: (keys) => keys,
     resolve: (member) => {
       const reference = referenceOf(member)
@@ -578,7 +575,6 @@ const hydrate = (value: unknown, substitutions: ReadonlyMap<string, string>, at:
 const literal = (value: unknown, found: Array<PlannedRecord>, at: string): unknown =>
   walkPayload(value, {
     at,
-    rebuild: true,
     keysOf: (keys) => [...keys].sort(),
     resolve: (member) => {
       const reference = Planned.reference(member)
