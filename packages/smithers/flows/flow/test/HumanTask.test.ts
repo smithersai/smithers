@@ -1419,14 +1419,25 @@ describe("HumanTask.answer", () => {
     const state = makeMemoryState()
     const executionId = "human-foreign-token"
     const foreign = [
-      // A `DurableQueue` per-item address.
+      // A `DurableQueue` per-item address, with and without a well-formed
+      // attempt suffix: the namespace alone must refuse it.
       "DurableQueue/releases/item-1",
+      "DurableQueue/releases/item#1",
       // A bare wait point: HumanTask's namespace, but not its attempt suffix.
       "WaitFor/approval",
       // Attempt suffixes `HumanTask.deferred` would never have written.
       "WaitFor/release#01",
       "WaitFor/release#1e0",
       "WaitFor/release#",
+      "WaitFor/release#0",
+      "WaitFor/release#-1",
+      // Suffixes that survive a Number()/String() round trip but are not the
+      // decimal of an attempt `HumanTask.deferred` ever parks on.
+      "WaitFor/release#NaN",
+      "WaitFor/release#Infinity",
+      "WaitFor/release#-Infinity",
+      "WaitFor/release#1e+21",
+      "WaitFor/release#9007199254740992",
       // An unrelated flow's deferred.
       "Some/Other/Deferred"
     ]
