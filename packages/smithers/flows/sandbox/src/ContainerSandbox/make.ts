@@ -3,25 +3,19 @@
  *
  * @since 0.1.0
  */
-import * as CommandLine from "@smthrs/kernel/CommandLine"
 import * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
 import * as Stream from "effect/Stream"
 import * as ChildProcess from "effect/unstable/process/ChildProcess"
 import type { ChildProcessSpawner } from "effect/unstable/process/ChildProcessSpawner"
 import { configurationFingerprint } from "../internal/configurationFingerprint.ts"
-import { environmentInput } from "../internal/environmentInput.ts"
 import { checkEnvironmentNames } from "../internal/environmentNames.ts"
+import { execSession } from "../internal/execSession.ts"
 import { finalizeWithin } from "../internal/finalizeWithin.ts"
-import { parentOf } from "../internal/guestPath.ts"
-import { cancelGuard, killScript } from "../internal/killScript.ts"
-import { gather, type GatheredRun, providerFailure, remoteProcessOf } from "../internal/localProcess.ts"
-import { rootedAt } from "../internal/rootedPath.ts"
+import { gather, type GatheredRun, providerFailure } from "../internal/localProcess.ts"
 import { sessionSlug } from "../internal/sessionSlug.ts"
-import type { RemoteProcess } from "../RemoteChildProcessSpawner/Provider.ts"
 import { ProviderError } from "../RemoteChildProcessSpawner/ProviderError.ts"
 import type { Provider } from "../Sandbox/Provider.ts"
-import type { Session } from "../Sandbox/Session.ts"
 
 /**
  * How the provider reaches and shapes its containers.
@@ -53,8 +47,6 @@ export interface ContainerSandboxOptions {
   readonly namePrefix?: string | undefined
 }
 
-/** The session-private guest directory spawned commands record their pids in. */
-const pidDirectory = "/tmp/.smthrs-sbx"
 const fingerprintLabel = "smithers.dev/sandbox-fingerprint"
 const inspectedContainer = Schema.Array(Schema.Struct({
   Config: Schema.Struct({
@@ -231,196 +223,39 @@ export const make = (options: ContainerSandboxOptions): Provider => {
           () => finalizeWithin(Effect.ignore(run(["rm", "--force", name]), { log: "Warn" }), `container ${name}`)
         )
         yield* step(`the container ${name} could not be started`, ["start", name])
-        yield* step(`the workspace ${workdir} could not be prepared in ${name}`, [
-          "exec",
-          name,
-          // The absolute path prevents a container-wide PATH override from
-          // disabling the provider's own workspace-preparation shell.
-          "/bin/sh",
-          "-c",
-          `mkdir -p ${CommandLine.quote(workdir)} && rm -rf ${pidDirectory} && mkdir -p ${pidDirectory}`
-        ])
-        // Pidfiles are numbered per acquire; the wipe above means a reattached
-        // container starts from a clean directory, so the counter cannot
-        // collide with a previous incarnation's files.
-        let nextPidfile = 0
-        const pidfiles = new WeakMap<RemoteProcess, string>()
-        const resolveCwd = rootedAt(workdir)
-        const deliver = (pidfile: string, signal: string): Effect.Effect<void, ProviderError> =>
-          Effect.flatMap(
-            run([
-              "exec",
-              name,
-              // The absolute path prevents a container-wide PATH override
-              // from disabling the provider's own signal-delivery shell.
-              "/bin/sh",
-              "-c",
-              killScript(pidfile, signal.replace(/^SIG/, ""))
-            ]),
-            (result) =>
-              result.code === 0 ? Effect.void : Effect.fail(
-                new ProviderError({
-                  code: "unknown",
-                  message: `the signal ${signal} could not be delivered in ${name}: ${result.stderr.trim()}`
-                })
-              )
-          )
-        const session: Session = {
+        return yield* execSession({
           id: sessionKey,
-          remoteId: name,
+          name,
+          noun: "container",
+          program,
           workdir,
-          spawn: Effect.fnUntraced(function*(command, spawnOptions) {
-            yield* checkEnvironmentNames(spawnOptions.env)
-            const pidfile = `${pidDirectory}/${nextPidfile++}.pid`
-            const stdin = spawnOptions.stdin
-            // The caller's variables reach the command, never the wrapper. As
-            // `--env` they were part of the exec environment, so a `PATH`
-            // override broke the wrapper's own `sh` one layer in, the same
-            // failure the absolute `/bin/sh` below exists to prevent, moved
-            // rather than fixed. `env(1)` does not widen which names survive:
-            // the inner shell rebuilds its environment when it starts, so
-            // `checkEnvironmentNames` above refuses a non-identifier name
-            // whatever the delivery.
-            //
-            // GNU coreutils, busybox, and BSD `env` all support `-u`, so an
-            // undefined value deletes a variable the container was created
-            // with instead of silently keeping it: `undefined` means the same
-            // "remove this one" here that it means for a local command. Every
-            // `-u` precedes every assignment, because `env` stops reading
-            // options at the first operand and `env A=1 -u B prog` runs `-u`
-            // as the program.
-            const entries = Object.entries(spawnOptions.env ?? {})
-            const environment = [
-              ...entries.flatMap(([key, value]) => value === undefined ? ["-u", CommandLine.quote(key)] : []),
-              ...entries.flatMap(([key, value]) => value === undefined ? [] : [CommandLine.quote(`${key}=${value}`)])
-            ]
-            const input = environmentInput(environment, stdin)
-            const args = [
-              "exec",
-              // The exec has a real input channel; it is asked for only when
-              // there is input to carry, so an input-less command sees EOF.
-              ...input.stdin === undefined ? [] : ["--interactive"],
-              // `--workdir` requires an absolute guest path, so a relative
-              // cwd is rooted at the session workdir before it gets here.
-              "--workdir",
-              resolveCwd(spawnOptions.cwd ?? ""),
-              name,
-              // Absolute on purpose: the engine resolves the exec's argv
-              // through the exec environment's PATH, so a caller's PATH
-              // override would keep a bare `sh` from ever starting.
-              "/bin/sh",
-              "-c",
-              // The pid survives the whole chain: `exec` replaces the recorded
-              // shell with env, env replaces itself with `/bin/sh`, and
-              // `sh -c` execs a lone simple command.
-              `echo $$ > ${pidfile}; ${cancelGuard(pidfile)}; ${input.script}exec ${input.prefix}/bin/sh -c ${
-                CommandLine.quote(command)
-              }`
-            ]
-            const handle = yield* options.spawner.spawn(
-              ChildProcess.make(program, args, input.stdin === undefined ? {} : { stdin: input.stdin })
-            ).pipe(
-              Effect.mapError(providerFailure("spawn_error", `\`${command}\` could not start in ${name}`))
-            )
-            const raw = remoteProcessOf(handle, command)
-            let ended = false
-            const process: RemoteProcess = {
-              ...raw,
-              exitCode: Effect.tap(raw.exitCode, () =>
-                Effect.sync(() => {
-                  ended = true
-                }))
-            }
-            // Closing the process scope ends the local CLI client, which the
-            // guest does not notice. The contract says the scope IS the
-            // process's lifetime, so the finalizer signals the guest side
-            // too, unless the command has already been seen to end.
-            yield* Effect.addFinalizer(() =>
-              ended
-                ? Effect.void
-                : finalizeWithin(
-                  Effect.ignore(deliver(pidfile, "SIGTERM"), { log: "Warn" }),
-                  `container ${name} process ${pidfile}`
-                )
-            )
-            pidfiles.set(process, pidfile)
-            return process
-          }),
-          kill: (process, signal) =>
-            Effect.suspend(() => {
-              const pidfile = pidfiles.get(process)
-              /* v8 ignore next 3 -- `spawn` records every process it returns and a `RemoteProcess` has no other source, so the guard only discharges the optional a map read carries */
-              if (pidfile === undefined) {
-                return Effect.fail(new ProviderError({ code: "unknown", message: "unrecognized process" }))
-              }
-              return deliver(pidfile, signal)
-            }),
-          readFile: (path) =>
-            Effect.flatMap(
-              run([
-                "exec",
-                name,
-                // The absolute path prevents a container-wide PATH override
-                // from disabling the provider's own file-read shell.
-                "/bin/sh",
-                "-c",
-                `test -e ${CommandLine.quote(path)} || exit 9; cat ${CommandLine.quote(path)}`
-              ]),
-              (result) =>
-                result.code === 0
-                  ? Effect.succeed(result.stdout)
-                  : result.code === 9
-                  ? Effect.fail(
-                    new ProviderError({ code: "not_found", message: `the container holds nothing at ${path}` })
-                  )
-                  : Effect.fail(
-                    new ProviderError({
-                      code: "unknown",
-                      message: `the container could not read ${path}: ${result.stderr.trim()}`
-                    })
-                  )
-            ),
-          writeFile: (path, content) =>
-            Effect.scoped(
-              Effect.gen(function*() {
-                const parent = parentOf(path)
-                const script = parent === undefined
-                  ? `cat > ${CommandLine.quote(path)}`
-                  : `mkdir -p ${CommandLine.quote(parent)} && cat > ${CommandLine.quote(path)}`
-                const handle = yield* options.spawner.spawn(
-                  ChildProcess.make(program, [
-                    "exec",
-                    "--interactive",
-                    name,
-                    // The absolute path prevents a container-wide PATH
-                    // override from disabling the provider's own file-write shell.
-                    "/bin/sh",
-                    "-c",
-                    script
-                  ], {
-                    stdin: Stream.make(content)
-                  })
-                ).pipe(Effect.mapError(providerFailure("spawn_error", `the write to ${path} could not start`)))
-                const result = yield* gather(handle, script)
-                if (result.code !== 0) {
-                  return yield* Effect.fail(
-                    new ProviderError({
-                      code: "unknown",
-                      message: `the container could not write ${path}: ${result.stderr.trim()}`
-                    })
-                  )
-                }
-              })
-            ),
-          ping: Effect.flatMap(run(["exec", name, "true"]), (result) =>
-            result.code === 0 ? Effect.void : Effect.fail(
-              new ProviderError({
-                code: "unavailable",
-                message: `the container ${name} did not answer: ${result.stderr.trim()}`
-              })
-            ))
-        }
-        return session
+          encode: "raw",
+          run: (args) => run(args),
+          launch: (args, stdin) =>
+            options.spawner.spawn(ChildProcess.make(program, [...args], stdin === undefined ? {} : { stdin })),
+          shell: (
+            script,
+            interactive
+          ) => ["exec", ...interactive ? ["--interactive"] : [], name, "/bin/sh", "-c", script],
+          spawn: ({ command, cwd, record, stdin }) => [
+            "exec",
+            // The exec has a real input channel; it is asked for only when
+            // there is input to carry, so an input-less command sees EOF.
+            ...stdin === undefined ? [] : ["--interactive"],
+            // `--workdir` requires an absolute guest path, so a relative
+            // cwd is rooted at the session workdir before it gets here.
+            "--workdir",
+            cwd,
+            name,
+            // Absolute on purpose: the engine resolves the exec's argv
+            // through the exec environment's PATH, so a caller's PATH
+            // override would keep a bare `sh` from ever starting.
+            "/bin/sh",
+            "-c",
+            [...record, command].join("; ")
+          ],
+          ping: ["exec", name, "true"]
+        })
       })
   }
 }

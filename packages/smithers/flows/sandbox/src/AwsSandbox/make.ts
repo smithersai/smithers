@@ -14,10 +14,12 @@ import { decodeBase64, encodeBase64 } from "../internal/base64.ts"
 import { configurationFingerprint } from "../internal/configurationFingerprint.ts"
 import { environmentInput } from "../internal/environmentInput.ts"
 import { checkEnvironmentNames } from "../internal/environmentNames.ts"
+import { envPrefix } from "../internal/envPrefix.ts"
 import { finalizeWithin } from "../internal/finalizeWithin.ts"
 import { parentOf } from "../internal/guestPath.ts"
 import { cancelledStatus, cancelMarker, killScript } from "../internal/killScript.ts"
 import { gather, type GatheredRun, providerFailure } from "../internal/localProcess.ts"
+import { pidDirectory } from "../internal/pidDirectory.ts"
 import { rootedAt } from "../internal/rootedPath.ts"
 import { sessionSlug } from "../internal/sessionSlug.ts"
 import { stdinRedirect } from "../internal/stdinRedirect.ts"
@@ -407,9 +409,6 @@ const noTransport = (operation: string): ProviderError =>
     `cannot ${operation}: no command transport was supplied, and the ECS API alone carries no command output; pass \`exec\` (the AWS CLI over a spawner)`
   )
 
-/** The session-private guest directory spawned commands record their pids in. */
-const pidDirectory = "/tmp/.smthrs-sbx"
-
 const decoder = new TextDecoder()
 const encoder = new TextEncoder()
 
@@ -454,35 +453,6 @@ const unframe = (run: GatheredRun, nonce: number): Unframed => {
     payload: text.slice(Math.min(start, last.index), last.index),
     code: Number.parseInt(last[1]!, 10)
   }
-}
-
-/**
- * The caller's environment as an `env(1)` prefix.
- *
- * `env`, not `export`: `export` is a POSIX special builtin, so a name it
- * refuses ends the whole non-interactive script, taking the sentinel this
- * transport frames its exit status with. `env` carries any name to the process
- * it starts, but the `sh -c` that frames the script keeps only shell
- * identifiers, so `spawn` refuses the rest up front rather than letting the
- * guest shell drop them unseen. The program after the prefix is absolute,
- * because `env` resolves it through the environment it has just built and a
- * caller's `PATH` override would otherwise keep a bare `sh` from ever
- * starting. GNU coreutils, busybox, and BSD `env` all support `-u`, so an
- * undefined value explicitly deletes a variable the task definition put in the
- * environment instead of silently keeping it: `undefined` means the same
- * "remove this one" for a remote command that it means for a local one.
- *
- * Every `-u` comes before every assignment, because `env` stops reading
- * options at the first operand: `env A=1 -u B prog` hands `-u` to `env` as
- * the program to run and fails with `env: -u: No such file or directory`.
- */
-const envOperands = (env: Readonly<Record<string, string | undefined>> | undefined): ReadonlyArray<string> => {
-  const entries = Object.entries(env ?? {})
-  const removals = entries.flatMap(([name, value]) => value === undefined ? ["-u", CommandLine.quote(name)] : [])
-  const assignments = entries.flatMap(([name, value]) =>
-    value === undefined ? [] : [CommandLine.quote(`${name}=${value}`)]
-  )
-  return [...removals, ...assignments]
 }
 
 /**
@@ -745,7 +715,7 @@ export const make = (options: AwsSandboxOptions): Provider => ({
         workdir,
         spawn: Effect.fnUntraced(function*(command, spawnOptions) {
           yield* checkEnvironmentNames(spawnOptions.env)
-          const environment = environmentInput(envOperands(spawnOptions.env), undefined)
+          const environment = environmentInput(envPrefix(spawnOptions.env), undefined)
           if (spawnOptions.stdin !== undefined || environment.stdin !== undefined) yield* requireStreaming
           const nonce = nextNonce++
           const pidfile = `${pidDirectory}/${nonce}.pid`
