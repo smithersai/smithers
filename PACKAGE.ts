@@ -40,6 +40,10 @@ const tsconfig = Smithers.Tsconfig({
     Smithers.glob("crates/*/PACKAGE.ts"),
     Smithers.glob("evals/*/PACKAGE.ts"),
     Smithers.file("scripts/PACKAGE.ts"),
+    Smithers.glob("scripts/*/PACKAGE.ts"),
+    Smithers.file("flows/PACKAGE.ts"),
+    Smithers.file("examples/PACKAGE.ts"),
+    Smithers.glob("apps/docs/*/PACKAGE.ts"),
     // One entry per nesting depth, spelled out. Packages nest: a granular
     // package lives inside the product package it belongs to, so
     // `@smthrs/canonical` is `packages/smithers/flows/canonical` and
@@ -156,8 +160,6 @@ const ubuntu = "ubuntu-latest"
 
 const node = Smithers.CiToolchain.Node({ release: "22.19.0", npmRelease: "11.16.0" })
 
-const bareNode = Smithers.CiToolchain.Node({ release: "22.19.0", cachePackageStore: false })
-
 const bun = Smithers.CiToolchain.Bun({ release: "1.4.1" })
 
 const jj = Smithers.CiToolchain.Jj({ release: "0.39.0" })
@@ -204,6 +206,7 @@ const ci = Smithers.GithubCiGen({
       id: "cache-publish",
       name: "Publish reviewed workspace results to the cache",
       runsOn: ubuntu,
+      timeoutMinutes: 120,
       publishesToCache: true,
       toolchain: Smithers.CiToolchain.Needs({
         runtimes: [node, bun],
@@ -222,6 +225,7 @@ const ci = Smithers.GithubCiGen({
       id: "test",
       name: "workspace graph (coverage gates enforced)",
       runsOn: ubuntu,
+      timeoutMinutes: 120,
       toolchain: Smithers.CiToolchain.Needs({
         runtimes: [node, bun],
         jj,
@@ -382,7 +386,7 @@ const ci = Smithers.GithubCiGen({
       runsOn: ubuntu,
       timeoutMinutes: 30,
       toolchain: Smithers.CiToolchain.Needs({
-        runtimes: [bareNode],
+        runtimes: [node],
         rust: Smithers.CiToolchain.Rust({})
       }),
       steps: [
@@ -397,7 +401,7 @@ const ci = Smithers.GithubCiGen({
       runsOn: ubuntu,
       timeoutMinutes: 30,
       toolchain: Smithers.CiToolchain.Needs({
-        runtimes: [bareNode],
+        runtimes: [node],
         rust: Smithers.CiToolchain.Rust({ cache: false })
       }),
       steps: [

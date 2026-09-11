@@ -137,3 +137,26 @@ test("public project copy keeps the support contract out of the short descriptio
     assert.match(support, /Packaged desktop and hosted deployments require separate acceptance evidence/)
   }
 })
+
+const jobBlocks = (workflow) => {
+  const body = readFileSync(join(root, workflow), "utf8").split(/^jobs:\n/m)[1]
+  return Object.fromEntries(body.split(/^(?= {2}[\w-]+:\n)/m).map((block) => [block.match(/^ {2}([\w-]+):/)[1], block]))
+}
+
+test("every CI job and the release publish job bound their runtime below GitHub's six-hour default", () => {
+  for (const [id, block] of Object.entries(jobBlocks(".github/workflows/ci.yml")))
+    assert.match(block, /^ {4}timeout-minutes: \d+$/m, `ci.yml job ${id} declares no timeout-minutes`)
+  assert.match(jobBlocks(".github/workflows/release.yml").publish, /^ {4}timeout-minutes: \d+$/m)
+})
+
+test("jobs that install the workspace restore the pnpm store", () => {
+  for (const [id, block] of Object.entries(jobBlocks(".github/workflows/ci.yml")))
+    if (block.includes("pnpm install --frozen-lockfile"))
+      assert.match(block, /node-version: [\d.]+\n {10}cache: pnpm$/m, `ci.yml job ${id} installs the workspace from a cold store`)
+})
+
+test("the root TypeScript project includes every PACKAGE.ts outside packages/", () => {
+  const { include } = JSON.parse(readFileSync(join(root, "tsconfig.json"), "utf8"))
+  for (const entry of ["scripts/*/PACKAGE.ts", "flows/PACKAGE.ts", "examples/PACKAGE.ts", "apps/docs/*/PACKAGE.ts"])
+    assert.ok(include.includes(entry), `tsconfig.json include omits ${entry}`)
+})

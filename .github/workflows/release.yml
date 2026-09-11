@@ -47,6 +47,7 @@ jobs:
   publish:
     name: validate, build, and publish
     runs-on: ubuntu-latest
+    timeout-minutes: 120
     environment: npm-publish
     permissions:
       contents: read

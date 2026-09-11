@@ -11,6 +11,7 @@ jobs:
     name: Publish reviewed workspace results to the cache
     runs-on: ubuntu-latest
     if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+    timeout-minutes: 120
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
       - name: Install Go
@@ -77,6 +78,7 @@ jobs:
   test:
     name: "workspace graph (coverage gates enforced)"
     runs-on: ubuntu-latest
+    timeout-minutes: 120
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
       - name: Validate GitHub Actions workflows
@@ -392,6 +394,12 @@ jobs:
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
           node-version: 22.19.0
+          cache: pnpm
+      - name: Install certified npm
+        run: |
+          npm install --global 'npm@11.16.0' --ignore-scripts --no-audit --no-fund
+          test "$(npm --version)" = '11.16.0'
+        shell: bash
       - run: pnpm install --frozen-lockfile --ignore-scripts
       - name: Install pinned Rust toolchain
         run: rustup toolchain install
@@ -424,6 +432,12 @@ jobs:
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
           node-version: 22.19.0
+          cache: pnpm
+      - name: Install certified npm
+        run: |
+          npm install --global 'npm@11.16.0' --ignore-scripts --no-audit --no-fund
+          test "$(npm --version)" = '11.16.0'
+        shell: bash
       - run: pnpm install --frozen-lockfile --ignore-scripts
       - name: Install pinned Rust toolchain
         run: rustup toolchain install
