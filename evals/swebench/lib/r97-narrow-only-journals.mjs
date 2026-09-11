@@ -105,11 +105,16 @@ const checkpointedCalls = (text) => {
 
 const distil = (path) => {
   const db = new DatabaseSync(path, { readOnly: true })
-  const rows = db.prepare(
-    "select seq, event_type, payload_json from flows_journal_events"
-      + " where event_type like 'control.agent.%' or event_type = 'flows.time-travel.effect-boundary'"
-      + " order by seq"
-  ).all()
+  let rows
+  try {
+    rows = db.prepare(
+      "select seq, event_type, payload_json from flows_journal_events"
+        + " where event_type like 'control.agent.%' or event_type = 'flows.time-travel.effect-boundary'"
+        + " order by seq"
+    ).all()
+  } finally {
+    db.close()
+  }
   const frames = []
   const demands = []
   const started = []

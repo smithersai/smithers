@@ -23,9 +23,9 @@
  */
 import assert from "node:assert/strict"
 import { spawnSync } from "node:child_process"
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
-import { join, resolve } from "node:path"
+import { basename, dirname, join, resolve } from "node:path"
 
 const root = resolve(import.meta.dirname, "..")
 const temporary = mkdtempSync(join(tmpdir(), "flows-swebench-selector-"))
@@ -57,6 +57,140 @@ const select = (instance, journals, patches, out, extra = []) =>
 const rationaleOf = (out, instance) => readFileSync(join(out, `${instance}.rationale.json`), "utf8")
 
 try {
+  // -----------------------------------------------------------------------
+  // What it can name at all. The flag surface below is one half of the rule;
+  // this is the other. Every module the selector loads is a node builtin, the
+  // harness's own detectors, the journal reader, or the committed price table
+  // — and none of those files names an evaluator report, the dataset, or the
+  // graded identifiers, so there is no path to the answer to refuse. These
+  // checks read source only, so they run first and no replay red can hide them.
+  // -----------------------------------------------------------------------
+  /** Where the detectors live. A move of the harness breaks this, not the rule. */
+  const harnessSource = resolve(root, "../../packages/smithers/agent/harness/src")
+  const allowed = (from, specifier) => {
+    if (specifier.startsWith("node:")) return true
+    const target = resolve(root, dirname(from), specifier)
+    return target === join(root, "lib/journal-facts.mjs")
+      || target === join(root, "prices.ts")
+      || (dirname(target) === harnessSource && /^[A-Za-z]+\.ts$/u.test(basename(target)))
+  }
+  assert.ok(allowed("select-candidate.mjs", "../../packages/smithers/agent/harness/src/Sufficiency.ts"))
+  assert.ok(allowed("lib/journal-facts.mjs", "../../../packages/smithers/agent/harness/src/NarrowedCheck.ts"))
+  assert.ok(!allowed("select-candidate.mjs", "../../packages/harness/src/Sufficiency.ts"), "a stale harness path")
+  assert.ok(!allowed("select-candidate.mjs", "../../packages/smithers/agent/harness/test/fixtures/r97Journals.json"))
+
+  const forbiddenNames = ["swb-verified", "preds-", "FAIL_TO_PASS", "PASS_TO_PASS", "resolved_ids", "test_patch"]
+  // The doc comments say what the selector must never read, so a mention is
+  // only a leak when it is not in a comment.
+  const codeOf = (source) =>
+    source.replace(/\/\*[\s\S]*?\*\//gu, "").split("\n").filter((line) => !line.trimStart().startsWith("//")).join(
+      "\n"
+    )
+  const importsOf = (source) => [...source.matchAll(/^import[^"']*["']([^"']+)["']/gmu)].map((match) => match[1])
+
+  // The name scan runs over every module the selector loads, detectors
+  // included, before the import shape is asserted.
+  const scanned = new Set()
+  const pending = [join(root, "select-candidate.mjs")]
+  while (pending.length > 0) {
+    const path = pending.pop()
+    if (scanned.has(path)) continue
+    scanned.add(path)
+    const source = readFileSync(path, "utf8")
+    const code = codeOf(source)
+    for (const forbidden of forbiddenNames) {
+      assert.ok(!code.includes(forbidden), `${path} names ${forbidden} outside a comment`)
+    }
+    for (const specifier of importsOf(source)) {
+      if (specifier.startsWith(".")) pending.push(resolve(dirname(path), specifier))
+    }
+  }
+  assert.ok(scanned.has(join(harnessSource, "Sufficiency.ts")), "the scan reaches the detectors")
+
+  for (const name of ["select-candidate.mjs", "lib/journal-facts.mjs", "prices.ts"]) {
+    for (const specifier of importsOf(readFileSync(join(root, name), "utf8"))) {
+      assert.ok(allowed(name, specifier), `${name} imports ${specifier}, which is not a journal, a detector or a price`)
+    }
+  }
+
+  // -----------------------------------------------------------------------
+  // A distillation's instance name is a path component, never a path.
+  // -----------------------------------------------------------------------
+  const escapeBase = join(temporary, "escape")
+  mkdirSync(escapeBase, { recursive: true })
+  writeFileSync(
+    join(escapeBase, "escape.json"),
+    JSON.stringify({ journals: [{ instance: "../escaped", openedOn: "", frames: [] }] })
+  )
+  const escaped = spawnSync(
+    process.execPath,
+    [
+      join(root, "fixtures/rehydrate-journals.mjs"),
+      join(escapeBase, "escape.json"),
+      join(escapeBase, "out"),
+      "r1",
+      join(escapeBase, "patches")
+    ],
+    { encoding: "utf8" }
+  )
+  assert.equal(escaped.status, 2, "an instance that is not <repo>__<issue> is refused")
+  assert.match(escaped.stderr, /must match <repo>__<issue>/)
+  assert.deepEqual(readdirSync(escapeBase), ["escape.json"], "and nothing is written")
+
+  // -----------------------------------------------------------------------
+  // Distil over rehydrate: the distiller reads back the frames rehydration
+  // wrote.
+  // -----------------------------------------------------------------------
+  const roundTrip = {
+    instance: "round__trip",
+    openedOn: "aaaa",
+    frames: [
+      {
+        calls: [{ flow: "bash", input: { command: "check tests/a.py" }, ok: true, mutates: false, exit: 1 }],
+        basis: "observed",
+        digest: "aaaa",
+        mutated: false,
+        transition: "continue"
+      },
+      {
+        calls: [{ flow: "write", input: { path: "a.py", text: "x" }, ok: true, mutates: true }],
+        basis: "observed",
+        digest: "bbbb",
+        mutated: true,
+        transition: "complete"
+      }
+    ]
+  }
+  const roundBase = join(temporary, "round")
+  mkdirSync(roundBase, { recursive: true })
+  writeFileSync(join(roundBase, "in.json"), JSON.stringify({ journals: [roundTrip] }))
+  rehydrate(join(roundBase, "in.json"), join(roundBase, "journals"), "r1", join(roundBase, "patches"))
+  mkdirSync(join(roundBase, "work", "round__trip", ".flows"), { recursive: true })
+  renameSync(
+    join(roundBase, "journals", "round__trip-r1", "engine.db"),
+    join(roundBase, "work", "round__trip", ".flows", "engine.db")
+  )
+  const distilled = spawnSync(
+    process.execPath,
+    [join(root, "lib/narrowing-journals.mjs"), join(roundBase, "work"), join(roundBase, "out.json")],
+    { encoding: "utf8" }
+  )
+  assert.equal(distilled.status, 0, distilled.stderr)
+  const [readBackJournal] = JSON.parse(readFileSync(join(roundBase, "out.json"), "utf8")).journals
+  assert.equal(readBackJournal.instance, "round__trip")
+  assert.equal(readBackJournal.openedOn, "aaaa")
+  assert.deepEqual(
+    readBackJournal.frames.map(({ calls, basis, digest, mutated, transition }) => ({
+      calls: calls.map(({ seq: _seq, ...call }) => call),
+      basis,
+      digest,
+      mutated,
+      transition
+    })),
+    roundTrip.frames,
+    "the distillation reads back what rehydration wrote"
+  )
+
   const journals = join(temporary, "journals")
   const patches = join(temporary, "patches")
   const out = join(temporary, "selected")
@@ -351,35 +485,6 @@ try {
       new RegExp(`\\b${field}: event\\.`, "u"),
       `AgentSession no longer writes ${field}, which journal-facts reads`
     )
-  }
-
-  // -----------------------------------------------------------------------
-  // What it can name at all. The flag surface above is one half of the rule;
-  // this is the other. Every module the selector loads is a node builtin, the
-  // harness's own detectors, the journal reader, or the committed price table
-  // — and none of the three files names an evaluator report, the dataset, or
-  // the graded identifiers, so there is no path to the answer to refuse.
-  // -----------------------------------------------------------------------
-  const sources = ["select-candidate.mjs", "lib/journal-facts.mjs", "prices.ts"]
-  const allowed = (specifier) =>
-    specifier.startsWith("node:")
-    || /^\.\.?\/(\.\.\/)*packages\/harness\/src\/[A-Za-z]+\.ts$/u.test(specifier)
-    || specifier === "./lib/journal-facts.mjs"
-    || specifier === "./prices.ts"
-  for (const name of sources) {
-    const source = readFileSync(join(root, name), "utf8")
-    for (const match of source.matchAll(/^import[^"']*["']([^"']+)["']/gmu)) {
-      assert.ok(allowed(match[1]), `${name} imports ${match[1]}, which is not a journal, a detector or a price`)
-    }
-    for (const forbidden of ["swb-verified", "preds-", "FAIL_TO_PASS", "PASS_TO_PASS", "resolved_ids", "test_patch"]) {
-      // The doc comments say what the selector must never read, so a mention is
-      // only a leak when it is not in a comment. Every line here is checked
-      // against the code with its comments stripped.
-      const code = source.replace(/\/\*[\s\S]*?\*\//gu, "").split("\n").filter((line) =>
-        !line.trimStart().startsWith("//")
-      ).join("\n")
-      assert.ok(!code.includes(forbidden), `${name} names ${forbidden} outside a comment`)
-    }
   }
 } finally {
   rmSync(temporary, { recursive: true, force: true })

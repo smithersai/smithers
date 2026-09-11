@@ -43,6 +43,18 @@ if (!/^r[0-9]+$/u.test(indexArgument)) {
 }
 
 const source = JSON.parse(readFileSync(resolve(sourcePath), "utf8"))
+// Each instance name becomes a path component, so it must be one: the same
+// `<repo>__<issue>` shape `lib/run-paths.sh` accepts. Every name is checked
+// before anything is written.
+for (const journal of source.journals) {
+  if (
+    typeof journal.instance !== "string"
+    || !/^[A-Za-z0-9][A-Za-z0-9._-]*__[A-Za-z0-9][A-Za-z0-9._-]*$/u.test(journal.instance)
+  ) {
+    console.error(`rehydrate-journals.mjs: instance ${JSON.stringify(journal.instance)} must match <repo>__<issue>`)
+    process.exit(2)
+  }
+}
 const outDir = resolve(outArgument)
 const patchesDir = patchesArgument === undefined ? undefined : resolve(patchesArgument)
 
