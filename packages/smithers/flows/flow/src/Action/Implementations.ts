@@ -38,10 +38,10 @@ import type * as Crypto from "effect/Crypto"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
 import * as Option from "effect/Option"
-import * as Schema from "effect/Schema"
 import type { Scope } from "effect/Scope"
 import type { FlowInstance } from "../FlowRuntime/FlowInstance.ts"
 import type { FlowRuntime } from "../FlowRuntime/FlowRuntime.ts"
+import { DuplicateImplementation } from "./DuplicateImplementation.ts"
 
 /**
  * One declared action's implementation, as a driver consumes it: a name to
@@ -63,16 +63,6 @@ export interface Implementation {
     payload: unknown
   ) => Effect.Effect<unknown, unknown, Crypto.Crypto | FlowRuntime | FlowInstance>
 }
-
-/**
- * Two implementations competed for one action tag without an explicit override.
- * @category errors
- * @since 0.1.0
- */
-export class DuplicateImplementation extends Schema.TaggedError<DuplicateImplementation>()(
-  "@smthrs/flow/Action/DuplicateImplementation",
-  { name: Schema.String }
-) {}
 
 /**
  * Service holding the declared action implementations a composition wired

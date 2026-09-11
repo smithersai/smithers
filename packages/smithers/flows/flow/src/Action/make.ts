@@ -21,10 +21,11 @@ import { FlowRuntime } from "../FlowRuntime/FlowRuntime.ts"
 import type * as RetryPolicy from "../RetryPolicy.ts"
 import type { Action, Declared, IdempotencyKey, Requirement, Tier } from "./Action.ts"
 import { CurrentAttempt } from "./Context.ts"
-import { ImplementationVersionMismatch, InfraInterruptRetriesExhausted } from "./Errors.ts"
-import type { InfraInterrupt } from "./Errors.ts"
 import { FileBoundary } from "./FileBoundary.ts"
 import { type Implementation, Implementations } from "./Implementations.ts"
+import { ImplementationVersionMismatch } from "./ImplementationVersionMismatch.ts"
+import type { InfraInterrupt } from "./InfraInterrupt.ts"
+import { InfraInterruptRetriesExhausted } from "./InfraInterruptRetriesExhausted.ts"
 import { TypeId } from "./TypeId.ts"
 
 interface ExitSchemas {
