@@ -438,6 +438,20 @@ describe("ContainerSandbox", () => {
       ])
     }))
 
+  it.effect("hands exec the cwd `Sandbox.fileSystem` would name for a relative path", () =>
+    Effect.gen(function*() {
+      const fake = engine()
+      yield* acquired(ContainerSandbox.make({ spawner: fake.spawner, image: "img", workdir }), (session) =>
+        Effect.gen(function*() {
+          yield* output(session, "mkdir -p sub")
+          yield* output(session, "true", { cwd: ".//sub" })
+        }))
+      const exec = fake.calls.filter((call) =>
+        call.args[0] === "exec" && call.args.includes("--workdir")
+      )
+      expect(exec.map(({ args }) => args[args.indexOf("--workdir") + 1])).toEqual([workdir, `${workdir}/sub`])
+    }))
+
   it.effect("drives the full container lifecycle through the engine CLI", () =>
     Effect.gen(function*() {
       const spaced = join(root, "work dir")
@@ -636,7 +650,9 @@ describe("ContainerSandbox", () => {
       expect(spawns[0]!.args).not.toContain("--env")
       expect(Buffer.from(spawns[0]!.input.trim(), "base64").toString()).toBe("-u DROP KEEP=1 WHO=guest")
       expect(spawns[1]!.args.slice(0, 3)).toEqual(["exec", "--workdir", workdir])
-      expect(spawns[3]!.args.slice(1, 3)).toEqual(["--workdir", `${workdir}/sub/nested`])
+      // The rooting rule keeps a trailing slash, as `Sandbox.fileSystem` does;
+      // the `pwd` above shows it names the same directory.
+      expect(spawns[3]!.args.slice(1, 3)).toEqual(["--workdir", `${workdir}/sub/nested/`])
       const fed = spawns.find((call) => call.args.at(-1)?.includes("cat > stdin-copy.bin"))!
       expect(fed.args.slice(0, 4)).toEqual(["exec", "--interactive", "--workdir", workdir])
       // Both environment operands and command stdin use the input channel.

@@ -16,6 +16,7 @@ import { checkEnvironmentNames } from "../internal/environmentNames.ts"
 import { finalizeWithin } from "../internal/finalizeWithin.ts"
 import { cancelledStatus, cancelMarker, killScript } from "../internal/killScript.ts"
 import { gather, type GatheredRun, providerFailure } from "../internal/localProcess.ts"
+import { rootedAt } from "../internal/rootedPath.ts"
 import { sessionSlug } from "../internal/sessionSlug.ts"
 import { stdinRedirect } from "../internal/stdinRedirect.ts"
 import { warnTeardown } from "../internal/teardownWarning.ts"
@@ -728,10 +729,7 @@ export const make = (options: AwsSandboxOptions): Provider => ({
               )
           )
       })
-      const resolveCwd = (cwd: string | undefined): string =>
-        cwd === undefined || cwd.startsWith("/")
-          ? cwd ?? workdir
-          : `${workdir}/${cwd.replace(/^(\.\/)+/, "")}`.replace(/\/\.?$/, "")
+      const resolveCwd = rootedAt(workdir)
       const kill = (pidfile: string, signal: string): Effect.Effect<void, ProviderError> =>
         Effect.flatMap(
           run(killScript(pidfile, signal.replace(/^SIG/, ""))),
@@ -759,7 +757,7 @@ export const make = (options: AwsSandboxOptions): Provider => ({
           const nonce = nextNonce++
           const pidfile = `${pidDirectory}/${nonce}.pid`
           const fed = yield* redirect(command, spawnOptions.stdin)
-          const remote = spawnScript(fed, resolveCwd(spawnOptions.cwd), environment, pidfile, nonce)
+          const remote = spawnScript(fed, resolveCwd(spawnOptions.cwd ?? ""), environment, pidfile, nonce)
           const handle = yield* spawnTransport(remote, environment.stdin)
           // The session's whole output is needed before any of it can be
           // read back (the banner leads and the sentinel trails), so the

@@ -12,6 +12,7 @@ import * as ChildProcess from "effect/unstable/process/ChildProcess"
 import type { ChildProcessHandle, ChildProcessSpawner } from "effect/unstable/process/ChildProcessSpawner"
 import { checkEnvironmentNames } from "../internal/environmentNames.ts"
 import { providerFailure, remoteProcessOf } from "../internal/localProcess.ts"
+import { rootedAt } from "../internal/rootedPath.ts"
 import { sessionSlug } from "../internal/sessionSlug.ts"
 import type { RemoteProcess } from "../RemoteChildProcessSpawner/Provider.ts"
 import { ProviderError } from "../RemoteChildProcessSpawner/ProviderError.ts"
@@ -80,14 +81,9 @@ export const make = (options: DirectorySandboxOptions): Provider => ({
         ),
         () => Effect.ignore(options.fs.remove(workdir, { recursive: true, force: true }))
       )
-      // One rooting rule for every relative path the session sees, mirroring
-      // `Sandbox.fileSystem`: a relative `cwd` or file path is the
-      // workspace's, never the engine process's working directory.
-      const resolve = (path: string): string => {
-        if (path.startsWith("/")) return path
-        const trimmed = path.replace(/^(\.\/)+/, "")
-        return trimmed === "" || trimmed === "." ? workdir : `${workdir}/${trimmed}`
-      }
+      // A relative `cwd` is the workspace's, never the engine process's
+      // working directory.
+      const resolve = rootedAt(workdir)
       const started = new WeakMap<RemoteProcess, ChildProcessHandle>()
       // Only the injected lifecycle owns signal authority. A supervised
       // handle's pid can name its owner, not the command's target process.

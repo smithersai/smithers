@@ -7,6 +7,7 @@ import * as Effect from "effect/Effect"
 import * as Stream from "effect/Stream"
 import { environmentCommand } from "../internal/environmentCommand.ts"
 import { checkEnvironmentNames } from "../internal/environmentNames.ts"
+import { rootedAt } from "../internal/rootedPath.ts"
 import { sessionSlug } from "../internal/sessionSlug.ts"
 import { warnTeardown } from "../internal/teardownWarning.ts"
 import type { RemoteProcess } from "../RemoteChildProcessSpawner/Provider.ts"
@@ -356,10 +357,7 @@ export const make = (options: MicrosandboxSandboxOptions): Provider => ({
       }
       prepared = true
 
-      const resolveCwd = (cwd: string | undefined): string =>
-        cwd === undefined || cwd.startsWith("/")
-          ? cwd ?? workdir
-          : `${workdir}/${cwd.replace(/^(\.\/)+/, "")}`.replace(/\/\.?$/, "")
+      const resolveCwd = rootedAt(workdir)
 
       const session: Session = {
         id: sessionKey,
@@ -381,7 +379,7 @@ export const make = (options: MicrosandboxSandboxOptions): Provider => ({
               execute(
                 opened.sandbox,
                 commandLine(shell, guest.command, nix),
-                resolveCwd(spawnOptions.cwd),
+                resolveCwd(spawnOptions.cwd ?? ""),
                 guest.env,
                 spawnOptions.stdin,
                 "spawn_error",

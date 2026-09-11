@@ -10,6 +10,7 @@ import { environmentCommand } from "../internal/environmentCommand.ts"
 import { checkEnvironmentNames } from "../internal/environmentNames.ts"
 import { finalizeWithin } from "../internal/finalizeWithin.ts"
 import { providerFailure } from "../internal/localProcess.ts"
+import { rootedAt } from "../internal/rootedPath.ts"
 import { sessionSlug } from "../internal/sessionSlug.ts"
 import { stdinRedirect } from "../internal/stdinRedirect.ts"
 import { warnTeardown } from "../internal/teardownWarning.ts"
@@ -208,10 +209,7 @@ export const make = (options: DaytonaSandboxOptions): Provider => ({
           Effect.asVoid(Effect.flatMap(execute(`rm -f ${CommandLine.quote(path)}`), (result) =>
             checked(result, "unknown", `daytona-sandbox: could not remove ${path}`)))
       })
-      const resolveCwd = (cwd: string | undefined): string =>
-        cwd === undefined || cwd.startsWith("/")
-          ? cwd ?? workdir
-          : `${workdir}/${cwd.replace(/^(\.\/)+/, "")}`.replace(/\/\.?$/, "")
+      const resolveCwd = rootedAt(workdir)
       const session: Session = {
         id: sessionKey,
         remoteId: held.sandbox.id,
@@ -224,7 +222,7 @@ export const make = (options: DaytonaSandboxOptions): Provider => ({
               return Effect.map(
                 execute(
                   guest.command,
-                  resolveCwd(spawnOptions.cwd),
+                  resolveCwd(spawnOptions.cwd ?? ""),
                   guest.env
                 ),
                 (result) => ({

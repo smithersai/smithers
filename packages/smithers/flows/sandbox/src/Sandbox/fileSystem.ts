@@ -10,6 +10,7 @@ import * as Option from "effect/Option"
 import * as PlatformError from "effect/PlatformError"
 import * as Stream from "effect/Stream"
 import { platformReason } from "../internal/platformReason.ts"
+import { rootedAt } from "../internal/rootedPath.ts"
 import type { ProviderError, ProviderErrorCode } from "../RemoteChildProcessSpawner/ProviderError.ts"
 import type { Session } from "./Session.ts"
 
@@ -263,20 +264,7 @@ const unsupportedExit = 13
  */
 export const fileSystem = (session: Session): FileSystem.FileSystem => {
   const quote = CommandLine.quote
-  // Trailing slashes go, because every resolved path adds its own. A workdir
-  // that is nothing but slashes is the root, and stripping it to the empty
-  // string would quote `''` into the probe and name the host's cwd rather than
-  // the machine's; the root keeps its one slash and never doubles it.
-  const trimmedWorkdir = session.workdir.replace(/\/+$/, "")
-  const workdir = trimmedWorkdir === "" ? "/" : trimmedWorkdir
-  const resolve = (path: string): string => {
-    if (path.startsWith("/")) return path
-    // Leading `./` and the slashes around it go together, so `.//x` names the
-    // same entry `./x` does rather than reaching the machine as `<workdir>//x`.
-    const relative = path.replace(/^(?:\.?\/+)*/, "")
-    if (relative === "" || relative === ".") return workdir
-    return workdir === "/" ? `/${relative}` : `${workdir}/${relative}`
-  }
+  const resolve = rootedAt(session.workdir)
   const statOf = Effect.fn("Sandbox.fileSystem.stat")(function*(raw: string) {
     const path = resolve(raw)
     const target = quote(path)

@@ -9,6 +9,7 @@ import { environmentCommand } from "../internal/environmentCommand.ts"
 import { checkEnvironmentNames } from "../internal/environmentNames.ts"
 import { finalizeWithin } from "../internal/finalizeWithin.ts"
 import { providerFailure } from "../internal/localProcess.ts"
+import { rootedAt } from "../internal/rootedPath.ts"
 import { sessionSlug } from "../internal/sessionSlug.ts"
 import { stdinRedirect } from "../internal/stdinRedirect.ts"
 import { warnTeardown } from "../internal/teardownWarning.ts"
@@ -253,10 +254,7 @@ export const make = (options: VercelSandboxOptions): Provider => ({
             )
           )
       })
-      const resolveCwd = (cwd: string | undefined): string =>
-        cwd === undefined || cwd.startsWith("/")
-          ? cwd ?? workdir
-          : `${workdir}/${cwd.replace(/^(\.\/)+/, "")}`.replace(/\/\.?$/, "")
+      const resolveCwd = rootedAt(workdir)
       const session: Session = {
         id: sessionKey,
         remoteId: sandbox.name,
@@ -272,7 +270,7 @@ export const make = (options: VercelSandboxOptions): Provider => ({
                   // `-c`, never `-lc`: profile output from a login shell would
                   // precede the command's own stdout on this transport.
                   args: ["-c", guest.command],
-                  cwd: resolveCwd(spawnOptions.cwd),
+                  cwd: resolveCwd(spawnOptions.cwd ?? ""),
                   env: guest.env
                 }),
                 (result) => ({

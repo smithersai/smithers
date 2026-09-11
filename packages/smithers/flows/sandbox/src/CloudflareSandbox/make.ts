@@ -10,6 +10,7 @@ import { decodeBase64, encodeBase64 } from "../internal/base64.ts"
 import { environmentCommand } from "../internal/environmentCommand.ts"
 import { checkEnvironmentNames } from "../internal/environmentNames.ts"
 import { finalizeWithin } from "../internal/finalizeWithin.ts"
+import { rootedAt } from "../internal/rootedPath.ts"
 import { sessionSlug } from "../internal/sessionSlug.ts"
 import { stdinRedirect } from "../internal/stdinRedirect.ts"
 import { warnTeardown } from "../internal/teardownWarning.ts"
@@ -151,10 +152,7 @@ export const make = <Binding>(options: CloudflareSandboxOptions<Binding>): Provi
                 )
             )
         })
-        const resolveCwd = (cwd: string | undefined): string =>
-          cwd === undefined || cwd.startsWith("/")
-            ? cwd ?? workdir
-            : `${workdir}/${cwd.replace(/^(\.\/)+/, "")}`.replace(/\/\.?$/, "")
+        const resolveCwd = rootedAt(workdir)
 
         const spawn: Session["spawn"] = (command, spawnOptions) =>
           Effect.flatMap(
@@ -162,7 +160,7 @@ export const make = <Binding>(options: CloudflareSandboxOptions<Binding>): Provi
             (fed) => {
               const guest = environmentCommand(fed, spawnOptions.env)
               const commandOptions = {
-                cwd: resolveCwd(spawnOptions.cwd),
+                cwd: resolveCwd(spawnOptions.cwd ?? ""),
                 env: guest.env
               }
               return options.execution === "process"

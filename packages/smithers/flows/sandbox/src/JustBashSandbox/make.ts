@@ -10,6 +10,7 @@ import * as Semaphore from "effect/Semaphore"
 import * as Stream from "effect/Stream"
 import { checkEnvironmentNames } from "../internal/environmentNames.ts"
 import { providerFailure } from "../internal/localProcess.ts"
+import { rootedAt } from "../internal/rootedPath.ts"
 import { sessionSlug } from "../internal/sessionSlug.ts"
 import { ProviderError } from "../RemoteChildProcessSpawner/ProviderError.ts"
 import type { Provider } from "../Sandbox/Provider.ts"
@@ -49,13 +50,6 @@ const latin1 = (bytes: Uint8Array): string => {
     text += String.fromCharCode(...bytes.subarray(offset, offset + 8192))
   }
   return text
-}
-
-/** Roots a relative path at the workdir, the rule `Sandbox.fileSystem` uses. */
-const rootedAt = (workdir: string) => (path: string): string => {
-  if (path.startsWith("/")) return path
-  const trimmed = path.replace(/^(\.\/)+/, "")
-  return trimmed === "" || trimmed === "." ? workdir : `${workdir}/${trimmed}`
 }
 
 /**

@@ -317,6 +317,10 @@ describe("JustBashSandbox", () => {
             expect((yield* output(session, "pwd", { cwd: "." })).stdout).toBe(`${session.workdir}\n`)
             expect((yield* output(session, "pwd", { cwd: "" })).stdout).toBe(`${session.workdir}\n`)
             expect((yield* output(session, "pwd", { cwd: root })).stdout).toBe(`${root}\n`)
+            // The interpreter receives the path `Sandbox.fileSystem` would name
+            // for `.//sub`, not `<workdir>//sub`.
+            yield* output(session, "true", { cwd: ".//sub" })
+            expect(fake.calls.at(-1)!.options.cwd).toBe(`${session.workdir}/sub`)
 
             // Defined environment entries are merged for this one call.
             const env = yield* output(session, `printf '%s' "$KEPT"`, {

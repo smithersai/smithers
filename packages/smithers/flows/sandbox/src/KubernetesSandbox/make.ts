@@ -16,6 +16,7 @@ import { checkEnvironmentNames } from "../internal/environmentNames.ts"
 import { finalizeWithin } from "../internal/finalizeWithin.ts"
 import { cancelGuard, killScript } from "../internal/killScript.ts"
 import { gather, type GatheredRun, providerFailure, remoteProcessOf } from "../internal/localProcess.ts"
+import { rootedAt } from "../internal/rootedPath.ts"
 import { sessionSlug } from "../internal/sessionSlug.ts"
 import type { RemoteProcess } from "../RemoteChildProcessSpawner/Provider.ts"
 import { ProviderError } from "../RemoteChildProcessSpawner/ProviderError.ts"
@@ -332,10 +333,7 @@ export const make = (options: KubernetesSandboxOptions): Provider => {
 
         let nextPidfile = 0
         const pidfiles = new WeakMap<RemoteProcess, string>()
-        const resolveCwd = (cwd: string | undefined): string =>
-          cwd === undefined || cwd.startsWith("/")
-            ? cwd ?? workdir
-            : `${workdir}/${cwd.replace(/^(\.\/)+/, "")}`.replace(/\/\.?$/, "")
+        const resolveCwd = rootedAt(workdir)
         const deliver = (pidfile: string, signal: string): Effect.Effect<void, ProviderError> =>
           Effect.flatMap(
             run([
@@ -389,7 +387,7 @@ export const make = (options: KubernetesSandboxOptions): Provider => {
             // a lone simple command.
             const input = environmentInput(environment, stdin)
             const script = [
-              `cd ${CommandLine.quote(resolveCwd(spawnOptions.cwd))}`,
+              `cd ${CommandLine.quote(resolveCwd(spawnOptions.cwd ?? ""))}`,
               `echo $$ > ${pidfile}`,
               cancelGuard(pidfile),
               `${input.script}exec ${input.prefix}/bin/sh -c ${CommandLine.quote(command)}`

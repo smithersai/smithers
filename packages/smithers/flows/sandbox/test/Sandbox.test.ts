@@ -636,31 +636,22 @@ describe("Sandbox.fileSystem", () => {
       expect(listed).toEqual(["a.txt", "b.txt", "c.txt"])
     }))
 
-  it.effect("roots dotted, empty, and root-workdir paths without doubling or dropping a slash", () =>
+  it.effect("roots every probe path at the session workdir, the root included", () =>
     Effect.gen(function*() {
+      // The rule's cases live in test/RootedPath.test.ts; this proves the probe
+      // paths go through it with the session's own workdir.
       const provider = Sandbox.TestSession.make({ workdir: "/work//", script: () => ({ exitCode: 0 }) })
       const rooted = yield* Effect.scoped(
         Effect.gen(function*() {
           const files = yield* probeSession(provider)
-          for (const path of [".", "", "./x", ".//y", "./././deep/z", "..", "/absolute"]) {
+          for (const path of [".", ".//y", "/absolute"]) {
             yield* files.makeDirectory(path)
           }
         })
       )
       expect(rooted).toBeUndefined()
       const targets = provider.state.commands.map((command) => /mkdir (.*); fi$/.exec(command)?.[1])
-      // The workdir's trailing slashes are gone, `.` and `""` name the workdir
-      // itself, `./` prefixes are stripped rather than passed through, and an
-      // absolute path is left alone.
-      expect(targets).toEqual([
-        "/work",
-        "/work",
-        "/work/x",
-        "/work/y",
-        "/work/deep/z",
-        "/work/..",
-        "/absolute"
-      ])
+      expect(targets).toEqual(["/work", "/work/y", "/absolute"])
 
       // A session whose workspace IS the root still names the root, not the
       // empty string the host shell would read as its own directory.
