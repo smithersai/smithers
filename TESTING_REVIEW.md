@@ -26,7 +26,7 @@ This reviews the current working tree, including its existing uncommitted change
 
 3. **P1 — Pull-request CI's “apps e2e” job does not run the browser suite.**
 
-   [.github/workflows/ci.yml](.github/workflows/ci.yml:177) runs `smithers-build test '//apps/ui/...'`. [apps/ui/PACKAGE.ts](apps/ui/PACKAGE.ts:91) declares a Bun unit test runner for `src`, and explicitly keeps Playwright and packaged E2E out of the per-push graph. Installing or checking for Chrome does not make that command a browser test. [The actual Playwright step](.github/workflows/apps-deploy.yml:67) is in the deploy workflow, triggered by `apps-v*` tags or manual dispatch.
+   [.github/workflows/ci.yml](.github/workflows/ci.yml:177) runs `smithers-build test '//apps/app/...'`. [apps/app/PACKAGE.ts](apps/app/PACKAGE.ts:91) declares a Bun unit test runner for `src`, and explicitly keeps Playwright and packaged E2E out of the per-push graph. Installing or checking for Chrome does not make that command a browser test. [The actual Playwright step](.github/workflows/apps-deploy.yml:67) is in the deploy workflow, triggered by `apps-v*` tags or manual dispatch.
 
    The main CI workflow also does not select `//apps/server/...`; that app's unit suite is explicitly run in the deploy workflow. UI typechecking is not selected by the test-only UI invocation either. The [test-script wiring gate](scripts/repo-contract/test-script-wiring.test.mjs:48) checks manifest scripts and recursive root commands, rather than the graph selected by actual CI; all four of its tests pass despite this mismatch.
 
