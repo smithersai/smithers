@@ -53,12 +53,6 @@ interface Provider {
   readonly route: RouteFor
 }
 
-/**
- * The providers a recorded seat may name.
- *
- * A seat naming anything else fails by name rather than recording a fixture
- * against the wrong model.
- */
 /** The ChatGPT-subscription model: OpenAIChatGPT route over the codex auth store. */
 const chatgptModel = (modelId: string, file: string): Model.Model =>
   Effect.runSync(
@@ -70,6 +64,12 @@ const chatgptModel = (modelId: string, file: string): Model.Model =>
     }).pipe(Effect.provide(executor), Effect.orDie)
   )
 
+/**
+ * The providers a recorded seat may name.
+ *
+ * A seat naming anything else fails by name rather than recording a fixture
+ * against the wrong model.
+ */
 const providers: Record<string, Provider> = {
   anthropic: { envVar: "ANTHROPIC_API_KEY", route: Route.anthropic as RouteFor },
   openai: { envVar: "OPENAI_API_KEY", route: Route.openai as RouteFor }
@@ -104,11 +104,10 @@ export const apiKeyFor = (envVar: string): string => {
 export const liveModel = (seat: string): Model.Model => {
   const separator = seat.indexOf(":")
   const name = separator < 0 ? DEFAULT_PROVIDER : seat.slice(0, separator)
-  // `FLOWS_OPENAI_AUTH=chatgpt` swaps the openai provider's credential source
-  // to the codex CLI's ChatGPT session, exactly as @smthrs/cli NodeControl
-  // does. This machine records on the subscription: its API accounts carry no
-  // credit (2026-08-27).
-  if (name === "openai" && process.env.FLOWS_OPENAI_AUTH === "chatgpt") {
+  // `SMITHERS_OPENAI_AUTH=chatgpt` swaps the openai provider's credential
+  // source to the codex CLI's ChatGPT session, exactly as the @smthrs/cli seat
+  // resolver does.
+  if (name === "openai" && process.env.SMITHERS_OPENAI_AUTH === "chatgpt") {
     return chatgptModel(separator < 0 ? seat : seat.slice(separator + 1), CodexAuth.locate(process.env))
   }
   const provider = providers[name]
