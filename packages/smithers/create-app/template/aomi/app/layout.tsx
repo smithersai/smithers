@@ -9,7 +9,7 @@ import manifest from "virtual:smthrs-app/manifest"
 import { Input } from "@smthrs/ui"
 import type { ReactNode } from "react"
 import { isActive, linkHandler, navigate } from "../src/shell/router.ts"
-import { actions, useAppState } from "../src/shell/store.ts"
+import { actions, useField, useRoute } from "../src/shell/store.ts"
 import { AomiLogo } from "../src/ui/AomiLogo.tsx"
 import { SidebarNav } from "../src/ui/SidebarNav.tsx"
 
@@ -29,7 +29,9 @@ function CollapseIcon({ collapsed }: { readonly collapsed: boolean }) {
 }
 
 export default function AppShell({ children }: AppShellProps) {
-  const { route, sidebarCollapsed, search } = useAppState()
+  const route = useRoute()
+  const sidebarCollapsed = useField("sidebarCollapsed")
+  const search = useField("search")
   return (
     <div className="aomi-shell" data-collapsed={sidebarCollapsed ? "true" : undefined}>
       <aside className="aomi-sidebar">

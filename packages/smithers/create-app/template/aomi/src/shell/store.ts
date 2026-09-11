@@ -7,7 +7,12 @@
  * snapshot when they resolve.
  *
  * Selectors must return a referentially stable slice, so the exposed hooks
- * only read whole fields.
+ * read one whole field (or a primitive derived from one). `set` notifies every
+ * subscriber, and `useSyncExternalStore` re-renders only the components whose
+ * slice changed: a streamed token replaces `entries` and nothing else, so a
+ * component that reads `draft` does not re-render. `useAppState` is the one
+ * exception and belongs only in components that read most of what a turn
+ * changes.
  */
 import { useSyncExternalStore } from "react"
 import type { AppCard, TurnFrame } from "../api.ts"
@@ -46,7 +51,7 @@ export interface AppState {
    * after a failed one.
    *
    * TODO(shell): the value is no longer a data source, so the field wants the
-   * name `sessionsLoaded` and the note at `app/build/page.tsx:102` wants copy
+   * name `sessionsLoaded` and the "Sample data" note in `app/build/page.tsx` wants copy
    * that says the column is empty rather than "Sample data".
    */
   readonly sessionsSource: "mock" | "api"
@@ -116,8 +121,19 @@ export const store = { subscribe, getSnapshot }
 // Hooks
 // ---------------------------------------------------------------------------
 
-/** The whole snapshot. Stable between changes, so destructuring is safe. */
+/**
+ * The whole snapshot. Stable between changes, so destructuring is safe, but
+ * the caller re-renders on every change to any field, including each streamed
+ * token. Prefer `useField`.
+ */
 export const useAppState = (): AppState => useSyncExternalStore(subscribe, getSnapshot)
+
+/** One field of the snapshot; the caller re-renders only when that field changes. */
+export const useField = <K extends keyof AppState>(key: K): AppState[K] =>
+  useSyncExternalStore(subscribe, () => state[key])
+
+/** Whether the transcript has any entry: the Build page's hero-or-thread switch. */
+export const useStarted = (): boolean => useSyncExternalStore(subscribe, () => state.entries.length > 0)
 
 export const useRoute = (): string => useSyncExternalStore(subscribe, () => state.route)
 

@@ -37,7 +37,7 @@ import type { AppCard } from "../../src/api.ts"
 import { actionPills, buildTemplates, featuredTemplateIds } from "../../src/brand.ts"
 import { chatFlowId, planFlowId, useRegistry } from "../../src/shell/registry.ts"
 import type { TranscriptEntry } from "../../src/shell/store.ts"
-import { actions, useAppState } from "../../src/shell/store.ts"
+import { actions, useAppState, useField, useSessions, useStarted } from "../../src/shell/store.ts"
 import { ActionPill } from "../../src/ui/ActionPill.tsx"
 import { Icon } from "../../src/ui/Icon.tsx"
 import { PaneHost } from "../../src/ui/PaneHost.tsx"
@@ -58,7 +58,9 @@ const SPEAKER = { user: "You", assistant: "Aomi", system: "System" } as const
 // ---------------------------------------------------------------------------
 
 function RecentColumn() {
-  const { sessions, sessionId, sessionsSource } = useAppState()
+  const sessions = useSessions()
+  const sessionId = useField("sessionId")
+  const sessionsSource = useField("sessionsSource")
   return (
     <section className="aomi-recent" aria-label="Recent">
       {/* A plain row, like the Aomi rail: label on the left, "New" as a text
@@ -111,7 +113,7 @@ function RecentColumn() {
 /** One mounted host per card; maximizing changes its presentation in place. */
 function CardEntry({ card }: { readonly card: AppCard }) {
   const { panes } = useRegistry()
-  const { maximizedCardId } = useAppState()
+  const maximizedCardId = useField("maximizedCardId")
   switch (card.kind) {
     case "pane":
       return (
@@ -219,7 +221,10 @@ function Transcript() {
 // ---------------------------------------------------------------------------
 
 function Composer() {
-  const { draft, status, model, previewEnabled } = useAppState()
+  const draft = useField("draft")
+  const status = useField("status")
+  const model = useField("model")
+  const previewEnabled = useField("previewEnabled")
   const { flows } = useRegistry()
   return (
     <ChatComposer
@@ -265,7 +270,8 @@ function Composer() {
 }
 
 function ActionPills() {
-  const { draft, status } = useAppState()
+  const draft = useField("draft")
+  const status = useField("status")
   const { flows } = useRegistry()
   return (
     <div className="aomi-action-pills" role="group" aria-label="Quick actions">
@@ -296,7 +302,7 @@ function ActionPills() {
 // ---------------------------------------------------------------------------
 
 function TemplateGallery() {
-  const { templatesOpen } = useAppState()
+  const templatesOpen = useField("templatesOpen")
   const featured = featuredTemplateIds.map(templateById).filter((template) => template !== undefined)
   const pick = (id: string): void => {
     const template = templateById(id)
@@ -355,8 +361,10 @@ function TemplateGallery() {
 // ---------------------------------------------------------------------------
 
 export default function BuildPage() {
-  const { entries, error } = useAppState()
-  const started = entries.length > 0
+  // Subscribes to the hero-or-thread switch, not to `entries`: a streamed token
+  // must not re-render the Recent column, composer and pills below.
+  const started = useStarted()
+  const error = useField("error")
   return (
     <div className="aomi-build">
       <RecentColumn />

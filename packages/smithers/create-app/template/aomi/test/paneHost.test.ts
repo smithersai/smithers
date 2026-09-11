@@ -20,7 +20,11 @@ const transcript = vi.hoisted(() => ({
 }))
 vi.mock("../src/shell/store.ts", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../src/shell/store.ts")>()
-  return { ...actual, useAppState: () => ({ ...actual.useAppState(), ...transcript }) }
+  return {
+    ...actual,
+    useAppState: () => ({ ...actual.useAppState(), ...transcript }),
+    useStarted: () => actual.useStarted() || transcript.entries.length > 0
+  }
 })
 vi.mock("@smthrs/ui", async () => {
   const { createElement } = await import("react")
