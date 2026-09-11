@@ -10,7 +10,7 @@
  */
 import * as Effect from "effect/Effect"
 import { EvalError } from "./EvalError.ts"
-import { compareText, stringify } from "./internal/canonical.ts"
+import { CanonicalJson } from "./internal/CanonicalJson.ts"
 import { controlCharacter } from "./internal/controlCharacters.ts"
 import { tupleKey } from "./internal/tupleKey.ts"
 import type { Observation, RunResult } from "./Runner.ts"
@@ -210,9 +210,9 @@ export const write = (baseline: Baseline): string => {
   const sortKey = (record: BaselineRecord): string => tupleKey(record.suite, record.case, record.scorer, record.stepKey)
   const records = baseline.records
     .map((record) => [sortKey(record), record] as const)
-    .sort(([left], [right]) => compareText(left, right))
+    .sort(([left], [right]) => CanonicalJson.compareText(left, right))
     .map(([, record]) => record)
-  return stringify({
+  return CanonicalJson.stringify({
     version: baseline.version,
     suite: baseline.suite,
     records

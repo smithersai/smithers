@@ -17,7 +17,7 @@
  * @since 0.1.0
  * @private
  */
-export const maxDepth = 64
+const maxDepth = 64
 
 /**
  * Default cap on an embedded string, in UTF-16 code units.
@@ -25,7 +25,7 @@ export const maxDepth = 64
  * @since 0.1.0
  * @private
  */
-export const maxStringLength = 8192
+const maxStringLength = 8192
 
 /**
  * Total number of values one encode may visit.
@@ -40,7 +40,7 @@ export const maxStringLength = 8192
  * @since 0.1.0
  * @private
  */
-export const maxNodes = 2_000_000
+const maxNodes = 2_000_000
 
 /**
  * Approximate cap on the encoded output, in UTF-16 code units.
@@ -48,7 +48,7 @@ export const maxNodes = 2_000_000
  * @since 0.1.0
  * @private
  */
-export const maxBytes = 33_554_432
+const maxBytes = 33_554_432
 
 /**
  * Marker left where a total budget ran out.
@@ -56,7 +56,7 @@ export const maxBytes = 33_554_432
  * @since 0.1.0
  * @private
  */
-export const budgetExceeded = "[budget exceeded]"
+const budgetExceeded = "[budget exceeded]"
 
 /**
  * Options accepted by {@link encode}.
@@ -64,7 +64,7 @@ export const budgetExceeded = "[budget exceeded]"
  * @since 0.1.0
  * @private
  */
-export interface Options {
+interface Options {
   /** Cap on embedded strings; `undefined` keeps them whole. */
   readonly maxStringLength?: number | undefined
   /** Cap on values visited; defaults to {@link maxNodes}. */
@@ -85,7 +85,7 @@ interface Budget {
  * @since 0.1.0
  * @private
  */
-export const compareText = (left: string, right: string): number => left < right ? -1 : left > right ? 1 : 0
+const compareText = (left: string, right: string): number => left < right ? -1 : left > right ? 1 : 0
 
 const truncate = (value: string, limit: number | undefined): string =>
   limit === undefined || value.length <= limit
@@ -202,7 +202,7 @@ const walk = (value: unknown, depth: number, seen: Set<object>, options: Options
  * @since 0.1.0
  * @private
  */
-export const encode = (value: unknown, options: Options = {}): unknown =>
+const encode = (value: unknown, options: Options = {}): unknown =>
   walk(value, 0, new Set<object>(), options, {
     nodes: options.maxNodes ?? maxNodes,
     bytes: options.maxBytes ?? maxBytes
@@ -214,5 +214,21 @@ export const encode = (value: unknown, options: Options = {}): unknown =>
  * @since 0.1.0
  * @private
  */
-export const stringify = (value: unknown, options: Options = {}): string =>
-  `${JSON.stringify(encode(value, options))}\n`
+const stringify = (value: unknown, options: Options = {}): string => `${JSON.stringify(encode(value, options))}\n`
+
+/**
+ * The canonical JSON encoder: its limits, key order, and serializers.
+ *
+ * @since 0.1.0
+ * @private
+ */
+export const CanonicalJson = {
+  maxDepth,
+  maxStringLength,
+  maxNodes,
+  maxBytes,
+  budgetExceeded,
+  compareText,
+  encode,
+  stringify
+} as const

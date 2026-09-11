@@ -8,7 +8,7 @@
  * @since 0.1.0
  */
 import type { Baseline } from "./Baseline.ts"
-import { maxStringLength, stringify } from "./internal/canonical.ts"
+import { CanonicalJson } from "./internal/CanonicalJson.ts"
 import { scorerLabel } from "./internal/scorerLabel.ts"
 import type { MissingObservation, Nondeterminism, Regression, Report as RegressionReport } from "./Regression.ts"
 import type { CaseResult, Observation, RunResult } from "./Runner.ts"
@@ -119,7 +119,8 @@ export const data = (report: RegressionReport): Data => {
  * @category serialization
  * @since 0.1.0
  */
-export const json = (report: RegressionReport): string => stringify(data(report), { maxStringLength })
+export const json = (report: RegressionReport): string =>
+  CanonicalJson.stringify(data(report), { maxStringLength: CanonicalJson.maxStringLength })
 
 /** Maximum escaped UTF-16 code units per value, before a truncation ellipsis. */
 const maxCellLength = 240

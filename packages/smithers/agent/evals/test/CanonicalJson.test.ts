@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest"
-import { budgetExceeded, compareText, encode, maxBytes, maxDepth, stringify } from "../src/internal/canonical.ts"
+import { CanonicalJson } from "../src/internal/CanonicalJson.ts"
 
-describe("canonical", () => {
+const { budgetExceeded, compareText, encode, maxBytes, maxDepth, stringify } = CanonicalJson
+
+describe("CanonicalJson", () => {
   it("orders text by code unit and reports equality", () => {
     expect(compareText("a", "b")).toBe(-1)
     expect(compareText("b", "a")).toBe(1)

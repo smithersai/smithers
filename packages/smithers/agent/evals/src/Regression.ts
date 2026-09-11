@@ -12,7 +12,7 @@
 import * as Effect from "effect/Effect"
 import type { Baseline, BaselineRecord } from "./Baseline.ts"
 import { EvalError } from "./EvalError.ts"
-import { compareText } from "./internal/canonical.ts"
+import { CanonicalJson } from "./internal/CanonicalJson.ts"
 import { tupleKey } from "./internal/tupleKey.ts"
 import type { Observation, RunResult } from "./Runner.ts"
 
@@ -117,7 +117,8 @@ const byScore = <A extends { readonly score: number }>(items: ReadonlyArray<A>):
 
 const byStepThenScore = <A extends { readonly stepKey: string; readonly score: number }>(
   items: ReadonlyArray<A>
-): Array<A> => [...items].sort((left, right) => compareText(left.stepKey, right.stepKey) || left.score - right.score)
+): Array<A> =>
+  [...items].sort((left, right) => CanonicalJson.compareText(left.stepKey, right.stepKey) || left.score - right.score)
 
 /** One matched pair, or one record that nothing on the other side accounts for. */
 type Pair =
@@ -142,7 +143,7 @@ const pairsFor = (
   const observedByStep = groupBy(observed, (record) => record.stepKey)
   const leftoverExpected: Array<BaselineRecord> = []
   const leftoverObserved: Array<Score> = []
-  for (const stepKey of [...expectedByStep.keys()].sort(compareText)) {
+  for (const stepKey of [...expectedByStep.keys()].sort(CanonicalJson.compareText)) {
     const atStep = byScore(expectedByStep.get(stepKey)!)
     const observedAtStep = byScore(observedByStep.get(stepKey) ?? [])
     const count = Math.min(atStep.length, observedAtStep.length)
