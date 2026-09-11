@@ -29,7 +29,7 @@ import {
   firstLine,
   timeOf
 } from "@smthrs/gateway/Diagnosis"
-import { causeLine } from "./internal/Failure.ts"
+import { causeLine, terminalSafe } from "./internal/Failure.ts"
 
 /**
  * One refused flow call, aggregated by its refusal message. Reach for this in
@@ -100,8 +100,11 @@ const cardStatuses: ReadonlySet<string> = new Set([...ControlSchema.RunStatus.li
 
 const compact = (value: unknown, width: number): string => {
   const rendered = typeof value === "string" ? value : JSON.stringify(value) ?? String(value)
-  return clip(firstLine(rendered), width)
+  return clip(terminalSafe(firstLine(rendered)), width)
 }
+
+/** A short journaled field, such as a seat or flow name, made terminal-inert. */
+const field = (value: unknown, fallback: string): string => terminalSafe(asString(value) ?? fallback)
 
 /**
  * Computes the diagnosis for one run from its ordered events. Reach for this
@@ -296,7 +299,7 @@ export const eventLine = (event: ControlSchema.ControlEvent): string => {
   const payload = asRecord(event.payload)
   switch (event.kind) {
     case "control.agent.turn-opened":
-      return `turn opened · ${asString(payload.seat) ?? ""}`
+      return `turn opened · ${field(payload.seat, "")}`
     case "control.agent.model-settled": {
       const usage = asRecord(payload.usage)
       return `model   ${compact(asString(payload.text) ?? "", 100)} (${asNumber(usage.inputTokens) ?? 0} in / ${
@@ -313,7 +316,7 @@ export const eventLine = (event: ControlSchema.ControlEvent): string => {
     case "control.agent.cell-printed":
       return `print   ${compact(asString(payload.text) ?? "", 100)}`
     case "control.agent.cell-call-started":
-      return `call    ${asString(payload.flowName) ?? "?"} ${compact(payload.input, 90)}`
+      return `call    ${field(payload.flowName, "?")} ${compact(payload.input, 90)}`
     case "control.agent.cell-call-settled":
       return asString(payload.outcome) === "failure"
         ? `  -> FAIL ${compact(asString(payload.message) ?? "", 100)}`
@@ -335,7 +338,7 @@ export const eventLine = (event: ControlSchema.ControlEvent): string => {
       return tag === "complete"
         ? `complete ${compact(asString(transition.output) ?? "", 90)}`
         : tag === "park"
-        ? `park (${asString(transition.reason) ?? "?"}) ${compact(asString(transition.message) ?? "", 80)}`
+        ? `park (${field(transition.reason, "?")}) ${compact(asString(transition.message) ?? "", 80)}`
         // `context` and `state` were the filing surface's two slots, and this
         // line used to report their byte sizes. Nothing populates either since
         // 2026-08-24, so reading them off a current run prints two constants;
@@ -386,7 +389,7 @@ export const renderTranscript = (events: ReadonlyArray<ControlSchema.ControlEven
   for (const event of events) {
     if (event.kind === "control.agent.turn-opened") {
       turn += 1
-      lines.push("", `=== turn ${turn} · ${asString(asRecord(event.payload).seat) ?? ""} ===`)
+      lines.push("", `=== turn ${turn} · ${field(asRecord(event.payload).seat, "")} ===`)
       continue
     }
     if (!event.kind.startsWith("control.agent.")) {

@@ -533,6 +533,29 @@ describe("Forensics.eventLine", () => {
     const line = Forensics.eventLine(event("control.agent.cell-produced", { text: "x".repeat(100) }, 1))
     expect(line).toBe(`cell    ${"x".repeat(100)}`)
   })
+
+  it("renders journaled text inert on the follow line and in the transcript", () => {
+    // Model and cell text is untrusted: a cell can print a screen clear, a
+    // cursor move, an OSC window title and a BEL, as Failure.test.ts pins for
+    // the refusal path.
+    const hostile = "ok\u001b[2J\u001b[1;1H FAKE: run completed\u001b]0;pwned\u0007\u009b31m\u200b"
+    const events = [
+      event("control.agent.turn-opened", { seat: `seat${hostile}` }, 0),
+      event("control.agent.model-settled", { text: hostile }, 1),
+      event("control.agent.cell-produced", { text: hostile }, 2),
+      event("control.agent.cell-call-started", { flowName: `bash${hostile}`, input: { command: hostile } }, 3),
+      event("control.agent.cell-call-settled", { outcome: "success", value: hostile }, 4),
+      event("control.agent.cell-call-settled", { outcome: "failure", message: hostile }, 5)
+    ]
+    const unsafe = /[\p{Cc}\p{Cf}]/u
+    for (const each of events) expect(Forensics.eventLine(each)).not.toMatch(unsafe)
+    // A raw-text line keeps the words and loses the whole OSC sequence; a JSON
+    // value already spells ESC as an inert backslash-u escape.
+    expect(Forensics.eventLine(events[2]!)).toContain("ok FAKE: run completed")
+    expect(Forensics.eventLine(events[2]!)).not.toContain("pwned")
+    const transcript = Forensics.renderTranscript(events).replaceAll("\n", "")
+    expect(transcript).not.toMatch(unsafe)
+  })
 })
 
 describe("Forensics.renderDiagnosis boundaries", () => {

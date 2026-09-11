@@ -20,6 +20,18 @@ import * as Redaction from "@smthrs/journal/Redaction"
 import { stripVTControlCharacters } from "node:util"
 
 /**
+ * One line of untrusted text made inert for a terminal: ANSI escape sequences
+ * are removed, and every remaining control or format code point becomes a
+ * space, so journaled model or cell text cannot move the cursor, clear the
+ * screen, or set the window title.
+ *
+ * @category getters
+ * @since 1.0.0
+ */
+export const terminalSafe = (text: string): string =>
+  stripVTControlCharacters(text).replace(/[\p{Cc}\p{Cf}]/gu, " ")
+
+/**
  * The most specific recorded cause, including older nested Error stacks.
  * @category getters
  * @since 1.0.0
@@ -32,7 +44,7 @@ export const causeLine = (cause: string): string => {
   if (!/^[a-z][a-z0-9_]*: /.test(line)) {
     for (const nested of safe.matchAll(/^\s*\[cause\]:\s*([^\r\n]+)/gm)) line = nested[1]!
   }
-  return line.replace(/[\p{Cc}\p{Cf}]/gu, " ").trim().slice(0, 1024)
+  return terminalSafe(line).trim().slice(0, 1024)
 }
 
 /**
