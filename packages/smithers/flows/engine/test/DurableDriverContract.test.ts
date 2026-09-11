@@ -19,23 +19,10 @@ import { TestClock } from "effect/testing"
 import { FlowEngine } from "../src/index.ts"
 import { withCrypto } from "./Crypto.ts"
 import { layerDurable, makeLog } from "./DurableLogEngine.ts"
+import { pollUntil } from "./Harness.ts"
 
 const effect = (name: string, body: () => Effect.Effect<void, unknown, Crypto.Crypto>) =>
   it.effect(name, () => withCrypto(body().pipe(Effect.provide(TestClock.layer()))))
-
-/** Polls a result until the predicate holds, bounded by scheduler turns. */
-const pollUntil = <A, E, R>(
-  poll: Effect.Effect<Option.Option<Flow.Result<A, E>>, FlowRuntime.FlowExecutionNotFound, R>,
-  predicate: (result: Flow.Result<A, E>) => boolean
-): Effect.Effect<Option.Option<Flow.Result<A, E>>, FlowRuntime.FlowExecutionNotFound, R> =>
-  Effect.gen(function*() {
-    let result = yield* poll
-    for (let index = 0; index < 100 && (Option.isNone(result) || !predicate(result.value)); index++) {
-      yield* Effect.yieldNow
-      result = yield* poll
-    }
-    return result
-  })
 
 /** Yields until the predicate holds, bounded by scheduler turns. */
 const waitFor = (predicate: () => boolean): Effect.Effect<void> =>
@@ -85,7 +72,9 @@ describe("durable driver contract across an engine restart", () => {
       // the run still open.
       yield* Effect.gen(function*() {
         yield* flow.execute({ id: "x" }, { executionId: "restart-run", discard: true })
-        const parked = yield* pollUntil(flow.poll("restart-run"), (result) => result._tag === "Suspended")
+        const parked = yield* pollUntil(flow.poll("restart-run"), (result) => result._tag === "Suspended", {
+          turns: 100
+        })
         expect(Option.isSome(parked) && parked.value._tag).toBe("Suspended")
         expect(charges).toBe(1)
       }).pipe(Effect.provide(stack))
@@ -99,7 +88,7 @@ describe("durable driver contract across an engine restart", () => {
 
         const token = DurableDeferred.tokenFromExecutionId(gate, { flow, executionId: "restart-run" })
         yield* DurableDeferred.succeed(gate, { token, value: 7 })
-        const woken = yield* pollUntil(flow.poll("restart-run"), (result) => result._tag === "Complete")
+        const woken = yield* pollUntil(flow.poll("restart-run"), (result) => result._tag === "Complete", { turns: 100 })
         expect(
           Option.isSome(woken) && woken.value._tag === "Complete" &&
             Exit.isSuccess(woken.value.exit) && woken.value.exit.value
@@ -170,7 +159,9 @@ describe("durable driver contract across an engine restart", () => {
           yield* Effect.yieldNow
           yield* TestClock.adjust("10 seconds")
         }
-        const settled = yield* pollUntil(flow.poll("attempts-run"), (result) => result._tag === "Complete")
+        const settled = yield* pollUntil(flow.poll("attempts-run"), (result) => result._tag === "Complete", {
+          turns: 100
+        })
         expect(
           Option.isSome(settled) && settled.value._tag === "Complete" &&
             Exit.isSuccess(settled.value.exit) && settled.value.exit.value
@@ -252,7 +243,9 @@ describe("durable driver contract across an engine restart", () => {
           expect(started).toEqual(Array(attempt).fill(0))
           expect(world).toBe(1)
           if (attempt === 3) {
-            const settled = yield* pollUntil(flow.poll("compensable-run"), (result) => result._tag === "Complete")
+            const settled = yield* pollUntil(flow.poll("compensable-run"), (result) => result._tag === "Complete", {
+              turns: 100
+            })
             expect(
               Option.isSome(settled) && settled.value._tag === "Complete" &&
                 Exit.isSuccess(settled.value.exit) && settled.value.exit.value
@@ -335,7 +328,9 @@ describe("durable driver contract across an engine restart", () => {
       // been RetryAfter and attempt 2 would have dispatched.
       yield* Effect.gen(function*() {
         yield* flow.execute({ id: "x" }, { executionId: "expiring-run", discard: true })
-        const settled = yield* pollUntil(flow.poll("expiring-run"), (result) => result._tag === "Complete")
+        const settled = yield* pollUntil(flow.poll("expiring-run"), (result) => result._tag === "Complete", {
+          turns: 100
+        })
         expect(Option.isSome(settled) && settled.value._tag).toBe("Complete")
         const exit = Option.isSome(settled) && settled.value._tag === "Complete"
           ? settled.value.exit
@@ -394,7 +389,9 @@ describe("durable driver contract across an engine restart", () => {
       // child, and the instance dies.
       yield* Effect.gen(function*() {
         yield* parent.execute({ id: "x" }, { executionId: "cascade-parent", discard: true })
-        const parked = yield* pollUntil(parent.poll("cascade-parent"), (result) => result._tag === "Suspended")
+        const parked = yield* pollUntil(parent.poll("cascade-parent"), (result) => result._tag === "Suspended", {
+          turns: 100
+        })
         expect(Option.isSome(parked) && parked.value._tag).toBe("Suspended")
         expect(log.parents.get("cascade-child")).toBe("cascade-parent")
       }).pipe(Effect.provide(stack))
@@ -406,7 +403,9 @@ describe("durable driver contract across an engine restart", () => {
         expect(log.cancelled.has("cascade-parent")).toBe(true)
         expect(log.cancelled.has("cascade-child")).toBe(true)
 
-        const childResult = yield* pollUntil(child.poll("cascade-child"), (result) => result._tag === "Complete")
+        const childResult = yield* pollUntil(child.poll("cascade-child"), (result) => result._tag === "Complete", {
+          turns: 100
+        })
         expect(Option.isSome(childResult) && childResult.value._tag).toBe("Complete")
         const childExit = Option.isSome(childResult) && childResult.value._tag === "Complete"
           ? childResult.value.exit
@@ -418,7 +417,9 @@ describe("durable driver contract across an engine restart", () => {
             childExit.cause.reasons.some(Cause.isInterruptReason)
         ).toBe(true)
 
-        const parentResult = yield* pollUntil(parent.poll("cascade-parent"), (result) => result._tag === "Complete")
+        const parentResult = yield* pollUntil(parent.poll("cascade-parent"), (result) => result._tag === "Complete", {
+          turns: 100
+        })
         expect(Option.isSome(parentResult) && parentResult.value._tag).toBe("Complete")
         const parentExit = Option.isSome(parentResult) && parentResult.value._tag === "Complete"
           ? parentResult.value.exit
@@ -426,5 +427,61 @@ describe("durable driver contract across an engine restart", () => {
         expect(parentExit !== undefined && Exit.isFailure(parentExit)).toBe(true)
       }).pipe(Effect.provide(stack))
     })
+  })
+})
+
+describe("durable driver refusals", () => {
+  effect("dies with the typed FlowNotRegistered refusal for an unregistered flow", () => {
+    const log = makeLog()
+    const unregistered = Flow.make("DurableContract/unregistered", {
+      payload: {},
+      success: Schema.Void,
+      body: () => {
+        throw new Error("not executed")
+      }
+    })
+    return Effect.gen(function*() {
+      const engine = yield* FlowRuntime.FlowRuntime
+      const exit = yield* Effect.exit(
+        engine.execute(unregistered, { executionId: "unregistered", payload: {}, discard: true })
+      )
+      const defect = Exit.isFailure(exit) ? exit.cause.reasons.find(Cause.isDieReason)?.defect : undefined
+      expect(defect).toBeInstanceOf(FlowEngine.FlowNotRegistered)
+      expect(defect).toMatchObject({ code: "flow_not_registered", flowName: "DurableContract/unregistered" })
+    }).pipe(Effect.scoped, Effect.provide(layerDurable(log)))
+  })
+
+  effect("dies with the typed ExecutionIdentityConflict for a deferred addressed to another flow", () => {
+    const log = makeLog()
+    const gate = DurableDeferred.make("DurableContract/refusal-gate", { success: Schema.String })
+    const make = (name: string) =>
+      Flow.make(name, {
+        payload: {},
+        success: Schema.Void,
+        body: () => {
+          throw new Error("not executed")
+        }
+      })
+    const Known = make("DurableContract/KnownFlow")
+    const Other = make("DurableContract/OtherFlow")
+    return Effect.gen(function*() {
+      const engine = yield* FlowRuntime.FlowRuntime
+      yield* engine.register(Known, () => Effect.succeed(undefined))
+      yield* engine.execute(Known, { executionId: "known-flow", payload: {}, discard: true })
+      const exit = yield* Effect.exit(engine.deferredDone(gate, {
+        flowName: Other._tag,
+        executionId: "known-flow",
+        deferredName: gate.name,
+        exit: Exit.succeed("wrong-flow")
+      }))
+      const defect = Exit.isFailure(exit) ? exit.cause.reasons.find(Cause.isDieReason)?.defect : undefined
+      expect(defect).toBeInstanceOf(FlowEngine.ExecutionIdentityConflict)
+      expect(defect).toMatchObject({
+        code: "execution_identity_conflict",
+        field: "flow",
+        expected: "DurableContract/KnownFlow",
+        actual: "DurableContract/OtherFlow"
+      })
+    }).pipe(Effect.scoped, Effect.provide(layerDurable(log)))
   })
 })

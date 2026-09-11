@@ -1,5 +1,3 @@
-// Deep reviewed and polished by a human on 2026-08-10.
-
 import type * as Crypto from "effect/Crypto"
 /**
  * Issue #59: the attempt counter resumes from the persisted sequence. A
@@ -14,17 +12,13 @@ import { Node } from "@smthrs/plan"
 import { Cause, Effect, Exit, Layer, Logger, Option, Schema } from "effect"
 import { FlowEngine } from "../src/index.ts"
 import { withCrypto } from "./Crypto.ts"
-
-const effect = (name: string, body: () => Effect.Effect<void, unknown, Crypto.Crypto>) =>
-  it.effect(name, () => withCrypto(body()))
+import { effect, liveEffect } from "./Harness.ts"
+import { scriptedEngine } from "./ScriptedEngine.ts"
 
 /**
  * The same wiring on the live clock, for cases that wait on the real elapsed
  * time a retry or resume policy schedules rather than driving `TestClock`.
  */
-const liveEffect = (name: string, body: () => Effect.Effect<void, unknown, Crypto.Crypto>) =>
-  it.live(name, () => withCrypto(body()))
-
 const flow = Flow.make("AttemptResume/flow", {
   payload: { id: Schema.String },
   success: Schema.Number,
@@ -36,13 +30,7 @@ const scriptedWith = (options: {
   readonly latestAttempt: Option.Option<number>
   readonly attempts: Array<number>
 }) =>
-  FlowEngine.makeUnsafe({
-    register: () => Effect.void,
-    execute: () => Effect.die("not used"),
-    poll: () => Effect.succeedNone,
-    interrupt: () => Effect.void,
-    interruptUnsafe: () => Effect.void,
-    resume: () => Effect.void,
+  scriptedEngine({
     actionExecute: (input) =>
       Effect.sync(() => {
         options.attempts.push(input.attempt)
@@ -50,10 +38,7 @@ const scriptedWith = (options: {
           exit: input.attempt >= 4 ? Exit.succeed(input.attempt) : Exit.fail("transient")
         })
       }),
-    actionLatestAttempt: () => Effect.succeed(options.latestAttempt),
-    deferredResult: () => Effect.succeedNone,
-    deferredDone: () => Effect.void,
-    scheduleClock: () => Effect.void
+    actionLatestAttempt: () => Effect.succeed(options.latestAttempt)
   })
 
 const provideInstance = <A, E>(self: Effect.Effect<A, E, any>, engine: FlowRuntime.FlowRuntime["Service"]) =>
@@ -170,13 +155,7 @@ describe("durable attempt counter resume", () => {
       }),
       execute: Effect.die("scripted driver dispatches instead")
     })
-    const engine = FlowEngine.makeUnsafe({
-      register: () => Effect.void,
-      execute: () => Effect.die("not used"),
-      poll: () => Effect.succeedNone,
-      interrupt: () => Effect.void,
-      interruptUnsafe: () => Effect.void,
-      resume: () => Effect.void,
+    const engine = scriptedEngine({
       // The durable driver replays the persisted failed attempt: the
       // original tagged error surfaces, never an admission wrapper.
       actionExecute: (input) =>
@@ -186,10 +165,7 @@ describe("durable attempt counter resume", () => {
             exit: Exit.failCause(Cause.fail({ _tag: "FatalBoom", detail: "persisted" }))
           })
         }),
-      actionLatestAttempt: () => Effect.succeedSome(3),
-      deferredResult: () => Effect.succeedNone,
-      deferredDone: () => Effect.void,
-      scheduleClock: () => Effect.void
+      actionLatestAttempt: () => Effect.succeedSome(3)
     })
     return Effect.gen(function*() {
       const result = yield* engine.actionExecute(action, 1)

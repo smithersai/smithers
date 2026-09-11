@@ -1,5 +1,3 @@
-// Deep reviewed and polished by a human on 2026-08-10.
-
 /**
  * The host snapshot boundary compensable actions are executed against.
  *
@@ -32,7 +30,6 @@ export class SnapshotBoundaryRequired extends Schema.TaggedError<SnapshotBoundar
  *
  * @category models
  * @since 0.1.0
- * @slop
  */
 export interface SnapshotBoundaryOptions {
   readonly flow: Flow.Any
@@ -45,11 +42,8 @@ export interface SnapshotBoundaryOptions {
 /**
  * Minimal host snapshot boundary required by compensable actions.
  *
- * TODO(piece-6): bind to @smthrs/kernel Jj in @smthrs/engine-store.
- *
  * @category services
  * @since 0.1.0
- * @slop
  */
 export class SnapshotBoundary extends Context.Service<
   SnapshotBoundary,

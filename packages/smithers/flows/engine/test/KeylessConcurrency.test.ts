@@ -1,5 +1,3 @@
-// Deep reviewed and polished by a human on 2026-08-10.
-
 import type * as Crypto from "effect/Crypto"
 /**
  * Issue #111: keyless same-declaration actions dispatched concurrently
@@ -19,9 +17,8 @@ import { Node } from "@smthrs/plan"
 import { Cause, Deferred, Effect, Exit, Fiber, Layer, Scheduler, Schema } from "effect"
 import { FlowEngine } from "../src/index.ts"
 import { withCrypto } from "./Crypto.ts"
-
-const effect = (name: string, body: () => Effect.Effect<void, unknown, Crypto.Crypto>) =>
-  it.effect(name, () => withCrypto(body()))
+import { effect } from "./Harness.ts"
+import { scriptedEngine } from "./ScriptedEngine.ts"
 
 const flow = Flow.make("KeylessConcurrency/flow", {
   payload: { id: Schema.String },
@@ -51,17 +48,8 @@ const keyedFetch = (idempotencyKey: string) =>
  * starts.
  */
 const gatedEngine = (gate: Deferred.Deferred<void>) =>
-  FlowEngine.makeUnsafe({
-    register: () => Effect.void,
-    execute: () => Effect.die("not used"),
-    poll: () => Effect.succeedNone,
-    interrupt: () => Effect.void,
-    interruptUnsafe: () => Effect.void,
-    resume: () => Effect.void,
-    actionExecute: () => Effect.as(Deferred.await(gate), new Flow.Complete({ exit: Exit.void })),
-    deferredResult: () => Effect.succeedNone,
-    deferredDone: () => Effect.void,
-    scheduleClock: () => Effect.void
+  scriptedEngine({
+    actionExecute: () => Effect.as(Deferred.await(gate), new Flow.Complete({ exit: Exit.void }))
   })
 
 const drive = (
@@ -99,21 +87,12 @@ describe("concurrent keyless same-declaration dispatches are refused (issue #111
   effect("keeps a handler-driven keyless dispatch on the byte-identical name-only scope and key", () => {
     return Effect.gen(function*() {
       const keys: Array<string> = []
-      const engine = FlowEngine.makeUnsafe({
-        register: () => Effect.void,
-        execute: () => Effect.die("not used"),
-        poll: () => Effect.succeedNone,
-        interrupt: () => Effect.void,
-        interruptUnsafe: () => Effect.void,
-        resume: () => Effect.void,
+      const engine = scriptedEngine({
         actionExecute: (input) =>
           Effect.sync(() => {
             keys.push(input.key)
             return new Flow.Complete({ exit: Exit.void })
-          }),
-        deferredResult: () => Effect.succeedNone,
-        deferredDone: () => Effect.void,
-        scheduleClock: () => Effect.void
+          })
       })
       const scope = yield* StepIdentity.allocationScope({
         kind: "action",

@@ -1,5 +1,3 @@
-// Deep reviewed and polished by a human on 2026-08-10.
-
 /**
  * A volatile, in-memory implementation of the flow runtime port.
  *
@@ -55,7 +53,6 @@ export class ExecutionIdentityConflict extends Schema.TaggedError<ExecutionIdent
  *
  * @category layers
  * @since 0.1.0
- * @slop
  */
 export const layerMemory: Layer.Layer<FlowRuntime.FlowRuntime> = Layer.effect(FlowRuntime.FlowRuntime)(
   Effect.gen(function*() {
@@ -533,7 +530,7 @@ export const layerMemory: Layer.Layer<FlowRuntime.FlowRuntime> = Layer.effect(Fl
         actions.set(actionId, owner)
         const actionInstance = makeInstance(instance.flow, instance.executionId)
         actionInstance.interrupted = instance.interrupted
-        // DECIDED (2026-08-11, pending review): the waiting classification is
+        // DECIDED: the waiting classification is
         // threaded through the dispatch's instance and back, because a driver
         // gives an action its own instance while `annotateWaiting` is
         // documented to reach the parked run. An implementation that declares

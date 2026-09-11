@@ -11,6 +11,7 @@ import { Cause, Deferred, Effect, Exit, Fiber, Layer, Option, Schema } from "eff
 import type * as Crypto from "effect/Crypto"
 import { FlowEngine } from "../src/index.ts"
 import { withCrypto } from "./Crypto.ts"
+import { pollUntil } from "./Harness.ts"
 
 const Read = Action.make("body/read", {
   payload: { path: Schema.String },
@@ -71,20 +72,6 @@ const wire = (value: number) => {
   )
   return { calls, layer }
 }
-
-/** Polls a result until the predicate holds, so a suspension is observed rather than timed. */
-const pollUntil = <A, E, R>(
-  poll: Effect.Effect<Option.Option<Flow.Result<A, E>>, FlowRuntime.FlowExecutionNotFound, R>,
-  predicate: (result: Flow.Result<A, E>) => boolean
-): Effect.Effect<Option.Option<Flow.Result<A, E>>, FlowRuntime.FlowExecutionNotFound, R> =>
-  Effect.gen(function*() {
-    let result = yield* poll
-    for (let index = 0; index < 50 && (Option.isNone(result) || !predicate(result.value)); index++) {
-      yield* Effect.yieldNow
-      result = yield* poll
-    }
-    return result
-  })
 
 describe("bodied flow on the memory engine", () => {
   it.effect("runs each action call through the engine's action path and settles the root", () =>
@@ -203,12 +190,14 @@ describe("bodied flow on the memory engine", () => {
       const observed = yield* withCrypto(
         Effect.gen(function*() {
           yield* Gated.execute({ path: "counter.txt" }, { executionId: "body-park", discard: true })
-          const parked = yield* pollUntil(Gated.poll("body-park"), (result) => result._tag === "Suspended")
+          const parked = yield* pollUntil(Gated.poll("body-park"), (result) => result._tag === "Suspended", {
+            turns: 50
+          })
           approved = true
           yield* Gated.resume("body-park")
           return {
             parked,
-            woken: yield* pollUntil(Gated.poll("body-park"), (result) => result._tag === "Complete")
+            woken: yield* pollUntil(Gated.poll("body-park"), (result) => result._tag === "Complete", { turns: 50 })
           }
         }).pipe(Effect.provide(layer))
       )

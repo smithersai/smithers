@@ -1,5 +1,3 @@
-// Deep reviewed and polished by a human on 2026-08-10.
-
 import type * as Crypto from "effect/Crypto"
 /**
  * Issue #73: invocation keys must not depend on fiber scheduling order.
@@ -23,9 +21,8 @@ import { Node } from "@smthrs/plan"
 import { Deferred, Effect, Exit, Layer, Schema } from "effect"
 import { FlowEngine } from "../src/index.ts"
 import { withCrypto } from "./Crypto.ts"
-
-const effect = (name: string, body: () => Effect.Effect<void, unknown, Crypto.Crypto>) =>
-  it.effect(name, () => withCrypto(body()))
+import { effect } from "./Harness.ts"
+import { scriptedEngine as noOpEngine } from "./ScriptedEngine.ts"
 
 const flow = Flow.make("InvocationKeyStability/flow", {
   payload: { id: Schema.String },
@@ -56,21 +53,12 @@ const repeatedCharge = Action.make({
 
 /** Captures the step key the engine allocates for each dispatch. */
 const scriptedEngine = (keys: Array<{ readonly name: string; readonly key: string }>) =>
-  FlowEngine.makeUnsafe({
-    register: () => Effect.void,
-    execute: () => Effect.die("not used"),
-    poll: () => Effect.succeedNone,
-    interrupt: () => Effect.void,
-    interruptUnsafe: () => Effect.void,
-    resume: () => Effect.void,
+  noOpEngine({
     actionExecute: (input) =>
       Effect.sync(() => {
         keys.push({ name: input.action.name, key: input.key })
         return new Flow.Complete({ exit: Exit.void })
-      }),
-    deferredResult: () => Effect.succeedNone,
-    deferredDone: () => Effect.void,
-    scheduleClock: () => Effect.void
+      })
   })
 
 /** One drive of a run: dispatches `actions` in the given order. */

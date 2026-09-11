@@ -1,5 +1,3 @@
-// Deep reviewed and polished by a human on 2026-08-10.
-
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
 import { DerivedKey, type StoredKey } from "@smthrs/keys"
 import { Crypto, Effect, Schema } from "effect"

@@ -1,5 +1,3 @@
-// Deep reviewed and polished by a human on 2026-08-10.
-
 /**
  * Derives the step identity an action dispatch is recorded under.
  *
@@ -59,7 +57,6 @@ const fileBoundary = (
  *
  * @private
  * @since 0.1.0
- * @slop
  */
 export const ordinalScope = (
   action: Action.Any,
@@ -134,7 +131,6 @@ export const schemaErrorPath = (error: Schema.SchemaError): string => {
  *
  * @private
  * @since 0.1.0
- * @slop
  */
 export const uncanonicalKey = (
   actionName: string,
@@ -198,7 +194,6 @@ const boundaryDigest = Effect.fnUntraced(function*(metadata: unknown) {
  *
  * @private
  * @since 0.1.0
- * @slop
  */
 export const actionKey = Effect.fnUntraced(function*(
   action: Action.AnyWithProps,

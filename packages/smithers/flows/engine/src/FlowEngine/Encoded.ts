@@ -1,5 +1,3 @@
-// Deep reviewed and polished by a human on 2026-08-10.
-
 /**
  * The low-level engine contract a durable store implements. `makeUnsafe`
  * adapts it into the typed `FlowRuntime` port that `@smthrs/flow` declares;
@@ -39,7 +37,6 @@ import type * as Round from "./Round.ts"
  *
  * @category models
  * @since 0.1.0
- * @slop
  */
 export interface ActionExecuteOptions {
   readonly action: Action.Any
@@ -70,7 +67,6 @@ export interface ActionExecuteOptions {
  *
  * @category models
  * @since 0.1.0
- * @slop
  */
 export interface Encoded {
   readonly register: (

@@ -13,9 +13,7 @@ import { Cause, Effect, Exit, Logger, References, Schema } from "effect"
 import type * as Crypto from "effect/Crypto"
 import { FlowEngine } from "../src/index.ts"
 import { withCrypto } from "./Crypto.ts"
-
-const effect = (name: string, body: () => Effect.Effect<void, unknown, Crypto.Crypto>) =>
-  it.effect(name, () => withCrypto(body()))
+import { effect } from "./Harness.ts"
 
 const Undeclared = Flow.make("UndeclaredFlowFailure/flow", {
   payload: {},

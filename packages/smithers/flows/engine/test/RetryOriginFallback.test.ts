@@ -1,5 +1,3 @@
-// Deep reviewed and polished by a human on 2026-08-10.
-
 /**
  * Issue #69: pins the ternary's `Option.none()` arm when the durable retry
  * origin hook is present and the policy declares `expirationMs`. A missing
@@ -15,9 +13,8 @@ import type * as Crypto from "effect/Crypto"
 import { TestClock } from "effect/testing"
 import { FlowEngine } from "../src/index.ts"
 import { withCrypto } from "./Crypto.ts"
-
-const effect = (name: string, body: () => Effect.Effect<void, unknown, Crypto.Crypto>) =>
-  it.effect(name, () => withCrypto(body()))
+import { effect } from "./Harness.ts"
+import { scriptedEngine } from "./ScriptedEngine.ts"
 
 const flow = Flow.make("RetryOriginFallback/flow", {
   payload: { id: Schema.String },
@@ -46,23 +43,14 @@ describe("retry origin fallback when the durable hook yields none", () => {
       execute: Effect.die("scripted driver dispatches instead")
     })
     let originRequests = 0
-    const engine = FlowEngine.makeUnsafe({
-      register: () => Effect.void,
-      execute: () => Effect.die("not used"),
-      poll: () => Effect.succeedNone,
-      interrupt: () => Effect.void,
-      interruptUnsafe: () => Effect.void,
-      resume: () => Effect.void,
+    const engine = scriptedEngine({
       actionExecute: (input) =>
         Effect.sync(() => {
           attempts.push(input.attempt)
           return new Flow.Complete({ exit: Exit.fail("still-failing") })
         }),
       // Every attempt row was pruned: the durable driver has no origin.
-      actionRetryOrigin: () => Effect.sync(() => (originRequests++, Option.none())),
-      deferredResult: () => Effect.succeedNone,
-      deferredDone: () => Effect.void,
-      scheduleClock: () => Effect.void
+      actionRetryOrigin: () => Effect.sync(() => (originRequests++, Option.none()))
     })
     return Effect.gen(function*() {
       const fiber = yield* engine.actionExecute(action, 1).pipe(
@@ -128,22 +116,13 @@ describe("retry origin fallback when the durable hook yields none", () => {
       }),
       execute: Effect.die("scripted driver dispatches instead")
     })
-    const engine = FlowEngine.makeUnsafe({
-      register: () => Effect.void,
-      execute: () => Effect.die("not used"),
-      poll: () => Effect.succeedNone,
-      interrupt: () => Effect.void,
-      interruptUnsafe: () => Effect.void,
-      resume: () => Effect.void,
+    const engine = scriptedEngine({
       actionExecute: (input) =>
         Effect.sync(() => {
           attempts.push(input.attempt)
           return new Flow.Complete({ exit: Exit.fail("still-failing") })
         }),
-      actionRetryOrigin: () => Effect.succeedSome(origin),
-      deferredResult: () => Effect.succeedNone,
-      deferredDone: () => Effect.void,
-      scheduleClock: () => Effect.void
+      actionRetryOrigin: () => Effect.succeedSome(origin)
     })
     return Effect.gen(function*() {
       yield* TestClock.setTime(1_000)

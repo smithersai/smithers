@@ -11,9 +11,8 @@ import { Cause, Effect, Exit, Layer, Logger, References, Schema } from "effect"
 import type * as Crypto from "effect/Crypto"
 import { FlowEngine } from "../src/index.ts"
 import { withCrypto } from "./Crypto.ts"
-
-const effect = (name: string, body: () => Effect.Effect<void, unknown, Crypto.Crypto>) =>
-  it.effect(name, () => withCrypto(body()))
+import { effect } from "./Harness.ts"
+import { scriptedEngine } from "./ScriptedEngine.ts"
 
 const flow = Flow.make("RecordedExitSchemaMismatch/flow", {
   payload: { id: Schema.String },
@@ -40,20 +39,11 @@ describe("a recorded outcome that fails the action's exit schema", () => {
       error: Schema.String,
       execute: Effect.die("scripted driver dispatches instead")
     })
-    const engine = FlowEngine.makeUnsafe({
-      register: () => Effect.void,
-      execute: () => Effect.die("not used"),
-      poll: () => Effect.succeedNone,
-      interrupt: () => Effect.void,
-      interruptUnsafe: () => Effect.void,
-      resume: () => Effect.void,
+    const engine = scriptedEngine({
       // The driver hands back an outcome the action never declared: the error
       // channel is a string, and this one is a number.
       actionExecute: () => Effect.succeed(new Flow.Complete({ exit: Exit.fail(42 as never) })),
-      actionRetryOrigin: () => Effect.succeedNone,
-      deferredResult: () => Effect.succeedNone,
-      deferredDone: () => Effect.void,
-      scheduleClock: () => Effect.void
+      actionRetryOrigin: () => Effect.succeedNone
     })
     return Effect.gen(function*() {
       const exit = yield* Effect.exit(engine.actionExecute(action, 1))
@@ -94,17 +84,8 @@ describe("a recorded outcome that fails the action's exit schema", () => {
     })
     const circular: { self?: unknown } = {}
     circular.self = circular
-    const engine = FlowEngine.makeUnsafe({
-      register: () => Effect.void,
-      execute: () => Effect.die("not used"),
-      poll: () => Effect.succeedNone,
-      interrupt: () => Effect.void,
-      interruptUnsafe: () => Effect.void,
-      resume: () => Effect.void,
-      actionExecute: () => Effect.succeed(new Flow.Complete({ exit: Exit.fail(circular as never) })),
-      deferredResult: () => Effect.succeedNone,
-      deferredDone: () => Effect.void,
-      scheduleClock: () => Effect.void
+    const engine = scriptedEngine({
+      actionExecute: () => Effect.succeed(new Flow.Complete({ exit: Exit.fail(circular as never) }))
     })
     return Effect.gen(function*() {
       const exit = yield* Effect.exit(engine.actionExecute(action, 1))

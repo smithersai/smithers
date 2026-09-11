@@ -66,5 +66,13 @@ export default tseslint.config(
     }
   },
   ...jsdocConvention,
+  {
+    // Unlike the shared convention, this package forbids the `@slop` review
+    // marker: it is bookkeeping, not documentation.
+    files: ["src/**/*.ts"],
+    rules: {
+      "jsdoc/check-tag-names": ["error", { definedTags: ["category", "since"] }]
+    }
+  },
   ...invariants(uninstalledSafety, swallowedCause, ambientAuthority)
 )

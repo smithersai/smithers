@@ -1,5 +1,3 @@
-// Deep reviewed and polished by a human on 2026-08-10.
-
 /**
  * Construction of the per-execution state an engine hands to a flow run.
  *
@@ -24,7 +22,6 @@ import * as Lineage from "./Lineage.ts"
  *
  * @category constructors
  * @since 0.1.0
- * @slop
  */
 export const makeInstance = (
   flow: Flow.Any,

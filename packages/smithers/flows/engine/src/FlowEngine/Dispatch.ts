@@ -1,5 +1,3 @@
-// Deep reviewed and polished by a human on 2026-08-10.
-
 /**
  * Action dispatch: the ordinal allocation an invocation key is derived from,
  * the keyless-concurrency guard that refuses indistinguishable overlaps, the
@@ -41,7 +39,6 @@ const ActionOrdinalScope = Context.Service<never, string>(
  *
  * @category constructors
  * @since 0.1.0
- * @slop
  */
 export const makeActionExecute = (options: Encoded) =>
   // Untraced because action retries are a hot path within a flow run.
@@ -234,7 +231,7 @@ export const makeActionExecute = (options: Encoded) =>
       } else {
         result = yield* options.actionExecute(input).pipe(
           Effect.provideService(Action.CurrentAttempt, currentAttempt),
-          // DECIDED (2026-08-11, pending review): the dispatch's own key is
+          // DECIDED: the dispatch's own key is
           // handed to the implementation rather than left engine-private. An
           // implementation that names durable state of its own — `Sleep`
           // names a `DurableClock` — needs identity that is stable across

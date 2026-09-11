@@ -12,6 +12,7 @@ import { Deferred, Effect, Exit, Fiber, Layer, Logger, Schema } from "effect"
 import { TestClock } from "effect/testing"
 import { FlowEngine } from "../src/index.ts"
 import { withCrypto } from "./Crypto.ts"
+import { scriptedEngine } from "./ScriptedEngine.ts"
 
 const Bump = Action.make("boundary/bump", {
   payload: { value: Schema.Number },
@@ -46,8 +47,7 @@ const scripted = (
 ) => {
   const requests: Array<{ readonly executionId: string; readonly parent: string | undefined }> = []
   const interrupts: Array<string> = []
-  const engine = FlowEngine.makeUnsafe({
-    register: () => Effect.void,
+  const engine = scriptedEngine({
     execute: ((_flow: Flow.Any, options: {
       readonly executionId: string
       readonly parent?: FlowRuntime.FlowInstance["Service"] | undefined
@@ -56,19 +56,13 @@ const scripted = (
         requests.push({ executionId: options.executionId, parent: options.parent?.executionId })
         return result
       })) as never,
-    poll: () => Effect.succeedNone,
     interrupt: (_flow, executionId) =>
       Effect.sync(() => void interrupts.push(executionId)).pipe(
         Effect.andThen(
           interruptFailure === undefined ? interruptDelivery : Effect.fail(interruptFailure)
         )
       ),
-    interruptUnsafe: () => Effect.void,
-    resume: () => Effect.void,
-    actionExecute: () => Effect.succeed(new Flow.Complete({ exit: Exit.void })),
-    deferredResult: () => Effect.succeedNone,
-    deferredDone: () => Effect.void,
-    scheduleClock: () => Effect.void
+    actionExecute: () => Effect.succeed(new Flow.Complete({ exit: Exit.void }))
   })
   return { engine, interrupts, requests }
 }

@@ -12,23 +12,7 @@ import { Effect, Exit, Layer, Option, Result, Schema } from "effect"
 import type * as Crypto from "effect/Crypto"
 import { FlowEngine } from "../src/index.ts"
 import { withCrypto } from "./Crypto.ts"
-
-const effect = (name: string, body: () => Effect.Effect<void, unknown, Crypto.Crypto>) =>
-  it.effect(name, () => withCrypto(body()))
-
-/** Polls a result until the predicate holds, bounded by scheduler turns. */
-const pollUntil = <A, E, R>(
-  poll: Effect.Effect<Option.Option<Flow.Result<A, E>>, FlowRuntime.FlowExecutionNotFound, R>,
-  predicate: (result: Flow.Result<A, E>) => boolean
-): Effect.Effect<Option.Option<Flow.Result<A, E>>, FlowRuntime.FlowExecutionNotFound, R> =>
-  Effect.gen(function*() {
-    let result = yield* poll
-    for (let index = 0; index < 50 && (Option.isNone(result) || !predicate(result.value)); index++) {
-      yield* Effect.yieldNow
-      result = yield* poll
-    }
-    return result
-  })
+import { effect, pollUntil } from "./Harness.ts"
 
 describe("sealed-key memoization of terminal outcomes", () => {
   effect("replays a typed failure exactly once for the same key and attempt", () => {
@@ -164,13 +148,13 @@ describe("sealed-key memoization of terminal outcomes", () => {
 
     return Effect.gen(function*() {
       const executionId = yield* flow.execute({ id: "memo-gated" }, { discard: true })
-      const parked = yield* pollUntil(flow.poll(executionId), (result) => result._tag === "Suspended")
+      const parked = yield* pollUntil(flow.poll(executionId), (result) => result._tag === "Suspended", { turns: 50 })
       expect(Option.isSome(parked) && parked.value._tag).toBe("Suspended")
       expect(executions).toBe(1)
 
       const token = DurableDeferred.tokenFromExecutionId(gate, { flow, executionId })
       yield* DurableDeferred.succeed(gate, { token, value: 9 })
-      const woken = yield* pollUntil(flow.poll(executionId), (result) => result._tag === "Complete")
+      const woken = yield* pollUntil(flow.poll(executionId), (result) => result._tag === "Complete", { turns: 50 })
       expect(
         Option.isSome(woken) && woken.value._tag === "Complete" &&
           Exit.isSuccess(woken.value.exit) && woken.value.exit.value

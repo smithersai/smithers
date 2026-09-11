@@ -1,5 +1,3 @@
-// Deep reviewed and polished by a human on 2026-08-10.
-
 import { describe, expect, it } from "@effect/vitest"
 import { Action, Flow, FlowRuntime, Interpreter } from "@smthrs/flow"
 import { DerivedKey } from "@smthrs/keys"
@@ -11,11 +9,9 @@ import { vi } from "vitest"
 import { actionKey } from "../src/FlowEngine/ActionKey.ts"
 import { FlowEngine } from "../src/index.ts"
 import { withCrypto } from "./Crypto.ts"
+import { effect } from "./Harness.ts"
 
 vi.mock("effect/SchemaRepresentation", { spy: true })
-
-const effect = (name: string, body: () => Effect.Effect<void, unknown, Crypto.Crypto>) =>
-  it.effect(name, () => withCrypto(body()))
 
 const hostFlow = Flow.make("ActionKeys/host", {
   payload: { id: Schema.String },

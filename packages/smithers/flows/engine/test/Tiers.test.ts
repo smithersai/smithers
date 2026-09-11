@@ -1,5 +1,3 @@
-// Deep reviewed and polished by a human on 2026-08-10.
-
 import { describe, expect, it } from "@effect/vitest"
 import { Action, Flow, Interpreter, RetryPolicy } from "@smthrs/flow"
 import { Cause, Effect, Exit, Layer, Schema } from "effect"
@@ -7,9 +5,7 @@ import type * as Crypto from "effect/Crypto"
 import { TestClock } from "effect/testing"
 import { FlowEngine } from "../src/index.ts"
 import { withCrypto } from "./Crypto.ts"
-
-const effect = (name: string, body: () => Effect.Effect<void, unknown, Crypto.Crypto>) =>
-  it.effect(name, () => withCrypto(body()))
+import { effect } from "./Harness.ts"
 
 describe("action durability tiers", () => {
   effect("sealed actions replay from the memory memo", () => {

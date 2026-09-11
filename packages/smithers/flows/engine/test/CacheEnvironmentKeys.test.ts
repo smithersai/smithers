@@ -1,5 +1,3 @@
-// Deep reviewed and polished by a human on 2026-08-10.
-
 import * as Crypto from "effect/Crypto"
 /**
  * Issue #75: a sealed action's cache key omitted the two pieces of key
@@ -23,9 +21,8 @@ import { Node } from "@smthrs/plan"
 import { Effect, Exit, Layer, Schema } from "effect"
 import { FlowEngine } from "../src/index.ts"
 import { withCrypto } from "./Crypto.ts"
-
-const effect = (name: string, body: () => Effect.Effect<void, unknown, Crypto.Crypto>) =>
-  it.effect(name, () => withCrypto(body()))
+import { effect } from "./Harness.ts"
+import { scriptedEngine } from "./ScriptedEngine.ts"
 
 const flow = Flow.make("CacheEnvironmentKeys/flow", {
   payload: { id: Schema.String },
@@ -55,21 +52,12 @@ const keyUnder = (
   executionId = "content-environment-run"
 ): Effect.Effect<string> => {
   let captured: string | undefined
-  const engine = FlowEngine.makeUnsafe({
-    register: () => Effect.void,
-    execute: () => Effect.die("not used"),
-    poll: () => Effect.succeedNone,
-    interrupt: () => Effect.void,
-    interruptUnsafe: () => Effect.void,
-    resume: () => Effect.void,
+  const engine = scriptedEngine({
     actionExecute: (input) =>
       Effect.sync(() => {
         captured = input.key
         return new Flow.Complete({ exit: Exit.void })
-      }),
-    deferredResult: () => Effect.succeedNone,
-    deferredDone: () => Effect.void,
-    scheduleClock: () => Effect.void
+      })
   })
   return Effect.gen(function*() {
     const service = yield* FlowRuntime.FlowRuntime

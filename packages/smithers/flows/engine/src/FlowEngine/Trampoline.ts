@@ -1,5 +1,3 @@
-// Deep reviewed and polished by a human on 2026-08-10.
-
 /**
  * The trampoline: one `execute` call follows a whole lineage of rounds, and
  * the two refusals that loop raises.
@@ -67,7 +65,6 @@ export class FlowNotRegistered extends Schema.TaggedError<FlowNotRegistered>()(
  *
  * @category models
  * @since 0.1.0
- * @slop
  */
 export type Declarations = Map<
   string,
@@ -96,7 +93,6 @@ interface LineageRound {
  *
  * @category constructors
  * @since 0.1.0
- * @slop
  */
 export const makeExecute = (options: Encoded, declarations: Declarations) =>
   // Untraced because flow execution recursively invokes child flows.
@@ -213,14 +209,14 @@ export const makeExecute = (options: Encoded, declarations: Declarations) =>
           // what makes the trampoline transparent to the caller: one
           // `execute` answers with the LINEAGE's value, and each round keeps
           // its own execution id and journal underneath.
-          // DECIDED (2026-08-11, pending review): `maxRounds` belongs to the
+          // DECIDED: `maxRounds` belongs to the
           // lineage originator. A multi-flow handoff cannot reset or replace
           // the budget by naming a target with a different declaration.
           const advanced = yield* Round.next(lineage.round, {
             flowName: self._tag,
             maxRounds: lineageBudget
           }).pipe(Effect.catch((error) => Effect.die(error)))
-          // DECIDED (2026-08-11, pending review): a caller that cannot
+          // DECIDED: a caller that cannot
           // resolve the target dies rather than answering with the raw
           // handoff. The round is durable either way, so the lineage is not
           // lost — what is wrong is this caller's wiring, and saying so is

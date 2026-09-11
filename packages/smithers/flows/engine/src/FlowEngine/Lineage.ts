@@ -44,7 +44,6 @@ export type JournalLineageId = string & { readonly [JournalLineageIdTypeId]: typ
  *
  * @since 0.1.0
  * @category constructors
- * @slop
  */
 export const root = (runId: string): JournalLineageId =>
   `smithers-journal-lineage/v1:${JSON.stringify([runId])}` as JournalLineageId

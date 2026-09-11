@@ -12,7 +12,8 @@
  *
  * The execution machinery mirrors `FlowEngine.layerMemory`: both record only
  * settled action outcomes, so a fiber killed mid-attempt leaves no outcome
- * to replay. The durability hooks diverge where a real driver would: attempt
+ * to replay, and both die with the same typed refusals (`FlowNotRegistered`,
+ * `ExecutionIdentityConflict`). The durability hooks diverge where a real driver would: attempt
  * rows persist a first-start time and the highest attempt for
  * `actionRetryOrigin`/`actionLatestAttempt`,
  * plus pre-attempt handles for `actionSnapshot`,
@@ -153,7 +154,12 @@ export const layerDurable = (log: DurableLog): Layer.Layer<FlowRuntime.FlowRunti
         execute: Effect.fnUntraced(function*(flow, options) {
           const entry = flows.get(flow._tag)
           if (!entry) {
-            return yield* Effect.orDie(Effect.fail(`Flow ${flow._tag} is not registered`))
+            return yield* Effect.die(
+              new FlowEngine.FlowNotRegistered({
+                flowName: flow._tag,
+                message: `Flow ${flow._tag} is not registered`
+              })
+            )
           }
           if (!log.executions.has(options.executionId)) {
             log.executions.set(options.executionId, {
@@ -295,10 +301,14 @@ export const layerDurable = (log: DurableLog): Layer.Layer<FlowRuntime.FlowRunti
             const execution = log.executions.get(options.executionId)
             if (execution !== undefined && execution.flowTag !== options.flowName) {
               return Effect.die(
-                new Error(
-                  `execution ${options.executionId} belongs to flow ${execution.flowTag}; ` +
+                new FlowEngine.ExecutionIdentityConflict({
+                  executionId: options.executionId,
+                  field: "flow",
+                  expected: execution.flowTag,
+                  actual: options.flowName,
+                  message: `execution ${options.executionId} belongs to flow ${execution.flowTag}; ` +
                     `a deferred for ${options.flowName} cannot complete it`
-                )
+                })
               )
             }
             const id = JSON.stringify([options.flowName, options.executionId, options.deferredName])

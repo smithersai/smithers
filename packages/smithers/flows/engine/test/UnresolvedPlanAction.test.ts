@@ -22,9 +22,7 @@ import type * as Crypto from "effect/Crypto"
 import { FlowEngine } from "../src/index.ts"
 import { withCrypto } from "./Crypto.ts"
 import { layerDurable, makeLog } from "./DurableLogEngine.ts"
-
-const effect = (name: string, body: () => Effect.Effect<void, unknown, Crypto.Crypto>) =>
-  it.effect(name, () => withCrypto(body()))
+import { effect } from "./Harness.ts"
 
 const Unimplemented = Action.make("UnresolvedPlanAction/Unimplemented", {
   payload: { id: Schema.String },

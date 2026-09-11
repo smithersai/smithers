@@ -1,5 +1,3 @@
-// Deep reviewed and polished by a human on 2026-08-10.
-
 import { describe, expect, it } from "@effect/vitest"
 import { Action, DurableDeferred, Flow, FlowRuntime, Interpreter, RetryPolicy } from "@smthrs/flow"
 import { Node } from "@smthrs/plan"
@@ -7,30 +5,13 @@ import { Effect, Exit, Fiber, Layer, Option, Schema } from "effect"
 import type * as Crypto from "effect/Crypto"
 import { FlowEngine } from "../src/index.ts"
 import { withCrypto } from "./Crypto.ts"
-
-const effect = (name: string, body: () => Effect.Effect<void, unknown, Crypto.Crypto>) =>
-  it.effect(name, () => withCrypto(body()))
+import { effect, liveEffect, pollUntil } from "./Harness.ts"
+import { scriptedEngine } from "./ScriptedEngine.ts"
 
 /**
  * The same wiring on the live clock, for cases that wait on the real elapsed
  * time a retry or resume policy schedules rather than driving `TestClock`.
  */
-const liveEffect = (name: string, body: () => Effect.Effect<void, unknown, Crypto.Crypto>) =>
-  it.live(name, () => withCrypto(body()))
-
-const pollUntil = <A, E, R>(
-  poll: Effect.Effect<Option.Option<Flow.Result<A, E>>, FlowRuntime.FlowExecutionNotFound, R>,
-  predicate: (result: Flow.Result<A, E>) => boolean
-) =>
-  Effect.gen(function*() {
-    let result = yield* poll
-    for (let i = 0; i < 200 && (Option.isNone(result) || !predicate(result.value)); i++) {
-      yield* Effect.yieldNow
-      result = yield* poll
-    }
-    return result
-  })
-
 const isSuspended = (result: Flow.Result<any, any>) => result._tag === "Suspended"
 const isComplete = (result: Flow.Result<any, any>) => result._tag === "Complete"
 
@@ -68,7 +49,7 @@ describe("action suspension", () => {
 
     return Effect.gen(function*() {
       yield* flow.execute({ id: "x" }, { executionId: "run-action-gate", discard: true })
-      const suspended = yield* pollUntil(flow.poll("run-action-gate"), isSuspended)
+      const suspended = yield* pollUntil(flow.poll("run-action-gate"), isSuspended, { turns: 200 })
       expect(Option.isSome(suspended)).toBe(true)
       expect(bodyRuns).toBe(1)
 
@@ -78,7 +59,7 @@ describe("action suspension", () => {
       })
       yield* DurableDeferred.succeed(Gate, { token, value: "open" })
 
-      const done = yield* pollUntil(flow.poll("run-action-gate"), isComplete)
+      const done = yield* pollUntil(flow.poll("run-action-gate"), isComplete, { turns: 200 })
       expect(
         Option.isSome(done) && done.value._tag === "Complete" && Exit.isSuccess(done.value.exit) &&
           done.value.exit.value
@@ -134,10 +115,10 @@ describe("child flow suspension and interruption", () => {
 
     return Effect.gen(function*() {
       yield* parent.execute({ id: "x" }, { executionId: "parent-gated", discard: true })
-      const suspended = yield* pollUntil(parent.poll("parent-gated"), isSuspended)
+      const suspended = yield* pollUntil(parent.poll("parent-gated"), isSuspended, { turns: 200 })
       expect(Option.isSome(suspended)).toBe(true)
       // the child's suspension propagated: the parent is parked, not failed
-      expect(Option.isSome(yield* pollUntil(child.poll("child-gated"), isSuspended))).toBe(true)
+      expect(Option.isSome(yield* pollUntil(child.poll("child-gated"), isSuspended, { turns: 200 }))).toBe(true)
 
       const token = DurableDeferred.tokenFromExecutionId(Gate, {
         flow: child,
@@ -145,7 +126,7 @@ describe("child flow suspension and interruption", () => {
       })
       yield* DurableDeferred.succeed(Gate, { token, value: 41 })
 
-      const done = yield* pollUntil(parent.poll("parent-gated"), isComplete)
+      const done = yield* pollUntil(parent.poll("parent-gated"), isComplete, { turns: 200 })
       expect(
         Option.isSome(done) && done.value._tag === "Complete" && Exit.isSuccess(done.value.exit) &&
           done.value.exit.value
@@ -179,22 +160,15 @@ describe("child flow suspension and interruption", () => {
         success: Schema.Number,
         body: () => Node.succeed(0)
       })
-      const scripted = FlowEngine.makeUnsafe({
-        register: () => Effect.void,
+      const scripted = scriptedEngine({
         execute: (() =>
           Effect.succeed(
             childOutcome === "Complete"
               ? new Flow.Complete({ exit: Exit.succeed(1) })
               : new Flow.Suspended({})
           )) as any,
-        poll: () => Effect.succeedNone,
         interrupt: (_flow, executionId) => Effect.sync(() => void interruptCalls.push(executionId)),
-        interruptUnsafe: () => Effect.void,
-        resume: () => Effect.void,
-        actionExecute: () => Effect.succeed(new Flow.Complete({ exit: Exit.void })),
-        deferredResult: () => Effect.succeedNone,
-        deferredDone: () => Effect.void,
-        scheduleClock: () => Effect.void
+        actionExecute: () => Effect.succeed(new Flow.Complete({ exit: Exit.void }))
       })
       const parentInstance = FlowEngine.makeInstance(parentFlow, "parent-exec")
       parentInstance.interrupted = parentInterrupted
@@ -285,8 +259,7 @@ describe("resumeSignal", () => {
     })
     let executions = 0
     let signals = 0
-    const scripted = FlowEngine.makeUnsafe({
-      register: () => Effect.void,
+    const scripted = scriptedEngine({
       execute: (() =>
         Effect.sync(() => {
           executions++
@@ -294,15 +267,8 @@ describe("resumeSignal", () => {
             ? new Flow.Suspended({})
             : new Flow.Complete({ exit: Exit.succeed("woken") })
         })) as any,
-      poll: () => Effect.succeedNone,
-      interrupt: () => Effect.void,
-      interruptUnsafe: () => Effect.void,
-      resume: () => Effect.void,
       resumeSignal: () => Effect.sync(() => void signals++),
-      actionExecute: () => Effect.succeed(new Flow.Complete({ exit: Exit.void })),
-      deferredResult: () => Effect.succeedNone,
-      deferredDone: () => Effect.void,
-      scheduleClock: () => Effect.void
+      actionExecute: () => Effect.succeed(new Flow.Complete({ exit: Exit.void }))
     })
 
     return Effect.gen(function*() {
@@ -320,8 +286,7 @@ describe("resumeSignal", () => {
       body: () => Node.succeed("ready")
     })
     let executions = 0
-    const scripted = FlowEngine.makeUnsafe({
-      register: () => Effect.void,
+    const scripted = scriptedEngine({
       execute: (() =>
         Effect.sync(() => {
           executions++
@@ -329,14 +294,7 @@ describe("resumeSignal", () => {
             ? new Flow.Suspended({})
             : new Flow.Complete({ exit: Exit.succeed("slept") })
         })) as any,
-      poll: () => Effect.succeedNone,
-      interrupt: () => Effect.void,
-      interruptUnsafe: () => Effect.void,
-      resume: () => Effect.void,
-      actionExecute: () => Effect.succeed(new Flow.Complete({ exit: Exit.void })),
-      deferredResult: () => Effect.succeedNone,
-      deferredDone: () => Effect.void,
-      scheduleClock: () => Effect.void
+      actionExecute: () => Effect.succeed(new Flow.Complete({ exit: Exit.void }))
     })
 
     return Effect.gen(function*() {

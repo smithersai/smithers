@@ -1,5 +1,3 @@
-// Deep reviewed and polished by a human on 2026-08-10.
-
 import { describe, expect, it } from "@effect/vitest"
 import { Action, Flow, FlowRuntime, Interpreter } from "@smthrs/flow"
 import { Node } from "@smthrs/plan"
@@ -7,28 +5,13 @@ import { Cause, Context, Effect, Exit, Layer, Option, Schema } from "effect"
 import type * as Crypto from "effect/Crypto"
 import { FlowEngine } from "../src/index.ts"
 import { withCrypto } from "./Crypto.ts"
-
-const effect = (name: string, body: () => Effect.Effect<void, unknown, Crypto.Crypto>) =>
-  it.effect(name, () => withCrypto(body()))
+import { effect, pollUntil } from "./Harness.ts"
 
 /**
  * Polls a result until the predicate holds, under a bound: a run that stops
  * settling fails on the assertion after the bound rather than spinning into
  * the suite's timeout, which reports no diagnosis.
  */
-const pollUntil = <A, E, R>(
-  poll: Effect.Effect<Option.Option<Flow.Result<A, E>>, FlowRuntime.FlowExecutionNotFound, R>,
-  predicate: (result: Flow.Result<A, E>) => boolean
-): Effect.Effect<Option.Option<Flow.Result<A, E>>, FlowRuntime.FlowExecutionNotFound, R> =>
-  Effect.gen(function*() {
-    let result = yield* poll
-    for (let index = 0; index < 50 && (Option.isNone(result) || !predicate(result.value)); index++) {
-      yield* Effect.yieldNow
-      result = yield* poll
-    }
-    return result
-  })
-
 describe("memory engine execution surface", () => {
   effect("dies when executing a flow that was never registered", () => {
     const flow = Flow.make("Memory/unregistered", {
@@ -92,7 +75,7 @@ describe("memory engine execution surface", () => {
     return Effect.gen(function*() {
       const executionId = yield* flow.execute({ id: "x" }, { executionId: "run-d", discard: true })
       expect(executionId).toBe("run-d")
-      const polled = yield* pollUntil(flow.poll("run-d"), (result) => result._tag === "Complete")
+      const polled = yield* pollUntil(flow.poll("run-d"), (result) => result._tag === "Complete", { turns: 50 })
       expect(Option.isSome(polled) ? polled.value._tag : "unsettled").toBe("Complete")
     }).pipe(Effect.provide(layer))
   })

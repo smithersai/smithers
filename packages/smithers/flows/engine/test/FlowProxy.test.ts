@@ -1,5 +1,3 @@
-// Deep reviewed and polished by a human on 2026-08-10.
-
 import { describe, expect, it } from "@effect/vitest"
 import { Action, DurableDeferred, Flow, Interpreter } from "@smthrs/flow"
 import { Node } from "@smthrs/plan"

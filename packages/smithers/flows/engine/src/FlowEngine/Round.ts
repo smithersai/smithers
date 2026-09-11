@@ -48,7 +48,6 @@ export type RootExecutionId = string & { readonly [RootExecutionIdTypeId]: typeo
  *
  * @since 0.1.0
  * @category models
- * @slop
  */
 export interface Round {
   readonly rootExecutionId: RootExecutionId
@@ -100,7 +99,6 @@ const validate = (round: Round): InvalidRound | undefined => {
  *
  * @since 0.1.0
  * @category constructors
- * @slop
  */
 export const initial = <Id extends string>(executionId: Id extends JournalLineageId ? never : Id): Round => {
   const id: string = executionId
@@ -117,7 +115,6 @@ export const initial = <Id extends string>(executionId: Id extends JournalLineag
  *
  * @since 0.1.0
  * @category constructors
- * @slop
  */
 export const executionId = (round: Round): Effect.Effect<string, InvalidRound, Crypto.Crypto> =>
   Effect.suspend(() => {
@@ -136,7 +133,7 @@ export const executionId = (round: Round): Effect.Effect<string, InvalidRound, C
  * its declared budget. An absent budget is unbounded, which is the right
  * default for a lineage whose exit condition is its own branch.
  *
- * DECIDED (2026-08-11, pending review): the budget counts ROUNDS, not handoffs,
+ * DECIDED: the budget counts ROUNDS, not handoffs,
  * so a lineage bounded at `n` may open ordinals `0` through `n - 1` and the
  * request for ordinal `n` is the one that is refused. Counting rounds is what a
  * reader of `maxRounds: 100` expects, and it makes `maxRounds: 1` mean "no
@@ -144,7 +141,6 @@ export const executionId = (round: Round): Effect.Effect<string, InvalidRound, C
  *
  * @since 0.1.0
  * @category constructors
- * @slop
  */
 export const next = (round: Round, options: {
   readonly flowName: string

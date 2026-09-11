@@ -1,5 +1,3 @@
-// Deep reviewed and polished by a human on 2026-08-10.
-
 /**
  * The in-memory engine's durable-wait paths: scheduled clocks, externally
  * completed deferreds, interruption of a parked execution, and the no-op
@@ -17,6 +15,7 @@ import { TestClock } from "effect/testing"
 import { FlowEngine } from "../src/index.ts"
 import { withCrypto } from "./Crypto.ts"
 import { layerDurable, makeLog } from "./DurableLogEngine.ts"
+import { scriptedEngine } from "./ScriptedEngine.ts"
 
 const effect = (name: string, body: () => Effect.Effect<void, unknown, Crypto.Crypto>) =>
   it.effect(name, () => withCrypto(body().pipe(Effect.provide(TestClock.layer()))))
@@ -470,17 +469,8 @@ describe("FlowEngine.layerMemory durable waits", () => {
 
   effect("fails closed when an encoded driver has no conditional completion primitive", () =>
     Effect.gen(function*() {
-      const engine = FlowEngine.makeUnsafe({
-        register: () => Effect.void,
-        execute: () => Effect.die("not used"),
-        poll: () => Effect.succeedNone,
-        interrupt: () => Effect.void,
-        interruptUnsafe: () => Effect.void,
-        resume: () => Effect.void,
-        actionExecute: () => Effect.die("not used"),
-        deferredResult: () => Effect.succeedNone,
-        deferredDone: () => Effect.void,
-        scheduleClock: () => Effect.void
+      const engine = scriptedEngine({
+        actionExecute: () => Effect.die("not used")
       })
       expect(
         yield* engine.deferredDoneIfWaiting(gate, {

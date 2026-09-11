@@ -1,5 +1,3 @@
-// Deep reviewed and polished by a human on 2026-08-10.
-
 import { describe, expect, it } from "@effect/vitest"
 import { Action, DurableDeferred, Flow, FlowRuntime, Interpreter, RetryPolicy } from "@smthrs/flow"
 import { Node } from "@smthrs/plan"
@@ -8,30 +6,13 @@ import type * as Crypto from "effect/Crypto"
 import { TestClock } from "effect/testing"
 import { FlowEngine } from "../src/index.ts"
 import { withCrypto } from "./Crypto.ts"
-
-const effect = (name: string, body: () => Effect.Effect<void, unknown, Crypto.Crypto>) =>
-  it.effect(name, () => withCrypto(body()))
+import { effect, liveEffect, pollUntil } from "./Harness.ts"
+import { scriptedEngine } from "./ScriptedEngine.ts"
 
 /**
  * The same wiring on the live clock, for cases that wait on the real elapsed
  * time a retry or resume policy schedules rather than driving `TestClock`.
  */
-const liveEffect = (name: string, body: () => Effect.Effect<void, unknown, Crypto.Crypto>) =>
-  it.live(name, () => withCrypto(body()))
-
-const pollUntil = <A, E, R>(
-  poll: Effect.Effect<Option.Option<Flow.Result<A, E>>, FlowRuntime.FlowExecutionNotFound, R>,
-  predicate: (result: Flow.Result<A, E>) => boolean
-) =>
-  Effect.gen(function*() {
-    let result = yield* poll
-    for (let i = 0; i < 100 && (Option.isNone(result) || !predicate(result.value)); i++) {
-      yield* Effect.yieldNow
-      result = yield* poll
-    }
-    return result
-  })
-
 const isSuspended = (result: Flow.Result<any, any>) => result._tag === "Suspended"
 
 describe("boundary descriptor identity", () => {
@@ -330,21 +311,13 @@ describe("suspended resume policy", () => {
       body: () => Node.succeed("ready")
     })
     let executions = 0
-    const scripted = FlowEngine.makeUnsafe({
-      register: () => Effect.void,
+    const scripted = scriptedEngine({
       execute: (() =>
         Effect.sync(() => {
           executions++
           return new Flow.Suspended({})
         })) as never,
-      poll: () => Effect.succeedNone,
-      interrupt: () => Effect.void,
-      interruptUnsafe: () => Effect.void,
-      resume: () => Effect.void,
-      actionExecute: () => Effect.succeed(new Flow.Complete({ exit: Exit.void })),
-      deferredResult: () => Effect.succeedNone,
-      deferredDone: () => Effect.void,
-      scheduleClock: () => Effect.void
+      actionExecute: () => Effect.succeed(new Flow.Complete({ exit: Exit.void }))
     })
     return Effect.gen(function*() {
       const fiber = yield* flow.execute({ id: "x" }, { executionId: "run-expired" }).pipe(
@@ -436,7 +409,8 @@ describe("suspended resume policy", () => {
         flow.poll("run-late").pipe(
           Effect.catchTag("@smthrs/flow/FlowExecutionNotFound", () => Effect.succeedNone)
         ),
-        isSuspended
+        isSuspended,
+        { turns: 100 }
       )
       expect(Option.isSome(suspended)).toBe(true)
       const token = DurableDeferred.tokenFromExecutionId(Gate, { flow, executionId: "run-late" })
@@ -467,18 +441,9 @@ describe("action retry give-up reasons", () => {
       body: () => Node.succeed(0)
     })
     let requestedKey: string | undefined
-    const scripted = FlowEngine.makeUnsafe({
-      register: () => Effect.void,
-      execute: () => Effect.die("not used"),
-      poll: () => Effect.succeedNone,
-      interrupt: () => Effect.void,
-      interruptUnsafe: () => Effect.void,
-      resume: () => Effect.void,
+    const scripted = scriptedEngine({
       actionExecute: () => Effect.succeed(new Flow.Complete({ exit: Exit.fail("unavailable") })),
-      actionRetryOrigin: ({ key }) => Effect.sync(() => (requestedKey = key, Option.some(0))),
-      deferredResult: () => Effect.succeedNone,
-      deferredDone: () => Effect.void,
-      scheduleClock: () => Effect.void
+      actionRetryOrigin: ({ key }) => Effect.sync(() => (requestedKey = key, Option.some(0)))
     })
     return Effect.gen(function*() {
       const result = yield* scripted.actionExecute(action, 1)

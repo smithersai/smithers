@@ -1,5 +1,3 @@
-// Deep reviewed and polished by a human on 2026-08-10.
-
 import type * as Crypto from "effect/Crypto"
 /**
  * Issue #151: forcing key-schema decoders at the four derivation sites turned
@@ -18,9 +16,7 @@ import { Cause, Effect, Exit, Layer, Schema, SchemaIssue } from "effect"
 import { schemaErrorPath } from "../src/FlowEngine/ActionKey.ts"
 import { FlowEngine } from "../src/index.ts"
 import { invocationKey, runSync, withCrypto } from "./Crypto.ts"
-
-const effect = (name: string, body: () => Effect.Effect<void, unknown, Crypto.Crypto>) =>
-  it.effect(name, () => withCrypto(body()))
+import { effect } from "./Harness.ts"
 
 const identityWith = (body: unknown): Action.IdempotencyKey => ({ body } as Action.IdempotencyKey)
 

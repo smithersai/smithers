@@ -1,5 +1,3 @@
-// Deep reviewed and polished by a human on 2026-08-10.
-
 /**
  * Server-side layers for flow proxy APIs.
  *
@@ -207,7 +205,6 @@ const handleResume = (
  *
  * @category layers
  * @since 0.1.0
- * @slop
  */
 export const layerHttpApi = <
   ApiId extends string,
@@ -254,7 +251,6 @@ export const layerHttpApi = <
  *
  * @category layers
  * @since 0.1.0
- * @slop
  */
 export const layerRpcHandlers = <
   const Flows extends NonEmptyReadonlyArray<Flow.Any>,
@@ -294,7 +290,6 @@ export const layerRpcHandlers = <
  *
  * @category services
  * @since 0.1.0
- * @slop
  */
 export type RpcHandlers<Flows extends Flow.Any, Prefix extends string> = Flows extends Flow.Flow<
   infer _Name,

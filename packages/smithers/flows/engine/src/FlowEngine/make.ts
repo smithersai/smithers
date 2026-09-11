@@ -1,5 +1,3 @@
-// Deep reviewed and polished by a human on 2026-08-10.
-
 /**
  * Adapts a low-level `Encoded` implementation into the typed `FlowRuntime`
  * port `@smthrs/flow` declares.
@@ -38,7 +36,6 @@ import { type Declarations, makeExecute } from "./Trampoline.ts"
  *
  * @category constructors
  * @since 0.1.0
- * @slop
  */
 export const makeUnsafe = (options: Encoded): FlowRuntime.FlowRuntime["Service"] => {
   /**
