@@ -251,7 +251,8 @@ describe("TurnFrame", () => {
   })
 
   test("covers every declared frame type", () => {
-    expect(new Set(frames.map((frame) => frame.type)).size).toBe(8)
+    const declared = TurnFrame.members.map((member) => member.fields.type.literal)
+    expect(new Set(frames.map((frame) => frame.type))).toEqual(new Set(declared))
   })
 
   test("rejects an unknown frame type", () => {

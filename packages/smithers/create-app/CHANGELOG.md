@@ -1,11 +1,10 @@
 # @smthrs/create-app
 
-The package is private and versioned at `0.1.0`; every `@since` tag in `src/`
-reads `0.1.0` for that reason, and it owns no page under `docs/pages`. Entries
-below are the unreleased changes on top of it, so there is no `1.0.0-rc.0`
-section here the way there is in a published package's changelog.
+**Documentation:** https://create-app.smithers.sh
 
 ## [Unreleased]
+
+## [1.0.0-rc.0]
 
 ### Added
 
@@ -13,9 +12,9 @@ section here the way there is in a published package's changelog.
   scaffold command exposed by `@smthrs/build-cli`.
 - Added `PACKAGE.ts`, so the package's lint, check, test, circular, and build
   gates run in CI rather than only by hand.
-- Added package-owned documentation under `docs/`: the routing grammar and the
-  body of the API page this package will publish if it ever stops being
-  private.
+- Added package-owned documentation under `docs/`, published at
+  https://create-app.smithers.sh: the routing grammar, the layer resolution
+  order, the API reference, and the Cloudflare deploy guide.
 - Added `@smthrs/create-app/routesBin`, the body of the `smithers-routes`
   executable, so its flags and exit codes are held to the package's coverage
   thresholds instead of living in an uninstrumented child process.
@@ -26,8 +25,8 @@ section here the way there is in a published package's changelog.
   caller addressing the session registry's own Durable Object.
 - Added the aomi template's `worker/stream.ts`, one cleanup path that runs on
   close, source error, and cancel.
-- Added a second test target, `//packages/create-app:templates`, which runs the
-  shipped templates' own 104 tests from this package against workspace sources.
+- Added a second test target, `//packages/smithers/create-app:templates`, which
+  runs the templates' own suites from this package against workspace sources.
   Every test for the scaffolded Worker's credential check, body cap, session-id
   rule, stream cleanup, and turn cancellation lives under `template/`, which no
   gate ran.
@@ -36,7 +35,10 @@ section here the way there is in a published package's changelog.
   aomi template's promote tool instead of copied into each.
 - Added `test/docsParity.test.ts`, which fails when `docs/api.md` names a
   subpath the package does not serve, a constructor it does not export, or a
-  `smithers-routes` flag its usage text does not document.
+  `smithers-routes` flag its usage text does not document. It also holds the
+  `BrandToken` count, the optional peer ranges and install pins, the template
+  file counts, target labels, and this changelog's first release heading to
+  the source they describe.
 
 ### Fixed
 
@@ -90,7 +92,7 @@ section here the way there is in a published package's changelog.
   `routes.gen.ts` at module scope. The generated table pulls every flow, layer
   file, and tool module in behind it.
 - The aomi template no longer declares `@smthrs/ui-styleguide`. Nothing
-  imported it — `@smthrs/ui` resolves those token names itself — so it was one
-  fewer private package a scaffold could not install. Each template's README
-  now names exactly the private packages it depends on, and a test holds it
-  there: both READMEs named the same four, and `default` depends on two.
+  imported it, because `@smthrs/ui` resolves those token names itself, so it
+  was one fewer private package a scaffold could not install. A test holds each
+  template's private dependencies: the published `default` template has none,
+  and `aomi` has only `@smthrs/ui`.

@@ -137,7 +137,7 @@ flow.
 | ------------ | --------------------------------------------------------------------------------------------------------------------------------- |
 | `Brand`      | `name`, `wordmark?`, `theme?: "light" \| "dark" \| "system"`, `fonts?: BrandFonts`, `tokens: Partial<Record<BrandToken, string>>` |
 | `BrandFonts` | `display?`, `body?`, `mono?`, `wordmark?`, `googleFonts?: ReadonlyArray<string>`                                                  |
-| `BrandToken` | The 33 token names a brand may override                                                                                           |
+| `BrandToken` | The 32 token names a brand may override                                                                                           |
 | `NavItem`    | `label`, `href`, `icon?`                                                                                                          |
 | `NavGroup`   | `label`, `items: ReadonlyArray<NavItem>`                                                                                          |
 

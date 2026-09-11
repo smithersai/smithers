@@ -98,6 +98,13 @@ pulls `./app` and `./runtime` into the Worker bundle, `routes.ui.gen.ts` pulls
 `./ui` into the browser bundle, and `sideEffects: []` lets a bundler drop the
 Node half.
 
+Each subpath is one module, `src/<subpath>.ts`, that holds every export of its
+runtime class. This package is exempt from the repository's one-export-per-file
+layout for that reason: the imports that decide whether a Worker or a browser
+can load a subpath sit at the top of one file. The
+[API reference](https://create-app.smithers.sh/reference/api/) lists each
+module's exports.
+
 ## Generated files
 
 `smithers-routes` writes two files at the app root and never anything else.
