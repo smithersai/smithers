@@ -6,6 +6,7 @@ import type {
   LocalRepositoryInspection,
   RepositoryAccess
 } from "@smthrs/rpc/NativeRepository"
+import { sanitizeRemoteUrl } from "./sanitizeRemoteUrl"
 
 const git = async (
   directory: string,
@@ -30,20 +31,6 @@ const optionalGitValue = async (
 ): Promise<string | null> => {
   const result = await git(directory, args)
   return result.exitCode === 0 && result.stdout !== "" ? result.stdout : null
-}
-
-const sanitizeRemoteUrl = (remoteUrl: string | null): string | null => {
-  if (remoteUrl === null) return null
-  try {
-    const url = new URL(remoteUrl)
-    url.username = ""
-    url.password = ""
-    url.search = ""
-    url.hash = ""
-    return url.toString()
-  } catch {
-    return remoteUrl.replace(/^[^@/\s]+@(?=[^:/\s]+[:/])/, "")
-  }
 }
 
 const permissionError = (accessMode: RepositoryAccess): InspectLocalRepositoryResult => ({

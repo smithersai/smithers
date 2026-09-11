@@ -12,6 +12,7 @@ import { tmpdir } from "node:os"
 import { basename, join, relative } from "node:path"
 import type { Repo, RepoWorkspace } from "@smthrs/rpc/LocalApp"
 import { currentSandboxHost, probePolicy, wrapSandbox } from "./Sandbox"
+import { sanitizeRemoteUrl } from "./sanitizeRemoteUrl"
 
 export type SmithersDetection = Repo["smithers"]
 
@@ -286,9 +287,11 @@ export const inspectRepo = async (path: string): Promise<InspectRepoResult> => {
     return { status: "error", code: "invalid_path", message: `${path} does not exist or cannot be read.` }
   }
   const inside = (await git(root, ["rev-parse", "--is-inside-work-tree"])) === "true"
-  const [branch, remote] = inside
+  const [branch, rawRemote] = inside
     ? await Promise.all([git(root, ["branch", "--show-current"]), git(root, ["remote", "get-url", "origin"])])
     : [null, null]
+  // The record reaches the renderer through /api/repo/open and /api/repos.
+  const remote = sanitizeRemoteUrl(rawRemote)
   const smithers = detectSmithers(root)
   const jj = await probeJj(root)
   return {

@@ -192,6 +192,55 @@ describe("repository records", () => {
   })
 })
 
+/*
+ * POST /api/repo/open answers `store.open` and GET /api/repos answers
+ * `store.list`, so both hand the renderer this record. A token embedded in the
+ * origin must never survive into it. The developer's own git config is
+ * neutralised so url.<base>.insteadOf cannot rewrite the remote under test.
+ */
+describe("the repository record never carries remote credentials", () => {
+  const withRemote = async (remote: string): Promise<string> => {
+    const root = await scratch()
+    const env = { ...(Bun.env as Record<string, string | undefined>), GIT_CONFIG_GLOBAL: "/dev/null", GIT_CONFIG_SYSTEM: "/dev/null" }
+    expect(await Bun.spawn(["git", "init", "-q", root], { env }).exited).toBe(0)
+    expect(await Bun.spawn(["git", "-C", root, "remote", "add", "origin", remote], { env }).exited).toBe(0)
+    return root
+  }
+
+  const isolated = async <A>(body: () => Promise<A>): Promise<A> => {
+    const previous = [process.env.GIT_CONFIG_GLOBAL, process.env.GIT_CONFIG_SYSTEM] as const
+    process.env.GIT_CONFIG_GLOBAL = "/dev/null"
+    process.env.GIT_CONFIG_SYSTEM = "/dev/null"
+    try {
+      return await body()
+    } finally {
+      if (previous[0] === undefined) delete process.env.GIT_CONFIG_GLOBAL
+      else process.env.GIT_CONFIG_GLOBAL = previous[0]
+      if (previous[1] === undefined) delete process.env.GIT_CONFIG_SYSTEM
+      else process.env.GIT_CONFIG_SYSTEM = previous[1]
+    }
+  }
+
+  test("an https origin loses its userinfo, query and fragment on open and on list", async () => {
+    const root = await withRemote("https://user:ghp_secrettoken@github.com/o/r.git?x=1#y")
+    const store = createRepoStore()
+    const opened = await isolated(() => store.open(root))
+    expect(opened.status).toBe("ok")
+    if (opened.status !== "ok") return
+    expect(opened.repo.git?.remote).toBe("https://github.com/o/r.git")
+    expect(opened.repo.name).toBe("o/r")
+    expect(store.list().map((repo) => repo.git?.remote)).toEqual(["https://github.com/o/r.git"])
+    expect(JSON.stringify(store.list())).not.toContain("ghp_secrettoken")
+  })
+
+  test("an scp-style origin keeps its host and path but loses the user, as the picker reports it", async () => {
+    const root = await withRemote("git@github.com:o/r.git")
+    const opened = await isolated(() => inspectRepo(root))
+    expect(opened.status === "ok" && opened.repo.git?.remote).toBe("github.com:o/r.git")
+    expect(opened.status === "ok" && opened.repo.name).toBe("o/r")
+  })
+})
+
 describe("declaration files on a legacy declaration-rooted checkout", () => {
   test("package legacy declaration files that import smthrs are declarations, so target.source.open can reach them", async () => {
     const root = await scratch()
