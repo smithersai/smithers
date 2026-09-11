@@ -1993,6 +1993,33 @@ export const make = (deps: Dependencies) => {
             }
           }
 
+          /**
+           * Settles an attempt its boundary refused and rethrows the refusal.
+           * Preparation, sandbox open, and settlement can each refuse, and all
+           * three are the same durable transition: a `failed` row marked
+           * `hardViolation`, committed with the hard-violation record and the
+           * failed finish. A lost fence self-interrupts instead.
+           *
+           * A boundary exists only for sealed work, while snapshots are
+           * created only for compensable work. The two capabilities are
+           * disjoint, so a refused attempt never carries a snapshot.
+           */
+          const failBoundaryAttempt = (cause: Cause.Cause<unknown>) =>
+            Effect.gen(function*() {
+              const finishedAtMs = yield* Clock.currentTimeMillis
+              const finished = yield* settleAttempt({
+                ...attemptId,
+                state: "failed",
+                finishedAtMs,
+                error: attemptPayload(persistCause(cause)),
+                meta: { ...declarationMeta, hardViolation: true }
+              }, [
+                JournalRecords.hardViolation(attemptSource("hard-violation"), { ...attemptId, error: cause }),
+                JournalRecords.attemptFinished(attemptSource("finished"), { ...attemptId, state: "failed" })
+              ])
+              if (!finished) return yield* Effect.interrupt
+              return yield* Effect.failCause(cause)
+            })
           const boundary = input.tier === "sealed" && input.metadata !== undefined
             ? yield* StepBoundary.StepBoundary
             : undefined
@@ -2000,27 +2027,7 @@ export const make = (deps: Dependencies) => {
             ? undefined
             : yield* boundary.prepare(input.metadata).pipe(Effect.exit)
           if (preparedResult !== undefined && Exit.isFailure(preparedResult)) {
-            const finishedAtMs = yield* Clock.currentTimeMillis
-            const finished = yield* settleAttempt({
-              ...attemptId,
-              state: "failed",
-              finishedAtMs,
-              error: attemptPayload(persistCause(preparedResult.cause)),
-              // A boundary is prepared only for sealed work, while snapshots are
-              // created only for compensable work. The two capabilities are
-              // disjoint, so a preparation failure can never carry a snapshot.
-              meta: { ...declarationMeta, hardViolation: true }
-            }, [
-              JournalRecords.hardViolation(attemptSource("hard-violation"), {
-                ...attemptId,
-                error: preparedResult.cause
-              }),
-              JournalRecords.attemptFinished(attemptSource("finished"), { ...attemptId, state: "failed" })
-            ])
-            if (!finished) {
-              return yield* Effect.interrupt
-            }
-            return yield* Effect.failCause(preparedResult.cause)
+            return yield* failBoundaryAttempt(preparedResult.cause)
           }
           const prepared = preparedResult === undefined ? undefined : preparedResult.value
 
@@ -2043,27 +2050,10 @@ export const make = (deps: Dependencies) => {
           const opened = Option.isSome(stepSandbox) ? yield* stepSandbox.value.open.pipe(Effect.exit) : undefined
           if (opened !== undefined && Exit.isFailure(opened)) {
             // A host that cannot isolate (`layerNoop`, a refusing forest) is a
-            // typed refusal, not a crash: settle the attempt exactly like a
-            // prepare failure, or the row stays "running" and reads as an
-            // abandoned attempt to the reclaim machinery.
-            const finishedAtMs = yield* Clock.currentTimeMillis
-            const finished = yield* settleAttempt({
-              ...attemptId,
-              state: "failed",
-              finishedAtMs,
-              error: attemptPayload(persistCause(opened.cause)),
-              meta: { ...declarationMeta, hardViolation: true }
-            }, [
-              JournalRecords.hardViolation(attemptSource("hard-violation"), {
-                ...attemptId,
-                error: opened.cause
-              }),
-              JournalRecords.attemptFinished(attemptSource("finished"), { ...attemptId, state: "failed" })
-            ])
-            if (!finished) {
-              return yield* Effect.interrupt
-            }
-            return yield* Effect.failCause(opened.cause)
+            // typed refusal, not a crash: settle the attempt, or the row stays
+            // "running" and reads as an abandoned attempt to the reclaim
+            // machinery.
+            return yield* failBoundaryAttempt(opened.cause)
           }
           const sandbox = boundary === undefined || input.metadata === undefined
             ? undefined
@@ -2326,21 +2316,7 @@ export const make = (deps: Dependencies) => {
             1
           )
           if (settled !== undefined && Exit.isFailure(settled)) {
-            const failedAtMs = yield* Clock.currentTimeMillis
-            const finished = yield* settleAttempt({
-              ...attemptId,
-              state: "failed",
-              finishedAtMs: failedAtMs,
-              error: attemptPayload(persistCause(settled.cause)),
-              // Settlement, like preparation, runs only for sealed work; a
-              // compensable snapshot is therefore unreachable on this path.
-              meta: { ...declarationMeta, hardViolation: true }
-            }, [
-              JournalRecords.hardViolation(attemptSource("hard-violation"), { ...attemptId, error: settled.cause }),
-              JournalRecords.attemptFinished(attemptSource("finished"), { ...attemptId, state: "failed" })
-            ])
-            if (!finished) return yield* Effect.interrupt
-            return yield* Effect.failCause(settled.cause)
+            return yield* failBoundaryAttempt(settled.cause)
           }
           const settledEvidence = settled === undefined ? undefined : settled.value
           /**

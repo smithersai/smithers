@@ -688,6 +688,93 @@ describe("action executor failure paths", () => {
       expect(finished[0]!.payload).toMatchObject({ state: "failed" })
     }))
 
+  /**
+   * Preparation, sandbox open, and settlement are the three places a sealed
+   * attempt's boundary can refuse it, and all three are one durable
+   * transition: a failed row marked `hardViolation`, which is all the failed
+   * replay branch re-emits the violation from, then the hard-violation record
+   * and the failed finish. Under a lost fence none of it lands.
+   */
+  const boundaryRefusals = [
+    {
+      phase: "prepare",
+      boundary: () => StepBoundary.layerTest({ supported: false }),
+      refusal: "@smthrs/engine-store/UnsupportedBoundary"
+    },
+    {
+      phase: "sandbox-open",
+      boundary: () => Layer.mergeAll(StepBoundary.layerTest(), StepSandbox.layerNoop),
+      refusal: "@smthrs/engine-store/UnsupportedBoundary"
+    },
+    {
+      phase: "settle",
+      boundary: () =>
+        StepBoundary.layerTest({
+          failure: new StepBoundary.UndeclaredWrite({
+            code: "undeclared_write",
+            paths: ["undeclared.txt"],
+            diffIdentity: "test-diff"
+          })
+        }),
+      refusal: "@smthrs/engine-store/UndeclaredWrite"
+    }
+  ] as const
+
+  for (const { boundary, phase, refusal } of boundaryRefusals) {
+    const refuse = (runId: string, fenceLost: boolean) =>
+      run(
+        Effect.gen(function*() {
+          yield* activate(runId, ownerA)
+          const runs = yield* RunStore.RunStore
+          const attempts = yield* AttemptStore.AttemptStore
+          const steal: Notifying.Hook = (op, order, args) =>
+            fenceLost && op === "finish" && order === "before" &&
+              (args[0] as { readonly state: string }).state === "failed"
+              ? takeover(runs, runId, ownerB).pipe(Effect.orDie)
+              : Effect.void
+          const key = `failure/${runId}`
+          const exit = yield* executor({ runId, execute: () => Effect.succeed("value") })(input(key)).pipe(
+            Effect.provideService(AttemptStore.AttemptStore, Notifying.wrap(attempts, steal)),
+            Effect.forkChild({ startImmediately: true }),
+            Effect.flatMap(Fiber.await)
+          )
+          const row = yield* attempts.get({ runId, stepKeyDigest: sha256(key), attempt: 1 })
+          const events = yield* journalState(runId)
+          return { exit, row: Option.getOrThrow(row), events }
+        }),
+        boundary()
+      )
+
+    it.effect(`settles a ${phase} refusal as a failed hard-violation attempt and rethrows it`, () =>
+      Effect.gen(function*() {
+        const { events, exit, row } = yield* refuse(`${phase}-refused`, false)
+
+        const failure = Exit.isFailure(exit) ? Cause.squash(exit.cause) as { readonly _tag?: string } : {}
+        expect(failure._tag).toBe(refusal)
+        expect(row.state).toBe("failed")
+        expect(row.meta).toEqual({ tier: "sealed", hardViolation: true })
+        expect(row.error).toMatchObject({ reasons: [{ _tag: "Fail", error: { _tag: refusal } }] })
+        const eventTypes = events.map((event) => event.eventType)
+        expect(eventTypes.filter((type) => type === "flows.engine.hard-violation")).toHaveLength(1)
+        expect(eventTypes.filter((type) => type === "flows.engine.attempt-finished")).toHaveLength(1)
+        expect(events.slice(-2)).toMatchObject([
+          { eventType: "flows.engine.hard-violation" },
+          { eventType: "flows.engine.attempt-finished", payload: { state: "failed" } }
+        ])
+      }))
+
+    it.effect(`discards a ${phase} refusal's settlement when the fence is lost`, () =>
+      Effect.gen(function*() {
+        const { events, exit, row } = yield* refuse(`${phase}-fenced`, true)
+
+        expect(Exit.isFailure(exit) && Cause.hasInterruptsOnly(exit.cause)).toBe(true)
+        expect(row.state).toBe("running")
+        const eventTypes = events.map((event) => event.eventType)
+        expect(eventTypes).not.toContain("flows.engine.hard-violation")
+        expect(eventTypes).not.toContain("flows.engine.attempt-finished")
+      }))
+  }
+
   it.effect("fails with AttemptSuspended when the durable attempt row is suspended", () =>
     Effect.gen(function*() {
       const key = "failure/suspended"
