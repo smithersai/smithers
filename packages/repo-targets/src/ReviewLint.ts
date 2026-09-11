@@ -134,6 +134,9 @@ export interface Rubric {
 /**
  * Applies one rubric to one package's options.
  *
+ * It returns the declaration synchronously and runs no review. See "Failure
+ * contracts" in the package README for declaration and execution failures.
+ *
  * @category constructors
  * @since 0.1.0
  */

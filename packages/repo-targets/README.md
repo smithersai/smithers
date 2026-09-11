@@ -23,6 +23,22 @@ Root development dependencies make this package available to repository declarat
 
 `pnpm --filter @smthrs/repo-targets test` enforces 100% V8 coverage across `src/**`. Both required CI package selections reach its declared Vitest target, `//packages/repo-targets:test`. The suite checks the actual CLI discovery result and the target's runner configuration, so a declared test script alone cannot satisfy that contract.
 
+## Failure contracts
+
+Every macro returns its target declarations synchronously. Calling one never runs a review, a build, or a tool; the executor runs the emitted targets later, when a verb such as `smthrs review` or `ci` plans them.
+
+Declaration-time rejections happen while `PACKAGE.ts` loads:
+
+- TypeScript rejects a call without `cwd`, and a review whose `engine` is not `codex` but names no `model`.
+- The emitted target's constructor validates its attributes and throws an `Error` reading `<target> declaration at <site> is invalid: <reason>`. Examples: an empty review `model`, an `engine` outside LlmLint's engine set, or a non-integer `testTimeoutMs`.
+
+Execution failures belong to the emitted targets. The [`@smthrs/targets` error table](../smithers/build/targets/docs/reference/targets.md#errors) documents each one:
+
+- Review targets fail with `smithers-build/ClaudeCliMissing` when the engine CLI, `codex` by default, is not on the host. The tag is historical and covers every engine.
+- Review targets fail with `smithers-build/LlmReviewError` when a round fails in the `diff`, `read`, `review`, or `parse` phase.
+- Review targets fail with `smithers-build/FindingsError` when a finding meets the threshold: `error` for `ReviewTagsMigrationsAndKeys`, `warning` for `ReviewDocsAgainstCode` and `ReviewJsdocAgainstCode`. The error carries every finding.
+- `BuildAndCheckTypeScriptPackage` targets fail with `smithers-build/ExecError` when a tool such as `tsc`, Vitest, ESLint, dprint, or the circular script fails, and its `docs` target fails with `smithers-build/DocsParityError`.
+
 ## Bun tests in this repository
 
 Packages that must NOT declare this, and why:

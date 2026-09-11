@@ -245,4 +245,12 @@ describe("the macros pair the engine with the model id it runs", () => {
       ReviewDocsAgainstCode({ cwd: "packages/smithers/flows/journal", engine: "claude" })
     ).toBeFunction()
   })
+
+  it("rejects an empty model or an unknown engine at declaration time, as the README's failure contracts state", () => {
+    expect(() => ReviewJsdocAgainstCode({ cwd: "packages/smithers/flows/journal", model: "" }))
+      .toThrow(/declaration.* is invalid/)
+    expect(() =>
+      ReviewDocsAgainstCode({ cwd: "packages/smithers/flows/journal", engine: "gemini" as never, model: "m" })
+    ).toThrow(/declaration.* is invalid/)
+  })
 })

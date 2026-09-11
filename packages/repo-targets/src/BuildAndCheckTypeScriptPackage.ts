@@ -151,7 +151,9 @@ export interface PackageTargets {
  * `sources` and `entry` are separate options, as are `tests` and
  * `testSources`, because the published entry point is one file inside the
  * sources and because narrowing the suite one package runs must not narrow
- * what it typechecks or formats.
+ * what it typechecks or formats. The call returns declarations and runs no
+ * tool; see "Failure contracts" in the package README for declaration and
+ * execution failures.
  *
  * @category macros
  * @since 0.1.0

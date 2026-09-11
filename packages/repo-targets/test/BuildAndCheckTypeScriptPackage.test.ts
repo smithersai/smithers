@@ -415,3 +415,10 @@ describe("BuildAndCheckTypeScriptPackage option propagation", () => {
     expect(attrsOf<TsBuild.Attrs>(standard.lib).entries).toEqual([Input.file("src/index.ts")])
   })
 })
+
+describe("BuildAndCheckTypeScriptPackage declaration failures", () => {
+  it("rejects a non-integer testTimeoutMs at declaration time, as the README's failure contracts state", () => {
+    expect(() => BuildAndCheckTypeScriptPackage({ packageManager, cwd: "packages/smithers/flows/plan", testTimeoutMs: 1.5 }))
+      .toThrow(/declaration.* is invalid/)
+  })
+})

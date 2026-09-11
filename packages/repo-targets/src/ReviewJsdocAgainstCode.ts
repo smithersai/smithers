@@ -12,7 +12,9 @@ import type { Options, ReviewLint } from "./ReviewLint.ts"
  *
  * `include` defaults to `src/**\/*.ts`, and findings report at `warning` while
  * the rubric is tuned. Presence of JSDoc is already gated by eslint; this
- * rubric is about truthfulness alone.
+ * rubric is about truthfulness alone. The call returns a declaration and runs
+ * no review; see "Failure contracts" in the package README for declaration
+ * and execution failures.
  *
  * @example
  * ```ts

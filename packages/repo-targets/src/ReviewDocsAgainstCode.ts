@@ -17,7 +17,9 @@ import type { Options, ReviewLint } from "./ReviewLint.ts"
  * local prose is selected. Override `context` to opt into concept or guide
  * sections. Context crosses package boundaries and is read into every batch
  * whether or not it changed; the set must fit LlmLint's 2 MiB aggregate cap.
- * Findings report at `warning` while the rubric is tuned.
+ * Findings report at `warning` while the rubric is tuned. The call returns a
+ * declaration and runs no review; see "Failure contracts" in the package
+ * README for declaration and execution failures.
  *
  * @example
  * ```ts

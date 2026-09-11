@@ -14,7 +14,9 @@ import type { Options, ReviewLint } from "./ReviewLint.ts"
  * The rubric is written for a package that persists something: a store, a
  * journal, a cache, or a database driver. `include` defaults to `src/**`,
  * which already contains a `src/migrations` tree, and findings fail the
- * target at `error`.
+ * target at `error`. The call returns a declaration and runs no review; see
+ * "Failure contracts" in the package README for declaration and execution
+ * failures.
  *
  * @example
  * ```ts
