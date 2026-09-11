@@ -200,8 +200,26 @@ try {
   assert.match(refused, /exit:3/, "a workspace with no capture base exits 3")
   assert.match(refused, /predates the capture fix/, "the refusal says why")
   assert.equal(existsSync(join(temporary, "stale.patch")), false, "the refusal writes no patch")
+
+  // Mode cleanup drops only permission-bit sections; a rename or copy with no
+  // content hunks is still the agent's change.
+  const strip = (name, text) => {
+    const patchPath = join(temporary, `${name}.patch`)
+    writeFileSync(patchPath, text)
+    execFileSync("node", [join(root, "lib/strip-modes.mjs"), patchPath], { encoding: "utf8" })
+    return readFileSync(patchPath, "utf8")
+  }
+  const pureRename = "diff --git a/old.py b/new.py\nsimilarity index 100%\nrename from old.py\nrename to new.py\n"
+  assert.equal(strip("pure-rename", pureRename), pureRename, "a pure rename is kept")
+  const modeRename =
+    "diff --git a/old.py b/new.py\nold mode 100644\nnew mode 100755\nsimilarity index 100%\nrename from old.py\nrename to new.py\n"
+  assert.match(strip("mode-rename", modeRename), /^rename from old\.py\nrename to new\.py$/m, "a rename with a mode change keeps the rename")
+  const pureCopy = "diff --git a/old.py b/copy.py\nsimilarity index 100%\ncopy from old.py\ncopy to copy.py\n"
+  assert.equal(strip("pure-copy", pureCopy), pureCopy, "a pure copy is kept")
+  const modeOnly = "diff --git a/run.sh b/run.sh\nold mode 100644\nnew mode 100755\n"
+  assert.equal(strip("mode-only", modeOnly + pureRename), pureRename, "a pure mode change is dropped")
 } finally {
   rmSync(temporary, { recursive: true, force: true })
 }
 
-console.log("check-capture.mjs: 2 capture scenarios, 18 hostile-config scenarios and missing-ref refusal passed.")
+console.log("check-capture.mjs: 2 capture scenarios, 18 hostile-config scenarios, missing-ref refusal and mode cleanup passed.")

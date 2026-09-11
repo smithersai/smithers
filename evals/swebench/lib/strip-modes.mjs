@@ -21,7 +21,9 @@ const text = readFileSync(path, "utf8")
 const sections = text.split(/(?=^diff --git )/m).filter((section) => section.trim().length > 0)
 const kept = sections.filter((section) => {
   const body = section.split("\n").slice(1)
-  return body.some((line) => !/^(old mode |new mode |index |similarity |rename |diff --git |$)/.test(line))
+  // Rename, copy and similarity headers are changes even with no hunks, so only
+  // old/new mode (plus the index line and blanks) makes a section droppable.
+  return body.some((line) => !/^(old mode |new mode |index |$)/.test(line))
 })
 writeFileSync(path, kept.join(""))
 console.log(`${path}: ${sections.length} sections -> ${kept.length}`)
