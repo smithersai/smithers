@@ -5431,9 +5431,6 @@ importers:
       '@smthrs/control':
         specifier: 1.0.0-rc.0
         version: link:../control
-      '@smthrs/run-store':
-        specifier: 1.0.0-rc.0
-        version: link:../flows/run-store
       '@smthrs/sync':
         specifier: 1.0.0-rc.0
         version: link:../flows/sync
@@ -5474,6 +5471,9 @@ importers:
       '@smthrs/registry':
         specifier: 1.0.0-rc.0
         version: link:../agent/registry
+      '@smthrs/run-store':
+        specifier: 1.0.0-rc.0
+        version: link:../flows/run-store
       '@types/node':
         specifier: 26.4.1
         version: 26.4.1

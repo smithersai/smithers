@@ -35,7 +35,7 @@ const request = JSON.stringify({ _tag: "Request", id: 1, tag: "List", payload: {
 await Effect.runPromise(Effect.scoped(Effect.gen(function*() {
   for (const options of [{ host: "0.0.0.0" }, { host: "0.0.0.0", listen: true }]) {
     const refusal = yield* Layer.build(served(options)).pipe(Effect.flip)
-    assert.equal(refusal._tag, "flows/gateway/GatewayError"); if (refusal._tag !== "flows/gateway/GatewayError") throw refusal
+    assert.equal(refusal._tag, "@smthrs/gateway/GatewayError"); if (refusal._tag !== "@smthrs/gateway/GatewayError") throw refusal
     assert.equal(refusal.code, "bind_failed")
   }
   const context = yield* Layer.build(served({ host: "127.0.0.1", port: 0, credential: "test-bun-token" }))
@@ -44,7 +44,7 @@ await Effect.runPromise(Effect.scoped(Effect.gen(function*() {
   if (address._tag !== "TcpAddress") throw new Error("expected TCP")
   const url = `http://127.0.0.1:${address.port}`
   const bindFailure = yield* Layer.build(served({ host: "127.0.0.1", port: address.port, credential: "test-bun-token" })).pipe(Effect.flip)
-  assert.equal(bindFailure._tag, "flows/gateway/GatewayError"); if (bindFailure._tag !== "flows/gateway/GatewayError") throw bindFailure
+  assert.equal(bindFailure._tag, "@smthrs/gateway/GatewayError"); if (bindFailure._tag !== "@smthrs/gateway/GatewayError") throw bindFailure
   assert.equal(bindFailure.code, "bind_failed")
   yield* Effect.promise(async () => {
     assert.deepEqual(await (await fetch(`${url}/health`)).json(), health)

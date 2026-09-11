@@ -313,7 +313,7 @@ already applied, so a client rendering a run card calls neither. See
 | Export             | Signature                                                                 | Meaning                                                                                     |
 | ------------------ | ------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
 | `GatewayErrorCode` | nine literals                                                             | The whole failure vocabulary.                                                               |
-| `GatewayError`     | `Schema.TaggedError` tagged `flows/gateway/GatewayError`                  | `{ code, message, cause? }`, where `cause` is a `{ _tag, code? }` summary and nothing more. |
+| `GatewayError`     | `Schema.TaggedError` tagged `@smthrs/gateway/GatewayError`                | `{ code, message, cause? }`, where `cause` is a `{ _tag, code? }` summary and nothing more. |
 | `settingRefusal`   | `(name: string, value: number \| undefined) => GatewayError \| undefined` | The refusal a numeric setting earns when it is not a positive safe integer.                 |
 
 Every code is constructed by a real path, and the declared vocabulary is exactly
@@ -348,9 +348,9 @@ The host seam a supervisor would implement to recover abandoned work.
 | `Candidate`             | the union of the three                                                                                                   | A run supervision may recover or resume.                   |
 | `ResumeLease`           | `{ runId, claimant, candidate }`                                                                                         | A fenced request to resume one candidate.                  |
 | `ResumeErrorCode`       | `"claim_lost" \| "resume_failed"`                                                                                        | Stable resume failures.                                    |
-| `ResumeError`           | `Schema.TaggedError` tagged `flows/gateway/ResumeError`                                                                  | `{ code, message, cause }`.                                |
+| `ResumeError`           | `Schema.TaggedError` tagged `@smthrs/gateway/ResumeError`                                                                | `{ code, message, cause }`.                                |
 | `Service`               | `{ scan: (now: number) => Effect<ReadonlyArray<Candidate>>; resume: (lease: ResumeLease) => Effect<void, ResumeError> }` | Engine-facing supervision operations.                      |
-| `SuperviseRuntime`      | `Context.Service` tagged `flows/gateway/SuperviseRuntime`                                                                | The service tag.                                           |
+| `SuperviseRuntime`      | `Context.Service` tagged `@smthrs/gateway/SuperviseRuntime`                                                              | The service tag.                                           |
 | `make`                  | `(service: Service) => Service`                                                                                          | Constructs a supervision runtime.                          |
 | `makeNoop`              | `(overrides?: Partial<Service>) => Service`                                                                              | No candidates, successful resumes, overridable per member. |
 | `layerNoop`             | `(overrides?: Partial<Service>) => Layer<SuperviseRuntime>`                                                              | Provides that no-op.                                       |

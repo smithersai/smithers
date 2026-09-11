@@ -86,7 +86,7 @@ HTTP 200 carrying a `/control/Unauthorized` in the RPC frame.
 
 ```json
 {
-  "_tag": "flows/gateway/GatewayError",
+  "_tag": "@smthrs/gateway/GatewayError",
   "code": "unauthorized",
   "message": "A valid bearer credential is required"
 }
@@ -108,7 +108,7 @@ body under a 401 from the rest. The reasoning is in
 
 ```json
 {
-  "_tag": "flows/gateway/GatewayError",
+  "_tag": "@smthrs/gateway/GatewayError",
   "code": "malformed_request",
   "message": "POST /projections carries no RPC request message"
 }

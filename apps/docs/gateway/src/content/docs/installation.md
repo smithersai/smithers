@@ -36,9 +36,9 @@ adapter. A Node gateway host selects it explicitly:
 pnpm add effect@4.0.0-rc.112 @effect/platform-node@4.0.0-rc.112
 ```
 
-Three packages install with it as ordinary dependencies:
-[`@smthrs/control`](https://control.smithers.sh/reference/api/), [`@smthrs/sync`](https://smithers-sync.smithers.sh/reference/api/), and
-[`@smthrs/run-store`](https://run-store.smithers.sh/reference/api/). You do not name them separately to
+Two packages install with it as ordinary dependencies:
+[`@smthrs/control`](https://control.smithers.sh/reference/api/) and [`@smthrs/sync`](https://smithers-sync.smithers.sh/reference/api/).
+You do not name them separately to
 compile against this package's API. The guides that compose a full host or a
 test stack import more than that, and each says which packages it adds.
 

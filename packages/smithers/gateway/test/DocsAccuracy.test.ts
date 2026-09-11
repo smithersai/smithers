@@ -67,3 +67,39 @@ describe("the package docs", () => {
     expect(read(file)).not.toContain("—")
   })
 })
+
+/** Every TypeScript file under src/, relative to the package. */
+const srcSources = (): ReadonlyArray<string> =>
+  (Fs.readdirSync(Path.join(packageRoot, "src"), { recursive: true }) as Array<string>)
+    .filter((file) => file.endsWith(".ts"))
+    .map((file) => Path.join("src", file))
+
+describe("the package manifest and source references", () => {
+  it("installs a runtime dependency only when src imports it", () => {
+    const manifest = JSON.parse(read("package.json")) as { readonly dependencies: Record<string, string> }
+    // A type-only import is erased at build time and needs no installed package.
+    const imported = new Set(
+      srcSources().flatMap((file) =>
+        [
+          ...read(file).replaceAll(/(?:import|export) type [\s\S]*?from "[^"]*"/g, "").matchAll(
+            /from "(@[\w-]+\/[\w-]+|[\w-]+)[/"]/g
+          )
+        ].map((match) => match[1] as string)
+      )
+    )
+    expect(Object.keys(manifest.dependencies).filter((name) => !imported.has(name))).toEqual([])
+  })
+
+  it("cites only docs files that exist", () => {
+    for (const file of srcSources()) {
+      // Join JSDoc lines so a path wrapped across ` * ` continuations is read whole.
+      const prose = read(file).replaceAll(/\n\s*\* ?/g, "")
+      for (const match of prose.matchAll(/`(docs\/[\w./-]+\.md)`/g)) {
+        expect(Fs.existsSync(Path.join(packageRoot, match[1] as string)), `${file} cites ${match[1]}`).toBe(true)
+      }
+    }
+    const changelog = read("CHANGELOG.md")
+    expect(changelog).not.toContain("docs/Manifest.ts")
+    expect(changelog).not.toContain("docsPages")
+  })
+})

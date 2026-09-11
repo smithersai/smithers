@@ -11,8 +11,11 @@
 import type { ControlSchema } from "@smthrs/control"
 import { Schema } from "effect"
 import { describe, expect, it } from "vitest"
+import { GatewayError } from "../src/GatewayError.ts"
 import * as GatewayProjection from "../src/GatewayProjection.ts"
 import * as GatewaySchema from "../src/GatewaySchema.ts"
+import { Projections } from "../src/Projections.ts"
+import { ResumeError, SuperviseRuntime } from "../src/SuperviseRuntime.ts"
 
 const encode = <A, I, R>(schema: Schema.Codec<A, I, R>, value: A): unknown =>
   JSON.parse(JSON.stringify(Schema.encodeUnknownSync(schema)(value)))
@@ -218,5 +221,31 @@ describe("the encoded subscription frames", () => {
       },
       rows: []
     })
+  })
+})
+
+describe("the tag namespace", () => {
+  it("freezes a refusal body's tag", () => {
+    expect(encode(GatewayError, new GatewayError({ code: "unauthorized", message: "no" }))).toEqual({
+      _tag: "@smthrs/gateway/GatewayError",
+      code: "unauthorized",
+      message: "no"
+    })
+  })
+
+  it("freezes a resume failure's tag", () => {
+    expect(encode(ResumeError, new ResumeError({ code: "claim_lost", message: "lost", cause: null }))).toEqual({
+      _tag: "@smthrs/gateway/ResumeError",
+      code: "claim_lost",
+      message: "lost",
+      cause: null
+    })
+  })
+
+  it("spells every service tag under @smthrs/gateway/", () => {
+    expect([SuperviseRuntime.key, Projections.key]).toEqual([
+      "@smthrs/gateway/SuperviseRuntime",
+      "@smthrs/gateway/Projections"
+    ])
   })
 })

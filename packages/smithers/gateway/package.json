@@ -147,7 +147,6 @@
   },
   "dependencies": {
     "@smthrs/control": "1.0.0-rc.0",
-    "@smthrs/run-store": "1.0.0-rc.0",
     "@smthrs/sync": "1.0.0-rc.0",
     "@effect/platform-bun": "4.0.0-rc.112"
   },
@@ -164,6 +163,7 @@
     "@smthrs/kernel": "1.0.0-rc.0",
     "@smthrs/notifications": "1.0.0-rc.0",
     "@smthrs/registry": "1.0.0-rc.0",
+    "@smthrs/run-store": "1.0.0-rc.0",
     "@types/node": "26.4.1",
     "@vitest/coverage-v8": "4.1.9",
     "dprint": "0.57.1",

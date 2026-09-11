@@ -16,6 +16,12 @@
   `rowSchemaFor`, `ProjectionSnapshot`, `RowFrame`, and `DeltaFrame` from one
   selector-to-row table instead of five hand-kept lists. The wire format is
   unchanged.
+- Renamed the `GatewayError`, `ResumeError`, and `SuperviseRuntime` tags from
+  the retired `flows/gateway/` namespace to `@smthrs/gateway/`, the namespace
+  `Projections` already used. A refusal body now carries
+  `"_tag": "@smthrs/gateway/GatewayError"`.
+- `@smthrs/run-store` is no longer a runtime dependency. `SuperviseRuntime`
+  spells its two ownership shapes structurally.
 
 ### Removed
 
@@ -53,8 +59,8 @@
   `Projection.Subscribe`, and same-named type aliases for every public selector
   and frame schema, so a client decodes rows and resumes a subscription instead
   of casting and re-reading.
-- Added package-owned documentation: `docs/`, `docs/Manifest.ts`, and a `PACKAGE.ts`
-  `docsPages` target that writes and drift-checks `docs/pages/api/gateway.md`.
+- Added package-owned documentation under `docs/`, built and drift-checked by
+  the `PACKAGE.ts` `docs` and `docsFiles` targets.
 
 ### Changed
 

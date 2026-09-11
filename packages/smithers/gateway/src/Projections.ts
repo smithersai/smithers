@@ -42,7 +42,7 @@ import * as GatewaySchema from "./GatewaySchema.ts"
 /**
  * How often an idle subscription emits a keepalive frame.
  *
- * Plue's relay cuts an idle tunnel at 600 s (the deployed relay behavior), so a
+ * The Smithers Cloud relay cuts an idle tunnel at 600 s (the deployed relay behavior), so a
  * quiet run must produce a frame well inside that window or the connection is
  * dropped and every follower reconnects. Thirty seconds leaves twenty
  * heartbeats of margin.

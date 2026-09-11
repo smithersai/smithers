@@ -563,7 +563,7 @@ describe("a binary serialization through ingress on the Node adapter", () => {
       const response = yield* post(url, framed)
       expect(response.status).toBe(413)
       expect(yield* Effect.promise(() => response.json() as Promise<unknown>)).toEqual({
-        _tag: "flows/gateway/GatewayError",
+        _tag: "@smthrs/gateway/GatewayError",
         code: "request_too_large",
         message: `POST /rpc exceeds the ${framed.byteLength - 1}-byte request limit`
       })
@@ -684,7 +684,7 @@ describe("the assembled gateway over a real loopback bind", () => {
       const hostileHttp = yield* Effect.promise(() => postRpc(["Origin: https://evil.example"]))
       expect(hostileHttp.status).toBe(403)
       expect(JSON.parse(hostileHttp.body)).toEqual({
-        _tag: "flows/gateway/GatewayError",
+        _tag: "@smthrs/gateway/GatewayError",
         code: "invalid_origin",
         message: "The browser Origin must match an allowed gateway Host"
       })
@@ -715,7 +715,7 @@ describe("the assembled gateway over a real loopback bind", () => {
       const foreignHost = yield* Effect.promise(() => postRpc(["Host: gateway.example"]))
       expect(foreignHost.status).toBe(421)
       expect(JSON.parse(foreignHost.body)).toEqual({
-        _tag: "flows/gateway/GatewayError",
+        _tag: "@smthrs/gateway/GatewayError",
         code: "invalid_host",
         message: "This gateway does not allow the supplied Host value"
       })
@@ -775,7 +775,7 @@ describe("the assembled gateway over a real loopback bind", () => {
 
         expect(response.status).toBe(400)
         expect(yield* Effect.promise(() => response.json() as Promise<unknown>)).toEqual({
-          _tag: "flows/gateway/GatewayError",
+          _tag: "@smthrs/gateway/GatewayError",
           code: "malformed_request",
           message: "POST /rpc carries no RPC request message"
         })
@@ -1226,7 +1226,7 @@ describe("the assembled gateway over a real loopback bind", () => {
         })
       )
       expect(yield* Effect.promise(() => refused.json() as Promise<unknown>)).toEqual({
-        _tag: "flows/gateway/GatewayError",
+        _tag: "@smthrs/gateway/GatewayError",
         code: "malformed_request",
         message: "POST /projections carries no RPC request message"
       })
@@ -1250,7 +1250,7 @@ describe("the assembled gateway over a real loopback bind", () => {
         )
         expect([path, response.status]).toEqual([path, 401])
         expect([path, JSON.parse(response.body) as unknown]).toEqual([path, {
-          _tag: "flows/gateway/GatewayError",
+          _tag: "@smthrs/gateway/GatewayError",
           code: "unauthorized",
           message: "A valid bearer credential is required"
         }])

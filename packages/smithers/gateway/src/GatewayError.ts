@@ -37,7 +37,7 @@ export type GatewayErrorCode = typeof GatewayErrorCode.Type
  * @since 0.1.0
  * @category errors
  */
-export class GatewayError extends Schema.TaggedError<GatewayError>()("flows/gateway/GatewayError", {
+export class GatewayError extends Schema.TaggedError<GatewayError>()("@smthrs/gateway/GatewayError", {
   code: GatewayErrorCode,
   message: Schema.String,
   cause: Schema.optional(Schema.Struct({
