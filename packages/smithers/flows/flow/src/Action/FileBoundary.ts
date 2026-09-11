@@ -23,7 +23,14 @@ import { FileInput } from "./FileInput.ts"
  * @since 0.1.0
  */
 export const FileBoundary = Schema.Struct({
-  /** Exact files already measured, or globs to expand while preparing. */
+  /**
+   * Exact files already measured, or globs to expand while preparing.
+   *
+   * Workspace-relative in both forms: a measured {@link FileInput} path is
+   * checked like every pattern, because the engine measures reads inside the
+   * workspace sandbox and would refuse an absolute or upward path only at
+   * prepare time.
+   */
   readSet: Schema.Array(Schema.Union([FileInput, FileSet.Glob])),
   /** Files or patterns the action is allowed to write. */
   writeSet: Schema.Array(FileSet.Entry),

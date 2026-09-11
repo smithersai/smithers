@@ -9,17 +9,25 @@
  *
  * @since 0.1.0
  */
+import * as FileSet from "@smthrs/plan/FileSet"
 import * as Schema from "effect/Schema"
 
 /**
  * Schema for an input file path paired with its measured content digest.
  *
+ * The path is workspace-relative like every other declared path in a
+ * {@link FileBoundary}: the engine measures reads through the workspace
+ * sandbox, which refuses absolute and upward spellings, so a boundary that
+ * admitted them here would only be refused later, at prepare or replay.
+ * Checking here keeps the boundary this package admits the boundary the
+ * engine accepts.
+ *
  * @category models
  * @since 0.1.0
  */
 export const FileInput = Schema.Struct({
-  /** Non-empty path of the input file. */
-  path: Schema.NonEmptyString,
+  /** Workspace-relative path of the input file. */
+  path: FileSet.Pattern,
   /** Non-empty digest observed for the file contents. */
   digest: Schema.NonEmptyString
 })

@@ -63,7 +63,7 @@ that boundary into the key rather than trusting a caller-supplied field:
 
 | Field          | Meaning                                                                                                                                   |
 | -------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
-| `readSet`      | Exact files already measured (`Action.FileInput`, a path plus its content digest), or globs to expand while preparing.                    |
+| `readSet`      | Exact files already measured (`Action.FileInput`, a workspace-relative path plus its content digest), or globs to expand while preparing. |
 | `writeSet`     | The files or patterns the action may write.                                                                                               |
 | `removes`      | The paths the action may delete. Optional, empty by default, and disjoint from `writeSet`: a path cannot be both promised and disclaimed. |
 | `boundaryMode` | `hard` rejects undeclared access immediately. `expected` validates it later.                                                              |

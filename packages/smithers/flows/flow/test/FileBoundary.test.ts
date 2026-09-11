@@ -22,11 +22,9 @@ const expectSchemaFailure = (input: unknown) => {
 }
 
 describe("FileBoundary", () => {
-  it("accepts nonempty measured-file spellings while Pattern fields stay workspace-relative", () => {
+  it("accepts workspace-relative measured-file spellings alongside Pattern fields", () => {
     const measured = decode({
       readSet: [
-        { path: "/absolute/input", digest: "a" },
-        { path: "../measured/input", digest: "b" },
         { path: "src\\windows.ts", digest: "c" },
         { path: "资料/输入.ts", digest: "d" },
         { path: "资料/输入.ts", digest: "d" }
@@ -44,6 +42,9 @@ describe("FileBoundary", () => {
       expectSchemaFailure({ readSet, writeSet: [], boundaryMode: "hard" })
     }
     for (const path of ["", "/absolute", "C:\\absolute", ".", "..", "a/./b", "a/../b", "a//b"]) {
+      // A measured read is a declared path like any other: the sandbox refuses
+      // these spellings at prepare time, so the boundary refuses them up front.
+      expectSchemaFailure({ readSet: [{ path, digest: "x" }], writeSet: [], boundaryMode: "hard" })
       expectSchemaFailure({ readSet: [], writeSet: [path], boundaryMode: "hard" })
       expectSchemaFailure({ readSet: [], writeSet: [], removes: [path], boundaryMode: "hard" })
       expectSchemaFailure({
