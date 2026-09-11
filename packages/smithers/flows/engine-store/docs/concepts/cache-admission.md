@@ -185,6 +185,13 @@ also wrote a shared HTTP tier would put a network round trip inside a write
 transaction, blocking every other writer for its duration and rolling the local
 row back whenever a shared cache was unreachable.
 
+The ordering makes a shared tier consistent, not trustworthy. A hit replays the
+entry's evidence into the workspace, writing its outputs and deleting its
+`digest: null` paths, and every check that runs is against digests the same
+entry recorded. Only producers you trust as much as your own machines may write
+to the shared tier. See
+[Trust every writer of the shared tier](../guides/share-a-cache-across-machines.md#trust-every-writer-of-the-shared-tier).
+
 ## Neither publication step can fail a run
 
 Both run after `attempts.finish`, so the result is already durably recorded on

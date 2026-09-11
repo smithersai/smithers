@@ -10,6 +10,28 @@ By default a recorded step result is local. Two seams turn it into a shared one:
 publishes the result entry itself. Both are absent by default, which is what
 keeps a purely local engine free of any remote-cache machinery.
 
+## Trust every writer of the shared tier
+
+A shared step-result tier is trusted to write into your workspace. A hit
+replays the entry's boundary evidence through `StepBoundary.replayOutputs`: it
+writes each recorded output, deletes each path recorded with `digest: null`,
+and prunes files under a recorded tree that the entry does not list. The
+integrity checks are self-consistent, not authenticating: inline bytes are
+checked against the digest recorded in the same entry, and blobs against their
+own address. Replay refuses paths outside the workspace, but inside it an entry
+chooses both the path and the content that lands on every machine that hits it.
+
+Only producers you trust as much as your own machines may write to the tier.
+This is the trust model of Bazel's remote cache.
+
+- Give consumers read-only credentials, and grant write access only to the
+  machines whose results you would run anyway, such as CI.
+- Use a separate tier per tenant or trust level rather than one tier shared
+  across them.
+
+A stronger property, accepting entries only from named producers, needs signed
+provenance on the entry. Another digest check cannot provide it.
+
 ## Publish artifacts before entries
 
 Provide `ArtifactSync` with a shared `ArtifactStore`. The two tiers cannot both

@@ -26,6 +26,18 @@ describe("documentation contracts", () => {
     expect(api).not.toContain("retains the existing unbounded path and is not covered by this conflict check")
   })
 
+  it("states that a shared step-result tier is trusted to write into the workspace", () => {
+    const guide = readDoc("guides/share-a-cache-across-machines.md").replace(/\s+/g, " ")
+    expect(guide).toContain("## Trust every writer of the shared tier")
+    expect(guide).toContain("A shared step-result tier is trusted to write into your workspace")
+    expect(guide).toContain("Only producers you trust as much as your own machines may write to the tier")
+    expect(guide).toContain("read-only credentials")
+    expect(guide).toContain("signed provenance")
+    const admission = readDoc("concepts/cache-admission.md").replace(/\s+/g, " ")
+    expect(admission).toContain("Only producers you trust as much as your own machines may write to the shared tier")
+    expect(admission).toContain("../guides/share-a-cache-across-machines.md#trust-every-writer-of-the-shared-tier")
+  })
+
   it("assembles the quickstart snippets without duplicate import bindings", () => {
     const blocks = [...readDoc("quickstart.md").matchAll(/^```ts\n([\s\S]*?)^```/gm)]
     expect(blocks.length).toBeGreaterThan(1)
