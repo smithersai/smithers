@@ -119,6 +119,22 @@ describe("a run whose failure the flow's own codec cannot encode", () => {
       expect(projected?.reasons[0]?.error?.message).toBe("You have no credits remaining")
     }))
 
+  it("redacts credentials in the projected message and stack", () => {
+    const token = "ghs_A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q7r8"
+    const remote = `https://x-access-token:${token}@github.com/acme/private.git/`
+    const projected = ExitEncoding.projectValue({
+      _tag: "GitCloneFailed",
+      message: `fatal: unable to access '${remote}': 403`,
+      stack: `GitCloneFailed: fatal\n    at clone (${remote})`
+    })
+
+    expect(JSON.stringify(projected)).not.toContain(token)
+    expect(projected.message).toBe(
+      "fatal: unable to access 'https://x-access-token:[REDACTED]@github.com/acme/private.git/': 403"
+    )
+    expect(ExitEncoding.projectValue(`clone ${remote}`).message).not.toContain(token)
+  })
+
   it.effect("answers the waiting caller the projected failure rather than a suspension", () =>
     Effect.gen(function*() {
       // Before the fix the drain died, `poll` found no result on the row, and

@@ -532,6 +532,37 @@ describe("action executor failure paths", () => {
       })
     }))
 
+  /**
+   * A git or HTTP failure message embeds the remote URL, credentials included.
+   * `message` and `stack` are observability text, so the journal's redaction
+   * rules run over them on write; the typed `_tag` replay classifies on stays.
+   */
+  it.effect("redacts credentials in a failure message and stack before the row is written", () =>
+    Effect.gen(function*() {
+      const token = "ghs_A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q7r8"
+      const remote = `https://x-access-token:${token}@github.com/acme/private.git/`
+      const error = {
+        _tag: "GitCloneFailed",
+        message: `fatal: unable to access '${remote}': 403`,
+        stack: `GitCloneFailed: fatal\n    at clone (${remote})`
+      }
+
+      const result = yield* settleCause("redacted-failure-text", Cause.fail(error))
+
+      const row = Option.getOrThrow(result.row)
+      expect(row.state).toBe("failed")
+      expect(JSON.stringify(row.error)).not.toContain(token)
+      expect(row.error).toMatchObject({
+        reasons: [{
+          _tag: "Fail",
+          error: {
+            _tag: "GitCloneFailed",
+            message: "fatal: unable to access 'https://x-access-token:[REDACTED]@github.com/acme/private.git/': 403"
+          }
+        }]
+      })
+    }))
+
   it.effect("rejects ill-formed string values and keys before store admission", () =>
     Effect.gen(function*() {
       const keyedDefect: Record<string, unknown> = {}

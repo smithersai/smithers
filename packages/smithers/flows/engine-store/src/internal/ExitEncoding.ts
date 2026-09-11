@@ -38,6 +38,7 @@
  * @since 0.1.0
  */
 import { Flow } from "@smthrs/flow"
+import { Redaction } from "@smthrs/journal"
 import type * as Cause from "effect/Cause"
 import * as Effect from "effect/Effect"
 import * as Exit from "effect/Exit"
@@ -169,6 +170,16 @@ export interface EncodedResult {
 const truncate = (value: string, limit: number): string => value.length <= limit ? value : `${value.slice(0, limit)}…`
 
 /**
+ * Bounds one projected message or stack after the journal's redaction rules.
+ *
+ * The projection is observability text in `flows_runs.state_json`, and a git or
+ * HTTP failure message embeds its remote URL, credentials included. Redaction
+ * runs before truncation so a cut cannot leave half a credential the rules no
+ * longer match.
+ */
+const redactedText = (value: string): string => truncate(Redaction.redact(value) as string, maxTextLength)
+
+/**
  * Renders any value as a bounded string without raising.
  *
  * `JSON.stringify` answers `undefined` for a function, a symbol, and
@@ -221,7 +232,7 @@ export const projectValue = (value: unknown, depth = 0, seen = new WeakSet<objec
   if (value === null || typeof value !== "object") {
     return {
       type: value === null ? "null" : typeof value,
-      message: truncate(text(value), maxTextLength)
+      message: redactedText(text(value))
     }
   }
   // Generic Proxy introspection is observable user code. A host that can name
@@ -249,14 +260,14 @@ export const projectValue = (value: unknown, depth = 0, seen = new WeakSet<objec
         : Array.isArray(value)
         ? "Array"
         : "object",
-      message: truncate(typeof message === "string" ? message : text(value), maxTextLength)
+      message: redactedText(typeof message === "string" ? message : text(value))
     }
     if (typeof tag === "string") projection.tag = truncate(tag, maxTextLength)
     if (typeof code === "string") projection.code = truncate(code, maxTextLength)
     // Native Error stacks are commonly accessors. They remain deliberately
     // unread; only an already-materialized own data string is retained.
     if (typeof stack === "string") {
-      projection.stack = truncate(stack.split("\n").slice(0, maxStackLines).join("\n"), maxTextLength)
+      projection.stack = redactedText(stack.split("\n").slice(0, maxStackLines).join("\n"))
     }
     if (cause !== undefined && depth < maxCauseDepth) {
       projection.cause = projectValue(cause, depth + 1, seen)

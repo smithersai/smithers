@@ -39,6 +39,22 @@ values were schema-encoded before persistence, so a `_tag` survives the JSON
 round trip and a `RetryPolicy`'s non-retryable matching still applies on
 replay.
 
+## Which columns are redacted
+
+Attempt and run rows share a database with the journal, so failure text meets
+the journal's redaction rules (`Redaction.defaultRules`) on write. Only text
+that replay never classifies on is rewritten:
+
+| Column                        | Redacted                                                                                                 |
+| ----------------------------- | -------------------------------------------------------------------------------------------------------- |
+| `flows_attempts.error_json`   | String `message` and `stack` members of each persisted reason. `_tag` and every other member stay exact. |
+| `flows_runs.state_json`       | The `message` and `stack` text of an unencodable-settlement projection.                                  |
+| `flows_attempts.outcome_json` | Never. It is the executable copy replay returns, byte for byte.                                          |
+
+A redacted failure still replays as the same typed failure, because
+`RetryPolicy` matches on `_tag`. A value that must never reach `outcome_json`
+belongs in a `Redacted` field of the action's own success schema.
+
 ## Admission is exclusive per key
 
 Attempt admission holds one mutex per store incarnation, shared by every

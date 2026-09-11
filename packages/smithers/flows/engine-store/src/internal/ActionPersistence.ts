@@ -12,7 +12,7 @@ import { FlowEngine } from "@smthrs/engine"
 import { Action, FlowRuntime } from "@smthrs/flow"
 import * as CacheEnvironment from "@smthrs/flow/CacheEnvironment"
 import type { FileBoundary } from "@smthrs/flow/FileBoundary"
-import { Journal, type JournalEvent } from "@smthrs/journal"
+import { Journal, type JournalEvent, Redaction } from "@smthrs/journal"
 import { Jj } from "@smthrs/kernel"
 import { DerivedKey } from "@smthrs/keys"
 import { AttemptStore, Ownership, RunStore } from "@smthrs/run-store"
@@ -582,7 +582,14 @@ const inertJson = (value: unknown, budget: InertJsonBudget): unknown => {
             if ((!descriptor.enumerable && !(key === "message" && conflictMessage)) || !("value" in descriptor)) {
               continue
             }
-            const reduced = reduce(descriptor.value, depth + 1)
+            // `message` and `stack` are observability text, never a field replay
+            // classifies on, and a git or HTTP failure embeds its remote URL,
+            // credentials included. They meet the journal's own rules; every
+            // other member, `_tag` included, stays byte-exact for replay.
+            const member = (key === "message" || key === "stack") && typeof descriptor.value === "string"
+              ? Redaction.redact(descriptor.value)
+              : descriptor.value
+            const reduced = reduce(member, depth + 1)
             if (reduced === inertJsonRejected) return inertJsonRejected
             if (reduced === inertJsonOmitted) continue
             Object.defineProperty(output, key, {
