@@ -724,16 +724,6 @@ const findingsArray = (text: string): unknown => {
   return candidate
 }
 
-/** Extracts the findings candidate from one claude CLI JSON envelope. */
-const extractClaudeCandidate = (stdout: string): unknown => {
-  const envelope: unknown = JSON.parse(stdout)
-  if (typeof envelope === "object" && envelope !== null && "result" in envelope) {
-    const result = (envelope as { readonly result: unknown }).result
-    if (typeof result === "string") return findingsArray(result)
-  }
-  throw new Error(`unexpected claude CLI output: ${snippet(stdout)}`)
-}
-
 /** Reads the text of one valid codex `agent_message` JSONL event, if present. */
 const agentMessage = (text: string): string | undefined => {
   const event: unknown = JSON.parse(text)
@@ -750,29 +740,7 @@ const agentMessage = (text: string): string | undefined => {
   return typed.type === "agent_message" && typeof typed.text === "string" ? typed.text : undefined
 }
 
-/**
- * Extracts the findings candidate from the codex CLI JSONL event stream.
- *
- * `codex exec --json` prints one JSON event per line. The final answer is the
- * last `item.completed` event carrying an `agent_message` item. A malformed
- * line fails the protocol instead of being silently discarded.
- */
-const extractCodexCandidate = (stdout: string): unknown => {
-  let last: string | undefined
-  for (const line of stdout.split("\n").filter((entry) => entry !== "")) {
-    const text = agentMessage(line)
-    if (text !== undefined) last = text
-  }
-  if (last === undefined) throw new Error(`unexpected codex CLI output: ${snippet(stdout)}`)
-  return findingsArray(last)
-}
-
-/**
- * Extracts the answer text from one claude CLI JSON envelope.
- *
- * The findings path parses that text into an array. A caller that asked the
- * model for something other than findings needs the text itself.
- */
+/** Extracts the answer text from one claude CLI JSON envelope. */
 const extractClaudeText = (stdout: string): string => {
   const envelope: unknown = JSON.parse(stdout)
   if (typeof envelope === "object" && envelope !== null && "result" in envelope) {
@@ -782,7 +750,13 @@ const extractClaudeText = (stdout: string): string => {
   throw new Error(`unexpected claude CLI output: ${snippet(stdout)}`)
 }
 
-/** Extracts the last codex `agent_message` text from the JSONL event stream. */
+/**
+ * Extracts the answer text from the codex CLI JSONL event stream.
+ *
+ * `codex exec --json` prints one JSON event per line. The final answer is the
+ * last `item.completed` event carrying an `agent_message` item. A malformed
+ * line fails the protocol instead of being silently discarded.
+ */
 const extractCodexText = (stdout: string): string => {
   let last: string | undefined
   for (const line of stdout.split("\n").filter((entry) => entry !== "")) {
@@ -797,7 +771,6 @@ const extractCodexText = (stdout: string): string => {
 interface EngineAdapter {
   readonly executable: string
   readonly args: (model: string) => ReadonlyArray<string>
-  readonly candidate: (stdout: string) => unknown
   readonly text: (stdout: string) => string
 }
 
@@ -823,7 +796,6 @@ const adapters: Record<Engine, EngineAdapter> = {
       "",
       "--no-chrome"
     ],
-    candidate: extractClaudeCandidate,
     text: extractClaudeText
   },
   codex: {
@@ -842,7 +814,6 @@ const adapters: Record<Engine, EngineAdapter> = {
       model,
       "-"
     ],
-    candidate: extractCodexCandidate,
     text: extractCodexText
   }
 }
@@ -966,32 +937,37 @@ export const promptEngine = (
           try: (signal) => runtimeOptions(options, validated.engine, signal),
           catch: (cause) => new LlmReviewError({ phase: "review", message: failureMessage(cause) })
         }),
-        (runtime) =>
-          spawnText(
-            runtime.workspaceRoot,
-            runtime.executable,
-            adapters[validated.engine].args(validated.model),
-            {
-              stdin: validated.prompt,
-              stdoutBytes: maximumModelOutputBytes,
-              timeoutMs: runtime.timeoutMs,
-              sensitiveEnv: runtime.sensitiveEnv,
-              git: false
-            }
-          ).pipe(
-            Effect.map((output) => ({ output, runtime, engine: validated.engine }))
-          )
+        (runtime) => invokeEngine(runtime, validated.engine, validated.model, validated.prompt)
       )
-  ).pipe(
+  )
+}
+
+/**
+ * Spawns one engine CLI with a prompt and extracts its answer text.
+ *
+ * The single model invocation behind {@link promptEngine} and {@link review}:
+ * output bound, deadline, missing-executable mapping, exit status, and the
+ * engine's envelope all live here.
+ */
+const invokeEngine = (
+  runtime: RuntimeOptions,
+  engine: Engine,
+  model: string,
+  prompt: string
+): Effect.Effect<string, ClaudeCliMissing | LlmReviewError> =>
+  spawnText(runtime.workspaceRoot, runtime.executable, adapters[engine].args(model), {
+    stdin: prompt,
+    stdoutBytes: maximumModelOutputBytes,
+    timeoutMs: runtime.timeoutMs,
+    sensitiveEnv: runtime.sensitiveEnv,
+    git: false
+  }).pipe(
     Effect.mapError((error) =>
       SafeFs.errorCode(error) === "ENOENT"
-        ? new ClaudeCliMissing({
-          executable: options.executable ?? adapters[request.engine]?.executable ?? "model CLI",
-          message: failureMessage(error)
-        })
+        ? new ClaudeCliMissing({ executable: runtime.executable, message: failureMessage(error) })
         : new LlmReviewError({ phase: "review", message: failureMessage(error) })
     ),
-    Effect.flatMap(({ engine, output, runtime }) =>
+    Effect.flatMap((output) =>
       output.exitCode === 0
         ? Effect.try({
           try: () => adapters[engine].text(output.stdout),
@@ -1005,19 +981,15 @@ export const promptEngine = (
         )
     )
   )
-}
 
 const decodeFindings = Schema.decodeUnknownEffect(
   Schema.Array(Finding).check(Schema.isMaxLength(maximumFindings))
 )
 
-/** Parses one engine CLI response into decoded findings. */
-const parseFindings = (
-  engine: Engine,
-  stdout: string
-): Effect.Effect<ReadonlyArray<Finding>, LlmReviewError> =>
+/** Parses one model answer into decoded findings. */
+const parseFindings = (text: string): Effect.Effect<ReadonlyArray<Finding>, LlmReviewError> =>
   Effect.try({
-    try: () => adapters[engine].candidate(stdout),
+    try: () => findingsArray(text),
     catch: (cause) => new LlmReviewError({ phase: "parse", message: failureMessage(cause) })
   }).pipe(
     Effect.flatMap((candidate) =>
@@ -1039,35 +1011,9 @@ const reviewBatch = (
       try: () => renderPrompt(payload, batch, context),
       catch: (cause) => new LlmReviewError({ phase: "review", message: failureMessage(cause) })
     }),
-    (prompt) =>
-      spawnText(
-        runtime.workspaceRoot,
-        runtime.executable,
-        adapters[payload.engine].args(payload.model),
-        {
-          stdin: prompt,
-          stdoutBytes: maximumModelOutputBytes,
-          timeoutMs: runtime.timeoutMs,
-          sensitiveEnv: runtime.sensitiveEnv,
-          git: false
-        }
-      )
+    (prompt) => invokeEngine(runtime, payload.engine, payload.model, prompt)
   ).pipe(
-    Effect.mapError((error) =>
-      SafeFs.errorCode(error) === "ENOENT"
-        ? new ClaudeCliMissing({ executable: runtime.executable, message: failureMessage(error) })
-        : new LlmReviewError({ phase: "review", message: failureMessage(error) })
-    ),
-    Effect.flatMap((output) =>
-      output.exitCode === 0
-        ? parseFindings(payload.engine, output.stdout)
-        : Effect.fail(
-          new LlmReviewError({
-            phase: "review",
-            message: `${runtime.executable} exited ${output.exitCode}: ${stderrTail(output.stderr)}`
-          })
-        )
-    ),
+    Effect.flatMap(parseFindings),
     Effect.flatMap((findings) =>
       Effect.try({
         try: () => {

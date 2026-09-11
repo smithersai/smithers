@@ -1102,6 +1102,21 @@ describe("LlmLint.promptEngine protocol boundary", () => {
     expect(message).not.toContain("x".repeat(250))
   })
 
+  it("surfaces the same failure as review for a missing executable and a non-zero exit", async () => {
+    await write("src/a.ts", "export const a = 3\n")
+    const refusing = await shellCli("prompt-parity-refusal", "printf 'fake engine: not logged in' >&2\nexit 5")
+    for (const executable of [NodePath.join(root, "absent-cli"), refusing]) {
+      const prompted = await Effect.runPromise(Effect.flip(LlmLint.promptEngine(
+        { workspaceRoot: root, executable },
+        { engine: "claude", model: "model", prompt: "prompt" }
+      )))
+      const reviewed = await Effect.runPromise(
+        Effect.flip(LlmLint.review({ workspaceRoot: root, executable }, payload()))
+      )
+      expect(prompted).toEqual(reviewed)
+    }
+  })
+
   it("rejects unusable request and runtime options before spawning", async () => {
     const cli = await fakeCli("prompt-unused", JSON.stringify({ result: "answer" }))
     const cases: ReadonlyArray<
