@@ -25,7 +25,7 @@ import { dual } from "effect/Function"
 import * as Option from "effect/Option"
 import * as Schema from "effect/Schema"
 import * as SchemaGetter from "effect/SchemaGetter"
-import type * as Action from "./Action/index.ts"
+import { CurrentAttempt } from "./Action/Context.ts"
 import * as Flow from "./Flow/index.ts"
 import { FlowInstance } from "./FlowRuntime/FlowInstance.ts"
 import { FlowRuntime } from "./FlowRuntime/FlowRuntime.ts"
@@ -116,11 +116,6 @@ export const make = <
     })
   }
 }
-
-const CurrentAttempt = Context.Reference<number>(
-  "@smthrs/flow/Action/CurrentAttempt" satisfies typeof Action.CurrentAttempt.key,
-  { defaultValue: () => 1 }
-)
 
 const await_: <Success extends Schema.Constraint, Error extends Schema.Constraint>(
   self: DurableDeferred<Success, Error>
@@ -440,7 +435,7 @@ export class TokenParsed extends Schema.Class<TokenParsed>(
 
 const maxTokenExcerptChars = 64
 
-/** Renders a bounded, non-secret token excerpt for a parse failure. */
+/** Renders a bounded excerpt of untrusted token content for a diagnostic. */
 const tokenExcerpt = (token: string): string =>
   token.length <= maxTokenExcerptChars
     ? token
@@ -504,9 +499,12 @@ export const tokenFromExecutionId: {
  * Creates a durable deferred token by deriving the flow execution ID from
  * the supplied flow payload.
  *
- * The flow must declare `idempotencyKey` so the payload deterministically
- * identifies an execution. Without it, the default execution-id source dies.
- * For an explicitly named execution, use {@link tokenFromExecutionId} instead.
+ * The payload identifies a previously started execution only when the flow
+ * declares `idempotencyKey` or the host installs the opt-in `derived`
+ * execution-id source. Otherwise the default `fresh` source mints a new
+ * execution ID on every call, so the token addresses no earlier run. To
+ * complete an existing execution without stable identity, keep its execution
+ * ID and use {@link tokenFromExecutionId}.
  *
  * @category token
  * @since 0.1.0
@@ -596,7 +594,7 @@ export const done: {
       return yield* Effect.fail(
         new TokenInvalid({
           code: "deferred_mismatch",
-          message: `The token addresses deferred "${token.deferredName}", but it was submitted through ` +
+          message: `The token addresses deferred "${tokenExcerpt(token.deferredName)}", but it was submitted through ` +
             `deferred "${self.name}".`
         })
       )

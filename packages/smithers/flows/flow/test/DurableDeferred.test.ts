@@ -176,6 +176,25 @@ describe("DurableDeferred", () => {
     }).pipe(Effect.provide(layerWired(Layer.empty)))
   })
 
+  effect("deferred mismatch diagnostics bound the token's deferred name", () =>
+    Effect.gen(function*() {
+      const deferredName = "x".repeat(1024 * 1024)
+      const token = new DurableDeferred.TokenParsed({
+        flowName: "DurableDeferred/Bound/Flow",
+        executionId: "bound",
+        deferredName
+      }).asToken
+      const failure = yield* DurableDeferred.done(Gate, {
+        token,
+        exit: Exit.succeed("ignored")
+      }).pipe(Effect.flip)
+
+      expect(failure.code).toBe("deferred_mismatch")
+      expect(failure.message).toContain(Gate.name)
+      expect(failure.message).toContain(`${deferredName.length - 64} characters dropped`)
+      expect(failure.message.length).toBeLessThan(256)
+    }).pipe(Effect.provide(layerWired(Layer.empty))))
+
   effect("registers an awaited deferred before reading its result", () => {
     const flow = Flow.make("DurableDeferred/registration", {
       payload: {},
@@ -219,6 +238,23 @@ describe("DurableDeferred", () => {
       )
       expect(fromPayload).toBe(fromInstance)
       expect(DurableDeferred.TokenParsed.fromString(fromPayload).deferredName).toBe(Gate.name)
+    })
+  })
+
+  effect("tokenFromPayload mints a fresh execution id for a flow without idempotencyKey", () => {
+    const flow = Flow.make("DurableDeferred/token-payload-unkeyed", {
+      payload: { id: Schema.String },
+      success: Schema.Void,
+      body: () => Node.succeed(undefined)
+    })
+    return Effect.gen(function*() {
+      const first = yield* DurableDeferred.tokenFromPayload(Gate, { flow, payload: { id: "abc" } })
+      const second = yield* DurableDeferred.tokenFromPayload(Gate, { flow, payload: { id: "abc" } })
+      // The same payload addresses a new execution on every call, so a
+      // resolver must keep the original execution id.
+      expect(DurableDeferred.TokenParsed.fromString(first).executionId).not.toBe(
+        DurableDeferred.TokenParsed.fromString(second).executionId
+      )
     })
   })
 
