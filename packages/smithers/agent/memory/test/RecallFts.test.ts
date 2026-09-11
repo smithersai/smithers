@@ -75,6 +75,18 @@ describe("RecallFts", () => {
     expect(Fts.literalFtsQuery(" \0 ")).toBe("")
   })
 
+  it("orders a key tied across banks by bank, independent of the request's bank order", async () => {
+    const result = await Effect.runPromise(
+      Fts.recall({ banks: ["zeta", "alpha"], query: "alpha" }).pipe(
+        Effect.provideService(
+          MemoryStore.MemoryStore,
+          storeOf(() => Effect.succeed([ftsRow({ key: "same", updatedAtMs: 5 })]))
+        )
+      )
+    )
+    expect(result.map(({ bank }) => bank)).toEqual(["alpha", "zeta"])
+  })
+
   it("leaves store query escaping to the authoritative store", async () => {
     const queries: Array<string> = []
     const store = storeOf((input) => {

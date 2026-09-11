@@ -149,6 +149,16 @@ describe("RecallKeyword", () => {
     expect(result.map(({ key, score }) => [key, score])).toEqual([["a", 1], ["b", 1], ["z", 1], ["é", 1]])
   })
 
+  it("orders a key tied across banks by bank, independent of the request's bank order", async () => {
+    const tied = [{ key: "same", text: "alpha", tags: [], updatedAtMs: 5 }]
+    const result = await Effect.runPromise(
+      Keyword.recall({ banks: ["zeta", "alpha"], query: "alpha" }).pipe(
+        Effect.provideService(MemoryStore.MemoryStore, storeOf(() => Effect.succeed(tied)))
+      )
+    )
+    expect(result.map(({ bank }) => bank)).toEqual(["alpha", "zeta"])
+  })
+
   it("recalls nothing for a query with no terms and nothing from an empty bank", async () => {
     const empty = await Effect.runPromise(
       Keyword.recall({ banks: ["bank"], query: "   " }).pipe(

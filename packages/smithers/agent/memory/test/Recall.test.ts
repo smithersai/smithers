@@ -6,6 +6,28 @@ import * as Namespace from "../src/Namespace.ts"
 import * as Recall from "../src/Recall.ts"
 
 describe("Recall", () => {
+  it("ranks by score, newest update, key, then bank for every binding", () => {
+    const row = { bank: "b", key: "k", text: "t", score: 1, updatedAtMs: 5 }
+    const results = [
+      { ...row, bank: "z" },
+      row,
+      { ...row, key: "a" },
+      { ...row, updatedAtMs: 6 },
+      { ...row, score: 2 },
+      { ...row, updatedAtMs: undefined }
+    ]
+    expect([...results].sort(Recall.compareResults)).toEqual([
+      { ...row, score: 2 },
+      { ...row, updatedAtMs: 6 },
+      { ...row, key: "a" },
+      row,
+      { ...row, bank: "z" },
+      { ...row, updatedAtMs: undefined }
+    ])
+    expect(Recall.requestedRows(undefined)).toBe(Recall.DEFAULT_MAX_TOKENS / 256)
+    expect([0, 1, 256, 257].map(Recall.requestedRows)).toEqual([1, 1, 1, 2])
+  })
+
   it("caps whole results and truncates only the first overflowing result", () => {
     const results = [
       { bank: "a", key: "one", text: "short", score: 1 },

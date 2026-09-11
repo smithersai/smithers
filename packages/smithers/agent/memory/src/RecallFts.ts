@@ -9,9 +9,9 @@
  * @since 0.1.0
  */
 import * as Effect from "effect/Effect"
-import * as Layer from "effect/Layer"
+import type * as Layer from "effect/Layer"
 import { resolveBanks } from "./internal/Bank.ts"
-import { compareText, literalFtsQuery as escapeFtsQuery } from "./internal/Text.ts"
+import { literalFtsQuery as escapeFtsQuery } from "./internal/Text.ts"
 import type * as MemoryError from "./MemoryError.ts"
 import * as MemoryStore from "./MemoryStore.ts"
 import * as Namespace from "./Namespace.ts"
@@ -36,7 +36,7 @@ const run = (input: Recall.Input): Effect.Effect<Recall.Output, MemoryError.Memo
     const query = literalFtsQuery(input.query)
     const banks = yield* resolveBanks(input.banks)
     if (query.length === 0 || banks.length === 0) return []
-    const requested = Math.max(1, Math.ceil((input.maxTokens ?? 2048) / 256))
+    const requested = Recall.requestedRows(input.maxTokens)
     const rows = yield* Effect.all(
       banks.map(({ namespace }) =>
         store.searchFts({
@@ -65,11 +65,8 @@ const run = (input: Recall.Input): Effect.Effect<Recall.Output, MemoryError.Memo
         })
       }
     }
-    results.sort((left, right) =>
-      right.score - left.score || (right.updatedAtMs ?? 0) - (left.updatedAtMs ?? 0) ||
-      compareText(left.key, right.key)
-    )
-    return Recall.capRecallResults(results.slice(0, requested), input.maxTokens ?? 2048)
+    results.sort(Recall.compareResults)
+    return Recall.capRecallResults(results.slice(0, requested), input.maxTokens)
   })
 
 /**
@@ -91,10 +88,4 @@ export const recall = run
  * @since 0.1.0
  * @slop
  */
-export const layer: Layer.Layer<Recall.Recall, never, MemoryStore.MemoryStore> = Layer.effect(
-  Recall.Recall,
-  Effect.gen(function*() {
-    const store = yield* MemoryStore.MemoryStore
-    return Recall.make({ recall: (input) => run(input).pipe(Effect.provideService(MemoryStore.MemoryStore, store)) })
-  })
-)
+export const layer: Layer.Layer<Recall.Recall, never, MemoryStore.MemoryStore> = Recall.layerFrom(run)

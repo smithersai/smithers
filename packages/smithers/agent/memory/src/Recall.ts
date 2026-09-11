@@ -13,8 +13,10 @@ import * as Context from "effect/Context"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
 import * as Schema from "effect/Schema"
-import type * as MemoryError from "./MemoryError.ts"
 import * as Bank from "./internal/Bank.ts"
+import { compareText } from "./internal/Text.ts"
+import type * as MemoryError from "./MemoryError.ts"
+import * as MemoryStore from "./MemoryStore.ts"
 import * as Namespace from "./Namespace.ts"
 
 /**
@@ -61,6 +63,23 @@ export const MAX_RECALL_TOKENS = 64 * 1_024
  * @since 0.1.0
  */
 export const MAX_RECALL_TAG_GROUPS = 16
+
+/**
+ * Byte budget applied when a recall request omits `maxTokens`.
+ *
+ * @category constants
+ * @since 0.1.0
+ */
+export const DEFAULT_MAX_TOKENS = 2048
+
+/**
+ * Rows a row-counting binding keeps for a byte budget: one per 256 bytes, at
+ * least one.
+ *
+ * @category constructors
+ * @since 0.1.0
+ */
+export const requestedRows = (maxTokens: number = DEFAULT_MAX_TOKENS): number => Math.max(1, Math.ceil(maxTokens / 256))
 
 const inputEncoder = new TextEncoder()
 const BankName = Schema.NonEmptyString.pipe(Schema.check(Schema.isMaxLength(MAX_RECALL_BANK_NAME_LENGTH)))
@@ -206,7 +225,7 @@ const SEPARATOR_BYTES = 1
  * @since 0.1.0
  * @slop
  */
-export const capRecallResults = (results: ReadonlyArray<Result>, maxTokens = 2048): Array<Result> => {
+export const capRecallResults = (results: ReadonlyArray<Result>, maxTokens = DEFAULT_MAX_TOKENS): Array<Result> => {
   const normalized = results.filter((result) => result.text.length > 0)
   const byteBudget = Math.max(0, Math.floor(maxTokens))
   const selected: Array<Result> = []
@@ -239,6 +258,35 @@ export const capRecallResults = (results: ReadonlyArray<Result>, maxTokens = 204
   }
   return selected
 }
+
+/**
+ * The ranking every binding sorts by: score descending, newest update, key,
+ * then bank, so the order never depends on the request's bank order.
+ *
+ * @category constructors
+ * @since 0.1.0
+ */
+export const compareResults = (left: Result, right: Result): number =>
+  right.score - left.score || (right.updatedAtMs ?? 0) - (left.updatedAtMs ?? 0) ||
+  compareText(left.key, right.key) || compareText(left.bank, right.bank)
+
+/**
+ * Provides a store-backed recall binding, capturing the MemoryStore once so
+ * the service method needs no environment.
+ *
+ * @category layers
+ * @since 0.1.0
+ */
+export const layerFrom = (
+  run: (input: Input) => Effect.Effect<Output, MemoryError.MemoryError, MemoryStore.MemoryStore>
+): Layer.Layer<Recall, never, MemoryStore.MemoryStore> =>
+  Layer.effect(
+    Recall,
+    Effect.gen(function*() {
+      const store = yield* MemoryStore.MemoryStore
+      return make({ recall: (input) => run(input).pipe(Effect.provideService(MemoryStore.MemoryStore, store)) })
+    })
+  )
 
 /**
  * Constructs a recall service.

@@ -22,7 +22,7 @@ import * as Stream from "effect/Stream"
 import type { DatabaseService } from "./Database.ts"
 import * as Embedding from "./Embedding.ts"
 import { bankForNamespace, resolveBanks, resolveNamespace } from "./internal/Bank.ts"
-import { compareText, digest, searchableText, vectorBytes } from "./internal/Text.ts"
+import { digest, searchableText, vectorBytes } from "./internal/Text.ts"
 import * as MemoryError from "./MemoryError.ts"
 import * as MemoryStore from "./MemoryStore.ts"
 import * as Namespace from "./Namespace.ts"
@@ -355,9 +355,6 @@ export const recall = (
       return yield* Effect.fail(mismatch("semantic recency configuration must be finite with a positive half-life"))
     }
     const ranked: Array<Recall.Result> = []
-    const compareResults = (left: Recall.Result, right: Recall.Result): number =>
-      right.score - left.score || (right.updatedAtMs ?? 0) - (left.updatedAtMs ?? 0) ||
-      compareText(left.key, right.key) || compareText(left.bank, right.bank)
     yield* Stream.runForEach(
       options.vectorStore.scan(banks.map(({ bank }) => bank), model),
       (page) =>
@@ -395,14 +392,14 @@ export const recall = (
               const score = cosine(query.vector, vector.vector) * recency(vector.updatedAtMs, now, halfLife)
               if (score > 0) {
                 ranked.push({ bank, key: row.key, text: row.text, score, updatedAtMs: row.updatedAtMs })
-                ranked.sort(compareResults)
+                ranked.sort(Recall.compareResults)
                 if (ranked.length > limit) ranked.pop()
               }
             }
           }
         })
     )
-    return Recall.capRecallResults(ranked, input.maxTokens ?? 2048)
+    return Recall.capRecallResults(ranked, input.maxTokens)
   })
 
 /**

@@ -379,6 +379,8 @@ When memory shares a database with the engine or control plane, compose all requ
 | `MAX_RECALL_QUERY_BYTES`      | `16384`                                      | Maximum UTF-8 bytes in one query.                                                                                     |
 | `MAX_RECALL_TOKENS`           | `65536`                                      | Maximum conservative byte budget accepted as `maxTokens`.                                                             |
 | `MAX_RECALL_TAG_GROUPS`       | `16`                                         | Maximum tag groups per request; each group is evaluated against every candidate row, so the list is bounded too.      |
+| `DEFAULT_MAX_TOKENS`          | `2048`                                       | Byte budget when `maxTokens` is absent.                                                                               |
+| `requestedRows`               | `(maxTokens = 2048) => number`               | Rows keyword and FTS recall keep: one per 256 bytes, at least one.                                                    |
 | `TagGroup`                    | type                                         | `Namespace.TagGroup`.                                                                                                 |
 | `Input`                       | schema and type                              | `{ banks, query, tagGroups?, maxTokens?, budget? }` where `budget` is `"low"`, `"mid"`, or `"high"`.                  |
 | `Result`                      | schema and type                              | `{ bank, key, text, score, updatedAtMs? }`.                                                                           |
@@ -387,6 +389,8 @@ When memory shares a database with the engine or control plane, compose all requ
 | `Service`                     | interface                                    | `{ recall(input): Effect<Output, MemoryError> }`.                                                                     |
 | `Recall`                      | `Context.Service` tag `flows/memory/Recall`  | The context tag for the replaceable implementation.                                                                   |
 | `capRecallResults`            | `(results, maxTokens = 2048) => Result[]`    | The shared byte cap: drops empty text, selects complete rows greedily, then truncates only the first overflowing row. |
+| `compareResults`              | `(left, right) => number`                    | The ranking every binding sorts by: score descending, newest update, key, then bank.                                  |
+| `layerFrom`                   | `(run) => Layer<Recall, never, MemoryStore>` | Provides a store-backed binding, capturing the MemoryStore once.                                                      |
 | `make`                        | `(implementation: Service) => Service`       | Constructs a recall service.                                                                                          |
 | `layer`                       | `(implementation: Service) => Layer<Recall>` | Provides a recall service.                                                                                            |
 | `makeNoop`                    | `() => Service`                              | Answers no rows.                                                                                                      |

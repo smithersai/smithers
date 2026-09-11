@@ -45,4 +45,4 @@ A `limit` on `listFacts`, `listNotes`, `listMessages`, `searchRows`, or `searchF
 
 ## Score ties
 
-Bindings break score ties by newest update first, then ascending key. Semantic recall also orders equal keys by bank, independent of the request's bank order. The order is deterministic, so a replayed recall over unchanged memory returns the same rows in the same order.
+Every binding sorts with `Recall.compareResults`: score ties break by newest update first, then ascending key, then ascending bank, independent of the request's bank order. The order is deterministic, so a replayed recall over unchanged memory returns the same rows in the same order.
