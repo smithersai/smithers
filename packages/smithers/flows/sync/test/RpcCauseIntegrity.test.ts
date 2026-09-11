@@ -45,8 +45,8 @@ for (const path of ["bootstrap", "live", "snapshot"] as const) {
         expect(failure.annotations.get("trace")).toBe("original")
         expect(result.cause.reasons.find(Cause.isDieReason)!.defect).toBe(unrelated)
       }
-      expect((yield* client.progress).applied.cursors).toEqual([])
-      expect(yield* client.cursors).toEqual([])
+      expect((yield* client.progress).applied).toEqual([])
+      expect((yield* client.progress).delivered).toEqual([])
     }))
 }
 
@@ -86,8 +86,8 @@ for (const path of ["bootstrap", "live", "snapshot"] as const) {
               [{ _tag: "Interrupt", fiberId: 123 }]
           }
         })
-        expect(yield* client.cursors).toEqual([])
-        expect((yield* client.progress).applied.cursors).toEqual([])
+        expect((yield* client.progress).delivered).toEqual([])
+        expect((yield* client.progress).applied).toEqual([])
       }))
   }
 }
@@ -121,5 +121,5 @@ it.effect("does not retry a disconnect accompanied by an unrelated defect", () =
       }
     })
     expect(calls).toBe(1)
-    expect(yield* client.cursors).toEqual([])
+    expect((yield* client.progress).delivered).toEqual([])
   }))

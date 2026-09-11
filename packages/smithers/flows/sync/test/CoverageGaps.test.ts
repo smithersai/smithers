@@ -47,11 +47,11 @@ describe("sync malformed and terminal boundaries", () => {
             Effect.provideService(Socket.Socket, pair.client),
             Effect.provide(RpcSerialization.layerJson)
           )
-          const client = yield* SyncClient.Sync.pipe(
+          const client = yield* SyncClient.SyncClient.pipe(
             Effect.provide(SyncClient.layer),
             Effect.provideService(RpcClient.Protocol, protocol)
           )
-          return yield* client.cursors
+          return (yield* client.progress).delivered
         }).pipe(Effect.scoped)
       )
 
@@ -151,7 +151,7 @@ describe("sync malformed and terminal boundaries", () => {
       if (Exit.isFailure(exit)) {
         expect(exit.cause.reasons.find((reason) => reason._tag === "Fail")?.error).toMatchObject({ code: "closed" })
       }
-      expect(yield* (client.cursors)).toEqual([])
+      expect((yield* client.progress).delivered).toEqual([])
     }))
 
   it.effect("maps a non-Error journal failure to the stable server fallback message", () =>

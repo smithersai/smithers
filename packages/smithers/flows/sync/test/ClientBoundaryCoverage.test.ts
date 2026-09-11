@@ -53,7 +53,7 @@ describe("SyncClient covered-frame boundaries", () => {
       )
 
       expect(Array.from(entries).map((value) => value.seq)).toEqual([3])
-      expect(yield* (client.cursors)).toEqual([{ generation: 0, runId: "boundary", afterSeq: 3 }])
+      expect((yield* client.progress).delivered).toEqual([{ generation: 0, runId: "boundary", afterSeq: 3 }])
     }))
 
   it.effect("forwards a share capability when the durable bootstrap enters live follow", () =>

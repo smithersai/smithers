@@ -253,7 +253,7 @@ describe("sync payload and frame limits", () => {
 
       expect(failureOf(exit)).toBeInstanceOf(SyncError)
       expect(failureOf(exit)).toMatchObject({ code: "frame_too_large" })
-      expect(yield* client.cursors).toEqual([])
+      expect((yield* client.progress).delivered).toEqual([])
     }))
 
   it.effect("client refuses a bootstrap page whose encoded entries exceed its frame ceiling", () =>
@@ -280,6 +280,6 @@ describe("sync payload and frame limits", () => {
 
       expect(failureOf(exit)).toBeInstanceOf(SyncError)
       expect(failureOf(exit)).toMatchObject({ code: "frame_too_large" })
-      expect(yield* client.cursors).toEqual([])
+      expect((yield* client.progress).delivered).toEqual([])
     }))
 })

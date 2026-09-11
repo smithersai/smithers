@@ -115,10 +115,14 @@ const defaults: Resolved = {
  * `capability` authorizes branch reads: following a shared branch's run
  * requires a capability that verifies for that branch on the server.
  *
+ * `EApply` and `EResync` are the consumer's own failure types for `apply` and
+ * `onResync`. The subscription fails with them unchanged, so an application
+ * failure is never dressed as a transport or protocol {@link SyncError}.
+ *
  * @category models
  * @since 0.1.0
  */
-export interface SubscribeOptions {
+export interface SubscribeOptions<EApply = never, EResync = never> {
   readonly scope: Scope
   /**
    * Where this subscription starts, per run. The effective position is the
@@ -141,12 +145,12 @@ export interface SubscribeOptions {
    * Without it the cursor advances as each entry is handed to the consumer,
    * so a consumer whose own application then fails has a cursor naming an
    * entry it never materialized. With it the cursor advances only after this
-   * effect succeeds, and records separate `AppliedProgress`. A
-   * failure here fails the subscription with the entry unacknowledged, so the
+   * effect succeeds, and records it in `Progress.applied`. A failure here
+   * fails the subscription with the entry unacknowledged, so the
    * next applying subscription delivers it again; the effect must
    * therefore be idempotent, because a redelivery is exactly what a retry is.
    */
-  readonly apply?: ((entry: JournalEvent.Entry) => Effect.Effect<void, SyncError>) | undefined
+  readonly apply?: ((entry: JournalEvent.Entry) => Effect.Effect<void, EApply>) | undefined
   /**
    * Restores state when the server refuses a cursor below a compaction floor.
    * Return the exact run and sequence actually restored, after applying it.
@@ -164,7 +168,7 @@ export interface SubscribeOptions {
    * Recovery must be idempotent, including when a newer compaction requires
    * another restoration before the suffix can be read.
    */
-  readonly onResync?: ((resync: Resync) => Effect.Effect<RunCursor, SyncError>) | undefined
+  readonly onResync?: ((resync: Resync) => Effect.Effect<RunCursor, EResync>) | undefined
 }
 
 /**
@@ -176,10 +180,14 @@ export interface SubscribeOptions {
 export interface Service {
   /** Fetches a public snapshot without applying state or advancing a cursor. */
   readonly snapshot: (request: SnapshotRequest) => Effect.Effect<Snapshot, SyncError>
-  readonly subscribe: (options: SubscribeOptions) => Stream.Stream<JournalEvent.Entry, SyncError | SyncGapError>
-  /** Transport bookmarks only. For application acknowledgement use progress.applied. */
-  readonly cursors: Effect.Effect<WorkspaceCursor>
-  /** Separately typed delivery and application positions. */
+  /** Replays then follows `options.scope`, also failing with the callbacks' own errors. */
+  readonly subscribe: <EApply = never, EResync = never>(
+    options: SubscribeOptions<EApply, EResync>
+  ) => Stream.Stream<JournalEvent.Entry, SyncError | SyncGapError | EApply | EResync>
+  /**
+   * Delivery and application positions. `delivered` is a transport bookmark
+   * only; `applied` is what the `apply` and `onResync` callbacks acknowledged.
+   */
   readonly progress: Effect.Effect<Progress>
 }
 
@@ -187,9 +195,27 @@ export interface Service {
  * The browser-safe journal replication client.
  *
  * @category services
+ * @since 1.0.0-rc.0
+ */
+export class SyncClient extends Context.Service<SyncClient, Service>()("@smthrs/sync/SyncClient") {}
+
+/**
+ * The client tag's former name, kept for one release.
+ *
+ * @deprecated Use {@link SyncClient}.
+ * @category services
  * @since 0.1.0
  */
-export class Sync extends Context.Service<Sync, Service>()("@smthrs/sync/Sync") {}
+export const Sync = SyncClient
+
+/**
+ * The client tag's former name, kept for one release.
+ *
+ * @deprecated Use {@link SyncClient}.
+ * @category services
+ * @since 0.1.0
+ */
+export type Sync = SyncClient
 
 /**
  * Constructs a closed sync stub, optionally overriding individual operations.
@@ -198,14 +224,10 @@ export class Sync extends Context.Service<Sync, Service>()("@smthrs/sync/Sync") 
  * @since 0.1.0
  */
 export const makeNoop = (overrides: Partial<Service> = {}): Service =>
-  Sync.of({
+  SyncClient.of({
     snapshot: () => Effect.fail(new SyncError({ code: "closed", message: "Sync client is closed" })),
     subscribe: () => Stream.fail(new SyncError({ code: "closed", message: "Sync client is closed" })),
-    cursors: Effect.succeed([]),
-    progress: Effect.succeed({
-      delivered: { _tag: "Delivered", cursors: [] },
-      applied: { _tag: "Applied", cursors: [] }
-    }),
+    progress: Effect.succeed({ delivered: [], applied: [] }),
     ...overrides
   })
 
@@ -215,8 +237,8 @@ export const makeNoop = (overrides: Partial<Service> = {}): Service =>
  * @category layers
  * @since 0.1.0
  */
-export const layerNoop = (overrides: Partial<Service> = {}): Layer.Layer<Sync> =>
-  Layer.succeed(Sync, makeNoop(overrides))
+export const layerNoop = (overrides: Partial<Service> = {}): Layer.Layer<SyncClient> =>
+  Layer.succeed(SyncClient, makeNoop(overrides))
 
 type Client = RpcClient.RpcClient<RpcGroup.Rpcs<typeof SyncRpcs>, RpcClientError.RpcClientError>
 
@@ -282,17 +304,17 @@ const advance = (
 /**
  * Live-follow reconnect policy: exponential backoff capped at five seconds,
  * the same shape as `RpcClient`'s own transport retry policy, and only for
- * transport failures — gaps, authorization refusals, and server closes
- * propagate to the consumer.
+ * transport failures — gaps, authorization refusals, server closes, and the
+ * consumer's own callback failures propagate to the consumer.
  */
 const reconnectPolicy = Schedule.min([
   Schedule.exponential(500, 1.5),
   Schedule.spaced(5000)
 ]).pipe(
-  Schedule.while(({ input }: { readonly input: Cause.Cause<SyncError | SyncGapError> }) => isTransportCause(input))
+  Schedule.while(({ input }: { readonly input: Cause.Cause<unknown> }) => isTransportCause(input))
 )
 
-const isTransportCause = (cause: Cause.Cause<SyncError | SyncGapError>): boolean => {
+const isTransportCause = (cause: Cause.Cause<unknown>): boolean => {
   const reason = cause.reasons[0]!
   return cause.reasons.length === 1 && Cause.isFailReason(reason) &&
     SyncError.is(reason.error) && reason.error.code === "transport_failed"
@@ -493,11 +515,10 @@ const service = (client: Client, { bootstrapLimit, maxFrameBytes }: Resolved): E
     const delivered = Ref.makeUnsafe<ReadonlyMap<JournalEvent.RunId, RunCursor>>(new Map())
     const applied = Ref.makeUnsafe<ReadonlyMap<JournalEvent.RunId, RunCursor>>(new Map())
 
-    const cursors = Effect.map(Ref.get(delivered), canonicalCursors)
     const progress: Effect.Effect<Progress> = Effect.gen(function*() {
       return {
-        delivered: { _tag: "Delivered", cursors: yield* cursors },
-        applied: { _tag: "Applied", cursors: canonicalCursors(yield* Ref.get(applied)) }
+        delivered: canonicalCursors(yield* Ref.get(delivered)),
+        applied: canonicalCursors(yield* Ref.get(applied))
       }
     })
 
@@ -510,8 +531,13 @@ const service = (client: Client, { bootstrapLimit, maxFrameBytes }: Resolved): E
         return yield* SnapshotBoundary.response(request, supplied, maxFrameBytes)
       })
 
-    const subscribe = (input: SubscribeOptions): Stream.Stream<JournalEvent.Entry, SyncError | SyncGapError> =>
+    const subscribe = <EApply = never, EResync = never>(
+      input: SubscribeOptions<EApply, EResync>
+    ): Stream.Stream<JournalEvent.Entry, SyncError | SyncGapError | EApply | EResync> =>
       Stream.unwrap(Effect.gen(function*() {
+        /** Every way this subscription fails: the wire's refusals and the consumer's own callback errors. */
+        type Failure = SyncError | SyncGapError | EApply | EResync
+
         const options = {
           ...input,
           ...yield* Admission.decode(RequestEnvelope, input, "invalid_request")
@@ -579,7 +605,7 @@ const service = (client: Client, { bootstrapLimit, maxFrameBytes }: Resolved): E
           runId: JournalEvent.RunId,
           entry: JournalEvent.Entry,
           generation: number
-        ): Stream.Stream<JournalEvent.Entry, SyncError | SyncGapError> => {
+        ): Stream.Stream<JournalEvent.Entry, Failure> => {
           const through = entry.seq
           return Stream.concat(
             Stream.drain(Stream.fromEffect(
@@ -593,7 +619,7 @@ const service = (client: Client, { bootstrapLimit, maxFrameBytes }: Resolved): E
           )
         }
 
-        const batch = (frame: EntriesFrame): Stream.Stream<JournalEvent.Entry, SyncError | SyncGapError> => {
+        const batch = (frame: EntriesFrame): Stream.Stream<JournalEvent.Entry, Failure> => {
           if (frame.generation === undefined) {
             return Stream.fail(
               new SyncError({ code: "protocol_violation", message: "Entries frame lacks a generation" })
@@ -636,7 +662,7 @@ const service = (client: Client, { bootstrapLimit, maxFrameBytes }: Resolved): E
           return Stream.flatMap(Stream.fromIterable(entries), (entry) => deliver(frame.runId, entry, generation))
         }
 
-        const livePage = (onFrame: () => void): Stream.Stream<JournalEvent.Entry, SyncError | SyncGapError> =>
+        const livePage = (onFrame: () => void): Stream.Stream<JournalEvent.Entry, Failure> =>
           Stream.unwrap(
             Effect.sync(() =>
               client["Sync.Subscribe"]({
@@ -668,7 +694,7 @@ const service = (client: Client, { bootstrapLimit, maxFrameBytes }: Resolved): E
             })
           )
 
-        const live = (): Stream.Stream<JournalEvent.Entry, SyncError | SyncGapError> =>
+        const live = (): Stream.Stream<JournalEvent.Entry, Failure> =>
           Stream.unwrap(Effect.sync(() => {
             let receivedFrame = false
             return Stream.concat(
@@ -689,7 +715,7 @@ const service = (client: Client, { bootstrapLimit, maxFrameBytes }: Resolved): E
         // The retry re-runs the whole follow from the acknowledged cursors,
         // and its schedule resets once entries flow again, so a long-lived
         // subscription pays the backoff only across consecutive failures.
-        const follow = (): Stream.Stream<JournalEvent.Entry, SyncError | SyncGapError> =>
+        const follow = (): Stream.Stream<JournalEvent.Entry, Failure> =>
           live().pipe(
             Stream.tapCause((cause) =>
               isTransportCause(cause)
@@ -703,7 +729,7 @@ const service = (client: Client, { bootstrapLimit, maxFrameBytes }: Resolved): E
             Stream.catch((cause) => Stream.failCause(cause))
           )
 
-        const bootstrap = (): Stream.Stream<JournalEvent.Entry, SyncError | SyncGapError> =>
+        const bootstrap = (): Stream.Stream<JournalEvent.Entry, Failure> =>
           Stream.unwrap(
             // SUSPENDED, exactly as `livePage` is. Building the payload where
             // the recursive call is written snapshotted the cursors as page N
@@ -769,7 +795,7 @@ const service = (client: Client, { bootstrapLimit, maxFrameBytes }: Resolved): E
          * `compacted` failure carrying no {@link Resync} stays a failure
          * rather than becoming a silent stall.
          */
-        const resyncTarget = (failure: SyncError | SyncGapError): Resync | undefined => {
+        const resyncTarget = (failure: Failure): Resync | undefined => {
           if (!SyncError.is(failure) || failure.code !== "compacted" || failure.resync === undefined) {
             return undefined
           }
@@ -779,7 +805,7 @@ const service = (client: Client, { bootstrapLimit, maxFrameBytes }: Resolved): E
 
         const onResync = options.onResync
 
-        const resynced = (): Stream.Stream<JournalEvent.Entry, SyncError | SyncGapError> =>
+        const resynced = (): Stream.Stream<JournalEvent.Entry, Failure> =>
           Stream.catchCause(bootstrap(), (cause) => {
             const reason = cause.reasons[0]!
             if (cause.reasons.length !== 1 || !Cause.isFailReason(reason)) return Stream.failCause(cause)
@@ -837,27 +863,27 @@ const service = (client: Client, { bootstrapLimit, maxFrameBytes }: Resolved): E
         return resynced()
       }))
 
-    return Sync.of({ snapshot, subscribe, cursors, progress })
+    return SyncClient.of({ snapshot, subscribe, progress })
   })
 
 /**
- * Provides a Sync client from the active RPC protocol.
+ * Provides the sync client from the active RPC protocol.
  *
  * @category layers
  * @since 0.1.0
  */
-export const layer: Layer.Layer<Sync, never, RpcClient.Protocol> = Layer.effect(
-  Sync,
+export const layer: Layer.Layer<SyncClient, never, RpcClient.Protocol> = Layer.effect(
+  SyncClient,
   Effect.flatMap(RpcClient.make(SyncRpcs), (client) => make({ client }))
 )
 
 /**
- * Provides a Sync client under an explicit policy. Fails with
+ * Provides the sync client under an explicit policy. Fails with
  * `invalid_request` when an option is not a positive safe integer, so a bad
  * policy fails the composition rather than every operation under it.
  *
  * @category layers
  * @since 1.0.0-rc.0
  */
-export const layerWith = (options: Options): Layer.Layer<Sync, SyncError, RpcClient.Protocol> =>
-  Layer.effect(Sync, Effect.flatMap(RpcClient.make(SyncRpcs), (client) => makeWith({ ...options, client })))
+export const layerWith = (options: Options): Layer.Layer<SyncClient, SyncError, RpcClient.Protocol> =>
+  Layer.effect(SyncClient, Effect.flatMap(RpcClient.make(SyncRpcs), (client) => makeWith({ ...options, client })))

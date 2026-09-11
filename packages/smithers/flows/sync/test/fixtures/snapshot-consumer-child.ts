@@ -133,7 +133,7 @@ const program = Effect.gen(function*() {
   const pause = (phase: string) =>
     mode === phase ?
       Effect.gen(function*() {
-        yield* emit({ phase, state: state(), cursors: yield* client.cursors })
+        yield* emit({ phase, state: state(), cursors: (yield* client.progress).delivered })
         yield* Effect.never
       }) :
       Effect.void
@@ -172,7 +172,7 @@ const program = Effect.gen(function*() {
     phase: "complete",
     initial,
     state: state(),
-    cursors: yield* client.cursors,
+    cursors: (yield* client.progress).delivered,
     snapshots,
     applied,
     delivered: entries.map((entry) => entry.seq),

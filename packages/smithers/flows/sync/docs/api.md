@@ -11,7 +11,7 @@ import { Effect, Layer } from "effect"
 const serverLayer = SyncServer.layer.pipe(Layer.provide(RunCatalog.layerStatic([])))
 
 const follow = Effect.gen(function*() {
-  const sync = yield* SyncClient.Sync
+  const sync = yield* SyncClient.SyncClient
   return sync.subscribe({ scope: { _tag: "Run", runId: "build-42" as JournalEvent.RunId }, cursors: [] })
 })
 ```
@@ -140,10 +140,9 @@ projection name/version, minimum or actual sequence, and response JSON state.
 Both ends validate identities and the full response's encoded UTF-8 byte limit
 using `maxFrameBytes`. Invalid or stale state is refused, not coerced or skipped.
 
-`SyncClient.Service.progress` returns `SyncProtocol.Progress`: separate
-`{ _tag: "Delivered", cursors }` and `{ _tag: "Applied", cursors }` fields.
-`cursors` on the service remains a delivery bookmark. Applied progress advances
-only after successful application or restoration; an applying subscription
+`SyncClient.Service.progress` returns `SyncProtocol.Progress`: two cursor sets,
+`delivered` and `applied`. `delivered` is a delivery bookmark only. `applied`
+advances only after successful application or restoration; an applying subscription
 uses the shared applied map when choosing its start position. Use one client
 per projection and persist projection state and its cursor in one transaction.
 
@@ -166,8 +165,9 @@ the echoed response state would otherwise disagree about where the page began.
 
 ## Follow path
 
-`SyncClient.Sync` is the browser-safe service tag. `make({ client })` adapts an
-Effect RPC client and `layer` derives that client from `RpcClient.Protocol`.
+`SyncClient.SyncClient` is the browser-safe service tag; `SyncClient.Sync` is
+its deprecated former name. `make({ client })` adapts an Effect RPC client and
+`layer` derives that client from `RpcClient.Protocol`.
 A subscription replays through `Sync.Read` until the server reports `done`,
 then follows through `Sync.Subscribe` in credit windows, replenishing each
 window by resubscribing from its matching delivered or applied progress.
@@ -189,9 +189,14 @@ progress; gaps, authorization refusals, and server closes propagate to the
 consumer instead of retrying.
 
 A delivery bookmark names what was delivered. `SubscribeOptions.apply`
-additionally records `AppliedProgress`: the callback runs to success before
+additionally records `progress.applied`: the callback runs to success before
 that cursor moves, so a failed application is retried by the next applying
 subscription. A delivery-only subscription cannot acknowledge application.
+
+`apply` and `onResync` fail with the consumer's own error types, and
+`subscribe` returns `Stream<Entry, SyncError | SyncGapError | EApply | EResync>`.
+A consumer failure keeps its own type, so it never borrows a wire code and
+never passes `SyncError.is`.
 
 ## Compaction and resync
 

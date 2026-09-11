@@ -50,7 +50,7 @@ describe("sync protocol compatibility over a socket", () => {
               }).pipe(Stream.take(1), Stream.runDrain)
             )
             expect(failure).toMatchObject({ code: "protocol_violation" })
-            expect(yield* client.cursors).toEqual([])
+            expect((yield* client.progress).delivered).toEqual([])
           }).pipe(Effect.provide(TestSync.layerTest))
         ))
     }
@@ -79,7 +79,7 @@ describe("sync protocol compatibility over a socket", () => {
               .pipe(Stream.take(1), Stream.runDrain)
           )
           expect(failure).toMatchObject({ code: "protocol_violation" })
-          expect(yield* client.cursors).toEqual([])
+          expect((yield* client.progress).delivered).toEqual([])
         }).pipe(Effect.provide(TestSync.layerTest))
       ))
   }
@@ -108,7 +108,7 @@ for (const bootstrap of [true, false]) {
         yield* journal.emitDurableUnfenced({ runId, sourceId, eventType: "event", payload: 2 })
         const second = yield* client.subscribe(options).pipe(Stream.take(1), Stream.runCollect)
         expect(second.map((entry) => entry.seq)).toEqual([2])
-        expect(yield* client.cursors).toEqual([{ runId, afterSeq: 2, generation: 0 }])
+        expect((yield* client.progress).delivered).toEqual([{ runId, afterSeq: 2, generation: 0 }])
       }).pipe(Effect.provide(TestSync.layerTest))
     ))
 }
@@ -171,7 +171,7 @@ for (const generation of [0, 5]) {
         )
         expect(applications).toBe(0)
         expect(yield* client.progress).toEqual(before)
-        expect(yield* client.cursors).toEqual([])
+        expect((yield* client.progress).delivered).toEqual([])
         expect(requested).toEqual(cursors)
         expect(Exit.isFailure(exit)).toBe(true)
         if (Exit.isFailure(exit)) {

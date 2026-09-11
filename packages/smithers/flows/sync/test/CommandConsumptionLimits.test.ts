@@ -89,7 +89,7 @@ describe("command admission through durable synchronization", () => {
                 } as unknown as Parameters<typeof SyncClient.make>[0]["client"]
               })
               expect(yield* client.subscribe(request).pipe(Stream.take(1), Stream.runCollect)).toEqual(stored)
-              expect(yield* client.cursors).toEqual([{ generation: 0, runId, afterSeq: receipt.seq }])
+              expect((yield* client.progress).delivered).toEqual([{ generation: 0, runId, afterSeq: receipt.seq }])
             }
             // A fresh admission service recovers the receipt from durable data.
             const reopened = yield* BranchCommands.makeLiveWith({ maxCommandBytes })
@@ -203,7 +203,7 @@ describe("command admission through durable synchronization", () => {
         "second"
       ])
       expect(received.every((entry) => bytes(entry.payload) === BranchCommands.defaultMaxCommandBytes)).toBe(true)
-      expect(yield* client.cursors).toEqual([{ generation: 0, runId, afterSeq: 1 }])
+      expect((yield* client.progress).delivered).toEqual([{ generation: 0, runId, afterSeq: 1 }])
       // This measures actual RPC envelopes traversing the socket pair, above
       // the journal-entry-only budget. The retained 1 MiB command maximum fits.
       expect(largestWireFrame).toBeGreaterThan(BranchCommands.defaultMaxCommandBytes)

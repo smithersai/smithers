@@ -77,7 +77,7 @@ import * as RpcSerialization from "effect/unstable/rpc/RpcSerialization"
 const runId = "build-42" as JournalEvent.RunId
 
 export const follow = Effect.gen(function*() {
-  const sync = yield* SyncClient.Sync
+  const sync = yield* SyncClient.SyncClient
   yield* sync.subscribe({ scope: { _tag: "Run", runId }, cursors: [] }).pipe(
     Stream.runForEach((entry) => Effect.logInfo(`${entry.seq} ${entry.eventType}`))
   )

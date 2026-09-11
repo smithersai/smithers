@@ -49,7 +49,7 @@ describe("sync rewind generation", () => {
         )
         expect(failure).toMatchObject({ code: "lineage_changed" })
         expect(delivered).toEqual([])
-        expect(yield* client.cursors).toEqual([])
+        expect((yield* client.progress).delivered).toEqual([])
       }))
   }
 })
@@ -138,7 +138,7 @@ describe("SQL rewind through the sync server", () => {
             } as unknown as Parameters<typeof SyncClient.make>[0]["client"]
           })
           yield* client.subscribe({ scope, cursors: recovered }).pipe(Stream.take(1), Stream.runDrain)
-          expect(yield* client.cursors).toEqual(page.cursors)
+          expect((yield* client.progress).delivered).toEqual(page.cursors)
           yield* rewind
           const staleClient = yield* Effect.flip(
             client.subscribe({
@@ -222,6 +222,6 @@ describe("generation admission", () => {
       yield* client.subscribe({ scope: { _tag: "Run", runId }, cursors: [] }).pipe(Stream.take(1), Stream.runDrain)
       yield* Deferred.succeed(release, undefined)
       expect(yield* Fiber.join(slow)).toMatchObject({ code: "lineage_changed" })
-      expect(yield* client.cursors).toEqual([{ runId, afterSeq: entry.seq, generation: 1 }])
+      expect((yield* client.progress).delivered).toEqual([{ runId, afterSeq: entry.seq, generation: 1 }])
     })))
 })

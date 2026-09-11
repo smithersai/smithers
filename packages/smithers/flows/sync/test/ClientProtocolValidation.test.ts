@@ -78,7 +78,7 @@ describe("SyncClient protocol consistency validation", () => {
 
         expect(failure).toBeInstanceOf(SyncError)
         expect(failure).toMatchObject({ code: "protocol_violation" })
-        expect(yield* client.cursors).toEqual([])
+        expect((yield* client.progress).delivered).toEqual([])
       }))
   }
 })

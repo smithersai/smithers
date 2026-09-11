@@ -49,7 +49,7 @@ import * as RpcSerialization from "effect/unstable/rpc/RpcSerialization"
 const runId = "build-42" as JournalEvent.RunId
 
 export const follow = Effect.gen(function*() {
-  const sync = yield* SyncClient.Sync
+  const sync = yield* SyncClient.SyncClient
   yield* sync.subscribe({ scope: { _tag: "Run", runId }, cursors: [] }).pipe(
     Stream.runForEach((entry) => Effect.logInfo(`${entry.seq} ${entry.eventType}`))
   )
@@ -75,11 +75,12 @@ only the code above.
 cursors. A non-contiguous journal sequence is valid; `SyncGapError` means the
 server skipped beyond the interval covered by the client's cursor.
 
-`sync.cursors` reports delivery bookmarks. `sync.progress` distinguishes
-`Delivered` from `Applied` progress; only successful `apply` or `onResync`
-callbacks acknowledge materialization. Persist state and its cursor together
-inside those callbacks. An applying subscriber never skips entries merely
-because an earlier subscriber received them.
+`sync.progress` reports two cursor sets: `delivered` holds delivery bookmarks,
+and `applied` holds what successful `apply` or `onResync` callbacks
+acknowledged. Those callbacks fail with your own error types, which the
+subscription's error channel carries unchanged. Persist state and its cursor
+together inside those callbacks. An applying subscriber never skips entries
+merely because an earlier subscriber received them.
 
 ## Authorization
 

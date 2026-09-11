@@ -31,7 +31,7 @@ it.effect("treats RPC decode defects as terminal protocol failures instead of re
     expect(refused).toMatchObject({ code: "protocol_violation", cause: expect.any(String) })
     expect(JSON.stringify(refused)).not.toContain("private-envelope")
     expect(calls).toBe(1)
-    expect((yield* client.progress).applied.cursors).toEqual([])
+    expect((yield* client.progress).applied).toEqual([])
   }))
 
 for (const live of [false, true]) {
@@ -87,7 +87,7 @@ for (const live of [false, true]) {
       expect(failure).toMatchObject({ code: "decode_failed", cause: "SchemaError" })
       expect(corrupted).toBe(1)
       expect(applied).toBe(0)
-      expect(yield* client.cursors).toEqual([])
+      expect((yield* client.progress).delivered).toEqual([])
     }).pipe(Effect.provide(Layer.mergeAll(TestSync.layerWorkspaceAuth)), Effect.scoped))
 }
 
@@ -115,6 +115,6 @@ it.live("refuses a malformed snapshot on the actual JSON wire without advancing 
     expect(yield* Effect.flip(client.snapshot({ ...identity, atLeastSeq: 0 as JournalEvent.Seq })))
       .toMatchObject({ code: "decode_failed", cause: "SchemaError" })
     expect(corrupted).toBe(1)
-    expect(yield* client.cursors).toEqual([])
-    expect((yield* client.progress).applied.cursors).toEqual([])
+    expect((yield* client.progress).delivered).toEqual([])
+    expect((yield* client.progress).applied).toEqual([])
   }).pipe(Effect.provide(TestSync.layerWorkspaceAuth), Effect.scoped))

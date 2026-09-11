@@ -131,7 +131,7 @@ describe("SyncClient failure paths", () => {
       const entries = yield* (
         client.subscribe({ scope, cursors: [] }).pipe(Stream.take(2), Stream.runCollect)
       )
-      const cursors = yield* (client.cursors)
+      const cursors = (yield* client.progress).delivered
 
       expect(Array.from(entries).map((value) => value.seq)).toEqual([0, 1])
       expect(cursors).toEqual([{ generation: 0, runId: id, afterSeq: 1 }])
@@ -514,7 +514,7 @@ describe("SyncClient failure paths", () => {
         const failure = exit.cause.reasons.find((reason) => reason._tag === "Fail")?.error
         expect((failure as SyncError).code).toBe("closed")
       }
-      expect(yield* (noop.cursors)).toEqual([])
+      expect((yield* noop.progress).delivered).toEqual([])
     }))
 
   it("waits out the reconnect backoff instead of re-dialing immediately, logging the failure cause", async () => {
@@ -646,7 +646,7 @@ describe("SyncClient failure paths", () => {
         yield* Stream.runDrain(client.subscribe({ scope, cursors: [] }).pipe(Stream.take(2)))
         yield* Latch.open(gate)
         yield* Fiber.join(lagging)
-        return yield* client.cursors
+        return (yield* client.progress).delivered
       })
     )
 

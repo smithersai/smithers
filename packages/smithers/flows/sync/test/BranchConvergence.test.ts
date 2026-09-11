@@ -149,7 +149,7 @@ describe("branch convergence", () => {
             partial,
             Array.from(resumed).reduce(BranchProjection.apply, partial),
             Array.from(resumed, (entry) => entry.seq),
-            yield* sync.cursors
+            (yield* sync.progress).delivered
           ] as const
         })
       )

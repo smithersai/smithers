@@ -152,11 +152,11 @@ describe("public snapshot admission", () => {
         const remote = yield* client(value)
         expect(yield* Effect.flip(asOwner(service.snapshot(request)))).toMatchObject({ code })
         expect(yield* Effect.flip(remote.snapshot(request))).toMatchObject({ code })
-        expect(yield* remote.cursors).toEqual([])
+        expect((yield* remote.progress).delivered).toEqual([])
       }
       const remote = yield* client(snapshot)
       expect(yield* remote.snapshot(request)).toEqual(snapshot)
-      expect(yield* remote.cursors).toEqual([])
+      expect((yield* remote.progress).delivered).toEqual([])
       // A frame ceiling of `NaN` is the client's policy, so it is refused by
       // the constructor rather than by each snapshot taken under it.
       expect(yield* Effect.flip(client(snapshot, Number.NaN))).toMatchObject({ code: "invalid_request" })
@@ -321,7 +321,7 @@ describe("public snapshot admission", () => {
       expect(calls).toBe(0)
       expect(yield* fetch(yield* SyncAuth.encodeCapability(capability))).toEqual(snapshot)
       expect(calls).toBe(1)
-      expect(yield* remote.cursors).toEqual([])
+      expect((yield* remote.progress).delivered).toEqual([])
     }).pipe(Effect.provide(stack), Effect.scoped)
   })
 
@@ -337,7 +337,7 @@ describe("public snapshot admission", () => {
       const result = yield* remote.snapshot(request)
       expect(Schema.is(Protocol.Snapshot)(result)).toBe(true)
       expect(result).toEqual(snapshot)
-      expect(yield* remote.cursors).toEqual([])
+      expect((yield* remote.progress).delivered).toEqual([])
       expect(wire.join("\n")).toContain("counter")
       expect(wire.join("\n")).not.toContain("private-provider-state")
     }).pipe(

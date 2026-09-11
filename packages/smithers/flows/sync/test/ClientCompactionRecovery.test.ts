@@ -66,7 +66,7 @@ describe("SyncClient compaction recovery admission", () => {
         client.subscribe({ scope, cursors: [] }).pipe(Stream.take(1), Stream.runCollect)
       )
       expect(failure).toMatchObject({ code: "compacted", resync: { runId, checkpointSeq: 2 } })
-      expect(yield* client.cursors).toEqual([])
+      expect((yield* client.progress).delivered).toEqual([])
       expect(transport.requests).toEqual([[]])
     }))
 
@@ -88,7 +88,7 @@ describe("SyncClient compaction recovery admission", () => {
       )
       expect(failure).toMatchObject({ code: "protocol_violation" })
       expect(calls).toBe(0)
-      expect(yield* client.cursors).toEqual([])
+      expect((yield* client.progress).delivered).toEqual([])
       expect(transport.requests).toEqual([[]])
     }))
 
@@ -103,7 +103,7 @@ describe("SyncClient compaction recovery admission", () => {
         onResync: (request) =>
           Effect.gen(function*() {
             expect(request.checkpointSeq).toBe(2)
-            expect(yield* client.cursors).toEqual([])
+            expect((yield* client.progress).delivered).toEqual([])
             // The latest snapshot advanced to 4 after the server observed floor 2.
             // It contains five increments (sequences 0 through 4).
             count = 5
@@ -117,7 +117,7 @@ describe("SyncClient compaction recovery admission", () => {
       expect(suffix.map((event) => event.seq)).toEqual([5])
       expect(count).toBe(6)
       expect(transport.requests).toEqual([[], [restored(4)]])
-      expect(yield* client.cursors).toEqual([restored(5)])
+      expect((yield* client.progress).delivered).toEqual([restored(5)])
     }))
 
   it.effect("refuses invalid, foreign, and behind-floor restoration receipts without advancing", () =>
@@ -148,7 +148,7 @@ describe("SyncClient compaction recovery admission", () => {
           }).pipe(Stream.take(1), Stream.runCollect)
         )
         expect(failure).toMatchObject({ code: "invalid_request" })
-        expect(yield* client.cursors).toEqual([])
+        expect((yield* client.progress).delivered).toEqual([])
         expect(transport.requests).toEqual([[]])
       }
     }))
@@ -169,7 +169,7 @@ describe("SyncClient compaction recovery admission", () => {
         .pipe(Stream.take(1), Stream.runCollect)
       expect(reads).toBe(1)
       expect(transport.requests).toEqual([[], [restored(4)]])
-      expect(yield* client.cursors).toEqual([restored(5)])
+      expect((yield* client.progress).delivered).toEqual([restored(5)])
     }))
 
   it.effect("does not acknowledge an interrupted snapshot application", () =>
@@ -184,7 +184,7 @@ describe("SyncClient compaction recovery admission", () => {
       }).pipe(Stream.runDrain, Effect.forkChild)
       yield* Deferred.await(applying)
       yield* Fiber.interrupt(pending)
-      expect(yield* client.cursors).toEqual([])
+      expect((yield* client.progress).delivered).toEqual([])
       expect(transport.requests).toEqual([[]])
     }))
 })
@@ -304,7 +304,7 @@ describe("snapshot recovery over production SQLite and JSON RPC", () => {
         expect(suffix.map((event) => event.seq)).toEqual([5])
         expect(count).toBe(reference)
         expect(applied).toEqual(race === "newer snapshot" ? [4] : [2, 4])
-        expect(yield* client.cursors).toEqual([restored(5)])
+        expect((yield* client.progress).delivered).toEqual([restored(5)])
         expect(wire.join("\n")).toContain("compacted")
         expect(wire.join("\n")).not.toContain("private-checkpoint-fixture")
       }).pipe(Effect.provide(services), Effect.scoped))

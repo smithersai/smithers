@@ -26,16 +26,16 @@ The client can fetch that projection in its recovery handler:
 
 ```ts
 import type * as SyncClient from "@smthrs/sync/SyncClient"
-import { SyncError } from "@smthrs/sync/SyncError"
+import type { SyncError } from "@smthrs/sync/SyncError"
 import type * as SyncProtocol from "@smthrs/sync/SyncProtocol"
 import * as Effect from "effect/Effect"
 
-const recoverPublic = (
+const recoverPublic = <E>(
   sync: SyncClient.Service,
   identity: Pick<SyncProtocol.SnapshotRequest, "lineageId" | "projection" | "projectionVersion" | "capability">,
-  applySnapshot: (snapshot: SyncProtocol.Snapshot) => Effect.Effect<void, SyncError>
+  applySnapshot: (snapshot: SyncProtocol.Snapshot) => Effect.Effect<void, E>
 ) =>
-(resync: SyncProtocol.Resync): Effect.Effect<SyncProtocol.RunCursor, SyncError> =>
+(resync: SyncProtocol.Resync): Effect.Effect<SyncProtocol.RunCursor, SyncError | E> =>
   Effect.gen(function*() {
     const snapshot = yield* sync.snapshot({
       ...identity,
@@ -51,7 +51,9 @@ const recoverPublic = (
 
 `snapshot` validates identity, version, sequence and byte limits; your callback
 must still decode the projection's application schema and transactionally apply
-its state and durable cursor. A fetch alone never acknowledges missing history.
+its state and durable cursor. The handler fails with `snapshot`'s `SyncError`
+or with your callback's own error `E`, and the subscription carries either
+unchanged. A fetch alone never acknowledges missing history.
 The host must retain a snapshot covering the compaction floor. If the floor
 moves again before replay, recovery runs again for the newer floor.
 
@@ -62,25 +64,24 @@ the journal and supply its own application callback:
 
 ```ts
 import { Journal } from "@smthrs/journal"
-import { SyncError } from "@smthrs/sync/SyncError"
 import type * as SyncProtocol from "@smthrs/sync/SyncProtocol"
+import * as Data from "effect/Data"
 import * as Effect from "effect/Effect"
 import * as Option from "effect/Option"
 
-const recoverFromJournal = (
+class CheckpointUnavailable extends Data.TaggedError("CheckpointUnavailable")<{
+  readonly message: string
+  readonly resync: SyncProtocol.Resync
+}> {}
+
+const recoverFromJournal = <E>(
   journal: Journal.Service,
-  applySnapshot: (checkpoint: Journal.Checkpoint) => Effect.Effect<void, SyncError>
+  applySnapshot: (checkpoint: Journal.Checkpoint) => Effect.Effect<void, E>
 ) =>
-(resync: SyncProtocol.Resync): Effect.Effect<SyncProtocol.RunCursor, SyncError> =>
+(resync: SyncProtocol.Resync): Effect.Effect<SyncProtocol.RunCursor, CheckpointUnavailable | E> =>
   Effect.gen(function*() {
     const saved = yield* journal.latestCheckpoint(resync.runId).pipe(
-      Effect.mapError(() =>
-        new SyncError({
-          code: "compacted",
-          message: "Could not read the checkpoint",
-          resync
-        })
-      )
+      Effect.mapError(() => new CheckpointUnavailable({ message: "Could not read the checkpoint", resync }))
     )
     if (
       Option.isNone(saved) ||
@@ -88,11 +89,7 @@ const recoverFromJournal = (
       saved.value.seq < resync.checkpointSeq
     ) {
       return yield* Effect.fail(
-        new SyncError({
-          code: "compacted",
-          message: "No checkpoint covers the requested history",
-          resync
-        })
+        new CheckpointUnavailable({ message: "No checkpoint covers the requested history", resync })
       )
     }
     const checkpoint = saved.value
@@ -102,10 +99,12 @@ const recoverFromJournal = (
   })
 ```
 
-Pass the returned function as `onResync`. The required `applySnapshot`
-callback must actually decode and restore the projection; logging a checkpoint
-is not restoration. Validate its run/lineage and projection schema/version
-before using the state. Journal checkpoints are generic and intentionally
+Pass the returned function as `onResync`. `CheckpointUnavailable` is the
+follower's own error, not a wire code, so the subscription reports it as a
+local restoration failure rather than as the server's `compacted` refusal. The
+required `applySnapshot` callback must actually decode and restore the
+projection; logging a checkpoint is not restoration. Validate its run/lineage
+and projection schema/version before using the state. Journal checkpoints are generic and intentionally
 unredacted: never expose raw execution checkpoints to a remote follower merely
 because that follower can read redacted history.
 
@@ -138,9 +137,10 @@ new floor.
 ## Refuse when restoration is unavailable
 
 Omit `onResync` to preserve the original `compacted` refusal and cursor.
-A handler may also fail explicitly if its snapshot is missing, unauthorized,
-incompatible, or cannot be applied. Failed or interrupted application never
-acknowledges the deleted prefix.
+A handler may also fail with its own error if its snapshot is missing,
+unauthorized, incompatible, or cannot be applied; the subscription fails with
+that error unchanged. Failed or interrupted application never acknowledges the
+deleted prefix.
 
 A browser or remote follower without a configured public snapshot source must
 not pretend to have rebuilt complete state. The RPC fails closed when the

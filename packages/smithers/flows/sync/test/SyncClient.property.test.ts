@@ -61,7 +61,7 @@ const collect = (
     const failure = Exit.isFailure(exit)
       ? exit.cause.reasons.find((reason) => reason._tag === "Fail")?.error
       : undefined
-    const acknowledged = yield* client.cursors
+    const acknowledged = (yield* client.progress).delivered
     return { delivered, failure, acknowledged }
   })
 

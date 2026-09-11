@@ -22,7 +22,7 @@ import * as RpcClient from "effect/unstable/rpc/RpcClient"
 import * as RpcSerialization from "effect/unstable/rpc/RpcSerialization"
 import type * as Socket from "effect/unstable/socket/Socket"
 
-export const clientLayer: Layer.Layer<SyncClient.Sync, never, Socket.Socket> = SyncClient.layer.pipe(
+export const clientLayer: Layer.Layer<SyncClient.SyncClient, never, Socket.Socket> = SyncClient.layer.pipe(
   Layer.provide(RpcClient.layerProtocolSocket()),
   Layer.provide(RpcSerialization.layerJson)
 )
@@ -61,7 +61,7 @@ import * as Stream from "effect/Stream"
 const runId = "build-42" as JournalEvent.RunId
 
 const entries = Effect.gen(function*() {
-  const sync = yield* SyncClient.Sync
+  const sync = yield* SyncClient.SyncClient
   return sync.subscribe({ scope: { _tag: "Run", runId }, cursors: [] })
 })
 ```
@@ -78,7 +78,7 @@ the callback succeeds:
 
 ```ts
 const followed = Effect.gen(function*() {
-  const sync = yield* SyncClient.Sync
+  const sync = yield* SyncClient.SyncClient
   return sync.subscribe({
     scope: { _tag: "Run", runId },
     cursors: [],
@@ -93,8 +93,9 @@ redelivery is what a retry looks like here.
 
 ## Resume after a restart
 
-`client.cursors` reports delivery bookmarks. `(yield* client.progress).applied`
-reports successfully applied positions, one entry per run, sorted by run id.
+`(yield* client.progress).delivered` reports delivery bookmarks.
+`(yield* client.progress).applied` reports successfully applied positions, one
+entry per run, sorted by run id.
 Both maps are in memory. A durable consumer commits its projection and cursor
 together in its application transaction, then seeds a fresh client with that
 durable cursor after restart:
@@ -105,7 +106,7 @@ const resume = (
   apply: NonNullable<SyncClient.SubscribeOptions["apply"]>
 ) =>
   Effect.gen(function*() {
-    const sync = yield* SyncClient.Sync
+    const sync = yield* SyncClient.SyncClient
     return sync.subscribe({ scope: { _tag: "Workspace" }, cursors: saved, apply })
   })
 ```
@@ -163,7 +164,7 @@ allows is `SyncProtocol.maxSubscribeCredit`:
 
 ```ts
 const narrow = Effect.gen(function*() {
-  const sync = yield* SyncClient.Sync
+  const sync = yield* SyncClient.SyncClient
   return sync.subscribe({ scope: { _tag: "Run", runId }, cursors: [], credit: 32 })
 })
 ```

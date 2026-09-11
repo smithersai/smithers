@@ -157,7 +157,7 @@ describe("one SyncClient with concurrent subscriptions", () => {
             })
             yield* Fiber.join(lower)
 
-            const cursorAfterRace = yield* client.cursors
+            const cursorAfterRace = (yield* client.progress).delivered
             const third = yield* Stream.runCollect(
               Stream.take(client.subscribe({ scope, cursors: [] }), 1)
             ).pipe(Effect.forkChild({ startImmediately: true }))

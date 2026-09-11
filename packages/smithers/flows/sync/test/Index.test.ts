@@ -63,6 +63,24 @@ describe("@smthrs/sync barrel", () => {
     expect(Sync.SyncServer.makeNoop).not.toBe(Sync.SyncClient.makeNoop)
   })
 
+  it("names every service tag after its module", () => {
+    const tags = {
+      BranchCommands: Sync.BranchCommands.BranchCommands,
+      BranchIds: Sync.BranchIds.BranchIds,
+      BranchPresence: Sync.BranchPresence.BranchPresence,
+      BranchShare: Sync.BranchShare.BranchShare,
+      RunCatalog: Sync.RunCatalog.RunCatalog,
+      SyncClient: Sync.SyncClient.SyncClient,
+      SyncServer: Sync.SyncServer.SyncServer,
+      WorkspaceShare: Sync.WorkspaceShare.WorkspaceShare
+    }
+    for (const [module, tag] of Object.entries(tags)) expect(tag.key).toBe(`@smthrs/sync/${module}`)
+  })
+
+  it("keeps the deprecated Sync alias bound to the SyncClient tag", () => {
+    expect(Sync.SyncClient.Sync).toBe(Sync.SyncClient.SyncClient)
+  })
+
   it("exposes the tagged error classes with their canonical tags", () => {
     expect(new Sync.SyncError.SyncError({ code: "unknown", message: "x" })._tag).toBe(
       "@smthrs/sync/SyncError"

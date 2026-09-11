@@ -97,7 +97,7 @@ const program = Effect.gen(function*() {
             if (offset > 0) {
               assert.equal((yield* Effect.flip(commands.submit({ capability, submission }))).code, "frame_too_large")
               yield* Fiber.interrupt(live)
-              assert.deepEqual((yield* remote.progress).applied.cursors, [])
+              assert.deepEqual((yield* remote.progress).applied, [])
             } else {
               yield* commands.submit({ capability, submission })
               assert.deepEqual((yield* Fiber.join(live)).map((entry) => entry.payload), [submission])
@@ -118,7 +118,7 @@ const program = Effect.gen(function*() {
             })
               .pipe(Stream.take(1), Stream.runCollect)
             assert.deepEqual(entries.map((entry) => entry.payload), [submission])
-            assert.deepEqual((yield* fresh.progress).applied.cursors, [{ generation: 0, runId, afterSeq: 0 }])
+            assert.deepEqual((yield* fresh.progress).applied, [{ generation: 0, runId, afterSeq: 0 }])
             const reconstructed = yield* BranchCommands.makeLiveWith({ maxCommandBytes: limit })
             assert.equal((yield* reconstructed.submit({ capability, submission })).status, "duplicate")
             assert.equal((yield* journal.entries({ runId, limit: 2 })).entries.length, 1)
@@ -186,11 +186,11 @@ const program = Effect.gen(function*() {
             assert.ok(failure instanceof SyncError)
             assert.equal(failure.code, "frame_too_large")
             assert.equal(applied, 0)
-            assert.deepEqual((yield* remote.progress).applied.cursors, [])
+            assert.deepEqual((yield* remote.progress).applied, [])
           } else {
             assert.equal((yield* read)[0]!.payload, payload)
             assert.equal(applied, 1)
-            assert.deepEqual((yield* remote.progress).applied.cursors, [{ generation: 0, runId, afterSeq: 0 }])
+            assert.deepEqual((yield* remote.progress).applied, [{ generation: 0, runId, afterSeq: 0 }])
           }
         }).pipe(Effect.scoped)
       }
@@ -229,8 +229,8 @@ const program = Effect.gen(function*() {
         const fetch = remote.snapshot({ ...identity, atLeastSeq: 0 as JournalEvent.Seq })
         if (offset > 0) assert.equal((yield* Effect.flip(fetch)).code, "frame_too_large")
         else assert.deepEqual(yield* fetch, snapshot)
-        assert.deepEqual(yield* remote.cursors, [])
-        assert.deepEqual((yield* remote.progress).applied.cursors, [])
+        assert.deepEqual((yield* remote.progress).delivered, [])
+        assert.deepEqual((yield* remote.progress).applied, [])
       }).pipe(Effect.scoped)
       snapshotsTested++
     }
@@ -280,7 +280,7 @@ const program = Effect.gen(function*() {
         assert.equal(failure.code, malformed ? "decode_failed" : "protocol_violation")
         assert.equal(typeof failure.cause, "string")
         assert.equal(applied, 0)
-        assert.deepEqual((yield* remote.progress).applied.cursors, [])
+        assert.deepEqual((yield* remote.progress).applied, [])
       }).pipe(Effect.scoped)
     }
     const commands = yield* BranchCommands.makeLive
@@ -333,7 +333,7 @@ const program = Effect.gen(function*() {
       const failure = yield* Effect.flip(remote.snapshot({ ...identity, atLeastSeq: 0 as JournalEvent.Seq }))
       assert.equal(failure.code, "protocol_violation")
       assert.equal(typeof failure.cause, "string")
-      assert.deepEqual((yield* remote.progress).applied.cursors, [])
+      assert.deepEqual((yield* remote.progress).applied, [])
     }).pipe(Effect.scoped)
     malformedRecordsTested++
   }

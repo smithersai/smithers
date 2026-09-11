@@ -149,7 +149,7 @@ describe("sync recovery across a killed server process", () => {
                     firstPageConsumption
                   )
                 )
-                const cursors = yield* client.cursors
+                const cursors = (yield* client.progress).delivered
                 // Kill the server while this client/socket scope is still live,
                 // after only half of its 256-entry bootstrap page was admitted.
                 yield* Effect.promise(() => killHard(firstServer))

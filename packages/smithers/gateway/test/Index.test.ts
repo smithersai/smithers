@@ -6,7 +6,7 @@ describe("/gateway", () => {
   it("exports its canonical schemas, supervision port, and sync package", () => {
     expect(Gateway.GatewaySchema.ProjectionSnapshot).toBeDefined()
     expect(Gateway.SuperviseRuntime.SuperviseRuntime).toBeDefined()
-    expect(Gateway.Sync.SyncClient.Sync).toBeDefined()
+    expect(Gateway.Sync.SyncClient.SyncClient).toBeDefined()
   })
 
   it("provides overridable no-op supervision services and layers", async () => {

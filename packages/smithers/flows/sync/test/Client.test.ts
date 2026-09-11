@@ -95,7 +95,7 @@ describe("SyncClient", () => {
           Stream.runCollect
         )
       )
-      const cursors = yield* (client.cursors)
+      const cursors = (yield* client.progress).delivered
 
       expect(Array.from(values).map((value) => value.seq)).toEqual([0])
       expect(cursors).toEqual([{ generation: 0, runId: id, afterSeq: 0 }])

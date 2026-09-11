@@ -67,7 +67,7 @@ describe("SyncClient cursors", () => {
       // snapshot has one cursor per run and sorting never compares equal run IDs.
       expect(reads).toEqual([[{ generation: 0, runId: "duplicate", afterSeq: 4 }]])
       expect(Array.from(values).map((value) => value.seq)).toEqual([5])
-      expect(yield* (client.cursors)).toEqual([{ generation: 0, runId: "duplicate", afterSeq: 5 }])
+      expect((yield* client.progress).delivered).toEqual([{ generation: 0, runId: "duplicate", afterSeq: 5 }])
     }))
 
   it.effect("returns acknowledged cursors in canonical run order regardless of arrival order", () =>
@@ -95,7 +95,7 @@ describe("SyncClient cursors", () => {
           client.subscribe({ scope: { _tag: "Workspace" }, cursors: [] }).pipe(Stream.take(3))
         )
       )
-      const cursors = yield* (client.cursors)
+      const cursors = (yield* client.progress).delivered
 
       expect(cursors).toEqual([
         { generation: 0, runId: "alpha", afterSeq: 3 },

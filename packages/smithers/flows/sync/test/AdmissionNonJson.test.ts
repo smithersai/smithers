@@ -71,8 +71,8 @@ for (const [label, payload] of [["cycle", cycle], ["bigint", 1n], ["function", (
         const error = yield* Effect.flip(failed.pipe(Effect.provide(SyncPrincipal.layerWorkspace("non-json"))))
         expect(error).toMatchObject({ code: "decode_failed", cause: expect.any(String) })
         expect(delivered).toBe(0)
-        expect(yield* client.cursors).toEqual([])
-        expect((yield* client.progress).applied.cursors).toEqual([])
+        expect((yield* client.progress).delivered).toEqual([])
+        expect((yield* client.progress).applied).toEqual([])
       }))
   }
 }

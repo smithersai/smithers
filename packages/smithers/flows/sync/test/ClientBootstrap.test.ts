@@ -6,14 +6,21 @@
  */
 import { describe, expect, it } from "@effect/vitest"
 import { JournalEvent } from "@smthrs/journal"
-import { Effect, Stream } from "effect"
+import { Data, Effect, Stream } from "effect"
+import { expectTypeOf } from "vitest"
 import * as SyncClient from "../src/SyncClient.ts"
-import { SyncError } from "../src/SyncError.ts"
+import { SyncError, type SyncGapError } from "../src/SyncError.ts"
 import * as SyncProtocol from "../src/SyncProtocol.ts"
 
 const target = "catch-up" as JournalEvent.RunId
 const foreign = "somebody-elses-run" as JournalEvent.RunId
 const scope = { _tag: "Run", runId: target } as const
+
+/** A consumer's own restoration failure, outside the wire vocabulary. */
+class CheckpointMissing extends Data.TaggedError("CheckpointMissing")<{ readonly checkpointSeq: number }> {}
+
+/** A consumer's own transaction failure, outside the wire vocabulary. */
+class RolledBack extends Data.TaggedError("RolledBack")<{ readonly seq: number }> {}
 
 const entry = (runId: JournalEvent.RunId, sequence: number) =>
   new JournalEvent.Entry({
@@ -122,7 +129,7 @@ describe("SyncClient bootstrap page validation", () => {
 
       expect(SyncError.is(failure)).toBe(true)
       expect((failure as SyncError).code).toBe("protocol_violation")
-      expect(yield* sync.cursors).toEqual([])
+      expect((yield* sync.progress).delivered).toEqual([])
     }))
 
   it.effect("refuses a page whose sequences repeat or move backwards", () =>
@@ -286,7 +293,7 @@ describe("SyncClient consumer acknowledgement", () => {
       expect(applied).toEqual([0])
       // Sequence 1 was never applied, so it is never acknowledged either: the
       // next subscription from these cursors delivers it again.
-      expect(yield* sync.cursors).toEqual([{ generation: 0, runId: target, afterSeq: 0 }])
+      expect((yield* sync.progress).delivered).toEqual([{ generation: 0, runId: target, afterSeq: 0 }])
     }))
 
   it.effect("advances the cursor through an apply step that succeeds", () =>
@@ -309,7 +316,7 @@ describe("SyncClient consumer acknowledgement", () => {
       )
 
       expect(applied).toEqual([0, 1])
-      expect(yield* sync.cursors).toEqual([{ generation: 0, runId: target, afterSeq: 1 }])
+      expect((yield* sync.progress).delivered).toEqual([{ generation: 0, runId: target, afterSeq: 1 }])
     }))
 })
 
@@ -383,6 +390,39 @@ describe("SyncClient compaction seam", () => {
       )
 
       expect((failure as SyncError).message).toBe("cannot restore state")
-      expect(yield* sync.cursors).toEqual([])
+      expect((yield* sync.progress).delivered).toEqual([])
+    }))
+
+  it.effect("fails with the consumer's own callback errors, typed in the stream's error channel", () =>
+    Effect.gen(function*() {
+      const follow = (restorable: boolean) =>
+        Effect.flatMap(SyncClient.make({ client: compactingServer(12) }), (sync) => {
+          const following = sync.subscribe({
+            cursors: [],
+            scope,
+            onResync: (resync) =>
+              restorable
+                ? Effect.succeed({ runId: resync.runId, afterSeq: resync.checkpointSeq })
+                : Effect.fail(new CheckpointMissing({ checkpointSeq: resync.checkpointSeq })),
+            apply: (applied) => Effect.fail(new RolledBack({ seq: applied.seq }))
+          })
+          expectTypeOf(following).toEqualTypeOf<
+            Stream.Stream<JournalEvent.Entry, SyncError | SyncGapError | CheckpointMissing | RolledBack>
+          >()
+          return Effect.map(Effect.flip(Stream.runDrain(following)), (failure) => [failure, sync] as const)
+        })
+
+      const [unrestored, refused] = yield* follow(false)
+      expect(unrestored).toEqual(new CheckpointMissing({ checkpointSeq: 12 }))
+      expect(SyncError.is(unrestored)).toBe(false)
+      expect(yield* refused.progress).toEqual({ delivered: [], applied: [] })
+
+      const [unapplied, restored] = yield* follow(true)
+      expect(unapplied).toEqual(new RolledBack({ seq: 13 }))
+      expect(SyncError.is(unapplied)).toBe(false)
+      expect(yield* restored.progress).toEqual({
+        delivered: [{ generation: 0, runId: target, afterSeq: 12 }],
+        applied: [{ generation: 0, runId: target, afterSeq: 12 }]
+      })
     }))
 })

@@ -59,8 +59,8 @@ export type Scope = typeof Scope.Type
  * step then fails must not treat the cursor as an acknowledgement of that
  * apply. A consumer that needs the stronger meaning supplies
  * `SubscribeOptions.apply`, which the client runs to success before the cursor
- * moves. `Progress` distinguishes that application claim with an `Applied`
- * tag; a bare wire cursor never acknowledges application to the server.
+ * moves. `Progress.applied` records that application claim; a bare wire
+ * cursor never acknowledges application to the server.
  *
  * `generation` identifies the run's current history after rewinds. Requests may
  * omit it for persisted generation-zero cursors. Server responses must include
@@ -157,24 +157,19 @@ export const RequestEnvelope = Schema.Struct({ scope: Scope, cursors: WorkspaceC
  */
 export type RequestEnvelope = typeof RequestEnvelope.Type
 
-/** Transport delivery positions. These are never application acknowledgements.
+/**
+ * A client's delivery and application positions, as two cursor sets.
+ *
+ * `delivered` is transport delivery and never an application acknowledgement.
+ * `applied` holds the positions committed after a successful `apply` or
+ * `onResync` callback; consumers persist state and these positions in the
+ * same transaction. The field names carry the distinction, so neither set is
+ * wrapped in a tag.
+ *
  * @category models
  * @since 1.0.0-rc.0
  */
-export const DeliveredProgress = Schema.TaggedStruct("Delivered", { cursors: WorkspaceCursor })
-
-/** Application positions committed after a successful apply or restore callback.
- * Consumers must persist state and these positions in the same transaction.
- * @category models
- * @since 1.0.0-rc.0
- */
-export const AppliedProgress = Schema.TaggedStruct("Applied", { cursors: WorkspaceCursor })
-
-/** Distinct delivery and application claims; delivery cannot be used as an acknowledgement.
- * @category models
- * @since 1.0.0-rc.0
- */
-export const Progress = Schema.Struct({ delivered: DeliveredProgress, applied: AppliedProgress })
+export const Progress = Schema.Struct({ delivered: WorkspaceCursor, applied: WorkspaceCursor })
 
 /** The value form of progress.
  * @category models

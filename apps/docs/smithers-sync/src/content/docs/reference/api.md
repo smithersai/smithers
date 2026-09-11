@@ -12,7 +12,7 @@ import { Effect, Layer } from "effect"
 const serverLayer = SyncServer.layer.pipe(Layer.provide(RunCatalog.layerStatic([])))
 
 const follow = Effect.gen(function*() {
-  const sync = yield* SyncClient.Sync
+  const sync = yield* SyncClient.SyncClient
   return sync.subscribe({ scope: { _tag: "Run", runId: "build-42" as JournalEvent.RunId }, cursors: [] })
 })
 ```
@@ -91,7 +91,7 @@ for an entry committed in this process reads only the runs it named. Size
 | `SyncServer.Options.tailIntervalMs`              | `SyncServer.defaultTailIntervalMs` (1000)       | Milliseconds a workspace subscription waits before revisiting every covered run when nothing wakes it, and the longest that local wakes may defer that catalog-wide round.     |
 | `SyncServer.Options.maxFrameBytes`               | `SyncProtocol.defaultMaxFrameBytes` (2 MiB)     | Summed encoded entries of one read page or subscription frame.                                                                                                                 |
 | `SyncClient.SubscribeOptions.credit`             | `SyncClient.defaultCredit` (256)                | Frames one subscription round carries before the follow replenishes the window by resubscribing from its acknowledged cursors.                                                 |
-| `SyncClient.make` `bootstrapLimit`               | `SyncClient.defaultBootstrapLimit` (256)        | Entries one catch-up page asks for.                                                                                                                                            |
+| `SyncClient.Options.bootstrapLimit`              | `SyncClient.defaultBootstrapLimit` (256)        | Entries one catch-up page asks for.                                                                                                                                            |
 | `BranchCommands.Options.maxCommandBytes`         | `BranchCommands.defaultMaxCommandBytes` (1 MiB) | Encoded size of one command submission, refused before anything is appended.                                                                                                   |
 | `BranchCommands.Options.ledgerCapacity`          | `BranchCommands.defaultLedgerCapacity` (4096)   | Receipts one branch keeps in memory. The journal's producer identity is the durable dedupe, so an evicted receipt costs a round trip and never correctness.                    |
 | `BranchCommands.Options.hydrationLimit`          | `BranchCommands.defaultHydrationLimit` (4096)   | Entries one branch's first-touch hydration reads before it stops, so a long history is not charged to the next writer's latency. What the walk misses, the journal answers.    |
@@ -100,9 +100,17 @@ for an entry committed in this process reads only the runs it named. Size
 | `RunCatalog.PollingOptions.intervalMs`           | `RunCatalog.defaultPollIntervalMs` (1000)       | Milliseconds between reads of the durable run set: one bounded query per interval per composition, not per subscriber.                                                         |
 | `BranchPresence.PresenceOptions.changesCapacity` | `BranchPresence.defaultChangesCapacity` (256)   | Roster notifications a stalled `changes` subscriber may fall behind by; the oldest slide out.                                                                                  |
 
-Every numeric option is validated where it enters: a value that is not a
-positive safe integer fails the constructor with `invalid_request` instead of
-quietly disabling the comparison it configures.
+Every numeric option is validated where it enters. A policy belongs to the
+constructor that takes it: `SyncServer.makeLiveWith`, `BranchCommands.makeLiveWith`,
+`SyncClient.makeWith`, `BranchPresence.makeMemory`, `RunCatalog.makeMemory` and
+`RunCatalog.makePolling`, plus the `layerWith`, `layerMemory` and `layerPolling`
+layers over them, fail with `invalid_request` when a value is not a positive
+safe integer, so a bad policy fails the composition instead of quietly
+disabling the comparison it configures. The plain `make`, `makeLive` and
+`layer` forms carry the defaults, which are valid by construction, and cannot
+fail on a policy. A count a REQUEST carries rather than a policy, meaning
+`Sync.Read`'s `limit` and `SyncClient.SubscribeOptions.credit`, is checked
+where the request is built.
 
 Both change feeds slide rather than block: a publisher never waits on a stalled
 subscriber and never grows the process on its behalf. Neither feed is a source
@@ -133,10 +141,9 @@ projection name/version, minimum or actual sequence, and response JSON state.
 Both ends validate identities and the full response's encoded UTF-8 byte limit
 using `maxFrameBytes`. Invalid or stale state is refused, not coerced or skipped.
 
-`SyncClient.Service.progress` returns `SyncProtocol.Progress`: separate
-`{ _tag: "Delivered", cursors }` and `{ _tag: "Applied", cursors }` fields.
-`cursors` on the service remains a delivery bookmark. Applied progress advances
-only after successful application or restoration; an applying subscription
+`SyncClient.Service.progress` returns `SyncProtocol.Progress`: two cursor sets,
+`delivered` and `applied`. `delivered` is a delivery bookmark only. `applied`
+advances only after successful application or restoration; an applying subscription
 uses the shared applied map when choosing its start position. Use one client
 per projection and persist projection state and its cursor in one transaction.
 
@@ -159,8 +166,9 @@ the echoed response state would otherwise disagree about where the page began.
 
 ## Follow path
 
-`SyncClient.Sync` is the browser-safe service tag. `make({ client })` adapts an
-Effect RPC client and `layer` derives that client from `RpcClient.Protocol`.
+`SyncClient.SyncClient` is the browser-safe service tag; `SyncClient.Sync` is
+its deprecated former name. `make({ client })` adapts an Effect RPC client and
+`layer` derives that client from `RpcClient.Protocol`.
 A subscription replays through `Sync.Read` until the server reports `done`,
 then follows through `Sync.Subscribe` in credit windows, replenishing each
 window by resubscribing from its matching delivered or applied progress.
@@ -182,9 +190,14 @@ progress; gaps, authorization refusals, and server closes propagate to the
 consumer instead of retrying.
 
 A delivery bookmark names what was delivered. `SubscribeOptions.apply`
-additionally records `AppliedProgress`: the callback runs to success before
+additionally records `progress.applied`: the callback runs to success before
 that cursor moves, so a failed application is retried by the next applying
 subscription. A delivery-only subscription cannot acknowledge application.
+
+`apply` and `onResync` fail with the consumer's own error types, and
+`subscribe` returns `Stream<Entry, SyncError | SyncGapError | EApply | EResync>`.
+A consumer failure keeps its own type, so it never borrows a wire code and
+never passes `SyncError.is`.
 
 ## Compaction and resync
 

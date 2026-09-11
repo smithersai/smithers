@@ -59,8 +59,8 @@ describe("SyncClient construction policy", () => {
       const sync = yield* SyncClient.makeWith({ client })
       const defaults = yield* SyncClient.make({ client })
 
-      expect(yield* sync.cursors).toEqual([])
-      expect(yield* defaults.cursors).toEqual([])
+      expect((yield* sync.progress).delivered).toEqual([])
+      expect((yield* defaults.progress).delivered).toEqual([])
     }))
 
   it.effect("provides the client under an explicit policy, and fails the layer on a bad one", () =>
@@ -77,7 +77,7 @@ describe("SyncClient construction policy", () => {
 
       const cursors = yield* overSocket(
         Effect.provide(
-          Effect.flatMap(SyncClient.Sync, (sync) => sync.cursors),
+          Effect.flatMap(SyncClient.SyncClient, (sync) => Effect.map(sync.progress, (progress) => progress.delivered)),
           SyncClient.layerWith({
             bootstrapLimit: 8
           })
@@ -85,7 +85,7 @@ describe("SyncClient construction policy", () => {
       )
       const refusal = yield* Effect.flip(
         overSocket(
-          Effect.provide(SyncClient.Sync, SyncClient.layerWith({ maxFrameBytes: 0 }))
+          Effect.provide(SyncClient.SyncClient, SyncClient.layerWith({ maxFrameBytes: 0 }))
         )
       )
 

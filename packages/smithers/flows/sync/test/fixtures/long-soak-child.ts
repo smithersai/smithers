@@ -254,7 +254,7 @@ const program = Effect.gen(function*() {
               })
           }).pipe(Stream.takeUntil((entry) => entry.seq === tip), Stream.runDrain)
           assert.equal(total, emitted)
-          assert.deepEqual((yield* client.progress).applied.cursors, [{ generation: 0, runId, afterSeq: tip }])
+          assert.deepEqual((yield* client.progress).applied, [{ generation: 0, runId, afterSeq: tip }])
         }).pipe(Effect.scoped)),
       { concurrency: 4 }
     )

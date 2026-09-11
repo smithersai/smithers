@@ -46,6 +46,6 @@ for (const live of [false, true]) {
           })
       }).pipe(Stream.take(2), Stream.runDrain)
       expect(applied).toEqual([{ seq: 0, amount: 1 }, { seq: 1, amount: 2 }])
-      expect((yield* remote.progress).applied.cursors).toEqual([{ generation: 0, runId, afterSeq: 1 }])
+      expect((yield* remote.progress).applied).toEqual([{ generation: 0, runId, afterSeq: 1 }])
     }))
 }

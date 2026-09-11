@@ -71,8 +71,8 @@ describe("sync admission integrity", () => {
           )
           expect(error).toMatchObject({ code: sample.code, cause: expect.any(String) })
           expect(applied).toBe(0)
-          expect((yield* remote.progress).applied.cursors).toEqual([])
-          expect(yield* remote.cursors).toEqual([])
+          expect((yield* remote.progress).applied).toEqual([])
+          expect((yield* remote.progress).delivered).toEqual([])
         }))
     }
     for (const path of ["read", "run live", "workspace live"] as const) {
@@ -208,6 +208,6 @@ describe("sync admission integrity", () => {
       )
       expect(error).toMatchObject({ code: "protocol_violation", cause: expect.any(String) })
       expect(applied).toBe(0)
-      expect(yield* remote.cursors).toEqual([])
+      expect((yield* remote.progress).delivered).toEqual([])
     }))
 })

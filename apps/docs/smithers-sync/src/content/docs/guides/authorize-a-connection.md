@@ -141,7 +141,7 @@ import type * as BranchProtocol from "@smthrs/sync/BranchProtocol"
 
 const followBranch = (capability: BranchProtocol.ShareCapability, runId: JournalEvent.RunId) =>
   Effect.gen(function*() {
-    const sync = yield* SyncClient.Sync
+    const sync = yield* SyncClient.SyncClient
     return sync.subscribe({ scope: { _tag: "Run", runId }, cursors: [], capability })
   })
 ```

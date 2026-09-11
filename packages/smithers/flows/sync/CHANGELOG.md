@@ -43,6 +43,21 @@
   gained `layerConfig`, which reads `SMITHERS_SYNC_BRANCH_SECRET` and
   `SMITHERS_SYNC_BRANCH_KEY_ID`. Outstanding branch capabilities do not verify
   under this release.
+- **Breaking.** The client's service tag is `SyncClient.SyncClient`, keyed
+  `@smthrs/sync/SyncClient`, matching every other service module.
+  `SyncClient.Sync` stays as a deprecated alias of the same tag for one
+  release.
+- **Breaking.** `SubscribeOptions.apply` and `onResync` fail with the
+  consumer's own error types, and `subscribe` returns
+  `Stream<Entry, SyncError | SyncGapError | EApply | EResync>`. A consumer's
+  transaction failure no longer has to borrow a wire code such as `unknown` or
+  `compacted`, so it can no longer be mistaken for a transport or protocol
+  failure or pass `SyncError.is`.
+- **Breaking.** `SyncProtocol.Progress` is
+  `{ delivered: WorkspaceCursor, applied: WorkspaceCursor }`. The
+  `DeliveredProgress` and `AppliedProgress` tagged wrappers are removed: they
+  never sat in a union, so their tags discriminated nothing. `Service.cursors`
+  is removed; read `progress.delivered` instead.
 - **Breaking.** `BranchCommands.submission` returns
   `Effect<CommandSubmission, SyncError>`. It decodes the fields it fills in, so
   a command name the schema forbids is the same typed refusal `submit` returns

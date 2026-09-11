@@ -59,29 +59,29 @@ at every boundary that could break it.
 ## Delivered and applied are different claims
 
 `RunCursor` is an exclusive transport bookmark. The server's response cursors
-and `client.cursors` describe delivery, and never acknowledge application.
-`client.progress` reports two schema-backed, discriminated claims:
+and `progress.delivered` describe delivery, and never acknowledge application.
+`client.progress` reports `SyncProtocol.Progress`, two cursor sets:
 
-- `delivered: { _tag: "Delivered", cursors }` records transport delivery.
-- `applied: { _tag: "Applied", cursors }` records successful `apply` or `onResync` callbacks.
+- `delivered` records transport delivery.
+- `applied` records successful `apply` or `onResync` callbacks.
 
-The matching schemas are `DeliveredProgress`, `AppliedProgress`, and `Progress`
-in `SyncProtocol`. Delivery-only subscriptions leave applied progress empty.
-Use `SubscribeOptions.apply` to acknowledge materialization:
+Both are `WorkspaceCursor` values; the field name carries the distinction.
+Delivery-only subscriptions leave applied progress empty. Use
+`SubscribeOptions.apply` to acknowledge materialization:
 
 ```ts
 import type { JournalEvent } from "@smthrs/journal"
-import type { SyncError } from "@smthrs/sync/SyncError"
 import * as Effect from "effect/Effect"
 
-const apply = (entry: JournalEvent.Entry): Effect.Effect<void, SyncError> =>
+const apply = (entry: JournalEvent.Entry): Effect.Effect<void> =>
   Effect.logInfo(`applied ${entry.eventType} at ${entry.seq}`)
 ```
 
-The callback runs to success before the cursor moves. A failure fails the
-subscription with that entry unacknowledged, so the next subscription from
-`client.progress`'s applied cursors delivers it again. Redelivery is what a retry is here, so the
-callback must be idempotent.
+The callback runs to success before the cursor moves. It fails with the
+consumer's own error type, which the subscription's error channel carries
+unchanged. A failure fails the subscription with that entry unacknowledged, so
+the next subscription from `client.progress`'s applied cursors delivers it
+again. Redelivery is what a retry is here, so the callback must be idempotent.
 
 Use it whenever the consumer writes somewhere durable. Leave it off when the
 consumer is a view that is rebuilt on reconnect anyway.
@@ -113,7 +113,10 @@ snapshot does not move either set:
 import * as SyncClient from "@smthrs/sync/SyncClient"
 import * as Effect from "effect/Effect"
 
-const checkpoint = Effect.flatMap(SyncClient.Sync, (sync) => Effect.map(sync.progress, (progress) => progress.applied))
+const checkpoint = Effect.flatMap(
+  SyncClient.SyncClient,
+  (sync) => Effect.map(sync.progress, (progress) => progress.applied)
+)
 ```
 
 For durable recovery, the callback must commit state and its cursor in the

@@ -65,11 +65,11 @@ the ceiling fails, with `frame_too_large`, because no page can carry it.
 
 Persist the returned cursors only after applying the returned batch.
 
-There is no application acknowledgement RPC. Response cursors and
-`SyncClient.cursors` are delivery bookmarks. `SyncClient.progress` separately
-reports `DeliveredProgress` and `AppliedProgress`, tagged `Delivered` and
-`Applied`. Only successful `apply` and snapshot-restore callbacks advance the
-applied map. An applying subscription never inherits delivery-only progress.
+There is no application acknowledgement RPC. Response cursors are delivery
+bookmarks. `SyncClient.progress` reports `Progress`, two cursor sets:
+`delivered` holds delivery bookmarks and `applied` holds application
+positions. Only successful `apply` and snapshot-restore callbacks advance the
+applied set. An applying subscription never inherits delivery-only progress.
 
 Both server and client validate complete admitted batches before serving or
 applying them. A malformed envelope or non-JSON payload fails `decode_failed`;
