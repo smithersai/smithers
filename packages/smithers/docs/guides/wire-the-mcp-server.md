@@ -79,6 +79,14 @@ executable's discovery protocol. Its `Options` choose `surface` (`semantic`,
 directory entries, not another execution path. An allowlist cannot enable
 approval-bearing tools on its own.
 
+`list_flows`, `list_runs`, and `list_pending_approvals` return one Control page.
+Each accepts optional `cursor` and `limit` arguments. `limit` is 1 to 500 and
+defaults to 100. `data` stays the array of items. When more items remain, the
+envelope also carries `nextCursor`; pass it back as `cursor` to read the next
+page. An envelope without `nextCursor` is the last page. `list_flows` drops
+reserved system flows from each page, so a page can hold fewer than `limit`
+items and still have a `nextCursor`.
+
 The default semantic session exposes nine Control-backed tools plus ten
 unsupported compatibility entries. `run_workflow` and `resolve_approval` are
 excluded. A custom host can set `approvalTools: true` and a host-authenticated

@@ -1108,3 +1108,80 @@ describe("a real stdio round trip", () => {
     expect(result.refused.isError).toBe(true)
   }, 60_000)
 })
+
+/**
+ * The three list tools page the way Control does: a first answer of 100 items
+ * carries `nextCursor`, and passing it back reads the rest. Before this, the
+ * tools dropped the cursor and refused one as an argument, so item 101 was
+ * unreachable behind an `ok: true`.
+ */
+describe("list tools page past the first Control page", () => {
+  const page = <A>(items: ReadonlyArray<A>, cursor: string | undefined, limit: number | undefined) => {
+    const start = cursor === undefined ? 0 : Number(cursor)
+    const end = start + (limit ?? 100)
+    return {
+      items: items.slice(start, end),
+      ...(end < items.length ? { nextCursor: String(end) } : {})
+    }
+  }
+  const flows = [
+    ...Array.from({ length: 100 }, (_, index) => ({ flowId: `project/flow-${index}`, description: "" })),
+    { flowId: "system/test", description: "" },
+    { flowId: "project/last", description: "" }
+  ]
+  const runs = Array.from({ length: 101 }, (_, index) => ({
+    runId: `run-${index}`,
+    flowId: "project/demo",
+    status: "waiting-approval" as const
+  }))
+  const pagedControl = Layer.effect(
+    ControlService.Control,
+    Effect.map(ControlService.Control, (service) =>
+      ControlService.make({
+        ...service,
+        watch: () => Stream.empty,
+        list: (request) =>
+          Effect.succeed(
+            request._tag === "flows"
+              ? { _tag: "flows" as const, ...page(flows, request.cursor, request.limit) }
+              : { _tag: "runs" as const, ...page(runs, request.cursor, request.limit) }
+          ) as never
+      }))
+  ).pipe(Layer.provide(control))
+
+  type Paged = { readonly ok: true; readonly data: ReadonlyArray<Record<string, unknown>>; readonly nextCursor?: string }
+
+  it("continues list_flows across the boundary and still hides reserved flows", async () => {
+    const first = await rpcCallWith(pagedControl, "list_flows") as Paged
+    expect(first.data).toHaveLength(100)
+    expect(first.nextCursor).toBe("100")
+
+    const second = await rpcCallWith(pagedControl, "list_flows", { cursor: first.nextCursor }) as Paged
+    expect(second.data.map((flow) => flow.flowId)).toEqual(["project/last"])
+    expect(second.nextCursor).toBeUndefined()
+  })
+
+  it("continues list_runs across the boundary", async () => {
+    const first = await rpcCallWith(pagedControl, "list_runs", { status: "waiting-approval" }) as Paged
+    expect(first.data).toHaveLength(100)
+    expect(first.nextCursor).toBe("100")
+
+    const second = await rpcCallWith(pagedControl, "list_runs", { cursor: "100" }) as Paged
+    expect(second.data.map((run) => run.runId)).toEqual(["run-100"])
+    expect(second).not.toHaveProperty("nextCursor")
+  })
+
+  it("continues list_pending_approvals across the boundary and honors limit", async () => {
+    const first = await rpcCallWith(pagedControl, "list_pending_approvals", { limit: 60 }) as Paged
+    expect(first.data).toHaveLength(60)
+    expect(first.nextCursor).toBe("60")
+
+    const second = await rpcCallWith(pagedControl, "list_pending_approvals", { cursor: "100" }) as Paged
+    expect(second.data.map((approval) => approval.runId)).toEqual(["run-100"])
+  })
+
+  it.each([0, 501, 1.5])("refuses the page limit %s", async (limit) => {
+    expect(await rpcCallWith(pagedControl, "list_runs", { limit }))
+      .toMatchObject({ ok: false, error: { code: "INVALID_INPUT" } })
+  })
+})

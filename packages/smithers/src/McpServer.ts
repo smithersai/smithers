@@ -86,7 +86,7 @@ export type Surface = "raw" | "semantic" | "both"
  * @since 1.0.0
  */
 export type Envelope =
-  | { readonly ok: true; readonly data: unknown }
+  | { readonly ok: true; readonly data: unknown; readonly nextCursor?: string }
   | { readonly ok: false; readonly error: { readonly code: string; readonly message: string } }
 
 /**
@@ -95,7 +95,8 @@ export type Envelope =
  * @category constructors
  * @since 1.0.0
  */
-export const succeeded = (data: unknown): Envelope => ({ ok: true, data })
+export const succeeded = (data: unknown, nextCursor?: string): Envelope =>
+  nextCursor === undefined ? { ok: true, data } : { ok: true, data, nextCursor }
 
 /**
  * A failed envelope.
@@ -156,9 +157,27 @@ const runFlowArguments = Schema.Struct({
   )
 })
 
+// Control answers one page at a time; the list tools pass its cursor through
+// so a caller can read past the first page instead of seeing it as the whole.
+const pageArguments = {
+  cursor: Schema.optionalKey(describedString("The nextCursor of the previous page.")),
+  limit: Schema.optionalKey(ControlSchema.PageLimit.annotate({
+    description:
+      `Items per page, 1 to ${ControlSchema.maxPageSize}. Omitted means ${ControlSchema.defaultPageSize}.`
+  }))
+}
+
+const pageOf = (args: Record<string, unknown>) => ({
+  ...(asString(args["cursor"]) === undefined ? {} : { cursor: asString(args["cursor"])! }),
+  ...(typeof args["limit"] === "number" ? { limit: args["limit"] } : {})
+})
+
+const listFlowsArguments = Schema.Struct(pageArguments)
+
 const listRunsArguments = Schema.Struct({
   flowId: Schema.optionalKey(describedString("Only runs of this flow.")),
-  status: Schema.optionalKey(ControlSchema.RunStatus.annotate({ description: "Only runs in this status." }))
+  status: Schema.optionalKey(ControlSchema.RunStatus.annotate({ description: "Only runs in this status." })),
+  ...pageArguments
 })
 
 const watchRunArguments = Schema.Struct({
@@ -171,7 +190,8 @@ const watchRunArguments = Schema.Struct({
 })
 
 const pendingApprovalArguments = Schema.Struct({
-  runId: Schema.optionalKey(describedString("Only this run."))
+  runId: Schema.optionalKey(describedString("Only this run.")),
+  ...pageArguments
 })
 
 const resolveApprovalArguments = Schema.Struct({
@@ -302,15 +322,16 @@ export const supportedTools: ReadonlyArray<Tool> = [
     name: "list_flows",
     description: "List the flows discovered under this project.",
     readOnly: true,
-    schema: emptyArguments,
-    call: () =>
+    schema: listFlowsArguments,
+    call: (args) =>
       envelope(
-        Effect.flatMap(ControlService.Control, (control) => control.list({ _tag: "flows" })),
+        Effect.flatMap(ControlService.Control, (control) => control.list({ _tag: "flows", ...pageOf(args) })),
         (listed) =>
           succeeded(
             listed._tag === "flows"
               ? listed.items.filter((item) => !Unsupported.isReservedFlow(item.flowId))
-              : []
+              : [],
+            listed.nextCursor
           )
       )
   }),
@@ -363,9 +384,10 @@ export const supportedTools: ReadonlyArray<Tool> = [
               ...(asString(args["status"]) === undefined
                 ? {}
                 : { status: asString(args["status"])! as ControlSchema.RunStatus })
-            }
+            },
+            ...pageOf(args)
           })),
-        (listed) => succeeded(listed._tag === "runs" ? listed.items : [])
+        (listed) => succeeded(listed._tag === "runs" ? listed.items : [], listed.nextCursor)
       )
   }),
   makeTool({
@@ -440,10 +462,11 @@ export const supportedTools: ReadonlyArray<Tool> = [
           const only = requireRunId(args)
           const listed = yield* control.list({
             _tag: "runs",
-            filters: { status: "waiting-approval", ...(only === undefined ? {} : { runId: only }) }
+            filters: { status: "waiting-approval", ...(only === undefined ? {} : { runId: only }) },
+            ...pageOf(args)
           })
           const runs = listed._tag === "runs" ? listed.items : []
-          return yield* Effect.forEach(runs, (run) =>
+          const approvals = yield* Effect.forEach(runs, (run) =>
             Effect.map(eventsOf(run.runId), (events) => {
               const digest = Forensics.digest(events)
               return {
@@ -453,8 +476,9 @@ export const supportedTools: ReadonlyArray<Tool> = [
                 approval: digest.parkedApproval
               }
             }))
+          return { approvals, nextCursor: listed.nextCursor }
         }),
-        (approvals) => succeeded(approvals)
+        ({ approvals, nextCursor }) => succeeded(approvals, nextCursor)
       )
   }),
   makeTool({
