@@ -205,7 +205,8 @@ const keyed = (
       : `${blank.map((variable) => `$${variable}`).join(" and ")} exported but empty`,
     // Not spelled as an assignment. `Redaction.redact` rewrites anything of
     // the form `<NAME>KEY=<value>`, and this sentence reaches an operator
-    // through `bin.ts`, which redacts every failure line: the literal
+    // through `cli/LegacyBin.ts` or `cli/Entry.ts`, both of which redact
+    // every failure line: the literal
     // `export MOONSHOT_API_KEY=<your key>` printed as
     // `export MOONSHOT_API_KEY=[REDACTED] key>`, which reads like a bug in
     // the hint rather than a rule doing its job.

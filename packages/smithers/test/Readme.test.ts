@@ -87,6 +87,23 @@ describe("the CLI documentation contracts", () => {
     )
   })
 
+  it("describes the bin entry as the dispatcher between the Incur tree and the legacy tree", () => {
+    const row = readme.split("\n").find((line) => line.startsWith("| `bin` / `smthrs`"))
+    expect(row).toContain("`Cli.makeCli`")
+    expect(row).toContain("`cli/LegacyBin`")
+  })
+
+  it("does not credit bin.ts with the reporting that moved to cli/LegacyBin.ts and cli/Entry.ts", () => {
+    // `bin.ts` only picks an entry; the reporter, the exit status and the
+    // `--help`/`--version` scan live in the two modules it loads.
+    const stale = /`bin\.ts` (?:prints|hands|reads|answers)|through `bin\.ts`|rather than in `bin\.ts`/
+    const files = ["CliError.ts", "Unsupported.ts", "Command.ts", "Providers.ts", "internal/Failure.ts"]
+      .filter((file) => stale.test(readFileSync(new URL(`../src/${file}`, import.meta.url), "utf8")))
+    const tests = readFileSync(new URL("./Unsupported.test.ts", import.meta.url), "utf8")
+    expect(files).toEqual([])
+    expect(stale.test(tests)).toBe(false)
+  })
+
   it("does not promise unimplemented legacy environment aliases", () => {
     expect(Cli.Environment.names.every(({ name }) => name.startsWith("SMITHERS_"))).toBe(true)
     expect(readme).not.toContain("FLOWS_*")

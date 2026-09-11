@@ -327,7 +327,7 @@ const initGlobalRefusal = (args: ReadonlyArray<string> | Argv.Globals): CliError
  * effect of being told the verb is gone, and the eight-at-a-time spawns in
  * `scripts/docs-removals.test.mjs` contended on those two SQLite files.
  *
- * The scan is deliberately narrow, the way `bin.ts` reads `--help` and
+ * The scan is deliberately narrow, the way `cli/LegacyBin.ts` reads `--help` and
  * `--version`: it fires only for `smthrs <verb> [<positional>...]`, and any
  * flag anywhere in the vector sends the invocation down the ordinary path,
  * except the removed initializer with known root and presentation options.

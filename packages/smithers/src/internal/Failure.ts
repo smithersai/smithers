@@ -10,7 +10,7 @@
  * `ClaimLost: `, which names neither the run nor the stable `code` a script
  * must be able to grep for.
  *
- * It lives here rather than in `bin.ts` because importing that module runs the
+ * It lives here rather than in `cli/LegacyBin.ts` because importing that module runs the
  * command line: the reporter itself can only be exercised through a real
  * process, and this is the part of it that has an answer to check.
  *

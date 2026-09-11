@@ -68,7 +68,7 @@ describe("every removed verb", () => {
   })
 })
 
-describe("the refusal `bin.ts` answers before the control plane boots", () => {
+describe("the refusal `cli/LegacyBin.ts` answers before the control plane boots", () => {
   /**
    * Every form the removed-command contract removes, spelled the way an operator types it:
    * the bare verbs, and the removed subcommands of the two parents that live.

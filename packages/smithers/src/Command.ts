@@ -947,7 +947,7 @@ const migrate = Command.make("migrate", {
     }
     yield* Console.log(MigrateCommand.render(outcome.report, root.json ? "json" : "human", outcome.reportDirectory))
     // The migration's own status, the way `smithers-migrate` reports it: 3 is
-    // "parked, the operator has a decision", not a failure. `bin.ts` hands a
+    // "parked, the operator has a decision", not a failure. `cli/LegacyBin.ts` hands a
     // successful exit whatever `process.exitCode` holds, which is also how
     // `NodeControl.layerOutput` transfers a rendered status.
     yield* CommandStatus.set(MigrateCommand.exitCode(outcome.report))

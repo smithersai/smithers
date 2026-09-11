@@ -94,7 +94,7 @@ export class RenderingError extends Schema.TaggedError<RenderingError>()("/cli/R
  * plane's own.
  *
  * A handler's error channel carries these beside the typed control-plane
- * failures; `bin.ts` prints both and this union decides the exit status.
+ * failures; `cli/LegacyBin.ts` and `cli/Entry.ts` print both and this union decides the exit status.
  *
  * @category models
  * @since 0.1.0
