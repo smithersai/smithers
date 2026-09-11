@@ -12,7 +12,7 @@ import type { Entry, RunId, Seq } from "@smthrs/journal/JournalEvent"
 import { Ownership, RunStore } from "@smthrs/run-store"
 import { CacheStore } from "@smthrs/step-cache"
 import { EffectBoundary, ReadOnlyTimeTravel, SqlTimeTravelStore, TimeTravel } from "@smthrs/time-travel"
-import { forkWorkspaceName, type Position, type Projection } from "@smthrs/time-travel/TimeTravel"
+import { forkWorkspaceName, type Position } from "@smthrs/time-travel/TimeTravel"
 import { TimeTravelStore } from "@smthrs/time-travel/TimeTravelStore"
 import { Cause, Effect, Exit, Layer } from "effect"
 import { existsSync, mkdirSync } from "node:fs"
@@ -20,6 +20,7 @@ import { join } from "node:path"
 import { DatabaseSync } from "node:sqlite"
 import * as NodeControl from "../NodeControl.ts"
 import * as Project from "../Project.ts"
+import * as Projection from "./Projection.ts"
 import * as Workspace from "./Workspace.ts"
 
 /**
@@ -134,30 +135,6 @@ const resolvePosition = (runId: string, options: Options) =>
     return { row, position: { runId, frame: { lineageId: lineage, seq: sequence } } satisfies Position }
   })
 
-interface State {
-  readonly entryCount: number
-  readonly eventTypes: Readonly<Record<string, number>>
-  readonly state?: unknown
-  readonly events: ReadonlyArray<Entry>
-  readonly sealed: ReadonlyArray<{ seq: number; result: unknown }>
-}
-
-const projection = (includeEvents: boolean): Projection<State> => ({
-  initial: { entryCount: 0, eventTypes: {}, events: [], sealed: [] },
-  reduce: (state, entry, sealed) => {
-    const payload = entry.payload as { readonly state?: unknown } | null
-    return {
-      entryCount: state.entryCount + 1,
-      eventTypes: { ...state.eventTypes, [entry.eventType]: (state.eventTypes[entry.eventType] ?? 0) + 1 },
-      state: entry.eventType === "flows.engine.run-decision" && payload?.state !== undefined
-        ? payload.state
-        : state.state,
-      events: includeEvents ? [...state.events, entry] : [],
-      sealed: sealed === undefined ? state.sealed : [...state.sealed, { seq: entry.seq, result: sealed }]
-    }
-  }
-})
-
 /**
  * Reads the stored prefix without executing effects or startup recovery.
  * @since 1.0.0
@@ -168,9 +145,12 @@ export const read = async (root: string, runId: string, options: Options, replay
     Effect.gen(function*() {
       const { row, position } = yield* resolvePosition(runId, options)
       const reader = yield* ReadOnlyTimeTravel
-      const result = position.frame.seq === 0
-        ? projection(replay).initial
-        : yield* reader.replay(position, projection(replay), { maxHistoryEntries: options.limit ?? 10_000 })
+      const fold = Projection.make(replay)
+      const result = fold.finish(
+        position.frame.seq === 0
+          ? fold.initial
+          : yield* reader.replay(position, fold, { maxHistoryEntries: options.limit ?? 10_000 })
+      )
       return {
         position,
         executionFlow: (JSON.parse(row.stateJson) as { flowName?: string } | null)?.flowName,
