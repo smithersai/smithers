@@ -1,0 +1,132 @@
+[
+  {
+    "lane": "login",
+    "goal": "Complete GitHub login on local and cloud origins and emit only a validated signed-in identity.",
+    "files": [
+      "apps/app/src/mainview/ControllerBoot.client.ts",
+      "apps/app/src/mainview/state/controller/auth-billing.ts",
+      "apps/app/src/mainview/state/seams/CloudSeam.ts",
+      "apps/app/src/bun/CloudAuth.ts",
+      "apps/app/src/bun/server.ts",
+      "apps/app/src/mainview/flows/entries/auth.ts",
+      "apps/app/e2e/playwright/tutorial2-login.spec.ts"
+    ],
+    "signal": "identity.signed-in",
+    "acceptance": "From signed-out local hybrid and cloud origins, keyboard sign-in returns to the same repo path, validated login appears, lesson 2 checks and advances; unknown, unavailable, cancellation and 501 never check.",
+    "notes": "Own all local server.ts changes; repo lane exports a route registrar for you to mount. Distinguish local session token, cloud PAT, and app identity. No browser-held credentials. Offline needs an honest recovery route, never synthetic identity. All listed files are exclusively owned by this lane; new test/helper files must use the lane prefix. Shared composition edits are supplied as a handoff to the root integrator, not applied by this lane."
+  },
+  {
+    "lane": "repository",
+    "goal": "Rank repos by authored commits over the last 90 days; choose one or Skip to create a local repo and report its actual path.",
+    "files": [
+      "apps/app/src/mainview/flows/entries/repo.ts",
+      "apps/app/src/mainview/state/seams/RepositoriesSeam.ts",
+      "apps/app/src/mainview/state/controller/tutorialRepository.ts",
+      "apps/app/src/mainview/cards/RepositoryChoiceCard.tsx",
+      "apps/app/src/bun/routes/tutorialRepository.ts",
+      "apps/app/src/mainview/state/controller/adoptLocalRepository.ts",
+      "apps/app/e2e/playwright/tutorial2-repository.spec.ts"
+    ],
+    "signal": "repository.ready",
+    "acceptance": "Repo with most distinct authored commits ranks first, not most recently pushed; choosing it persists active repo; Skip creates a Git repo with no GitHub remote, shows its name and absolute path, and advances only after adoption survives reload.",
+    "notes": "Use /repo.choose and /repo.create; source counts through existing same-origin GitHub proxy, extend upstream only if required. Default ~/Smithers/repositories/smithers-playground, collision suffix; no overwrites. Export local route registration for login owner to mount. /repo.open opens an existing repo; initialization itself is a gap. Cloud browser must hand off to local host, never pretend its filesystem exists. All listed files are exclusively owned by this lane; new test/helper files must use the lane prefix. Shared composition edits are supplied as a handoff to the root integrator, not applied by this lane."
+  },
+  {
+    "lane": "issues_prs",
+    "goal": "Expose exact /issues and /prs read doors, reuse existing cards, and emit completion on a successful repository-scoped read.",
+    "files": [
+      "apps/app/src/mainview/flows/entries/issues.ts",
+      "apps/app/src/mainview/flows/entries/prs.ts",
+      "apps/app/src/mainview/state/seams/IssuesSeam.ts",
+      "apps/app/src/mainview/state/seams/LandingsSeam.ts",
+      "apps/app/src/mainview/cards/IssueCards.tsx",
+      "apps/app/src/mainview/cards/LandingCards.tsx",
+      "apps/app/e2e/playwright/tutorial2-issues-prs.spec.ts"
+    ],
+    "signal": "issues.opened (or prs.opened, normalized by skeleton)",
+    "acceptance": "Typing /issues or /prs opens the selected repo card, including a successful empty list; error/auth refusal does not check; a local-only repo gets an honest supported local empty state, not a GitHub request.",
+    "notes": "Bare namespaces are not currently registered execution aliases. Preserve issues.list/prs.list and their GitHub-vs-platform semantics. Export grammar additions in handoff; root owns SlashPayload integration. All listed files are exclusively owned by this lane; new test/helper files must use the lane prefix. Shared composition edits are supplied as a handoff to the root integrator, not applied by this lane."
+  },
+  {
+    "lane": "file_open",
+    "goal": "Make /files.read without args a useful file chooser and open actual repository contents in the existing file card.",
+    "files": [
+      "apps/app/src/mainview/flows/entries/files.ts",
+      "apps/app/src/mainview/state/seams/FilesSeam.ts",
+      "apps/app/src/mainview/state/seams/RepoTreeSeam.ts",
+      "apps/app/src/mainview/cards/FileCards.tsx",
+      "apps/app/e2e/playwright/tutorial2-files.spec.ts"
+    ],
+    "signal": "file.opened",
+    "acceptance": "/files.read shows only missing path input, sourced from the selected repo; keyboard selection/submission renders exact file contents via code-view and checks lesson 5; failed read, directory listing and unrelated repo do not check.",
+    "notes": "Reuse files.list/read, line anchors, code-view adapter and form payload. Do not create an /open synonym unless needed. Request additive file option provider from root if required; do not edit rpc Cards.ts or forms.ts yourself. All listed files are exclusively owned by this lane; new test/helper files must use the lane prefix. Shared composition edits are supplied as a handoff to the root integrator, not applied by this lane."
+  },
+  {
+    "lane": "librarian",
+    "goal": "Make the Librarian the tutorial sole package choice and install its Wiki/history capabilities through the existing plugin flow.",
+    "files": [
+      "apps/app/src/mainview/plugins/catalog.ts",
+      "apps/app/src/mainview/plugins/PluginGallery.tsx",
+      "apps/app/src/mainview/plugins/PluginsSurface.tsx",
+      "apps/app/src/mainview/plugins/AppPlugin.ts",
+      "apps/app/src/mainview/state/controller/plugins.ts",
+      "apps/app/src/mainview/flows/entries/plugins.ts",
+      "apps/app/src/mainview/onboarding/pluginLesson.ts",
+      "apps/app/e2e/playwright/tutorial2-librarian.spec.ts"
+    ],
+    "signal": "librarian (existing real producer)",
+    "acceptance": "Open Library at lesson 6, see Librarian as the only required tutorial package, install with keyboard or slash; installed shelf survives reload, Wiki/history doors load, check appears only on installation; replay handles already-installed package.",
+    "notes": "Keep global catalog unless removal is justified; add a tutorial projection if necessary. Root alone changes GuideShell.tsx to pass any new projection prop. Library browse must have an embedded agent door; installing is confirmable for the agent. All listed files are exclusively owned by this lane; new test/helper files must use the lane prefix. Shared composition edits are supplied as a handoff to the root integrator, not applied by this lane."
+  },
+  {
+    "lane": "background_flows",
+    "goal": "Implement Create Wiki and Create Mythical history as two durable asynchronous runs, with monitoring while chat remains usable.",
+    "files": [
+      "apps/app/src/mainview/flows/entries/wiki.ts",
+      "apps/app/src/mainview/flows/entries/history.ts",
+      "apps/app/src/mainview/state/seams/HistorySeam.ts",
+      "apps/app/src/mainview/state/controller/librarianRuns.ts",
+      "flows/librarian/wiki/flow.ts",
+      "flows/librarian/history/flow.ts",
+      "apps/app/e2e/playwright/tutorial2-background.spec.ts"
+    ],
+    "signal": "librarian.runs.monitored",
+    "acceptance": "Two distinct real run IDs launch for the chosen repo, both have inspectable persisted run cards; send a chat message while they run; opening both monitors checks lesson 7; restart reattaches and failures remain visible.",
+    "notes": "Use /wiki.create and existing /history.bootstrap; aggregate successful start plus inspection of BOTH runs, not timer completion. Reuse workflow-pump/runs controller via root integration. HistorySeam currently explicitly refuses generation. Wiki writes retain provenance/revision; mythical branch/notes must preserve source tree and main. All listed files are exclusively owned by this lane; new test/helper files must use the lane prefix. Shared composition edits are supplied as a handoff to the root integrator, not applied by this lane."
+  },
+  {
+    "lane": "agent_change",
+    "goal": "Find a codebase-specific feature, persist its plan before executing recursive scripts, and display one resulting commit directly above the captured HEAD.",
+    "files": [
+      "apps/app/src/mainview/flows/entries/agent.ts",
+      "apps/app/src/mainview/state/controller/tutorialChange.ts",
+      "apps/app/src/mainview/cards/CodingPlanCard.tsx",
+      "apps/app/src/mainview/cards/CodingPlan.ts",
+      "apps/app/src/mainview/cards/ChangeCommitStrip.tsx",
+      "flows/tutorial-change/flow.ts",
+      "flows/coding/schema.ts",
+      "flows/coding/workflow.ts",
+      "flows/coding/implementation/flow.ts",
+      "apps/app/e2e/playwright/tutorial2-change.spec.ts"
+    ],
+    "signal": "change.committed",
+    "acceptance": "Before execution see suggested feature, base HEAD and planned commit list; recursive script calls are journaled; successful run shows exactly one actual commit with parent equal to captured HEAD and matching changed files; stale HEAD/failure never checks.",
+    "notes": "Reuse coding Plan/ImplementPlan and RunTraceCard CodingPlanBody; prefer @smthrs/ui Commit strip to making target dependency graph pretend to be Git history. Root wires the strip into shared run card after exported payload contract is ready. Agent door confirms spend/write; no push during tutorial by default. All listed files are exclusively owned by this lane; new test/helper files must use the lane prefix. Shared composition edits are supplied as a handoff to the root integrator, not applied by this lane."
+  },
+  {
+    "lane": "turn_trace",
+    "goal": "Ensure each real turn has one human explanation and keyboard click-through to the recorded script/call trace.",
+    "files": [
+      "apps/app/src/mainview/cards/RunTraceCard.tsx",
+      "apps/app/src/mainview/cards/RunTrace.ts",
+      "apps/app/src/mainview/cards/EngineTrace.ts",
+      "apps/app/src/mainview/state/controller/runs.ts",
+      "apps/app/src/mainview/flows/entries/runs.ts",
+      "apps/app/src/mainview/DevtoolsPanel.tsx",
+      "apps/app/e2e/playwright/tutorial2-trace.spec.ts"
+    ],
+    "signal": "trace.opened",
+    "acceptance": "The change run shows one grounded sentence per recorded turn; Tab/Enter opens the exact turn and recorded source/calls/results without maximizing; slash/agent select the same payload and selection survives reload.",
+    "notes": "Reuse existing turnNarratives, turns/timeline views, runs.trace.select/view and source block. Current fallback is Calls: or Turn opened, not always a human explanation. Never synthesize execution history or chain-of-thought; show observable actions and recorded explanations. Root integrates agent_change strip into this file after both lanes land. All listed files are exclusively owned by this lane; new test/helper files must use the lane prefix. Shared composition edits are supplied as a handoff to the root integrator, not applied by this lane."
+  }
+]

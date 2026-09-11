@@ -41,7 +41,7 @@ import {
 } from "./TargetGraph.ts"
 
 /*
- * The targets card's table state (apps/ui cards/TargetsTable.ts): the filter
+ * The targets card's table state (apps/app cards/TargetsTable.ts): the filter
  * the user set, the row they selected, and what the card has read about
  * individual targets. All optional: cards persisted before the table parse.
  */
@@ -164,7 +164,7 @@ export const CardPlanItemSchema = z.object({
  */
 export type CardPlanItem = z.infer<typeof CardPlanItemSchema>
 
-/** The seams a form field's select may draw its options from (apps/ui flows/FlowForms.ts OPTION_PROVIDERS).
+/** The seams a form field's select may draw its options from (apps/app flows/FlowForms.ts OPTION_PROVIDERS).
  * @since 1.0.0
  * @category constants
  */
@@ -177,7 +177,9 @@ export const FORM_OPTION_PROVIDERS = [
   "bookmarks",
   "workspaces",
   "agents",
-  "plugins"
+  "plugins",
+  /* The selected repository's real files, listed by the tutorial's file lesson. */
+  "files"
 ] as const
 
 const cardBaseShape = {
@@ -610,6 +612,31 @@ export type SearchItem = z.infer<typeof SearchItemSchema>
  * @category schemas
  */
 const CurrentCardSchema = z.discriminatedUnion("kind", [
+  /* The tutorial's ranked repository chooser and its local-creation receipt. */
+  z.object({
+    ...cardBaseShape,
+    kind: z.literal("repository-choice"),
+    payload: z.object({
+      cutoff: z.string(),
+      partial: z.boolean(),
+      error: z.string().nullable(),
+      selected: z.string().nullable(),
+      created: z.object({ name: z.string(), path: z.string() }).nullable(),
+      repositories: z.array(z.object({
+        fullName: z.string(),
+        count: z.number().nullable(),
+        latest: z.string().nullable(),
+        coverage: z.enum(["default-branch", "unknown"]),
+        error: z.string().nullable()
+      }))
+    })
+  }),
+  /* The Library as an embedded card: the agent's browse door onto the same shelf. */
+  z.object({
+    ...cardBaseShape,
+    kind: z.literal("plugin-library"),
+    payload: z.object({ tutorial: z.boolean() })
+  }),
   z.object({
     ...cardBaseShape,
     kind: z.literal("plan"),
@@ -1525,7 +1552,7 @@ const CurrentCardSchema = z.discriminatedUnion("kind", [
         seq: z.number().int().positive().nullable().optional()
       }).optional(),
       /*
-       * Code intelligence (apps/ui/docs/code-intel/PLAN.md §5). Components
+       * Code intelligence (apps/app/docs/code-intel/PLAN.md §5). Components
        * project these; the seams write them through `card.updated`. All
        * optional so cards persisted before the lane parse and state none.
        */
@@ -1876,7 +1903,7 @@ const CurrentCardSchema = z.discriminatedUnion("kind", [
     })
   }),
   /*
-   * The local app's repository cards (apps/ui/docs/LOCAL-APP.md "Cards"):
+   * The local app's repository cards (apps/app/docs/LOCAL-APP.md "Cards"):
    * the opened repository, its trusted typed target list, and one streamed
    * target run.
    */
@@ -1992,7 +2019,7 @@ const CurrentCardSchema = z.discriminatedUnion("kind", [
     })
   }),
   /*
-   * The agents as data (apps/ui/docs/workbench-lanes/custom-agents.md): the
+   * The agents as data (apps/app/docs/workbench-lanes/custom-agents.md): the
    * Agents card lists every built-in and custom agent with its harness's live
    * availability (from the harness signals, never guessed); the form card
    * holds the New-agent draft IN ITS PAYLOAD (form edits are card-payload
@@ -2027,8 +2054,8 @@ const CurrentCardSchema = z.discriminatedUnion("kind", [
     })
   }),
   /*
-   * THE FORM LAW (apps/ui/AGENTS.md;
-   * apps/ui/docs/workbench-lanes/flow-forms.md): a flow invoked without its
+   * THE FORM LAW (apps/app/AGENTS.md;
+   * apps/app/docs/workbench-lanes/flow-forms.md): a flow invoked without its
    * required input renders this card for the missing fields. The fields derive
    * from the flow's input schema; the draft IS the payload (a field commit is
    * a card-payload update, never component state); `given` is what the slash
@@ -2068,7 +2095,7 @@ const CurrentCardSchema = z.discriminatedUnion("kind", [
     })
   }),
   /*
-   * The repository welcome and its three answers (apps/ui
+   * The repository welcome and its three answers (apps/app
    * controller/onboarding.ts): the opener a repository shows when it is
    * opened, and the maintain / contribute / explore cards its buttons open.
    * `activity` is null until the public activity route answers; `guides` are
@@ -2118,7 +2145,7 @@ const CurrentCardSchema = z.discriminatedUnion("kind", [
     ])
   }),
   /*
-   * The repository's home pane (apps/ui controller/onboarding.ts): the first
+   * The repository's home pane (apps/app controller/onboarding.ts): the first
    * card a repository shows, declared in its `.smithers/FACTORY.ts` as
    * `export const home = Smithers.Factory.Home` and read as
    * `.smithers/home.json` from the public mirror. `blocks` are the declared

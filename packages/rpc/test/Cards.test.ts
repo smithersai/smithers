@@ -93,13 +93,13 @@ describe("the service-log card", () => {
 })
 
 /*
- * Code intelligence (apps/ui/docs/code-intel/PLAN.md §5): the file card's
+ * Code intelligence (apps/app/docs/code-intel/PLAN.md §5): the file card's
  * anchor, what the language server published, the hover answer, and the
  * server state live in the payload, all optional so a card persisted before
  * the lane parses unchanged and states none of them.
  */
 describe("the file card", () => {
-  const payload = { repo: "smithers", path: "apps/ui/src/mainview/App.tsx", content: "export {}\n", truncated: false }
+  const payload = { repo: "smithers", path: "apps/app/src/mainview/App.tsx", content: "export {}\n", truncated: false }
   const diagnostic = {
     line: 317,
     character: 62,
@@ -165,7 +165,7 @@ describe("the file card", () => {
 })
 
 /*
- * Custom agents (apps/ui/docs/workbench-lanes/custom-agents.md): the Agents card
+ * Custom agents (apps/app/docs/workbench-lanes/custom-agents.md): the Agents card
  * carries every agent with the harness's live availability, the form card
  * carries its draft in the payload, and the subagent card accepts a custom
  * role id beside a built-in one.
@@ -420,7 +420,7 @@ describe("env card persistence", () => {
 
 /*
  * The persistence contract, kind by kind. Cards.ts states that "everything in
- * a card payload is written to disk", and apps/ui's FrameSnapshotSchema reads
+ * a card payload is written to disk", and apps/app's FrameSnapshotSchema reads
  * a whole transcript back through `cards: z.array(CardSchema)` — so a field
  * that stops parsing rejects a snapshot, not one card. Dozens of fields are
  * marked "optional so cards persisted before the lane parse", which is a
@@ -1746,6 +1746,28 @@ const FIXTURES: Record<Card["kind"], KindFixtures> = {
   "anonymous-ceiling": {
     minimal: { message: "too many turns from this address", retryAt: null },
     full: { message: "too many turns from this address", retryAt: "2026-09-05T10:00:00Z" }
+  },
+  /* The tutorial's repository chooser: every field is required, so both fixtures name all six. */
+  "repository-choice": {
+    minimal: { cutoff: "2026-08-10T00:00:00Z", partial: false, error: null, selected: null, created: null, repositories: [] },
+    full: {
+      cutoff: "2026-08-10T00:00:00Z",
+      partial: true,
+      error: "GitHub answered 403 for one repository",
+      selected: "smithersai/smithers",
+      created: { name: "smithers-playground", path: "/tmp/smithers-playground" },
+      repositories: [{
+        fullName: "smithersai/smithers",
+        count: 12,
+        latest: "2026-09-05T09:00:00Z",
+        coverage: "default-branch",
+        error: null
+      }]
+    }
+  },
+  "plugin-library": {
+    minimal: { tutorial: false },
+    full: { tutorial: true }
   }
 }
 
@@ -1809,7 +1831,7 @@ describe("every persisted card kind", () => {
     expect(CardSchema.parse(rich)).toEqual(rich)
   })
 
-  test("a whole frame snapshot of one card per kind parses (apps/ui FrameSnapshotSchema)", () => {
+  test("a whole frame snapshot of one card per kind parses (apps/app FrameSnapshotSchema)", () => {
     const snapshot = z.object({ cards: z.array(CardSchema) })
     const cards = kinds.map((kind, ordinal) => ({ ...base, kind, ordinal, payload: FIXTURES[kind].full }))
     expect(snapshot.parse({ cards }).cards).toHaveLength(kinds.length)

@@ -1,0 +1,61 @@
+import { guideClock, type GuideClock } from "./advance"
+
+export const REEL_BUTTON = { label: "What else can you do?", command: "tut.more", key: "W" } as const
+
+export const REEL_STAGES = [
+  { id: "theme", kind: "say", message: "I can change the theme, and put it back when I'm done.", demo: "theme" },
+  { id: "notifications", kind: "say", message: "I can send notifications while you keep working.", demo: "notify" },
+  { id: "sound", kind: "say", message: "I can play a little sound when something needs your attention.", demo: "sound" },
+  { id: "profile", kind: "say", message: "I can show forms, like these optional questions about what you want to build.", demo: "profile" },
+  { id: "wait", kind: "say", message: "I can run a flow and wait for it. This example simply waits; your repository stays untouched.", demo: "wait" },
+  { id: "create-flow", kind: "say", message: "I can turn reusable instructions into a flow. Here's the wait example's instruction.", demo: "create-flow" },
+  { id: "composer", kind: "say", message: "You can talk directly to me with Command K. I'll open the composer, then close it.", demo: "composer" },
+  { id: "prototype", kind: "say", message: "I can show a disposable prototype before implementation. Here's our local practice idea board.", demo: "prototype" },
+  { id: "revision", kind: "say", message: "I can revise that prototype from feedback. Watch the practice heading change.", demo: "revision" },
+  { id: "plan", kind: "say", message: "I can turn feedback into a plan: change the heading, check it, then review the result.", demo: "plan" },
+  { id: "review", kind: "say", message: "I can show changes for review before delivery. This practice review publishes nothing.", demo: "review" },
+] as const
+export type ReelDemo = typeof REEL_STAGES[number]["demo"]
+export type ReelState = { reelSeen?: boolean; reelIndex?: number; reelEpoch?: number; reelDemo?: string; reelTheme?: "light" | "dark" }
+export type ReelDispatch = (action: string, value?: string) => void
+export const reelPause = (copy: string, reduced = false) => reduced ? 0 : Math.min(2000, 400 + 20 * copy.trim().split(/\s+/).filter(Boolean).length)
+
+/** The mounted card invokes the same controller door as slash/agent callers. */
+export function dispatchReelDemo(demo: ReelDemo, dispatch: ReelDispatch, playSound: () => void = () => {}) {
+  dispatch("reel-demo", demo)
+  if (demo === "sound") playSound()
+}
+
+/** No input is required. Escape/Back cancel even when the composer owns focus. */
+export function scheduleReel({ target, copy, advance, exit, clock = guideClock, reduced = false }: {
+  target: EventTarget; copy: string; advance: () => void; exit: () => void; clock?: GuideClock; reduced?: boolean
+}) {
+  let pending = true
+  const handle = clock.setTimeout(() => { if (pending) { pending = false; advance() } }, reelPause(copy, reduced))
+  const keydown = (raw: Event) => {
+    const event = raw as KeyboardEvent
+    if (event.isComposing || event.metaKey || event.ctrlKey || event.altKey || event.shiftKey) return
+    if (event.key !== "Escape" && event.key !== "ArrowLeft") return
+    if (event.key === "ArrowLeft" && (event.target as Element | null)?.closest?.('input,textarea,select,[contenteditable="true"]')) return
+    event.preventDefault(); event.stopImmediatePropagation()
+    pending = false; clock.clearTimeout(handle); exit()
+  }
+  target.addEventListener("keydown", keydown, true)
+  return () => { pending = false; clock.clearTimeout(handle); target.removeEventListener("keydown", keydown, true) }
+}
+
+/** Original three-note interval; the optional reel click is the audio opt-in. */
+export function playReelChime() {
+  if (typeof AudioContext === "undefined") return
+  const audio = new AudioContext()
+  void audio.resume().then(() => {
+    for (const [i, frequency] of [261.63, 392, 523.25].entries()) {
+      const tone = audio.createOscillator(), gain = audio.createGain(), at = audio.currentTime + i * .09
+      tone.frequency.value = frequency
+      gain.gain.setValueAtTime(.025, at)
+      gain.gain.exponentialRampToValueAtTime(.0001, at + .25)
+      tone.connect(gain).connect(audio.destination); tone.start(at); tone.stop(at + .3)
+      if (i === 2) tone.onended = () => { void audio.close() }
+    }
+  }).catch(() => { void audio.close() })
+}
