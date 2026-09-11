@@ -1,3 +1,4 @@
+import { fileURLToPath } from "node:url"
 import { defineConfig } from "vitest/config"
 
 // Two suites, one runner:
@@ -24,6 +25,11 @@ export default defineConfig({
   resolve: {
     // Linked @smthrs/* packages carry their own node_modules. One `effect`
     // instance per run keeps Context tags identical across them.
-    dedupe: ["effect"]
+    dedupe: ["effect"],
+    // `worker/AppSession.ts` imports the Durable Object base class from a
+    // module only workerd resolves. `test/appSession.test.ts` constructs the
+    // class over node:sqlite (`test/support/durableObject.ts`), so the base
+    // class comes from a stub with the same shape.
+    alias: [{ find: /^cloudflare:workers$/, replacement: fileURLToPath(new URL("./test/support/cloudflareWorkers.ts", import.meta.url)) }]
   }
 })

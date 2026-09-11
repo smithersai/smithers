@@ -70,7 +70,10 @@ export default defineConfig({
       { find: /^@smthrs\/std$/, replacement: here("../agent/std/src/index.ts") },
       { find: /^@smthrs\/std\/(.*)$/, replacement: here("../agent/std/src/$1.ts") },
       { find: /^@smthrs\/ui$/, replacement: here("../ui/src/index.ts") },
-      { find: /^tevm(\/.*)?$/, replacement: here("./test/support/tevmAbsent.ts") }
+      { find: /^tevm(\/.*)?$/, replacement: here("./test/support/tevmAbsent.ts") },
+      // The Durable Object base class, which only workerd resolves; the
+      // template's own vitest.config.ts carries the same alias.
+      { find: /^cloudflare:workers$/, replacement: here("./template/aomi/test/support/cloudflareWorkers.ts") }
     ]
   }
 })

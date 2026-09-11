@@ -9,8 +9,11 @@
  *
  * What this covers is the routing contract: which object a route reaches, what
  * it refuses, and whether the body decodes with the schema in `src/api.ts`.
- * `AppSession`'s own SQL behaviour needs real Durable Object storage and is not
- * tested here.
+ * `AppSession`'s own storage, what a turn writes, what a recreated object reads
+ * back, and how overlapping turns and cancels settle, is `appSession.test.ts`,
+ * which constructs the real class over SQLite. The double's `state` and
+ * `listFlows` here return whatever a test planted, so an assertion on them
+ * proves only that the router reached the right object.
  */
 import type { FlowRunCard } from "@smthrs/create-app/ui"
 import * as Schema from "effect/Schema"
@@ -245,8 +248,6 @@ describe("GET /api/session", () => {
   })
 
   test("an empty id is the list form, not a session named the empty string", async () => {
-    await handle(get(`${Routes.session}?id=`), app.env)
-    expect(app.session("").state("").id).toBe("")
     const response = await handle(get(`${Routes.session}?id=`), app.env)
     expect(Schema.decodeUnknownSync(SessionList)(await response.json())).toEqual({ sessions: [] })
   })
