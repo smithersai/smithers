@@ -47,14 +47,6 @@ import * as Sandbox from "./Sandbox.ts"
 import * as VariablesPanel from "./VariablesPanel.ts"
 
 /**
- * The prelude evaluated before every cell.
- *
- * It installs the one binding a cell has and removes the two sources of
- * nondeterminism QuickJS ships with. The raw host bridge is captured in a
- * closure and then deleted from the global object, so a cell cannot reach the
- * unwrapped boundary and hand it unencoded values.
- */
-/**
  * Every intrinsic the host's own realm-side code reads, bound before a cell runs.
  *
  * A global script may rebind `Object`, and under a per-cell realm that cost the
@@ -199,6 +191,11 @@ const sealedCall = Cell.callFailure(
 
 /**
  * The prelude a persistent realm is opened with.
+ *
+ * It removes the two sources of nondeterminism QuickJS ships with, `Date` and
+ * `Math.random`. The raw host bridge is captured in a closure and then deleted
+ * from the global object, so a cell cannot reach the unwrapped boundary and
+ * hand it unencoded values.
  *
  * It differs from the per-cell prelude the filing surface used in exactly the
  * two ways the persistent realm

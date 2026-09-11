@@ -67,4 +67,19 @@ describe("package conventions", () => {
   it("names module-level constants in camelCase", () => {
     expect(owning(/^const [A-Z0-9_]{2,} =/m)).toEqual([])
   })
+
+  // CellTurn kept a copy of `bounded`'s docblock stacked on `missedProperty`'s,
+  // and QuickJSSandbox kept one for a prelude it no longer has. A block with
+  // another block directly after it documents nothing, and reads as the
+  // description of whatever it happens to sit above. A module header is the
+  // exception: it documents the file, and the block after it is the first
+  // declaration's.
+  it("attaches every docblock to the declaration after it", () => {
+    const stacked = src.flatMap(([name, text]) =>
+      [...text.matchAll(/\/\*\*(?:(?!\*\/)[\s\S])*\*\/\s*\/\*\*/g)]
+        .filter((match) => text.slice(0, match.index).trim() !== "")
+        .map((match) => `${name}:${text.slice(0, match.index).split("\n").length}`)
+    )
+    expect(stacked).toEqual([])
+  })
 })
