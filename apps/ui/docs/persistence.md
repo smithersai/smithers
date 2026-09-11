@@ -101,16 +101,38 @@ dispatch started during another transaction's rollback cannot persist stale
 optimistic fields. A fresh dispatch after rollback may retry. Direct collection
 inserts used during seeding follow the same durable-before-confirm order.
 
+`store.dispatch(transition)` applies the change optimistically and returns its
+TanStack transaction. `transaction.isPersisted.promise` is the durability
+receipt: it resolves after the commit, and after `flush()` on SQLite, and it
+rejects when the commit fails and the change rolls back. A transition the
+reducer refuses resolves at once with no change.
+
+```ts
+await store.dispatch({ type: "theme.changed", actor: "user", theme: "dark" }).isPersisted.promise
+```
+
 The durable navigation collections are `app-workspaces`, `app-branches`, and
 `app-frames`. Frames refer to existing card records; maximizing a card changes
 navigation state rather than copying or remounting the card.
 
 A maximized frame records the conversation, cards, world documents, and draft
-at its revision. Forking restores that snapshot into a new branch. Switching
-branches saves the outgoing branch's current projection and restores the
-incoming one atomically, so edits and conversation resets stay in their branch.
-Branch switches and forks wait until an active turn finishes. Account-state
-removal also clears archived snapshots.
+at its revision. Later card updates change the card row only; the recorded
+snapshot keeps its revision. Forking restores that snapshot into a new branch.
+Switching branches saves the outgoing branch's current projection and restores
+the incoming one atomically, so edits and conversation resets stay in their
+branch. Branch switches and forks wait until an active turn finishes.
+Account-state removal also clears archived snapshots.
+
+## Composer drafts
+
+`composer.changed` keystrokes share one durable commit. The draft is visible
+at once; the commit lands 250 ms after the last keystroke, at most 1 s after
+the first unsaved one, or earlier on the next other dispatch, `pagehide` or
+`store.dispose()`. Every keystroke in that window returns the same receipt,
+and the journal holds one `composer.changed` record with the final draft.
+A localStorage commit rewrites the whole envelope, so one commit per keystroke
+copied every saved collection per character. A crash inside the window loses
+at most those keystrokes.
 
 ## Clearing and recovering a conversation
 
@@ -159,7 +181,8 @@ secure deletion mechanism. Deleting account state also removes the snapshots.
 `beginBatch()` buffers the coordinator's synchronous row deltas.
 `commitBatch()` schedules exactly one `BEGIN IMMEDIATE` transaction that
 inserts, updates, and deletes all changed rows; any error rolls it back.
-`AppStore.persist()` awaits `flush()` before reporting persistence complete.
+A dispatch's receipt, `transaction.isPersisted.promise`, resolves only after
+`flush()` completes.
 
 At open, every known row is JSON-decoded and schema-validated. Validation reads,
 recovery copies, normalization, imports and version stamps share one

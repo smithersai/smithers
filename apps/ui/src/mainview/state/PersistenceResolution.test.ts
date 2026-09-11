@@ -4,7 +4,7 @@ import { describe, expect, test } from "bun:test"
 import { APP_SCHEMA_VERSION, PERSISTENCE_BACKEND_STORAGE_KEY } from "../chain/SchemaVersion"
 import { METADATA_TABLE_NAME, openSqliteRowStorage, ROW_TABLE_NAME } from "../chain/SqliteRowStorage"
 import type { SqliteRowDatabase } from "../chain/SqliteRowStorage"
-import { resolvePersistence } from "./AppStore"
+import { createAppStore, resolvePersistence } from "./AppStore"
 
 const memory = (): StorageApi & {
   readonly bytes: Map<string, string>
@@ -153,6 +153,30 @@ describe("the browser's persistence resolver", () => {
     expect(resolved.degraded).toBe(true)
     resolved.backend.storage!.setItem("key", "memory only")
     expect(resolved.backend.storage!.getItem("key")).toBe("memory only")
+  })
+
+  test("a degraded boot keeps its failure notice through the boot sweep and calls an archive temporary", async () => {
+    const record = memory()
+    record.setItem(PERSISTENCE_BACKEND_STORAGE_KEY, "opfs")
+    const resolved = await resolvePersistence({
+      bootRecord: () => record,
+      openDatabase: async () => {
+        throw new Error("access handles still held")
+      }
+    })
+    const store = await createAppStore(resolved)
+    expect(store.persistenceMode).toBe("memory")
+    expect(store.persistenceDegraded).toBe(true)
+    expect(store.collections.toasts.get("toast-store.degraded")).toMatchObject({
+      status: "failed",
+      title: "This session will not be saved"
+    })
+    await store.dispatch({ type: "conversation.cleared", actor: "user", branchId: "after-degraded-boot", notes: [] })
+      .isPersisted.promise
+    const notice = [...store.collections.messages.values()].find((message) => message.id.endsWith("-cleared"))
+    expect(notice?.text).toContain("This archive is only available until this session closes")
+    expect([...record.bytes]).toEqual([[PERSISTENCE_BACKEND_STORAGE_KEY, "opfs"]])
+    await store.dispose?.()
   })
 
   for (const cleanupFails of [false, true]) {

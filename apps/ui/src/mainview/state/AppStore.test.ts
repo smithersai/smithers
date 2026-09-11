@@ -1,6 +1,6 @@
 import type { StorageApi } from "@tanstack/db"
 import { describe, expect, test } from "bun:test"
-import { initialGuide, type Card } from "./AppState"
+import { cardFrameId, DEFAULT_BRANCH_ID, initialGuide, type Card } from "./AppState"
 import { createAppStore } from "./AppStore"
 import type { AgentTurnFrame } from "@smthrs/rpc/NativeAgent"
 import { createControllerContext } from "./controller/context"
@@ -574,6 +574,30 @@ test("card updates merge partial payloads, refuse kind changes, and persist reda
   expect(JSON.stringify([...store.collections.transitions.values()])).not.toContain("updated-secret-value")
   const reloaded = await createAppStore({ kind: "localStorage", storage })
   expect(reloaded.collections.cards.get("patch-env")?.payload).toMatchObject({ vars: [{ name: "TOKEN", value: "upd…" }] })
+})
+
+test("card updates never rewrite the conversation a maximized frame recorded", async () => {
+  const storage = memoryStorage()
+  const store = await createAppStore({ kind: "localStorage", storage })
+  const card: Card = { id: "live-status", kind: "status", title: "Starting", status: "active", createdAt: 1, ordinal: 1,
+    payload: { progress: 0.1 } }
+  await store.dispatch({ type: "card.upsert", actor: "system", card }).isPersisted.promise
+  await store.dispatch({ type: "card.maximized", actor: "user", id: card.id }).isPersisted.promise
+  const frameId = cardFrameId(DEFAULT_BRANCH_ID, card.id)
+  const recorded = structuredClone(store.collections.frames.get(frameId)!)
+  expect(recorded.snapshot?.cards[0]?.title).toBe("Starting")
+  await store.dispatch({ type: "card.updated", actor: "system", id: card.id, patch: { title: "Halfway" } }).isPersisted.promise
+  await store.dispatch({ type: "card.minimized", actor: "user" }).isPersisted.promise
+  const minimized = structuredClone(store.collections.frames.get(frameId)!)
+  expect(minimized.snapshot).toEqual(recorded.snapshot)
+  expect(minimized.stateRevision).toBe(recorded.stateRevision)
+  // Live progress lands on the card row alone, never as a fresh copy of every message and card.
+  await store.dispatch({ type: "card.updated", actor: "system", id: card.id, patch: { title: "Nearly done" } }).isPersisted.promise
+  await store.dispatch({ type: "card.upsert", actor: "system", card: { ...card, title: "Done", payload: { progress: 1 } } }).isPersisted.promise
+  expect(store.collections.cards.get(card.id)?.title).toBe("Done")
+  expect(store.collections.frames.get(frameId)).toEqual(minimized)
+  const reopened = await createAppStore({ kind: "localStorage", storage })
+  expect(reopened.collections.frames.get(frameId)).toEqual(minimized)
 })
 
 test("app.reset durably clears all collections and fences late writes before reboot", async () => {

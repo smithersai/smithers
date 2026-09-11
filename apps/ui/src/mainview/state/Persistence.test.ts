@@ -106,11 +106,12 @@ describe("an atomic commit point per logical transition", () => {
     const store = await createAppStore({ kind: "localStorage", storage: host })
     host.crashCommit()
     const first = store.dispatch({ type: "composer.changed", actor: "user", draft: "failed first" }).isPersisted.promise
-    const second = store.dispatch({ type: "composer.changed", actor: "user", draft: "failed queued" }).isPersisted.promise
+    // A second keystroke would join the first draft's commit; a different transition queues its own.
+    const second = store.dispatch({ type: "theme.changed", actor: "user", theme: "dark" }).isPersisted.promise
     const secondResult = second.catch(() => "rejected")
     const reentrant = first.catch(async () => {
       // The second optimistic projection has not rolled back yet.
-      expect(store.session().draft).toBe("failed queued")
+      expect(store.session().theme).toBe("dark")
       host.heal()
       return store.dispatch({ type: "theme.changed", actor: "user", theme: "dark" }).isPersisted.promise
     })
@@ -133,6 +134,62 @@ describe("an atomic commit point per logical transition", () => {
     expect(
       [...reopened.collections.transitions.values()].some((record) => record.type === "composer.changed")
     ).toBe(true)
+  })
+})
+
+/** Counts localStorage commits: the backend writes the whole envelope once per durable transaction. */
+const countingStorage = (): StorageApi & { readonly commits: () => number } => {
+  const inner = memoryStorage()
+  let commits = 0
+  return {
+    commits: () => commits,
+    getItem: (key) => inner.getItem(key),
+    setItem: (key, value) => {
+      if (key === ENVELOPE_STORAGE_KEY) commits += 1
+      inner.setItem(key, value)
+    },
+    removeItem: (key) => inner.removeItem(key)
+  }
+}
+
+describe("composer drafts", () => {
+  test("a burst of keystrokes commits one envelope and journals only the final draft", async () => {
+    const host = countingStorage()
+    const store = await createAppStore({ kind: "localStorage", storage: host })
+    const before = host.commits()
+    const text = "hello from a burst of keystrokes"
+    const receipts = [...text].map((_, index) => {
+      const receipt = store.dispatch({ type: "composer.changed", actor: "user", draft: text.slice(0, index + 1) }).isPersisted.promise
+      // The draft is live at once; only its durable write waits.
+      expect(store.session().draft).toBe(text.slice(0, index + 1))
+      return receipt
+    })
+    await Promise.all(receipts)
+    expect(host.commits() - before).toBe(1)
+    const journaled = [...store.collections.transitions.values()].filter((record) => record.type === "composer.changed")
+    expect(journaled.map((record) => JSON.parse(record.payload))).toEqual([{ draft: text }])
+    const reopened = await createAppStore({ kind: "localStorage", storage: host })
+    expect(reopened.session().draft).toBe(text)
+  })
+
+  test("the next dispatch commits a pending draft first", async () => {
+    const host = memoryStorage()
+    const store = await createAppStore({ kind: "localStorage", storage: host })
+    store.dispatch({ type: "composer.changed", actor: "user", draft: "typed before the next act" })
+    await store.dispatch({ type: "theme.changed", actor: "user", theme: "dark" }).isPersisted.promise
+    const reopened = await createAppStore({ kind: "localStorage", storage: host })
+    expect(reopened.session().draft).toBe("typed before the next act")
+    expect(reopened.session().theme).toBe("dark")
+    expect([...reopened.collections.transitions.values()].map((record) => record.type)).toEqual(["composer.changed", "theme.changed"])
+  })
+
+  test("dispose commits a pending draft before releasing the store", async () => {
+    const host = memoryStorage()
+    const store = await createAppStore({ kind: "localStorage", storage: host })
+    store.dispatch({ type: "composer.changed", actor: "user", draft: "typed just before closing" })
+    await store.dispose?.()
+    const reopened = await createAppStore({ kind: "localStorage", storage: host })
+    expect(reopened.session().draft).toBe("typed just before closing")
   })
 })
 

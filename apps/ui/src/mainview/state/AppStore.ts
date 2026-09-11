@@ -121,6 +121,14 @@ const PALETTE_RECENTS_CAP = 50
 export const MAX_TRANSITION_RECORDS = 500
 export const MAX_TOOL_CALL_RECORDS = 250
 
+/*
+ * Composer keystrokes share one durable commit (docs/persistence.md "Composer
+ * drafts"). It lands after this pause in typing, and never later than the
+ * second bound after the first unsaved keystroke.
+ */
+const DRAFT_COMMIT_IDLE_MS = 250
+const DRAFT_COMMIT_MAX_MS = 1_000
+
 /**
  * The keys of the records beyond `keep`, oldest first. `order` is the row's
  * position in the log (a revision, a createdAt); ties fall to the key so the
@@ -298,7 +306,8 @@ export type PersistenceBackend =
     readonly storage?: StorageApi
   }
 
-interface ResolvedPersistence {
+/** The store a launch reads, as `resolvePersistence` chose it. */
+export interface ResolvedPersistence {
   readonly backend: PersistenceBackend
   readonly mode: PersistenceMode
   /** True when the store holding the user's data could not be opened. */
@@ -587,22 +596,6 @@ export const resolvePersistence = async (host: BrowserPersistenceHost = {
 const storageOf = (backend: PersistenceBackend): StorageApi | undefined =>
   backend.kind === "opfs" ? backend.storage : (backend.storage ?? bootRecordStorage())
 
-interface CollectionSpec<TSchema extends StandardSchemaV1> {
-  readonly id: string
-  readonly getKey: (item: InferSchemaOutput<TSchema>) => string
-  readonly schema: TSchema
-}
-
-const createPersistedCollection = <TSchema extends StandardSchemaV1>(
-  backend: PersistenceBackend,
-  spec: CollectionSpec<TSchema>
-) => {
-  const persistence = (backend as PersistenceBackend & { readonly collectionPersistence?: CollectionPersistence }).collectionPersistence
-    ?? createCollectionPersistence({ storage: storageOf(backend) ?? memoryStorage() })
-  const options = durableCollectionOptions(persistence, spec)
-  return createCollection({ ...options, schema: spec.schema })
-}
-
 export type StoredCollections = {
   readonly [K in keyof typeof COLLECTION_DEFINITIONS]: ReturnType<typeof COLLECTION_DEFINITIONS[K]["create"]>
 }
@@ -628,6 +621,25 @@ export interface AgentContextSnapshot {
 
 export interface AppStore {
   readonly collections: AppCollections
+  /**
+   * Apply one transition. Its change is visible in `collections` when this
+   * returns, before it is saved. The returned transaction is the durability
+   * receipt: await `isPersisted.promise` before treating the change as saved,
+   * for example before a reload or an outbound side effect.
+   *
+   * ```ts
+   * await store.dispatch({ type: "theme.changed", actor: "user", theme: "dark" }).isPersisted.promise
+   * ```
+   *
+   * A transition the reducer refuses changes nothing and its receipt resolves
+   * at once; an impossible request (a conversation id already in use) throws
+   * here. A failed commit rejects the receipt and rolls the change back, with
+   * any queued transition derived from it. After `app.reset`, every dispatch
+   * returns the reset's receipt and changes nothing. Consecutive
+   * `composer.changed` keystrokes share one receipt, which resolves when the
+   * draft commits: after a pause in typing, the next other dispatch, page hide
+   * or `dispose`.
+   */
   readonly dispatch: (transition: AppTransition) => Transaction
   /** Immutable runtime request; legacy model-authored cards have no authority. */
   readonly approvalRequest: (id: string) => ApprovalRequest | undefined
@@ -643,7 +655,7 @@ export interface AppStore {
   readonly agentContextSnapshot: () => AgentContextSnapshot
   /** Private host capability, never a model/tool payload. */
   readonly readRecovery: () => Promise<StorageRecoverySnapshot>
-  /** Release persistence resources acquired for this store. */
+  /** Commit a pending draft, then release persistence resources acquired for this store. */
   readonly dispose?: () => void | Promise<void>
 }
 
@@ -658,7 +670,9 @@ const persistedCollection = <TSchema extends StandardSchemaV1>(
   schema,
   persisted: true as const,
   ...recovery,
-  create: (backend: PersistenceBackend) => createPersistedCollection(backend, { id, schema, getKey })
+  /* Every collection shares one coordinator, so a dispatch is one atomic commit. */
+  create: (persistence: CollectionPersistence) =>
+    createCollection({ ...durableCollectionOptions(persistence, { id, schema, getKey }), schema })
 })
 
 const byId = (row: { readonly id: string }): string => row.id
@@ -699,13 +713,13 @@ const COLLECTION_DEFINITIONS = {
   githubAppStatuses: persistedCollection("app-github-app-statuses", GitHubAppStatusRowSchema, (row) => row.repo),
   repoTree: {
     persisted: false as const,
-    create: (_backend: PersistenceBackend) => createCollection(localOnlyCollectionOptions({
+    create: (_persistence: CollectionPersistence) => createCollection(localOnlyCollectionOptions({
       id: "app-repo-tree", schema: RepoTreeRowSchema, getKey: byId
     }))
   },
   repositoryFlows: {
     persisted: false as const,
-    create: (_backend: PersistenceBackend) => createCollection(localOnlyCollectionOptions({
+    create: (_persistence: CollectionPersistence) => createCollection(localOnlyCollectionOptions({
       id: "app-repository-flows", schema: RepositoryFlowsRowSchema, getKey: byId
     }))
   }
@@ -1038,12 +1052,17 @@ const nextOrdinal = (collections: Pick<StoredCollections, "messages" | "cards">)
   return highest + 1
 }
 
+/*
+ * No argument resolves the browser's store. A bare backend is a healthy store
+ * of its own kind; a resolution (from `resolvePersistence` with an injected
+ * host) carries its mode and degraded flag, so a memory launch boots as one.
+ */
 export const createAppStore = async (
-  backend?: PersistenceBackend
+  persistence?: PersistenceBackend | ResolvedPersistence
 ): Promise<AppStore> => {
-  const resolved: ResolvedPersistence = backend === undefined
+  const resolved: ResolvedPersistence = persistence === undefined
     ? await resolvePersistence()
-    : { backend, mode: backend.kind, degraded: false }
+    : "backend" in persistence ? persistence : { backend: persistence, mode: persistence.kind, degraded: false }
   try {
     const store = await initializeAppStore(resolved)
     resolved.recordSuccessfulOpen?.()
@@ -1087,9 +1106,8 @@ const initializeAppStore = async (resolved: ResolvedPersistence): Promise<AppSto
     ...(resolvedBackend.kind === "opfs" ? { flush: resolvedBackend.flush } : {}),
     ...(rowSink === undefined ? {} : { rows: rowSink })
   })
-  const collectionBackend = { ...resolvedBackend, collectionPersistence }
   const collections = Object.fromEntries(
-    Object.entries(COLLECTION_DEFINITIONS).map(([name, definition]) => [name, definition.create(collectionBackend)])
+    Object.entries(COLLECTION_DEFINITIONS).map(([name, definition]) => [name, definition.create(collectionPersistence)])
   ) as StoredCollections
 
   await seed(collections)
@@ -1154,8 +1172,44 @@ const initializeAppStore = async (resolved: ResolvedPersistence): Promise<AppSto
 
   // Reset fences late streams and command-settlement writes until the new boot.
   let resetTransaction: Transaction | undefined
+
+  /*
+   * The draft commit still open to keystrokes. A localStorage commit rewrites
+   * the whole envelope, so one commit per keystroke copied every saved
+   * collection per character. The draft is live at once; its commit waits for
+   * a pause in typing, the next dispatch, page hide or dispose. The journal
+   * keeps one record per commit, carrying the final draft.
+   */
+  let pendingDraft: { readonly transaction: Transaction; readonly revision: number; readonly deadline: number } | undefined
+  let draftTimer: ReturnType<typeof setTimeout> | undefined
+  const commitDraft = (): void => {
+    clearTimeout(draftTimer)
+    const pending = pendingDraft
+    pendingDraft = undefined
+    // A failed commit this draft depended on may already have rolled it back.
+    // A failure of its own rejects the receipt its callers hold.
+    if (pending?.transaction.state === "pending") pending.transaction.commit().catch(() => {})
+  }
+  const awaitTypingPause = (deadline: number): void => {
+    clearTimeout(draftTimer)
+    draftTimer = setTimeout(commitDraft, Math.max(0, Math.min(DRAFT_COMMIT_IDLE_MS, deadline - Date.now())))
+  }
+
   const dispatch = (transition: AppTransition): Transaction => {
     if (resetTransaction !== undefined) return resetTransaction
+    if (transition.type === "composer.changed" && pendingDraft?.transaction.state === "pending") {
+      const { transaction, revision, deadline } = pendingDraft
+      const text = transition.draft
+      const payload = transitionPayload(transition)
+      transaction.mutate(() => {
+        collections.sessions.update(SESSION_ID, (draft) => { draft.draft = text })
+        collections.transitions.update(`transition-${revision}`, (record) => { record.payload = payload })
+      })
+      awaitTypingPause(deadline)
+      return transaction
+    }
+    // Every other act builds on the draft's session row, so the draft commits first.
+    commitDraft()
     // The transition journal persists its input as well as the card collection.
     // Redact before either writer or the verbose trace can observe env values.
     if (transition.type === "card.upsert" && transition.card.kind === "env") {
@@ -1169,6 +1223,7 @@ const initializeAppStore = async (resolved: ResolvedPersistence): Promise<AppSto
     const createdAt = Date.now()
     const transaction = createTransaction({
       id: `app-transition-${revision}`,
+      autoCommit: transition.type !== "composer.changed",
       metadata: { actor: transition.actor, type: transition.type },
       mutationFn: ({ transaction }) => persist(transaction)
     })
@@ -2105,12 +2160,14 @@ const initializeAppStore = async (resolved: ResolvedPersistence): Promise<AppSto
             collections.cards.update(card.id, (draft) => { Object.assign(draft, card) })
           }
           const frame = ensureCardFrame(card.id)
-          collections.frames.update(frame.id, (draft) => {
-            draft.stateRevision = revision
-            if (frame.snapshot !== undefined) draft.snapshot = snapshot()
-            draft.updatedAt = createdAt
-            draft.revision = revision
-          })
+          // A recorded frame keeps the revision it was maximized at; live card state is the card row.
+          if (frame.snapshot === undefined) {
+            collections.frames.update(frame.id, (draft) => {
+              draft.stateRevision = revision
+              draft.updatedAt = createdAt
+              draft.revision = revision
+            })
+          }
           collections.sessions.update(SESSION_ID, (draft) => {
             draft.revision = revision
           })
@@ -2152,10 +2209,9 @@ const initializeAppStore = async (resolved: ResolvedPersistence): Promise<AppSto
             Object.assign(draft, patch)
           })
           for (const frame of collections.frames.values()) {
-            if (frame.cardId !== transition.id || frame.branchId !== activeBranchId) continue
+            if (frame.cardId !== transition.id || frame.branchId !== activeBranchId || frame.snapshot !== undefined) continue
             collections.frames.update(frame.id, (draft) => {
               draft.stateRevision = revision
-              if (frame.snapshot !== undefined) draft.snapshot = snapshot()
               draft.updatedAt = createdAt
               draft.revision = revision
             })
@@ -3190,6 +3246,10 @@ const initializeAppStore = async (resolved: ResolvedPersistence): Promise<AppSto
     if (transition.type === "app.reset") {
       void transaction.isPersisted.promise.catch(() => { resetTransaction = undefined })
     }
+    if (transition.type === "composer.changed") {
+      pendingDraft = { transaction, revision, deadline: createdAt + DRAFT_COMMIT_MAX_MS }
+      awaitTypingPause(pendingDraft.deadline)
+    }
     return transaction
   }
 
@@ -3302,6 +3362,10 @@ const initializeAppStore = async (resolved: ResolvedPersistence): Promise<AppSto
     }).isPersisted.promise
   }
 
+  // A hidden page may never run the typing-pause timer; commit what was typed.
+  const page = typeof window === "undefined" || typeof window.addEventListener !== "function" ? undefined : window
+  page?.addEventListener("pagehide", commitDraft)
+
   const { approvalRequests: _approvalRequests, ...publicCollections } = collections
   return {
     collections: { ...publicCollections, ...views },
@@ -3321,6 +3385,11 @@ const initializeAppStore = async (resolved: ResolvedPersistence): Promise<AppSto
       ...(resolved.mode === "memory" ? { memory: recoveryStorage(persistedLocally) } : {})
     }),
     dispose: async () => {
+      page?.removeEventListener("pagehide", commitDraft)
+      const draft = pendingDraft?.transaction
+      commitDraft()
+      // Its failure rejects the dispatch receipt; release the store either way.
+      await draft?.isPersisted.promise.catch(() => {})
       await Promise.all(Object.values(views).map((view) => view.cleanup()))
       if (resolvedBackend.kind === "opfs") await resolvedBackend.close()
     }
