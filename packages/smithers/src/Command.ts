@@ -9,7 +9,7 @@
  * @since 1.0.0
  */
 import * as Canonical from "@smthrs/canonical/Canonical"
-import { Control as ControlService, ControlError, ControlSchema } from "@smthrs/control"
+import { Control as ControlService, ControlSchema } from "@smthrs/control"
 import * as Sha256 from "@smthrs/crypto/Sha256"
 import * as MigrateCommand from "@smthrs/migrate/flow/Command"
 import { Ownership } from "@smthrs/run-store"
@@ -18,25 +18,25 @@ import { Argument, CliError as ParserError, Command, Flag, Prompt } from "effect
 import { randomUUID } from "node:crypto"
 import { hostname } from "node:os"
 import { resolve } from "node:path"
-import * as ClaudeMirror from "./ClaudeMirror.ts"
-import * as RunProgress from "./cli/RunProgress.ts"
 import * as CliError from "./CliError.ts"
 import * as BugCmd from "./commands/Bug.ts"
+import * as ClaudeCmd from "./commands/Claude.ts"
 import * as DoctorCmd from "./commands/Doctor.ts"
 import * as FlowCatalog from "./commands/FlowCatalog.ts"
 import * as GcCmd from "./commands/Gc.ts"
 import * as Globals from "./commands/Globals.ts"
 import * as MigrateCmd from "./commands/Migrate.ts"
+import * as Removed from "./commands/Removed.ts"
+import * as RunReads from "./commands/RunReads.ts"
+import * as Settlement from "./commands/Settlement.ts"
 import * as UpdateCmd from "./commands/Update.ts"
 import * as Detached from "./Detached.ts"
 import * as Doctor from "./Doctor.ts"
 import * as Environment from "./Environment.ts"
-import * as ExecutorOwnership from "./ExecutorOwnership.ts"
 import * as Forensics from "./Forensics.ts"
 import * as Gc from "./Gc.ts"
 import { defaultApprovalScope } from "./internal/ApprovalScope.ts"
 import * as CommandStatus from "./internal/CommandStatus.ts"
-import { causeLine } from "./internal/Failure.ts"
 import * as FeaturedFlows from "./internal/FeaturedFlows.ts"
 import * as History from "./internal/History.ts"
 import * as NodeOutput from "./NodeOutput.ts"
@@ -145,49 +145,6 @@ const selectedFlow = (value: string) =>
     return selected.value.flowId
   })
 
-/**
- * Removed verbs that are registered by hand instead of by the loop below,
- * because `workflow list` is the `ls` alias.
- */
-const ownGroupCommands = new Set(["workflow"])
-
-/** One removed verb by name, so a handler cannot cite the wrong entry. */
-const removedVerb = (name: string): Unsupported.RemovedVerb =>
-  Unsupported.removedVerbs.find((verb) => verb.name === name)!
-
-/** A hidden boolean flag whose presence is a refusal. */
-const removedFlag = (parent: string, name: string) => Flag.boolean(name).pipe(Flag.withDefault(false), Flag.withHidden)
-
-/** A hidden value flag whose presence is a refusal. */
-const removedValueFlag = (name: string) => Flag.string(name).pipe(Flag.optional, Flag.withHidden)
-
-/**
- * Fails when a removed flag was passed.
- *
- * Taking the whole flag record and the names to check keeps the refusal in one
- * place: a handler that forgot one would accept a flag the contract removed.
- */
-const refuseRemoved = (
-  parent: string,
-  passed: Readonly<Record<string, boolean | Option.Option<string>>>
-): Effect.Effect<void, CliError.UnsupportedError> => {
-  for (const [name, value] of Object.entries(passed)) {
-    const present = typeof value === "boolean" ? value : Option.isSome(value)
-    if (present) return Effect.fail(Unsupported.flagError(Unsupported.findFlag(parent, name)))
-  }
-  return Effect.void
-}
-
-/**
- * The shared pre-handler: the globals every handler is checked against, and
- * the one notice every handler owes.
- *
- * The 0.x-project guard's detection is "when a command runs in a directory", so it belongs
- * here rather than in a verb. Wired into `ls` and `up` alone it printed only
- * when one of those two happened to be the first command an operator typed in
- * a 0.x project, because the first invocation writes `.flows/` and the sample
- * treats that as proof the project has moved on.
- */
 const globalsOf = Effect.map(rootCommand, (root): Globals.Options => ({
   credential: Option.getOrUndefined(root.credential),
   backend: Option.getOrUndefined(root.backend),
@@ -278,65 +235,15 @@ const renderJson = (value: unknown) =>
     yield* Console.log(rendered.text)
   })
 
-/**
- * A local CLI owns the executor layer. Keep that scope alive after accepting
- * a run so its driver is not interrupted as soon as the receipt is printed.
- * A settlement is any event that leaves this process nothing to drive: a park
- * for approval, a `pending` launch the executor declined, or a terminal
- * status.
- */
-const settled = (kind: string): boolean =>
-  kind === "control.run.waiting-approval" ||
-  kind === "control.run.pending" ||
-  kind === "control.run.completed" ||
-  kind === "control.run.failed" ||
-  kind === "control.run.cancelled"
+/** Whether this invocation suppresses progress on stderr. */
+const quiet = Effect.map(rootCommand, (globals) => globals.silent || globals.quiet)
 
-const watchFailure = (
-  error: unknown,
-  runId: string,
-  operation: string
-): ControlError.TransportError =>
-  new ControlError.TransportError({
-    message: `Control watch failed during ${operation} for run ${JSON.stringify(runId)}. Retry the command.`,
-    retryable: error instanceof ControlError.TransportError ? error.retryable : true,
-    cause: error
-  })
-
-/**
- * Waits for the run to settle and reports the event kind that settled it, or
- * `undefined` when nothing was waited for.
- */
-interface Settlement {
-  readonly kind: string
-  readonly cause?: string
-}
-
-const awaitRun = (
+/** Waits for a run this process's executor owns; see `Settlement.awaitOwnedRun`. */
+const awaitOwnedRun = (
   control: ControlService.Service,
-  runId: string,
+  receipt: ControlSchema.Receipt,
   afterSequence: number | undefined
-): Effect.Effect<Settlement | undefined, ControlError.TransportError, Command.CommandContext<"smthrs">> =>
-  Effect.gen(function*() {
-    const globals = yield* rootCommand
-    return yield* RunProgress.observe(
-      control.watch(afterSequence === undefined ? { runId } : { runId, afterSequence }),
-      runId,
-      globals.silent || globals.quiet
-    ).pipe(
-      Stream.filter((event) => settled(event.kind)),
-      Stream.take(1),
-      Stream.runCollect,
-      Effect.map((events): Settlement | undefined => {
-        const event = globalThis.Array.from(events)[0]
-        if (event === undefined) return undefined
-        const payload = event.payload
-        const cause = typeof payload === "object" && payload !== null && "cause" in payload ? payload.cause : undefined
-        return { kind: event.kind, ...(typeof cause === "string" ? { cause } : {}) }
-      }),
-      Effect.mapError((error) => watchFailure(error, runId, "settlement"))
-    )
-  })
+) => Effect.flatMap(quiet, (suppressed) => Settlement.awaitOwnedRun(control, receipt, afterSequence, suppressed))
 
 /**
  * Finds the greatest sequence in a stream without retaining its history.
@@ -348,179 +255,21 @@ const awaitRun = (
  * @category getters
  * @since 1.0.0-rc.0
  */
-export const latestSequence = <E, R>(
-  events: Stream.Stream<{ readonly sequence: number }, E, R>
-): Effect.Effect<number | undefined, E, R> =>
-  Stream.runFold(
-    events,
-    () => undefined as number | undefined,
-    (latest, event) => latest === undefined || event.sequence > latest ? event.sequence : latest
-  )
-
-/**
- * The sequence of the latest committed `control.run.waiting-approval` event:
- * the park a resume applies to. It keys the resume mutation, so resuming a
- * second park is a fresh mutation instead of a replay of the first resume's
- * recorded receipt, and it scopes the settlement wait.
- */
-const latestPark = (control: ControlService.Service, runId: string) =>
-  latestSequence(
-    control.watch({ runId, follow: false }).pipe(
-      Stream.filter((event) => event.kind === "control.run.waiting-approval")
-    )
-  ).pipe(
-    // A failed park lookup cannot safely mint the run-only resume key. Keep it
-    // in the error channel so no mutation is attempted with a weaker key.
-    Effect.mapError((error) => watchFailure(error, runId, "approval-park lookup"))
-  )
-
-const awaitOwnedRun = (
-  control: ControlService.Service,
-  receipt: ControlSchema.Receipt,
-  afterSequence: number | undefined
-): Effect.Effect<Settlement | undefined, ControlError.TransportError, Command.CommandContext<"smthrs">> =>
-  Effect.gen(function*() {
-    // A run that had already settled when the verb reached it has no
-    // settlement event left to wait for, and the receipt carries the answer.
-    // Without this, `smthrs run --resume <run-id>` against a run that
-    // settled `failed` printed `{"_tag":"Terminal","status":"failed"}` and
-    // exited 0, because every receipt tag but `Accepted` reported nothing at
-    // all (recorded by the cli-exit-code lane's verifier).
-    if (receipt._tag === "Terminal") return { kind: `control.run.${receipt.status}` }
-    const ownsExecutor = yield* ExecutorOwnership.ExecutorOwnership
-    if (!ownsExecutor || receipt._tag !== "Accepted" || receipt.runId === undefined) return undefined
-    return yield* awaitRun(control, receipt.runId, afterSequence)
-  })
-
-/**
- * The park a decision answers, or nothing for a plan-level decision.
- *
- * `Control.approve` and `Control.deny` restart the run their `ask` parked, in
- * the deciding call. The driver that picks that
- * resume up is this process's own executor, so a command that printed its
- * receipt and returned took the driver down with it and left the run it had
- * just restarted exactly where it stood, still needing `run --resume`, which
- * is the second call the contract says a decision replaces.
- *
- * A plan-level decision has no run yet, and the settlement wait needs one.
- */
-const decisionPark = (
-  control: ControlService.Service,
-  target: ControlSchema.ApprovalTarget
-) => target._tag === "Node" ? latestPark(control, target.runId) : Effect.succeed(undefined)
+export const latestSequence = Settlement.latestSequence
 
 /**
  * Renders what the control plane knows about a declined launch, and returns
  * the refusal the verb exits with.
- *
- * `control.run.pending` is the executor saying it will not take the run: no
- * seat resolved, a capability was not granted, or the host refused it. The run
- * row is durable and stays at `accepted` with nothing driving it. Printing the
- * launch receipt there said `Accepted` and exited 0, which is the one answer
- * that is wrong in both halves.
  */
 const declinedLaunch = (control: ControlService.Service, runId: string) =>
   Effect.gen(function*() {
-    const summary = yield* summaryOf(control, runId)
+    const summary = yield* RunReads.summary(control, runId)
     if (summary !== undefined) yield* render(summary)
-    return new CliError.UnsupportedError({
-      message: `Run ${runId} was accepted but no executor took it: it is ` +
-        `${summary?.status ?? "accepted"} with nothing running. This host drives prompt flows. A flow whose ` +
-        `body is a module (\`flow.ts\`) is driven by the host program that registers its delegates, and a flow ` +
-        `this project's registry does not hold belongs to another host: run the flow from that program, or end ` +
-        `the run with \`smthrs cancel ${runId}\`. \`smthrs status ${runId}\` shows what it waits for.`
-    })
+    return Settlement.declined(runId, summary)
   })
 
-/** Whether the settlement this process waited for was the executor declining. */
-const wasDeclined = (settlement: Settlement | undefined): boolean => settlement?.kind === "control.run.pending"
-
-/**
- * The process status one settlement reports, or nothing when the settlement
- * says nothing about how the run ended.
- *
- * The `up` command promises that an
- * attached launch exits with the terminal status code. The launch contract
- * paragraph is the vocabulary that code is spelled in: 0 success, 1 error, 2
- * usage, 3 parked, 130 SIGINT, 143 SIGTERM. A cancel reports the interrupt
- * status because a cancel is an interruption: `Control.cancel` settles the run
- * through `ControlRuntime.interrupt`, and reporting it separately keeps a
- * cancelled run distinguishable from a failed one.
- *
- * Until this existed, `runLaunch` failed only on `control.run.pending`, so a
- * `control.run.failed` settlement rendered the launch receipt and exited 0.
- * No caller of `smthrs up` could read a red run from the exit code: the
- * release validation measured `smthrs up ci-fast --json` returning 0 in
- * three seconds while `smthrs ps` reported `failed`.
- */
-const settlementStatus = (settlement: Settlement | undefined): number | undefined => {
-  switch (settlement?.kind) {
-    case "control.run.completed":
-      return 0
-    case "control.run.failed":
-      return 1
-    case "control.run.cancelled":
-      return 130
-    case "control.run.waiting-approval":
-      return 3
-    default:
-      return undefined
-  }
-}
-
-/**
- * Reports a settled run's terminal status as this process's exit status.
- *
- * Written after the receipt is rendered, never instead of it: the `--json`
- * contract is that an attached launch prints its receipt, and a caller reads
- * `runId` from that document whatever the run then did. `bin.ts` hands a
- * successful exit whatever `process.exitCode` holds, which is how
- * `smthrs migrate` reports its own status too.
- */
-const reportSettlement = (settlement: Settlement | undefined) =>
-  Effect.suspend(() => {
-    const status = settlementStatus(settlement)
-    return status === undefined ? Effect.void : CommandStatus.set(status)
-  })
-
-/** Admission stays identifiable while an attached failure states its verdict. */
-const renderReceipt = (receipt: ControlSchema.Receipt, settlement: Settlement | undefined) =>
-  render(
-    settlement?.kind === "control.run.failed"
-      ? {
-        ...receipt,
-        status: "failed",
-        cause: settlement.cause === undefined ? "no cause recorded in the journal" : causeLine(settlement.cause)
-      }
-      : receipt
-  )
-
-/** Every event of one run, oldest first. */
-const eventsOf = (control: ControlService.Service, runId: string) =>
-  History.collect(control.watch({ runId, follow: false }), {
-    operation: "event-history read",
-    subject: `run ${JSON.stringify(runId)}`
-  }).pipe(
-    Effect.mapError((error) =>
-      error instanceof CliError.ResourceLimitError ? error : watchFailure(error, runId, "event-history read")
-    )
-  )
-
-/** One run's summary, or undefined when the control plane has no such run. */
-const summaryOf = (control: ControlService.Service, runId: string) =>
-  Effect.map(
-    control.list({ _tag: "runs", filters: { runId } }),
-    (listed) => listed._tag === "runs" ? listed.items.find((item) => item.runId === runId) : undefined
-  )
-
-const missingRun = (runId: string): CliError.UsageError =>
-  new CliError.UsageError({ message: `Run not found: ${JSON.stringify(runId)}` })
-
-/** One run's summary, failing before a reader projects an empty history. */
-const requireRun = (control: ControlService.Service, runId: string) =>
-  summaryOf(control, runId).pipe(
-    Effect.flatMap((run) => run === undefined ? Effect.fail(missingRun(runId)) : Effect.succeed(run))
-  )
+const renderReceipt = (receipt: ControlSchema.Receipt, settlement: Settlement.Settlement | undefined) =>
+  render(Settlement.receiptDocument(receipt, settlement))
 
 // == the shipped-command contract verbs
 
@@ -543,7 +292,7 @@ const plan = Command.make(
 const runResume = (planOrRunId: string) =>
   Effect.gen(function*() {
     const control = yield* ControlService.Control
-    const parkSequence = yield* latestPark(control, planOrRunId)
+    const parkSequence = yield* Settlement.latestPark(control, planOrRunId)
     const receipt = yield* control.resume({
       runId: planOrRunId,
       idempotencyKey: parkSequence === undefined
@@ -551,11 +300,11 @@ const runResume = (planOrRunId: string) =>
         : `cli:resume:${planOrRunId}:${parkSequence}`
     })
     const settlement = yield* awaitOwnedRun(control, receipt, parkSequence)
-    if (wasDeclined(settlement) && receipt._tag === "Accepted" && receipt.runId !== undefined) {
+    if (Settlement.wasDeclined(settlement) && receipt._tag === "Accepted" && receipt.runId !== undefined) {
       return yield* Effect.fail(yield* declinedLaunch(control, receipt.runId))
     }
     yield* renderReceipt(receipt, settlement)
-    return yield* reportSettlement(settlement)
+    return yield* Settlement.report(settlement)
   })
 
 /**
@@ -586,11 +335,11 @@ const runLaunch = (payload: ControlService.ApprovalInput) =>
     })
     yield* announceAdmission(receipt)
     const settlement = yield* awaitOwnedRun(control, receipt, undefined)
-    if (wasDeclined(settlement) && receipt._tag === "Accepted" && receipt.runId !== undefined) {
+    if (Settlement.wasDeclined(settlement) && receipt._tag === "Accepted" && receipt.runId !== undefined) {
       return yield* Effect.fail(yield* declinedLaunch(control, receipt.runId))
     }
     yield* renderReceipt(receipt, settlement)
-    yield* reportSettlement(settlement)
+    yield* Settlement.report(settlement)
   })
 
 const run = Command.make("run", {
@@ -620,25 +369,25 @@ const upFlags = {
     Flag.withAlias("d"),
     Flag.withDescription("Launch a local executor in the background and print its run id and log path")
   ),
-  serve: removedFlag("up", "serve"),
-  interactive: removedFlag("up", "interactive"),
-  supervise: removedFlag("up", "supervise"),
-  herdr: removedFlag("up", "herdr"),
-  monitor: removedFlag("up", "monitor"),
-  report: removedFlag("up", "report"),
-  force: removedFlag("up", "force"),
-  "steal-ownership": removedFlag("up", "steal-ownership"),
-  "resume-claim-owner": removedFlag("up", "resume-claim-owner"),
-  "resume-claim-heartbeat": removedFlag("up", "resume-claim-heartbeat"),
-  "resume-restore-owner": removedFlag("up", "resume-restore-owner"),
-  "resume-restore-heartbeat": removedFlag("up", "resume-restore-heartbeat"),
-  "max-concurrency": removedValueFlag("max-concurrency")
+  serve: Removed.flag("up", "serve"),
+  interactive: Removed.flag("up", "interactive"),
+  supervise: Removed.flag("up", "supervise"),
+  herdr: Removed.flag("up", "herdr"),
+  monitor: Removed.flag("up", "monitor"),
+  report: Removed.flag("up", "report"),
+  force: Removed.flag("up", "force"),
+  "steal-ownership": Removed.flag("up", "steal-ownership"),
+  "resume-claim-owner": Removed.flag("up", "resume-claim-owner"),
+  "resume-claim-heartbeat": Removed.flag("up", "resume-claim-heartbeat"),
+  "resume-restore-owner": Removed.flag("up", "resume-restore-owner"),
+  "resume-restore-heartbeat": Removed.flag("up", "resume-restore-heartbeat"),
+  "max-concurrency": Removed.valueFlag("max-concurrency")
 }
 
 const up = Command.make("up", upFlags, (config) =>
   Effect.gen(function*() {
     yield* guardGlobals
-    yield* refuseRemoved("up", {
+    yield* Removed.refuse("up", {
       serve: config.serve,
       interactive: config.interactive,
       supervise: config.supervise,
@@ -727,7 +476,7 @@ const approve = Command.make("approve", {
     yield* guardGlobals
     const payload = yield* approval(config.approval)
     const control = yield* ControlService.Control
-    const parkSequence = yield* decisionPark(control, payload.target)
+    const parkSequence = yield* Settlement.decisionPark(control, payload.target)
     const receipt = yield* control.approve({ ...payload, scope: config.scope })
     // A decision restarts the run it answers, in this call, on this process's
     // own executor. The decision therefore ends with
@@ -735,7 +484,7 @@ const approve = Command.make("approve", {
     // read that run's status from `$?` exactly as `up` and `run` promise it.
     const settlement = yield* awaitOwnedRun(control, receipt, parkSequence)
     yield* renderReceipt(receipt, settlement)
-    yield* reportSettlement(settlement)
+    yield* Settlement.report(settlement)
   })).pipe(Command.withDescription(Verb.find("approve")!.help))
 
 const deny = Command.make("deny", { approval: requiredArgument("approval") }, (config) =>
@@ -743,11 +492,11 @@ const deny = Command.make("deny", { approval: requiredArgument("approval") }, (c
     yield* guardGlobals
     const payload = yield* approval(config.approval)
     const control = yield* ControlService.Control
-    const parkSequence = yield* decisionPark(control, payload.target)
+    const parkSequence = yield* Settlement.decisionPark(control, payload.target)
     const receipt = yield* control.deny(payload)
     const settlement = yield* awaitOwnedRun(control, receipt, parkSequence)
     yield* renderReceipt(receipt, settlement)
-    yield* reportSettlement(settlement)
+    yield* Settlement.report(settlement)
   })).pipe(Command.withDescription(Verb.find("deny")!.help))
 
 const cancel = Command.make("cancel", { runId: requiredArgument("run-id") }, (config) =>
@@ -797,11 +546,11 @@ const steer = Command.make("steer", {
     Flag.withDescription("Text to deliver as an attributed steering message to the run"),
     Flag.withFallbackPrompt(inputPrompt("--message"))
   ),
-  takeover: removedFlag("steer", "takeover")
+  takeover: Removed.flag("steer", "takeover")
 }, (config) =>
   Effect.gen(function*() {
     yield* guardGlobals
-    yield* refuseRemoved("steer", { takeover: config.takeover })
+    yield* Removed.refuse("steer", { takeover: config.takeover })
     const control = yield* ControlService.Control
     const stamp = Date.now()
     const messageId = `cli:steer:${config.runId}:${randomUUID()}`
@@ -855,7 +604,7 @@ const workflowList = Command.make("list", {}, () => listFlows).pipe(
 const workflow = Command.make(
   "workflow",
   { rest: Argument.string("subcommand").pipe(Argument.variadic()) },
-  (config) => Effect.fail(Unsupported.verbError(removedVerb("workflow"), config.rest[0]))
+  (config) => Effect.fail(Unsupported.verbError(Removed.verb("workflow"), config.rest[0]))
 ).pipe(
   Command.withDescription("Removed; only `workflow list` survives, as an alias of `ls`"),
   Command.unlisted,
@@ -969,9 +718,9 @@ const statusOf = (runId: Option.Option<string>) =>
     // run id gets the diagnosis card computed from that run's own events.
     if (Option.isNone(runId)) return yield* render(listed)
     const run = listed._tag === "runs" ? listed.items.find((item) => item.runId === runId.value) : undefined
-    if (run === undefined) return yield* Effect.fail(missingRun(runId.value))
+    if (run === undefined) return yield* Effect.fail(RunReads.missing(runId.value))
     if (root.json) return yield* render(listed)
-    const events = yield* eventsOf(control, runId.value)
+    const events = yield* RunReads.events(control, runId.value)
     yield* render(Forensics.renderDiagnosis(run, Forensics.digest(events)))
   })
 
@@ -992,13 +741,15 @@ const readLogs = (runId: Option.Option<string>, follow: boolean, forceJson: bool
     const control = yield* ControlService.Control
     const root = yield* rootCommand
     const json = forceJson || root.json
-    if (Option.isSome(runId)) yield* requireRun(control, runId.value)
+    if (Option.isSome(runId)) yield* RunReads.existing(control, runId.value)
     const watchedRunId = Option.getOrElse(runId, () => "*")
     const events = control.watch({
       runId: Option.getOrUndefined(runId),
       follow
     }).pipe(
-      Stream.mapError((error) => watchFailure(error, watchedRunId, follow ? "log follow" : "event-history read"))
+      Stream.mapError((error) =>
+        Settlement.watchFailure(error, watchedRunId, follow ? "log follow" : "event-history read")
+      )
     )
     // Human output is the transcript projection; `--json` remains the raw
     // event stream, byte-stable for scripts. Follow mode renders one line per
@@ -1058,8 +809,8 @@ const output = Command.make("output", {
   Effect.gen(function*() {
     yield* guardGlobals
     const control = yield* ControlService.Control
-    yield* requireRun(control, config.runId)
-    const collected = yield* eventsOf(control, config.runId)
+    yield* RunReads.existing(control, config.runId)
+    const collected = yield* RunReads.events(control, config.runId)
     const nodes = NodeOutput.project(collected)
     const requested = Option.getOrUndefined(config.nodeId)
     if (requested === undefined) return yield* render(renderValue(nodes))
@@ -1158,11 +909,11 @@ const migrateFlags = {
 
 const migrate = Command.make("migrate", {
   path: Argument.string("path").pipe(Argument.optional),
-  to: removedValueFlag("to"),
+  to: Removed.valueFlag("to"),
   ...migrateFlags
 }, (config) =>
   Effect.gen(function*() {
-    yield* refuseRemoved("migrate", { to: config.to })
+    yield* Removed.refuse("migrate", { to: config.to })
     const migrationRoot = yield* Project.MigrationRoot
     const target = Option.getOrElse(config.path, () => migrationRoot)
     const root = yield* rootCommand
@@ -1201,167 +952,6 @@ const migrate = Command.make("migrate", {
     // `NodeControl.layerOutput` transfers a rendered status.
     yield* CommandStatus.set(MigrateCommand.exitCode(outcome.report))
   })).pipe(Command.withDescription(Verb.find("migrate")!.help))
-
-const claudeSession = Flag.string("session").pipe(
-  Flag.optional,
-  Flag.withDescription("Claude Code session id; falls back to CLAUDE_CODE_SESSION_ID")
-)
-
-const sessionId = (raw: Option.Option<string>): string =>
-  Option.getOrElse(raw, () => process.env["CLAUDE_CODE_SESSION_ID"] ?? "unknown")
-
-const claudeTick = Command.make("tick", {
-  runId: requiredArgument("run-id"),
-  session: claudeSession,
-  afterSeq: Flag.integer("after-seq").pipe(
-    Flag.withDefault(0),
-    Flag.withDescription("Only include events after this sequence number")
-  )
-}, (config) =>
-  Effect.gen(function*() {
-    yield* guardGlobals
-    const control = yield* ControlService.Control
-    const projectRoot = yield* Project.ProjectRoot
-    // Following a run is subscribing: every tick re-asserts the entry, so a
-    // registry lost to a crash repairs itself on the next frame.
-    yield* Effect.sync(() => ClaudeMirror.subscribe(projectRoot, config.runId, sessionId(config.session)))
-    const collected = yield* eventsOf(control, config.runId)
-    const run = yield* summaryOf(control, config.runId)
-    const digest = Forensics.digest(collected)
-    yield* renderJson(
-      ClaudeMirror.frame(config.runId, run, collected, {
-        afterSeq: config.afterSeq,
-        parked: { question: digest.parkedQuestion, approval: digest.parkedApproval }
-      })
-    )
-  })).pipe(Command.withDescription("Print one mirror frame for a run"))
-
-const claudeNodeWait = Command.make("node-wait", {
-  runId: requiredArgument("run-id"),
-  nodeId: requiredArgument("node-id"),
-  timeout: Flag.integer("timeout-ms").pipe(
-    Flag.withDefault(30_000),
-    Flag.withDescription("Maximum time in milliseconds to wait for the node to settle")
-  )
-}, (config) =>
-  Effect.gen(function*() {
-    yield* guardGlobals
-    const control = yield* ControlService.Control
-    yield* requireRun(control, config.runId)
-    const deadline = Date.now() + config.timeout
-    const history = History.empty<ControlSchema.ControlEvent>()
-    let afterSequence: number | undefined
-    for (;;) {
-      const previousLength = history.values.length
-      yield* History.collectInto(
-        control.watch({
-          runId: config.runId,
-          follow: false,
-          ...(afterSequence === undefined ? {} : { afterSequence })
-        }),
-        history,
-        { operation: "node wait", subject: `run ${JSON.stringify(config.runId)}` }
-      ).pipe(
-        Effect.mapError((error) =>
-          error instanceof CliError.ResourceLimitError ? error : watchFailure(error, config.runId, "node wait")
-        )
-      )
-      for (let index = previousLength; index < history.values.length; index++) {
-        const event = history.values[index]!
-        if (afterSequence === undefined || event.sequence > afterSequence) afterSequence = event.sequence
-      }
-      const node = NodeOutput.find(history.values, config.nodeId)
-      if (node !== undefined && node.outcome !== "pending") return yield* renderJson({ ...node, timedOut: false })
-      const run = yield* summaryOf(control, config.runId)
-      if (run !== undefined && ClaudeMirror.isTerminal(run.status)) {
-        return yield* renderJson({ nodeId: config.nodeId, outcome: "vanished", status: run.status, timedOut: false })
-      }
-      if (Date.now() >= deadline) {
-        return yield* renderJson({ nodeId: config.nodeId, outcome: "pending", timedOut: true })
-      }
-      yield* Effect.sleep("250 millis")
-    }
-  })).pipe(Command.withDescription("Block until one node settles"))
-
-const claudeMonitor = Command.make("monitor", {
-  session: claudeSession,
-  allRuns: Flag.boolean("all-runs").pipe(
-    Flag.withDefault(false),
-    Flag.withDescription("Include all runs, beyond this session’s subscriptions")
-  ),
-  limit: Flag.integer("limit").pipe(
-    Flag.withDefault(200),
-    Flag.withDescription("Maximum number of runs in the monitor frame")
-  )
-}, (config) =>
-  Effect.gen(function*() {
-    yield* guardGlobals
-    if (!Number.isSafeInteger(config.limit) || config.limit <= 0) {
-      return yield* Effect.fail(
-        new CliError.UsageError({
-          message: `--limit must be a positive integer; got ${JSON.stringify(String(config.limit))}`
-        })
-      )
-    }
-    const control = yield* ControlService.Control
-    const projectRoot = yield* Project.ProjectRoot
-    const followed = config.allRuns
-      ? undefined
-      : new Set(
-        ClaudeMirror.readSubscriptions(projectRoot)
-          .filter((entry) => entry.sessionId === sessionId(config.session))
-          .map((entry) => entry.runId)
-      )
-    type Transition = NonNullable<ReturnType<typeof ClaudeMirror.transition>>
-    const ring = yield* Stream.runFold(
-      control.watch({ follow: false }),
-      () => ({ values: [] as Array<Transition | undefined>, next: 0, count: 0 }),
-      (state, event) => {
-        const line = ClaudeMirror.transition(event)
-        if (line === undefined || (followed !== undefined && !followed.has(line.runId))) return state
-        state.values[state.next] = line
-        state.next = (state.next + 1) % config.limit
-        state.count = Math.min(config.limit, state.count + 1)
-        return state
-      }
-    )
-    for (let offset = 0; offset < ring.count; offset++) {
-      const index = (ring.next - ring.count + offset + config.limit) % config.limit
-      const line = ring.values[index]
-      if (line !== undefined) yield* Console.log(JSON.stringify(line))
-    }
-  })).pipe(Command.withDescription("Print notable run transitions as NDJSON"))
-
-const claudeSubscribe = Command.make("subscribe", {
-  runId: requiredArgument("run-id"),
-  session: claudeSession
-}, (config) =>
-  Effect.gen(function*() {
-    yield* guardGlobals
-    const projectRoot = yield* Project.ProjectRoot
-    const entries = yield* Effect.sync(() =>
-      ClaudeMirror.subscribe(projectRoot, config.runId, sessionId(config.session))
-    )
-    yield* renderJson({ subscriptions: entries.length })
-  })).pipe(Command.withDescription("Follow a run in this session's mirror"))
-
-const claudeUnsubscribe = Command.make("unsubscribe", {
-  runId: requiredArgument("run-id"),
-  session: claudeSession
-}, (config) =>
-  Effect.gen(function*() {
-    yield* guardGlobals
-    const projectRoot = yield* Project.ProjectRoot
-    const entries = yield* Effect.sync(() =>
-      ClaudeMirror.unsubscribe(projectRoot, config.runId, sessionId(config.session))
-    )
-    yield* renderJson({ subscriptions: entries.length })
-  })).pipe(Command.withDescription("Stop following a run in this session's mirror"))
-
-const claude = Command.make("claude").pipe(
-  Command.withDescription(Verb.find("claude")!.help),
-  Command.withSubcommands([claudeTick, claudeNodeWait, claudeMonitor, claudeSubscribe, claudeUnsubscribe])
-)
 
 const update = Command.make("update", {}, () =>
   Effect.gen(function*() {
@@ -1428,28 +1018,6 @@ const gc = Command.make("gc", {
     }
   })).pipe(Command.withDescription(Verb.find("gc")!.help))
 
-// == the removed-command contract refusals
-
-/**
- * Every removed verb, as a hidden subcommand that exits 1 with its reason.
- *
- * `workflows` is registered here under its own spelling like the rest. The
- * singular `workflow` is a separate command group, because `workflow list`
- * survives as the `ls` alias, and it refuses on its own with the same reason.
- */
-const removedCommands = Unsupported.removedVerbs
-  .filter((verb) => !ownGroupCommands.has(verb.name))
-  .map((verb) =>
-    Command.make(
-      verb.name,
-      { rest: Argument.string("argument").pipe(Argument.variadic()) },
-      (config) => Effect.fail(Unsupported.verbError(verb, verb.subcommands === undefined ? undefined : config.rest[0]))
-    ).pipe(
-      Command.withDescription(`Removed in 1.0.0-rc.0: ${verb.reason}`),
-      Command.unlisted
-    )
-  )
-
 /**
  * The composed root command. Application composition supplies Control and
  * Output layers; this module contains no transport selection.
@@ -1486,9 +1054,9 @@ export const cli = rootCommand.pipe(
     doctor,
     gc,
     migrate,
-    claude,
+    ClaudeCmd.make({ guard: guardGlobals, required: requiredArgument }),
     update,
     bug,
-    ...removedCommands
+    ...Removed.commands
   ])
 )
