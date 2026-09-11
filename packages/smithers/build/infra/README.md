@@ -8,8 +8,14 @@ content-addressed blobs in R2.
 The hosted service and the self-hosted service under [`../terraform/`](../terraform/)
 serve the same HTTP routes, and cache keys and payloads do not change between
 them. Both carry the read and write credential split and both refuse two equal
-credentials. They are not identical: the self-hosted translation is maintained
-by hand and follows this Worker, so treat this file as the contract for the
+credentials. They are two implementations, not one: the self-hosted
+`protocol.js` is written by hand, imports nothing from this Worker, and is not
+generated from it. Its exported bounds are held equal to the Worker's by
+`../test/CacheProtocolParity.test.ts`, and the black-box corpus in
+`../terraform/modules/cache/service/test/conformance_test.js` runs the same
+requests through both handlers. The tiers differ by contract on journal
+provenance, which the self-hosted tier stores and this Worker refuses (see
+"Hosted arbitration contract"). Treat this file as the contract for the
 hosted service alone.
 
 The service has two credentials: one that may read and one that may publish.

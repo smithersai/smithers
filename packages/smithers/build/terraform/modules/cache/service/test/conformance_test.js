@@ -416,26 +416,24 @@ const vectors = [
     ]
   },
   {
+    // Fenced deletion of a row that carries no provenance answers the same on
+    // both tiers. Publishing provenance does not: see the tier contract test.
     name: "delete fence",
     requests: [
       {
         method: "PUT",
-        path: `/ac/${keyDigest}?recordedRunId=run-1&recordedEventSeq=7`,
-        body: cacheEntryBody(keyDigest, { ok: true }, {
-          recordedRunId: "run-1",
-          recordedEventSeq: 7
-        }),
+        path: `/ac/${keyDigest}`,
+        body: cacheEntryBody(keyDigest, { ok: true }),
         json: true
       },
       {
         method: "DELETE",
         path: `/ac/${keyDigest}?recordedRunId=run-2&recordedEventSeq=7`
       },
-      {
-        method: "DELETE",
-        path: `/ac/${keyDigest}?recordedRunId=run-1&recordedEventSeq=7`
-      },
-      { method: "DELETE", path: `/ac/${keyDigest}?recordedRunId=run-1` }
+      { method: "DELETE", path: `/ac/${keyDigest}?recordedRunId=run-1` },
+      { method: "DELETE", path: `/ac/${keyDigest}?recordedRunId=run-1&recordedEventSeq=x` },
+      { method: "DELETE", path: `/ac/${keyDigest}` },
+      { method: "DELETE", path: `/ac/${keyDigest}` }
     ]
   },
   {
@@ -563,6 +561,57 @@ for (const vector of vectors) {
     expect(service).toEqual(worker)
   })
 }
+
+/*
+ * The one place the tiers answer differently by contract. The hosted Worker
+ * advertises result-only arbitration and refuses journal provenance with 422
+ * (infra/README.md, "Hosted arbitration contract"); the self-hosted service
+ * stores the provenance and fences deletion on it. A parity vector cannot
+ * hold here, so each tier's answer is pinned on its own: a change on either
+ * side that closes or widens the gap fails this test, not silently the corpus.
+ */
+const provenanceVector = {
+  name: "journal provenance",
+  requests: [
+    {
+      method: "PUT",
+      path: `/ac/${keyDigest}`,
+      body: cacheEntryBody(keyDigest, { ok: true }, {
+        recordedRunId: "run-1",
+        recordedEventSeq: 7
+      }),
+      json: true
+    },
+    { method: "GET", path: `/ac/${keyDigest}?recordedRunId=run-1&recordedEventSeq=7` },
+    {
+      method: "DELETE",
+      path: `/ac/${keyDigest}?recordedRunId=run-2&recordedEventSeq=7`
+    },
+    {
+      method: "DELETE",
+      path: `/ac/${keyDigest}?recordedRunId=run-1&recordedEventSeq=7`
+    }
+  ]
+}
+
+test("journal provenance is refused by the hosted tier and fenced by the self-hosted tier", async () => {
+  const service = await runVector(serviceCreateHandler, provenanceVector)
+  const worker = await runVector(workerCreateHandler, provenanceVector)
+
+  expect(service.responses.map((response) => response.status)).toEqual([201, 200, 404, 200])
+  expect(JSON.parse(service.responses[1].body)).toMatchObject({ recordedRunId: "run-1", recordedEventSeq: 7 })
+  // The matching fence deleted the row; the mismatched one before it did not.
+  expect(service.actionCacheRows).toEqual([])
+
+  expect(worker.responses.map((response) => response.status)).toEqual([422, 422, 404, 404])
+  for (const response of worker.responses.slice(0, 2)) {
+    expect(JSON.parse(response.body)).toEqual({
+      code: "UNSUPPORTED_PROVENANCE",
+      error: "the hosted cache supports result-only arbitration, not journal provenance"
+    })
+  }
+  expect(worker.actionCacheRows).toEqual([])
+})
 
 test("corpus exercises both storage surfaces", async () => {
   const vector = vectors.find((candidate) => candidate.exercisesState)

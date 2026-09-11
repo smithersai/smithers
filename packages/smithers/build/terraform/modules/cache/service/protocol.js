@@ -10,11 +10,16 @@
  *   POST   /cas/findMissing           -> 200 {"missing":[...]}
  *   GET    /healthz                   -> 200, unauthenticated
  *
- * This file is a translation of infra/worker/protocol.ts, which serves the
- * same protocol on Cloudflare. Both accept the two shapes the two real clients
- * publish: the `CacheEntry` envelope `RemoteCacheStore` sends, and the bare
- * `CachedResult` JSON the smthrs CLI sends. Every bound below is the bound
- * that file uses, so a client cannot tell the two backends apart.
+ * infra/worker/protocol.ts serves these routes on Cloudflare. This file is a
+ * separate implementation of the same routes, written and maintained by hand;
+ * it is not generated from that module and nothing in it is imported from
+ * there. Both accept the two shapes the two real clients publish: the
+ * `CacheEntry` envelope `RemoteCacheStore` sends, and the bare `CachedResult`
+ * JSON the smthrs CLI sends, and every exported bound below equals the
+ * Worker's (../../../../test/CacheProtocolParity.test.ts pins that). The
+ * tiers differ by contract on journal provenance: the Worker refuses it with
+ * 422 and this service stores it and fences deletion on it. The black-box
+ * corpus in test/conformance_test.js holds every other route to one answer.
  *
  * Storage arrives as `actionCache` and `contentStore`, so the protocol is
  * testable without a database and startup is somebody else's file.

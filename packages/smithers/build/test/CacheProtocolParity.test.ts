@@ -54,8 +54,10 @@ describe("hosted and self-hosted cache protocols", () => {
   it("keeps both tiers on one credential model", () => {
     for (const [label, source] of implementations) {
       expect(source, `${label} does not classify by credential`).toContain("presentedCredential")
-      expect(source, `${label} admits a read credential to a mutation`).toContain(
-        `(request.method === "PUT" || request.method === "DELETE") && credential !== "write"`
+      // The Worker classifies into `{ kind, digest }` for credential budgets and
+      // the service into a bare string; the refusal is the same on both.
+      expect(source, `${label} admits a read credential to a mutation`).toMatch(
+        /\(request\.method === "PUT" \|\| request\.method === "DELETE"\) && credential(?:\.kind)? !== "write"/
       )
       expect(source, `${label} accepts one secret for both directions`).toContain(
         "readTokenHash and writeTokenHash must differ, or the read credential can publish"
@@ -68,7 +70,9 @@ describe("hosted and self-hosted cache protocols", () => {
     // stores them, but a client publishing one malformed reference must get
     // the same answer from either.
     for (const [label, source] of implementations) {
-      expect(source, `${label} does not validate declared references`).toContain("referencedDigests")
+      expect(source, `${label} does not validate declared references`).toMatch(
+        /referencedDigests|assertDeclaredOutputsValid/
+      )
       expect(source, `${label} accepts an invalid declared output digest`).toContain(
         "declared output digest is invalid"
       )
