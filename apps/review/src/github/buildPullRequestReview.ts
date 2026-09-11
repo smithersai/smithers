@@ -1,4 +1,4 @@
-import type { ReviewRunOutput } from "../workflow/openCodeReview.ts";
+import { ReviewCommentSeverity, type ReviewRunOutput } from "../workflow/openCodeReview.ts";
 import type { Quiz } from "../quiz/quizSchema.ts";
 import { fenceFor } from "../text/fenceFor.ts";
 import { pluralize } from "../text/pluralize.ts";
@@ -27,7 +27,7 @@ const MAX_BODY_CHARS = 60_000;
 const MAX_FILES_PER_CHAPTER = 30;
 const MAX_FILE_TABLE_ROWS = 30;
 
-const SEVERITY_ORDER: Severity[] = ["critical", "major", "minor", "info"];
+const SEVERITY_ORDER = ReviewCommentSeverity.literals;
 const SEVERITY_EMOJI: Record<Severity, string> = {
   critical: "💥",
   major: "🔴",

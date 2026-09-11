@@ -19,6 +19,7 @@ import { postReviewSupersedingPrior } from "../github/postReviewSupersedingPrior
 import { resolvePullRequest, type PullRequestTarget } from "../github/resolvePullRequest.ts";
 import { ghBin } from "../github/runGh.ts";
 import { fenceFor } from "../text/fenceFor.ts";
+import { ReviewCommentSeverity } from "../workflow/openCodeReview.ts";
 import { Review } from "../workflow/reviewFlow.ts";
 import { layerNode } from "../workflow/reviewLayer.ts";
 import { missingSeatCredential, reviewSeatResolver } from "../workflow/reviewSeatResolver.ts";
@@ -33,10 +34,11 @@ import { whichBinary } from "./whichBinary.ts";
 type Finding = Parameters<typeof buildPullRequestReview>[0]["findings"][number];
 type Warning = { file: string; message: string; type: string };
 
-const SEVERITIES = ["critical", "major", "minor", "info"] as const;
-
-function severityCounts(findings: Finding[]): Record<(typeof SEVERITIES)[number], number> {
-  const counts = { critical: 0, major: 0, minor: 0, info: 0 };
+function severityCounts(findings: Finding[]): Record<ReviewCommentSeverity, number> {
+  const counts = Object.fromEntries(ReviewCommentSeverity.literals.map((severity) => [severity, 0])) as Record<
+    ReviewCommentSeverity,
+    number
+  >;
   for (const finding of findings) {
     if (finding.severity in counts) counts[finding.severity] += 1;
   }
@@ -45,7 +47,7 @@ function severityCounts(findings: Finding[]): Record<(typeof SEVERITIES)[number]
 
 function severityBreakdown(findings: Finding[]): string {
   const counts = severityCounts(findings);
-  const parts = SEVERITIES.filter((severity) => counts[severity] > 0).map(
+  const parts = ReviewCommentSeverity.literals.filter((severity) => counts[severity] > 0).map(
     (severity) => `${counts[severity]} ${severity}`,
   );
   return parts.length > 0 ? parts.join(", ") : "none";

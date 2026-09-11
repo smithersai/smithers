@@ -1,4 +1,4 @@
-import type { ReviewRunOutput } from "../workflow/openCodeReview.ts";
+import { ReviewCommentSeverity, type ReviewRunOutput } from "../workflow/openCodeReview.ts";
 import { extractDiffAssets } from "../diffs/extractDiffAssets.ts";
 import { renderFallbackDiffHtml } from "../diffs/renderFallbackDiffHtml.ts";
 import { renderPierreFileDiff } from "../diffs/renderPierreFileDiff.ts";
@@ -28,7 +28,7 @@ const OPEN_DIFF_MAX_CHURN = 300;
 // truncates) instead of the fully highlighted Pierre renderer.
 const PIERRE_MAX_CHURN = 5_000;
 
-const severityOrder = ["critical", "major", "minor", "info"] as const;
+const severityOrder = ReviewCommentSeverity.literals;
 
 const faviconSvg = `data:image/svg+xml,${encodeURIComponent(
   `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><text y=".9em" font-size="90">🔍</text></svg>`,

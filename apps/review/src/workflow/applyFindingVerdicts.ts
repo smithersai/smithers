@@ -1,7 +1,7 @@
-import type { ReviewCommentSeverity } from "./openCodeReview.ts";
+import { ReviewCommentSeverity } from "./openCodeReview.ts";
 import type { FindingVerdict } from "./verifyVerdictsSchema.ts";
 
-const severitySteps: ReviewCommentSeverity[] = ["critical", "major", "minor", "info"];
+const severitySteps = ReviewCommentSeverity.literals;
 
 export function applyFindingVerdicts<T extends { path: string; severity: ReviewCommentSeverity }>(
   findings: T[],

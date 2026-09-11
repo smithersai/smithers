@@ -16,10 +16,6 @@ import { parseReviewArgs, type ReviewArgs } from "./parseReviewArgs.ts";
 
 const decodeQuiz = Schema.decodeUnknownOption(QuizSchema);
 
-type Finding = { severity: "critical" | "major" | "minor" | "info" };
-
-const SEVERITIES = ["critical", "major", "minor", "info"] as const;
-
 /**
  * Decodes a quiz out of the JSON column a run summary carries.
  *
@@ -37,29 +33,6 @@ export function parseQuizColumn(value: unknown): Quiz | null {
   } catch {
     return null;
   }
-}
-
-function severityCounts(findings: Finding[]): Record<(typeof SEVERITIES)[number], number> {
-  const counts = { critical: 0, major: 0, minor: 0, info: 0 };
-  for (const finding of findings) {
-    if (finding.severity in counts) counts[finding.severity] += 1;
-  }
-  return counts;
-}
-
-function severityBreakdown(findings: Finding[]): string {
-  const counts = severityCounts(findings);
-  const parts = SEVERITIES.filter((severity) => counts[severity] > 0).map(
-    (severity) => `${counts[severity]} ${severity}`,
-  );
-  return parts.length > 0 ? parts.join(", ") : "none";
-}
-
-function elapsedLabel(ms: number): string {
-  const totalSeconds = Math.round(ms / 1000);
-  const minutes = Math.floor(totalSeconds / 60);
-  const secondsPart = totalSeconds % 60;
-  return minutes > 0 ? `${minutes}m${String(secondsPart).padStart(2, "0")}s` : `${totalSeconds}s`;
 }
 
 /**

@@ -228,8 +228,9 @@ export const PreviewOutput = Schema.Struct({
 export type PreviewOutput = typeof PreviewOutput.Type;
 
 /**
- * How much a finding matters. Ordered most to least severe; the run summary
- * counts by this.
+ * How much a finding matters. Ordered most to least severe; every rank, order,
+ * count, and prompt sentence reads `ReviewCommentSeverity.literals` rather than
+ * a copy.
  *
  * @since 1.0.0
  * @category schemas
@@ -1495,10 +1496,9 @@ function resolveCommentLineNumbers(comment: ReviewComment, diffText: string) {
   return comment;
 }
 
-const severityRank: Record<ReviewCommentSeverity, number> = { critical: 0, major: 1, minor: 2, info: 3 };
-
 function rankSeverity(severity: string) {
-  return severityRank[severity as ReviewCommentSeverity] ?? severityRank.minor;
+  const rank = ReviewCommentSeverity.literals.indexOf(severity as ReviewCommentSeverity);
+  return rank === -1 ? ReviewCommentSeverity.literals.indexOf("minor") : rank;
 }
 
 function normalizedContentKey(value: string) {
