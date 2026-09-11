@@ -282,7 +282,7 @@ test("every gate in ci.yml also runs in release.yml", () => {
   // silently landing outside the release's proof. The jobs release.yml
   // does not mirror: `cache-publish` re-runs `ci '//packages/...'` on main
   // pushes only to publish its results to the remote cache, and `test`
-  // already carries that gate; `browser` runs `//scripts:browserContract`, which
+  // already carries that gate; `browser` runs `//scripts:webBundleContract`, which
   // `//scripts/...` already covers; `packages` runs `test '//packages/...'`,
   // which `ci '//packages/...'` already covers; `apps-e2e` needs the runner's
   // Chrome; native Rust tests stay in `rust`. Release mirrors `wasm-repro`

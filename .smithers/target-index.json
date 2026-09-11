@@ -20379,7 +20379,10 @@
     ],
     "outputs": [],
     "dependencies": [
+      "//packages/smithers/flows/canonical:lib",
+      "//packages/smithers/flows/crypto:lib",
       "//packages/smithers/flows/flow:lib",
+      "//packages/smithers/flows/keys:lib",
       "//packages/smithers/flows/plan:lib"
     ],
     "source": {
@@ -20554,6 +20557,9 @@
       "packages/smithers/flows/flow/dist/esm"
     ],
     "dependencies": [
+      "//packages/smithers/flows/canonical:lib",
+      "//packages/smithers/flows/crypto:lib",
+      "//packages/smithers/flows/keys:lib",
       "//packages/smithers/flows/plan:lib"
     ],
     "source": {
@@ -20694,7 +20700,10 @@
     ],
     "outputs": [],
     "dependencies": [
+      "//packages/smithers/flows/canonical:lib",
+      "//packages/smithers/flows/crypto:lib",
       "//packages/smithers/flows/flow:lib",
+      "//packages/smithers/flows/keys:lib",
       "//packages/smithers/flows/plan:lib"
     ],
     "source": {
@@ -27277,6 +27286,40 @@
     }
   },
   {
+    "label": "//scripts/repo-contract:reliabilityWorkflow",
+    "package": "scripts/repo-contract",
+    "name": "reliabilityWorkflow",
+    "rule": "NodeTest",
+    "kinds": [
+      "test"
+    ],
+    "cacheable": false,
+    "inputs": [
+      {
+        "kind": "file",
+        "path": "scripts/repo-contract/reliability-workflow.test.mjs"
+      },
+      {
+        "kind": "glob",
+        "pattern": "scripts/repo-contract/**/*.mjs",
+        "exclude": []
+      },
+      {
+        "kind": "file",
+        "path": "scripts/release-rehearsal.mjs"
+      },
+      {
+        "kind": "file",
+        "path": ".github/workflows/reliability.yml"
+      }
+    ],
+    "outputs": [],
+    "dependencies": [],
+    "source": {
+      "file": "scripts/repo-contract/PACKAGE.ts"
+    }
+  },
+  {
     "label": "//scripts/repo-contract:smithersLinks",
     "package": "scripts/repo-contract",
     "name": "smithersLinks",
@@ -27325,10 +27368,6 @@
       },
       {
         "kind": "file",
-        "path": "scripts/check-signal-campaign.mjs"
-      },
-      {
-        "kind": "file",
         "path": "scripts/release-rehearsal.mjs"
       },
       {
@@ -27359,7 +27398,45 @@
       },
       {
         "kind": "file",
-        "path": ".github/workflows/reliability.yml"
+        "path": "package.json"
+      },
+      {
+        "kind": "file",
+        "path": "pnpm-workspace.yaml"
+      }
+    ],
+    "outputs": [],
+    "dependencies": [],
+    "source": {
+      "file": "scripts/repo-contract/PACKAGE.ts"
+    }
+  },
+  {
+    "label": "//scripts/repo-contract:uiCiTier",
+    "package": "scripts/repo-contract",
+    "name": "uiCiTier",
+    "rule": "NodeTest",
+    "kinds": [
+      "test"
+    ],
+    "cacheable": false,
+    "inputs": [
+      {
+        "kind": "file",
+        "path": "scripts/repo-contract/ui-ci-tier.test.mjs"
+      },
+      {
+        "kind": "glob",
+        "pattern": "scripts/repo-contract/**/*.mjs",
+        "exclude": []
+      },
+      {
+        "kind": "file",
+        "path": "scripts/release-rehearsal.mjs"
+      },
+      {
+        "kind": "file",
+        "path": ".github/workflows/ci.yml"
       },
       {
         "kind": "file",
@@ -27396,10 +27473,6 @@
       {
         "kind": "file",
         "path": "pnpm-lock.yaml"
-      },
-      {
-        "kind": "file",
-        "path": "pnpm-workspace.yaml"
       }
     ],
     "outputs": [],
@@ -28315,6 +28388,42 @@
     "dependencies": [
       "//scripts:conformanceCheck"
     ],
+    "source": {
+      "file": "scripts/PACKAGE.ts"
+    }
+  },
+  {
+    "label": "//scripts:signalCampaign",
+    "package": "scripts",
+    "name": "signalCampaign",
+    "rule": "NodeTest",
+    "kinds": [
+      "test"
+    ],
+    "cacheable": false,
+    "inputs": [
+      {
+        "kind": "file",
+        "path": "scripts/check-signal-campaign.test.mjs"
+      },
+      {
+        "kind": "glob",
+        "pattern": "scripts/**/*.mjs",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "scripts/**/*.ts",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "scripts/fixtures/**/*.json",
+        "exclude": []
+      }
+    ],
+    "outputs": [],
+    "dependencies": [],
     "source": {
       "file": "scripts/PACKAGE.ts"
     }

@@ -76,7 +76,6 @@ const testScriptWiring = Smithers.NodeTest({
   runner: Smithers.testRunner([Smithers.file("//scripts/repo-contract/test-script-wiring.test.mjs")]),
   srcs: [
     sources,
-    Smithers.file("//scripts/check-signal-campaign.mjs"),
     Smithers.file("//scripts/release-rehearsal.mjs"),
     Smithers.file("//PACKAGE.ts"),
     Smithers.file("//scripts/PACKAGE.ts"),
@@ -84,7 +83,26 @@ const testScriptWiring = Smithers.NodeTest({
     Smithers.glob("//scripts/**/*.test.mjs"),
     Smithers.glob("//factory/**/*.test.ts"),
     Smithers.file("//.github/workflows/ci.yml"),
-    Smithers.file("//.github/workflows/reliability.yml"),
+    Smithers.file("//package.json"),
+    Smithers.file("//pnpm-workspace.yaml")
+  ],
+  deps: []
+})
+
+/**
+ * The apps/ui required CI tier: selected once in its own job, a Playwright
+ * wrapper that propagates failure, and a typecheck the real scheduler skips
+ * when strict devkit preparation fails.
+ *
+ * @since 1.0.0
+ * @category test
+ */
+const uiCiTier = Smithers.NodeTest({
+  runner: Smithers.testRunner([Smithers.file("//scripts/repo-contract/ui-ci-tier.test.mjs")]),
+  srcs: [
+    sources,
+    Smithers.file("//scripts/release-rehearsal.mjs"),
+    Smithers.file("//.github/workflows/ci.yml"),
     Smithers.file("//apps/ui/PACKAGE.ts"),
     Smithers.file("//apps/ui/scripts/ensure-devkit.mjs"),
     Smithers.file("//apps/ui/scripts/run-pr-e2e.mjs"),
@@ -93,9 +111,21 @@ const testScriptWiring = Smithers.NodeTest({
     Smithers.file("//apps/ui/hutch.config.ts"),
     Smithers.file("//apps/ui/tsconfig.json"),
     Smithers.file("//package.json"),
-    Smithers.file("//pnpm-lock.yaml"),
-    Smithers.file("//pnpm-workspace.yaml")
+    Smithers.file("//pnpm-lock.yaml")
   ],
+  deps: []
+})
+
+/**
+ * The scheduled signal campaign records its seed, preserves its evidence and
+ * verifies it.
+ *
+ * @since 1.0.0
+ * @category test
+ */
+const reliabilityWorkflow = Smithers.NodeTest({
+  runner: Smithers.testRunner([Smithers.file("//scripts/repo-contract/reliability-workflow.test.mjs")]),
+  srcs: [sources, Smithers.file("//scripts/release-rehearsal.mjs"), Smithers.file("//.github/workflows/reliability.yml")],
   deps: []
 })
 
@@ -181,5 +211,5 @@ const ciInventory = Smithers.NodeTest({
 })
 
 export const Package = Smithers.Package({
-  targets: { barrels, cliVerbs, faultSkips, machinePaths, packageContract, smithersLinks, testScriptWiring, ciInventory, publicExportMaps }
+  targets: { barrels, cliVerbs, faultSkips, machinePaths, packageContract, smithersLinks, testScriptWiring, uiCiTier, reliabilityWorkflow, ciInventory, publicExportMaps }
 })

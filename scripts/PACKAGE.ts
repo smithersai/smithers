@@ -158,6 +158,19 @@ const testPinRegister = Smithers.NodeTest({
 })
 
 /**
+ * The scheduled signal campaign's evidence check refuses a missing case, a
+ * truncated history, a wrong seed and a failed result.
+ *
+ * @since 1.0.0
+ * @category test
+ */
+const signalCampaign = Smithers.NodeTest({
+  runner: Smithers.testRunner([Smithers.file("//scripts/check-signal-campaign.test.mjs")]),
+  srcs: [...sources],
+  deps: []
+})
+
+/**
  * The toolchain drift gate: package.json `engines` and `packageManager`,
  * flake.nix, and the generated CI workflow must agree with the runtimes and
  * package manager `.smithers/WORKSPACE.ts` declares. The gate reads the
@@ -540,6 +553,7 @@ export const Package = Smithers.Package({
     releaseRehearsal,
     releaseSmoke,
     releaseVersion,
+    signalCampaign,
     testPinRegister,
     toolchainPins,
     thirdPartyNotices,

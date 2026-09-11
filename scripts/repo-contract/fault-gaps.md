@@ -52,8 +52,8 @@ workload for 60 minutes on Node 22.19.0 and 24.18.0. It requires completed JSON
 receipts through `scripts/check-soak-campaign.mjs`, checks resource growth and
 cleanup, and retains artifacts and logs for 30 days even when the workload fails.
 
-This closes the missing sync runner wiring. Bounded local runs are recorded in
-`review-evidence/2026-09-04/ci-test-tiers.md`; the scheduled 60-minute rows have
+This closes the missing sync runner wiring in the `sync-long-soak` job of
+`.github/workflows/reliability.yml`; the scheduled 60-minute rows have
 not been executed by lane G. They do not establish the CLI case 16 composition,
 hours-long behavior, hosted-provider behavior, or reinstatement of every retired
 soak case. Those remain separate acceptance evidence.
