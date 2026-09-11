@@ -2,30 +2,404 @@
 import Base from "../layouts/Base.astro"
 import project from "../data/project.json"
 import { AVAILABLE_REPOS } from "../../../server/src/publicRepoCatalog"
+// The app's entrance mark (apps/app/src/mainview/SessionShell.tsx), reused verbatim.
+import { WORDMARK } from "../../../app/src/mainview/Wordmark"
 
 const title = "Smithers"
 const description = project.tagline
 /*
- * The primary action opens the product, not the documentation: the first
- * available catalog repository's app page (src/pages/[owner]/[repo].astro),
- * which the app Worker serves with its /api/* families. Reading the catalog
- * keeps this link on a page the build actually emits. The documentation keeps
- * a secondary button beside it.
+ * Start Here opens the app in this document: the script below mounts
+ * apps/app (AppMount.tsx) in onboarding mode and the wordmark becomes the
+ * app's own. The href is the first catalog repository's app page
+ * (src/pages/[owner]/[repo].astro) for a middle-click, a new tab, or a
+ * browser without JavaScript. The documentation is not linked from the home
+ * page at launch.
  */
 const appHref = `/${AVAILABLE_REPOS[0].name}/`
+const githubHref = "https://github.com/smithersai/smithers"
 ---
 
 <Base title={title} description={description} header={false} footer={false}>
+  <a class="github" href={githubHref} target="_blank" rel="noopener noreferrer" aria-label="Smithers on GitHub" title="Smithers on GitHub">
+    <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 .297c-6.63 0-12 5.373-12 12 0 5.303 3.438 9.8 8.205 11.385.6.113.82-.258.82-.577 0-.285-.01-1.04-.015-2.04-3.338.724-4.042-1.61-4.042-1.61C4.422 18.07 3.633 17.7 3.633 17.7c-1.087-.744.084-.729.084-.729 1.205.084 1.838 1.236 1.838 1.236 1.07 1.835 2.809 1.305 3.495.998.108-.776.417-1.305.76-1.605-2.665-.3-5.466-1.332-5.466-5.93 0-1.31.465-2.38 1.235-3.22-.135-.303-.54-1.523.105-3.176 0 0 1.005-.322 3.3 1.23.96-.267 1.98-.399 3-.405 1.02.006 2.04.138 3 .405 2.28-1.552 3.285-1.23 3.285-1.23.645 1.653.24 2.873.12 3.176.765.84 1.23 1.91 1.23 3.22 0 4.61-2.805 5.625-5.475 5.92.42.36.81 1.096.81 2.22 0 1.606-.015 2.896-.015 3.286 0 .315.21.69.825.57C20.565 22.092 24 17.592 24 12.297c0-6.627-5.373-12-12-12" /></svg>
+  </a>
   <main class="wrap hero home">
-    <h1>Smithers</h1>
+    <h1 class="wordmark" aria-label="Smithers">
+      <pre aria-hidden="true">{WORDMARK.join("\n")}</pre>
+    </h1>
     <p class="sub">{project.tagline}</p>
     <div class="actions">
-      <a class="btn primary" href={appHref} data-astro-prefetch="hover">Start Here</a>
-      <a class="btn ghost" href="/docs/quickstart/" data-astro-prefetch="hover">Docs</a>
-      <a class="btn ghost" href="https://github.com/smithersai/smithers">
-        <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 .297c-6.63 0-12 5.373-12 12 0 5.303 3.438 9.8 8.205 11.385.6.113.82-.258.82-.577 0-.285-.01-1.04-.015-2.04-3.338.724-4.042-1.61-4.042-1.61C4.422 18.07 3.633 17.7 3.633 17.7c-1.087-.744.084-.729.084-.729 1.205.084 1.838 1.236 1.838 1.236 1.07 1.835 2.809 1.305 3.495.998.108-.776.417-1.305.76-1.605-2.665-.3-5.466-1.332-5.466-5.93 0-1.31.465-2.38 1.235-3.22-.135-.303-.54-1.523.105-3.176 0 0 1.005-.322 3.3 1.23.96-.267 1.98-.399 3-.405 1.02.006 2.04.138 3 .405 2.28-1.552 3.285-1.23 3.285-1.23.645 1.653.24 2.873.12 3.176.765.84 1.23 1.91 1.23 3.22 0 4.61-2.805 5.625-5.475 5.92.42.36.81 1.096.81 2.22 0 1.606-.015 2.896-.015 3.286 0 .315.21.69.825.57C20.565 22.092 24 17.592 24 12.297c0-6.627-5.373-12-12-12" /></svg>
-        <span>GitHub</span>
+      {/* JS hides the button (html.js) until the app is loaded; without JS it shows at once. */}
+      <script is:inline>document.documentElement.classList.add("js")</script>
+      <a id="start" class="start" href={appHref} aria-keyshortcuts="s">
+        <span>Start Here</span>
+        <kbd class="start-key" aria-hidden="true">S</kbd>
       </a>
     </div>
   </main>
 </Base>
+
+<script>
+  /*
+   * The app arrives in this document. After `load` and an idle moment the
+   * page reads the prerendered app page (Start Here's href) for the app's
+   * island chunk and stylesheets, imports the chunk, and Start Here appears.
+   * Nothing of the app is in this page's module graph: Astro would link
+   * every stylesheet the graph reaches into this page's head, render-blocking.
+   * Start Here, or S, mounts the app in onboarding mode inside a view
+   * transition: the hero wordmark glides onto the app's top-left mark, the
+   * page fades away, and the tutorial eases in. The URL stays where it is.
+   */
+  type AppMount = Pick<typeof import("../../../app/src/mainview/AppMount"), "mountApp">
+  type Sheet = HTMLLinkElement | HTMLStyleElement
+
+  const start = document.getElementById("start") as HTMLAnchorElement | null
+  const reduced = matchMedia("(prefers-reduced-motion: reduce)")
+  const TRANSITION_STYLE_ID = "smithers-enter-app"
+  const MARK_NAME = "smithers-wordmark"
+  /* SessionShell's mark (apps/app/src/mainview/onboarding/guide.css .guide-wordmark). */
+  const APP_MARK = { left: 12, top: 12, fontSize: 2.75 }
+  const TRANSITION_CSS = `
+    @media (prefers-reduced-motion: no-preference) {
+      ::view-transition-group(${MARK_NAME}) { animation-duration: 700ms; animation-timing-function: cubic-bezier(0.65, 0, 0.35, 1); }
+      ::view-transition-old(${MARK_NAME}) { animation: smithers-mark-out 700ms linear both; }
+      ::view-transition-new(${MARK_NAME}) { animation: smithers-mark-in 700ms linear both; }
+      ::view-transition-old(root) { animation: smithers-home-out 280ms cubic-bezier(0.4, 0, 1, 1) both; }
+      ::view-transition-new(root) { animation: smithers-app-in 460ms cubic-bezier(0.22, 0.61, 0.21, 1) 240ms both; }
+    }
+    @keyframes smithers-mark-out { 0%, 80% { opacity: 1; } 100% { opacity: 0; } }
+    @keyframes smithers-mark-in { 0%, 80% { opacity: 0; } 100% { opacity: 1; } }
+    @keyframes smithers-home-out { to { opacity: 0; transform: translateY(-12px); } }
+    @keyframes smithers-app-in { from { opacity: 0; transform: translateY(10px); } }
+  `
+
+  if (start) {
+    /*
+     * The app's stylesheets restyle html and body (its base.css), so each one
+     * the import adds stays inert (media="not all") until the app mounts, and
+     * the home page's own sheets go inert then. A MutationObserver callback
+     * runs before the next frame, so no frame paints with both.
+     */
+    const homeSheets: Array<Sheet> = Array.from(document.querySelectorAll<Sheet>('link[rel="stylesheet"], style'))
+    const appSheets: Array<Sheet> = []
+    const hold = new MutationObserver((records) => {
+      for (const record of records) {
+        for (const node of record.addedNodes) {
+          const sheet = node instanceof HTMLLinkElement && node.rel === "stylesheet" ? node : node instanceof HTMLStyleElement ? node : null
+          if (sheet === null || sheet.id === TRANSITION_STYLE_ID) continue
+          sheet.media = "not all"
+          appSheets.push(sheet)
+        }
+      }
+    })
+
+    /* The app page names its island chunk (AppIsland, whose default export carries mountApp) and its stylesheets. */
+    const importApp = async (): Promise<AppMount> => {
+      const response = await fetch(start.href, { priority: "low", credentials: "same-origin" } as RequestInit)
+      if (!response.ok) throw new Error(`The app page answered HTTP ${response.status}.`)
+      const page = new DOMParser().parseFromString(await response.text(), "text/html")
+      const chunk = page.querySelector("astro-island[component-url]")?.getAttribute("component-url")
+      if (!chunk) throw new Error("The app page names no island chunk.")
+      const loaded = Array.from(page.querySelectorAll<Sheet>('link[rel="stylesheet"][href], style'), (source) => {
+        const sheet = source instanceof HTMLLinkElement ? document.createElement("link") : document.createElement("style")
+        if (sheet instanceof HTMLLinkElement) {
+          sheet.rel = "stylesheet"
+          sheet.href = new URL(source.getAttribute("href") ?? "", start.href).href
+        } else sheet.textContent = source.textContent
+        document.head.append(sheet)
+        return sheet instanceof HTMLLinkElement
+          ? new Promise<void>((resolve) => { sheet.addEventListener("load", () => resolve(), { once: true }); sheet.addEventListener("error", () => resolve(), { once: true }) })
+          : Promise.resolve()
+      })
+      // Astro's own hydration order: the before-hydration script (the React refresh preamble in dev) runs first.
+      const before = page.querySelector("astro-island[before-hydration-url]")?.getAttribute("before-hydration-url")
+      if (before) await import(/* @vite-ignore */ new URL(before, start.href).href)
+      const island = (await import(/* @vite-ignore */ new URL(chunk, start.href).href)) as { default?: Partial<AppMount> }
+      await Promise.all(loaded)
+      const mountApp = island.default?.mountApp
+      if (typeof mountApp !== "function") throw new Error("The app chunk carries no mountApp.")
+      return { mountApp }
+    }
+    let app: Promise<AppMount> | undefined
+    const load = (): Promise<AppMount> => {
+      if (app !== undefined) return app
+      hold.observe(document.head, { childList: true })
+      app = importApp()
+      app.catch(() => {
+        app = undefined
+      })
+      return app
+    }
+
+    let shown = false
+    const show = (): void => {
+      if (shown) return
+      shown = true
+      start.classList.add("ready")
+    }
+    const fallback = setTimeout(show, 4000)
+    const preload = (): void => {
+      load()
+        .catch(() => {})
+        .finally(() => {
+          clearTimeout(fallback)
+          show()
+        })
+    }
+    const idle = (): void => {
+      const connection = (navigator as Navigator & { connection?: { saveData?: boolean } }).connection
+      if (connection?.saveData === true) return show()
+      if ("requestIdleCallback" in window) requestIdleCallback(preload, { timeout: 2000 })
+      else setTimeout(preload, 200)
+    }
+
+    /** Swap the home page for the app; answers the app's entrance mark. */
+    const swap = (mount: AppMount): HTMLElement | null => {
+      hold.disconnect()
+      for (const sheet of homeSheets) sheet.media = "not all"
+      for (const sheet of appSheets) sheet.removeAttribute("media")
+      document.querySelector(".github")?.remove()
+      document.querySelector("main.home")?.remove()
+      const root = document.createElement("div")
+      root.id = "root"
+      document.body.append(root)
+      mount.mountApp(root, { mode: "onboarding", keepUrl: true })
+      return root.querySelector<HTMLElement>(".session-shell > .guide-wordmark")
+    }
+
+    /* Without same-document view transitions: fly the mark by hand, then swap. */
+    const flight = async (): Promise<void> => {
+      const pre = document.querySelector<HTMLElement>(".wordmark pre")
+      if (pre === null) return
+      const rect = pre.getBoundingClientRect()
+      const scale = APP_MARK.fontSize / parseFloat(getComputedStyle(pre).fontSize)
+      const easing = "cubic-bezier(0.65, 0, 0.35, 1)"
+      for (const el of document.querySelectorAll<HTMLElement>(".home .sub, .home .actions, .github")) {
+        el.animate([{ opacity: 1 }, { opacity: 0, transform: "translateY(-10px)" }], { duration: 260, easing, fill: "forwards" })
+      }
+      await pre.animate(
+        [
+          { transformOrigin: "0 0", transform: "none" },
+          { transformOrigin: "0 0", transform: `translate(${APP_MARK.left - rect.left}px, ${APP_MARK.top - rect.top}px) scale(${scale})` }
+        ],
+        { duration: 600, easing, fill: "forwards" }
+      ).finished
+    }
+
+    let entering = false
+    const enter = async (instant = false): Promise<void> => {
+      if (entering) return
+      entering = true
+      start.classList.add("pending")
+      start.setAttribute("aria-busy", "true")
+      let mount: AppMount
+      try {
+        mount = await load()
+      } catch {
+        // The chunk did not arrive (offline, a deploy replaced it): Start Here stays and can be pressed again.
+        entering = false
+        start.classList.remove("pending")
+        start.removeAttribute("aria-busy")
+        return
+      }
+      if (instant || reduced.matches || typeof document.startViewTransition !== "function") {
+        if (!instant && !reduced.matches) await flight()
+        swap(mount)
+        return
+      }
+      const style = document.createElement("style")
+      style.id = TRANSITION_STYLE_ID
+      style.textContent = TRANSITION_CSS
+      document.head.append(style)
+      let mark: HTMLElement | null = null
+      const transition = document.startViewTransition(() => {
+        mark = swap(mount)
+        mark?.style.setProperty("view-transition-name", MARK_NAME)
+      })
+      await transition.finished.catch(() => {})
+      ;(mark as HTMLElement | null)?.style.removeProperty("view-transition-name")
+      style.remove()
+    }
+
+    start.addEventListener("click", (event) => {
+      // A modified or middle click keeps the link's meaning: the app page, in a new tab.
+      if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return
+      event.preventDefault()
+      void enter()
+    })
+    // The app's key convention (apps/app/src/mainview/onboarding/GuideShell.tsx):
+    // one bare letter per action, ignored with modifiers or inside text entry.
+    const onKey = (event: KeyboardEvent): void => {
+      if (entering) return removeEventListener("keydown", onKey)
+      if (event.metaKey || event.ctrlKey || event.altKey || event.shiftKey || event.repeat || event.defaultPrevented) return
+      if (event.key.toLowerCase() !== "s") return
+      const target = event.target instanceof Element ? event.target : null
+      if (target?.closest('input, textarea, select, [contenteditable]:not([contenteditable="false"])')) return
+      event.preventDefault()
+      removeEventListener("keydown", onKey)
+      void enter()
+    }
+    addEventListener("keydown", onKey)
+
+    /*
+     * GitHub sign-in (the tutorial's first step) returns to this page with
+     * `?signed-in` or `?auth=failed|error`: the app resumes at once, where
+     * it was, and reads the marker itself.
+     */
+    const params = new URLSearchParams(location.search)
+    const auth = params.get("auth")
+    if (params.has("signed-in") || auth === "failed" || auth === "error") {
+      document.documentElement.classList.add("entering")
+      void enter(true)
+    } else if (document.readyState === "complete") idle()
+    else addEventListener("load", idle, { once: true })
+  }
+</script>
+
+<style>
+  /*
+   * The app's accent (apps/app/src/mainview/styles/base.css .session-shell
+   * --g-accent) colors the wordmark and fills Start Here.
+   */
+  :global(:root) {
+    --home-accent: #3a756b;
+    --home-accent-hover: #2f6158;
+    --home-accent-ink: #ffffff;
+    --home-key-bg: rgb(255 255 255 / 18%);
+  }
+  @media (prefers-color-scheme: dark) {
+    :global(:root) {
+      --home-accent: #9bd5c6;
+      --home-accent-hover: #b4e2d6;
+      --home-accent-ink: #011627;
+      --home-key-bg: rgb(1 22 39 / 12%);
+    }
+  }
+
+  /* 63 monospace columns at 0.6em each span ~38em; the size follows the viewport. */
+  .wordmark {
+    display: flex;
+    justify-content: center;
+    color: var(--home-accent);
+    margin: 0 0 1.6rem;
+  }
+  .wordmark pre {
+    margin: 0;
+    font-family: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: clamp(4px, 2.2vw, 16px);
+    line-height: 1.07;
+    letter-spacing: 0;
+    font-weight: 400;
+    white-space: pre;
+    /* Shared with the app's mark while Start Here's view transition runs. */
+    view-transition-name: smithers-wordmark;
+  }
+
+  .github {
+    position: fixed;
+    top: max(16px, env(safe-area-inset-top));
+    right: max(16px, env(safe-area-inset-right));
+    z-index: 2;
+    display: grid;
+    place-items: center;
+    width: 40px;
+    height: 40px;
+    border-radius: 999px;
+    color: var(--text-muted);
+    transition: color 0.15s var(--ease), background-color 0.15s var(--ease);
+  }
+  .github:hover {
+    color: var(--text);
+    background: var(--surface-2);
+  }
+  .github:focus-visible {
+    outline: 2px solid var(--home-accent);
+    outline-offset: 2px;
+  }
+  .github svg {
+    width: 22px;
+    height: 22px;
+  }
+
+  .start {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.9rem;
+    min-width: 220px;
+    min-height: 56px;
+    padding: 0.95rem 2.1rem;
+    border-radius: 999px;
+    background: var(--home-accent);
+    color: var(--home-accent-ink);
+    font-size: 1.35rem;
+    font-weight: 600;
+    line-height: 1.2;
+    text-decoration: none;
+    box-shadow: 0 6px 18px rgb(var(--shadow-rgb) / 16%);
+    transition: background-color 0.15s var(--ease), transform 0.15s var(--ease), box-shadow 0.15s var(--ease), opacity 0.15s var(--ease);
+  }
+  .start:hover {
+    background: var(--home-accent-hover);
+    transform: translateY(-1px);
+    box-shadow: 0 10px 24px rgb(var(--shadow-rgb) / 20%);
+  }
+  .start:active {
+    transform: translateY(0);
+    box-shadow: 0 4px 12px rgb(var(--shadow-rgb) / 14%);
+  }
+  .start:focus-visible {
+    outline: 3px solid var(--home-accent);
+    outline-offset: 3px;
+  }
+  /* Pressed before the app finished loading: it waits, visibly. */
+  .start.pending {
+    cursor: progress;
+    opacity: 0.8;
+  }
+  /* The app's key chip (.guide-primary .guide-button-key), tinted for the filled button. */
+  .start-key {
+    flex-shrink: 0;
+    font-family: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 0.8rem;
+    font-weight: 500;
+    line-height: 1.4;
+    padding: 2px 7px;
+    border-radius: 4px;
+    background: var(--home-key-bg);
+    color: inherit;
+  }
+  @media (max-width: 480px) {
+    .start {
+      width: 100%;
+      max-width: 22rem;
+    }
+  }
+
+  /* Hidden but still laid out, so revealing it moves nothing. */
+  :global(html.js) .start:not(.ready) {
+    visibility: hidden;
+    opacity: 0;
+  }
+  .start.ready {
+    animation: start-in 0.45s var(--ease) both;
+  }
+  /* Returning from sign-in: the app replaces the page at once, so the page never shows. */
+  :global(html.entering) .home,
+  :global(html.entering) .github {
+    visibility: hidden;
+  }
+  @keyframes start-in {
+    from { opacity: 0; transform: translateY(8px) scale(0.98); }
+    to { opacity: 1; transform: none; }
+  }
+  @keyframes start-fade {
+    from { opacity: 0; }
+    to { opacity: 1; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .start.ready { animation-name: start-fade; animation-duration: 0.2s; }
+    .start, .github { transition: none; }
+    .start:hover { transform: none; }
+  }
+</style>

@@ -37,6 +37,9 @@ const bootProgram = (options: ControllerBootOptions = {}) =>
     // frame history, which writes the first history entry within the first
     // frame, long before identity has loaded.
     const requested = yield* Effect.sync(() => requestedRepo(window.location))
+    // The entry URL's query, read before frame history rewrites the address bar: the OAuth and
+    // GitHub App setup-URL returns ride on it, and by the end of boot it is gone.
+    const entrySearch = yield* Effect.sync(() => window.location.search)
     const http = yield* Effect.sync(() => createAppFetch())
     const bootstrap = yield* promiseEffect("load runtime bootstrap", () => loadBootstrap(http))
     const runtime = yield* Effect.sync(() => createRuntime({
@@ -100,7 +103,11 @@ const bootProgram = (options: ControllerBootOptions = {}) =>
     }
     // Both URL rewrites keep the entry's state: on a repository path the
     // frame history stores the frame location there, not in the URL.
-    if (controller.handleAuthReturn(window.location.search)) {
+    // A GitHub App setup-URL return (onboarding SCRIPT v4 beat 11) carries its own parameters.
+    if (controller.handleInstallReturn(entrySearch)) {
+      window.history.replaceState(window.history.state, "", window.location.pathname)
+    }
+    if (controller.handleAuthReturn(entrySearch)) {
       window.history.replaceState(window.history.state, "", window.location.pathname)
     }
     // `/owner/name` (or the landing page's `/?repo=owner/name`) preselects a public-catalog repository.
