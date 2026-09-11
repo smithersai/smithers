@@ -14,7 +14,10 @@ import type { Action, Any } from "./Action.ts"
 
 /**
  * Runs a non-empty collection of actions as a durable race and returns the
- * first completed success or failure using unioned success and error schemas.
+ * first success using unioned success and error schemas. A losing failure is
+ * ignored while another action is still running; the race fails only when
+ * every action fails. To settle on whichever action exits first, success or
+ * failure, race `Effect.exit` of each action and unwrap the winning exit.
  *
  * @category racing
  * @since 0.1.0

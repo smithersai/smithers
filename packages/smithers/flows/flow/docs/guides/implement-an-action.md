@@ -105,9 +105,12 @@ export const layer = Layer.mergeAll(
    table while its own layer is built, so the table has to be built first.
 3. Provide the engine under that. Every declaration above it is engine agnostic.
 
-A later registration of one tag replaces the earlier one, and closing the
-registering scope restores what it replaced. That is what lets a test scope an
-override to one block without leaking it into the next.
+A second, different implementation of one tag dies during layer construction
+with `Action.DuplicateImplementation`. To substitute one on purpose, register it
+with `action.toLayer(handler, { override: true })`. The override shadows the
+earlier registration, and closing its scope restores what it shadowed. That is
+what lets a test scope an override to one block without leaking it into the
+next.
 
 ## Skip the layer for a nested operation
 
@@ -129,9 +132,10 @@ const settle = Action.make({
 })
 ```
 
-The inline form is the only one that takes `retryPolicy`, `interruptRetryPolicy`,
-and `metadata`. Reach for it when an implementation needs a nested durable
-operation with its own retry behavior; reach for the declared form when a body
+Both forms take `retryPolicy` and `interruptRetryPolicy`; only the inline form
+takes `metadata`. The [`Action.make` reference](../reference/flow.md#actionmake)
+is the one option table. Reach for the inline form when an implementation needs
+a nested durable operation of its own; reach for the declared form when a body
 should name the step.
 
 ## Related pages

@@ -111,14 +111,16 @@ topology exists to avoid.
 
 `Interpreter.InterpreterError` carries a stable `code`, the flow, and the node:
 
-| Code                   | What it means                                            |
-| ---------------------- | -------------------------------------------------------- |
-| `incomplete_graph`     | The build reported topology it could not complete.       |
-| `duplicate_node_id`    | Two nodes answer to one dispatch address.                |
-| `unresolved_action`    | An action the body names has no implementation wired up. |
-| `unresolved_reference` | A payload reads a node this graph does not hold.         |
-| `unsupported_call`     | A call whose declaration did not survive serialization.  |
-| `missing_operation`    | A deferred function that did not survive serialization.  |
+| Code                              | What it means                                                                        |
+| --------------------------------- | ------------------------------------------------------------------------------------ |
+| `incomplete_graph`                | The build reported topology it could not complete.                                   |
+| `duplicate_node_id`               | Two nodes answer to one dispatch address.                                            |
+| `unresolved_action`               | An action the body names has no implementation wired up.                             |
+| `implementation_version_mismatch` | A declaration and its registered implementation disagree on `implementationVersion`. |
+| `missing_implementation_version`  | A content-reusable sealed action declares no `implementationVersion`.                |
+| `unresolved_reference`            | A payload reads a node this graph does not hold.                                     |
+| `unsupported_call`                | A call whose declaration did not survive serialization.                              |
+| `missing_operation`               | A deferred function that did not survive serialization.                              |
 
 Missing mappers, branch predicates, and catch schema filters are refused before
 any action dispatch, including operations in untaken arms. `Node.catch` cannot

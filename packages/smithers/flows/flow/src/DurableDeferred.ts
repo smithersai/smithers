@@ -273,7 +273,8 @@ export const into: {
 
 /**
  * Runs effects as a durable race, returning a previously persisted result when
- * present or completing a named deferred with the first result.
+ * present or completing a named deferred with the first success. The race
+ * fails only when every effect fails.
  *
  * @category racing
  * @since 0.1.0

@@ -80,9 +80,9 @@ replayed as one tree artifact.
 
 Both inline and declared actions accept `fileBoundary`. Declared actions may
 compute it from decoded payload fields, and can derive `idempotencyKey` from
-the same payload. They also accept `retryPolicy` and `interruptRetryPolicy`.
-The attached implementation receives these policies directly; no nested inline
-action is needed. A new typed boundary is validated before dispatch. Historical
+the same payload. They also accept `retryPolicy` and `interruptRetryPolicy`;
+see the [`Action.make` reference](../reference/flow.md#actionmake) for every
+option. A new typed boundary is validated before dispatch. Historical
 inline `metadata` boundary declarations remain readable for existing callers.
 
 ## Declare the composition's environment

@@ -88,9 +88,11 @@ it.effect("dispatches the action once across two drives", () =>
   }).pipe(Effect.provide(countedLayer)))
 ```
 
-A later registration of one action tag replaces the earlier one, and closing the
-registering scope restores what it replaced, so an override like `counted` is
-scoped to the block that provided it.
+A second, different implementation of one action tag dies with
+`Action.DuplicateImplementation` unless it registers with
+`toLayer(handler, { override: true })`. Closing the overriding scope restores
+what it shadowed. `countedLayer` needs no flag because it builds its own
+composition rather than overriding one.
 
 ## Drive a suspension
 

@@ -27,7 +27,7 @@ The `exports` map declares these subpaths:
 | `@smthrs/flow/StepIdentity`     | `src/Action/StepIdentity.ts`     | any      |
 | `@smthrs/flow/<Module>`         | `src/<Module>.ts`                | any      |
 
-The `./*` subpath covers the top-level modules (`DurableClock`, `DurableDeferred`, `DurableQueue`, `Graph`, `HumanTask`, `Interpreter`, `Poll`, `RetryPolicy`, `Sleep`, `WaitFor`). The `exports` map maps `./internal/*`, `./*/index`, `./Action/*`, `./Flow/*`, and `./FlowRuntime/*` to `null`, so those paths do not resolve.
+`<Module>` is one of the top-level modules, each listed explicitly in the `exports` map: `DurableClock`, `DurableDeferred`, `DurableQueue`, `Graph`, `HumanTask`, `Interpreter`, `Poll`, `RetryPolicy`, `Sleep`, and `WaitFor`. No `./*` wildcard is declared. The `exports` map maps `./internal/*`, `./*/index`, `./Action/*`, `./Flow/*`, and `./FlowRuntime/*` to `null`, so those paths do not resolve.
 
 ## Namespaces
 
@@ -141,6 +141,13 @@ The current durable retry attempt, counted from one.
 
 The persisted key of the dispatch an implementation is running under, when the runtime supplies one.
 
+### `Action.DuplicateImplementation`
+
+- **Type:** `Schema.TaggedError` with field `name: string`
+- **Since:** `0.1.0`
+
+The defect layer construction dies with when a second, different implementation registers for an action tag without `{ override: true }`.
+
 ### `Action.InfraInterrupt`
 
 - **Type:** `Schema.TaggedError` with fields `code: "infra_interrupt"` and `reason?: unknown`
@@ -203,7 +210,7 @@ Computes the run-local invocation key of an internal durable operation. The key 
 - **Since:** `0.1.0`
 - **Related:** [`Action.layerImplementations`](#actionlayerimplementations)
 
-The table holding the declared action implementations a composition wired up, keyed by action tag. A later registration of one tag replaces the earlier one, and closing the registering scope restores what it replaced.
+The table holding the declared action implementations a composition wired up, keyed by action tag. A second, different implementation of one tag dies with `Action.DuplicateImplementation` unless it registers with `toLayer(handler, { override: true })`. An override shadows the earlier registration, and closing the overriding scope restores it. Registering the same implementation object again is not a conflict.
 
 ### `Action.layerImplementations`
 
@@ -214,16 +221,33 @@ The implementation table, scoped to the composition that builds it. Filing an im
 
 ### `Action.make`
 
-- **Signature:** `make(tag: Tag, options: { payload, success?, error?, tier?, idempotencyKey?, nondeterministic?, annotations? }): Declared<Tag, Payload, Success, Error>`
+- **Signature:** `make(tag: Tag, options: { payload, implementationVersion?, success?, error?, tier?, idempotencyKey?, nondeterministic?, retryPolicy?, interruptRetryPolicy?, fileBoundary?, annotations? }): Declared<Tag, Payload, Success, Error>`
 - **Signature:** `make(options: { name, success?, error?, execute, tier?, idempotencyKey?, nondeterministic?, metadata?, interruptRetryPolicy?, retryPolicy?, annotations? }): Action<Success, Error, R>`
 - **Since:** `0.1.0`
 - **Related:** [`Action.makeSystem`](#actionmakesystem)
 
 Creates either a named action declaration or an inline executable action, selected by whether the first argument is a string. The declared form is pure data whose implementation attaches later through `Declared.toLayer`. The inline form carries its `execute` effect directly.
 
+| Option                 | Forms            | Meaning                                                                                                   |
+| ---------------------- | ---------------- | --------------------------------------------------------------------------------------------------------- |
+| `payload`              | declared         | Payload fields or struct schema, validated on every dispatch.                                             |
+| `name`, `execute`      | inline           | The step name and the effect it runs.                                                                     |
+| `implementationVersion` | declared        | Non-empty version string; `toLayer` must pass the same value.                                             |
+| `success`, `error`     | both             | Result schemas. Default `Schema.Void` and `Schema.Never`.                                                 |
+| `tier`                 | both             | Durability tier. Default `"sealed"`.                                                                      |
+| `idempotencyKey`       | both             | Caller identity. The declared form may compute it from the decoded payload.                              |
+| `nondeterministic`     | both             | Marks a result that replay must read from the record rather than recompute.                               |
+| `retryPolicy`          | both             | The `RetryPolicy` the engine reads at dispatch.                                                           |
+| `interruptRetryPolicy` | both             | The `Schedule` spent on `Action.InfraInterrupt` failures.                                                 |
+| `fileBoundary`         | both             | Typed file boundary. The declared form may compute it from the decoded payload.                           |
+| `metadata`             | inline           | Free-form metadata; a historical boundary declaration is still read from it.                              |
+| `annotations`          | both             | Context annotations carried by the action.                                                                |
+
+`Declared.toLayer(handler, { implementationVersion?, override? })` registers the implementation. Without `override: true`, a second, different implementation of the tag dies with `Action.DuplicateImplementation`.
+
 ### `Action.makeSystem`
 
-- **Signature:** `makeSystem(tag: Tag, options: { payload, success?, error?, tier?, idempotencyKey?, nondeterministic?, annotations? }): Declared<Tag, Payload, Success, Error, never>`
+- **Signature:** `makeSystem(tag: Tag, options: { payload, implementationVersion?, success?, error?, tier?, idempotencyKey?, nondeterministic?, retryPolicy?, interruptRetryPolicy?, fileBoundary?, annotations? }): Declared<Tag, Payload, Success, Error, never>`
 - **Since:** `0.1.0`
 
 Declares a system action, one whose implementation ships with the engine rather than with the composition that calls it. It matches `Action.make`'s declared form in every respect except the requirement: a system declaration mints none, so a body using `Sleep` or `WaitFor` pushes no layer obligation onto its callers.
@@ -233,7 +257,7 @@ Declares a system action, one whose implementation ships with the engine rather 
 - **Signature:** `raceAll(name: string, actions: Actions): Effect.Effect<...>`
 - **Since:** `0.1.0`
 
-Runs a non-empty collection of actions as a durable race and returns the first completed success or failure, under the unioned success and error schemas. One winner is persisted under `name`, so a re-driven round replays it instead of racing again.
+Runs a non-empty collection of actions as a durable race and returns the first success, under the unioned success and error schemas. A losing failure is ignored while another action runs; the race fails only when every action fails. To settle on the first exit, success or failure, race `Effect.exit` of each action and unwrap the winner. One winner is persisted under `name`, so a re-driven round replays it instead of racing again.
 
 ### `Action.retry`
 
@@ -346,7 +370,7 @@ An interrupt-only exit records nothing. Mixed causes record only their non-inter
 - **Signature:** `raceAll(options: { name: string; success: Success; error: Error; effects: Effects }): Effect.Effect<...>`
 - **Since:** `0.1.0`
 
-Runs effects as a durable race. A previously persisted result is returned unchanged. Otherwise the first result completes the deferred named `raceAll/<name>`, so a re-driven round reads the recorded winner instead of racing again.
+Runs effects as a durable race. A previously persisted result is returned unchanged. Otherwise the first success completes the deferred named `raceAll/<name>`, and the race fails only when every effect fails, so a re-driven round reads the recorded winner instead of racing again.
 
 ### `DurableDeferred.TokenTypeId`
 
@@ -734,7 +758,7 @@ Executing a flow would close a cycle in the persisted parent-execution chain. `p
 - **Type:** `Schema.TaggedError` with fields `code: "execution_not_found"` and `executionId: string`
 - **Since:** `0.1.0`
 
-`poll` or `resume` was given an execution id the runtime never recorded.
+`poll` was given an execution id the runtime never recorded. `resume` has no error channel and returns without effect for an unknown id.
 
 ### `FlowRuntime.FlowInstance`
 
@@ -806,8 +830,8 @@ What a pure per-node layer resolver is told. It is the identity of the implement
 
 ### `Graph.BuildOptions`
 
-- **Type:** `interface BuildOptions { readonly resolveLayers?: ((request: LayerRequest) => Iterable<string>) | undefined; readonly root?: string | undefined }`
-- **Default:** `root` is `"root"`
+- **Type:** `interface BuildOptions { readonly resolveLayers?: ((request: LayerRequest) => Iterable<string>) | undefined; readonly callbackIdentity?: "stable" | "process-local" | undefined; readonly root?: string | undefined }`
+- **Default:** `root` is `"root"`; `callbackIdentity` is `"process-local"`
 - **Since:** `0.1.0`
 
 The options `Graph.build` takes. `resolveLayers` is invoked once per node and must be pure: planning performs no input or output, and a resolver that read the world would make a plan a function of more than its declarations.
@@ -1081,7 +1105,7 @@ Gives an answer the caller's own type. The schema here and the question's own sc
 - **Type:** `Schema.TaggedError` with fields `code`, `flow: string`, `node: string`, and `message: string`
 - **Since:** `0.1.0`
 
-A graph the interpreter refuses to drive. The `code` is one of `incomplete_graph`, `duplicate_node_id`, `unresolved_action`, `unresolved_reference`, `unsupported_call`, or `missing_operation`.
+A graph the interpreter refuses to drive. The `code` is one of `incomplete_graph`, `duplicate_node_id`, `unresolved_action`, `implementation_version_mismatch`, `missing_implementation_version`, `unresolved_reference`, `unsupported_call`, or `missing_operation`.
 
 ### `Interpreter.Interpretation`
 
@@ -1111,6 +1135,13 @@ Builds and walks the graph of a flow body, or of a bare node, against real value
 - **Since:** `0.1.0`
 
 Registers a flow with the runtime and installs the handler that drives its body. It is the only way a flow's behavior reaches the runtime, and the reason a flow has no `toLayer`. Compose it beside the action implementation layers the body calls, over `Action.layerImplementations`.
+
+### `Interpreter.layerWithImplementations`
+
+- **Signature:** `layerWithImplementations(flow: Flow<Tag, Payload, Success, Error, Requires>, implementations: Layer.Layer<Provided, E, R>, options: Graph.BuildOptions = {}): Layer.Layer<...>`
+- **Since:** `0.1.0`
+
+Builds the interpreter and the action implementations against one fresh, isolated `Action.Implementations` table. The types require every action the flow names. `callbackIdentity` defaults to `"stable"`. A conflicting same-tag registration dies during layer construction unless it passes `{ override: true }`.
 
 ## Poll
 
@@ -1259,14 +1290,14 @@ Creates a `GiveUp` decision.
 - **Type:** `Schema.TaggedError` with fields `code: "retry_policy_expired"`, `actionName: string`, `attempt: number`, `expirationMs: number`, and optional `lastError`
 - **Since:** `0.1.0`
 
-A retry sequence crossed the policy's `expirationMs` wall-clock bound.
+A historical retry sequence crossed the policy's `expirationMs` wall-clock bound. Current engines preserve the final declared failure instead; the schema remains for reading old outcomes.
 
 ### `RetryPolicy.RetryAttemptsExhausted`
 
 - **Type:** `Schema.TaggedError` with fields `code: "retry_attempts_exhausted"`, `actionName: string`, `attempt: number`, `maxAttempts: number`, and optional `lastError`
 - **Since:** `0.1.0`
 
-A retry sequence exhausted the policy's `maxAttempts` bound.
+A historical retry sequence exhausted the policy's `maxAttempts` bound. Current engines preserve the final declared failure instead; the schema remains for reading old outcomes.
 
 ### `RetryPolicy.nextDelay`
 
@@ -1434,13 +1465,13 @@ Every failure the package defines is a `Schema.TaggedError` carrying a stable `c
 | `@smthrs/flow/MaxRoundsExceeded`                       | A trampoline lineage opens a round past its flow's `maxRounds` budget.                                               | `code`, `flowName`, `lineageId`, `maxRounds`, `roundOrdinal`, `message` |
 | `@smthrs/flow/CancelRequestFailed`                     | `interrupt` cannot durably record its cancellation request, or a durable engine is asked for `interruptUnsafe`.      | `code`, `executionId`, `reason`                                         |
 | `@smthrs/flow/FlowCycleDetected`                       | Executing a flow would close a cycle in the persisted parent-execution chain.                                        | `code`, `path`                                                          |
-| `@smthrs/flow/FlowExecutionNotFound`                   | `poll` or `resume` names an execution id the runtime never recorded.                                                 | `code`, `executionId`                                                   |
+| `@smthrs/flow/FlowExecutionNotFound`                   | `poll` names an execution id the runtime never recorded.                                                             | `code`, `executionId`                                                   |
 | `@smthrs/flow/HumanTaskFailed`                         | A question is unanswerable, spends its attempt budget on refused answers, or passes its deadline while open.         | `code`, `task`, `attempts`, `rejections`, `message`                     |
 | `@smthrs/flow/HumanAnswerInvalid`                      | An answer is outside the durable JSON boundary, or the attempt it addresses is not open.                             | `code`, `message`                                                       |
 | `@smthrs/flow/InterpreterError`                        | The interpreter refuses a graph it cannot drive.                                                                     | `code`, `flow`, `node`, `message`                                       |
 | `@smthrs/flow/PollExhausted`                           | A poll uses its last attempt without a satisfied check, under `onTimeout: "fail"`.                                   | `code`, `poll`, `attempts`, `message`                                   |
-| `@smthrs/flow/RetryPolicyExpired`                      | A retry sequence crosses the policy's `expirationMs` wall-clock bound.                                               | `code`, `actionName`, `attempt`, `expirationMs`, `lastError`            |
-| `@smthrs/flow/RetryAttemptsExhausted`                  | A retry sequence exhausts the policy's `maxAttempts` bound.                                                          | `code`, `actionName`, `attempt`, `maxAttempts`, `lastError`             |
+| `@smthrs/flow/RetryPolicyExpired`                      | A historical retry sequence crossed the policy's `expirationMs` wall-clock bound.                                   | `code`, `actionName`, `attempt`, `expirationMs`, `lastError`            |
+| `@smthrs/flow/RetryAttemptsExhausted`                  | A historical retry sequence exhausted the policy's `maxAttempts` bound.                                             | `code`, `actionName`, `attempt`, `maxAttempts`, `lastError`             |
 | `@smthrs/flow/SleepRequestInvalid`                     | A sleep payload names no deadline, two deadlines, or a value that is not a length of time.                           | `code`, `message`                                                       |
 | `@smthrs/flow/WaitForRequestInvalid`                   | A wait payload names no target, two targets, a token that does not parse, or a token addressed to another execution. | `code`, `message`                                                       |
 

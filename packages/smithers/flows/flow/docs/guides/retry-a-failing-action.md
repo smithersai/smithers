@@ -44,8 +44,9 @@ a long-lived retry with `expirationMs` when a wall-clock give-up is required.
 
 ## Attach it to the work
 
-The engine reads `action.retryPolicy` at dispatch, and the **inline** form of
-`Action.make` is where that field lives:
+The engine reads `action.retryPolicy` at dispatch. Both forms of `Action.make`
+take it; the [`Action.make` reference](../reference/flow.md#actionmake) lists
+every option. The inline form:
 
 ```ts
 import { Action } from "@smthrs/flow"
@@ -63,14 +64,23 @@ const settle = Action.make({
 })
 ```
 
-A **declared** action, the kind a body names, takes no `retryPolicy` option. Give
-one retry behavior in either of two ways:
+A **declared** action, the kind a body names, takes the same option:
 
-- Dispatch an inline action carrying the policy from inside the declared action's
-  implementation. The engine records it as a durable step of its own, with its
-  own attempt sequence.
-- Wrap the work in `Action.retry`, which is `Effect.retry` with the durable
-  attempt context threaded through it.
+```ts
+const Settle = Action.make("payments/Settle", {
+  payload: { orderId: Schema.String },
+  success: Schema.String,
+  error: Schema.String,
+  retryPolicy: policy
+})
+```
+
+Two other tools cover different needs:
+
+- Dispatch an inline action from inside an implementation when a nested step
+  needs its own record and its own attempt sequence.
+- Wrap work in `Action.retry`, which is `Effect.retry` with the durable attempt
+  context threaded through it, for a retry the policy does not describe.
 
 ```ts
 const attempts = Action.retry(settle, { times: 3 })
