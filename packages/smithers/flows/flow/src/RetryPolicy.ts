@@ -63,8 +63,12 @@ type RetryPolicyFields = typeof RetryPolicyFields.Type
 
 /** Returns the first contract violation shared by decoding and construction. */
 const validationIssue = (policy: RetryPolicyFields): string | undefined => {
-  if (!Number.isFinite(policy.initialMs) || policy.initialMs < 0) {
-    return `"initialMs" must be a finite number of milliseconds that is not negative, and was ${policy.initialMs}.`
+  // Zero is refused rather than read as "retry immediately": every computed
+  // delay would be zero, so such a policy would give up on its first failure
+  // no matter what `maxAttempts` promised. Use `initialMs: 1` for a
+  // near-immediate retry.
+  if (!Number.isFinite(policy.initialMs) || policy.initialMs <= 0) {
+    return `"initialMs" must be a finite number of milliseconds greater than zero, and was ${policy.initialMs}.`
   }
   if (!Number.isFinite(policy.factor) || policy.factor <= 0) {
     return `"factor" must be a finite number greater than zero, and was ${policy.factor}.`
@@ -117,8 +121,10 @@ export type RetryPolicy = typeof RetryPolicy.Type
 
 /**
  * Creates a `RetryPolicy` value after checking every numeric bound.
- * `jitterRatio` must be between zero and one, inclusive, and
- * `jitterRatio: 0` disables jitter.
+ * `initialMs` must be greater than zero: a zero initial interval would
+ * compute a zero delay for every attempt, which {@link nextDelay} reads as
+ * exhausted, so the policy would never retry. `jitterRatio` must be between
+ * zero and one, inclusive, and `jitterRatio: 0` disables jitter.
  *
  * @category constructors
  * @since 0.1.0

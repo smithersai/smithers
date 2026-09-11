@@ -500,13 +500,14 @@ describe("action retry give-up reasons", () => {
   effect("preserves the failure when a zero-delay policy stops without maxAttempts", () => {
     // A policy whose first delay is not positive gives up as `exhausted`
     // without ever declaring maxAttempts; the reported bound is the attempt
-    // actually reached.
+    // actually reached. `RetryPolicy.make` refuses `initialMs: 0`, so this
+    // models a persisted row that bypassed the constructor.
     let attempts = 0
     const action = Action.make({
       name: "Gaps/exhausted-no-max",
       success: Schema.Number,
       error: Schema.String,
-      retryPolicy: RetryPolicy.make({ initialMs: 0, factor: 2, maxMs: 100 }),
+      retryPolicy: { initialMs: 0, factor: 2, maxMs: 100 } satisfies RetryPolicy.RetryPolicy,
       execute: Effect.suspend(() => {
         attempts++
         return Effect.fail("nope")

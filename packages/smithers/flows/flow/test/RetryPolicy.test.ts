@@ -22,6 +22,8 @@ describe("make", () => {
       readonly options: Parameters<typeof RetryPolicy.make>[0]
     }> = [
       { field: "initialMs", options: { ...base, initialMs: -1 } },
+      { field: "initialMs", options: { ...base, initialMs: 0 } },
+      { field: "initialMs", options: { ...base, initialMs: Number.NaN } },
       { field: "initialMs", options: { ...base, initialMs: Number.POSITIVE_INFINITY } },
       { field: "factor", options: { ...base, factor: 0 } },
       { field: "factor", options: { ...base, factor: -1 } },
@@ -48,14 +50,14 @@ describe("make", () => {
   it("accepts every inclusive boundary", () => {
     expect(
       RetryPolicy.make({
-        initialMs: 0,
+        initialMs: 1,
         factor: 1,
-        maxMs: 0,
+        maxMs: 1,
         maxAttempts: 1,
         expirationMs: 1,
         jitterRatio: 0
       })
-    ).toMatchObject({ initialMs: 0, maxMs: 0, maxAttempts: 1, jitterRatio: 0 })
+    ).toMatchObject({ initialMs: 1, maxMs: 1, maxAttempts: 1, jitterRatio: 0 })
     expect(RetryPolicy.make({ ...base, maxMs: 100, jitterRatio: 1 })).toMatchObject({
       initialMs: 100,
       maxMs: 100,
@@ -75,6 +77,7 @@ describe("make", () => {
 
   it("enforces the constructor contract when decoding persisted policies", () => {
     const decode = Schema.decodeUnknownSync(RetryPolicy.RetryPolicy)
+    expect(() => decode({ ...base, initialMs: 0 })).toThrow(/initialMs/)
     expect(() => decode({ ...base, maxMs: 99 })).toThrow(/maxMs/)
     expect(() => decode({ ...base, maxAttempts: 1.5 })).toThrow(/maxAttempts/)
     expect(() => decode({ ...base, jitterRatio: 2 })).toThrow(/jitterRatio/)
@@ -110,10 +113,24 @@ describe("nextDelay", () => {
   })
 
   it("gives up on a non-positive computed interval", () => {
-    const zero = RetryPolicy.make({ initialMs: 0, factor: 2, maxMs: 1000 })
+    // `make` refuses these, so they model persisted rows that bypassed it.
+    const zero: RetryPolicy.RetryPolicy = { initialMs: 0, factor: 2, maxMs: 1000 }
     expect(RetryPolicy.nextDelay(zero, 1)).toEqual(none)
     const negative: RetryPolicy.RetryPolicy = { initialMs: -5, factor: 2, maxMs: 1000 }
     expect(RetryPolicy.nextDelay(negative, 1)).toEqual(none)
+    // A valid shrinking policy whose exponential underflows to zero.
+    const underflow = RetryPolicy.make({ initialMs: 1, factor: 0.5, maxMs: 1 })
+    expect(RetryPolicy.nextDelay(underflow, 2_000)).toEqual(none)
+  })
+
+  it("keeps retrying with a one millisecond initial interval up to maxAttempts", () => {
+    // The smallest accepted interval behaves as a near-immediate retry, which
+    // is the replacement for the refused `initialMs: 0`.
+    const nearImmediate = RetryPolicy.make({ initialMs: 1, factor: 1, maxMs: 1, maxAttempts: 5 })
+    for (const attempt of [1, 2, 3, 4]) {
+      expect(RetryPolicy.nextDelay(nearImmediate, attempt)).toEqual(some(1))
+    }
+    expect(RetryPolicy.nextDelay(nearImmediate, 5)).toEqual(none)
   })
 
   it("gives up when the cap falls below the initial interval", () => {

@@ -27,10 +27,14 @@ const policy = RetryPolicy.make({
 ```
 
 `RetryPolicy.make` checks every bound and throws a `RangeError` naming the field
-that is wrong: `initialMs` finite and not negative, `factor` finite and positive,
-`maxMs` finite and not below `initialMs`, `maxAttempts` a safe integer of at
-least one, `expirationMs` finite and positive, and `jitterRatio` finite and
-within zero and one inclusive. `jitterRatio: 0` disables jitter. The
+that is wrong: `initialMs` finite and greater than zero, `factor` finite and
+positive, `maxMs` finite and not below `initialMs`, `maxAttempts` a safe integer
+of at least one, `expirationMs` finite and positive, and `jitterRatio` finite
+and within zero and one inclusive. `initialMs: 0` is refused rather than read as
+"retry immediately": every computed delay would be zero, which `nextDelay`
+treats as exhausted, so the policy would give up on the first failure whatever
+`maxAttempts` promised. Use `initialMs: 1` for a near-immediate retry.
+`jitterRatio: 0` disables jitter. The
 `nonRetryable` array is copied and frozen, so mutating your array later cannot
 change what a parked policy means.
 

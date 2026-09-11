@@ -1209,7 +1209,7 @@ A retry policy as plain data, so the next delay is derived from a persisted atte
 - **Required:** `initialMs`, `factor`, and `maxMs`
 - **Since:** `0.1.0`
 
-Creates a policy after checking every numeric bound, and throws a `RangeError` naming the field that is wrong: `initialMs` finite and not negative, `factor` finite and positive, `maxMs` finite and not below `initialMs`, `maxAttempts` a safe integer of at least one, `expirationMs` finite and positive, and `jitterRatio` finite and within zero and one inclusive. `jitterRatio: 0` disables jitter. The `nonRetryable` array is copied and frozen, so a later mutation of the caller's array cannot change what a parked policy means.
+Creates a policy after checking every numeric bound, and throws a `RangeError` naming the field that is wrong: `initialMs` finite and greater than zero, `factor` finite and positive, `maxMs` finite and not below `initialMs`, `maxAttempts` a safe integer of at least one, `expirationMs` finite and positive, and `jitterRatio` finite and within zero and one inclusive. `initialMs: 0` is refused rather than read as an immediate retry, because every computed delay would be zero and `nextDelay` would report the policy exhausted on the first failure; use `initialMs: 1` for a near-immediate retry. `jitterRatio: 0` disables jitter. The `nonRetryable` array is copied and frozen, so a later mutation of the caller's array cannot change what a parked policy means.
 
 ### `RetryPolicy.defaultRetryPolicy`
 
