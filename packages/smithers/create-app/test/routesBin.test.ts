@@ -11,33 +11,17 @@
  */
 import { afterAll, describe, expect, it } from "@effect/vitest"
 import { spawnSync } from "node:child_process"
-import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
-import { tmpdir } from "node:os"
+import { copyFileSync, mkdirSync, readFileSync, writeFileSync } from "node:fs"
 import { dirname, join, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
 import { runRoutesBin, usage } from "../src/routesBin.ts"
+import { appTrees } from "./support/appTree.ts"
+import { layers } from "./support/layers.ts"
 
 const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..")
 const binPath = join(packageRoot, "bin", "routes.mjs")
 
-const roots: Array<string> = []
-
-const appTree = (files: Record<string, string>): string => {
-  const root = mkdtempSync(join(tmpdir(), "smthrs-routes-bin-"))
-  roots.push(root)
-  for (const [path, contents] of Object.entries(files)) {
-    const full = join(root, path)
-    mkdirSync(dirname(full), { recursive: true })
-    writeFileSync(full, contents)
-  }
-  return root
-}
-
-const layers = {
-  "AGENT.ts": "export const Agent = {}\n",
-  "SANDBOX.ts": "export const Sandbox = {}\n",
-  "TOOLS.ts": "export const Tools = {}\n"
-}
+const { write: appTree, remove: removeTrees } = appTrees("smthrs-routes-bin-")
 
 /** Runs the bin body and returns its exit code beside the two streams. */
 const run = (argv: ReadonlyArray<string>, cwd?: string) => {
@@ -53,7 +37,7 @@ const run = (argv: ReadonlyArray<string>, cwd?: string) => {
 // Drained after the whole file rather than after each test, so a spawned child
 // that still holds a handle cannot make an individual test flaky.
 afterAll(() => {
-  while (roots.length > 0) rmSync(roots.pop()!, { recursive: true, force: true })
+  removeTrees()
 })
 
 describe("runRoutesBin", () => {

@@ -10,47 +10,8 @@
  */
 import { describe, expect, it } from "vitest"
 import { track } from "../worker/stream.ts"
-
-const bytes = (text: string): Uint8Array => new TextEncoder().encode(text)
-
-/** A source that records whether the consumer cancelled it, and with what. */
-const recordingSource = (
-  chunks: ReadonlyArray<string>,
-  options: { readonly fail?: Error } = {}
-): { readonly stream: ReadableStream<Uint8Array>; readonly cancels: Array<unknown> } => {
-  const cancels: Array<unknown> = []
-  let index = 0
-  const stream = new ReadableStream<Uint8Array>({
-    pull(controller) {
-      if (index < chunks.length) {
-        controller.enqueue(bytes(chunks[index]!))
-        index += 1
-        return
-      }
-      if (options.fail !== undefined) {
-        controller.error(options.fail)
-        return
-      }
-      controller.close()
-    },
-    cancel(reason) {
-      cancels.push(reason)
-    }
-  })
-  return { stream, cancels }
-}
-
-const drain = async (stream: ReadableStream<Uint8Array>): Promise<string> => {
-  const reader = stream.getReader()
-  const decoder = new TextDecoder()
-  let out = ""
-  for (;;) {
-    const { done, value } = await reader.read()
-    if (done) break
-    out += decoder.decode(value, { stream: true })
-  }
-  return out
-}
+import { drain } from "./support/drain.ts"
+import { recordingSource } from "./support/recordingSource.ts"
 
 describe("track", () => {
   it("forwards every chunk in order and settles once when the source closes", async () => {

@@ -17,9 +17,8 @@ import * as ModelEvent from "@smthrs/model/ModelEvent"
 import { CapabilityContractError } from "@smthrs/testing/TestingError"
 import * as Schema from "effect/Schema"
 import * as Stream from "effect/Stream"
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
-import { tmpdir } from "node:os"
-import { dirname, join } from "node:path"
+import { existsSync, readFileSync, writeFileSync } from "node:fs"
+import { join } from "node:path"
 import { pathToFileURL } from "node:url"
 import { inspect } from "node:util"
 import { defineAgent, defineFlow, defineSandbox, defineTools } from "../src/index.ts"
@@ -31,6 +30,7 @@ import {
   type RoutedFlow,
   runCachedModelTest
 } from "../src/testing.ts"
+import { appTrees } from "./support/appTree.ts"
 
 const Output = Schema.Struct({ answer: Schema.String })
 // The spelling `docs/api.md` tells a caller to write for `cachedModelTest`'s
@@ -104,26 +104,14 @@ const scripted = (): Model.Model =>
       })
   })
 
-const scratch: Array<string> = []
+const { write: tree, remove: removeTrees } = appTrees("smthrs-cached-")
 
-const tree = (files: Record<string, string>): string => {
-  const root = mkdtempSync(join(tmpdir(), "smthrs-cached-"))
-  scratch.push(root)
-  for (const [path, contents] of Object.entries(files)) {
-    const full = join(root, path)
-    mkdirSync(dirname(full), { recursive: true })
-    writeFileSync(full, contents)
-  }
-  return root
-}
-
-const dir = mkdtempSync(join(tmpdir(), "smthrs-cached-fixture-"))
-scratch.push(dir)
+const dir = tree({})
 const fixturePath = join(dir, "echo.json")
 const fixture = pathToFileURL(fixturePath)
 
 afterAll(() => {
-  while (scratch.length > 0) rmSync(scratch.pop()!, { recursive: true, force: true })
+  removeTrees()
 })
 
 // `recording()` reads the environment inside the test body, so the mode is set

@@ -8,37 +8,21 @@
  * startup cost and hide nothing.
  */
 import { afterEach, describe, expect, it } from "@effect/vitest"
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
-import { tmpdir } from "node:os"
-import { dirname, join } from "node:path"
+import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs"
+import { join } from "node:path"
 import type { AppManifest, Brand } from "../src/app.ts"
 import { RouterError } from "../src/router.ts"
 import { brandCss, brandModuleId, createApp, loadManifest, manifestModuleId } from "../src/vite.ts"
+import { appTrees } from "./support/appTree.ts"
+import { layers } from "./support/layers.ts"
 
-const roots: Array<string> = []
+const { write: tree, remove: removeTrees } = appTrees("smthrs-vite-")
 const unwritable: Array<string> = []
 
 afterEach(() => {
   while (unwritable.length > 0) chmodSync(unwritable.pop()!, 0o700)
-  while (roots.length > 0) rmSync(roots.pop()!, { recursive: true, force: true })
+  removeTrees()
 })
-
-const tree = (files: Record<string, string>): string => {
-  const root = mkdtempSync(join(tmpdir(), "smthrs-vite-"))
-  roots.push(root)
-  for (const [path, contents] of Object.entries(files)) {
-    const full = join(root, path)
-    mkdirSync(dirname(full), { recursive: true })
-    writeFileSync(full, contents)
-  }
-  return root
-}
-
-const layers = {
-  "AGENT.ts": "export const Agent = {}\n",
-  "SANDBOX.ts": "export const Sandbox = {}\n",
-  "TOOLS.ts": "export const Tools = {}\n"
-}
 
 const minimal: Brand = { name: "test", tokens: { accent: "#5288c2", background: "#ffffff" } }
 

@@ -6,43 +6,22 @@
  */
 import { afterEach, describe, expect, it } from "@effect/vitest"
 import { spawnSync } from "node:child_process"
-import {
-  chmodSync,
-  existsSync,
-  linkSync,
-  mkdirSync,
-  mkdtempSync,
-  readFileSync,
-  rmSync,
-  symlinkSync,
-  writeFileSync
-} from "node:fs"
-import { tmpdir } from "node:os"
+import { chmodSync, existsSync, linkSync, mkdirSync, readFileSync, symlinkSync, writeFileSync } from "node:fs"
 import { dirname, join, sep } from "node:path"
 import ts from "typescript"
 import type { AppRoutes } from "../src/app.ts"
 import { defaultDirs } from "../src/app.ts"
 import { discover, render, renderAll, renderUi, resolveLayer, RouterError, writeRoutes } from "../src/router.ts"
+import { appTrees } from "./support/appTree.ts"
+import { layers } from "./support/layers.ts"
 
-const roots: Array<string> = []
+const { write: appTree, remove: removeTrees } = appTrees("smthrs-router-")
 const unwritable: Array<string> = []
 
 afterEach(() => {
   while (unwritable.length > 0) chmodSync(unwritable.pop()!, 0o700)
-  while (roots.length > 0) rmSync(roots.pop()!, { recursive: true, force: true })
+  removeTrees()
 })
-
-/** Writes an app tree from a `relative path -> contents` map and returns its root. */
-const appTree = (files: Record<string, string>): string => {
-  const root = mkdtempSync(join(tmpdir(), "smthrs-router-"))
-  roots.push(root)
-  for (const [path, contents] of Object.entries(files)) {
-    const full = join(root, path)
-    mkdirSync(dirname(full), { recursive: true })
-    writeFileSync(full, contents)
-  }
-  return root
-}
 
 /**
  * Every import a generated module declares, as binding and specifier.
@@ -76,20 +55,12 @@ const importsOf = (source: string): ReadonlyArray<{ readonly binding: string; re
  * a module Node parses as-is.
  */
 const parseErrors = (source: string): string => {
-  const directory = mkdtempSync(join(tmpdir(), "smthrs-parse-"))
-  roots.push(directory)
-  const file = join(directory, "generated.mjs")
-  writeFileSync(file, source.replaceAll(" as const", ""))
+  const file = join(appTree({ "generated.mjs": source.replaceAll(" as const", "") }), "generated.mjs")
   const result = spawnSync(process.execPath, ["--check", file], { encoding: "utf8" })
   return result.status === 0 ? "" : result.stderr
 }
 
 const dirs = defaultDirs
-const layers = {
-  "AGENT.ts": "export const Agent = {}\n",
-  "SANDBOX.ts": "export const Sandbox = {}\n",
-  "TOOLS.ts": "export const Tools = {}\n"
-}
 
 describe("discover", () => {
   it("names pages, panes, and flows by location", () => {

@@ -11,52 +11,18 @@
  */
 import { describe, expect, it } from "vitest"
 import { runTurn, type TurnOptions } from "../worker/turn.ts"
+import { drain } from "./support/drain.ts"
+import { recordingSource } from "./support/recordingSource.ts"
 
 // The wrapper reads no field of its options; it hands them straight to the
 // loaded implementation. So a test supplies a marker rather than a whole fake
 // session, and asserts the marker arrived.
 const marker = { probe: "turn-options" } as unknown as TurnOptions
 
-const bytes = (text: string): Uint8Array => new TextEncoder().encode(text)
-
-/** An inner stream that records the cancel reason its consumer sent. */
-const innerStream = (
-  chunks: ReadonlyArray<string>
-): { readonly stream: ReadableStream<Uint8Array>; readonly cancels: Array<unknown> } => {
-  const cancels: Array<unknown> = []
-  let index = 0
-  const stream = new ReadableStream<Uint8Array>({
-    pull(controller) {
-      if (index === chunks.length) {
-        controller.close()
-        return
-      }
-      controller.enqueue(bytes(chunks[index]!))
-      index += 1
-    },
-    cancel(reason) {
-      cancels.push(reason)
-    }
-  })
-  return { stream, cancels }
-}
-
-const drain = async (stream: ReadableStream<Uint8Array>): Promise<string> => {
-  const reader = stream.getReader()
-  const decoder = new TextDecoder()
-  let out = ""
-  for (;;) {
-    const { done, value } = await reader.read()
-    if (done) break
-    out += decoder.decode(value, { stream: true })
-  }
-  return out
-}
-
 describe("runTurn", () => {
   it("forwards the loaded implementation's stream and hands it the options", async () => {
     const seen: Array<TurnOptions> = []
-    const inner = innerStream(["{\"type\":\"text\"}\n", "{\"type\":\"done\"}\n"])
+    const inner = recordingSource(["{\"type\":\"text\"}\n", "{\"type\":\"done\"}\n"])
     const text = await drain(runTurn(marker, async () => ({
       runTurn: (options: TurnOptions) => {
         seen.push(options)
@@ -68,7 +34,7 @@ describe("runTurn", () => {
   })
 
   it("cancels the inner stream when the consumer hangs up", async () => {
-    const inner = innerStream(["one", "two", "three"])
+    const inner = recordingSource(["one", "two", "three"])
     const reader = runTurn(marker, async () => ({ runTurn: () => inner.stream })).getReader()
     await reader.read()
     await reader.cancel("client gone")
@@ -76,7 +42,7 @@ describe("runTurn", () => {
   })
 
   it("cancels an implementation that only arrives after the hangup, and enqueues nothing", async () => {
-    const inner = innerStream(["never delivered"])
+    const inner = recordingSource(["never delivered"])
     let deliver: (() => void) | undefined
     const loaded = new Promise<void>((resolve) => (deliver = resolve))
     const stream = runTurn(marker, async () => {
