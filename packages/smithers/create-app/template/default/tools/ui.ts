@@ -88,7 +88,7 @@ export const PaneOutput = Schema.Struct({
 })
 
 export const HtmlInput = Schema.Struct({
-  html: Schema.String.annotate({ description: "HTML fragment; the shell sanitizes it before rendering" }),
+  html: Schema.String.annotate({ description: "HTML fragment; the shell renders it in a scriptless sandboxed frame with no network" }),
   title: Schema.optionalKey(Schema.String.annotate({ description: "Card heading" }))
 })
 
@@ -183,6 +183,15 @@ export const uiSource = (services: Context.Context<CardSink | PaneNames>): FlowB
 
 /** Cards the mock sink collected, newest last. A host replaces this wholesale. */
 export const collectedCards: Array<AppCard> = []
+
+/**
+ * Empties {@link collectedCards} in place, so the bound sink keeps appending to
+ * the same array. Call it in `beforeEach`: without it a test's card assertion
+ * also sees every card an earlier test in the same module emitted.
+ */
+export const resetCollectedCards = (): void => {
+  collectedCards.length = 0
+}
 
 /**
  * The source `TOOLS.ts` composes: a collecting sink and the one pane this

@@ -42,6 +42,7 @@ import { ActionPill } from "../../src/ui/ActionPill.tsx"
 import { Icon } from "../../src/ui/Icon.tsx"
 import { PaneHost } from "../../src/ui/PaneHost.tsx"
 import { TemplateCard } from "../../src/ui/TemplateCard.tsx"
+import { htmlCardDocument } from "./htmlCardDocument.ts"
 
 const HINT = "Enter to send · Shift+Enter newline · Esc stop · ⌘N new"
 const PLACEHOLDER = "Describe an agent — e.g. hyperliquid & binance arb bot"
@@ -130,7 +131,7 @@ function CardEntry({ card }: { readonly card: AppCard }) {
             <CardTitle>{card.title ?? "Output"}</CardTitle>
           </CardHeader>
           <CardContent>
-            <iframe className="aomi-html-card" title={card.title ?? "Output"} sandbox="" srcDoc={card.html} />
+            <iframe className="aomi-html-card" title={card.title ?? "Output"} sandbox="" srcDoc={htmlCardDocument(card.html)} />
           </CardContent>
         </Card>
       )

@@ -143,7 +143,7 @@ export const PaneOutput = Schema.Struct({
 export type PaneOutput = typeof PaneOutput.Type
 
 export const HtmlInput = Schema.Struct({
-  html: Schema.String.annotate({ description: "HTML fragment; the shell sanitizes it before rendering" }),
+  html: Schema.String.annotate({ description: "HTML fragment; the shell renders it in a scriptless sandboxed frame with no network" }),
   title: Schema.optionalKey(Schema.String.annotate({ description: "Card heading" }))
 })
 export type HtmlInput = typeof HtmlInput.Type

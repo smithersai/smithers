@@ -102,3 +102,20 @@ describe("UI card identity and updates", () => {
     expect(cards).toEqual(before)
   })
 })
+
+describe("ui/html description", () => {
+  test("says the frame is sandboxed and never claims a sanitizer", async () => {
+    const bindings = await Effect.runPromise(setup().source.bindings())
+    const descriptor = JSON.stringify(bindings.find((entry) => entry.descriptor.name === "ui/html")!.descriptor)
+    expect(descriptor).not.toMatch(/sanitiz/i)
+    expect(descriptor).toContain("scriptless sandboxed frame with no network")
+  })
+})
+
+describe("collectedCards", () => {
+  test("resetCollectedCards empties the array the bound sink appends to", () => {
+    Ui.collectedCards.push({ kind: "html", id: "stale", html: "<p>earlier test</p>" })
+    Ui.resetCollectedCards()
+    expect(Ui.collectedCards).toEqual([])
+  })
+})

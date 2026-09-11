@@ -15,12 +15,16 @@
  * the output is the model reporting what it thinks it emitted, and a model that
  * answered in prose can still name a card there. `collectedCards` is the sink
  * `TOOLS.ts` bound, so an entry in it means `ui/pane` actually ran and the pane
- * registry accepted the name.
+ * registry accepted the name. `resetCollectedCards` runs before each test, so
+ * the assertion sees only the cards this test's run emitted.
  */
 import { cachedModelTest } from "@smthrs/create-app/testing"
 import type * as Schema from "effect/Schema"
-import { collectedCards } from "../../tools/ui.ts"
+import { beforeEach } from "vitest"
+import { collectedCards, resetCollectedCards } from "../../tools/ui.ts"
 import { Flow } from "./flow.ts"
+
+beforeEach(resetCollectedCards)
 
 type Payload = Schema.Struct.Type<typeof Flow.payload>
 type Output = typeof Flow.output.Type
