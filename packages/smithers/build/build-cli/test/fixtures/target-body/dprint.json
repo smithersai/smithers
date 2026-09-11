@@ -1,6 +1,6 @@
 {
   "includes": ["src/**/*.ts"],
-  "plugins": ["https://plugins.dprint.dev/typescript-0.93.4.wasm"],
+  "plugins": ["https://plugins.dprint.dev/typescript-0.93.4.wasm@cdbf74066391bdb11ddaef9ea95299636a97d637f5a9bf7f121d584875647c7a"],
   "typescript": {
     "semiColons": "asi",
     "quoteStyle": "alwaysDouble"
