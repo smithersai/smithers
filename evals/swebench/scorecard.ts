@@ -423,8 +423,8 @@ interface PinnedSubject {
   readonly node?: string
   readonly platform?: string
   readonly marker?: { readonly path: string; readonly hash: string; readonly resolvedBy?: string }
-  readonly cliDist?: { readonly hash: string; readonly files: number }
-  readonly cliSrc?: { readonly hash: string; readonly files: number }
+  readonly cliDist?: { readonly directory?: string; readonly hash: string; readonly files: number }
+  readonly cliSrc?: { readonly directory?: string; readonly hash: string; readonly files: number }
   readonly refusals?: ReadonlyArray<{ readonly code: string; readonly message: string }>
 }
 
@@ -475,10 +475,12 @@ const markdown = [
   `| subject | \`${subject.stamp ?? "unpinned"}\` |`,
   `| agreement | ${subject.agreement} |`,
   `| git HEAD | ${subject.head ?? "—"} ${subject.headSubject ?? ""} |`,
-  `| \`packages/smithers/agent/harness/src/CellTurn.ts\` | \`${subject.marker?.hash ?? "—"}\` |`,
+  // The path labels come from the subject record, never from today's layout:
+  // a wave measured before a package move keeps the paths it actually loaded.
+  `| \`${subject.marker?.path ?? "harness marker"}\` | \`${subject.marker?.hash ?? "—"}\` |`,
   `| loaded from | ${subject.marker?.resolvedBy ?? "—"} |`,
-  `| \`packages/smithers/dist/esm\` | \`${subject.cliDist?.hash ?? "—"}\` (${subject.cliDist?.files ?? 0} modules) |`,
-  `| \`packages/smithers/src\` | \`${subject.cliSrc?.hash ?? "—"}\` (${subject.cliSrc?.files ?? 0} files, built above) |`,
+  `| \`${subject.cliDist?.directory ?? "CLI build"}\` | \`${subject.cliDist?.hash ?? "—"}\` (${subject.cliDist?.files ?? 0} modules) |`,
+  `| \`${subject.cliSrc?.directory ?? "CLI source"}\` | \`${subject.cliSrc?.hash ?? "—"}\` (${subject.cliSrc?.files ?? 0} files, built above) |`,
   `| node | ${subject.node ?? "—"} ${subject.platform ?? ""} |`,
   "",
   ...(subject.refusals === undefined || subject.refusals.length === 0 ? [] : [

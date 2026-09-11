@@ -9,10 +9,10 @@ Instances: 5 · flows resolved **4/5** · codex resolved **5/5** · flows wins *
 | subject | `sha256:6eef1d25481a934c82a3cb24ad016fe1e6e215ff9e737ac5688979e6f9486d88` |
 | agreement | one subject, pinned and stamped by every instance |
 | git HEAD | 967081eca20b0ec96bceadc0411678bf2d26d891 🐛 fix(harness): bound the ledger's flow name, hold the sufficiency signal on a red frame, and pin the batched replies |
-| `packages/smithers/agent/harness/src/CellTurn.ts` | `sha256:e149830e905c07fc1aac6062a827efc852c85311fb211e6f906c363eaedc6026` |
-| loaded from | packages/smithers/agent/harness/src/CellTurn.ts |
-| `packages/smithers/dist/esm` | `sha256:1d53b7de47aab2ec5b66d57e0210f4afe723936e60f5d31b44531892781a0e40` (11 modules) |
-| `packages/smithers/src` | `sha256:f6745ec4af0efc5f13a5ae3e9c6c21aa1f36fa469d45a59920f3adaa3e7a8e8f` (11 files, built above) |
+| `packages/harness/src/CellTurn.ts` | `sha256:e149830e905c07fc1aac6062a827efc852c85311fb211e6f906c363eaedc6026` |
+| loaded from | packages/harness/src/CellTurn.ts |
+| `packages/cli/dist/esm` | `sha256:1d53b7de47aab2ec5b66d57e0210f4afe723936e60f5d31b44531892781a0e40` (11 modules) |
+| `packages/cli/src` | `sha256:f6745ec4af0efc5f13a5ae3e9c6c21aa1f36fa469d45a59920f3adaa3e7a8e8f` (11 files, built above) |
 | node | v24.18.0 darwin-arm64 |
 
 Every `@smthrs/*` package except `@smthrs/cli` is loaded from its `src` directory, because that is where its workspace `exports` map points; the harness under test is the working tree, not a build. `packages/smithers/agent/harness/dist` is not in the loaded graph and its state means nothing here.

@@ -6,15 +6,17 @@
   "node": "v24.0.0",
   "platform": "fixture",
   "marker": {
-    "path": "packages/smithers/agent/harness/src/CellTurn.ts",
+    "path": "packages/harness/src/CellTurn.ts",
     "hash": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
-    "resolvedBy": "packages/smithers/agent/harness/src/CellTurn.ts"
+    "resolvedBy": "packages/harness/src/CellTurn.ts"
   },
   "cliDist": {
+    "directory": "packages/cli/dist/esm",
     "hash": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
     "files": 11
   },
   "cliSrc": {
+    "directory": "packages/cli/src",
     "hash": "sha256:3333333333333333333333333333333333333333333333333333333333333333",
     "files": 11
   },

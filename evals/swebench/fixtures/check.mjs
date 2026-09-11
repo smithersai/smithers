@@ -76,6 +76,19 @@ check("subject marker", card.subject.marker.hash, pinned.marker.hash)
 check("subject agreement", card.subject.agreement, "one subject, pinned and stamped by every instance")
 for (const expected of mirror) check(`${expected.id} subject`, card.subject.instances[expected.id], pinned.stamp)
 
+// The rendered preconditions carry the paths the subject recorded, not the
+// paths the repository uses today: a later layout change must not rewrite an
+// old measurement's provenance.
+const rendered = readFileSync(join(here, "scorecard.md"), "utf8")
+for (const row of [
+  `| \`${pinned.marker.path}\` | \`${pinned.marker.hash}\` |`,
+  `| loaded from | ${pinned.marker.resolvedBy} |`,
+  `| \`${pinned.cliDist.directory}\` | \`${pinned.cliDist.hash}\` (${pinned.cliDist.files} modules) |`,
+  `| \`${pinned.cliSrc.directory}\` | \`${pinned.cliSrc.hash}\` (${pinned.cliSrc.files} files, built above) |`
+]) {
+  if (!rendered.includes(row)) failures.push(`scorecard.md: missing the recorded subject row ${row}`)
+}
+
 check("flows resolved", card.aggregate.flowsResolved, mirror.filter((row) => row.graded === "resolved").length)
 check("codex resolved", card.aggregate.codexResolved, baseline.filter((row) => row.codex.verdict === "resolved").length)
 check("flows wall clock total", card.aggregate.flowsWallClockSeconds, mirror.reduce((total, row) => total + row.seconds, 0))
