@@ -1,7 +1,7 @@
 /**
  * Lazy SQLite full-text search operations.
  *
- * @see https://smithers.sh/docs/reference/api/memory
+ * @see https://memory.smithers.sh/reference/api/
  *
  * @since 0.1.0
  */
@@ -9,20 +9,6 @@ import * as Effect from "effect/Effect"
 import type * as SqlError from "effect/unstable/sql/SqlError"
 import type { DatabaseService } from "../Database.ts"
 import type { Kind } from "../Namespace.ts"
-
-/**
- * The pair of services the memory schema operates through.
- *
- * `@smthrs/database` split its old `Database` service into Effect's own
- * `SqlClient` for queries and a `DurableWriter` for writes. These helpers take
- * both together because an FTS projection has to run inside the very write
- * transaction that changed the authoritative row.
- *
- * @category models
- * @since 0.1.0
- * @slop
- */
-export type { DatabaseService } from "../Database.ts"
 
 /**
  * A record projected into a namespace-kind FTS table.

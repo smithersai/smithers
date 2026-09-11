@@ -9,7 +9,7 @@
  */
 import * as Effect from "effect/Effect"
 import type * as Layer from "effect/Layer"
-import { resolveBanks } from "./internal/Bank.ts"
+import { resolveBanks } from "./internal/ResolveNamespace.ts"
 import type * as MemoryError from "./MemoryError.ts"
 import * as MemoryStore from "./MemoryStore.ts"
 import * as Namespace from "./Namespace.ts"
@@ -60,7 +60,9 @@ const authoritative = (row: Row, groups: ReadonlyArray<Recall.TagGroup> | undefi
  * @since 0.1.0
  * @slop
  */
-export const recall = (input: Recall.Input): Effect.Effect<Recall.Output, MemoryError.MemoryError, MemoryStore.MemoryStore> =>
+export const recall = (
+  input: Recall.Input
+): Effect.Effect<Recall.Output, MemoryError.MemoryError, MemoryStore.MemoryStore> =>
   Effect.gen(function*() {
     const store = yield* MemoryStore.MemoryStore
     const banks = yield* resolveBanks(input.banks)

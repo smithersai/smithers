@@ -5,11 +5,14 @@
  */
 import * as Clock from "effect/Clock"
 import * as Effect from "effect/Effect"
+import type { DatabaseService } from "../Database.ts"
 import type { MemoryError } from "../MemoryError.ts"
 import type { Fact, ListFactsInput, Service } from "../MemoryStore.ts"
 import type * as Namespace from "../Namespace.ts"
-import { resolveNamespace } from "./Bank.ts"
-import * as Sql from "./Sql.ts"
+import { canonicalJson } from "./Canonical.ts"
+import { searchableText } from "./FactProjection.ts"
+import * as Fts from "./Fts.ts"
+import { resolveNamespace } from "./ResolveNamespace.ts"
 import {
   changed,
   decodeFact,
@@ -23,7 +26,6 @@ import {
   validateTags,
   validateTime
 } from "./Store.ts"
-import { canonicalJson, searchableText } from "./Text.ts"
 
 const FACT_COLUMNS = "namespace_kind, namespace_id, fact_key, value_json, tags_json, ttl_ms, " +
   "provenance_json, created_at_ms, updated_at_ms"
@@ -44,7 +46,7 @@ type ReadFacts = (
  * @category constructors
  * @since 0.1.0
  */
-export const make = (database: Sql.DatabaseService): {
+export const make = (database: DatabaseService): {
   readonly readFacts: ReadFacts
   readonly service: Pick<
     Service,
@@ -141,7 +143,7 @@ export const make = (database: Sql.DatabaseService): {
             ttl_ms = excluded.ttl_ms,
             provenance_json = excluded.provenance_json,
             updated_at_ms = excluded.updated_at_ms`
-          yield* Sql.replaceFtsRecord(database, namespace.kind, {
+          yield* Fts.replaceFtsRecord(database, namespace.kind, {
             recordId: input.key,
             recordKind: "fact",
             namespaceId: namespace.id,
@@ -162,7 +164,7 @@ export const make = (database: Sql.DatabaseService): {
             WHERE namespace_kind = ${namespace.kind}
               AND namespace_id = ${namespace.id}
               AND fact_key = ${input.key}`.raw
-          yield* Sql.deleteFtsRecord(database, namespace.kind, {
+          yield* Fts.deleteFtsRecord(database, namespace.kind, {
             recordId: input.key,
             recordKind: "fact",
             namespaceId: namespace.id
@@ -213,7 +215,7 @@ export const make = (database: Sql.DatabaseService): {
               }
             }
             for (const group of byNamespace.values()) {
-              yield* Sql.deleteFtsFacts(database, group.kind, group.id, group.keys)
+              yield* Fts.deleteFtsFacts(database, group.kind, group.id, group.keys)
               yield* sql`DELETE FROM memory_vectors
                 WHERE namespace_kind = ${group.kind}
                   AND namespace_id = ${group.id}

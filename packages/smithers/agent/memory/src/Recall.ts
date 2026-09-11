@@ -3,7 +3,7 @@
  *
  * Recall is both a flow-valued injection slot and an Effect runtime service.
  *
- * @see https://smithers.sh/docs/reference/api/memory
+ * @see https://memory.smithers.sh/reference/api/
  * @see https://smithers.sh/docs/reference/api/patterns
  *
  * @since 0.1.0
@@ -13,8 +13,8 @@ import * as Context from "effect/Context"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
 import * as Schema from "effect/Schema"
-import * as Bank from "./internal/Bank.ts"
-import { compareText } from "./internal/Text.ts"
+import { compareText } from "./internal/Canonical.ts"
+import * as Bank from "./internal/ResolveNamespace.ts"
 import type * as MemoryError from "./MemoryError.ts"
 import * as MemoryStore from "./MemoryStore.ts"
 import * as Namespace from "./Namespace.ts"

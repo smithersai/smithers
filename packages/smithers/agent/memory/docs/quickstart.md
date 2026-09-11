@@ -94,4 +94,4 @@ const memory = Layer.provide(
 
 - To give one flow tree its own namespace and budget instead of naming banks per call, attach a policy as described in [Scope a flow tree to a namespace](./guides/scope-a-flow-tree.md).
 - To pick a different recall binding, see [Recall memory](./guides/recall-memory.md).
-- For a full application walkthrough with an agent and the Smithers engine, see the [memory tutorial](/docs/tutorials/memory/) on smithers.sh.
+- For a full application walkthrough with an agent and the Smithers engine, see the [memory tutorial](https://smithers.sh/docs/tutorials/memory/) on smithers.sh.

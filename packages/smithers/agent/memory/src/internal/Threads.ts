@@ -6,9 +6,10 @@
 import * as Clock from "effect/Clock"
 import type * as Crypto from "effect/Crypto"
 import * as Effect from "effect/Effect"
+import type { DatabaseService } from "../Database.ts"
 import type { Service } from "../MemoryStore.ts"
-import { resolveNamespace } from "./Bank.ts"
-import type * as Sql from "./Sql.ts"
+import { canonicalJson } from "./Canonical.ts"
+import { resolveNamespace } from "./ResolveNamespace.ts"
 import {
   changed,
   decodeJson,
@@ -23,7 +24,6 @@ import {
   validateNonEmpty,
   validateTime
 } from "./Store.ts"
-import { canonicalJson } from "./Text.ts"
 
 const THREAD_COLUMNS = "thread_id, namespace_kind, namespace_id, title, metadata_json, created_at_ms, updated_at_ms"
 const MESSAGE_COLUMNS = "thread_id, id, role, text, at_ms"
@@ -36,7 +36,7 @@ const DELETE_MESSAGES_CHUNK_SIZE = 900
  * @category constructors
  * @since 0.1.0
  */
-export const make = (database: Sql.DatabaseService, crypto: Crypto.Crypto): Pick<
+export const make = (database: DatabaseService, crypto: Crypto.Crypto): Pick<
   Service,
   | "createThread"
   | "getThread"

@@ -1,32 +1,37 @@
 import * as Digest from "@smthrs/core/Digest"
 import { Effect } from "effect"
 import { describe, expect, it } from "vitest"
-import * as Bank from "../src/internal/Bank.ts"
-import * as Namespace from "../src/Namespace.ts"
+import * as Canonical from "../src/internal/Canonical.ts"
+import * as MemoryDigest from "../src/internal/Digest.ts"
+import * as FactProjection from "../src/internal/FactProjection.ts"
+import * as FtsQuery from "../src/internal/FtsQuery.ts"
 import * as Ranking from "../src/internal/Ranking.ts"
-import * as Text from "../src/internal/Text.ts"
+import * as Bank from "../src/internal/ResolveNamespace.ts"
+import * as Utf8 from "../src/internal/Utf8.ts"
+import * as VectorBytes from "../src/internal/VectorBytes.ts"
+import * as Namespace from "../src/Namespace.ts"
 
 describe("memory internal helpers", () => {
   it("normalizes text and hashes every JavaScript string with SHA-256", () => {
-    expect(Text.compareText("a", "b")).toBe(-1)
-    expect(Text.compareText("b", "a")).toBe(1)
-    expect(Text.compareText("a", "a")).toBe(0)
-    expect(Text.wellFormed("a\uD800b\uDC00c\uD83D\uDE00")).toBe("a\uFFFDb\uFFFDc\uD83D\uDE00")
-    expect(Text.digest("abc")).toBe("ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad")
-    expect(Text.digest("\uD800")).toBe(Digest.digest("\uFFFD"))
+    expect(Canonical.compareText("a", "b")).toBe(-1)
+    expect(Canonical.compareText("b", "a")).toBe(1)
+    expect(Canonical.compareText("a", "a")).toBe(0)
+    expect(MemoryDigest.wellFormed("a\uD800b\uDC00c\uD83D\uDE00")).toBe("a\uFFFDb\uFFFDc\uD83D\uDE00")
+    expect(MemoryDigest.digest("abc")).toBe("ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad")
+    expect(MemoryDigest.digest("\uD800")).toBe(Digest.digest("\uFFFD"))
   })
 
   it("extracts searchable text and retained string tags", () => {
-    expect(Text.searchableText("root")).toBe("root")
-    expect(Text.searchableText({ content: "body", tags: ["scope:x"] })).toBe("body")
-    expect(Text.searchableText({ other: "value" })).toBe("{\"other\":\"value\"}")
-    expect(Text.searchableText(undefined)).toBe("")
-    expect(Text.retainedTags({ tags: ["scope:x", 1, "branch:main"] })).toEqual(["scope:x", "branch:main"])
-    expect(Text.retainedTags(null)).toEqual([])
+    expect(FactProjection.searchableText("root")).toBe("root")
+    expect(FactProjection.searchableText({ content: "body", tags: ["scope:x"] })).toBe("body")
+    expect(FactProjection.searchableText({ other: "value" })).toBe("{\"other\":\"value\"}")
+    expect(FactProjection.searchableText(undefined)).toBe("")
+    expect(FactProjection.retainedTags({ tags: ["scope:x", 1, "branch:main"] })).toEqual(["scope:x", "branch:main"])
+    expect(FactProjection.retainedTags(null)).toEqual([])
   })
 
   it("encodes vectors explicitly little-endian and truncates on UTF-8 boundaries", () => {
-    expect([...Text.vectorBytes([1, -2, 0.5])]).toEqual([
+    expect([...VectorBytes.vectorBytes([1, -2, 0.5])]).toEqual([
       0,
       0,
       128,
@@ -40,8 +45,8 @@ describe("memory internal helpers", () => {
       0,
       63
     ])
-    expect(Text.truncateBytes("a\u00E9\uD83D\uDE00z", 7)).toBe("a\u00E9\uD83D\uDE00")
-    expect(Text.truncateBytes("a\u00E9", 2)).toBe("a")
+    expect(Utf8.truncateBytes("a\u00E9\uD83D\uDE00z", 7)).toBe("a\u00E9\uD83D\uDE00")
+    expect(Utf8.truncateBytes("a\u00E9", 2)).toBe("a")
   })
 
   it("scores cosine similarity and recency decay at their boundaries", () => {
@@ -63,18 +68,18 @@ describe("memory internal helpers", () => {
   })
 
   it("truncates to a byte budget without splitting a code point", () => {
-    expect(Text.truncateBytes("h\u00E9llo", 6)).toBe("h\u00E9llo")
-    expect(Text.truncateBytes("h\u00E9llo", 7)).toBe("h\u00E9llo")
-    expect(Text.truncateBytes("h\u00E9llo", 2)).toBe("h")
-    expect(Text.truncateBytes("h\u00E9llo", 0)).toBe("")
-    expect(Text.truncateBytes("\uD83D\uDE00\uD83D\uDE00", 4)).toBe("\uD83D\uDE00")
+    expect(Utf8.truncateBytes("h\u00E9llo", 6)).toBe("h\u00E9llo")
+    expect(Utf8.truncateBytes("h\u00E9llo", 7)).toBe("h\u00E9llo")
+    expect(Utf8.truncateBytes("h\u00E9llo", 2)).toBe("h")
+    expect(Utf8.truncateBytes("h\u00E9llo", 0)).toBe("")
+    expect(Utf8.truncateBytes("\uD83D\uDE00\uD83D\uDE00", 4)).toBe("\uD83D\uDE00")
   })
 
   it("always treats FTS query text as data", () => {
-    expect(Text.literalFtsQuery("alpha beta")).toBe("\"alpha\" \"beta\"")
-    expect(Text.literalFtsQuery("\"alpha beta\"")).toBe("\"\"\"alpha\" \"beta\"\"\"")
-    expect(Text.literalFtsQuery(" alpha\0beta ")).toBe("\"alpha\" \"beta\"")
-    expect(Text.literalFtsQuery("\uD800")).toBe("\"\uFFFD\"")
+    expect(FtsQuery.literalFtsQuery("alpha beta")).toBe("\"alpha\" \"beta\"")
+    expect(FtsQuery.literalFtsQuery("\"alpha beta\"")).toBe("\"\"\"alpha\" \"beta\"\"\"")
+    expect(FtsQuery.literalFtsQuery(" alpha\0beta ")).toBe("\"alpha\" \"beta\"")
+    expect(FtsQuery.literalFtsQuery("\uD800")).toBe("\"\uFFFD\"")
   })
 
   it("validates structured namespaces and resolves every bank form", async () => {

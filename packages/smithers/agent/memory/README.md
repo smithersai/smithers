@@ -104,6 +104,7 @@ is on the [API reference](https://memory.smithers.sh/reference/api/).
 | `Maintenance`      | TTL collection, history limiting, and compaction, as finite Effects you schedule. |
 | `Database`         | The public database port SQL-backed memory adapters accept.                       |
 | `MemoryError`      | The one failure type, carrying a stable code and an optional field path.          |
+| `Migrations`       | The registered memory schema for standalone and shared database composition.      |
 
 `@smthrs/memory/test/TestMemory` is the in-memory test layer: the same
 authoritative store over a fresh in-memory database. `internal/*`,

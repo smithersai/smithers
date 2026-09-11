@@ -36,7 +36,7 @@
  * closes that replay gap; omitting it deliberately keeps the process-local
  * fallback.
  *
- * @see https://smithers.sh/docs/reference/api/memory
+ * @see https://memory.smithers.sh/reference/api/
  *
  * @since 0.1.0
  */
@@ -45,8 +45,10 @@ import * as Clock from "effect/Clock"
 import * as Deferred from "effect/Deferred"
 import * as Effect from "effect/Effect"
 import * as Option from "effect/Option"
-import { resolveBanks } from "./internal/Bank.ts"
-import { canonicalJson, digest, truncateBytes } from "./internal/Text.ts"
+import { canonicalJson } from "./internal/Canonical.ts"
+import { digest } from "./internal/Digest.ts"
+import { resolveBanks } from "./internal/ResolveNamespace.ts"
+import { truncateBytes } from "./internal/Utf8.ts"
 import type { MemoryError } from "./MemoryError.ts"
 import * as MemoryStore from "./MemoryStore.ts"
 import * as Recall from "./Recall.ts"

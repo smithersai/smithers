@@ -1,7 +1,7 @@
 /**
  * Authoritative SQL memory contract store.
  *
- * @see https://smithers.sh/docs/reference/api/memory
+ * @see https://memory.smithers.sh/reference/api/
  *
  * @since 0.1.0
  */
@@ -12,10 +12,10 @@ import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
 import * as Schema from "effect/Schema"
 import * as SqlClient from "effect/unstable/sql/SqlClient"
+import type { DatabaseService } from "./Database.ts"
 import * as Facts from "./internal/Facts.ts"
 import * as Notes from "./internal/Notes.ts"
 import * as Search from "./internal/Search.ts"
-import type * as Sql from "./internal/Sql.ts"
 import { error, storeError } from "./internal/Store.ts"
 import * as Threads from "./internal/Threads.ts"
 import type { MemoryError } from "./MemoryError.ts"
@@ -504,7 +504,7 @@ export const make: Effect.Effect<Service, MemoryError, Crypto.Crypto | DurableWr
     const sql = yield* Effect.service(SqlClient.SqlClient)
     const writer = yield* DurableWriter
     const crypto = yield* Crypto.Crypto
-    const database: Sql.DatabaseService = { sql, write: writer.write }
+    const database: DatabaseService = { sql, write: writer.write }
     yield* Migrations.run.pipe(Effect.mapError(storeError("memory migration failed")))
     const facts = Facts.make(database)
     const notes = Notes.make(database)

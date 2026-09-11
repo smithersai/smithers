@@ -6,11 +6,15 @@
 import * as Clock from "effect/Clock"
 import * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
+import type { DatabaseService } from "../Database.ts"
 import type { MemoryError } from "../MemoryError.ts"
 import type { Fact, FtsRow, ListFactsInput, ListNotesInput, Note, SearchRow, Service } from "../MemoryStore.ts"
 import * as Namespace from "../Namespace.ts"
-import { resolveNamespace } from "./Bank.ts"
-import * as Sql from "./Sql.ts"
+import { compareText } from "./Canonical.ts"
+import { retainedTags, searchableText } from "./FactProjection.ts"
+import * as Fts from "./Fts.ts"
+import { literalFtsQuery } from "./FtsQuery.ts"
+import { resolveNamespace } from "./ResolveNamespace.ts"
 import {
   collectUntil,
   error,
@@ -21,7 +25,6 @@ import {
   validateLimit,
   validateRecords
 } from "./Store.ts"
-import { compareText, literalFtsQuery, retainedTags, searchableText } from "./Text.ts"
 
 /**
  * The domain readers search pages through.
@@ -71,7 +74,7 @@ const noteSearchRow = (bank: string, note: Note): SearchRow => ({
  * @since 0.1.0
  */
 export const make = (
-  database: Sql.DatabaseService,
+  database: DatabaseService,
   { readFacts, readNotes }: Readers
 ): Pick<Service, "searchRows" | "enableFts" | "searchFts"> => {
   const { sql } = database
@@ -136,7 +139,7 @@ export const make = (
         Effect.mapError(() => error("invalid_namespace", "FTS namespace kind is invalid"))
       )
       const now = yield* Clock.currentTimeMillis
-      yield* database.write(Sql.enableFts(database, decodedKind, now)).pipe(
+      yield* database.write(Fts.enableFts(database, decodedKind, now)).pipe(
         Effect.mapError(storeError(`could not enable FTS for "${decodedKind}"`))
       )
     })
@@ -146,7 +149,7 @@ export const make = (
       const limit = (yield* validateLimit(input.limit, "searchFts")) ?? 20
       const { bank, namespace } = yield* resolveNamespace(input.namespace)
       yield* validateRecords(input.records, "searchFts")
-      const enabled = yield* Sql.isFtsEnabled(database, namespace.kind).pipe(
+      const enabled = yield* Fts.isFtsEnabled(database, namespace.kind).pipe(
         Effect.mapError(storeError("could not inspect FTS enablement"))
       )
       if (!enabled) {
@@ -183,7 +186,7 @@ export const make = (
         limit,
         pageSize,
         (size) =>
-          Sql.searchFts(database, namespace.kind, namespace.id, query, size, offset).pipe(
+          Fts.searchFts(database, namespace.kind, namespace.id, query, size, offset).pipe(
             Effect.tap((matches) =>
               Effect.sync(() => {
                 offset += matches.length

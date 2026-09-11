@@ -5,11 +5,13 @@
  */
 import * as Clock from "effect/Clock"
 import * as Effect from "effect/Effect"
+import type { DatabaseService } from "../Database.ts"
 import type { MemoryError } from "../MemoryError.ts"
 import type { ListNotesInput, Note, Service, StatusFilter } from "../MemoryStore.ts"
 import type * as Namespace from "../Namespace.ts"
-import { resolveNamespace } from "./Bank.ts"
-import * as Sql from "./Sql.ts"
+import { canonicalJson, compareText } from "./Canonical.ts"
+import * as Fts from "./Fts.ts"
+import { resolveNamespace } from "./ResolveNamespace.ts"
 import {
   changed,
   collectUntil,
@@ -27,7 +29,6 @@ import {
   validateNonEmpty,
   validateTags
 } from "./Store.ts"
-import { canonicalJson, compareText } from "./Text.ts"
 
 const NOTE_COLUMNS = "namespace_kind, namespace_id, id, text, tags_json, provenance_json, status, created_at_ms"
 
@@ -42,7 +43,7 @@ type ReadNotes = (
  * @category constructors
  * @since 0.1.0
  */
-export const make = (database: Sql.DatabaseService): {
+export const make = (database: DatabaseService): {
   readonly readNotes: ReadNotes
   readonly service: Pick<Service, "putNote" | "getNote" | "setNoteStatus" | "supersede" | "listNotes">
 } => {
@@ -186,7 +187,7 @@ export const make = (database: Sql.DatabaseService): {
                 VALUES (${input.id}, ${targetId}, ${now})
                 ON CONFLICT (superseder_id, target_id) DO NOTHING`
             }
-            yield* Sql.replaceFtsRecord(database, namespace.kind, {
+            yield* Fts.replaceFtsRecord(database, namespace.kind, {
               recordId: input.id,
               recordKind: "note",
               namespaceId: namespace.id,

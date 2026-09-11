@@ -4,7 +4,7 @@
  * The declarations describe the runtime operation but intentionally perform
  * no memory I/O while a graph is being built.
  *
- * @see https://smithers.sh/docs/reference/api/memory
+ * @see https://memory.smithers.sh/reference/api/
  * @see https://smithers.sh/docs/reference/api/patterns
  * @since 0.1.0
  */
@@ -13,7 +13,7 @@ import * as Flow from "@smthrs/core/Flow"
 import * as Pattern from "@smthrs/patterns/Pattern"
 import * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
-import { resolveNamespace } from "./internal/Bank.ts"
+import { resolveNamespace } from "./internal/ResolveNamespace.ts"
 import { MemoryError } from "./MemoryError.ts"
 import * as MemoryStore from "./MemoryStore.ts"
 import * as Namespace from "./Namespace.ts"

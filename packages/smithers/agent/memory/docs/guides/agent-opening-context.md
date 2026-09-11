@@ -89,4 +89,4 @@ With a recorder in context, the first fetch for an identity goes through its bou
 ## Next steps
 
 - Pick what the snapshot ranks: [Recall memory](./recall-memory.md).
-- Understand why frozen context matters: [durable execution](/docs/concepts/durable-execution/) on smithers.sh.
+- Understand why frozen context matters: [durable execution](https://smithers.sh/docs/concepts/durable-execution/) on smithers.sh.

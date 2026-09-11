@@ -1,7 +1,7 @@
 import { Effect, Schema } from "effect"
 import { afterEach, describe, expect, it, vi } from "vitest"
 import * as Bank from "../src/Bank.ts"
-import * as BankInternal from "../src/internal/Bank.ts"
+import * as BankInternal from "../src/internal/ResolveNamespace.ts"
 import * as Namespace from "../src/Namespace.ts"
 import * as Recall from "../src/Recall.ts"
 

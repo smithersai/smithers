@@ -350,7 +350,7 @@ The service tag is `MemoryStore`, `Context.Service` tag `flows/memory/MemoryStor
 
 `MemoryStore.make` and `MemoryStore.layer` run these migrations automatically. A standalone store needs only its SQL client, durable writer, and Crypto service; the resulting database can be reopened by another process.
 
-When memory shares a database with the engine or control plane, compose all required lower migration sets before building memory. The CLI's shared control database installs `TimeTravelMigrations.sets`, `ControlMigrations.set`, and `MemoryMigrations.set` together. The database migration ladder rejects adding a previously absent lower block after memory has advanced the ledger; it does not assume those tables already exist. The [memory tutorial](https://smithers.sh/docs/tutorials/memory) shows that shared composition.
+When memory shares a database with the engine or control plane, compose all required lower migration sets before building memory. The CLI's shared control database installs `TimeTravelMigrations.sets`, `ControlMigrations.set`, and `MemoryMigrations.set` together. The database migration ladder rejects adding a previously absent lower block after memory has advanced the ledger; it does not assume those tables already exist. The [memory tutorial](https://smithers.sh/docs/tutorials/memory/) shows that shared composition.
 
 ### `@smthrs/memory/Namespace`
 
