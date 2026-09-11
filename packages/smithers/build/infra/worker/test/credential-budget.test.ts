@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto"
 import { describe, expect, it, vi } from "vitest"
-import { makeCredentialBudget } from "../index.ts"
+import { makeCredentialBudget } from "../RateLimitCredentialBudget.ts"
 import {
   type ActionCache,
   type ContentStore,

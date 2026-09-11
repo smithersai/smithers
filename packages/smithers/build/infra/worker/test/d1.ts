@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url"
  * A `D1Database` over `node:sqlite`, so the adapter is exercised against real
  * SQL, the shipped migrations, and rows that really persist between calls.
  *
- * Only the surface `worker/index.ts` uses is implemented: `prepare`, `bind`,
+ * Only the surface `worker/D1ActionCache.ts` uses is implemented: `prepare`, `bind`,
  * `first`, and `all`. Anything else throws rather than answering something a
  * test could mistake for D1 behavior.
  */

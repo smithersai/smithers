@@ -4,7 +4,8 @@ import * as HttpClient from "effect/unstable/http/HttpClient"
 import * as HttpClientResponse from "effect/unstable/http/HttpClientResponse"
 import type * as CacheStore from "../../../../flows/step-cache/src/CacheStore.ts"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
-import { makeActionCache, pruneStaleEntries, readTouchDays, retentionDays } from "../index.ts"
+import { makeActionCache, readTouchDays } from "../D1ActionCache.ts"
+import { pruneStaleEntries, retentionDays } from "../RetentionSweep.ts"
 import { type ActionCache, type ActionCachePublication, type ContentStore, createHandler } from "../protocol.ts"
 import { makeTestDatabase, type TestDatabase } from "./d1.ts"
 
@@ -407,7 +408,7 @@ describe("action-cache retention", () => {
   it("prunes from the scheduled handler at the documented retention window", async () => {
     const logs = vi.spyOn(console, "log").mockImplementation(() => undefined)
     try {
-      const worker = (await import("../index.ts")).default
+      const worker = (await import("../CacheWorker.ts")).default
       const now = Date.parse("2026-09-01T00:00:00.000Z")
       vi.setSystemTime(now)
       seed("cold", new Date(now - (retentionDays + 1) * 86_400_000).toISOString())
@@ -426,7 +427,7 @@ describe("action-cache retention", () => {
   it("reports a retention failure without repeating its cause", async () => {
     const errors = vi.spyOn(console, "error").mockImplementation(() => undefined)
     try {
-      const worker = (await import("../index.ts")).default
+      const worker = (await import("../CacheWorker.ts")).default
       const failing = {
         prepare: () => {
           throw Object.assign(new Error("connection string with a password"), { code: "ECONNRESET" })

@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
-import { makeContentStore } from "../index.ts"
+import { makeContentStore } from "../R2ContentStore.ts"
 
 const digestOf = (text: string): string => createHash("sha256").update(text).digest("hex")
 const digestBytes = (digest: string): ArrayBuffer =>

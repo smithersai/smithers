@@ -27,7 +27,8 @@ import {
   workerEntry,
   workerStageOptions
 } from "../../deployment.ts"
-import { readTouchDays, retentionDays } from "../index.ts"
+import { readTouchDays } from "../D1ActionCache.ts"
+import { retentionDays } from "../RetentionSweep.ts"
 
 const readToken = "SMITHERS_CACHE_READ_TOKEN"
 const writeToken = "SMITHERS_CACHE_WRITE_TOKEN"

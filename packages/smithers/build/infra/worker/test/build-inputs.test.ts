@@ -161,7 +161,7 @@ describe("build target inputs", () => {
       include: Array<string>
       exclude?: Array<string>
     }
-    for (const path of ["worker/index.ts", "worker/protocol.ts", "worker/future/module.ts"]) {
+    for (const path of ["worker/CacheWorker.ts", "worker/protocol.ts", "worker/future/module.ts"]) {
       expect(config.include.some((pattern) => globExpression(pattern).test(path)), `${path} is not a worker root`)
         .toBe(true)
     }

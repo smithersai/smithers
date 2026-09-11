@@ -50,7 +50,7 @@ describe("worker entry point", () => {
       ...overrides
     }) as never
 
-  const load = async () => (await import("../index.ts")).default
+  const load = async () => (await import("../CacheWorker.ts")).default
 
   it("answers 503 rather than starting on an environment it cannot verify", async () => {
     const worker = await load()

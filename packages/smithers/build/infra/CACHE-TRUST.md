@@ -167,7 +167,7 @@ routes are metered out of proportion to their request size:
   each, so one 67 KB request is a thousand Class B operations.
 - `GET /ac/{key}` maintains the `last_accessed_at` the retention sweep orders
   by. It reads the row and writes it only when the last access is more than
-  1 day old (`readTouchDays` in `worker/index.ts`), so a hot key costs its
+  1 day old (`readTouchDays` in `worker/D1ActionCache.ts`), so a hot key costs its
   readers row reads and one row write a day, whatever the request rate.
 
 The Worker's per-isolate ceilings (64 requests, 8 `findMissing`, 2 artifact

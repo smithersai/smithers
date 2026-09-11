@@ -9,6 +9,9 @@
 
 import { isRecord } from "@smthrs/canonical/Record"
 import { CacheFailure } from "./cache-failure.ts"
+import { constantTimeEquals } from "./constantTimeEquals.ts"
+import { digestBytes } from "./digestBytes.ts"
+import { discardBody } from "./discardBody.ts"
 
 const hexDigest = /^[0-9a-f]{64}$/
 const jsonContentType = /^application\/(?:[a-z0-9!#$&^_.+-]+\+)?json$/
@@ -397,17 +400,6 @@ const mediaType = (request: Request): string => {
 }
 
 const utf8Bytes = (value: string): number => textEncoder.encode(value).byteLength
-
-/** Cancels a body the handler has refused without allowing cleanup to mask the response. */
-const discardBody = (body: ReadableStream<Uint8Array> | null): Promise<void> => {
-  if (body === null) return Promise.resolve()
-  try {
-    void body.cancel().catch(() => undefined)
-  } catch {
-    // A sender that has already gone away needs no further cleanup.
-  }
-  return Promise.resolve()
-}
 
 /** Stop waiting promptly, and pass cancellation to dependencies that support it. */
 const boundedWait = <A>(
@@ -939,16 +931,6 @@ interface Credential {
   readonly digest: string
 }
 
-const matches = (supplied: Uint8Array<ArrayBuffer>, expected: Uint8Array<ArrayBuffer>): boolean => {
-  // Both are SHA-256 digests, so every index of `expected` reads inside `supplied`.
-  const candidate = new DataView(supplied.buffer, supplied.byteOffset, supplied.byteLength)
-  let difference = 0
-  expected.forEach((byte, index) => {
-    difference |= byte ^ candidate.getUint8(index)
-  })
-  return difference === 0
-}
-
 /**
  * Classifies the presented bearer token against both credential digests.
  *
@@ -969,8 +951,8 @@ const presentedCredential = async (
   const suppliedToken = bearer ? authorization.slice(scheme[0].length) : ""
   const suppliedDigest = await crypto.subtle.digest("SHA-256", textEncoder.encode(suppliedToken))
   const supplied = new Uint8Array(suppliedDigest)
-  const isWrite = matches(supplied, expectedWrite)
-  const isRead = matches(supplied, expectedRead)
+  const isWrite = constantTimeEquals(supplied, expectedWrite)
+  const isRead = constantTimeEquals(supplied, expectedRead)
   const digest = hexOf(supplied)
   if (!bearer) return { kind: "none", digest }
   if (isWrite) return { kind: "write", digest }
@@ -1531,11 +1513,6 @@ export const createHandler = (dependencies: ProtocolDependencies) => {
     put: (digest, bytes, signal) => contentPut(signal, digest, bytes),
     presentDigests: (digests, signal) => contentPresent(signal, digests)
   }
-  const digestBytes = (digest: string): Uint8Array<ArrayBuffer> =>
-    Uint8Array.from(
-      { length: digest.length / 2 },
-      (_, index) => Number.parseInt(digest.slice(index * 2, index * 2 + 2), 16)
-    )
   const expectedReadTokenHash = digestBytes(readTokenHash)
   const expectedWriteTokenHash = digestBytes(writeTokenHash)
 

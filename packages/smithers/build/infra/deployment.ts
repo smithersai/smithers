@@ -326,7 +326,7 @@ export const cacheBucketOptions = { lifecycleRules: [...artifactLifecycleRules] 
  * @category constants
  * @since 0.1.0
  */
-export const workerEntry = "./worker/index.ts"
+export const workerEntry = "./worker/CacheWorker.ts"
 
 /**
  * The Workers runtime compatibility date the cache runs under.
