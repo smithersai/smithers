@@ -6,7 +6,7 @@
 import * as Effect from "effect/Effect"
 import type { Cron } from "./Cron.ts"
 import * as CronSchedule from "./Cron.ts"
-import type { CatchUp as Policy } from "./Trigger.ts"
+import type { CatchUp as Policy } from "./Schedule.ts"
 import { TriggerError } from "./TriggerError.ts"
 
 /**

@@ -578,10 +578,6 @@ Construction applies the package's migrations, so a host runs nothing itself. A
 migration the migrator raises as a defect is caught and reported as `store`,
 because the constructor's signature promises a `TriggerError`.
 
-### SqlTriggerStore.reservationLeaseMs
-
-Re-exported from `TriggerStore`, which owns the value.
-
 ## Scheduler
 
 The Clock-driven poll loop and the launcher port it fires through.
@@ -1032,9 +1028,8 @@ A launch-capable claim writes a reservation before it starts a run.
 `TriggerStore.reservationPrefix` is `trigger-reservation:`, and
 `TriggerStore.reservationId` appends the trigger ID, optional attempt, and occurrence;
 `TriggerStore.reservationOccurrence` reads that occurrence back. The
-`SqlTriggerStore.reservationLeaseMs` lease is 300,000 milliseconds, or 5
-minutes. `TriggerStore.reservationLeaseMs` owns the shared value and
-`SqlTriggerStore` re-exports it. Both store implementations reclaim an expired
+`TriggerStore.reservationLeaseMs` lease is 300,000 milliseconds, or 5
+minutes. Both store implementations reclaim an expired
 reservation and restore its unfinished occurrence to pending work, whether the
 lease expires during an active-run read or a later claim. A supersede
 reservation also retains the predecessor run ID: recovery re-attaches to that

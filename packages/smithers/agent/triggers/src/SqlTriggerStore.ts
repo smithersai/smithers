@@ -37,9 +37,6 @@ import {
   TriggerStore
 } from "./TriggerStore.ts"
 
-/** @category constants @since 0.1.0 */
-export { reservationLeaseMs } from "./TriggerStore.ts"
-
 interface Row {
   readonly trigger_id: string
   readonly flow_id: string

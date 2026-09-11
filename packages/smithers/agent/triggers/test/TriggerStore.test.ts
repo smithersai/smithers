@@ -476,7 +476,7 @@ describe("TriggerStore", () => {
           triggerId: trigger.id,
           expectedRevision: registered.revision
         })
-        yield* TestClock.adjust(SqlTriggerStore.reservationLeaseMs + 1)
+        yield* TestClock.adjust(TriggerStore.reservationLeaseMs + 1)
         const active = yield* store.activeRun(trigger.id)
         const rows = yield* sql<{ readonly pending_at_ms: number | null }>`
           SELECT pending_at_ms FROM flows_triggers WHERE trigger_id = ${trigger.id}
