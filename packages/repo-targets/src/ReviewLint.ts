@@ -16,6 +16,10 @@
  * `cwd` and re-roots it. The diff itself is narrowed to the same patterns, so
  * one package's review re-keys on that package's changes alone.
  *
+ * This module holds what the rubrics share: the prompt framing, the options,
+ * the result type, and the helper that applies one rubric. Each macro lives in
+ * its own module beside it.
+ *
  * @since 0.1.0
  */
 import * as Input from "@smthrs/targets/Input"
@@ -112,8 +116,13 @@ const anchor = (cwd: string, declaration: Input.Glob): Input.Glob =>
     exclude: declaration.exclude.map((entry) => `//${Input.resolvePath(cwd, entry)}`)
   })
 
-/** One rubric's fixed half: everything a caller does not choose. */
-interface Rubric {
+/**
+ * One rubric's fixed half: everything a caller does not choose.
+ *
+ * @category models
+ * @since 0.1.0
+ */
+export interface Rubric {
   readonly summary: string
   readonly rubric: string
   readonly batchSize: number
@@ -122,8 +131,13 @@ interface Rubric {
   readonly context: ReadonlyArray<Input.Glob>
 }
 
-/** Applies one rubric to one package's options. */
-const review = (options: Options, rubric: Rubric): ReviewLint => {
+/**
+ * Applies one rubric to one package's options.
+ *
+ * @category constructors
+ * @since 0.1.0
+ */
+export const review = (options: Options, rubric: Rubric): ReviewLint => {
   const cwd = options.cwd
   const include = (options.include ?? rubric.include).map((entry) => anchor(cwd, entry))
   const context = (options.context ?? rubric.context).map((entry) => anchor(cwd, entry))
@@ -148,135 +162,3 @@ const review = (options: Options, rubric: Rubric): ReviewLint => {
     failOn: rubric.failOn
   })
 }
-
-/**
- * Reviews changed sources for identity strings, migrations, persisted
- * schemas, and durable keys.
- *
- * The rubric is written for a package that persists something: a store, a
- * journal, a cache, or a database driver. `include` defaults to `src/**`,
- * which already contains a `src/migrations` tree, and findings fail the
- * target at `error`.
- *
- * @example
- * ```ts
- * import { ReviewTagsMigrationsAndKeys, ReviewDocsAgainstCode, ReviewJsdocAgainstCode } from "./ReviewLint.ts"
- *
- * const reviewTagsMigrationsAndKeys = ReviewTagsMigrationsAndKeys({ cwd: "packages/smithers/flows/journal" })
- * ```
- *
- * @category macros
- * @since 0.1.0
- */
-export const ReviewTagsMigrationsAndKeys = (options: Options): ReviewLint =>
-  review(options, {
-    summary:
-      "A cheap Codex review of the diff against origin/main for identity strings, migrations, persisted schemas and durable keys.",
-    include: [Input.glob("src/**")],
-    context: [],
-    batchSize: 2,
-    failOn: "error",
-    rubric: [
-      "1. An identity string passed to `Action.make`, `Flow.make`, a service tag, or a",
-      "   `Schema.TaggedError` tag must equal the defining module path. A tag that names a",
-      "   different module, a moved module that kept its old tag, or a tag that no longer",
-      "   matches the file it is defined in is an error.",
-      "2. A rename must rename the identity everywhere and leave no backwards-compatible",
-      "   alias, re-export, or fallback branch. A compat alias is an error.",
-      "3. A change to a persisted schema, a table, or a stored column must add a NEW migration",
-      "   file. Editing a migration that has already shipped is an error.",
-      "4. A change to a durable key: a step key, a cache key, a run key, or the material any of",
-      "   them hashes, is a replay and cache hazard. It is an error unless the diff carries an",
-      "   explicit note saying so.",
-      "Report the offending identity or key by name. Line 1 is fine for whole-file findings."
-    ].join("\n")
-  })
-
-/**
- * Reviews changed public APIs against the prose that documents them.
- *
- * `context` defaults to the package's own `README.md` and `docs/*.md` plus the
- * site API reference pages at
- * `//apps/site/src/content/docs/docs/reference/api/<package>*.mdx`, where
- * `<package>` is the last directory in `cwd`. At the workspace root only the
- * local prose is selected. Override `context` to opt into concept or guide
- * sections. Context crosses package boundaries and is read into every batch
- * whether or not it changed; the set must fit LlmLint's 2 MiB aggregate cap.
- * Findings report at `warning` while the rubric is tuned.
- *
- * @example
- * ```ts
- * import { ReviewTagsMigrationsAndKeys, ReviewDocsAgainstCode, ReviewJsdocAgainstCode } from "./ReviewLint.ts"
- *
- * const reviewDocsAgainstCode = ReviewDocsAgainstCode({ cwd: "packages/smithers/flows/journal" })
- * ```
- *
- * @category macros
- * @since 0.1.0
- */
-export const ReviewDocsAgainstCode = (options: Options): ReviewLint => {
-  const packageName = Input.resolvePath("", options.cwd).replace(/\/$/, "").split("/").at(-1)!
-  return review(options, {
-    summary: "A cheap Codex review of changed public APIs against package prose and matching site API references.",
-    include: [Input.glob("src/**")],
-    context: [
-      Input.glob("README.md"),
-      Input.glob("docs/*.md"),
-      ...(packageName === "." ? [] : [
-        Input.glob(`//apps/site/src/content/docs/docs/reference/api/${packageName}*.mdx`)
-      ])
-    ],
-    batchSize: 3,
-    failOn: "warning",
-    rubric: [
-      "The context files are package prose and selected site reference, concept, or guide pages.",
-      "Compare their current contents against the changed source, whether or not they changed.",
-      "1. A public export whose reference page still describes removed, renamed, or changed",
-      "   behavior is a warning against the reference page.",
-      "2. A new public export absent from its package's reference page is a warning against the",
-      "   reference page.",
-      "3. A concept page contradicted by the change is a warning against the concept page.",
-      "Name the stale documentation page in `file`. Do not report a source file for these.",
-      "Private helpers, tests, and internal modules are out of scope."
-    ].join("\n")
-  })
-}
-
-/**
- * Reviews changed exports against the JSDoc that describes them.
- *
- * `include` defaults to `src/**\/*.ts`, and findings report at `warning` while
- * the rubric is tuned. Presence of JSDoc is already gated by eslint; this
- * rubric is about truthfulness alone.
- *
- * @example
- * ```ts
- * import { ReviewTagsMigrationsAndKeys, ReviewDocsAgainstCode, ReviewJsdocAgainstCode } from "./ReviewLint.ts"
- *
- * const reviewJsdocAgainstCode = ReviewJsdocAgainstCode({ cwd: "packages/smithers/flows/journal" })
- * ```
- *
- * @category macros
- * @since 0.1.0
- */
-export const ReviewJsdocAgainstCode = (options: Options): ReviewLint =>
-  review(options, {
-    summary: "A cheap Codex review of changed exports against their JSDoc.",
-    include: [Input.glob("src/**/*.ts")],
-    context: [],
-    batchSize: 3,
-    failOn: "warning",
-    rubric: [
-      "For each export whose body changed in this diff:",
-      "1. The JSDoc prose must still describe what the code does. Prose that describes the old",
-      "   behavior is a warning.",
-      "2. The documented error channel must match the actual `Schema.TaggedError` union the",
-      "   code can fail with. A documented error the code cannot raise, or a raised error the",
-      "   doc never mentions, is a warning.",
-      "3. A documented default must match the default in the code.",
-      "4. `@since` on a NEW export must be the current unreleased version, not a value",
-      "   copy-pasted from a neighboring export.",
-      "Report against the source file and the line of the JSDoc block. Presence of JSDoc is",
-      "already gated by eslint; only truthfulness is in scope."
-    ].join("\n")
-  })

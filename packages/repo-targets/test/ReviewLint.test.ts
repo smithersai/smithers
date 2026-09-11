@@ -3,7 +3,7 @@ import { fileURLToPath } from "node:url"
 import { maximumContextContentBytes, maximumContextFiles } from "@smthrs/targets/LlmLint"
 import { describe, expect, expectTypeOf, it } from "vitest"
 import * as Input from "@smthrs/targets/Input"
-import { ReviewDocsAgainstCode, ReviewTagsMigrationsAndKeys, ReviewJsdocAgainstCode, smithersReviewPrompt } from "../src/ReviewLint.ts"
+import { ReviewDocsAgainstCode, ReviewTagsMigrationsAndKeys, ReviewJsdocAgainstCode, smithersReviewPrompt } from "../src/index.ts"
 import * as Target from "@smthrs/targets/Target"
 
 /**
