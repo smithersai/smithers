@@ -20,6 +20,7 @@
  */
 import * as Input from "@smthrs/targets/Input"
 import { LlmLint } from "@smthrs/targets/LlmLint"
+import type { Engine } from "@smthrs/targets/LlmLint"
 import type * as Target from "@smthrs/targets/Target"
 
 /** The base revision a review diffs against when the caller names none. */
@@ -42,15 +43,38 @@ export const smithersReviewPrompt = "You are reviewing a diff in `smithers`, an 
  * Options accepted by every macro in this module.
  *
  * `cwd` is the workspace-relative package directory the default globs, and any
- * package-relative glob a caller passes, resolve against. It defaults to the
- * workspace root, so a package-level declaration passes its own directory, for
- * example `packages/smithers/flows/journal`.
+ * package-relative glob a caller passes, resolve against. It is required: every
+ * default glob is package-shaped, so a package-level declaration passes its own
+ * directory, for example `packages/smithers/flows/journal`, and a workspace-wide
+ * declaration passes `"."` beside its `//`-rooted globs.
+ *
+ * `engine` selects the CLI the review runs through and `model` is an id that
+ * engine accepts. Omitted, the review runs on `codex` with `gpt-5.6-luna`; a
+ * Codex review names another Codex tier such as `gpt-5.6-sol`. Any other engine
+ * has no default model, so a `claude` review must name a Claude id.
  *
  * @category models
  * @since 0.1.0
  */
-export interface Options {
-  readonly cwd?: string | undefined
+export type Options = BaseOptions & EngineOptions
+
+/** The engine and the model id it runs, paired so a model reaches its own CLI. */
+type EngineOptions =
+  | {
+    /** @default "codex" */
+    readonly engine?: "codex" | undefined
+    /** A Codex model id. @default "gpt-5.6-luna" */
+    readonly model?: string | undefined
+  }
+  | {
+    readonly engine: Exclude<Engine, "codex">
+    /** A model id the selected engine's CLI accepts. */
+    readonly model: string
+  }
+
+/** The options that do not depend on the engine. */
+interface BaseOptions {
+  readonly cwd: string
   /**
    * The changed paths this review covers. Patterns are package-relative unless
    * they carry the `//` workspace-root prefix. Each macro documents its own
@@ -68,8 +92,6 @@ export interface Options {
   readonly deps?: ReadonlyArray<Target.AnyTarget> | undefined
   /** @default "origin/main" */
   readonly base?: string | undefined
-  /** @default "gpt-5.6-luna" */
-  readonly model?: string | undefined
   readonly summary?: string | undefined
   /** @default false */
   readonly featured?: boolean | undefined
@@ -102,7 +124,7 @@ interface Rubric {
 
 /** Applies one rubric to one package's options. */
 const review = (options: Options, rubric: Rubric): ReviewLint => {
-  const cwd = options.cwd ?? "."
+  const cwd = options.cwd
   const include = (options.include ?? rubric.include).map((entry) => anchor(cwd, entry))
   const context = (options.context ?? rubric.context).map((entry) => anchor(cwd, entry))
   return LlmLint({
@@ -120,7 +142,7 @@ const review = (options: Options, rubric: Rubric): ReviewLint => {
     deps: options.deps ?? [],
     prompt: smithersReviewPrompt,
     rubric: rubric.rubric,
-    engine: "codex",
+    engine: options.engine ?? "codex",
     model: options.model ?? defaultModel,
     batchSize: rubric.batchSize,
     failOn: rubric.failOn
@@ -146,7 +168,7 @@ const review = (options: Options, rubric: Rubric): ReviewLint => {
  * @category macros
  * @since 0.1.0
  */
-export const ReviewTagsMigrationsAndKeys = (options: Options = {}): ReviewLint =>
+export const ReviewTagsMigrationsAndKeys = (options: Options): ReviewLint =>
   review(options, {
     summary:
       "A cheap Codex review of the diff against origin/main for identity strings, migrations, persisted schemas and durable keys.",
@@ -192,8 +214,8 @@ export const ReviewTagsMigrationsAndKeys = (options: Options = {}): ReviewLint =
  * @category macros
  * @since 0.1.0
  */
-export const ReviewDocsAgainstCode = (options: Options = {}): ReviewLint => {
-  const packageName = Input.resolvePath("", options.cwd ?? ".").replace(/\/$/, "").split("/").at(-1)!
+export const ReviewDocsAgainstCode = (options: Options): ReviewLint => {
+  const packageName = Input.resolvePath("", options.cwd).replace(/\/$/, "").split("/").at(-1)!
   return review(options, {
     summary: "A cheap Codex review of changed public APIs against package prose and matching site API references.",
     include: [Input.glob("src/**")],
@@ -237,7 +259,7 @@ export const ReviewDocsAgainstCode = (options: Options = {}): ReviewLint => {
  * @category macros
  * @since 0.1.0
  */
-export const ReviewJsdocAgainstCode = (options: Options = {}): ReviewLint =>
+export const ReviewJsdocAgainstCode = (options: Options): ReviewLint =>
   review(options, {
     summary: "A cheap Codex review of changed exports against their JSDoc.",
     include: [Input.glob("src/**/*.ts")],

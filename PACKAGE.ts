@@ -548,6 +548,7 @@ const ci = Smithers.GithubCiGen({
 // stricter review of its own declares one from the same macro in its own
 // PACKAGE.ts, the way the storage packages declare `reviewTagsMigrationsAndKeys`.
 const reviewDocsAgainstCode = ReviewDocsAgainstCode({
+  cwd: ".",
   featured: true,
   include: [
     Smithers.glob("//packages/*/src/**"),
@@ -573,6 +574,7 @@ const reviewDocsAgainstCode = ReviewDocsAgainstCode({
 })
 
 const reviewJsdocAgainstCode = ReviewJsdocAgainstCode({
+  cwd: ".",
   featured: true,
   include: [
     Smithers.glob("//packages/*/src/**/*.ts"),

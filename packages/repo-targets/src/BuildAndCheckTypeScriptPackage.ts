@@ -19,8 +19,8 @@ import { Vitest } from "@smthrs/targets/Vitest"
  * Options accepted by {@link BuildAndCheckTypeScriptPackage}.
  *
  * `cwd` is the workspace-relative package directory every emitted target's
- * tool runs in. It defaults to the workspace root, so a package-level
- * legacy declaration passes its own directory, for example `packages/smithers/flows/plan`.
+ * tool runs in. It is required because every default input is package-shaped,
+ * so a declaration passes its own directory, for example `packages/smithers/flows/plan`.
  *
  * @category models
  * @since 0.1.0
@@ -35,7 +35,7 @@ export interface Options {
   readonly packageManager?: PackageManager.PackageManager | undefined
   /** @default [] */
   readonly deps?: ReadonlyArray<Target.AnyTarget> | undefined
-  readonly cwd?: string | undefined
+  readonly cwd: string
   /**
    * The package's TypeScript sources. It feeds every target that reads them:
    * `lib`, `check`, `test`, `lint`, `fmt`, and `circular`. It does not name
@@ -157,7 +157,7 @@ export interface PackageTargets {
  * @since 0.1.0
  */
 export const BuildAndCheckTypeScriptPackage = (options: Options): PackageTargets => {
-  const cwd = options.cwd ?? "."
+  const cwd = options.cwd
   const deps = options.deps ?? []
   const sources = options.sources ?? Input.glob("src/**/*.ts")
   const tests = options.tests ?? Input.glob("test/**/*.test.ts")

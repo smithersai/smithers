@@ -1,7 +1,7 @@
 import { stat } from "node:fs/promises"
 import { fileURLToPath } from "node:url"
 import { maximumContextContentBytes, maximumContextFiles } from "@smthrs/targets/LlmLint"
-import { describe, expect, it } from "vitest"
+import { describe, expect, expectTypeOf, it } from "vitest"
 import * as Input from "@smthrs/targets/Input"
 import { ReviewDocsAgainstCode, ReviewTagsMigrationsAndKeys, ReviewJsdocAgainstCode, smithersReviewPrompt } from "../src/ReviewLint.ts"
 import * as Target from "@smthrs/targets/Target"
@@ -101,10 +101,22 @@ describe("ReviewTagsMigrationsAndKeys", () => {
     ])
   })
 
-  it("defaults to the workspace root, and is not featured unless a caller says so", () => {
-    expect(attrsOf(ReviewTagsMigrationsAndKeys()).include).toEqual([
-      { _tag: "Glob", pattern: "//src/**", exclude: [] }
-    ])
+  it("requires cwd, so no declaration falls back to an empty workspace-root //src/** review", () => {
+    expectTypeOf(() =>
+      // @ts-expect-error cwd is required: every default glob is package-shaped.
+      ReviewTagsMigrationsAndKeys({})
+    ).toBeFunction()
+    expectTypeOf(() =>
+      // @ts-expect-error cwd is required: every default glob is package-shaped.
+      ReviewDocsAgainstCode()
+    ).toBeFunction()
+    expectTypeOf(() =>
+      // @ts-expect-error cwd is required: every default glob is package-shaped.
+      ReviewJsdocAgainstCode({ featured: true })
+    ).toBeFunction()
+  })
+
+  it("is not featured unless a caller says so", () => {
     expect(Target.metadata(ReviewTagsMigrationsAndKeys({ cwd: "packages/smithers/flows/journal" })).featured).toBe(false)
     expect(Target.metadata(ReviewTagsMigrationsAndKeys({ cwd: "packages/smithers/flows/journal", featured: true })).featured)
       .toBe(true)
@@ -123,7 +135,7 @@ describe("ReviewDocsAgainstCode", () => {
   })
 
   it("omits site context at the workspace root", () => {
-    expect(attrsOf(ReviewDocsAgainstCode()).context).toEqual([
+    expect(attrsOf(ReviewDocsAgainstCode({ cwd: "." })).context).toEqual([
       Input.glob("//README.md"), Input.glob("//docs/*.md")
     ])
   })
@@ -207,5 +219,30 @@ describe("the macros take a caller's base revision, model tier and dependencies"
     expect(attrs.changes.base).toBe("origin/next")
     expect(attrs.model).toBe("gpt-5.6-sol")
     expect(Target.metadata(target).dependencies).toEqual([dependency])
+  })
+})
+
+describe("the macros pair the engine with the model id it runs", () => {
+  it("defaults to codex with the codex tier, matching the README's Ask Codex wording", () => {
+    const attrs = attrsOf(ReviewJsdocAgainstCode({ cwd: "packages/smithers/flows/journal" }))
+    expect(attrs.engine).toBe("codex")
+    expect(attrs.model).toBe("gpt-5.6-luna")
+  })
+
+  it("threads a claude engine and its model id through to the emitted attrs", () => {
+    const attrs = attrsOf(ReviewTagsMigrationsAndKeys({
+      cwd: "packages/smithers/flows/journal",
+      engine: "claude",
+      model: "claude-opus-5"
+    }))
+    expect(attrs.engine).toBe("claude")
+    expect(attrs.model).toBe("claude-opus-5")
+  })
+
+  it("refuses a non-codex engine without a model, so the codex default never reaches another CLI", () => {
+    expectTypeOf(() =>
+      // @ts-expect-error a claude review must name a Claude model id.
+      ReviewDocsAgainstCode({ cwd: "packages/smithers/flows/journal", engine: "claude" })
+    ).toBeFunction()
   })
 })

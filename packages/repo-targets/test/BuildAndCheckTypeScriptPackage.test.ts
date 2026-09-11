@@ -9,7 +9,7 @@ import type * as Typecheck from "@smthrs/targets/Typecheck"
 import type * as Vitest from "@smthrs/targets/Vitest"
 import { globSync } from "node:fs"
 import { resolve } from "node:path"
-import { describe, expect, it } from "vitest"
+import { describe, expect, expectTypeOf, it } from "vitest"
 import { Package as PluginPackage } from "../../smithers/agent/plugin/PACKAGE.ts"
 import { BuildAndCheckTypeScriptPackage } from "../src/BuildAndCheckTypeScriptPackage.ts"
 import { plannedArgv, plannedCalls } from "./plan.ts"
@@ -154,8 +154,15 @@ describe("BuildAndCheckTypeScriptPackage", () => {
     }
   })
 
-  it("roots omitted cwd at the workspace and explicitly disables a config when asked", () => {
-    const targets = BuildAndCheckTypeScriptPackage({ packageManager, vitestConfig: null })
+  it("requires cwd, since every default input is package-shaped", () => {
+    expectTypeOf(() =>
+      // @ts-expect-error cwd is required.
+      BuildAndCheckTypeScriptPackage({ packageManager })
+    ).toBeFunction()
+  })
+
+  it("roots an explicit '.' cwd at the workspace and explicitly disables a config when asked", () => {
+    const targets = BuildAndCheckTypeScriptPackage({ packageManager, cwd: ".", vitestConfig: null })
     expect(Filegroup.sources(Target.metadata(targets.docsFiles).attrs as Filegroup.Attrs)).toEqual([
       Input.glob("docs/**/*.md"),
       Input.file("README.md"),
