@@ -114,16 +114,21 @@ const defaultHalfLifeMs = 7 * 24 * 60 * 60 * 1000
 const maximumDimensions = 65_536
 const vectorPageSize = 64
 
-const readVector = (
-  bytes: Uint8Array,
-  dimensions: number
-): Effect.Effect<Float32Array, MemoryError.MemoryError> =>
-  !Number.isSafeInteger(dimensions) || dimensions < 1 || dimensions > maximumDimensions ||
-    bytes.byteLength !== dimensions * 4
+// A corrupt row fails the scan, so the failure names the row an operator has
+// to find and delete: namespace, record kind, record id, and model.
+const readVector = (row: SqlVectorRow): Effect.Effect<Float32Array, MemoryError.MemoryError> => {
+  const bytes = row.vector_bytes
+  const dimensions = row.dimensions
+  const path = [row.namespace_kind, row.namespace_id, row.record_kind, row.record_id, row.embedding_model]
+  const identity = `${row.namespace_kind}/${row.namespace_id} ${row.record_kind}/${row.record_id}` +
+    ` (model ${row.embedding_model})`
+  return !Number.isSafeInteger(dimensions) || dimensions < 1 || dimensions > maximumDimensions ||
+      bytes.byteLength !== dimensions * 4
     ? Effect.fail(
       new MemoryError.MemoryError({
         code: "store",
-        message: "stored memory vector has invalid dimensions or byte length"
+        message: `stored memory vector ${identity} has invalid dimensions or byte length`,
+        path
       })
     )
     : Effect.try({
@@ -133,11 +138,18 @@ const readVector = (
         for (let index = 0; index < dimensions; index++) vector[index] = view.getFloat32(index * 4, true)
         return vector
       },
-      catch: () => new MemoryError.MemoryError({ code: "store", message: "stored memory vector could not be decoded" })
+      catch: (cause) =>
+        new MemoryError.MemoryError({
+          code: "store",
+          message: `stored memory vector ${identity} could not be decoded`,
+          path,
+          cause
+        })
     })
+}
 
-const sqlError = (): MemoryError.MemoryError =>
-  new MemoryError.MemoryError({ code: "store", message: "memory vector projection failed" })
+const sqlError = (message: string) => (cause: unknown): MemoryError.MemoryError =>
+  new MemoryError.MemoryError({ code: "store", message, cause })
 
 const invalidArgument = (message: string, path: ReadonlyArray<string>): MemoryError.MemoryError =>
   new MemoryError.MemoryError({ code: "invalid_argument", message, path })
@@ -183,7 +195,7 @@ export const makeSqlVectorStore = (database: DatabaseService): VectorStore => {
         Stream.fromEffect(database.sql<{ readonly upper: number; readonly count: number }>`
           SELECT COALESCE(MAX(rowid), 0) AS upper, COUNT(*) AS count FROM memory_vectors
           WHERE namespace_kind = ${namespace.kind} AND namespace_id = ${namespace.id}
-            AND embedding_model = ${model}`.pipe(Effect.mapError(sqlError))).pipe(
+            AND embedding_model = ${model}`.pipe(Effect.mapError(sqlError("memory vector scan failed")))).pipe(
           Stream.flatMap((bounds) =>
             Stream.paginate(
               {
@@ -203,9 +215,9 @@ export const makeSqlVectorStore = (database: DatabaseService): VectorStore => {
           WHERE namespace_kind = ${namespace.kind} AND namespace_id = ${namespace.id}
             AND embedding_model = ${model} AND rowid <= ${bounds[0]!.upper} AND ${continuation}
           ORDER BY record_kind, record_id
-          LIMIT ${Math.min(vectorPageSize, remaining)}`.pipe(Effect.mapError(sqlError))
+          LIMIT ${Math.min(vectorPageSize, remaining)}`.pipe(Effect.mapError(sqlError("memory vector scan failed")))
                   const vectors = yield* Effect.forEach(rows, (row) =>
-                    readVector(row.vector_bytes, row.dimensions).pipe(
+                    readVector(row).pipe(
                       Effect.map((vector): Vector => ({
                         bank,
                         key: row.record_id,
@@ -265,7 +277,7 @@ export const makeSqlVectorStore = (database: DatabaseService): VectorStore => {
         vector_bytes = excluded.vector_bytes,
         updated_at_ms = excluded.updated_at_ms
     `
-        ).pipe(Effect.mapError(sqlError), Effect.asVoid)
+        ).pipe(Effect.mapError(sqlError("memory vector upsert failed")), Effect.asVoid)
       })
   }
 }

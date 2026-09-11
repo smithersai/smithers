@@ -591,8 +591,12 @@ describe("RecallSemantic", () => {
     )
 
     expect(failures.map((error) => [error.code, error.message])).toEqual([
-      ["store", "memory vector projection failed"],
-      ["store", "memory vector projection failed"]
+      ["store", "memory vector upsert failed"],
+      ["store", "memory vector scan failed"]
+    ])
+    expect(failures.map((error) => error.cause)).toEqual([
+      expect.objectContaining({ _tag: "@smthrs/database/DatabaseError" }),
+      expect.objectContaining({ _tag: "SqlError" })
     ])
   })
 
@@ -609,7 +613,11 @@ describe("RecallSemantic", () => {
         return yield* Effect.flip(collectVectors(vectors, ["flow-one"], "test"))
       }).pipe(Effect.provide(TestMemory.layerWithDatabase))
     )
-    expect(failure).toMatchObject({ code: "store", message: expect.stringContaining("invalid dimensions") })
+    expect(failure).toMatchObject({
+      code: "store",
+      message: "stored memory vector flow/one note/bad (model test) has invalid dimensions or byte length",
+      path: ["flow", "one", "note", "bad", "test"]
+    })
   })
 
   it("projects a decorated fact and note write after the authoritative commit", async () => {

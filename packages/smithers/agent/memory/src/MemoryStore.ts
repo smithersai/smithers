@@ -514,12 +514,13 @@ interface NoteRow {
   readonly created_at_ms: number
 }
 
+// An Error is kept whole so its SQL code, message, and nested cause survive:
+// DurableWriter classifies a nested write's retry by walking the cause chain
+// of the domain error a store wraps it in, and an operator reading the failure
+// needs the driver text. Only unstructured values are bounded.
 const causeSummary = (cause: unknown): unknown => {
   if (cause instanceof Error) {
-    return {
-      name: cause.name.slice(0, 128),
-      message: cause.message.slice(0, 1_024)
-    }
+    return cause
   }
   if (typeof cause === "string") {
     return cause.slice(0, 1_024)

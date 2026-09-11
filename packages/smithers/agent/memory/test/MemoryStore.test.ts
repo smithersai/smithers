@@ -2,6 +2,7 @@ import * as DurableWriter from "@smthrs/database/DurableWriter"
 import { Effect, Layer, Option } from "effect"
 import { TestClock } from "effect/testing"
 import * as SqlClient from "effect/unstable/sql/SqlClient"
+import * as SqlError from "effect/unstable/sql/SqlError"
 import { describe, expect, expectTypeOf, it } from "vitest"
 import { MemoryError } from "../src/MemoryError.ts"
 import * as MemoryStore from "../src/MemoryStore.ts"
@@ -18,6 +19,20 @@ const run = <A, E>(effect: Effect.Effect<A, E, MemoryStore.MemoryStore>) =>
 const runWithDatabase = <A, E>(
   effect: Effect.Effect<A, E, MemoryStore.MemoryStore | SqlClient.SqlClient>
 ) => Effect.runPromise(effect.pipe(Effect.provide(TestMemory.layerWithDatabase)))
+
+// Every message down a failure's cause chain, through SqlError reasons too.
+const causeMessages = (cause: unknown): ReadonlyArray<string> => {
+  const messages: Array<string> = []
+  const seen = new Set<unknown>()
+  let current = cause
+  while (typeof current === "object" && current !== null && !seen.has(current)) {
+    seen.add(current)
+    const record = current as { message?: unknown; cause?: unknown; reason?: unknown }
+    if (typeof record.message === "string") messages.push(record.message)
+    current = SqlError.isSqlError(current) ? current.reason.cause : (record.cause ?? record.reason)
+  }
+  return messages
+}
 
 describe("MemoryStore", () => {
   it("exposes only the plural tag-group input", () => {
@@ -992,6 +1007,75 @@ describe("MemoryStore", () => {
     expect(failure.cause).toBe("x".repeat(1_024))
   })
 
+  it("keeps an Error cause whole so its SQL code survives", async () => {
+    const failure = await Effect.runPromise(
+      Effect.gen(function*() {
+        const sql = yield* Effect.service(SqlClient.SqlClient)
+        const driverError = Object.assign(new Error("database is locked"), { code: "SQLITE_BUSY" })
+        const failingSql = new Proxy(sql, {
+          apply(target, thisArg, argumentsList) {
+            const statement = Array.isArray(argumentsList[0]) ? argumentsList[0].join(" ") : ""
+            return statement.includes("FROM memory_notes")
+              ? Effect.fail(driverError)
+              : Reflect.apply(target, thisArg, argumentsList)
+          }
+        })
+        const store = yield* MemoryStore.make.pipe(Effect.provideService(SqlClient.SqlClient, failingSql))
+        return { driverError, failure: yield* Effect.flip(store.listNotes({ namespace })) }
+      }).pipe(Effect.provide(TestMemory.layerWithDatabase))
+    )
+
+    expect(failure.failure.code).toBe("store")
+    expect(failure.failure.cause).toBe(failure.driverError)
+  })
+
+  // DurableWriter's contract: the outermost write classifies retry by walking
+  // the cause chain, even after a nested store wrapped the failure in a domain
+  // error. A memory write nested in a host transaction must replay on a
+  // transient busy failure exactly like a plain nested write does.
+  it("replays a host write that nests a memory write over one transient busy failure", async () => {
+    const result = await Effect.runPromise(
+      Effect.gen(function*() {
+        const sql = yield* Effect.service(SqlClient.SqlClient)
+        const real = yield* DurableWriter.DurableWriter
+        let attempts = 0
+        const busy = () =>
+          new SqlError.SqlError({
+            reason: new SqlError.LockTimeoutError({
+              cause: Object.assign(new Error("database is locked"), { code: "SQLITE_BUSY" })
+            })
+          })
+        const injected = DurableWriter.DurableWriter.of({
+          write: <A, E, R>(effect: Effect.Effect<A, E, R>) =>
+            real.write(Effect.suspend(() => {
+              attempts += 1
+              return attempts === 1 ? (Effect.fail(busy()) as unknown as Effect.Effect<A, E, R>) : effect
+            }))
+        })
+        const store = yield* MemoryStore.make.pipe(Effect.provideService(DurableWriter.DurableWriter, injected))
+
+        attempts = 0
+        const control = yield* Effect.exit(real.write(injected.write(sql`SELECT 1`)))
+        const controlAttempts = attempts
+
+        attempts = 0
+        const nested = yield* Effect.exit(
+          real.write(store.putFact({ namespace, key: "nested", value: "v", provenance: {} }))
+        )
+        const stored = yield* store.getFact({ namespace, key: "nested" })
+        return {
+          control: [control._tag, controlAttempts],
+          nested: [nested._tag, attempts],
+          stored: stored?.value
+        }
+      }).pipe(Effect.provide(TestMemory.layerWithDatabase))
+    )
+
+    expect(result.control).toEqual(["Success", 2])
+    expect(result.nested).toEqual(["Success", 2])
+    expect(result.stored).toBe("v")
+  })
+
   it("accepts equivalent thread metadata with a different key order", async () => {
     const result = await run(Effect.gen(function*() {
       const store = yield* MemoryStore.MemoryStore
@@ -1915,7 +1999,9 @@ describe("MemoryStore", () => {
     }))
 
     expect([failure.code, failure.message]).toEqual(["store", "could not list memory facts"])
-    expect(failure.cause).toBeDefined()
+    expect(causeMessages(failure.cause).some((message) => message.includes("no such table: memory_facts"))).toBe(
+      true
+    )
   })
 
   it("does not project vectors from authoritative writes by default", async () => {
