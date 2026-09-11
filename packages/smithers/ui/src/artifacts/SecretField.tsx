@@ -1,7 +1,8 @@
 /** @jsxImportSource react */
-import { type ComponentProps, useEffect, useRef, useState } from "react";
+import { type ComponentProps, useState } from "react";
 import { cn } from "../cn";
-import { type CopyFailureCode, copyToClipboard } from "../internal/copyToClipboard";
+import type { CopyFailureCode } from "../internal/copyToClipboard";
+import { useCopyFeedback } from "../internal/useCopyFeedback";
 import { useInjectUiCss } from "../styles";
 
 export type SecretFieldProps = Omit<ComponentProps<"span">, "children" | "onCopy"> & {
@@ -36,11 +37,7 @@ export function SecretField({
 }: SecretFieldProps) {
   useInjectUiCss();
   const [uncontrolledRevealed, setUncontrolledRevealed] = useState(defaultRevealed);
-  const [copied, setCopied] = useState(false);
-  const [copyFailed, setCopyFailed] = useState(false);
-  const copiedTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-  const copyInFlightRef = useRef(false);
-  const mountedRef = useRef(false);
+  const { copied, copyFailed, copy } = useCopyFeedback({ value, onCopy, onCopyError });
   const isControlled = controlledRevealed !== undefined;
   const revealed = isControlled ? controlledRevealed : uncontrolledRevealed;
   const hasClipboard = typeof navigator !== "undefined" && typeof navigator.clipboard?.writeText === "function";
@@ -48,42 +45,12 @@ export function SecretField({
   const context = label !== undefined ? ` ${label}` : "";
   const normalizedMaskLength = Math.min(64, Math.max(1, Math.trunc(maskLength) || 8));
 
-  useEffect(() => {
-    mountedRef.current = true;
-    return () => {
-      mountedRef.current = false;
-      if (copiedTimerRef.current !== undefined) clearTimeout(copiedTimerRef.current);
-    };
-  }, []);
-
   function toggle() {
     const next = !revealed;
     if (!isControlled) setUncontrolledRevealed(next);
     onRevealedChange?.(next);
   }
 
-  async function copy() {
-    if (copyInFlightRef.current) return;
-    copyInFlightRef.current = true;
-    const result = await copyToClipboard(value, onCopy);
-    copyInFlightRef.current = false;
-    if (!mountedRef.current) return;
-    if (!result.ok) {
-      if (copiedTimerRef.current !== undefined) clearTimeout(copiedTimerRef.current);
-      copiedTimerRef.current = undefined;
-      setCopied(false);
-      setCopyFailed(true);
-      onCopyError?.({ code: result.code, cause: result.cause });
-      return;
-    }
-    setCopyFailed(false);
-    setCopied(true);
-    if (copiedTimerRef.current !== undefined) clearTimeout(copiedTimerRef.current);
-    copiedTimerRef.current = setTimeout(() => {
-      copiedTimerRef.current = undefined;
-      setCopied(false);
-    }, 2_000);
-  }
 
   return (
     <span

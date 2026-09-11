@@ -213,3 +213,47 @@ for (const affordance of affordances) {
     });
   });
 }
+
+for (const affordance of affordances) {
+  test(`${affordance.name} clears Copied when a later copy fails`, async () => {
+    let fail = false;
+    const errors: CopyError[] = [];
+    await render(
+      affordance.element({
+        onCopy: () => {
+          if (fail) throw new Error("second copy");
+        },
+        onCopyError: (error) => errors.push(error),
+      }),
+    );
+    const button = container!.querySelector<HTMLButtonElement>(affordance.buttonSelector)!;
+    await act(async () => {
+      button.click();
+      await Promise.resolve();
+    });
+    expect(button.textContent).toBe("Copied");
+
+    fail = true;
+    await act(async () => {
+      button.click();
+      await Promise.resolve();
+    });
+    expect(button.textContent).toBe("Copy");
+    expect(container!.querySelector(affordance.rootSelector)!.getAttribute("data-copy-failed")).toBe("true");
+    expect(errors).toHaveLength(1);
+  });
+}
+
+test("CodeBlock resets Copied after copiedDurationMs", async () => {
+  await render(<CodeBlock code="x" onCopyCode={() => {}} copiedDurationMs={20} />);
+  const button = container!.querySelector<HTMLButtonElement>('[data-slot="code-block-copy"]')!;
+  await act(async () => {
+    button.click();
+    await Promise.resolve();
+  });
+  expect(button.textContent).toBe("Copied");
+  await act(async () => {
+    await new Promise((done) => setTimeout(done, 60));
+  });
+  expect(button.textContent).toBe("Copy");
+});
