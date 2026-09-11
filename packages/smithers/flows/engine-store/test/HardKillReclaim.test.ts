@@ -134,12 +134,15 @@ const repositoryRoot = fileURLToPath(new URL("../../../../../", import.meta.url)
 const processBudget = 120_000
 
 /** The child's first protocol line, or a failure naming what it did instead. */
+/** Keep only the last 4 KiB of child output in an error message. */
+const tail = (text: string): string => text.length > 4096 ? `...${text.slice(-4096)}` : text
+
 const firstJsonLine = (child: ChildProcessWithoutNullStreams): Promise<Record<string, unknown>> =>
   new Promise((resolve, reject) => {
     let stdout = ""
     let stderr = ""
     const timeout = setTimeout(() => {
-      reject(new Error(`child did not produce a JSON line\n${stderr}\n${stdout}`))
+      reject(new Error(`child did not produce a JSON line\n${tail(stderr)}\n${tail(stdout)}`))
     }, processBudget)
     child.stdout.setEncoding("utf8")
     child.stderr.setEncoding("utf8")
@@ -159,7 +162,7 @@ const firstJsonLine = (child: ChildProcessWithoutNullStreams): Promise<Record<st
     })
     child.once("exit", (code, signal) => {
       clearTimeout(timeout)
-      reject(new Error(`child exited before its marker with ${code ?? signal}\n${stderr}\n${stdout}`))
+      reject(new Error(`child exited before its marker with ${code ?? signal}\n${tail(stderr)}\n${tail(stdout)}`))
     })
   })
 
@@ -294,7 +297,11 @@ describe("hard-killed running runs are reclaimed (issue #53)", () => {
     const directory = await mkdtemp(join(tmpdir(), "lease-reclaim-process-"))
     const filename = join(directory, "runs.db")
     const runId = "lease-reclaim-after-sigkill"
-    const child = spawn(process.execPath, [fixture, filename, runId], { cwd: repositoryRoot })
+    const child = spawn(process.execPath, [fixture, filename, runId], {
+      cwd: repositoryRoot,
+      // The fixture reads only argv; never hand it the parent's credentials.
+      env: { PATH: process.env.PATH, TMPDIR: process.env.TMPDIR, LANG: "C.UTF-8" }
+    })
     try {
       const marker = await firstJsonLine(child)
       expect(marker.status).toBe("running")

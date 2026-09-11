@@ -4,7 +4,7 @@ import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { fileURLToPath } from "node:url"
-import { describe, expect, it } from "vitest"
+import { afterEach, describe, expect, it } from "vitest"
 
 const fixture = fileURLToPath(new URL("./fixtures/durable-wait-child.ts", import.meta.url))
 const repositoryRoot = fileURLToPath(new URL("../../../../../", import.meta.url))
@@ -34,46 +34,88 @@ const lastJsonLine = (stdout: string): Record<string, unknown> => {
   return last
 }
 
+/**
+ * The children need only argv and a SQLite path, so they get this allowlist
+ * instead of the parent's environment and its exported credentials.
+ */
+const childEnv = { PATH: process.env.PATH, TMPDIR: process.env.TMPDIR, LANG: "C.UTF-8" }
+
+/** Keep only the last 4 KiB of child output in an error message. */
+const outputTailBytes = 4096
+const tail = (text: string): string =>
+  text.length > outputTailBytes ? `...${text.slice(-outputTailBytes)}` : text
+
+/** Every child a case starts; `afterEach` kills and awaits any still alive. */
+const liveChildren = new Set<ChildProcessWithoutNullStreams>()
+
+const spawnChild = (args: ReadonlyArray<string>): ChildProcessWithoutNullStreams => {
+  const child = spawn(process.execPath, [fixture, ...args], { cwd: repositoryRoot, env: childEnv })
+  liveChildren.add(child)
+  child.once("close", () => liveChildren.delete(child))
+  return child
+}
+
 const runChild = (
   mode: string,
   filename: string,
   executionId: string,
-  value?: string
+  value?: string,
+  options: {
+    readonly deadlineMs?: number
+    readonly onSpawn?: (child: ChildProcessWithoutNullStreams) => void
+  } = {}
 ): Promise<ChildResult> =>
   new Promise((resolve, reject) => {
-    const child = spawn(
-      process.execPath,
-      [fixture, mode, filename, executionId, ...(value === undefined ? [] : [value])],
-      { cwd: repositoryRoot }
-    )
+    const child = spawnChild([mode, filename, executionId, ...(value === undefined ? [] : [value])])
+    options.onSpawn?.(child)
     let stdout = ""
     let stderr = ""
+    let expired = false
+    const onStdout = (chunk: string) => {
+      stdout += chunk
+    }
+    const onStderr = (chunk: string) => {
+      stderr += chunk
+    }
+    const settle = (error: Error | undefined) => {
+      clearTimeout(deadline)
+      child.stdout.off("data", onStdout)
+      child.stderr.off("data", onStderr)
+      child.off("error", onError)
+      child.off("close", onClose)
+      if (error === undefined) resolve({ stdout, stderr })
+      else reject(error)
+    }
+    const onError = (cause: Error) => {
+      child.kill("SIGKILL")
+      settle(cause)
+    }
+    const onClose = (code: number | null, signal: NodeJS.Signals | null) => {
+      if (expired) {
+        settle(new Error(`child ${mode} missed its ${options.deadlineMs ?? restartBudget} ms deadline\n${tail(stderr)}\n${tail(stdout)}`))
+      } else if (code === 0) {
+        settle(undefined)
+      } else {
+        settle(new Error(`child ${mode} exited with ${code ?? signal}\n${tail(stderr)}\n${tail(stdout)}`))
+      }
+    }
+    const deadline = setTimeout(() => {
+      expired = true
+      child.kill("SIGKILL")
+    }, options.deadlineMs ?? restartBudget)
     child.stdout.setEncoding("utf8")
     child.stderr.setEncoding("utf8")
-    child.stdout.on("data", (chunk: string) => {
-      stdout += chunk
-    })
-    child.stderr.on("data", (chunk: string) => {
-      stderr += chunk
-    })
-    child.once("error", reject)
-    child.once("exit", (code, signal) => {
-      if (code === 0) {
-        resolve({ stdout, stderr })
-      } else {
-        reject(new Error(`child ${mode} exited with ${code ?? signal}\n${stderr}\n${stdout}`))
-      }
-    })
+    child.stdout.on("data", onStdout)
+    child.stderr.on("data", onStderr)
+    child.once("error", onError)
+    child.once("close", onClose)
   })
 
 const startChild = (
   mode: string,
   filename: string,
   executionId: string
-): ChildProcessWithoutNullStreams =>
-  spawn(process.execPath, [fixture, mode, filename, executionId], {
-    cwd: repositoryRoot
-  })
+): ChildProcessWithoutNullStreams => spawnChild([mode, filename, executionId])
 
 /**
  * Wall-clock budget for every case here, and for the in-test guard below.
@@ -94,7 +136,7 @@ const firstJsonLine = (
     let stdout = ""
     let stderr = ""
     const timeout = setTimeout(() => {
-      reject(new Error(`child did not produce a JSON line\n${stderr}\n${stdout}`))
+      reject(new Error(`child did not produce a JSON line\n${tail(stderr)}\n${tail(stdout)}`))
     }, restartBudget)
     child.stdout.setEncoding("utf8")
     child.stderr.setEncoding("utf8")
@@ -114,7 +156,7 @@ const firstJsonLine = (
     })
     child.once("exit", (code, signal) => {
       clearTimeout(timeout)
-      reject(new Error(`child exited before its marker with ${code ?? signal}\n${stderr}\n${stdout}`))
+      reject(new Error(`child exited before its marker with ${code ?? signal}\n${tail(stderr)}\n${tail(stdout)}`))
     })
   })
 
@@ -122,6 +164,16 @@ const killHard = async (child: ChildProcessWithoutNullStreams): Promise<void> =>
   child.kill("SIGKILL")
   await once(child, "exit")
 }
+
+afterEach(async () => {
+  await Promise.all(
+    [...liveChildren].map(async (child) => {
+      const closed = once(child, "close")
+      child.kill("SIGKILL")
+      await closed
+    })
+  )
+})
 
 describe("durable waiting across process loss", () => {
   it("picks up a pending deferred wait after a hard process kill", async () => {
@@ -205,6 +257,28 @@ describe("durable waiting across process loss", () => {
         "Existing"
       ])
       expect(outcomes[0]?.row).toEqual(outcomes[1]?.row)
+    } finally {
+      await rm(directory, { recursive: true, force: true })
+    }
+  }, restartBudget)
+
+  it("kills a child that misses its deadline and rejects with its output", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "flows-durable-deadline-"))
+    const filename = join(directory, "deadline.sqlite")
+    let pid: number | undefined
+    try {
+      // `wait-start` suspends and then waits forever, so it cannot finish.
+      await expect(
+        runChild("wait-start", filename, "never-finishes", undefined, {
+          deadlineMs: 2_000,
+          onSpawn: (child) => {
+            pid = child.pid
+          }
+        })
+      ).rejects.toThrow(/missed its 2000 ms deadline/)
+      expect(pid).toBeTypeOf("number")
+      expect(() => process.kill(pid as number, 0)).toThrow(expect.objectContaining({ code: "ESRCH" }))
+      expect(liveChildren.size).toBe(0)
     } finally {
       await rm(directory, { recursive: true, force: true })
     }
