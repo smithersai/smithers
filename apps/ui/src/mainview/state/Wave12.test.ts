@@ -327,6 +327,39 @@ describe("wave 12 §1 — the model may not narrate run state", () => {
     expect(transcript(store)).toContain("Approvals go to you, never to me.")
   })
 
+  test("a slash-prefixed launch arms the gate exactly like the bare spelling", async () => {
+    // ui-state-store/api-design/1: the tool schema accepts the catalog's
+    // "/flow.create"; execution launched from it while the classifier read
+    // the raw name and left the claim gate unarmed, so the lie rendered.
+    const store = await webStore()
+    const double = relay()
+    const { agent } = scriptedToolAgent([
+      () => [
+        {
+          type: "tool_call" as const,
+          call_id: "call_1",
+          name: "commands",
+          arguments: JSON.stringify({ action: "execute", name: " /flow.create ", args: "summarize my issues" })
+        },
+        { type: "done" as const, reason: "tool_call" as const }
+      ],
+      () => [
+        { type: "delta" as const, kind: "text" as const, text: WAVE11_LIE },
+        { type: "done" as const, reason: "stop" as const }
+      ]
+    ])
+    const controller = createAppController(store, unavailableRepositories, agent, double.services)
+    await signIn(store)
+
+    controller.send("make me a workflow")
+    await settle(30)
+    const rendered = transcript(store)
+    expect(rendered).not.toContain("has been created")
+    expect(rendered).toContain("I started a create-workflow run — the run card shows its real progress.")
+    expect(rendered).toContain(`Smithers started a create-workflow run on ${REPO}`)
+    expect(runCard(store)).toBeDefined()
+  })
+
   test("a preamble before the tool call is covered too — half a suppressed claim is still a claim", async () => {
     const store = await webStore()
     const double = relay()
@@ -467,6 +500,9 @@ describe("wave 12 §1 — the model may not narrate run state", () => {
     )
     expect(
       runLaunchCommandOf("commands", JSON.stringify({ action: "execute", name: "flow.create", args: "x" }))
+    ).toBe("flow.create")
+    expect(
+      runLaunchCommandOf("commands", JSON.stringify({ action: "execute", name: "/flow.create", args: "x" }))
     ).toBe("flow.create")
     expect(runLaunchCommandOf("commands", JSON.stringify({ action: "execute", name: "world" }))).toBeUndefined()
     expect(runLaunchCommandOf("commands", "not json")).toBeUndefined()

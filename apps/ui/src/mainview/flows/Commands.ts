@@ -12,6 +12,7 @@
  * exists: a parallel projection is exactly the drift the one-door law forbids.
  */
 import { Authorize } from "@smthrs/chain"
+import { canonicalCommandName } from "./CommandName"
 import { FlowCancellation } from "./FlowCancellation"
 import type { AgentInvocation } from "./AgentInvocation"
 import { createChainPolicy } from "../chain/Policy"
@@ -589,7 +590,7 @@ export const createCommandRegistry = (actions: CommandActions, agentActions: Com
     runAsAgent: (name, args) => runAs("agent", name, args),
     executeForAgent: (call) => executeAgentToolCall(registry, call),
     runForAgent: async (name, args, invocation, signal) => {
-      const clean = name.trim().replace(/^\/+/, "")
+      const clean = canonicalCommandName(name)
       const target = find(clean)
       if (target !== undefined && !modelInvocable(target)) {
         return { status: "failed", error: userOnlyError(clean, target.metadata.userOnlyReason) }
@@ -600,7 +601,7 @@ export const createCommandRegistry = (actions: CommandActions, agentActions: Com
       })
     },
     submit: async ({ name, payload, actor, display, invocation }) => {
-      const clean = name.trim().replace(/^\/+/, "")
+      const clean = canonicalCommandName(name)
       if (actor === "user") return runAs("user", clean, display, new Set(), invocation, payload)
       const target = find(clean)
       if (target !== undefined && !modelInvocable(target)) {

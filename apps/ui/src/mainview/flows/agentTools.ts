@@ -10,6 +10,7 @@
  * string below is what the continuation turn posts back to the model.
  */
 import type { AgentToolSpec } from "@smthrs/rpc/NativeAgent"
+import { canonicalCommandName } from "./CommandName"
 import type { CommandRegistry } from "./Commands"
 import type { CatalogItem, FlowEntry } from "./registry"
 import { itemOf, visible } from "./registry"
@@ -164,7 +165,7 @@ export const executeAgentToolCall = async (
    * bare. (Live on canary, execute {"name":"/browser"} died as
    * unknown-command and the turn degraded into asking permission.)
    */
-  const name = input.name.trim().replace(/^\/+/, "")
+  const name = canonicalCommandName(input.name)
   if (name === "") {
     return "failed: the execute action requires a command name"
   }

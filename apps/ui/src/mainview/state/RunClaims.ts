@@ -18,6 +18,7 @@
  * failure. Nothing here touches the store or the DOM, so the rule is unit-pinned.
  */
 
+import { canonicalCommandName } from "../flows/CommandName"
 import { ASK_HONEST_LINES, type ImpossibleAskClass } from "./Instructions"
 
 /** The commands that launch a run on the user's workspace. */
@@ -26,7 +27,9 @@ export const RUN_LAUNCH_COMMANDS: ReadonlyArray<string> = ["flow.create", "flow.
 /**
  * The command a model tool call would launch a run with, if any. The model
  * reaches the app through the one `commands` tool, so the launch is named
- * inside its JSON arguments; a direct command name is accepted too.
+ * inside its JSON arguments, in any spelling the execution boundary accepts
+ * (leading slash, surrounding whitespace); a direct command name is accepted
+ * too.
  */
 export const runLaunchCommandOf = (toolName: string, toolArguments: string): string | undefined => {
   if (RUN_LAUNCH_COMMANDS.includes(toolName)) return toolName
@@ -39,7 +42,10 @@ export const runLaunchCommandOf = (toolName: string, toolArguments: string): str
   }
   if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) return undefined
   if (!("action" in parsed) || !("name" in parsed) || parsed.action !== "execute" || typeof parsed.name !== "string") return undefined
-  return RUN_LAUNCH_COMMANDS.includes(parsed.name) ? parsed.name : undefined
+  // The same spelling execution matches on (agentTools.ts): a slash-prefixed
+  // or padded name launches the run, so it must arm the claim gate too.
+  const name = canonicalCommandName(parsed.name)
+  return RUN_LAUNCH_COMMANDS.includes(name) ? name : undefined
 }
 
 /**
