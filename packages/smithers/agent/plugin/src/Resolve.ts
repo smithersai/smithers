@@ -6,17 +6,18 @@
  *
  * @since 1.0.0-rc.0
  */
-import { Action } from "@smthrs/flow"
+import type { Action } from "@smthrs/flow"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
-import * as Schema from "effect/Schema"
 import type { FlowsConfig } from "./Config.ts"
 import * as Config from "./Config.ts"
 import type { HookCatalog, HookKind, HookObject } from "./Hooks.ts"
 import { engineHooks, handlerOf, orderOf } from "./Hooks.ts"
 import type { FlowsHooks } from "./index.ts"
 import * as Boundary from "./internal/Boundary.ts"
+import { mergePluginLayers } from "./internal/mergePluginLayers.ts"
 import * as ImmutableMap from "./internal/ReadonlyMap.ts"
+import { snapshotCacheEnvironment } from "./internal/snapshotCacheEnvironment.ts"
 import type { Apply, FlowsPlugin, PluginInput } from "./Plugin.ts"
 import { PluginError, type PluginErrorCode } from "./PluginError.ts"
 
@@ -382,59 +383,6 @@ const included = <H>(
 
 const rank = (enforce: "pre" | "post" | undefined): number => (enforce === "pre" ? 0 : enforce === "post" ? 2 : 1)
 
-const escapePluginIdentityPart = (value: string): string =>
-  // Percent must be escaped first so literal escape-looking text remains distinct from the `@` escape added next.
-  value.replaceAll("%", "%25").replaceAll("@", "%40")
-
-const snapshotCacheEnvironment = <H>(
-  input: unknown,
-  plugins: ReadonlyArray<FlowsPlugin<H>>
-): Effect.Effect<Action.CacheEnvironment | undefined, PluginError> => {
-  if (input === undefined) return Effect.succeed(undefined)
-  const pluginIdentities: Array<string> = []
-  for (const plugin of plugins) {
-    if (plugin.version === undefined) {
-      return Effect.fail(failure(
-        "cache_environment_invalid",
-        `cache environment requires a version for plugin "${plugin.name}"`,
-        "$.version",
-        { plugin: plugin.name }
-      ))
-    }
-    pluginIdentities.push(`${escapePluginIdentityPart(plugin.name)}@${escapePluginIdentityPart(plugin.version)}`)
-  }
-  const admitted = Boundary.record(input)
-  if (!admitted.ok) {
-    return Effect.fail(failure(
-      "cache_environment_invalid",
-      `cache environment ${admitted.complaint}`,
-      `$options.cacheEnvironment${admitted.path.slice(1)}`
-    ))
-  }
-  return Schema.decodeUnknownEffect(Action.CacheEnvironment)(admitted.value).pipe(
-    Effect.mapError(() =>
-      failure(
-        "cache_environment_invalid",
-        "cache environment does not match the complete cache identity schema",
-        "$options.cacheEnvironment"
-      )
-    ),
-    Effect.map((environment) => {
-      const capabilities: Record<string, ReadonlyArray<string>> = {}
-      for (const name of Object.keys(environment.capabilities)) {
-        Object.defineProperty(capabilities, name, {
-          value: Object.freeze([...environment.capabilities[name]!]),
-          enumerable: true
-        })
-      }
-      return Object.freeze({
-        layers: Object.freeze([...pluginIdentities, ...environment.layers]),
-        capabilities: Object.freeze(capabilities)
-      })
-    })
-  )
-}
-
 /**
  * Resolves a plugin preset into an immutable, resource-bounded catalog.
  *
@@ -582,32 +530,5 @@ export const resolve = <H = FlowsHooks>(
  * @category combinators
  * @since 1.0.0-rc.0
  */
-export const layer = <H>(resolved: Resolved<H>): Layer.Layer<any, PluginError, any> => {
-  const layers = resolved.plugins.flatMap((plugin) =>
-    plugin.layer
-      ? [
-        Layer.catchCause(plugin.layer, (cause) =>
-          Layer.effectDiscard(
-            Effect.fail(
-              new PluginError({
-                code: "layer_failed",
-                message: `plugin "${plugin.name}" failed to build its layer`,
-                plugin: plugin.name,
-                cause
-              })
-            )
-          )) as Layer.Layer<any, PluginError, any>
-      ]
-      : []
-  )
-  const plugins = (layers.length === 0
-    ? Layer.empty
-    : layers.reduce((accumulated, next) => Layer.provideMerge(next, accumulated))) as Layer.Layer<any, PluginError, any>
-  if (resolved.cacheEnvironment === undefined) return plugins
-  const environment = Action.layerCacheEnvironment(resolved.cacheEnvironment) as unknown as Layer.Layer<
-    any,
-    PluginError,
-    any
-  >
-  return Layer.provideMerge(plugins, environment)
-}
+export const layer = <H>(resolved: Resolved<H>): Layer.Layer<any, PluginError, any> =>
+  mergePluginLayers(resolved.plugins, resolved.cacheEnvironment)
