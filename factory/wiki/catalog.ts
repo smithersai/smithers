@@ -35,7 +35,7 @@ export const pages: readonly PageSpec[] = [
     "packages/smithers/flows/database/src/node/NodeDatabase.ts", "packages/smithers/flows/database/src/bun/BunDatabase.ts",
     ["packages/smithers/flows/database/src/internal/SqliteOpen.ts", [65, 123], [132, 208], [291, 343]],
     ["packages/smithers/flows/database/src/DurableWriter.ts", [64, 106], [208, 310]],
-    ["packages/smithers/flows/platform-node/src/AtomicFileSystem.ts", [1420, 1475], [1834, 1872], [2026, 2096]],
+    ["packages/smithers/flows/platform-node/src/AtomicFileSystem.ts", [282, 365]], ["packages/smithers/flows/platform-node/src/internal/AtomicFileSystemTransport.ts", [29, 81], [100, 138]],
     "packages/smithers/flows/platform-node/test/AtomicFileSystemRuntimeParity.test.ts", "packages/smithers/flows/platform-node/test/fixtures/atomic-helper-identity.ts"
   ]),
   page({ id: "storage", title: "Journal and durable stores", purpose: "Use existing persisted execution facts instead of another coding ledger.", kind: "current", document: "factory/wiki/pages/storage.md", related: ["runtime", "flows", "wiki-generation"] }, [

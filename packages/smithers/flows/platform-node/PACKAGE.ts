@@ -8,6 +8,9 @@ import { Smithers } from "@smthrs/targets"
 
 const { check, circular, docs, docsFiles, fmt, lib, lint, test } = BuildAndCheckTypeScriptPackage({
   deps: [],
+  // The helper's Python source and its generator: the parity test reads both,
+  // so an edit to either alone has to rerun it.
+  testData: ["src/internal/AtomicFileSystemHelper.py", "scripts/generate-atomic-helper.mjs"],
   cwd: "packages/smithers/flows/platform-node"
 })
 

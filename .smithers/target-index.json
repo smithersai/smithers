@@ -10145,6 +10145,10 @@
       },
       {
         "kind": "file",
+        "path": "packages/smithers/flows/platform-node/src/internal/AtomicFileSystemTransport.ts"
+      },
+      {
+        "kind": "file",
         "path": "packages/smithers/flows/platform-node/test/AtomicFileSystemRuntimeParity.test.ts"
       },
       {
@@ -10804,6 +10808,10 @@
       },
       {
         "kind": "file",
+        "path": "packages/smithers/flows/platform-node/src/internal/AtomicFileSystemTransport.ts"
+      },
+      {
+        "kind": "file",
         "path": "packages/smithers/flows/platform-node/test/AtomicFileSystemRuntimeParity.test.ts"
       },
       {
@@ -11458,6 +11466,10 @@
       {
         "kind": "file",
         "path": "packages/smithers/flows/platform-node/src/AtomicFileSystem.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/flows/platform-node/src/internal/AtomicFileSystemTransport.ts"
       },
       {
         "kind": "file",
@@ -23249,6 +23261,16 @@
       {
         "kind": "glob",
         "pattern": "packages/smithers/flows/platform-node/src/**/*.ts",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "packages/smithers/flows/platform-node/src/internal/AtomicFileSystemHelper.py",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "packages/smithers/flows/platform-node/scripts/generate-atomic-helper.mjs",
         "exclude": []
       },
       {

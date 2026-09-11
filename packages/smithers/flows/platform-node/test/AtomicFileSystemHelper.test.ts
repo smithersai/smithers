@@ -108,6 +108,23 @@ const missing = (path: string) => readFile(path, "utf8").then(() => true, () => 
 const described = (failure: PlatformError.PlatformError) =>
   String((failure.reason as { readonly description?: string }).description)
 
+describe("atomic helper source", () => {
+  const packageRoot = join(import.meta.dirname, "..")
+
+  // The Python file is the one source; the TypeScript module that ships it is
+  // generated. Compared as bytes, so an edit to either side alone fails here.
+  it("runs the committed Python file byte for byte", async () => {
+    const python = await readFile(join(packageRoot, "src/internal/AtomicFileSystemHelper.py"), "utf8")
+    expect(AtomicFileSystem.program).toBe(`\n${python}`)
+  })
+
+  it("keeps the embedded module equal to its generator's output", async () => {
+    await expect(
+      promisify(execFile)(process.execPath, [join(packageRoot, "scripts/generate-atomic-helper.mjs"), "--check"])
+    ).resolves.toMatchObject({ stderr: "" })
+  })
+})
+
 describe("atomic helper toolchain identity", () => {
   it.live("follows real interpreter symlinks while refusing workspace targets and link cycles", () =>
     Effect.gen(function*() {

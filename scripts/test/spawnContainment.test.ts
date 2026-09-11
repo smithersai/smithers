@@ -65,7 +65,7 @@ describe("child-process containment conformance", () => {
       + "which is what `NodeHost.layerContained` does."
     ],
     [
-      "smithers/flows/platform-node/src/AtomicFileSystem.ts",
+      "smithers/flows/platform-node/src/internal/AtomicFileSystemTransport.ts",
       "The atomic-operation helper. It CANNOT route through the spawner: `NodeHost` builds "
       + "`NodeChildProcessSpawner.layer` over `AtomicFileSystem.layer`, so routing it would "
       + "close a layer cycle. Bounded instead: `complete()` calls `cleanup()`, which SIGKILLs, "
