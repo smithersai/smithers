@@ -262,6 +262,9 @@ const ci = Smithers.GithubCiGen({
         { name: "Examples", verb: Smithers.Verb.Ci, pattern: "//examples/..." },
         { name: "Workspace targets", verb: Smithers.Verb.Ci, pattern: "//packages/...", parallelism: 2 },
         { name: "Script gates", verb: Smithers.Verb.Test, pattern: "//scripts/..." },
+        // The registry and migrate-detector checks over flows/. `//flows/...`
+        // would also select the 45-minute codingNative/codingBundle gates.
+        { name: "Repository flows", verb: Smithers.Verb.Test, pattern: "//flows:pack" },
         { name: "Public export JSDoc", verb: Smithers.Verb.Lint, pattern: "//:jsdocTree" },
         { name: "Script lint", verb: Smithers.Verb.Lint, pattern: "//scripts:lint" },
         { name: "JSDoc rule harness", verb: Smithers.Verb.Test, pattern: "//:jsdocRules" },

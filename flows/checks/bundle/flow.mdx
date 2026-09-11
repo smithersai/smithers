@@ -1,6 +1,6 @@
 ---
 description: Run the existing //flows:codingBundle acceptance target.
 flows: [coding/CommandCheck]
-capabilities: ["*"]
+capabilities: ["fs:read:**", "proc:spawn:smithers-build test *"]
 ---
 {"argv":["smithers-build","test","//flows:codingBundle"],"cwd":".","timeoutMs":2700000}

@@ -39,10 +39,17 @@ const run = (effect) => Effect.runPromise(effect.pipe(Effect.provide(platform)))
 
 /**
  * The prompt bodies under `flows/`, by their path-derived flow name: the ten
- * authoring bodies the migration composes, and the three repository flows
- * (`lint`, `release-notes`, `review`) the smithers.sh tape runs.
+ * authoring bodies the migration composes, the repository flows the
+ * smithers.sh tape runs, and the `checks/*` bodies that pin a command for
+ * `coding/CommandCheck`.
  */
 const EXPECTED_FLOWS = [
+  "checks/bundle",
+  "checks/bundle-bun",
+  "checks/native",
+  "checks/native-bun",
+  "checks/policy",
+  "checks/runtime",
   "create-flow/clarify",
   "create-flow/design",
   "create-flow/document",
@@ -61,6 +68,23 @@ const EXPECTED_FLOWS = [
 ];
 
 const FIXTURE = "migrate-smithers-v1/test/fixtures/smithers-0x-hello";
+
+/** The warning the registry attaches to every body that delegates to a flow. */
+const DELEGATED = "unprojectable_authority: Delegated flow authority cannot be projected statically; the flow receives every capability";
+
+/** Whether a body's frontmatter names `flows:` it delegates to. */
+const delegates = (text) => /^---\n[\s\S]*?^flows:/m.test(text);
+
+/**
+ * The capabilities a body declares. The registry replaces a delegating body's
+ * list with the conservative wildcard, so read that list from its frontmatter.
+ */
+const declaredCapabilities = (text, descriptor) => {
+  if (!delegates(text)) return descriptor.capabilities;
+  const line = /^capabilities: (\[.*\])$/m.exec(text);
+  assert.ok(line, "a delegating body declares its capabilities as a JSON array");
+  return JSON.parse(line[1]);
+};
 
 /** Every `flow.mdx` under `flows/`, as repository-relative POSIX paths. */
 function markdownFlows(directory = flowsRoot) {
@@ -104,7 +128,7 @@ describe("the staged prompt bodies", () => {
 
       assert.deepEqual(
         result.warnings.map((warning) => `${warning.code}: ${warning.message}`),
-        [],
+        delegates(text) ? [DELEGATED] : [],
       );
       assert.ok(Option.isSome(result.descriptor), `${name} produced no descriptor`);
 
@@ -157,15 +181,16 @@ describe("the capabilities the staged prompt bodies declare", () => {
     const name = relative(flowsRoot, dirname(file)).split("\\").join("/");
 
     it(`${name} declares capabilities the permission kernel can parse`, () => {
-      const declared = MarkdownFlow.fromMarkdown({
-        text: readFileSync(file, "utf8"),
+      const text = readFileSync(file, "utf8");
+      const declared = declaredCapabilities(text, MarkdownFlow.fromMarkdown({
+        text,
         path: relative(repoRoot, file).split("\\").join("/"),
         baseDirectory: dirname(file),
         naming: "path",
         name: Option.some(name),
         dirBasename: name.split("/").pop(),
         provenance: { source: "project", root: flowsRoot },
-      }).descriptor.value.capabilities;
+      }).descriptor.value);
 
       for (const literal of declared) {
         // The registry stores whatever string the frontmatter carries, so a
@@ -183,15 +208,16 @@ describe("the capabilities the staged prompt bodies declare", () => {
     });
 
     it(`${name} grants a real command line where it asks to spawn one`, () => {
-      const declared = MarkdownFlow.fromMarkdown({
-        text: readFileSync(file, "utf8"),
+      const text = readFileSync(file, "utf8");
+      const declared = declaredCapabilities(text, MarkdownFlow.fromMarkdown({
+        text,
         path: relative(repoRoot, file).split("\\").join("/"),
         baseDirectory: dirname(file),
         naming: "path",
         name: Option.some(name),
         dirBasename: name.split("/").pop(),
         provenance: { source: "project", root: flowsRoot },
-      }).descriptor.value.capabilities;
+      }).descriptor.value);
 
       const spawns = declared.filter((literal) => literal.startsWith("proc:spawn"));
       if (spawns.length === 0) return;
@@ -504,11 +530,17 @@ describe("discovery over the project flows directory", () => {
       }),
     );
 
+    const modules = ["checks/wiki", "coding", "coding/implementation", "coding/request", "coding/vibe", "release", "release-content", "wiki"];
+    const [code, message] = DELEGATED.split(": ");
     assert.deepEqual(
       scan.warnings.map((warning) => `${warning.code} at ${relative(flowsRoot, warning.path).split("\\").join("/")}: ${warning.message}`).sort(),
-      ["release-content", "release"].map((name) => `unsupported_module_metadata at ${name}/flow.ts: Flow authority cannot be projected statically; using the conservative wildcard`).sort(),
+      [
+        ...EXPECTED_FLOWS.filter((name) => name.startsWith("checks/")).map((name) => `${code} at ${name}/flow.mdx: ${message}`),
+        ...modules.map((name) => `unsupported_module_metadata at ${name}/flow.ts: Flow authority cannot be projected statically; using the conservative wildcard`),
+        ...["checks/wiki", "wiki"].map((name) => `unsupported_module_metadata at ${name}/flow.ts: Effect tier sealed under-classifies declared authority; using irreversible`),
+      ].sort(),
     );
-    assert.deepEqual([...scan.entries].map((entry) => entry.name).sort(), [...EXPECTED_FLOWS, "release", "release-content"].sort());
+    assert.deepEqual([...scan.entries].map((entry) => entry.name).sort(), [...EXPECTED_FLOWS, ...modules].sort());
   });
 
   it("finds no flow inside the 0.x fixture, which is data and not a flow", async () => {
