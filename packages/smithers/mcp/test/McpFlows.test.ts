@@ -363,4 +363,28 @@ describe("McpFlows.mcp", () => {
     expect(McpFlows.Result).toBeDefined()
     expect(McpFlows.effects).toBeDefined()
   })
+
+  it("declares the conservative effect envelope on the export and every projected flow", async () => {
+    const envelope = {
+      reads: ["**"],
+      writes: ["**"],
+      mode: "expected",
+      onConflict: "serialize",
+      tier: "irreversible"
+    }
+    expect(McpFlows.effects).toEqual(envelope)
+
+    const bindings = await execute(McpFlows.mcp(projectionClient).bindings())
+    expect(bindings.length).toBeGreaterThan(0)
+    for (const binding of bindings) expect(binding.descriptor.effects).toEqual(envelope)
+  })
+
+  it("keeps the documented capability lists equal to McpFlows.capabilities", () => {
+    for (const page of ["../docs/api.md", "../docs/guides/grant-authority-to-mcp-tools.md"]) {
+      const text = readFileSync(new URL(page, import.meta.url), "utf8")
+      const fence = text.match(/```ts\n;\[\n((?:  "[^"]+",?\n)+)\]\n```/)
+      expect(fence, page).not.toBeNull()
+      expect(JSON.parse(`[${fence![1]}]`), page).toEqual(McpFlows.capabilities)
+    }
+  })
 })

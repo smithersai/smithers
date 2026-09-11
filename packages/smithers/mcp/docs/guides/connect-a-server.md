@@ -105,11 +105,8 @@ tools and nothing else.
 
 ## Identify yourself
 
-Every connection discloses the frozen `McpClient.clientInfo`:
-
-```ts
-{ name: "smithers", version: "1.0.0-rc.0" }
-```
+Every connection discloses the frozen `McpClient.clientInfo`: `name` is
+`"smithers"` and `version` is this package's version.
 
 It is not configurable. A server that varies its behavior by client should see
 one honest answer.

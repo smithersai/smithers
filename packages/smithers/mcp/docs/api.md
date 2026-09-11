@@ -145,7 +145,8 @@ const clientInfo: { readonly name: string; readonly version: string }
 ```
 
 The frozen identity disclosed to every server during initialization:
-`{ name: "smithers", version: "1.0.0-rc.0" }`. Not configurable.
+`name` is `"smithers"` and `version` is this package's version. Not
+configurable.
 
 ### McpClient.supportedProtocolVersions
 

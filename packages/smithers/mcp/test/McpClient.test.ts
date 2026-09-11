@@ -41,7 +41,7 @@ describe("McpClient.connect", () => {
       params: {
         protocolVersion: "2025-06-18",
         capabilities: {},
-        clientInfo: { name: "smithers", version: "1.0.0-rc.0" }
+        clientInfo: { name: "smithers", version: manifest.version }
       }
     })
   })

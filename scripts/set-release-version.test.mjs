@@ -117,6 +117,23 @@ test("retargetSource rewrites the version literal and nothing else", () => {
   )
 })
 
+test("the MCP client identity is a versioned source", () => {
+  const source = versionedSources.find(({ path }) => path === "packages/smithers/mcp/src/McpClient.ts")
+  assert.ok(source, "McpClient.ts clientInfo.version is not in versionedSources")
+  const text = [
+    "export const clientInfo = Object.freeze({",
+    '  name: "smithers",',
+    '  version: "1.0.0-rc.0"',
+    "})",
+    'export const other = "1.0.0-rc.0"'
+  ].join("\n")
+
+  assert.equal(
+    retargetSource(text, "1.0.0-rc.1", source),
+    text.replace('version: "1.0.0-rc.0"', 'version: "1.0.0-rc.1"')
+  )
+})
+
 test("retargetSource refuses a file that no longer carries the declaration", () => {
   const source = versionedSources.find(({ path }) => path.endsWith("Otlp.ts"))
 

@@ -22,8 +22,10 @@ pnpm add @smthrs/mcp@next
 
 - Node.js 22.19+ (Node 22) or 24.11+.
 - [`effect`](https://effect.website) 4.0.0-rc.112, a peer dependency and the
-  version this package is built against. Every public function returns an
-  `Effect`, and every schema is an `effect/Schema`.
+  version this package is built against. Connection and tool-call operations
+  return an `Effect`, and every schema is an `effect/Schema`. `McpFlows.mcp`
+  is synchronous and returns a `FlowBinding.Source`; `Diagnostics.layer` is a
+  `Layer` constructor.
 
 The package ships as both ESM and CommonJS with TypeScript declarations. The
 `@smthrs/*` packages the adapter composes are ordinary dependencies and install
@@ -100,8 +102,11 @@ are runtime dependencies of this package and install with it:
 
 What a host adds is the thing that runs the cell loop:
 
-`@smthrs/registry` and `@smthrs/kernel` are development dependencies of this
-package. A host that imports them declares them in its own manifest.
+The runtime `@smthrs/*` dependencies of this package are `@smthrs/canonical`,
+`@smthrs/capability`, `@smthrs/core`, `@smthrs/harness`, `@smthrs/journal`,
+and `@smthrs/kernel`. `@smthrs/registry` and `@smthrs/model` are development
+dependencies only. A host that imports any of them directly declares it in its
+own manifest.
 
 ```bash
 pnpm add @smthrs/agent@next

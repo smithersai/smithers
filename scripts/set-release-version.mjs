@@ -52,6 +52,11 @@ export const versionedSources = [
     path: "packages/smithers/migrate/src/Report.ts",
     declaration: "tool.version",
     pattern: /(export const tool = \{ name: "@smthrs\/migrate", version: ")([^"]*)(" \} as const)/
+  },
+  {
+    path: "packages/smithers/mcp/src/McpClient.ts",
+    declaration: "clientInfo.version",
+    pattern: /(name: "smithers",\s*version: ")([^"]*)(")/
   }
 ]
 

@@ -17,7 +17,8 @@ of them fails the whole effect:
 1. Spawn the command with `stdin`, `stdout`, and `stderr` piped. A spawn that
    fails is `spawn_failed`.
 2. Send `initialize`, proposing `2025-06-18` and disclosing the frozen
-   `McpClient.clientInfo` identity, `{ name: "smithers", version: "1.0.0-rc.0" }`.
+   `McpClient.clientInfo` identity: name `"smithers"` and this package's
+   version.
 3. Validate the result. The server's `protocolVersion` must be one of
    `McpClient.supportedProtocolVersions`, and its `capabilities` must declare a
    `tools` object. A server that serves no tools is refused with

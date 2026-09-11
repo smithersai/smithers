@@ -35,7 +35,8 @@
 - Snapshot tool arguments through guarded property descriptors. Accessors are
   never invoked, proxy reflection failures remain typed `McpError` failures,
   and non-enumerable properties are omitted like `JSON.stringify`.
-- Publish the Markdown files under `docs/` that the package README links.
+- Point the package README at mcp.smithers.sh. The Markdown files under
+  `docs/` stay out of the published tarball.
 - Require every tool `inputSchema` to declare `type: "object"`, and reject C1
   control characters in tool names alongside C0 controls and U+007F.
 - Drop stdout that does not claim JSON-RPC as server log noise, while closing
