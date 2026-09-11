@@ -1,4 +1,4 @@
-import { ReviewCommentSeverity } from "./openCodeReview.ts";
+import { ReviewCommentSeverity } from "./reviewCommentSeveritySchema.ts";
 import type { FindingVerdict } from "./verifyVerdictsSchema.ts";
 
 const severitySteps = ReviewCommentSeverity.literals;

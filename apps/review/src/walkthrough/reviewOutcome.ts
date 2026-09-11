@@ -1,4 +1,4 @@
-import type { ReviewRunOutput } from "../workflow/openCodeReview.ts";
+import type { ReviewRunOutput } from "../workflow/reviewRunOutputSchema.ts";
 
 /** Review coverage and diagnostics carried by the standalone walkthrough. */
 export interface ReviewOutcome {

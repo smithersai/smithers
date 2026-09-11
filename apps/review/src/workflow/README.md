@@ -50,9 +50,35 @@ not exist until the verifying round has settled.
   index is ignored rather than silently targeting finding 0, and
   `applyFindingVerdicts.ts` applies keep/drop/demote (demote never raises
   severity).
-- Input: `reviewInputSchema.ts` extends the open-code-review schema;
-  `normalizeReviewInput.ts` strips nulls so a caller that spells "not supplied"
-  as `null` gets the declared defaults.
+- Input: `reviewInputSchema.ts` extends `openCodeReviewInputSchema.ts`;
+  `normalizeReviewInput.ts` and `normalizeOpenCodeReviewInput.ts` strip nulls
+  so a caller that spells "not supplied" as `null` gets the declared defaults.
+- Review data, one schema per file: `reviewModeSchema.ts`,
+  `reviewTargetSchema.ts`, `previewEntrySchema.ts`, `previewOutputSchema.ts`,
+  `reviewCommentSeveritySchema.ts` (the one severity list),
+  `reviewCommentCategorySchema.ts`, `reviewCommentSchema.ts`,
+  `reviewWarningSchema.ts`, `reviewSummarySchema.ts`,
+  `reviewRunStatusSchema.ts`, `reviewRunOutputSchema.ts`,
+  `nativeReviewFileSchema.ts`, `nativeReviewPromptSchema.ts`,
+  `nativeReviewAgentOutputSchema.ts`, `workflowSummarySchema.ts`.
+- `openCodeReview.ts` re-exports those schemas plus `../git` and `../review`
+  for one release, because `@smthrs/review/workflow/openCodeReview` is a
+  published entry point. New code imports the owning file.
+
+The steps call two sibling directories:
+
+- `../git/` reads the change set: `runCommand.ts`, `runGit.ts`,
+  `parseGitDiff.ts`, `loadDiffs.ts` (range, commit, or working tree, with
+  untracked files and provider-directory filtering), `effectivePath.ts`,
+  `diffStatus.ts`, `diffRecord.ts`.
+- `../review/` decides what to review and folds the answers:
+  `loadReviewSnapshot.ts` (one git read), `resolveReviewTarget.ts`,
+  `reviewMode.ts`, `validateReviewInput.ts`, `globMatch.ts`,
+  `buildFileFilter.ts` (`.opencodereview/rule.json`), `whyExcluded.ts`,
+  `previewFromSnapshot.ts`, `reviewChecklistForPath.ts`,
+  `buildFileReviewPrompt.ts` (the per-file seat prompt), `reviewFileTaskId.ts`,
+  `nativeReviewPromptFromSnapshot.ts`, `anchorFinding.ts`,
+  `dedupeFindings.ts`, `rankSeverity.ts`, `finalizeNativeReview.ts`.
 
 ## Failure is data
 

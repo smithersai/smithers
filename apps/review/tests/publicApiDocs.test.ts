@@ -16,7 +16,7 @@ import { fileURLToPath } from "node:url";
  * non-blank line does not close a block comment is undocumented.
  */
 
-/** The entry points in `package.json`'s `exports`, plus the modules the diffs barrel re-exports. */
+/** The entry points in `package.json`'s `exports`, plus the modules the diffs and openCodeReview barrels re-export. */
 const surface = [
   "../src/cli/main.ts",
   "../src/diffs/index.ts",
@@ -26,6 +26,40 @@ const surface = [
   "../src/workflow/reviewFlow.ts",
   "../src/workflow/reviewLayer.ts",
   "../src/workflow/openCodeReview.ts",
+  "../src/workflow/openCodeReviewInputSchema.ts",
+  "../src/workflow/reviewModeSchema.ts",
+  "../src/workflow/reviewTargetSchema.ts",
+  "../src/workflow/previewEntrySchema.ts",
+  "../src/workflow/previewOutputSchema.ts",
+  "../src/workflow/reviewCommentSeveritySchema.ts",
+  "../src/workflow/reviewCommentCategorySchema.ts",
+  "../src/workflow/reviewCommentSchema.ts",
+  "../src/workflow/reviewWarningSchema.ts",
+  "../src/workflow/reviewSummarySchema.ts",
+  "../src/workflow/reviewRunStatusSchema.ts",
+  "../src/workflow/reviewRunOutputSchema.ts",
+  "../src/workflow/nativeReviewFileSchema.ts",
+  "../src/workflow/nativeReviewPromptSchema.ts",
+  "../src/workflow/nativeReviewAgentOutputSchema.ts",
+  "../src/workflow/workflowSummarySchema.ts",
+  "../src/workflow/normalizeOpenCodeReviewInput.ts",
+  "../src/git/diffRecord.ts",
+  "../src/git/effectivePath.ts",
+  "../src/git/diffStatus.ts",
+  "../src/git/loadDiffs.ts",
+  "../src/review/nativeReviewFileResult.ts",
+  "../src/review/reviewSnapshot.ts",
+  "../src/review/reviewMode.ts",
+  "../src/review/validateReviewInput.ts",
+  "../src/review/resolveReviewTarget.ts",
+  "../src/review/globMatch.ts",
+  "../src/review/loadReviewSnapshot.ts",
+  "../src/review/previewFromSnapshot.ts",
+  "../src/review/previewOpenCodeReview.ts",
+  "../src/review/reviewFileTaskId.ts",
+  "../src/review/nativeReviewPromptFromSnapshot.ts",
+  "../src/review/buildNativeReviewPrompt.ts",
+  "../src/review/finalizeNativeReview.ts",
 ] as const;
 
 /** Export statements that introduce a name; a bare `export { … } from` re-export does not. */

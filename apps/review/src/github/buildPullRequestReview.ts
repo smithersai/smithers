@@ -1,4 +1,5 @@
-import { ReviewCommentSeverity, type ReviewRunOutput } from "../workflow/openCodeReview.ts";
+import { ReviewCommentSeverity } from "../workflow/reviewCommentSeveritySchema.ts";
+import type { ReviewRunOutput } from "../workflow/reviewRunOutputSchema.ts";
 import type { Quiz } from "../quiz/quizSchema.ts";
 import { fenceFor } from "../text/fenceFor.ts";
 import { pluralize } from "../text/pluralize.ts";

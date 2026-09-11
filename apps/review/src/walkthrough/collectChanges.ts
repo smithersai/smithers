@@ -1,8 +1,6 @@
-import {
-  loadReviewSnapshot,
-  type OpenCodeReviewInput,
-  type PreviewOutput,
-} from "../workflow/openCodeReview.ts";
+import { loadReviewSnapshot } from "../review/loadReviewSnapshot.ts";
+import type { OpenCodeReviewInput } from "../workflow/openCodeReviewInputSchema.ts";
+import type { PreviewOutput } from "../workflow/previewOutputSchema.ts";
 import { changesFromDiffs } from "./changesFromDiffs.ts";
 import type { Changes } from "./changesSchema.ts";
 

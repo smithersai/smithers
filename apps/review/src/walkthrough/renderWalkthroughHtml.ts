@@ -1,4 +1,5 @@
-import { ReviewCommentSeverity, type ReviewRunOutput } from "../workflow/openCodeReview.ts";
+import { ReviewCommentSeverity } from "../workflow/reviewCommentSeveritySchema.ts";
+import type { ReviewRunOutput } from "../workflow/reviewRunOutputSchema.ts";
 import { extractDiffAssets } from "../diffs/extractDiffAssets.ts";
 import { renderFallbackDiffHtml } from "../diffs/renderFallbackDiffHtml.ts";
 import { renderPierreFileDiff } from "../diffs/renderPierreFileDiff.ts";

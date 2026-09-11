@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
-import { ReviewCommentSeverity } from "../src/workflow/openCodeReview.ts";
+import { ReviewCommentSeverity } from "../src/workflow/reviewCommentSeveritySchema.ts";
 import { buildVerifyFindingsPrompt } from "../src/workflow/verifyFindings.ts";
 
 /**
@@ -36,7 +36,7 @@ describe("the severity list lives in the schema", () => {
       const count = readFileSync(path, "utf8").match(copy)?.length ?? 0;
       if (count > 0) copies[relative(appDir, path)] = count;
     }
-    expect(copies).toEqual({ "src/workflow/openCodeReview.ts": 1 });
+    expect(copies).toEqual({ "src/workflow/reviewCommentSeveritySchema.ts": 1 });
   });
 
   test("the verifier prompt offers exactly the levels the verdict schema accepts", () => {

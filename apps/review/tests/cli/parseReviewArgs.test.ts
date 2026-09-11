@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { normalizeOpenCodeReviewInput } from "../../src/workflow/openCodeReview.ts";
+import { normalizeOpenCodeReviewInput } from "../../src/workflow/normalizeOpenCodeReviewInput.ts";
 import { parseReviewArgs } from "../../src/cli/parseReviewArgs.ts";
 
 describe("parseReviewArgs", () => {

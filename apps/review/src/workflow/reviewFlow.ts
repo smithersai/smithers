@@ -30,7 +30,7 @@ import {
   PrepareReview,
   RenderWalkthrough,
 } from "./reviewActions.ts";
-import { NativeReviewAgentOutput } from "./openCodeReview.ts";
+import { NativeReviewAgentOutput } from "./nativeReviewAgentOutputSchema.ts";
 import { ReviewInput } from "./reviewInputSchema.ts";
 import {
   NarrateReviewPayload,

@@ -1,9 +1,7 @@
-import {
-  diffStatus,
-  effectivePath,
-  type DiffRecord,
-  type PreviewOutput,
-} from "../workflow/openCodeReview.ts";
+import { diffStatus } from "../git/diffStatus.ts";
+import { effectivePath } from "../git/effectivePath.ts";
+import type { DiffRecord } from "../git/diffRecord.ts";
+import type { PreviewOutput } from "../workflow/previewOutputSchema.ts";
 import type { Changes } from "./changesSchema.ts";
 
 /**

@@ -5,7 +5,7 @@
  */
 import * as Schema from "effect/Schema";
 import { arrayOf, withDefault } from "../schema/withDefault.ts";
-import { ReviewCommentSeverity } from "./openCodeReview.ts";
+import { ReviewCommentSeverity } from "./reviewCommentSeveritySchema.ts";
 
 /**
  * One verdict. `index` defaults to -1 so a verdict that lost its index is

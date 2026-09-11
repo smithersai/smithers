@@ -6,7 +6,7 @@
  */
 import * as Schema from "effect/Schema";
 import { withDefault } from "../schema/withDefault.ts";
-import { OpenCodeReviewInput } from "./openCodeReview.ts";
+import { OpenCodeReviewInput } from "./openCodeReviewInputSchema.ts";
 
 /**
  * The full review request.

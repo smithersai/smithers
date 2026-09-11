@@ -18,7 +18,7 @@ file list round 1 discovers:
 1. `Review` resolves the target, filters files, and hands off. `ReviewFiles`
    then runs one `ReviewFile` cell per changed file, in `--concurrency`-wide
    batches, on the `review` seat with the prompt in
-   `src/workflow/openCodeReview.ts`. Each batch runs in its own durable round;
+   `src/review/buildFileReviewPrompt.ts`. Each batch runs in its own durable round;
    `MergeFileBatch` records its outcomes before a handoff starts the next batch.
    `--concurrency` bounds the simultaneous file-review calls per run (default
    8). Completed batches survive a resume. `VerifyReview` adjudicates the

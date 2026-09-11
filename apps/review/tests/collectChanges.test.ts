@@ -3,7 +3,8 @@ import { execFileSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { normalizeOpenCodeReviewInput, previewOpenCodeReview } from "../src/workflow/openCodeReview.ts";
+import { normalizeOpenCodeReviewInput } from "../src/workflow/normalizeOpenCodeReviewInput.ts";
+import { previewOpenCodeReview } from "../src/review/previewOpenCodeReview.ts";
 import { collectChanges } from "../src/walkthrough/collectChanges.ts";
 
 const tempDirs: string[] = [];

@@ -19,7 +19,7 @@ import { postReviewSupersedingPrior } from "../github/postReviewSupersedingPrior
 import { resolvePullRequest, type PullRequestTarget } from "../github/resolvePullRequest.ts";
 import { ghBin } from "../github/runGh.ts";
 import { fenceFor } from "../text/fenceFor.ts";
-import { ReviewCommentSeverity } from "../workflow/openCodeReview.ts";
+import { ReviewCommentSeverity } from "../workflow/reviewCommentSeveritySchema.ts";
 import { Review } from "../workflow/reviewFlow.ts";
 import { layerNode } from "../workflow/reviewLayer.ts";
 import { missingSeatCredential, reviewSeatResolver } from "../workflow/reviewSeatResolver.ts";

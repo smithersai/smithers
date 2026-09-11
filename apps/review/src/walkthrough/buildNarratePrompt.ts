@@ -1,4 +1,4 @@
-import type { ReviewRunOutput } from "../workflow/openCodeReview.ts";
+import type { ReviewRunOutput } from "../workflow/reviewRunOutputSchema.ts";
 import { fenceFor } from "../text/fenceFor.ts";
 import { trimDiff } from "../text/trimDiff.ts";
 import type { ChangedFile } from "./changedFileSchema.ts";

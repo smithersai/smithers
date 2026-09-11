@@ -9,7 +9,9 @@ proxy). `../alchemy.run.ts` deploys the Worker and names the domain it serves.
 Directory map:
 
 - `cli/` — arg parsing, live progress, publishing, and the entry point.
-- `workflow/` — the four-round review flow, its seats, and finding verification.
+- `workflow/` — the four-round review flow, its seats, its schemas, and finding verification.
+- `git/` — reads a change set from git and parses it into one record per file.
+- `review/` — file filters, per-file prompts, finding anchoring, de-duplication, and finalizing.
 - `quiz/` — change-impact assessment and the reviewer comprehension quiz.
 - `walkthrough/` — story normalization and the walkthrough HTML renderer.
 - `diffs/` — Pierre + fallback diff-to-HTML rendering, imported as

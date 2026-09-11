@@ -1,5 +1,5 @@
-// Values produced by whyExcluded/previewOpenCodeReview in
-// ../workflow/openCodeReview.ts.
+// Values produced by whyExcluded in
+// ../review/whyExcluded.ts, plus "deleted" from ../review/previewFromSnapshot.ts.
 const reasonLabels: Record<string, string> = {
   binary: "binary file",
   user_exclude: "excluded by review rules",

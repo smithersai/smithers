@@ -6,7 +6,7 @@ import { dirname, join } from "node:path";
 import { Flow, Interpreter } from "@smthrs/flow";
 import { Effect, Layer, Schema } from "effect";
 import { ApplyVerdicts, PrepareReview, RenderWalkthrough } from "../../src/workflow/reviewActions.ts";
-import { ReviewRunOutput } from "../../src/workflow/openCodeReview.ts";
+import { ReviewRunOutput } from "../../src/workflow/reviewRunOutputSchema.ts";
 import { layerMemory } from "../../src/workflow/reviewLayer.ts";
 import { scriptedSeats } from "./scriptedSeats.ts";
 

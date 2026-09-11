@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import type { ReviewCommentSeverity } from "../src/workflow/openCodeReview.ts";
+import type { ReviewCommentSeverity } from "../src/workflow/reviewCommentSeveritySchema.ts";
 import { applyFindingVerdicts } from "../src/workflow/applyFindingVerdicts.ts";
 import { buildVerifyFindingsPrompt, type VerifiableFinding } from "../src/workflow/verifyFindings.ts";
 import { Option, Schema } from "effect";

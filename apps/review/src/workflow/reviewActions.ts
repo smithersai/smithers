@@ -23,14 +23,12 @@ import { renderWalkthroughHtml } from "../walkthrough/renderWalkthroughHtml.ts";
 import { writeWalkthroughArtifact } from "../walkthrough/writeWalkthroughArtifact.ts";
 import { Story } from "../walkthrough/storySchema.ts";
 import { applyFindingVerdicts } from "./applyFindingVerdicts.ts";
-import {
-  finalizeNativeReview,
-  loadReviewSnapshot,
-  nativeReviewPromptFromSnapshot,
-  previewFromSnapshot,
-  ReviewRunOutput,
-  ReviewTarget,
-} from "./openCodeReview.ts";
+import { finalizeNativeReview } from "../review/finalizeNativeReview.ts";
+import { loadReviewSnapshot } from "../review/loadReviewSnapshot.ts";
+import { nativeReviewPromptFromSnapshot } from "../review/nativeReviewPromptFromSnapshot.ts";
+import { previewFromSnapshot } from "../review/previewFromSnapshot.ts";
+import { ReviewRunOutput } from "./reviewRunOutputSchema.ts";
+import { ReviewTarget } from "./reviewTargetSchema.ts";
 import { ReviewInput } from "./reviewInputSchema.ts";
 import {
   FileBatch,

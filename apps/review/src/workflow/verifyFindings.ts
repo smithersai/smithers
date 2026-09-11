@@ -1,6 +1,6 @@
 import { fenceFor } from "../text/fenceFor.ts";
 import { trimDiff } from "../text/trimDiff.ts";
-import { ReviewCommentSeverity } from "./openCodeReview.ts";
+import { ReviewCommentSeverity } from "./reviewCommentSeveritySchema.ts";
 
 export type VerifiableFinding = {
   path: string;

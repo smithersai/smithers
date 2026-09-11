@@ -14,13 +14,11 @@ import { arrayOf, withDefault } from "../schema/withDefault.ts";
 import { Quiz } from "../quiz/quizSchema.ts";
 import { Changes } from "../walkthrough/changesSchema.ts";
 import { Story } from "../walkthrough/storySchema.ts";
-import {
-  NativeReviewAgentOutput,
-  NativeReviewPrompt,
-  PreviewOutput,
-  ReviewRunOutput,
-  ReviewTarget,
-} from "./openCodeReview.ts";
+import { NativeReviewAgentOutput } from "./nativeReviewAgentOutputSchema.ts";
+import { NativeReviewPrompt } from "./nativeReviewPromptSchema.ts";
+import { PreviewOutput } from "./previewOutputSchema.ts";
+import { ReviewRunOutput } from "./reviewRunOutputSchema.ts";
+import { ReviewTarget } from "./reviewTargetSchema.ts";
 import { ReviewInput } from "./reviewInputSchema.ts";
 
 /**
