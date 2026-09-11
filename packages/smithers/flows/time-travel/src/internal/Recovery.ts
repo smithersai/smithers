@@ -31,7 +31,11 @@ import { AuditDetail } from "./Rewind.ts"
 export interface Options {
   readonly compensationTimeout?: Duration.Input | undefined
   readonly owner: OwnerId
-  readonly livenessEvidence?: (
+  /**
+   * Proof that the owner a running run or child records is gone. `undefined`
+   * declines the takeover, and the audit stays `Busy` for a later pass.
+   */
+  readonly livenessEvidence: (
     audit: Audit,
     row: RunStore.RunRow,
     owner: OwnerId,
@@ -96,9 +100,6 @@ const acquire = (
     const expected = snapshotOf(row)
     const claimed = row.status === "running"
       ? yield* Effect.gen(function*() {
-        if (options.livenessEvidence === undefined) {
-          return yield* Effect.fail(error("busy", `run ${audit.runId} is still owned`))
-        }
         const evidence = yield* options.livenessEvidence(audit, row, options.owner, nowMs)
         if (evidence === undefined) {
           return yield* Effect.fail(error("busy", `run ${audit.runId} is still live`))
@@ -173,9 +174,7 @@ const childEvidence = (
   options: Options
 ): Effect.Effect<LivenessEvidence, TimeTravelFailure> =>
   Effect.gen(function*() {
-    const evidence = options.livenessEvidence === undefined
-      ? undefined
-      : yield* options.livenessEvidence(audit, row, owner, nowMs)
+    const evidence = yield* options.livenessEvidence(audit, row, owner, nowMs)
     if (evidence === undefined) {
       return yield* Effect.fail(error("busy", `child ${row.runId} is still owned`))
     }

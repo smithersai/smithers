@@ -191,8 +191,8 @@ describe("truncation", () => {
       )
 
       expect(failure).toMatchObject({ code: "unknown", message: "injected failure at nextForkId" })
-      // Nothing was reserved, so `forkIntents` is still empty and the counter
-      // still hands out the id the failed mint would have taken.
+      // Nothing was reserved, so `forkIntents` is still empty and the next
+      // mint still hands out the ordinal the failed one would have taken.
       expect(before.forkIntents).toEqual([])
       expect(store.state()).toEqual(before)
     }))
@@ -274,7 +274,7 @@ describe("truncation", () => {
       )
 
       expect(failure).toMatchObject({ code: "unknown", message: "memory transaction failed" })
-      expect(fork.runId).toBe("parent:fork:1")
+      expect(fork.runId).toBe("parent:fork:0:1")
       expect(store.state().edges).toEqual([fork.edge])
     }))
 })

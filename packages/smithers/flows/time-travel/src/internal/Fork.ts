@@ -375,13 +375,29 @@ export const fork = (
       yield* jj.workspaceAdd(workspaceName, `${options.workspaceRoot}/${workspaceName}`, snapshot?.changeId).pipe(
         Effect.mapError((cause) => error("unknown", "could not add fork workspace", cause))
       )
-      const result = yield* runHook(options, "commit-fork").pipe(
-        Effect.andThen(store.createFork(options.parentRunId, options.frame, childRunId)),
-        Effect.onError(() => forgetLane(jj, workspaceName, "after a refused commit"))
+      /**
+       * THE COMMIT AND THE LANE'S FINALIZER ARE ONE UNIT.
+       *
+       * COMMIT can finish in an uninterruptible SQL finalizer, so the store
+       * call and the forget-on-close registration share one mask: an interrupt
+       * that lands while the commit finishes is observed only once the
+       * committed child's lane has its finalizer. Registering it after the
+       * commit returned let that interrupt either strand the lane with no
+       * finalizer and no reservation left to reclaim it, or send a committed
+       * child's lane through the refused-commit forget. Only the hook stays
+       * interruptible, because nothing durable has happened when it runs.
+       */
+      const result = yield* Effect.uninterruptibleMask((restore) =>
+        restore(runHook(options, "commit-fork")).pipe(
+          Effect.andThen(store.createFork(options.parentRunId, options.frame, childRunId)),
+          Effect.onError(() => forgetLane(jj, workspaceName, "after a refused commit")),
+          Effect.tap(() =>
+            options.retainWorkspace === true
+              ? Effect.void
+              : Effect.addFinalizer(() => forgetLane(jj, workspaceName, "when the service scope closed"))
+          )
+        )
       )
-      if (options.retainWorkspace !== true) {
-        yield* Effect.addFinalizer(() => forgetLane(jj, workspaceName, "when the service scope closed"))
-      }
       /**
        * THE CHILD'S WORKTREE IS PINNED AT THE FRAME'S POINTER.
        *

@@ -215,7 +215,19 @@ export const make = (options: Options = {}): TimeTravelStore.Service & { readonl
    * count never reuses its ordinal, exactly as the SQL store keeps the row.
    */
   let forkIntents: Array<TimeTravelStore.ForkIntent & { readonly reclaimed: boolean }> = []
-  let sequence = 0
+  /**
+   * The id the next fork off `(parentRunId, frame.seq)` carries, minted as
+   * `SqlTimeTravelStore` mints it: the ordinal counts the edges already
+   * hanging off that frame plus every reservation there, reclaimed or not, so
+   * a mint that never committed keeps its number. The jj lane is named after
+   * this id, so a different shape here would provision lanes SQL never does.
+   */
+  const mintForkId = (parentRunId: string, frame: Frame): string => {
+    const at = (candidate: { readonly parentRunId: string; readonly parentSeq: number }) =>
+      candidate.parentRunId === parentRunId && candidate.parentSeq === frame.seq
+    const ordinal = edges.filter(at).length + forkIntents.filter(at).length + 1
+    return `${parentRunId}:fork:${frame.seq}:${ordinal}`
+  }
   const fail = (step: string): void => {
     if (options.failAt === step) throw error("unknown", `injected failure at ${step}`)
   }
@@ -258,7 +270,6 @@ export const make = (options: Options = {}): TimeTravelStore.Service & { readonl
     Effect.try({
       try: () => {
         const before = state()
-        const beforeSequence = sequence
         const beforeGenerations = new Map(generations)
         const beforeIntents = forkIntents.map((intent) => ({ ...intent }))
         try {
@@ -274,7 +285,6 @@ export const make = (options: Options = {}): TimeTravelStore.Service & { readonl
           for (const runId of before.liveRuns) liveRuns.add(runId)
           runOwners.clear()
           for (const [runId, runOwner] of before.runOwners) runOwners.set(runId, runOwner)
-          sequence = beforeSequence
           generations = beforeGenerations
           forkIntents = beforeIntents
           throw cause
@@ -479,10 +489,10 @@ export const make = (options: Options = {}): TimeTravelStore.Service & { readonl
         Effect.flatMap((nowMs) =>
           atomic(() => {
             fail("nextForkId")
-            // The counter never rewinds, so the id differs from every mint
-            // before it whether or not that mint committed; the intent is the
-            // durable half the SQL store keeps in a table.
-            const childRunId = `${parentRunId}:fork:${++sequence}`
+            // The intent pushed below is counted by every later mint, so the
+            // id differs from every mint before it whether or not that mint
+            // committed; it is the durable half the SQL store keeps in a table.
+            const childRunId = mintForkId(parentRunId, frame)
             forkIntents.push({ childRunId, parentRunId, parentSeq: frame.seq, reservedAtMs: nowMs, reclaimed: false })
             return childRunId
           })
@@ -533,7 +543,7 @@ export const make = (options: Options = {}): TimeTravelStore.Service & { readonl
           ) {
             throw error("not_found", TimeTravelStore.forkFrameMessage(parentRunId, frame))
           }
-          const runId = childRunId ?? `${parentRunId}:fork:${++sequence}`
+          const runId = childRunId ?? mintForkId(parentRunId, frame)
           // The committed edge takes over the ordinal the reservation held.
           forkIntents = forkIntents.filter((intent) => intent.childRunId !== runId)
           const prefix = records.filter((record) => record.runId === parentRunId && record.seq <= frame.seq)

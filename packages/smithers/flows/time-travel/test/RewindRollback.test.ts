@@ -543,7 +543,7 @@ describe("Rewind protocol fault matrix", () => {
       })
 
       const outcomes = yield* provide(
-        Recovery.recover({ owner }),
+        Recovery.recover({ owner, livenessEvidence: () => Effect.succeed(undefined) }),
         { store: recoveryStore, runs: recoveryRuns, jj: makeJj().service, registry }
       )
 
@@ -647,7 +647,7 @@ describe("Rewind protocol fault matrix", () => {
         heartbeatAtMs: 1
       })
       const outcomes = yield* provide(
-        Recovery.recover({ owner }),
+        Recovery.recover({ owner, livenessEvidence: () => Effect.succeed(undefined) }),
         { store, runs: recoveryRuns, jj: makeJj().service, registry }
       )
 

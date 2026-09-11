@@ -34,9 +34,10 @@ describe("fork", () => {
       expect(store.state().records.filter((record) => record.runId === "r")).toEqual(before)
     }))
 
-  // The in-memory store advances a private counter instead of counting
-  // committed edges, so it hands out a fresh id per mint. The store interface
-  // documents that difference; this is what holds it to it.
+  // The in-memory store mints the SQL store's shape, `<parent>:fork:<seq>:<n>`,
+  // counting the edges and reservations already at the frame, so a mint that
+  // never committed still keeps its ordinal. The jj lane is named after this
+  // id, so a different shape here would name lanes SQL never provisions.
   it.effect("mints a fresh child id on every call, committed or not", () =>
     Effect.gen(function*() {
       const store = Memory.make({
@@ -46,7 +47,7 @@ describe("fork", () => {
       const first = yield* store.nextForkId("r", { lineageId: "r", seq: 0 })
       const second = yield* store.nextForkId("r", { lineageId: "r", seq: 0 })
 
-      expect(first).not.toBe(second)
+      expect([first, second]).toEqual(["r:fork:0:1", "r:fork:0:2"])
       expect(store.state().records.filter((record) => record.runId !== "r")).toEqual([])
     }))
 
@@ -369,4 +370,25 @@ describe("fork ancestry in the memory store", () => {
 
       expect(fork.edge).toMatchObject({ parentRunId: "child", parentSeq: 0, kind: "fork" })
     }))
+})
+
+/**
+ * The lane name caps the sanitized run id at 64 characters and appends a
+ * digest of the RAW id, so a long id still names a bounded directory and two
+ * ids that agree on their first 64 sanitized characters still get two lanes.
+ */
+describe("fork workspace name", () => {
+  it("caps the sanitized run id segment at exactly 64 characters", () => {
+    expect(TimeTravel.forkWorkspaceName("a".repeat(100))).toMatch(/^smithers-fork-a{64}-[0-9a-f]{8}$/)
+  })
+
+  it("tells apart two ids that share their first 64 sanitized characters", () => {
+    const shared = "p".repeat(64)
+    const left = TimeTravel.forkWorkspaceName(`${shared}:fork:0:1`)
+    const right = TimeTravel.forkWorkspaceName(`${shared}:fork:0:2`)
+
+    expect(left).toMatch(/^smithers-fork-p{64}-[0-9a-f]{8}$/)
+    expect(right).toMatch(/^smithers-fork-p{64}-[0-9a-f]{8}$/)
+    expect(left).not.toBe(right)
+  })
 })

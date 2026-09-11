@@ -150,11 +150,7 @@ const runRecovery = (
     restore: () => Effect.void
   })
   return Effect.map(
-    Recovery.recover(
-      options.livenessEvidence === undefined
-        ? { owner }
-        : { owner, livenessEvidence: options.livenessEvidence }
-    ).pipe(
+    Recovery.recover({ owner, livenessEvidence: options.livenessEvidence ?? (() => Effect.succeed(undefined)) }).pipe(
       Effect.provide(Layer.succeed(TimeTravelStore, store)),
       Effect.provide(Layer.succeed(RunStore.RunStore, runs)),
       Effect.provide(Layer.succeed(Journal.Journal, options.journal ?? emptyJournal)),
@@ -873,21 +869,6 @@ describe("Recovery ownership arbitration", () => {
       expect(outcomes[0]).toMatchObject({
         _tag: "Busy",
         error: { code: "busy", message: "run run lost its recovery claim" }
-      })
-    }))
-
-  it.effect("refuses to steal from another owner when no liveness probe is configured", () =>
-    Effect.gen(function*() {
-      const runs = RunStore.makeNoop({
-        get: () => Effect.succeed(baseRow({ status: "running", owner: stranger })),
-        steal: () => Effect.succeed({ _tag: "Claimed" as const, claimedAtMs: 1 })
-      })
-
-      const { outcomes } = yield* runRecovery(runs)
-
-      expect(outcomes[0]).toMatchObject({
-        _tag: "Busy",
-        error: { code: "busy", message: "run run is still owned" }
       })
     }))
 

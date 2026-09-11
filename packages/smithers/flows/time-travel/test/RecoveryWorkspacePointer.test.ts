@@ -124,13 +124,23 @@ for (const boundary of ["before-restore", "after-restore"] as const) {
     await Effect.runPromise(recoveredStore.writeAudit(crashAudit!))
     pointer = crashPointer
     status = "running"
-    const outcomes = await Effect.runPromise(provide(Recovery.recover({ owner }), recoveredStore))
+    const outcomes = await Effect.runPromise(
+      provide(Recovery.recover({ owner, livenessEvidence: () => Effect.succeed(undefined) }), recoveredStore)
+    )
     expect(outcomes).toMatchObject([{ _tag: "RolledBack" }])
     expect(pointer).toBe("original-workspace")
     expect((crashAudit!.detail as Rewind.AuditDetail).compensation?.workspace).toEqual({
       currentChangeId: "original-workspace",
       targetChangeId: "target-workspace"
     })
-    expect(await Effect.runPromise(provide(Recovery.recover({ owner }), recoveredStore))).toEqual([])
+    expect(
+      await Effect.runPromise(provide(
+        Recovery.recover({
+          owner,
+          livenessEvidence: () => Effect.succeed(undefined)
+        }),
+        recoveredStore
+      ))
+    ).toEqual([])
   })
 }

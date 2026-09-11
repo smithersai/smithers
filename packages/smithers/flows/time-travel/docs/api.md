@@ -152,6 +152,7 @@ interface ReplayOptions {
 interface ForkOptions {
   readonly workspaceRoot?: string | undefined
   readonly retainWorkspace?: boolean | undefined
+  readonly pageSize?: number | undefined
   readonly maxHistoryEntries?: number | undefined
 }
 
@@ -163,9 +164,9 @@ interface RewindOptions {
 ```
 
 `pageSize` is a throughput knob only and never changes a derived answer; it
-defaults to 100. In `ReplayOptions` and `RewindOptions`, it must be a safe integer
-from 1 through `Journal.maxEntriesLimit` (10,000). Larger pages are refused
-with `invalid` before reading the journal. `maxHistoryEntries` overrides
+defaults to 100. In all three options types it must be a safe integer from 1
+through `Journal.maxEntriesLimit` (10,000). Any other value is refused with
+`invalid` before reading the journal. `maxHistoryEntries` overrides
 `Options.maxHistoryEntries` for one call. `workspaceRoot` defaults to `.flows/forks` and only moves which lane
 the derived workspace name lands in. `retainWorkspace` keeps the child lane
 registered after the service scope closes. `detachedChildren` defaults to

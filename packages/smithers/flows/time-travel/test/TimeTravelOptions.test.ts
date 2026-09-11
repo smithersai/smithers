@@ -127,6 +127,89 @@ describe("TimeTravel rewind options", () => {
 })
 
 /**
+ * A fork reads the parent's suffix through the same pager as replay and
+ * rewind, so it takes the same `pageSize` and refuses the same values.
+ */
+describe("TimeTravel fork options", () => {
+  const records = [0, 1, 2, 3].map((seq) => ({
+    runId: "run",
+    seq,
+    eventId: `e${seq}`,
+    lineageId: "run/root",
+    payload: {}
+  }))
+  const position = { runId: "run", frame: { lineageId: "run/root", seq: 0 } }
+
+  const withFork = <A, E>(body: (timeTravel: TimeTravel["Service"]) => Effect.Effect<A, E>) =>
+    Effect.gen(function*() {
+      const store = MemoryTimeTravelStore.make({ records })
+      const reads: Array<{ readonly after: number | undefined; readonly limit: number }> = []
+      const entries: ReadonlyArray<JournalEvent.Entry> = records.map((record) => ({
+        runId: record.runId as JournalEvent.RunId,
+        seq: record.seq as JournalEvent.Seq,
+        eventId: record.eventId,
+        sourceId: "options" as JournalEvent.SourceId,
+        sourceSeq: record.seq as JournalEvent.SourceSeq,
+        emittedAtMs: record.seq,
+        eventType: "test",
+        payload: {},
+        meta: { lineageId: record.lineageId }
+      }))
+      const journal = Journal.makeNoop({
+        entries: ({ after, limit }) =>
+          Effect.sync(() => {
+            reads.push({ after, limit })
+            const remaining = entries.filter((entry) => entry.seq > (after ?? -1))
+            const page = remaining.slice(0, Math.max(0, Math.min(limit, remaining.length)))
+            return { entries: page, hasMore: remaining.length > page.length }
+          })
+      })
+      const layer = TimeTravel.layer.pipe(
+        Layer.provide(
+          Layer.mergeAll(
+            Layer.succeed(TimeTravelStore)(store),
+            Layer.succeed(RunStore.RunStore)(RunStore.makeNoop({ get: () => Effect.succeed(row) })),
+            Layer.succeed(Journal.Journal)(journal),
+            Layer.succeed(Jj.Jj)(Jj.makeNoop({ workspaceAdd: () => Effect.void, workspaceForget: () => Effect.void })),
+            CacheStore.layerNoop()
+          )
+        )
+      )
+      const result = yield* Effect.scoped(
+        Effect.gen(function*() {
+          const timeTravel = yield* TimeTravel
+          return yield* body(timeTravel)
+        }).pipe(Effect.provide(layer))
+      )
+      return { result, reads, store }
+    })
+
+  it.effect("pages the suffix it assesses at the caller's pageSize", () =>
+    Effect.gen(function*() {
+      const { reads, result } = yield* withFork((timeTravel) => timeTravel.fork(position, { pageSize: 1 }))
+
+      expect(result.runId).toBe("run:fork:0:1")
+      // The anchor projection reads at its own default page; the suffix past
+      // the frame is what the fork pages, one entry per read.
+      expect(reads.filter((read) => read.limit === 1).map((read) => read.after)).toEqual([0, 1, 2])
+    }))
+
+  for (const pageSize of [0, 1.5, Journal.maxEntriesLimit + 1]) {
+    it.effect(`refuses pageSize ${pageSize} before reading the journal or minting a child`, () =>
+      Effect.gen(function*() {
+        const { reads, result, store } = yield* withFork((timeTravel) =>
+          Effect.flip(timeTravel.fork(position, { pageSize }))
+        )
+
+        expect(result).toMatchObject({ code: "invalid", message: expect.stringMatching(/^fork pageSize must be /) })
+        expect(reads).toEqual([])
+        expect(store.state().forkIntents).toEqual([])
+        expect(store.state().edges).toEqual([])
+      }))
+  }
+})
+
+/**
  * Startup recovery is wiring, so the shipped composition has to be able to
  * make progress on its own: a rewind interrupted by a crash leaves the run
  * `running` under the dead incarnation's owner, and with no way to answer "is

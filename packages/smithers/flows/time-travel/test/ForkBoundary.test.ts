@@ -15,8 +15,13 @@ import type * as JournalEvent from "@smthrs/journal/JournalEvent"
 import * as SqlJournal from "@smthrs/journal/SqlJournal"
 import * as RunStore from "@smthrs/run-store/RunStore"
 import * as CacheStore from "@smthrs/step-cache/CacheStore"
+import * as Cause from "effect/Cause"
+import * as Deferred from "effect/Deferred"
 import * as Effect from "effect/Effect"
+import * as Exit from "effect/Exit"
+import * as Fiber from "effect/Fiber"
 import * as Layer from "effect/Layer"
+import * as Scope from "effect/Scope"
 import * as SqlClient from "effect/unstable/sql/SqlClient"
 import * as EffectBoundary from "../src/EffectBoundary.ts"
 import * as EffectHandlerRegistry from "../src/internal/EffectHandlerRegistry.ts"
@@ -29,11 +34,12 @@ import { TimeTravelStore } from "../src/TimeTravelStore.ts"
 const frame = { lineageId: "parent/root", seq: 0 } as const
 
 /**
- * The lane every case here provisions: the memory store mints `parent:fork:1`
- * for the first fork of a fresh store, and the workspace is named after that
- * child rather than after the parent frame.
+ * The lane every case here provisions: the memory store mints
+ * `parent:fork:0:1` for the first fork off frame 0, exactly as the SQL store
+ * does, and the workspace is named after that child rather than after the
+ * parent frame.
  */
-const lane = Fork.workspaceNameFor("parent:fork:1")
+const lane = Fork.workspaceNameFor("parent:fork:0:1")
 
 const row = (): RunStore.RunRow => ({
   runId: "parent",
@@ -561,5 +567,64 @@ describe("the compensation descriptor on a boundary record", () => {
 
       expect(decoded?.compensation).toBe("billing/refund@v2")
       expect(decoded?.status).toBe("succeeded")
+    }))
+})
+
+/**
+ * The store commit and the lane's forget-on-close finalizer are one unit. An
+ * interrupt that lands while the commit finishes used to be observed before
+ * the finalizer was registered, so a committed child either lost its lane at
+ * once or kept one nothing would ever forget.
+ */
+describe("fork commit boundary", () => {
+  it.effect("keeps a committed child's lane until the scope closes when interrupted at commit", () =>
+    Effect.gen(function*() {
+      const calls: Array<string> = []
+      const base = MemoryTimeTravelStore.make()
+      const committed = yield* Deferred.make<Fiber.Fiber<unknown, unknown>>()
+      const release = yield* Deferred.make<void>()
+      const store: TimeTravelStore["Service"] = {
+        ...base,
+        // Hold the real commit's result in an uninterruptible region, as
+        // SqlClient does while it finalizes COMMIT.
+        createFork: (...args) =>
+          Effect.uninterruptible(
+            base.createFork(...args).pipe(
+              Effect.tap(() => Deferred.succeed(committed, Fiber.getCurrent()!)),
+              Effect.tap(() => Deferred.await(release))
+            )
+          )
+      }
+      const scope = yield* Scope.make()
+      const fiber = yield* Fork.fork({ parentRunId: "parent", frame, workspaceRoot: "/tmp/lanes" }).pipe(
+        Effect.provide(Layer.succeed(RunStore.RunStore, RunStore.makeNoop({ get: () => Effect.succeed(row()) }))),
+        Effect.provide(Layer.succeed(TimeTravelStore, store)),
+        Effect.provide(
+          Layer.succeed(
+            Jj.Jj,
+            Jj.makeNoop({
+              workspaceAdd: (name) => Effect.sync(() => void calls.push(`add:${name}`)),
+              workspaceForget: (name) => Effect.sync(() => void calls.push(`forget:${name}`))
+            })
+          )
+        ),
+        Effect.provide(journalOf([], 1)),
+        Effect.provide(Layer.succeed(CacheStore.CacheStore, CacheStore.makeNoop())),
+        Effect.provide(EffectHandlerRegistry.layerNoop),
+        Effect.provideService(Scope.Scope, scope),
+        Effect.forkChild
+      )
+      const committing = yield* Deferred.await(committed)
+      // Request cancellation while the commit is masked, then let it return.
+      yield* Effect.sync(() => committing.interruptUnsafe())
+      yield* Deferred.succeed(release, undefined)
+      const exit = yield* Fiber.await(fiber)
+
+      expect(Exit.isFailure(exit) && Cause.hasInterruptsOnly(exit.cause)).toBe(true)
+      expect(base.state().edges.map((edge) => edge.childRunId)).toEqual(["parent:fork:0:1"])
+      // The child committed, so its lane stays registered while the scope is open.
+      expect(calls).toEqual([`add:${lane}`])
+      yield* Scope.close(scope, Exit.void)
+      expect(calls).toEqual([`add:${lane}`, `forget:${lane}`])
     }))
 })

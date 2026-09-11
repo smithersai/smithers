@@ -138,12 +138,14 @@ export type RewindResult = Rewind.Result
  * supplied; `workspaceRoot` only moves which lane that derived name lands in,
  * and defaults to `.flows/forks`. `maxHistoryEntries` caps the suffix the
  * fork assesses for this one call, overriding {@link Options.maxHistoryEntries}.
+ * `pageSize` pages that suffix read exactly as it pages a replay or a rewind.
  *
  * @since 0.1.0
  * @category models
  */
 export interface ForkOptions {
   readonly workspaceRoot?: string | undefined
+  readonly pageSize?: number | undefined
   readonly maxHistoryEntries?: number | undefined
   /** Keep the child workspace registered after this service scope closes. */
   readonly retainWorkspace?: boolean | undefined
@@ -221,6 +223,22 @@ const validatePosition = (position: Position) =>
     Effect.mapError((cause) => error("invalid", "invalid history position", cause))
   )
 
+/**
+ * Refuses a journal page size before a verb reads anything: a safe integer
+ * from 1 through `Journal.maxEntriesLimit`, or absent for the default.
+ */
+const validatePageSize = (verb: string, pageSize: number | undefined): Effect.Effect<void, TimeTravelError> => {
+  if (pageSize !== undefined && (!Number.isSafeInteger(pageSize) || pageSize < 1)) {
+    return Effect.fail(error("invalid", `${verb} pageSize must be a positive integer, not ${String(pageSize)}`))
+  }
+  if (pageSize !== undefined && pageSize > Journal.maxEntriesLimit) {
+    return Effect.fail(
+      error("invalid", `${verb} pageSize must be at most ${Journal.maxEntriesLimit}, not ${String(pageSize)}`)
+    )
+  }
+  return Effect.void
+}
+
 /** The shared fold and input contract behind both history-reading layers. */
 const replayWith =
   (historyLimit: number) => <S>(position: Position, projection: Projection<S>, options?: ReplayOptions) =>
@@ -232,16 +250,7 @@ const replayWith =
         seq: decoded.frame.seq
       })
       const pageSize = options?.pageSize
-      if (pageSize !== undefined && (!Number.isSafeInteger(pageSize) || pageSize < 1)) {
-        return yield* Effect.fail(
-          error("invalid", `replay pageSize must be a positive integer, not ${String(pageSize)}`)
-        )
-      }
-      if (pageSize !== undefined && pageSize > Journal.maxEntriesLimit) {
-        return yield* Effect.fail(
-          error("invalid", `replay pageSize must be at most ${Journal.maxEntriesLimit}, not ${String(pageSize)}`)
-        )
-      }
+      yield* validatePageSize("replay", pageSize)
       const maxEntries = yield* HistoryLimit.resolve(options?.maxHistoryEntries, historyLimit)
       return yield* Replay.rederive(decoded.frame, projection, {
         runId: decoded.runId,
@@ -562,6 +571,7 @@ export const makeWith = (
             lineageId: decoded.frame.lineageId,
             seq: decoded.frame.seq
           })
+          yield* validatePageSize("fork", options?.pageSize)
           const maxEntries = yield* HistoryLimit.resolve(options?.maxHistoryEntries, historyLimit)
           return yield* provided(
             // The anchors a fork restores from are a projection of the engine's
@@ -572,6 +582,7 @@ export const makeWith = (
               frame: decoded.frame,
               workspaceRoot: options?.workspaceRoot ?? workspaceRoot,
               retainWorkspace: options?.retainWorkspace,
+              pageSize: options?.pageSize,
               maxEntries,
               refreshAnchors: refreshAnchors(decoded.runId, decoded.frame.seq, maxEntries)
             })

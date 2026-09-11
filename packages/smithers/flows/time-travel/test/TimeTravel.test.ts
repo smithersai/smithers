@@ -165,7 +165,7 @@ describe("TimeTravel", () => {
       )
 
       expect(fork.edge).toMatchObject({ parentRunId: "run", parentSeq: 1, kind: "fork" })
-      expect(fork.runId).toBe("run:fork:1")
+      expect(fork.runId).toBe("run:fork:1:1")
       // Derived, never caller-supplied: the CHILD names the lane, so a second
       // fork of this frame lands beside this one rather than on top of it.
       const lane = Fork.workspaceNameFor(fork.runId)
@@ -210,7 +210,7 @@ describe("TimeTravel", () => {
         workspaces
       )
 
-      const lane = Fork.workspaceNameFor("run:fork:1")
+      const lane = Fork.workspaceNameFor("run:fork:1:1")
       expect(workspaces).toEqual([`${lane}@/tmp/lanes/${lane}`])
       expect(result.archive.archived).toBe(2)
     }))

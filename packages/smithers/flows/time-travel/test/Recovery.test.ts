@@ -140,7 +140,7 @@ const runRecovery = (
   hasSuffix: boolean,
   options: Partial<Recovery.Options> = {}
 ) =>
-  Recovery.recover({ owner, ...options }).pipe(
+  Recovery.recover({ owner, livenessEvidence: () => Effect.succeed(undefined), ...options }).pipe(
     Effect.provide(Layer.succeed(TimeTravelStore, store)),
     Effect.provide(Layer.succeed(RunStore.RunStore, runs)),
     Effect.provide(Layer.succeed(Journal.Journal, journal(hasSuffix))),
@@ -543,7 +543,7 @@ describe("Recovery", () => {
       expect(outcomes).toMatchObject([{
         _tag: "Busy",
         auditId: "audit-archive_committed",
-        error: { code: "busy", message: "run run is still owned" }
+        error: { code: "busy", message: "run run is still live" }
       }])
       expect(store.state().audits).toMatchObject([{ status: "in_progress" }])
     }))
@@ -680,7 +680,7 @@ describe("Recovery", () => {
             Effect.as({ _tag: "FenceLost" as const })
           )
       })
-      const program = Recovery.recover({ owner }).pipe(
+      const program = Recovery.recover({ owner, livenessEvidence: () => Effect.succeed(undefined) }).pipe(
         Effect.provide(Layer.succeed(TimeTravelStore, blockingStore)),
         Effect.provide(Layer.succeed(RunStore.RunStore, runs)),
         Effect.provide(Layer.succeed(Journal.Journal, journal(false))),
@@ -745,7 +745,7 @@ describe("Recovery", () => {
       let reads = 0
       const failure = yield* (
         Effect.flip(
-          Recovery.recover({ owner }).pipe(
+          Recovery.recover({ owner, livenessEvidence: () => Effect.succeed(undefined) }).pipe(
             Effect.provide(
               Layer.succeed(
                 TimeTravelStore,
@@ -794,7 +794,7 @@ describe("Recovery", () => {
             Effect.as({ _tag: "Transitioned" as const })
           )
       })
-      const program = Recovery.recover({ owner }).pipe(
+      const program = Recovery.recover({ owner, livenessEvidence: () => Effect.succeed(undefined) }).pipe(
         Effect.provide(Layer.succeed(TimeTravelStore, store)),
         Effect.provide(Layer.succeed(RunStore.RunStore, runs)),
         Effect.provide(Layer.succeed(Journal.Journal, journal(false))),

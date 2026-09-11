@@ -683,6 +683,7 @@ describe("TimeTravelStore fork intents", () => {
           const fork = yield* store.createFork("run", at, minted)
           const consumed = yield* store.abandonForkIntents(Number.MAX_SAFE_INTEGER)
           return {
+            ids: [abandoned, minted],
             distinct: abandoned !== minted,
             fresh,
             stale: stale.map((intent) => ({
@@ -720,6 +721,7 @@ describe("TimeTravelStore fork intents", () => {
 
       expect(memory).toEqual(sqlite)
       expect(memory).toEqual({
+        ids: ["run:fork:0:1", "run:fork:0:2"],
         distinct: true,
         fresh: [],
         stale: [{ reclaimsAbandoned: true, parentRunId: "run", parentSeq: 0, reservedAtMs: 0 }],

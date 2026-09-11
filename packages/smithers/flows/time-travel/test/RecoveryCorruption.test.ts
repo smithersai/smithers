@@ -70,7 +70,7 @@ const recover = (corruption: Corruption) =>
         status: "in_progress",
         detail
       })
-      const outcomes = yield* Recovery.recover({ owner })
+      const outcomes = yield* Recovery.recover({ owner, livenessEvidence: () => Effect.succeed(undefined) })
       const audits = yield* sql<{ readonly status: string; readonly detail_json: string }>`
           SELECT status, detail_json FROM flows_time_travel_audits WHERE id = 'audit'
         `
