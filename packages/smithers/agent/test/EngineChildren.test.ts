@@ -724,7 +724,7 @@ describe("EngineChildren.await", () => {
       yield* store.create(
         "pending-child",
         JSON.stringify({ version: 1, flowName: Worker._tag, payload: {} }),
-        { lineageId: FlowEngine.Round.initial("pending-child").lineageId, roundOrdinal: 0 }
+        { lineageId: FlowEngine.Round.initial("pending-child").rootExecutionId, roundOrdinal: 0 }
       )
 
       const collector = yield* Effect.forkChild(port.await({ child: "pending-child" }), {

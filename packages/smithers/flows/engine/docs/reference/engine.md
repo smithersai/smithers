@@ -83,12 +83,13 @@ The members and the value each one carries across the seam:
 | `actionExecute`         | no       | Encoded. `makeUnsafe` decodes it through the action's `exitSchemaPartial`.                                                                 |
 | `actionRetryOrigin`     | yes      | None.                                                                                                                                      |
 | `actionLatestAttempt`   | yes      | None.                                                                                                                                      |
+| `actionSnapshot`        | yes      | None.                                                                                                                                      |
 | `deferredResult`        | no       | Encoded. `makeUnsafe` decodes it through the deferred's `exitSchema`.                                                                      |
 | `deferredDone`          | no       | Encoded. `makeUnsafe` encodes the exit before the call.                                                                                    |
 | `deferredDoneIfWaiting` | yes      | Encoded, encoded before the call the same way.                                                                                             |
 | `scheduleClock`         | no       | None.                                                                                                                                      |
 
-`executionId` on `execute` is caller-supplied identity. A repeated id joins the run that already owns it, which is what makes a retried submission idempotent. `poll` answers `Option.none` for a known unsettled execution, and for an execution that belongs to a different flow declaration. Only an execution id no engine knows fails, with `FlowRuntime.FlowExecutionNotFound`. `interrupt`, `interruptUnsafe`, and `resume` treat an unknown execution id as a silent no-op.
+`executionId` on `execute` is caller-supplied identity. A repeated id joins the run that already owns it, which is what makes a retried submission idempotent. `round` on `execute` is required: `makeUnsafe` supplies round zero for a fresh execution and the advanced round after a handoff, with `previousExecutionId` naming the round it continues. `poll` answers `Option.none` for a known unsettled execution, and for an execution that belongs to a different flow declaration. Only an execution id no engine knows fails, with `FlowRuntime.FlowExecutionNotFound`. `interrupt`, `interruptUnsafe`, and `resume` treat an unknown execution id as a silent no-op.
 
 `actionRetryOrigin` returns the persisted start time of the first surviving attempt for `key`, so a `RetryPolicy.expirationMs` bound survives park, resume, and process death. `Option.none()` means no attempt row survives, and the engine then falls back to the current clock and logs a warning. `actionLatestAttempt` returns the highest persisted attempt number for `key`, so the attempt counter resumes from the persisted sequence rather than from `1`.
 
@@ -123,10 +124,10 @@ The refusal raised when a caller reuses an execution id for different persisted 
 
 ### `FlowEngine.makeInstance`
 
-- **Signature:** `makeInstance(flow: Flow.Any, executionId: string): FlowRuntime.FlowInstance["Service"]`
+- **Signature:** `makeInstance(flow: Flow.Any, executionId: string): FlowRuntime.FlowInstance["Service"] & { readonly lineageId: JournalLineageId }`
 - **Since:** `0.1.0`
 
-Creates the initial `FlowInstance` state for one flow execution. A runtime calls it when it starts a flow run, or restarts one on resume. The state it returns is what suspension, interruption, and action coordination are tracked in. The instance's `lineageId` is the run's own root journal lineage, because a subflow is a separate run with a separate journal. Action ordinals are counted per allocation scope, so a permuted fiber interleaving cannot renumber distinguishable dispatches across a replay.
+Creates the initial `FlowInstance` state for one flow execution. A runtime calls it when it starts a flow run, or restarts one on resume. The state it returns is what suspension, interruption, and action coordination are tracked in. The instance's `lineageId` is the run's own root journal lineage, because a subflow is a separate run with a separate journal. It keeps its `JournalLineageId` brand, so it cannot pass for a trampoline root execution id. Action ordinals are counted per allocation scope, so a permuted fiber interleaving cannot renumber distinguishable dispatches across a replay.
 
 ### `FlowEngine.layerMemory`
 
@@ -142,7 +143,7 @@ The volatile in-memory implementation of the `FlowRuntime` port, for tests and l
 - **Since:** `0.1.0`
 - **Related:** `FlowEngine.Round`
 
-The journal lineage identity every durable record a run writes carries as `meta.lineageId`. A journal lineage id is a versioned encoded tuple of the run id and the node-id path from the run root. It is a different identity from the trampoline lineage `FlowEngine.Round` carries, which is a bare execution id. A value from one space is not an address in the other.
+The journal lineage identity every durable record a run writes carries as `meta.lineageId`. A journal lineage id is a versioned encoded tuple of the run id and the node-id path from the run root. It is a different identity from the trampoline lineage `FlowEngine.Round` carries as `rootExecutionId`, which is a bare execution id. A value from one space is not an address in the other, and each space carries its own brand so the compiler refuses a swap.
 
 #### `FlowEngine.Lineage.JournalLineageId`
 
@@ -156,15 +157,7 @@ An injective journal address minted from one run and node path. `JournalLineageI
 - **Signature:** `root(runId: string): JournalLineageId`
 - **Since:** `0.1.0`
 
-Returns the lineage id of a run's root node. `FlowEngine.makeInstance` calls it for every instance it builds.
-
-#### `FlowEngine.Lineage.make`
-
-- **Signature:** `make(runId: string, path: ReadonlyArray<string> = []): JournalLineageId`
-- **Default:** `path` is `[]`.
-- **Since:** `0.1.0`
-
-Returns the lineage id of a node reached by `path` from the run root. The path only ever grows inside one run, and no engine node contributes a segment today.
+Returns the lineage id of a run's root node. `FlowEngine.makeInstance` calls it for every instance it builds. No engine node contributes a path segment today, so the namespace exports no path constructor.
 
 ### `FlowEngine.makeUnsafe`
 
@@ -182,35 +175,42 @@ The returned service follows a trampoline for the caller: one `execute` answers 
 - **Since:** `0.1.0`
 - **Related:** `FlowEngine.Lineage`
 
-The trampoline round identity one lineage of executions is chained by. Every round is its own execution with its own journal, and the lineage is the unit a UI, a budget, and time travel attach to. Round 0 is the execution the caller asked for, and its id is also the lineage id every later round derives from.
+The trampoline round identity one lineage of executions is chained by. Every round is its own execution with its own journal, and the lineage is the unit a UI, a budget, and time travel attach to. Round 0 is the execution the caller asked for, and its id is also the root execution id every later round derives from.
+
+#### `FlowEngine.Round.RootExecutionId`
+
+- **Type:** `type RootExecutionId = string & { readonly [RootExecutionIdTypeId]: typeof RootExecutionIdTypeId }`
+- **Since:** `1.0.0`
+
+Round zero's execution id, which names the trampoline lineage. `Round.initial` mints one from an execution id, and a store rehydrates one from the id it persisted. `RootExecutionIdTypeId` is a declared unique symbol with no runtime value, so the brand exists only in the type.
 
 #### `FlowEngine.Round.Round`
 
-- **Type:** `interface Round { readonly lineageId: string; readonly ordinal: number }`
+- **Type:** `interface Round { readonly rootExecutionId: RootExecutionId; readonly ordinal: number }`
 - **Since:** `0.1.0`
 
-The position of one execution in its lineage: the lineage it belongs to, and which round of it this is, counted from zero.
+The position of one execution in its lineage: the root execution id the lineage derives from, and which round of it this is, counted from zero.
 
 #### `FlowEngine.Round.InvalidRound`
 
 - **Type:** `class InvalidRound extends Schema.TaggedError<InvalidRound>()("@smthrs/engine/InvalidRound", { code, message })`
 - **Since:** `1.0.0`
 
-The refusal raised for a malformed trampoline identity or resource bound. A `lineageId` must be non-empty well-formed UTF-16, and an `ordinal` must be a non-negative safe integer.
+The refusal raised for a malformed trampoline identity or resource bound. A `rootExecutionId` must be non-empty well-formed UTF-16, and an `ordinal` must be a non-negative safe integer.
 
 #### `FlowEngine.Round.initial`
 
-- **Signature:** `initial(executionId: string): Round`
+- **Signature:** `initial<Id extends string>(executionId: Id extends JournalLineageId ? never : Id): Round`
 - **Since:** `0.1.0`
 
-Returns the round a lineage starts at: ordinal zero, under the caller's execution id. It throws `InvalidRound` synchronously when `executionId` is empty or ill-formed UTF-16, including a trailing unpaired high surrogate.
+Returns the round a lineage starts at: ordinal zero, under the caller's execution id. A `JournalLineageId` argument does not compile, because a journal address is not an execution id. It throws `InvalidRound` synchronously when `executionId` is empty or ill-formed UTF-16, including a trailing unpaired high surrogate.
 
 #### `FlowEngine.Round.executionId`
 
 - **Signature:** `executionId(round: Round): Effect.Effect<string, InvalidRound, Crypto.Crypto>`
 - **Since:** `0.1.0`
 
-Returns `lineageId` unchanged for ordinal zero after validation, so `executionId(initial(id))` returns `id`. For later rounds, derives the execution id from `(lineageId, ordinal)` alone through the injected SHA-256. It is therefore the same id in every process and after every restart, which is what makes a handoff at-most-once. The preimage is `["flow-round/v2", lineageId, ordinal]`, and it is part of the package's durable contract: a lineage opened under one release derives the same round ids under the next.
+Returns `rootExecutionId` unchanged for ordinal zero after validation, so `executionId(initial(id))` returns `id`. For later rounds, derives the execution id from `(rootExecutionId, ordinal)` alone through the injected SHA-256. It is therefore the same id in every process and after every restart, which is what makes a handoff at-most-once. The preimage is `["flow-round/v2", rootExecutionId, ordinal]`, and it is part of the package's durable contract: a lineage opened under one release derives the same round ids under the next.
 
 #### `FlowEngine.Round.next`
 

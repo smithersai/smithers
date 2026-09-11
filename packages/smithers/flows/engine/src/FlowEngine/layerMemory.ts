@@ -17,6 +17,7 @@ import * as Schema from "effect/Schema"
 import type * as Scope from "effect/Scope"
 import { makeInstance } from "./FlowInstance.ts"
 import { makeUnsafe } from "./make.ts"
+import type * as Round from "./Round.ts"
 import { FlowNotRegistered } from "./Trampoline.ts"
 
 /**
@@ -76,7 +77,7 @@ export const layerMemory: Layer.Layer<FlowRuntime.FlowRuntime> = Layer.effect(Fl
     type ExecutionState = {
       readonly payload: unknown
       readonly parent: string | undefined
-      readonly logicalLineageId: string
+      readonly rootExecutionId: Round.RootExecutionId
       instance: FlowRuntime.FlowInstance["Service"]
       fiber: Fiber.Fiber<Flow.Result<unknown, unknown>> | undefined
       /**
@@ -110,10 +111,11 @@ export const layerMemory: Layer.Layer<FlowRuntime.FlowRuntime> = Layer.effect(Fl
       wakes.delete(executionId)
       Deferred.doneUnsafe(pending, Exit.void)
     }
-    // This is trampoline membership, not the journal frame lineage on an
-    // instance. A cancellation survives the gap before the next round exists.
-    const rounds = new Map<string, Set<string>>()
-    const cancelledLineages = new Set<string>()
+    // Trampoline membership, keyed by root execution id rather than the
+    // journal lineage on an instance. A cancellation survives the gap before
+    // the next round exists.
+    const rounds = new Map<Round.RootExecutionId, Set<string>>()
+    const cancelledLineages = new Set<Round.RootExecutionId>()
 
     // Every child execution request records an edge, including a fan-in that
     // joins an existing execution. This mirrors the durable engine's edge
@@ -162,7 +164,7 @@ export const layerMemory: Layer.Layer<FlowRuntime.FlowRuntime> = Layer.effect(Fl
       if (!executions.has(executionId)) return []
       const pending = [executionId]
       const seen = new Set(pending)
-      const visitedLineages = new Set<string>()
+      const visitedLineages = new Set<Round.RootExecutionId>()
       const admit = (id: string) => {
         if (seen.has(id)) return
         seen.add(id)
@@ -173,11 +175,11 @@ export const layerMemory: Layer.Layer<FlowRuntime.FlowRuntime> = Layer.effect(Fl
         const state = executions.get(id)
         if (state !== undefined) {
           state.instance.interrupted = true
-          const lineageId = state.logicalLineageId
-          cancelledLineages.add(lineageId)
-          if (!visitedLineages.has(lineageId)) {
-            visitedLineages.add(lineageId)
-            for (const round of rounds.get(lineageId)!) admit(round)
+          const root = state.rootExecutionId
+          cancelledLineages.add(root)
+          if (!visitedLineages.has(root)) {
+            visitedLineages.add(root)
+            for (const round of rounds.get(root)!) admit(round)
           }
         }
         for (const child of children.get(id) ?? []) admit(child)
@@ -428,30 +430,28 @@ export const layerMemory: Layer.Layer<FlowRuntime.FlowRuntime> = Layer.effect(Fl
         }
         if (!state) {
           const storedPayload = yield* snapshot(flow, options.payload)
-          // makeUnsafe always supplies the initial or advanced round; this
-          // encoded implementation is private to that adapter.
-          const logicalLineageId = options.round!.lineageId
+          const rootExecutionId = options.round.rootExecutionId
           const instance = makeInstance(flow, options.executionId)
           const parent = options.parent
-          instance.interrupted = cancelledLineages.has(logicalLineageId) ||
+          instance.interrupted = cancelledLineages.has(rootExecutionId) ||
             (parent !== undefined && (parent.interrupted ||
               executions.get(parent.executionId)?.instance.interrupted === true))
-          if (instance.interrupted) cancelledLineages.add(logicalLineageId)
+          if (instance.interrupted) cancelledLineages.add(rootExecutionId)
           state = {
             // The stored value never crosses into user code. Every drive
             // rebuilds its own copy, so caller and handler mutation cannot
             // alter a replay.
             payload: storedPayload,
             instance,
-            logicalLineageId,
+            rootExecutionId,
             fiber: undefined,
             bodyFiber: undefined,
             parent: options.parent?.executionId
           }
           executions.set(options.executionId, state)
-          const members = rounds.get(logicalLineageId) ?? new Set<string>()
+          const members = rounds.get(rootExecutionId) ?? new Set<string>()
           members.add(options.executionId)
-          rounds.set(logicalLineageId, members)
+          rounds.set(rootExecutionId, members)
           yield* resume(options.executionId)
         }
         if (options.discard) return

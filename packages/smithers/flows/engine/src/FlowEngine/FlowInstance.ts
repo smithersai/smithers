@@ -5,8 +5,7 @@
  *
  * @since 0.1.0
  */
-import type { Flow } from "@smthrs/flow"
-import { FlowRuntime } from "@smthrs/flow"
+import type { Flow, FlowRuntime } from "@smthrs/flow"
 import * as Latch from "effect/Latch"
 import * as Scope from "effect/Scope"
 import * as Lineage from "./Lineage.ts"
@@ -20,6 +19,9 @@ import * as Lineage from "./Lineage.ts"
  * the mutable state its suspension, interruption, and action coordination
  * are tracked in.
  *
+ * The returned `lineageId` keeps its {@link module:Lineage.JournalLineageId}
+ * brand, so it cannot pass for a trampoline root execution id.
+ *
  * @category constructors
  * @since 0.1.0
  * @slop
@@ -27,13 +29,15 @@ import * as Lineage from "./Lineage.ts"
 export const makeInstance = (
   flow: Flow.Any,
   executionId: string
-): FlowRuntime.FlowInstance["Service"] => {
+): FlowRuntime.FlowInstance["Service"] & { readonly lineageId: Lineage.JournalLineageId } => {
   // Ordinals are counted per allocation scope, not per run: the engine
   // scopes action dispatches by declaration identity and an optional
   // structural interpreter site so a permuted fiber interleaving cannot
   // renumber distinguishable dispatches across a replay (issue #73).
   const ordinals = new Map<string, number>()
-  return FlowRuntime.FlowInstance.of({
+  // `satisfies` rather than `FlowInstance.of`, which would widen `lineageId`
+  // to the port's `string` and drop the journal brand.
+  return {
     executionId,
     // The run's own root lineage: a subflow is a separate run with a separate
     // journal, so nesting is a lineage EDGE rather than a longer id here.
@@ -57,5 +61,5 @@ export const makeInstance = (
       snapshots: new Map(),
       keylessInFlight: new Set()
     }
-  })
+  } satisfies FlowRuntime.FlowInstance["Service"]
 }

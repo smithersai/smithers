@@ -11,6 +11,12 @@ import type * as Crypto from "effect/Crypto"
 import { FlowEngine } from "../src/index.ts"
 import { withCrypto } from "./Crypto.ts"
 
+// A round built from raw parts, including malformed ones only validation sees.
+const roundOf = (rootExecutionId: string, ordinal: number): FlowEngine.Round.Round => ({
+  rootExecutionId: rootExecutionId as FlowEngine.Round.RootExecutionId,
+  ordinal
+})
+
 const Increment = Action.make("trampoline/increment", {
   payload: { value: Schema.Number },
   success: Schema.Number
@@ -106,17 +112,17 @@ const wire = <const Registrations extends ReadonlyArray<Registration>>(...regist
 
 describe("FlowEngine.Round", () => {
   it("starts a lineage at ordinal zero under the caller's execution id", () => {
-    expect(FlowEngine.Round.initial("run-a")).toEqual({ lineageId: "run-a", ordinal: 0 })
+    expect(FlowEngine.Round.initial("run-a")).toEqual({ rootExecutionId: "run-a", ordinal: 0 })
   })
 
   it.effect("derives the same execution id for the same (lineage, ordinal), and different ids otherwise", () =>
     Effect.gen(function*() {
       const [first, again, later, other] = yield* withCrypto(
         Effect.all([
-          FlowEngine.Round.executionId({ lineageId: "run-a", ordinal: 1 }),
-          FlowEngine.Round.executionId({ lineageId: "run-a", ordinal: 1 }),
-          FlowEngine.Round.executionId({ lineageId: "run-a", ordinal: 2 }),
-          FlowEngine.Round.executionId({ lineageId: "run-b", ordinal: 1 })
+          FlowEngine.Round.executionId(roundOf("run-a", 1)),
+          FlowEngine.Round.executionId(roundOf("run-a", 1)),
+          FlowEngine.Round.executionId(roundOf("run-a", 2)),
+          FlowEngine.Round.executionId(roundOf("run-b", 1))
         ])
       )
 
@@ -128,13 +134,13 @@ describe("FlowEngine.Round", () => {
 
   it.effect("pins the durable round execution-id vectors", () =>
     Effect.gen(function*() {
-      // These pin SHA-256(JSON.stringify(["flow-round/v2", lineageId,
+      // These pin SHA-256(JSON.stringify(["flow-round/v2", rootExecutionId,
       // ordinal])). Changing either value is a durable-identity break that
       // orphans in-flight lineages and therefore requires a migration.
       const [first, second] = yield* withCrypto(
         Effect.all([
-          FlowEngine.Round.executionId({ lineageId: "run-a", ordinal: 1 }),
-          FlowEngine.Round.executionId({ lineageId: "run-a", ordinal: 2 })
+          FlowEngine.Round.executionId(roundOf("run-a", 1)),
+          FlowEngine.Round.executionId(roundOf("run-a", 2))
         ])
       )
       expect(first).toBe("5a80d3d6fbc2c69076f7407e3763e77a777de0cac9e77bda5b687ade914ba44a")
@@ -144,15 +150,15 @@ describe("FlowEngine.Round", () => {
   it.effect("advances within an unbounded lineage and within a budget that has room", () =>
     Effect.gen(function*() {
       const unbounded = yield* withCrypto(
-        FlowEngine.Round.next({ lineageId: "run-a", ordinal: 0 }, {
+        FlowEngine.Round.next(roundOf("run-a", 0), {
           flowName: "f",
           maxRounds: undefined
         })
       )
-      expect(unbounded.round).toEqual({ lineageId: "run-a", ordinal: 1 })
+      expect(unbounded.round).toEqual({ rootExecutionId: "run-a", ordinal: 1 })
 
       const bounded = yield* withCrypto(
-        FlowEngine.Round.next({ lineageId: "run-a", ordinal: 0 }, { flowName: "f", maxRounds: 2 })
+        FlowEngine.Round.next(roundOf("run-a", 0), { flowName: "f", maxRounds: 2 })
       )
       expect(bounded.round.ordinal).toBe(1)
     }))
@@ -161,7 +167,7 @@ describe("FlowEngine.Round", () => {
     Effect.gen(function*() {
       const exit = yield* withCrypto(
         Effect.exit(
-          FlowEngine.Round.next({ lineageId: "run-a", ordinal: 1 }, { flowName: "f", maxRounds: 2 })
+          FlowEngine.Round.next(roundOf("run-a", 1), { flowName: "f", maxRounds: 2 })
         )
       )
 
@@ -175,12 +181,12 @@ describe("FlowEngine.Round", () => {
     Effect.gen(function*() {
       const zero = yield* withCrypto(
         Effect.exit(
-          FlowEngine.Round.next({ lineageId: "run-a", ordinal: 0 }, { flowName: "f", maxRounds: 0 })
+          FlowEngine.Round.next(roundOf("run-a", 0), { flowName: "f", maxRounds: 0 })
         )
       )
       const negative = yield* withCrypto(
         Effect.exit(
-          FlowEngine.Round.next({ lineageId: "run-a", ordinal: 0 }, { flowName: "f", maxRounds: -1 })
+          FlowEngine.Round.next(roundOf("run-a", 0), { flowName: "f", maxRounds: -1 })
         )
       )
 
@@ -199,28 +205,28 @@ describe("FlowEngine.Round", () => {
       expect(() => FlowEngine.Round.initial("\ud800\uffff")).toThrow(FlowEngine.Round.InvalidRound)
       expect(() => FlowEngine.Round.initial("\udc00")).toThrow(FlowEngine.Round.InvalidRound)
       expect(FlowEngine.Round.initial("round-\ud83d\ude80")).toEqual({
-        lineageId: "round-\ud83d\ude80",
+        rootExecutionId: "round-\ud83d\ude80",
         ordinal: 0
       })
       const invalid: ReadonlyArray<Effect.Effect<unknown, unknown, Crypto.Crypto>> = [
-        FlowEngine.Round.executionId({ lineageId: "", ordinal: 0 }),
-        FlowEngine.Round.executionId({ lineageId: "run", ordinal: -1 }),
-        FlowEngine.Round.executionId({ lineageId: "run", ordinal: Number.NaN }),
-        FlowEngine.Round.executionId({ lineageId: "run", ordinal: 1.5 }),
-        FlowEngine.Round.next({ lineageId: "run", ordinal: Number.MAX_SAFE_INTEGER }, {
+        FlowEngine.Round.executionId(roundOf("", 0)),
+        FlowEngine.Round.executionId(roundOf("run", -1)),
+        FlowEngine.Round.executionId(roundOf("run", Number.NaN)),
+        FlowEngine.Round.executionId(roundOf("run", 1.5)),
+        FlowEngine.Round.next(roundOf("run", Number.MAX_SAFE_INTEGER), {
           flowName: "f",
           maxRounds: undefined
         }),
-        FlowEngine.Round.next({ lineageId: "run", ordinal: 0 }, {
+        FlowEngine.Round.next(roundOf("run", 0), {
           flowName: "f",
           maxRounds: Number.POSITIVE_INFINITY
         }),
-        FlowEngine.Round.next({ lineageId: "", ordinal: 0 }, {
+        FlowEngine.Round.next(roundOf("", 0), {
           flowName: "f",
           maxRounds: undefined
         }),
         FlowEngine.Round.next(
-          Object.defineProperty({}, "lineageId", {
+          Object.defineProperty({}, "rootExecutionId", {
             get: () => {
               throw new Error("hostile round getter")
             }
@@ -241,8 +247,8 @@ describe("FlowEngine.Round", () => {
   it.effect("keeps delimiter-bearing round tuples injective", () =>
     Effect.gen(function*() {
       const [left, right] = yield* withCrypto(Effect.all([
-        FlowEngine.Round.executionId({ lineageId: "r-", ordinal: 1 }),
-        FlowEngine.Round.executionId({ lineageId: "r", ordinal: 1 })
+        FlowEngine.Round.executionId(roundOf("r-", 1)),
+        FlowEngine.Round.executionId(roundOf("r", 1))
       ]))
       expect(left).not.toBe(right)
     }))
@@ -316,7 +322,7 @@ describe("a lineage on the memory engine", () => {
           )
           expect(id).toBe("memory-discard-lineage")
           for (const ordinal of [1, 2]) {
-            const roundId = yield* FlowEngine.Round.executionId({ lineageId: id, ordinal })
+            const roundId = yield* FlowEngine.Round.executionId(roundOf(id, ordinal))
             let settled = Option.none<Flow.Result<number, never>>()
             for (let attempt = 0; attempt < 300; attempt++) {
               settled = yield* engine.poll(Counter, roundId).pipe(Effect.catch(() => Effect.succeedNone))
@@ -373,7 +379,7 @@ describe("a lineage on the memory engine", () => {
           payload: { target: 2 },
           discard: true
         })
-        const childId = yield* FlowEngine.Round.executionId({ lineageId: "memory-parked-child", ordinal: 1 })
+        const childId = yield* FlowEngine.Round.executionId(roundOf("memory-parked-child", 1))
         expect(yield* pollTag(engine.poll(Parent, "memory-parked-parent"), "Suspended")).toBe("Suspended")
         expect(yield* pollTag(engine.poll(Counter, childId), "Suspended")).toBe("Suspended")
         ready = true

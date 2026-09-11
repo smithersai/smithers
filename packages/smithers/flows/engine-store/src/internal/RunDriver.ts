@@ -112,7 +112,20 @@ export interface Dependencies {
  */
 export interface Service {
   readonly register: FlowEngine.Encoded["register"]
-  readonly execute: FlowEngine.Encoded["execute"]
+  /**
+   * The encoded `execute`, widened for direct driver callers: an absent
+   * `round` admits the execution as round zero of its own lineage.
+   */
+  readonly execute: <const Discard extends boolean>(
+    flow: Flow.Any,
+    options: {
+      readonly executionId: string
+      readonly payload: object
+      readonly discard: Discard
+      readonly parent?: FlowRuntime.FlowInstance["Service"] | undefined
+      readonly round?: Parameters<FlowEngine.Encoded["execute"]>[1]["round"] | undefined
+    }
+  ) => Effect.Effect<Discard extends true ? void : Flow.Result<unknown, unknown>, FlowCycleDetected>
   readonly poll: FlowEngine.Encoded["poll"]
   readonly interrupt: FlowEngine.Encoded["interrupt"]
   readonly interruptUnsafe: FlowEngine.Encoded["interruptUnsafe"]
@@ -1462,13 +1475,13 @@ export const make = (
               executionId: advanced.executionId,
               stateJson: nextStateJson,
               payload,
-              lineageId: advanced.round.lineageId,
+              lineageId: advanced.round.rootExecutionId,
               roundOrdinal: advanced.round.ordinal,
               parentRunId: seam.executionId,
               onCreated: emitDecision(advanced.executionId, {
                 decision: "created",
                 state: JSON.parse(nextStateJson),
-                lineageId: advanced.round.lineageId,
+                lineageId: advanced.round.rootExecutionId,
                 roundOrdinal: advanced.round.ordinal,
                 parentExecutionId: seam.executionId
               })
@@ -1490,7 +1503,7 @@ export const make = (
                 decision: "handed-off",
                 status: "completed",
                 flow: seam.handoff.flow,
-                lineageId: advanced.round.lineageId,
+                lineageId: advanced.round.rootExecutionId,
                 roundOrdinal: advanced.round.ordinal,
                 nextExecutionId: advanced.executionId,
                 owner: dependencies.owner
@@ -1591,7 +1604,9 @@ export const make = (
     const handOff = (seam: HandoffSeam): Effect.Effect<void, never, Crypto.Crypto> =>
       FlowEngine.Round.next(
         {
-          lineageId: seam.row.lineageId!,
+          // The row's lineage_id was written from a round's rootExecutionId,
+          // so this rehydrates the brand; `Round.next` still validates it.
+          rootExecutionId: seam.row.lineageId! as FlowEngine.Round.RootExecutionId,
           ordinal: seam.row.roundOrdinal!
         },
         // The origin persisted its budget into every round's state, so a
@@ -2154,7 +2169,7 @@ export const make = (
             executionId: options.executionId,
             stateJson: createdStateJson,
             payload,
-            lineageId: round.lineageId,
+            lineageId: round.rootExecutionId,
             roundOrdinal: round.ordinal,
             ...(previousExecutionId === undefined
               ? {}

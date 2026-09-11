@@ -108,13 +108,13 @@ action, which the engine restores from persisted state across restarts.
 
 ## Invalid round or budget
 
-**Symptom.** `Round lineageId must be non-empty well-formed text`,
+**Symptom.** `Round rootExecutionId must be non-empty well-formed text`,
 `Round ordinal must be a non-negative safe integer`, or
 `Round maxRounds must be a positive safe integer when supplied`.
 
 **Cause.** A trampoline identity or a round budget is malformed. In practice
-this is a `maxRounds` of 0 or a negative number, or a lineage id that came from
-somewhere other than an execution id.
+this is a `maxRounds` of 0 or a negative number, or a root execution id that
+came from somewhere other than an execution id.
 
 **Fix.** Declare `maxRounds` as a positive safe integer. Remember it counts
 rounds, so `maxRounds: 1` means no handoff at all. See

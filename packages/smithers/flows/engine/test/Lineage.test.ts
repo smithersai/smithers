@@ -7,16 +7,17 @@ import { FlowEngine } from "../src/index.ts"
 const flow = Flow.make("engine/Lineage", { payload: {}, success: Schema.String, body: () => Node.succeed("ready") })
 
 describe("FlowEngine.Lineage", () => {
-  it("addresses a run's root, and a node by its path from that root", () => {
+  it("addresses a run's root as an injective encoded tuple", () => {
     expect(FlowEngine.Lineage.root("run-1")).toBe("smithers-journal-lineage/v1:[\"run-1\"]")
-    expect(FlowEngine.Lineage.make("run-1")).toBe(FlowEngine.Lineage.root("run-1"))
-    expect(FlowEngine.Lineage.make("run-1", [])).toBe(FlowEngine.Lineage.root("run-1"))
-    expect(FlowEngine.Lineage.make("run-1", ["agent", "step-3"])).toBe(
-      "smithers-journal-lineage/v1:[\"run-1\",\"agent\",\"step-3\"]"
-    )
-    expect(FlowEngine.Lineage.make("r", ["a/b"])).not.toBe(FlowEngine.Lineage.make("r", ["a", "b"]))
-    expect(FlowEngine.Lineage.root("r/root/x")).not.toBe(FlowEngine.Lineage.make("r", ["x", "root"]))
-    expect(FlowEngine.Lineage.make("r", ["é"])).not.toBe(FlowEngine.Lineage.make("r", ["e\u0301"]))
+    expect(FlowEngine.Lineage.root("r/root/x")).toBe("smithers-journal-lineage/v1:[\"r/root/x\"]")
+    expect(FlowEngine.Lineage.root("a\",\"b")).not.toBe("smithers-journal-lineage/v1:[\"a\",\"b\"]")
+    expect(FlowEngine.Lineage.root("é")).not.toBe(FlowEngine.Lineage.root("é"))
+  })
+
+  it("mints only the root lineage until a node contributes a path segment", () => {
+    // No engine node contributes a segment, so a path constructor would be a
+    // public API without a caller. It returns with the node that needs it.
+    expect(Object.keys(FlowEngine.Lineage)).toEqual(["root"])
   })
 
   it("is carried on the instance a runtime hands a flow", () => {

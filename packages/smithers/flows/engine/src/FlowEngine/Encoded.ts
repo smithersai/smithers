@@ -6,9 +6,9 @@
  * stores implement this interface, never the typed port directly.
  *
  * The name is narrower than it looks: only SOME members carry encoded values,
- * and an implementation that encodes the rest produces a silently wrong
- * system, because those members are typed `Flow.Result<unknown, unknown>` and
- * nothing decodes them on the way out.
+ * and an implementation that encodes the decoded ones produces a silently
+ * wrong system, because those members are typed `Flow.Result<unknown, unknown>`
+ * and nothing decodes them on the way out.
  *
  * - `actionExecute` and `deferredResult` return ENCODED values, which
  *   `makeUnsafe` decodes through the action's `exitSchemaPartial` and the
@@ -18,8 +18,10 @@
  * - `execute` and `poll` return DECODED results. The implementation decodes
  *   them itself, through
  *   `Flow.Result({ success: flow.successSchema, error: flow.errorSchema })`.
- * - `register`, `interrupt`, `interruptUnsafe`, `resume`, and `scheduleClock`
- *   carry no flow-declared payload at all.
+ * - Every other member, optional ones included, carries no flow-declared
+ *   payload at all.
+ *
+ * `docs/reference/engine.md` tabulates every member with its optionality.
  *
  * @since 0.1.0
  */
@@ -99,14 +101,14 @@ export interface Encoded {
       readonly discard: Discard
       readonly parent?: FlowRuntime.FlowInstance["Service"] | undefined
       /**
-       * The execution's trampoline position. Later rounds name the preceding
-       * execution so durable stores can verify the continue-as-new chain.
+       * The execution's trampoline position. `makeUnsafe` supplies it on every
+       * call: round zero for a fresh execution, and the advanced round after a
+       * handoff. Later rounds name the preceding execution so durable stores
+       * can verify the continue-as-new chain.
        */
-      readonly round?:
-        | (Round.Round & {
-          readonly previousExecutionId?: string | undefined
-        })
-        | undefined
+      readonly round: Round.Round & {
+        readonly previousExecutionId?: string | undefined
+      }
     }
   ) => Effect.Effect<
     Discard extends true ? void : Flow.Result<unknown, unknown>,

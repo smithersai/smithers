@@ -90,7 +90,7 @@ describe("cancellation follows logical runs", () => {
               executionId: "next",
               payload: {},
               discard: true,
-              round: { lineageId: "root", ordinal: 1, previousExecutionId: "root" }
+              round: { ...FlowEngine.Round.initial("root"), ordinal: 1, previousExecutionId: "root" }
             }).pipe(Effect.forkScoped)
             yield* entered.await
             if (status === "suspended") yield* Fiber.join(drive)
@@ -139,7 +139,7 @@ describe("cancellation follows logical runs", () => {
             executionId: "next",
             payload: {},
             discard: true,
-            round: { lineageId: "root", ordinal: 1, previousExecutionId: "root" }
+            round: { ...FlowEngine.Round.initial("root"), ordinal: 1, previousExecutionId: "root" }
           })
           expect(calls).toBe(0)
           expect((yield* store.get("next")).status).toBe("cancelled")
@@ -210,7 +210,7 @@ describe("cancellation follows logical runs", () => {
             executionId: "next",
             payload: {},
             discard: true,
-            round: { lineageId: "root", ordinal: 1, previousExecutionId: "root" }
+            round: { ...FlowEngine.Round.initial("root"), ordinal: 1, previousExecutionId: "root" }
           })
           expect((yield* store.get("next")).status).toBe(ending === "completed" ? "completed" : "failed")
           expect((yield* store.get("child-next")).cancelRequestedAtMs !== null).toBe(policy === "cancel")

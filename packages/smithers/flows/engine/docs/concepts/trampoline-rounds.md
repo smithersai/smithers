@@ -39,8 +39,8 @@ Two consequences follow from resolving the target by tag:
 ## The next round's id is derived, not allocated
 
 Round 0's execution id is the one the caller executed, and it is also the
-lineage id. Every later round's id is derived from the pair
-`(lineageId, ordinal)` through SHA-256.
+root execution id. Every later round's id is derived from the pair
+`(rootExecutionId, ordinal)` through SHA-256.
 
 Deriving rather than allocating is what makes the handoff at-most-once. A
 process that dies between settling round N and opening round N+1 re-derives the
@@ -65,7 +65,7 @@ rather than "one handoff", which is what a reader of the number expects.
 
 An absent budget is unbounded, which is the right default for a lineage whose
 exit condition is its own branch. A budget that is not a positive safe integer
-is refused with `InvalidRound`, as is a malformed lineage id or ordinal.
+is refused with `InvalidRound`, as is a malformed root execution id or ordinal.
 
 ## Two ids are called a lineage
 
@@ -73,21 +73,23 @@ The word appears twice in this package, and they are different spaces.
 
 | Name               | What it is                                                                                                                                                                         | Shape                      |
 | ------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------- |
-| Trampoline lineage | Round 0's execution id, naming the chain of round executions one `execute` call follows. `Round` carries it as `lineageId`.                                                        | A bare execution id.       |
+| Trampoline lineage | Round 0's execution id, naming the chain of round executions one `execute` call follows. `Round` carries it as `rootExecutionId`.                                                  | A bare execution id.       |
 | Journal lineage    | A run's position in its journal: the run id followed by the node path from the run root. `Lineage` mints it, and every durable record a run writes carries it as `meta.lineageId`. | A versioned encoded tuple. |
 
 The shapes differ, so a value from one space is never an address in the other,
-and `meta.lineageId` on an engine record always means the journal one.
+and `meta.lineageId` on an engine record always means the journal one. Each
+space has its own brand, `Round.RootExecutionId` and `Lineage.JournalLineageId`,
+so `Round.initial(Lineage.root(id))` does not compile.
 
 A subflow is a separate run with its own journal, so nesting is a lineage EDGE
 rather than a longer id: the node path only ever grows inside one run, and no
-engine node contributes a segment today. `Lineage.make` takes a path parameter
-so a nested-node lineage lands in one place when one appears, rather than being
-invented at a call site.
+engine node contributes a segment today. `Lineage` therefore exports only
+`root`; a path constructor arrives with the first node that contributes a
+segment.
 
 ## Related
 
 - [Execution identity](./execution-identity.md): why every round is a separate
   execution id, and what joining one means.
 - [The API reference](../api.md) for `Round.initial`, `Round.next`,
-  `Round.executionId`, `Lineage.root`, and `Lineage.make`.
+  `Round.executionId`, and `Lineage.root`.

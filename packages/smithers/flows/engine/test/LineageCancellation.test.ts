@@ -5,6 +5,12 @@ import { Cause, Deferred, Effect, Exit, Fiber, Option, Schema } from "effect"
 import { FlowEngine } from "../src/index.ts"
 import { withCrypto } from "./Crypto.ts"
 
+// A round built from raw parts, including malformed ones only validation sees.
+const roundOf = (rootExecutionId: string, ordinal: number): FlowEngine.Round.Round => ({
+  rootExecutionId: rootExecutionId as FlowEngine.Round.RootExecutionId,
+  ordinal
+})
+
 const Round = Flow.make("memory-lineage/round", {
   payload: { ordinal: Schema.Number },
   success: Schema.String,
@@ -69,7 +75,7 @@ describe("memory logical cancellation", () => {
           (instance) => Flow.suspend(instance)
         ))
       yield* engine.execute(Round, { executionId: "root", payload: { ordinal: 0 } }).pipe(Effect.forkScoped)
-      const next = yield* FlowEngine.Round.executionId({ lineageId: "root", ordinal: 1 })
+      const next = yield* FlowEngine.Round.executionId(roundOf("root", 1))
       let parked = false
       for (let attempt = 0; attempt < 40 && !parked; attempt++) {
         yield* Effect.yieldNow
@@ -132,7 +138,7 @@ describe("memory logical cancellation", () => {
       )
       yield* Deferred.await(childEntered)
       yield* engine.interrupt(Parent, "parent")
-      const next = yield* FlowEngine.Round.executionId({ lineageId: "child", ordinal: 1 })
+      const next = yield* FlowEngine.Round.executionId(roundOf("child", 1))
       yield* awaitSettlement(next)
       yield* engine.execute(Round, { executionId: "late-child", payload: { ordinal: 1 }, discard: true }).pipe(
         Effect.provideService(FlowRuntime.FlowInstance, parent!)
@@ -159,8 +165,8 @@ describe("memory logical cancellation", () => {
           Effect.forkScoped
         )
         yield* Deferred.await(entered)
-        const second = yield* FlowEngine.Round.executionId({ lineageId: "root", ordinal: 1 })
-        const third = yield* FlowEngine.Round.executionId({ lineageId: "root", ordinal: 2 })
+        const second = yield* FlowEngine.Round.executionId(roundOf("root", 1))
+        const third = yield* FlowEngine.Round.executionId(roundOf("root", 2))
         yield* Round.interrupt(requestedOrdinal === 0 ? "root" : second)
         yield* awaitSettlement(third)
         expect(cleanup).toBe(1)
