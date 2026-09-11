@@ -1,7 +1,6 @@
-import { fileArgs } from "../flows/FileArgs"
-import { FileTree } from "@smthrs/ui"
 import { useLiveQuery } from "@tanstack/react-db"
 import { BookOpen, ChevronRight, Download, FolderGit2, History, KeyRound, Moon, Pencil, Plus, RotateCcw, Sun, Timer, UserRound, Workflow, X } from "lucide-react"
+import { useMemo } from "react"
 import { roleMenuEntries } from "../AgentRoleMenu"
 import { useController } from "../ControllerContext"
 import { rovingKeyDown } from "../RovingKeyDown"
@@ -9,6 +8,7 @@ import { DEFAULT_WORKSPACE_NAME, MAIN_TAB_ID, parseRepoSelection } from "../stat
 import type { Repo, RepoTreeRow, TabRow, WorkingCopy } from "../state/AppState"
 import { isReadOnlyCopy, workingCopyLabel } from "../state/WorkspaceViews"
 import { SELECT_REPO_LABEL } from "../Onboarding"
+import { copyTreesOf, RepoTree } from "./RepoTree"
 
 /*
  * The sidebar (docs/workbench-lanes/sidebar-tree.md): the workspace heading
@@ -34,34 +34,12 @@ import { SELECT_REPO_LABEL } from "../Onboarding"
  * "tab" lives here.
  */
 
-/* The existing truncated line (cards/FileCards.tsx), so a capped directory says the same thing in both places. */
-const TRUNCATED_LINE = "Truncated — the directory holds more entries than the listing shows."
-
-/** The tree's view of one working copy: every loaded row, keyed by path. */
-interface CopyTree {
-  readonly root: RepoTreeRow | undefined
-  readonly rows: ReadonlyMap<string, RepoTreeRow>
-  readonly nodes: ReadonlyArray<string>
-  readonly directories: ReadonlyArray<string>
-  readonly collapsed: ReadonlySet<string>
-}
-
-const copyTreeOf = (copyId: string, treeRows: ReadonlyArray<RepoTreeRow>): CopyTree => {
-  const rows = new Map<string, RepoTreeRow>()
-  for (const row of treeRows) if (row.copyId === copyId) rows.set(row.path, row)
-  const nodes: string[] = []
-  const directories: string[] = []
-  // Rows in path order; each level keeps the order the seam wrote (RepoTreeSeam: dirs first, then by name).
-  for (const row of [...rows.values()].sort((left, right) => left.path.localeCompare(right.path))) {
-    if (row.state !== "loaded") continue
-    for (const entry of row.entries) {
-      const full = row.path === "" ? entry.name : `${row.path}/${entry.name}`
-      if (entry.kind === "dir") directories.push(full)
-      else nodes.push(full)
-    }
-  }
-  const collapsed = new Set(directories.filter((directory) => rows.get(directory)?.expanded !== true))
-  return { root: rows.get(""), rows, nodes, directories, collapsed }
+/** One repository row of the Repos section: an inventory repository, or a local checkout it does not know. */
+interface TreeRepo {
+  readonly repoId: string
+  readonly name: string
+  readonly org: string | null
+  readonly copies: ReadonlyArray<WorkingCopy>
 }
 
 export function ChromeBar() {
@@ -87,6 +65,8 @@ export function ChromeBar() {
   const { data: repositoryRows } = useLiveQuery(collections.repositories)
   const { data: copyRows } = useLiveQuery(collections.workingCopies)
   const { data: treeRows } = useLiveQuery(collections.repoTree)
+  // Every copy's tree, derived once per change of the rows: a shell render (a streamed token) re-derives none.
+  const treeOf = useMemo(() => copyTreesOf(treeRows), [treeRows])
   const session = sessionRows[0]
   const identity = identityRows[0]
   const activeTabId = session?.activeTabId ?? MAIN_TAB_ID
@@ -145,12 +125,6 @@ export function ChromeBar() {
   const copiesByRepoId = new Map<string, ReadonlyArray<WorkingCopy>>()
   for (const copy of copyRows) {
     copiesByRepoId.set(copy.repoId, [...(copiesByRepoId.get(copy.repoId) ?? []), copy])
-  }
-  interface TreeRepo {
-    readonly repoId: string
-    readonly name: string
-    readonly org: string | null
-    readonly copies: ReadonlyArray<WorkingCopy>
   }
   const tree: Array<TreeRepo> = [...repositoryRows]
     .sort((left, right) => left.org.localeCompare(right.org) || left.name.localeCompare(right.name))
@@ -236,62 +210,14 @@ export function ChromeBar() {
       ) :
       null
 
-  /*
-   * The expanded tree under a copy's row: what the route returned, nothing
-   * else. Every directory row is `repo.tree <copyId>#<path>`; every file row
-   * is the existing file card in the chat (THE EMBED LAW): `files.read <path>
-   * <repo>` on a local checkout, `workspace.file <path> <workspaceId>` on a
-   * cloud workspace copy, `files.read <path> <org/repo>` on the shared copy
-   * (the same public read the files flows make). A directory with nothing
-   * loaded shows its row's own state: `loading…`, `empty`, or the route's
-   * error text verbatim.
-   */
-  const copyTree = (copy: WorkingCopy, view: CopyTree) => {
-    if (view.root?.expanded !== true) return null
-    const repo = copy.path === undefined ? undefined : openByPath.get(copy.path)
-    const fileFlow = copy.kind === "workspace" ? "workspace.file" : "files.read"
-    const fileFlowArgs = (path: string): string =>
-      copy.kind === "workspace"
-        ? fileArgs(path, copy.workspaceId ?? copy.id)
-        : copy.kind === "shared"
-        ? fileArgs(path, copy.repoId)
-        : fileArgs(path, repo?.id)
-    const stateOf = (path: string): string => {
-      const row = view.rows.get(path)
-      if (row === undefined || row.state === "loading") return "loading…"
-      if (row.state === "failed") return row.error ?? "failed"
-      return "empty"
-    }
-    // The root with nothing under it says its own state in place: `loading…`, `empty`, or the refusal verbatim (a box that is not running names its state).
-    if (view.nodes.length === 0 && view.directories.length === 0) {
-      return (
-        <div className="repo-tree" role="presentation" data-testid={`repo-tree-${copy.id}`}>
-          <span className="repo-tree-state" data-state={view.root.state} data-testid={`repo-tree-state-${copy.id}#`}>
-            {stateOf("")}
-          </span>
-        </div>
-      )
-    }
-    return (
-      <div className="repo-tree" role="presentation" data-testid={`repo-tree-${copy.id}`}>
-        <FileTree
-          nodes={view.nodes}
-          directories={view.directories}
-          collapsed={view.collapsed}
-          onToggle={(path) => controller.runCommand("repo.tree", `${copy.id}#${path}`)}
-          onSelect={(path) => controller.runCommand(fileFlow, fileFlowArgs(path))}
-          renderDirectoryEmpty={(path) => (
-            <span className="repo-tree-state" data-state={view.rows.get(path)?.state ?? "loading"} data-testid={`repo-tree-state-${copy.id}#${path}`}>
-              {stateOf(path)}
-            </span>
-          )}
-          renderDirectoryFooter={(path) => view.rows.get(path)?.truncated === true ? <span className="repo-tree-state">{TRUNCATED_LINE}</span> : null}
-          directoryProps={(path) => ({ "data-flow": "repo.tree", "data-testid": `repo-dir-${copy.id}#${path}` })}
-          nodeProps={(node) => ({ "data-flow": fileFlow, "data-testid": `repo-file-${copy.id}#${node.path}` })}
-        />
-      </div>
-    )
-  }
+  /* The expanded tree under a copy's row (RepoTree.tsx); a local checkout reads its files through its open repository. */
+  const copyTree = (copy: WorkingCopy) => (
+    <RepoTree
+      copy={copy}
+      view={treeOf(copy.id)}
+      repoId={copy.path === undefined ? undefined : openByPath.get(copy.path)?.id}
+    />
+  )
 
   /* A copy's sessions, labelled apart from its files once the tree is open. */
   const copySessions = (copy: WorkingCopy, treeOpen: boolean) => {
@@ -441,7 +367,7 @@ export function ChromeBar() {
                 : activeKey === group.repoId || (selection !== null && "repoId" in selection && selection.repoId === group.repoId)
               const open = single !== undefined && single.path !== undefined && openByPath.has(single.path)
               const orgHeader = group.org !== null && groups[groupIndex - 1]?.org !== group.org
-              const singleTree = single === undefined ? undefined : copyTreeOf(single.id, treeRows)
+              const singleTree = single === undefined ? undefined : treeOf(single.id)
               return (
                 <div key={groupKey} role="presentation">
                   {orgHeader ?
@@ -503,7 +429,7 @@ export function ChromeBar() {
                     {single !== undefined && singleTree !== undefined ?
                       (
                         <>
-                          {copyTree(single, singleTree)}
+                          {copyTree(single)}
                           {copySessions(single, singleTree.root?.expanded === true)}
                         </>
                       ) :
@@ -512,7 +438,7 @@ export function ChromeBar() {
                           {group.copies.map((copy) => {
                             const copyActive = activeCopyId === copy.id
                             const copyLabel = workingCopyLabel(copy)
-                            const view = copyTreeOf(copy.id, treeRows)
+                            const view = treeOf(copy.id)
                             return (
                               <div key={copy.id} className="repo-copy" role="presentation" data-testid={`copy-${copy.id}`}>
                                 <div className="repo" role="presentation">
@@ -562,7 +488,7 @@ export function ChromeBar() {
                                     ) :
                                     null}
                                 </div>
-                                {copyTree(copy, view)}
+                                {copyTree(copy)}
                                 {copySessions(copy, view.root?.expanded === true)}
                               </div>
                             )

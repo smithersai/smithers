@@ -1,6 +1,7 @@
 import { GlobalRegistrator } from "@happy-dom/global-registrator"
 import type { StorageApi } from "@tanstack/db"
-import { afterAll, afterEach, describe, expect, test } from "bun:test"
+import { afterAll, afterEach, describe, expect, spyOn, test } from "bun:test"
+import * as SmithersUi from "@smthrs/ui"
 import { readFileSync } from "node:fs"
 import { fileURLToPath } from "node:url"
 import { flushSync } from "react-dom"
@@ -871,6 +872,35 @@ describe("the sidebar's file tree", () => {
     expect(order).toEqual(["repo-tree", "repo-sessions-label", "repo-tabs"])
     expect(group?.querySelector(".repo-sessions-label")?.textContent).toBe("sessions")
     expect(group?.querySelector(".repo-tabs [data-testid=tab-t1]")).not.toBeNull()
+  })
+
+  /*
+   * The streaming hot path: a message delta re-renders the shell, and the
+   * sidebar under it used to rebuild every copy's tree from the whole
+   * repoTree collection on each one. The tree is derived once per change of
+   * its rows, so the file tree keeps the very rows it was handed.
+   */
+  test("a message delta re-derives no copy's tree: the file tree keeps the rows it was handed", async () => {
+    const fileTree = spyOn(SmithersUi, "FileTree")
+    try {
+      const { store, controller } = await treeHarness()
+      const { host, act } = mount(controller)
+      await settle(act, () => host.querySelector<HTMLButtonElement>(`[data-testid="repo-tree-toggle-${COPY}"]`)?.click())
+      // The copy tree is the FileTree handed `directories`; the Wiki's note list is not.
+      const handed = (): ReadonlyArray<ReadonlyArray<unknown>> =>
+        fileTree.mock.calls.flatMap(([props]) => props.directories === undefined ? [] : [props.nodes])
+      const rows = handed().at(-1)
+      expect(rows).toEqual(["README.md", "zeta.txt"])
+      if (rows === undefined) throw new Error("the copy tree was never handed its rows")
+      fileTree.mockClear()
+
+      await settle(act, () => store.dispatch({ type: "message.appended", actor: "system", text: "a delta beside the tree" }))
+
+      expect(host.querySelector("[data-testid=transcript]")?.textContent).toContain("a delta beside the tree")
+      for (const nodes of handed()) expect(nodes).toBe(rows)
+    } finally {
+      fileTree.mockRestore()
+    }
   })
 })
 

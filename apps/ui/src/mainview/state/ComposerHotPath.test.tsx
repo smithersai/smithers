@@ -1,12 +1,14 @@
 import { GlobalRegistrator } from "@happy-dom/global-registrator"
 import type { StorageApi } from "@tanstack/db"
-import { afterAll, afterEach, describe, expect, test } from "bun:test"
+import { afterAll, afterEach, describe, expect, spyOn, test } from "bun:test"
+import { Profiler } from "react"
 import { flushSync } from "react-dom"
 import { createRoot } from "react-dom/client"
 import App from "../App"
 import { ControllerTestProvider } from "../ControllerContext"
 import type { NativeRepositories } from "../native/NativeBridge"
 import type { AgentPort } from "../runtime/AgentPort"
+import * as VaultAdapter from "../wiki/VaultAdapter"
 import { createAppController } from "./AppController"
 import type { AppController as AppControllerType } from "./AppController"
 import { createAppStore } from "./AppStore"
@@ -75,6 +77,8 @@ interface Counted {
   readonly controller: AppControllerType
   /** How many times App has rendered since mount. */
   readonly renders: () => number
+  /** How many commits the shell's tree has made since mount, whoever rendered in them. */
+  readonly commits: () => number
   readonly host: HTMLElement
   readonly act: (change: () => unknown) => Promise<void>
 }
@@ -94,13 +98,16 @@ const mountCounted = async (): Promise<Counted> => {
       }
     }
   }
+  let commits = 0
   const host = document.createElement("div")
   document.body.append(host)
   const root = createRoot(host)
   flushSync(() =>
     root.render(
       <ControllerTestProvider controller={controller}>
-        <App />
+        <Profiler id="shell" onRender={() => { commits += 1 }}>
+          <App />
+        </Profiler>
       </ControllerTestProvider>
     )
   )
@@ -118,7 +125,7 @@ const mountCounted = async (): Promise<Counted> => {
     flushSync(() => {})
   }
   await act(() => {})
-  return { controller, renders: () => count, host, act }
+  return { controller, renders: () => count, commits: () => commits, host, act }
 }
 
 const textarea = (host: HTMLElement): HTMLTextAreaElement | null => host.querySelector<HTMLTextAreaElement>("textarea")
@@ -189,6 +196,83 @@ describe("the composer hot path: typing never re-renders the transcript", () => 
     await view.act(() => {})
 
     expect(view.controller.store.session().connectMenuOpen).toBe(false)
+  })
+})
+
+/*
+ * The streaming hot path.
+ *
+ * A message delta has to re-render the shell, because the shell renders the
+ * transcript. It must not re-derive what the transcript does not show: every
+ * token used to walk the flow registry twice (the manifest and the opening
+ * read's flow count) and resolve the open note's links by parsing every
+ * note's body, with the Wiki pane closed.
+ */
+const appendMessage = (view: Counted, text: string): Promise<void> =>
+  view.act(() => view.controller.store.dispatch({ type: "message.appended", actor: "system", text }))
+
+describe("the streaming hot path: a message delta re-derives only what the transcript shows", () => {
+  test("the shell reads the flow registry once per render", async () => {
+    const view = await mountCounted()
+    const reads = view.renders()
+    const commits = view.commits()
+
+    await appendMessage(view, "one delta")
+
+    expect(view.host.querySelector(".smithers-transcript")?.textContent).toContain("one delta")
+    expect(view.commits()).toBeGreaterThan(commits)
+    expect(view.renders() - reads).toBe(view.commits() - commits)
+  })
+
+  test("with the Wiki closed a delta resolves no note links; with it open, only a note change does", async () => {
+    const links = spyOn(VaultAdapter, "linksOf")
+    try {
+      const view = await mountCounted()
+      expect(view.controller.store.collections.worldDocuments.size).toBeGreaterThan(0)
+      links.mockClear()
+
+      await appendMessage(view, "a delta with the Wiki closed")
+
+      expect(view.host.querySelector(".smithers-transcript")?.textContent).toContain("a delta with the Wiki closed")
+      expect(links).not.toHaveBeenCalled()
+
+      // Open, the rail is derived for the open note...
+      await view.act(() => view.controller.store.dispatch({ type: "surface.changed", actor: "user", surface: "world" }))
+      expect(view.host.querySelector("[data-testid=wiki-rail]")).not.toBeNull()
+      expect(links).toHaveBeenCalled()
+      links.mockClear()
+
+      // ...and a delta beside it leaves that derivation alone.
+      await appendMessage(view, "a delta with the Wiki open")
+
+      expect(view.host.querySelector(".smithers-transcript")?.textContent).toContain("a delta with the Wiki open")
+      expect(view.host.querySelector("[data-testid=wiki-rail]")).not.toBeNull()
+      expect(links).not.toHaveBeenCalled()
+    } finally {
+      links.mockRestore()
+    }
+  })
+
+  test("in graph mode a delta rebuilds no graph", async () => {
+    const graph = spyOn(VaultAdapter, "linkGraphOf")
+    try {
+      const view = await mountCounted()
+      await view.act(() => view.controller.store.dispatch({ type: "surface.changed", actor: "user", surface: "world" }))
+      await view.act(() => view.controller.store.dispatch({ type: "wiki.pane.changed", actor: "user", pane: "graph", path: null }))
+      expect(view.host.querySelector("[data-testid=wiki-graph-pane]")).not.toBeNull()
+      expect(view.host.querySelector("[data-testid=wiki-pane-graph-scope]")?.textContent).toBe("All")
+      expect(view.host.querySelector("[data-testid=wiki-rail]")).toBeNull()
+      expect(graph).toHaveBeenCalled()
+      graph.mockClear()
+
+      await appendMessage(view, "a delta beside the graph")
+
+      expect(view.host.querySelector(".smithers-transcript")?.textContent).toContain("a delta beside the graph")
+      expect(view.host.querySelector("[data-testid=wiki-graph-pane]")).not.toBeNull()
+      expect(graph).not.toHaveBeenCalled()
+    } finally {
+      graph.mockRestore()
+    }
   })
 })
 

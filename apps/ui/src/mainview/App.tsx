@@ -1,11 +1,9 @@
 import { GuideComposerHost, GuideShell } from "./onboarding/GuideShell"
 import {
-  Badge,
   Button,
   ChatMessage,
   ChatTranscript,
   EmptyState,
-  FileTree,
   Markdown,
   Marker,
   Reasoning,
@@ -14,58 +12,33 @@ import {
   SuggestionGroup
 } from "@smthrs/ui"
 import { useLiveQuery } from "@tanstack/react-db"
-import {
-  BookOpen,
-  CheckCircle2,
-  Copy,
-  Factory,
-  HelpCircle,
-  Plus,
-  RotateCcw,
-  Sparkles,
-  Timer,
-  Trash2,
-  Waypoints,
-  Workflow
-} from "lucide-react"
-import { BacklinksPanel, OutlineView } from "@smthrs/ui/vault"
-import { lazy, Suspense, useMemo, useContext, useRef, useState } from "react"
+import { CheckCircle2, Copy, HelpCircle, RotateCcw, Sparkles } from "lucide-react"
+import { useMemo, useContext, useRef, useState } from "react"
 import type { PointerEvent as ReactPointerEvent } from "react"
 import { createPortal } from "react-dom"
 import { CardView } from "./ChatCards"
 import { cardActions } from "./cards/CardActions"
-import { TriggerListCardBody } from "./cards/TriggersCard"
-import { WorkflowListCardBody } from "./cards/WorkflowCards"
 import { Composer } from "./Composer"
 import { ConnectorsSurface } from "./ConnectorsSurface"
+import { FlowsSurface } from "./FlowsSurface"
 import { PluginsSurface } from "./plugins/PluginsSurface"
 import { useController } from "./ControllerContext"
 import { DevtoolsPanel } from "./DevtoolsPanel"
-import { stampFlows } from "./FlowStamp"
 import { INIT_GREETING, INIT_TITLE, initMessage, repoStep, repoSuggestion } from "./Onboarding"
 import type { InitMessage } from "./Onboarding"
 import type { Card, Message, Suggestion as SuggestionBinding } from "./state/AppState"
-import { WIKI_DISPLAY_NAME, WIKI_GRAPH_ALL_SCOPE } from "./state/AppState"
 import { scrubToolEcho } from "./state/MessageScrub"
 import { conversationTabIdOf, inConversation, MAIN_TAB_ID } from "./state/AppState"
 import { catalogRepositoryOf } from "./state/RepoContext"
-import { ConfirmDialog, SurfaceHeader } from "./SurfaceChrome"
+import { ConfirmDialog } from "./SurfaceChrome"
 import { ChromeBar } from "./tabs/ChromeBar"
 import { TabBodies } from "./tabs/TabBodies"
 import { timeLabel } from "./Timestamps"
 import { ToastStack } from "./ToastStack"
 import { useCardRows, useWorkflowCatalogRows } from "./state/useCardRows"
-import { linkGraphOf, linksOf, neighbourhoodOf } from "./wiki/VaultAdapter"
 import { StorageRecoveryButton } from "./StorageRecoveryButton"
 import { STORAGE_RECOVERY_EXPORT } from "./state/StorageRecoveryContract"
-
-const MarkdownEditorSurface = lazy(() =>
-  import("./MarkdownEditorSurface").then((module) => ({ default: module.MarkdownEditorSurface }))
-)
-/* The Wiki pane's graph mode renders over d3-force; it loads on first use like the editor. */
-const KnowledgeGraphSurface = lazy(() =>
-  import("./KnowledgeGraphSurface").then((module) => ({ default: module.KnowledgeGraphSurface }))
-)
+import { WorldSurface } from "./WorldSurface"
 
 const systemNoteLabel = (message: Message): string => {
   if (message.statusDetail !== undefined) return `Turn interrupted — ${message.statusDetail}`
@@ -139,7 +112,6 @@ function App() {
       phase: session.phase,
       theme: session.theme,
       surface: session.surface,
-      selectedWorldDocumentId: session.selectedWorldDocumentId,
       maximizedCardId: session.maximizedCardId,
       activeWorkspaceId: session.activeWorkspaceId,
       activeBranchId: session.activeBranchId,
@@ -147,9 +119,6 @@ function App() {
       devtoolsOpen: session.devtoolsOpen,
       surfacesMenuOpen: session.surfacesMenuOpen,
       connectMenuOpen: session.connectMenuOpen,
-      pendingWorldDeleteId: session.pendingWorldDeleteId,
-      wikiPane: session.wikiPane,
-      wikiGraphPath: session.wikiGraphPath,
       activeTabId: session.activeTabId,
       tabMenuOpen: session.tabMenuOpen,
       addMenuOpen: session.addMenuOpen,
@@ -172,11 +141,6 @@ function App() {
   const { data: repoRows } = useLiveQuery(collections.repos)
   const { data: repositoryRows } = useLiveQuery(collections.repositories)
   const { data: recommendationRows } = useLiveQuery(collections.recommendations)
-  /*
-   * §10.6: the delete question lives in the store, not here — a component is
-   * a projection, never an authority, and the local-state version was
-   * bypassed entirely by `/wiki.delete <id>` typed into the composer.
-   */
   /* The surfaces trigger, refocused by this shell's Escape and by the menu itself. */
   const surfacesTriggerRef = useRef<HTMLButtonElement>(null)
   /* The composer wrap: Cmd+K focuses the textarea inside it (the palette opens on the composer). */
@@ -202,54 +166,21 @@ function App() {
   const messages = messageRows.filter((message) => inConversation(message, conversationTabId))
   const conversationCards = cardRows.filter((card) => inConversation(card, conversationTabId))
   /*
-   * Ask 5 (will, 2026-09-02): the Flows pane shows what `flow.list` last
-   * answered with — the newest listing card, rendered through that card's own
-   * rows below. NO INVENTION: with no listing yet the pane holds nothing and
-   * the seam's refusal (why it could not list) stands in the chat beside it.
-   */
-  const flowsCard = cardRows
-    .filter((card): card is Extract<Card, { kind: "workflow-list" }> => card.kind === "workflow-list")
-    .reduce<Extract<Card, { kind: "workflow-list" }> | undefined>(
-      (latest, card) => (latest === undefined || card.ordinal > latest.ordinal ? card : latest),
-      undefined
-    )
-  /* The dispatchers beside the flows: the newest triggers.list card, rendered through its own rows. */
-  const triggersCard = cardRows
-    .filter((card): card is Extract<Card, { kind: "trigger-list" }> => card.kind === "trigger-list")
-    .reduce<Extract<Card, { kind: "trigger-list" }> | undefined>(
-      (latest, card) => (latest === undefined || card.ordinal > latest.ordinal ? card : latest),
-      undefined
-    )
-  const canListTriggers = controller.commands.find("triggers.list") !== undefined
-  const canShowFactory = controller.commands.find("factory.show") !== undefined
-  /*
    * A stable array: CardView is memoized, and re-sorting the same rows into a
    * fresh array on every render would re-render every card body regardless.
+   * The Wiki pane lists the same array (WorldSurface.tsx).
    */
   const worldDocuments = useMemo(
     () => [...worldDocumentRows].sort((left, right) => left.path.localeCompare(right.path)),
     [worldDocumentRows]
   )
-  const pendingWorldDelete = worldDocuments.find(
-    (document) => document.id === (session.pendingWorldDeleteId ?? null)
-  )
-  const selectedWorldDocument = worldDocuments.find((document) => document.id === session.selectedWorldDocumentId) ??
-    worldDocuments[0]
   /*
-   * Librarian L5: the link rail and the graph are derived from the same
-   * notes the sidebar lists, during render (no effect, no second store).
-   * The rail shows the open note's backlinks and resolved links out; the
-   * graph mode shows every page (the All scope) or one note's
-   * neighbourhood.
+   * The flow registry, read once per render: the opening read counts it and
+   * the shell's `data-flows` manifest names it. The registry object never
+   * changes while its catalog does (admin sign-in, a repository's flow
+   * leaves), so there is no identity to memoize the read on.
    */
-  const selectedWorldLinks = selectedWorldDocument === undefined ? undefined : linksOf(worldDocuments, selectedWorldDocument.path)
-  const wikiGraphMode = session.surface === "world" && session.wikiPane === "graph"
-  const wikiWholeGraph = wikiGraphMode ? linkGraphOf(worldDocuments) : undefined
-  const wikiGraph = wikiWholeGraph === undefined ?
-    undefined :
-    session.wikiGraphPath === null || session.wikiGraphPath === undefined ?
-    wikiWholeGraph :
-    neighbourhoodOf(wikiWholeGraph, session.wikiGraphPath) ?? wikiWholeGraph
+  const flows = controller.commands.all()
   const typing = session.phase === "responding"
   const activeTabId = session.activeTabId ?? MAIN_TAB_ID
   const streamingMessageId = typing ? messages[messages.length - 1]?.id : undefined
@@ -401,7 +332,7 @@ function App() {
   // A new conversation opens empty; the host's opening read belongs to main alone.
   const openingMessage: InitMessage | undefined = gatedByAuth || conversationTabId !== undefined ? undefined : initMessage({
     bootstrap: controller.bootstrap,
-    flowCount: controller.commands.all().length,
+    flowCount: flows.length,
     harnesses: harnessRows,
     connectors: connectorRows,
     repos: repoRows,
@@ -483,7 +414,7 @@ function App() {
     <div
       className="app-shell"
       data-frame-maximized={session.maximizedCardId !== null}
-      data-flows={controller.commands.all().map((command) => command.name).join(" ")}
+      data-flows={flows.map((command) => command.name).join(" ")}
       onPointerDownCapture={onShellPointerDownCapture}
       onKeyDown={(event) => {
         if (event.defaultPrevented) return
@@ -780,232 +711,11 @@ function App() {
         </div>
 
         {session.surface === "world" ?
-          (
-            <section className="world-surface embedded-pane" aria-label={`Smithers ${WIKI_DISPLAY_NAME} state`}>
-              <SurfaceHeader
-                icon={<BookOpen size={17} aria-hidden="true" />}
-                title={WIKI_DISPLAY_NAME}
-                subtitle="What Smithers currently understands"
-                closeCommand="chat"
-                onClose={() => controller.runCommand("chat")}
-              >
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  data-flow="wiki.new-note"
-                  onClick={() => controller.runCommand("wiki.new-note")}
-                >
-                  <Plus size={14} aria-hidden="true" />
-                  New note
-                </Button>
-                {/* The button door of wiki.graph: the same registry entry the slash and the agent run; it toggles. */}
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  data-flow="wiki.graph"
-                  data-testid="wiki-graph"
-                  aria-pressed={wikiGraphMode}
-                  onClick={() =>
-                    // A button always carries its args: a focused graph toggles back from its own focus.
-                    session.wikiGraphPath ?
-                      controller.runCommand("wiki.graph", session.wikiGraphPath) :
-                      controller.runCommand("wiki.graph")}
-                >
-                  <Waypoints size={14} aria-hidden="true" />
-                  Graph
-                </Button>
-                {/* The button door of factory.show: the same registry entry the slash and the agent run. */}
-                {canShowFactory ?
-                  (
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      data-flow="factory.show"
-                      data-testid="wiki-factory"
-                      onClick={() => controller.runCommand("factory.show")}
-                    >
-                      <Factory size={14} aria-hidden="true" />
-                      Factory
-                    </Button>
-                  ) :
-                  null}
-              </SurfaceHeader>
-
-              <div className="world-workspace" data-pane={wikiGraphMode ? "graph" : "document"}>
-                <aside
-                  className="world-sidebar"
-                  aria-label={`${WIKI_DISPLAY_NAME} notes`}
-                >
-                  <FileTree
-                    nodeProps={() => ({ "data-flow": "wiki.select" })}
-                    nodes={worldDocuments.map((document) => ({
-                      path: document.path,
-                      label: document.title
-                    }))}
-                    selected={selectedWorldDocument?.path}
-                    onSelect={(path) => {
-                      const document = worldDocuments.find((candidate) => candidate.path === path)
-                      if (document) controller.runCommand("wiki.select", document.id)
-                    }}
-                  />
-                </aside>
-
-                {wikiGraph !== undefined ?
-                  (
-                    <main
-                      className="world-graph"
-                      aria-label={`${WIKI_DISPLAY_NAME} graph`}
-                      data-testid="wiki-graph-pane"
-                      ref={stampFlows([["button", "wiki.open"]])}
-                    >
-                      <div className="world-document-meta">
-                        <span data-testid="wiki-pane-graph-scope">
-                          {session.wikiGraphPath === null || session.wikiGraphPath === undefined ?
-                            WIKI_GRAPH_ALL_SCOPE :
-                            `Around ${session.wikiGraphPath}`}
-                        </span>
-                      </div>
-                      <Suspense fallback={<p className="smithers-card-note">Loading graph…</p>}>
-                        <KnowledgeGraphSurface
-                          notes={wikiGraph.notes}
-                          links={wikiGraph.links}
-                          height="100%"
-                          onOpenNote={(path) => controller.runCommand("wiki.open", path)}
-                        />
-                      </Suspense>
-                    </main>
-                  ) :
-                <main className="world-document">
-                  {selectedWorldDocument ?
-                    (
-                      <>
-                        <div className="world-document-meta">
-                          <span>{selectedWorldDocument.path}</span>
-                          <div>
-                            <Badge variant="outline">
-                              {Math.round(selectedWorldDocument.confidence * 100)}% confidence
-                            </Badge>
-                            <Badge variant="muted">
-                              {selectedWorldDocument.sources.length} source
-                              {selectedWorldDocument.sources.length === 1 ? "" : "s"}
-                            </Badge>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="world-delete-btn"
-                              data-flow="wiki.delete"
-                              aria-label={`Delete ${selectedWorldDocument.title}`}
-                              title="Delete note"
-                              onClick={() => controller.runCommand("wiki.delete", selectedWorldDocument.id)}
-                            >
-                              <Trash2 size={13} />
-                            </Button>
-                          </div>
-                        </div>
-                        {/* Layout only: the editor releases Tab itself (§21.2, `escapeTabOrder`). */}
-                        <div className="world-editor-region">
-                          <Suspense fallback={<p className="smithers-card-note">Loading editor…</p>}>
-                            <MarkdownEditorSurface
-                              value={selectedWorldDocument.body}
-                              resetKey={selectedWorldDocument.id}
-                              label={`Edit ${selectedWorldDocument.title}`}
-                              onChange={(body) => controller.changeWorldDocument(selectedWorldDocument.id, body)}
-                              onEditor={controller.attachWikiEditor}
-                            />
-                          </Suspense>
-                        </div>
-                      </>
-                    ) :
-                    (
-                      <EmptyState
-                        icon={<BookOpen size={20} />}
-                        title={`No ${WIKI_DISPLAY_NAME} notes yet`}
-                        description="Smithers will keep what it learns here."
-                        action={<Button onClick={() => controller.runCommand("wiki.new-note")}>Create a note</Button>}
-                      />
-                    )}
-                </main>}
-                {wikiGraph === undefined && selectedWorldDocument !== undefined && selectedWorldLinks !== undefined ?
-                  (
-                    <aside
-                      className="world-rail"
-                      aria-label={`${selectedWorldDocument.title} links and outline`}
-                      data-testid="wiki-rail"
-                      ref={stampFlows([['[data-slot="vault-outline"] button', "wiki.heading"], ["button", "wiki.open"]])}
-                    >
-                      <BacklinksPanel
-                        backlinks={[...selectedWorldLinks.backlinks]}
-                        linksOut={[...selectedWorldLinks.linksOut]}
-                        onOpenNote={(path) => controller.runCommand("wiki.open", path)}
-                      />
-                      {/* Each heading is the button door of wiki.heading: the editor scrolls to its source line. */}
-                      <OutlineView
-                        markdown={selectedWorldDocument.body}
-                        onHeadingClick={(line) => controller.runCommand("wiki.heading", String(line))}
-                      />
-                    </aside>
-                  ) :
-                  null}
-              </div>
-              <ConfirmDialog
-                open={pendingWorldDelete !== undefined}
-                title={`Delete ${pendingWorldDelete?.title ?? "note"}?`}
-                body={`This note leaves the ${WIKI_DISPLAY_NAME}. You can write it again, but Smithers will treat it as new.`}
-                confirmLabel="Delete"
-                destructive
-                onConfirm={() => controller.runCommand("wiki.delete.confirm")}
-                onCancel={() => controller.runCommand("wiki.delete.cancel")}
-              />
-            </section>
-          ) :
+          <WorldSurface documents={worldDocuments} /> :
           session.surface === "connectors" ?
           <ConnectorsSurface /> :
           session.surface === "flows" ?
-          (
-            <section className="flows-surface embedded-pane" aria-label="Flows on your workspace">
-              <SurfaceHeader
-                icon={<Workflow size={17} aria-hidden="true" />}
-                title="Flows"
-                subtitle={flowsCard?.payload.repo ?? ""}
-                closeCommand="chat"
-                onClose={() => controller.runCommand("chat")}
-              >
-                {/* The button door of triggers.list: the same registry entry the slash and the agent run. */}
-                {canListTriggers ?
-                  (
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      data-flow="triggers.list"
-                      data-testid="flows-triggers"
-                      onClick={() => controller.runCommand("triggers.list")}
-                    >
-                      <Timer size={14} aria-hidden="true" />
-                      Triggers
-                    </Button>
-                  ) :
-                  null}
-              </SurfaceHeader>
-              <div className="flows-content">
-                {flowsCard === undefined ?
-                  null :
-                  (
-                    <WorkflowListCardBody
-                      card={flowsCard}
-                      onRunCommand={actions.onRunCommand}
-                    />
-                  )}
-                {triggersCard === undefined ?
-                  null :
-                  (
-                    <TriggerListCardBody
-                      card={triggersCard}
-                      onRunCommand={(name, commandArgs) => controller.runCommand(name, commandArgs)}
-                    />
-                  )}
-              </div>
-            </section>
-          ) :
+          <FlowsSurface cards={cardRows} /> :
           session.surface === "plugins" ?
           <PluginsSurface /> :
           null}
