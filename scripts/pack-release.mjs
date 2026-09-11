@@ -13,13 +13,11 @@ import { execFileSync, spawn } from "node:child_process"
 import { readFileSync } from "node:fs"
 import { access, cp, mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
-import { basename, dirname, join, relative, resolve, sep } from "node:path"
-import { fileURLToPath, pathToFileURL } from "node:url"
-import { libraryPackages, packageKey } from "./workspace-packages.mjs"
+import { basename, join, relative, resolve, sep } from "node:path"
+
+import { libraryPackages, packageKey, isMain, repoRoot } from "./workspace-packages.mjs"
 import { assertPackedExportTargets } from "./packed-export-targets.mjs"
 import { buildRelease } from "./build-release.mjs"
-
-const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..")
 
 /**
  * Every group a workspace manifest may declare, and the groups the 1.0 release
@@ -596,9 +594,7 @@ export const main = async (args) => {
   }
 }
 
-const isMain = process.argv[1] !== undefined &&
-  import.meta.url === pathToFileURL(resolve(process.argv[1])).href
 
-if (isMain) {
+if (isMain(import.meta)) {
   await main(process.argv.slice(2))
 }

@@ -27735,11 +27735,41 @@
       },
       {
         "kind": "file",
+        "path": "scripts/workspace-packages.mjs"
+      },
+      {
+        "kind": "file",
         "path": "flows/issue-triage/flow.mdx"
       },
       {
         "kind": "file",
         "path": "flows/pr-triage/flow.mdx"
+      }
+    ],
+    "outputs": [],
+    "dependencies": [],
+    "source": {
+      "file": "scripts/PACKAGE.ts"
+    }
+  },
+  {
+    "label": "//scripts:lint",
+    "package": "scripts",
+    "name": "lint",
+    "rule": "EsLint",
+    "kinds": [
+      "lint"
+    ],
+    "cacheable": false,
+    "inputs": [
+      {
+        "kind": "glob",
+        "pattern": "scripts/**/*.mjs",
+        "exclude": []
+      },
+      {
+        "kind": "file",
+        "path": "eslint.config.js"
       }
     ],
     "outputs": [],
@@ -28085,6 +28115,10 @@
       {
         "kind": "file",
         "path": "scripts/restore-release.test.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "scripts/workspace-packages.test.mjs"
       },
       {
         "kind": "glob",

@@ -15,11 +15,27 @@
  * (a scaffolding template, a generated `dist/cjs/package.json`), and a declared
  * member is a package wherever it lives.
  */
-import { globSync, readFileSync } from "node:fs"
+import { globSync, readFileSync, realpathSync } from "node:fs"
 import { dirname, join, resolve } from "node:path"
 
 /** The repository root, resolved from this file rather than `process.cwd()`. */
 export const repoRoot = resolve(import.meta.dirname, "..")
+
+/**
+ * Whether the module that owns `meta` is the process entry point.
+ *
+ * Both sides are real paths, so a symlinked, relative, or space-containing
+ * invocation still matches. Comparing a percent-encoded URL against the raw
+ * `argv[1]` does not, and the script then exits 0 without running.
+ */
+export const isMain = (meta) => {
+  if (process.argv[1] === undefined) return false
+  try {
+    return realpathSync(process.argv[1]) === realpathSync(meta.filename)
+  } catch {
+    return false
+  }
+}
 
 /**
  * The membership globs `pnpm-workspace.yaml` declares, in file order.
@@ -105,10 +121,7 @@ export const packageKey = (entry) => entry.dir.slice(entry.dir.lastIndexOf("/") 
  * package writes a generated `dist/cjs/package.json`, so a three-deep glob
  * would hand the loop a build artifact and fail on its missing group.
  */
-const isMain = process.argv[1] !== undefined &&
-  import.meta.url === new URL(`file://${resolve(process.argv[1])}`).href
-
-if (isMain) {
+if (isMain(import.meta)) {
   const dirs = process.argv.includes("--library-dirs") ? libraryPackages() : workspacePackages()
   console.log(dirs.map((entry) => entry.dir).join("\n"))
 }

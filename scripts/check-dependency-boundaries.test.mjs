@@ -1,12 +1,11 @@
 import assert from "node:assert/strict"
 import { readFileSync } from "node:fs"
-import { dirname, join, resolve } from "node:path"
+import { join } from "node:path"
 import test from "node:test"
-import { fileURLToPath } from "node:url"
+
 import ts from "typescript"
 import { blankLiteralRanges, packageSourceReachedBy } from "./check-dependency-boundaries.mjs"
-
-const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..")
+import { repoRoot } from "./workspace-packages.mjs"
 
 /**
  * The blanking the gate shipped before the single pass: rebuild the whole

@@ -6,11 +6,12 @@ import { existsSync, readFileSync, readdirSync, realpathSync } from "node:fs"
 import { copyFile, mkdtemp, readFile, rename, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join, relative, resolve } from "node:path"
-import { fileURLToPath } from "node:url"
+
 import { releaseRegistry } from "./release-registry.mjs"
 import { EXPECTED_EFFECT_VERSION } from "./check-single-effect-version.mjs"
 import { build as bundle } from "esbuild"
 import { valid } from "semver"
+import { isMain } from "./workspace-packages.mjs"
 
 // The one Effect pin every published manifest carries; declared once for the whole release line.
 const effect = EXPECTED_EFFECT_VERSION
@@ -366,7 +367,7 @@ export const runConsumerMatrix = async (directory, entries, {
   }
 }
 
-if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+if (isMain(import.meta)) {
   const directory = resolve(process.argv[2])
   const entries = JSON.parse(await readFile(join(directory, "manifest.json"), "utf8"))
   await runConsumerMatrix(directory, entries, {

@@ -21,11 +21,9 @@
  * case this guard exists for.
  */
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs"
-import { dirname, join, relative, resolve, sep } from "node:path"
-import { fileURLToPath } from "node:url"
-import { libraryPackages } from "./workspace-packages.mjs"
+import { join, relative, sep } from "node:path"
 
-const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..")
+import { libraryPackages, isMain, repoRoot } from "./workspace-packages.mjs"
 
 /** The package groups whose pins this register covers. */
 export const guardedGroups = new Set(["engine", "agent", "tooling"])
@@ -223,4 +221,4 @@ const main = () => {
   process.exit(1)
 }
 
-if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) main()
+if (isMain(import.meta)) main()

@@ -6,8 +6,8 @@ import { tmpdir } from "node:os"
 import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
 import { test } from "node:test"
+import { repoRoot as root } from "./workspace-packages.mjs"
 
-const root = fileURLToPath(new URL("../", import.meta.url))
 const cli = join(root, "packages/smithers/src/bin.ts")
 const scratchRoots = new Map()
 function write(directory, path, body) {

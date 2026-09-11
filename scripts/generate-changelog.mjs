@@ -75,9 +75,8 @@
  */
 import { execFileSync } from "node:child_process"
 import { existsSync, readFileSync, writeFileSync } from "node:fs"
-import { join, resolve } from "node:path"
-
-const repoRoot = resolve(import.meta.dirname, "..")
+import { join } from "node:path"
+import { isMain, repoRoot } from "./workspace-packages.mjs"
 
 /** The manifest whose version names the release when `--version` is absent. */
 export const versionManifestPath = "packages/smithers/package.json"
@@ -523,6 +522,6 @@ export const main = (argv, root = repoRoot) => {
   console.log(`the ${version} commit block matches ${range}.`)
 }
 
-if (process.argv[1] !== undefined && resolve(process.argv[1]) === resolve(import.meta.filename)) {
+if (isMain(import.meta)) {
   main(process.argv.slice(2))
 }

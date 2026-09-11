@@ -2,10 +2,9 @@ import assert from "node:assert/strict"
 import { spawnSync } from "node:child_process"
 import { cpSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
-import { join, resolve } from "node:path"
+import { join } from "node:path"
 import test from "node:test"
-
-const repoRoot = resolve(import.meta.dirname, "..")
+import { repoRoot } from "./workspace-packages.mjs"
 
 test("notices follow Cargo's wasm normal/build closure and --check detects drift without writing", () => {
   const root = realpathSync(mkdtempSync(join(tmpdir(), "notices-")))
@@ -13,6 +12,7 @@ test("notices follow Cargo's wasm normal/build closure and --check detects drift
     mkdirSync(join(root, "scripts"))
     mkdirSync(join(root, "packages/smithers/flows/jj"), { recursive: true })
     cpSync(join(repoRoot, "scripts/generate-third-party-notices.mjs"), join(root, "scripts/generate-third-party-notices.mjs"))
+    cpSync(join(repoRoot, "scripts/workspace-packages.mjs"), join(root, "scripts/workspace-packages.mjs"))
     cpSync(join(repoRoot, "scripts/third-party-notices.template.md"), join(root, "scripts/third-party-notices.template.md"))
     const crates = ["flows-jj", "normal", "build", "dev", "native"]
     writeFileSync(join(root, "Cargo.toml"), `[workspace]\nresolver = "3"\nmembers = ${JSON.stringify(crates)}\n`)

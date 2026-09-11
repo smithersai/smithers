@@ -6,10 +6,10 @@ import { createRequire } from "node:module"
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { dirname, join, resolve } from "node:path"
-import { fileURLToPath, pathToFileURL } from "node:url"
-import { mutants as manifest, exclusions } from "./mutations/manifest.mjs"
 
-const root = fileURLToPath(new URL("../", import.meta.url))
+import { mutants as manifest, exclusions } from "./mutations/manifest.mjs"
+import { isMain, repoRoot as root } from "./workspace-packages.mjs"
+
 const hash = (path) => createHash("sha256").update(readFileSync(path)).digest("hex")
 const escapeRegex = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
 
@@ -94,4 +94,4 @@ export default {
   }
 }
 
-if (process.argv[1] && pathToFileURL(resolve(process.argv[1])).href === import.meta.url) runMutations(process.env.SMITHERS_MUTATION_ARTIFACT_DIR)
+if (isMain(import.meta)) runMutations(process.env.SMITHERS_MUTATION_ARTIFACT_DIR)

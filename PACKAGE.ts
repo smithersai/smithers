@@ -263,6 +263,7 @@ const ci = Smithers.GithubCiGen({
         { name: "Workspace targets", verb: Smithers.Verb.Ci, pattern: "//packages/...", parallelism: 2 },
         { name: "Script gates", verb: Smithers.Verb.Test, pattern: "//scripts/..." },
         { name: "Public export JSDoc", verb: Smithers.Verb.Lint, pattern: "//:jsdocTree" },
+        { name: "Script lint", verb: Smithers.Verb.Lint, pattern: "//scripts:lint" },
         { name: "JSDoc rule harness", verb: Smithers.Verb.Test, pattern: "//:jsdocRules" },
         { name: "Factory harness", verb: Smithers.Verb.Test, pattern: "//:factoryHarness" },
         // Every `evals/*` directory is its own workspace member now, so each

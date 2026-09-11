@@ -2,13 +2,13 @@
 import assert from "node:assert/strict"
 import { spawn } from "node:child_process"
 import { createHash } from "node:crypto"
-import { createWriteStream, realpathSync } from "node:fs"
+import { createWriteStream } from "node:fs"
 import { access, mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
-import { dirname, join, resolve } from "node:path"
-import { fileURLToPath, pathToFileURL } from "node:url"
+import { join, resolve } from "node:path"
 
-const root = resolve(dirname(fileURLToPath(import.meta.url)), "..")
+import { isMain, repoRoot as root } from "./workspace-packages.mjs"
+
 const digest = (bytes) => createHash("sha256").update(bytes).digest("hex")
 const fileHash = (text) => createHash("blake2b512").update(text).digest("hex").slice(0, 10)
 export const expectedDiff = (before) => `diff --git a/generated.txt b/generated.txt\nindex ${fileHash(before)}..${fileHash(`${before}changed\n`)} 100644\n--- a/generated.txt\n+++ b/generated.txt\n@@ -1,1 +1,2 @@\n ${before}+changed\n`
@@ -214,7 +214,7 @@ export const runCampaign = async (configuration = campaignConfiguration(), artif
   return report
 }
 
-if (process.argv[1] !== undefined && import.meta.url === pathToFileURL(realpathSync(process.argv[1])).href) {
+if (isMain(import.meta)) {
   try { await runCampaign() }
   catch (error) {
     console.error(error)

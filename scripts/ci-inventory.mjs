@@ -2,7 +2,7 @@
 import { spawnSync } from "node:child_process"
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs"
 import { dirname, resolve } from "node:path"
-import { fileURLToPath, pathToFileURL } from "node:url"
+
 import { parseWorkflow } from "./release-rehearsal.mjs"
 import { openPackageIndex } from "@smthrs/build-cli/Cli"
 import * as Cargo from "@smthrs/targets/Cargo"
@@ -10,9 +10,10 @@ import * as NodeBinary from "@smthrs/targets/NodeBinary"
 import * as NodeTest from "@smthrs/targets/NodeTest"
 import * as PackageManager from "@smthrs/targets/PackageManager"
 import * as Target from "@smthrs/targets/Target"
+import { isMain, repoRoot } from "./workspace-packages.mjs"
 
-export const root = fileURLToPath(new URL("../", import.meta.url))
-const cli = resolve(root, "packages/smithers/src/bin.ts")
+export const root = repoRoot
+export const cli = resolve(root, "packages/smithers/src/bin.ts")
 
 /** Recognize target invocations without silently dropping a newly added option. */
 export function targetInvocation(run) {
@@ -123,7 +124,7 @@ export async function resolveInventory() {
     selections: [...selections].map(([command, plan]) => ({ command, roots: plan.roots })), rows }
 }
 
-if (process.argv[1] && pathToFileURL(resolve(process.argv[1])).href === import.meta.url) {
+if (isMain(import.meta)) {
   const inventory = await resolveInventory()
   const destination = process.argv[2]
   if (destination) {

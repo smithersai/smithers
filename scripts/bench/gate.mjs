@@ -4,8 +4,9 @@ import { createHash } from "node:crypto"
 import { mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
-import { pathToFileURL } from "node:url"
+
 import { resources, runCorpus } from "./corpus.mjs"
+import { isMain } from "../workspace-packages.mjs"
 
 export function compare(results, baseline) {
   assert.deepEqual(results.map((row) => row.id).sort(), baseline.cases.map((row) => row.id).sort(), "fixture roster changed")
@@ -57,6 +58,6 @@ export async function benchmark({ output = join(tmpdir(), `smithers-benchmark-${
   }
 }
 
-if (process.argv[1] && pathToFileURL(resolve(process.argv[1])).href === import.meta.url) {
+if (isMain(import.meta)) {
   await benchmark({ output: process.env.SMITHERS_BENCH_ARTIFACT_DIR, measure: process.argv.includes("--measure"), candidate: process.argv.includes("--candidate") })
 }

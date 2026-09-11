@@ -422,6 +422,7 @@ const githubTriage = Smithers.NodeTest({
   runner: Smithers.testRunner([Smithers.file("//scripts/github-triage.test.mjs")]),
   srcs: [
     Smithers.file("//scripts/github-triage.mjs"),
+    Smithers.file("//scripts/workspace-packages.mjs"),
     Smithers.file("//flows/issue-triage/flow.mdx"),
     Smithers.file("//flows/pr-triage/flow.mdx")
   ],
@@ -464,7 +465,8 @@ const thirdPartyNoticesUnit = Smithers.NodeTest({
 const releaseIntegrity = Smithers.NodeTest({
   runner: Smithers.testRunner([
     Smithers.file("//scripts/publish-release.test.mjs"),
-    Smithers.file("//scripts/restore-release.test.mjs")
+    Smithers.file("//scripts/restore-release.test.mjs"),
+    Smithers.file("//scripts/workspace-packages.test.mjs")
   ]),
   srcs: sources,
   deps: []
@@ -528,6 +530,23 @@ const repositoryConformance = Smithers.NodeTest({
   deps: [conformanceCheck]
 })
 
+/**
+ * Lints every operator script against the root config's scripts block.
+ *
+ * Scripts carry no public-JSDoc contract, so the block holds statement style
+ * only: no semicolons, the style most of `scripts/` already used.
+ *
+ * @since 1.0.0
+ * @category lint
+ */
+const lint = Smithers.EsLint({
+  sources: [Smithers.glob("//scripts/**/*.mjs")],
+  configs: [Smithers.file("//eslint.config.js")],
+  deps: [],
+  maxWarnings: 0,
+  fix: false
+})
+
 export const Package = Smithers.Package({
   targets: {
     conformanceCheck,
@@ -542,6 +561,7 @@ export const Package = Smithers.Package({
     dependencyBoundariesUnit,
     effectVersion,
     githubTriage,
+    lint,
     localSmithers,
     localSmithersUnit,
     lockfileParity,

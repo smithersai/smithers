@@ -2,9 +2,9 @@ import assert from "node:assert/strict"
 import { chmodSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs"
 import { spawnSync } from "node:child_process"
 import { tmpdir } from "node:os"
-import { dirname, join, resolve } from "node:path"
+import { join } from "node:path"
 import test from "node:test"
-import { fileURLToPath } from "node:url"
+
 import {
   evaluateExpression,
   interpolate,
@@ -12,8 +12,8 @@ import {
   parseWorkflow,
   rehearsalContexts
 } from "./release-rehearsal.mjs"
+import { repoRoot } from "./workspace-packages.mjs"
 
-const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..")
 const release = parseWorkflow(
   readFileSync(join(repoRoot, ".github", "workflows", "release.yml"), "utf8")
 )

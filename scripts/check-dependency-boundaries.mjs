@@ -17,26 +17,25 @@
  * Run it with `pnpm exec smithers-build test '//scripts:dependencyBoundaries'`, or
  * directly with `node scripts/check-dependency-boundaries.mjs`.
  */
-import { builtinModules } from "node:module";
-import { existsSync, lstatSync, readdirSync, readFileSync, statSync } from "node:fs";
-import { basename, dirname, extname, join, relative, resolve, sep } from "node:path";
-import { fileURLToPath, pathToFileURL } from "node:url";
-import ts from "typescript";
-import { workspacePackages } from "./workspace-packages.mjs";
+import { builtinModules } from "node:module"
+import { existsSync, lstatSync, readdirSync, readFileSync, statSync } from "node:fs"
+import { basename, dirname, extname, join, relative, resolve, sep } from "node:path"
+
+import ts from "typescript"
+import { workspacePackages, isMain, repoRoot } from "./workspace-packages.mjs"
 
 // Resolved from this file, not from `process.cwd()`: the build system runs a
 // target from the directory that owns it, and this gate is about the whole
 // workspace.
-const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 // Membership comes from `pnpm-workspace.yaml` through the shared reader, so a
 // package nested inside the product package it belongs to
 // (`packages/smithers/flows/canonical`) is checked like any other. This gate scans
 // `packages/` and `apps/`; the remaining members (`examples`,
 // `packages/smithers/build/infra` is one of them and needs no separate row now the
 // reader finds it) are named, and `evals/*` stays out.
-const scannedRoots = ["packages/", "apps/"];
-const directWorkspaceDirs = ["examples"];
-const sourceExtensions = new Set([".js", ".jsx", ".ts", ".tsx", ".mjs", ".cjs"]);
+const scannedRoots = ["packages/", "apps/"]
+const directWorkspaceDirs = ["examples"]
+const sourceExtensions = new Set([".js", ".jsx", ".ts", ".tsx", ".mjs", ".cjs"])
 const ignoredDirs = new Set([
   ".alchemy",
   ".flows",
@@ -53,8 +52,8 @@ const ignoredDirs = new Set([
   "node_modules",
   "target",
   "tmp",
-]);
-const builtinPackages = new Set(["bun", ...builtinModules, ...builtinModules.map((mod) => `node:${mod}`)]);
+])
+const builtinPackages = new Set(["bun", ...builtinModules, ...builtinModules.map((mod) => `node:${mod}`)])
 // Reach-throughs that predate the rule, as `file -> specifier`. Each is a
 // debt: the target is either an `internal/*` module its package deliberately
 // does not export, or an app source no export map covers. Remove the entry
@@ -67,85 +66,85 @@ const knownReachThroughs = new Set([
   "apps/ui/src/mainview/cards/EngineTrace.test.ts -> ../../../../../packages/smithers/flows/engine-store/src/internal/JournalRecords.ts",
   "apps/ui/src/mainview/cards/fixtures/CodingJournal.ts -> ../../../../../../packages/smithers/flows/engine-store/src/internal/JournalRecords.ts",
   "packages/smithers/build/infra/worker/test/action-cache.test.ts -> ../../../../flows/step-cache/src/CacheStore.ts",
-]);
+])
 
 /** @typedef {{ dir: string; name: string; manifestPath: string; manifest: Record<string, unknown> }} WorkspacePackage */
 
 /** @param {string} path */
 function readJson(path) {
-  return JSON.parse(readFileSync(path, "utf8"));
+  return JSON.parse(readFileSync(path, "utf8"))
 }
 
 /** @param {string} path */
 function isDirectory(path) {
   try {
-    return statSync(path).isDirectory();
+    return statSync(path).isDirectory()
   } catch {
-    return false;
+    return false
   }
 }
 
 /** @param {string} dir */
 function readPackage(dir) {
-  const manifestPath = join(repoRoot, dir, "package.json");
-  if (!existsSync(manifestPath)) return null;
-  const manifest = readJson(manifestPath);
-  if (!manifest?.name || typeof manifest.name !== "string") return null;
-  return { dir, name: manifest.name, manifestPath, manifest };
+  const manifestPath = join(repoRoot, dir, "package.json")
+  if (!existsSync(manifestPath)) return null
+  const manifest = readJson(manifestPath)
+  if (!manifest?.name || typeof manifest.name !== "string") return null
+  return { dir, name: manifest.name, manifestPath, manifest }
 }
 
 /** @returns {WorkspacePackage[]} */
 function findWorkspacePackages() {
   /** @type {WorkspacePackage[]} */
-  const packages = [];
+  const packages = []
   for (const member of workspacePackages(repoRoot)) {
-    if (!scannedRoots.some((root) => member.dir.startsWith(root))) continue;
-    const pkg = readPackage(member.dir.split("/").join(sep));
-    if (pkg) packages.push(pkg);
+    if (!scannedRoots.some((root) => member.dir.startsWith(root))) continue
+    const pkg = readPackage(member.dir.split("/").join(sep))
+    if (pkg) packages.push(pkg)
   }
   for (const dir of directWorkspaceDirs) {
-    const pkg = readPackage(dir);
-    if (pkg) packages.push(pkg);
+    const pkg = readPackage(dir)
+    if (pkg) packages.push(pkg)
   }
-  const rootPackage = readPackage(".");
-  if (rootPackage) packages.push(rootPackage);
-  return packages.sort((a, b) => a.dir.localeCompare(b.dir));
+  const rootPackage = readPackage(".")
+  if (rootPackage) packages.push(rootPackage)
+  return packages.sort((a, b) => a.dir.localeCompare(b.dir))
 }
 
 /** @param {string} dir @param {string[]} out @param {string[]} [nestedPackageDirs] */
 export function collectSourceFiles(dir, out, nestedPackageDirs) {
-  const absDir = join(repoRoot, dir);
-  if (!isDirectory(absDir)) return;
+  const absDir = join(repoRoot, dir)
+  if (!isDirectory(absDir)) return
   for (const entry of readdirSync(absDir)) {
-    if (ignoredDirs.has(entry)) continue;
-    const child = join(dir, entry);
-    const absChild = join(repoRoot, child);
+    if (ignoredDirs.has(entry)) continue
+    const child = join(dir, entry)
+    const absChild = join(repoRoot, child)
     // Skip symlinks before stat-following can recurse through workspace cycles
     // or crash on dangling local artifacts left by workflow runs.
-    let stats;
+    let stats
     try {
-      stats = lstatSync(absChild);
+      stats = lstatSync(absChild)
     } catch {
-      continue;
+      continue
     }
-    if (stats.isSymbolicLink()) continue;
+    if (stats.isSymbolicLink()) continue
     if (stats.isDirectory()) {
       // A nested package.json with a name marks a standalone package (a
       // template, fixture, or shipped plugin). Its files are checked against
       // its own manifest, not the enclosing workspace's.
       if (nestedPackageDirs && readPackage(child)) {
-        nestedPackageDirs.push(child);
-        continue;
+        nestedPackageDirs.push(child)
+        continue
       }
-      collectSourceFiles(child, out, nestedPackageDirs);
-      continue;
+      collectSourceFiles(child, out, nestedPackageDirs)
+      continue
     }
-    if (!stats.isFile()) continue;
+    if (!stats.isFile()) continue
     // Build-graph declarations belong to the root workspace, not the package
     // they sit in: the build CLI loads them from the repository root against
     // the root install. `collectGraphFiles` gives them to the root package.
-    if (entry === "legacy declaration" || entry === "PACKAGE.ts") continue;
-    if (sourceExtensions.has(extname(entry))) out.push(child);
+    if (entry === "legacy declaration" || entry === "PACKAGE.ts") continue
+    if (sourceExtensions.has(extname(entry))) out.push(child)
   }
 }
 
@@ -165,53 +164,53 @@ export function collectSourceFiles(dir, out, nestedPackageDirs) {
  * @param {string[]} out
  */
 export function collectGraphFiles(dir, memberDirs, out) {
-  const absDir = join(repoRoot, dir === "" ? "." : dir);
-  if (!isDirectory(absDir)) return;
+  const absDir = join(repoRoot, dir === "" ? "." : dir)
+  if (!isDirectory(absDir)) return
   for (const entry of readdirSync(absDir)) {
-    if (ignoredDirs.has(entry)) continue;
-    const child = dir === "" ? entry : join(dir, entry);
-    const absChild = join(repoRoot, child);
-    let stats;
+    if (ignoredDirs.has(entry)) continue
+    const child = dir === "" ? entry : join(dir, entry)
+    const absChild = join(repoRoot, child)
+    let stats
     try {
-      stats = lstatSync(absChild);
+      stats = lstatSync(absChild)
     } catch {
-      continue;
+      continue
     }
-    if (stats.isSymbolicLink()) continue;
+    if (stats.isSymbolicLink()) continue
     if (stats.isDirectory()) {
       const foreignProject = existsSync(join(absChild, "package.json")) &&
         !memberDirs.has(child) &&
-        ![...memberDirs].some((member) => member.startsWith(`${child}${sep}`));
-      if (foreignProject) continue;
-      collectGraphFiles(child, memberDirs, out);
-      continue;
+        ![...memberDirs].some((member) => member.startsWith(`${child}${sep}`))
+      if (foreignProject) continue
+      collectGraphFiles(child, memberDirs, out)
+      continue
     }
-    if (entry === "legacy declaration" || entry === "PACKAGE.ts") out.push(child);
+    if (entry === "legacy declaration" || entry === "PACKAGE.ts") out.push(child)
   }
 }
 
 /** @param {WorkspacePackage} pkg @param {Set<string>} [memberDirs] @returns {{ files: string[]; nestedPackageDirs: string[] }} */
 function filesForPackage(pkg, memberDirs = new Set()) {
   /** @type {string[]} */
-  const files = [];
+  const files = []
   /** @type {string[]} */
-  const nestedPackageDirs = [];
+  const nestedPackageDirs = []
   if (pkg.dir === ".") {
     // The root workspace's own sources live under scripts/ and factory/ (the
     // dogfood harness has no manifest and runs against the root install),
     // and it owns every build-graph declaration in the tree.
-    collectSourceFiles("scripts", files, nestedPackageDirs);
-    collectSourceFiles("factory", files, nestedPackageDirs);
-    collectGraphFiles("", memberDirs, files);
+    collectSourceFiles("scripts", files, nestedPackageDirs)
+    collectSourceFiles("factory", files, nestedPackageDirs)
+    collectGraphFiles("", memberDirs, files)
   } else if (isDirectory(join(repoRoot, pkg.dir, "src"))) {
-    collectSourceFiles(join(pkg.dir, "src"), files, nestedPackageDirs);
+    collectSourceFiles(join(pkg.dir, "src"), files, nestedPackageDirs)
   } else {
     // Some workspaces have no src/ and keep their sources at the package root.
     // Scan the whole package dir; the recursive collector already skips
     // node_modules, dist, and coverage.
-    collectSourceFiles(pkg.dir, files, nestedPackageDirs);
+    collectSourceFiles(pkg.dir, files, nestedPackageDirs)
   }
-  return { files: files.sort(), nestedPackageDirs: nestedPackageDirs.sort() };
+  return { files: files.sort(), nestedPackageDirs: nestedPackageDirs.sort() }
 }
 
 /** @param {string} specifier */
@@ -226,14 +225,14 @@ function packageNameForSpecifier(specifier) {
     specifier.startsWith("astro:") ||
     specifier.startsWith("bun:")
   ) {
-    return null;
+    return null
   }
-  if (builtinPackages.has(specifier)) return null;
-  const parts = specifier.split("/");
+  if (builtinPackages.has(specifier)) return null
+  const parts = specifier.split("/")
   if (specifier.startsWith("@")) {
-    return parts.length >= 2 ? `${parts[0]}/${parts[1]}` : specifier;
+    return parts.length >= 2 ? `${parts[0]}/${parts[1]}` : specifier
   }
-  return parts[0] ?? null;
+  return parts[0] ?? null
 }
 
 /**
@@ -252,21 +251,21 @@ function packageNameForSpecifier(specifier) {
  * @returns {string | null}
  */
 export function packageSourceReachedBy(file, specifier, packageDirs) {
-  if (!specifier.startsWith(".")) return null;
-  const target = relative(repoRoot, resolve(repoRoot, dirname(file), specifier));
-  if (target.startsWith("..")) return null;
-  let owner = null;
+  if (!specifier.startsWith(".")) return null
+  const target = relative(repoRoot, resolve(repoRoot, dirname(file), specifier))
+  if (target.startsWith("..")) return null
+  let owner = null
   for (const dir of packageDirs) {
-    if (target.startsWith(`${dir}${sep}src${sep}`) && (owner === null || dir.length > owner.length)) owner = dir;
+    if (target.startsWith(`${dir}${sep}src${sep}`) && (owner === null || dir.length > owner.length)) owner = dir
   }
-  return owner;
+  return owner
 }
 
 /** @param {string} path */
 function scriptKindForPath(path) {
-  if (path.endsWith(".tsx") || path.endsWith(".jsx")) return ts.ScriptKind.TSX;
-  if (path.endsWith(".ts")) return ts.ScriptKind.TS;
-  return ts.ScriptKind.JS;
+  if (path.endsWith(".tsx") || path.endsWith(".jsx")) return ts.ScriptKind.TSX
+  if (path.endsWith(".ts")) return ts.ScriptKind.TS
+  return ts.ScriptKind.JS
 }
 
 /**
@@ -284,87 +283,87 @@ function scriptKindForPath(path) {
  */
 export function blankLiteralRanges(text, ranges) {
   /** @type {string[]} */
-  const parts = [];
-  let cursor = 0;
+  const parts = []
+  let cursor = 0
   for (const [start, end] of [...ranges].sort((a, b) => a[0] - b[0])) {
-    if (end <= cursor) continue;
-    const from = Math.max(start, cursor);
-    parts.push(text.slice(cursor, from), " ".repeat(end - from));
-    cursor = end;
+    if (end <= cursor) continue
+    const from = Math.max(start, cursor)
+    parts.push(text.slice(cursor, from), " ".repeat(end - from))
+    cursor = end
   }
-  parts.push(text.slice(cursor));
-  return parts.join("");
+  parts.push(text.slice(cursor))
+  return parts.join("")
 }
 
 /** @param {string} file */
 function importSpecifiersForFile(file) {
-  const absFile = join(repoRoot, file);
-  const text = readFileSync(absFile, "utf8");
-  const sourceFile = ts.createSourceFile(file, text, ts.ScriptTarget.Latest, true, scriptKindForPath(file));
+  const absFile = join(repoRoot, file)
+  const text = readFileSync(absFile, "utf8")
+  const sourceFile = ts.createSourceFile(file, text, ts.ScriptTarget.Latest, true, scriptKindForPath(file))
   /** @type {Set<string>} */
-  const specifiers = new Set();
+  const specifiers = new Set()
   /** Character ranges of string/template literals, so the regex sweep below skips their contents. @type {[number, number][]} */
-  const literalRanges = [];
+  const literalRanges = []
 
   /** @param {ts.Node} node */
   function visit(node) {
     if (ts.isStringLiteralLike(node) || ts.isTemplateLiteral(node)) {
-      literalRanges.push([node.getStart(sourceFile), node.getEnd()]);
+      literalRanges.push([node.getStart(sourceFile), node.getEnd()])
     }
     if (
       (ts.isImportDeclaration(node) || ts.isExportDeclaration(node)) &&
       node.moduleSpecifier &&
       ts.isStringLiteralLike(node.moduleSpecifier)
     ) {
-      specifiers.add(node.moduleSpecifier.text);
+      specifiers.add(node.moduleSpecifier.text)
     } else if (
       ts.isImportEqualsDeclaration(node) &&
       ts.isExternalModuleReference(node.moduleReference) &&
       ts.isStringLiteralLike(node.moduleReference.expression)
     ) {
-      specifiers.add(node.moduleReference.expression.text);
+      specifiers.add(node.moduleReference.expression.text)
     } else if (ts.isCallExpression(node)) {
       if (
         node.expression.kind === ts.SyntaxKind.ImportKeyword &&
         node.arguments.length === 1 &&
         ts.isStringLiteralLike(node.arguments[0])
       ) {
-        specifiers.add(node.arguments[0].text);
+        specifiers.add(node.arguments[0].text)
       } else if (
         ts.isIdentifier(node.expression) &&
         node.expression.text === "require" &&
         node.arguments.length === 1 &&
         ts.isStringLiteralLike(node.arguments[0])
       ) {
-        specifiers.add(node.arguments[0].text);
+        specifiers.add(node.arguments[0].text)
       }
     } else if (
       ts.isImportTypeNode(node) &&
       ts.isLiteralTypeNode(node.argument) &&
       ts.isStringLiteralLike(node.argument.literal)
     ) {
-      specifiers.add(node.argument.literal.text);
+      specifiers.add(node.argument.literal.text)
     }
-    ts.forEachChild(node, visit);
+    ts.forEachChild(node, visit)
   }
 
-  visit(sourceFile);
+  visit(sourceFile)
 
   // Belt-and-braces sweep for dynamic imports the AST walk can miss, run over a
   // copy with string and template literals blanked out. Without that, a dynamic
   // import quoted *inside* a string literal (a doc assertion needle, or the
   // workflow sources embedded in the generated pack) reads as a real import.
-  const outsideLiterals = blankLiteralRanges(text, literalRanges);
+  const outsideLiterals = blankLiteralRanges(text, literalRanges)
   for (const match of outsideLiterals.matchAll(/\bimport\s*\(\s*["']([^"']+)["']\s*\)/g)) {
-    specifiers.add(match[1]);
+    specifiers.add(match[1])
   }
-  return [...specifiers].sort();
+  return [...specifiers].sort()
 }
 
 /** @param {Record<string, unknown>} manifest @param {string} section */
 function dependencyNames(manifest, section) {
-  const deps = manifest[section];
-  return deps && typeof deps === "object" && !Array.isArray(deps) ? new Set(Object.keys(deps)) : new Set();
+  const deps = manifest[section]
+  return deps && typeof deps === "object" && !Array.isArray(deps) ? new Set(Object.keys(deps)) : new Set()
 }
 
 /**
@@ -378,8 +377,8 @@ function dependencyNames(manifest, section) {
  * @param {string} file
  */
 function isDevOnlyFile(file) {
-  const base = basename(file);
-  const parts = file.split(sep);
+  const base = basename(file)
+  const parts = file.split(sep)
   return (
     parts.includes("test") ||
     parts.includes("tests") ||
@@ -391,7 +390,7 @@ function isDevOnlyFile(file) {
     base.includes(".spec.") ||
     base.endsWith(".config.ts") ||
     base.endsWith(".config.js")
-  );
+  )
 }
 
 /**
@@ -409,80 +408,80 @@ function dependencySets(pkg) {
     ...dependencyNames(pkg.manifest, "dependencies"),
     ...dependencyNames(pkg.manifest, "peerDependencies"),
     ...dependencyNames(pkg.manifest, "optionalDependencies"),
-  ]);
-  const dev = new Set([...declared, ...dependencyNames(pkg.manifest, "devDependencies")]);
-  const runtime = pkg.manifest.private === true ? dev : declared;
-  return { runtime, dev };
+  ])
+  const dev = new Set([...declared, ...dependencyNames(pkg.manifest, "devDependencies")])
+  const runtime = pkg.manifest.private === true ? dev : declared
+  return { runtime, dev }
 }
 
 function main() {
-  const workspacePackages = findWorkspacePackages();
-  const workspaceNames = new Set(workspacePackages.map((pkg) => pkg.name));
-  const memberDirs = new Set(workspacePackages.map((pkg) => pkg.dir).filter((dir) => dir !== "."));
+  const workspacePackages = findWorkspacePackages()
+  const workspaceNames = new Set(workspacePackages.map((pkg) => pkg.name))
+  const memberDirs = new Set(workspacePackages.map((pkg) => pkg.dir).filter((dir) => dir !== "."))
   /** @type {Array<{ file: string; specifier: string; packageName: string; section: "dependencies" | "devDependencies" }>} */
-  const violations = [];
+  const violations = []
   /** @type {Array<{ file: string; specifier: string; packageDir: string }>} */
-  const reachThroughs = [];
+  const reachThroughs = []
   /** @type {Set<string>} */
-  const seenReachThroughs = new Set();
+  const seenReachThroughs = new Set()
 
-  const packageQueue = [...workspacePackages];
-  let checkedPackageCount = 0;
+  const packageQueue = [...workspacePackages]
+  let checkedPackageCount = 0
   while (packageQueue.length > 0) {
-    const pkg = packageQueue.shift();
-    checkedPackageCount += 1;
-    const { files, nestedPackageDirs } = filesForPackage(pkg, memberDirs);
+    const pkg = packageQueue.shift()
+    checkedPackageCount += 1
+    const { files, nestedPackageDirs } = filesForPackage(pkg, memberDirs)
     for (const nestedDir of nestedPackageDirs) {
-      const nestedPkg = readPackage(nestedDir);
-      if (nestedPkg) packageQueue.push(nestedPkg);
+      const nestedPkg = readPackage(nestedDir)
+      if (nestedPkg) packageQueue.push(nestedPkg)
     }
-    const deps = dependencySets(pkg);
+    const deps = dependencySets(pkg)
     for (const file of files) {
-      const devOnly = isDevOnlyFile(file);
-      const allowed = devOnly ? deps.dev : deps.runtime;
-      const expectedSection = devOnly ? "devDependencies" : "dependencies";
+      const devOnly = isDevOnlyFile(file)
+      const allowed = devOnly ? deps.dev : deps.runtime
+      const expectedSection = devOnly ? "devDependencies" : "dependencies"
       for (const specifier of importSpecifiersForFile(file)) {
-        const reached = packageSourceReachedBy(file, specifier, memberDirs);
+        const reached = packageSourceReachedBy(file, specifier, memberDirs)
         if (reached !== null && reached !== pkg.dir) {
-          const key = `${file.split(sep).join("/")} -> ${specifier}`;
-          if (knownReachThroughs.has(key)) seenReachThroughs.add(key);
-          else reachThroughs.push({ file, specifier, packageDir: reached });
-          continue;
+          const key = `${file.split(sep).join("/")} -> ${specifier}`
+          if (knownReachThroughs.has(key)) seenReachThroughs.add(key)
+          else reachThroughs.push({ file, specifier, packageDir: reached })
+          continue
         }
-        const packageName = packageNameForSpecifier(specifier);
-        if (!packageName || packageName === pkg.name) continue;
-        if (allowed.has(packageName)) continue;
-        violations.push({ file, specifier, packageName, section: expectedSection });
+        const packageName = packageNameForSpecifier(specifier)
+        if (!packageName || packageName === pkg.name) continue
+        if (allowed.has(packageName)) continue
+        violations.push({ file, specifier, packageName, section: expectedSection })
       }
     }
   }
 
-  const staleReachThroughs = [...knownReachThroughs].filter((key) => !seenReachThroughs.has(key));
+  const staleReachThroughs = [...knownReachThroughs].filter((key) => !seenReachThroughs.has(key))
   if (violations.length > 0 || reachThroughs.length > 0 || staleReachThroughs.length > 0) {
-    console.error("Dependency boundary check failed: undeclared imports found.\n");
+    console.error("Dependency boundary check failed: undeclared imports found.\n")
     for (const violation of violations) {
-      const workspaceHint = workspaceNames.has(violation.packageName) ? "workspace dependency" : "dependency";
+      const workspaceHint = workspaceNames.has(violation.packageName) ? "workspace dependency" : "dependency"
       console.error(
         `- ${relative(repoRoot, join(repoRoot, violation.file))} imports ${violation.specifier}; ` +
           `declare ${violation.packageName} as a ${workspaceHint} in ${violation.section}.`,
-      );
+      )
     }
     for (const reach of reachThroughs) {
-      const name = readPackage(reach.packageDir)?.name ?? reach.packageDir;
+      const name = readPackage(reach.packageDir)?.name ?? reach.packageDir
       console.error(
         `- ${relative(repoRoot, join(repoRoot, reach.file))} imports ${reach.specifier}, ` +
           `which resolves inside ${reach.packageDir}/src; import ${name} by package name through its export map.`,
-      );
+      )
     }
     for (const key of staleReachThroughs) {
-      console.error(`- knownReachThroughs entry "${key}" no longer matches an import; remove it from the gate.`);
+      console.error(`- knownReachThroughs entry "${key}" no longer matches an import; remove it from the gate.`)
     }
-    process.exitCode = 1;
+    process.exitCode = 1
   } else {
-    console.log(`Dependency boundary check passed for ${checkedPackageCount} package(s).`);
+    console.log(`Dependency boundary check passed for ${checkedPackageCount} package(s).`)
   }
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
-  main();
+if (isMain(import.meta)) {
+  main()
 }

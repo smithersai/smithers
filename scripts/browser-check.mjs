@@ -15,10 +15,9 @@
  * Run it with `pnpm run browser` from the repository root.
  */
 import { relative, resolve } from "node:path"
-import { fileURLToPath } from "node:url"
-import { BROWSER_SAFE, NODE_ONLY } from "./browser-contract.mjs"
 
-const repoRoot = resolve(fileURLToPath(import.meta.url), "..", "..")
+import { BROWSER_SAFE, NODE_ONLY } from "./browser-contract.mjs"
+import { repoRoot } from "./workspace-packages.mjs"
 
 const esbuild = await import("esbuild").catch((cause) => {
   console.error("browser-check needs esbuild from the workspace toolchain — run `pnpm install` first.")

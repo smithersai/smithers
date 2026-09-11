@@ -9,12 +9,11 @@
  */
 import assert from "node:assert/strict"
 import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs"
-import { join, resolve } from "node:path"
+import { join } from "node:path"
 import { tmpdir } from "node:os"
 import { describe, it } from "node:test"
-import { fileURLToPath } from "node:url"
 
-const root = resolve(fileURLToPath(new URL(".", import.meta.url)), "..", "..")
+import { repoRoot as root } from "../workspace-packages.mjs"
 
 const subcommands = (source) => {
   const table = source.match(/export const shipped:[\s\S]*?= \[([\s\S]*?)\n\]/)?.[1]

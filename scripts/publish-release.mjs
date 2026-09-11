@@ -3,7 +3,8 @@ import { execFileSync } from "node:child_process"
 import { createHash } from "node:crypto"
 import { readFile, readdir, writeFile } from "node:fs/promises"
 import { basename, join, resolve } from "node:path"
-import { pathToFileURL } from "node:url"
+
+import { isMain } from "./workspace-packages.mjs"
 
 export const integrity = (bytes) => `sha512-${createHash("sha512").update(bytes).digest("base64")}`
 
@@ -122,7 +123,7 @@ export const registryPublisher = ({ run = execFileSync, pause = (seconds) => exe
 
 export const registryIntegrity = (spec) => registryPublisher().readRegistry(spec)
 
-if (process.argv[1] !== undefined && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
+if (isMain(import.meta)) {
   const directory = resolve(process.argv[2] ?? "dist/release-packs")
   const candidate = JSON.parse(await readFile(join(directory, "release-manifest.json"), "utf8"))
   const releaseTag = process.env.RELEASE_TAG

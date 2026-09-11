@@ -1,8 +1,8 @@
 /** Refuse incomplete sync soak evidence. Scheduling a tier does not prove it ran. */
 import assert from "node:assert/strict"
 import { readFileSync } from "node:fs"
-import { resolve } from "node:path"
-import { pathToFileURL } from "node:url"
+
+import { isMain } from "./workspace-packages.mjs"
 
 export function slope(samples, field) {
   const xs = samples.map((sample) => sample.elapsedMs / 60_000)
@@ -62,7 +62,7 @@ export function verifySoak(artifact, { minutes, seed, node } = {}) {
   return { minutes: workload.requestedMinutes, seed: workload.seed, samples: artifact.samples.length, growth }
 }
 
-if (process.argv[1] && pathToFileURL(resolve(process.argv[1])).href === import.meta.url) {
+if (isMain(import.meta)) {
   const path = process.argv[2]
   assert.ok(path, "usage: node scripts/check-soak-campaign.mjs <artifact.json>")
   console.log(JSON.stringify(verifySoak(JSON.parse(readFileSync(path, "utf8")), {

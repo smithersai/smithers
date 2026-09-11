@@ -4,12 +4,10 @@
  */
 import { createRequire } from "node:module"
 import { readFileSync, realpathSync } from "node:fs"
-import { dirname, join, resolve } from "node:path"
-import { fileURLToPath } from "node:url"
-import { workspacePackages } from "./workspace-packages.mjs"
-import { readWorkspaceManifests } from "./pack-release.mjs"
+import { join, resolve } from "node:path"
 
-const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..")
+import { workspacePackages, isMain, repoRoot } from "./workspace-packages.mjs"
+import { readWorkspaceManifests } from "./pack-release.mjs"
 
 // Update the family atomically with manifests and both package-manager locks.
 export const EXPECTED_EFFECT_VERSION = "4.0.0-rc.112"
@@ -80,7 +78,7 @@ export const checkEffectVersions = (root = repoRoot) => {
   return { declarations: manifestRecords.length, locked: locked.length, resolutions: installed.length, packages: published.size }
 }
 
-if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+if (isMain(import.meta)) {
   const result = checkEffectVersions()
   console.log(`check-single-effect-version: exact RC ${EXPECTED_EFFECT_VERSION}; ${result.declarations} declarations, ` +
     `${result.locked} locked entries, ${result.resolutions} installed resolutions across ${result.packages} published packages; one physical Effect`)

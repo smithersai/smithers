@@ -29,11 +29,10 @@
 import assert from "node:assert/strict"
 import { spawnSync } from "node:child_process"
 import { readFileSync } from "node:fs"
-import { join, resolve } from "node:path"
+import { join } from "node:path"
 import { describe, it } from "node:test"
-import { fileURLToPath } from "node:url"
 
-const root = resolve(fileURLToPath(new URL(".", import.meta.url)), "..", "..")
+import { repoRoot as root } from "../workspace-packages.mjs"
 
 /**
  * A home directory belonging to a person: `/Users/<name>/` on macOS and

@@ -20,9 +20,7 @@
  */
 import { readFileSync, writeFileSync } from "node:fs"
 import { join, resolve } from "node:path"
-import { workspacePackages } from "./workspace-packages.mjs"
-
-const repoRoot = resolve(import.meta.dirname, "..")
+import { workspacePackages, isMain, repoRoot } from "./workspace-packages.mjs"
 
 const dependencyFields = ["dependencies", "devDependencies", "peerDependencies", "optionalDependencies"]
 
@@ -204,6 +202,6 @@ export const main = (argv) => {
   console.log("run `pnpm install --lockfile-only` next: the lockfile records these specifiers.")
 }
 
-if (process.argv[1] !== undefined && resolve(process.argv[1]) === resolve(import.meta.filename)) {
+if (isMain(import.meta)) {
   main(process.argv.slice(2))
 }

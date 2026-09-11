@@ -26,9 +26,8 @@
  */
 import { execFileSync } from "node:child_process"
 import { existsSync, readFileSync, unlinkSync, writeFileSync } from "node:fs"
-import { join, resolve } from "node:path"
-
-const repoRoot = resolve(import.meta.dirname, "..")
+import { join } from "node:path"
+import { isMain, repoRoot } from "./workspace-packages.mjs"
 
 /**
  * The commit message a cut records, in the repository's emoji convention.
@@ -249,6 +248,6 @@ export const main = (argv, root = repoRoot) => {
   for (const command of nextCommands(options.version)) process.stdout.write(`  ${command}\n`)
 }
 
-if (process.argv[1] !== undefined && resolve(process.argv[1]) === resolve(import.meta.filename)) {
+if (isMain(import.meta)) {
   main(process.argv.slice(2))
 }

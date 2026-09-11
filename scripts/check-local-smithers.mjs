@@ -19,11 +19,12 @@
 //
 // Run: node scripts/check-local-smithers.mjs
 
-import { readFileSync, readdirSync, statSync } from "node:fs";
-import { dirname, join, relative, resolve, sep } from "node:path";
-import { fileURLToPath } from "node:url";
+import { readFileSync, readdirSync, statSync } from "node:fs"
+import { join, relative, sep } from "node:path"
 
-export const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+import { isMain, repoRoot } from "./workspace-packages.mjs"
+
+export const REPO_ROOT = repoRoot
 
 /**
  * The working-tree entry an internal script must name.
@@ -32,7 +33,7 @@ export const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
  * `dist/esm/bin.js` when a published install has one and `src/bin.ts`
  * otherwise, so naming it here covers both.
  */
-export const SOURCE_ENTRY = "packages/smithers/bin/smithers.mjs";
+export const SOURCE_ENTRY = "packages/smithers/bin/smithers.mjs"
 
 /**
  * Directories (and single files) whose code executes the Smithers CLI.
@@ -47,10 +48,10 @@ export const SCANNED_PATHS = [
   "flows",
   "evals",
   "examples",
-];
+]
 
 /** Extensions worth scanning; everything else in those trees is prose or data. */
-export const SCANNED_EXTENSIONS = [".mjs", ".js", ".cjs", ".ts", ".tsx", ".json", ".sh", ".toml"];
+export const SCANNED_EXTENSIONS = [".mjs", ".js", ".cjs", ".ts", ".tsx", ".json", ".sh", ".toml"]
 
 /** Never descend into these directory names. */
 const SKIPPED_DIRECTORIES = new Set([
@@ -60,7 +61,7 @@ const SKIPPED_DIRECTORIES = new Set([
   "target",
   ".git",
   ".jj",
-]);
+])
 
 /**
  * Files that may keep a published-CLI invocation, each with the reason it is
@@ -69,13 +70,13 @@ const SKIPPED_DIRECTORIES = new Set([
 export const ALLOWLIST = {
   "scripts/check-local-smithers.mjs": "this guard names the patterns it forbids",
   "scripts/check-local-smithers.test.mjs": "exercises the guard with sample violations",
-};
+}
 
 /** Package managers that fetch and run the published CLI. */
-const RUNNERS = ["bunx", "npx", "pnpm dlx", "yarn dlx", "deno run -A npm:"];
+const RUNNERS = ["bunx", "npx", "pnpm dlx", "yarn dlx", "deno run -A npm:"]
 
 /** Config files whose every line is a command the harness will execute. */
-const EXECUTED_CONFIG_FILES = new Set([".mcp.json", "monitors.json"]);
+const EXECUTED_CONFIG_FILES = new Set([".mcp.json", "monitors.json"])
 
 /** Calls that hand a string to a shell. A match on such a line is an invocation. */
 const EXECUTION_CALLS = [
@@ -90,7 +91,7 @@ const EXECUTION_CALLS = [
   "execa(",
   "Bun.spawn",
   "Bun.$",
-];
+]
 
 /**
  * True when a source line is entirely a comment, so an explanatory mention of
@@ -99,15 +100,15 @@ const EXECUTION_CALLS = [
  * @param {string} line
  */
 export function isCommentLine(line) {
-  const trimmed = line.trim();
-  return trimmed.startsWith("//") || trimmed.startsWith("#") || trimmed.startsWith("*") || trimmed.startsWith("/*");
+  const trimmed = line.trim()
+  return trimmed.startsWith("//") || trimmed.startsWith("#") || trimmed.startsWith("*") || trimmed.startsWith("/*")
 }
 
 /**
  * @param {string} line
  */
 function mentionsPublishedCli(line) {
-  return RUNNERS.some((runner) => line.includes(`${runner} smthrs`));
+  return RUNNERS.some((runner) => line.includes(`${runner} smthrs`))
 }
 
 /**
@@ -120,38 +121,38 @@ function mentionsPublishedCli(line) {
  * @returns {{ path: string, line: number, text: string }[]}
  */
 export function findViolationsInFile(path, contents) {
-  if (Object.hasOwn(ALLOWLIST, path)) return [];
-  const fileName = path.split("/").pop() ?? path;
+  if (Object.hasOwn(ALLOWLIST, path)) return []
+  const fileName = path.split("/").pop() ?? path
 
   // `package.json`: only the scripts the package manager runs.
   if (fileName === "package.json") {
-    let scripts;
+    let scripts
     try {
-      scripts = JSON.parse(contents)?.scripts;
+      scripts = JSON.parse(contents)?.scripts
     } catch {
-      return [];
+      return []
     }
-    if (!scripts || typeof scripts !== "object") return [];
-    const lines = contents.split("\n");
+    if (!scripts || typeof scripts !== "object") return []
+    const lines = contents.split("\n")
     return Object.entries(scripts)
       .filter(([, command]) => typeof command === "string" && mentionsPublishedCli(command))
       .map(([name, command]) => ({
         path,
         line: lines.findIndex((line) => line.includes(`"${name}":`)) + 1,
         text: `${name}: ${command}`,
-      }));
+      }))
   }
 
-  const everyLineExecutes = fileName.endsWith(".sh") || EXECUTED_CONFIG_FILES.has(fileName);
-  const violations = [];
-  const lines = contents.split("\n");
+  const everyLineExecutes = fileName.endsWith(".sh") || EXECUTED_CONFIG_FILES.has(fileName)
+  const violations = []
+  const lines = contents.split("\n")
   for (let index = 0; index < lines.length; index++) {
-    const line = lines[index];
-    if (isCommentLine(line) || !mentionsPublishedCli(line)) continue;
-    if (!everyLineExecutes && !EXECUTION_CALLS.some((call) => line.includes(call))) continue;
-    violations.push({ path, line: index + 1, text: line.trim() });
+    const line = lines[index]
+    if (isCommentLine(line) || !mentionsPublishedCli(line)) continue
+    if (!everyLineExecutes && !EXECUTION_CALLS.some((call) => line.includes(call))) continue
+    violations.push({ path, line: index + 1, text: line.trim() })
   }
-  return violations;
+  return violations
 }
 
 /**
@@ -159,26 +160,26 @@ export function findViolationsInFile(path, contents) {
  * @returns {string[]} Absolute paths of scannable files.
  */
 function collectFiles(directory) {
-  const found = [];
-  let entries;
+  const found = []
+  let entries
   try {
-    entries = readdirSync(directory, { withFileTypes: true });
+    entries = readdirSync(directory, { withFileTypes: true })
   } catch {
-    return found;
+    return found
   }
   for (const entry of entries) {
     if (entry.name.startsWith(".") && entry.name !== ".mcp.json" && entry.name !== ".smithers") {
-      continue;
+      continue
     }
-    const full = join(directory, entry.name);
+    const full = join(directory, entry.name)
     if (entry.isDirectory()) {
-      if (SKIPPED_DIRECTORIES.has(entry.name)) continue;
-      found.push(...collectFiles(full));
+      if (SKIPPED_DIRECTORIES.has(entry.name)) continue
+      found.push(...collectFiles(full))
     } else if (SCANNED_EXTENSIONS.some((extension) => entry.name.endsWith(extension))) {
-      found.push(full);
+      found.push(full)
     }
   }
-  return found;
+  return found
 }
 
 /**
@@ -186,19 +187,19 @@ function collectFiles(directory) {
  * @returns {string[]} Repo-relative POSIX paths to scan.
  */
 export function listScannedFiles(root = REPO_ROOT) {
-  const files = [];
+  const files = []
   for (const entry of SCANNED_PATHS) {
-    const absolute = join(root, entry);
-    let stats;
+    const absolute = join(root, entry)
+    let stats
     try {
-      stats = statSync(absolute);
+      stats = statSync(absolute)
     } catch {
-      continue;
+      continue
     }
-    if (stats.isDirectory()) files.push(...collectFiles(absolute));
-    else files.push(absolute);
+    if (stats.isDirectory()) files.push(...collectFiles(absolute))
+    else files.push(absolute)
   }
-  return files.map((file) => relative(root, file).split(sep).join("/")).sort();
+  return files.map((file) => relative(root, file).split(sep).join("/")).sort()
 }
 
 /**
@@ -206,24 +207,24 @@ export function listScannedFiles(root = REPO_ROOT) {
  * @returns {{ violations: { path: string, line: number, text: string }[] }}
  */
 export function check(root = REPO_ROOT) {
-  const violations = [];
+  const violations = []
   for (const path of listScannedFiles(root)) {
-    let contents;
+    let contents
     try {
-      contents = readFileSync(join(root, path), "utf8");
+      contents = readFileSync(join(root, path), "utf8")
     } catch {
-      continue;
+      continue
     }
-    violations.push(...findViolationsInFile(path, contents));
+    violations.push(...findViolationsInFile(path, contents))
   }
-  return { violations };
+  return { violations }
 }
 
-const invokedDirectly = process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url);
+const invokedDirectly = isMain(import.meta)
 if (invokedDirectly) {
-  const { violations } = check();
+  const { violations } = check()
   for (const violation of violations) {
-    console.error(`check-local-smithers: ${violation.path}:${violation.line}: ${violation.text}`);
+    console.error(`check-local-smithers: ${violation.path}:${violation.line}: ${violation.text}`)
   }
   if (violations.length) {
     console.error(
@@ -231,8 +232,8 @@ if (invokedDirectly) {
         `  - shell and npm scripts: run ${SOURCE_ENTRY}\n` +
         "If a file genuinely needs the published fallback, add it to ALLOWLIST in " +
         "scripts/check-local-smithers.mjs with the reason.",
-    );
-    process.exit(1);
+    )
+    process.exit(1)
   }
-  console.log("check-local-smithers: internal scripts run the Smithers working tree");
+  console.log("check-local-smithers: internal scripts run the Smithers working tree")
 }

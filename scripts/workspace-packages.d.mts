@@ -7,6 +7,7 @@ export interface WorkspacePackage {
 }
 
 export const repoRoot: string
+export const isMain: (meta: ImportMeta) => boolean
 export const readWorkspacePatterns: (path?: string) => ReadonlyArray<string>
 export const workspacePackages: (root?: string) => ReadonlyArray<WorkspacePackage>
 export const libraryPackages: (root?: string) => ReadonlyArray<WorkspacePackage>

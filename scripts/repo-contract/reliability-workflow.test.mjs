@@ -9,12 +9,11 @@
  */
 import assert from "node:assert/strict"
 import { readFileSync } from "node:fs"
-import { join, resolve } from "node:path"
+import { join } from "node:path"
 import { it } from "node:test"
-import { fileURLToPath } from "node:url"
-import { parseWorkflow } from "../release-rehearsal.mjs"
 
-const root = resolve(fileURLToPath(new URL(".", import.meta.url)), "..", "..")
+import { parseWorkflow } from "../release-rehearsal.mjs"
+import { repoRoot as root } from "../workspace-packages.mjs"
 
 it("scheduled durable histories retain reproducible seeds and operation artifacts", () => {
   const workflow = parseWorkflow(readFileSync(join(root, ".github/workflows/reliability.yml"), "utf8"))

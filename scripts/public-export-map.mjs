@@ -3,9 +3,9 @@
  * allowlist: creating another source module never adds an import contract.
  */
 import { existsSync, globSync } from "node:fs"
-import { join, resolve } from "node:path"
-import { pathToFileURL } from "node:url"
-import { libraryPackages, repoRoot } from "./workspace-packages.mjs"
+import { join } from "node:path"
+
+import { libraryPackages, repoRoot, isMain } from "./workspace-packages.mjs"
 
 /** Keep condition order and ESM-only branches when substituting a pattern. */
 const substitute = (target, capture) => {
@@ -106,7 +106,7 @@ export const auditPublicExports = (root = repoRoot) =>
       return { name: entry.name, directory: entry.dir, subpaths, errors }
     })
 
-if (process.argv[1] !== undefined && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
+if (isMain(import.meta)) {
   const rows = auditPublicExports()
   console.log(JSON.stringify(rows, null, 2))
   if (rows.some((row) => row.errors.length > 0)) process.exitCode = 1

@@ -1,7 +1,8 @@
 /** Refuse a successful scheduled campaign without complete replayable evidence. */
 import { readFile } from "node:fs/promises"
-import { join, resolve } from "node:path"
-import { pathToFileURL } from "node:url"
+import { join } from "node:path"
+
+import { isMain } from "./workspace-packages.mjs"
 
 export const verifySignalCampaign = async (directory, { seed, cases, steps }) => {
   if (!Number.isInteger(seed) || seed < 0 || seed > 0xffff_ffff || !Number.isSafeInteger(cases) || cases < 1 || !Number.isSafeInteger(steps) || steps < 1) throw new Error("Invalid signal campaign configuration")
@@ -13,7 +14,7 @@ export const verifySignalCampaign = async (directory, { seed, cases, steps }) =>
   return { seed, cases, steps }
 }
 
-if (process.argv[1] !== undefined && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
+if (isMain(import.meta)) {
   if (!process.argv[2]) throw new Error("usage: node scripts/check-signal-campaign.mjs <artifact-directory>")
   const configuration = await verifySignalCampaign(process.argv[2], {
     seed: Number(process.env.SMITHERS_FUZZ_SEED),

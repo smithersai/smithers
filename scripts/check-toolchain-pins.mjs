@@ -13,10 +13,9 @@
  * comparison the test drives with fixtures.
  */
 import { readFileSync } from "node:fs"
-import { dirname, resolve } from "node:path"
-import { fileURLToPath, pathToFileURL } from "node:url"
-
-const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..")
+import { resolve } from "node:path"
+import { pathToFileURL } from "node:url"
+import { isMain, repoRoot } from "./workspace-packages.mjs"
 
 /** The numeric floor of a `>=x.y.z` requirement, or of a bare `x.y.z`. */
 export const floorOf = (requirement) => {
@@ -105,7 +104,7 @@ export const check = async (root = repoRoot) => {
   })
 }
 
-if (process.argv[1] !== undefined && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+if (isMain(import.meta)) {
   const drift = await check()
   if (drift.length > 0) {
     process.stderr.write(`toolchain pins drift from .smithers/WORKSPACE.ts:\n${drift.map((line) => `  ${line}`).join("\n")}\n`)

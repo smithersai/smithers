@@ -47,12 +47,12 @@
  */
 import assert from "node:assert/strict"
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs"
-import { join, relative, resolve } from "node:path"
+import { join, relative } from "node:path"
 import { describe, it } from "node:test"
-import { fileURLToPath } from "node:url"
-import { libraryPackages } from "../workspace-packages.mjs"
 
-const root = resolve(fileURLToPath(new URL(".", import.meta.url)), "..", "..")
+import { libraryPackages } from "../workspace-packages.mjs"
+import { repoRoot as root } from "../workspace-packages.mjs"
+
 const packagesRoot = join(root, "packages")
 
 /**

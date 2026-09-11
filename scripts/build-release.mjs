@@ -1,10 +1,9 @@
 /** Build the validated release roster in required-dependency order. */
 import { spawnSync } from "node:child_process"
 import { rmSync } from "node:fs"
-import { join, resolve } from "node:path"
+import { join } from "node:path"
 import { dependencyOrder, readWorkspaceManifests, workspaceDependencies } from "./pack-release.mjs"
-
-const repoRoot = resolve(import.meta.dirname, "..")
+import { isMain, repoRoot } from "./workspace-packages.mjs"
 
 /**
  * Optional peers and development dependencies can point back to their host
@@ -37,7 +36,7 @@ export const buildRelease = (root = repoRoot, manifests = readWorkspaceManifests
   return order
 }
 
-if (process.argv[1] !== undefined && resolve(process.argv[1]) === resolve(import.meta.filename)) {
+if (isMain(import.meta)) {
   if (process.argv[2] === "--list") {
     console.log(dependencyOrder(workspaceDependencies(readWorkspaceManifests())).join("\n"))
   } else if (process.argv.length === 2) {

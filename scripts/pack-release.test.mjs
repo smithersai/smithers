@@ -3,9 +3,9 @@ import { execFileSync } from "node:child_process"
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs"
 import { cp, mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
-import { dirname, join, resolve, sep } from "node:path"
+import { join, resolve, sep } from "node:path"
 import test from "node:test"
-import { fileURLToPath, pathToFileURL } from "node:url"
+import { pathToFileURL } from "node:url"
 import { assertExportTargets, assertPackedExportTargets } from "./packed-export-targets.mjs"
 import { assertEffectPins, effectDeclarations, effectLockVersions, installedEffectResolutions } from "./check-single-effect-version.mjs"
 import {
@@ -22,8 +22,8 @@ import {
   workspaceDependencies,
   workspaces
 } from "./pack-release.mjs"
+import { repoRoot } from "./workspace-packages.mjs"
 
-const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..")
 // `workspaces` reads and validates a workspace tree, so this suite reads the
 // real one once and every case below asserts over that single order.
 const packedWorkspaces = workspaces()
@@ -724,7 +724,6 @@ test("no published source module default-imports a sibling or exports a default"
       "exported value, so the published CommonJS entry throws at module init; use a named export and a named import"
   )
 })
-
 
 test("the real staging and tarball retain authored template config and exclude runtime debris", async () => {
   const directory = await mkdtemp(join(tmpdir(), "smithers-pack-template-"))

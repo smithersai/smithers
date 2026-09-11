@@ -12,14 +12,13 @@
  */
 import assert from "node:assert/strict"
 import { readFileSync } from "node:fs"
-import { join, resolve } from "node:path"
+import { join } from "node:path"
 import { describe, it } from "node:test"
-import { fileURLToPath } from "node:url"
+
 import { EXPECTED_EFFECT_VERSION as effectVersion } from "../check-single-effect-version.mjs"
 import { retarget } from "../set-release-version.mjs"
 import { libraryPackages } from "../workspace-packages.mjs"
-
-const root = resolve(fileURLToPath(new URL(".", import.meta.url)), "..", "..")
+import { repoRoot as root } from "../workspace-packages.mjs"
 
 /**
  * The one version every package on the release line carries, read from the CLI

@@ -6,8 +6,7 @@ import { dirname, join, resolve } from "node:path"
 import test from "node:test"
 
 import { runTemplateReplay } from "./release-consumers.mjs"
-
-const repoRoot = resolve(import.meta.dirname, "..")
+import { repoRoot } from "./workspace-packages.mjs"
 
 test("the template smoke scaffolds then executes its generated replay, and propagates replay failure", async () => {
   const root = realpathSync(mkdtempSync(join(tmpdir(), "smithers-template-replay-")))

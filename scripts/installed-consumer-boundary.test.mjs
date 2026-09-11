@@ -2,12 +2,12 @@ import assert from "node:assert/strict"
 import { spawnSync } from "node:child_process"
 import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
-import { dirname, join, resolve } from "node:path"
+import { dirname, join } from "node:path"
 import test from "node:test"
 import { pathToFileURL } from "node:url"
 import { assertInstalledConsumer } from "./fixtures/installed-consumer/consumer-boundary.mjs"
+import { repoRoot } from "./workspace-packages.mjs"
 
-const repoRoot = resolve(import.meta.dirname, "..")
 const sourceRoot = join(repoRoot, "scripts/fixtures/installed-consumer")
 const write = (path, value) => {
   mkdirSync(dirname(path), { recursive: true })

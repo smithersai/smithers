@@ -1,12 +1,13 @@
 /** Restore one immutable tested release archive; this script never publishes. */
 import { execFileSync, spawn } from "node:child_process"
 import { createHash } from "node:crypto"
-import { createReadStream, closeSync, openSync, realpathSync, writeSync } from "node:fs"
+import { createReadStream, closeSync, openSync, writeSync } from "node:fs"
 import { access, mkdir, mkdtemp, readFile, rename, rm, writeFile } from "node:fs/promises"
 import { dirname, join, resolve } from "node:path"
-import { pathToFileURL } from "node:url"
+
 import { preflight, registryIntegrity } from "./publish-release.mjs"
 import { dependencyOrder, publishedPackages, readWorkspaceManifests, workspaceDependencies } from "./pack-release.mjs"
+import { isMain } from "./workspace-packages.mjs"
 
 export const restoreSelection = (runId = "", artifactId = "") => {
   if (runId === "" && artifactId === "") return undefined
@@ -144,7 +145,7 @@ export const restoreCandidate = async (directory, options) => {
   }
 }
 
-if (process.argv[1] !== undefined && import.meta.url === pathToFileURL(realpathSync(process.argv[1])).href) {
+if (isMain(import.meta)) {
   const selection = restoreSelection(process.env.CANDIDATE_RUN_ID, process.env.CANDIDATE_ARTIFACT_ID)
   if (process.argv[2] === "--check-inputs") {
     console.log(selection === undefined ? "Building a new release candidate" : `Restoring release run ${selection.runId}, artifact ${selection.artifactId}`)

@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 
-import { mkdir, readFile, writeFile } from "node:fs/promises";
-import process from "node:process";
+import { mkdir, readFile, writeFile } from "node:fs/promises"
+import process from "node:process"
+import { isMain } from "./workspace-packages.mjs"
 
 export const LABELS = Object.freeze({
   "kind:bug": ["d73a4a", "A reproducible defect"],
@@ -21,39 +22,39 @@ export const LABELS = Object.freeze({
   "pr:missing-tests": ["fbca04", "Behavior changes need focused tests"],
   "pr:missing-docs": ["fbca04", "Public behavior needs documentation"],
   "pr:size-large": ["fbca04", "The change needs to be split or reviewed in stages"]
-});
+})
 
-const REPORT_PATH = ".triage/report.json";
-const CONTEXT_PATH = ".triage/context.json";
-const MAX_PATCH_BYTES = 180_000;
-const CHECK = new Set(["pass", "needs-work", "not-applicable"]);
+const REPORT_PATH = ".triage/report.json"
+const CONTEXT_PATH = ".triage/context.json"
+const MAX_PATCH_BYTES = 180_000
+const CHECK = new Set(["pass", "needs-work", "not-applicable"])
 
-const object = (value) => typeof value === "object" && value !== null && !Array.isArray(value);
-const text = (value, maximum = 60_000) => typeof value === "string" && value.trim() && value.length <= maximum;
+const object = (value) => typeof value === "object" && value !== null && !Array.isArray(value)
+const text = (value, maximum = 60_000) => typeof value === "string" && value.trim() && value.length <= maximum
 
 export function validateReport(value, expectedKind) {
-  if (!object(value) || value.kind !== expectedKind || !text(value.summary, 500) || !text(value.comment)) return null;
-  if (!Array.isArray(value.labels) || value.labels.length > 5) return null;
-  const labels = [...new Set(value.labels)];
-  if (labels.some((label) => typeof label !== "string" || !(label in LABELS))) return null;
+  if (!object(value) || value.kind !== expectedKind || !text(value.summary, 500) || !text(value.comment)) return null
+  if (!Array.isArray(value.labels) || value.labels.length > 5) return null
+  const labels = [...new Set(value.labels)]
+  if (labels.some((label) => typeof label !== "string" || !(label in LABELS))) return null
 
   if (expectedKind === "issue") {
-    if (!object(value.reproduction)) return null;
-    if (!["reproduced", "needs-author", "not-applicable"].includes(value.reproduction.status)) return null;
-    if (!text(value.reproduction.details, 10_000)) return null;
-    if (value.reproduction.status === "reproduced" && !labels.includes("status:reproduced")) return null;
-    if (value.reproduction.status === "needs-author" && !labels.includes("status:needs-author")) return null;
+    if (!object(value.reproduction)) return null
+    if (!["reproduced", "needs-author", "not-applicable"].includes(value.reproduction.status)) return null
+    if (!text(value.reproduction.details, 10_000)) return null
+    if (value.reproduction.status === "reproduced" && !labels.includes("status:reproduced")) return null
+    if (value.reproduction.status === "needs-author" && !labels.includes("status:needs-author")) return null
   } else {
-    if (!object(value.checks)) return null;
-    if (!["description", "tests", "docs", "size"].every((key) => CHECK.has(value.checks[key]))) return null;
-    const ready = Object.values(value.checks).every((result) => result !== "needs-work");
-    if (labels.includes("status:ready-for-review") !== ready) return null;
+    if (!object(value.checks)) return null
+    if (!["description", "tests", "docs", "size"].every((key) => CHECK.has(value.checks[key]))) return null
+    const ready = Object.values(value.checks).every((result) => result !== "needs-work")
+    if (labels.includes("status:ready-for-review") !== ready) return null
   }
-  return { ...value, labels };
+  return { ...value, labels }
 }
 
 export function fallbackReport(kind, reason) {
-  const escaped = String(reason).replaceAll("`", "'").slice(0, 500);
+  const escaped = String(reason).replaceAll("`", "'").slice(0, 500)
   if (kind === "issue") {
     return {
       kind,
@@ -62,7 +63,7 @@ export function fallbackReport(kind, reason) {
         `Automation detail: \`${escaped}\``,
       labels: ["status:needs-author"],
       reproduction: { status: "needs-author", details: "The automated report was missing or invalid." }
-    };
+    }
   }
   return {
     kind,
@@ -71,12 +72,12 @@ export function fallbackReport(kind, reason) {
       `Automation detail: \`${escaped}\``,
     labels: ["status:needs-author"],
     checks: { description: "needs-work", tests: "not-applicable", docs: "not-applicable", size: "not-applicable" }
-  };
+  }
 }
 
 const api = async (path, options = {}) => {
-  const token = process.env.GH_TOKEN;
-  if (!token) throw new Error("GH_TOKEN is required");
+  const token = process.env.GH_TOKEN
+  if (!token) throw new Error("GH_TOKEN is required")
   const response = await fetch(`https://api.github.com${path}`, {
     ...options,
     headers: {
@@ -86,28 +87,28 @@ const api = async (path, options = {}) => {
       "user-agent": "smithers-triage",
       ...(options.headers ?? {})
     }
-  });
-  if (!response.ok) throw new Error(`GitHub ${options.method ?? "GET"} ${path}: ${response.status} ${await response.text()}`);
-  return response.status === 204 ? undefined : response.json();
-};
+  })
+  if (!response.ok) throw new Error(`GitHub ${options.method ?? "GET"} ${path}: ${response.status} ${await response.text()}`)
+  return response.status === 204 ? undefined : response.json()
+}
 
 export async function prepare(kind, eventPath = process.env.GITHUB_EVENT_PATH) {
-  if (!eventPath) throw new Error("GITHUB_EVENT_PATH is required");
-  const event = JSON.parse(await readFile(eventPath, "utf8"));
-  const repository = process.env.GITHUB_REPOSITORY ?? event.repository?.full_name;
-  if (!repository) throw new Error("GITHUB_REPOSITORY is required");
-  const subject = kind === "issue" ? event.issue : event.pull_request;
-  if (!object(subject) || !Number.isSafeInteger(subject.number)) throw new Error(`event has no ${kind}`);
+  if (!eventPath) throw new Error("GITHUB_EVENT_PATH is required")
+  const event = JSON.parse(await readFile(eventPath, "utf8"))
+  const repository = process.env.GITHUB_REPOSITORY ?? event.repository?.full_name
+  if (!repository) throw new Error("GITHUB_REPOSITORY is required")
+  const subject = kind === "issue" ? event.issue : event.pull_request
+  if (!object(subject) || !Number.isSafeInteger(subject.number)) throw new Error(`event has no ${kind}`)
 
-  let files = [];
+  let files = []
   if (kind === "pr") {
-    const rows = await api(`/repos/${repository}/pulls/${subject.number}/files?per_page=100`);
-    let remaining = MAX_PATCH_BYTES;
+    const rows = await api(`/repos/${repository}/pulls/${subject.number}/files?per_page=100`)
+    let remaining = MAX_PATCH_BYTES
     files = rows.map((row) => {
-      const patch = typeof row.patch === "string" ? row.patch.slice(0, remaining) : "";
-      remaining -= patch.length;
-      return { filename: row.filename, status: row.status, additions: row.additions, deletions: row.deletions, patch };
-    });
+      const patch = typeof row.patch === "string" ? row.patch.slice(0, remaining) : ""
+      remaining -= patch.length
+      return { filename: row.filename, status: row.status, additions: row.additions, deletions: row.deletions, patch }
+    })
   }
   const context = {
     kind,
@@ -118,67 +119,67 @@ export async function prepare(kind, eventPath = process.env.GITHUB_EVENT_PATH) {
     body: subject.body ?? "",
     ...(kind === "pr" ? { draft: subject.draft === true, changedFiles: subject.changed_files ?? files.length, files } : {}),
     allowedLabels: Object.keys(LABELS)
-  };
-  await mkdir(".triage", { recursive: true });
-  await writeFile(CONTEXT_PATH, `${JSON.stringify(context, null, 2)}\n`);
-  return context;
+  }
+  await mkdir(".triage", { recursive: true })
+  await writeFile(CONTEXT_PATH, `${JSON.stringify(context, null, 2)}\n`)
+  return context
 }
 
 const ensureLabel = async (repository, name) => {
-  const [color, description] = LABELS[name];
-  const encoded = encodeURIComponent(name);
+  const [color, description] = LABELS[name]
+  const encoded = encodeURIComponent(name)
   try {
-    await api(`/repos/${repository}/labels/${encoded}`);
+    await api(`/repos/${repository}/labels/${encoded}`)
   } catch (cause) {
-    if (!String(cause).includes(": 404 ")) throw cause;
+    if (!String(cause).includes(": 404 ")) throw cause
     await api(`/repos/${repository}/labels`, {
       method: "POST",
       body: JSON.stringify({ name, color, description }),
       headers: { "content-type": "application/json" }
-    });
+    })
   }
-};
+}
 
 export async function apply(kind) {
-  const context = JSON.parse(await readFile(CONTEXT_PATH, "utf8"));
-  let report;
+  const context = JSON.parse(await readFile(CONTEXT_PATH, "utf8"))
+  let report
   try {
-    const decoded = JSON.parse(await readFile(REPORT_PATH, "utf8"));
-    report = validateReport(decoded, kind) ?? fallbackReport(kind, "the flow wrote a report that did not satisfy its contract");
+    const decoded = JSON.parse(await readFile(REPORT_PATH, "utf8"))
+    report = validateReport(decoded, kind) ?? fallbackReport(kind, "the flow wrote a report that did not satisfy its contract")
   } catch (cause) {
-    report = fallbackReport(kind, cause instanceof Error ? cause.message : String(cause));
+    report = fallbackReport(kind, cause instanceof Error ? cause.message : String(cause))
   }
-  for (const label of report.labels) await ensureLabel(context.repository, label);
+  for (const label of report.labels) await ensureLabel(context.repository, label)
   await api(`/repos/${context.repository}/issues/${context.number}/labels`, {
     method: "POST",
     body: JSON.stringify({ labels: report.labels }),
     headers: { "content-type": "application/json" }
-  });
+  })
 
-  const marker = `<!-- smithers-${kind}-triage -->`;
-  const body = `${marker}\n## Smithers ${kind === "issue" ? "issue" : "PR"} triage\n\n${report.comment}\n\n<sub>${report.summary}</sub>`;
-  const comments = await api(`/repos/${context.repository}/issues/${context.number}/comments?per_page=100`);
-  const existing = comments.find((comment) => typeof comment.body === "string" && comment.body.includes(marker));
+  const marker = `<!-- smithers-${kind}-triage -->`
+  const body = `${marker}\n## Smithers ${kind === "issue" ? "issue" : "PR"} triage\n\n${report.comment}\n\n<sub>${report.summary}</sub>`
+  const comments = await api(`/repos/${context.repository}/issues/${context.number}/comments?per_page=100`)
+  const existing = comments.find((comment) => typeof comment.body === "string" && comment.body.includes(marker))
   await api(existing ? `/repos/${context.repository}/issues/comments/${existing.id}` : `/repos/${context.repository}/issues/${context.number}/comments`, {
     method: existing ? "PATCH" : "POST",
     body: JSON.stringify({ body }),
     headers: { "content-type": "application/json" }
-  });
-  return report;
+  })
+  return report
 }
 
 async function main() {
-  const [command, kind] = process.argv.slice(2);
+  const [command, kind] = process.argv.slice(2)
   if (!["prepare", "apply"].includes(command) || !["issue", "pr"].includes(kind)) {
-    throw new Error("usage: github-triage.mjs <prepare|apply> <issue|pr>");
+    throw new Error("usage: github-triage.mjs <prepare|apply> <issue|pr>")
   }
-  const result = command === "prepare" ? await prepare(kind) : await apply(kind);
-  process.stdout.write(`${JSON.stringify({ ok: true, kind, number: result.number })}\n`);
+  const result = command === "prepare" ? await prepare(kind) : await apply(kind)
+  process.stdout.write(`${JSON.stringify({ ok: true, kind, number: result.number })}\n`)
 }
 
-if (process.argv[1] && new URL(import.meta.url).pathname === process.argv[1]) {
+if (isMain(import.meta)) {
   main().catch((cause) => {
-    process.stderr.write(`${cause instanceof Error ? cause.stack : String(cause)}\n`);
-    process.exitCode = 1;
-  });
+    process.stderr.write(`${cause instanceof Error ? cause.stack : String(cause)}\n`)
+    process.exitCode = 1
+  })
 }

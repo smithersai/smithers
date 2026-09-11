@@ -17,9 +17,9 @@ import assert from "node:assert/strict"
 import { existsSync, readdirSync, readFileSync } from "node:fs"
 import { extname, join, relative, resolve, sep } from "node:path"
 import { describe, it } from "node:test"
-import { fileURLToPath } from "node:url"
 
-const root = resolve(fileURLToPath(new URL(".", import.meta.url)), "..", "..")
+import { repoRoot as root } from "../workspace-packages.mjs"
+
 const packages = join(root, "packages")
 const site = join(root, "apps", "site")
 const output = join(site, "dist")

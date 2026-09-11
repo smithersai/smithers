@@ -12,12 +12,11 @@ import { execFileSync } from "node:child_process"
 import assert from "node:assert/strict"
 import { chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
-import { dirname, delimiter, join, resolve } from "node:path"
+import { dirname, delimiter, join } from "node:path"
 import { describe, it } from "node:test"
-import { fileURLToPath } from "node:url"
-import { parseWorkflow } from "../release-rehearsal.mjs"
 
-const root = resolve(fileURLToPath(new URL(".", import.meta.url)), "..", "..")
+import { parseWorkflow } from "../release-rehearsal.mjs"
+import { repoRoot as root } from "../workspace-packages.mjs"
 
 const readManifest = (path) => JSON.parse(readFileSync(path, "utf8"))
 

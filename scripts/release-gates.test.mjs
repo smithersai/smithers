@@ -1,11 +1,11 @@
 import assert from "node:assert/strict"
 import { readFileSync } from "node:fs"
-import { dirname, join, resolve } from "node:path"
+import { join } from "node:path"
 import test from "node:test"
-import { fileURLToPath } from "node:url"
-import { commandCovers, releaseGateArgs, releaseGateCommand, releaseGateExclusions, releaseGates } from "./release-gates.mjs"
 
-const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..")
+import { commandCovers, releaseGateArgs, releaseGateCommand, releaseGateExclusions, releaseGates } from "./release-gates.mjs"
+import { repoRoot } from "./workspace-packages.mjs"
+
 const workflow = (name) => readFileSync(join(repoRoot, ".github", "workflows", name), "utf8")
 
 /** Every build-graph invocation one job makes, in order, comments dropped. */

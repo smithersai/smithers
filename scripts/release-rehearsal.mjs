@@ -42,8 +42,7 @@ import { mkdir, mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
 import YAML from "yaml"
-
-const repoRoot = resolve(import.meta.dirname, "..")
+import { isMain, repoRoot } from "./workspace-packages.mjs"
 
 // ---------------------------------------------------------------------------
 // Workflow files are read by the same YAML 1.2 rules GitHub applies, through
@@ -479,6 +478,6 @@ export const main = async (argv) => {
   if (failed) process.exitCode = 1
 }
 
-if (process.argv[1] !== undefined && resolve(process.argv[1]) === resolve(import.meta.filename)) {
+if (isMain(import.meta)) {
   await main(process.argv.slice(2))
 }

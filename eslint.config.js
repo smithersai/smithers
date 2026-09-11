@@ -11,6 +11,8 @@ export default [
   { ignores: ["**/node_modules/**", "**/dist/**", "**/coverage/**", "**/template/**", "**/fixtures/**", ...optedOut] },
   // Non-JSDoc directives belong to each package's full lint pass.
   { linterOptions: { reportUnusedDisableDirectives: false } },
+  // Operator scripts carry no public-JSDoc contract; they share one statement style.
+  { files: ["scripts/**/*.mjs"], rules: { semi: ["error", "never"] } },
   { files: sources, languageOptions: { parser: tseslint.parser }, plugins: { "@typescript-eslint": tseslint.plugin } },
   ...jsdocConvention.map((config) => ({
     ...config,
