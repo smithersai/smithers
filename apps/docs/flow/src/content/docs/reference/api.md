@@ -307,7 +307,7 @@ A `RetryPolicy` is a plain value, so the next retry delay is derived from a pers
 | `FlowExecutionNotFound` | `poll` and `resume` were given an execution id the runtime does not hold                                                                                                                                    |
 | `CancelRequestFailed`   | a durable runtime could not record a cancellation, with `cancel_request_failed` for a storage failure and `unsafe_interrupt_unsupported` for `interruptUnsafe`, which the durable engine does not implement |
 
-No shipped runtime reads `FlowInstance.awaitedDeferreds`. It is reserved for a runtime that wants to preempt a suspension when a completion lands in the read-to-park window; a completion wakes a parked run through `FlowRuntime.resume` today.
+A completion wakes a parked run through `FlowRuntime.resume`.
 
 ## See also
 

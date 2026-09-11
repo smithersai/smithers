@@ -53,13 +53,8 @@ a guessed or stale token from pre-answering a run.
 `FlowRuntime.FlowInstance` is one execution's frontier state: its `executionId`,
 `lineageId`, `flow`, a `scope` closed only when the execution fully completes,
 the mutable `suspended`, `interrupted`, `waiting`, `handoff`, and `cause` fields,
-an optional `awaitedDeferreds` set, and `actionState`. This package declares the
-contract; a runtime constructs the value.
-
-No Smithers engine reads `awaitedDeferreds` today. It is reserved
-for a runtime that wants to preempt a suspension when a completion lands in the
-read-to-park window. Today a completion wakes a parked run through
-`FlowRuntime.resume`.
+and `actionState`. This package declares the contract; a runtime constructs the
+value. A completion wakes a parked run through `FlowRuntime.resume`.
 
 ## Declaring a wait
 

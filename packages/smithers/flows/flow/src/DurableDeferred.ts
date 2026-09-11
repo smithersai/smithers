@@ -153,7 +153,6 @@ const await_: <Success extends Schema.Constraint, Error extends Schema.Constrain
   >(self: DurableDeferred<Success, Error>) {
     const engine = yield* FlowRuntime
     const instance = yield* FlowInstance
-    ;(instance.awaitedDeferreds ??= new Set()).add(self.name)
     const exit = yield* Flow.wrapActionResult(
       engine.deferredResult(self),
       Option.isNone

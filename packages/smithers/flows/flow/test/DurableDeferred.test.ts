@@ -168,28 +168,6 @@ describe("DurableDeferred", () => {
       expect(failure.message.length).toBeLessThan(256)
     }).pipe(Effect.provide(layerWired(Layer.empty))))
 
-  effect("registers an awaited deferred before reading its result", () => {
-    const flow = Flow.make("DurableDeferred/registration", {
-      payload: {},
-      success: Schema.Void,
-      body: () => Node.succeed(undefined)
-    })
-    const instance = makeInstance(flow, "registration")
-    return Effect.gen(function*() {
-      const engine = yield* FlowRuntime.FlowRuntime
-      yield* engine.deferredDone(Gate, {
-        flowName: flow._tag,
-        executionId: instance.executionId,
-        deferredName: Gate.name,
-        exit: Exit.succeed("ready")
-      })
-      yield* DurableDeferred.await(Gate).pipe(
-        Effect.provideService(FlowRuntime.FlowInstance, instance)
-      )
-      expect(instance.awaitedDeferreds).toEqual(new Set([Gate.name]))
-    }).pipe(Effect.provide(layerWired(Layer.empty)))
-  })
-
   effect("tokenFromPayload derives the same token as the running instance", () => {
     const flow = Flow.make("DurableDeferred/token-payload", {
       payload: { id: Schema.String },

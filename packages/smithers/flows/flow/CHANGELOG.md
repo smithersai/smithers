@@ -9,6 +9,12 @@
   `scripts/docs.mjs` and the `docsPages` target described under 0.1.0 no
   longer exist. (`flows-flow/maintainability/7`)
 
+### Removed
+
+- `FlowInstance.awaitedDeferreds`. No runtime read the set, and
+  `DurableDeferred.await` no longer writes it. A completion wakes a parked run
+  through `FlowRuntime.resume`, unchanged. (`flows-flow/simplicity/1`)
+
 ### Fixed
 
 - Nested explicit `Node.andThen` continuations now carry only their nearest

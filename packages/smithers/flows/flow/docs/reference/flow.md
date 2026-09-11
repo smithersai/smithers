@@ -765,7 +765,7 @@ Executing a flow would close a cycle in the persisted parent-execution chain. `p
 - **Type:** `Context.Service` keyed `"@smthrs/flow/FlowRuntime/FlowInstance"`
 - **Since:** `0.1.0`
 
-One execution's state: `executionId`, `lineageId`, `flow`, a `scope` closed only when the flow completes, the mutable `suspended`, `interrupted`, `waiting`, `handoff`, and `cause` fields, the optional `awaitedDeferreds` set, and `actionState`. This package declares the contract; a runtime constructs the value. No shipped runtime reads `awaitedDeferreds`: a completion wakes a parked run through `FlowRuntime.resume`.
+One execution's state: `executionId`, `lineageId`, `flow`, a `scope` closed only when the flow completes, the mutable `suspended`, `interrupted`, `waiting`, `handoff`, and `cause` fields, and `actionState`. This package declares the contract; a runtime constructs the value. A completion wakes a parked run through `FlowRuntime.resume`.
 
 ### `FlowRuntime.DeferredDoneIfWaitingOutcome`
 
