@@ -181,6 +181,11 @@ const guarded = HostServices.layer.pipe(
 )
 ```
 
+`GrantStore.layerNoop` allows every operation inside the workspace. It is a
+seam for tests and boot paths, not a production policy. Replace it with a
+rule-based store before running untrusted work; see
+[Write a capability policy](https://kernel.smithers.sh/guides/write-a-capability-policy/).
+
 Turning on process containment adds a `ProcessLedger`, which the journal backs.
 See [Contain child processes](/guides/contain-child-processes/).
 

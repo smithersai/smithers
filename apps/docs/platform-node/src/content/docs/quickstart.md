@@ -77,8 +77,12 @@ symlinkSync(secret, join(workspace, "escape.txt"))
 `HostServices.layer` from [`@smthrs/kernel`](https://kernel.smithers.sh/reference/api/) decorates every one
 of the five tags with a capability check. It needs the workspace root that
 bounds the filesystem, and a grant store that answers the permission
-questions. Use the allow-all store, so that the only thing left refusing
-anything is the confinement itself:
+questions. For this local trial, use the allow-all store, so that the only
+thing left refusing anything is the confinement itself. `GrantStore.layerNoop`
+is a seam for tests and boot paths, not a production policy; a real host
+answers with rules, as
+[Write a capability policy](https://kernel.smithers.sh/guides/write-a-capability-policy/)
+shows:
 
 ```ts
 import * as GrantStore from "@smthrs/kernel/GrantStore"

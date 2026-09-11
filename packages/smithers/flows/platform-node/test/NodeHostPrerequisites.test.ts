@@ -31,4 +31,12 @@ describe("NodeHost prerequisite documentation", () => {
     expect(example).toContain("Layer.provide(platform)")
     expect(example).not.toContain("NodeHost.layer")
   })
+
+  it("marks the allow-all grant store as a test seam wherever a page composes it", () => {
+    for (const page of [installation, quickstart]) {
+      expect(page).toContain("Layer.provide(GrantStore.layerNoop)")
+      expect(page).toContain("not a production policy")
+      expect(page).toContain("https://kernel.smithers.sh/guides/write-a-capability-policy/")
+    }
+  })
 })
