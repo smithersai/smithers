@@ -2,7 +2,7 @@
 
 import { describe, expect, it } from "@effect/vitest"
 import { Flow } from "@smthrs/flow"
-import { Effect, Exit, Schema } from "effect"
+import { Cause, Effect, Exit, Schema } from "effect"
 import type * as Crypto from "effect/Crypto"
 import { withCrypto } from "./Crypto.ts"
 
@@ -92,6 +92,49 @@ describe("Flow.Result round trips", () => {
     expect(Flow.isResult("Complete")).toBe(false)
     return Effect.void
   })
+})
+
+describe("Flow.ResultEncoded", () => {
+  // The stored form: what an engine writes through the flow's own JSON codec,
+  // read back by a consumer that knows none of the flow's schemas.
+  const stored = Schema.toCodecJson(ResultSchema)
+  const results: ReadonlyArray<Flow.Result<number, string>> = [
+    new Flow.Complete({ exit: Exit.succeed(3) }),
+    new Flow.Complete({ exit: Exit.fail("boom") }),
+    new Flow.Suspended(),
+    new Flow.Suspended({ cause: Cause.die("parked") }),
+    new Flow.Handoff({ flow: "next", payload: { round: 2 } })
+  ]
+
+  effect("round trips every stored result shape unchanged", () =>
+    Effect.gen(function*() {
+      for (const result of results) {
+        const json = JSON.parse(JSON.stringify(yield* Schema.encodeEffect(stored)(result)))
+        const read = yield* Schema.decodeUnknownEffect(Flow.ResultEncoded)(json, { onExcessProperty: "error" })
+        expect(read).toStrictEqual(json)
+        const written = yield* Schema.encodeEffect(Flow.ResultEncoded)(read)
+        expect(written).toStrictEqual(json)
+        const typed = yield* Schema.decodeUnknownEffect(stored)(written)
+        expect(typed._tag).toBe(result._tag)
+        expect(yield* Schema.encodeEffect(stored)(typed)).toStrictEqual(json)
+      }
+    }))
+
+  effect("refuses values no result encodes to", () =>
+    Effect.gen(function*() {
+      for (
+        const value of [
+          { _tag: "Pending" },
+          { _tag: "Handoff", flow: "", payload: null },
+          { _tag: "Complete", exit: { _tag: "Success", value: 1 }, extra: true }
+        ]
+      ) {
+        const exit = yield* Schema.decodeUnknownEffect(Flow.ResultEncoded)(value, { onExcessProperty: "error" }).pipe(
+          Effect.exit
+        )
+        expect(Exit.isFailure(exit)).toBe(true)
+      }
+    }))
 })
 
 describe("Flow.isResult", () => {

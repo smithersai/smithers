@@ -1024,4 +1024,78 @@ describe("Interpreter concurrency", () => {
       expect(state.entered).toEqual(["shared"])
       expect(value.value).toMatchObject({ recovered: 1 })
     }))
+
+  /** Parks on its first run until {@link Unpark} runs, then interrupts itself. */
+  const Flaky = Action.make("interpreter/flaky", { payload: {}, success: Schema.Number })
+
+  /** Unparks {@link Flaky} once the walk has recovered, and settles after that run is interrupted. */
+  const Unpark = Action.make("interpreter/unpark", { payload: {}, success: Schema.Number })
+
+  /** A recovery arm that gives the walk's remaining executions turns until `flaky` runs again. */
+  const Recover = Action.make("interpreter/recover", { payload: {}, success: Schema.Number })
+
+  it.effect("re-executes an interrupted node on a later demand instead of replaying the interrupt", () =>
+    Effect.gen(function*() {
+      // `flaky`'s binder is an `All` member whose sibling fails, so the
+      // binder's join is interrupted and the walk recovers through the catch.
+      // The binder's continuation keeps running, because the interpretation
+      // owns it: it unparks `flaky`, whose execution then ends interrupted,
+      // and only after that demands `flaky` again through `late`. An
+      // interrupt says nothing about the node, so the interpretation evicted
+      // it instead of memoizing it, and the later demand runs it a second time.
+      let runs = 0
+      let recover = () => {}
+      const recovered = new Promise<void>((resolve) => {
+        recover = resolve
+      })
+      let unpark = () => {}
+      const unparked = new Promise<void>((resolve) => {
+        unpark = resolve
+      })
+      let interrupt = () => {}
+      const interrupted = new Promise<void>((resolve) => {
+        interrupt = resolve
+      })
+      const layer = Layer.mergeAll(
+        Flaky.toLayer(() =>
+          Effect.gen(function*() {
+            runs++
+            if (runs > 1) return runs
+            yield* Effect.promise(() => unparked)
+            return yield* Effect.interrupt
+          }).pipe(Effect.onInterrupt(() => Effect.sync(() => interrupt())))
+        ),
+        Unpark.toLayer(() =>
+          Effect.gen(function*() {
+            yield* Effect.promise(() => recovered)
+            unpark()
+            yield* Effect.promise(() => interrupted)
+            return 0
+          })
+        ),
+        Recover.toLayer(() =>
+          Effect.gen(function*() {
+            recover()
+            for (let turn = 0; turn < 1000 && runs < 2; turn++) yield* Effect.yieldNow
+            return runs
+          })
+        ),
+        Failing.toLayer(({ name }) => Effect.fail(`${name} failed`))
+      )
+      const value = yield* driveWith(
+        layer,
+        Interpreter.interpret(
+          Node.all({
+            use: Flaky.call({}).pipe(
+              Node.bindPlanned((flaky) =>
+                Unpark.call({}).pipe(Node.andThen(Sum.call({ values: [flaky], label: "late" })))
+              )
+            ),
+            doomed: Failing.call({ name: "doomed" })
+          }).pipe(Node.catch({ onFailure: () => Recover.call({}) }))
+        )
+      )
+      expect(runs).toBe(2)
+      expect(value.value).toBe(2)
+    }))
 })

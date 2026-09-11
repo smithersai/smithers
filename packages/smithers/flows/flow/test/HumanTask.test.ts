@@ -1505,6 +1505,44 @@ describe("HumanTask.answer", () => {
       Effect.provide(wiredOver(state))
     )
   })
+
+  effect("accepts a second answer to a still-open token and keeps the first", () => {
+    // Two people can both see the run parked on one approval token: a durable
+    // store keeps the waiting row until the re-driven round consumes the
+    // answer. The first write wins; the second is told it succeeded (the
+    // runtime answers `Existing`), not that the question was never open.
+    const state = makeMemoryState()
+    const executionId = "human-second-answer"
+    const instance = makeInstance(Host, executionId)
+    const point = HumanTask.deferred("release", 1)
+    const token = DurableDeferred.tokenFromExecutionId(point, { flow: Host, executionId })
+    const ask = Flow.intoResult(
+      Interpreter.interpret(HumanTask.action.call({ name: "release", kind: "json", prompt: "Decide." }))
+    )
+
+    return Effect.gen(function*() {
+      expect((yield* ask)._tag).toBe("Suspended")
+      const parkedOn = instance.waiting
+      expect(parkedOn).toMatchObject({ reason: "approval", token })
+
+      yield* HumanTask.answer({ token, value: { decision: "ship" } })
+      // The fixture clears the annotation as it records the answer; restoring
+      // it is the waiting row a second submitter still finds before the run
+      // is re-driven.
+      instance.waiting = parkedOn
+      yield* HumanTask.answer({ token, value: { decision: "hold" } })
+
+      const stored = state.deferredResults.get(`${executionId}/${point.name}`)
+      expect(Exit.isSuccess(stored!) && stored!.value).toEqual({ decision: "ship" })
+      const settled = yield* ask
+      expect(settled._tag === "Complete" && Exit.isSuccess(settled.exit) && settled.exit.value.value).toEqual({
+        decision: "ship"
+      })
+    }).pipe(
+      Effect.provideService(FlowRuntime.FlowInstance, instance),
+      Effect.provide(wiredOver(state))
+    )
+  })
 })
 
 describe("HumanTask.decode", () => {
