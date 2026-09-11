@@ -152,12 +152,19 @@ describe("Maintenance", () => {
   // shorter than one page never proves the cursor advances.
   it("walks a thread longer than one message page", async () => {
     const total = 300
+    const summarized: Array<ReadonlyArray<string>> = []
     const result = await run(Effect.gen(function*() {
       const store = yield* MemoryStore.MemoryStore
       yield* append(store, "paged", total)
       const withinBudget = yield* Maintenance.limitHistory({ maxTokens: 1_000_000 })
       const compacted = yield* Maintenance.compact({
-        summarizer: { summarize: ({ messages }) => Effect.succeed(`summarized ${messages.length}`) },
+        summarizer: {
+          summarize: ({ messages }) =>
+            Effect.sync(() => {
+              summarized.push(messages.map((message) => message.id))
+              return `summarized ${messages.length}`
+            })
+        },
         makeSummaryId: () => "paged-summary"
       })
       const remaining = yield* store.listMessages({ threadId: "paged" })
@@ -165,9 +172,137 @@ describe("Maintenance", () => {
     }))
 
     expect(result.withinBudget).toEqual({ deletedMessages: 0 })
-    expect(result.compacted.compactedThreads).toBe(1)
-    expect(result.remaining[0]?.text).toBe(`summarized ${result.compacted.deletedMessages}`)
-    expect(result.remaining).toHaveLength(total - result.compacted.deletedMessages + 1)
+    expect(result.compacted).toEqual({ compactedThreads: 1, deletedMessages: 298 })
+    expect(summarized).toEqual([Array.from({ length: 298 }, (_, index) => `paged-message-${index}`)])
+    expect(result.remaining.map((message) => [message.id, message.text])).toEqual([
+      ["paged-summary", "summarized 298"],
+      ["paged-message-298", "text-298"],
+      ["paged-message-299", "text-299"]
+    ])
+  })
+
+  // The budget check is one SQL aggregate per thread, so a thread within
+  // budget never has its message bodies read.
+  it("checks the budget without reading the history of a thread that fits", async () => {
+    let listCalls = 0
+    const result = await run(Effect.gen(function*() {
+      const store = yield* MemoryStore.MemoryStore
+      yield* append(store, "fits", 300)
+      const counting = MemoryStore.MemoryStore.of({
+        ...store,
+        listMessages: (input) => Effect.sync(() => listCalls++).pipe(Effect.andThen(store.listMessages(input)))
+      })
+      return yield* Maintenance.limitHistory({ maxTokens: 1_000_000 }).pipe(
+        Effect.provideService(MemoryStore.MemoryStore, counting)
+      )
+    }))
+
+    expect(result).toEqual({ deletedMessages: 0 })
+    expect(listCalls).toBe(0)
+  })
+
+  // Tied timestamps order by id, and a deletion that ends exactly on a page
+  // boundary must neither stop early nor delete one message too many.
+  it("deletes across message pages with tied timestamps and an exact page boundary", async () => {
+    const ids = Array.from({ length: 600 }, (_, index) => `m-${String(index).padStart(4, "0")}`)
+    const result = await run(Effect.gen(function*() {
+      const store = yield* MemoryStore.MemoryStore
+      for (const threadId of ["boundary", "crossing"]) {
+        // Reverse insertion order proves the store, not the insert order, sorts ties.
+        for (const [index, id] of ids.map((id, index) => [index, id] as const).reverse()) {
+          yield* store.appendMessage({ threadId, id, role: "user", text: "x", at: Math.floor(index / 3) })
+        }
+      }
+      const boundary = yield* Maintenance.limitHistory({ maxTokens: 600 - 512, charsPerToken: 1 })
+      const afterBoundary = yield* store.listMessages({ threadId: "boundary" })
+      const crossing = yield* store.listMessages({ threadId: "crossing" })
+      return { boundary, afterBoundary, crossing }
+    }))
+
+    expect(result.boundary).toEqual({ deletedMessages: 1024 })
+    expect(result.afterBoundary.map((message) => message.id)).toEqual(ids.slice(512))
+    expect(result.crossing.map((message) => message.id)).toEqual(ids.slice(512))
+
+    const crossed = await run(Effect.gen(function*() {
+      const store = yield* MemoryStore.MemoryStore
+      for (const [index, id] of ids.entries()) {
+        yield* store.appendMessage({ threadId: "crossing", id, role: "user", text: "x", at: Math.floor(index / 3) })
+      }
+      const limited = yield* Maintenance.limitHistory({ maxTokens: 600 - 301, charsPerToken: 1 })
+      return { limited, remaining: yield* store.listMessages({ threadId: "crossing" }) }
+    }))
+
+    expect(crossed.limited).toEqual({ deletedMessages: 301 })
+    expect(crossed.remaining.map((message) => message.id)).toEqual(ids.slice(301))
+  })
+
+  // The budget counts JavaScript string length, so an astral character costs
+  // two units even though SQLite counts it as one character.
+  it("measures history in JavaScript code units", async () => {
+    const result = await run(Effect.gen(function*() {
+      const store = yield* MemoryStore.MemoryStore
+      yield* store.appendMessage({ threadId: "emoji", id: "one", role: "user", text: "😀😀", at: 1 })
+      yield* store.appendMessage({ threadId: "emoji", id: "two", role: "user", text: "ab", at: 2 })
+      const fits = yield* Maintenance.limitHistory({ maxTokens: 6, charsPerToken: 1 })
+      const over = yield* Maintenance.limitHistory({ maxTokens: 5, charsPerToken: 1 })
+      return { fits, over, remaining: yield* store.listMessages({ threadId: "emoji" }) }
+    }))
+
+    expect(result.fits).toEqual({ deletedMessages: 0 })
+    expect(result.over).toEqual({ deletedMessages: 1 })
+    expect(result.remaining.map((message) => message.id)).toEqual(["two"])
+  })
+
+  // Each summarizer call sees at most `maxMessagesPerSummary` messages; later
+  // windows fold the previous summary in with the next oldest messages.
+  it("compacts a long thread in bounded windows", async () => {
+    const summarized: Array<ReadonlyArray<string>> = []
+    const result = await run(Effect.gen(function*() {
+      const store = yield* MemoryStore.MemoryStore
+      yield* append(store, "windowed", 300)
+      const compacted = yield* Maintenance.compact({
+        threadId: "windowed",
+        maxMessagesPerSummary: 100,
+        summarizer: {
+          summarize: ({ messages }) =>
+            Effect.sync(() => {
+              summarized.push(messages.map((message) => message.id))
+              return `window ${summarized.length}`
+            })
+        },
+        makeSummaryId: (_, messages) => `summary-of-${messages.at(-1)!.id}`
+      })
+      return { compacted, remaining: yield* store.listMessages({ threadId: "windowed" }) }
+    }))
+
+    const original = (from: number, to: number) =>
+      Array.from({ length: to - from }, (_, index) => `windowed-message-${from + index}`)
+    expect(summarized).toEqual([
+      original(0, 100),
+      ["summary-of-windowed-message-99", ...original(100, 199)],
+      ["summary-of-windowed-message-198", ...original(199, 298)]
+    ])
+    expect(result.compacted).toEqual({ compactedThreads: 1, deletedMessages: 300 })
+    expect(result.remaining.map((message) => [message.id, message.text])).toEqual([
+      ["summary-of-windowed-message-297", "window 3"],
+      ["windowed-message-298", "text-298"],
+      ["windowed-message-299", "text-299"]
+    ])
+  })
+
+  it("rejects a summary window that cannot make progress", async () => {
+    const failures = await run(Effect.gen(function*() {
+      const summarizer = { summarize: () => Effect.succeed("summary") }
+      return [
+        yield* Effect.flip(Maintenance.compact({ summarizer, maxMessagesPerSummary: 1 })),
+        yield* Effect.flip(Maintenance.compact({ summarizer, maxMessagesPerSummary: 2.5 }))
+      ]
+    }))
+
+    expect(failures.map((error) => [error.code, error.path])).toEqual([
+      ["invalid_argument", ["maxMessagesPerSummary"]],
+      ["invalid_argument", ["maxMessagesPerSummary"]]
+    ])
   })
 
   it("writes the summary before deleting old messages in one transaction", async () => {

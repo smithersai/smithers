@@ -36,7 +36,7 @@ const trimmed = Effect.gen(function*() {
 })
 ```
 
-The approximation is character-based: a thread's budget is `maxTokens * charsPerToken` characters, with `charsPerToken` defaulting to 4. A non-finite or negative `maxTokens`, or a non-positive `charsPerToken`, fails with `invalid_argument` and a path to the field. Threads are processed one at a time, and messages page through the store rather than loading a whole thread at once.
+The approximation is character-based: a thread's budget is `maxTokens * charsPerToken` characters, with `charsPerToken` defaulting to 4. A non-finite or negative `maxTokens`, or a non-positive `charsPerToken`, fails with `invalid_argument` and a path to the field. Characters are JavaScript string length, so an astral character such as an emoji counts as two. Threads are processed one at a time. One SQL aggregate per thread (`MemoryStore.messageStats`) settles every thread that fits by stored bytes, and every all-ASCII thread exactly, without reading message bodies. Other threads page through the store 256 messages at a time, and deletion reads only the oldest pages it removes.
 
 ## Compact old history into a summary
 
@@ -60,6 +60,7 @@ const summarized = Effect.gen(function*() {
 
 - `threadId` restricts the pass to one thread; omit it to compact every thread.
 - `keepRecent` messages stay untouched, defaulting to 2. A thread with no more messages than that is skipped, and so is a thread whose only old message is a system message.
+- `maxMessagesPerSummary` bounds one summarizer call, defaulting to 1024 and at least 2. Longer histories compact in several windows, oldest first: each window becomes one summary, and the next window folds that summary in with the next oldest messages, so the thread ends with one summary. `deletedMessages` counts every deleted row, including folded summaries, so a summary id must differ per window; the default id does.
 - The summarizer receives the thread id, the old messages, and their rendered `role: text` lines, and answers the summary text.
 - The summary lands as a `system` message timestamped at the oldest removed message, with the id `makeSummaryId` returns. The default id derives from a digest of the thread and message ids, so a retried pass targets the same summary.
 - The summarizer runs before the write transaction. After it succeeds, `MemoryStore.compactMessages` checks the immutable `sourceMessages` snapshot against the stored rows, then inserts the summary and deletes the sources in one durable write, so a failure or interruption before that commit leaves the source messages intact. A missing or changed source fails with `compaction_conflict`; read and summarize the current history again. Concurrent appends outside the snapshot remain intact. A summary id that already exists fails with `idempotency_conflict`, even on an identical retry. See [Troubleshooting](../troubleshooting.md#idempotency_conflict) to check a compaction after a lost response.

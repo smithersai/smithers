@@ -204,6 +204,22 @@ export interface ListMessagesInput {
 }
 
 /**
+ * One thread's message count and text-size bounds, answered in SQL.
+ *
+ * `codePoints` is SQLite's character count and `bytes` the stored encoding's
+ * byte count. A thread's total JavaScript string length lies between them,
+ * and equals both when they agree.
+ *
+ * @category models
+ * @since 0.1.0
+ */
+export interface MessageStats {
+  readonly messages: number
+  readonly codePoints: number
+  readonly bytes: number
+}
+
+/**
  * Stable exclusive cursor for ordered message pagination.
  *
  * @category models
@@ -448,6 +464,7 @@ export interface Service {
   readonly appendMessage: (input: AppendMessageInput) => Effect.Effect<void, MemoryError>
   readonly listMessages: (input: ListMessagesInput) => Effect.Effect<ReadonlyArray<Message>, MemoryError>
   readonly countMessages: (input: ListMessagesInput) => Effect.Effect<number, MemoryError>
+  readonly messageStats: (input: { readonly threadId: string }) => Effect.Effect<MessageStats, MemoryError>
   readonly putNote: (input: PutNoteInput) => Effect.Effect<Note, MemoryError>
   readonly getNote: (input: GetNoteInput) => Effect.Effect<Note | undefined, MemoryError>
   readonly setNoteStatus: (input: SetNoteStatusInput) => Effect.Effect<void, MemoryError>
@@ -1108,6 +1125,22 @@ export const make: Effect.Effect<Service, MemoryError, Crypto.Crypto | DurableWr
         return Number(rows[0]?.count ?? 0)
       })
 
+    const messageStats: Service["messageStats"] = (input) =>
+      Effect.gen(function*() {
+        yield* validateNonEmpty(input.threadId, "threadId", ["threadId"])
+        const rows = yield* sql<{ readonly count: number; readonly code_points: number; readonly bytes: number }>`
+        SELECT count(*) AS count,
+          COALESCE(SUM(length(text)), 0) AS code_points,
+          COALESCE(SUM(length(CAST(text AS BLOB))), 0) AS bytes
+        FROM memory_messages WHERE thread_id = ${input.threadId}
+      `.pipe(Effect.mapError(storeError("could not measure memory messages")))
+        return {
+          messages: Number(rows[0]?.count ?? 0),
+          codePoints: Number(rows[0]?.code_points ?? 0),
+          bytes: Number(rows[0]?.bytes ?? 0)
+        }
+      })
+
     const deleteMessageRows = (threadId: string, ids: ReadonlyArray<string>) =>
       Effect.gen(function*() {
         let deleted = 0
@@ -1708,6 +1741,7 @@ export const make: Effect.Effect<Service, MemoryError, Crypto.Crypto | DurableWr
       appendMessage,
       listMessages,
       countMessages,
+      messageStats,
       putNote,
       getNote,
       setNoteStatus,
@@ -1746,6 +1780,7 @@ export const makeNoop = (overrides: Partial<Service> = {}): Service => {
     appendMessage: () => unavailable("appendMessage"),
     listMessages: () => unavailable("listMessages"),
     countMessages: () => unavailable("countMessages"),
+    messageStats: () => unavailable("messageStats"),
     putNote: () => unavailable("putNote"),
     getNote: () => unavailable("getNote"),
     setNoteStatus: () => unavailable("setNoteStatus"),

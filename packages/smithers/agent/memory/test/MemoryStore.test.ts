@@ -1096,6 +1096,26 @@ describe("MemoryStore", () => {
     expect(result.threads).toEqual([result.first])
   })
 
+  it("answers a thread's message count and text-size bounds in one read", async () => {
+    const result = await run(Effect.gen(function*() {
+      const store = yield* MemoryStore.MemoryStore
+      const empty = yield* store.messageStats({ threadId: "absent" })
+      yield* store.appendMessage({ threadId: "thread", id: "ascii", role: "user", text: "abc", at: 0 })
+      const ascii = yield* store.messageStats({ threadId: "thread" })
+      yield* store.appendMessage({ threadId: "thread", id: "emoji", role: "user", text: "é😀", at: 1 })
+      yield* store.appendMessage({ threadId: "other", id: "other", role: "user", text: "zzzz", at: 0 })
+      const mixed = yield* store.messageStats({ threadId: "thread" })
+      const invalid = yield* Effect.flip(store.messageStats({ threadId: "" }))
+      return { empty, ascii, mixed, invalid }
+    }))
+
+    expect(result.empty).toEqual({ messages: 0, codePoints: 0, bytes: 0 })
+    expect(result.ascii).toEqual({ messages: 1, codePoints: 3, bytes: 3 })
+    // "é😀" is 2 code points, 3 JavaScript code units, and 6 UTF-8 bytes.
+    expect(result.mixed).toEqual({ messages: 2, codePoints: 5, bytes: 9 })
+    expect([result.invalid.code, result.invalid.path]).toEqual(["invalid_argument", ["threadId"]])
+  })
+
   it("counts, de-duplicates, chunks, and compacts messages at their boundaries", async () => {
     const result = await run(Effect.gen(function*() {
       const store = yield* MemoryStore.MemoryStore
@@ -1987,6 +2007,7 @@ describe("MemoryStore", () => {
       ["appendMessage", noop.appendMessage({ threadId: "t", id: "m", role: "user", text: "x", at: 0 })],
       ["listMessages", noop.listMessages({ threadId: "t" })],
       ["countMessages", noop.countMessages({ threadId: "t" })],
+      ["messageStats", noop.messageStats({ threadId: "t" })],
       ["putNote", noop.putNote({ namespace, id: "n", text: "t", tags: [], provenance: {} })],
       ["getNote", noop.getNote({ id: "n" })],
       ["setNoteStatus", noop.setNoteStatus({ id: "n", status: "accepted" })],

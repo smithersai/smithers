@@ -248,9 +248,9 @@ The `mode`, `onConflict`, and `tier` values in the two effect declarations below
 | `limitHistory`        | `(options) => Effect<TokenLimiterResult, MemoryError, MemoryStore>`         | Deletes the oldest messages in every thread until each thread fits the approximate budget `maxTokens * charsPerToken` characters.                                                   |
 | `SummarizerInput`     | interface                                                                   | `{ threadId, messages, rendered }`: the old messages and their rendered `role: text` lines.                                                                                         |
 | `Summarizer`          | interface                                                                   | `{ summarize(input): Effect<string, E, R> }`: the injected summarization route.                                                                                                     |
-| `CompactionOptions`   | interface                                                                   | `{ summarizer, threadId?, keepRecent?, makeSummaryId? }`; `keepRecent` defaults to 2.                                                                                               |
+| `CompactionOptions`   | interface                                                                   | `{ summarizer, threadId?, keepRecent?, maxMessagesPerSummary?, makeSummaryId? }`; `keepRecent` defaults to 2, `maxMessagesPerSummary` to 1024 and must be at least 2.               |
 | `CompactionResult`    | interface                                                                   | `{ compactedThreads: number, deletedMessages: number }`.                                                                                                                            |
-| `compact`             | `(options) => Effect<CompactionResult, E \| MemoryError, R \| MemoryStore>` | Summarizes old history and atomically replaces it with one summary message. The summarizer runs before the write transaction; interruption before the commit leaves sources intact. |
+| `compact`             | `(options) => Effect<CompactionResult, E \| MemoryError, R \| MemoryStore>` | Summarizes old history in windows of at most `maxMessagesPerSummary` messages, each atomically replaced by one summary that the next window folds in. The summarizer runs before each write transaction; interruption before a commit leaves that window's sources intact. `deletedMessages` counts every deleted row, including folded summaries. |
 
 ### `@smthrs/memory/MemoryError`
 
@@ -279,6 +279,7 @@ Model types, all plain interfaces unless noted:
 | `AppendMessageInput`   | `Message`: an idempotent append, with the id unique within its thread.                                                                |
 | `ListMessagesInput`    | `{ threadId, limit?, cursor? }`.                                                                                                      |
 | `MessageCursor`        | `{ at, id }`: a stable exclusive cursor for ordered pagination.                                                                       |
+| `MessageStats`         | `{ messages, codePoints, bytes }`: one thread's size bounds; its JavaScript string length lies between `codePoints` and `bytes`.      |
 | `GetNoteInput`         | `{ id }`.                                                                                                                             |
 | `NoteStatus`           | schema and type: `"pending"`, `"accepted"`, `"rejected"`; the only mutable state on an append-only note.                              |
 | `Note`                 | `{ namespace, id, text, tags, provenance, status, createdAtMs }`.                                                                     |
@@ -311,6 +312,7 @@ The service tag is `MemoryStore`, `Context.Service` tag `flows/memory/MemoryStor
 | `appendMessage`      | `(AppendMessageInput) => Effect<void>`            | Creates a missing thread in the `global` namespace under the id `history`. An identical retry is a no-op; a differing one fails `idempotency_conflict`. |
 | `listMessages`       | `(ListMessagesInput) => Effect<Message[]>`        | Ordered by `(at, id)`; paginate with the exclusive `cursor`.                                                                                            |
 | `countMessages`      | `(ListMessagesInput) => Effect<number>`           | Counts one thread's messages.                                                                                                                           |
+| `messageStats`       | `({ threadId }) => Effect<MessageStats>`          | One SQL aggregate: message count, summed code points, and summed stored bytes, without reading message bodies.                                          |
 | `putNote`            | `(PutNoteInput) => Effect<Note>`                  | Append-only insert; `status` defaults to `accepted`. An identical re-put is a no-op; a differing one fails `supersede_conflict`.                        |
 | `getNote`            | `(GetNoteInput) => Effect<Note \| undefined>`     | Exact read by globally unique id.                                                                                                                       |
 | `setNoteStatus`      | `(SetNoteStatusInput) => Effect<void>`            | The status gate. An unknown id fails `not_found`.                                                                                                       |
