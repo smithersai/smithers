@@ -261,6 +261,29 @@ under `none` would reproduce a number under conditions their recorded rows were
 never measured under. Every new lane takes the default. See
 [Lanes, and the sealed one](#lanes-and-the-sealed-one).
 
+## The flows host shell
+
+**The flows arm's host shell is not confined, so the lane must say so.** The
+prompt tells the agent to name the testbed container on every `bash` call, but
+`container` is optional on a `mode: "unhermetic"` call and the flows CLI binds
+no policy that refuses one without it. Such a call runs model-authored shell on
+this host, with the docker socket in reach, from input that is untrusted
+repository text.
+
+`run-instance.sh` refuses to start an agent unless the lane sets
+`SWB_FLOWS_HOST_SHELL=allowed`, and stamps the value into `timings/<id>.json`
+as `hostShell`. `lib/fullbench-instance.sh` carries it into the ledger row
+beside `testbedNetwork`. `SWB_SKIP_AGENT=1` runs no agent and needs no value.
+
+```sh
+SWB_FLOWS_HOST_SHELL=allowed ./run-instance.sh django__django-16612
+```
+
+A testbed sealed with `--network none` does not seal the host shell. A report
+that states a flows lane had no network cites both fields, and a lane whose
+rows lack `hostShell` ran before the field existed: its host shell was
+unrestricted.
+
 ### Preflight: does any test need the network
 
 A `--network none` testbed changes what the *agent* can run, so it has to be

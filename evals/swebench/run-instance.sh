@@ -49,6 +49,19 @@ case "$BUDGET" in
   0) echo "[$INSTANCE] timeout must be a positive integer"; exit 2 ;;
 esac
 
+# The flows arm's host shell, as a condition the lane states rather than one a
+# report assumes. The prompt tells the agent to name the testbed container, but
+# the flows CLI binds no policy that refuses a `mode: "unhermetic"` call without
+# one, so such a call runs model-authored shell on this host, with the docker
+# socket in reach. Nothing here can confine it, so no agent starts until the
+# lane opts in with SWB_FLOWS_HOST_SHELL=allowed, and the value is stamped into
+# the timings beside the testbed network. See README, "The flows host shell".
+HOST_SHELL="${SWB_FLOWS_HOST_SHELL:-}"
+if [ "${SWB_SKIP_AGENT:-0}" != "1" ] && [ "$HOST_SHELL" != "allowed" ]; then
+  echo "[$INSTANCE] SWB_FLOWS_HOST_SHELL must be 'allowed', got '$HOST_SHELL': the flows bash flow runs container-less calls on this host unconfined"
+  exit 2
+fi
+
 # The subject the wave measures, pinned by ./preflight.sh. It is stamped into
 # this instance's timings record so the scorecard can state which bytes each
 # instance ran, and refuse to average two subjects into one wave.
@@ -264,10 +277,11 @@ else
   # what `docker inspect` said the container was on. They are two fields rather
   # than one because a report that could only print the request would be
   # printing a claim; the ledger row and every scoreboard downstream carry the
-  # observation.
-  printf '{\n  "instance_id": "%s",\n  "run_id": "%s",\n  "runIndex": "%s",\n  "seat": "%s",\n  "openaiAuth": "%s",\n  "subject": "%s",\n  "budgetSeconds": %s,\n  "testbedNetwork": "%s",\n  "testbedNetworkObserved": "%s",\n  "startedAt": %s,\n  "endedAt": %s,\n  "wallClockSeconds": %s,\n  "exitStatus": %s,\n  "timedOut": %s\n}\n' \
+  # observation. `hostShell` is the condition the agent's host-side shell ran
+  # under; `allowed` is the only value an agent run can have today.
+  printf '{\n  "instance_id": "%s",\n  "run_id": "%s",\n  "runIndex": "%s",\n  "seat": "%s",\n  "openaiAuth": "%s",\n  "subject": "%s",\n  "budgetSeconds": %s,\n  "testbedNetwork": "%s",\n  "testbedNetworkObserved": "%s",\n  "hostShell": "%s",\n  "startedAt": %s,\n  "endedAt": %s,\n  "wallClockSeconds": %s,\n  "exitStatus": %s,\n  "timedOut": %s\n}\n' \
     "$INSTANCE" "$RUN_ID" "$RUN_INDEX" "$SEAT" "$OPENAI_AUTH" "$SUBJECT" "$BUDGET" \
-    "$TESTBED_NETWORK" "$TESTBED_OBSERVED" "$((START*1000))" "$((END*1000))" "$((END-START))" \
+    "$TESTBED_NETWORK" "$TESTBED_OBSERVED" "$HOST_SHELL" "$((START*1000))" "$((END*1000))" "$((END-START))" \
     "$RUN_STATUS" "$([ "$RUN_STATUS" -eq 124 ] && printf true || printf false)" \
     > "$TIMINGS"
 fi

@@ -467,7 +467,10 @@ The four instances codex resolves and flows does not are
 upstream source or the merged fix from inside the testbed container before
 writing any patch.** The seal `SWB_CODEX_NETWORK=sealed` proxies the host shell;
 the testbed container's own network stays up, and nine of the 45 high-effort
-codex runs used it. flows has no network at all, by construction.
+codex runs used it. For flows the ledger supports less: this lane's testbed
+network is unrecorded, its host shell had no egress restriction, and the
+evidence is a clean breach scan (0 breaches, 2 egress attempts, 0 in-container
+fetches; see `airtight-scoreboard.md`), not a construction.
 
 Restricted to the 34 scored instances codex did not breach, **the two arms
 resolve the identical set: 29 each, zero flows-only, zero codex-only.** That is

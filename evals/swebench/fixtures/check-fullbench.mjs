@@ -57,7 +57,7 @@ printf 'untracked' > "$PATCH.untracked"
 printf 'paid journal' > "$JOURNAL/engine.db"
 printf 'hidden' > "$JOURNAL/.metadata"
 printf 'nested' > "$JOURNAL/nested/frame"
-printf '{}' > "$TIMINGS"
+printf '{"hostShell":"allowed"}' > "$TIMINGS"
 printf 'run log' > "$LOG_PREFIX.run.log"
 if [ "$ARCHIVE_MODE" = patch-fail ]; then
   printf '{"kind":"instance","id":"torn' >> "$FB_DIR/manifest.jsonl"
@@ -111,8 +111,14 @@ if [ "$ARCHIVE_MODE" = publish-fail ]; then exit 1; fi
       assert.equal(existsSync(journal), false)
       assert.equal(readFileSync(join(fb, "patches", `${id}.patch`), "utf8"), "paid patch")
       assert.equal(readFileSync(join(fb, "patches", `${id}.patch.untracked`), "utf8"), "untracked")
-      assert.equal(readFileSync(join(fb, "timings", `${id}.json`), "utf8"), "{}")
+      assert.equal(readFileSync(join(fb, "timings", `${id}.json`), "utf8"), '{"hostShell":"allowed"}')
       assert.equal(readFileSync(join(fb, "logs", `${id}.run.log`), "utf8"), "run log")
+      // The host-shell condition travels off the timings into the ledger row,
+      // beside testbedNetwork, so a report reads it rather than assumes it.
+      const ran = readFileSync(join(fb, "manifest.jsonl"), "utf8").split("\n").filter(Boolean)
+        .map((line) => JSON.parse(line)).find((row) => row.kind === "instance" && row.state === "ran")
+      assert.equal(ran.hostShell, "allowed", "the ran row records the flows arm's host shell")
+      assert.equal(ran.testbedNetwork, "none")
       for (const [file, content] of [["engine.db", "paid journal"], [".metadata", "hidden"], ["nested/frame", "nested"]]) {
         assert.equal(readFileSync(join(fb, "journals", id, file), "utf8"), content)
       }
@@ -123,7 +129,7 @@ if [ "$ARCHIVE_MODE" = publish-fail ]; then exit 1; fi
       assert.equal(readFileSync(patch, "utf8"), "paid patch", `${mode}: patch survives`)
       assert.equal(readFileSync(join(journal, "engine.db"), "utf8"), "paid journal", `${mode}: journal survives`)
       assert.equal(readFileSync(`${patch}.untracked`, "utf8"), "untracked")
-      assert.equal(readFileSync(join(rig, "timings", `${id}-r90.json`), "utf8"), "{}")
+      assert.equal(readFileSync(join(rig, "timings", `${id}-r90.json`), "utf8"), '{"hostShell":"allowed"}')
       assert.equal(readFileSync(join(rig, "logs-agent", `${id}-r90.run.log`), "utf8"), "run log")
       assert.equal(existsSync(join(fb, "patches", `${id}.patch`)), false)
       assert.equal(existsSync(join(fb, "journals", id)), false)

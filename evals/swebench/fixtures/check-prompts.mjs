@@ -25,7 +25,7 @@
  */
 import assert from "node:assert/strict"
 import { spawnSync } from "node:child_process"
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs"
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
 
@@ -253,6 +253,29 @@ try {
     const derived = spawnSync("grep", ["-c", "lib/interpreter.sh", join(root, runner)], { encoding: "utf8" })
     assert.equal(derived.status, 0, `${runner} derives the interpreter from lib/interpreter.sh`)
   }
+
+  // -------------------------------------------------------------------------
+  // The flows arm's host shell is a lane decision, and the ledger records it
+  // -------------------------------------------------------------------------
+  // The prompt tells the agent to name the testbed container, but the flows CLI
+  // binds no policy that refuses a container-less `mode: "unhermetic"` call, so
+  // every such call runs on the host with docker-daemon reach. The rig cannot
+  // confine it; it can refuse to start an agent until the lane says so, and
+  // stamp that condition beside `testbedNetwork` so no report assumes it away.
+  const runInstance = (hostShell) => {
+    const env = { ...process.env, SWB_DATASET: dataset }
+    delete env.SWB_FLOWS_HOST_SHELL
+    delete env.SWB_SKIP_AGENT
+    if (hostShell !== undefined) env.SWB_FLOWS_HOST_SHELL = hostShell
+    return spawnSync("bash", [join(root, "run-instance.sh"), instance.instance_id], { env, encoding: "utf8" })
+  }
+  for (const hostShell of [undefined, "", "confined", "yes"]) {
+    const refused = runInstance(hostShell)
+    assert.equal(refused.status, 2, `run-instance.sh refuses SWB_FLOWS_HOST_SHELL=${JSON.stringify(hostShell)}`)
+    assert.match(refused.stdout, /SWB_FLOWS_HOST_SHELL must be 'allowed'/u)
+  }
+  const flowsRunner = readFileSync(join(root, "run-instance.sh"), "utf8")
+  assert.match(flowsRunner, /"hostShell": "%s"/u, "run-instance.sh stamps the host-shell condition into its timings")
 } finally {
   rmSync(temporary, { recursive: true, force: true })
 }

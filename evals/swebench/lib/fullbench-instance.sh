@@ -32,6 +32,10 @@
 #   SWB_SEAT, SWB_FULLBENCH_BUDGET, SWB_MODEL_NAME
 #   SWB_FLOWS_OPENAI_AUTH         api-key (default) or chatgpt; run-instance.sh
 #                                 reads it from the environment directly
+#   SWB_FLOWS_HOST_SHELL          must be `allowed`; run-instance.sh refuses to
+#                                 start an agent otherwise, because the flows
+#                                 bash flow runs container-less calls on the
+#                                 host unconfined. Recorded as `hostShell`
 #
 # Two stubs exist for the rig's own dry run, and they are the same convention
 # `run-matrix.sh` already uses for `SWB_RUN_CMD`:
@@ -339,6 +343,18 @@ TESTBED_OBSERVED="$(node -e '
 TESTBED_ROW=""
 if [ -n "$TESTBED_OBSERVED" ]; then
   TESTBED_ROW="--testbedNetworkObserved $TESTBED_OBSERVED"
+fi
+# The host-shell condition the harness stamped, carried the same way, so a
+# report states what the agent's host shell could reach instead of assuming it.
+HOST_SHELL="$(node -e '
+  const fs = require("fs")
+  try {
+    const shell = JSON.parse(fs.readFileSync(process.argv[1], "utf8")).hostShell
+    process.stdout.write(shell === "allowed" ? shell : "")
+  } catch { process.stdout.write("") }
+' "$FB/timings/$ID.json" 2>/dev/null || printf '')"
+if [ -n "$HOST_SHELL" ]; then
+  TESTBED_ROW="$TESTBED_ROW --hostShell $HOST_SHELL"
 fi
 append "$MANIFEST" "$(row --kind instance --id "$ID" --state ran --at "$RUN_ENDED" \
   --image "$IMAGE" --exit "$RUN_STATUS" --patchBytes "$PATCH_BYTES" \
