@@ -16,8 +16,8 @@ import { describe, expect, it } from "vitest"
 import { runSync } from "./Crypto.ts"
 
 // Total extraction for test material known to be canonical; the typed
-// failure surface of `allocationScope` is exercised in
-// UncanonicalIdempotencyKey.test.ts (issue #151).
+// failure surface of `allocationScope` is exercised by "fails with a typed
+// SchemaError on uncanonical object idempotency" below (issue #151).
 const allocationScope = (identity: StepIdentity.AllocationIdentity): string =>
   runSync(StepIdentity.allocationScope(identity).pipe(Effect.orDie))
 
@@ -43,6 +43,19 @@ const randomName = (rand: () => number): string => {
 }
 
 describe("StepIdentity.allocationScope", () => {
+  it("fails with a typed SchemaError on uncanonical object idempotency", () => {
+    const cyclic: Record<string, unknown> = {}
+    cyclic.self = cyclic
+    const error = runSync(
+      StepIdentity.allocationScope({
+        kind: "action",
+        name: "a",
+        idempotency: cyclic as Schema.JsonObject
+      }).pipe(Effect.flip)
+    )
+    expect(Schema.isSchemaError(error)).toBe(true)
+  })
+
   it("is stable: identical declarations derive identical scopes", () => {
     const rand = mulberry32(7)
     for (let i = 0; i < 200; i++) {

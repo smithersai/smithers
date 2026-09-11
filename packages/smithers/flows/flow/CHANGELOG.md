@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+### Changed
+
+- The package reference page now lives at `docs/reference/flow.md`, written by
+  the `referenceDocs` target. The `docs/pages/api/flow.md` page,
+  `scripts/docs.mjs` and the `docsPages` target described under 0.1.0 no
+  longer exist. (`flows-flow/maintainability/7`)
+
 ### Fixed
 
 - Nested explicit `Node.andThen` continuations now carry only their nearest

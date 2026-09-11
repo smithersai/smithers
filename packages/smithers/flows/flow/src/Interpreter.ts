@@ -68,8 +68,7 @@ import { FlowInstance } from "./FlowRuntime/FlowInstance.ts"
 import { FlowRuntime } from "./FlowRuntime/FlowRuntime.ts"
 import { annotateWaiting } from "./FlowRuntime/WaitingAnnotation.ts"
 import * as Graph from "./Graph.ts"
-
-const OutcomeValueTypeId = Symbol.for("@smthrs/flow/Flow/OutcomeValue")
+import { OutcomeValueTypeId } from "./internal/OutcomeMarker.ts"
 
 /**
  * A graph the interpreter will not drive.
@@ -127,14 +126,6 @@ export interface Interpretation {
  * @private
  */
 type Services = Crypto.Crypto | FlowRuntime | FlowInstance | Implementations
-
-/**
- * Whether a value is a record to walk into. Everything a payload can carry
- * here came out of the AST, which holds JSON and placeholders only, so an
- * object that is not an array is a record.
- *
- * @private
- */
 
 /** Reads one own data property without invoking an accessor or letting a proxy trap escape. */
 const ownDataProperty = (value: unknown, key: PropertyKey): unknown => {
@@ -459,7 +450,7 @@ const interpretWithPolicy = (
     const inFlight = new Map<string, Deferred.Deferred<unknown, unknown>>()
     const nodes = yield* Scope.make()
 
-    const settle = (id: string): Effect.Effect<unknown, unknown, Services> =>
+    const settleNode = (id: string): Effect.Effect<unknown, unknown, Services> =>
       Effect.suspend(() => {
         if (settled.has(id)) return Effect.succeed(settled.get(id))
         const waiting = inFlight.get(id)
@@ -506,16 +497,16 @@ const interpretWithPolicy = (
           // Map, or inline call start effects before its prerequisite settles.
           // bindPlanned is distinct: it declares data dependencies and can
           // expose independent work while the producer is still running.
-          yield* settle(children[0]!)
-          return yield* settle(children[1]!)
+          yield* settleNode(children[0]!)
+          return yield* settleNode(children[1]!)
         }
         if (ast._tag === "Branch") {
           // The predicate decides on the REAL value, and only the arm it chose
           // is settled. Both arms are still in the plan; the untaken one is
           // reported as skipped.
           const decide = Node.predicate(ast)!
-          const subject = yield* settle(children[0]!)
-          return yield* settle(decide(subject) ? children[1]! : children[2]!)
+          const subject = yield* settleNode(children[0]!)
+          return yield* settleNode(decide(subject) ? children[1]! : children[2]!)
         }
         if (ast._tag === "Catch") {
           // DECIDED: catch observes only typed
@@ -525,7 +516,7 @@ const interpretWithPolicy = (
           // channel, so recovery cannot conceal a broken invariant or weaken
           // withRollback's compensation guarantees.
           const protectedId = children[0]!
-          return yield* Effect.matchEffect(settle(protectedId), {
+          return yield* Effect.matchEffect(settleNode(protectedId), {
             onFailure: (error) => {
               if (Schema.is(InterpreterError)(error)) return Effect.fail(error)
               const filter = Node.catchFilter(ast)
@@ -537,7 +528,7 @@ const interpretWithPolicy = (
               // also prevents its static failure edge from re-running the
               // protected graph while the recovery arm is driven.
               failed.set(protectedId, error)
-              return settle(children[1]!)
+              return settleNode(children[1]!)
             },
             onSuccess: Effect.succeed
           })
@@ -550,7 +541,7 @@ const interpretWithPolicy = (
         // hazard, not just a latency one.
         yield* Effect.forEach(
           KeyMaterial.dependencies(node.draft.material).filter((dependency) => !failed.has(dependency)),
-          settle,
+          settleNode,
           { concurrency: "unbounded", discard: true }
         )
         switch (ast._tag) {
@@ -566,7 +557,7 @@ const interpretWithPolicy = (
             return resolve(node.payload)
           case "Map": {
             const transform = Node.mapper(ast)!
-            return transform(yield* settle(children[0]!))
+            return transform(yield* settleNode(children[0]!))
           }
           case "All": {
             // `All` is a combination, so its members settle concurrently — the
@@ -579,7 +570,7 @@ const interpretWithPolicy = (
             // records nothing, so it reports as skipped rather than as a
             // phantom success.
             const members = Object.keys(ast.nodes)
-            const values = yield* Effect.forEach(members, (_, index) => settle(children[index]!), {
+            const values = yield* Effect.forEach(members, (_, index) => settleNode(children[index]!), {
               concurrency: "unbounded"
             })
             const joined: Record<string, unknown> = Object.create(null) as Record<string, unknown>
@@ -594,7 +585,7 @@ const interpretWithPolicy = (
             return joined
           }
           case "AndThen":
-            return yield* settle(children[1]!)
+            return yield* settleNode(children[1]!)
           case "FlowCall": {
             if (ast.mode === "handoff") {
               const declaration = handoffDeclarations.get(node.id)!
@@ -660,7 +651,7 @@ const interpretWithPolicy = (
                   `node in the same process, or call it as ${ast.flow}.child(payload) to run it as its own execution.`
               )
             }
-            return yield* settle(spliced)
+            return yield* settleNode(spliced)
           }
         }
       }
@@ -671,7 +662,7 @@ const interpretWithPolicy = (
     // ownership model: whatever is still running when the walk ends is
     // interrupted before the interpretation reports, so no execution
     // outlives it.
-    const value = yield* settle(options.root ?? "root").pipe(
+    const value = yield* settleNode(options.root ?? "root").pipe(
       Effect.onExit((exit) => Scope.close(nodes, exit))
     )
     return {
@@ -697,7 +688,7 @@ const interpretWithPolicy = (
  *
  * @private
  */
-const settle = (value: unknown): Effect.Effect<unknown, never, FlowInstance> => {
+const settleOutcome = (value: unknown): Effect.Effect<unknown, never, FlowInstance> => {
   if (!Outcome.isOutcome(value)) return Effect.succeed(value)
   switch (value._tag) {
     case "Done":
@@ -789,7 +780,7 @@ const makeLayer = <
       ((payload: Payload["Type"]) =>
         Effect.flatMap(
           interpretWithPolicy(flow, payload, options, requireReusableVersions),
-          (interpretation) => settle(interpretation.value)
+          (interpretation) => settleOutcome(interpretation.value)
         )) as (payload: Payload["Type"], executionId: string) => Effect.Effect<
           Success["Type"],
           Error["Type"],

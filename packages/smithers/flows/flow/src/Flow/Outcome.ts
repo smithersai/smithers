@@ -10,9 +10,7 @@
 import * as Node from "@smthrs/plan/Node"
 import * as Schema from "effect/Schema"
 import { WaitingAnnotation } from "../FlowRuntime/WaitingAnnotation.ts"
-
-const OutcomeNodeTypeId = Symbol.for("@smthrs/flow/Flow/OutcomeNode")
-const OutcomeValueTypeId = Symbol.for("@smthrs/flow/Flow/OutcomeValue")
+import { OutcomeNodeTypeId, OutcomeValueTypeId } from "../internal/OutcomeMarker.ts"
 
 const outcomeNode = <A extends Outcome>(value: A): Node.Node<Node.Succeed<A>> => {
   const node = Node.succeed(value)

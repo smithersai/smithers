@@ -68,9 +68,8 @@ import { TypeId as ActionTypeId } from "./Action/TypeId.ts"
 import * as Annotations from "./Flow/Annotations.ts"
 import type * as Flow from "./Flow/Flow.ts"
 import { TypeId as FlowTypeId } from "./Flow/TypeId.ts"
+import { OutcomeNodeTypeId, OutcomeValueTypeId } from "./internal/OutcomeMarker.ts"
 
-const OutcomeNodeTypeId = Symbol.for("@smthrs/flow/Flow/OutcomeNode")
-const OutcomeValueTypeId = Symbol.for("@smthrs/flow/Flow/OutcomeValue")
 type OutcomeTag = "Done" | "To" | "Park"
 
 /**
@@ -232,12 +231,11 @@ interface PlannedRecord {
 }
 
 /**
- * What a node that declared nothing contributes: it claims no path either way.
+ * What a node that declared nothing contributes: it claims no path either way,
+ * so `expected` is the honest default.
  *
  * @private
  */
-// A node that declares no effects claims no path either way, so `expected` is
-// the honest default.
 const emptyEffects: Plan.NodeEffects = { reads: [], writes: [], boundaryMode: "expected" }
 
 /** @private */
