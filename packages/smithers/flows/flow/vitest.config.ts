@@ -1,6 +1,8 @@
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { defineConfig } from "vitest/config"
+import { parseCLI } from "vitest/node"
+import { coversWholeSuite } from "./test/CoverageGate.ts"
 
 export default defineConfig({
   test: {
@@ -16,17 +18,24 @@ export default defineConfig({
     // fails the run rather than hanging the gate forever.
     testTimeout: 30_000,
     hookTimeout: 30_000,
+    // Reclaims the scratch report below once the thresholds have been checked.
+    globalSetup: ["./test/CoverageTeardown.ts"],
     coverage: {
-      // `enabled: true` makes every `vitest` run compute and ENFORCE these
-      // thresholds — a red gate fails the run (issue #20).
-      enabled: true,
+      // A whole-suite run — `vitest run`, which is what the `test` target
+      // invokes — computes and ENFORCES these thresholds, so a red gate fails
+      // the run (issue #20). A run narrowed to some files or names cannot
+      // reach 100% however green it is, so it skips coverage; see
+      // `test/CoverageGate.ts`. An explicit `--coverage` still wins.
+      enabled: coversWholeSuite(parseCLI(["vitest", ...process.argv.slice(2)], { allowUnknownOptions: true })),
       provider: "v8",
       // Scope the report directory — and the `.tmp` scratch dir the v8
       // provider clears at run start and reads at run end — to this process.
       // The default `./coverage` is shared, so two concurrent `vitest run`
       // invocations destroy each other: one aborts with a removed-coverage-
       // directory error and the other enforces 100% against a partial
-      // profile with every test passing (issues #115/#121).
+      // profile with every test passing (issues #115/#121). The globalSetup
+      // above removes it after the run; `pnpm coverage` writes `coverage/`
+      // instead so the report outlives the run.
       reportsDirectory: join(tmpdir(), `flows-flow-coverage-${process.pid}`),
       // Every production module, including the public barrel, is measured.
       include: ["src/**"].map((pattern) => join(import.meta.dirname, pattern)),

@@ -186,7 +186,7 @@
     "check": "tsc -b tsconfig.json && tsc -p tsconfig.test.json --noEmit",
     "circular": "node scripts/circular.mjs",
     "test": "vitest",
-    "coverage": "vitest --coverage"
+    "coverage": "vitest --coverage --coverage.reportsDirectory=coverage"
   },
   "dependencies": {
     "@smthrs/crypto": "1.0.0-rc.0",
