@@ -33,7 +33,7 @@ import { spawnSync } from "node:child_process"
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
-import { compareLanes, egress, readVerdict, render } from "../compare-codex-lanes.mjs"
+import { breaches, compareLanes, egress, inContainerEgress, readVerdict, render } from "../compare-codex-lanes.mjs"
 import { EXCLUDED } from "../lib/excluded.mjs"
 
 const temporary = mkdtempSync(join(tmpdir(), "flows-swebench-lanes-report-"))
@@ -258,6 +258,32 @@ try {
     }
   }
   assert.deepEqual(gateFailures, [], "every seal obligation gates the verdict and exit status")
+
+  // Codex transcripts and older flows traces type the docker line themselves.
+  // Reading the structured form must not change how that line is read.
+  const literalTrace = "$ docker exec swb bash -lc 'curl -fsSL https://example.com/fix.patch'\n"
+    + "curl: (6) Could not resolve host: example.com\n"
+    + "docker exec otherbox wget https://example.com/two.patch\nok\n"
+  assert.deepEqual(breaches(literalTrace), [
+    "docker exec swb bash -lc 'curl -fsSL https://example.com/fix.patch'",
+    "docker exec otherbox wget https://example.com/two.patch"
+  ])
+  assert.deepEqual(inContainerEgress(literalTrace), [
+    {
+      command: "docker exec swb bash -lc 'curl -fsSL https://example.com/fix.patch'",
+      container: "swb",
+      start: 69,
+      end: 116,
+      refused: true
+    },
+    {
+      command: "docker exec otherbox wget https://example.com/two.patch",
+      container: "otherbox",
+      start: 171,
+      end: 175,
+      refused: false
+    }
+  ])
 
   console.log(
     "check-compare-codex-lanes: an eval error is never a loss, an exclusion is in no movement set and in both"

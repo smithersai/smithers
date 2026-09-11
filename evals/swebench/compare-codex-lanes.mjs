@@ -157,7 +157,9 @@ export const webSearches = (text) =>
  * @category conversions
  * @since 0.1.0
  */
-export const breaches = (text) => {
+export const breaches = (text) => literalBreaches(withContainerLines(text))
+
+const literalBreaches = (text) => {
   const lines = text.split("\n")
   const found = []
   for (const line of lines) {
@@ -170,6 +172,47 @@ export const breaches = (text) => {
   }
   return found
 }
+
+const containerIdentity = /^[\w][\w.-]*$/u
+
+/** Every `{ container, command }` call in one parsed value, JSON strings included. */
+const containerCalls = (value, found) => {
+  if (typeof value === "string") {
+    if (!/^\s*[[{]/u.test(value)) return found
+    try {
+      return containerCalls(JSON.parse(value), found)
+    } catch {
+      return found
+    }
+  }
+  if (value === null || typeof value !== "object") return found
+  const program = typeof value.command === "string" ? value.command : typeof value.script === "string"
+    ? [value.interpreter, value.script].filter((part) => typeof part === "string").join(" ")
+    : undefined
+  if (typeof value.container === "string" && value.container !== "" && program !== undefined) {
+    const container = containerIdentity.test(value.container) ? value.container : JSON.stringify(value.container)
+    found.push(`docker exec ${container} ${program.replace(/\s+/gu, " ")}`)
+  }
+  for (const child of Object.values(value)) containerCalls(child, found)
+  return found
+}
+
+/**
+ * The trace with each structured container call also written as its docker line.
+ *
+ * The flows `bash` tool runs a project command as
+ * `{ mode: "unhermetic", container, cwd, command }` and never types
+ * `docker exec`, so the literal reading above would count the fetch as an
+ * attempt and never as in-container. Each such call found in a JSON line is
+ * written as `docker exec <container> <command>` on the line before it, which
+ * keeps its container identity for the seal reading and starts its outcome
+ * window where the call is. Codex transcripts and older traces pass unchanged.
+ */
+const withContainerLines = (text) =>
+  text.split("\n").map((line) => {
+    const calls = containerCalls(line, [])
+    return calls.length === 0 ? line : [...calls, line].join("\n")
+  }).join("\n")
 
 /**
  * What a fetch looks like when the network was not there.
@@ -209,8 +252,9 @@ export const SEAL_REFUSALS = [
  * @category conversions
  * @since 0.1.0
  */
-export const inContainerEgress = (text) => {
-  const attempts = breaches(text)
+export const inContainerEgress = (trace) => {
+  const text = withContainerLines(trace)
+  const attempts = literalBreaches(text)
   const read = []
   let from = 0
   for (const command of attempts) {

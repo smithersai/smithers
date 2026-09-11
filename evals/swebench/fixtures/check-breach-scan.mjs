@@ -198,6 +198,41 @@ try {
   assert.ok(render(fetched, { label: "x", ledger: journalLedger }).includes("Where the seal did not hold"))
 
   // -------------------------------------------------------------------------
+  // The generated flow names its container in a field rather than typing a
+  // docker line. A fetch in that form is still an in-container fetch, bound to
+  // that container, and on an unmeasured container it is a breach.
+  // -------------------------------------------------------------------------
+  const structuredDirectory = join(temporary, "structured")
+  mkdirSync(join(structuredDirectory, "logs"), { recursive: true })
+  const structuredCall = {
+    flow: "bash",
+    input: { mode: "unhermetic", container: "a__a-1-r98", cwd: "/testbed", command: "curl https://example.invalid/fix.patch" }
+  }
+  journal(join(structuredDirectory, "journals", "a__a-1"), [JSON.stringify(structuredCall)])
+  const structuredLedger = jsonl(join(structuredDirectory, "manifest.jsonl"), [
+    { kind: "instance", id: "a__a-1", state: "graded", at: 1, verdict: "resolved" }
+  ])
+  const structured = scan({
+    journals: join(structuredDirectory, "journals"),
+    ledger: structuredLedger,
+    logs: join(structuredDirectory, "logs"),
+    require: "none"
+  })
+  assert.equal(structured.totals.attempts, 1)
+  assert.equal(structured.totals.inContainerAttempts, 1, "a structured container fetch is an in-container fetch")
+  assert.equal(structured.totals.breaches, 1, "on an unmeasured container it is a breach")
+  assert.match(structured.rows[0].breaches[0], /^docker exec a__a-1-r98 curl https:\/\/example\.invalid\/fix\.patch/u)
+  assert.deepEqual(
+    inContainerEgress(JSON.stringify(structuredCall)).map((one) => one.container),
+    ["a__a-1-r98"],
+    "the structured form carries its container identity"
+  )
+  const nested = JSON.stringify({ payload: JSON.stringify(structuredCall) })
+  assert.equal(inContainerEgress(nested).length, 1, "an event that embeds the call as a JSON string is read too")
+  assert.deepEqual(inContainerEgress(JSON.stringify({ input: { command: "curl https://example.invalid/" } })), [],
+    "a host command with no container is not an in-container fetch")
+
+  // -------------------------------------------------------------------------
   // An in-container fetch the trace shows dying is the seal working, not a
   // breach. A `--network none` container cannot resolve a name, and reporting
   // the attempt as a successful fetch failed the first sealed lane that ran.
