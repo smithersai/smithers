@@ -9,6 +9,7 @@
  */
 import * as DatabaseMigrations from "@smthrs/database/Migrations"
 import * as Layer from "effect/Layer"
+import { indexes } from "./internal/MemoryIndexes.ts"
 import { initial } from "./internal/MemorySchema.ts"
 
 /**
@@ -20,7 +21,10 @@ import { initial } from "./internal/MemorySchema.ts"
 export const set: DatabaseMigrations.MigrationSet = {
   namespace: "memory",
   idOffset: DatabaseMigrations.idBlock * 7,
-  migrations: { "0001_initial": initial }
+  migrations: {
+    "0001_initial": initial,
+    "0002_indexes": indexes
+  }
 }
 
 /**

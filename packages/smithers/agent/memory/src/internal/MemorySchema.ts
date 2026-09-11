@@ -38,8 +38,10 @@ export const initial = Effect.gen(function*() {
     yield* sql`ALTER TABLE memory_facts
       ADD COLUMN tags_json TEXT CHECK (tags_json IS NULL OR json_valid(tags_json))`
   }
-  yield* sql`CREATE INDEX IF NOT EXISTS memory_facts_expiry_idx
-    ON memory_facts (updated_at_ms, ttl_ms) WHERE ttl_ms IS NOT NULL`
+  // The expiry sweep filters on the computed sum, so the index is over that
+  // expression; a plain (updated_at_ms, ttl_ms) index could never serve it.
+  yield* sql`CREATE INDEX IF NOT EXISTS memory_facts_expires_at_idx
+    ON memory_facts (updated_at_ms + ttl_ms) WHERE ttl_ms IS NOT NULL`
   yield* sql`CREATE TABLE IF NOT EXISTS memory_threads (
     thread_id TEXT PRIMARY KEY CHECK (length(thread_id) > 0),
     namespace_kind TEXT NOT NULL,
@@ -104,6 +106,11 @@ export const initial = Effect.gen(function*() {
     FOREIGN KEY (target_id) REFERENCES memory_notes (id),
     CHECK (superseder_id <> target_id)
   )`
+  // Default note reads ask "is this note superseded?", a lookup by target_id
+  // that the primary key (superseder_id, target_id) cannot answer without a
+  // scan of every edge per candidate row.
+  yield* sql`CREATE INDEX IF NOT EXISTS memory_note_supersedes_target_idx
+    ON memory_note_supersedes (target_id, superseder_id)`
   yield* sql`CREATE TABLE IF NOT EXISTS memory_fts_kinds (
     namespace_kind TEXT PRIMARY KEY,
     enabled_at_ms INTEGER NOT NULL,

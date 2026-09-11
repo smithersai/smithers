@@ -101,6 +101,38 @@ describe("Maintenance", () => {
     expect(result.projectionCounts).toEqual([0, 0, 0])
   })
 
+  // Expired facts of one namespace are deleted with one statement per table.
+  // Live facts in the same namespace, and their projections, stay in place.
+  it("collects many expired facts of one namespace and keeps its live ones", async () => {
+    const result = await runWithDatabase(Effect.gen(function*() {
+      const store = yield* MemoryStore.MemoryStore
+      const sql = yield* Effect.service(SqlClient.SqlClient)
+      yield* store.enableFts("flow")
+      for (const key of ["stale-a", "stale-b", "stale-c"]) {
+        yield* store.putFact({ namespace, key, value: `${key} value`, ttlMs: 1, provenance: {} })
+        yield* sql`INSERT INTO memory_vectors (
+          record_kind, record_id, namespace_kind, namespace_id,
+          embedding_model, content_digest, dimensions, vector_bytes, updated_at_ms
+        ) VALUES ('fact', ${key}, 'flow', 'maintenance', 'model', 'digest', 1, ${new Uint8Array(4)}, 0)`
+      }
+      yield* store.putFact({ namespace, key: "fresh", value: "fresh value", ttlMs: 1_000, provenance: {} })
+      yield* store.putFact({ namespace, key: "forever", value: "forever value", provenance: {} })
+      yield* TestClock.adjust("1 millis")
+      const collected = yield* Maintenance.ttlGc
+      const facts = yield* store.listFacts({ namespace })
+      const fts = yield* sql<{ readonly record_id: string }>`SELECT record_id FROM memory_fts_flow
+        WHERE record_kind = 'fact' AND namespace_id = 'maintenance' ORDER BY record_id`
+      const vectors = yield* sql<{ readonly count: number }>`SELECT count(*) AS count FROM memory_vectors
+        WHERE namespace_kind = 'flow' AND namespace_id = 'maintenance'`
+      return { collected, facts: facts.map((fact) => fact.key), fts: fts.map((row) => row.record_id), vectors }
+    }))
+
+    expect(result.collected).toEqual({ deletedFacts: 3 })
+    expect(result.facts).toEqual(["forever", "fresh"])
+    expect(result.fts).toEqual(["forever", "fresh"])
+    expect(result.vectors).toEqual([{ count: 0 }])
+  })
+
   it("deletes oldest history until the approximate token budget is met", async () => {
     const result = await run(Effect.gen(function*() {
       const store = yield* MemoryStore.MemoryStore

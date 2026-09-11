@@ -1539,6 +1539,57 @@ describe("MemoryStore", () => {
     expect(result.emptyPage).toEqual([])
   })
 
+  // enableFts is documented as a setup step, so hosts call it on every boot.
+  // Once a kind is enabled its projection is maintained row by row; a repeat
+  // call must leave that projection alone instead of rebuilding it under the
+  // writer. A row written straight into the FTS table survives only if the
+  // second call did not DELETE and backfill.
+  it("does not rebuild the FTS projection when the kind is already enabled", async () => {
+    const result = await runWithDatabase(Effect.gen(function*() {
+      const store = yield* MemoryStore.MemoryStore
+      const sql = yield* Effect.service(SqlClient.SqlClient)
+      yield* store.putFact({ namespace, key: "runbook", value: { content: "restore the primary" }, provenance: {} })
+      yield* store.enableFts("flow")
+      yield* sql`INSERT INTO memory_fts_flow (record_id, record_kind, namespace_id, record_key, text)
+        VALUES ('marker', 'fact', ${namespace.id}, 'marker', 'sentinel projection')`
+      yield* store.enableFts("flow")
+      const rows = yield* sql<{ readonly record_id: string }>`SELECT record_id FROM memory_fts_flow ORDER BY record_id`
+      return rows.map((row) => row.record_id)
+    }))
+
+    expect(result).toEqual(["marker", "runbook"])
+  })
+
+  // The backfill derives searchable text in SQL; it must match what the live
+  // projection wrote for a string value, a content object, and any other JSON.
+  it("backfills FTS text for every value shape the live projection indexes", async () => {
+    const result = await runWithDatabase(Effect.gen(function*() {
+      const store = yield* MemoryStore.MemoryStore
+      const sql = yield* Effect.service(SqlClient.SqlClient)
+      const put = (key: string, value: unknown) => store.putFact({ namespace, key, value, provenance: {} })
+      yield* put("plain", "restore the primary")
+      yield* put("content", { content: "rotate the keys", tags: ["ops"] })
+      yield* put("object", { content: 7, note: "reindex the shards" })
+      yield* put("number", 42)
+      yield* store.enableFts("flow")
+      const live = yield* sql<{ readonly record_id: string; readonly text: string }>`
+        SELECT record_id, text FROM memory_fts_flow ORDER BY record_id`
+      yield* sql`DELETE FROM memory_fts_kinds WHERE namespace_kind = 'flow'`
+      yield* store.enableFts("flow")
+      const rebuilt = yield* sql<{ readonly record_id: string; readonly text: string }>`
+        SELECT record_id, text FROM memory_fts_flow ORDER BY record_id`
+      return { live, rebuilt }
+    }))
+
+    expect(result.rebuilt).toEqual(result.live)
+    expect(result.rebuilt.map((row) => row.text)).toEqual([
+      "rotate the keys",
+      "42",
+      "{\"content\":7,\"note\":\"reindex the shards\"}",
+      "restore the primary"
+    ])
+  })
+
   it("ends the expiry sweep on its first empty chunk", async () => {
     const deleted = await run(Effect.gen(function*() {
       const store = yield* MemoryStore.MemoryStore

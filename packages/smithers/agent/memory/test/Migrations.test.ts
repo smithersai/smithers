@@ -176,9 +176,75 @@ describe("memory migrations", () => {
         return { first, second, recorded }
       }).pipe(Effect.provide(TestDatabase.layer))
     )
-    expect(result.first).toEqual([[7001, "memory_initial"]])
+    expect(result.first).toEqual([[7001, "memory_initial"], [7002, "memory_indexes"]])
     expect(result.second).toEqual([])
-    expect(result.recorded).toEqual([{ migration_id: 7001, name: "memory_initial" }])
+    expect(result.recorded).toEqual([
+      { migration_id: 7001, name: "memory_initial" },
+      { migration_id: 7002, name: "memory_indexes" }
+    ])
+  })
+
+  // A database that recorded only memory_initial before the index migration
+  // existed still carries the unusable expiry index. Migrating it must run just
+  // the second migration, swap the index, and add the supersedes lookup.
+  it("upgrades a database that only recorded memory_initial", async () => {
+    const result = await Effect.runPromise(
+      Effect.gen(function*() {
+        const sql = yield* Effect.service(SqlClient.SqlClient)
+        for (const statement of migrationStatements().filter((text) => !text.includes("memory_facts_expires_at_idx"))) {
+          if (statement.startsWith("DROP INDEX")) continue
+          yield* sql.unsafe(statement)
+        }
+        yield* sql`CREATE TABLE flows_migrations (
+          migration_id INTEGER PRIMARY KEY NOT NULL,
+          name VARCHAR(255) NOT NULL,
+          created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )`
+        yield* sql`INSERT INTO flows_migrations (migration_id, name) VALUES (7001, 'memory_initial')`
+        const before = yield* sql<
+          NameRow
+        >`SELECT name FROM sqlite_master WHERE type = 'index' AND name LIKE 'memory_facts_%'`
+        const applied = yield* Migrations.run
+        const after = yield* sql<NameRow>`SELECT name FROM sqlite_master
+          WHERE type = 'index' AND (name LIKE 'memory_facts_%' OR name LIKE 'memory_note_supersedes_%')
+          ORDER BY name`
+        return { applied, before: before.map((row) => row.name), after: after.map((row) => row.name) }
+      }).pipe(Effect.provide(TestDatabase.layer))
+    )
+    expect(result.before).toEqual(["memory_facts_expiry_idx"])
+    expect(result.applied).toEqual([[7002, "memory_indexes"]])
+    expect(result.after).toEqual(["memory_facts_expires_at_idx", "memory_note_supersedes_target_idx"])
+  })
+
+  // The expiry sweep filters on the computed sum, and every default note read
+  // asks whether an accepted note supersedes the candidate. Both must be index
+  // lookups, not scans: the reviewer's probe measured a 40-note page at
+  // hundreds of milliseconds against a few thousand edges without them.
+  it("serves the expiry sweep and the supersession filter from indexes", async () => {
+    const plans = await Effect.runPromise(
+      Effect.gen(function*() {
+        yield* Migrations.run
+        const sql = yield* Effect.service(SqlClient.SqlClient)
+        const explain = (query: string) =>
+          sql<{ readonly detail: string }>`EXPLAIN QUERY PLAN ${sql.literal(query)}`.pipe(
+            Effect.map((rows) => rows.map((row) => row.detail).join("\n"))
+          )
+        return {
+          expiry: yield* explain(`SELECT namespace_kind, namespace_id, fact_key FROM memory_facts
+            WHERE ttl_ms IS NOT NULL AND updated_at_ms + ttl_ms <= 5 LIMIT 256`),
+          notes: yield* explain(`SELECT notes.id FROM memory_notes notes
+            WHERE notes.namespace_kind = 'flow' AND notes.namespace_id = 'bank' AND notes.status = 'accepted'
+              AND NOT EXISTS (
+                SELECT 1 FROM memory_note_supersedes edges
+                JOIN memory_notes superseder ON superseder.id = edges.superseder_id
+                WHERE edges.target_id = notes.id AND superseder.status = 'accepted')
+            ORDER BY notes.created_at_ms DESC, notes.id LIMIT 40`)
+        }
+      }).pipe(Effect.provide(TestDatabase.layer))
+    )
+    expect(plans.expiry).toContain("SEARCH memory_facts USING INDEX memory_facts_expires_at_idx")
+    expect(plans.notes).toContain("SEARCH edges USING COVERING INDEX memory_note_supersedes_target_idx (target_id=?)")
+    expect(plans.notes).not.toContain("SCAN edges")
   })
 
   it("rolls back partial schema creation without recording a failed migration", async () => {
@@ -187,7 +253,7 @@ describe("memory migrations", () => {
         const sql = yield* SqlClient.SqlClient
         // A conflicting table makes index creation fail after memory_facts was
         // created. Both the new table and the migration identity must roll back.
-        yield* sql`CREATE TABLE memory_facts_expiry_idx (id INTEGER)`
+        yield* sql`CREATE TABLE memory_facts_expires_at_idx (id INTEGER)`
         const failure = yield* Effect.exit(Migrations.run)
         const facts = yield* sql`SELECT name FROM sqlite_master WHERE name = 'memory_facts'`
         const recorded = yield* sql`SELECT migration_id FROM flows_migrations`

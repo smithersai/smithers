@@ -9,7 +9,6 @@ import * as Effect from "effect/Effect"
 import type * as SqlError from "effect/unstable/sql/SqlError"
 import type { DatabaseService } from "../Database.ts"
 import type { Kind } from "../Namespace.ts"
-import { searchableText } from "./Text.ts"
 
 /**
  * The pair of services the memory schema operates through.
@@ -72,6 +71,13 @@ export const isFtsEnabled = (
 /**
  * Creates and fully backfills one namespace-kind FTS5 table.
  *
+ * A kind that `memory_fts_kinds` already holds is left alone: its projection
+ * has been maintained row by row since it was enabled, so a second call at
+ * setup time does not rebuild it under the writer. The fact backfill is one
+ * `INSERT ... SELECT` that derives the searchable text in SQL the same way
+ * `searchableText` does: a string value is the string, an object with a
+ * string `content` is that content, anything else is its JSON text.
+ *
  * This Effect must be run inside `Database.write`.
  *
  * @category migrations
@@ -86,29 +92,52 @@ export const enableFts = (
   const { sql } = database
   const table = sql.literal(ftsTable(kind))
   return Effect.gen(function*() {
+    if (yield* isFtsEnabled(database, kind)) {
+      return
+    }
     yield* sql`CREATE VIRTUAL TABLE IF NOT EXISTS ${table}
       USING fts5(record_id UNINDEXED, record_kind UNINDEXED, namespace_id UNINDEXED, record_key, text)`
     yield* sql`INSERT INTO memory_fts_kinds (namespace_kind, enabled_at_ms)
-      VALUES (${kind}, ${enabledAtMs})
-      ON CONFLICT (namespace_kind) DO NOTHING`
+      VALUES (${kind}, ${enabledAtMs})`
     yield* sql`DELETE FROM ${table}`
-    const facts = yield* sql<{
-      readonly fact_key: string
-      readonly namespace_id: string
-      readonly value_json: string
-    }>`SELECT fact_key, namespace_id, value_json
-      FROM memory_facts WHERE namespace_kind = ${kind}
-      ORDER BY namespace_id, fact_key`
-    for (const fact of facts) {
-      const value = JSON.parse(fact.value_json) as unknown
-      yield* sql`INSERT INTO ${table} (record_id, record_kind, namespace_id, record_key, text)
-        VALUES (${fact.fact_key}, 'fact', ${fact.namespace_id}, ${fact.fact_key}, ${searchableText(value)})`
-    }
+    yield* sql`INSERT INTO ${table} (record_id, record_kind, namespace_id, record_key, text)
+      SELECT fact_key, 'fact', namespace_id, fact_key,
+        CASE
+          WHEN json_type(value_json) = 'text' THEN json_extract(value_json, '$')
+          WHEN json_type(value_json) = 'object' AND json_type(value_json, '$.content') = 'text'
+            THEN json_extract(value_json, '$.content')
+          ELSE value_json
+        END
+      FROM memory_facts WHERE namespace_kind = ${kind}`
     yield* sql`INSERT INTO ${table} (record_id, record_kind, namespace_id, record_key, text)
       SELECT id, 'note', namespace_id, id, text
       FROM memory_notes WHERE namespace_kind = ${kind}`
   })
 }
+
+/**
+ * Deletes the FTS projections of many facts of one namespace and kind when the
+ * kind is enabled, with one statement instead of one per fact.
+ *
+ * @category projections
+ * @since 1.0.0
+ * @slop
+ */
+export const deleteFtsFacts = (
+  database: DatabaseService,
+  kind: Kind,
+  namespaceId: string,
+  factKeys: ReadonlyArray<string>
+): Effect.Effect<void, SqlError.SqlError> =>
+  Effect.gen(function*() {
+    if (factKeys.length === 0 || !(yield* isFtsEnabled(database, kind))) return
+    const { sql } = database
+    const table = sql.literal(ftsTable(kind))
+    yield* sql`DELETE FROM ${table}
+      WHERE record_kind = 'fact'
+        AND namespace_id = ${namespaceId}
+        AND ${sql.in("record_id", factKeys)}`
+  })
 
 /**
  * Replaces one authoritative record's FTS projection when its kind is enabled.

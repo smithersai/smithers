@@ -1548,6 +1548,8 @@ export const make: Effect.Effect<Service, MemoryError, Crypto.Crypto | DurableWr
             let deleted = 0
             let hasMore = true
             while (hasMore) {
+              // No ORDER BY: the expression index hands back expired rows in
+              // expiry order, and a chunk is deleted before the next is read.
               const expiring = yield* sql<{
                 readonly namespace_kind: Namespace.Kind
                 readonly namespace_id: string
@@ -1555,26 +1557,36 @@ export const make: Effect.Effect<Service, MemoryError, Crypto.Crypto | DurableWr
               }>`SELECT namespace_kind, namespace_id, fact_key
                 FROM memory_facts
                 WHERE ttl_ms IS NOT NULL AND updated_at_ms + ttl_ms <= ${now}
-                ORDER BY namespace_kind, namespace_id, fact_key
                 LIMIT ${DELETE_EXPIRED_FACTS_CHUNK_SIZE}`
               if (expiring.length === 0) {
                 break
               }
+              // One statement per table per namespace, not four per fact.
+              const byNamespace = new Map<string, { kind: Namespace.Kind; id: string; keys: Array<string> }>()
               for (const fact of expiring) {
-                yield* Sql.deleteFtsRecord(database, fact.namespace_kind, {
-                  recordId: fact.fact_key,
-                  recordKind: "fact",
-                  namespaceId: fact.namespace_id
-                })
+                const namespaceKey = `${fact.namespace_kind}\u0000${fact.namespace_id}`
+                const group = byNamespace.get(namespaceKey)
+                if (group === undefined) {
+                  byNamespace.set(namespaceKey, {
+                    kind: fact.namespace_kind,
+                    id: fact.namespace_id,
+                    keys: [fact.fact_key]
+                  })
+                } else {
+                  group.keys.push(fact.fact_key)
+                }
+              }
+              for (const group of byNamespace.values()) {
+                yield* Sql.deleteFtsFacts(database, group.kind, group.id, group.keys)
                 yield* sql`DELETE FROM memory_vectors
-                  WHERE namespace_kind = ${fact.namespace_kind}
-                    AND namespace_id = ${fact.namespace_id}
+                  WHERE namespace_kind = ${group.kind}
+                    AND namespace_id = ${group.id}
                     AND record_kind = 'fact'
-                    AND record_id = ${fact.fact_key}`
+                    AND ${sql.in("record_id", group.keys)}`
                 const result = yield* sql`DELETE FROM memory_facts
-                  WHERE namespace_kind = ${fact.namespace_kind}
-                    AND namespace_id = ${fact.namespace_id}
-                    AND fact_key = ${fact.fact_key}
+                  WHERE namespace_kind = ${group.kind}
+                    AND namespace_id = ${group.id}
+                    AND ${sql.in("fact_key", group.keys)}
                     AND ttl_ms IS NOT NULL
                     AND updated_at_ms + ttl_ms <= ${now}`.raw
                 deleted += changed(result)
