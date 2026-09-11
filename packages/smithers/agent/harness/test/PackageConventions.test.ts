@@ -1,5 +1,5 @@
-import { readdirSync, readFileSync } from "node:fs"
-import { join } from "node:path"
+import { existsSync, readdirSync, readFileSync } from "node:fs"
+import { join, matchesGlob, posix } from "node:path"
 import { describe, expect, it } from "vitest"
 
 const srcDir = join(import.meta.dirname, "..", "src")
@@ -81,5 +81,30 @@ describe("package conventions", () => {
         .map((match) => `${name}:${text.slice(0, match.index).split("\n").length}`)
     )
     expect(stacked).toEqual([])
+  })
+
+  // The allowlist once read `docs/*.md`, so the four guides linked from
+  // docs/README.md and HISTORY.md linked from the changelog never shipped.
+  it("ships every file a shipped markdown page links to", () => {
+    const root = join(import.meta.dirname, "..")
+    const { files } = JSON.parse(readFileSync(join(root, "package.json"), "utf8")) as { files: ReadonlyArray<string> }
+    const shipped = (file: string) => files.some((pattern) => matchesGlob(file, pattern))
+    const markdown = (dir: string): ReadonlyArray<string> =>
+      readdirSync(join(root, dir), { withFileTypes: true }).flatMap((entry) =>
+        entry.isDirectory()
+          ? markdown(`${dir}/${entry.name}`)
+          : entry.name.endsWith(".md")
+          ? [`${dir}/${entry.name}`]
+          : []
+      )
+    const pages = ["README.md", "CHANGELOG.md", ...markdown("docs")].filter(shipped)
+    const broken = pages.flatMap((page) =>
+      [...readFileSync(join(root, page), "utf8").matchAll(/\]\((?!https?:|mailto:|#|\/)([^)#\s]+)/g)]
+        .map((match) => posix.normalize(posix.join(posix.dirname(page), match[1] ?? "")))
+        .filter((target) => !existsSync(join(root, target)) || !shipped(target))
+        .map((target) => `${page} -> ${target}`)
+    )
+    expect(pages).toContain("docs/README.md")
+    expect(broken).toEqual([])
   })
 })

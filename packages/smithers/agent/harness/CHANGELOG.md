@@ -48,7 +48,7 @@
 
 The first published release of this package. `0.1.0` was never published; the
 wave-by-wave record of how this loop was built is in
-[`HISTORY.md`](./HISTORY.md).
+[`HISTORY.md`](https://github.com/smithersai/smithers/blob/main/packages/smithers/agent/harness/HISTORY.md).
 
 ### Added
 

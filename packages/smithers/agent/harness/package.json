@@ -67,7 +67,7 @@
     "./index": "./src/index.ts"
   },
   "files": [
-    "docs/*.md",
+    "docs/**/*.md",
     "src/**/*.ts",
     "dist/**/*.js",
     "dist/**/*.js.map",
