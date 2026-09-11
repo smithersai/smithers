@@ -1459,4 +1459,62 @@ describe("Scheduler tick reads", () => {
     const enabledOnly = await runOnce({ listEnabled: () => Effect.succeed([]) })
     expect(enabledOnly._tag).toBe("Failure")
   })
+
+  // A run this process launched or recovered is kept locally, so a later tick
+  // answers from that entry rather than reading the run back from the store.
+  const countingReads = (reads: Array<string>): Layer.Layer<TriggerStore.TriggerStore> =>
+    Layer.effect(
+      TriggerStore.TriggerStore,
+      Effect.gen(function*() {
+        const store = yield* TriggerStore.TriggerStore
+        return TriggerStore.TriggerStore.of({
+          ...store,
+          activeRun: (triggerId) => Effect.suspend(() => (reads.push("activeRun"), store.activeRun(triggerId))),
+          activeOccurrence: (triggerId, runId) =>
+            Effect.suspend(() => (reads.push("activeOccurrence"), store.activeOccurrence(triggerId, runId)))
+        })
+      })
+    ).pipe(Layer.provide(TestTriggers.layer))
+
+  const twoTicks = (
+    outcome: TriggerStore.Outcome,
+    at: number,
+    runner: RunnerFixture,
+    reads: Array<string>
+  ) =>
+    Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function*() {
+          yield* seed(yield* TriggerStore.TriggerStore, trigger(), runner, outcome)
+          const scheduler = yield* Scheduler.make({ runPollInterval: "1 hour" }).pipe(
+            Effect.provideService(Scheduler.Runner, runner.service)
+          )
+          yield* TestClock.setTime(at)
+          yield* scheduler.runOnce
+          yield* Effect.yieldNow
+          const first = [...reads]
+          yield* scheduler.runOnce
+          yield* Effect.yieldNow
+          return { first, second: reads.slice(first.length) }
+        })
+      ).pipe(Effect.provide(countingReads(reads)), Effect.provide(TestClock.layer()))
+    )
+
+  it("keeps the run it launched, so the next tick reads nothing back about it", async () => {
+    const runner = runnerFixture()
+    const { second } = await twoTicks("skipped", hour, runner, [])
+    expect(runner.starts).toHaveLength(1)
+    expect(second).toEqual([])
+    // The monitor's first poll, and nothing from the second tick.
+    expect(runner.inspected).toEqual(["run-1"])
+  })
+
+  it("keeps the run it recovered, so the next tick asks only the runner about it", async () => {
+    const runner = runnerFixture()
+    const { first, second } = await twoTicks("launched", 0, runner, [])
+    expect(runner.starts).toEqual([])
+    expect(first).toEqual(["activeRun", "activeOccurrence"])
+    expect(second).toEqual([])
+    expect(runner.inspected).toEqual(["seed", "seed"])
+  })
 })

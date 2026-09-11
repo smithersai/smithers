@@ -20,8 +20,8 @@ import * as Ref from "effect/Ref"
 import * as Result from "effect/Result"
 import type * as Scope from "effect/Scope"
 import * as Semaphore from "effect/Semaphore"
-import * as CatchUp from "./CatchUp.ts"
-import * as Cron from "./Cron.ts"
+import * as ActiveRuns from "./internal/ActiveRuns.ts"
+import * as DueOccurrences from "./internal/DueOccurrences.ts"
 import { TriggerError } from "./TriggerError.ts"
 import {
   type Claim,
@@ -361,26 +361,6 @@ export interface Service {
  */
 export class Scheduler extends Context.Service<Scheduler, Service>()("flows/triggers/Scheduler") {}
 
-/**
- * What this process knows about the run one trigger currently owns: which
- * occurrence claimed it, the reservation or run id the store holds for it, and
- * the monitor fiber when this process is the one watching it.
- *
- * `runId` is always known. A claim that hands out work names the reservation it
- * wrote, and a recovered entry is read back from the store, so an entry with
- * nothing to release cannot be constructed.
- */
-interface Active {
-  readonly occurrence: number
-  readonly runId: string
-  readonly fiber?: Fiber.Fiber<void> | undefined
-}
-
-interface Due {
-  readonly occurrences: ReadonlyArray<number>
-  readonly watermark: number
-}
-
 /** Stable Control request identity for one manual or scheduled occurrence.
  * @category constructors
  * @since 0.1.0
@@ -428,7 +408,7 @@ export const make = (
   Effect.gen(function*() {
     const parentScope = yield* Effect.scope
     const store = yield* TriggerStore
-    const active = yield* Ref.make<ReadonlyMap<string, Active>>(new Map())
+    const active = yield* ActiveRuns.make
     const observedAt = yield* Ref.make<ReadonlyMap<string, number>>(new Map())
     const semaphore = yield* Semaphore.make(1)
     const runPollInterval = yield* duration(options.runPollInterval ?? "15 seconds", "runPollInterval")
@@ -458,29 +438,6 @@ export const make = (
         if (existing !== undefined && existing >= occurrence) return current
         return new Map(current).set(triggerId, occurrence)
       })
-
-    // Every write to an entry is fenced on the occurrence that claimed it, so
-    // one guard states the rule once: a launch that has been superseded, or
-    // whose run already settled, no longer owns the entry and must not write to
-    // it. Spelling the fence out at each site is how the three copies of it
-    // drifted apart.
-    const updateActive = (
-      triggerId: string,
-      occurrence: number,
-      change: (entry: Active) => Active | undefined
-    ): Effect.Effect<void> =>
-      Ref.update(active, (current) => {
-        const entry = current.get(triggerId)
-        if (entry?.occurrence !== occurrence) return current
-        const next = new Map(current)
-        const updated = change(entry)
-        if (updated === undefined) next.delete(triggerId)
-        else next.set(triggerId, updated)
-        return next
-      })
-
-    const removeActive = (triggerId: string, occurrence: number): Effect.Effect<void> =>
-      updateActive(triggerId, occurrence, () => undefined)
 
     // A reservation is not a run: the Runner has never heard of it, and asking
     // answers "not active" for a launch that is still in flight. Its lease is
@@ -523,12 +480,29 @@ export const make = (
         ? Effect.succeed(Option.none())
         : store.activeRun(triggerId)
 
+    // Adopts the run the store holds for a trigger that has no local entry:
+    // settle it if it has already stopped, otherwise take the entry for it.
+    const recoverStored = (
+      trigger: Registered,
+      runId: string
+    ): Effect.Effect<ActiveRuns.Active | undefined, TriggerError> =>
+      Effect.gen(function*() {
+        const occurrence = yield* occurrenceOf(trigger.id, runId)
+        if (!(yield* stillRunning(runId))) {
+          yield* settleRecovered(trigger.id, occurrence, runId)
+          return undefined
+        }
+        const recovered: ActiveRuns.Active = { occurrence, runId }
+        yield* active.take(trigger.id, recovered)
+        return recovered
+      })
+
     const resolveActive = (
       trigger: Registered,
       held: Held | undefined
-    ): Effect.Effect<Active | undefined, TriggerError> =>
+    ): Effect.Effect<ActiveRuns.Active | undefined, TriggerError> =>
       Effect.gen(function*() {
-        const local = (yield* Ref.get(active)).get(trigger.id)
+        const local = yield* active.get(trigger.id)
         if (local !== undefined) {
           // The finalizer detaches the fiber when monitoring ends. An entry
           // without a fiber was recovered or could no longer be inspected;
@@ -537,45 +511,24 @@ export const make = (
           if (!isReservation(local.runId)) {
             if (yield* stillRunning(local.runId)) return local
             yield* settleRecovered(trigger.id, local.occurrence, local.runId)
-            yield* removeActive(trigger.id, local.occurrence)
+            yield* active.remove(trigger.id, local.occurrence)
           } else {
             // A recovered reservation has no monitor that can remove it. Ask
             // the store on every tick so its lease can expire and re-arm the
             // occurrence instead of pinning this local cache forever.
             const stored = yield* storedActive(trigger.id, held)
             if (Option.isNone(stored)) {
-              yield* removeActive(trigger.id, local.occurrence)
+              yield* active.remove(trigger.id, local.occurrence)
               return undefined
             }
             if (stored.value === local.runId) return local
-            yield* removeActive(trigger.id, local.occurrence)
-            const occurrence = yield* occurrenceOf(trigger.id, stored.value)
-            if (!(yield* stillRunning(stored.value))) {
-              yield* settleRecovered(trigger.id, occurrence, stored.value)
-              return undefined
-            }
-            const recovered: Active = { occurrence, runId: stored.value }
-            yield* Ref.update(active, (current) => new Map(current).set(trigger.id, recovered))
-            return recovered
+            yield* active.remove(trigger.id, local.occurrence)
+            return yield* recoverStored(trigger, stored.value)
           }
         }
         const stored = yield* storedActive(trigger.id, held)
         if (Option.isNone(stored)) return undefined
-        const occurrence = yield* occurrenceOf(trigger.id, stored.value)
-        if (!(yield* stillRunning(stored.value))) {
-          yield* settleRecovered(
-            trigger.id,
-            occurrence,
-            stored.value
-          )
-          return undefined
-        }
-        const recovered: Active = {
-          occurrence,
-          runId: stored.value
-        }
-        yield* Ref.update(active, (current) => new Map(current).set(trigger.id, recovered))
-        return recovered
+        return yield* recoverStored(trigger, stored.value)
       })
 
     const recordFailed = (
@@ -627,6 +580,9 @@ export const make = (
       preserveBuffered: boolean
     ): Effect.Effect<void, TriggerError> =>
       Effect.gen(function*() {
+        // The occurrence takes the entry under its reservation before the
+        // runner hears of it, so every write below is fenced on this launch.
+        yield* active.take(trigger.id, { occurrence, runId: reservation })
         let runId: string | undefined
         let launchRecorded = false
         let completed = false
@@ -638,7 +594,7 @@ export const make = (
             idempotencyKey: idempotencyKey(trigger.id, occurrence)
           })
           const startedRunId = runId
-          yield* updateActive(trigger.id, occurrence, (entry) => ({ ...entry, runId: startedRunId }))
+          yield* active.update(trigger.id, occurrence, (entry) => ({ ...entry, runId: startedRunId }))
           yield* store.recordResult({
             triggerId: trigger.id,
             occurrence,
@@ -724,8 +680,8 @@ export const make = (
           // act and belongs to `cancelActive` alone.
           Effect.ensuring(Effect.suspend(() =>
             launchRecorded && !completed
-              ? updateActive(trigger.id, occurrence, (entry) => ({ ...entry, fiber: undefined }))
-              : removeActive(trigger.id, occurrence)
+              ? active.update(trigger.id, occurrence, (entry) => ({ ...entry, fiber: undefined }))
+              : active.remove(trigger.id, occurrence)
           ))
         )
         const fiber = yield* Effect.forkIn(
@@ -750,7 +706,7 @@ export const make = (
         // `startImmediately` can finish or detach before the fork returns.
         // Never attach a finished fiber to an entry awaiting tick recovery.
         if (fiber.pollUnsafe() === undefined) {
-          yield* updateActive(trigger.id, occurrence, (entry) => ({ ...entry, fiber }))
+          yield* active.update(trigger.id, occurrence, (entry) => ({ ...entry, fiber }))
         }
         yield* Deferred.await(started)
       })
@@ -763,7 +719,7 @@ export const make = (
     // of its own to record the supersession against.
     const cancelActive = (
       trigger: Registered,
-      prior: Active,
+      prior: ActiveRuns.Active,
       replacementOccurrence: number,
       replacementReservation: string,
       queueReplacement: boolean
@@ -805,7 +761,7 @@ export const make = (
         // store refuses it after cancellation, the monitor can still observe
         // the stopped run and record a terminal result on its next poll.
         if (prior.fiber !== undefined) yield* Fiber.interrupt(prior.fiber)
-        yield* removeActive(trigger.id, prior.occurrence)
+        yield* active.remove(trigger.id, prior.occurrence)
       })
 
     const dispatchClaimed = (
@@ -817,14 +773,6 @@ export const make = (
       Effect.gen(function*() {
         switch (claim.action) {
           case "fire":
-            yield* Ref.update(
-              active,
-              (current) =>
-                new Map(current).set(trigger.id, {
-                  occurrence,
-                  runId: claim.reservationId
-                })
-            )
             yield* launch(trigger, occurrence, claim.reservationId, resumeBuffered)
             return
           case "skip":
@@ -844,7 +792,7 @@ export const make = (
           case "supersede": {
             const superseded = claim.activeRunId
             if (superseded !== undefined) {
-              const local = (yield* Ref.get(active)).get(trigger.id)
+              const local = yield* active.get(trigger.id)
               yield* cancelActive(
                 trigger,
                 local !== undefined && local.runId === superseded
@@ -858,14 +806,6 @@ export const make = (
                 !resumeBuffered
               )
             }
-            yield* Ref.update(
-              active,
-              (current) =>
-                new Map(current).set(trigger.id, {
-                  occurrence,
-                  runId: claim.reservationId
-                })
-            )
             yield* launch(trigger, occurrence, claim.reservationId, resumeBuffered)
             return
           }
@@ -942,67 +882,6 @@ export const make = (
             })
           ))
 
-    // A bound the declaration cannot honour is a statement about how much
-    // history to replay, not a reason to stop scheduling: the backlog beyond
-    // the bound is abandoned, loudly, and the current occurrence still fires.
-    const withinBound = (
-      triggerId: string,
-      owed: Effect.Effect<ReadonlyArray<Date>, TriggerError>
-    ): Effect.Effect<ReadonlyArray<Date>, TriggerError> =>
-      Effect.catch(owed, (error) =>
-        error.code === "catch_up_bound_exceeded"
-          ? Effect.as(
-            Effect.annotateLogs(
-              Effect.logWarning("A trigger abandoned catch-up work beyond its bound", error),
-              { triggerId }
-            ),
-            [] as ReadonlyArray<Date>
-          )
-          : Effect.fail(error))
-
-    const dueOccurrences = (
-      trigger: Registered,
-      now: number
-    ): Effect.Effect<Due, TriggerError> =>
-      Effect.gen(function*() {
-        const cron = yield* Cron.parse(trigger.cron, trigger.timezone)
-        const observed = (yield* Ref.get(observedAt)).get(trigger.id)
-        const current = (yield* Cron.previousAtOrBefore(cron, new Date(now))).getTime()
-        if (observed === undefined) {
-          // First sight of this trigger in this process. A trigger that has
-          // never fired starts from here rather than from whatever occurrence
-          // last passed: registering a weekly trigger on a Sunday evening owes
-          // nothing for the Monday six days gone, which is what `catchUp` says.
-          if (trigger.lastFiredAt === undefined) return { occurrences: [], watermark: current }
-          const owed = yield* withinBound(
-            trigger.id,
-            CatchUp.occurrences(
-              trigger.catchUp,
-              trigger.maxCatchUp,
-              new Date(trigger.lastFiredAt),
-              new Date(now),
-              cron
-            )
-          )
-          return { occurrences: owed.map((occurrence) => occurrence.getTime()), watermark: current }
-        }
-        if (current <= observed) return { occurrences: [], watermark: observed }
-        const backlog = yield* withinBound(
-          trigger.id,
-          CatchUp.occurrences(
-            trigger.catchUp,
-            trigger.maxCatchUp,
-            new Date(observed),
-            new Date(current - 1),
-            cron
-          )
-        )
-        return {
-          occurrences: [...backlog.map((occurrence) => occurrence.getTime()), current],
-          watermark: current
-        }
-      })
-
     const processTrigger = (
       trigger: Registered,
       held: Held | undefined,
@@ -1017,7 +896,8 @@ export const make = (
         // occurrence (including a plan waiting for a human decision).
         if (!trigger.enabled) return
         if (running === undefined || trigger.overlap === "supersede") yield* resumePending(trigger, held)
-        const due = yield* dueOccurrences(trigger, now)
+        const observed = (yield* Ref.get(observedAt)).get(trigger.id)
+        const due = yield* DueOccurrences.compute(trigger, now, observed)
         let dispatched: number | undefined
         let interrupted = false
         let stale = false
