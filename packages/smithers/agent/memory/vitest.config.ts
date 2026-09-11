@@ -16,9 +16,6 @@ export default defineConfig({
       // Per-process report directory so concurrent vitest runs do not destroy
       // each other's coverage scratch state (issues #115/#121).
       reportsDirectory: join(tmpdir(), `flows-memory-coverage-${process.pid}`),
-      // Coverage instrumentation only understands source modules. Keeping the
-      // SQL migrations in this glob makes v8 ask Rollup to parse them as
-      // JavaScript, producing a warning for every migration on every run.
       include: ["src/**/*.ts"].map((pattern) => join(import.meta.dirname, pattern)),
       // An honest measured floor: every value is at or below what the suite
       // actually reaches (99.31 statements / 95.00 branches / 99.14 functions /

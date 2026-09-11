@@ -2,34 +2,10 @@ import * as TestDatabase from "@smthrs/database/test/TestDatabase"
 import { Effect, Exit, Layer } from "effect"
 import * as Crypto from "effect/Crypto"
 import * as SqlClient from "effect/unstable/sql/SqlClient"
-import { readdirSync, readFileSync } from "node:fs"
-import { dirname, join } from "node:path"
-import { fileURLToPath } from "node:url"
 import { describe, expect, it } from "vitest"
 import * as MemoryStore from "../src/MemoryStore.ts"
 import * as Migrations from "../src/Migrations.ts"
 import * as TestMemory from "../src/test/TestMemory.ts"
-
-const migrationsDirectory = join(dirname(fileURLToPath(import.meta.url)), "..", "src", "migrations")
-
-/**
- * Reads every checked-in migration file in lexical order and splits it into
- * executable statements. Comment lines are dropped so a `--` note never becomes
- * a statement of its own.
- */
-const migrationStatements = (): ReadonlyArray<string> =>
-  readdirSync(migrationsDirectory)
-    .filter((name) => name.endsWith(".sql"))
-    .sort()
-    .flatMap((name) =>
-      readFileSync(join(migrationsDirectory, name), "utf8")
-        .split("\n")
-        .filter((line) => !line.trimStart().startsWith("--"))
-        .join("\n")
-        .split(";")
-        .map((statement) => statement.trim())
-        .filter((statement) => statement.length > 0)
-    )
 
 const testCrypto = Layer.succeed(Crypto.Crypto)(Crypto.make({
   randomBytes: (size) => new Uint8Array(size),
@@ -191,16 +167,12 @@ describe("memory migrations", () => {
     const result = await Effect.runPromise(
       Effect.gen(function*() {
         const sql = yield* Effect.service(SqlClient.SqlClient)
-        for (const statement of migrationStatements().filter((text) => !text.includes("memory_facts_expires_at_idx"))) {
-          if (statement.startsWith("DROP INDEX")) continue
-          yield* sql.unsafe(statement)
-        }
-        yield* sql`CREATE TABLE flows_migrations (
-          migration_id INTEGER PRIMARY KEY NOT NULL,
-          name VARCHAR(255) NOT NULL,
-          created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
-        )`
-        yield* sql`INSERT INTO flows_migrations (migration_id, name) VALUES (7001, 'memory_initial')`
+        yield* Migrations.run
+        yield* sql`DROP INDEX memory_facts_expires_at_idx`
+        yield* sql`DROP INDEX memory_note_supersedes_target_idx`
+        yield* sql`CREATE INDEX memory_facts_expiry_idx
+          ON memory_facts (updated_at_ms, ttl_ms) WHERE ttl_ms IS NOT NULL`
+        yield* sql`DELETE FROM flows_migrations WHERE migration_id = 7002`
         const before = yield* sql<
           NameRow
         >`SELECT name FROM sqlite_master WHERE type = 'index' AND name LIKE 'memory_facts_%'`
@@ -263,28 +235,6 @@ describe("memory migrations", () => {
     expect(Exit.isFailure(result.failure)).toBe(true)
     expect(result.facts).toEqual([])
     expect(result.recorded).toEqual([])
-  })
-
-  it("mirrors every checked-in migration file in the registered migration", async () => {
-    const fromMigrate = await Effect.runPromise(
-      Effect.gen(function*() {
-        yield* Migrations.run
-        return yield* describeSchema
-      }).pipe(Effect.provide(TestDatabase.layer))
-    )
-
-    const fromFiles = await Effect.runPromise(
-      Effect.gen(function*() {
-        const sql = yield* Effect.service(SqlClient.SqlClient)
-        for (const statement of migrationStatements()) {
-          yield* sql.unsafe(statement)
-        }
-        return yield* describeSchema
-      }).pipe(Effect.provide(TestDatabase.layer))
-    )
-
-    expect(fromFiles.length).toBeGreaterThan(0)
-    expect(fromMigrate).toEqual(fromFiles)
   })
 
   // A database written before migration 0005 has a `memory_facts` table with no

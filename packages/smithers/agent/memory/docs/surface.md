@@ -40,10 +40,9 @@ The [API reference](./api.md) documents every export of every module.
 
 ## Blocked paths
 
-Three subpath forms resolve to nothing on purpose:
+Two subpath forms resolve to nothing on purpose:
 
 - `@smthrs/memory/internal/*`: shared implementation, not contract.
-- `@smthrs/memory/migrations/*`: the SQL migrations the store applies; import nothing from them.
 - `@smthrs/memory/*/index`: there are no nested index modules.
 
 `@smthrs/memory/package.json` is exported for tooling that reads package metadata.

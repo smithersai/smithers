@@ -9,8 +9,8 @@ import * as SqlClient from "effect/unstable/sql/SqlClient"
 const compositeMessagePrimaryKey = /PRIMARY\s+KEY\s*\(\s*thread_id\s*,\s*id\s*\)/iu
 
 /**
- * Creates the schema mirrored by `src/migrations/*.sql`. The shared migrator
- * runs this Effect and records its identity in the same transaction.
+ * Creates the memory schema. The shared migrator runs this Effect and records
+ * its identity in the same transaction.
  *
  * @category migrations
  * @since 1.0.0

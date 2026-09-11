@@ -36,7 +36,6 @@
     "./package.json": "./package.json",
     ".": "./src/index.ts",
     "./internal/*": null,
-    "./migrations/*": null,
     "./*/index": null,
     "./Bank": "./src/Bank.ts",
     "./Database": "./src/Database.ts",
@@ -60,7 +59,6 @@
   },
   "files": [
     "src/**/*.ts",
-    "src/**/*.sql",
     "dist/**/*.js",
     "dist/**/*.js.map",
     "dist/**/*.d.ts",
@@ -82,7 +80,6 @@
         "require": "./dist/cjs/index.js"
       },
       "./internal/*": null,
-      "./migrations/*": null,
       "./*/index": null,
       "./Bank": {
         "types": "./dist/esm/Bank.d.ts",
