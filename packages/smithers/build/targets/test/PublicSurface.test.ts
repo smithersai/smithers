@@ -94,6 +94,27 @@ describe("shell executable contract", () => {
     expect(() => Shell.Test(attrs as never)).toThrow()
     expect(() => Shell.execPayload(attrs as never)).toThrow()
   })
+
+  it("names the selected executables in the schema's own diagnostic", () => {
+    for (const schema of [Shell.BuildAttrs, Shell.TestAttrs, Shell.RunAttrs, Shell.ServeAttrs, Shell.DiffAttrs]) {
+      expect(() => Schema.decodeUnknownSync(schema)({ outDirs: ["dist"], changes: [] }))
+        .toThrow(/requires exactly one of bin, bun, shell, script; received none/)
+      expect(() => Schema.decodeUnknownSync(schema)({ shell: "true", bun: "1", outDirs: ["dist"], changes: [] }))
+        .toThrow(/received bun, shell/)
+    }
+    expect(() => Schema.decodeUnknownSync(Shell.BuildAttrs)({ shell: "true" }))
+      .toThrow(/at least one outDirs or outFiles/)
+  })
+
+  it("exports each rule with its attrs schema as the only validator", () => {
+    expect([Shell.Build, Shell.Test, Shell.Run, Shell.Serve, Shell.Diff].map((rule) => [rule.id, rule.attrs])).toEqual([
+      ["Shell.Build", Shell.BuildAttrs],
+      ["Shell.Test", Shell.TestAttrs],
+      ["Shell.Run", Shell.RunAttrs],
+      ["Shell.Serve", Shell.ServeAttrs],
+      ["Shell.Diff", Shell.DiffAttrs]
+    ])
+  })
 })
 
 describe("opaque target contract", () => {

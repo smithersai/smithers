@@ -432,7 +432,7 @@ describe("Shell bodies", () => {
       new Error("shell declaration names no executable")
     )
     expect(() => Shell.Build(null as never)).toThrowError(
-      new TypeError("Shell.Build attrs must be an object")
+      new Error("Shell.Build declaration is invalid: Expected object")
     )
   })
 

@@ -38,9 +38,15 @@ const sharedFields = {
   timeout: Schema.optional(Schema.NonEmptyString.check(Schema.isPattern(/^\d+(?:ms|s|m|h)$/)))
 } as const
 
+const executableSelectors = ["bin", "bun", "shell", "script"] as const
+
 const executableIssue = (attrs: ExecAttrs): string | undefined => {
-  const selected = [attrs.bin, attrs.bun, attrs.shell, attrs.script].filter((value) => value !== undefined)
-  if (selected.length !== 1) return "shell declaration requires exactly one of bin, bun, shell, or script"
+  const selected = executableSelectors.filter((selector) => attrs[selector] !== undefined)
+  if (selected.length !== 1) {
+    return `shell declaration requires exactly one of ${executableSelectors.join(", ")}; received ${
+      selected.length === 0 ? "none" : selected.join(", ")
+    }`
+  }
   if (
     attrs.shell !== undefined &&
     (attrs.args !== undefined || attrs.runtimeArgs !== undefined || attrs.using !== undefined)
@@ -66,7 +72,14 @@ export const BuildAttrs = Schema.Struct({
   ...sharedFields,
   outDirs: Schema.optional(Schema.Array(Schema.NonEmptyString)),
   outFiles: Schema.optional(Schema.Array(Schema.NonEmptyString))
-}).check(executableCheck)
+}).check(
+  executableCheck,
+  Schema.makeFilter((attrs) =>
+    (attrs.outDirs?.length ?? 0) + (attrs.outFiles?.length ?? 0) === 0
+      ? "Shell.Build requires at least one outDirs or outFiles entry"
+      : undefined
+  )
+)
 
 /**
  * Attrs for {@link Test}.
@@ -356,13 +369,6 @@ const diffDefinition = Target.make("Shell.Diff", {
   implementation: (attrs) => planExec(attrs)
 })
 
-const requireOneExecutable = (id: string, attrs: unknown): void => {
-  if (typeof attrs !== "object" || attrs === null) {
-    throw new TypeError(`${id} attrs must be an object`)
-  }
-  Attr.requireOneExecutable(id, attrs as Record<string, unknown>, ["bin", "bun", "shell", "script"])
-}
-
 /**
  * Exactly one executable selector and only the options that selector consumes.
  * @category models
@@ -413,12 +419,7 @@ const exclusive = <D extends (attrs: never) => unknown>(
  * @category targets
  * @since 0.1.0
  */
-export const Build = exclusive(Target.guard(buildDefinition, (attrs) => {
-  requireOneExecutable("Shell.Build", attrs)
-  if ((attrs.outDirs?.length ?? 0) + (attrs.outFiles?.length ?? 0) === 0) {
-    throw new TypeError("Shell.Build requires at least one outDirs or outFiles entry")
-  }
-}))
+export const Build = exclusive(buildDefinition)
 
 /**
  * A tool run whose exit status is the test verdict.
@@ -426,7 +427,7 @@ export const Build = exclusive(Target.guard(buildDefinition, (attrs) => {
  * @category targets
  * @since 0.1.0
  */
-export const Test = exclusive(Target.guard(testDefinition, (attrs) => requireOneExecutable("Shell.Test", attrs)))
+export const Test = exclusive(testDefinition)
 
 /**
  * A tool run executed only when named explicitly.
@@ -434,7 +435,7 @@ export const Test = exclusive(Target.guard(testDefinition, (attrs) => requireOne
  * @category targets
  * @since 0.1.0
  */
-export const Run = exclusive(Target.guard(runDefinition, (attrs) => requireOneExecutable("Shell.Run", attrs)))
+export const Run = exclusive(runDefinition)
 
 /**
  * A scoped long-running service with the readiness/health/stop probe
@@ -443,7 +444,7 @@ export const Run = exclusive(Target.guard(runDefinition, (attrs) => requireOneEx
  * @category targets
  * @since 0.1.0
  */
-export const Serve = exclusive(Target.guard(serveDefinition, (attrs) => requireOneExecutable("Shell.Serve", attrs)))
+export const Serve = exclusive(serveDefinition)
 
 /**
  * A tool run whose writes are mechanically confined to the declared
@@ -452,4 +453,4 @@ export const Serve = exclusive(Target.guard(serveDefinition, (attrs) => requireO
  * @category targets
  * @since 0.1.0
  */
-export const Diff = exclusive(Target.guard(diffDefinition, (attrs) => requireOneExecutable("Shell.Diff", attrs)))
+export const Diff = exclusive(diffDefinition)
