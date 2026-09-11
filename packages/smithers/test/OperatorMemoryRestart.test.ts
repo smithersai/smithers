@@ -71,7 +71,7 @@ it("allows memory to be the first project command before opening and reopening c
   const db = new DatabaseSync(join(directory, ".flows", "control.db"), { readOnly: true })
   try {
     const rows = db.prepare("SELECT DISTINCT migration_id / 1000 AS block FROM flows_migrations ORDER BY block").all()
-    expect(rows.map((row) => row.block)).toEqual([0, 1, 2, 3, 4, 5, 6, 7])
+    expect(rows.map((row) => row.block)).toEqual([0, 1, 2, 3, 4, 5, 6, 7, 8])
   } finally {
     db.close()
   }

@@ -18,6 +18,7 @@ import { Cause, Effect, Exit, Layer } from "effect"
 import { existsSync, mkdirSync } from "node:fs"
 import { join } from "node:path"
 import { DatabaseSync } from "node:sqlite"
+import * as ControlDatabaseMigrations from "../internal/ControlDatabaseMigrations.ts"
 import { hasTable } from "../internal/SqliteTable.ts"
 import * as NodeControl from "../NodeControl.ts"
 import * as Project from "../Project.ts"
@@ -203,6 +204,11 @@ export const preview = async (root: string, runId: string, options: Options, sig
 const openControl = (root: string) => {
   const file = NodeControl.databasePath(root)
   if (!existsSync(file)) throw new Error("This operation requires a public CLI run with an approved control plan")
+  // A control.db written before the history rung gains it through the ledger,
+  // exactly as the runtime's next open would apply it.
+  Effect.runSync(Effect.scoped(Layer.build(
+    ControlDatabaseMigrations.layer.pipe(Layer.provide(NodeDatabase.layer({ filename: file })))
+  )))
   const db = new DatabaseSync(file)
   db.exec("PRAGMA busy_timeout = 5000")
   return db
@@ -279,7 +285,6 @@ export const reconcile = (root: string): void => {
   const control = openControl(root)
   try {
     control.exec("BEGIN IMMEDIATE")
-    control.exec("CREATE TABLE IF NOT EXISTS smthrs_history_applied(audit_id TEXT PRIMARY KEY)")
     if (hasTable(engine, "flows_time_travel_edges")) {
       const forks = engine.prepare(
         "SELECT child_run_id,parent_run_id FROM flows_time_travel_edges WHERE kind='fork' ORDER BY rowid"
@@ -373,7 +378,6 @@ export const mutate = async (
         }
       }
       parkControl(control, runId, summary)
-      control.exec("CREATE TABLE IF NOT EXISTS smthrs_history_applied(audit_id TEXT PRIMARY KEY)")
       control.prepare("INSERT OR IGNORE INTO smthrs_history_applied(audit_id) VALUES(?)").run(result.result.auditId)
       control.exec("COMMIT")
       return { ...result.result, runId, status: "parked", next: `smthrs runs resume ${runId}` }

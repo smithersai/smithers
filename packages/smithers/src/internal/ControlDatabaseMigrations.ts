@@ -11,6 +11,7 @@ import * as ControlMigrations from "@smthrs/control/Migrations"
 import * as DatabaseMigrations from "@smthrs/database/Migrations"
 import * as MemoryMigrations from "@smthrs/memory/Migrations"
 import * as TimeTravelMigrations from "@smthrs/time-travel/Migrations"
+import * as HistoryMigrations from "../history/Migrations.ts"
 
 /**
  * Applies the complete shared schema in a single ordered migration pass.
@@ -21,5 +22,6 @@ import * as TimeTravelMigrations from "@smthrs/time-travel/Migrations"
 export const layer = DatabaseMigrations.layer([
   ...TimeTravelMigrations.sets,
   ControlMigrations.set,
-  MemoryMigrations.set
+  MemoryMigrations.set,
+  HistoryMigrations.set
 ])

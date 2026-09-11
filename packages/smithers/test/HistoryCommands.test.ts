@@ -232,7 +232,7 @@ describe("history boundaries and refusal postconditions", () => {
     editDatabase(root, "control", (db) => {
       // A second writer can acquire the lock after refusal; no audit was committed.
       db.exec("BEGIN IMMEDIATE")
-      expect(db.prepare("SELECT 1 FROM sqlite_master WHERE name='smthrs_history_applied'").get()).toBeUndefined()
+      expect(db.prepare("SELECT 1 FROM smthrs_history_applied").get()).toBeUndefined()
       db.exec("ROLLBACK")
     })
   })
@@ -285,7 +285,7 @@ describe("history boundaries and refusal postconditions", () => {
     )
     expect(() => History.reconcile(root)).toThrow("active or claimed")
     editDatabase(root, "control", (db) => {
-      expect(db.prepare("SELECT 1 FROM sqlite_master WHERE name='smthrs_history_applied'").get()).toBeUndefined()
+      expect(db.prepare("SELECT 1 FROM smthrs_history_applied").get()).toBeUndefined()
       expect(db.prepare("SELECT claim_nonce FROM flows_runs WHERE run_id='run-1'").get()?.claim_nonce).toBe("claim")
       db.exec("UPDATE flows_runs SET claim_host_id=NULL,claim_pid=NULL,claim_nonce=NULL,claimed_at_ms=NULL")
     })
@@ -362,9 +362,30 @@ describe("history boundaries and refusal postconditions", () => {
     )
     editDatabase(root, "control", (db) => {
       expect(db.prepare("SELECT 1 FROM flows_runs WHERE run_id='child'").get()).toBeUndefined()
-      expect(db.prepare("SELECT 1 FROM sqlite_master WHERE name='smthrs_history_applied'").get()).toBeUndefined()
+      expect(db.prepare("SELECT 1 FROM smthrs_history_applied").get()).toBeUndefined()
     })
     expect(Workspace.workspaceFor(root, "child")).toBeUndefined()
+  })
+
+  it("owns the applied-audit table through the control migration ledger, including pre-history databases", async () => {
+    const root = await fixture()
+    const ledger = (db: DatabaseSync) =>
+      db.prepare("SELECT name FROM flows_migrations WHERE name LIKE '%applied_audits'").all().map((row) => row.name)
+    editDatabase(root, "control", (db) => {
+      expect(ledger(db)).toHaveLength(1)
+      // A control.db written before the history rung: no table, no ledger row.
+      db.exec("DROP TABLE smthrs_history_applied")
+      db.exec("DELETE FROM flows_migrations WHERE name LIKE '%applied_audits'")
+    })
+    editDatabase(root, "engine", (db) => {
+      db.exec("CREATE TABLE flows_time_travel_audits(id TEXT,run_id TEXT,status TEXT)")
+      db.exec("INSERT INTO flows_time_travel_audits VALUES('audit-1','run-1','completed')")
+    })
+    History.reconcile(root)
+    editDatabase(root, "control", (db) => {
+      expect(ledger(db)).toHaveLength(1)
+      expect(db.prepare("SELECT audit_id FROM smthrs_history_applied").all()).toEqual([{ audit_id: "audit-1" }])
+    })
   })
 })
 
