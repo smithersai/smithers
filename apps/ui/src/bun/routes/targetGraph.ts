@@ -1,5 +1,6 @@
 import { realpath } from "node:fs/promises"
 import { isAbsolute, relative, resolve } from "node:path"
+import { TARGET_PATTERN } from "@smthrs/rpc/LocalApp"
 import { TARGET_GRAPH_ROUTES } from "@smthrs/rpc/TargetGraph"
 import type { NodeSidecar } from "../Node"
 import type { RepoStore } from "../Repos"
@@ -37,8 +38,9 @@ export const registerTargetGraphRoutes = (
     const repo = options.repos.get(repoId)
     if (repo === undefined) return jsonError(404, "repo_not_found", `No open repository with id ${repoId}.`)
     const rawLabels = field(parsed.body, "labels")
-    if (rawLabels !== undefined && (!Array.isArray(rawLabels) || rawLabels.some((label) => typeof label !== "string"))) {
-      return jsonError(400, "invalid_request", "labels must be an array of strings.")
+    /* Each label becomes one CLI argv element, so only a target pattern passes: `--cache-dir` would be read as a flag. */
+    if (rawLabels !== undefined && (!Array.isArray(rawLabels) || rawLabels.some((label) => typeof label !== "string" || !TARGET_PATTERN.test(label)))) {
+      return jsonError(400, "invalid_request", "labels must be an array of target patterns such as //pkg:name or //pkg/....")
     }
     const result = await queryTargetGraph({
       repoId,

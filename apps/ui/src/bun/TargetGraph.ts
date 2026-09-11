@@ -3,7 +3,7 @@ import { existsSync } from "node:fs"
 import { readdir, readFile } from "node:fs/promises"
 import { dirname, join, relative, sep } from "node:path"
 import type { GraphEdge, GraphNode, TargetGraphResponse } from "@smthrs/rpc/TargetGraph"
-import { splitLabel } from "@smthrs/rpc/LocalApp"
+import { splitLabel, TARGET_PATTERN } from "@smthrs/rpc/LocalApp"
 import { isPrivateLabel } from "@smthrs/rpc/TargetGraphCli"
 import type { NodeSidecar } from "./Node"
 import { declarationBindings } from "./DeclarationBindings"
@@ -279,6 +279,13 @@ export const loaderFailureText = (stdout: string, stderr: string): string => {
   return parts.join("\n").slice(0, 2000)
 }
 
+/* A label is one argv element of `graph <label>` and the plan argv; anything but a target pattern (`--cache-dir`) would reach the CLI as a flag. */
+const assertTargetPatterns = (labels: ReadonlyArray<string>): void => {
+  for (const label of labels) {
+    if (!TARGET_PATTERN.test(label)) throw new Error(`${JSON.stringify(label)} is not a target pattern.`)
+  }
+}
+
 const runJson = async (options: TargetGraphOptions, args: ReadonlyArray<string>): Promise<unknown> => {
   if (options.node === null) throw new Error("No Node.js >= 22.19 was found for the smithers-build loader.")
   const cli = options.cli ?? resolveBuildCli()
@@ -323,6 +330,7 @@ export const revalidateTarget = async (
   options: TargetGraphOptions,
   label: string
 ): Promise<{ readonly nodes: Array<GraphNode>; readonly edges: Array<GraphEdge> }> => {
+  assertTargetPatterns([label])
   const body = object(await runJson(options, ["graph", label, "--format", "json"]))
   if (typeof body?.graph !== "string") throw new Error("The graph envelope has no text graph field.")
   const rows = Array.isArray(body.targets)
@@ -401,6 +409,7 @@ const loadWholeGraph = (options: TargetGraphOptions, declarations: DeclarationSe
 }
 
 export const queryTargetGraph = async (options: TargetGraphOptions): Promise<TargetGraphResponse> => {
+  assertTargetPatterns(options.labels ?? [])
   const started = Date.now()
   const declarations = await declarationSet(options.repo)
   let base = graphCache.get(options.repo)

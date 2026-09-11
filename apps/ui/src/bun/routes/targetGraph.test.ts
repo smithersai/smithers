@@ -7,6 +7,7 @@ import { TargetsQueryResponseSchema } from "@smthrs/rpc/LocalApp"
 import { LOCAL_SESSION_HEADER } from "@smthrs/rpc/LocalSession"
 import { startLocalServer } from "../server"
 import type { LocalServer } from "../server"
+import { queryTargetGraph, revalidateTarget } from "../TargetGraph"
 
 let root = ""
 let repo = ""
@@ -77,6 +78,26 @@ describe("POST /api/targets/graph", () => {
     expect(graph.digest).toMatch(/^[a-f0-9]{64}$/)
     expect(graph.nodes.find((node) => node.label === "//:lint")?.source).toEqual({ file: "PACKAGE.ts", line: 3 })
     expect((await post("/api/targets/graph", { repoId: "missing" })).status).toBe(404)
+  })
+
+  /*
+   * A label is one argv element of `graph <label>` and the plan argv, so a
+   * label the CLI reads as a flag (`--cache-dir` swallowing `--plan`) gave
+   * the renderer control of the child's flags. Only target patterns pass.
+   */
+  test("refuses labels that are not target patterns before anything spawns", async () => {
+    for (const label of ["--cache-dir", "-j", "--no-cache", "lint"]) {
+      const response = await post("/api/targets/graph", { repoId, plan: true, labels: [label] })
+      expect({ label, status: response.status }).toEqual({ label, status: 400 })
+    }
+    const response = await post("/api/targets/graph", { repoId, labels: ["//..."] })
+    expect(response.status).toBe(200)
+  })
+
+  test("the graph query refuses a flag-shaped label when a caller skips the route", async () => {
+    const options = { repoId, repo, node: { path: process.execPath, version: "v22.19.0" }, cli: join(root, "missing-cli.js"), plan: true }
+    await expect(queryTargetGraph({ ...options, labels: ["--cache-dir"] })).rejects.toThrow("not a target pattern")
+    await expect(revalidateTarget(options, "--no-cache")).rejects.toThrow("not a target pattern")
   })
 
   test("the declaration digest changes when contents change at identical size and mtime", async () => {
