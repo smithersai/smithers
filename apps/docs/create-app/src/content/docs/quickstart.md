@@ -34,7 +34,7 @@ and the agent's teaching. The command reports what it copied:
   "directory": "/work/ledger",
   "name": "ledger",
   "template": "default",
-  "files": 28
+  "files": 30
 }
 ```
 
@@ -89,9 +89,9 @@ routes: 1 pages, 1 panes, 1 flows
 
 That wrote two files at the app root. `routes.gen.ts` holds every flow with its
 three resolved layers, and imports no React, so the Worker and a plain Vitest
-run can both load it. `routes.ui.gen.ts` holds the layout, the pages, and the
-pane components for the browser bundle. Both are generated: edit the files they
-are derived from, never the tables. To fail instead of writing, ask for a drift
+run can both load it. `routes.ui.gen.ts` holds the layout, the pages, the pane
+components, and the flow summaries for the browser bundle. Both are generated:
+edit the files they are derived from, never the tables. To fail instead of writing, ask for a drift
 check:
 
 ```bash

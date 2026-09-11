@@ -65,11 +65,16 @@ props: Schema.Struct({
 export const Pane = definePane({ props, title: "Plan", fullscreen: true, render })
 ```
 
-`fullscreen` defaults to `false`. When it is set, the shell offers a maximize
-control on the card. A pane is always embedded first, and the maximized
-presentation is the same component in an overlay rather than a second render,
-so the component sees `PaneContext` with `fullscreen`, `maximize`, and
-`restore` and decides what to change.
+`fullscreen` defaults to `false`. Set it on the pane definition to offer a
+maximize control. Aomi's `PaneHost` reads this capability from the registered
+component, even when the Worker emits `fullscreen: false` on the wire card.
+The wire flag is metadata for hosts without a pane registry.
+
+A pane starts embedded in the transcript. Maximizing changes the same mounted
+host to a fixed overlay; restoring changes it back. Local component state is
+preserved. The pane receives `PaneContext` with `fullscreen`, `maximize`, and
+`restore`. Context changes can render it again without mounting another
+instance.
 
 ## Register the name with the tool
 
@@ -114,13 +119,30 @@ const { cardId } = await ctx.call("ui/pane", {
 ```
 
 The call returns only a `cardId`. The card itself travels to the browser on the
-turn stream rather than through the cell's return value, and passing the same
-id back updates the same card.
+turn stream rather than through the cell's return value. Pass `cardId` to
+`ui/pane` to replace that card:
 
-Card ids are derived from the frame and the call's ordinal within its cell,
-not from a random source. A cell re-executes from the top after a crash or a
-permission park, and those two numbers are exactly the pair that does not move,
-so a replayed call updates its card instead of emitting a second one.
+```ts
+await ctx.call("ui/pane", {
+  cardId,
+  name: "balance",
+  props: { address: "0xabc...", eth: "13.0" },
+  title: "vitalik.eth"
+})
+```
+
+Omitting `cardId` creates a card through `CardSink.emit`. Supplying it calls
+`CardSink.update` with a full replacement: props are replaced, an omitted title
+clears the previous heading, and the registered pane supplies `fullscreen`.
+The pane name is validated for both operations. Updates preserve the card's
+position; an absent id inserts a card. Custom sinks must implement these
+replacement semantics and stream `card.update` for updates.
+
+New pane and HTML card ids have the form `card-${session}-${frame}-${ordinal}`.
+Here `session` is `call.identity.session`, the execution lineage, so separate
+executions with equal frame and ordinal values receive distinct ids. Replaying
+the same call keeps its id. Hosts must deduplicate replayed emissions by id;
+the collecting sink appends emissions and replaces explicit updates.
 
 ## The card kinds
 

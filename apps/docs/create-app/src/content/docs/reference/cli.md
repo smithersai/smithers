@@ -58,7 +58,9 @@ smithers-routes [--check] [--root <dir>] [--app <dir>] [--flows <dir>] [--tools 
 Every flag takes either form: `--root <dir>` or `--root=<dir>`.
 
 The three directory flags mirror the `dirs` field of `CreateApp`, so an app
-that renamed them passes the same names here.
+that renamed them passes the same names here. The `CreateApp` routes target
+passes the resolved directories automatically, keeping its generated tables
+consistent with the Vite plugin.
 
 ### Exit codes
 

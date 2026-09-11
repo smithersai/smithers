@@ -83,7 +83,9 @@ const host = layerFor({
 sandbox and steering defaults, the action implementations, an in-memory flow
 engine, and the crypto service you passed. It requires no service in return:
 the package asserts that at compile time, so a composition that type-checks is
-complete.
+complete. The optional `sandboxVariant` names the QuickJS build; omit it on
+Node, pass a `.wasm`-module variant on a host that refuses to compile
+WebAssembly from bytes.
 
 Two of its choices are worth knowing. The catalog a cell is shown is empty,
 because a routed app reaches its tools through the `TOOLS.ts` binding sources

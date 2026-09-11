@@ -138,7 +138,7 @@ flow.
 | ------------ | --------------------------------------------------------------------------------------------------------------------------------- |
 | `Brand`      | `name`, `wordmark?`, `theme?: "light" \| "dark" \| "system"`, `fonts?: BrandFonts`, `tokens: Partial<Record<BrandToken, string>>` |
 | `BrandFonts` | `display?`, `body?`, `mono?`, `wordmark?`, `googleFonts?: ReadonlyArray<string>`                                                  |
-| `BrandToken` | The 33 token names a brand may override                                                                                           |
+| `BrandToken` | The 32 token names a brand may override                                                                                           |
 | `NavItem`    | `label`, `href`, `icon?`                                                                                                          |
 | `NavGroup`   | `label`, `items: ReadonlyArray<NavItem>`                                                                                          |
 
@@ -237,13 +237,19 @@ flow engine, and the caller's crypto. It requires no service in return, which
 the package asserts at compile time through the exported type
 `CompositionRootsAreComplete`.
 
-| `LayerOptions` field | Type                         |
-| -------------------- | ---------------------------- |
-| `agent`              | `AgentSpec`                  |
-| `sandbox`            | `SandboxSpec`                |
-| `tools`              | `ToolsSpec`                  |
-| `seats`              | `SeatProvider`               |
-| `crypto`             | `Layer.Layer<Crypto.Crypto>` |
+| `LayerOptions` field | Type                                            |
+| -------------------- | ----------------------------------------------- |
+| `agent`              | `AgentSpec`                                     |
+| `sandbox`            | `SandboxSpec`                                   |
+| `tools`              | `ToolsSpec`                                     |
+| `seats`              | `SeatProvider`                                  |
+| `crypto`             | `Layer.Layer<Crypto.Crypto>`                    |
+| `sandboxVariant`     | `Layer.Layer<QuickJSSandbox.Variant>`, optional |
+
+`sandboxVariant` names the QuickJS build the sandbox compiles. Omitted, the
+host gets the single-file build, which Node and a browser compile from bytes
+and Cloudflare's workerd refuses. A workerd host builds a variant from a
+`.wasm` module import with `QuickJSSandbox.layerVariant` and passes it here.
 
 `SeatProvider` is one method:
 
@@ -403,9 +409,13 @@ const brandCss: (brand: Brand) => string
 ```
 
 Renders a brand as one CSS rule of custom properties, scoped to
-`:root, [data-theme]`. A token the brand did not declare is not emitted, so the
-styleguide default survives. Google Fonts `@import` rules come first, because
-CSS ignores an `@import` that follows a rule.
+`:root:root:root:root, :root:root:root [data-theme]`. `:root` is repeated to
+raise specificity: the brand sheet is a CSS import and so lands in `<head>`,
+while `@smthrs/ui` renders its own `<style>` in the tree, so only specificity
+can carry the brand over the styleguide's token rules. A token the brand did
+not declare is not emitted, so the styleguide default survives; an app never
+needs a second sheet aliasing these names. Google Fonts `@import` rules come
+first, because CSS ignores an `@import` that follows a rule.
 
 ### loadManifest
 

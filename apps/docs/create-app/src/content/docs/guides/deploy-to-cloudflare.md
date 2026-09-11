@@ -90,16 +90,19 @@ An app whose Worker never calls a model needs none. The `default` template is
 in that position: its turn endpoint is a stub, so nothing on its Worker path
 reaches a provider until you build the host.
 
-The `aomi` template adds one more, `APP_API_TOKEN`, and it matters before the
-first public deploy. While it is unset, every `/api/*` route answers any
-caller, which is what a local `pnpm dev` wants and what a public domain does
-not: an anonymous caller can allocate Durable Object storage and read or
-overwrite any session id it guesses. `GET /api/health` reports whether a
-running instance is in `none` or `token` mode, so an operator can tell from
-outside without a credential.
+The `aomi` template also requires `APP_API_TOKEN` as a Worker secret before the
+first public deploy. Without a nonempty token, every `/api/*` route except
+`GET /api/health` refuses requests with 401. Health reports `{ ok, build, app }`
+without disclosing authentication configuration.
 
-Local development reads the same values from `.dev.vars`, which is gitignored.
-The `aomi` template ships a `.dev.vars.example` to copy.
+Local development reads values from the gitignored `.dev.vars`. Copy the
+`aomi` template's `.dev.vars.example`, which explicitly opts into token-free
+local requests with `APP_API_OPEN=1`. Never add that opt-in to deployed vars or
+secrets. A configured token always requires a matching bearer header.
+
+API requests with an `Origin` or `Sec-Fetch-Site` header must identify the same
+origin (403 otherwise). JSON routes require `Content-Type: application/json`
+(415 otherwise), including in local open mode.
 
 ## Build and deploy
 
@@ -124,7 +127,8 @@ go through the build.
 
 The templates put the SPA in the assets bucket and scope
 `run_worker_first` to `/api/*`, so an asset request never wakes the Worker.
-`not_found_handling` is `single-page-application`, which is why the templates
-route in the browser on the location hash rather than on the path. An unrouted
+`not_found_handling` is `single-page-application`, which is what lets the
+templates route in the browser: the `default` template on the location hash,
+the `aomi` template on history with a hash fallback. An unrouted
 `/api/*` path answers the Worker's own JSON 404 rather than the SPA's
 `index.html`.
