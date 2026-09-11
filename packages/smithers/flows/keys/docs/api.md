@@ -51,10 +51,11 @@ const key = await Effect.runPromise(
 ### DerivedKey
 
 ```ts
-const DerivedKey: Schema.Codec<KeyV1, unknown>
+const DerivedKey: Schema.Codec<KeyV1, unknown, Crypto.Crypto, never>
 ```
 
 The same derivation as a schema transformation, for composing inside a decode.
+Decoding requires the `Crypto` service; encoding requires none.
 
 - Decoding derives a fresh key from whatever it is given. Decoding the text
   `key1_...` hashes that text into a different key; it does not parse it. Use
