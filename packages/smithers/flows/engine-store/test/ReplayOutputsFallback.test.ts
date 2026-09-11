@@ -8,10 +8,14 @@
  * creating parent directories, so any output inside a directory the original
  * body created died ENOENT on a fresh workspace.
  *
- * A replay failure is a retryable host condition, never a permanent run
- * failure: the cache-hit path falls back to a real execution, the
- * succeeded-attempt path returns the durable outcome with the refusal
- * journalled, and the production layer mkdirs parents before materializing.
+ * A transient host or materialization failure is a retryable host
+ * condition, never a permanent run failure: the cache-hit path falls back to
+ * a real execution, the succeeded-attempt path returns the durable outcome
+ * with the refusal journalled, and the production layer mkdirs parents
+ * before materializing. Integrity failures are not covered here: under the
+ * strict default a corrupt cache hit fails with `CacheCorruptionDetected` and
+ * corrupt succeeded-attempt evidence is quarantined with
+ * `AttemptEvidenceQuarantined`; see ReplayCorruptionClassification.test.ts.
  */
 import { describe, expect, it } from "@effect/vitest"
 import * as ArtifactStore from "@smthrs/artifacts/ArtifactStore"
