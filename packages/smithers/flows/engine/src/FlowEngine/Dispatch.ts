@@ -9,7 +9,6 @@
 import { Action, Flow, FlowRuntime, RetryPolicy, StepIdentity } from "@smthrs/flow"
 import * as Cause from "effect/Cause"
 import * as Clock from "effect/Clock"
-import * as Context from "effect/Context"
 import * as Effect from "effect/Effect"
 import * as Option from "effect/Option"
 import * as Result from "effect/Result"
@@ -21,18 +20,6 @@ import type { ActionExecuteOptions, Encoded } from "./Encoded.ts"
 import { SnapshotBoundary, type SnapshotBoundaryOptions, SnapshotBoundaryRequired } from "./SnapshotBoundary.ts"
 
 /**
- * The allocation scope derived once by the dispatch wrapper and consumed by
- * the ordinal allocator inside it. Keeping one value in context makes the
- * concurrent guard and allocation path incapable of checking different
- * identities.
- *
- * @private
- */
-const ActionOrdinalScope = Context.Service<never, string>(
-  "@smthrs/engine/FlowEngine/ActionOrdinalScope"
-)
-
-/**
  * Builds the typed `actionExecute` an engine answers with: it allocates the
  * dispatch's identity, admits it through the low-level seam, and owns the
  * retry decision made on the outcome.
@@ -40,15 +27,17 @@ const ActionOrdinalScope = Context.Service<never, string>(
  * @category constructors
  * @since 0.1.0
  */
-export const makeActionExecute = (options: Encoded) =>
-  // Untraced because action retries are a hot path within a flow run.
-  Effect.fnUntraced(function*<
+export const makeActionExecute = (options: Encoded) => {
+  // The allocation scope is derived once by `actionExecute` below and passed
+  // here, so the concurrent guard and the ordinal allocator cannot check
+  // different identities. Untraced because action retries are a hot path
+  // within a flow run.
+  const dispatch = Effect.fnUntraced(function*<
     Success extends Schema.Constraint,
     Error extends Schema.Constraint,
     R
-  >(action: Action.Action<Success, Error, R>, attempt: number) {
+  >(action: Action.Action<Success, Error, R>, attempt: number, scope: string) {
     const instance = yield* FlowRuntime.FlowInstance
-    const scope = yield* ActionOrdinalScope
     // `Action.retry` hands down an empty slot map rather than a number:
     // the ordinal can only be allocated here, where the action — and so
     // its allocation scope — is known (issue #73). The slot is keyed by
@@ -306,7 +295,12 @@ export const makeActionExecute = (options: Encoded) =>
       )
       return new Flow.Complete({ exit })
     }
-  }, (body, action) =>
+  })
+  return Effect.fnUntraced(function*<
+    Success extends Schema.Constraint,
+    Error extends Schema.Constraint,
+    R
+  >(action: Action.Action<Success, Error, R>, attempt: number) {
     // Ordinal-keyed invocations of one allocation scope are
     // allocation-ordered: with two in flight at once the ordinals — and so
     // the step keys, attempt rows, and recorded outcomes — would be
@@ -327,36 +321,36 @@ export const makeActionExecute = (options: Encoded) =>
     // blocks under a shared outer block, the #116 private cursor views
     // would even hand both dispatches the same pinned ordinal (issue
     // #130). Distinct keys are distinct scopes and overlap freely.
-    Effect.gen(function*() {
-      const dispatchSite = yield* Effect.serviceOption(StepIdentity.DispatchSite)
-      const site = Option.getOrUndefined(dispatchSite)
-      const scopeResult = yield* Effect.result(ordinalScope(action, site))
-      if (Result.isFailure(scopeResult)) {
-        return uncanonicalKey(action.name, scopeResult.failure)
-      }
-      const scope = scopeResult.success
-      const scopedBody = body.pipe(Effect.provideService(ActionOrdinalScope, scope))
-      if (action.tier === "sealed" && action.idempotencyKey !== undefined) return yield* scopedBody
-      const instance = yield* FlowRuntime.FlowInstance
-      const inFlight = instance.actionState.keylessInFlight
-      // The acquire and its release live in one uninterruptible region
-      // (issue #139): a bare `add` followed by `Effect.ensuring` left a
-      // one-op window — after the add, before the finalizer registered —
-      // where an interruption (a lost race, a timeout) leaked the scope
-      // into the Set forever, so every later fully sequential dispatch of
-      // the same scope falsely died `ConcurrentKeylessDispatch`.
-      return yield* Effect.acquireUseRelease(
-        Effect.sync(() => {
-          if (inFlight.has(scope)) return false
-          inFlight.add(scope)
-          return true
-        }),
-        (acquired) =>
-          acquired
-            ? scopedBody
-            : Effect.die(
-              new Action.ConcurrentKeylessDispatch({ actionName: action.name })
-            ),
-        (acquired) => acquired ? Effect.sync(() => inFlight.delete(scope)) : Effect.void
-      )
-    }))
+    const dispatchSite = yield* Effect.serviceOption(StepIdentity.DispatchSite)
+    const site = Option.getOrUndefined(dispatchSite)
+    const scopeResult = yield* Effect.result(ordinalScope(action, site))
+    if (Result.isFailure(scopeResult)) {
+      return uncanonicalKey(action.name, scopeResult.failure)
+    }
+    const scope = scopeResult.success
+    const body = dispatch(action, attempt, scope)
+    if (action.tier === "sealed" && action.idempotencyKey !== undefined) return yield* body
+    const instance = yield* FlowRuntime.FlowInstance
+    const inFlight = instance.actionState.keylessInFlight
+    // The acquire and its release live in one uninterruptible region
+    // (issue #139): a bare `add` followed by `Effect.ensuring` left a
+    // one-op window — after the add, before the finalizer registered —
+    // where an interruption (a lost race, a timeout) leaked the scope
+    // into the Set forever, so every later fully sequential dispatch of
+    // the same scope falsely died `ConcurrentKeylessDispatch`.
+    return yield* Effect.acquireUseRelease(
+      Effect.sync(() => {
+        if (inFlight.has(scope)) return false
+        inFlight.add(scope)
+        return true
+      }),
+      (acquired) =>
+        acquired
+          ? body
+          : Effect.die(
+            new Action.ConcurrentKeylessDispatch({ actionName: action.name })
+          ),
+      (acquired) => acquired ? Effect.sync(() => inFlight.delete(scope)) : Effect.void
+    )
+  })
+}

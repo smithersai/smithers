@@ -66,6 +66,15 @@ describe("engine module boundaries", () => {
     expect(make.split("\n").length).toBeLessThan(300)
   })
 
+  it("passes the dispatch allocation scope lexically, not through context", () => {
+    const dispatch = read("../src/FlowEngine/Dispatch.ts")
+    // A private context service once carried the one derived scope from the
+    // concurrency guard to the ordinal allocator in the same function.
+    expect(dispatch).not.toContain("ActionOrdinalScope")
+    expect(dispatch).not.toContain("Context.Service")
+    expect(dispatch).toContain("dispatch(action, attempt, scope)")
+  })
+
   it("carries the trampoline round state as one value, unshadowed", () => {
     const trampoline = read("../src/FlowEngine/Trampoline.ts")
     // The four `let round*` bindings were re-declared as `runRound`
