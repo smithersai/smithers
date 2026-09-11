@@ -8,6 +8,7 @@ import * as Stream from "effect/Stream"
 import type { ChildProcessHandle } from "effect/unstable/process/ChildProcessSpawner"
 import type { RemoteProcess } from "../RemoteChildProcessSpawner/Provider.ts"
 import { ProviderError } from "../RemoteChildProcessSpawner/ProviderError.ts"
+import { concat } from "./concat.ts"
 
 /**
  * Wraps a failure cause in the provider vocabulary.
@@ -48,18 +49,6 @@ export interface GatheredRun {
   readonly stdout: Uint8Array
   readonly stderr: string
   readonly code: number
-}
-
-const concat = (chunks: ReadonlyArray<Uint8Array>): Uint8Array => {
-  let length = 0
-  for (const chunk of chunks) length += chunk.length
-  const whole = new Uint8Array(length)
-  let offset = 0
-  for (const chunk of chunks) {
-    whole.set(chunk, offset)
-    offset += chunk.length
-  }
-  return whole
 }
 
 /**

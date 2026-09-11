@@ -547,11 +547,14 @@ describe("CloudflareSandbox", () => {
         Effect.flatMap(provider.acquire("edge"), (session) =>
           Effect.gen(function*() {
             const live = workerBinding.instances.at(-1)!
-            // A path with no separator takes the bare write; a path whose
-            // parent is the root takes the "/" parent branch. Both are real
-            // files under the instance's own directory.
+            // A path with no separator and a path directly under the root both
+            // take the bare write, like every other provider: the root always
+            // exists, so neither creates a parent. Both are real files under
+            // the instance's own directory.
+            const before = live.events.length
             yield* session.writeFile("leaf", new Uint8Array())
             yield* session.writeFile("/leaf", new Uint8Array([0, 255]))
+            expect(live.events.slice(before).filter((event) => event.startsWith("mkdir:"))).toEqual([])
             expect(Array.from(yield* session.readFile("/leaf"))).toEqual([0, 255])
 
             live.readContents.set("/invalid", "not base64 %")

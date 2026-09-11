@@ -12,15 +12,12 @@ import { ChildProcess } from "effect/unstable/process"
 import { ChildProcessSpawner } from "effect/unstable/process/ChildProcessSpawner"
 import { boundedCheck } from "../internal/boundedCheck.ts"
 import { defaultCheckTimeout, elapsed } from "../internal/deadline.ts"
+import { describeExit } from "../internal/describeExit.ts"
 import { layer } from "../RemoteChildProcessSpawner/layer.ts"
 import type { Provider } from "../RemoteChildProcessSpawner/Provider.ts"
 import { make as makeHealth } from "../SandboxHealth/make.ts"
 import { type Commands, defaultCopiesStdin, defaultStopsWithin } from "./Commands.ts"
 import type { Violation } from "./Violation.ts"
-
-/** Describes an unexpected outcome without leaking a stack into the report. */
-const shown = (exit: Exit.Exit<unknown, unknown>): string =>
-  Exit.isSuccess(exit) ? JSON.stringify(exit.value) : `a failure: ${String(exit.cause)}`
 
 /**
  * Runs one check against a fresh session, so a check that leaves a session
@@ -54,7 +51,7 @@ const writesItsOutput = (
       Exit.isSuccess(exit) && exit.value === commands.output ? undefined : {
         check: "writes-its-output",
         expected: `stdout ${JSON.stringify(commands.output)}`,
-        actual: shown(exit)
+        actual: describeExit(exit)
       }
   )
 
@@ -76,7 +73,7 @@ const reportsANonzeroExit = (
       Exit.isSuccess(exit) && exit.value === commands.failureCode ? undefined : {
         check: "reports-a-nonzero-exit",
         expected: `exit code ${commands.failureCode}`,
-        actual: shown(exit)
+        actual: describeExit(exit)
       }
   )
 
@@ -90,7 +87,7 @@ const answersAPing = (
       Exit.isSuccess(exit) && exit.value._tag === "Healthy" ? undefined : {
         check: "answers-a-ping",
         expected: "a healthy probe while the session is open",
-        actual: shown(exit)
+        actual: describeExit(exit)
       }
   )
 
@@ -138,7 +135,7 @@ const signalsARunningCommand = (
           ? "the command was still running after the signal"
           : Exit.isSuccess(exit) && exit.value.survived
           ? "the command's work was still running after its handle reported it stopped"
-          : shown(exit)
+          : describeExit(exit)
       }
   )
 
@@ -169,7 +166,7 @@ const deliversStandardInput = (
       Exit.isSuccess(exit) && exit.value.includes(stdinFixture) ? undefined : {
         check: "delivers-standard-input",
         expected: `stdout containing ${JSON.stringify(stdinFixture)}, the bytes given as stdin`,
-        actual: shown(exit)
+        actual: describeExit(exit)
       }
   )
 

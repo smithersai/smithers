@@ -28,6 +28,7 @@ import {
   makeHandle,
   ProcessId
 } from "effect/unstable/process/ChildProcessSpawner"
+import { concat } from "../internal/concat.ts"
 import { elapsed } from "../internal/deadline.ts"
 import { platformFailure } from "../internal/platformReason.ts"
 import type { Provider, RemoteProcess } from "./Provider.ts"
@@ -93,17 +94,6 @@ const stdinStream = (
  */
 const maxStdinBytes = 16 * 1024 * 1024
 
-/** The one copy of a chunked input, made once the whole of it is accepted. */
-const joined = (chunks: ReadonlyArray<Uint8Array>, length: number): Uint8Array => {
-  const whole = new Uint8Array(length)
-  let offset = 0
-  for (const chunk of chunks) {
-    whole.set(chunk, offset)
-    offset += chunk.length
-  }
-  return whole
-}
-
 /**
  * Reads a command's whole standard input, refusing it the moment it crosses
  * the bound rather than once the producer is done.
@@ -155,7 +145,7 @@ const collectStdin = (
           length += part.length
           return Effect.void
         })
-    ).pipe(Effect.map(() => joined(chunks, length)))
+    ).pipe(Effect.map(() => concat(chunks)))
   })
 
 /** The literal handling a command names for its standard input, if it names one. */

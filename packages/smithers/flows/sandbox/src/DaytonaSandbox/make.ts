@@ -6,12 +6,15 @@
 import * as CommandLine from "@smthrs/kernel/CommandLine"
 import * as Effect from "effect/Effect"
 import * as Stream from "effect/Stream"
+import { attemptIn } from "../internal/attempt.ts"
+import { checked } from "../internal/checkedExit.ts"
 import { environmentCommand } from "../internal/environmentCommand.ts"
 import { checkEnvironmentNames } from "../internal/environmentNames.ts"
 import { finalizeWithin } from "../internal/finalizeWithin.ts"
+import { parentOf } from "../internal/guestPath.ts"
 import { providerFailure } from "../internal/localProcess.ts"
+import { machineName } from "../internal/machineName.ts"
 import { rootedAt } from "../internal/rootedPath.ts"
-import { sessionSlug } from "../internal/sessionSlug.ts"
 import { stdinRedirect } from "../internal/stdinRedirect.ts"
 import { warnTeardown } from "../internal/teardownWarning.ts"
 import { ProviderError } from "../RemoteChildProcessSpawner/ProviderError.ts"
@@ -45,11 +48,6 @@ type ExecuteResponse = Awaited<ReturnType<VendorSandbox["process"]["executeComma
 
 const encoder = new TextEncoder()
 
-const parentOf = (path: string): string | undefined => {
-  const separator = path.lastIndexOf("/")
-  return separator > 0 ? path.slice(0, separator) : undefined
-}
-
 const field = (cause: unknown, name: string): unknown =>
   typeof cause === "object" && cause !== null ? Reflect.get(cause, name) : undefined
 
@@ -64,24 +62,7 @@ const missingSandbox = (cause: unknown): boolean => field(cause, "statusCode") =
 // typings; it has not been verified against the live service.
 const missingFile = (cause: unknown): boolean => field(cause, "code") === "FILE_NOT_FOUND"
 
-const attempt = <A>(
-  thunk: () => Promise<A>,
-  code: ProviderError["code"],
-  message: string
-): Effect.Effect<A, ProviderError> =>
-  Effect.tryPromise({ try: thunk, catch: providerFailure(code, `daytona-sandbox: ${message}`) })
-
-const checked = (
-  result: ExecuteResponse,
-  code: ProviderError["code"],
-  message: string
-): Effect.Effect<ExecuteResponse, ProviderError> =>
-  result.exitCode === 0
-    ? Effect.succeed(result)
-    : Effect.fail(new ProviderError({ code, message: `${message}: command exited ${result.exitCode}` }))
-
-const machineName = (prefix: string, session: string): string =>
-  `${prefix}${sessionSlug(session)}`.toLowerCase().replaceAll(/[._]/g, "-")
+const attempt = attemptIn("daytona-sandbox")
 
 /**
  * Builds a provider backed by Daytona sandboxes.

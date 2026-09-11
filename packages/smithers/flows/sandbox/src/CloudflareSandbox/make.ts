@@ -6,10 +6,12 @@
 import * as CommandLine from "@smthrs/kernel/CommandLine"
 import * as Effect from "effect/Effect"
 import * as Stream from "effect/Stream"
+import { attemptIn } from "../internal/attempt.ts"
 import { decodeBase64, encodeBase64 } from "../internal/base64.ts"
 import { environmentCommand } from "../internal/environmentCommand.ts"
 import { checkEnvironmentNames } from "../internal/environmentNames.ts"
 import { finalizeWithin } from "../internal/finalizeWithin.ts"
+import { parentOf } from "../internal/guestPath.ts"
 import { rootedAt } from "../internal/rootedPath.ts"
 import { sessionSlug } from "../internal/sessionSlug.ts"
 import { stdinRedirect } from "../internal/stdinRedirect.ts"
@@ -41,16 +43,7 @@ const encoder = new TextEncoder()
 const failed = (code: ProviderError["code"], message: string, cause: unknown): ProviderError =>
   new ProviderError({ code, message: `cloudflare sandbox: ${message}`, cause })
 
-const attempt = <A>(thunk: () => Promise<A>, code: ProviderError["code"], message: string) =>
-  Effect.tryPromise({
-    try: thunk,
-    catch: (cause) => failed(code, message, cause)
-  })
-
-const parentOf = (path: string): string | undefined => {
-  const separator = path.lastIndexOf("/")
-  return separator < 0 ? undefined : separator === 0 ? "/" : path.slice(0, separator)
-}
+const attempt = attemptIn("cloudflare sandbox")
 
 const errorCodeOf = (cause: unknown): unknown =>
   typeof cause === "object" && cause !== null && "code" in cause ? cause.code : undefined

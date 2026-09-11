@@ -9,6 +9,7 @@ import * as Exit from "effect/Exit"
 import * as Stream from "effect/Stream"
 import { boundedCheck } from "../internal/boundedCheck.ts"
 import { defaultCheckTimeout } from "../internal/deadline.ts"
+import { describeExit } from "../internal/describeExit.ts"
 import * as check_ from "../ProviderConformance/check.ts"
 import type { Commands } from "../ProviderConformance/Commands.ts"
 import type { Violation } from "../ProviderConformance/Violation.ts"
@@ -18,10 +19,6 @@ import { commandProvider } from "../Sandbox/commandProvider.ts"
 import type { Provider } from "../Sandbox/Provider.ts"
 import type { Session } from "../Sandbox/Session.ts"
 import { uniquePosixCommands } from "./posixCommands.ts"
-
-/** Describes an unexpected outcome without leaking a stack into the report. */
-const shown = (exit: Exit.Exit<unknown, unknown>): string =>
-  Exit.isSuccess(exit) ? JSON.stringify(exit.value) : `a failure: ${String(exit.cause)}`
 
 /**
  * Runs one check against a fresh session, so a check that leaves a session
@@ -239,44 +236,44 @@ export const check = (
       Exit.isSuccess(roundTrips) && sameBytes(roundTrips.value, conformanceBytes) ? undefined : {
         check: "round-trips-binary-bytes",
         expected: "the written bytes back, unchanged",
-        actual: shown(roundTrips)
+        actual: describeExit(roundTrips)
       },
       Exit.isSuccess(empty) && empty.value.length === 0 ? undefined : {
         check: "round-trips-an-empty-file",
         expected: "an empty file back, empty",
-        actual: shown(empty)
+        actual: describeExit(empty)
       },
       Exit.isSuccess(large) && sameBytes(large.value, largeBytes) ? undefined : {
         check: "round-trips-a-large-file",
         expected: "64 KiB back, unchanged",
-        actual: Exit.isSuccess(large) ? `${large.value.length} bytes, or different bytes` : shown(large)
+        actual: Exit.isSuccess(large) ? `${large.value.length} bytes, or different bytes` : describeExit(large)
       },
       Exit.isSuccess(absent) && absent.value instanceof ProviderError && absent.value.code === "not_found"
         ? undefined
         : {
           check: "reports-an-absent-file",
           expected: "a ProviderError with code not_found",
-          actual: shown(absent)
+          actual: describeExit(absent)
         },
       Exit.isSuccess(parents) ? undefined : {
         check: "creates-parent-directories",
         expected: "a write below missing directories to land",
-        actual: shown(parents)
+        actual: describeExit(parents)
       },
       Exit.isSuccess(workdir) && workdir.value.answer === workdir.value.expected ? undefined : {
         check: "runs-in-its-workdir",
         expected: "a bare spawn's working directory to be the session workdir",
-        actual: shown(workdir)
+        actual: describeExit(workdir)
       },
       Exit.isSuccess(relativeCwd) && relativeCwd.value.answer === relativeCwd.value.expected ? undefined : {
         check: "roots-a-relative-cwd",
         expected: "a relative cwd to be taken under the session workdir",
-        actual: shown(relativeCwd)
+        actual: describeExit(relativeCwd)
       },
       Exit.isSuccess(environment) && environment.value === "delivered#0" ? undefined : {
         check: "delivers-the-environment",
         expected: `stdout "delivered" from the spawn's env`,
-        actual: shown(environment)
+        actual: describeExit(environment)
       },
       Exit.isSuccess(deletedEnvironment) && deletedEnvironment.value.before === "present#0" &&
         (deletedEnvironment.value.after === "#0" ||
@@ -286,41 +283,41 @@ export const check = (
         : {
           check: "deletes-inherited-environment-or-refuses",
           expected: "guest HOME present before deletion, then absent or spawn refused with ProviderError spawn_error",
-          actual: shown(deletedEnvironment)
+          actual: describeExit(deletedEnvironment)
         },
       Exit.isSuccess(unusableEnvironment) && unusableEnvironment.value instanceof ProviderError
         ? undefined
         : {
           check: "refuses-an-unusable-environment-name",
           expected: "a ProviderError for an env name the guest shell would drop",
-          actual: shown(unusableEnvironment)
+          actual: describeExit(unusableEnvironment)
         },
       Exit.isSuccess(stdin) && stdin.value.status === "#0" && sameBytes(stdin.value.copied, conformanceBytes)
         ? undefined
         : {
           check: "delivers-standard-input",
           expected: "the bytes given as stdin to reach the command unchanged",
-          actual: shown(stdin)
+          actual: describeExit(stdin)
         },
       Exit.isSuccess(stderr) && stderr.value.startsWith("to-stderr") ? undefined : {
         check: "delivers-standard-error",
         expected: "text a command writes to stderr to arrive on one of its output streams",
-        actual: shown(stderr)
+        actual: describeExit(stderr)
       },
       Exit.isSuccess(fileToProcess) && fileToProcess.value === `${conformanceBytes.length}#0` ? undefined : {
         check: "files-reach-processes",
         expected: `a process to measure ${conformanceBytes.length} bytes in a file writeFile put there`,
-        actual: shown(fileToProcess)
+        actual: describeExit(fileToProcess)
       },
       Exit.isSuccess(processToFile) && processToFile.value === "from-process" ? undefined : {
         check: "processes-reach-files",
         expected: "readFile to return what a process wrote",
-        actual: shown(processToFile)
+        actual: describeExit(processToFile)
       },
       Exit.isSuccess(reacquired) && reacquired.value === "again#0" ? undefined : {
         check: "reacquires-its-session",
         expected: "a working session after release and reacquire",
-        actual: shown(reacquired)
+        actual: describeExit(reacquired)
       }
     ]
     return [

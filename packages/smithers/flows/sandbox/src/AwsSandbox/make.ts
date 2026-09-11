@@ -9,11 +9,13 @@ import * as Effect from "effect/Effect"
 import type { Scope } from "effect/Scope"
 import * as Stream from "effect/Stream"
 import * as ChildProcess from "effect/unstable/process/ChildProcess"
+import { attemptIn } from "../internal/attempt.ts"
 import { decodeBase64, encodeBase64 } from "../internal/base64.ts"
 import { configurationFingerprint } from "../internal/configurationFingerprint.ts"
 import { environmentInput } from "../internal/environmentInput.ts"
 import { checkEnvironmentNames } from "../internal/environmentNames.ts"
 import { finalizeWithin } from "../internal/finalizeWithin.ts"
+import { parentOf } from "../internal/guestPath.ts"
 import { cancelledStatus, cancelMarker, killScript } from "../internal/killScript.ts"
 import { gather, type GatheredRun, providerFailure } from "../internal/localProcess.ts"
 import { rootedAt } from "../internal/rootedPath.ts"
@@ -98,11 +100,7 @@ type RegisterTaskDefinitionOutput = Awaited<ReturnType<Sdk["registerTaskDefiniti
 const failure = (code: ProviderError["code"], message: string, cause?: unknown): ProviderError =>
   new ProviderError({ code, message: `aws sandbox: ${message}`, cause })
 
-const attempt = <A>(thunk: () => Promise<A>, code: ProviderError["code"], message: string) =>
-  Effect.tryPromise({
-    try: thunk,
-    catch: (cause) => failure(code, message, cause)
-  })
+const attempt = attemptIn("aws sandbox")
 
 const fingerprintTag = "smithers.dev/sandbox-fingerprint"
 
@@ -414,11 +412,6 @@ const pidDirectory = "/tmp/.smthrs-sbx"
 
 const decoder = new TextDecoder()
 const encoder = new TextEncoder()
-
-const parentOf = (path: string): string | undefined => {
-  const separator = path.lastIndexOf("/")
-  return separator > 0 ? path.slice(0, separator) : undefined
-}
 
 /**
  * The line a wrapped command prints after it ends, carrying its exit status.

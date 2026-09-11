@@ -13,6 +13,7 @@ import { configurationFingerprint } from "../internal/configurationFingerprint.t
 import { environmentInput } from "../internal/environmentInput.ts"
 import { checkEnvironmentNames } from "../internal/environmentNames.ts"
 import { finalizeWithin } from "../internal/finalizeWithin.ts"
+import { parentOf } from "../internal/guestPath.ts"
 import { cancelGuard, killScript } from "../internal/killScript.ts"
 import { gather, type GatheredRun, providerFailure, remoteProcessOf } from "../internal/localProcess.ts"
 import { rootedAt } from "../internal/rootedPath.ts"
@@ -50,11 +51,6 @@ export interface ContainerSandboxOptions {
   readonly createArgs?: ReadonlyArray<string> | undefined
   /** The container-name prefix. Default `smthrs-sbx-`. */
   readonly namePrefix?: string | undefined
-}
-
-const parentOf = (path: string): string | undefined => {
-  const separator = path.lastIndexOf("/")
-  return separator > 0 ? path.slice(0, separator) : undefined
 }
 
 /** The session-private guest directory spawned commands record their pids in. */

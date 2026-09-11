@@ -5,8 +5,10 @@
  */
 import * as Effect from "effect/Effect"
 import * as Stream from "effect/Stream"
+import { attemptIn } from "../internal/attempt.ts"
 import { environmentCommand } from "../internal/environmentCommand.ts"
 import { checkEnvironmentNames } from "../internal/environmentNames.ts"
+import { parentOf } from "../internal/guestPath.ts"
 import { rootedAt } from "../internal/rootedPath.ts"
 import { sessionSlug } from "../internal/sessionSlug.ts"
 import { warnTeardown } from "../internal/teardownWarning.ts"
@@ -120,25 +122,12 @@ type Builder = ReturnType<Sdk["Sandbox"]["builder"]>
 type VendorSandbox = Awaited<ReturnType<Builder["create"]>>
 type ExecOutput = Awaited<ReturnType<Awaited<ReturnType<VendorSandbox["execStreamWith"]>>["collect"]>>
 
-const parentOf = (path: string): string | undefined => {
-  const separator = path.lastIndexOf("/")
-  return separator > 0 ? path.slice(0, separator) : undefined
-}
-
 const messageOf = (cause: unknown): string => cause instanceof Error ? cause.message : String(cause)
 
 const failure = (code: ProviderErrorCode, message: string, cause: unknown): ProviderError =>
   new ProviderError({ code, message: `microsandbox: ${message}`, cause })
 
-const attempt = <A>(
-  thunk: () => Promise<A>,
-  code: ProviderErrorCode,
-  message: string
-): Effect.Effect<A, ProviderError> =>
-  Effect.tryPromise({
-    try: thunk,
-    catch: (cause) => failure(code, message, cause)
-  })
+const attempt = attemptIn("microsandbox")
 
 const configure = (builder: Builder, options: MicrosandboxSandboxOptions, sticky: boolean): Builder => {
   let configured = options.snapshot === undefined

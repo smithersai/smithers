@@ -5,12 +5,15 @@
  */
 import * as Effect from "effect/Effect"
 import * as Stream from "effect/Stream"
+import { attemptIn } from "../internal/attempt.ts"
+import { checked } from "../internal/checkedExit.ts"
+import { concat } from "../internal/concat.ts"
 import { environmentCommand } from "../internal/environmentCommand.ts"
 import { checkEnvironmentNames } from "../internal/environmentNames.ts"
 import { finalizeWithin } from "../internal/finalizeWithin.ts"
-import { providerFailure } from "../internal/localProcess.ts"
+import { parentOf } from "../internal/guestPath.ts"
+import { machineName } from "../internal/machineName.ts"
 import { rootedAt } from "../internal/rootedPath.ts"
-import { sessionSlug } from "../internal/sessionSlug.ts"
 import { stdinRedirect } from "../internal/stdinRedirect.ts"
 import { warnTeardown } from "../internal/teardownWarning.ts"
 import { ProviderError } from "../RemoteChildProcessSpawner/ProviderError.ts"
@@ -44,31 +47,11 @@ export interface VercelSandboxOptions extends Credentials {
 }
 
 type VendorSandbox = Awaited<ReturnType<Sdk["Sandbox"]["getOrCreate"]>>
-type CommandFinished = Awaited<ReturnType<VendorSandbox["runCommand"]>>
 
 const createCeilingMillis = 5 * 60_000
 const defaultWorkdir = "/vercel/sandbox"
 
-const parentOf = (path: string): string | undefined => {
-  const separator = path.lastIndexOf("/")
-  return separator > 0 ? path.slice(0, separator) : undefined
-}
-
-const attempt = <A>(
-  thunk: () => Promise<A>,
-  code: ProviderError["code"],
-  message: string
-): Effect.Effect<A, ProviderError> =>
-  Effect.tryPromise({ try: thunk, catch: providerFailure(code, `vercel-sandbox: ${message}`) })
-
-const checked = (
-  result: CommandFinished,
-  code: ProviderError["code"],
-  message: string
-): Effect.Effect<CommandFinished, ProviderError> =>
-  result.exitCode === 0
-    ? Effect.succeed(result)
-    : Effect.fail(new ProviderError({ code, message: `${message}: command exited ${result.exitCode}` }))
+const attempt = attemptIn("vercel-sandbox")
 
 const output = (
   read: () => Promise<string>,
@@ -77,18 +60,6 @@ const output = (
   Stream.fromEffect(
     Effect.map(attempt(read, "unknown", description), (text) => new TextEncoder().encode(text))
   )
-
-const concat = (chunks: ReadonlyArray<Uint8Array>): Uint8Array => {
-  let size = 0
-  for (const chunk of chunks) size += chunk.length
-  const content = new Uint8Array(size)
-  let offset = 0
-  for (const chunk of chunks) {
-    content.set(chunk, offset)
-    offset += chunk.length
-  }
-  return content
-}
 
 const decodeFile = async (
   stream: NonNullable<Awaited<ReturnType<VendorSandbox["readFile"]>>>
@@ -118,9 +89,6 @@ const resolveCredentials = (
   }
   return {}
 }
-
-const machineName = (prefix: string, session: string): string =>
-  `${prefix}${sessionSlug(session)}`.toLowerCase().replaceAll(/[._]/g, "-")
 
 /**
  * Builds a provider backed by named, persistent Vercel sandboxes.
