@@ -554,6 +554,22 @@ describe("up", () => {
     expect(typeof (receipt as { readonly runId: string }).runId).toBe("string")
   })
 
+  it("refuses to auto-approve an envelope that grants every capability", async () => {
+    const wildcardFlow = {
+      ...demoFlow,
+      flowId: "demo/skill",
+      envelope: { capabilities: ["*"], flows: [], budget: {} }
+    } as const
+    const error = await run(
+      Effect.flip(runCommand(["up", "demo/skill"])),
+      TestControl.layer({ now: () => 0, flows: [wildcardFlow] })
+    )
+
+    expect(error).toBeInstanceOf(CliError.UsageError)
+    expect((error as CliError.UsageError).message).toContain("grants every capability")
+    expect((error as CliError.UsageError).message).toContain("smthrs plan demo/skill")
+  })
+
   it("carries --data into the planned input", async () => {
     const card = await run(json(["--json", "plan", "demo/ship", "--data", "{\"topic\":\"flows\"}"]), testControl)
 

@@ -273,19 +273,27 @@ describe("MarkdownFlow", () => {
     expect(result.warnings).toContainEqual(expect.objectContaining({ code: "invalid_capabilities" }))
   })
 
-  it("falls back to the wildcard when capabilities cannot bound authority", () => {
-    const descriptor = Option.getOrThrow(
-      fromMarkdown("---\ndescription: Review\ncapabilities:\n  read: true\n---\nbody").descriptor
-    )
+  it.each([
+    ["a mapping", "capabilities:\n  read: true", "{\"read\":\"true\"}"],
+    ["a list of mappings", "capabilities:\n  - name: Read", "[{\"name\":\"Read\"}]"]
+  ])("refuses to discover a flow whose capabilities are %s", (_label, member, shown) => {
+    const result = fromMarkdown(`---\ndescription: Review\n${member}\n---\nbody`)
 
-    expect(descriptor.capabilities).toEqual(["*"])
-    expect(descriptor.effects).toEqual({
-      reads: ["**"],
-      writes: ["**"],
-      mode: "expected",
-      onConflict: "serialize",
-      tier: "irreversible"
-    })
+    expect(Option.isNone(result.descriptor)).toBe(true)
+    expect(result.warnings).toContainEqual(expect.objectContaining({
+      code: "invalid_capabilities",
+      path: "/flows/review/SKILL.md",
+      message: expect.stringContaining(shown)
+    }))
+  })
+
+  it("says an undeclared capability list grants every capability", () => {
+    const result = fromMarkdown("---\ndescription: Review\n---\nbody")
+
+    expect(Option.getOrThrow(result.descriptor).capabilities).toEqual(["*"])
+    const warning = result.warnings.find((item) => item.code === "unprojectable_authority")
+    expect(warning?.message).toContain("every capability")
+    expect(warning?.message).not.toContain("conservative")
   })
 
   it.each([

@@ -53,9 +53,10 @@ export const grant = `proc:spawn:mcp/${serverName}`
  * through `jj:revert:**`. It spells each one out because the cell boundary
  * reads a declared capability with `Capability.parse` as an EXACT
  * `namespace:operation:resource` triple. A bare `"*"` parses as nothing and
- * counts as unauthorized under every envelope, however wide. `MarkdownFlow`
- * still uses that bare spelling for a skill that declares none, so a skill is
- * refused where an MCP tool is merely narrowed.
+ * counts as unauthorized under every envelope, however wide. That is the
+ * declaration parser only. A run envelope is read with `Capability.parsePattern`,
+ * where the same bare `"*"` matches every capability; `MarkdownFlow` puts it in
+ * the envelope of a skill that declares none.
  *
  * Only the host knows what this particular server is for, so `granting`
  * replaces the projector's everything with the one capability it decided on.

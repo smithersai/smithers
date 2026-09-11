@@ -418,6 +418,18 @@ const up = Command.make("up", upFlags, (config) =>
     const decodedInput = yield* decodeInput([], config.data)
     const control = yield* ControlService.Control
     const card = yield* control.plan({ flowId, input: decodedInput })
+    // The bare `*` envelope grants every capability, and markdown discovery
+    // substitutes it for a flow that declares none, so `up` never approves it
+    // unseen. The operator reviews the card with `plan` and signs it with
+    // `approve`.
+    if (card.envelope.capabilities.includes("*")) {
+      return yield* Effect.fail(
+        new CliError.UsageError({
+          message: `up will not approve ${flowId}: its envelope grants every capability ("*"). `
+            + `Declare capabilities in the flow, or review it with \`smthrs plan ${flowId}\` and approve it with \`smthrs approve\``
+        })
+      )
+    }
     // Scope `run`: the approval authorizes this launch and its whole run, not
     // every future launch of the flow.
     yield* control.approve({ ...card.approval, scope: "run" })

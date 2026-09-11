@@ -141,20 +141,6 @@ describe("shared effects projection", () => {
       Authority.conservativeEffects
     ],
     [
-      "a capability list discovery cannot read",
-      [
-        "capabilities:",
-        "  read: true",
-        "effects:",
-        "  reads: []",
-        "  writes: []",
-        "  mode: hermetic",
-        "  tier: sealed"
-      ],
-      ["  capabilities,", "  effects: { reads: [], writes: [], mode: \"hermetic\", tier: \"sealed\" }"],
-      Authority.conservativeEffects
-    ],
-    [
       "a non-empty delegate list",
       [
         "flows: [dangerous/write]",
@@ -187,5 +173,12 @@ describe("shared effects projection", () => {
   ])("projects %s the same way for markdown and module bodies", (_label, frontmatter, members, effects) => {
     expect(markdownEffects(frontmatter)).toEqual(effects)
     expect(moduleEffects(members)).toEqual(markdownEffects(frontmatter))
+  })
+
+  // Markdown discovery refuses a capability list it cannot read (see
+  // MarkdownFlow.test.ts), so only the module body has effects to project.
+  it("projects a module capability list discovery cannot read as the widest effects", () => {
+    expect(moduleEffects(["  capabilities,", "  effects: { reads: [], writes: [], mode: \"hermetic\", tier: \"sealed\" }"]))
+      .toEqual(Authority.conservativeEffects)
   })
 })

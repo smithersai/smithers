@@ -124,6 +124,7 @@ export const fromMarkdown = (options: FromMarkdownOptions): FromMarkdownResult =
   const flows = deriveFlows(fields, options.path, warnings)
   const delegation = flows.length === 0 ? undefined : unprojectableDelegation()
   const capabilities = deriveCapabilities(fields, delegation, options.path, warnings)
+  if (capabilities === undefined) return { descriptor: Option.none(), warnings }
   const modelInvocable = deriveModelInvocable(fields, options.path, warnings)
   const effects = deriveEffects(fields, capabilities, options.path, warnings)
   const placement = derivePlacement(fields, options.path, warnings)
@@ -240,14 +241,14 @@ const deriveCapabilities = (
   delegation: ReturnType<typeof unprojectableDelegation> | undefined,
   path: string,
   warnings: Array<DiscoveryWarning>
-): ReadonlyArray<string> => {
+): ReadonlyArray<string> | undefined => {
   if (!Object.hasOwn(fields, "capabilities")) {
     warnings.push({
       code: "unprojectable_authority",
       path,
       message: delegation === undefined
-        ? "Markdown authority is not declared; using the conservative wildcard"
-        : "Delegated flow authority cannot be projected statically; using the conservative wildcard"
+        ? "Markdown authority is not declared; the flow receives every capability"
+        : "Delegated flow authority cannot be projected statically; the flow receives every capability"
     })
     return delegation?.capabilities ?? ["*"]
   }
@@ -267,19 +268,23 @@ const deriveCapabilities = (
   ) {
     capabilities = value
   } else {
+    // A typo in a narrow list must not widen it to every capability, so the
+    // flow is not discovered until the value is a string array.
     warnings.push({
       code: "invalid_capabilities",
       path,
-      message: "Malformed capabilities cannot bound markdown authority; using the conservative wildcard"
+      message: `Frontmatter capabilities must be a string array, got ${
+        JSON.stringify(value) ?? String(value)
+      }; the flow is not discovered`
     })
-    capabilities = ["*"]
+    return undefined
   }
 
   if (delegation !== undefined) {
     warnings.push({
       code: "unprojectable_authority",
       path,
-      message: "Delegated flow authority cannot be projected statically; using the conservative wildcard"
+      message: "Delegated flow authority cannot be projected statically; the flow receives every capability"
     })
     return delegation.capabilities
   }
