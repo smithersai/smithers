@@ -97,8 +97,9 @@ would pass an adapter that sets the flag and then ignores
 
 A `kill` that returns success and leaves the command running satisfies the type
 and leaks a process inside the sandbox for every cancelled action. The check
-therefore waits `Commands.stopsWithin` (default 5 seconds) for `runs` to stop
-and reports `the command was still running after the signal` when it does not.
+therefore waits `Commands.stopsWithin` (default 5 seconds), measured on the
+platform timer even under a frozen test clock, for `runs` to stop. It reports
+`the command was still running after the signal` when it does not.
 How it stopped is not the subject: a provider that reports a signalled process
 as a failed exit code is as conforming as one that reports a status.
 
@@ -113,12 +114,24 @@ stopped`. A command line that cannot match itself, such as
 
 ## Nothing hangs the suite
 
-Every check runs under `CheckOptions.checkTimeout`, 240 seconds by default,
+Every check runs under `CheckOptions.checkTimeout`, 10 seconds by default,
 measured on the platform timer rather than the ambient `Clock`, and covering
-session acquisition and stream consumption as well as the call itself. A
-provider that never answers is convicted with a named violation instead of
+session acquisition, stream consumption, and release as well as the call
+itself. A provider that never answers is convicted with a named violation instead of
 hanging your test run, and it is convicted under a frozen test clock too, which
 is what `it.effect` gives you.
+
+The deadline bounds observation of a detached check. On timeout or caller
+cancellation the runner requests interruption and tracks cleanup in detached
+fibers without waiting for it. An uninterruptible acquisition or release may
+remain pending after the violation is returned; the deadline cannot force a
+backend to release resources. The release-and-reacquire check uses the same
+runner and one deadline for both acquisitions and releases.
+
+For slow machine provisioning, set `checkTimeout` explicitly. Size the test
+budget for the complete sequential suite, including every check that may time
+out. The default is below the bundled provider test budgets so a stuck kill
+can produce its named violation before the test runner expires.
 
 `SandboxConformance`'s default fixture is `uniquePosixCommands()`, whose sleep
 duration is unique to the running process, so two suites running side by side

@@ -1,6 +1,6 @@
 ---
 title: "Choose a provider"
-description: "Pick one of the nine bundled machine providers by what you need from it, construct it, and select one by name at runtime with Sandbox.selectProvider."
+description: "Pick one of the nine bundled machine providers by what you need from it, construct it, and look one up by name at the host's composition root."
 sidebar:
   order: 3
 editUrl: "https://github.com/smithersai/smithers/edit/main/packages/smithers/flows/sandbox/docs/guides/choose-a-provider.md"
@@ -16,7 +16,7 @@ stop a running command, and what the provider costs to run.
 | Provider              | A machine is                                                         | Needs                                            | Byte-exact command output | Declares `kill` |
 | --------------------- | -------------------------------------------------------------------- | ------------------------------------------------ | ------------------------- | --------------- |
 | `DirectorySandbox`    | one host directory                                                   | nothing beyond host services                     | yes                       | yes             |
-| `JustBashSandbox`     | one directory in a shared virtual filesystem, interpreted in process | a just-bash instance                             | yes                       | no              |
+| `JustBashSandbox`     | one directory in a shared virtual filesystem, interpreted in process | a just-bash instance                             | no                        | no              |
 | `ContainerSandbox`    | one container held on `sleep infinity`                               | a Docker-compatible CLI                          | yes                       | yes             |
 | `KubernetesSandbox`   | one Pod held on `sleep infinity`                                     | `kubectl` and a cluster                          | yes                       | yes             |
 | `MicrosandboxSandbox` | one local microVM                                                    | a Microsandbox host                              | yes                       | no              |
@@ -77,30 +77,26 @@ explicitly to opt the container into an egress-capable engine mode.
 
 ## Select one by name
 
-A host that lets a flow or an operator name a provider registers what it can
-actually boot and resolves the name once:
+The engine takes a `Sandbox.Provider` value and never looks a name up.
+`MicrosandboxSandbox` is the recommended default: a microVM is the only bundled
+backend that can hold a declared Nix environment. A host that lets an operator
+name a provider keeps the lookup at its own composition root, where a provider
+from another package joins it the same way, and refuses a name it does not
+hold instead of falling back to a weaker sandbox:
 
 ```ts
-import { Sandbox } from "@smthrs/sandbox"
+import { RemoteChildProcessSpawner, type Sandbox } from "@smthrs/sandbox"
+import { Effect } from "effect"
 
-const registry: Sandbox.ProviderRegistry = { directory: local, container: contained }
+const providers: Record<string, Sandbox.Provider> = { microsandbox: microVm, directory: local }
 
-const provider = yield* Sandbox.selectProvider(registry, requested)
+const selectProvider = (name: string) => {
+  const provider = providers[name]
+  if (provider !== undefined) return Effect.succeed(provider)
+  const message = `sandbox: no provider named ${name}`
+  return Effect.fail(new RemoteChildProcessSpawner.ProviderError({ code: "unavailable", message }))
+}
 ```
-
-`requested` is a `Sandbox.ProviderName` or `undefined`. When it is
-`undefined`, `Sandbox.defaultProviderName` is used, which is `"microsandbox"`:
-a microVM is the only bundled backend that can hold a declared Nix
-environment.
-
-A name the registry does not hold, the default included, fails with
-`ProviderError.code === "unavailable"` listing what is registered. Nothing
-falls back to a weaker sandbox silently, because a run that asked for a microVM
-and quietly got a host directory has lost the only property it asked for.
-
-The full name set is `"microsandbox"`, `"directory"`, `"container"`,
-`"kubernetes"`, `"just-bash"`, `"vercel"`, `"daytona"`, `"aws"`, and
-`"cloudflare"`.
 
 ## Run a Nix environment in the microVM
 

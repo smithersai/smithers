@@ -21,6 +21,9 @@ input as bytes in `RemoteOptions.stdin`. Collection is bounded at 16 MiB and
 the count runs as the bytes arrive, so an oversized or endless producer is
 stopped at the bound rather than after it finishes.
 
+Each accepted chunk is copied on arrival, including Node `Buffer` chunks.
+Producers may reuse their input buffer after each chunk has been consumed.
+
 The handle's own `stdin` sink always fails: there is no interactive channel
 either way. A command that pipes input into a long-running process and reads
 its answers cannot work here, and no arrangement of options makes it work.
@@ -31,8 +34,9 @@ redirects the command from it.
 
 ## There is no process identity
 
-`pid` is a module counter, not a pid on either side of the seam, and `unref`
-is a no-op, because this process holds no reference to a remote one.
+`pid` is a synthetic id allocated per spawner layer, not a pid on either side
+of the seam, and `unref` is a no-op, because this process holds no reference
+to a remote one.
 
 ## Signals exist only where a provider declares kill
 
@@ -73,8 +77,10 @@ These cannot be refused, because nothing in the call says they are happening.
   crosses the seam, so only the `env` overrides travel, and `extendEnv: false`
   cannot clear an environment this side never held.
 - **`isRunning` answers from what this side has observed.** Nothing pushes an
-  exit across the seam, so it turns `false` when a caller observes `exitCode`
-  rather than when the remote process actually ends.
+  exit across the seam, so the adapter forks a scoped observer of the
+  provider's exit at spawn and memoizes it. Liveness turns `false` when that
+  observation lands, which can lag the remote process by a scheduler tick, and
+  does not depend on a caller reading `exitCode`.
 
 ## A pipeline is one line
 
@@ -92,10 +98,22 @@ interprets the command, on dash but not on bash. A spawn carrying such a name
 is refused with `spawn_error` naming it, on every provider and both platforms,
 rather than losing the variable in the guest.
 
-An entry set to `undefined` is not a name at all: it asks for the variable to
-be absent, which every provider implements with `env -u` rather than by
-omitting an assignment, so a value the machine was created with is genuinely
-gone from the command's environment.
+An entry set to `undefined` requests deletion of an inherited variable for
+that command. Removing a command default alone does not clear guest inheritance.
+
+| Provider                                                                  | Deletion behavior                                                                                                                                                                                             |
+| ------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `DirectorySandbox`                                                        | Removes the entry from the child environment before spawning.                                                                                                                                                 |
+| `ContainerSandbox`, `KubernetesSandbox`                                   | Uses guest `env -u` before the command shell.                                                                                                                                                                 |
+| `AwsSandbox`                                                              | Uses guest `env -u`; environment overrides require `exec.streamingSpawner`, otherwise `unavailable`.                                                                                                          |
+| `CloudflareSandbox` (exec and process), `VercelSandbox`, `DaytonaSandbox` | Uses `/usr/bin/env -u NAME ... /bin/sh -c ...` in the guest, with removals before assignments. Requires those guest executables.                                                                              |
+| `MicrosandboxSandbox`                                                     | Uses guest `/usr/bin/env -u` before the configured command shell, including inside `nix develop`. Requires guest `/usr/bin/env`; refuses deletion with `spawn_error` if the configured shell is not absolute. |
+| `JustBashSandbox`                                                         | Refuses with `ProviderError` code `spawn_error` before interpreter execution. Its injected interface only merges string values.                                                                               |
+
+`SandboxConformance` checks that guest `HOME` exists before requesting its
+deletion, then requires absence or a typed spawn refusal. Provision test guests
+with `HOME` set. This check is separate from environment delivery and removal
+of provider command defaults.
 
 ## Read next
 

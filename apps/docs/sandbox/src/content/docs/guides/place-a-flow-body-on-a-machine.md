@@ -100,12 +100,27 @@ a location on the machine and not in the workspace.
 
 ## What the derived filesystem can and cannot tell you
 
-Operations the session declares in `files` are served natively. Everything else
-is a POSIX `sh` probe, and the probe dialect is deliberately honest about its
-limits:
+Operations the session declares in `files` are served natively. Reads and writes
+otherwise use the session's byte transfer operations; other supported operations
+use POSIX `sh` probes. The derived filesystem has these limits:
 
-- `stat` reports exact file size. Mode is `0`, and times and ownership are
-  absent, because the portable shell cannot name them.
+- `writeFile` and `writeFileString` support replacement with an omitted `flag`
+  or `flag: "w"`, and no `mode`. Every other flag, including `"a"` and `"wx"`,
+  and every explicit mode fail with a typed `PlatformError` reason
+  `BadArgument` before session access. The byte transfer contract cannot
+  guarantee atomic append, exclusive creation, or creation permissions.
+  Native write overrides in `Session.files` receive the options unchanged
+  and define their own supported set.
+- `stat` reports exact file size, read from the machine's own `stat` where it
+  has one (GNU, busybox, and BSD spellings) and counted with `wc` otherwise. A
+  size the probe cannot read, such as a mode `000` file on a machine without
+  `stat`, fails with reason `Unknown` rather than reporting zero. Mode is `0`,
+  and times and ownership are absent, because the portable shell cannot name
+  them.
+- `rename` refuses a file onto an existing directory with reason `BadResource`,
+  as `rename(2)` does. A directory may replace an empty directory or name
+  itself; the replacement runs through `mv -T`, so a machine whose `mv` lacks
+  `-T` (BSD) refuses it with `BadResource` and changes nothing.
 - Directory listings are line framed, so a filename containing a newline is
   misread. The listing probe is `ls -1A` and never a bare `ls -A`, because
   POSIX `ls` columnizes when its output is a terminal and one provider's

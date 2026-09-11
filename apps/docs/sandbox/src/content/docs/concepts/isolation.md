@@ -115,8 +115,8 @@ host, and a passing suite says nothing about confinement.
 
 **Some backends change a command's output bytes.** Output is byte-exact
 through `DirectorySandbox`, `ContainerSandbox`, `KubernetesSandbox`,
-`MicrosandboxSandbox`, and `JustBashSandbox`. It is not through
-`VercelSandbox`, `DaytonaSandbox`, or `CloudflareSandbox`, whose APIs report a
+`MicrosandboxSandbox`. It is not through `JustBashSandbox`, `VercelSandbox`,
+`DaytonaSandbox`, or `CloudflareSandbox`, whose APIs report a
 command's output as a string that is re-encoded as UTF-8, and `AwsSandbox`
 reframes output through a pseudo-terminal, which normalizes line endings and
 interleaves standard error. File transfer is byte-exact on all nine, so a
