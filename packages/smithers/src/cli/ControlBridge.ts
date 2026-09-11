@@ -16,7 +16,7 @@ import { format } from "node:util"
 import * as CliError from "../CliError.ts"
 import { cli as legacyCli } from "../Command.ts"
 import * as HistoryWorkspace from "../history/History.ts"
-import * as LegacyHistory from "../history/Legacy.ts"
+import * as ExecutionTarget from "../history/ExecutionTarget.ts"
 import * as CommandStatus from "../internal/CommandStatus.ts"
 import * as NodeControl from "../NodeControl.ts"
 import { layerTriggerScheduler } from "../operator/Triggers.ts"
@@ -177,7 +177,7 @@ export const invoke = async (
   if (config.remote === undefined && runtime.executionRoot === undefined) {
     // The same extraction the legacy executable uses, so a flat alias binds
     // to the same worktree whichever entry it arrived through.
-    const runId = LegacyHistory.executionRunId(args)
+    const runId = ExecutionTarget.executionRunId(args)
     if (runId !== undefined) {
       config = { ...config, ...HistoryWorkspace.prepare(Project.root(config.root, process.cwd()), runId) }
     }

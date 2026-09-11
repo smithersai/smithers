@@ -32,7 +32,7 @@ import { Cause, Context, Deferred, Effect, Queue, Schema, Stream } from "effect"
 import * as Argv from "./cli/Argv.ts"
 import * as CliError from "./CliError.ts"
 import * as Forensics from "./Forensics.ts"
-import * as History from "./internal/History.ts"
+import * as BoundedEvents from "./internal/BoundedEvents.ts"
 import * as NodeOutput from "./NodeOutput.ts"
 import * as Unsupported from "./Unsupported.ts"
 
@@ -217,13 +217,13 @@ const requireRunId = (args: Record<string, unknown>): string | undefined => asSt
 const eventsOf = (runId: string, afterSequence = 0) =>
   Effect.gen(function*() {
     const control = yield* ControlService.Control
-    return yield* History.collect(
+    return yield* BoundedEvents.collect(
       control.watch({ runId, afterSequence, follow: false }),
       { operation: "MCP event-history read", subject: `run ${JSON.stringify(runId)}` },
       {
         maxEvents: maximumHistoryEvents,
         maxBytes: maximumHistoryBytes,
-        maxEventBytes: History.maximumEventBytes
+        maxEventBytes: BoundedEvents.maximumEventBytes
       }
     )
   })

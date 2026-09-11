@@ -16,7 +16,7 @@ import { CliError as EffectCliError, Command } from "effect/unstable/cli"
 import * as CliError from "../CliError.ts"
 import { cli } from "../Command.ts"
 import * as History from "../history/History.ts"
-import * as LegacyHistory from "../history/Legacy.ts"
+import * as ExecutionTarget from "../history/ExecutionTarget.ts"
 import * as Failure from "../internal/Failure.ts"
 import * as McpServer from "../McpServer.ts"
 import * as NodeControl from "../NodeControl.ts"
@@ -213,7 +213,7 @@ const main = Effect.gen(function*() {
       // help/usage's file-free contract and never inspect local state for a
       // remote invocation. Flat transition aliases use the same worktree as
       // their canonical runs/approvals equivalents.
-      const runId = applicationConfig.remote === undefined ? LegacyHistory.executionRunId(parsed) : undefined
+      const runId = applicationConfig.remote === undefined ? ExecutionTarget.executionRunId(parsed) : undefined
       const config = runId === undefined ? applicationConfig : {
         ...applicationConfig,
         ...History.prepare(Project.root(applicationConfig.root, process.cwd()), runId)

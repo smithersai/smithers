@@ -10,7 +10,7 @@ import { type Argument, Command, Flag } from "effect/unstable/cli"
 import * as ClaudeMirror from "../ClaudeMirror.ts"
 import * as CliError from "../CliError.ts"
 import * as Forensics from "../Forensics.ts"
-import * as History from "../internal/History.ts"
+import * as BoundedEvents from "../internal/BoundedEvents.ts"
 import * as NodeOutput from "../NodeOutput.ts"
 import { Output } from "../Output.ts"
 import * as Project from "../Project.ts"
@@ -91,11 +91,11 @@ export const make = <E, R>({ guard, required }: Options<E, R>) => {
       const control = yield* ControlService.Control
       yield* RunReads.existing(control, config.runId)
       const deadline = Date.now() + config.timeout
-      const history = History.empty<ControlSchema.ControlEvent>()
+      const history = BoundedEvents.empty<ControlSchema.ControlEvent>()
       let afterSequence: number | undefined
       for (;;) {
         const previousLength = history.values.length
-        yield* History.collectInto(
+        yield* BoundedEvents.collectInto(
           control.watch({
             runId: config.runId,
             follow: false,

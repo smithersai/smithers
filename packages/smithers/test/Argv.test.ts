@@ -7,7 +7,7 @@ import * as Argv from "../src/cli/Argv.ts"
 import { agentArguments, legacyArguments } from "../src/cli/Compatibility.ts"
 import { connectionOptions } from "../src/cli/ControlBridge.ts"
 import { cli } from "../src/Command.ts"
-import { executionRunId } from "../src/history/Legacy.ts"
+import { executionRunId } from "../src/history/ExecutionTarget.ts"
 
 /** Every shared flag the root command advertises, with a sample spelling. */
 const declaredGlobals = async (): Promise<Array<{ readonly flag: string; readonly words: Array<string> }>> => {

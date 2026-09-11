@@ -9,7 +9,7 @@ import * as Bug from "../Bug.ts"
 import * as CliError from "../CliError.ts"
 import * as Environment from "../Environment.ts"
 import * as Forensics from "../Forensics.ts"
-import * as History from "../internal/History.ts"
+import * as BoundedEvents from "../internal/BoundedEvents.ts"
 import * as Ui from "../Ui.ts"
 import { packageVersion } from "../Version.ts"
 import * as Globals from "./Globals.ts"
@@ -66,7 +66,7 @@ export const submit = (
     const runId = options.runId
     const listed = runId === undefined ? undefined : yield* control.list({ _tag: "runs", filters: { runId } })
     const digest = runId === undefined ? undefined : Forensics.digest(
-      yield* History.collect(control.watch({ runId, follow: false }), {
+      yield* BoundedEvents.collect(control.watch({ runId, follow: false }), {
         operation: "event-history read",
         subject: `run ${JSON.stringify(runId)}`
       }).pipe(

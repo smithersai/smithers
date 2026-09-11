@@ -4,7 +4,7 @@ import { mkdir, mkdtemp, readdir, readFile, rm, stat, symlink, writeFile } from 
 import { tmpdir } from "node:os"
 import { dirname, join, relative } from "node:path"
 import { afterEach, describe, expect, it, vi } from "vitest"
-import { createEvalCli } from "../src/evaluation/Cli.ts"
+import { createEvalCli } from "../src/evaluation/EvalCli.ts"
 import * as Evaluation from "../src/evaluation/Evaluation.ts"
 
 const roots: Array<string> = []

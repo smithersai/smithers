@@ -7,7 +7,7 @@ import { afterEach, describe, expect, it } from "vitest"
 import * as Binding from "../agent/scorers/src/Binding.ts"
 import * as Scorer from "../agent/scorers/src/Scorer.ts"
 import * as Flow from "../flows/core/src/Flow.ts"
-import { createEvalCli } from "../src/evaluation/Cli.ts"
+import { createEvalCli } from "../src/evaluation/EvalCli.ts"
 import * as Evaluation from "../src/evaluation/Evaluation.ts"
 
 const roots: Array<string> = []

@@ -141,10 +141,10 @@ These nested modules are exported as `@smthrs/cli/<dir>/<Module>` only. The root
 - `@smthrs/cli/cli/LegacyBin`
 - `@smthrs/cli/cli/Presentation`
 - `@smthrs/cli/cli/RunProgress`
-- `@smthrs/cli/evaluation/Cli`
+- `@smthrs/cli/evaluation/EvalCli`
 - `@smthrs/cli/evaluation/Evaluation`
+- `@smthrs/cli/history/ExecutionTarget`
 - `@smthrs/cli/history/History`
-- `@smthrs/cli/history/Legacy`
 - `@smthrs/cli/history/Workspace`
 - `@smthrs/cli/operator/Credentials`
 - `@smthrs/cli/operator/Integrations`

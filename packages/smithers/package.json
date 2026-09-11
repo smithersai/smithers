@@ -92,10 +92,10 @@
     "./cli/LegacyBin": "./src/cli/LegacyBin.ts",
     "./cli/Presentation": "./src/cli/Presentation.ts",
     "./cli/RunProgress": "./src/cli/RunProgress.ts",
-    "./evaluation/Cli": "./src/evaluation/Cli.ts",
+    "./evaluation/EvalCli": "./src/evaluation/EvalCli.ts",
     "./evaluation/Evaluation": "./src/evaluation/Evaluation.ts",
     "./history/History": "./src/history/History.ts",
-    "./history/Legacy": "./src/history/Legacy.ts",
+    "./history/ExecutionTarget": "./src/history/ExecutionTarget.ts",
     "./history/Workspace": "./src/history/Workspace.ts",
     "./index": "./src/index.ts",
     "./operator/Credentials": "./src/operator/Credentials.ts",
@@ -339,10 +339,10 @@
         "import": "./dist/esm/cli/RunProgress.js",
         "require": "./dist/cjs/cli/RunProgress.js"
       },
-      "./evaluation/Cli": {
-        "types": "./dist/esm/evaluation/Cli.d.ts",
-        "import": "./dist/esm/evaluation/Cli.js",
-        "require": "./dist/cjs/evaluation/Cli.js"
+      "./evaluation/EvalCli": {
+        "types": "./dist/esm/evaluation/EvalCli.d.ts",
+        "import": "./dist/esm/evaluation/EvalCli.js",
+        "require": "./dist/cjs/evaluation/EvalCli.js"
       },
       "./evaluation/Evaluation": {
         "types": "./dist/esm/evaluation/Evaluation.d.ts",
@@ -354,10 +354,10 @@
         "import": "./dist/esm/history/History.js",
         "require": "./dist/cjs/history/History.js"
       },
-      "./history/Legacy": {
-        "types": "./dist/esm/history/Legacy.d.ts",
-        "import": "./dist/esm/history/Legacy.js",
-        "require": "./dist/cjs/history/Legacy.js"
+      "./history/ExecutionTarget": {
+        "types": "./dist/esm/history/ExecutionTarget.d.ts",
+        "import": "./dist/esm/history/ExecutionTarget.js",
+        "require": "./dist/cjs/history/ExecutionTarget.js"
       },
       "./history/Workspace": {
         "types": "./dist/esm/history/Workspace.d.ts",

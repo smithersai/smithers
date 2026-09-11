@@ -249,7 +249,7 @@ export const evidence = (repository: Repository): Evidence => {
  * @category models
  * @since 1.0.0-rc.0
  */
-export interface Check {
+export interface Rule {
   readonly id: string
   readonly match: (facts: Evidence, repository: Repository) => Suggestion | undefined
 }
@@ -267,7 +267,7 @@ const repeatedScriptPattern = /^(release|publish|deploy|docs|generate|gen|codege
  * @category constants
  * @since 1.0.0-rc.0
  */
-export const checks: ReadonlyArray<Check> = [
+export const checks: ReadonlyArray<Rule> = [
   {
     id: "test-target",
     // The runner's own configuration files are filtered by what is on disk,

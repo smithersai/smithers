@@ -6,7 +6,7 @@
 import type { Control as ControlService } from "@smthrs/control"
 import { Effect } from "effect"
 import * as CliError from "../CliError.ts"
-import * as History from "../internal/History.ts"
+import * as BoundedEvents from "../internal/BoundedEvents.ts"
 import * as Settlement from "./Settlement.ts"
 
 /**
@@ -15,7 +15,7 @@ import * as Settlement from "./Settlement.ts"
  * @since 1.0.0
  */
 export const events = (control: ControlService.Service, runId: string) =>
-  History.collect(control.watch({ runId, follow: false }), {
+  BoundedEvents.collect(control.watch({ runId, follow: false }), {
     operation: "event-history read",
     subject: `run ${JSON.stringify(runId)}`
   }).pipe(

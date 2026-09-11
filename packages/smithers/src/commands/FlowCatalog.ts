@@ -7,7 +7,7 @@ import { ControlSchema } from "@smthrs/control"
 import type { Service as ControlServiceShape } from "@smthrs/control/Control"
 import { Effect } from "effect"
 import * as CliError from "../CliError.ts"
-import * as History from "../internal/History.ts"
+import * as BoundedEvents from "../internal/BoundedEvents.ts"
 
 /**
  * One page of the flow listing.
@@ -42,14 +42,14 @@ export const read = (control: ControlServiceShape) =>
         )
       }
       for (const item of listed.items) {
-        bytes += History.encodedBytes(item)
-        if (items.length >= History.maximumEvents || bytes > History.maximumBytes) {
+        bytes += BoundedEvents.encodedBytes(item)
+        if (items.length >= BoundedEvents.maximumEvents || bytes > BoundedEvents.maximumBytes) {
           return yield* Effect.fail(
             new CliError.ResourceLimitError({
               operation: "flow listing",
               subject: "the discovered registry",
-              limit: bytes > History.maximumBytes ? History.maximumBytes : History.maximumEvents,
-              unit: bytes > History.maximumBytes ? "bytes" : "events"
+              limit: bytes > BoundedEvents.maximumBytes ? BoundedEvents.maximumBytes : BoundedEvents.maximumEvents,
+              unit: bytes > BoundedEvents.maximumBytes ? "bytes" : "events"
             })
           )
         }

@@ -5,7 +5,7 @@ import { join } from "node:path"
 import { pathToFileURL } from "node:url"
 import { afterEach, describe, expect, it } from "vitest"
 import { makeCli } from "../src/Cli.ts"
-import { createEvalCli } from "../src/evaluation/Cli.ts"
+import { createEvalCli } from "../src/evaluation/EvalCli.ts"
 
 const roots: Array<string> = []
 afterEach(async () => {

@@ -38,7 +38,7 @@ import * as Gc from "./Gc.ts"
 import { defaultApprovalScope } from "./internal/ApprovalScope.ts"
 import * as CommandStatus from "./internal/CommandStatus.ts"
 import * as FeaturedFlows from "./internal/FeaturedFlows.ts"
-import * as History from "./internal/History.ts"
+import * as BoundedEvents from "./internal/BoundedEvents.ts"
 import * as NodeOutput from "./NodeOutput.ts"
 import { Output, renderValue } from "./Output.ts"
 import * as Project from "./Project.ts"
@@ -759,12 +759,12 @@ const readLogs = (runId: Option.Option<string>, follow: boolean, forceJson: bool
         events,
         (event) =>
           Effect.gen(function*() {
-            if (History.encodedBytes(event) > History.maximumEventBytes) {
+            if (BoundedEvents.encodedBytes(event) > BoundedEvents.maximumEventBytes) {
               return yield* Effect.fail(
                 new CliError.ResourceLimitError({
                   operation: "log follow",
                   subject: `run ${JSON.stringify(watchedRunId)}`,
-                  limit: History.maximumEventBytes,
+                  limit: BoundedEvents.maximumEventBytes,
                   unit: "bytes"
                 })
               )
@@ -773,7 +773,7 @@ const readLogs = (runId: Option.Option<string>, follow: boolean, forceJson: bool
           })
       )
     }
-    const collected = yield* History.collect(events, {
+    const collected = yield* BoundedEvents.collect(events, {
       operation: "event-history read",
       subject: `run ${JSON.stringify(watchedRunId)}`
     })

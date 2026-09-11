@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest"
-import { executionRunId } from "../src/history/Legacy.ts"
+import { executionRunId } from "../src/history/ExecutionTarget.ts"
 
-describe("legacy history routing", () => {
+describe("execution target routing", () => {
   it.each(["resume", "cancel", "signal", "steer"])(
     "routes %s through flags without treating their values as IDs",
     (verb) => {

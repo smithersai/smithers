@@ -10,7 +10,7 @@ import { readFile } from "node:fs/promises"
 import * as Forensics from "../Forensics.ts"
 import { defaultApprovalScope } from "../internal/ApprovalScope.ts"
 import * as FeaturedFlows from "../internal/FeaturedFlows.ts"
-import * as History from "../internal/History.ts"
+import * as BoundedEvents from "../internal/BoundedEvents.ts"
 import * as Bridge from "./ControlBridge.ts"
 import { prepareHistoryRun, reconcileHistory } from "./HistoryCommands.ts"
 import * as Presentation from "./Presentation.ts"
@@ -187,7 +187,7 @@ export const createRunsCli = (runtime: Bridge.Runtime = {}) =>
               const page = yield* control.list({ _tag: "runs", filters: { runId: c.args.run } })
               const run = page._tag === "runs" ? page.items.find((row) => row.runId === c.args.run) : undefined
               if (run === undefined) throw new Error(`Unknown run ${c.args.run}`)
-              const events = yield* History.collect(control.watch({ runId: run.runId, follow: false }), {
+              const events = yield* BoundedEvents.collect(control.watch({ runId: run.runId, follow: false }), {
                 operation: "run diagnosis",
                 subject: run.runId
               })
@@ -322,7 +322,7 @@ export const pendingApprovals = (runId?: string) =>
     } while (cursor !== undefined)
     return yield* Effect.forEach(runs, (run) =>
       Effect.gen(function*() {
-        const events = yield* History.collect(control.watch({ runId: run.runId, follow: false }), {
+        const events = yield* BoundedEvents.collect(control.watch({ runId: run.runId, follow: false }), {
           operation: "pending approval",
           subject: run.runId
         })
