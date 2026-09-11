@@ -46,6 +46,15 @@ export default tseslint.config(
       "no-await-in-loop": "off",
       "no-console": "error",
       "no-fallthrough": "off",
+      "no-restricted-imports": [
+        "error",
+        {
+          paths: [{
+            name: "effect",
+            message: "Import effect modules by subpath: import * as Effect from \"effect/Effect\"."
+          }]
+        }
+      ],
       "no-shadow": "off",
       "no-unneeded-ternary": "error",
       "no-unused-vars": "off",
