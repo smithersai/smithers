@@ -85,11 +85,19 @@ slug is uppercased with dashes replaced by underscores, for example
 Alchemy 1 and 2 derive names differently, so guessing the old name would
 create another Worker and orphan the original.
 
-For an existing Alchemy 1 deployment, retain a backup of its `.alchemy`
-state before using Alchemy 2. Alchemy 2 uses its own local state under
-`.alchemy/state`; do not treat the old state as an Alchemy 2 migration.
-From the site's directory, archive the old directory separately, preserve
-the existing Worker name, and review an adoption plan before deploying:
+For an existing Alchemy 1 deployment, do not archive its `.alchemy` state
+as is. The Alchemy 1 `os::Exec` build resource stored the deploying shell's
+entire environment, including every credential in it, in plaintext under
+`props.env` and `output.env` of each `*-build.json` file. Before using
+Alchemy 2, delete the old `.alchemy` directory, or strip `props.env` and
+`output.env` from every state file before archiving it. Then rotate every
+credential that was set in the deploying shell. `makeDocsSiteStack` refuses
+to deploy while any `.alchemy/**/*.json` file carries either field, and
+names the file and variable count, never a value.
+
+Alchemy 2 uses its own local state under `.alchemy/state`; do not treat the
+old state as an Alchemy 2 migration. From the site's directory, preserve the
+existing Worker name and review an adoption plan before deploying:
 
 ```bash
 cd apps/docs/flow
