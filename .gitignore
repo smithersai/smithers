@@ -140,3 +140,23 @@ apps/reports/launch-checklist/*-dry-run/
 
 # Grafana runtime state written by the local observability stack
 apps/observability/data/
+
+# apps/app agent-lane evidence: reports, screenshots, handoffs and A/B
+# harness configs, kept on disk, never committed
+apps/app/*.png
+apps/app/.fix2.*
+apps/app/tutorial2-shots/
+apps/app/handoffs/
+apps/app/first-load-fix2-evidence/
+apps/app/AUTO_ADVANCE.md
+apps/app/BUTTONS.md
+apps/app/FILL_HEIGHT.md
+apps/app/FIRST_LOAD_*
+apps/app/KEYS3.md
+apps/app/NAV_KEYS*.md
+apps/app/NOTIFY_*
+apps/app/PALETTE_VERIFY.md
+apps/app/PIN_NAV.md
+apps/app/REORDER.md
+apps/app/TUTORIAL2_INTEGRATION.md
+apps/app/WHITESPACE*.md
