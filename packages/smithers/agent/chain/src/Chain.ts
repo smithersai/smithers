@@ -54,6 +54,28 @@ class ApprovalPark extends Schema.TaggedError<ApprovalPark>()("/chain/Chain/Appr
   message: Schema.String
 }) {}
 
+/** What one link execution returns: its outcome, or a seam-parked approval. */
+type LinkResult = Outcome.Outcome | { readonly _tag: "ApprovalParked"; readonly message: string }
+
+/**
+ * Asks the Authorize seam about one live call slot. A required approval
+ * parks in place; `onDenied` decides what a denial does, because the model
+ * seat and a catalog entry handle it differently.
+ */
+const authorizeSlot = <E>(
+  authorize: Authorize.Service,
+  request: Authorize.Request,
+  onDenied: (error: Authorize.AuthorizeError) => Effect.Effect<never, E>
+): Effect.Effect<void, Authorize.AuthorizeError | ApprovalPark | E> =>
+  authorize.authorize(request).pipe(
+    Effect.catchTag("/chain/AuthorizeError", (error) =>
+      Effect.gen(function*() {
+        if (error.code === "approval_required") return yield* new ApprovalPark({ message: error.message })
+        if (error.code === "denied") return yield* onDenied(error)
+        return yield* error
+      }))
+  )
+
 /**
  * What a run needs: the goal, the budgets it may spend, and the journal
  * scope it owns.
@@ -278,6 +300,8 @@ export const run = (options: Options): Effect.Effect<Outcome.RunResult, RunError
         position = position + 1
       })
 
+    // Scans the live mirror, unlike a link's `rejectedPrior` snapshot taken
+    // when the link starts executing.
     const hasRejection = (link: number, ordinal: number): boolean =>
       events.some((event) =>
         event._tag === "GateRejected" && event.link === link && event.ordinal === ordinal
@@ -418,21 +442,11 @@ export const run = (options: Options): Effect.Effect<Outcome.RunResult, RunError
                 // own denials. A denied seat is unrecoverable by
                 // re-authoring, so it propagates typed instead of
                 // journaling an observation; an ask parks in place.
-                yield* authorize.value
-                  .authorize({
-                    capabilities: [AuthorDeclaration.authorCapability],
-                    name,
-                    slot: { chain: chainId, link, ordinal }
-                  })
-                  .pipe(
-                    Effect.catchTag("/chain/AuthorizeError", (error) =>
-                      Effect.gen(function*() {
-                        if (error.code === "approval_required") {
-                          return yield* new ApprovalPark({ message: error.message })
-                        }
-                        return yield* error
-                      }))
-                  )
+                yield* authorizeSlot(
+                  authorize.value,
+                  { capabilities: [AuthorDeclaration.authorCapability], name, slot: { chain: chainId, link, ordinal } },
+                  Effect.fail
+                )
               }
               const promoted = yield* steeringFor(ordinal)
               const context = [
@@ -479,75 +493,69 @@ export const run = (options: Options): Effect.Effect<Outcome.RunResult, RunError
             if (Option.isSome(authorize) && claims.length > 0) {
               // Gate 4, live calls only: replayed settled calls already
               // ran, and the check stays out of the journal so a later
-              // grant is re-decidable (the cell-harness lesson).
-              yield* authorize.value
-                .authorize({
-                  capabilities: claims,
-                  name,
-                  slot: { chain: chainId, link, ordinal }
-                })
-                .pipe(
-                  Effect.catchTag("/chain/AuthorizeError", (error) =>
-                    Effect.gen(function*() {
-                      if (error.code === "denied") {
-                        return yield* reject(ordinal, Observation.make("denied", error.message))
-                      }
-                      if (error.code === "approval_required") {
-                        return yield* new ApprovalPark({ message: error.message })
-                      }
-                      return yield* error
-                    }))
-                )
+              // grant is re-decidable (see the Authorize.ts module comment).
+              yield* authorizeSlot(
+                authorize.value,
+                { capabilities: claims, name, slot: { chain: chainId, link, ordinal } },
+                (error) => reject(ordinal, Observation.make("denied", error.message))
+              )
             }
             const key = CallKey.make(link, scriptDigest, ordinal, Catalog.entryDigest(entry))
-            const settle = (signal?: AbortSignal) => Effect.gen(function*() {
-              const result = yield* entry.handler(payload, { chain: chainId, link, ordinal, key, signal }).pipe(
-                Effect.catchTag("/chain/CallError", (error) =>
-                  Effect.gen(function*() {
-                    // Run failures stay typed and un-settled, through every
-                    // level of recursion. Ordinary handler failures reject.
-                    if (error instanceof ChildRunError) return yield* error.error
-                    // A handler surfacing a required approval — a sub-chain
-                    // waiting on a grant — parks in place like the seam's
-                    // own ask: nothing settles, resume re-enters here.
-                    if (error.cause === "approval_required") {
-                      return yield* new ApprovalPark({ message: error.message })
-                    }
-                    return yield* reject(ordinal, Observation.make("call_failed", `"${name}" failed: ${error.message}`))
-                  }))
-              )
-              const resultBoundary = JsonBoundary.jsonBoundary(result)
-              if (resultBoundary._tag === "Refused") {
-                return yield* reject(
-                  ordinal,
-                  Observation.make("call_failed", `"${name}" produced a result that is not JSON-serializable`)
+            const settle = (signal?: AbortSignal) =>
+              Effect.gen(function*() {
+                const result = yield* entry.handler(payload, { chain: chainId, link, ordinal, key, signal }).pipe(
+                  Effect.catchTag("/chain/CallError", (error) =>
+                    Effect.gen(function*() {
+                      // Run failures stay typed and un-settled, through every
+                      // level of recursion. Ordinary handler failures reject.
+                      if (error instanceof ChildRunError) return yield* error.error
+                      // A handler surfacing a required approval — a sub-chain
+                      // waiting on a grant — parks in place like the seam's
+                      // own ask: nothing settles, resume re-enters here.
+                      if (error.cause === "approval_required") {
+                        return yield* new ApprovalPark({ message: error.message })
+                      }
+                      return yield* reject(
+                        ordinal,
+                        Observation.make("call_failed", `"${name}" failed: ${error.message}`)
+                      )
+                    }))
                 )
-              }
-              yield* append({
-                _tag: "CallSettled",
-                key,
-                link,
-                name,
-                payload: jsonPayload,
-                result: resultBoundary.value as typeof Schema.Json.Type
+                const resultBoundary = JsonBoundary.jsonBoundary(result)
+                if (resultBoundary._tag === "Refused") {
+                  return yield* reject(
+                    ordinal,
+                    Observation.make("call_failed", `"${name}" produced a result that is not JSON-serializable`)
+                  )
+                }
+                yield* append({
+                  _tag: "CallSettled",
+                  key,
+                  link,
+                  name,
+                  payload: jsonPayload,
+                  result: resultBoundary.value as typeof Schema.Json.Type
+                })
+                return resultBoundary.value
               })
-              return resultBoundary.value
-            })
             if (entry.settleOnInterrupt !== true) return yield* settle()
             // The parent remains interruptible, while the child owns both the
             // started action and its receipt. Stop signals the action and joins
             // settlement; it cannot abandon an irreversible controller promise.
-            return yield* Effect.uninterruptibleMask((restore) => Effect.gen(function*() {
-              const cancellation = new AbortController()
-              const fiber = yield* Effect.forkChild(settle(cancellation.signal), { uninterruptible: true })
-              return yield* restore(Fiber.join(fiber)).pipe(Effect.onInterrupt(() =>
-                Effect.sync(() => cancellation.abort()).pipe(
-                  Effect.andThen(Fiber.join(fiber)),
-                  // A refused/interrupted binding has already journaled its
-                  // observation. Journal failures must still escape the join.
-                  Effect.catchTag("/chain/Chain/LinkAborted", () => Effect.void)
-                )))
-            }))
+            return yield* Effect.uninterruptibleMask((restore) =>
+              Effect.gen(function*() {
+                const cancellation = new AbortController()
+                const fiber = yield* Effect.forkChild(settle(cancellation.signal), { uninterruptible: true })
+                return yield* restore(Fiber.join(fiber)).pipe(Effect.onInterrupt(() =>
+                  Effect.sync(() => cancellation.abort()).pipe(
+                    Effect.andThen(Fiber.join(fiber)),
+                    // A refused/interrupted binding has already journaled its
+                    // observation. Journal failures must still escape the join.
+                    Effect.catchTag("/chain/Chain/LinkAborted", () => Effect.void)
+                  )
+                ))
+              })
+            )
           })
 
         if (script !== undefined) {
@@ -609,13 +617,12 @@ export const run = (options: Options): Effect.Effect<Outcome.RunResult, RunError
       // its settled prefix and re-asks the seam under the current grants.
       // (A script deliberately returning park("approval") still ends its
       // link below — only the seam's park is resumable-in-place.)
-      const outcome: Outcome.Outcome | { readonly _tag: "ApprovalParked"; readonly message: string } =
-        yield* executeLink(link).pipe(
-          Effect.catchTag(
-            "/chain/Chain/ApprovalPark",
-            (error) => Effect.succeed({ _tag: "ApprovalParked" as const, message: error.message })
-          )
+      const outcome: LinkResult = yield* executeLink(link).pipe(
+        Effect.catchTag(
+          "/chain/Chain/ApprovalPark",
+          (error) => Effect.succeed({ _tag: "ApprovalParked" as const, message: error.message })
         )
+      )
       if (outcome._tag === "ApprovalParked") {
         return { _tag: "ApprovalWait", reason: { code: "approval", message: outcome.message } }
       }

@@ -1,8 +1,9 @@
 /**
  * Gate 4's seam: per-call authorization against declared capabilities.
  *
- * The check runs outside the journal on purpose — the cell harness
- * lesson: a permission requirement must be re-decidable against a later
+ * The check runs outside the journal on purpose, as the harness cell does
+ * for its permission parks (packages/smithers/agent/harness/src/Cell.ts):
+ * a permission requirement must be re-decidable against a later
  * grant, so a parked chain re-asks on resume instead of replaying a
  * refusal forever. A policy denial becomes a journaled observation the
  * model routes around; a required approval parks the run without ending

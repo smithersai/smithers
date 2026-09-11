@@ -7,8 +7,9 @@
  * `Math.random` — time and randomness are the `sys/now` and `sys/random`
  * catalog entries, journaled like any call — and the only bridge out is
  * `ctx.call`. The same single-file variant runs unmodified on Node and in
- * a browser. Adapted from the cell loop's QuickJS binding
- * (https://chain.smithers.sh/contract/).
+ * a browser. Adapted from the harness QuickJS binding
+ * (packages/smithers/agent/harness/src/QuickJSSandbox.ts;
+ * https://chain.smithers.sh/contract/).
  *
  * @since 0.1.0
  */

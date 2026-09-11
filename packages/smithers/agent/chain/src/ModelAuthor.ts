@@ -3,10 +3,11 @@
  *
  * Requires `Model.Model` from context — production supplies a route stack,
  * tests supply a replay model — and maps an author input onto the sealed
- * request shape the cell loop proved out: prefix as the stable system
+ * request shape of the harness's sealed steps: prefix as the stable system
  * part, context lines as one user message, no tools, `toolChoice: "none"`
- * (https://chain.smithers.sh/contract/). Reference prior art: the sealed
- * author step of the earlier cell loop, mined not imported.
+ * (https://chain.smithers.sh/contract/). Prior art, copied rather than
+ * imported: the sealed steps in
+ * packages/smithers/agent/harness/src/CellTurn.ts.
  *
  * @since 0.1.0
  */
@@ -119,8 +120,9 @@ export const make = (config: Config): Effect.Effect<Author.Service, never, Model
           }
           const text = visibleText(settled.message)
           if (text.trim() === "") {
-            // The cell loop's "returned no text" rule: a reasoning-only
-            // response is a seat failure, not an empty authored script.
+            // A reasoning-only response is a seat failure, not an empty
+            // authored script (the harness's sealed steps in
+            // packages/smithers/agent/harness/src/CellTurn.ts fail the same way).
             return yield* unavailable("the model returned no visible text", "no_text")
           }
           return text

@@ -144,8 +144,8 @@ export type LinkEnded = typeof LinkEnded.Type
 
 /**
  * One non-empty steering drain, tied to the live author call it fed —
- * the nondeterministic boundary of the cell loop's RecordBoundary lesson,
- * journaled so a re-executed attempt reuses the recorded lines. Empty
+ * a nondeterministic boundary in the sense of `RecordBoundary`
+ * (packages/smithers/agent/harness/src/EngineLike.ts), journaled so a re-executed attempt reuses the recorded lines. Empty
  * drains are not journaled: a settled author call already pins its
  * context in its `CallSettled` payload.
  *

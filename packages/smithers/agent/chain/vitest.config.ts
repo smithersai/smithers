@@ -18,7 +18,7 @@ export default defineConfig({
     hookTimeout: 30_000,
     coverage: {
       // `enabled: true` makes every `vitest` run compute and ENFORCE these
-      // thresholds — a red gate fails the run (issues #20/#32).
+      // thresholds — a red gate fails the run.
       enabled: true,
       provider: "v8",
       // Scope the report directory — and the `.tmp` scratch dir the v8
@@ -26,7 +26,7 @@ export default defineConfig({
       // The default `./coverage` is shared, so two concurrent `vitest run`
       // invocations destroy each other: one aborts with a removed-coverage-
       // directory error and the other enforces 100% against a partial
-      // profile with every test passing (issues #115/#121).
+      // profile with every test passing.
       reportsDirectory: join(tmpdir(), `flows-chain-coverage-${process.pid}`),
       include: ["src/**/*.ts"].map((pattern) => join(import.meta.dirname, pattern)),
       // Accurate, enforceable floors measured against the committed suite.
