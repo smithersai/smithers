@@ -45,7 +45,7 @@ export const smithersErrorDefinitions = {
     when:
       "An integration helper receives an argument it cannot use: a missing bot token, an approval option key containing a colon, callback data over Telegram's 64-byte limit, or a non-https Mini App URL.",
     details:
-      "`{ [field]: value }` on the signal-name failures, `{ maxLength }` on the chunk-size failure, `{ maxAgeSeconds }` or `{ nowMs }` on the init-data policy failures, otherwise none"
+      "`{ [field]: value }` on the signal-name failures, `{ maxLength }` on the chunk-size failure, `{ length }` on the malformed `publicKeyHex` failure, `{ maxAgeSeconds }` or `{ nowMs }` on the init-data policy failures, otherwise none"
   },
   INTEGRATION_ERROR: {
     when:

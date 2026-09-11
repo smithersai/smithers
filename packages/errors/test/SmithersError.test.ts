@@ -477,7 +477,7 @@ describe("error codes", () => {
   it("documents details carried by input and init-data failures", () => {
     expect(smithersErrorDefinitions.INVALID_INPUT.details)
       .toBe(
-        "`{ [field]: value }` on the signal-name failures, `{ maxLength }` on the chunk-size failure, `{ maxAgeSeconds }` or `{ nowMs }` on the init-data policy failures, otherwise none"
+        "`{ [field]: value }` on the signal-name failures, `{ maxLength }` on the chunk-size failure, `{ length }` on the malformed `publicKeyHex` failure, `{ maxAgeSeconds }` or `{ nowMs }` on the init-data policy failures, otherwise none"
       )
     expect(smithersErrorDefinitions.TELEGRAM_INIT_DATA_INVALID.details)
       .toBe("`{ authDate }` on the expiry failures, otherwise none")
