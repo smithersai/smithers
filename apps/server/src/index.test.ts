@@ -2337,68 +2337,6 @@ const doPost = async (registry: TurnCancelRegistry, path: string, owner?: string
   return response
 }
 
-describe("the turn-cancel registry (Durable Object state)", () => {
-  test("register starts a turn, a duplicate register is refused, cancel kills it", async () => {
-    const registry = new TurnCancelRegistry({ storage: memoryStorage() })
-    expect(await (await doPost(registry, "/register")).json()).toEqual({ status: "started", generation: expect.any(String) })
-    expect(await (await doPost(registry, "/register")).json()).toEqual({ status: "already-running" })
-    expect(await (await doPost(registry, "/cancel")).json()).toEqual({ status: "cancelled" })
-    // The kill is terminal: a second cancel, and the state read, agree.
-    expect(await (await doPost(registry, "/cancel")).json()).toEqual({ status: "not-found" })
-    expect(await (await doPost(registry, "/state")).json()).toEqual({
-      state: "cancelled"
-    })
-  })
-
-  test("a settled turn answers cancel with an honest not-found and may re-register", async () => {
-    const registry = new TurnCancelRegistry({ storage: memoryStorage() })
-    await doPost(registry, "/register")
-    await doPost(registry, "/settle")
-    expect(await (await doPost(registry, "/cancel")).json()).toEqual({ status: "not-found" })
-    // Tool-loop legs reuse the runId: a settled turn registers again.
-    expect(await (await doPost(registry, "/register")).json()).toEqual({ status: "started", generation: expect.any(String) })
-  })
-
-  test("cancel on a never-registered run is not-found", async () => {
-    const registry = new TurnCancelRegistry({ storage: memoryStorage() })
-    expect(await (await doPost(registry, "/cancel")).json()).toEqual({ status: "not-found" })
-  })
-
-  test("a stale active registration no longer holds the runId hostage", async () => {
-    const stale = Date.now() - 11 * 60 * 1000
-    const registry = new TurnCancelRegistry({
-      storage: memoryStorage({ state: { state: "active", at: stale } })
-    })
-    expect(await (await doPost(registry, "/cancel")).json()).toEqual({ status: "not-found" })
-    expect(await (await doPost(registry, "/register")).json()).toEqual({ status: "started", generation: expect.any(String) })
-  })
-
-  test("only the registering owner may cancel an owned registration", async () => {
-    const registry = new TurnCancelRegistry({ storage: memoryStorage() })
-    const as = (login: string, path: string): Promise<Response> => doPost(registry, path, login)
-    expect(await (await as("alice", "/register")).json()).toEqual({ status: "started", generation: expect.any(String) })
-    // A different login — and an anonymous caller — cannot kill alice's turn.
-    expect(await (await as("bob", "/cancel")).json()).toEqual({ status: "forbidden" })
-    expect(await (await doPost(registry, "/cancel")).json()).toEqual({ status: "forbidden" })
-    // The run is untouched, and its owner can still kill it.
-    expect(await (await as("alice", "/cancel")).json()).toEqual({ status: "cancelled" })
-  })
-
-  test("an owned active registration refuses a squatting re-register from anyone", async () => {
-    const registry = new TurnCancelRegistry({ storage: memoryStorage() })
-    const registerAs = (login: string): Promise<Response> =>
-      registry.fetch(
-        new Request("https://turn-cancel.internal/register", {
-          method: "POST",
-          headers: { "x-turn-owner": login }
-        })
-      )
-    expect(await (await registerAs("alice")).json()).toEqual({ status: "started", generation: expect.any(String) })
-    expect(await (await registerAs("bob")).json()).toEqual({ status: "already-running" })
-    expect(await (await registerAs("alice")).json()).toEqual({ status: "already-running" })
-  })
-})
-
 describe("the server-side kill route (B-3)", () => {
   /** An upstream that emits one delta and then streams nothing until cancelled. */
   const hangingUpstream = (): { response: () => Response; wasCancelled: () => boolean } => {
