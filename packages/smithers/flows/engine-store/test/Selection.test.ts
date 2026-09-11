@@ -821,7 +821,11 @@ describe("Selection scope matching", () => {
       ["src/**", ["src/a.ts", "src/nested/b.ts", "beside/a.ts", "x/src/a.ts"], ["src/a.ts", "src/nested/b.ts"]],
       ["src/*.ts", ["src/a.ts", "src/nested/b.ts", "src/a.tsx"], ["src/a.ts"]],
       ["src/?.ts", ["src/a.ts", "src/ab.ts", "src//.ts"], ["src/a.ts"]],
-      ["src/a[1]+(x).ts", ["src/a[1]+(x).ts", "src/a1x.ts"], ["src/a[1]+(x).ts"]]
+      ["src/a[1]+(x).ts", ["src/a[1]+(x).ts", "src/a1x.ts"], ["src/a[1]+(x).ts"]],
+      ["src/**/b.ts", ["src/x/b.ts", "src/x/y/b.ts", "src/b.ts", "src/x/b.tsx"], ["src/x/b.ts", "src/x/y/b.ts"]],
+      ["**.md", ["a.md", "docs/x/a.md", "a.mdx"], ["a.md", "docs/x/a.md"]],
+      ["src/***.ts", ["src/a.ts", "src/a/b.ts", "x/src/a.ts"], ["src/a.ts", "src/a/b.ts"]],
+      ["src/*/*", ["src/a/b", "src/a", "src/a/b/c", "src//b"], ["src/a/b", "src//b"]]
     ] as const
   ) {
     it(`preserves glob and literal semantics for ${scope}`, () => {
@@ -885,4 +889,23 @@ describe("Selection scope matching", () => {
       }
     })
   }
+
+  it("matches a many-wildcard scope in linear time, even one stored before the cap", () => {
+    const scope = "**a".repeat(12) + "**b"
+    const path = "a".repeat(40)
+    const snapshot = beliefs(edge({ scope }))
+    const started = performance.now()
+    expect(Selection.risk({ beliefs: snapshot, changed: [path] }).reasons).toEqual([])
+    expect(Selection.proposeReadSet({ beliefs: snapshot, flow: "lint-docs", paths: [path] })).toEqual([])
+    expect(Selection.risk({ beliefs: snapshot, changed: [`${path}b`] }).reasons).toHaveLength(1)
+    // The backtracking RegExp took minutes here; the linear matcher takes microseconds.
+    expect(performance.now() - started).toBeLessThan(250)
+  })
+
+  it(`refuses a scope with more than ${Selection.maxScopeWildcards} * or ** wildcards at the schema`, () => {
+    const decode = Schema.decodeUnknownExit(Selection.SuspectedEdge)
+    expect(decode(edge({ scope: "**a".repeat(7) + "*" }))._tag).toBe("Success")
+    expect(decode(edge({ scope: "**a".repeat(8) + "*" }))._tag).toBe("Failure")
+    expect(decode(edge({ scope: "src/?/?/?/?/?/?/?/?/?.ts" }))._tag).toBe("Success")
+  })
 })

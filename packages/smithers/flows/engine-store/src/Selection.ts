@@ -79,6 +79,18 @@ export const NonNegativeSafeInt = Schema.Int.check(
 )
 
 /**
+ * The most `*` or `**` tokens a `SuspectedEdge.scope` may carry. Matching is
+ * linear in the path either way; the bound keeps each match cheap and refuses
+ * degenerate scopes at the write.
+ *
+ * @since 1.0.0
+ * @category constants
+ */
+export const maxScopeWildcards = 8
+
+const scopeWildcards = (scope: string): number => scope.match(/\*\*|\*/g)?.length ?? 0
+
+/**
  * A recorded guess with a fixed shape: "changes matching this path pattern
  * tend to affect this flow". It is a belief, not a dependency — it carries
  * confidence and evidence, and training moves the confidence; nothing here
@@ -88,8 +100,14 @@ export const NonNegativeSafeInt = Schema.Int.check(
  * @category schemas
  */
 export const SuspectedEdge = Schema.Struct({
-  /** The path glob changed files are matched against. */
-  scope: Schema.NonEmptyString,
+  /** The path glob changed files are matched against, with at most `maxScopeWildcards` `*` or `**` tokens. */
+  scope: Schema.NonEmptyString.check(
+    Schema.makeFilter((scope) =>
+      scopeWildcards(scope) <= maxScopeWildcards
+        ? undefined
+        : `scope carries more than ${maxScopeWildcards} * or ** wildcards`
+    )
+  ),
   /** The flow or step name the guess says the change affects. */
   affects: Schema.NonEmptyString,
   /** In `[0, 1]`; moved by outcomes, never by hand. */
@@ -292,29 +310,56 @@ export const layerNoop: Layer.Layer<Selection> = Layer.sync(Selection, makeNoop)
  * separators, `*` and `?` stay within a segment, everything else is literal.
  * The whole path must match, so `packages/smithers/flows/engine/src/**` selects everything
  * under that directory and nothing beside it.
+ *
+ * The result runs the glob as a set of token positions advanced one path
+ * character at a time, so a match costs at most path length times token
+ * count and never backtracks, even for a scope stored before the wildcard cap.
  */
-const compileScope = (scope: string): RegExp => {
-  const expression = scope
-    .split("**")
-    .map((segment) =>
-      segment
-        .split("*")
-        .map((part) => part.split("?").map((piece) => piece.replace(/[.+^${}()|[\]\\]/g, "\\$&")).join("[^/]"))
-        .join("[^/]*")
-    )
-    .join(".*")
-  return new RegExp(`^${expression}$`)
+const compileScope = (scope: string): (path: string) => boolean => {
+  const tokens = scope.split("**").flatMap((segment, index) => [
+    ...(index === 0 ? [] : ["**"]),
+    ...segment
+  ])
+  const close = (states: Uint8Array): Uint8Array => {
+    for (let index = 0; index < tokens.length; index++) {
+      if (states[index] === 1 && (tokens[index] === "*" || tokens[index] === "**")) states[index + 1] = 1
+    }
+    return states
+  }
+  return (path) => {
+    let states = close(new Uint8Array(tokens.length + 1).fill(1, 0, 1))
+    for (const char of path) {
+      const next = new Uint8Array(tokens.length + 1)
+      let live = false
+      for (let index = 0; index < tokens.length; index++) {
+        if (states[index] !== 1) continue
+        const token = tokens[index]
+        const target = token === "**" || (token === "*" && char !== "/")
+          ? index
+          : (token === "?" && char !== "/") || token === char
+          ? index + 1
+          : -1
+        if (target >= 0) {
+          next[target] = 1
+          live = true
+        }
+      }
+      if (!live) return false
+      states = close(next)
+    }
+    return states[tokens.length] === 1
+  }
 }
 
 const makeScopeMatcher = () => {
-  const matchers = new Map<string, RegExp>()
+  const matchers = new Map<string, (path: string) => boolean>()
   return (scope: string, path: string): boolean => {
     let matcher = matchers.get(scope)
     if (matcher === undefined) {
       matcher = compileScope(scope)
       matchers.set(scope, matcher)
     }
-    return matcher.test(path)
+    return matcher(path)
   }
 }
 

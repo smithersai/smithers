@@ -193,6 +193,28 @@ describe("SelectionStore", () => {
       expect(errorOf(exit)).toMatchObject({ code: "invalid_input" })
     }))
 
+  it.effect("refuses a scope over the wildcard cap before writing", () =>
+    Effect.gen(function*() {
+      const exit = yield* withStore((store) => store.upsert([edge({ scope: "**a".repeat(12) + "**b" })]).pipe(Effect.exit))
+      expect(errorOf(exit)).toMatchObject({ code: "invalid_input" })
+      expect(yield* withStore((store) => store.list())).toEqual([])
+    }))
+
+  it.effect("refuses to list a scope stored before the wildcard cap", () =>
+    Effect.gen(function*() {
+      const scope = "**a".repeat(12) + "**b"
+      const exit = yield* withCrypto(
+        Effect.gen(function*() {
+          const store = yield* SelectionStore.SelectionStore
+          const sql = yield* SqlClient.SqlClient
+          yield* store.upsert([edge()])
+          yield* sql`UPDATE flows_selection_suspected_edges SET scope = ${scope}`
+          return yield* store.list().pipe(Effect.exit)
+        }).pipe(Effect.provide(storeLayer))
+      )
+      expect(errorOf(exit)).toMatchObject({ code: "decode_failed", scope })
+    }))
+
   it.effect("reports corrupt persisted evidence with its natural key", () =>
     Effect.gen(function*() {
       const exit = yield* withCrypto(

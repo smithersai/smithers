@@ -53,8 +53,10 @@ const train = Effect.gen(function*() {
 `SelectionStore.layer` persists through this package's own migration set and
 needs `DurableWriter` and `SqlClient`.
 
-- `upsert(edges)` inserts or replaces by `(scope, affects)`.
-- `list()` returns every stored edge.
+- `upsert(edges)` inserts or replaces by `(scope, affects)`. It refuses an
+  edge whose scope breaks the scope grammar with `invalid_input`.
+- `list()` returns every stored edge, and fails with `decode_failed` on a row
+  that no longer decodes, including a scope stored before the wildcard cap.
 - `snapshot()` returns a `BeliefSnapshot` pinned at the injected clock's current
   time, never `Date.now()`.
 - `train(observations)` applies the asymmetric rule in one transaction: a hit
@@ -97,7 +99,11 @@ ignores the cache.
 under it is byte-identical to a run before the seam existed.
 
 `Selection.layerHeuristic` is pure glob matching over live edges, where live
-means `validFromMs <= pinnedAtMs`. A matching edge supplies the likelihood, a
+means `validFromMs <= pinnedAtMs`. A scope glob must match the whole path:
+`**` matches any run of characters including `/`, `*` matches a run within one
+segment, `?` matches one non-`/` character, and every other character is
+literal. A scope carries at most `Selection.maxScopeWildcards` (8) `*` or `**`
+tokens. Matching runs in time linear in the path and never backtracks. A matching edge supplies the likelihood, a
 sink can defer only when a live edge names it, and a `Candidate.stats` failure
 ratio raises the likelihood so flaky sinks stay inline. Stats alone never defer.
 
