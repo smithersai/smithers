@@ -6,7 +6,6 @@
 import type { Jj } from "@smthrs/jj"
 import * as Journal from "@smthrs/journal/Journal"
 import type * as JournalEvent from "@smthrs/journal/JournalEvent"
-import * as Ownership from "@smthrs/run-store/Ownership"
 import type { LivenessEvidence, OwnerId } from "@smthrs/run-store/Ownership"
 import * as RunStore from "@smthrs/run-store/RunStore"
 import type * as CacheStore from "@smthrs/step-cache/CacheStore"
@@ -15,7 +14,6 @@ import * as Clock from "effect/Clock"
 import type * as Duration from "effect/Duration"
 import * as Effect from "effect/Effect"
 import * as Exit from "effect/Exit"
-import * as Fiber from "effect/Fiber"
 import * as Option from "effect/Option"
 import * as Schema from "effect/Schema"
 import * as EffectBoundary from "../EffectBoundary.ts"
@@ -26,6 +24,7 @@ import * as Compensation from "./Compensation.ts"
 import type { EffectHandlerRegistry } from "./EffectHandlerRegistry.ts"
 import * as HistoryLimit from "./HistoryLimit.ts"
 import * as JournalPages from "./JournalPages.ts"
+import * as Lease from "./Lease.ts"
 import { LineageMetadata } from "./LineageMetadata.ts"
 import * as RunRow from "./RunRow.ts"
 import * as StepHook from "./StepHook.ts"
@@ -495,29 +494,19 @@ const claimRun = (
     if (row.owner !== null || row.claim !== null) {
       return yield* Effect.fail(error("busy", `run ${options.runId} is not available for rewind`))
     }
-    const expected = RunRow.snapshotOf(row)
-    const outcome = yield* runs.claim(options.runId, expected, options.owner, nowMs).pipe(
-      Effect.mapError((cause) => RunRow.failure("claim run", cause))
-    )
-    if (outcome._tag === "NotFound") {
-      return yield* Effect.fail(error("not_found", `run ${options.runId} was not found`))
-    }
-    if (outcome._tag !== "Claimed") {
-      return yield* Effect.fail(error("busy", `run ${options.runId} lost the rewind claim`))
-    }
-    const activated = yield* runs.activate(
-      options.runId,
-      options.owner,
-      outcome.claimedAtMs,
-      expected
-    ).pipe(
-      Effect.mapError((cause) => RunRow.failure("activate rewind claim", cause))
-    )
-    if (activated._tag !== "Activated") {
-      yield* Effect.ignore(runs.abandonClaim(options.runId, options.owner, outcome.claimedAtMs))
-      return yield* Effect.fail(error("busy", `run ${options.runId} lost the rewind activation`))
-    }
-    return { row: rewindableRow, claimedAtMs: outcome.claimedAtMs }
+    const claimedAtMs = yield* Lease.claimAndActivate(runs, {
+      runId: options.runId,
+      expected: RunRow.snapshotOf(row),
+      claimant: options.owner,
+      nowMs,
+      operations: { claim: "claim run", activate: "activate rewind claim" },
+      refused: (outcome) =>
+        outcome._tag === "NotFound"
+          ? error("not_found", `run ${options.runId} was not found`)
+          : error("busy", `run ${options.runId} lost the rewind claim`),
+      lost: error("busy", `run ${options.runId} lost the rewind activation`)
+    })
+    return { row: rewindableRow, claimedAtMs }
   })
 
 /**
@@ -610,8 +599,8 @@ const claimChild = (
       ...options.owner,
       nonce: `${options.owner.nonce}:rewind-child:${plan.edge.childRunId}`
     }
-    const expected = RunRow.snapshotOf(plan.row)
-    const claim = plan.row.status === "running"
+    const childRunId = plan.edge.childRunId
+    const evidence = plan.row.status === "running"
       ? yield* Effect.gen(function*() {
         if (options.childLivenessEvidence === undefined) {
           return yield* Effect.fail(
@@ -629,34 +618,20 @@ const claimChild = (
             error("live_child", `child ${plan.edge.childRunId} is still live`)
           )
         }
-        return yield* runs.steal(plan.edge.childRunId, expected, childOwner, nowMs, evidence).pipe(
-          Effect.mapError((cause) => RunRow.failure(`claim child ${plan.edge.childRunId}`, cause))
-        )
+        return evidence
       })
-      : yield* runs.claim(plan.edge.childRunId, expected, childOwner, nowMs).pipe(
-        Effect.mapError((cause) => RunRow.failure(`claim child ${plan.edge.childRunId}`, cause))
-      )
-
-    if (claim._tag !== "Claimed") {
-      return yield* Effect.fail(
-        error("live_child", `could not claim child ${plan.edge.childRunId} for cancellation`)
-      )
-    }
-    const activated = yield* runs.activate(
-      plan.edge.childRunId,
-      childOwner,
-      claim.claimedAtMs,
-      expected
-    ).pipe(
-      Effect.mapError((cause) => RunRow.failure(`activate child ${plan.edge.childRunId}`, cause))
-    )
-    if (activated._tag !== "Activated") {
-      yield* Effect.ignore(runs.abandonClaim(plan.edge.childRunId, childOwner, claim.claimedAtMs))
-      return yield* Effect.fail(
-        error("live_child", `child ${plan.edge.childRunId} lost its cancellation claim`)
-      )
-    }
-    return { plan, owner: childOwner, claimedAtMs: claim.claimedAtMs }
+      : undefined
+    const claimedAtMs = yield* Lease.claimAndActivate(runs, {
+      runId: childRunId,
+      expected: RunRow.snapshotOf(plan.row),
+      claimant: childOwner,
+      nowMs,
+      evidence,
+      operations: { claim: `claim child ${childRunId}`, activate: `activate child ${childRunId}` },
+      refused: () => error("live_child", `could not claim child ${childRunId} for cancellation`),
+      lost: error("live_child", `child ${childRunId} lost its cancellation claim`)
+    })
+    return { plan, owner: childOwner, claimedAtMs }
   })
 
 const cancelClaimedChild = (
@@ -691,12 +666,519 @@ const initialDetail = (
 })
 
 /**
+ * The services and identity every rewind phase shares.
+ */
+interface Context {
+  readonly options: Options
+  readonly runs: RunStore.Service
+  readonly journal: Journal.Service
+  readonly store: TimeTravelStore["Service"]
+  readonly nowMs: number
+  readonly auditId: string
+  readonly claimed: ClaimedRun
+}
+
+/**
+ * What the rewind has done so far.
+ *
+ * `detail` is the audit detail as last written, `undefined` until the audit
+ * row exists, and its `phase` is what a crash leaves for `Recovery`. The phase
+ * cannot answer every question the failure handler asks, so the facts it does
+ * not carry stay explicit:
+ *
+ * - `compensation` is what this rewind still has to roll back. A workspace step
+ *   that fails runs its own cleanup, so it is emptied there while the detail
+ *   keeps the receipts it last persisted. Rolling them back again would repeat
+ *   non-idempotent handler side effects.
+ * - `claimedChildren` are the live child ownerships to give back or cancel.
+ * - `archiveAttempted` and `archiveCommitted` describe the one commit point.
+ *   The COMMIT can land before the `archive_committed` write does, so the
+ *   persisted phase alone would send a committed rewind through rollback.
+ */
+interface Progress {
+  detail: AuditDetail | undefined
+  compensation: Compensation.Result
+  archiveAttempted: boolean
+  archiveCommitted: boolean
+  readonly claimedChildren: Array<ClaimedChild>
+  readonly cancelledChildren: Array<string>
+}
+
+/**
+ * What the preflight phase established before the first irreversible step.
+ */
+interface Preflight {
+  readonly plan: Compensation.Plan
+  readonly warnings: ReadonlyArray<DetachedChildWarning>
+  readonly plannedChildren: ReadonlyArray<ChildPlan>
+  readonly pendingChildren: ReadonlyArray<string>
+}
+
+const persist = (context: Context, progress: Progress, patch: Partial<AuditDetail>) =>
+  Effect.suspend(() => {
+    const detail: AuditDetail = { ...progress.detail!, ...patch }
+    progress.detail = detail
+    return context.store.updateAudit(context.auditId, { detail })
+  })
+
+/**
+ * Re-checks the tail, applies the rate limit, opens the audit, reads the
+ * suffix, and refuses a blocked boundary or a live child. Nothing outside the
+ * audit row has changed when this phase fails.
+ */
+const preflight = (context: Context, progress: Progress) =>
+  Effect.gen(function*() {
+    const { auditId, journal, nowMs, options, runs, store } = context
+    // The frame was validated before the claim, so another executor could
+    // have claimed the idle row, appended records, and released it in that
+    // window. Re-reading the tail under the claim is what binds the two
+    // together; a moved tail is `busy`, not a silent truncation of records
+    // validation would have refused.
+    if (options.expectedTail !== undefined) {
+      const unmoved = yield* tailUnmoved(journal, options.runId, options.expectedTail.tail)
+      if (!unmoved) {
+        return yield* Effect.fail(error("busy", `journal tail moved for ${options.runId}`))
+      }
+    }
+
+    const rateLimit = options.rateLimit?.({
+      runId: options.runId,
+      frame: options.frame,
+      nowMs
+    }) ?? Effect.succeed({ allowed: true } as const)
+    const decision = yield* rateLimit
+    const auditDetail = initialDetail(context.claimed.row.status)
+    const audit: Audit = {
+      id: auditId,
+      runId: options.runId,
+      frame: options.frame,
+      status: "in_progress",
+      rateLimit: "detail" in decision && decision.detail !== undefined
+        ? decision.detail
+        : { allowed: decision.allowed, checkedAtMs: nowMs },
+      detail: auditDetail
+    }
+    yield* store.writeAudit(audit)
+    progress.detail = auditDetail
+
+    yield* StepHook.run("rewind", options.hooks?.beforeStep, "claim-run")
+    yield* StepHook.run("rewind", options.hooks?.beforeStep, "rate-limit")
+    if (!decision.allowed) {
+      return yield* Effect.fail(error("rate_limited", `rewind rate limit exceeded for ${options.runId}`))
+    }
+    yield* StepHook.run("rewind", options.hooks?.beforeStep, "write-audit")
+
+    const snapshot = yield* store.snapshotAt(options.runId, options.frame)
+    const descendants = yield* store.descendants(options.runId, options.frame)
+    const suffix = yield* readSuffix(
+      journal,
+      options.runId,
+      options.frame,
+      options.pageSize ?? 100,
+      options.maxEntries ?? HistoryLimit.defaultMaxHistoryEntries
+    )
+    const effects = yield* EffectBoundary.fromEntries(suffix.boundary)
+    yield* StepHook.run("rewind", options.hooks?.beforeStep, "load-suffix")
+
+    const childAssessment = yield* assessChildren(
+      runs,
+      descendants.attached,
+      descendants.detached,
+      options.detachedChildPolicy ?? "block"
+    )
+    const plannedChildren = [...childAssessment.cancellable].sort(
+      (left, right) => right.edge.parentSeq - left.edge.parentSeq
+    )
+    const plan = yield* Compensation.assess(effects, snapshot?.changeId)
+    const blocking = plan.assessments.filter(
+      (assessment) => assessment.classification === "blocking"
+    )
+    if (blocking.length > 0) {
+      // The cause carries identity and verdict, never the effect's `input` or
+      // `output`. `TimeTravelError` is a `Schema.TaggedError` that ENCODES its
+      // cause, so a raw record put whatever the adapter was called with -
+      // credentials, oversized blobs - on the wire and in the logs. The full
+      // records stay on the audit detail, which is privileged storage.
+      return yield* Effect.fail(
+        error(
+          "irreversible",
+          `rewind is blocked by ${blocking.length} effect(s)`,
+          blocking.map(Compensation.blockingSummary)
+        )
+      )
+    }
+    yield* persist(context, progress, {
+      phase: "preflight_complete",
+      suffixCount: suffix.count,
+      ...(suffix.tailSeq === undefined ? {} : { suffixTailSeq: suffix.tailSeq }),
+      ...(snapshot === undefined ? {} : { targetChangeId: snapshot.changeId }),
+      warnings: childAssessment.warnings
+    })
+    yield* StepHook.run("rewind", options.hooks?.beforeStep, "assess-boundary")
+    const preflighted: Preflight = {
+      plan,
+      warnings: childAssessment.warnings,
+      plannedChildren,
+      pendingChildren: plannedChildren.map((child) => child.edge.childRunId)
+    }
+    return preflighted
+  })
+
+/**
+ * Runs the compensation handlers and restores the workspace, persisting every
+ * receipt before the next irreversible step. Ends at `compensated`.
+ */
+const compensate = (context: Context, progress: Progress, preflighted: Preflight) =>
+  Effect.gen(function*() {
+    const { auditId, options, store } = context
+    const handlerReceipts = yield* Compensation.compensate(preflighted.plan, (receipts) => {
+      const nextDetail: AuditDetail = {
+        ...progress.detail!,
+        compensation: { handlerReceipts: receipts }
+      }
+      return store.updateAudit(auditId, { detail: nextDetail }).pipe(
+        Effect.tap(() => Effect.sync(() => (progress.detail = nextDetail)))
+      )
+    }, options.compensationTimeout)
+    progress.compensation = { handlerReceipts }
+    // The receipts reach durable storage BEFORE the next irreversible step.
+    // They used to land only after `restoreWorkspace`, so a process death
+    // between a handler succeeding and that write left the audit at
+    // `preflight_complete` with no compensation on it: recovery then skipped
+    // the rollback, restored the run, and the run later resumed against
+    // external state the handlers had already reversed.
+    yield* persist(context, progress, { compensation: progress.compensation })
+    yield* StepHook.run("rewind", options.hooks?.beforeStep, "compensate-effects")
+
+    // Preparation owns handler cleanup on failure. Once prepared, persist BOTH
+    // pointers before jj can change the workspace.
+    const prepared = yield* Effect.exit(
+      Compensation.prepareWorkspace(preflighted.plan, handlerReceipts, options.compensationTimeout)
+    )
+    if (Exit.isFailure(prepared)) {
+      progress.compensation = { handlerReceipts: [] }
+      return yield* Effect.failCause(prepared.cause)
+    }
+    progress.compensation = prepared.value
+    yield* persist(context, progress, { compensation: progress.compensation })
+    const restored = yield* Effect.exit(
+      Compensation.restorePreparedWorkspace(progress.compensation, options.compensationTimeout)
+    )
+    if (Exit.isFailure(restored)) {
+      progress.compensation = { handlerReceipts: [] }
+      return yield* Effect.failCause(restored.cause)
+    }
+    yield* StepHook.run("rewind", options.hooks?.beforeStep, "restore-workspace")
+    yield* persist(context, progress, {
+      phase: "compensated",
+      compensation: progress.compensation,
+      cancelledChildren: [...progress.cancelledChildren],
+      pendingChildren: preflighted.pendingChildren
+    })
+  })
+
+/**
+ * Claims every child the rewind cancels, then commits the archive and
+ * truncation. Ends at `archive_committed`, the recovery commit point.
+ */
+const commit = (context: Context, progress: Progress, preflighted: Preflight) =>
+  Effect.gen(function*() {
+    const { auditId, options, runs, store } = context
+    // Claims are reversible, unlike cancellation, so every child is owned
+    // before the commit and only transitioned terminal after it. The exact
+    // owners are also the archive transaction's child fences; any newly live
+    // or re-owned attached child refuses the whole mutation.
+    for (const child of preflighted.plannedChildren) {
+      progress.claimedChildren.push(yield* claimChild(runs, options, child))
+    }
+
+    yield* StepHook.run("rewind", options.hooks?.beforeStep, "archive-and-truncate")
+    progress.archiveAttempted = true
+    // COMMIT can finish in an uninterruptible SQL finalizer. Keep its result
+    // and this flag in the same mask so cancellation cannot send a durably
+    // committed rewind through rollback.
+    const archive = yield* Effect.uninterruptible(
+      store.archiveAndTruncate(
+        options.runId,
+        options.frame,
+        Compensation.toStoreReceipts(auditId, progress.compensation),
+        // The rewind claimed and activated the run with this owner; the store
+        // re-checks it at commit, so a superseded rewind never truncates
+        // behind the live owner.
+        options.owner,
+        new Map(progress.claimedChildren.map((child) => [child.plan.edge.childRunId, child.owner]))
+      ).pipe(Effect.tap(() =>
+        Effect.sync(() => {
+          progress.archiveCommitted = true
+        })
+      ))
+    )
+    // The cancellation plan was written with `compensated`, before the
+    // commit. This update records only that the archive landed.
+    yield* persist(context, progress, {
+      phase: "archive_committed",
+      pendingChildren: preflighted.pendingChildren
+    })
+    return archive
+  })
+
+/**
+ * Cancels the claimed children, suspends the run at the frame's state, and
+ * closes the audit `completed`.
+ */
+const finish = (
+  context: Context,
+  progress: Progress,
+  preflighted: Preflight,
+  lease: Lease.HeldLease
+) =>
+  Effect.gen(function*() {
+    const { auditId, claimed, options, runs, store } = context
+    for (const child of progress.claimedChildren) {
+      yield* cancelClaimedChild(runs, child)
+      progress.cancelledChildren.push(child.plan.edge.childRunId)
+      yield* persist(context, progress, {
+        cancelledChildren: [...progress.cancelledChildren],
+        pendingChildren: preflighted.pendingChildren.filter((runId) => !progress.cancelledChildren.includes(runId))
+      })
+    }
+
+    // The run suspends with the state AT the frame, not the state the
+    // truncated future left on the row. `createFork` already derives it this
+    // way for a child; a rewound parent that kept the later payload resumed
+    // from a future its journal no longer records.
+    const frameState = yield* store.stateAt(options.runId, options.frame)
+    // From here, losing the heartbeat is expected: this transition
+    // intentionally releases the ownership the supervisor watches.
+    yield* lease.releasing
+    const suspended = yield* runs.transitionOwned(
+      options.runId,
+      options.owner,
+      "suspended",
+      frameState ?? claimed.row.stateJson
+    ).pipe(
+      Effect.mapError((cause) => RunRow.failure("suspend rewound run", cause))
+    )
+    if (suspended._tag !== "Transitioned") {
+      return yield* Effect.fail(
+        error("busy", `run ${options.runId} lost ownership before suspension`)
+      )
+    }
+
+    const detail: AuditDetail = { ...progress.detail!, phase: "completed" }
+    progress.detail = detail
+    yield* store.updateAudit(auditId, { status: "completed", detail })
+  })
+
+const protocol = (context: Context, progress: Progress, lease: Lease.HeldLease) =>
+  Effect.gen(function*() {
+    const preflighted = yield* preflight(context, progress)
+    yield* compensate(context, progress, preflighted)
+    const archive = yield* commit(context, progress, preflighted)
+    yield* finish(context, progress, preflighted, lease)
+    const result: Result = {
+      auditId: context.auditId,
+      frame: context.options.frame,
+      archive,
+      assessments: preflighted.plan.assessments,
+      warnings: preflighted.warnings,
+      cancelledChildren: [...progress.cancelledChildren]
+    }
+    return result
+  })
+
+/**
+ * Re-raises a rewind failure with interruption preserved.
+ *
+ * The protocol runs under `restore(...)` inside an uninterruptible mask, so an
+ * interrupt lands as an interrupt-only cause and the failure handler still
+ * runs to completion. Squashing that cause through `fromCause` produced
+ * `TimeTravelError{code:"unknown"}`, so a cancelled rewind reported as a
+ * *failed* rewind: a caller racing `rewind` against a supervisor observed a
+ * failure and kept running on the fiber it believed it had cancelled.
+ * Cancellation is fiber interruption (`CLAUDE.md`), so the cause is re-raised
+ * verbatim and an interrupt stays an interrupt. A cause carrying any `Fail` or
+ * `Die` reason still reports as the typed failure the callers match on.
+ */
+const reraise = (cause: Cause.Cause<TimeTravelFailure>): Effect.Effect<never, TimeTravelFailure> =>
+  Cause.hasInterruptsOnly(cause) ? Effect.failCause(cause) : Effect.fail(fromCause(cause))
+
+/**
+ * The one failure handler, run under the held lease once the protocol fails.
+ *
+ * It first settles whether the archive committed, from `archiveCommitted` or,
+ * when the commit may have landed unobserved, from the journal and archive. A
+ * committed rewind stays `archive_committed` for `Recovery` to finish. An
+ * uncommitted one rolls back `progress.compensation`, gives back every claimed
+ * child and the run, and closes the audit `rolled_back` or `terminal_failure`.
+ */
+const settleFailure = (
+  context: Context,
+  progress: Progress,
+  cause: Cause.Cause<TimeTravelFailure>
+) =>
+  Effect.gen(function*() {
+    const { auditId, claimed, journal, options, runs, store } = context
+    const failure = fromCause(cause)
+
+    if (
+      !progress.archiveCommitted &&
+      (progress.archiveAttempted || Cause.hasInterruptsOnly(cause)) &&
+      progress.detail?.suffixTailSeq !== undefined
+    ) {
+      // Publication after COMMIT can fail before the call returns. As in
+      // Recovery, require both an empty live suffix and its archived tail.
+      // An unreadable store leaves the audit open without risking rollback.
+      const tailSeq = progress.detail.suffixTailSeq
+      const commitExit = yield* journal.entries({
+        runId: options.runId as JournalEvent.RunId,
+        after: options.frame.seq as JournalEvent.Seq,
+        limit: 1
+      }).pipe(
+        Effect.flatMap((page) =>
+          page.entries.length > 0
+            ? Effect.succeed(false)
+            : store.archivedAt(options.runId, tailSeq)
+        ),
+        Effect.exit
+      )
+      if (Exit.isFailure(commitExit)) {
+        return yield* Effect.failCause(cause)
+      }
+      progress.archiveCommitted = commitExit.value
+    }
+    if (progress.archiveCommitted && progress.detail !== undefined) {
+      // An interrupt can precede the protocol's audit update even when the
+      // local flag is set. Keep this audit recoverable after commit.
+      progress.detail = { ...progress.detail, phase: "archive_committed", failure: failure.message }
+      yield* Effect.ignore(store.updateAudit(auditId, { detail: progress.detail }))
+    }
+
+    if (!progress.archiveCommitted) {
+      const rollbackExit = yield* Effect.exit(Compensation.rollback(progress.compensation, options.compensationTimeout))
+      if (Exit.isSuccess(rollbackExit) && progress.detail?.compensation !== undefined) {
+        const { compensation: _, ...stripped } = progress.detail
+        progress.detail = stripped
+        // Handler rollback is not required to be idempotent. Record its
+        // success before run-state restoration can fail, otherwise a later
+        // recovery pass repeats the same external side effects.
+        yield* store.updateAudit(auditId, { detail: progress.detail })
+      }
+      /**
+       * THE RESTORATION HAS TO SUCCEED BEFORE THE AUDIT IS CLOSED.
+       *
+       * The exit used to be consulted only when there was no audit row, so a
+       * failed restoration still stamped `rolled_back` and left the run
+       * `running` under a dead rewind identity. Recovery only drains
+       * `in_progress` audits, so that run was stranded with no record any pass
+       * would revisit. A restoration that did not return `Transitioned` keeps
+       * the audit open instead, and says so.
+       */
+      const restorationProblems: Array<string> = []
+      for (const child of progress.claimedChildren) {
+        const childRunId = child.plan.edge.childRunId
+        const restoredChild = yield* runs.transitionOwned(
+          childRunId,
+          child.owner,
+          // `transitionOwned` cannot target `pending`, while targeting
+          // `running` deliberately retains the current owner. Suspended is
+          // therefore the only reversible status that clears the dead rewind
+          // identity: it exactly restores suspended children and safely parks
+          // children claimed from pending or running.
+          "suspended",
+          child.plan.row.stateJson
+        ).pipe(
+          Effect.mapError((cause) => RunRow.failure(`restore child ${childRunId}`, cause)),
+          Effect.exit
+        )
+        if (Exit.isFailure(restoredChild)) {
+          restorationProblems.push(fromCause(restoredChild.cause).message)
+        } else if (restoredChild.value._tag !== "Transitioned") {
+          restorationProblems.push(`restore child ${childRunId} returned ${restoredChild.value._tag}`)
+        }
+      }
+      const restored = yield* runs.transitionOwned(
+        options.runId,
+        options.owner,
+        // Pending is not a transition target; suspended clears the rewind
+        // owner while preserving the run's resumable state.
+        claimed.row.status === "pending" ? "suspended" : claimed.row.status,
+        claimed.row.stateJson
+      ).pipe(
+        Effect.mapError((cause) => RunRow.failure("restore run state", cause)),
+        Effect.exit
+      )
+      if (Exit.isFailure(restored)) {
+        restorationProblems.push(fromCause(restored.cause).message)
+        if (progress.detail === undefined) {
+          yield* Effect.ignore(runs.abandonClaim(options.runId, options.owner, claimed.claimedAtMs))
+        }
+      } else if (restored.value._tag !== "Transitioned") {
+        restorationProblems.push(`restore run state returned ${restored.value._tag}`)
+      }
+      const restorationProblem = restorationProblems.length === 0
+        ? undefined
+        : restorationProblems.join("; ")
+      if (progress.detail !== undefined && restorationProblem !== undefined) {
+        return yield* Effect.fail(
+          error(
+            failure.code,
+            `${failure.message}; ${restorationProblem}`,
+            { rewind: cause, restoration: restorationProblem }
+          )
+        )
+      }
+      if (progress.detail !== undefined) {
+        const rollbackFailure = Exit.isFailure(rollbackExit) ? Cause.squash(rollbackExit.cause) : undefined
+        const failureMessage = rollbackFailure === undefined
+          ? failure.message
+          : `${failure.message}; rollback failed: ${String(rollbackFailure)}`
+        // A rollback that SUCCEEDED already stripped `compensation` above,
+        // before the restoration that can fail. A rollback that FAILED leaves
+        // those receipts applied, so they stay on the detail. This audit closes
+        // terminal, recovery only drains `in_progress` rows, and the only
+        // writer of the receipt table, `archiveAndTruncate`, never ran on this
+        // path. Stripping them here deleted the sole durable record of which
+        // compensations still stand and which pre-rewind change id to restore,
+        // so a later rewind at the same frame compensated the same effect a
+        // second time.
+        progress.detail = {
+          ...progress.detail,
+          phase: rollbackFailure === undefined ? "rolled_back" : "terminal_failure",
+          cancelledChildren: [...progress.cancelledChildren],
+          failure: failureMessage,
+          ...(rollbackFailure === undefined ? {} : { rollbackFailure: String(rollbackFailure) })
+        }
+        yield* Effect.ignore(
+          store.updateAudit(auditId, {
+            status: "failed",
+            detail: progress.detail
+          })
+        )
+        if (Exit.isFailure(rollbackExit)) {
+          return yield* Effect.fail(
+            error("compensation_failed", failureMessage, {
+              rewind: cause,
+              rollback: rollbackExit.cause
+            })
+          )
+        }
+      }
+    }
+    return yield* reraise(cause)
+  })
+
+/**
  * Rewinds a run through the single public ownership CAS.
  *
  * Handler resolution, cache checks, and detached-child classification all
  * complete before compensation starts. The child-inclusive archive/truncate
  * is the final journal mutation and its commit becomes the recovery commit
  * point; a crash after that point is completed by `Recovery`.
+ *
+ * The phases run in order, `preflight`, `compensate`, `commit`, `finish`, each
+ * advancing the persisted {@link AuditDetail} phase, and any failure after the
+ * claim goes through the one failure handler.
  *
  * @since 0.1.0
  * @category constructors
@@ -727,452 +1209,39 @@ export const rewind = (
       const auditId = options.auditId ??
         `${options.runId}:rewind:${options.owner.nonce}:${nowMs}:${options.frame.seq}`
 
-      let claimed: ClaimedRun | undefined
-      let beat: Fiber.Fiber<never, never> | undefined
-      let leaseReleased = false
-      let archiveAttempted = false
-      let archiveCommitted = false
-      let compensation: Compensation.Result = { handlerReceipts: [] }
-      let detail: AuditDetail | undefined
-      const cancelledChildren: Array<string> = []
-      const claimedChildren: Array<ClaimedChild> = []
-
       return yield* Effect.uninterruptibleMask((restore) =>
         Effect.gen(function*() {
-          const protocol = restore(
+          const claimExit = yield* Effect.exit(restore(claimRun(runs, options, nowMs)))
+          if (Exit.isFailure(claimExit)) return yield* reraise(claimExit.cause)
+          const context: Context = { options, runs, journal, store, nowMs, auditId, claimed: claimExit.value }
+          const progress: Progress = {
+            detail: undefined,
+            compensation: { handlerReceipts: [] },
+            archiveAttempted: false,
+            archiveCommitted: false,
+            claimedChildren: [],
+            cancelledChildren: []
+          }
+          /**
+           * THE LEASE IS HELD FOR THE WHOLE PROTOCOL.
+           *
+           * `claimRun` activates the run and stamps one heartbeat, and nothing
+           * renewed it: a compensation handler, a jj restore, or a
+           * large-suffix archive slower than `heartbeatStaleAfter` left the row
+           * looking abandoned, and any engine sharing the database stole it
+           * with `lease-expired` evidence and resumed the run against a
+           * workspace this rewind had already restored. Losing ownership is
+           * still observed rather than papered over: the guarded protocol
+           * fails `fence_lost`. The lease outlives the protocol on purpose:
+           * the failure handler's restoration is itself an owned transition.
+           */
+          return yield* Lease.withHeldLease(options.runId, options.owner, (lease) =>
             Effect.gen(function*() {
-              const claimedRun = yield* claimRun(runs, options, nowMs)
-              claimed = claimedRun
-              const originalStatus = claimedRun.row.status
-              /**
-               * THE LEASE IS HELD FOR THE WHOLE PROTOCOL.
-               *
-               * `claimRun` activates the run and stamps one heartbeat, and
-               * nothing renewed it: a compensation handler, a jj restore, or a
-               * large-suffix archive slower than `heartbeatStaleAfter` left the
-               * row looking abandoned, and any engine sharing the database stole
-               * it with `lease-expired` evidence and resumed the run against a
-               * workspace this rewind had already restored. `heartbeatLoop`
-               * pulses until the fence is lost and then interrupts itself, so
-               * losing ownership is still observed rather than papered over.
-               */
-              const heartbeat = yield* Effect.forkChild(
-                Ownership.heartbeatLoop(options.runId, options.owner),
-                { startImmediately: true }
-              )
-              beat = heartbeat
-
-              return yield* Effect.raceFirst(
-                Effect.gen(function*() {
-                  // The frame was validated before the claim, so another executor
-                  // could have claimed the idle row, appended records, and released
-                  // it in that window. Re-reading the tail under the claim is what
-                  // binds the two together; a moved tail is `busy`, not a silent
-                  // truncation of records validation would have refused.
-                  if (options.expectedTail !== undefined) {
-                    const unmoved = yield* tailUnmoved(journal, options.runId, options.expectedTail.tail)
-                    if (!unmoved) {
-                      return yield* Effect.fail(error("busy", `journal tail moved for ${options.runId}`))
-                    }
-                  }
-
-                  const rateLimit = options.rateLimit?.({
-                    runId: options.runId,
-                    frame: options.frame,
-                    nowMs
-                  }) ?? Effect.succeed({ allowed: true } as const)
-                  const decision = yield* rateLimit
-                  const auditDetail = initialDetail(originalStatus)
-                  const audit: Audit = {
-                    id: auditId,
-                    runId: options.runId,
-                    frame: options.frame,
-                    status: "in_progress",
-                    rateLimit: "detail" in decision && decision.detail !== undefined
-                      ? decision.detail
-                      : { allowed: decision.allowed, checkedAtMs: nowMs },
-                    detail: auditDetail
-                  }
-                  yield* store.writeAudit(audit)
-                  detail = auditDetail
-
-                  yield* StepHook.run("rewind", options.hooks?.beforeStep, "claim-run")
-                  yield* StepHook.run("rewind", options.hooks?.beforeStep, "rate-limit")
-                  if (!decision.allowed) {
-                    return yield* Effect.fail(error("rate_limited", `rewind rate limit exceeded for ${options.runId}`))
-                  }
-                  yield* StepHook.run("rewind", options.hooks?.beforeStep, "write-audit")
-
-                  const snapshot = yield* store.snapshotAt(options.runId, options.frame)
-                  const descendants = yield* store.descendants(options.runId, options.frame)
-                  const suffix = yield* readSuffix(
-                    journal,
-                    options.runId,
-                    options.frame,
-                    options.pageSize ?? 100,
-                    options.maxEntries ?? HistoryLimit.defaultMaxHistoryEntries
-                  )
-                  const effects = yield* EffectBoundary.fromEntries(suffix.boundary)
-                  yield* StepHook.run("rewind", options.hooks?.beforeStep, "load-suffix")
-
-                  const childAssessment = yield* assessChildren(
-                    runs,
-                    descendants.attached,
-                    descendants.detached,
-                    options.detachedChildPolicy ?? "block"
-                  )
-                  const plannedChildren = [...childAssessment.cancellable].sort(
-                    (left, right) => right.edge.parentSeq - left.edge.parentSeq
-                  )
-                  const pendingChildren = plannedChildren.map((child) => child.edge.childRunId)
-                  const plan = yield* Compensation.assess(effects, snapshot?.changeId)
-                  const blocking = plan.assessments.filter(
-                    (assessment) => assessment.classification === "blocking"
-                  )
-                  if (blocking.length > 0) {
-                    // The cause carries identity and verdict, never the effect's
-                    // `input` or `output`. `TimeTravelError` is a `Schema.TaggedError`
-                    // that ENCODES its cause, so a raw record put whatever the
-                    // adapter was called with - credentials, oversized blobs - on the
-                    // wire and in the logs. The full records stay on the audit
-                    // detail, which is privileged storage.
-                    return yield* Effect.fail(
-                      error(
-                        "irreversible",
-                        `rewind is blocked by ${blocking.length} effect(s)`,
-                        blocking.map(Compensation.blockingSummary)
-                      )
-                    )
-                  }
-                  detail = {
-                    ...detail,
-                    phase: "preflight_complete",
-                    suffixCount: suffix.count,
-                    ...(suffix.tailSeq === undefined ? {} : { suffixTailSeq: suffix.tailSeq }),
-                    ...(snapshot === undefined ? {} : { targetChangeId: snapshot.changeId }),
-                    warnings: childAssessment.warnings
-                  }
-                  yield* store.updateAudit(auditId, { detail })
-                  yield* StepHook.run("rewind", options.hooks?.beforeStep, "assess-boundary")
-
-                  const handlerReceipts = yield* Compensation.compensate(plan, (receipts) => {
-                    const nextDetail: AuditDetail = {
-                      ...detail!,
-                      compensation: { handlerReceipts: receipts }
-                    }
-                    return store.updateAudit(auditId, { detail: nextDetail }).pipe(
-                      Effect.tap(() => Effect.sync(() => (detail = nextDetail)))
-                    )
-                  }, options.compensationTimeout)
-                  compensation = { handlerReceipts }
-                  // The receipts reach durable storage BEFORE the next irreversible
-                  // step. They used to land only after `restoreWorkspace`, so a
-                  // process death between a handler succeeding and that write left
-                  // the audit at `preflight_complete` with no compensation on it:
-                  // recovery then skipped the rollback, restored the run, and the
-                  // run later resumed against external state the handlers had
-                  // already reversed.
-                  detail = { ...detail, compensation }
-                  yield* store.updateAudit(auditId, { detail })
-                  yield* StepHook.run("rewind", options.hooks?.beforeStep, "compensate-effects")
-
-                  // Preparation owns handler cleanup on failure. Once prepared,
-                  // persist BOTH pointers before jj can change the workspace.
-                  const prepared = yield* Effect.exit(
-                    Compensation.prepareWorkspace(plan, handlerReceipts, options.compensationTimeout)
-                  )
-                  if (Exit.isFailure(prepared)) {
-                    compensation = { handlerReceipts: [] }
-                    return yield* Effect.failCause(prepared.cause)
-                  }
-                  compensation = prepared.value
-                  detail = { ...detail, compensation }
-                  yield* store.updateAudit(auditId, { detail })
-                  const restored = yield* Effect.exit(
-                    Compensation.restorePreparedWorkspace(compensation, options.compensationTimeout)
-                  )
-                  if (Exit.isFailure(restored)) {
-                    compensation = { handlerReceipts: [] }
-                    return yield* Effect.failCause(restored.cause)
-                  }
-                  yield* StepHook.run("rewind", options.hooks?.beforeStep, "restore-workspace")
-                  detail = {
-                    ...detail,
-                    phase: "compensated",
-                    compensation,
-                    cancelledChildren: [...cancelledChildren],
-                    pendingChildren
-                  }
-                  yield* store.updateAudit(auditId, { detail })
-
-                  // Claims are reversible, unlike cancellation, so every child is
-                  // owned before the commit and only transitioned terminal after
-                  // it. The exact owners are also the archive transaction's child
-                  // fences; any newly live or re-owned attached child refuses the
-                  // whole mutation.
-                  for (const child of plannedChildren) {
-                    claimedChildren.push(yield* claimChild(runs, options, child))
-                  }
-
-                  yield* StepHook.run("rewind", options.hooks?.beforeStep, "archive-and-truncate")
-                  archiveAttempted = true
-                  // COMMIT can finish in an uninterruptible SQL finalizer. Keep
-                  // its result and this flag in the same mask so cancellation
-                  // cannot send a durably committed rewind through rollback.
-                  const archive = yield* Effect.uninterruptible(
-                    store.archiveAndTruncate(
-                      options.runId,
-                      options.frame,
-                      Compensation.toStoreReceipts(auditId, compensation),
-                      // The rewind claimed and activated the run with this owner;
-                      // the store re-checks it at commit, so a superseded rewind
-                      // never truncates behind the live owner.
-                      options.owner,
-                      new Map(claimedChildren.map((child) => [child.plan.edge.childRunId, child.owner]))
-                    ).pipe(Effect.tap(() =>
-                      Effect.sync(() => {
-                        archiveCommitted = true
-                      })
-                    ))
-                  )
-                  // The cancellation plan was written with `compensated`, before
-                  // the commit. This update records only that the archive landed.
-                  detail = { ...detail, phase: "archive_committed", pendingChildren }
-                  yield* store.updateAudit(auditId, { detail })
-
-                  for (const child of claimedChildren) {
-                    yield* cancelClaimedChild(runs, child)
-                    cancelledChildren.push(child.plan.edge.childRunId)
-                    detail = {
-                      ...detail,
-                      cancelledChildren: [...cancelledChildren],
-                      pendingChildren: pendingChildren.filter((runId) => !cancelledChildren.includes(runId))
-                    }
-                    yield* store.updateAudit(auditId, { detail })
-                  }
-
-                  // The run suspends with the state AT the frame, not the state the
-                  // truncated future left on the row. `createFork` already derives
-                  // it this way for a child; a rewound parent that kept the later
-                  // payload resumed from a future its journal no longer records.
-                  const frameState = yield* store.stateAt(options.runId, options.frame)
-                  // From here, losing the heartbeat is expected: this transition
-                  // intentionally releases the ownership the supervisor watches.
-                  leaseReleased = true
-                  const suspended = yield* runs.transitionOwned(
-                    options.runId,
-                    options.owner,
-                    "suspended",
-                    frameState ?? claimedRun.row.stateJson
-                  ).pipe(
-                    Effect.mapError((cause) => RunRow.failure("suspend rewound run", cause))
-                  )
-                  if (suspended._tag !== "Transitioned") {
-                    return yield* Effect.fail(
-                      error("busy", `run ${options.runId} lost ownership before suspension`)
-                    )
-                  }
-
-                  detail = { ...detail, phase: "completed" }
-                  yield* store.updateAudit(auditId, {
-                    status: "completed",
-                    detail
-                  })
-                  return {
-                    auditId,
-                    frame: options.frame,
-                    archive,
-                    assessments: plan.assessments,
-                    warnings: childAssessment.warnings,
-                    cancelledChildren: [...cancelledChildren]
-                  }
-                }),
-                Fiber.await(heartbeat).pipe(
-                  Effect.flatMap(() =>
-                    leaseReleased
-                      ? Effect.never
-                      : Effect.fail(error("fence_lost", `run ${options.runId} lost its ownership lease`))
-                  )
-                )
-              )
-            })
-          )
-
-          const protocolExit = yield* Effect.exit(protocol)
-          if (Exit.isSuccess(protocolExit)) return protocolExit.value
-          const failure = fromCause(protocolExit.cause)
-
-          if (
-            !archiveCommitted &&
-            (archiveAttempted || Cause.hasInterruptsOnly(protocolExit.cause)) &&
-            detail?.suffixTailSeq !== undefined
-          ) {
-            // Publication after COMMIT can fail before the call returns. As in
-            // Recovery, require both an empty live suffix and its archived tail.
-            // An unreadable store leaves the audit open without risking rollback.
-            const tailSeq = detail.suffixTailSeq
-            const commitExit = yield* journal.entries({
-              runId: options.runId as JournalEvent.RunId,
-              after: options.frame.seq as JournalEvent.Seq,
-              limit: 1
-            }).pipe(
-              Effect.flatMap((page) =>
-                page.entries.length > 0
-                  ? Effect.succeed(false)
-                  : store.archivedAt(options.runId, tailSeq)
-              ),
-              Effect.exit
-            )
-            if (Exit.isFailure(commitExit)) {
-              return yield* Effect.failCause(protocolExit.cause)
-            }
-            archiveCommitted = commitExit.value
-          }
-          if (archiveCommitted && detail !== undefined) {
-            // An interrupt can precede the protocol's audit update even when
-            // the local flag is set. Keep this audit recoverable after commit.
-            detail = { ...detail, phase: "archive_committed", failure: failure.message }
-            yield* Effect.ignore(store.updateAudit(auditId, { detail }))
-          }
-
-          if (!archiveCommitted) {
-            const rollbackExit = yield* Effect.exit(Compensation.rollback(compensation, options.compensationTimeout))
-            if (Exit.isSuccess(rollbackExit) && detail?.compensation !== undefined) {
-              const { compensation: _, ...stripped } = detail
-              detail = stripped
-              // Handler rollback is not required to be idempotent. Record its
-              // success before run-state restoration can fail, otherwise a
-              // later recovery pass repeats the same external side effects.
-              yield* store.updateAudit(auditId, { detail })
-            }
-            /**
-             * THE RESTORATION HAS TO SUCCEED BEFORE THE AUDIT IS CLOSED.
-             *
-             * The exit used to be consulted only when there was no audit row, so
-             * a failed restoration still stamped `rolled_back` and left the run
-             * `running` under a dead rewind identity. Recovery only drains
-             * `in_progress` audits, so that run was stranded with no record any
-             * pass would revisit. A restoration that did not return
-             * `Transitioned` keeps the audit open instead, and says so.
-             */
-            const restorationProblems: Array<string> = []
-            for (const child of claimedChildren) {
-              const childRunId = child.plan.edge.childRunId
-              const restoredChild = yield* runs.transitionOwned(
-                childRunId,
-                child.owner,
-                // `transitionOwned` cannot target `pending`, while targeting
-                // `running` deliberately retains the current owner. Suspended
-                // is therefore the only reversible status that clears the
-                // dead rewind identity: it exactly restores suspended children
-                // and safely parks children claimed from pending or running.
-                "suspended",
-                child.plan.row.stateJson
-              ).pipe(
-                Effect.mapError((cause) => RunRow.failure(`restore child ${childRunId}`, cause)),
-                Effect.exit
-              )
-              if (Exit.isFailure(restoredChild)) {
-                restorationProblems.push(fromCause(restoredChild.cause).message)
-              } else if (restoredChild.value._tag !== "Transitioned") {
-                restorationProblems.push(`restore child ${childRunId} returned ${restoredChild.value._tag}`)
-              }
-            }
-            if (claimed !== undefined) {
-              const restored = yield* runs.transitionOwned(
-                options.runId,
-                options.owner,
-                // Pending is not a transition target; suspended clears the
-                // rewind owner while preserving the run's resumable state.
-                claimed.row.status === "pending" ? "suspended" : claimed.row.status,
-                claimed.row.stateJson
-              ).pipe(
-                Effect.mapError((cause) => RunRow.failure("restore run state", cause)),
-                Effect.exit
-              )
-              if (Exit.isFailure(restored)) {
-                restorationProblems.push(fromCause(restored.cause).message)
-                if (detail === undefined) {
-                  yield* Effect.ignore(runs.abandonClaim(options.runId, options.owner, claimed.claimedAtMs))
-                }
-              } else if (restored.value._tag !== "Transitioned") {
-                restorationProblems.push(`restore run state returned ${restored.value._tag}`)
-              }
-            }
-            const restorationProblem = restorationProblems.length === 0
-              ? undefined
-              : restorationProblems.join("; ")
-            if (detail !== undefined && restorationProblem !== undefined) {
-              return yield* Effect.fail(
-                error(
-                  failure.code,
-                  `${failure.message}; ${restorationProblem}`,
-                  { rewind: protocolExit.cause, restoration: restorationProblem }
-                )
-              )
-            }
-            if (detail !== undefined) {
-              const currentDetail = detail
-              const rollbackFailure = Exit.isFailure(rollbackExit) ? Cause.squash(rollbackExit.cause) : undefined
-              const failureMessage = rollbackFailure === undefined
-                ? failure.message
-                : `${failure.message}; rollback failed: ${String(rollbackFailure)}`
-              // A rollback that SUCCEEDED already stripped `compensation` above,
-              // before the restoration that can fail. A rollback that FAILED
-              // leaves those receipts applied, so they stay on the detail. This
-              // audit closes terminal, recovery only drains `in_progress` rows,
-              // and the only writer of the receipt table, `archiveAndTruncate`,
-              // never ran on this path. Stripping them here deleted the sole
-              // durable record of which compensations still stand and which
-              // pre-rewind change id to restore, so a later rewind at the same
-              // frame compensated the same effect a second time.
-              detail = {
-                ...currentDetail,
-                phase: rollbackFailure === undefined ? "rolled_back" : "terminal_failure",
-                cancelledChildren: [...cancelledChildren],
-                failure: failureMessage,
-                ...(rollbackFailure === undefined ? {} : { rollbackFailure: String(rollbackFailure) })
-              }
-              yield* Effect.ignore(
-                store.updateAudit(auditId, {
-                  status: "failed",
-                  detail
-                })
-              )
-              if (Exit.isFailure(rollbackExit)) {
-                return yield* Effect.fail(
-                  error("compensation_failed", failureMessage, {
-                    rewind: protocolExit.cause,
-                    rollback: rollbackExit.cause
-                  })
-                )
-              }
-            }
-          }
-
-          // The protocol runs under `restore(...)` inside an uninterruptible
-          // mask, so an interrupt lands as an interrupt-only cause on
-          // `protocolExit` and the rollback above still runs to completion.
-          // Squashing that cause through `fromCause` produced
-          // `TimeTravelError{code:"unknown"}`, so a cancelled rewind reported
-          // as a *failed* rewind: a caller racing `rewind` against a
-          // supervisor observed a failure and kept running on the fiber it
-          // believed it had cancelled. Cancellation is fiber interruption
-          // (`CLAUDE.md`), so the cause is re-raised verbatim and an interrupt
-          // stays an interrupt. A cause carrying any `Fail` or `Die` reason
-          // still reports as the typed failure the callers match on.
-          if (Cause.hasInterruptsOnly(protocolExit.cause)) {
-            return yield* Effect.failCause(protocolExit.cause)
-          }
-          return yield* Effect.fail(failure)
-        }).pipe(
-          // The lease outlives the protocol on purpose: the failure branch's
-          // restoration is itself an owned transition, so the heartbeat stops
-          // only once every ownership write this rewind performs has landed.
-          Effect.ensuring(
-            Effect.suspend(() => beat === undefined ? Effect.void : Fiber.interrupt(beat))
-          )
-        )
+              const protocolExit = yield* Effect.exit(restore(lease.guard(protocol(context, progress, lease))))
+              if (Exit.isSuccess(protocolExit)) return protocolExit.value
+              return yield* settleFailure(context, progress, protocolExit.cause)
+            }))
+        })
       )
     })
   )()
