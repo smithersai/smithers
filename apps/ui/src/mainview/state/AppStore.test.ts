@@ -45,6 +45,22 @@ describe("createAppStore with the localStorage fallback backend", () => {
     expect(journal.some((record) => record.type === "composer.changed")).toBe(true)
   })
 
+  test("every applied transition bumps the session revision exactly once", async () => {
+    const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
+    for (const transition of [
+      { type: "theme.changed", actor: "user", theme: "dark" },
+      { type: "tab.menu.toggled", actor: "user", open: true },
+      // Closing a tab that is not open changes no row but still journals.
+      { type: "tab.closed", actor: "user", id: "tab-not-open" },
+      { type: "tab.menu.toggled", actor: "user", open: false }
+    ] as const) {
+      const before = store.session().revision
+      await store.dispatch(transition).isPersisted.promise
+      expect(store.session().revision).toBe(before + 1)
+      expect(store.collections.transitions.get(`transition-${before + 1}`)?.type).toBe(transition.type)
+    }
+  })
+
   test("persists state across store instances sharing one storage", async () => {
     const storage = memoryStorage()
     const first = await createAppStore({ kind: "localStorage", storage })

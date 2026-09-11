@@ -687,13 +687,6 @@ export const createAppController = (
   ctx.withToast = withToast
   ctx.resolveToast = resolveToast
 
-  const nextTranscriptOrdinal = (): number => {
-    let highest = -1
-    for (const message of store.collections.messages.values()) highest = Math.max(highest, message.ordinal)
-    for (const card of store.collections.cards.values()) highest = Math.max(highest, card.ordinal)
-    return highest + 1
-  }
-
   /*
    * The multi-parity domain seams: each owns one backend domain behind the
    * platform proxy, constructed on the shared seam context (the tapped
@@ -710,7 +703,7 @@ export const createAppController = (
     store,
     dispatch: store.dispatch,
     actor: () => ctx.commandActor,
-    nextOrdinal: nextTranscriptOrdinal
+    nextOrdinal: store.nextOrdinal
   }
   const repositoryFlowsSeam = createRepositoryFlowsSeam(seamCtx)
   const repositoryFlows = (): RepositoryFlowCatalog | undefined => {
@@ -812,7 +805,7 @@ export const createAppController = (
     adminHealth,
     settleTurnBilling,
     watchIdentityAcrossTabs
-  } = actors.pair(ctx, (context) => createAuthBillingController(context, nextTranscriptOrdinal))
+  } = actors.pair(ctx, (context) => createAuthBillingController(context, store.nextOrdinal))
   const { showPlugins, installPlugin, removePlugin, listPlugins } = actors.pair(ctx, createPluginsController)
   const { downloadUrl, openDownload, promptDownload, introduce } = actors.pair(ctx, (context) => createAppShellController(context))
   const { storageRecoveryState, promptStorageRecovery, exportStorageRecovery } = actors.pair(ctx, createStorageRecoveryController)
@@ -870,7 +863,7 @@ export const createAppController = (
     notePtyExit,
     installKeyboard
   } = actors.pair(ctx, (context) => createTabsController(context))
-  const { renderFlowForm, setFormField, submitForm, dismissCard } = actors.pair(ctx, (context) => createFormsController(context, { nextOrdinal: nextTranscriptOrdinal }))
+  const { renderFlowForm, setFormField, submitForm, dismissCard } = actors.pair(ctx, (context) => createFormsController(context, { nextOrdinal: store.nextOrdinal }))
   const {
     loadAgents,
     listAgents,
@@ -879,7 +872,7 @@ export const createAppController = (
     editAgent,
     removeAgent,
     listHarnessModels
-  } = actors.pair(ctx, (context, select) => createAgentsController(context, { nextOrdinal: nextTranscriptOrdinal, loadHarnesses: select(loadHarnesses), renderFlowForm: select(renderFlowForm) }))
+  } = actors.pair(ctx, (context, select) => createAgentsController(context, { nextOrdinal: store.nextOrdinal, loadHarnesses: select(loadHarnesses), renderFlowForm: select(renderFlowForm) }))
   const { toggleRepoTree, renameWorkspace, toggleWorkspaceRename } = actors.pair(ctx, (context, select) => createSidebarController(context, select(repoTreeSeam)))
   /*
    * "Open in tab" is offered on the maximized card, so opening the tab also
@@ -944,13 +937,13 @@ export const createAppController = (
     }
   })
   const targetGraph = actors.pair(ctx, (context) => createTargetGraphController(context, {
-    nextOrdinal: nextTranscriptOrdinal,
+    nextOrdinal: store.nextOrdinal,
     runs: targetRuns,
     devFixtures: createTargetGraphDevFixtures()
   }))
   const { openRepo, listTargets, runTarget, runPattern, openTarget, filterTargets, selectTarget, starTarget, expandTargetGroup, pickTargets, runTargetSet } =
     actors.pair(ctx, (context, select) => createTargetsController(context, {
-    nextOrdinal: nextTranscriptOrdinal,
+    nextOrdinal: store.nextOrdinal,
     loadRepos: select(loadRepos),
     runs: targetRuns,
     onRunStarted: select(targetGraph.noteRunStarted)
@@ -962,9 +955,9 @@ export const createAppController = (
     stopWatchingRun,
     retryRunWatch,
     resumeWorkflowRuns
-  } = createWorkflowPumpController(ctx, nextTranscriptOrdinal)
+  } = createWorkflowPumpController(ctx, store.nextOrdinal)
 
-  const workflowController: WorkflowController = actors.pair(ctx, (context) => createWorkflowController(context, nextTranscriptOrdinal, pumpWorkflowRun))
+  const workflowController: WorkflowController = actors.pair(ctx, (context) => createWorkflowController(context, store.nextOrdinal, pumpWorkflowRun))
   const {
     createWorkflow,
     listWorkspaceWorkflows,
@@ -975,7 +968,7 @@ export const createAppController = (
     forwardInboxApprovalDecision
   } = workflowController
   const { listTriggers, registerTrigger } = triggersSeam
-  const runs = actors.pair(ctx, (context, select) => createRunsController(context, nextTranscriptOrdinal, select(workflowController)))
+  const runs = actors.pair(ctx, (context, select) => createRunsController(context, store.nextOrdinal, select(workflowController)))
   const {
     subscribeToAgent,
     send,
@@ -985,12 +978,12 @@ export const createAppController = (
     retryLastTurn
   } = createTurnController(ctx, {
     settleTurnBilling,
-    nextOrdinal: nextTranscriptOrdinal,
+    nextOrdinal: store.nextOrdinal,
     surfaceCommandFailure,
     forwardApprovalDecision,
     forwardInboxApprovalDecision
   })
-  const cloudWiki = actors.pair(ctx, (context) => createCloudWikiController(context, nextTranscriptOrdinal))
+  const cloudWiki = actors.pair(ctx, (context) => createCloudWikiController(context, store.nextOrdinal))
   const { listCloudWiki, openCloudWiki, retryCloudWiki, attachWorldEditor } = cloudWiki
   const {
     clearConversation,
@@ -1007,7 +1000,7 @@ export const createAppController = (
     jumpToHeading,
     selectWikiCardDocument,
     setWikiCardView
-  } = actors.pair(ctx, (context, select) => createWorldController(context, { nextOrdinal: nextTranscriptOrdinal, cloudWiki: select(cloudWiki) }))
+  } = actors.pair(ctx, (context, select) => createWorldController(context, { nextOrdinal: store.nextOrdinal, cloudWiki: select(cloudWiki) }))
 
   const changeDraft = (draft: string): void => {
     store.dispatch({ type: "composer.changed", actor: "user", draft })
@@ -1166,7 +1159,7 @@ export const createAppController = (
    */
   const onboarding = actors.pair(ctx, (context, select) =>
     createOnboardingController(context, {
-      nextOrdinal: nextTranscriptOrdinal,
+      nextOrdinal: store.nextOrdinal,
       deferCommand,
       promptSignIn,
       workflows: select(workflowController)
@@ -1177,7 +1170,7 @@ export const createAppController = (
    * sign-in step when no one is, through auth.prompt's renderer.
    */
   const account = actors.pair(ctx, (context) =>
-    createAccountController(context, { nextOrdinal: nextTranscriptOrdinal, promptSignIn }))
+    createAccountController(context, { nextOrdinal: store.nextOrdinal, promptSignIn }))
 
   /*
    * The /chat.commands answer: the LIVE visible catalog as one chat message —

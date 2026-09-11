@@ -651,6 +651,8 @@ export interface AppStore {
    */
   readonly persistenceDegraded: boolean
   readonly session: () => Session
+  /** The transcript ordinal after every message and card: where the next row lands. */
+  readonly nextOrdinal: () => number
   readonly worldStateSnapshot: () => WorldStateSnapshot
   readonly agentContextSnapshot: () => AgentContextSnapshot
   /** Private host capability, never a model/tool payload. */
@@ -1319,7 +1321,6 @@ const initializeAppStore = async (resolved: ResolvedPersistence): Promise<AppSto
         case "composer.changed":
           collections.sessions.update(SESSION_ID, (draft) => {
             draft.draft = transition.draft
-            draft.revision = revision
           })
           break
 
@@ -1340,7 +1341,6 @@ const initializeAppStore = async (resolved: ResolvedPersistence): Promise<AppSto
             // The turn belongs to the conversation it was asked in, whatever tab is active later.
             draft.turnTabId = conversationTabId ?? null
             draft.turnId = transition.turnId
-            draft.revision = revision
           })
           break
         }
@@ -1367,9 +1367,6 @@ const initializeAppStore = async (resolved: ResolvedPersistence): Promise<AppSto
               }
             })
           }
-          collections.sessions.update(SESSION_ID, (draft) => {
-            draft.revision = revision
-          })
           break
         }
 
@@ -1379,7 +1376,6 @@ const initializeAppStore = async (resolved: ResolvedPersistence): Promise<AppSto
           // phase unconditionally.
           collections.sessions.update(SESSION_ID, (draft) => {
             draft.phase = "idle"
-            draft.revision = revision
           })
           break
 
@@ -1402,7 +1398,6 @@ const initializeAppStore = async (resolved: ResolvedPersistence): Promise<AppSto
           }
           collections.sessions.update(SESSION_ID, (draft) => {
             draft.phase = "idle"
-            draft.revision = revision
           })
           break
         }
@@ -1420,7 +1415,6 @@ const initializeAppStore = async (resolved: ResolvedPersistence): Promise<AppSto
           collections.sessions.update(SESSION_ID, (draft) => {
             draft.phase = "responding"
             draft.turnId = transition.turnId
-            draft.revision = revision
           })
           break
         }
@@ -1449,7 +1443,6 @@ const initializeAppStore = async (resolved: ResolvedPersistence): Promise<AppSto
           }
           collections.sessions.update(SESSION_ID, (draft) => {
             draft.phase = "idle"
-            draft.revision = revision
           })
           break
         }
@@ -1493,7 +1486,6 @@ const initializeAppStore = async (resolved: ResolvedPersistence): Promise<AppSto
           collections.sessions.update(SESSION_ID, (draft) => {
             draft.phase = "idle"
             draft.turnId = null
-            draft.revision = revision
           })
           break
         }
@@ -1538,7 +1530,6 @@ const initializeAppStore = async (resolved: ResolvedPersistence): Promise<AppSto
             draft.maximizedCardId = null
             draft.activeFrameId = rootFrameId(activeBranchId)
             draft.resetConfirmOpen = false
-            draft.revision = revision
           })
           break
         }
@@ -1546,7 +1537,6 @@ const initializeAppStore = async (resolved: ResolvedPersistence): Promise<AppSto
         case "conversation.reset.asked":
           collections.sessions.update(SESSION_ID, (draft) => {
             draft.resetConfirmOpen = transition.open
-            draft.revision = revision
           })
           break
 
@@ -1605,7 +1595,6 @@ const initializeAppStore = async (resolved: ResolvedPersistence): Promise<AppSto
             draft.turnTabId = null
             draft.turnId = null
             draft.resetConfirmOpen = false
-            draft.revision = revision
           })
           break
         }
@@ -1635,7 +1624,6 @@ const initializeAppStore = async (resolved: ResolvedPersistence): Promise<AppSto
             draft.activeWorkspaceId = activeWorkspaceId
             draft.activeBranchId = activeBranchId
             draft.activeFrameId = cardFrameId(activeBranchId, transition.id)
-            draft.revision = revision
           })
           break
 
@@ -1652,7 +1640,6 @@ const initializeAppStore = async (resolved: ResolvedPersistence): Promise<AppSto
             draft.activeWorkspaceId = activeWorkspaceId
             draft.activeBranchId = activeBranchId
             draft.activeFrameId = rootFrameId(activeBranchId)
-            draft.revision = revision
           })
           break
 
@@ -1691,7 +1678,6 @@ const initializeAppStore = async (resolved: ResolvedPersistence): Promise<AppSto
             draft.activeBranchId = branch.id
             draft.activeFrameId = frame.id
             draft.maximizedCardId = frame.cardId
-            draft.revision = revision
           })
           break
         }
@@ -1717,14 +1703,12 @@ const initializeAppStore = async (resolved: ResolvedPersistence): Promise<AppSto
             draft.activeBranchId = transition.branch.id
             draft.activeFrameId = transition.selectedFrame.id
             draft.maximizedCardId = transition.selectedFrame.cardId
-            draft.revision = revision
           })
           break
 
         case "devtools.toggled":
           collections.sessions.update(SESSION_ID, (draft) => {
             draft.devtoolsOpen = transition.open
-            draft.revision = revision
           })
           break
 
@@ -1745,7 +1729,6 @@ const initializeAppStore = async (resolved: ResolvedPersistence): Promise<AppSto
           })
           collections.sessions.update(SESSION_ID, (draft) => {
             draft.verbose = transition.on
-            draft.revision = revision
           })
           break
         }
@@ -1753,29 +1736,23 @@ const initializeAppStore = async (resolved: ResolvedPersistence): Promise<AppSto
         case "flow.invoked":
           // Recorded by the transition insert below; rendered by the verbose
           // trace after the switch. The session row moves like every dispatch.
-          collections.sessions.update(SESSION_ID, (draft) => {
-            draft.revision = revision
-          })
           break
 
         case "surfaces-menu.toggled":
           collections.sessions.update(SESSION_ID, (draft) => {
             draft.surfacesMenuOpen = transition.open
-            draft.revision = revision
           })
           break
 
         case "connect-menu.toggled":
           collections.sessions.update(SESSION_ID, (draft) => {
             draft.connectMenuOpen = transition.open
-            draft.revision = revision
           })
           break
 
         case "add-menu.toggled":
           collections.sessions.update(SESSION_ID, (draft) => {
             draft.addMenuOpen = transition.open
-            draft.revision = revision
           })
           break
         case "palette.toggled":
@@ -1783,14 +1760,12 @@ const initializeAppStore = async (resolved: ResolvedPersistence): Promise<AppSto
             draft.paletteOpen = transition.open
             if (!transition.open) draft.paletteActionsRef = null
             if (transition.lastQuery !== undefined) draft.paletteLastQuery = transition.lastQuery
-            draft.revision = revision
           })
           break
 
         case "palette.actions.toggled":
           collections.sessions.update(SESSION_ID, (draft) => {
             draft.paletteActionsRef = transition.ref
-            draft.revision = revision
           })
           break
 
@@ -1802,7 +1777,6 @@ const initializeAppStore = async (resolved: ResolvedPersistence): Promise<AppSto
               { ref: transition.ref, kind: transition.kind, count: (seen?.count ?? 0) + 1, lastSeen: transition.at },
               ...rest
             ].slice(0, PALETTE_RECENTS_CAP)
-            draft.revision = revision
           })
           break
 
@@ -1814,14 +1788,12 @@ const initializeAppStore = async (resolved: ResolvedPersistence): Promise<AppSto
               requirement: transition.requirement,
               requestedAt: createdAt
             }
-            draft.revision = revision
           })
           break
 
         case "command.deferral.cleared":
           collections.sessions.update(SESSION_ID, (draft) => {
             draft.pendingCommand = null
-            draft.revision = revision
           })
           break
 
@@ -1831,7 +1803,6 @@ const initializeAppStore = async (resolved: ResolvedPersistence): Promise<AppSto
               transition.name,
               ...(draft.recentCommands ?? []).filter((name) => name !== transition.name)
             ].slice(0, 20)
-            draft.revision = revision
           })
           break
 
@@ -1844,17 +1815,11 @@ const initializeAppStore = async (resolved: ResolvedPersistence): Promise<AppSto
             result: transition.result,
             createdAt
           })
-          collections.sessions.update(SESSION_ID, (draft) => {
-            draft.revision = revision
-          })
           break
 
         case "chain.lineage.retired": {
           const id = retiredLineageKey(transition.lineageId)
           if (!collections.retiredChainLineages.has(id)) collections.retiredChainLineages.insert({ id })
-          collections.sessions.update(SESSION_ID, (draft) => {
-            draft.revision = revision
-          })
           break
         }
 
@@ -1866,9 +1831,6 @@ const initializeAppStore = async (resolved: ResolvedPersistence): Promise<AppSto
             event: transition.event,
             createdAt
           })
-          collections.sessions.update(SESSION_ID, (draft) => {
-            draft.revision = revision
-          })
           break
 
         case "chain.turn.resumed":
@@ -1876,21 +1838,18 @@ const initializeAppStore = async (resolved: ResolvedPersistence): Promise<AppSto
           collections.sessions.update(SESSION_ID, (draft) => {
             draft.phase = "responding"
             draft.turnId = transition.turnId
-            draft.revision = revision
           })
           break
 
         case "guide.changed":
           collections.sessions.update(SESSION_ID, (draft) => {
             draft.guide = transition.guide
-            draft.revision = revision
           })
           break
 
         case "theme.changed":
           collections.sessions.update(SESSION_ID, (draft) => {
             draft.theme = transition.theme
-            draft.revision = revision
           })
           applyTheme(transition.theme)
           break
@@ -1898,7 +1857,6 @@ const initializeAppStore = async (resolved: ResolvedPersistence): Promise<AppSto
         case "palette.changed":
           collections.sessions.update(SESSION_ID, (draft) => {
             draft.palette = transition.palette
-            draft.revision = revision
           })
           applyPalette(transition.palette)
           break
@@ -1907,14 +1865,12 @@ const initializeAppStore = async (resolved: ResolvedPersistence): Promise<AppSto
           collections.sessions.update(SESSION_ID, (draft) => {
             draft.composerOwner = transition.owner
             if (transition.draft !== undefined) draft.draft = transition.draft
-            draft.revision = revision
           })
           break
 
         case "surface.changed":
           collections.sessions.update(SESSION_ID, (draft) => {
             draft.surface = transition.surface
-            draft.revision = revision
           })
           break
 
@@ -1926,14 +1882,12 @@ const initializeAppStore = async (resolved: ResolvedPersistence): Promise<AppSto
           collections.sessions.update(SESSION_ID, (draft) => {
             const installed = draft.plugins ?? []
             if (!installed.includes(transition.plugin)) draft.plugins = [...installed, transition.plugin]
-            draft.revision = revision
           })
           break
 
         case "plugin.removed":
           collections.sessions.update(SESSION_ID, (draft) => {
             draft.plugins = (draft.plugins ?? []).filter((plugin) => plugin !== transition.plugin)
-            draft.revision = revision
           })
           break
 
@@ -1941,7 +1895,6 @@ const initializeAppStore = async (resolved: ResolvedPersistence): Promise<AppSto
           if (collections.worldDocuments.get(transition.id) === undefined) return
           collections.sessions.update(SESSION_ID, (draft) => {
             draft.selectedWorldDocumentId = transition.id
-            draft.revision = revision
           })
           break
 
@@ -1961,7 +1914,6 @@ const initializeAppStore = async (resolved: ResolvedPersistence): Promise<AppSto
           }
           collections.sessions.update(SESSION_ID, (draft) => {
             if (transition.select !== false) draft.selectedWorldDocumentId = document.id
-            draft.revision = revision
           })
           break
         }
@@ -1970,7 +1922,6 @@ const initializeAppStore = async (resolved: ResolvedPersistence): Promise<AppSto
           collections.sessions.update(SESSION_ID, (draft) => {
             draft.wikiPane = transition.pane
             draft.wikiGraphPath = transition.path
-            draft.revision = revision
           })
           break
 
@@ -1978,7 +1929,6 @@ const initializeAppStore = async (resolved: ResolvedPersistence): Promise<AppSto
           if (transition.id !== null && collections.worldDocuments.get(transition.id) === undefined) return
           collections.sessions.update(SESSION_ID, (draft) => {
             draft.pendingWorldDeleteId = transition.id
-            draft.revision = revision
           })
           break
         }
@@ -1993,7 +1943,6 @@ const initializeAppStore = async (resolved: ResolvedPersistence): Promise<AppSto
             draft.selectedWorldDocumentId = remaining?.id ?? null
             // The question this answered is closed with it.
             if (draft.pendingWorldDeleteId === transition.id) draft.pendingWorldDeleteId = null
-            draft.revision = revision
           })
           break
         }
@@ -2006,9 +1955,6 @@ const initializeAppStore = async (resolved: ResolvedPersistence): Promise<AppSto
             draft.updatedAt = createdAt
             draft.revision = revision
           })
-          collections.sessions.update(SESSION_ID, (draft) => {
-            draft.revision = revision
-          })
           break
 
         case "connector.local.cancelled":
@@ -2019,9 +1965,6 @@ const initializeAppStore = async (resolved: ResolvedPersistence): Promise<AppSto
             draft.updatedAt = createdAt
             draft.revision = revision
           })
-          collections.sessions.update(SESSION_ID, (draft) => {
-            draft.revision = revision
-          })
           break
 
         case "connector.local.failed":
@@ -2030,9 +1973,6 @@ const initializeAppStore = async (resolved: ResolvedPersistence): Promise<AppSto
             draft.requestedAccess = null
             draft.error = transition.message
             draft.updatedAt = createdAt
-            draft.revision = revision
-          })
-          collections.sessions.update(SESSION_ID, (draft) => {
             draft.revision = revision
           })
           break
@@ -2069,9 +2009,6 @@ const initializeAppStore = async (resolved: ResolvedPersistence): Promise<AppSto
             draft.updatedAt = createdAt
             draft.revision = revision
           })
-          collections.sessions.update(SESSION_ID, (draft) => {
-            draft.revision = revision
-          })
           break
         }
 
@@ -2085,16 +2022,12 @@ const initializeAppStore = async (resolved: ResolvedPersistence): Promise<AppSto
             draft.updatedAt = createdAt
             draft.revision = revision
           })
-          collections.sessions.update(SESSION_ID, (draft) => {
-            draft.revision = revision
-          })
           break
 
         case "connector.removal.asked":
           if (transition.id !== null && collections.connectors.get(transition.id) === undefined) return
           collections.sessions.update(SESSION_ID, (draft) => {
             draft.pendingConnectorRemovalId = transition.id
-            draft.revision = revision
           })
           break
 
@@ -2103,7 +2036,6 @@ const initializeAppStore = async (resolved: ResolvedPersistence): Promise<AppSto
           collections.connectors.delete(transition.id)
           collections.sessions.update(SESSION_ID, (draft) => {
             if (draft.pendingConnectorRemovalId === transition.id) draft.pendingConnectorRemovalId = null
-            draft.revision = revision
           })
           break
 
@@ -2168,9 +2100,6 @@ const initializeAppStore = async (resolved: ResolvedPersistence): Promise<AppSto
               draft.revision = revision
             })
           }
-          collections.sessions.update(SESSION_ID, (draft) => {
-            draft.revision = revision
-          })
           break
         }
 
@@ -2216,9 +2145,6 @@ const initializeAppStore = async (resolved: ResolvedPersistence): Promise<AppSto
               draft.revision = revision
             })
           }
-          collections.sessions.update(SESSION_ID, (draft) => {
-            draft.revision = revision
-          })
           break
         }
 
@@ -2231,9 +2157,6 @@ const initializeAppStore = async (resolved: ResolvedPersistence): Promise<AppSto
               draft.payload.pending = true
               draft.payload.error = undefined
             }
-          })
-          collections.sessions.update(SESSION_ID, (draft) => {
-            draft.revision = revision
           })
           break
         }
@@ -2248,9 +2171,6 @@ const initializeAppStore = async (resolved: ResolvedPersistence): Promise<AppSto
               draft.payload.pending = false
               draft.payload.error = transition.message
             }
-          })
-          collections.sessions.update(SESSION_ID, (draft) => {
-            draft.revision = revision
           })
           break
         }
@@ -2268,9 +2188,6 @@ const initializeAppStore = async (resolved: ResolvedPersistence): Promise<AppSto
               draft.payload.pending = false
               draft.payload.error = undefined
             }
-          })
-          collections.sessions.update(SESSION_ID, (draft) => {
-            draft.revision = revision
           })
           break
         }
@@ -2308,9 +2225,6 @@ const initializeAppStore = async (resolved: ResolvedPersistence): Promise<AppSto
             draft.updatedAt = createdAt
             draft.revision = revision
           })
-          collections.sessions.update(SESSION_ID, (draft) => {
-            draft.revision = revision
-          })
           break
         }
 
@@ -2323,9 +2237,6 @@ const initializeAppStore = async (resolved: ResolvedPersistence): Promise<AppSto
             draft.updatedAt = createdAt
             draft.revision = revision
           })
-          collections.sessions.update(SESSION_ID, (draft) => {
-            draft.revision = revision
-          })
           break
         }
 
@@ -2334,9 +2245,6 @@ const initializeAppStore = async (resolved: ResolvedPersistence): Promise<AppSto
           collections.identitySessions.update("identity", (draft) => {
             draft.accessError = transition.message
             draft.updatedAt = createdAt
-            draft.revision = revision
-          })
-          collections.sessions.update(SESSION_ID, (draft) => {
             draft.revision = revision
           })
           break
@@ -2356,9 +2264,6 @@ const initializeAppStore = async (resolved: ResolvedPersistence): Promise<AppSto
             draft.updatedAt = createdAt
             draft.revision = revision
           })
-          collections.sessions.update(SESSION_ID, (draft) => {
-            draft.revision = revision
-          })
           break
         }
 
@@ -2373,9 +2278,6 @@ const initializeAppStore = async (resolved: ResolvedPersistence): Promise<AppSto
             draft.refreshedAt = createdAt
             draft.revision = revision
           })
-          collections.sessions.update(SESSION_ID, (draft) => {
-            draft.revision = revision
-          })
           break
         }
 
@@ -2386,9 +2288,6 @@ const initializeAppStore = async (resolved: ResolvedPersistence): Promise<AppSto
             // Keep the last known balance honest-but-stale; only an account
             // that never loaded falls back to plain "unavailable".
             if (draft.state === "unknown") draft.state = "unavailable"
-            draft.revision = revision
-          })
-          collections.sessions.update(SESSION_ID, (draft) => {
             draft.revision = revision
           })
           break
@@ -2413,9 +2312,6 @@ const initializeAppStore = async (resolved: ResolvedPersistence): Promise<AppSto
               Object.assign(draft, toast)
             })
           }
-          collections.sessions.update(SESSION_ID, (draft) => {
-            draft.revision = revision
-          })
           break
         }
 
@@ -2428,26 +2324,17 @@ const initializeAppStore = async (resolved: ResolvedPersistence): Promise<AppSto
             draft.detail = transition.detail
             draft.updatedAt = createdAt
           })
-          collections.sessions.update(SESSION_ID, (draft) => {
-            draft.revision = revision
-          })
           break
         }
 
         case "toast.dismissed":
           if (collections.toasts.get(transition.id) === undefined) return
           collections.toasts.delete(transition.id)
-          collections.sessions.update(SESSION_ID, (draft) => {
-            draft.revision = revision
-          })
           break
 
         case "card.removed":
           if (collections.cards.get(transition.id) === undefined) return
           collections.cards.delete(transition.id)
-          collections.sessions.update(SESSION_ID, (draft) => {
-            draft.revision = revision
-          })
           break
 
         case "message.steered": {
@@ -2471,7 +2358,6 @@ const initializeAppStore = async (resolved: ResolvedPersistence): Promise<AppSto
           }
           collections.sessions.update(SESSION_ID, (draft) => {
             draft.draft = ""
-            draft.revision = revision
           })
           break
         }
@@ -2485,9 +2371,6 @@ const initializeAppStore = async (resolved: ResolvedPersistence): Promise<AppSto
             status: "complete",
             createdAt,
             ordinal: nextOrdinal(collections)
-          })
-          collections.sessions.update(SESSION_ID, (draft) => {
-            draft.revision = revision
           })
           break
         }
@@ -2510,9 +2393,6 @@ const initializeAppStore = async (resolved: ResolvedPersistence): Promise<AppSto
               draft.text = transition.text
             })
           }
-          collections.sessions.update(SESSION_ID, (draft) => {
-            draft.revision = revision
-          })
           break
         }
 
@@ -2525,9 +2405,6 @@ const initializeAppStore = async (resolved: ResolvedPersistence): Promise<AppSto
             status: "complete",
             createdAt,
             ordinal: nextOrdinal(collections)
-          })
-          collections.sessions.update(SESSION_ID, (draft) => {
-            draft.revision = revision
           })
           break
         }
@@ -2545,7 +2422,6 @@ const initializeAppStore = async (resolved: ResolvedPersistence): Promise<AppSto
           collections.sessions.update(SESSION_ID, (draft) => {
             draft.activeTabId = transition.tab.id
             draft.tabMenuOpen = false
-            draft.revision = revision
           })
           break
         }
@@ -2554,7 +2430,6 @@ const initializeAppStore = async (resolved: ResolvedPersistence): Promise<AppSto
           if (collections.tabs.get(transition.id) === undefined) return
           collections.sessions.update(SESSION_ID, (draft) => {
             draft.activeTabId = transition.id
-            draft.revision = revision
           })
           break
 
@@ -2563,7 +2438,6 @@ const initializeAppStore = async (resolved: ResolvedPersistence): Promise<AppSto
           if (transition.id !== null && (asked === undefined || asked.kind === "main")) return
           collections.sessions.update(SESSION_ID, (draft) => {
             draft.pendingTabCloseId = transition.id
-            draft.revision = revision
           })
           break
         }
@@ -2575,7 +2449,6 @@ const initializeAppStore = async (resolved: ResolvedPersistence): Promise<AppSto
         case "tab.menu.toggled":
           collections.sessions.update(SESSION_ID, (draft) => {
             draft.tabMenuOpen = transition.open
-            draft.revision = revision
           })
           break
 
@@ -2598,9 +2471,6 @@ const initializeAppStore = async (resolved: ResolvedPersistence): Promise<AppSto
               })
             }
           }
-          collections.sessions.update(SESSION_ID, (draft) => {
-            draft.revision = revision
-          })
           break
         }
 
@@ -2624,9 +2494,6 @@ const initializeAppStore = async (resolved: ResolvedPersistence): Promise<AppSto
               })
             }
           }
-          collections.sessions.update(SESSION_ID, (draft) => {
-            draft.revision = revision
-          })
           break
         }
 
@@ -2643,9 +2510,6 @@ const initializeAppStore = async (resolved: ResolvedPersistence): Promise<AppSto
               })
             }
           }
-          collections.sessions.update(SESSION_ID, (draft) => {
-            draft.revision = revision
-          })
           break
         }
 
@@ -2717,7 +2581,6 @@ const initializeAppStore = async (resolved: ResolvedPersistence): Promise<AppSto
             else if (named === null || !openKeys.has(named)) {
               draft.activeRepoKey = byName[0] === undefined ? named : repoKeyOf(byName[0].path)
             }
-            draft.revision = revision
           })
           break
         }
@@ -2746,9 +2609,6 @@ const initializeAppStore = async (resolved: ResolvedPersistence): Promise<AppSto
               })
             }
           }
-          collections.sessions.update(SESSION_ID, (draft) => {
-            draft.revision = revision
-          })
           break
         }
         case "repository.upserted": {
@@ -2771,9 +2631,6 @@ const initializeAppStore = async (resolved: ResolvedPersistence): Promise<AppSto
               Object.assign(draft, row)
             })
           }
-          collections.sessions.update(SESSION_ID, (draft) => {
-            draft.revision = revision
-          })
           break
         }
         case "workingcopies.workspaces.loaded": {
@@ -2792,9 +2649,6 @@ const initializeAppStore = async (resolved: ResolvedPersistence): Promise<AppSto
               })
             }
           }
-          collections.sessions.update(SESSION_ID, (draft) => {
-            draft.revision = revision
-          })
           break
         }
         case "cloud.session.loaded": {
@@ -2815,9 +2669,6 @@ const initializeAppStore = async (resolved: ResolvedPersistence): Promise<AppSto
           }
           // Signed out, no workspace terminal can attach: its tabs close with the session, in this transaction.
           if (transition.state === "signed-out") closeTabRows(collections, workspaceTabIds(collections), revision)
-          collections.sessions.update(SESSION_ID, (draft) => {
-            draft.revision = revision
-          })
           break
         }
         /*
@@ -2862,9 +2713,6 @@ const initializeAppStore = async (resolved: ResolvedPersistence): Promise<AppSto
               })
             }
           }
-          collections.sessions.update(SESSION_ID, (draft) => {
-            draft.revision = revision
-          })
           break
         }
         case "workspace.updated": {
@@ -2876,9 +2724,6 @@ const initializeAppStore = async (resolved: ResolvedPersistence): Promise<AppSto
               Object.assign(draft, row)
             })
           }
-          collections.sessions.update(SESSION_ID, (draft) => {
-            draft.revision = revision
-          })
           break
         }
         case "workspace.session.destroyed": {
@@ -2897,9 +2742,6 @@ const initializeAppStore = async (resolved: ResolvedPersistence): Promise<AppSto
               delete draft.payload.terminalSessionId
             })
           }
-          collections.sessions.update(SESSION_ID, (draft) => {
-            draft.revision = revision
-          })
           break
         }
         case "workspace.deleted": {
@@ -2911,9 +2753,6 @@ const initializeAppStore = async (resolved: ResolvedPersistence): Promise<AppSto
           const copyId = `workspace:${workspaceId}`
           if (collections.workingCopies.get(copyId) !== undefined) collections.workingCopies.delete(copyId)
           closeTabRows(collections, workspaceTabIds(collections, new Set([workspaceId])), revision)
-          collections.sessions.update(SESSION_ID, (draft) => {
-            draft.revision = revision
-          })
           break
         }
         /* Lane change: one change upsert; pinned cards read the current revision from here. */
@@ -2926,9 +2765,6 @@ const initializeAppStore = async (resolved: ResolvedPersistence): Promise<AppSto
               Object.assign(draft, row)
             })
           }
-          collections.sessions.update(SESSION_ID, (draft) => {
-            draft.revision = revision
-          })
           break
         }
         /* Lane sync (ADR 0005): the Linear integrations list replaced; one GitHub App status upserted. */
@@ -2947,9 +2783,6 @@ const initializeAppStore = async (resolved: ResolvedPersistence): Promise<AppSto
               })
             }
           }
-          collections.sessions.update(SESSION_ID, (draft) => {
-            draft.revision = revision
-          })
           break
         }
         case "github.app-status.loaded": {
@@ -2961,9 +2794,6 @@ const initializeAppStore = async (resolved: ResolvedPersistence): Promise<AppSto
               Object.assign(draft, row)
             })
           }
-          collections.sessions.update(SESSION_ID, (draft) => {
-            draft.revision = revision
-          })
           break
         }
         case "repo.pinned": {
@@ -2986,9 +2816,6 @@ const initializeAppStore = async (resolved: ResolvedPersistence): Promise<AppSto
               revision
             })
           }
-          collections.sessions.update(SESSION_ID, (draft) => {
-            draft.revision = revision
-          })
           break
         }
         case "repo.unpinned": {
@@ -3005,7 +2832,6 @@ const initializeAppStore = async (resolved: ResolvedPersistence): Promise<AppSto
             if (selected !== undefined && selected !== null && selected.endsWith(`#${transition.id}`)) {
               draft.activeRepoKey = null
             }
-            draft.revision = revision
           })
           break
         }
@@ -3030,7 +2856,6 @@ const initializeAppStore = async (resolved: ResolvedPersistence): Promise<AppSto
           ) return
           collections.sessions.update(SESSION_ID, (draft) => {
             draft.activeRepoKey = transition.id
-            draft.revision = revision
           })
           break
         }
@@ -3051,9 +2876,6 @@ const initializeAppStore = async (resolved: ResolvedPersistence): Promise<AppSto
               draft.loadedAt = createdAt
             })
           }
-          collections.sessions.update(SESSION_ID, (draft) => {
-            draft.revision = revision
-          })
           break
         }
         case "repo-tree.toggled": {
@@ -3061,9 +2883,6 @@ const initializeAppStore = async (resolved: ResolvedPersistence): Promise<AppSto
           if (collections.repoTree.get(id) === undefined) return
           collections.repoTree.update(id, (draft) => {
             draft.expanded = transition.expanded
-          })
-          collections.sessions.update(SESSION_ID, (draft) => {
-            draft.revision = revision
           })
           break
         }
@@ -3105,9 +2924,6 @@ const initializeAppStore = async (resolved: ResolvedPersistence): Promise<AppSto
               draft.loadedAt = next.loadedAt
             })
           }
-          collections.sessions.update(SESSION_ID, (draft) => {
-            draft.revision = revision
-          })
           break
         }
         case "workspace.renamed": {
@@ -3116,14 +2932,12 @@ const initializeAppStore = async (resolved: ResolvedPersistence): Promise<AppSto
           collections.sessions.update(SESSION_ID, (draft) => {
             draft.workspaceName = name
             draft.workspaceRenameOpen = false
-            draft.revision = revision
           })
           break
         }
         case "workspace.rename.toggled":
           collections.sessions.update(SESSION_ID, (draft) => {
             draft.workspaceRenameOpen = transition.open
-            draft.revision = revision
           })
           break
         case "target.starred":
@@ -3153,9 +2967,6 @@ const initializeAppStore = async (resolved: ResolvedPersistence): Promise<AppSto
               if (draft.kind === "targets") draft.payload = payload
             })
           }
-          collections.sessions.update(SESSION_ID, (draft) => {
-            draft.revision = revision
-          })
           break
         }
         case "recommendations.updated": {
@@ -3166,9 +2977,6 @@ const initializeAppStore = async (resolved: ResolvedPersistence): Promise<AppSto
            */
           const existing = collections.recommendations.get(RECOMMENDATION_ID)
           if (existing !== undefined && existing.revision > transition.revision) {
-            collections.sessions.update(SESSION_ID, (draft) => {
-              draft.revision = revision
-            })
             break
           }
           const row: Recommendation = {
@@ -3184,12 +2992,11 @@ const initializeAppStore = async (resolved: ResolvedPersistence): Promise<AppSto
               Object.assign(draft, row)
             })
           }
-          collections.sessions.update(SESSION_ID, (draft) => {
-            draft.revision = revision
-          })
           break
         }
       }
+      // Every transition that reaches here applied, so it takes its revision once.
+      collections.sessions.update(SESSION_ID, (draft) => { draft.revision = revision })
 
       /*
        * /verbose: the maintainer's view of everything. A traced transition
@@ -3374,6 +3181,7 @@ const initializeAppStore = async (resolved: ResolvedPersistence): Promise<AppSto
     persistenceMode: resolved.mode,
     persistenceDegraded: resolved.degraded,
     session,
+    nextOrdinal: () => nextOrdinal(collections),
     worldStateSnapshot,
     agentContextSnapshot,
     readRecovery: () => captureBrowserStorageRecovery({
