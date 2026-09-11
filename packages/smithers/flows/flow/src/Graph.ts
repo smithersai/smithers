@@ -276,7 +276,22 @@ const declaredPlacement = (annotations: Context.Context<never>): unknown =>
  *
  * @private
  */
-const schemaIdentity = (schema: Schema.Top): unknown => Schema.toJsonSchemaDocument(schema)
+const schemaIdentity = (schema: Schema.Top): unknown => {
+  const cached = schemaDocuments.get(schema)
+  if (cached !== undefined) return cached
+  const document = Schema.toJsonSchemaDocument(schema)
+  schemaDocuments.set(schema, document)
+  return document
+}
+
+/**
+ * One document per schema object. A document is a pure function of the
+ * schema's AST and schemas are immutable, so every node and every build that
+ * names the same declaration reuses the document rather than regenerating it.
+ *
+ * @private
+ */
+const schemaDocuments = new WeakMap<Schema.Top, unknown>()
 
 /** @private */
 const isPlainObject = (value: unknown): value is Record<string, unknown> =>
@@ -554,18 +569,22 @@ const hydrate = (value: unknown, substitutions: ReadonlyMap<string, string>, at:
 /**
  * The hashed form of a payload: placeholders keep their property path and drop
  * the node they came from, because the node id is a lookup address and the
- * dependency itself is named by a separate `Ref`.
+ * dependency itself is named by a separate `Ref`. The same walk collects every
+ * upstream result the payload reads into `found`, in sorted-key order, so a
+ * payload is canonicalized once rather than walked again for its references.
  *
  * @private
  */
-const literal = (value: unknown, at: string): unknown =>
+const literal = (value: unknown, found: Array<PlannedRecord>, at: string): unknown =>
   walkPayload(value, {
     at,
     rebuild: true,
     keysOf: (keys) => [...keys].sort(),
     resolve: (member) => {
       const reference = Planned.reference(member)
-      return reference === undefined ? undefined : { value: { _tag: "PlannedInput", path: [...reference.path] } }
+      if (reference === undefined) return undefined
+      found.push(reference)
+      return { value: { _tag: "PlannedInput", path: [...reference.path] } }
     }
   })
 
@@ -767,26 +786,6 @@ const renderPlacement = (value: unknown): string => {
 }
 
 /**
- * Collects the upstream results a payload consumes, in declaration order and
- * without duplicates.
- *
- * @private
- */
-const references = (value: unknown, into: Array<PlannedRecord>, at: string): void => {
-  walkPayload(value, {
-    at,
-    rebuild: false,
-    keysOf: (keys) => [...keys].sort(),
-    resolve: (member) => {
-      const reference = Planned.reference(member)
-      if (reference === undefined) return undefined
-      into.push(reference)
-      return { value: undefined }
-    }
-  })
-}
-
-/**
  * The `Literal` a payload hashes as, followed by one `Ref` per distinct
  * upstream result it reads.
  *
@@ -794,8 +793,7 @@ const references = (value: unknown, into: Array<PlannedRecord>, at: string): voi
  */
 const payloadInputs = (payload: unknown, at: string): ReadonlyArray<KeyMaterial.InputRef> => {
   const found: Array<PlannedRecord> = []
-  references(payload, found, at)
-  const inputs: Array<KeyMaterial.InputRef> = [{ _tag: "Literal", value: literal(payload, at) }]
+  const inputs: Array<KeyMaterial.InputRef> = [{ _tag: "Literal", value: literal(payload, found, at) }]
   const seen = new Set<string>()
   for (const reference of found) {
     const identity = JSON.stringify([reference.node, ...reference.path])

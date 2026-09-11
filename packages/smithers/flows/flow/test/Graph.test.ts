@@ -1187,3 +1187,114 @@ describe("Graph.build into a plan", () => {
       expect(planNode(grown, "root").key).toBe(planNode(plan, "root").key)
     }))
 })
+
+describe("Graph.build limits and cost", () => {
+  const codeOf = (build: () => unknown): string => {
+    try {
+      build()
+      return "built"
+    } catch (thrown) {
+      return (thrown as { code: string }).code
+    }
+  }
+
+  it("accepts an AndThen graph exactly maximumGraphDepth deep and refuses one level more", () => {
+    const leftNested = (depth: number) => {
+      let deep: Node.Node<number> = Node.succeed(0)
+      for (let index = 1; index <= depth; index++) deep = Node.andThen(deep, Node.succeed(index))
+      return deep
+    }
+    const rightNested = (depth: number) => {
+      let deep: Node.Node<number> = Node.succeed(0)
+      for (let index = 1; index <= depth; index++) deep = Node.andThen(Node.succeed(index), deep)
+      return deep
+    }
+
+    expect(codeOf(() => Graph.build(leftNested(1_000)))).toBe("built")
+    expect(codeOf(() => Graph.build(leftNested(1_001)))).toBe("graph_too_deep")
+    expect(codeOf(() => Graph.build(rightNested(1_000)))).toBe("built")
+    expect(codeOf(() => Graph.build(rightNested(1_001)))).toBe("graph_too_deep")
+  })
+
+  it("accepts a payload exactly maximumPayloadDepth containers deep and refuses one more", () => {
+    const nested = (containers: number) => {
+      let payload: Record<string, unknown> = { value: "leaf" }
+      for (let index = 1; index < containers; index++) payload = { next: payload }
+      return payload
+    }
+
+    expect(codeOf(() => Graph.build(Node.succeed(nested(1_000))))).toBe("built")
+    expect(codeOf(() => Graph.build(Node.succeed(nested(1_001))))).toBe("payload_too_deep")
+  })
+
+  it("proves identity at exactly maxComparisonPairs and refuses one pair more", () => {
+    // Comparing two arrays of length n examines the pair of arrays plus n
+    // member pairs, so length 99_999 is exactly 100_000 pairs.
+    const wide = (length: number) => Array.from({ length }, () => 0)
+    expect(codeOf(() => buildWithPlacements(wide(99_999), wide(99_999)))).toBe("built")
+    expect(codeOf(() => buildWithPlacements(wide(100_000), wide(100_000)))).toBe("placement_requires_boundary")
+  })
+
+  it("renders exactly maxPlacementMembers members without <more> and one more with it", () => {
+    const message = (enclosing: unknown): string => {
+      try {
+        buildWithPlacements(enclosing, { host: "vm" })
+      } catch (thrown) {
+        return (thrown as { message: string }).message
+      }
+      throw new Error("the build did not refuse")
+    }
+    const wide = (members: number) => {
+      const object: Record<string, number> = {}
+      for (let index = 0; index < members; index++) object[`k${index}`] = 1
+      return object
+    }
+
+    expect(message(Array.from({ length: 32 }, () => 1))).not.toContain("<more>")
+    expect(message(Array.from({ length: 33 }, () => 1))).toContain("<more>")
+    expect(message(wide(32))).not.toContain("<more>")
+    expect(message(wide(33))).toContain("<more>")
+  })
+
+  it("reuses one schema document per declaration across nodes and builds", () => {
+    const body = (graph: Graph.Graph) =>
+      Graph.drafts(graph)
+        .map((draft) => draft.material.body as { _tag: string; declaration?: { payload: unknown; success: unknown } })
+        .filter((current) => current._tag === "ActionCall")
+    const build = () => Graph.build(Node.all({ a: Increment.call({ path: "a" }), b: Increment.call({ path: "b" }) }))
+
+    const [first, second] = body(build())
+    const [again] = body(build())
+    expect(first?.declaration?.payload).toBeDefined()
+    expect(second?.declaration?.payload).toBe(first?.declaration?.payload)
+    expect(again?.declaration?.payload).toBe(first?.declaration?.payload)
+    expect(again?.declaration?.success).toBe(first?.declaration?.success)
+  })
+
+  it("hashes a payload and collects its references in one walk", () => {
+    const containers = 10
+    let payload: Record<string, unknown> = { value: "leaf" }
+    for (let index = 1; index < containers; index++) payload = { next: payload, [`k${index}`]: index }
+
+    const original = Object.getOwnPropertyDescriptors
+    let opened = 0
+    Object.getOwnPropertyDescriptors = ((source: object) => {
+      opened++
+      return original(source)
+    }) as typeof Object.getOwnPropertyDescriptors
+    let graph: Graph.Graph
+    try {
+      graph = Graph.build(Node.succeed(payload))
+    } finally {
+      Object.getOwnPropertyDescriptors = original
+    }
+
+    // One pass clones the AST in @smthrs/plan, one hydrates, and one hashes
+    // and collects references together. Hashing and collecting used to be
+    // two separate walks, for four passes per container.
+    expect(opened).toBe(3 * containers)
+    expect(Graph.drafts(graph).find((draft) => draft.id === "root")?.material.inputs).toEqual([
+      { _tag: "Literal", value: payload }
+    ])
+  })
+})
