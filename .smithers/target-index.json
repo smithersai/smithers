@@ -74,6 +74,36 @@
     }
   },
   {
+    "label": "//:factoryHarness",
+    "package": "",
+    "name": "factoryHarness",
+    "rule": "NodeTest",
+    "kinds": [
+      "test"
+    ],
+    "cacheable": false,
+    "inputs": [
+      {
+        "kind": "file",
+        "path": "factory/flows/harness.test.ts"
+      },
+      {
+        "kind": "glob",
+        "pattern": "factory/flows/*.ts",
+        "exclude": []
+      },
+      {
+        "kind": "file",
+        "path": "scripts/workspace-packages.mjs"
+      }
+    ],
+    "outputs": [],
+    "dependencies": [],
+    "source": {
+      "file": "PACKAGE.ts"
+    }
+  },
+  {
     "label": "//:factoryProjection",
     "package": "",
     "name": "factoryProjection",
@@ -7607,10 +7637,6 @@
       {
         "kind": "file",
         "path": "apps/site/src/components/AvailableRepos.astro"
-      },
-      {
-        "kind": "file",
-        "path": "apps/site/src/components/ComingSoonRepo.astro"
       }
     ],
     "outputs": [],
@@ -27307,6 +27333,28 @@
       },
       {
         "kind": "file",
+        "path": "PACKAGE.ts"
+      },
+      {
+        "kind": "file",
+        "path": "scripts/PACKAGE.ts"
+      },
+      {
+        "kind": "file",
+        "path": "scripts/repo-contract/PACKAGE.ts"
+      },
+      {
+        "kind": "glob",
+        "pattern": "scripts/**/*.test.mjs",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "factory/**/*.test.ts",
+        "exclude": []
+      },
+      {
+        "kind": "file",
         "path": ".github/workflows/ci.yml"
       },
       {
@@ -28086,6 +28134,14 @@
         "path": "scripts/release-gates.test.mjs"
       },
       {
+        "kind": "file",
+        "path": "scripts/runtime-node-support.test.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "scripts/dev-compiler-isolation.test.mjs"
+      },
+      {
         "kind": "glob",
         "pattern": "scripts/**/*.mjs",
         "exclude": []
@@ -28099,6 +28155,10 @@
         "kind": "glob",
         "pattern": "scripts/fixtures/**/*.json",
         "exclude": []
+      },
+      {
+        "kind": "file",
+        "path": ".pnpmfile.mjs"
       },
       {
         "kind": "file",
@@ -28417,6 +28477,10 @@
       {
         "kind": "file",
         "path": "scripts/benchmark-gate.test.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "scripts/run-jj-abi-campaign.test.mjs"
       },
       {
         "kind": "glob",

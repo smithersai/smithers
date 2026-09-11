@@ -85,6 +85,48 @@ describe("test-script wiring", () => {
   })
 })
 
+/** Every `*.test.*` file under `directory`, repository-relative. */
+const testFiles = (directory, extension) =>
+  readdirSync(join(root, directory), { recursive: true, withFileTypes: true })
+    .filter((entry) => entry.isFile() && entry.name.endsWith(`.test${extension}`) && !entry.parentPath.includes("node_modules"))
+    .map((entry) => join(entry.parentPath, entry.name).slice(root.length + 1))
+    .sort()
+
+/**
+ * Test files deliberately outside every target, with the reason. A suite that
+ * no target names never runs, so the default is an owner, not an entry here.
+ */
+const unownedTests = new Map([])
+
+describe("test-file ownership", () => {
+  const declarations = ["PACKAGE.ts", "scripts/PACKAGE.ts", "scripts/repo-contract/PACKAGE.ts"]
+    .map((path) => readFileSync(join(root, path), "utf8"))
+    .join("\n")
+  const suites = [...testFiles("scripts", ".mjs"), ...testFiles("factory", ".ts")]
+
+  it("finds the script and factory suites", () => {
+    assert.ok(suites.includes("scripts/pack-release.test.mjs"))
+    assert.ok(suites.includes("factory/flows/harness.test.ts"))
+  })
+
+  it("names every script and factory suite in a target's test runner", () => {
+    const orphans = suites.filter((path) => !unownedTests.has(path) && !declarations.includes(`Smithers.file("//${path}")`))
+    assert.deepEqual(orphans, [], "each suite needs a Smithers.testRunner entry or a reasoned unownedTests entry")
+  })
+
+  it("keeps the exclusion list free of owned or deleted suites", () => {
+    for (const path of unownedTests.keys()) assert.ok(suites.includes(path) && !declarations.includes(`//${path}"`), path)
+  })
+
+  it("selects the owning targets in the required test job", () => {
+    const workflow = parseWorkflow(readFileSync(join(root, ".github/workflows/ci.yml"), "utf8"))
+    assert.notEqual(workflow.jobs.test["continue-on-error"], true)
+    const main = workflow.jobs.test.steps.flatMap((step) => step.run ? [step.run] : []).join("\n")
+    assert.match(main, /smthrs test '\/\/scripts\/\.\.\.'/)
+    assert.match(main, /smthrs test '\/\/:factoryHarness'/)
+  })
+})
+
 
 describe("required PR selection", () => {
   const workflow = parseWorkflow(readFileSync(join(root, ".github/workflows/ci.yml"), "utf8"))

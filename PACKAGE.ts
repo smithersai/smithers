@@ -260,6 +260,7 @@ const ci = Smithers.GithubCiGen({
         { name: "Script gates", verb: Smithers.Verb.Test, pattern: "//scripts/..." },
         { name: "Public export JSDoc", verb: Smithers.Verb.Lint, pattern: "//:jsdocTree" },
         { name: "JSDoc rule harness", verb: Smithers.Verb.Test, pattern: "//:jsdocRules" },
+        { name: "Factory harness", verb: Smithers.Verb.Test, pattern: "//:factoryHarness" },
         // Every `evals/*` directory is its own workspace member now, so each
         // one's targets carry the standard `check`/`test` names and run from
         // the directory that pins their toolchain.
@@ -622,6 +623,21 @@ const jsdocRules = Smithers.NodeTest({
 })
 
 /**
+ * The factory flows' shared harness: workspace package identities, package
+ * selection, confinement and process guards. `factory/` has no manifest of its
+ * own, so the root owns the suite; it is written against `bun:test`.
+ *
+ * @since 1.0.0
+ * @category test
+ */
+const factoryHarness = Smithers.NodeTest({
+  runtime: Smithers.Runtime.Bun({ version: ">=1.4.0" }),
+  runner: Smithers.testRunner([Smithers.file("//factory/flows/harness.test.ts")]),
+  srcs: [Smithers.glob("//factory/flows/*.ts"), Smithers.file("//scripts/workspace-packages.mjs")],
+  deps: []
+})
+
+/**
  * The commit-level `CHANGELOG.md` section for the version the manifests carry.
  *
  * `Generate`'s kinds are `run` and `lint`, not `build` and `lint`, so writing
@@ -668,6 +684,7 @@ export const Package = Smithers.Package({
   targets: {
     changelog,
     ci,
+    factoryHarness,
     factoryProjection,
     reviewDocsAgainstCode,
     jsdocRules,

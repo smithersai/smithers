@@ -113,10 +113,13 @@ const releaseRehearsal = Smithers.NodeTest({
     Smithers.file("//scripts/release-registry.test.mjs"),
     Smithers.file("//scripts/release-process.test.mjs"),
     Smithers.file("//scripts/release-graph.test.mjs"),
-    Smithers.file("//scripts/release-gates.test.mjs")
+    Smithers.file("//scripts/release-gates.test.mjs"),
+    Smithers.file("//scripts/runtime-node-support.test.mjs"),
+    Smithers.file("//scripts/dev-compiler-isolation.test.mjs")
   ]),
   srcs: [
     ...sources,
+    Smithers.file("//.pnpmfile.mjs"),
     Smithers.file("//.github/workflows/release.yml"),
     Smithers.file("//.github/workflows/ci.yml"),
     Smithers.file("//packages/smithers/build/build-cli/src/CreateApp.ts"),
@@ -474,7 +477,8 @@ const tierContracts = Smithers.NodeTest({
     Smithers.file("//scripts/runner-contract.test.mjs"),
     Smithers.file("//scripts/check-mutations.test.mjs"),
     Smithers.file("//scripts/check-soak-campaign.test.mjs"),
-    Smithers.file("//scripts/benchmark-gate.test.mjs")
+    Smithers.file("//scripts/benchmark-gate.test.mjs"),
+    Smithers.file("//scripts/run-jj-abi-campaign.test.mjs")
   ]),
   srcs: sources,
   deps: []
