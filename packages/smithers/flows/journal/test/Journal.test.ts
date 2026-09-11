@@ -1189,6 +1189,64 @@ describe("Journal", () => {
     )
   })
 
+  effect("publishes a durable commit even when the emitter is interrupted right after COMMIT", () => {
+    const run = runId("durable-interrupted-after-commit")
+    // An interruption reaches a running fiber only at an op boundary. The
+    // writer records the fiber's stack depth when the transaction returns; the
+    // tracer's per-op hook interrupts at the first op evaluated below that
+    // depth, which is past the writer and its `restore`, the window before
+    // index update and publication that the mask must cover.
+    type StackedFiber = { readonly _stack: ReadonlyArray<unknown> }
+    const depth = (fiber: unknown) => (fiber as StackedFiber)._stack.length
+    let committedAt: number | undefined
+    const interruptAfterCommit: Layer.Layer<DurableWriter, never, DurableWriter> = Layer.effect(
+      DurableWriter,
+      Effect.gen(function*() {
+        const writer = yield* DurableWriter
+        const write: WriterService["write"] = (effect) =>
+          writer.write(effect).pipe(
+            Effect.tap(() => Effect.withFiber((fiber) => Effect.sync(() => (committedAt = depth(fiber)))))
+          )
+        return DurableWriter.of({ write })
+      })
+    )
+    const tracer = Tracer.make({
+      span: (options) => new Tracer.NativeSpan(options),
+      context: (primitive, fiber) => {
+        if (committedAt !== undefined && depth(fiber) < committedAt - 1) {
+          committedAt = undefined
+          fiber.interruptUnsafe()
+        }
+        return primitive["~effect/Effect/evaluate"](fiber)
+      }
+    })
+
+    return Effect.gen(function*() {
+      const journal = yield* Journal
+      const subscription = yield* journal.changes
+      const changed = yield* Effect.forkChild(PubSub.take(subscription), { startImmediately: true })
+      const emitting = yield* Effect.forkChild(
+        journal.emitDurableUnfenced(input(run, sourceId("durable"), "committed", { ok: true })).pipe(
+          Effect.provideService(Tracer.Tracer, tracer)
+        )
+      )
+      const exit = yield* Fiber.await(emitting)
+      yield* Effect.yieldNow
+      const page = yield* journal.entries({ runId: run, limit: 10 })
+      expect(exit._tag).toBe("Failure")
+      expect(page.entries).toHaveLength(1)
+      const notification = changed.pollUnsafe()
+      expect(notification?._tag).toBe("Success")
+      yield* Fiber.interrupt(changed)
+    }).pipe(
+      Effect.provide(journalLayer(
+        { capacity: 128, overflow: "reject" },
+        Layer.provideMerge(interruptAfterCommit, TestDatabase.layer)
+      )),
+      Effect.scoped
+    )
+  })
+
   effect("isolates changes subscribers from recursive entry mutation", () => {
     const run = runId("changes-frozen")
     return runJournal(

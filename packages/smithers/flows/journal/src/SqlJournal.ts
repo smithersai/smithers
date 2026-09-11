@@ -1887,7 +1887,7 @@ export const layer = (
               prepared.validated.runId,
               Effect.gen(function*() {
                 const { metaJson, payloadJson, validated } = prepared
-                const written = yield* Effect.uninterruptibleMask((restore) =>
+                return yield* Effect.uninterruptibleMask((restore) =>
                   restore(writer.write(Effect.gen(function*() {
                     // Read only for a producer that allocates from this floor. A
                     // supplied sequence is not allocated, so reading the floor
@@ -1951,34 +1951,42 @@ export const layer = (
                     }
                     const commit = yield* insertOne(queued, fence)
                     return { commit, queued, sourceSeq }
-                  })))
+                  }))).pipe(
+                    /**
+                     * `writer.write` is a retrying transaction: its body replays on
+                     * `SQLITE_BUSY(_SNAPSHOT)` and can still abort at COMMIT after the
+                     * body succeeded. Cache mutation and publication therefore happen
+                     * strictly after the transaction returns, so subscribers never
+                     * observe a rolled-back entry and a replayed body never publishes
+                     * twice. Mirrors the queued path, which publishes in a `.tap`
+                     * outside `persistBatch`. Only the transaction is restored: an
+                     * interruption that lands after it returns waits for the index
+                     * update and publication, so a committed row always reaches
+                     * `changes`.
+                     *
+                     * Under `transact` "after the transaction returns" is not yet
+                     * "after COMMIT": this write is a savepoint of the caller's
+                     * transaction, so `settleCommit` parks both effects until the
+                     * outermost transaction commits. The run permit is already free,
+                     * which lets automatic compaction take the same run barrier.
+                     */
+                    Effect.flatMap((written) =>
+                      Effect.gen(function*() {
+                        const maintenance = yield* settleCommit(written.queued, written.commit, restoreMaintenance)
+                        const receipt: DurableReceipt = written.commit.inserted
+                          ? { _tag: "Accepted", seq: written.commit.entry.seq, sourceSeq: written.sourceSeq }
+                          : {
+                            _tag: "Duplicate",
+                            seq: written.commit.entry.seq,
+                            sourceSeq: written.sourceSeq,
+                            status: "committed"
+                          }
+                        yield* Metric.update(JournalMetrics.durable[receipt._tag], 1)
+                        return { maintenance, receipt }
+                      })
+                    )
+                  )
                 )
-                /**
-                 * `writer.write` is a retrying transaction: its body replays on
-                 * `SQLITE_BUSY(_SNAPSHOT)` and can still abort at COMMIT after the
-                 * body succeeded. Cache mutation and publication therefore happen
-                 * strictly after the transaction returns, so subscribers never
-                 * observe a rolled-back entry and a replayed body never publishes
-                 * twice. Mirrors the queued path, which publishes in a `.tap`
-                 * outside `persistBatch`.
-                 *
-                 * Under `transact` "after the transaction returns" is not yet
-                 * "after COMMIT": this write is a savepoint of the caller's
-                 * transaction, so `settleCommit` parks both effects until the
-                 * outermost transaction commits. The run permit is already free,
-                 * which lets automatic compaction take the same run barrier.
-                 */
-                const maintenance = yield* settleCommit(written.queued, written.commit, restoreMaintenance)
-                const receipt: DurableReceipt = written.commit.inserted
-                  ? { _tag: "Accepted", seq: written.commit.entry.seq, sourceSeq: written.sourceSeq }
-                  : {
-                    _tag: "Duplicate",
-                    seq: written.commit.entry.seq,
-                    sourceSeq: written.sourceSeq,
-                    status: "committed"
-                  }
-                yield* Metric.update(JournalMetrics.durable[receipt._tag], 1)
-                return { maintenance, receipt }
               }).pipe(
                 Effect.mapError((cause) =>
                   isJournalError(cause) ? cause : error("sink_failed", "durable journal write failed", cause)
