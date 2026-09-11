@@ -38,8 +38,10 @@ conservatively select more work.
 
 For scripts, target commands and `generate ci/package` document `--workspace`
 in their schemas but the executable also accepts `--root` as an alias;
-flow and operator commands use `--root`. Flow control, ordinary run management, and approvals accept
-`--remote` and `--credential`. History, memory, triggers, credentials,
+flow and operator commands use `--root`. Flow control, ordinary run management, and approvals select a host from
+`SMITHERS_REMOTE` or `--remote` and authenticate with `SMITHERS_API_KEY`.
+`--credential` is a compatibility flag that warns on stderr because process listings and shell history expose its value.
+History, memory, triggers, credentials,
 integrations, evaluations, and local maintenance reject remote access.
 
 ## Operator commands

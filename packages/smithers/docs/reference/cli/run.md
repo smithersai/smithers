@@ -48,9 +48,10 @@ it prints the receipt and returns without waiting.
 
 ## Global flags
 
-`smthrs run` accepts `--root`, `--remote`, `--credential`, `--json`,
-`--quiet`, `--mcp-config`, and `--log-level`, listed in the
-[CLI reference index](/cli).
+`smthrs run` accepts `--root`, `--remote`, `--json`, `--quiet`,
+`--mcp-config`, and `--log-level`, listed in the
+[CLI reference index](/cli). It reads the bearer from `SMITHERS_API_KEY`.
+`--credential` is a compatibility flag that warns on stderr because process listings and shell history expose its value.
 
 ## Output
 

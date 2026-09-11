@@ -45,9 +45,10 @@ the command exits 2 and names `flow-id` and `--wizard` for guided input.
 
 ## Global flags
 
-`smthrs plan` accepts `--root`, `--remote`, `--credential`, `--json`,
-`--quiet`, `--mcp-config`, and `--log-level`, listed in the
-[CLI reference index](https://smithers.sh/docs/reference/cli/).
+`smthrs plan` accepts `--root`, `--remote`, `--json`, `--quiet`,
+`--mcp-config`, and `--log-level`, listed in the
+[CLI reference index](https://smithers.sh/docs/reference/cli/). It reads the bearer from `SMITHERS_API_KEY`.
+`--credential` is a compatibility flag that warns on stderr because process listings and shell history expose its value.
 
 ## Output
 

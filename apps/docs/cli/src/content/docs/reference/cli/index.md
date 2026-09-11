@@ -39,8 +39,10 @@ conservatively select more work.
 
 For scripts, target commands and `generate ci/package` document `--workspace`
 in their schemas but the executable also accepts `--root` as an alias;
-flow and operator commands use `--root`. Flow control, ordinary run management, and approvals accept
-`--remote` and `--credential`. History, memory, triggers, credentials,
+flow and operator commands use `--root`. Flow control, ordinary run management, and approvals select a host from
+`SMITHERS_REMOTE` or `--remote` and authenticate with `SMITHERS_API_KEY`.
+`--credential` is a compatibility flag that warns on stderr because process listings and shell history expose its value.
+History, memory, triggers, credentials,
 integrations, evaluations, and local maintenance reject remote access.
 
 ## Operator commands
@@ -54,7 +56,10 @@ integrations, evaluations, and local maintenance reject remote access.
 | `eval` | `list/run/baseline/compare`; discover `evals/**/*.eval.ts` modules exporting `suite` and `executor`, and compare saved results with committed baselines. |
 
 Memory defaults to `--namespace user:cli` and accepts `kind:id` or a bare kind
-with `--id`. Facts automatically decode valid JSON. Recall supports
+with `--id`. Bare `memory` prints help. Missing fact arguments, such as
+`memory get` without a key, return Incur validation errors (exit 1) without
+opening the store. Invalid namespace identities are also rejected before
+opening the store. Facts automatically decode valid JSON. Recall supports
 `--method keyword` and `--method fts`; FTS is enabled for the requested
 namespaces. Semantic recall remains a library binding that needs a configured
 embedding provider. `compact` takes an explicit `--summary`, `--before`
@@ -72,13 +77,14 @@ the one named by `SMITHERS_GITHUB_API_BASE_URL`, `SMITHERS_LINEAR_API_BASE_URL`,
 or `SMITHERS_TELEGRAM_API_BASE_URL`. GitHub hook declarations live in
 `.smithers/listeners.json`; deletion additionally requires `--allow-delete`.
 
-`serve` hosts the trigger scheduler; `triggers serve` runs it separately.
+`serve` (also available as `gateway`) hosts the trigger scheduler; `triggers serve` runs it separately.
 Scheduled and manual occurrences preserve approval requirements. Disabling a
 trigger stops future dispatch without cancelling its active run.
 `triggers show <id>` exposes the persisted `activePlan.plan.approval` payload;
 submit that unchanged to `approvals approve '<payload>' --scope run`. The
 scheduler retains the same plan across restarts and waits until it is approved
-or denied. `approvals list` lists in-run requests, not these pre-run plans.
+or denied. Both `approvals approve` and `approve` default to `--scope run`.
+`approvals list` lists in-run requests, not these pre-run plans.
 A launch attempt persists `launching` before calling Control. Cancellation
 before the run ID is recorded remains `cancelling` while the scheduler
 reconciles the durable launch key. Any accepted run is recorded and cancelled.
@@ -107,7 +113,14 @@ or suspended engine run; use `fork` for terminal history. Active runs and
 unsafe effect boundaries are refused. Evaluation artifacts live under
 `.flows/evals/runs/`; baselines default to `evals/<encoded-suite>.baseline.json`
 and require `--force` to overwrite. Evaluation comparison exits 1 for
-regressions and 5 for inconclusive results.
+regressions and 5 for inconclusive results. Cancellation interrupts evaluation
+suite effects, cases, and scorers, waits for their finalizers, and prevents
+publication of unfinished results. Embedded invocations pass `RuntimeConfig.signal`
+and `RuntimeConfig.environment` to `createEvalCli`.
+
+Evaluation, history, and operator commands share local project resolution.
+Roots must be accessible directories. An empty `SMITHERS_REMOTE` is unset;
+an explicit `--remote` option or nonempty environment value is refused.
 
 Action-result caches use the workspace's cache directory, normally
 `.flows/cache/`. `cache prune/clear` delete only local result files and require

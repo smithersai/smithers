@@ -49,9 +49,10 @@ it prints the receipt and returns without waiting.
 
 ## Global flags
 
-`smthrs run` accepts `--root`, `--remote`, `--credential`, `--json`,
-`--quiet`, `--mcp-config`, and `--log-level`, listed in the
-[CLI reference index](https://smithers.sh/docs/reference/cli/).
+`smthrs run` accepts `--root`, `--remote`, `--json`, `--quiet`,
+`--mcp-config`, and `--log-level`, listed in the
+[CLI reference index](https://smithers.sh/docs/reference/cli/). It reads the bearer from `SMITHERS_API_KEY`.
+`--credential` is a compatibility flag that warns on stderr because process listings and shell history expose its value.
 
 ## Output
 
@@ -63,12 +64,18 @@ with the same two members, `Parked` with `receiptId`, `planId`, and
 `status: "waiting-approval"`, `Conflict` with `message`, or `Terminal` with
 `runId` and `status`.
 
-The receipt is printed before the settlement wait reports anything, so a caller
-reads `runId` from the document whatever the run then does.
+For both launch and resume, the local receipt is printed after settlement,
+not when admission succeeds. A failed settlement adds `status: "failed"` and
+`cause` to that receipt. Progress can appear on stderr while stdout waits.
+Use `smthrs up -d` when a new local launch needs its run id at admission;
+[detached launches](/guides/launch-a-detached-run/) return the run id and
+log path without waiting for settlement. Remote calls print the receipt without
+a settlement wait.
 
 When the executor declines an accepted run, the command prints the run summary
-and then fails with a sentence that names the run, its status, and
-`smthrs cancel <run-id>` as the way to end it.
+instead of the receipt, then fails with a sentence that names the run, its
+status, and `smthrs cancel <run-id>` as the way to end it. A failed settlement
+watch or interruption can end the command before any receipt is printed.
 
 `--quiet` suppresses banners and progress on stderr, but this document still
 prints.
@@ -94,10 +101,17 @@ smthrs --json approve "$approval" --scope run
 smthrs --json run "$approval"
 ```
 
-The accepted receipt, with placeholders standing in for the identifiers:
+After a successful local settlement, the accepted receipt uses this shape:
 
 ```text
 {"_tag":"Accepted","receiptId":"<receipt-id>","runId":"<run-id>"}
+```
+
+After a failed local settlement, stdout retains the identifiers and adds the
+failure verdict; the process exits 1:
+
+```text
+{"_tag":"Accepted","cause":"fixture failure","receiptId":"<receipt-id>","runId":"<run-id>","status":"failed"}
 ```
 
 ## See also

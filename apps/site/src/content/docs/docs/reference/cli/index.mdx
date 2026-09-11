@@ -74,8 +74,9 @@ lists in-run requests, not these pre-run plans.
 For scripts, target commands and `generate ci/package` document `--workspace`
 in their schemas but the executable also accepts `--root` as an alias;
 flow and operator commands use `--root`.
-Flow control, normal run management, and approvals also accept `--remote`
-and `--credential`, with `SMITHERS_REMOTE` and `SMITHERS_API_KEY` as fallbacks.
+Flow control, normal run management, and approvals also select a host from
+`SMITHERS_REMOTE` and authenticate with `SMITHERS_API_KEY`; `--remote` overrides
+the host. `--credential` is a compatibility flag that warns on stderr because process listings and shell history expose its value.
 History, memory, triggers, credentials, integrations, evaluations, and local
 maintenance require the machine that owns the selected workspace.
 
