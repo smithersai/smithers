@@ -638,8 +638,7 @@ describe("StepKey.dispatchIdentity", () => {
       const failure = yield* Effect.flip(memo.digest("upstream", ["value"], Effect.fail(schemaError)))
       expect(failure).toBe(schemaError)
 
-      const recoveredKey =
-        "key1_cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc" as StepKey.StepKey
+      const recoveredKey = "key1_cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc" as StepKey.StepKey
       let attempts = 0
       const recovered = yield* memo.digest(
         "upstream",
@@ -872,7 +871,7 @@ describe("StepKey.dispatchIdentity", () => {
   it.effect("refuses material naming a dependency that has not settled", () =>
     Effect.gen(function*() {
       const failure = yield* withCryptoFailure(dispatch({ inputs: [{ _tag: "Ref", from: "missing", path: [] }] }, {}))
-      expect(failure).toMatchObject({ code: "missing_dependency" })
+      expectKeyMaterialError(failure, "missing_dependency", "Missing settled result for graph dependency missing")
     }))
 
   it.effect("refuses an own settled-result accessor without invoking it", () =>

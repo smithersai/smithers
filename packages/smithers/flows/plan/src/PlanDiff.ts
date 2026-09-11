@@ -13,8 +13,9 @@
  *
  * @since 0.1.0
  */
-import { value as jsonMirror } from "./internal/node.ts"
+import { jsonMirror } from "./internal/JsonMirror.ts"
 import type * as Plan from "./Plan.ts"
+import type * as Planned from "./Planned.ts"
 
 /**
  * A node whose key moved, with the fields that moved it.
@@ -66,6 +67,18 @@ const stable = (value: unknown): string => {
   return `{${entries.map(([name, entry]) => `${JSON.stringify(name)}:${stable(entry)}`).join(",")}}`
 }
 
+/**
+ * A planned value compares as the reference an AST stores for it, so the same
+ * reference at the same place is unchanged.
+ *
+ * @private
+ */
+const plannedReference = (_value: unknown, reference: Planned.Reference) => ({
+  _tag: "PlannedReference",
+  node: reference.node,
+  path: reference.path
+})
+
 /** @private */
 type ComparisonToken = string | symbol
 
@@ -80,7 +93,7 @@ const fieldComparison = () => {
   const refused = new Map<unknown, Map<string, symbol>>()
   const token = (input: unknown, nodeId: string, field: string): ComparisonToken => {
     try {
-      return stable(jsonMirror(input))
+      return stable(jsonMirror(input, plannedReference))
     } catch {
       const address = JSON.stringify([nodeId, field])
       let fields = refused.get(input)

@@ -502,59 +502,88 @@ export const planIdentity = (
       })
     ))
 
+/**
+ * Reads the entry a graph reference names. Only an own data property counts:
+ * an absent name or an accessor is a missing dependency, and no getter runs.
+ * `label` names what the record holds, as each refusal says it.
+ *
+ * @private
+ */
+const ownDataProperty = (
+  record: Readonly<Record<string, unknown>>,
+  from: string,
+  label: "Digest" | "Settled result"
+): Effect.Effect<unknown, KeyMaterialError> => {
+  const descriptor = Object.getOwnPropertyDescriptor(record, from)
+  if (descriptor === undefined) {
+    return Effect.fail(
+      new KeyMaterialError({
+        code: "missing_dependency",
+        message: `Missing ${label.toLowerCase()} for graph dependency ${from}`
+      })
+    )
+  }
+  if (!("value" in descriptor)) {
+    return Effect.fail(
+      new KeyMaterialError({
+        code: "missing_dependency",
+        message: `${label} for graph dependency ${from} must be a data property`
+      })
+    )
+  }
+  return Effect.succeed(descriptor.value)
+}
+
+/**
+ * The positional inputs both identities hash. A `Literal` contributes its raw
+ * value, so `normalizeInputs` applies the one literal wrap; `resolve` supplies
+ * the digest for each `Ref` and `Pending`, tagged with the reference variant.
+ *
+ * @private
+ */
+const resolveInputs = <E, R>(
+  material: KeyMaterial.KeyMaterial,
+  resolve: (reference: Exclude<KeyMaterial.InputRef, { readonly _tag: "Literal" }>) => Effect.Effect<string, E, R>
+): Effect.Effect<Record<string, unknown>, E, R> =>
+  Effect.gen(function*() {
+    const inputs: Record<string, unknown> = {}
+    for (let index = 0; index < material.inputs.length; index++) {
+      const input = material.inputs[index]!
+      if (input._tag === "Literal") {
+        inputs[String(index)] = input.value
+        continue
+      }
+      const digest = yield* resolve(input)
+      inputs[String(index)] = input._tag === "Pending"
+        ? digestInput(digest, { reference: "pending" })
+        : input.path.length > 0
+        ? digestInput(digest, { reference: "ref-projected", path: input.path })
+        : digestInput(digest, { reference: "ref" })
+    }
+    return inputs
+  })
+
 /** Resolves plan references once for both content and non-cacheable declarations. */
 const materialIdentity = (
   material: KeyMaterial.KeyMaterial,
   dependencyDigests: Readonly<Record<string, string>>
-): Effect.Effect<ContentIdentity, KeyMaterialError> => {
-  const inputs: Record<string, unknown> = {}
-  for (let index = 0; index < material.inputs.length; index++) {
-    const input = material.inputs[index]!
-    if (input._tag === "Literal") {
-      // Raw, so `normalizeInputs` applies the one literal wrap. Building
-      // `{kind: "literal", value}` here got wrapped a second time.
-      inputs[String(index)] = input.value
-      continue
-    }
-    const descriptor = Object.getOwnPropertyDescriptor(dependencyDigests, input.from)
-    if (descriptor === undefined) {
-      return Effect.fail(
-        new KeyMaterialError({
-          code: "missing_dependency",
-          message: `Missing digest for graph dependency ${input.from}`
-        })
-      )
-    }
-    if (!("value" in descriptor)) {
-      return Effect.fail(
-        new KeyMaterialError({
-          code: "missing_dependency",
-          message: `Digest for graph dependency ${input.from} must be a data property`
-        })
-      )
-    }
-    const digest: unknown = descriptor.value
-    if (typeof digest !== "string") {
-      return Effect.fail(
-        new KeyMaterialError({
-          code: "missing_dependency",
-          message: `Digest for graph dependency ${input.from} must be a string`
-        })
-      )
-    }
-    inputs[String(index)] = input._tag === "Pending"
-      ? digestInput(digest, { reference: "pending" })
-      : input.path.length > 0
-      ? digestInput(digest, { reference: "ref-projected", path: input.path })
-      : digestInput(digest, { reference: "ref" })
-  }
-  return Effect.succeed({
+): Effect.Effect<ContentIdentity, KeyMaterialError> =>
+  resolveInputs(
+    material,
+    (reference) =>
+      Effect.flatMap(ownDataProperty(dependencyDigests, reference.from, "Digest"), (digest) =>
+        typeof digest === "string" ? Effect.succeed(digest) : Effect.fail(
+          new KeyMaterialError({
+            code: "missing_dependency",
+            message: `Digest for graph dependency ${reference.from} must be a string`
+          })
+        ))
+  ).pipe(Effect.map((inputs) => ({
     body: materialBody(material),
     inputs,
     layers: material.layers,
     capabilities: { declared: material.capabilities }
-  })
-}
+  })))
 
 /**
  * The node's own declaration, hashed. Shared by {@link planIdentity},
@@ -656,38 +685,15 @@ export const dispatchIdentity = (options: {
       })
     }
     const environment = options.environment === undefined ? undefined : yield* decodeEnvironment(options.environment)
-    const inputs: Record<string, unknown> = {}
-    for (let index = 0; index < material.inputs.length; index++) {
-      const input = material.inputs[index]!
-      if (input._tag === "Literal") {
-        inputs[String(index)] = input.value
-        continue
-      }
-      if (input._tag === "Pending") {
-        inputs[String(index)] = digestInput(orderingOnly, { reference: "pending" })
-        continue
-      }
-      const descriptor = Object.getOwnPropertyDescriptor(options.results, input.from)
-      if (descriptor === undefined) {
-        return yield* new KeyMaterialError({
-          code: "missing_dependency",
-          message: `Missing settled result for graph dependency ${input.from}`
-        })
-      }
-      if (!("value" in descriptor)) {
-        return yield* new KeyMaterialError({
-          code: "missing_dependency",
-          message: `Settled result for graph dependency ${input.from} must be a data property`
-        })
-      }
-      const compute = decodeKey({ kind: "input-value", value: project(descriptor.value, input.path) })
-      const digest = yield* (
-        options.digestMemo === undefined ? compute : options.digestMemo.digest(input.from, input.path, compute)
-      )
-      inputs[String(index)] = input.path.length > 0
-        ? digestInput(digest, { reference: "ref-projected", path: input.path })
-        : digestInput(digest, { reference: "ref" })
-    }
+    const inputs = yield* resolveInputs(material, (reference) =>
+      reference._tag === "Pending"
+        ? Effect.succeed(orderingOnly)
+        : Effect.flatMap(ownDataProperty(options.results, reference.from, "Settled result"), (settled) => {
+          const compute = decodeKey({ kind: "input-value", value: project(settled, reference.path) })
+          return options.digestMemo === undefined
+            ? compute
+            : options.digestMemo.digest(reference.from, reference.path, compute)
+        }))
     return yield* content({
       body: materialBody(material),
       inputs,
