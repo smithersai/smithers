@@ -3,6 +3,7 @@ import * as CoreNode from "@smthrs/core/Node"
 import * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
 import * as SchemaAST from "effect/SchemaAST"
+import { readFileSync } from "node:fs"
 import { GraphBuildError } from "../src/GraphBuildError.ts"
 import * as internal from "../src/internal/node.ts"
 import * as Node from "../src/Node.ts"
@@ -1119,5 +1120,13 @@ describe("Node.isNode", () => {
     const decided = Node.branch(Node.succeed(0), { if: () => true, then: () => genuine, else: () => genuine })
     expect(tagged(decided.ast, "Branch")).toMatchObject({ then: genuine.ast, else: genuine.ast })
     expect(tagged(Node.catch(Node.succeed(0), { onFailure: () => genuine }).ast, "Catch").failure).toEqual(genuine.ast)
+  })
+
+  it("declares the Node interface once, in the public module", () => {
+    const node = internal.makeNode<number, string, "R">({ _tag: "Succeed", value: 1 })
+    expectTypeOf(node).toEqualTypeOf<Node.Node<number, string, "R">>()
+    expectTypeOf(Node.succeed(1)).toEqualTypeOf<Node.Node<number>>()
+    const source = readFileSync(new URL("../src/internal/node.ts", import.meta.url), "utf8")
+    expect(source).not.toMatch(/\binterface Node\b/)
   })
 })

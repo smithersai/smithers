@@ -27,10 +27,9 @@ import { isRecord } from "@smthrs/canonical/Record"
 import * as CoreNode from "@smthrs/core/Node"
 import { digestSync } from "@smthrs/crypto"
 import { identity } from "effect/Function"
-import type * as Pipeable from "effect/Pipeable"
 import { pipeArguments } from "effect/Pipeable"
 import * as Schema from "effect/Schema"
-import type * as Types from "effect/Types"
+import type { Node } from "../Node.ts"
 import type * as Planned from "../Planned.ts"
 import { jsonMirror } from "./JsonMirror.ts"
 
@@ -349,26 +348,6 @@ const payloadMirror = (input: unknown): unknown =>
  * @slop
  */
 export const functionIdentity: (operation: unknown) => FunctionIdentity = CoreNode.functionIdentity
-
-/**
- * The pipeable wrapper around an AST.
- *
- * `R` is phantom. Nothing here reads it, stores it, or digests it: the AST is
- * unchanged by it, so the plan a node describes and the key that plan hashes to
- * are the same whether or not a caller tracks requirements.
- *
- * @since 0.1.0
- * @private
- * @slop
- */
-export interface Node<out A, out E = never, out R = never> extends Pipeable.Pipeable {
-  readonly [TypeId]: {
-    readonly _A: Types.Covariant<A>
-    readonly _E: Types.Covariant<E>
-    readonly _R: Types.Covariant<R>
-  }
-  readonly ast: NodeAst
-}
 
 /**
  * The prototype every node shares, so `pipe` is one function rather than one
