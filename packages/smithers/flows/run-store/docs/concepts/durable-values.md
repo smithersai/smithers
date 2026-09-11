@@ -117,6 +117,22 @@ reference and flow data, never the resolved credential. Values that must not
 be published are handled on the journal-event and export surfaces, which is
 where the observability boundary lives.
 
+### The run file is a secret store
+
+Two columns keep run values verbatim because resume re-reads them byte for
+byte:
+
+- `flows_runs.state_json` holds the run's payload and result.
+- `flows_attempts.outcome_json` holds each action's encoded result, which an
+  action replays instead of executing again.
+
+A credential in a payload, or spliced into an action's success value, is
+stored in cleartext in the run's SQLite file (`.flows/*.db`). Handle that file
+as a secret store: restrict its permissions, keep it out of commits, bug
+reports, and artifacts, and delete it when the run is no longer needed. The
+journal table is redacted on the write path; the fault suite's case 22 scans
+every table and fails on a credential in any other column.
+
 The stores hold that line in their own diagnostics as well. Failure causes
 reach logs, spans, and telemetry, so they carry field names, lengths, and
 validity flags, and never the rejected payload. Malformed timestamp causes

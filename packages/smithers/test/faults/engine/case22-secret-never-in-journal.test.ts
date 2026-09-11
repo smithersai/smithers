@@ -28,7 +28,17 @@
  * Two assertions were added afterwards, pinning that redaction rewrites the
  * line rather than swallowing it.
  *
- * Both halves are required gates now. Neither may be marked `.fails`, skipped,
+ * The journal is not the only table in the file. A third test scans every
+ * column of every table the run wrote and fails on any credential outside
+ * `executableColumns`. The columns listed there are executable state that
+ * resume decodes and re-enters byte for byte: `flows_runs.state_json` holds the
+ * run's payload and result, and `flows_attempts.outcome_json` is the copy an
+ * action replays instead of executing again. Redacting either would corrupt the
+ * resumed run, so they are kept verbatim, and the run's SQLite file
+ * (`.flows/*.db`) holds unredacted run inputs and results. Treat it as a secret
+ * store; see `@smthrs/run-store` `docs/concepts/durable-values.md`.
+ *
+ * All three are required gates now. Neither may be marked `.fails`, skipped,
  * or deleted; `scripts/repo-contract/fault-skips.test.mjs` refuses all three
  * and names this file.
  */
@@ -80,6 +90,40 @@ const journalText = (filename: string): Promise<string> =>
     ) as Effect.Effect<string>
   )
 
+/**
+ * Columns that resume re-reads byte for byte, so they keep the credential.
+ * Every other column of every table must not contain it.
+ */
+const executableColumns = new Set(["flows_runs.state_json", "flows_attempts.outcome_json"])
+
+/** Every `table.column` of the SQLite file whose text contains `needle`. */
+const columnsContaining = (filename: string, needle: string): Promise<ReadonlyArray<string>> =>
+  Effect.runPromise(
+    Effect.gen(function*() {
+      const sql = yield* SqlClient.SqlClient
+      const tables = yield* sql<{ name: string }>`
+        SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name
+      `
+      const hits: Array<string> = []
+      for (const { name } of tables) {
+        const rows = yield* sql.unsafe<Record<string, unknown>>(`SELECT * FROM "${name.replaceAll("\"", "\"\"")}"`)
+        const columns = new Set<string>()
+        for (const row of rows) {
+          for (const [column, value] of Object.entries(row)) {
+            const text = value instanceof Uint8Array ? Buffer.from(value).toString("utf8") : String(value)
+            if (text.includes(needle)) columns.add(`${name}.${column}`)
+          }
+        }
+        hits.push(...columns)
+      }
+      return hits
+    }).pipe(
+      Effect.provide(SqliteClient.layer({ filename })),
+      Effect.scoped,
+      Effect.orDie
+    ) as Effect.Effect<ReadonlyArray<string>>
+  )
+
 describe("case22 a secret never reaches the journal", () => {
   it("redacts the credential out of every committed journal row", async () => {
     const filename = join(directory, "journal.sqlite")
@@ -99,6 +143,19 @@ describe("case22 a secret never reaches the journal", () => {
     // string with the credential spliced into it, which is the shape a
     // careless integration actually leaks.
     expect(committed).toContain("token=[REDACTED]")
+  }, 120_000)
+
+  it("keeps the credential out of every column except executable state", async () => {
+    const filename = join(directory, "tables.sqlite")
+    const child = await runChild(filename, "case22-tables")
+    expect(child.code).toBe(0)
+    expect(child.output).toContain("RESULT=ok")
+
+    const hits = await columnsContaining(filename, secret)
+    expect(hits.filter((column) => !executableColumns.has(column))).toEqual([])
+    // The allow-list is exact: each entry really holds the credential, so an
+    // entry that stops leaking must be removed rather than left as cover.
+    expect([...hits].sort()).toEqual([...executableColumns].sort())
   }, 120_000)
 
   // REQUIRED GATE. Case 22 covers the logs as well

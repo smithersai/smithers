@@ -1101,6 +1101,10 @@ const evidenceMatchesOwner = (
  * secret provider on resume. Publication hygiene belongs on journal-event
  * and export surfaces.
  *
+ * `state_json` and `flows_attempts.outcome_json` therefore hold unredacted
+ * run inputs and results, so the run's SQLite file (`.flows/*.db`) must be
+ * handled as a secret store.
+ *
  * @since 0.1.0
  * @category constructors
  */
