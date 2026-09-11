@@ -16,6 +16,11 @@ export default defineConfig({
       // Per-process report directory so concurrent vitest runs do not destroy
       // each other's coverage scratch state (issues #115/#121).
       reportsDirectory: join(tmpdir(), `flows-harness-coverage-${process.pid}`),
+      // Console table only. Nothing reads a report under a directory named
+      // after a finished process, and Vitest removes the reports directory at
+      // run end only when it is empty, so the default html, clover, and json
+      // reporters left one directory per run in the temp dir.
+      reporter: ["text"],
       include: ["src/**"].map((pattern) => join(import.meta.dirname, pattern)),
       // Every remaining unreachable site carries a `v8 ignore` comment stating
       // why a test cannot reach it, so anything short of 100 is new untested
