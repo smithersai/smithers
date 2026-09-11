@@ -1,5 +1,5 @@
 /** @jsxImportSource react */
-import type { ComponentProps } from "react";
+import type { ComponentProps, KeyboardEvent, MouseEvent } from "react";
 import { cva, type VariantProps } from "class-variance-authority";
 import { Slot } from "radix-ui";
 import { cn } from "./cn";
@@ -39,8 +39,9 @@ export type ButtonProps = ComponentProps<"button"> &
     /**
      * Render a Spinner before the children, mark the button `aria-busy`, and
      * disable interaction while work is in flight. Under `asChild`, disabled,
-     * busy, and aria-disabled semantics are forwarded but no Spinner is
-     * injected (the Slot cannot inject one into an arbitrary child element).
+     * busy, and aria-disabled semantics are forwarded, click and Enter/Space
+     * activation are blocked, and no Spinner is injected (the Slot cannot
+     * inject one into an arbitrary child element).
      */
     loading?: boolean;
   };
@@ -77,8 +78,29 @@ export function Button({
       "aria-disabled": interactionDisabled ? true : undefined,
       "aria-busy": loading ? true : undefined,
     };
+    // Anchors and other non-native children ignore `disabled`, and Slot runs
+    // the child's handlers before ours, so guard activation in the capture
+    // phase: the child's handlers and default navigation never run, while
+    // the element stays focusable with aria-disabled.
+    const { onClickCapture, onKeyDownCapture, ...rest } = props;
+    const inertProps = interactionDisabled
+      ? {
+          onClickCapture: (event: MouseEvent<HTMLButtonElement>) => {
+            event.preventDefault();
+            event.stopPropagation();
+            onClickCapture?.(event);
+          },
+          onKeyDownCapture: (event: KeyboardEvent<HTMLButtonElement>) => {
+            if (event.key === "Enter" || event.key === " ") {
+              event.preventDefault();
+              event.stopPropagation();
+            }
+            onKeyDownCapture?.(event);
+          },
+        }
+      : { onClickCapture, onKeyDownCapture };
     return (
-      <Slot.Root data-slot="button" className={classes} {...slottedStateProps} {...props}>
+      <Slot.Root data-slot="button" className={classes} {...slottedStateProps} {...rest} {...inertProps}>
         {children}
       </Slot.Root>
     );

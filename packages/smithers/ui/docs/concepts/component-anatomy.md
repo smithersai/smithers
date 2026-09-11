@@ -69,9 +69,12 @@ import { Button } from "@smthrs/ui"
 ```
 
 One limit is worth knowing. Under `asChild`, `Button` forwards its disabled,
-`aria-disabled`, and `aria-busy` state onto the child, but it does not inject a
-`Spinner` for `loading`: `Slot` merges props onto an arbitrary element and
-cannot add a child to it. Render your own indicator in that case.
+`aria-disabled`, and `aria-busy` state onto the child, and `disabled` or
+`loading` make the child inert: clicks and Enter or Space are cancelled in the
+capture phase, so the child's handlers and link navigation never run, while
+the element stays focusable. It does not inject a `Spinner` for `loading`:
+`Slot` merges props onto an arbitrary element and cannot add a child to it.
+Render your own indicator in that case.
 
 ## Host props pass through
 
