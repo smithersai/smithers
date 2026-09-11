@@ -9,23 +9,13 @@ import { Effect, Stream } from "effect"
 import * as BranchProtocol from "../src/BranchProtocol.ts"
 import * as SyncClient from "../src/SyncClient.ts"
 import type * as SyncProtocol from "../src/SyncProtocol.ts"
+import * as TestEntry from "./fixtures/entry.ts"
 
 const runId = (value: string) => value as JournalEvent.RunId
 const seq = (value: number) => value as JournalEvent.Seq
 const sourceSeq = (value: number) => value as JournalEvent.SourceSeq
 
-const entry = (sequence: number) =>
-  new JournalEvent.Entry({
-    runId: runId("boundary"),
-    seq: seq(sequence),
-    eventId: `boundary-${sequence}`,
-    sourceId: "source" as JournalEvent.SourceId,
-    sourceSeq: sourceSeq(sequence),
-    emittedAtMs: sequence,
-    eventType: "event",
-    payload: sequence,
-    meta: null
-  })
+const entry = (sequence: number) => TestEntry.entry("boundary", sequence)
 
 describe("SyncClient covered-frame boundaries", () => {
   it.effect("filters an entry exactly at the cursor while admitting the later entry in the same frame", () =>

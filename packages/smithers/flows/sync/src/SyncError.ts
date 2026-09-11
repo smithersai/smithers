@@ -72,7 +72,7 @@ const Rewind = Schema.Struct({
  * link. A `Schema.Unknown` cause published the host's own failure verbatim —
  * a driver message with SQL text, a rejected credential — counted against no
  * size ceiling, and had no defined wire form for a class instance or a cyclic
- * value. `internal/causeText` is the one renderer that fills it.
+ * value. `internal/CauseText` is the one renderer that fills it.
  *
  * @category errors
  * @since 0.1.0

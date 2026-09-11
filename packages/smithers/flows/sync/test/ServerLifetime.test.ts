@@ -15,23 +15,11 @@ import * as RunCatalog from "../src/RunCatalog.ts"
 import { SyncError } from "../src/SyncError.ts"
 import * as SyncPrincipal from "../src/SyncPrincipal.ts"
 import * as SyncServer from "../src/SyncServer.ts"
+import { entry } from "./fixtures/entry.ts"
 
 const branchId = "lifetime-branch" as BranchProtocol.BranchId
 const branchRun = BranchProtocol.branchRunId(branchId)
 const seq = (value: number) => value as JournalEvent.Seq
-
-const entry = (runId: JournalEvent.RunId, sequence: number) =>
-  new JournalEvent.Entry({
-    runId,
-    seq: seq(sequence),
-    eventId: `${runId}-${sequence}`,
-    sourceId: "source" as JournalEvent.SourceId,
-    sourceSeq: sequence as JournalEvent.SourceSeq,
-    emittedAtMs: sequence,
-    eventType: "event",
-    payload: sequence,
-    meta: null
-  })
 
 const shareLayer = BranchShare.layerHmac({
   activeKid: "primary",
@@ -232,7 +220,7 @@ describe("subscription lifetime", () => {
               }),
               Layer.succeed(
                 RunCatalog.RunCatalog,
-                RunCatalog.make({ changes: Stream.empty, list: Effect.sync(() => Array.from(listed)) })
+                RunCatalog.RunCatalog.of({ changes: Stream.empty, list: Effect.sync(() => Array.from(listed)) })
               ),
               shareLayer,
               SyncPrincipal.layerWorkspace("late-branch-owner")
@@ -315,7 +303,10 @@ describe("subscription lifetime", () => {
                 RunCatalog.RunCatalog,
                 // Empty at open, so the branch is admitted by reconciliation
                 // and its expiry is one the opening interrupt never saw.
-                RunCatalog.make({ changes: Stream.empty, list: Effect.sync(() => ++lists === 1 ? [] : [branchRun]) })
+                RunCatalog.RunCatalog.of({
+                  changes: Stream.empty,
+                  list: Effect.sync(() => ++lists === 1 ? [] : [branchRun])
+                })
               ),
               shareLayer,
               SyncPrincipal.layerWorkspace("mid-read-owner")
@@ -340,7 +331,7 @@ describe("workspace tail catalog reconciliation", () => {
   const mutable = (initial: ReadonlyArray<JournalEvent.RunId>) => {
     const listed = new Set(initial)
     return {
-      catalog: RunCatalog.make({
+      catalog: RunCatalog.RunCatalog.of({
         // `changes` is deliberately empty: the reconciliation must not depend
         // on a notification arriving, because both shipped catalogs publish
         // through a SLIDING feed that drops the oldest under load.

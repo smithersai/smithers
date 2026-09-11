@@ -408,7 +408,6 @@ describe("BranchCommands", () => {
           )
         )).message
       ).toBe("overridden")
-      expect(BranchCommands.make(noop).submit).toBe(noop.submit)
     }))
 
   it.effect("provides the ledger as a layer over the workspace journal", () =>

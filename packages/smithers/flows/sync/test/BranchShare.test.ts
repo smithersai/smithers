@@ -294,11 +294,6 @@ describe("BranchShare", () => {
       ).toBe("overridden")
     }))
 
-  it("keeps `make` an identity over an implementation", () => {
-    const implementation = BranchShare.makeNoop()
-    expect(BranchShare.make(implementation).verify).toBe(implementation.verify)
-  })
-
   it.effect("maps a Web Crypto rejection into a typed SyncError carrying the cause", () =>
     Effect.gen(function*() {
       const importFailure = new Error("import refused")

@@ -12,6 +12,7 @@ import { SyncError } from "../src/SyncError.ts"
 import * as SyncPrincipal from "../src/SyncPrincipal.ts"
 import type * as SyncProtocol from "../src/SyncProtocol.ts"
 import * as SyncServer from "../src/SyncServer.ts"
+import * as TestEntry from "./fixtures/entry.ts"
 
 const branchId = "payload-limits" as BranchProtocol.BranchId
 const branchRunId = BranchProtocol.branchRunId(branchId)
@@ -24,17 +25,7 @@ const failureOf = <A>(exit: Exit.Exit<A, unknown>): unknown =>
     : undefined
 
 const entry = (sequence: number, payload: unknown) =>
-  new JournalEvent.Entry({
-    runId,
-    seq: sequence as JournalEvent.Seq,
-    eventId: `payload-${sequence}`,
-    sourceId: "source" as JournalEvent.SourceId,
-    sourceSeq: sequence as JournalEvent.SourceSeq,
-    emittedAtMs: sequence,
-    eventType: "event",
-    payload,
-    meta: null
-  })
+  TestEntry.entry(runId, sequence, { eventId: `payload-${sequence}`, payload })
 
 const branchLayers = Layer.mergeAll(
   TestJournal.layer(),

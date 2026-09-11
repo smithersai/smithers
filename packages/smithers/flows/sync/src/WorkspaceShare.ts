@@ -24,8 +24,8 @@ import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
 import * as Schema from "effect/Schema"
 import { Access } from "./BranchProtocol.ts"
-import * as Admission from "./internal/admission.ts"
-import * as shareSigner from "./internal/shareSigner.ts"
+import * as Admission from "./internal/Admission.ts"
+import * as shareSigner from "./internal/ShareSigner.ts"
 import type { SyncError } from "./SyncError.ts"
 
 /**
@@ -115,14 +115,6 @@ export interface Service {
  */
 export class WorkspaceShare extends Context.Service<WorkspaceShare, Service>()("@smthrs/sync/WorkspaceShare") {}
 
-/**
- * Constructs a workspace share authority from an implementation.
- *
- * @category constructors
- * @since 0.1.0
- */
-export const make = (implementation: Service): Service => WorkspaceShare.of(implementation)
-
 const denied = shareSigner.unauthorized
 
 /**
@@ -133,7 +125,7 @@ const denied = shareSigner.unauthorized
  * @since 0.1.0
  */
 export const makeNoop = (overrides: Partial<Service> = {}): Service =>
-  make({
+  WorkspaceShare.of({
     // Both operations FAIL. `mint` used to die, and this is the authority the
     // shipped CLI gateway wires, so a consumer handling `SyncError` on that
     // composition got a crash where the type promised a refusal.
@@ -263,7 +255,7 @@ export const makeHmac = (keyring: Keyring): Effect.Effect<Service, SyncError> =>
         return claims
       })
 
-      return make({ mint, verify })
+      return WorkspaceShare.of({ mint, verify })
     }
   )
 

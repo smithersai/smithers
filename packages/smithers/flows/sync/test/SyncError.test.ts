@@ -21,7 +21,7 @@ const declared = (): ReadonlyArray<string> => {
 /**
  * Every code a `SyncError` in `src` is constructed with. The scan reads
  * literals only, and the one code that is computed comes from
- * `internal/causeText.ts`, which produces `backpressure`, `closed`,
+ * `internal/JournalErrorCode.ts`, which produces `backpressure`, `closed`,
  * `decode_failed` and `unknown`, each of which another site also writes out.
  */
 const produced = (): ReadonlySet<string> => {

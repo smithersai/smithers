@@ -3,22 +3,12 @@ import { JournalEvent } from "@smthrs/journal"
 import { Deferred, Effect, Fiber, Stream } from "effect"
 import * as SyncClient from "../src/SyncClient.ts"
 import type * as SyncProtocol from "../src/SyncProtocol.ts"
+import * as TestEntry from "./fixtures/entry.ts"
 
 const runId = "shared-client" as JournalEvent.RunId
 const seq = (value: number) => value as JournalEvent.Seq
 
-const entry = (sequence: number) =>
-  new JournalEvent.Entry({
-    runId,
-    seq: seq(sequence),
-    eventId: `shared-client-${sequence}`,
-    sourceId: "source" as JournalEvent.SourceId,
-    sourceSeq: sequence as JournalEvent.SourceSeq,
-    emittedAtMs: sequence,
-    eventType: "event",
-    payload: sequence,
-    meta: null
-  })
+const entry = (sequence: number) => TestEntry.entry(runId, sequence)
 
 describe("one SyncClient with concurrent subscriptions", () => {
   it.effect("follows a live run on a credit window instead of one subscribe per entry", () =>

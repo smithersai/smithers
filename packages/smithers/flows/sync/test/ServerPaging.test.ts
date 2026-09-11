@@ -10,24 +10,12 @@ import * as RunCatalog from "../src/RunCatalog.ts"
 import { SyncError } from "../src/SyncError.ts"
 import * as SyncPrincipal from "../src/SyncPrincipal.ts"
 import * as SyncServer from "../src/SyncServer.ts"
+import { entry } from "./fixtures/entry.ts"
 
 const runId = (value: string) => value as JournalEvent.RunId
 const seq = (value: number) => value as JournalEvent.Seq
 const sourceId = "source" as JournalEvent.SourceId
 const sourceSeq = (value: number) => value as JournalEvent.SourceSeq
-
-const entry = (id: JournalEvent.RunId, sequence: number) =>
-  new JournalEvent.Entry({
-    runId: id,
-    seq: seq(sequence),
-    eventId: `${id}-${sequence}`,
-    sourceId,
-    sourceSeq: sourceSeq(sequence),
-    emittedAtMs: sequence,
-    eventType: "event",
-    payload: sequence,
-    meta: null
-  })
 
 // Non-branch reads are fail-closed; this suite tests paging mechanics, so its
 // server runs every request as the workspace principal.

@@ -5,21 +5,12 @@ import { expectTypeOf } from "vitest"
 import * as SyncClient from "../src/SyncClient.ts"
 import { SyncError, type SyncGapError } from "../src/SyncError.ts"
 import * as Protocol from "../src/SyncProtocol.ts"
+import * as TestEntry from "./fixtures/entry.ts"
 
 const runId = "application-progress" as JournalEvent.RunId
 const scope = { _tag: "Run", runId } as const
 const entries = [0, 1].map((seq) =>
-  new JournalEvent.Entry({
-    runId,
-    seq: seq as JournalEvent.Seq,
-    eventId: `event-${seq}`,
-    sourceId: "source" as JournalEvent.SourceId,
-    sourceSeq: seq as JournalEvent.SourceSeq,
-    emittedAtMs: 0,
-    eventType: "increment",
-    payload: seq + 1,
-    meta: null
-  })
+  TestEntry.entry(runId, seq, { eventId: `event-${seq}`, emittedAtMs: 0, eventType: "increment", payload: seq + 1 })
 )
 const make = () =>
   SyncClient.make({

@@ -4,23 +4,13 @@ import { Effect, Exit, Stream } from "effect"
 import * as SyncClient from "../src/SyncClient.ts"
 import { SyncError } from "../src/SyncError.ts"
 import type * as SyncProtocol from "../src/SyncProtocol.ts"
+import * as TestEntry from "./fixtures/entry.ts"
 
 const runId = "validated-run" as JournalEvent.RunId
 const foreignRunId = "foreign-run" as JournalEvent.RunId
 const seq = (value: number) => value as JournalEvent.Seq
 
-const entry = (sequence: number, entryRunId: JournalEvent.RunId = runId) =>
-  new JournalEvent.Entry({
-    runId: entryRunId,
-    seq: seq(sequence),
-    eventId: `${entryRunId}-${sequence}`,
-    sourceId: "source" as JournalEvent.SourceId,
-    sourceSeq: sequence as JournalEvent.SourceSeq,
-    emittedAtMs: sequence,
-    eventType: "event",
-    payload: sequence,
-    meta: null
-  })
+const entry = (sequence: number, entryRunId: JournalEvent.RunId = runId) => TestEntry.entry(entryRunId, sequence)
 
 interface Case {
   readonly name: string

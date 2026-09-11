@@ -5,8 +5,8 @@ import * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
 import { SyncError } from "../SyncError.ts"
 import * as Protocol from "../SyncProtocol.ts"
-import { causeCode } from "./causeText.ts"
-import { requireVersion } from "./protocolVersion.ts"
+import { causeCode } from "./CauseText.ts"
+import { requireVersion } from "./ProtocolVersion.ts"
 
 /** Decode a detached request before callbacks can mutate its expected identity.
  * @category validation

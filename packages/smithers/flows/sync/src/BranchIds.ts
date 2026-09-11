@@ -34,14 +34,6 @@ export interface Service {
 export class BranchIds extends Context.Service<BranchIds, Service>()("@smthrs/sync/BranchIds") {}
 
 /**
- * Constructs an identifier source from an implementation.
- *
- * @category constructors
- * @since 0.1.0
- */
-export const make = (implementation: Service): Service => BranchIds.of(implementation)
-
-/**
  * Constructs the default source: Web Crypto UUIDs.
  *
  * Web Crypto is used directly, as it is for the share signature in
@@ -54,7 +46,7 @@ export const make = (implementation: Service): Service => BranchIds.of(implement
  * @category constructors
  * @since 0.1.0
  */
-export const makeWebCrypto = (): Service => make({ fresh: Effect.sync(() => crypto.randomUUID()) })
+export const makeWebCrypto = (): Service => BranchIds.of({ fresh: Effect.sync(() => crypto.randomUUID()) })
 
 /**
  * Provides {@link makeWebCrypto}.
@@ -74,7 +66,7 @@ export const layer: Layer.Layer<BranchIds> = Layer.sync(BranchIds)(makeWebCrypto
 export const layerSequential = (prefix: string): Layer.Layer<BranchIds> =>
   Layer.sync(BranchIds)(() => {
     let sequence = 0
-    return make({
+    return BranchIds.of({
       fresh: Effect.sync(() => {
         sequence += 1
         return `${prefix}-${sequence}`

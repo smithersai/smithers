@@ -183,11 +183,6 @@ describe("WorkspaceShare", () => {
       expect(overriddenFailure.message).toBe("overridden")
     }))
 
-  it("keeps `make` an identity over an implementation", () => {
-    const implementation = WorkspaceShare.makeNoop()
-    expect(WorkspaceShare.make(implementation).verify).toBe(implementation.verify)
-  })
-
   it.effect("layerHmac provides a working authority", () =>
     Effect.gen(function*() {
       const claims = yield* run(

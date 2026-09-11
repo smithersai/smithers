@@ -5,21 +5,12 @@ import * as RunCatalog from "../src/RunCatalog.ts"
 import * as SyncClient from "../src/SyncClient.ts"
 import * as SyncPrincipal from "../src/SyncPrincipal.ts"
 import * as SyncServer from "../src/SyncServer.ts"
+import * as TestEntry from "./fixtures/entry.ts"
 
 const runId = "non-json" as JournalEvent.RunId
 const scope = { _tag: "Run", runId } as const
 const entry = (seq: number, payload: unknown) =>
-  new JournalEvent.Entry({
-    runId,
-    seq: seq as JournalEvent.Seq,
-    eventId: `entry-${seq}`,
-    sourceId: "source" as JournalEvent.SourceId,
-    sourceSeq: seq as JournalEvent.SourceSeq,
-    emittedAtMs: 0,
-    eventType: "extension",
-    payload,
-    meta: null
-  })
+  TestEntry.entry(runId, seq, { eventId: `entry-${seq}`, emittedAtMs: 0, eventType: "extension", payload })
 const cycle: Record<string, unknown> = {}
 cycle.self = cycle
 for (const [label, payload] of [["cycle", cycle], ["bigint", 1n], ["function", () => 1]] as const) {

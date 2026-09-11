@@ -9,22 +9,13 @@ import { describe, expect, it } from "@effect/vitest"
 import { JournalEvent } from "@smthrs/journal"
 import { Effect } from "effect"
 import * as BranchProtocol from "../src/BranchProtocol.ts"
-import * as Admission from "../src/internal/admission.ts"
+import * as Admission from "../src/internal/Admission.ts"
+import * as TestEntry from "./fixtures/entry.ts"
 
 const branchId = "admitted" as BranchProtocol.BranchId
 const runId = BranchProtocol.branchRunId(branchId)
 const entry = (seq: number, eventType: string, payload: unknown) =>
-  new JournalEvent.Entry({
-    runId,
-    seq: seq as JournalEvent.Seq,
-    eventId: `entry-${seq}`,
-    sourceId: "source" as JournalEvent.SourceId,
-    sourceSeq: seq as JournalEvent.SourceSeq,
-    emittedAtMs: 0,
-    eventType,
-    payload,
-    meta: null
-  })
+  TestEntry.entry(runId, seq, { eventId: `entry-${seq}`, emittedAtMs: 0, eventType, payload })
 
 describe("Admission.withCommands", () => {
   it.effect("returns each command beside the payload admission decoded, and nothing beside other events", () =>

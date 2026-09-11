@@ -360,7 +360,6 @@ describe("BranchPresence", () => {
           )
         )).message
       ).toBe("overridden")
-      expect(BranchPresence.make(noop).list).toBe(noop.list)
     }))
 })
 

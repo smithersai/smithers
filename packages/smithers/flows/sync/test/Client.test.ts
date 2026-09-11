@@ -11,24 +11,12 @@ import * as SyncRpcs from "../src/SyncRpcs.ts"
 import * as SyncServer from "../src/SyncServer.ts"
 import * as TestSocket from "../src/test/TestSocket.ts"
 import * as TestSync from "../src/test/TestSync.ts"
+import { entry } from "./fixtures/entry.ts"
 
 const runId = (value: string) => value as JournalEvent.RunId
 const sourceId = (value: string) => value as JournalEvent.SourceId
 const seq = (value: number) => value as JournalEvent.Seq
 const sourceSeq = (value: number) => value as JournalEvent.SourceSeq
-
-const entry = (id: string, sequence: number) =>
-  new JournalEvent.Entry({
-    runId: runId(id),
-    seq: seq(sequence),
-    eventId: `${id}-${sequence}`,
-    sourceId: sourceId("source"),
-    sourceSeq: sourceSeq(sequence),
-    emittedAtMs: sequence,
-    eventType: "event",
-    payload: sequence,
-    meta: null
-  })
 
 const program = <A, E>(
   effect: Effect.Effect<A, E, Journal.Journal | Scope.Scope | SyncRpcs.SyncAuth | SyncServer.SyncServer>

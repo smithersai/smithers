@@ -166,7 +166,10 @@ const program = Effect.gen(function*() {
       for (const live of [false, true]) {
         yield* Effect.gen(function*() {
           const served = live
-            ? SyncServer.make({ ...server, read: () => Effect.succeed({ entries: [], cursors: [], done: true }) })
+            ? SyncServer.SyncServer.of({
+              ...server,
+              read: () => Effect.succeed({ entries: [], cursors: [], done: true })
+            })
             : server
           const remote = yield* TestSync.connect(yield* TestSocket.makePair()).pipe(
             Effect.provideService(SyncServer.SyncServer, served)
@@ -259,7 +262,10 @@ const program = Effect.gen(function*() {
     for (const live of [false, true]) {
       yield* Effect.gen(function*() {
         const served = live
-          ? SyncServer.make({ ...server, read: () => Effect.succeed({ entries: [], cursors: [], done: true }) })
+          ? SyncServer.SyncServer.of({
+            ...server,
+            read: () => Effect.succeed({ entries: [], cursors: [], done: true })
+          })
           : server
         const remote = yield* TestSync.connect(yield* TestSocket.makePair()).pipe(
           Effect.provideService(SyncServer.SyncServer, served)

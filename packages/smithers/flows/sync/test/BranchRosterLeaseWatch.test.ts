@@ -1,31 +1,15 @@
 import { describe, expect, it } from "@effect/vitest"
-import { Deferred, Effect, Fiber, Layer, Option, Queue, Redacted, type Scope, Stream } from "effect"
+import { Deferred, Effect, Fiber, Layer, Redacted, Stream } from "effect"
 import { TestClock } from "effect/testing"
-import * as RpcClient from "effect/unstable/rpc/RpcClient"
-import type * as RpcClientError from "effect/unstable/rpc/RpcClientError"
-import type * as RpcGroup from "effect/unstable/rpc/RpcGroup"
-import type { FromServerEncoded } from "effect/unstable/rpc/RpcMessage"
-import * as RpcSerialization from "effect/unstable/rpc/RpcSerialization"
-import * as RpcServer from "effect/unstable/rpc/RpcServer"
-import * as Socket from "effect/unstable/socket/Socket"
 import * as BranchCommands from "../src/BranchCommands.ts"
 import * as BranchIds from "../src/BranchIds.ts"
 import * as BranchPresence from "../src/BranchPresence.ts"
 import { type BranchId, Participant, type ParticipantId } from "../src/BranchProtocol.ts"
-import * as BranchRpcs from "../src/BranchRpcs.ts"
-import * as BranchServer from "../src/BranchServer.ts"
 import * as BranchShare from "../src/BranchShare.ts"
 import * as SyncPrincipal from "../src/SyncPrincipal.ts"
 import { SyncAuth } from "../src/SyncRpcs.ts"
 import * as TestSocket from "../src/test/TestSocket.ts"
-
-type Client = RpcClient.RpcClient<RpcGroup.Rpcs<typeof BranchRpcs.BranchRpcs>, RpcClientError.RpcClientError>
-type Requirements =
-  | BranchShare.BranchShare
-  | BranchCommands.BranchCommands
-  | BranchIds.BranchIds
-  | SyncAuth
-  | Scope.Scope
+import { connect, type Requirements } from "./fixtures/branchRpc.ts"
 
 const base = Layer.mergeAll(
   BranchShare.layerHmac({
@@ -33,6 +17,7 @@ const base = Layer.mergeAll(
     keys: [{ kid: "primary", secret: Redacted.make("roster-watch-secret") }]
   }),
   BranchCommands.layerNoop,
+  BranchPresence.layerNoop,
   BranchIds.layerSequential("roster"),
   Layer.succeed(SyncAuth)((effect) =>
     Effect.provideService(effect, SyncPrincipal.SyncPrincipal, SyncPrincipal.workspace("roster-test"))
@@ -41,54 +26,6 @@ const base = Layer.mergeAll(
 
 const program = <A, E>(effect: Effect.Effect<A, E, Requirements>) =>
   effect.pipe(Effect.provide(base), Effect.provide(TestClock.layer()), Effect.scoped)
-
-const connect = (
-  pair: TestSocket.Pair,
-  presence: BranchPresence.Service
-): Effect.Effect<Client, never, Requirements> =>
-  Effect.gen(function*() {
-    const handlers = yield* Layer.build(BranchServer.layerHandlers).pipe(
-      Effect.provideService(BranchPresence.BranchPresence, presence)
-    )
-    const serialization = RpcSerialization.json.makeUnsafe()
-    const writer = yield* pair.server.writer
-    const protocol = yield* RpcServer.Protocol.make((writeRequest) =>
-      Effect.gen(function*() {
-        yield* pair.server.runRaw((bytes) =>
-          Effect.forEach(serialization.decode(bytes), (message) => writeRequest(0, message as never), {
-            discard: true
-          })
-        ).pipe(Effect.forkScoped)
-        return {
-          disconnects: yield* Queue.make<number>(),
-          send: (_clientId: number, response: FromServerEncoded) => {
-            const encoded = serialization.encode(response)
-            return encoded === undefined ? Effect.void : Effect.orDie(writer(encoded))
-          },
-          end: () => Effect.void,
-          clientIds: Effect.succeed<ReadonlySet<number>>(new Set([0])),
-          initialMessage: Effect.succeed(Option.none()),
-          supportsAck: true,
-          supportsTransferables: false,
-          supportsSpanPropagation: false,
-          supportsNotifications: true,
-          codecFor: RpcSerialization.json.codecFor
-        }
-      })
-    )
-    yield* RpcServer.make(BranchRpcs.BranchRpcs, { disableFatalDefects: true }).pipe(
-      Effect.provideService(RpcServer.Protocol, protocol),
-      Effect.provide(handlers),
-      Effect.forkScoped
-    )
-    const clientProtocol = yield* RpcClient.makeProtocolSocket().pipe(
-      Effect.provideService(Socket.Socket, pair.client),
-      Effect.provide(RpcSerialization.layerJson)
-    )
-    return yield* RpcClient.make(BranchRpcs.BranchRpcs).pipe(
-      Effect.provideService(RpcClient.Protocol, clientProtocol)
-    )
-  })
 
 const leaseMs = 1_000
 const alice = "alice" as ParticipantId
@@ -101,7 +38,7 @@ describe("Branch.WatchRoster lease propagation", () => {
         Effect.gen(function*() {
           const presence = yield* BranchPresence.makeMemory({ leaseMs })
           const pair = yield* TestSocket.makePair()
-          const client = yield* connect(pair, presence)
+          const client = yield* connect(pair, { presence })
           const share = yield* BranchShare.BranchShare
           const branchId = "lease-watch" as BranchId
           const capability = yield* share.mint({
@@ -167,7 +104,7 @@ describe("Branch.WatchRoster lease propagation", () => {
         Effect.gen(function*() {
           const presence = yield* BranchPresence.makeMemory({ leaseMs })
           const pair = yield* TestSocket.makePair()
-          const client = yield* connect(pair, presence)
+          const client = yield* connect(pair, { presence })
           const share = yield* BranchShare.BranchShare
           const branchId = "last-participant" as BranchId
           const capability = yield* share.mint({
@@ -218,7 +155,7 @@ describe("Branch.WatchRoster lease propagation", () => {
           const initialListed = yield* Deferred.make<void>()
           const releaseInitial = yield* Deferred.make<void>()
           let lists = 0
-          const controlled = BranchPresence.make({
+          const controlled = BranchPresence.BranchPresence.of({
             ...memory,
             list: (request) =>
               Effect.gen(function*() {
@@ -232,7 +169,7 @@ describe("Branch.WatchRoster lease propagation", () => {
               })
           })
           const pair = yield* TestSocket.makePair()
-          const client = yield* connect(pair, controlled)
+          const client = yield* connect(pair, { presence: controlled })
           const share = yield* BranchShare.BranchShare
           const branchId = "watch-toctou" as BranchId
           const capability = yield* share.mint({
@@ -285,7 +222,7 @@ describe("Branch.WatchRoster lease propagation", () => {
       ]
       const rosters = yield* Effect.gen(function*() {
         let lists = 0
-        const presence = BranchPresence.make({
+        const presence = BranchPresence.BranchPresence.of({
           ...BranchPresence.makeNoop(),
           leaseMs: 600_000,
           changes: Stream.make(branchId),
@@ -297,7 +234,7 @@ describe("Branch.WatchRoster lease propagation", () => {
             })
         })
         const pair = yield* TestSocket.makePair()
-        const client = yield* connect(pair, presence)
+        const client = yield* connect(pair, { presence })
         const share = yield* BranchShare.BranchShare
         const capability = yield* share.mint({
           branchId,
@@ -329,7 +266,7 @@ describe("Branch.WatchRoster lease propagation", () => {
       const branchId = "roster-ordering" as BranchId
       const leases = yield* Effect.gen(function*() {
         let lists = 0
-        const presence = BranchPresence.make({
+        const presence = BranchPresence.BranchPresence.of({
           ...BranchPresence.makeNoop(),
           leaseMs: 600_000,
           // Delivered at once, so it races the subscription's own snapshot.
@@ -356,7 +293,7 @@ describe("Branch.WatchRoster lease propagation", () => {
             })
         })
         const pair = yield* TestSocket.makePair()
-        const client = yield* connect(pair, presence)
+        const client = yield* connect(pair, { presence })
         const share = yield* BranchShare.BranchShare
         const capability = yield* share.mint({
           branchId,
@@ -390,7 +327,7 @@ describe("Branch.WatchRoster lease propagation", () => {
           // The re-list a change drives has to COMPLETE before the next change
           // is published, or the two collapse into one list and the case
           // proves nothing either way.
-          const controlled = BranchPresence.make({
+          const controlled = BranchPresence.BranchPresence.of({
             ...memory,
             list: (request) =>
               Effect.gen(function*() {
@@ -401,7 +338,7 @@ describe("Branch.WatchRoster lease propagation", () => {
               })
           })
           const pair = yield* TestSocket.makePair()
-          const client = yield* connect(pair, controlled)
+          const client = yield* connect(pair, { presence: controlled })
           const share = yield* BranchShare.BranchShare
           const branchId = "roster-initial" as BranchId
           const capability = yield* share.mint({

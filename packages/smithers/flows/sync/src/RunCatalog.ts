@@ -11,7 +11,7 @@ import * as PubSub from "effect/PubSub"
 import * as Ref from "effect/Ref"
 import type * as Scope from "effect/Scope"
 import * as Stream from "effect/Stream"
-import { positiveInt } from "./internal/options.ts"
+import { positiveInt } from "./internal/PolicyOptions.ts"
 import type { SyncError } from "./SyncError.ts"
 
 /**
@@ -52,14 +52,6 @@ export interface Service {
 export class RunCatalog extends Context.Service<RunCatalog, Service>()("@smthrs/sync/RunCatalog") {}
 
 /**
- * Constructs a run catalog service from an implementation.
- *
- * @category constructors
- * @since 0.1.0
- */
-export const make = (implementation: Service): Service => RunCatalog.of(implementation)
-
-/**
  * Provides an immutable run catalog.
  *
  * `list` answers with a fresh array each time, matching {@link makeMemory} and
@@ -76,7 +68,7 @@ export const layerStatic = (
   const known = Array.from(new Set(ids))
   return Layer.succeed(
     RunCatalog,
-    make({
+    RunCatalog.of({
       list: Effect.sync(() => [...known]),
       changes: Stream.empty
     })
@@ -138,7 +130,7 @@ export const makeMemory = (options: MemoryOptions = {}): Effect.Effect<{
       yield* positiveInt("RunCatalog.MemoryOptions.changesCapacity", options.changesCapacity, defaultChangesCapacity)
     )
     return {
-      catalog: make({
+      catalog: RunCatalog.of({
         list: Effect.sync(() => Array.from(known)).pipe(Effect.withSpan("RunCatalog.list")),
         changes: Stream.fromPubSub(changes)
       }),
@@ -275,7 +267,7 @@ export const makePolling = <E, R>(
       Effect.forkScoped
     )
 
-    return make({
+    return RunCatalog.of({
       list: Effect.map(Ref.get(snapshot), (ids) => [...ids]).pipe(Effect.withSpan("RunCatalog.list")),
       changes: Stream.fromPubSub(changes)
     })

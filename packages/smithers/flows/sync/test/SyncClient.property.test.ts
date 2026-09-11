@@ -10,6 +10,7 @@ import { FastCheck } from "effect/testing"
 import * as SyncClient from "../src/SyncClient.ts"
 import { SyncError, SyncGapError } from "../src/SyncError.ts"
 import type * as SyncProtocol from "../src/SyncProtocol.ts"
+import * as TestEntry from "./fixtures/entry.ts"
 
 const params = {
   numRuns: Number(process.env.FC_NUM_RUNS ?? 100),
@@ -22,18 +23,7 @@ const runId = "property-run" as JournalEvent.RunId
 const foreignRunId = "foreign-run" as JournalEvent.RunId
 const seq = (value: number) => value as JournalEvent.Seq
 
-const entry = (sequence: number, entryRunId: JournalEvent.RunId = runId) =>
-  new JournalEvent.Entry({
-    runId: entryRunId,
-    seq: seq(sequence),
-    eventId: `${entryRunId}-${sequence}`,
-    sourceId: "source" as JournalEvent.SourceId,
-    sourceSeq: sequence as JournalEvent.SourceSeq,
-    emittedAtMs: sequence,
-    eventType: "event",
-    payload: sequence,
-    meta: null
-  })
+const entry = (sequence: number, entryRunId: JournalEvent.RunId = runId) => TestEntry.entry(entryRunId, sequence)
 
 const stubClient = (frames: ReadonlyArray<SyncProtocol.Frame>) =>
   SyncClient.make({

@@ -6,24 +6,14 @@ import { SyncError } from "../src/SyncError.ts"
 import * as SyncPrincipal from "../src/SyncPrincipal.ts"
 import * as SyncProtocol from "../src/SyncProtocol.ts"
 import * as SyncServer from "../src/SyncServer.ts"
+import * as TestEntry from "./fixtures/entry.ts"
 
 const runId = "gapped-run" as JournalEvent.RunId
 const seq = (value: number) => value as JournalEvent.Seq
 const sourceId = "source" as JournalEvent.SourceId
 const sourceSeq = (value: number) => value as JournalEvent.SourceSeq
 
-const entry = (value: number) =>
-  new JournalEvent.Entry({
-    runId,
-    seq: seq(value),
-    eventId: `event-${value}`,
-    sourceId,
-    sourceSeq: sourceSeq(value),
-    emittedAtMs: value,
-    eventType: "event",
-    payload: value,
-    meta: null
-  })
+const entry = (value: number) => TestEntry.entry(runId, value, { eventId: `event-${value}` })
 
 const makeServer = (entries: ReadonlyArray<JournalEvent.Entry>) =>
   SyncServer.makeLive.pipe(

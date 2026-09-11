@@ -52,7 +52,7 @@ describe("BranchRpcs", () => {
   it("reaches no branch service and never the journal service", () => {
     const files = reachable("BranchRpcs.ts")
     expect(files).toContain("BranchProtocol.ts")
-    for (const service of ["BranchCommands.ts", "BranchPresence.ts", "BranchShare.ts", "internal/admission.ts"]) {
+    for (const service of ["BranchCommands.ts", "BranchPresence.ts", "BranchShare.ts", "internal/Admission.ts"]) {
       expect(files).not.toContain(service)
     }
     const external = files.flatMap((file) => specifiers(new URL(file, src))).filter((specifier) =>

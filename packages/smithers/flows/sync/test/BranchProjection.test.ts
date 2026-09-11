@@ -3,6 +3,7 @@ import * as Schema from "effect/Schema"
 import { describe, expect, it } from "vitest"
 import * as BranchProjection from "../src/BranchProjection.ts"
 import * as BranchProtocol from "../src/BranchProtocol.ts"
+import * as TestEntry from "./fixtures/entry.ts"
 
 const branchId = "live-branch" as BranchProtocol.BranchId
 const runId = BranchProtocol.branchRunId(branchId)
@@ -17,16 +18,12 @@ const entry = (fields: {
   readonly eventType?: string
   readonly participantId?: string
 }) =>
-  new JournalEvent.Entry({
-    runId: fields.runId ?? runId,
-    seq: fields.seq as JournalEvent.Seq,
+  TestEntry.entry(fields.runId ?? runId, fields.seq, {
     eventId: `event-${fields.seq}`,
     sourceId: BranchProtocol.commandSourceId(`event-${fields.seq}` as BranchProtocol.CommandId),
     sourceSeq: (nextSourceSeq += 1) as JournalEvent.SourceSeq,
-    emittedAtMs: fields.seq,
     eventType: fields.eventType ?? BranchProtocol.CommandEvent,
-    payload: fields.payload,
-    meta: null
+    payload: fields.payload
   })
 
 const command = (fields: {

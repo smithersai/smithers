@@ -16,6 +16,7 @@ import { Deferred, Effect, Fiber, Layer, Stream } from "effect"
 import * as RunCatalog from "../src/RunCatalog.ts"
 import * as SyncPrincipal from "../src/SyncPrincipal.ts"
 import * as SyncServer from "../src/SyncServer.ts"
+import * as TestEntry from "./fixtures/entry.ts"
 
 const runId = (value: string) => value as JournalEvent.RunId
 const sourceId = (value: string) => value as JournalEvent.SourceId
@@ -23,17 +24,7 @@ const seq = (value: number) => value as JournalEvent.Seq
 const sourceSeq = (value: number) => value as JournalEvent.SourceSeq
 
 const entry = (id: string, sequence: number) =>
-  new JournalEvent.Entry({
-    runId: runId(id),
-    seq: seq(sequence),
-    eventId: `${id}-${sequence}`,
-    sourceId: sourceId("source"),
-    sourceSeq: sourceSeq(sequence),
-    emittedAtMs: sequence,
-    eventType: "event",
-    payload: { index: sequence, text: "x".repeat(256) },
-    meta: null
-  })
+  TestEntry.entry(id, sequence, { payload: { index: sequence, text: "x".repeat(256) } })
 
 interface Tracker {
   open: number

@@ -15,7 +15,7 @@ import * as Effect from "effect/Effect"
 import * as Redacted from "effect/Redacted"
 import type { Access } from "../BranchProtocol.ts"
 import { SyncError } from "../SyncError.ts"
-import { causeText } from "./causeText.ts"
+import { causeText } from "./CauseText.ts"
 
 const encoder = new TextEncoder()
 

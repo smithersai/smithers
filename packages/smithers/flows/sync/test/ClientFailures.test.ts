@@ -12,24 +12,12 @@ import { TestClock } from "effect/testing"
 import * as SyncClient from "../src/SyncClient.ts"
 import { SyncError, SyncGapError } from "../src/SyncError.ts"
 import type * as SyncProtocol from "../src/SyncProtocol.ts"
+import { entry } from "./fixtures/entry.ts"
 
 const runId = (value: string) => value as JournalEvent.RunId
 const sourceId = (value: string) => value as JournalEvent.SourceId
 const seq = (value: number) => value as JournalEvent.Seq
 const sourceSeq = (value: number) => value as JournalEvent.SourceSeq
-
-const entry = (id: string, sequence: number) =>
-  new JournalEvent.Entry({
-    runId: runId(id),
-    seq: seq(sequence),
-    eventId: `${id}-${sequence}`,
-    sourceId: sourceId("source"),
-    sourceSeq: sourceSeq(sequence),
-    emittedAtMs: sequence,
-    eventType: "event",
-    payload: sequence,
-    meta: null
-  })
 
 interface Stub {
   readonly read?: (

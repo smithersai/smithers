@@ -38,9 +38,10 @@ import {
   SubmitRequest
 } from "./BranchProtocol.ts"
 import * as BranchShare from "./BranchShare.ts"
-import * as Admission from "./internal/admission.ts"
-import { causeCode, journalErrorCode } from "./internal/causeText.ts"
-import { positiveInt } from "./internal/options.ts"
+import * as Admission from "./internal/Admission.ts"
+import { causeCode } from "./internal/CauseText.ts"
+import { journalErrorCode } from "./internal/JournalErrorCode.ts"
+import { positiveInt } from "./internal/PolicyOptions.ts"
 import { SyncError } from "./SyncError.ts"
 import * as SyncProtocol from "./SyncProtocol.ts"
 
@@ -63,21 +64,13 @@ export interface Service {
 export class BranchCommands extends Context.Service<BranchCommands, Service>()("@smthrs/sync/BranchCommands") {}
 
 /**
- * Constructs a command ledger from an implementation.
- *
- * @category constructors
- * @since 0.1.0
- */
-export const make = (implementation: Service): Service => BranchCommands.of(implementation)
-
-/**
  * Constructs a command ledger that admits nothing.
  *
  * @category constructors
  * @since 0.1.0
  */
 export const makeNoop = (overrides: Partial<Service> = {}): Service =>
-  make({
+  BranchCommands.of({
     submit: () => Effect.fail(new SyncError({ code: "closed", message: "Branch commands are unavailable" })),
     ...overrides
   })
@@ -518,7 +511,7 @@ const makeWith = (
         return yield* permitFor(request.submission.branchId).withPermits(1)(admit(request))
       })
 
-      return make({ submit })
+      return BranchCommands.of({ submit })
     }
   )
 

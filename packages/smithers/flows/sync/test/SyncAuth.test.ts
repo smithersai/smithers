@@ -209,7 +209,7 @@ describe("SyncAuth", () => {
                 Layer.effect(
                   WorkspaceShare.WorkspaceShare,
                   Effect.map(WorkspaceShare.makeHmac(keyring), (real) =>
-                    WorkspaceShare.make({
+                    WorkspaceShare.WorkspaceShare.of({
                       mint: real.mint,
                       verify: () =>
                         Effect.fail(

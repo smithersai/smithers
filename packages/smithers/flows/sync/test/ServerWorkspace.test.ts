@@ -10,37 +10,14 @@ import * as RunCatalog from "../src/RunCatalog.ts"
 import { SyncError } from "../src/SyncError.ts"
 import * as SyncPrincipal from "../src/SyncPrincipal.ts"
 import * as SyncServer from "../src/SyncServer.ts"
+import { entry } from "./fixtures/entry.ts"
 
 const runId = (value: string) => value as JournalEvent.RunId
 const sourceId = (value: string) => value as JournalEvent.SourceId
 const seq = (value: number) => value as JournalEvent.Seq
 const sourceSeq = (value: number) => value as JournalEvent.SourceSeq
 
-const entry = (id: string, sequence: number) =>
-  new JournalEvent.Entry({
-    runId: runId(id),
-    seq: seq(sequence),
-    eventId: `${id}-${sequence}`,
-    sourceId: sourceId("source"),
-    sourceSeq: sourceSeq(sequence),
-    emittedAtMs: sequence,
-    eventType: "event",
-    payload: sequence,
-    meta: null
-  })
-
-const bigEntry = (id: JournalEvent.RunId, sequence: number, payload: string) =>
-  new JournalEvent.Entry({
-    runId: id,
-    seq: seq(sequence),
-    eventId: `${id}-${sequence}`,
-    sourceId: sourceId("source"),
-    sourceSeq: sourceSeq(sequence),
-    emittedAtMs: sequence,
-    eventType: "event",
-    payload,
-    meta: null
-  })
+const bigEntry = (id: JournalEvent.RunId, sequence: number, payload: string) => entry(id, sequence, { payload })
 
 const journalOf = (byRun: Record<string, ReadonlyArray<JournalEvent.Entry>>) =>
   Journal.layerNoop({

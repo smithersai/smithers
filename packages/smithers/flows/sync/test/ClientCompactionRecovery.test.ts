@@ -12,6 +12,7 @@ import * as SyncProtocol from "../src/SyncProtocol.ts"
 import * as SyncServer from "../src/SyncServer.ts"
 import * as TestSocket from "../src/test/TestSocket.ts"
 import * as TestSync from "../src/test/TestSync.ts"
+import * as TestEntry from "./fixtures/entry.ts"
 
 const runId = "compaction-recovery" as JournalEvent.RunId
 const scope = { _tag: "Run", runId } as const
@@ -24,16 +25,11 @@ const compacted = (floor: number, target = runId) =>
     resync: { runId: target, checkpointSeq: seq(floor) }
   })
 const entry = (value: number) =>
-  new JournalEvent.Entry({
-    runId,
-    seq: seq(value),
+  TestEntry.entry(runId, value, {
     eventId: `event-${value}`,
     sourceId: "writer" as JournalEvent.SourceId,
-    sourceSeq: value as JournalEvent.SourceSeq,
-    emittedAtMs: value,
     eventType: "increment",
-    payload: 1,
-    meta: null
+    payload: 1
   })
 
 /** Honours the exact requested cursor; replaying a restored prefix doubles the counter. */

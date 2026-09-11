@@ -16,24 +16,14 @@ import { SyncError, SyncGapError } from "../src/SyncError.ts"
 import * as SyncPrincipal from "../src/SyncPrincipal.ts"
 import * as SyncServer from "../src/SyncServer.ts"
 import * as TestSocket from "../src/test/TestSocket.ts"
+import * as TestEntry from "./fixtures/entry.ts"
 
 const runId = (value: string) => value as JournalEvent.RunId
 const seq = (value: number) => value as JournalEvent.Seq
 const sourceId = "source" as JournalEvent.SourceId
 const sourceSeq = (value: number) => value as JournalEvent.SourceSeq
 
-const entry = (sequence: number) =>
-  new JournalEvent.Entry({
-    runId: runId("boundary"),
-    seq: seq(sequence),
-    eventId: `boundary-${sequence}`,
-    sourceId,
-    sourceSeq: sourceSeq(sequence),
-    emittedAtMs: sequence,
-    eventType: "event",
-    payload: sequence,
-    meta: null
-  })
+const entry = (sequence: number) => TestEntry.entry("boundary", sequence)
 
 const scope = { _tag: "Run", runId: runId("boundary") } as const
 

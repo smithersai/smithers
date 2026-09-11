@@ -24,21 +24,9 @@ import * as RunCatalog from "../src/RunCatalog.ts"
 import * as SyncPrincipal from "../src/SyncPrincipal.ts"
 import type * as SyncProtocol from "../src/SyncProtocol.ts"
 import * as SyncServer from "../src/SyncServer.ts"
+import { entry } from "./fixtures/entry.ts"
 
 const runId = (value: string) => value as JournalEvent.RunId
-
-const entry = (id: string, sequence: number) =>
-  new JournalEvent.Entry({
-    runId: runId(id),
-    seq: sequence as JournalEvent.Seq,
-    eventId: `${id}-${sequence}`,
-    sourceId: "source" as JournalEvent.SourceId,
-    sourceSeq: sequence as JournalEvent.SourceSeq,
-    emittedAtMs: sequence,
-    eventType: "event",
-    payload: sequence,
-    meta: null
-  })
 
 /**
  * A journal shaped like the real one: a run stream replays what is there and
@@ -68,7 +56,7 @@ const followingJournal = (byRun: Record<string, ReadonlyArray<JournalEvent.Entry
 const duplicatingCatalog = (ids: ReadonlyArray<JournalEvent.RunId>) =>
   Layer.succeed(
     RunCatalog.RunCatalog,
-    RunCatalog.make({ list: Effect.succeed(ids), changes: Stream.empty })
+    RunCatalog.RunCatalog.of({ list: Effect.succeed(ids), changes: Stream.empty })
   )
 
 const byRun = { alpha: [entry("alpha", 0), entry("alpha", 1)], beta: [entry("beta", 0)] }

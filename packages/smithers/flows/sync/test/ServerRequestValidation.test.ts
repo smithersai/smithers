@@ -5,22 +5,12 @@ import * as RunCatalog from "../src/RunCatalog.ts"
 import * as SyncPrincipal from "../src/SyncPrincipal.ts"
 import * as SyncProtocol from "../src/SyncProtocol.ts"
 import * as SyncServer from "../src/SyncServer.ts"
+import * as TestEntry from "./fixtures/entry.ts"
 
 const runId = "request-validation" as JournalEvent.RunId
 const seq = (value: number) => value as JournalEvent.Seq
 
-const entry = (sequence: number) =>
-  new JournalEvent.Entry({
-    runId,
-    seq: seq(sequence),
-    eventId: `request-validation-${sequence}`,
-    sourceId: "source" as JournalEvent.SourceId,
-    sourceSeq: sequence as JournalEvent.SourceSeq,
-    emittedAtMs: sequence,
-    eventType: "event",
-    payload: sequence,
-    meta: null
-  })
+const entry = (sequence: number) => TestEntry.entry(runId, sequence)
 
 describe("SyncServer request validation", () => {
   // The read position came from the FIRST duplicate and the echoed response

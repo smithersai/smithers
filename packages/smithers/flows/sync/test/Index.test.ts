@@ -3,6 +3,7 @@
  * re-exports are part of the public contract: a renamed or dropped module here
  * breaks callers without any single module's own tests noticing.
  */
+import { readdirSync } from "node:fs"
 import { describe, expect, it } from "vitest"
 import * as Sync from "../src/index.ts"
 
@@ -56,11 +57,27 @@ describe("@smthrs/sync barrel", () => {
   })
 
   it("keeps the service namespaces' constructor conventions distinct", () => {
-    expect(typeof Sync.SyncServer.make).toBe("function")
     expect(typeof Sync.SyncServer.makeNoop).toBe("function")
     expect(typeof Sync.SyncClient.makeNoop).toBe("function")
-    expect(typeof Sync.RunCatalog.make).toBe("function")
     expect(Sync.SyncServer.makeNoop).not.toBe(Sync.SyncClient.makeNoop)
+  })
+
+  it("exports `make` only where it constructs something: SyncClient", () => {
+    const withMake = Object.entries(Sync).filter(([, module]) => "make" in module).map(([name]) => name)
+    expect(withMake).toEqual(["SyncClient"])
+  })
+
+  it("names every internal module after its one concept, in PascalCase", () => {
+    const internal = readdirSync(new URL("../src/internal", import.meta.url)).sort()
+    expect(internal).toEqual([
+      "Admission.ts",
+      "CauseText.ts",
+      "JournalErrorCode.ts",
+      "PolicyOptions.ts",
+      "ProtocolVersion.ts",
+      "ShareSigner.ts",
+      "SnapshotBoundary.ts"
+    ])
   })
 
   it("names every service tag after its module", () => {

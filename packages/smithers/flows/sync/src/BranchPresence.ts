@@ -30,7 +30,7 @@ import {
   type RosterRequest
 } from "./BranchProtocol.ts"
 import * as BranchShare from "./BranchShare.ts"
-import { positiveInt } from "./internal/options.ts"
+import { positiveInt } from "./internal/PolicyOptions.ts"
 import { SyncError } from "./SyncError.ts"
 
 /**
@@ -68,14 +68,6 @@ export interface Service {
  */
 export class BranchPresence extends Context.Service<BranchPresence, Service>()("@smthrs/sync/BranchPresence") {}
 
-/**
- * Constructs a presence registry from an implementation.
- *
- * @category constructors
- * @since 0.1.0
- */
-export const make = (implementation: Service): Service => BranchPresence.of(implementation)
-
 const unavailable = new SyncError({ code: "closed", message: "Branch presence is unavailable" })
 
 /**
@@ -94,7 +86,7 @@ export const defaultLeaseMs = 30_000
  * @since 0.1.0
  */
 export const makeNoop = (overrides: Partial<Service> = {}): Service =>
-  make({
+  BranchPresence.of({
     announce: () => Effect.fail(unavailable),
     leave: () => Effect.fail(unavailable),
     list: () => Effect.succeed([]),
@@ -367,7 +359,7 @@ const makeResolved = (
       return live(request.branchId, yield* Clock.currentTimeMillis)
     })
 
-    return make({ announce, leave, list, changes: Stream.fromPubSub(changes), leaseMs })
+    return BranchPresence.of({ announce, leave, list, changes: Stream.fromPubSub(changes), leaseMs })
   })
 
 /**

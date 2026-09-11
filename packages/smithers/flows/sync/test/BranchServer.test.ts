@@ -8,28 +8,8 @@
 import { describe, expect, it } from "@effect/vitest"
 import { Journal } from "@smthrs/journal"
 import * as TestJournal from "@smthrs/journal/test/TestJournal"
-import {
-  Deferred,
-  Effect,
-  Exit,
-  Fiber,
-  Layer,
-  Option,
-  Queue,
-  Redacted,
-  Result,
-  Schema,
-  type Scope,
-  Stream
-} from "effect"
+import { Deferred, Effect, Exit, Fiber, Layer, Redacted, Result, Schema, type Scope, Stream } from "effect"
 import { TestClock } from "effect/testing"
-import * as RpcClient from "effect/unstable/rpc/RpcClient"
-import type * as RpcClientError from "effect/unstable/rpc/RpcClientError"
-import type * as RpcGroup from "effect/unstable/rpc/RpcGroup"
-import type { FromServerEncoded } from "effect/unstable/rpc/RpcMessage"
-import * as RpcSerialization from "effect/unstable/rpc/RpcSerialization"
-import * as RpcServer from "effect/unstable/rpc/RpcServer"
-import * as Socket from "effect/unstable/socket/Socket"
 import * as BranchCommands from "../src/BranchCommands.ts"
 import * as BranchIds from "../src/BranchIds.ts"
 import * as BranchPresence from "../src/BranchPresence.ts"
@@ -45,12 +25,12 @@ import {
   ShareClaims
 } from "../src/BranchProtocol.ts"
 import * as BranchRpcs from "../src/BranchRpcs.ts"
-import * as BranchServer from "../src/BranchServer.ts"
 import * as BranchShare from "../src/BranchShare.ts"
 import { SyncError } from "../src/SyncError.ts"
 import * as SyncPrincipal from "../src/SyncPrincipal.ts"
 import { SyncAuth } from "../src/SyncRpcs.ts"
 import * as TestSocket from "../src/test/TestSocket.ts"
+import { connect } from "./fixtures/branchRpc.ts"
 
 const base = Layer.mergeAll(
   TestJournal.layer(),
@@ -77,74 +57,6 @@ type Requirements =
 const program = <A, E>(effect: Effect.Effect<A, E, Requirements>) =>
   effect.pipe(Effect.provide(layer), Effect.provide(TestClock.layer()), Effect.scoped)
 
-type Client = RpcClient.RpcClient<RpcGroup.Rpcs<typeof BranchRpcs.BranchRpcs>, RpcClientError.RpcClientError>
-
-/**
- * One RPC client over a fresh in-memory socket pair.
- *
- * The server end runs the real schema-aware protocol (`RpcServer.make` over a
- * hand-rolled `Protocol` bound to the socket pair), so typed failures decode
- * on the client exactly as they would over a hosted transport.
- */
-const connect = (
-  pair: TestSocket.Pair,
-  authenticated = true,
-  shareOverride?: BranchShare.Service,
-  idsOverride?: BranchIds.Service
-): Effect.Effect<Client, never, Requirements> =>
-  Effect.gen(function*() {
-    const ambient = yield* BranchShare.BranchShare
-    const ambientIds = yield* BranchIds.BranchIds
-    const handlers = yield* Layer.build(BranchServer.layerHandlers).pipe(
-      Effect.provideService(BranchShare.BranchShare, shareOverride ?? ambient),
-      Effect.provideService(BranchIds.BranchIds, idsOverride ?? ambientIds)
-    )
-    const serialization = RpcSerialization.json.makeUnsafe()
-    const writer = yield* pair.server.writer
-    const protocol = yield* RpcServer.Protocol.make((writeRequest) =>
-      Effect.gen(function*() {
-        yield* pair.server.runRaw((bytes) =>
-          Effect.forEach(serialization.decode(bytes), (message) => writeRequest(0, message as never), {
-            discard: true
-          })
-        ).pipe(Effect.forkScoped)
-        return {
-          disconnects: yield* Queue.make<number>(),
-          send: (_clientId: number, response: FromServerEncoded) => {
-            const encoded = serialization.encode(response)
-            return encoded === undefined ? Effect.void : Effect.orDie(writer(encoded))
-          },
-          end: () => Effect.void,
-          clientIds: Effect.succeed<ReadonlySet<number>>(new Set([0])),
-          initialMessage: Effect.succeed(Option.none()),
-          supportsAck: true,
-          supportsTransferables: false,
-          supportsSpanPropagation: false,
-          supportsNotifications: true,
-          codecFor: RpcSerialization.json.codecFor
-        }
-      })
-    )
-    yield* RpcServer.make(BranchRpcs.BranchRpcs, { disableFatalDefects: true }).pipe(
-      Effect.provideService(RpcServer.Protocol, protocol),
-      Effect.provideService(SyncAuth, (effect) =>
-        Effect.provideService(
-          effect,
-          SyncPrincipal.SyncPrincipal,
-          authenticated ? SyncPrincipal.workspace("branch-test") : SyncPrincipal.anonymous
-        )),
-      Effect.provide(handlers),
-      Effect.forkScoped
-    )
-    const clientProtocol = yield* RpcClient.makeProtocolSocket().pipe(
-      Effect.provideService(Socket.Socket, pair.client),
-      Effect.provide(RpcSerialization.layerJson)
-    )
-    return yield* RpcClient.make(BranchRpcs.BranchRpcs).pipe(
-      Effect.provideService(RpcClient.Protocol, clientProtocol)
-    )
-  })
-
 const alice = "alice" as ParticipantId
 const bob = "bob" as ParticipantId
 
@@ -170,12 +82,9 @@ describe("BranchRpcs over the wire", () => {
   it.effect("refuses a host id source that yields an empty branch id", () =>
     Effect.gen(function*() {
       const failure = yield* program(Effect.gen(function*() {
-        const client = yield* connect(
-          yield* TestSocket.makePair(),
-          true,
-          undefined,
-          BranchIds.make({ fresh: Effect.succeed("") })
-        )
+        const client = yield* connect(yield* TestSocket.makePair(), {
+          ids: BranchIds.BranchIds.of({ fresh: Effect.succeed("") })
+        })
         return yield* Effect.flip(client["Branch.CreateBranch"]({ ttlMs: 60_000 }))
       }))
 
@@ -186,7 +95,7 @@ describe("BranchRpcs over the wire", () => {
   it.effect("requires workspace authentication and enforces the branch TTL policy", () =>
     Effect.gen(function*() {
       const denied = yield* program(Effect.gen(function*() {
-        const client = yield* connect(yield* TestSocket.makePair(), false)
+        const client = yield* connect(yield* TestSocket.makePair(), { principal: SyncPrincipal.anonymous })
         return yield* Effect.flip(client["Branch.CreateBranch"]({ ttlMs: 60_000 }))
       }))
       expect(denied).toMatchObject({ code: "unauthorized" })
@@ -283,7 +192,7 @@ describe("BranchRpcs over the wire", () => {
         })
         const started = yield* Deferred.make<void>()
         const release = yield* Deferred.make<void>()
-        const delayedIds = BranchIds.make({
+        const delayedIds = BranchIds.BranchIds.of({
           fresh: Effect.gen(function*() {
             yield* Deferred.succeed(started, undefined)
             yield* Deferred.await(release)
@@ -331,7 +240,7 @@ describe("BranchRpcs over the wire", () => {
       const failure = yield* program(
         Effect.gen(function*() {
           const ambient = yield* BranchShare.BranchShare
-          const expired = BranchShare.make({
+          const expired = BranchShare.BranchShare.of({
             ...ambient,
             // Verification succeeds, and the claims it returns are already out
             // of date by the time the handler reads the clock.
@@ -348,7 +257,7 @@ describe("BranchRpcs over the wire", () => {
               )
           })
           const pair = yield* TestSocket.makePair()
-          const client = yield* connect(pair, true, expired)
+          const client = yield* connect(pair, { share: expired })
           const created = yield* client["Branch.CreateBranch"]({ ttlMs: 600_000 })
           return yield* Effect.flip(
             client["Branch.MintShare"]({ capability: created.capability, access: "read", ttlMs: 60_000 })

@@ -29,8 +29,8 @@ import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
 import * as Schema from "effect/Schema"
 import { Access, BranchId, ShareCapability, ShareClaims } from "./BranchProtocol.ts"
-import * as Admission from "./internal/admission.ts"
-import * as shareSigner from "./internal/shareSigner.ts"
+import * as Admission from "./internal/Admission.ts"
+import * as shareSigner from "./internal/ShareSigner.ts"
 import type { SyncError } from "./SyncError.ts"
 
 /**
@@ -93,14 +93,6 @@ export interface Service {
  */
 export class BranchShare extends Context.Service<BranchShare, Service>()("@smthrs/sync/BranchShare") {}
 
-/**
- * Constructs a share authority from an implementation.
- *
- * @category constructors
- * @since 0.1.0
- */
-export const make = (implementation: Service): Service => BranchShare.of(implementation)
-
 const denied = shareSigner.unauthorized
 
 /**
@@ -110,7 +102,7 @@ const denied = shareSigner.unauthorized
  * @since 0.1.0
  */
 export const makeNoop = (overrides: Partial<Service> = {}): Service =>
-  make({
+  BranchShare.of({
     // Both operations FAIL. `mint` used to die, which contradicted its own
     // declared `Effect<ShareCapability, SyncError>` and left a consumer
     // wired to this authority unable to tell "sharing is off" from a bug.
@@ -263,7 +255,7 @@ export const makeHmac = (keyring: Keyring): Effect.Effect<Service, SyncError> =>
         return claims
       })
 
-      return make({ mint, verify })
+      return BranchShare.of({ mint, verify })
     }
   )
 

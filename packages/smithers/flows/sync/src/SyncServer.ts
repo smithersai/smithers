@@ -17,11 +17,12 @@ import type * as Rpc from "effect/unstable/rpc/Rpc"
 import type * as RpcGroup from "effect/unstable/rpc/RpcGroup"
 import { type BranchId, branchOfRunId, type ShareCapability, type ShareClaims } from "./BranchProtocol.ts"
 import * as BranchShare from "./BranchShare.ts"
-import * as Admission from "./internal/admission.ts"
-import { causeCode, journalErrorCode } from "./internal/causeText.ts"
-import { positiveInt, requestCount } from "./internal/options.ts"
-import { requireVersion } from "./internal/protocolVersion.ts"
-import * as SnapshotBoundary from "./internal/snapshot.ts"
+import * as Admission from "./internal/Admission.ts"
+import { causeCode } from "./internal/CauseText.ts"
+import { journalErrorCode } from "./internal/JournalErrorCode.ts"
+import { positiveInt, requestCount } from "./internal/PolicyOptions.ts"
+import { requireVersion } from "./internal/ProtocolVersion.ts"
+import * as SnapshotBoundary from "./internal/SnapshotBoundary.ts"
 import * as RunCatalog from "./RunCatalog.ts"
 import { SyncError } from "./SyncError.ts"
 import * as SyncPrincipal from "./SyncPrincipal.ts"
@@ -64,21 +65,13 @@ export class SnapshotSource extends Context.Service<SnapshotSource, {
 }>()("@smthrs/sync/SnapshotSource") {}
 
 /**
- * Constructs a sync server from an implementation.
- *
- * @category constructors
- * @since 0.1.0
- */
-export const make = (implementation: Service): Service => SyncServer.of(implementation)
-
-/**
  * Constructs a closed sync server stub.
  *
  * @category constructors
  * @since 0.1.0
  */
 export const makeNoop = (overrides: Partial<Service> = {}): Service =>
-  make({
+  SyncServer.of({
     snapshot: () => Effect.fail(new SyncError({ code: "not_found", message: "Public snapshots are unavailable" })),
     read: Effect.fn("SyncServer.read")(() => Effect.succeed({ entries: [], cursors: [], done: true })),
     subscribe: (): Stream.Stream<SyncProtocol.ServerFrame, SyncError> =>
@@ -1099,7 +1092,7 @@ const makeWith = (
         })
       )
 
-    return make({ snapshot, read, subscribe })
+    return SyncServer.of({ snapshot, read, subscribe })
   })
 
 /**

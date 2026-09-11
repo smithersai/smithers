@@ -7,20 +7,11 @@ import * as SyncClient from "../src/SyncClient.ts"
 import * as SyncPrincipal from "../src/SyncPrincipal.ts"
 import * as Protocol from "../src/SyncProtocol.ts"
 import * as SyncServer from "../src/SyncServer.ts"
+import * as TestEntry from "./fixtures/entry.ts"
 
 const runId = "integrity-run" as JournalEvent.RunId
 const entry = (sequence: number): JournalEvent.Entry =>
-  new JournalEvent.Entry({
-    runId,
-    seq: sequence as JournalEvent.Seq,
-    eventId: `entry-${sequence}`,
-    sourceId: "source" as JournalEvent.SourceId,
-    sourceSeq: sequence as JournalEvent.SourceSeq,
-    emittedAtMs: 0,
-    eventType: "event",
-    payload: sequence,
-    meta: null
-  })
+  TestEntry.entry(runId, sequence, { eventId: `entry-${sequence}`, emittedAtMs: 0 })
 const scope = { _tag: "Run", runId } as const
 const bad = [
   { label: "foreign run", entries: [entry(0), { ...entry(1), runId: "foreign" }], code: "protocol_violation" },

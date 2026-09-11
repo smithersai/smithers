@@ -11,6 +11,7 @@ import { expectTypeOf } from "vitest"
 import * as SyncClient from "../src/SyncClient.ts"
 import { SyncError, type SyncGapError } from "../src/SyncError.ts"
 import * as SyncProtocol from "../src/SyncProtocol.ts"
+import { entry } from "./fixtures/entry.ts"
 
 const target = "catch-up" as JournalEvent.RunId
 const foreign = "somebody-elses-run" as JournalEvent.RunId
@@ -21,19 +22,6 @@ class CheckpointMissing extends Data.TaggedError("CheckpointMissing")<{ readonly
 
 /** A consumer's own transaction failure, outside the wire vocabulary. */
 class RolledBack extends Data.TaggedError("RolledBack")<{ readonly seq: number }> {}
-
-const entry = (runId: JournalEvent.RunId, sequence: number) =>
-  new JournalEvent.Entry({
-    runId,
-    seq: sequence as JournalEvent.Seq,
-    eventId: `${runId}-${sequence}`,
-    sourceId: "source" as JournalEvent.SourceId,
-    sourceSeq: sequence as JournalEvent.SourceSeq,
-    emittedAtMs: sequence,
-    eventType: "event",
-    payload: sequence,
-    meta: null
-  })
 
 /**
  * A server that honours the cursors it is handed, which is the only kind of

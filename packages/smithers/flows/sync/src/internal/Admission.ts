@@ -6,7 +6,7 @@ import * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
 import { BranchId, branchOfRunId, CommandEvent, CommandEventPayload } from "../BranchProtocol.ts"
 import { SyncError } from "../SyncError.ts"
-import { causeCode } from "./causeText.ts"
+import { causeCode } from "./CauseText.ts"
 
 /** Decode a boundary value while retaining a safe cause classification.
  * @category validation

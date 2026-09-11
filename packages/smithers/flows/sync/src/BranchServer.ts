@@ -27,7 +27,7 @@ import * as BranchPresence from "./BranchPresence.ts"
 import { BranchId, type Participant } from "./BranchProtocol.ts"
 import { BranchRpcs } from "./BranchRpcs.ts"
 import * as BranchShare from "./BranchShare.ts"
-import * as Admission from "./internal/admission.ts"
+import * as Admission from "./internal/Admission.ts"
 import { SyncError } from "./SyncError.ts"
 import * as SyncPrincipal from "./SyncPrincipal.ts"
 
