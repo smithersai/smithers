@@ -2,7 +2,7 @@
  * The body interpreter: what a flow does when it runs.
  *
  * A `Flow` has no handler to register — its `body` IS the behavior, per
- * `docs/specs/Concepts/Unified Flow Authoring.md` — so something has to turn
+ * `docs/concepts/flows-and-actions.md` — so something has to turn
  * the graph that body describes into execution. That is this
  * module. {@link layer} registers a flow with the runtime, and the
  * handler it installs builds the graph with {@link module:Graph.build} and
@@ -144,7 +144,7 @@ const ownDataProperty = (value: unknown, key: PropertyKey): unknown => {
  * DECIDED: the id is DERIVED from the parent
  * execution and the child node's structural address, not minted. That is what
  * makes a boundary at-most-once under replay, exactly as
- * `docs/specs/Concepts/Trampoline Loops.md` requires of a round handoff: a
+ * `docs/concepts/trampoline-rounds.md` requires of a round handoff: a
  * parent that is re-driven re-derives the same id, so the engine lands on the
  * child execution that already exists instead of starting a second copy of it.
  * The canonical tuple includes the callee and a canonical payload digest, so
@@ -615,7 +615,7 @@ const interpretWithPolicy = (
               return outcome
             }
             if (ast.mode === "boundary") {
-              // The real boundary of `docs/specs/Concepts/Subflows.md`: an
+              // The real boundary of `docs/guides/run-a-child-flow.md`: an
               // ordinary child execution, opened through the same `execute` a
               // handler would call. The parent's `FlowInstance` is in scope, so
               // the engine records the lineage edge, interrupts the child with
@@ -676,9 +676,9 @@ const interpretWithPolicy = (
 /**
  * Turns a body's root value into the settlement the engine acts on.
  *
- * Three of them exist, and only three (`docs/specs/Concepts/Trampoline
- * Loops.md`): `done(value)` is the answer, so the value passes straight
- * through; `Next.to(payload)` is the next round, recorded in the instance's
+ * Three of them exist, and only three
+ * (`docs/concepts/trampoline-rounds.md`): `done(value)` is the answer, so the
+ * value passes straight through; `Next.to(payload)` is the next round, recorded in the instance's
  * handoff slot so `Flow.intoResult` answers `Flow.Handoff`; and `park(reason)`
  * is a durable suspension, declared through the ordinary waiting vocabulary so
  * a durable driver parks the run under the flow's own reason and wake token

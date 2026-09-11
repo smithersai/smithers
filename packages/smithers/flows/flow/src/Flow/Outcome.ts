@@ -3,7 +3,7 @@
  *
  * Engine handoff semantics are intentionally separate. These values contain
  * only the completed value, the next flow invocation, or the durable waiting
- * classification described by `docs/specs/Concepts/Trampoline Loops.md`.
+ * classification described by `docs/concepts/trampoline-rounds.md`.
  *
  * @since 0.1.0
  */

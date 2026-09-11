@@ -188,7 +188,7 @@ export class Suspended extends Schema.Class<Suspended>(
  * trampoline lineage.
  *
  * A round settles this way when its body's root value is a `to` invocation
- * (`docs/specs/Concepts/Trampoline Loops.md`): the round produced no answer of
+ * (`docs/concepts/trampoline-rounds.md`): the round produced no answer of
  * its own, it produced the NEXT flow to run. `flow` is the target's tag, so the
  * value survives the journal and the run row unchanged.
  *

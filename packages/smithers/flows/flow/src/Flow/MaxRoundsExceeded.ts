@@ -9,7 +9,7 @@ import * as Schema from "effect/Schema"
 /**
  * A lineage asked for one more round than its flow's `maxRounds` allows.
  *
- * `docs/specs/Concepts/Trampoline Loops.md` chooses a budget over loop
+ * `docs/concepts/trampoline-rounds.md` chooses a budget over loop
  * detection: identical consecutive rounds are legal (a poller is exactly
  * that), so the only honest stop condition is a declared bound on how many
  * rounds one lineage may open. Exceeding it is terminal for the lineage — the

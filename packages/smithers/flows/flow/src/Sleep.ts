@@ -1,7 +1,7 @@
 /**
  * The system timer, as an ordinary declared action.
  *
- * `docs/specs/Concepts/Unified Flow Authoring.md` names the timer primitive a
+ * `docs/concepts/flows-and-actions.md` names the timer primitive a
  * gap and says how to close it: ship it over the existing `DurableClock`, so a
  * wait is a visible, keyed plan node rather than a second execution mechanism.
  * That is this module. {@link action} is a plain `Action.make` declaration —

@@ -1,7 +1,7 @@
 /**
  * The table a driver resolves a declared action's implementation through.
  *
- * `docs/specs/Concepts/Unified Flow Authoring.md` splits an Action in two: a
+ * `docs/concepts/flows-and-actions.md` splits an Action in two: a
  * declaration that is pure data and travels everywhere, and an implementation
  * attached separately as a layer, on the hosts that can run it. A body names
  * the declaration — `Increment.call({ path })` records a node and executes

@@ -15,8 +15,8 @@ import * as Schema from "effect/Schema"
  * that already appears among its own ancestors.
  *
  * This is a **typed failure**, never a defect: the caller is expected to be
- * able to recover from it (see `docs/specs/Concepts/Run Ownership.md` and
- * `docs/pages/release/support-matrix.md`). Detection itself lives in
+ * able to recover from it (see `docs/troubleshooting.md`,
+ * "FlowRuntime.FlowCycleDetected"). Detection itself lives in
  * `@smthrs/engine-store`'s `DurableEngineState.recordRunParent`, which
  * inserts the durable parent edge and walks the parent chain in O(depth)
  * inside one storage transaction, rolling back on a hit; the error is

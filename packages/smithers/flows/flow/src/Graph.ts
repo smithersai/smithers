@@ -2,10 +2,10 @@
  * Graph building: a flow declaration plus a real payload, walked once into the
  * drafts a plan is compiled from.
  *
- * This is the plan phase of `docs/specs/Concepts/Build Phases.md` and nothing
+ * This is the plan phase of `docs/concepts/bodies-and-plans.md` and nothing
  * else — no I/O, no execution, no elaboration. {@link build} evaluates the
  * body with the REAL payload, because a body's own payload is data
- * (`docs/specs/Concepts/Unified Flow Authoring.md`), and evaluates every
+ * (`docs/concepts/flows-and-actions.md`), and evaluates every
  * continuation and branch arm exactly once against a STRICT
  * {@link module:Planned.Planned} placeholder, because a step result does not
  * exist yet. A body that computes on a placeholder therefore fails here,
@@ -27,7 +27,7 @@
  * Composition follows the same note: `Other.call(payload)` splices the
  * callee's body into this graph with the capabilities of the two declarations
  * intersected, and a flow that calls itself inline throws with the trampoline
- * (`docs/specs/Concepts/Trampoline Loops.md`) and the child boundary as the two
+ * (`docs/concepts/trampoline-rounds.md`) and the child boundary as the two
  * ways out. A callee whose declared placement the enclosing flow does not carry
  * throws for the same reason and names the same way out, because inline
  * expansion is the claim that these steps run in the caller's execution.

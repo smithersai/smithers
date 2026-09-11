@@ -20,7 +20,7 @@
  * digest under distinct tags so a string can never alias the object identity
  * whose digest it happens to spell.
  *
- * Governing contract: `docs/specs/Concepts/Step Keys.md`.
+ * Governing contract: `docs/concepts/execution-identity.md`.
  *
  * @since 0.1.0
  */

@@ -1,7 +1,7 @@
 /**
  * The system wait point, as an ordinary declared action.
  *
- * `docs/specs/Concepts/Unified Flow Authoring.md` names wait-for-event the
+ * `docs/concepts/flows-and-actions.md` names wait-for-event the
  * other half of the timer gap and says how to close it: ship it over the
  * existing `DurableDeferred`, so an external signal is a visible, keyed plan
  * node. That is this module. {@link action} is a plain `Action.make`

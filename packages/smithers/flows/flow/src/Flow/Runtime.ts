@@ -55,7 +55,7 @@ export const intoResult = <A, E, R>(
       Effect.matchCauseEffect({
         // A body that handed off produced no answer of its own, so the slot
         // the handoff was recorded in wins over the value the handler returned
-        // (`docs/specs/Concepts/Trampoline Loops.md`).
+        // (`docs/concepts/trampoline-rounds.md`).
         onSuccess: (value) =>
           Effect.succeed(
             instance.handoff ?? new Complete({ exit: Exit.succeed(value) })

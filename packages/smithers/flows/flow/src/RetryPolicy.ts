@@ -16,9 +16,8 @@
  * journals, and these tags freeze at the RC. Current action dispatch preserves
  * the final declared failure when a retry policy is spent.
  *
- * Vault: [[Failure Policy]] (`docs/specs/Concepts/Failure Policy.md`) and
- * [[Engine Hardening Round 1]]
- * (`docs/specs/Concepts/Engine Hardening Round 1.md`), section 6.
+ * See `docs/guides/retry-a-failing-action.md`; its "Infrastructure
+ * interrupts" section covers the interrupt retry schedule.
  *
  * @since 0.1.0
  */

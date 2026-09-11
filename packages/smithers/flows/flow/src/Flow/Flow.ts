@@ -8,7 +8,7 @@
  * execution ids when the caller does not provide one. Flow definitions can be
  * executed, discarded, polled, interrupted, and resumed.
  *
- * The two nouns of `docs/specs/Concepts/Unified Flow Authoring.md` divide the
+ * The two nouns of `docs/concepts/flows-and-actions.md` divide the
  * surface here: an Action carries an implementation, attached separately as a
  * Layer; a Flow carries a body, and never opaque executable code. There is
  * therefore no handler to attach to a flow, and no `toLayer` on one to attach
@@ -115,7 +115,7 @@ export interface Flow<
    * How many rounds one trampoline lineage started from this flow may open.
    *
    * The bound is a BUDGET, not loop detection: identical consecutive rounds
-   * are legal, so `docs/specs/Concepts/Trampoline Loops.md` stops a runaway
+   * are legal, so `docs/concepts/trampoline-rounds.md` stops a runaway
    * lineage by counting rounds instead of comparing them. Absent means
    * unbounded, which is the right default for a lineage whose exit condition
    * is its own branch. Exceeding it terminates the lineage with a
@@ -140,7 +140,7 @@ export interface Flow<
    *
    * `.call()` splices this flow's body into the caller's plan, so every inner
    * step is visible and individually keyed. `.child()` is the other choice
-   * `docs/specs/Concepts/Unified Flow Authoring.md` gives: the callee keeps its
+   * `docs/concepts/flows-and-actions.md` gives: the callee keeps its
    * own execution, journal lineage, retry policy, and placement, and the caller
    * sees one leaf. It is also the way out of the two build refusals inline
    * expansion raises — a recursive `.call()` and a placement the caller cannot

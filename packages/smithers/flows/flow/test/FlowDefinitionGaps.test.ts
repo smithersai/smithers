@@ -81,7 +81,7 @@ describe("Flow.make payload and schema defaults", () => {
 
 describe("Flow.make requires a body", () => {
   it("refuses a declaration with nothing to plan, at the type level", () => {
-    // The two nouns of `docs/specs/Concepts/Unified Flow Authoring.md` are
+    // The two nouns of `docs/concepts/flows-and-actions.md` are
     // stratified by the compiler, not by prose: a flow with nothing to plan is
     // a category error, and the work it described is an Action. The
     // directive is the assertion — tsc fails the check when the call below

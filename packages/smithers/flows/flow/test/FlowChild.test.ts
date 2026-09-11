@@ -2,7 +2,7 @@
  * The `.child()` boundary: ONE node in the caller's plan, and a real child
  * execution underneath it.
  *
- * `docs/specs/Concepts/Unified Flow Authoring.md` gives composition two modes —
+ * `docs/concepts/flows-and-actions.md` gives composition two modes —
  * inline by default, boundary by choice — and names the two cases that force
  * the boundary loudly at build time: a recursive `.call()`, and a placement the
  * caller cannot satisfy. Both refusals and the boundary they point at are here.

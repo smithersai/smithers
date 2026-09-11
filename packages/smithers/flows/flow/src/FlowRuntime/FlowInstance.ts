@@ -42,8 +42,8 @@ export class FlowInstance extends Context.Service<
     /**
      * The journal lineage this execution's records address themselves to.
      *
-     * `docs/specs/Concepts/Time Travel.md` makes a frame the journal position
-     * `(lineageId, seq)`, and `docs/specs/Concepts/Subflows.md` defines the
+     * `docs/concepts/the-runtime-port.md` makes a frame the journal position
+     * `(lineageId, seq)`, and `docs/guides/run-a-child-flow.md` defines the
      * lineage id as the run id followed by the node-id path from the run root.
      * A runtime mints it; every durable record this execution writes carries it
      * as `meta.lineageId`, which is what lets `TimeTravel.inspect` fold an
@@ -90,7 +90,7 @@ export class FlowInstance extends Context.Service<
      * cannot travel out through the effect's exit; `Flow.intoResult` reads the
      * slot and answers `Flow.Handoff` instead of `Flow.Complete`. The engine
      * then opens the next round under the same lineage
-     * (`docs/specs/Concepts/Trampoline Loops.md`).
+     * (`docs/concepts/trampoline-rounds.md`).
      */
     handoff: Flow.Handoff | undefined
 
