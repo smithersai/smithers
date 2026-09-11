@@ -27,6 +27,7 @@ import { error, type TimeTravelError } from "../TimeTravelError.ts"
 import { type Snapshot, TimeTravelStore } from "../TimeTravelStore.ts"
 import * as HistoryLimit from "./HistoryLimit.ts"
 import * as JournalPages from "./JournalPages.ts"
+import { LineageMetadata } from "./LineageMetadata.ts"
 
 /**
  * The anchor facts one lineage has put in force.
@@ -77,8 +78,6 @@ export const initial: State = { lineages: {}, anchors: 0 }
 
 const emptyLineage: LineageState = { changeId: undefined, planDigest: undefined }
 
-const LineageMeta = Schema.Struct({ lineageId: Schema.NonEmptyString })
-
 const SnapshotPayload = Schema.Struct({
   version: Schema.optionalKey(Schema.Literal(1)),
   snapshotId: Schema.optionalKey(Schema.NonEmptyString),
@@ -112,7 +111,7 @@ export const step = (
     // that carries none is corrupt evidence for either: the engine stamps
     // the lineage on every record it writes.
     const kind = isPlan ? "plan" : "snapshot"
-    const { lineageId } = yield* Schema.decodeUnknownEffect(LineageMeta)(entry.meta).pipe(
+    const { lineageId } = yield* Schema.decodeUnknownEffect(LineageMetadata)(entry.meta).pipe(
       Effect.mapError((cause) => error("invalid", `${kind} event ${entry.eventId} has corrupt lineage metadata`, cause))
     )
     const lineage = state.lineages[lineageId] ?? emptyLineage

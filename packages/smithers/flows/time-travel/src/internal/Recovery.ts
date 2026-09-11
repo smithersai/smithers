@@ -9,18 +9,18 @@ import type * as JournalEvent from "@smthrs/journal/JournalEvent"
 import * as Ownership from "@smthrs/run-store/Ownership"
 import type { LivenessEvidence, OwnerId } from "@smthrs/run-store/Ownership"
 import * as RunStore from "@smthrs/run-store/RunStore"
-import * as Cause from "effect/Cause"
 import * as Clock from "effect/Clock"
 import type * as Duration from "effect/Duration"
 import * as Effect from "effect/Effect"
 import * as Exit from "effect/Exit"
 import * as Fiber from "effect/Fiber"
 import * as Schema from "effect/Schema"
-import { error, TimeTravelError, type TimeTravelError as TimeTravelFailure } from "../TimeTravelError.ts"
+import { error, fromCause, type TimeTravelError as TimeTravelFailure } from "../TimeTravelError.ts"
 import { type Audit, TimeTravelStore } from "../TimeTravelStore.ts"
 import * as Compensation from "./Compensation.ts"
 import type { EffectHandlerRegistry } from "./EffectHandlerRegistry.ts"
 import { AuditDetail } from "./Rewind.ts"
+import * as RunRow from "./RunRow.ts"
 
 /**
  * Recovery construction options.
@@ -62,19 +62,6 @@ export type Outcome =
 
 const isAuditDetail = Schema.is(AuditDetail)
 
-const runFailure = (operation: string, cause: RunStore.RunStoreError): TimeTravelFailure =>
-  error(
-    cause.code === "not_found_row" ? "not_found" : "unknown",
-    `${operation} failed`,
-    cause
-  )
-
-const snapshotOf = (row: RunStore.RunRow): RunStore.RunSnapshot => ({
-  status: row.status,
-  owner: row.owner,
-  heartbeatAtMs: row.heartbeatAtMs
-})
-
 const sameOwner = (left: OwnerId, right: OwnerId): boolean =>
   left.hostId === right.hostId &&
   left.pid === right.pid &&
@@ -87,7 +74,7 @@ const acquire = (
 ): Effect.Effect<RunStore.RunRow, TimeTravelFailure> =>
   Effect.gen(function*() {
     const row = yield* runs.get(audit.runId).pipe(
-      Effect.mapError((cause) => runFailure("read recovery run", cause))
+      Effect.mapError((cause) => RunRow.failure("read recovery run", cause))
     )
     if (row.status === "running" && row.owner !== null && sameOwner(row.owner, options.owner)) {
       return row
@@ -97,7 +84,7 @@ const acquire = (
     }
 
     const nowMs = yield* Clock.currentTimeMillis
-    const expected = snapshotOf(row)
+    const expected = RunRow.snapshotOf(row)
     const claimed = row.status === "running"
       ? yield* Effect.gen(function*() {
         const evidence = yield* options.livenessEvidence(audit, row, options.owner, nowMs)
@@ -105,11 +92,11 @@ const acquire = (
           return yield* Effect.fail(error("busy", `run ${audit.runId} is still live`))
         }
         return yield* runs.steal(audit.runId, expected, options.owner, nowMs, evidence).pipe(
-          Effect.mapError((cause) => runFailure("steal recovery run", cause))
+          Effect.mapError((cause) => RunRow.failure("steal recovery run", cause))
         )
       })
       : yield* runs.claim(audit.runId, expected, options.owner, nowMs).pipe(
-        Effect.mapError((cause) => runFailure("claim recovery run", cause))
+        Effect.mapError((cause) => RunRow.failure("claim recovery run", cause))
       )
     if (claimed._tag !== "Claimed") {
       return yield* Effect.fail(error("busy", `run ${audit.runId} could not be claimed for recovery`))
@@ -120,7 +107,7 @@ const acquire = (
       claimed.claimedAtMs,
       expected
     ).pipe(
-      Effect.mapError((cause) => runFailure("activate recovery run", cause))
+      Effect.mapError((cause) => RunRow.failure("activate recovery run", cause))
     )
     if (activated._tag !== "Activated") {
       yield* Effect.ignore(runs.abandonClaim(audit.runId, options.owner, claimed.claimedAtMs))
@@ -209,10 +196,10 @@ const resolvePending = (
         Effect.catch((cause) =>
           cause.code === "not_found_row"
             ? Effect.succeed(undefined)
-            : Effect.fail(runFailure(`read pending child ${childRunId}`, cause))
+            : Effect.fail(RunRow.failure(`read pending child ${childRunId}`, cause))
         )
       )
-      if (row === undefined || terminalStatus(row.status)) continue
+      if (row === undefined || RunStore.isTerminalRunStatus(row.status)) continue
       if (!committed && !protocolChildOwner(row.owner, childRunId) && !protocolChildOwner(row.claim, childRunId)) {
         continue
       }
@@ -241,7 +228,7 @@ const resolvePending = (
           childOwner,
           nowMs,
           evidence
-        ).pipe(Effect.mapError((cause) => runFailure(`recover pending child claim ${childRunId}`, cause)))
+        ).pipe(Effect.mapError((cause) => RunRow.failure(`recover pending child claim ${childRunId}`, cause)))
         if (recovered._tag !== "Recovered") {
           return yield* Effect.fail(error("busy", `child ${childRunId} could not release its stale claim`))
         }
@@ -250,7 +237,7 @@ const resolvePending = (
       // not yet activated keeps its original status and owner after claim CAS.
       if (!committed && !protocolChildOwner(row.owner, childRunId)) continue
       const nowMs = yield* Clock.currentTimeMillis
-      const expected = snapshotOf(row)
+      const expected = RunRow.snapshotOf(row)
       const claimed = row.status === "running"
         ? yield* Effect.gen(function*() {
           if (!protocolChildOwner(row.owner, childRunId)) {
@@ -258,11 +245,11 @@ const resolvePending = (
           }
           const evidence = yield* childEvidence(audit, row, childOwner, nowMs, options)
           return yield* runs.steal(childRunId, expected, childOwner, nowMs, evidence).pipe(
-            Effect.mapError((cause) => runFailure(`steal pending child ${childRunId}`, cause))
+            Effect.mapError((cause) => RunRow.failure(`steal pending child ${childRunId}`, cause))
           )
         })
         : yield* runs.claim(childRunId, expected, childOwner, nowMs).pipe(
-          Effect.mapError((cause) => runFailure(`claim pending child ${childRunId}`, cause))
+          Effect.mapError((cause) => RunRow.failure(`claim pending child ${childRunId}`, cause))
         )
       if (claimed._tag !== "Claimed") {
         // The audit keeps the whole remaining plan: nothing is written on a
@@ -272,14 +259,14 @@ const resolvePending = (
         )
       }
       const activated = yield* runs.activate(childRunId, childOwner, claimed.claimedAtMs, expected).pipe(
-        Effect.mapError((cause) => runFailure(`activate pending child ${childRunId}`, cause))
+        Effect.mapError((cause) => RunRow.failure(`activate pending child ${childRunId}`, cause))
       )
       if (activated._tag !== "Activated") {
         yield* Effect.ignore(runs.abandonClaim(childRunId, childOwner, claimed.claimedAtMs))
         return yield* Effect.fail(error("busy", `child ${childRunId} lost its cancellation claim`))
       }
       const done = yield* runs.transitionOwned(childRunId, childOwner, committed ? "cancelled" : "suspended").pipe(
-        Effect.mapError((cause) => runFailure(`cancel pending child ${childRunId}`, cause))
+        Effect.mapError((cause) => RunRow.failure(`cancel pending child ${childRunId}`, cause))
       )
       if (done._tag !== "Transitioned") {
         return yield* Effect.fail(error("busy", `child ${childRunId} lost its cancellation fence`))
@@ -291,16 +278,6 @@ const resolvePending = (
     // and left the audit open with its plan intact.
     return { ...detail, cancelledChildren: cancelled, pendingChildren: [] }
   })
-
-const terminalStatus = (status: RunStore.RunStatus): boolean =>
-  status === "completed" || status === "failed" || status === "cancelled"
-
-const toFailure = (cause: Cause.Cause<unknown>): TimeTravelFailure => {
-  const squashed = Cause.squash(cause)
-  return squashed instanceof TimeTravelError
-    ? squashed
-    : error("unknown", squashed instanceof Error ? squashed.message : String(squashed), cause)
-}
 
 const terminalFailure = (
   store: TimeTravelStore["Service"],
@@ -379,7 +356,7 @@ const recoverOne = (
             Effect.flatMap((released) =>
               Effect.sync(() => {
                 if (Exit.isFailure(released)) {
-                  releaseProblem = toFailure(released.cause).message
+                  releaseProblem = fromCause(released.cause).message
                 } else if (released.value._tag !== "Transitioned") {
                   releaseProblem = `ownership release returned ${released.value._tag}`
                 }
@@ -417,7 +394,7 @@ const recoverOne = (
                   "suspended",
                   frameState ?? acquiredRow.stateJson
                 ).pipe(
-                  Effect.mapError((cause) => runFailure("finish recovered suspension", cause))
+                  Effect.mapError((cause) => RunRow.failure("finish recovered suspension", cause))
                 )
                 if (suspended._tag !== "Transitioned") {
                   return yield* Effect.fail(
@@ -448,7 +425,7 @@ const recoverOne = (
                 detail.originalStatus === "pending" ? "suspended" : detail.originalStatus,
                 acquiredRow.stateJson
               ).pipe(
-                Effect.mapError((cause) => runFailure("restore recovered run", cause))
+                Effect.mapError((cause) => RunRow.failure("restore recovered run", cause))
               )
               if (restored._tag !== "Transitioned") {
                 return yield* Effect.fail(
@@ -482,7 +459,7 @@ const recoverOne = (
       )
     )
     if (Exit.isSuccess(recoveryExit)) return recoveryExit.value
-    const failure = toFailure(recoveryExit.cause)
+    const failure = fromCause(recoveryExit.cause)
     if (releaseProblem !== undefined) {
       return {
         _tag: "Busy" as const,

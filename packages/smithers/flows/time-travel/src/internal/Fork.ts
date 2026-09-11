@@ -25,6 +25,7 @@ import * as Compensation from "./Compensation.ts"
 import type { EffectHandlerRegistry } from "./EffectHandlerRegistry.ts"
 import * as HistoryLimit from "./HistoryLimit.ts"
 import * as JournalPages from "./JournalPages.ts"
+import * as StepHook from "./StepHook.ts"
 
 /**
  * What a fork needs to know: which parent frame to branch from, and which lane
@@ -196,13 +197,6 @@ const suffixAfter = (
     return boundary
   })
 
-const runHook = (options: ForkOptions, step: ForkStep): Effect.Effect<void, TimeTravelError> => {
-  const hook = options.hooks?.beforeStep
-  return hook === undefined
-    ? Effect.void
-    : hook(step).pipe(Effect.mapError((cause) => error("unknown", `fork failed at ${step}`, cause)))
-}
-
 /**
  * Drops a lane registration, reporting rather than hiding a failure to.
  *
@@ -371,7 +365,7 @@ export const fork = (
       const childRunId = yield* store.nextForkId(options.parentRunId, options.frame)
       const workspaceName = workspaceNameFor(childRunId)
       yield* Effect.annotateCurrentSpan({ childRunId, workspaceName })
-      yield* runHook(options, "provision-workspace")
+      yield* StepHook.run("fork", options.hooks?.beforeStep, "provision-workspace")
       yield* jj.workspaceAdd(workspaceName, `${options.workspaceRoot}/${workspaceName}`, snapshot?.changeId).pipe(
         Effect.mapError((cause) => error("unknown", "could not add fork workspace", cause))
       )
@@ -388,7 +382,7 @@ export const fork = (
        * interruptible, because nothing durable has happened when it runs.
        */
       const result = yield* Effect.uninterruptibleMask((restore) =>
-        restore(runHook(options, "commit-fork")).pipe(
+        restore(StepHook.run("fork", options.hooks?.beforeStep, "commit-fork")).pipe(
           Effect.andThen(store.createFork(options.parentRunId, options.frame, childRunId)),
           Effect.onError(() => forgetLane(jj, workspaceName, "after a refused commit")),
           Effect.tap(() =>

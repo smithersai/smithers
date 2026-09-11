@@ -36,7 +36,8 @@ import * as Layer from "effect/Layer"
 import * as Schema from "effect/Schema"
 import * as SqlClient from "effect/unstable/sql/SqlClient"
 import * as EffectBoundary from "./EffectBoundary.ts"
-import { forkCreatedEventType, Frame, type LineageEdge } from "./Frame.ts"
+import { forkCreatedEventType, Frame, type LineageEdge, LineageEdgeKind } from "./Frame.ts"
+import * as LineageTree from "./internal/LineageTree.ts"
 import * as Migrations from "./Migrations.ts"
 import { error, TimeTravelError } from "./TimeTravelError.ts"
 import * as TimeTravelStore from "./TimeTravelStore.ts"
@@ -71,6 +72,31 @@ const decodeJson = (value: string | null) =>
  */
 const encodeJson = (value: unknown) => Schema.encodeEffect(Json)(value).pipe(Effect.mapError(mapError))
 
+/** One `flows_time_travel_audits` row as SQL returns it. */
+interface AuditRow {
+  readonly id: string
+  readonly run_id: string
+  readonly lineage_id: string
+  readonly seq: number
+  readonly status: TimeTravelStore.Audit["status"]
+  readonly rate_limit_json: string | null
+  readonly detail_json: string | null
+}
+
+const auditFromRow = (row: AuditRow) =>
+  Effect.gen(function*() {
+    const rateLimit = yield* decodeJson(row.rate_limit_json)
+    const detail = yield* decodeJson(row.detail_json)
+    return {
+      id: row.id,
+      runId: row.run_id,
+      frame: { lineageId: row.lineage_id, seq: row.seq },
+      status: row.status,
+      rateLimit,
+      detail
+    }
+  })
+
 /** The `[digest, attempt]` pairs of a set of attempts, as one JSON parameter. */
 const attemptRefsJson = (refs: ReadonlyArray<TimeTravelStore.AttemptRef>): string =>
   JSON.stringify(refs.map((ref) => [ref.stepKeyDigest, ref.attempt]))
@@ -89,7 +115,7 @@ const EdgeRow = Schema.Struct({
   parent_run_id: Schema.NonEmptyString,
   parent_seq: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
   child_run_id: Schema.NonEmptyString,
-  kind: Schema.Literals(["child", "fork", "continuation"]),
+  kind: LineageEdgeKind,
   attached: Schema.Literals([0, 1])
 })
 
@@ -106,49 +132,6 @@ const edgeFromRow = (row: EdgeRow): LineageEdge => ({
   kind: row.kind,
   attached: row.attached === 1
 })
-
-const descendantsFrom = (
-  rows: ReadonlyArray<EdgeRow>,
-  runId: string,
-  frame: TimeTravelStore.Snapshot["frame"]
-): {
-  readonly attached: ReadonlyArray<LineageEdge>
-  readonly detached: ReadonlyArray<LineageEdge>
-  readonly attachedRunIds: ReadonlySet<string>
-} => {
-  const edges = rows.map(edgeFromRow)
-  const attached: Array<LineageEdge> = []
-  const detached: Array<LineageEdge> = []
-  const attachedRunIds = new Set<string>()
-  // One child is one descendant. The edge union reads the same fork twice when
-  // the run also journaled a handoff naming it, and reporting the same child
-  // twice made a caller cancel it twice. The memory store already deduplicated
-  // both sides; this is what makes the two answer alike.
-  const detachedRunIds = new Set<string>()
-  const queue: Array<string> = []
-  const include = (edge: LineageEdge): void => {
-    if (edge.attached) {
-      if (attachedRunIds.has(edge.childRunId)) return
-      attached.push(edge)
-      attachedRunIds.add(edge.childRunId)
-      queue.push(edge.childRunId)
-    } else {
-      if (detachedRunIds.has(edge.childRunId)) return
-      detached.push(edge)
-      detachedRunIds.add(edge.childRunId)
-    }
-  }
-  for (const edge of edges) {
-    if (edge.parentRunId === runId && edge.parentSeq > frame.seq) include(edge)
-  }
-  while (queue.length > 0) {
-    const parentRunId = queue.shift()!
-    for (const edge of edges) {
-      if (edge.parentRunId === parentRunId) include(edge)
-    }
-  }
-  return { attached, detached, attachedRunIds }
-}
 
 /**
  * The kind an engine child spawn is journaled under.
@@ -246,7 +229,7 @@ export const make: Effect.Effect<
      * runs are never materialized. CROSS JOIN keeps reachable as the outer
      * loop, and literal producer predicates let SQLite use the partial indexes.
      * UNION deduplicates the reachable run ids so cycles terminate. The set
-     * ignores attachment and frame on purpose: descendantsFrom applies those
+     * ignores attachment and frame on purpose: LineageTree.descendants applies those
      * policies to this superset of the edges it visits.
      */
     const edgesUnder = (runId: string) =>
@@ -628,7 +611,7 @@ export const make: Effect.Effect<
         Effect.annotateCurrentSpan({ runId, lineageId: frame.lineageId, seq: frame.seq }).pipe(Effect.andThen(
           edgesUnder(runId).pipe(
             Effect.map((rows) => {
-              const descendants = descendantsFrom(rows, runId, frame)
+              const descendants = LineageTree.descendants(rows.map(edgeFromRow), runId, frame)
               return { attached: descendants.attached, detached: descendants.detached }
             }),
             Effect.mapError(mapError)
@@ -657,29 +640,9 @@ export const make: Effect.Effect<
           Effect.andThen(
             writer.write(
               Effect.gen(function*() {
-                const rows = yield* sql<
-                  {
-                    readonly id: string
-                    readonly run_id: string
-                    readonly lineage_id: string
-                    readonly seq: number
-                    readonly status: TimeTravelStore.Audit["status"]
-                    readonly rate_limit_json: string | null
-                    readonly detail_json: string | null
-                  }
-                >`SELECT * FROM flows_time_travel_audits WHERE id = ${id}`
+                const rows = yield* sql<AuditRow>`SELECT * FROM flows_time_travel_audits WHERE id = ${id}`
                 if (rows[0] === undefined) return yield* Effect.fail(error("not_found", `audit ${id} was not found`))
-                const row = rows[0]
-                const rateLimit = yield* decodeJson(row.rate_limit_json)
-                const detail = yield* decodeJson(row.detail_json)
-                const audit = {
-                  id: row.id,
-                  runId: row.run_id,
-                  frame: { lineageId: row.lineage_id, seq: row.seq },
-                  status: row.status,
-                  rateLimit,
-                  detail
-                }
+                const audit = yield* auditFromRow(rows[0])
                 const next = { ...audit, ...patch }
                 const rateLimitJson = next.rateLimit === undefined ? null : yield* encodeJson(next.rateLimit)
                 const detailJson = next.detail === undefined ? null : yield* encodeJson(next.detail)
@@ -690,32 +653,8 @@ export const make: Effect.Effect<
         )
       ),
       pendingAudits: Effect.fn("TimeTravelStore.pendingAudits")(() =>
-        sql<
-          {
-            readonly id: string
-            readonly run_id: string
-            readonly lineage_id: string
-            readonly seq: number
-            readonly status: "in_progress"
-            readonly rate_limit_json: string | null
-            readonly detail_json: string | null
-          }
-        >`SELECT * FROM flows_time_travel_audits WHERE status = 'in_progress'`.pipe(
-          Effect.flatMap((rows) =>
-            Effect.forEach(rows, (row) =>
-              Effect.gen(function*() {
-                const rateLimit = yield* decodeJson(row.rate_limit_json)
-                const detail = yield* decodeJson(row.detail_json)
-                return {
-                  id: row.id,
-                  runId: row.run_id,
-                  frame: { lineageId: row.lineage_id, seq: row.seq },
-                  status: row.status,
-                  rateLimit,
-                  detail
-                }
-              }))
-          ),
+        sql<AuditRow>`SELECT * FROM flows_time_travel_audits WHERE status = 'in_progress'`.pipe(
+          Effect.flatMap((rows) => Effect.forEach(rows, auditFromRow)),
           Effect.mapError(mapError)
         )
       ),
@@ -748,7 +687,7 @@ export const make: Effect.Effect<
                     )
                   }
                   const rows = yield* edgesUnder(runId)
-                  const descendants = descendantsFrom(rows, runId, frame)
+                  const descendants = LineageTree.descendants(rows.map(edgeFromRow), runId, frame)
                   // Attached journals are part of this transaction, so every
                   // non-terminal child is fenced here too. Assessment and claims
                   // happen before the commit, but only this read can catch a child

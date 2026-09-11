@@ -20,12 +20,15 @@ import * as Option from "effect/Option"
 import * as Schema from "effect/Schema"
 import * as EffectBoundary from "../EffectBoundary.ts"
 import { Frame, type LineageEdge } from "../Frame.ts"
-import { error, TimeTravelError, type TimeTravelError as TimeTravelFailure } from "../TimeTravelError.ts"
+import { error, fromCause, type TimeTravelError as TimeTravelFailure } from "../TimeTravelError.ts"
 import { ArchiveResult, type Audit, TimeTravelStore } from "../TimeTravelStore.ts"
 import * as Compensation from "./Compensation.ts"
 import type { EffectHandlerRegistry } from "./EffectHandlerRegistry.ts"
 import * as HistoryLimit from "./HistoryLimit.ts"
 import * as JournalPages from "./JournalPages.ts"
+import { LineageMetadata } from "./LineageMetadata.ts"
+import * as RunRow from "./RunRow.ts"
+import * as StepHook from "./StepHook.ts"
 
 /**
  * The eight fault-injection points pinned by the rewind parity suite.
@@ -247,19 +250,6 @@ interface ClaimedChild {
   readonly owner: OwnerId
   readonly claimedAtMs: number
 }
-
-const runStoreFailure = (
-  operation: string,
-  cause: RunStore.RunStoreError
-): TimeTravelFailure =>
-  error(
-    cause.code === "not_found_row" ? "not_found" : "unknown",
-    `${operation} failed`,
-    cause
-  )
-
-/** The lineage a validation scan reads off a journal entry's open metadata. */
-const LineageMetadata = Schema.Struct({ lineageId: Schema.NonEmptyString })
 
 const lineageOf = (entry: JournalEvent.Entry): string | undefined =>
   Option.getOrUndefined(Schema.decodeUnknownOption(LineageMetadata)(entry.meta))?.lineageId
@@ -489,12 +479,6 @@ const readSuffix = (
     return { boundary, count, tailSeq }
   })
 
-const snapshotOf = (row: RunStore.RunRow): RunStore.RunSnapshot => ({
-  status: row.status,
-  owner: row.owner,
-  heartbeatAtMs: row.heartbeatAtMs
-})
-
 const claimRun = (
   runs: RunStore.Service,
   options: Options,
@@ -502,7 +486,7 @@ const claimRun = (
 ): Effect.Effect<ClaimedRun, TimeTravelFailure> =>
   Effect.gen(function*() {
     const row = yield* runs.get(options.runId).pipe(
-      Effect.mapError((cause) => runStoreFailure("read run", cause))
+      Effect.mapError((cause) => RunRow.failure("read run", cause))
     )
     if (row.status !== "pending" && row.status !== "suspended") {
       return yield* Effect.fail(error("busy", `run ${options.runId} is not available for rewind`))
@@ -511,9 +495,9 @@ const claimRun = (
     if (row.owner !== null || row.claim !== null) {
       return yield* Effect.fail(error("busy", `run ${options.runId} is not available for rewind`))
     }
-    const expected = snapshotOf(row)
+    const expected = RunRow.snapshotOf(row)
     const outcome = yield* runs.claim(options.runId, expected, options.owner, nowMs).pipe(
-      Effect.mapError((cause) => runStoreFailure("claim run", cause))
+      Effect.mapError((cause) => RunRow.failure("claim run", cause))
     )
     if (outcome._tag === "NotFound") {
       return yield* Effect.fail(error("not_found", `run ${options.runId} was not found`))
@@ -527,7 +511,7 @@ const claimRun = (
       outcome.claimedAtMs,
       expected
     ).pipe(
-      Effect.mapError((cause) => runStoreFailure("activate rewind claim", cause))
+      Effect.mapError((cause) => RunRow.failure("activate rewind claim", cause))
     )
     if (activated._tag !== "Activated") {
       yield* Effect.ignore(runs.abandonClaim(options.runId, options.owner, outcome.claimedAtMs))
@@ -535,21 +519,6 @@ const claimRun = (
     }
     return { row: rewindableRow, claimedAtMs: outcome.claimedAtMs }
   })
-
-const runHook = (
-  options: Options,
-  step: RewindStep
-): Effect.Effect<void, TimeTravelFailure> => {
-  const hook = options.hooks?.beforeStep
-  return hook === undefined
-    ? Effect.void
-    : hook(step).pipe(
-      Effect.mapError((cause) => error("unknown", `rewind failed at ${step}`, cause))
-    )
-}
-
-const terminal = (status: RunStore.RunStatus): boolean =>
-  status === "completed" || status === "failed" || status === "cancelled"
 
 /**
  * Resolves every descendant a rewind crosses: cancel it, disclose it, or refuse.
@@ -596,7 +565,7 @@ const assessChildren = (
           Effect.catch((cause) =>
             cause.code === "not_found_row"
               ? Effect.succeed(undefined)
-              : Effect.fail(runStoreFailure(`read ${group.kind} child ${edge.childRunId}`, cause))
+              : Effect.fail(RunRow.failure(`read ${group.kind} child ${edge.childRunId}`, cause))
           )
         )
         if (child === undefined) {
@@ -609,7 +578,7 @@ const assessChildren = (
           })
           continue
         }
-        if (terminal(child.status)) {
+        if (RunStore.isTerminalRunStatus(child.status)) {
           warnings.push({
             childRunId: edge.childRunId,
             parentSeq: edge.parentSeq,
@@ -641,7 +610,7 @@ const claimChild = (
       ...options.owner,
       nonce: `${options.owner.nonce}:rewind-child:${plan.edge.childRunId}`
     }
-    const expected = snapshotOf(plan.row)
+    const expected = RunRow.snapshotOf(plan.row)
     const claim = plan.row.status === "running"
       ? yield* Effect.gen(function*() {
         if (options.childLivenessEvidence === undefined) {
@@ -661,11 +630,11 @@ const claimChild = (
           )
         }
         return yield* runs.steal(plan.edge.childRunId, expected, childOwner, nowMs, evidence).pipe(
-          Effect.mapError((cause) => runStoreFailure(`claim child ${plan.edge.childRunId}`, cause))
+          Effect.mapError((cause) => RunRow.failure(`claim child ${plan.edge.childRunId}`, cause))
         )
       })
       : yield* runs.claim(plan.edge.childRunId, expected, childOwner, nowMs).pipe(
-        Effect.mapError((cause) => runStoreFailure(`claim child ${plan.edge.childRunId}`, cause))
+        Effect.mapError((cause) => RunRow.failure(`claim child ${plan.edge.childRunId}`, cause))
       )
 
     if (claim._tag !== "Claimed") {
@@ -679,7 +648,7 @@ const claimChild = (
       claim.claimedAtMs,
       expected
     ).pipe(
-      Effect.mapError((cause) => runStoreFailure(`activate child ${plan.edge.childRunId}`, cause))
+      Effect.mapError((cause) => RunRow.failure(`activate child ${plan.edge.childRunId}`, cause))
     )
     if (activated._tag !== "Activated") {
       yield* Effect.ignore(runs.abandonClaim(plan.edge.childRunId, childOwner, claim.claimedAtMs))
@@ -701,7 +670,7 @@ const cancelClaimedChild = (
       claimed.owner,
       "cancelled"
     ).pipe(
-      Effect.mapError((cause) => runStoreFailure(`cancel child ${childRunId}`, cause))
+      Effect.mapError((cause) => RunRow.failure(`cancel child ${childRunId}`, cause))
     )
     if (cancelled._tag !== "Transitioned") {
       return yield* Effect.fail(
@@ -709,29 +678,6 @@ const cancelClaimedChild = (
       )
     }
   })
-
-const toFailure = (cause: Cause.Cause<unknown>): TimeTravelFailure => {
-  const squashed = Cause.squash(cause)
-  return squashed instanceof TimeTravelError
-    ? squashed
-    : error("unknown", squashed instanceof Error ? squashed.message : String(squashed), cause)
-}
-
-/**
- * What a blocking assessment is allowed to say on an encoded error.
- *
- * Identity and verdict, never payload: enough for a caller to name the effect
- * that refused the rewind and look it up, and nothing an adapter's `input` or
- * `output` could smuggle onto the wire.
- */
-const blockingSummary = (assessment: Compensation.Assessment) => ({
-  id: assessment.effect.id,
-  kind: assessment.effect.kind,
-  tier: assessment.effect.tier,
-  seq: assessment.effect.seq,
-  classification: assessment.classification,
-  reason: assessment.reason
-})
 
 const initialDetail = (
   originalStatus: "pending" | "suspended"
@@ -850,12 +796,12 @@ export const rewind = (
                   yield* store.writeAudit(audit)
                   detail = auditDetail
 
-                  yield* runHook(options, "claim-run")
-                  yield* runHook(options, "rate-limit")
+                  yield* StepHook.run("rewind", options.hooks?.beforeStep, "claim-run")
+                  yield* StepHook.run("rewind", options.hooks?.beforeStep, "rate-limit")
                   if (!decision.allowed) {
                     return yield* Effect.fail(error("rate_limited", `rewind rate limit exceeded for ${options.runId}`))
                   }
-                  yield* runHook(options, "write-audit")
+                  yield* StepHook.run("rewind", options.hooks?.beforeStep, "write-audit")
 
                   const snapshot = yield* store.snapshotAt(options.runId, options.frame)
                   const descendants = yield* store.descendants(options.runId, options.frame)
@@ -867,7 +813,7 @@ export const rewind = (
                     options.maxEntries ?? HistoryLimit.defaultMaxHistoryEntries
                   )
                   const effects = yield* EffectBoundary.fromEntries(suffix.boundary)
-                  yield* runHook(options, "load-suffix")
+                  yield* StepHook.run("rewind", options.hooks?.beforeStep, "load-suffix")
 
                   const childAssessment = yield* assessChildren(
                     runs,
@@ -894,7 +840,7 @@ export const rewind = (
                       error(
                         "irreversible",
                         `rewind is blocked by ${blocking.length} effect(s)`,
-                        blocking.map(blockingSummary)
+                        blocking.map(Compensation.blockingSummary)
                       )
                     )
                   }
@@ -907,7 +853,7 @@ export const rewind = (
                     warnings: childAssessment.warnings
                   }
                   yield* store.updateAudit(auditId, { detail })
-                  yield* runHook(options, "assess-boundary")
+                  yield* StepHook.run("rewind", options.hooks?.beforeStep, "assess-boundary")
 
                   const handlerReceipts = yield* Compensation.compensate(plan, (receipts) => {
                     const nextDetail: AuditDetail = {
@@ -928,7 +874,7 @@ export const rewind = (
                   // already reversed.
                   detail = { ...detail, compensation }
                   yield* store.updateAudit(auditId, { detail })
-                  yield* runHook(options, "compensate-effects")
+                  yield* StepHook.run("rewind", options.hooks?.beforeStep, "compensate-effects")
 
                   // Preparation owns handler cleanup on failure. Once prepared,
                   // persist BOTH pointers before jj can change the workspace.
@@ -949,7 +895,7 @@ export const rewind = (
                     compensation = { handlerReceipts: [] }
                     return yield* Effect.failCause(restored.cause)
                   }
-                  yield* runHook(options, "restore-workspace")
+                  yield* StepHook.run("rewind", options.hooks?.beforeStep, "restore-workspace")
                   detail = {
                     ...detail,
                     phase: "compensated",
@@ -968,7 +914,7 @@ export const rewind = (
                     claimedChildren.push(yield* claimChild(runs, options, child))
                   }
 
-                  yield* runHook(options, "archive-and-truncate")
+                  yield* StepHook.run("rewind", options.hooks?.beforeStep, "archive-and-truncate")
                   archiveAttempted = true
                   // COMMIT can finish in an uninterruptible SQL finalizer. Keep
                   // its result and this flag in the same mask so cancellation
@@ -1019,7 +965,7 @@ export const rewind = (
                     "suspended",
                     frameState ?? claimedRun.row.stateJson
                   ).pipe(
-                    Effect.mapError((cause) => runStoreFailure("suspend rewound run", cause))
+                    Effect.mapError((cause) => RunRow.failure("suspend rewound run", cause))
                   )
                   if (suspended._tag !== "Transitioned") {
                     return yield* Effect.fail(
@@ -1054,7 +1000,7 @@ export const rewind = (
 
           const protocolExit = yield* Effect.exit(protocol)
           if (Exit.isSuccess(protocolExit)) return protocolExit.value
-          const failure = toFailure(protocolExit.cause)
+          const failure = fromCause(protocolExit.cause)
 
           if (
             !archiveCommitted &&
@@ -1123,11 +1069,11 @@ export const rewind = (
                 "suspended",
                 child.plan.row.stateJson
               ).pipe(
-                Effect.mapError((cause) => runStoreFailure(`restore child ${childRunId}`, cause)),
+                Effect.mapError((cause) => RunRow.failure(`restore child ${childRunId}`, cause)),
                 Effect.exit
               )
               if (Exit.isFailure(restoredChild)) {
-                restorationProblems.push(toFailure(restoredChild.cause).message)
+                restorationProblems.push(fromCause(restoredChild.cause).message)
               } else if (restoredChild.value._tag !== "Transitioned") {
                 restorationProblems.push(`restore child ${childRunId} returned ${restoredChild.value._tag}`)
               }
@@ -1141,11 +1087,11 @@ export const rewind = (
                 claimed.row.status === "pending" ? "suspended" : claimed.row.status,
                 claimed.row.stateJson
               ).pipe(
-                Effect.mapError((cause) => runStoreFailure("restore run state", cause)),
+                Effect.mapError((cause) => RunRow.failure("restore run state", cause)),
                 Effect.exit
               )
               if (Exit.isFailure(restored)) {
-                restorationProblems.push(toFailure(restored.cause).message)
+                restorationProblems.push(fromCause(restored.cause).message)
                 if (detail === undefined) {
                   yield* Effect.ignore(runs.abandonClaim(options.runId, options.owner, claimed.claimedAtMs))
                 }
@@ -1207,7 +1153,7 @@ export const rewind = (
           // The protocol runs under `restore(...)` inside an uninterruptible
           // mask, so an interrupt lands as an interrupt-only cause on
           // `protocolExit` and the rollback above still runs to completion.
-          // Squashing that cause through `toFailure` produced
+          // Squashing that cause through `fromCause` produced
           // `TimeTravelError{code:"unknown"}`, so a cancelled rewind reported
           // as a *failed* rewind: a caller racing `rewind` against a
           // supervisor observed a failure and kept running on the fiber it

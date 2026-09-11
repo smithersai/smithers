@@ -24,6 +24,7 @@ import * as Schema from "effect/Schema"
 import { forkCreatedEventType, Frame, type LineageEdge } from "./Frame.ts"
 import { error, TimeTravelError } from "./TimeTravelError.ts"
 import * as TimeTravelStore from "./TimeTravelStore.ts"
+import * as LineageTree from "./internal/LineageTree.ts"
 
 /**
  * One journal record as this store holds it.
@@ -126,47 +127,6 @@ export interface Options {
    * recovery finishes or rolls it back.
    */
   readonly failAt?: string
-}
-
-const descendantsFrom = (
-  edges: ReadonlyArray<LineageEdge>,
-  runId: string,
-  frame: Frame
-): {
-  readonly attached: ReadonlyArray<LineageEdge>
-  readonly detached: ReadonlyArray<LineageEdge>
-  readonly attachedRunIds: ReadonlySet<string>
-} => {
-  const attached: Array<LineageEdge> = []
-  const detached: Array<LineageEdge> = []
-  const attachedRunIds = new Set<string>()
-  const detachedRunIds = new Set<string>()
-  const queue: Array<string> = []
-
-  const include = (edge: LineageEdge): void => {
-    if (edge.attached) {
-      if (attachedRunIds.has(edge.childRunId)) return
-      attached.push(edge)
-      attachedRunIds.add(edge.childRunId)
-      queue.push(edge.childRunId)
-    } else {
-      if (detachedRunIds.has(edge.childRunId)) return
-      detached.push(edge)
-      detachedRunIds.add(edge.childRunId)
-    }
-  }
-
-  for (const edge of edges) {
-    if (edge.parentRunId === runId && edge.parentSeq > frame.seq) include(edge)
-  }
-  while (queue.length > 0) {
-    const parentRunId = queue.shift()!
-    for (const edge of edges) {
-      if (edge.parentRunId === parentRunId) include(edge)
-    }
-  }
-
-  return { attached, detached, attachedRunIds }
 }
 
 /**
@@ -383,7 +343,7 @@ export const make = (options: Options = {}): TimeTravelStore.Service & { readonl
     descendants: Effect.fn("TimeTravelStore.descendants")((runId, frame) =>
       Effect.annotateCurrentSpan({ runId, lineageId: frame.lineageId, seq: frame.seq }).pipe(Effect.andThen(
         Effect.sync(() => {
-          const descendants = descendantsFrom(edges, runId, frame)
+          const descendants = LineageTree.descendants(edges, runId, frame)
           return { attached: descendants.attached, detached: descendants.detached }
         })
       ))
@@ -432,7 +392,7 @@ export const make = (options: Options = {}): TimeTravelStore.Service & { readonl
                 `run ${runId} is no longer owned by ${owner.hostId}:${owner.pid}:${owner.nonce}`
               )
             }
-            const descendants = descendantsFrom(edges, runId, frame)
+            const descendants = LineageTree.descendants(edges, runId, frame)
             for (const childRunId of descendants.attachedRunIds) {
               const status = runStatuses.get(childRunId)
               if (status === undefined || isTerminalRunStatus(status)) {

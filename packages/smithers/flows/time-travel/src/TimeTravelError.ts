@@ -10,6 +10,7 @@
  *
  * @since 0.1.0
  */
+import * as Cause from "effect/Cause"
 import * as Schema from "effect/Schema"
 /**
  * Why a time-travel operation was refused.
@@ -78,3 +79,17 @@ export class TimeTravelError extends Schema.TaggedError<TimeTravelError>()("@smt
  */
 export const error = (code: TimeTravelErrorCode, message: string, cause?: unknown): TimeTravelError =>
   new TimeTravelError({ code, message, ...(cause === undefined ? {} : { cause }) })
+
+/**
+ * The {@link TimeTravelError} a failed cause carries, or an `unknown` one
+ * wrapping it when the cause squashes to anything else.
+ *
+ * @since 0.1.0
+ * @category constructors
+ */
+export const fromCause = (cause: Cause.Cause<unknown>): TimeTravelError => {
+  const squashed = Cause.squash(cause)
+  return squashed instanceof TimeTravelError
+    ? squashed
+    : error("unknown", squashed instanceof Error ? squashed.message : String(squashed), cause)
+}

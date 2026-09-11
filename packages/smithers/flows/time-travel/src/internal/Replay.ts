@@ -30,6 +30,7 @@ import type { Frame } from "../Frame.ts"
 import { error, type TimeTravelError } from "../TimeTravelError.ts"
 import * as HistoryLimit from "./HistoryLimit.ts"
 import * as JournalPages from "./JournalPages.ts"
+import { LineageMetadata } from "./LineageMetadata.ts"
 
 /**
  * A pure fold over durable journal evidence.
@@ -62,8 +63,6 @@ export interface ReplayOptions {
    */
   readonly maxEntries?: number
 }
-/** @private */
-const LineageMetadata = Schema.Struct({ lineageId: Schema.NonEmptyString })
 /** @private */
 const CacheMetadata = Schema.Struct({ cacheKey: Schema.NonEmptyString })
 /**
