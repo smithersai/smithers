@@ -14,7 +14,8 @@
  * to the same behaviour, so a run inspected under one must be inspected
  * identically under the other.
  *
- * `docs/specs/Concepts/Time Travel.md` is the governing design.
+ * `docs/concepts/frames-and-lineage.md` and `docs/concepts/derived-state.md`
+ * describe the model this contract serves.
  *
  * @since 0.1.0
  */
@@ -30,7 +31,7 @@ import { error, type TimeTravelError } from "./TimeTravelError.ts"
  * The tier-2 anchor recorded at a frame: the jj pointer current when that seq
  * was journaled, and the plan digest in force.
  *
- * `docs/specs/Concepts/Time Travel.md` names exactly these two as the things
+ * These two are exactly the things
  * replay cannot derive and the frame must therefore carry. `planDigest` is
  * optional because a run driven without a persisted plan has none — an absent
  * digest means "no plan was in force", never "the digest was lost".
@@ -247,8 +248,7 @@ export type ArchiveResult = typeof ArchiveResult.Type
  * What `createFork` commits: the child run and its lineage edge back to the
  * parent frame.
  *
- * The disclosure a fork carries is NOT here. `docs/specs/Concepts/Time
- * Travel.md` §Fork normalizes the boundary assessment to warnings — "this
+ * The disclosure a fork carries is NOT here. A fork normalizes the boundary assessment to warnings — "this
  * effect may execute again on the child" — and that assessment runs above the
  * store, so the warnings belong to the operation's result rather than to the
  * row a store writes. A store returning this pair says nothing about them.
@@ -335,7 +335,7 @@ export interface Service {
   /**
    * The run state AT a frame, derived by replaying the run-decision records up
    * to it — not read off the run row, whose `state_json` is the run's *latest*
-   * state (`docs/specs/Concepts/Time Travel.md`; Temporal's
+   * state (`docs/concepts/derived-state.md`; Temporal's
    * `ndc/state_rebuilder.go`). Returns the encoded JSON, so the caller decides
    * what schema to read it under.
    */

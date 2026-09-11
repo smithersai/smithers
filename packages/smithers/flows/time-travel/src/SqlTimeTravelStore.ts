@@ -11,7 +11,7 @@
  * (records retained across truncation). The migration ladder also initializes
  * `flows_journal_generations`, shared with the journal.
  * Lineage edges are read as ONE tree across this package's fork edges and the
- * engine's child spawns, per `docs/specs/Concepts/Subflows.md` §129-131.
+ * engine's child spawns (`docs/concepts/frames-and-lineage.md`).
  *
  * The derived reads — state and attempts at a frame — are folds over journal
  * records rather than columns, because the run row holds only the *latest*
@@ -216,8 +216,7 @@ export const make: Effect.Effect<
      * The lineage edges under one run, forks and engine child spawns as ONE
      * tree.
      *
-     * `docs/specs/Concepts/Subflows.md` §129-131 asks for one lineage tree with
-     * an edge kind; this is that union, expressed where both sources can be
+     * A run has one lineage tree with an edge kind; this is that union, expressed where both sources can be
      * read. Fork edges stay in `flows_time_travel_edges`; child edges and
      * trampoline continuation edges are DERIVED from the parent's own journal,
      * which is the only one of the three stores of this tree that carries the
@@ -1021,8 +1020,8 @@ export const make: Effect.Effect<
             VALUES (${parentRunId}, ${frame.seq}, ${runId}, 'fork', 0)
           `
               /**
-               * The fork-created marker `docs/specs/Concepts/Forensics.md` §68
-               * asks for: written on the CHILD, above the copied prefix, naming
+               * The fork-created marker (`Frame.forkCreatedEventType`): written
+               * on the CHILD, above the copied prefix, naming
                * the parent and the offset it was cut at. A cross-fork timeline
                * can now start from any child and find its origin without
                * consulting the edge table.

@@ -1,7 +1,7 @@
 /**
  * The tier-2 anchor projector: engine snapshot records in, frame anchors out.
  *
- * `docs/specs/Concepts/Time Travel.md` says a frame must carry the jj pointer
+ * `docs/concepts/derived-state.md`: a frame must carry the jj pointer
  * current when its seq was journaled and the plan digest in force, because
  * replay cannot derive either. The engine emits both facts as ordinary journal
  * records — it has to, it is the only thing that knows them — but the engine
@@ -11,7 +11,7 @@
  *
  * A projector is the seam that keeps the arrow one-way. It reads the journal
  * (which both packages may depend on) and folds it into the anchor table
- * through {@link TimeTravelStore.Service.recordSnapshot}. `docs/specs/Concepts/Journal Queue.md`'s
+ * through {@link TimeTravelStore.Service.recordSnapshot}. The journal's projection
  * rule applies: a projection has no independent durable state, so replaying the
  * same entries reproduces the same anchors, and running it twice is a no-op.
  *

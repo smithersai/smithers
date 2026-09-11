@@ -1,16 +1,13 @@
 /**
  * The registration door for compensation handlers.
  *
- * `docs/specs/Concepts/Time Travel Service.md` §"The open gap this leaves"
- * asked for one of two doors: a construction argument on `TimeTravel.layer`, or
+ * Handlers could arrive through one of two doors: a construction argument on `TimeTravel.layer`, or
  * handlers contributed by the engine composition that owns the effect boundary
  * — either way without re-exposing `EffectHandlerRegistry`, which is machinery
  * and stays under `internal/`.
  *
  * **The pick is the contribution door.** The adapter that performed a tier-3
- * effect owns its compensation
- * (`docs/specs/Concepts/Time Travel Compensation.md` §"Resolve every handler"),
- * and the composition that wires that adapter is the only place that can close
+ * effect owns its compensation (`docs/guides/compensate-an-effect.md`), and the composition that wires that adapter is the only place that can close
  * over the services its `revert` needs. A construction argument on
  * `TimeTravel.layer` would have put that knowledge on whoever assembles the
  * app, one layer away from the boundary it describes. This service is

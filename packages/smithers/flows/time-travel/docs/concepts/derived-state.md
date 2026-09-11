@@ -82,11 +82,9 @@ diagnostic metadata cannot override it.
 
 Unsupported engine versions, such as `flows.engine.v3.*`, fail before folding.
 
-Fixtures exercise attempt lifecycle, execution lifecycle, deferred completion
-and clock scheduling through real SQLite journal rows. Current unversioned
-history retains its metadata lineage convention. Its attempt enumeration now
-refuses malformed started markers in both SQL and memory stores rather than
-silently producing an incomplete healthy list.
+Unversioned history keeps its metadata lineage convention. Attempt
+enumeration over it refuses a malformed started marker in both the SQL and
+memory stores rather than returning an incomplete list.
 
 The versioned constructors are additive. Engine recovery, fork copying and
 anchor projection still use the current authoritative stores and current

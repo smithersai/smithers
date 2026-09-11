@@ -91,7 +91,7 @@ describe("fork", () => {
 /**
  * A fork's workspace is an identity, not a label.
  *
- * `docs/specs/Concepts/Time Travel.md` §Fork gives every child its own jj
+ * `docs/guides/fork-a-run.md` gives every child its own jj
  * workspace, and the store gives every child its own run id. These cases hold
  * the two identities to each other over the REAL SQLite store: the name the
  * lane is provisioned under must distinguish exactly the children the store

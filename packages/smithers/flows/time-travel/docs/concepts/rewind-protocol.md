@@ -47,6 +47,13 @@ the process dies at this exact line, what does the next process see?
     Mutable deferred completions and clock deadlines named by those records are
     removed in the same transaction, so the rewound run cannot consume an
     answer or deadline from the discarded future.
+    The same transaction advances the durable journal generation of the run
+    and every attached child. Sync cursors from the previous generation fail
+    with `lineage_changed`, even when the new journal head is below the old
+    cursor. The error's `rewind` payload names the new generation and archive
+    boundary; rebuild the projection from the retained history and start a
+    fresh sync client from that boundary. The frame's structural lineage ID
+    does not change.
 11. **Cancel the claimed children**, recording each on the audit as it lands.
 12. **Suspend the run with the state derived at the frame**, not the state the
     truncated future left on the row, and close the audit as `completed`.
@@ -136,11 +143,3 @@ reported and left, and because its name is never reused it blocks nothing.
   and what it returns.
 - [Effect tiers](./effect-tiers.md): why an effect blocks.
 - [Troubleshooting](../troubleshooting.md): what each refusal means.
-
-Rewind advances a durable journal generation in the same SQL transaction as
-archiving and truncating the history, including attached children. Sync cursors
-from the previous generation fail with `lineage_changed`, even when the new
-journal head is below the old cursor. The error's `rewind` payload names the
-new generation and archive boundary; rebuild the projection from the current
-retained history and start a fresh sync client from that boundary. The frame's structural lineage ID itself
-does not change.

@@ -996,7 +996,7 @@ const protocol = (context: Context, progress: Progress, lease: Lease.HeldLease) 
  * `TimeTravelError{code:"unknown"}`, so a cancelled rewind reported as a
  * *failed* rewind: a caller racing `rewind` against a supervisor observed a
  * failure and kept running on the fiber it believed it had cancelled.
- * Cancellation is fiber interruption (`CLAUDE.md`), so the cause is re-raised
+ * Cancellation is fiber interruption, so the cause is re-raised
  * verbatim and an interrupt stays an interrupt. A cause carrying any `Fail` or
  * `Die` reason still reports as the typed failure the callers match on.
  */

@@ -1,7 +1,7 @@
 /**
  * The derived half of a frame: anchors, state, and attempts.
  *
- * `docs/specs/Concepts/Time Travel.md` makes frame state DERIVED — the only
+ * `docs/concepts/derived-state.md` makes frame state DERIVED — the only
  * things stored per frame are the jj pointer and the plan digest, and both
  * arrive through a projection of the engine's own records rather than an engine
  * write. These cases pin the fold, its carried-pointer resolution, and the

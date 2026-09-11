@@ -5,7 +5,7 @@
  * a lineage plus a journal sequence number — and every operation that creates
  * a new run from that point records a `LineageEdge` back to it. Together they
  * are the whole addressing scheme: a frame says *where*, an edge says *what
- * came from there*, and the two are what `docs/specs/Concepts/Time Travel.md`
+ * came from there*, and the two are what `docs/concepts/frames-and-lineage.md`
  * calls the lineage tree.
  *
  * A lineage is not a run. A fork or a continuation starts a new run but may
@@ -91,8 +91,7 @@ export type LineageEdge = typeof LineageEdge.Type
 /**
  * The journal event type marking a run as fork-created.
  *
- * `docs/specs/Concepts/Forensics.md` §68 asks a forked run to say so on its own
- * journal, so a cross-fork timeline can start from any child and walk back
+ * A forked run says so on its own journal, so a cross-fork timeline can start from any child and walk back
  * without consulting the edge table. The record sits directly above the copied
  * prefix and carries `(parentRunId, forkJournalOffset)`.
  *

@@ -47,13 +47,12 @@ import type { TimeTravelError } from "../src/TimeTravelError.ts"
 /**
  * The declared step the flow's body names.
  *
- * DECIDED (2026-08-11, pending review): the composite handler this suite always
- * had becomes ONE declared action rather than four body nodes. What is under
+ * The composite handler this suite always had is ONE declared action rather
+ * than four body nodes. What is under
  * test is time travel over an engine-written journal, so the fixture keeps the
  * action mix and the ordering the evidence assertions are written against;
  * decomposing it would rewrite the evidence rather than migrate the authoring
- * shape. The body still names an action instead of carrying code, which is
- * the migration `docs/specs/Concepts/Unified Flow Authoring.md` asks for.
+ * shape. The body still names an action instead of carrying code.
  */
 const Post = Action.make("time-travel/Post", { payload: {}, success: Schema.String })
 const Ledger = Flow.make("time-travel/Ledger", {
@@ -472,8 +471,8 @@ describe("time travel over an engine-written journal", () => {
       expect(result.childAttempts).toBe(3)
       // The fork gets its OWN workspace and leaves the parent's tree alone:
       // `Jj.restore` acts on the one working copy the layer is rooted at, so a
-      // fork that called it would restore the parent — forbidden by
-      // `docs/specs/Concepts/Time Travel.md` §Fork. The child lane is pinned at
+      // fork that called it would restore the parent, which a fork never
+      // touches. The child lane is pinned at
       // the frame's recorded pointer at provisioning time instead:
       // `workspaceAdd` carries the revision.
       const add = result.jjCalls.find((call) => call.startsWith("add:"))

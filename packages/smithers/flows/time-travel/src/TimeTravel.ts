@@ -4,7 +4,7 @@
  * `Replay`, `Fork`, `Rewind`, `Recovery`, `Compensation`, and the
  * effect-handler registry are machinery under `src/internal/`; a caller never
  * names them. This service fronts the verbs of
- * `docs/specs/Concepts/Time Travel.md` and owns the wiring they used to make
+ * `docs/concepts/frames-and-lineage.md` and owns the wiring they used to make
  * the caller thread: the ownership claim a rewind rides, the jj workspace a
  * fork lands in, the compensation-handler registry, the cap on how much
  * history one read may materialize, and startup recovery of an interrupted
@@ -182,7 +182,8 @@ export interface RewindOptions {
  * `replay` and `inspect` are one fold: `replay` takes the read knobs and
  * `inspect` is the same fold under the service defaults, kept so a caller
  * that never tunes a read has a shorter door. Both fold committed evidence
- * only and dispatch nothing.
+ * only and dispatch nothing. `inspect` takes no options, so versioned engine
+ * history needs `replay` with {@link ReplayOptions.engineEvents}.
  *
  * @since 0.1.0
  * @category models
@@ -433,9 +434,7 @@ export const makeWith = (
     const owner = yield* mintOwner
     const liveness = recoveryEvidence(options.isAlive ?? Ownership.leaseLiveness())
     const rateLimit = options.rateLimit
-    // The contribution door (`docs/specs/Concepts/Time Travel Service.md`
-    // §"The open gap this leaves"):
-    // handlers come from the composition that owns the effect boundary, and the
+    // The contribution door (see `CompensationHandlers`): handlers come from the composition that owns the effect boundary, and the
     // registry itself stays internal. Absent service means no handlers, which is
     // the pre-existing behaviour: every crossed irreversible effect blocks.
     // The contributed handler IS the registered handler. This used to copy
@@ -696,9 +695,11 @@ export class TimeTravel extends Context.Service<TimeTravel, Service>()(
   static readonly layer: Layer.Layer<TimeTravel, TimeTravelError, Requirements> = Layer.effect(TimeTravel)(make)
 
   /**
-   * The same wiring under an explicit policy. {@link Options.isAlive} is the
-   * only knob, and it decides what startup recovery is allowed to conclude
-   * about a run an interrupted rewind left `running`.
+   * The same wiring under an explicit policy. {@link Options} carries the
+   * knobs: `isAlive` decides what startup recovery is allowed to conclude
+   * about a run an interrupted rewind left `running`, `maxHistoryEntries` is
+   * the default read cap every verb applies, `rateLimit` gates each rewind,
+   * and `compensationTimeout` bounds each compensation handler.
    *
    * @since 0.1.0
    * @category layers

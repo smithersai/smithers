@@ -188,7 +188,7 @@ describe("TimeTravel", () => {
       expect(store.state().audits.map((audit) => audit.status)).toEqual(["completed"])
     }))
 
-  it.effect("honours the only two knobs it takes: fork root and rewind paging", () =>
+  it.effect("honours fork root and rewind paging", () =>
     Effect.gen(function*() {
       const store = MemoryTimeTravelStore.make({
         records: [record(0, 10), record(1, 20), record(2, 30), record(3, 40)]

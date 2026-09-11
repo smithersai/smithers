@@ -243,7 +243,9 @@ holds.
 8. Restore the Jujutsu workspace to the frame's pointer.
 9. Persist the cancellation plan and claim every child it names.
 10. Archive and truncate the suffix atomically, fenced on the parent owner and
-    every non-terminal attached child's exact owner.
+    every non-terminal attached child's exact owner. The same transaction
+    advances the journal generation, so older sync cursors fail
+    `lineage_changed`.
 11. Cancel the claimed children, recording each on the audit as it lands.
 12. Suspend the run with the state derived at the frame and close the audit.
 

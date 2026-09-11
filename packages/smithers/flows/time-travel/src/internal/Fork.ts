@@ -1,7 +1,7 @@
 /**
  * The fork verb: a new run seeded from a parent frame, never a parent mutation.
  *
- * `docs/specs/Concepts/Time Travel.md` §Fork: fork never touches the parent —
+ * `docs/guides/fork-a-run.md`: fork never touches the parent —
  * no compensation, no truncation, no restore of the parent's workspace — but
  * the boundary assessment still runs, and its result is **normalized to
  * warnings**: "this effect may execute again on the child". A fork with
@@ -235,7 +235,7 @@ const normalize = (
  * A fork's outcome: the child run, its lineage edge, and everything the
  * boundary assessment disclosed.
  *
- * `docs/specs/Concepts/Time Travel.md` §Fork: a fork never compensates, so the
+ * A fork never compensates, so the
  * assessment still runs and its blocking and revertible entries are
  * **normalized to warnings** — "this effect may execute again on the child".
  * A fork with a non-empty `warnings` is a successful fork, not a refused one.
@@ -353,7 +353,7 @@ export const fork = (
        *
        * The store commit is the fork's finalization step, the way Temporal
        * finalizes a workflow record only after what it names exists
-       * (`reference/temporal`'s transactional finalization): `createFork`
+       * (Temporal's transactional finalization): `createFork`
        * writes the child run, its copied prefix, attempts, and anchors, and
        * the lineage edge in ONE store transaction, and consumes the
        * reservation with them. A failed `workspaceAdd` therefore leaves no
@@ -395,7 +395,7 @@ export const fork = (
       /**
        * THE CHILD'S WORKTREE IS PINNED AT THE FRAME'S POINTER.
        *
-       * `docs/specs/Concepts/Time Travel.md` §Fork wants the child's lane
+       * A fork wants the child's lane
        * restored to the frame's jj pointer, and `Jj.workspaceAdd` now takes
        * that pointer as its optional `revision`: the new workspace is pinned
        * at provisioning time, so the parent is never restored — "Fork never

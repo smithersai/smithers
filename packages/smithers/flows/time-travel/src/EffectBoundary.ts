@@ -68,8 +68,7 @@ const effectFields = {
   idempotencyKey: Schema.optionalKey(Schema.NonEmptyString),
   /**
    * The stable compensation descriptor the adapter that performed this effect
-   * owns. `docs/specs/Concepts/Time Travel Compensation.md` puts it in the
-   * entry so a rewind's handler preflight resolves against recorded evidence
+   * owns. It lives in the entry so a rewind's handler preflight resolves against recorded evidence
    * rather than inferring a compensation from the effect kind alone.
    */
   compensation: Schema.optionalKey(Schema.NonEmptyString),

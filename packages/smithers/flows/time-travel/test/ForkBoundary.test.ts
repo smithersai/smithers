@@ -1,7 +1,7 @@
 /**
  * A fork assesses the boundary it carries past and restores the frame's tree.
  *
- * `docs/specs/Concepts/Time Travel.md` §Fork: the assessment runs but is
+ * `docs/guides/fork-a-run.md`: the assessment runs but is
  * normalized to warnings — the fork never reverts a parent effect — and the
  * child gets its own worktree restored from the frame's jj pointer. These cases
  * pin the disclosure wording, the paging of a long suffix, and what a fork says
@@ -185,8 +185,7 @@ describe("fork boundary assessment", () => {
         "execute again on the child. email-1 stands."
       ])
       // `Jj.restore` acts on the ONE working copy the layer is rooted at — the
-      // parent's. `docs/specs/Concepts/Time Travel.md` §Fork forbids a fork from
-      // restoring it, so the child lane is pinned at the frame's pointer at
+      // parent's. A fork never restores it, so the child lane is pinned at the frame's pointer at
       // provisioning time instead: `workspaceAdd` carries the revision.
       expect(calls).toEqual([`add:${lane}@change-at-frame`, `forget:${lane}`])
     }))
