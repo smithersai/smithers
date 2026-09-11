@@ -105,20 +105,28 @@ export const parseCloudCredentials = (value: unknown): CloudCredentials | null =
   }
 }
 
-const run = async (argv: ReadonlyArray<string>): Promise<{ readonly code: number; readonly stdout: string }> => {
-  const proc = Bun.spawn([...argv], { stdout: "pipe", stderr: "ignore" })
+/** The `security` process seam: argv plus optional stdin; tests record calls instead of spawning. */
+export type KeychainRun = (argv: ReadonlyArray<string>, stdin?: string) => Promise<{ readonly code: number; readonly stdout: string }>
+
+const spawnRun: KeychainRun = async (argv, stdin) => {
+  const proc = Bun.spawn([...argv], { stdin: stdin === undefined ? "ignore" : new Blob([stdin]), stdout: "pipe", stderr: "ignore" })
   const stdout = (await new Response(proc.stdout).text()).trim()
   const code = await proc.exited
   return { code, stdout }
 }
 
+/** A quoted `security -i` word; a quote, backslash or line break could smuggle in another option or command. */
+const interactiveWord = (value: string): string | null => /["\\\r\n]/.test(value) ? null : `"${value}"`
+
 /*
  * macOS `security`: one generic-password entry per API host. The secret is
  * the serialized CloudCredentials, so a restart restores the whole session,
- * not just the token. Every operation is best-effort: a keychain refusal
- * loses persistence, never the in-memory session.
+ * not just the token. The writer feeds `add-generic-password -X <hex>` to
+ * `security -i` on stdin, so the PAT never appears in a process's argv.
+ * Every operation is best-effort: a keychain refusal loses persistence,
+ * never the in-memory session.
  */
-const darwinKeychain = (): CloudKeychain => ({
+export const darwinKeychain = (run: KeychainRun = spawnRun): CloudKeychain => ({
   read: async (service, account) => {
     try {
       const { code, stdout } = await run(["security", "find-generic-password", "-s", service, "-a", account, "-w"])
@@ -129,7 +137,11 @@ const darwinKeychain = (): CloudKeychain => ({
   },
   write: async (service, account, secret) => {
     try {
-      await run(["security", "add-generic-password", "-U", "-s", service, "-a", account, "-w", secret])
+      const s = interactiveWord(service)
+      const a = interactiveWord(account)
+      if (s === null || a === null) return
+      const hex = Buffer.from(secret, "utf8").toString("hex")
+      await run(["security", "-i"], `add-generic-password -U -s ${s} -a ${a} -X ${hex}\n`)
     } catch {
       // Best-effort: the in-memory session still holds the token.
     }
