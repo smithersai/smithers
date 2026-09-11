@@ -78,6 +78,29 @@ export interface AnyWithProps {
   readonly exitSchema: Schema.Exit<any, any, any>
 }
 
+// Queues, human tasks and clocks mint a deferred per item, attempt or sleep.
+// Effect caches compiled parsers by AST identity, so the exit schema is shared
+// per (success, error) pair rather than rebuilt for every deferred.
+const exitSchemaCache = new WeakMap<object, WeakMap<object, Schema.Exit<any, any, any>>>()
+
+const exitSchemaFor = (success: Schema.Constraint, error: Schema.Constraint): Schema.Exit<any, any, any> => {
+  let byError = exitSchemaCache.get(success)
+  if (byError === undefined) {
+    byError = new WeakMap()
+    exitSchemaCache.set(success, byError)
+  }
+  let cached = byError.get(error)
+  if (cached === undefined) {
+    cached = Schema.Exit(
+      Schema.toCodecJson(success),
+      Schema.toCodecJson(error),
+      Schema.toCodecJson(Schema.Defect())
+    )
+    byError.set(error, cached)
+  }
+  return cached
+}
+
 /**
  * Creates a named durable deferred with optional success and error schemas for
  * persisted completion.
@@ -102,11 +125,7 @@ export const make = <
     name,
     successSchema,
     errorSchema,
-    exitSchema: Schema.Exit(
-      Schema.toCodecJson(successSchema),
-      Schema.toCodecJson(errorSchema),
-      Schema.toCodecJson(Schema.Defect())
-    ) as any,
+    exitSchema: exitSchemaFor(successSchema, errorSchema) as any,
     withActionAttempt: Effect.gen(function*() {
       const attempt = yield* CurrentAttempt
       return make(`${name}/${attempt}`, {

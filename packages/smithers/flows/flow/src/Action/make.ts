@@ -27,6 +27,66 @@ import { FileBoundary } from "./FileBoundary.ts"
 import { type Implementation, Implementations } from "./Implementations.ts"
 import { TypeId } from "./TypeId.ts"
 
+interface ExitSchemas {
+  readonly exitSchema: Schema.Exit<any, any, any>
+  readonly exitSchemaPartial: Schema.Exit<any, any, any>
+}
+
+// A declared action mints a fresh inline action per dispatch. Effect caches
+// compiled parsers by AST identity, so the exit schemas are shared per
+// (success, error) pair rather than rebuilt on every dispatch.
+const exitSchemaCache = new WeakMap<object, WeakMap<object, ExitSchemas>>()
+
+const exitSchemasFor = (
+  success: Schema.Constraint,
+  error: Schema.Constraint,
+  successJson: Schema.Top,
+  errorJson: Schema.Top
+): ExitSchemas => {
+  let byError = exitSchemaCache.get(success)
+  if (byError === undefined) {
+    byError = new WeakMap()
+    exitSchemaCache.set(success, byError)
+  }
+  let cached = byError.get(error)
+  if (cached === undefined) {
+    cached = {
+      exitSchema: Schema.Exit(successJson, errorJson, Schema.Defect()),
+      exitSchemaPartial: Schema.Exit(successJson, errorJson, Schema.Unknown)
+    }
+    byError.set(error, cached)
+  }
+  return cached
+}
+
+/**
+ * The options of a declared action, shared by {@link make}'s declared form and
+ * {@link makeSystem}.
+ */
+interface DeclaredOptions<
+  Payload extends Schema.Struct.Fields | Flow.AnyStructSchema,
+  Success extends Schema.Top,
+  Error extends Schema.Top
+> {
+  readonly payload: Payload
+  readonly implementationVersion?: string | undefined
+  readonly success?: Success | undefined
+  readonly error?: Error | undefined
+  readonly tier?: Tier | undefined
+  readonly idempotencyKey?:
+    | IdempotencyKey
+    | ((payload: (Payload extends Schema.Struct.Fields ? Schema.Struct<Payload> : Payload)["Type"]) => IdempotencyKey)
+    | undefined
+  readonly nondeterministic?: true | undefined
+  readonly retryPolicy?: RetryPolicy.RetryPolicy | undefined
+  readonly interruptRetryPolicy?: Schedule.Schedule<any, unknown> | undefined
+  readonly fileBoundary?:
+    | FileBoundary
+    | ((payload: (Payload extends Schema.Struct.Fields ? Schema.Struct<Payload> : Payload)["Type"]) => FileBoundary)
+    | undefined
+  readonly annotations?: Context.Context<never> | undefined
+}
+
 /**
  * Creates a flow action from an effect, using the provided schemas to
  * encode successes and failures for durable execution.
@@ -60,7 +120,7 @@ const makeInline = <
   const errorSchema = options.error ?? (Schema.Never as any as Error)
   const successSchemaJson = Schema.toCodecJson(successSchema)
   const errorSchemaJson = Schema.toCodecJson(errorSchema)
-  // oxlint-disable-next-line prefer-const
+  const exitSchemas = exitSchemasFor(successSchema, errorSchema, successSchemaJson, errorSchemaJson)
   let execute!: Effect.Effect<Success["Type"], Error["Type"], any>
   const executeWithInfraRetry = retryInfraInterrupt(
     options.name,
@@ -78,8 +138,8 @@ const makeInline = <
     implementationVersion,
     successSchema,
     errorSchema,
-    exitSchema: Schema.Exit(successSchemaJson, errorSchemaJson, Schema.Defect()),
-    exitSchemaPartial: Schema.Exit(successSchemaJson, errorSchemaJson, Schema.Unknown),
+    exitSchema: exitSchemas.exitSchema,
+    exitSchemaPartial: exitSchemas.exitSchemaPartial,
     annotations: options.annotations ?? Context.empty(),
     tier: options.tier ?? "sealed",
     idempotencyKey: options.idempotencyKey,
@@ -114,25 +174,7 @@ const makeDeclared = <
   Payload extends Schema.Struct.Fields | Flow.AnyStructSchema,
   Success extends Schema.Top = Schema.Void,
   Error extends Schema.Top = Schema.Never
->(tag: Tag, options: {
-  readonly payload: Payload
-  readonly implementationVersion?: string | undefined
-  readonly success?: Success | undefined
-  readonly error?: Error | undefined
-  readonly tier?: Tier | undefined
-  readonly idempotencyKey?:
-    | IdempotencyKey
-    | ((payload: (Payload extends Schema.Struct.Fields ? Schema.Struct<Payload> : Payload)["Type"]) => IdempotencyKey)
-    | undefined
-  readonly nondeterministic?: true | undefined
-  readonly retryPolicy?: RetryPolicy.RetryPolicy | undefined
-  readonly interruptRetryPolicy?: Schedule.Schedule<any, unknown> | undefined
-  readonly fileBoundary?:
-    | FileBoundary
-    | ((payload: (Payload extends Schema.Struct.Fields ? Schema.Struct<Payload> : Payload)["Type"]) => FileBoundary)
-    | undefined
-  readonly annotations?: Context.Context<never> | undefined
-}): Declared<
+>(tag: Tag, options: DeclaredOptions<Payload, Success, Error>): Declared<
   Tag,
   Payload extends Schema.Struct.Fields ? Schema.Struct<Payload> : Payload,
   Success,
@@ -289,25 +331,7 @@ export const make: {
     Payload extends Schema.Struct.Fields | Flow.AnyStructSchema,
     Success extends Schema.Top = Schema.Void,
     Error extends Schema.Top = Schema.Never
-  >(tag: Tag, options: {
-    readonly payload: Payload
-    readonly implementationVersion?: string | undefined
-    readonly success?: Success | undefined
-    readonly error?: Error | undefined
-    readonly tier?: Tier | undefined
-    readonly idempotencyKey?:
-      | IdempotencyKey
-      | ((payload: (Payload extends Schema.Struct.Fields ? Schema.Struct<Payload> : Payload)["Type"]) => IdempotencyKey)
-      | undefined
-    readonly nondeterministic?: true | undefined
-    readonly retryPolicy?: RetryPolicy.RetryPolicy | undefined
-    readonly interruptRetryPolicy?: Schedule.Schedule<any, unknown> | undefined
-    readonly fileBoundary?:
-      | FileBoundary
-      | ((payload: (Payload extends Schema.Struct.Fields ? Schema.Struct<Payload> : Payload)["Type"]) => FileBoundary)
-      | undefined
-    readonly annotations?: Context.Context<never> | undefined
-  }): Declared<
+  >(tag: Tag, options: DeclaredOptions<Payload, Success, Error>): Declared<
     Tag,
     Payload extends Schema.Struct.Fields ? Schema.Struct<Payload> : Payload,
     Success,
@@ -360,22 +384,7 @@ export const makeSystem = <
   Payload extends Schema.Struct.Fields | Flow.AnyStructSchema,
   Success extends Schema.Top = Schema.Void,
   Error extends Schema.Top = Schema.Never
->(tag: Tag, options: {
-  readonly payload: Payload
-  readonly implementationVersion?: string | undefined
-  readonly success?: Success | undefined
-  readonly error?: Error | undefined
-  readonly tier?: Tier | undefined
-  readonly idempotencyKey?: IdempotencyKey | undefined
-  readonly nondeterministic?: true | undefined
-  readonly retryPolicy?: RetryPolicy.RetryPolicy | undefined
-  readonly interruptRetryPolicy?: Schedule.Schedule<any, unknown> | undefined
-  readonly fileBoundary?:
-    | FileBoundary
-    | ((payload: (Payload extends Schema.Struct.Fields ? Schema.Struct<Payload> : Payload)["Type"]) => FileBoundary)
-    | undefined
-  readonly annotations?: Context.Context<never> | undefined
-}): Declared<
+>(tag: Tag, options: DeclaredOptions<Payload, Success, Error>): Declared<
   Tag,
   Payload extends Schema.Struct.Fields ? Schema.Struct<Payload> : Payload,
   Success,

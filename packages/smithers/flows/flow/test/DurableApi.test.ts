@@ -1,5 +1,5 @@
 import { describe, expect, it } from "@effect/vitest"
-import { Action, Flow, FlowRuntime, Interpreter, RetryPolicy } from "@smthrs/flow"
+import { Action, DurableDeferred, Flow, FlowRuntime, Interpreter, RetryPolicy } from "@smthrs/flow"
 import { Node } from "@smthrs/plan"
 import { Cause, Context, Effect, Exit, Layer, Option, Schema } from "effect"
 import { withCrypto } from "./Crypto.ts"
@@ -130,6 +130,10 @@ describe("declared durable policy", () => {
         )
       }
       expect(observed).toHaveLength(3)
+      // Every dispatch shares one exit schema, so the engine's parser cache hits.
+      const [first, second] = observed as unknown as ReadonlyArray<Action.Action<Schema.Number, Schema.Never, never>>
+      expect(second!.exitSchema).toBe(first!.exitSchema)
+      expect(second!.exitSchemaPartial).toBe(first!.exitSchemaPartial)
       for (const action of observed) {
         expect(action.idempotencyKey).toEqual({ value: 2 })
         expect(action.retryPolicy).toBe(policy)
@@ -143,6 +147,35 @@ describe("declared durable policy", () => {
       })
       expect(inline.metadata).toEqual(inline.fileBoundary)
     })
+  })
+
+  it.effect("system declarations accept a payload-derived idempotency key", () => {
+    const declared = Action.makeSystem("DurableApi/system", {
+      payload: { value: Schema.Number },
+      idempotencyKey: ({ value }) => ({ value })
+    })
+    return Effect.gen(function*() {
+      const observed: Action.Any[] = []
+      const capturing = Layer.succeed(FlowRuntime.FlowRuntime)(
+        {
+          register: (_flow: Flow.Any, handler: (payload: { value: number }) => Action.Any) =>
+            Effect.sync(() => {
+              observed.push(handler({ value: 7 }))
+            })
+        } as unknown as FlowRuntime.FlowRuntime["Service"]
+      )
+      yield* Effect.void.pipe(Effect.provide(declared.toLayer(() => Effect.void).pipe(Layer.provide(capturing))))
+      expect(observed.map((action) => action.idempotencyKey)).toEqual([{ value: 7 }])
+    })
+  })
+
+  it("durable deferreds with the same schemas share one exit schema", () => {
+    const first = DurableDeferred.make("DurableApi/deferred-a", { success: Schema.String })
+    const second = DurableDeferred.make("DurableApi/deferred-b", { success: Schema.String })
+    expect(second.exitSchema).toBe(first.exitSchema)
+    expect(DurableDeferred.make("DurableApi/deferred-c").exitSchema).toBe(
+      DurableDeferred.make("DurableApi/deferred-d").exitSchema
+    )
   })
 
   it.effect("accepts a fixed declared boundary and preserves static identities", () => {
