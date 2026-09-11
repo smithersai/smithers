@@ -46,7 +46,7 @@ export const make = (engine: EngineLike.EngineLike): SnapshotRecorder.Service =>
   const service: SnapshotRecorder.Service = {
     record: (identity, effect) => record(engine, identity, effect)
   }
-  return SnapshotRecorder.make(service)
+  return SnapshotRecorder.SnapshotRecorder.of(service)
 }
 
 /**

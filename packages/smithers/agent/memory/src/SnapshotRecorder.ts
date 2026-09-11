@@ -48,18 +48,10 @@ export class SnapshotRecorder extends Context.Service<SnapshotRecorder, Service>
 ) {}
 
 /**
- * Builds a snapshot recorder.
- *
- * @category constructors
- * @since 0.1.0
- */
-export const make = (implementation: Service): Service => SnapshotRecorder.of(implementation)
-
-/**
  * Provides a snapshot recorder.
  *
  * @category layers
  * @since 0.1.0
  */
 export const layer = (implementation: Service): Layer.Layer<SnapshotRecorder> =>
-  Layer.succeed(SnapshotRecorder)(make(implementation))
+  Layer.succeed(SnapshotRecorder)(SnapshotRecorder.of(implementation))

@@ -566,22 +566,7 @@ describe("RecallSemantic", () => {
     expect(rows[0]?.score).toBeGreaterThan(0.99)
   })
 
-  it("scores cosine similarity and recency decay at their boundaries", () => {
-    const withHole = JSON.parse("[null, 1]") as ReadonlyArray<number>
-    expect(Semantic.cosineSimilarity([], [])).toBe(0)
-    expect(Semantic.cosineSimilarity([1, 0], [1])).toBe(0)
-    expect(Semantic.cosineSimilarity([0, 0], [1, 0])).toBe(0)
-    expect(Semantic.cosineSimilarity([1, 0], [0, 0])).toBe(0)
-    expect(Semantic.cosineSimilarity([1, 0], [1, 0])).toBeCloseTo(1)
-    expect(Semantic.cosineSimilarity([1, 0], [-1, 0])).toBeCloseTo(-1)
-    expect(Semantic.cosineSimilarity(withHole, [0, 1])).toBeCloseTo(1)
-    expect(Semantic.cosineSimilarity([0, 1], withHole)).toBeCloseTo(1)
-    expect(Semantic.recencyDecay(10, 5, 1_000)).toBe(1)
-    expect(Semantic.recencyDecay(0, 0, 1_000)).toBe(1)
-    expect(Semantic.recencyDecay(0, 1_000, 1_000)).toBeCloseTo(0.5)
-    expect(Semantic.recencyDecay(0, 2_000, 1_000)).toBeCloseTo(0.25)
-    expect(Semantic.recencyDecay(0, 3_000, 1_000)).toBeCloseTo(0.125)
-    expect(Semantic.recencyDecay(0, 7 * 86_400_000, 7 * 86_400_000)).toBeCloseTo(0.5)
+  it("defaults to the in-process embedding model", () => {
     expect(Semantic.defaultModel).toBe(Embedding.inProcessModel)
   })
 

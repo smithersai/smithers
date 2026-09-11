@@ -52,7 +52,7 @@ describe("Flows", () => {
       output: Flows.RecallOutput
     })
     expect(Flows.bindRecall(binding)).toBe(binding)
-    expect(Flows.handlers).toMatchObject({
+    expect(Flows.handlersFor(Flows.recall)).toMatchObject({
       remember: expect.any(Function),
       recall: expect.any(Function)
     })
@@ -62,7 +62,7 @@ describe("Flows", () => {
     const result = await Effect.runPromise(
       Effect.gen(function*() {
         const store = yield* MemoryStore.MemoryStore
-        const tagged = yield* Flows.handlers.remember({
+        const tagged = yield* Flows.runRemember({
           bank: "global-history",
           key: "release",
           text: "cut 0.1.0",
@@ -159,15 +159,13 @@ describe("Flows", () => {
   it("keeps every runtime handler one-argument so FlowBinding can bind it", () => {
     expect(Flows.runRemember.length).toBe(1)
     expect(Flows.runRecall.length).toBe(1)
-    expect(Flows.handlers.remember.length).toBe(1)
-    expect(Flows.handlers.recall.length).toBe(1)
     expect(Flows.handlersFor(Flows.remember).remember.length).toBe(1)
     expect(Flows.runRememberWith({ runId: "run-1" }).length).toBe(1)
   })
 
   it("delegates the recall handler to the installed recall service", async () => {
     const rows = await Effect.runPromise(
-      Flows.handlers.recall({ banks: ["flow-one", "flow-two"], query: "durable" }).pipe(
+      Flows.runRecall({ banks: ["flow-one", "flow-two"], query: "durable" }).pipe(
         Effect.provide(Recall.layer({
           recall: (input) =>
             Effect.succeed(input.banks.map((bank) => ({ bank, key: input.query, text: "row", score: 1 })))

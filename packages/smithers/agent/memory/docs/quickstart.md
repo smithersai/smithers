@@ -36,10 +36,10 @@ const memory = Layer.provideMerge(RecallKeyword.layer, TestMemory.layer)
 
 const program = Effect.gen(function*() {
   // Write through the remember flow's runtime handler.
-  yield* Flows.handlers.remember({ bank: "global-notes", key: "release", text: "cut 0.1.0" })
+  yield* Flows.runRemember({ bank: "global-notes", key: "release", text: "cut 0.1.0" })
 
   // Recall through the keyword binding.
-  const rows = yield* Flows.handlers.recall({ banks: ["global-notes"], query: "release" })
+  const rows = yield* Flows.runRecall({ banks: ["global-notes"], query: "release" })
 
   // The store itself answers the authoritative read.
   const store = yield* MemoryStore.MemoryStore

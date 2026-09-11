@@ -81,18 +81,26 @@ export const DEFAULT_MAX_TOKENS = 2048
  */
 export const requestedRows = (maxTokens: number = DEFAULT_MAX_TOKENS): number => Math.max(1, Math.ceil(maxTokens / 256))
 
-const inputEncoder = new TextEncoder()
+const encoder = new TextEncoder()
 const BankName = Schema.NonEmptyString.pipe(Schema.check(Schema.isMaxLength(MAX_RECALL_BANK_NAME_LENGTH)))
 const Query = Schema.String.pipe(
   Schema.check(
     Schema.makeFilter((query) =>
-      inputEncoder.encode(query).byteLength <= MAX_RECALL_QUERY_BYTES
+      encoder.encode(query).byteLength <= MAX_RECALL_QUERY_BYTES
         ? undefined
         : `recall query exceeds ${MAX_RECALL_QUERY_BYTES} UTF-8 bytes`
     )
   )
 )
-const MaxTokens = Schema.Int.pipe(
+
+/**
+ * A recall budget: an integer UTF-8 byte ceiling from 0 to
+ * {@link MAX_RECALL_TOKENS}.
+ *
+ * @category schemas
+ * @since 1.0.0
+ */
+export const MaxTokens = Schema.Int.pipe(
   Schema.check(Schema.isGreaterThanOrEqualTo(0)),
   Schema.check(Schema.isLessThanOrEqualTo(MAX_RECALL_TOKENS))
 )
@@ -203,8 +211,6 @@ export interface Service {
  */
 export class Recall extends Context.Service<Recall, Service>()("flows/memory/Recall") {}
 
-const encoder = new TextEncoder()
-
 const serializedByteLength = (result: Result): number => encoder.encode(JSON.stringify(result)).byteLength
 
 // `JSON.stringify(rows)` is `[` + rows joined by `,` + `]`, so the serialized
@@ -284,18 +290,9 @@ export const layerFrom = (
     Recall,
     Effect.gen(function*() {
       const store = yield* MemoryStore.MemoryStore
-      return make({ recall: (input) => run(input).pipe(Effect.provideService(MemoryStore.MemoryStore, store)) })
+      return Recall.of({ recall: (input) => run(input).pipe(Effect.provideService(MemoryStore.MemoryStore, store)) })
     })
   )
-
-/**
- * Constructs a recall service.
- *
- * @category constructors
- * @since 0.1.0
- * @slop
- */
-export const make = (implementation: Service): Service => Recall.of(implementation)
 
 /**
  * Provides a recall service.
@@ -304,7 +301,7 @@ export const make = (implementation: Service): Service => Recall.of(implementati
  * @since 0.1.0
  * @slop
  */
-export const layer = (implementation: Service): Layer.Layer<Recall> => Layer.succeed(Recall)(make(implementation))
+export const layer = (implementation: Service): Layer.Layer<Recall> => Layer.succeed(Recall)(Recall.of(implementation))
 
 /**
  * Constructs a recall service that returns no rows.
@@ -323,16 +320,6 @@ export const makeNoop = (): Service => Recall.of({ recall: () => Effect.succeed(
  * @slop
  */
 export const layerNoop: Layer.Layer<Recall> = Layer.succeed(Recall)(makeNoop())
-
-/**
- * Namespace type marker retained for consumers that want to associate a
- * recall bank with a structured namespace without coupling the slot to it.
- *
- * @category models
- * @since 0.1.0
- * @slop
- */
-export type NamespaceValue = Namespace.Namespace
 
 /**
  * Maps a structured namespace back to the public bank name recall accepts.

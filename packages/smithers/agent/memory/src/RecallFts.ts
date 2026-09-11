@@ -11,7 +11,7 @@
 import * as Effect from "effect/Effect"
 import type * as Layer from "effect/Layer"
 import { resolveBanks } from "./internal/Bank.ts"
-import { literalFtsQuery as escapeFtsQuery } from "./internal/Text.ts"
+import * as Text from "./internal/Text.ts"
 import type * as MemoryError from "./MemoryError.ts"
 import * as MemoryStore from "./MemoryStore.ts"
 import * as Namespace from "./Namespace.ts"
@@ -28,7 +28,7 @@ import * as Recall from "./Recall.ts"
  * @since 0.1.0
  * @slop
  */
-export const literalFtsQuery: (query: string) => string = escapeFtsQuery
+export const literalFtsQuery: (query: string) => string = Text.literalFtsQuery
 
 const run = (input: Recall.Input): Effect.Effect<Recall.Output, MemoryError.MemoryError, MemoryStore.MemoryStore> =>
   Effect.gen(function*() {

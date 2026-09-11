@@ -87,7 +87,8 @@ export const RememberInput = Schema.Struct({
 export const RememberOutput = Schema.Struct({ key: Schema.String })
 
 /**
- * Input schema for recall.
+ * Input schema for the `recall` flow: `Recall.Input`, re-exported beside
+ * `RememberInput` so a host declares both flows from this module.
  *
  * @category schemas
  * @since 0.1.0
@@ -96,7 +97,7 @@ export const RememberOutput = Schema.Struct({ key: Schema.String })
 export const RecallInput = Recall.Input
 
 /**
- * Output schema for recall.
+ * Output schema for the `recall` flow: `Recall.Output`.
  *
  * @category schemas
  * @since 0.1.0
@@ -168,22 +169,13 @@ export const recall = Flow.make<typeof RecallInput, typeof RecallOutput, never>(
 })
 
 /**
- * Recall flow-valued slot shared by keyword, FTS, and semantic bindings.
- *
- * @category slots
- * @since 0.1.0
- * @slop
- */
-export const recallSlot = Recall.slot
-
-/**
  * Resolves the recall slot to a supplied flow.
  *
  * @category constructors
  * @since 0.1.0
  * @slop
  */
-export const bindRecall = (supplied: Flow.Any): Flow.Any => Pattern.bind(recallSlot, supplied)
+export const bindRecall = (supplied: Flow.Any): Flow.Any => Pattern.bind(Recall.slot, supplied)
 
 /**
  * Runtime binding for the remember declaration, carrying explicit provenance.
@@ -239,8 +231,8 @@ export const runRemember = (
  * @slop
  */
 export const runRecall = (
-  input: RecallInputType
-): Effect.Effect<RecallOutputType, MemoryError, Recall.Recall> =>
+  input: Recall.Input
+): Effect.Effect<Recall.Output, MemoryError, Recall.Recall> =>
   Effect.flatMap(Recall.Recall, (service) => service.recall(input))
 
 const validatePolicyBank = (bank: string, policy: WithMemory.Policy): Effect.Effect<void, MemoryError> =>
@@ -269,8 +261,8 @@ const validatePolicyBank = (bank: string, policy: WithMemory.Policy): Effect.Eff
  */
 export const runRecallFor = (
   flow: Flow.Any,
-  input: RecallInputType
-): Effect.Effect<RecallOutputType, MemoryError, Recall.Recall> => {
+  input: Recall.Input
+): Effect.Effect<Recall.Output, MemoryError, Recall.Recall> => {
   const policy = WithMemory.policyOf(flow)
   if (policy === undefined) return runRecall(input)
   if (policy.recall === "none") return Effect.succeed([])
@@ -328,7 +320,7 @@ export interface Handlers {
   readonly remember: (
     input: RememberInputType
   ) => Effect.Effect<typeof RememberOutput.Type, MemoryError, MemoryStore.MemoryStore>
-  readonly recall: (input: RecallInputType) => Effect.Effect<RecallOutputType, MemoryError, Recall.Recall>
+  readonly recall: (input: Recall.Input) => Effect.Effect<Recall.Output, MemoryError, Recall.Recall>
 }
 
 /**
@@ -362,21 +354,6 @@ export const handlersFor = (
 })
 
 /**
- * Runtime handlers for the bare declarations this module exports.
- *
- * They read a memory policy the same way {@link handlersFor} does. The bare
- * declarations carry none, so these behave as unscoped memory. Bind a
- * policy-carrying copy through {@link handlersFor} to get the scoped answer.
- *
- * @category handlers
- * @since 0.1.0
- */
-export const handlers: Handlers = {
-  remember: handlersFor(remember).remember,
-  recall: handlersFor(recall).recall
-}
-
-/**
  * What the `remember` flow accepts.
  *
  * @category types
@@ -384,21 +361,3 @@ export const handlers: Handlers = {
  * @slop
  */
 export type RememberInputType = typeof RememberInput.Type
-
-/**
- * What the `recall` flow accepts.
- *
- * @category types
- * @since 0.1.0
- * @slop
- */
-export type RecallInputType = Recall.Input
-
-/**
- * What the `recall` flow returns.
- *
- * @category types
- * @since 0.1.0
- * @slop
- */
-export type RecallOutputType = Recall.Output

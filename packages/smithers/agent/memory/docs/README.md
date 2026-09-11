@@ -32,8 +32,8 @@ import { Effect, Layer } from "effect"
 const memory = Layer.provideMerge(RecallKeyword.layer, TestMemory.layer)
 
 const program = Effect.gen(function*() {
-  yield* Flows.handlers.remember({ bank: "global-notes", key: "release", text: "cut 0.1.0" })
-  return yield* Flows.handlers.recall({ banks: ["global-notes"], query: "release" })
+  yield* Flows.runRemember({ bank: "global-notes", key: "release", text: "cut 0.1.0" })
+  return yield* Flows.runRecall({ banks: ["global-notes"], query: "release" })
 })
 
 const rows = await Effect.runPromise(program.pipe(Effect.provide(memory)))

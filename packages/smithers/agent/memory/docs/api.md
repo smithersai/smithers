@@ -7,7 +7,7 @@ This page covers the parts a flow author touches: the two callable flows, the me
 
 ## The two flows
 
-`Flows.remember` writes one record into a bank. `Flows.recall` reads advisory rows out of named banks. Both are declarations: building a graph performs no memory I/O. `Flows.handlersFor(flow)` supplies the runtime bindings for one declaration, and `Flows.handlers` is that pair for the bare declarations the module exports. `Flows.runRemember` and `Flows.runRecall` are the same implementations callable directly, without a policy.
+`Flows.remember` writes one record into a bank. `Flows.recall` reads advisory rows out of named banks. Both are declarations: building a graph performs no memory I/O. `Flows.handlersFor(flow)` supplies the runtime bindings for one declaration. `Flows.runRemember` and `Flows.runRecall` are the same implementations callable directly, without a policy.
 
 Each flow also carries an effect declaration, the claim a planner reads before it runs anything: the paths the flow touches, a `mode` (`expected` means these are the paths worth declaring, `hermetic` means these are all of them), an `onConflict` policy saying what to do about another writer of the same path, and a `tier` saying how reversible the effect is. Tiers order from `irreversible` through `compensable` to `sealed`, and a nested declaration may narrow along that order but never widen it. `Flows.rememberEffects` is `irreversible` because it writes; `Flows.recallEffects` is `sealed` because recall declares no writes, so recall nests inside any enclosing declaration without widening it. [Effect envelopes](/pkg/core/concepts/effects) in `@smthrs/core` covers the full grammar.
 
@@ -223,7 +223,6 @@ The `mode`, `onConflict`, and `tier` values in the two effect declarations below
 | `recallEffects`       | `Effects` declaration                                                                        | Reads `memory/**`, writes nothing, mode `expected`, conflict policy `fail`, tier `sealed`.                                                                          |
 | `remember`            | `Flow` declaration                                                                           | Declaration for a memory write. Performs no I/O while a graph builds.                                                                                               |
 | `recall`              | `Flow` declaration                                                                           | Declaration for advisory memory recall. Performs no I/O while a graph builds.                                                                                       |
-| `recallSlot`          | `Pattern` slot                                                                               | `Recall.slot`, the flow-valued slot shared by the keyword, FTS, and semantic bindings.                                                                              |
 | `bindRecall`          | `(supplied: Flow.Any) => Flow.Any`                                                           | Resolves the recall slot to a supplied flow, through `Pattern.bind`.                                                                                                |
 | `runRememberWith`     | `(provenance) => (input: RememberInput) => Effect<RememberOutput, MemoryError, MemoryStore>` | Runtime binding carrying explicit provenance, bound once when a host builds the handler. Stores the fact value `{ content: text }`.                                 |
 | `runRemember`         | `(input: RememberInput) => Effect<RememberOutput, MemoryError, MemoryStore>`                 | Runtime binding with no provenance. Takes exactly one argument so a host can hand it to `FlowBinding.make`.                                                         |
@@ -232,10 +231,7 @@ The `mode`, `onConflict`, and `tier` values in the two effect declarations below
 | `runRememberFor`      | `(flow, input, provenance = {}) => Effect<RememberOutput, MemoryError, MemoryStore>`         | Defaults an empty bank; rejects foreign namespaces with `invalid_namespace` before writing. `retain: "never"` short-circuits to `{ key }`.                          |
 | `Handlers`            | interface                                                                                    | The one-argument `remember` and `recall` handlers one bound declaration answers with.                                                                               |
 | `handlersFor`         | `(flow: Flow.Any, provenance = {}) => Handlers`                                              | Builds the handlers for one memory declaration, reading the policy it carries and binding provenance once.                                                          |
-| `handlers`            | `Handlers`                                                                                   | The handlers for the bare declarations this module exports. They carry no policy, so they behave as unscoped memory.                                                |
 | `RememberInputType`   | type                                                                                         | What the `remember` flow accepts.                                                                                                                                   |
-| `RecallInputType`     | type                                                                                         | What the `recall` flow accepts.                                                                                                                                     |
-| `RecallOutputType`    | type                                                                                         | What the `recall` flow returns.                                                                                                                                     |
 
 ### `@smthrs/memory/Maintenance`
 
@@ -382,6 +378,7 @@ When memory shares a database with the engine or control plane, compose all requ
 | `MAX_RECALL_TOKENS`           | `65536`                                      | Maximum conservative byte budget accepted as `maxTokens`.                                                             |
 | `MAX_RECALL_TAG_GROUPS`       | `16`                                         | Maximum tag groups per request; each group is evaluated against every candidate row, so the list is bounded too.      |
 | `DEFAULT_MAX_TOKENS`          | `2048`                                       | Byte budget when `maxTokens` is absent.                                                                               |
+| `MaxTokens`                   | schema                                       | An integer byte budget from 0 to `MAX_RECALL_TOKENS`; `Input.maxTokens` and `WithMemory.Policy.maxTokens` share it.   |
 | `requestedRows`               | `(maxTokens = 2048) => number`               | Rows keyword and FTS recall keep: one per 256 bytes, at least one.                                                    |
 | `TagGroup`                    | type                                         | `Namespace.TagGroup`.                                                                                                 |
 | `Input`                       | schema and type                              | `{ banks, query, tagGroups?, maxTokens?, budget? }` where `budget` is `"low"`, `"mid"`, or `"high"`.                  |
@@ -393,11 +390,9 @@ When memory shares a database with the engine or control plane, compose all requ
 | `capRecallResults`            | `(results, maxTokens = 2048) => Result[]`    | The shared byte cap: drops empty text, selects complete rows greedily, then truncates only the first overflowing row. |
 | `compareResults`              | `(left, right) => number`                    | The ranking every binding sorts by: score descending, newest update, key, then bank.                                  |
 | `layerFrom`                   | `(run) => Layer<Recall, never, MemoryStore>` | Provides a store-backed binding, capturing the MemoryStore once.                                                      |
-| `make`                        | `(implementation: Service) => Service`       | Constructs a recall service.                                                                                          |
 | `layer`                       | `(implementation: Service) => Layer<Recall>` | Provides a recall service.                                                                                            |
 | `makeNoop`                    | `() => Service`                              | Answers no rows.                                                                                                      |
 | `layerNoop`                   | `Layer<Recall>`                              | Provides the empty implementation.                                                                                    |
-| `NamespaceValue`              | type                                         | `Namespace.Namespace`, for associating a bank with a structured namespace.                                            |
 | `bankForNamespace`            | `(namespace: Namespace) => string`           | Maps a structured namespace to its public bank name, `kind-id`.                                                       |
 | `namespaceForBank`            | `(bank: string) => { kind, id }`             | The unvalidated syntactic inverse. Use `Bank.parse` at every I/O boundary.                                            |
 
@@ -413,7 +408,7 @@ When memory shares a database with the engine or control plane, compose all requ
 
 | Export                | Signature                                                    | Behavior                                                                                                      |
 | --------------------- | ------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------- |
-| `Row`                 | interface                                                    | A row accepted from the store retrieval seam: `{ bank?, namespace?, key, text, tags, status?, updatedAtMs }`. |
+| `Row`                 | type                                                         | `Pick<MemoryStore.SearchRow, "key" \| "text" \| "tags" \| "status" \| "updatedAtMs">`.         |
 | `recall`              | `(input: Input) => Effect<Output, MemoryError, MemoryStore>` | Runs keyword recall against the supplied store.                                                               |
 | `layer`               | `Layer<Recall, never, MemoryStore>`                          | Provides keyword recall with no host dependencies.                                                            |
 | `normalizeQueryTerms` | `(value: string) => ReadonlyArray<string>`                   | The NFKC, lowercase term split scoring compares against.                                                      |
@@ -436,8 +431,6 @@ When memory shares a database with the engine or control plane, compose all requ
 | `defaultProjectionTimeout` | `"5 seconds"`                                                                     | The projection deadline used when `Options.projectionTimeout` is absent.                                                                                                 |
 | `decorateStore`            | `(store: Service, projector: Projector, embedding: Embedding.Service) => Service` | Adds after-commit projection to `putFact` and `putNote`, keeping the ordinary write signatures.                                                                          |
 | `layer`                    | `(options: Options) => Layer<Recall, never, MemoryStore \| Embedding>`            | Provides semantic recall from the store, the embedding service, and the vector table.                                                                                    |
-| `cosineSimilarity`         | `(left, right) => number`                                                         | Cosine similarity between two embedding vectors.                                                                                                                         |
-| `recencyDecay`             | `(updatedAtMs, nowMs, halfLifeMs) => number`                                      | The exponential recency weight, with a default half-life of seven days inside `recall`.                                                                                  |
 
 ### `@smthrs/memory/Source`
 
@@ -449,8 +442,6 @@ When memory shares a database with the engine or control plane, compose all requ
 | `make`         | `(options?: { capacity?: number }) => Source`                                          | Constructs a memoizing source. `capacity` defaults to 1,024 identities and must be a positive safe integer.                                                 |
 | `source`       | `Source`                                                                               | The default source value.                                                                                                                                   |
 | `declaredText` | `(source: Source, input: Input) => Effect<DeclaredText, never, MemoryStore \| Recall>` | Reads the frozen snapshot and digests it. Fetches once per `(lineageId, iteration)` and degrades to empty text after a two-second timeout or typed failure. |
-| `byteLength`   | `(text: string) => number`                                                             | The UTF-8 byte length every memory budget is stated in.                                                                                                     |
-| `truncate`     | `(text: string, maxBytes: number) => string`                                           | Truncates to a byte budget without splitting a code point.                                                                                                  |
 
 ### `@smthrs/memory/SnapshotRecorder`
 
@@ -459,7 +450,6 @@ When memory shares a database with the engine or control plane, compose all requ
 | `Identity`         | interface                                              | `{ lineageId, iteration }`: the stable identity of one opening snapshot.                             |
 | `Service`          | interface                                              | `{ record(identity, effect) }`: answer the recorded value, or evaluate, record, and answer `effect`. |
 | `SnapshotRecorder` | `Context.Service` tag `flows/memory/SnapshotRecorder`  | The optional recorder tag. With no service in context, `Source` keeps its process-local memo.        |
-| `make`             | `(implementation: Service) => Service`                 | Builds a recorder.                                                                                   |
 | `layer`            | `(implementation: Service) => Layer<SnapshotRecorder>` | Provides a recorder.                                                                                 |
 
 ### `@smthrs/memory/WithMemory`

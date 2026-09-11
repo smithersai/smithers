@@ -8,6 +8,8 @@ import * as SnapshotRecorder from "../src/SnapshotRecorder.ts"
 import * as Source from "../src/Source.ts"
 import * as TestMemory from "../src/test/TestMemory.ts"
 
+const byteLength = (text: string): number => new TextEncoder().encode(text).byteLength
+
 const storeOf = (listNotes: () => Effect.Effect<ReadonlyArray<{ readonly text: string }>>) =>
   MemoryStore.MemoryStore.of({
     searchRows: () => listNotes().pipe(Effect.map((rows) => rows.map((row) => ({ ...row, kind: "note" }))))
@@ -97,7 +99,7 @@ describe("Source", () => {
     expect(limits.every((limit) => limit !== undefined && limit > 0 && limit <= maxBytes)).toBe(true)
     expect(text).toContain("[primer:bank] note 99\n[primer:bank] note 98")
     expect(text).not.toContain("[primer:bank] note 0")
-    expect(Source.byteLength(text)).toBeLessThanOrEqual(maxBytes)
+    expect(byteLength(text)).toBeLessThanOrEqual(maxBytes)
   })
 
   it("warns on a slow store and retries a degraded snapshot without recording empty text", async () => {
@@ -232,7 +234,7 @@ describe("Source", () => {
       expect(limits).toEqual([expect.any(Number)])
       expect(limits[0]).toBeGreaterThan(0)
       expect(limits[0]).toBeLessThan(16_384)
-      expect(Source.byteLength(declared.text)).toBe(16_384)
+      expect(byteLength(declared.text)).toBe(16_384)
       expect(declared.text).not.toContain("not a primer")
     }
   )
@@ -246,7 +248,7 @@ describe("Source", () => {
           return [{ kind: "note", namespace: "bank", text: `primer-${reads}` }]
         })
     } as unknown as MemoryStore.Service)
-    const recall = Recall.make({ recall: () => Effect.succeed([]) })
+    const recall = Recall.Recall.of({ recall: () => Effect.succeed([]) })
     const source = Source.make()
     const input = { lineageId: "lineage", iteration: 2, banks: ["bank"], query: "q" }
     const first = await Effect.runPromise(
@@ -284,7 +286,7 @@ describe("Source", () => {
       )
     )
 
-    expect(Source.byteLength(result.text)).toBeLessThanOrEqual(64)
+    expect(byteLength(result.text)).toBeLessThanOrEqual(64)
     expect(result.text).toMatch(/^<flows_memory_context>/)
     expect(result.text).toMatch(/<\/flows_memory_context>$/)
   })
@@ -349,7 +351,7 @@ describe("Source", () => {
       query: "durable"
     }, {
       store: storeOf(() => Effect.succeed([{ text: "primer text" }])),
-      recall: Recall.make({
+      recall: Recall.Recall.of({
         recall: () => Effect.succeed([{ bank: "flow-one", key: "runbook", text: "recalled text", score: 1 }])
       })
     })
@@ -377,7 +379,7 @@ describe("Source", () => {
         query: "q"
       }, {
         store: storeOf(() => Effect.succeed([{ text: field === "primer text" ? hostile : "primer text" }])),
-        recall: Recall.make({
+        recall: Recall.Recall.of({
           recall: () =>
             Effect.succeed([{
               bank: field === "recalled bank" ? hostile : "flow",
@@ -403,7 +405,7 @@ describe("Source", () => {
   it("keeps recalled labels distinct from primer labels and escapes label separators", async () => {
     const declared = await read({ lineageId: "labels", iteration: 0, banks: ["bank"], query: "q" }, {
       store: storeOf(() => Effect.succeed([{ text: "primer text" }])),
-      recall: Recall.make({
+      recall: Recall.Recall.of({
         recall: () => Effect.succeed([{ bank: "primer:trusted/other", key: "key] forged", text: "text", score: 1 }])
       })
     })
@@ -428,7 +430,7 @@ describe("Source", () => {
       iteration: 0,
       banks: ["bank"],
       query: "q",
-      maxBytes: Source.byteLength("<flows_memory_context>\n\n</flows_memory_context>")
+      maxBytes: byteLength("<flows_memory_context>\n\n</flows_memory_context>")
     }, options)
 
     expect([tiny.text, zero.text, negative.text]).toEqual(["", "", ""])
@@ -463,7 +465,7 @@ describe("Source", () => {
     const logged: Array<string> = []
     const source = Source.make()
     const store = storeOf(() => Effect.succeed([]))
-    const recall = Recall.make({
+    const recall = Recall.Recall.of({
       recall: (input) => Effect.succeed([{ bank: "bank", key: "row", text: input.query, score: 1 }])
     })
     const [first, frozen] = await Effect.runPromise(
@@ -620,13 +622,4 @@ describe("Source", () => {
     expect(declared.text).toBe("")
   })
 
-  it("truncates to a byte budget without splitting a code point", () => {
-    expect(Source.byteLength("")).toBe(0)
-    expect(Source.byteLength("héllo")).toBe(6)
-    expect(Source.truncate("héllo", 6)).toBe("héllo")
-    expect(Source.truncate("héllo", 7)).toBe("héllo")
-    expect(Source.truncate("héllo", 2)).toBe("h")
-    expect(Source.truncate("héllo", 0)).toBe("")
-    expect(Source.truncate("😀😀", 4)).toBe("😀")
-  })
 })

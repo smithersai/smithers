@@ -22,6 +22,7 @@ import * as Stream from "effect/Stream"
 import type { DatabaseService } from "./Database.ts"
 import * as Embedding from "./Embedding.ts"
 import { bankForNamespace, resolveBanks, resolveNamespace } from "./internal/Bank.ts"
+import { cosine, recency } from "./internal/Ranking.ts"
 import { digest, searchableText, vectorBytes } from "./internal/Text.ts"
 import * as MemoryError from "./MemoryError.ts"
 import * as MemoryStore from "./MemoryStore.ts"
@@ -311,24 +312,6 @@ const mismatch = (message: string): MemoryError.MemoryError =>
 const vectorMismatch = (message: string): MemoryError.MemoryError =>
   new MemoryError.MemoryError({ code: "vector_model_mismatch", message })
 
-const cosine = (left: ArrayLike<number>, right: ArrayLike<number>): number => {
-  if (left.length !== right.length || left.length === 0) return 0
-  let dot = 0
-  let leftMagnitude = 0
-  let rightMagnitude = 0
-  for (let index = 0; index < left.length; index++) {
-    const leftValue = left[index] ?? 0
-    const rightValue = right[index] ?? 0
-    dot += leftValue * rightValue
-    leftMagnitude += leftValue * leftValue
-    rightMagnitude += rightValue * rightValue
-  }
-  return leftMagnitude === 0 || rightMagnitude === 0 ? 0 : dot / Math.sqrt(leftMagnitude * rightMagnitude)
-}
-
-const recency = (updatedAtMs: number, nowMs: number, halfLifeMs: number): number =>
-  2 ** (-Math.max(0, nowMs - updatedAtMs) / halfLifeMs)
-
 /**
  * Computes a semantic recall result from a vector projection and authoritative
  * rows. Foreign-model rows are skipped and matching-model dimension
@@ -554,7 +537,7 @@ export const layer = (
     Effect.gen(function*() {
       const store = yield* MemoryStore.MemoryStore
       const embedding = yield* Embedding.Embedding
-      return Recall.make({
+      return Recall.Recall.of({
         recall: (input) =>
           recall(input, options).pipe(
             Effect.provideService(MemoryStore.MemoryStore, store),
@@ -563,24 +546,3 @@ export const layer = (
       })
     })
   )
-
-/**
- * Cosine similarity between two embedding vectors. Exported so the
- * ranking can be tested without a store.
- *
- * @category models
- * @since 0.1.0
- * @slop
- */
-export const cosineSimilarity = cosine
-
-/**
- * The recency weight applied to a row's similarity, decaying with the
- * configured half-life. Exported so the ranking can be tested without a
- * store.
- *
- * @category models
- * @since 0.1.0
- * @slop
- */
-export const recencyDecay = recency

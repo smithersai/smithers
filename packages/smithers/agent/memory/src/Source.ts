@@ -294,22 +294,3 @@ export const declaredText = (
   input: Input
 ): Effect.Effect<DeclaredText, never, MemoryStore.MemoryStore | Recall.Recall> =>
   memorySource.read(input).pipe(Effect.map((text) => ({ text, digest: digest(text) })))
-
-/**
- * The UTF-8 byte length of `text`, the unit every memory budget is
- * stated in.
- *
- * @category constructors
- * @since 0.1.0
- * @slop
- */
-export const byteLength = (text: string): number => encoder.encode(text).byteLength
-
-/**
- * Truncates `text` to a byte budget without splitting a code point.
- *
- * @category constructors
- * @since 0.1.0
- * @slop
- */
-export const truncate = truncateBytes

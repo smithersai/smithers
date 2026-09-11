@@ -64,7 +64,7 @@ import * as Flows from "@smthrs/memory/Flows"
 import { Effect } from "effect"
 
 const remembered = Effect.gen(function*() {
-  return yield* Flows.handlers.remember({
+  return yield* Flows.runRemember({
     bank: "global-history",
     key: "release",
     text: "cut 0.1.0",

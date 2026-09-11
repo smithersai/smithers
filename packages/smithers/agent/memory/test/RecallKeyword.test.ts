@@ -5,7 +5,7 @@ import * as Recall from "../src/Recall.ts"
 import * as Keyword from "../src/RecallKeyword.ts"
 import * as TestMemory from "../src/test/TestMemory.ts"
 
-const rows = [
+const rows: ReadonlyArray<Keyword.Row> = [
   { key: "alpha", text: "alpha beta", tags: ["scope:x"], status: "accepted", updatedAtMs: 1 },
   { key: "new", text: "alpha", tags: ["scope:y"], status: "accepted", updatedAtMs: 2 },
   { key: "hidden", text: "alpha alpha", tags: ["scope:x"], status: "rejected", updatedAtMs: 3 }

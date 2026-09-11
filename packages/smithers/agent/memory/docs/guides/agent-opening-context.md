@@ -76,7 +76,7 @@ Memory text goes into an agent's opening context, so it is part of the very firs
 import * as SnapshotRecorder from "@smthrs/memory/SnapshotRecorder"
 import { Effect } from "effect"
 
-const recorder = SnapshotRecorder.make({
+const recorder = SnapshotRecorder.SnapshotRecorder.of({
   record: (identity, effect) =>
     // return the value held for identity, or evaluate and record `effect`
     effect
@@ -85,10 +85,6 @@ const layer = SnapshotRecorder.layer(recorder)
 ```
 
 With a recorder in context, the first fetch for an identity goes through its boundary, and a second source, including one built by a resumed process, receives the recorded text instead of refetching. The production adapter is `@smthrs/agent/MemorySnapshotRecorder.layer`, which implements this port through the engine; see the [`@smthrs/agent` API](/api/agent). A memory-only composition supplies no service and keeps the process-local memo.
-
-## Helpers
-
-`Source.byteLength` measures the UTF-8 byte length every memory budget is stated in, and `Source.truncate` shortens text to a byte budget without splitting a code point.
 
 ## Next steps
 
