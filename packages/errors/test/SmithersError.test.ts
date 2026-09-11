@@ -240,9 +240,13 @@ describe("SmithersError", () => {
     expect((new SmithersError("INTEGRATION_ERROR", "x", undefined, { cause }).cause as Error).cause).toBe(cause.cause)
   })
 
-  it("stores non-Error causes verbatim", () => {
-    for (const cause of ["provider failure", { provider: "telegram" }]) {
-      expect(new SmithersError("INTEGRATION_ERROR", "x", undefined, { cause }).cause).toBe(cause)
+  // The falsy rows pin the `!== undefined` check: a truthiness check would
+  // drop null, false, 0 and "" while every truthy row still passed.
+  it("stores non-Error causes verbatim, including defined falsy ones", () => {
+    for (const cause of ["provider failure", { provider: "telegram" }, null, false, 0, ""]) {
+      const error = new SmithersError("INTEGRATION_ERROR", "x", undefined, { cause })
+      expect(Object.hasOwn(error, "cause")).toBe(true)
+      expect(error.cause).toBe(cause)
     }
   })
 
