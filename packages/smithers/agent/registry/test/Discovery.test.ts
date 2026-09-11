@@ -250,6 +250,26 @@ describe("Discovery", () => {
     })
   })
 
+  it("reports the first visited location of a revisited intermediate directory", async () => {
+    await withTemporaryRoot(async (root) => {
+      const ancestor = join(root, "a")
+      const directory = join(ancestor, "b")
+      const loop = join(directory, "loop")
+      writeMarkdownFlow(directory)
+      symlinkSync(ancestor, loop, "dir")
+
+      const result = await scan({ source: "intermediate", root, naming: "path" })
+
+      expect(result.entries.map((entry) => entry.name)).toEqual(["a/b"])
+      expect(result.warnings).toEqual([expect.objectContaining({
+        code: "symlink_cycle",
+        path: loop,
+        message:
+          `Directory "${loop}" resolves to already visited directory "${ancestor}"; skipping recursive traversal`
+      })])
+    })
+  })
+
   it("bounds a sibling symlink that would duplicate a frontmatter name", async () => {
     await withTemporaryRoot(async (root) => {
       const target = join(root, "a")

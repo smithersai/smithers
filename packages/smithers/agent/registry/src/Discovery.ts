@@ -376,7 +376,6 @@ export const make = (fs: FileSystem.FileSystem, path: Path.Path): Discovery =>
         const visit: (
           directory: string,
           segments: ReadonlyArray<string>,
-          visitedDirectories: Set<string>,
           directoryOrigins: Map<string, string>,
           initialEntries?: ReadonlyArray<string>
         ) => Effect.Effect<void> =
@@ -384,7 +383,6 @@ export const make = (fs: FileSystem.FileSystem, path: Path.Path): Discovery =>
           Effect.fnUntraced(function*(
             directory,
             segments,
-            visitedDirectories,
             directoryOrigins,
             initialEntries
           ) {
@@ -520,8 +518,8 @@ export const make = (fs: FileSystem.FileSystem, path: Path.Path): Discovery =>
 
             for (const child of directories) {
               if (!(yield* withinRoot(child.location))) continue
-              if (visitedDirectories.has(child.identity)) {
-                const ancestor = directoryOrigins.get(child.identity)!
+              const ancestor = directoryOrigins.get(child.identity)
+              if (ancestor !== undefined) {
                 warnings.push(
                   warning(
                     "symlink_cycle",
@@ -531,14 +529,8 @@ export const make = (fs: FileSystem.FileSystem, path: Path.Path): Discovery =>
                 )
                 continue
               }
-              visitedDirectories.add(child.identity)
               directoryOrigins.set(child.identity, child.location)
-              yield* visit(
-                child.location,
-                [...segments, child.name],
-                visitedDirectories,
-                directoryOrigins
-              )
+              yield* visit(child.location, [...segments, child.name], directoryOrigins)
             }
           })
 
@@ -546,7 +538,6 @@ export const make = (fs: FileSystem.FileSystem, path: Path.Path): Discovery =>
         yield* visit(
           source.root,
           [],
-          new Set([rootIdentity]),
           new Map([[rootIdentity, source.root]]),
           rootEntries
         )
