@@ -185,6 +185,53 @@ describe("useDialogFocusTrap keyboard containment", () => {
     await act(async () => press("Tab"));
     expect(active()).toBe(first);
   });
+
+  test("an unrendered or visibility:hidden control is never the initial focus or a wrap target", async () => {
+    // The bug this pins: the filter dropped inert and aria-hidden controls but
+    // not unrendered ones, so initial focus and the Tab wrap aimed at a control
+    // the browser refuses to focus.
+    await render(
+      <Dialog>
+        <button type="button" style={{ display: "none" }} data-testid="none">none</button>
+        <div hidden>
+          <button type="button" data-testid="under-hidden">under hidden</button>
+        </div>
+        <div style={{ display: "none" }}>
+          <button type="button" data-testid="under-none">under none</button>
+        </div>
+        <button type="button" data-testid="first">first</button>
+        <button type="button" data-testid="last">last</button>
+        <details>
+          <summary>more</summary>
+          <button type="button" data-testid="in-closed-details">in closed details</button>
+        </details>
+        <button type="button" style={{ visibility: "hidden" }} data-testid="invisible">invisible</button>
+      </Dialog>,
+    );
+    const first = document.querySelector<HTMLElement>('[data-testid="first"]')!;
+    const summary = document.querySelector<HTMLElement>("summary")!;
+    expect(active()).toBe(first);
+
+    await act(async () => summary.focus());
+    await act(async () => press("Tab"));
+    expect(active()).toBe(first);
+
+    await act(async () => press("Tab", { shiftKey: true }));
+    expect(active()).toBe(summary);
+  });
+
+  test("a dialog whose only controls are hidden takes focus itself", async () => {
+    await render(
+      <Dialog>
+        <button type="button" style={{ display: "none" }}>none</button>
+        <div hidden>
+          <button type="button">under hidden</button>
+        </div>
+      </Dialog>,
+    );
+    const dialog = document.querySelector<HTMLElement>('[data-testid="dialog"]')!;
+    expect(active()).toBe(dialog);
+  });
 });
 
 describe("useDialogFocusTrap lifecycle", () => {

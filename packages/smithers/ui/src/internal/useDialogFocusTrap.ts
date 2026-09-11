@@ -33,9 +33,30 @@ const activeDialogStack: HTMLElement[] = [];
  * a closed `details`, a collapsed panel). Wrapping focus onto a hidden control
  * would send it somewhere the user cannot see.
  */
+function isRendered(element: HTMLElement, container: HTMLElement): boolean {
+  const view = element.ownerDocument.defaultView;
+  if (!view) return true;
+  const own = view.getComputedStyle(element);
+  if (own.visibility === "hidden" || own.visibility === "collapse") return false;
+  // Walk ancestors by hand rather than trusting `checkVisibility` or layout
+  // (`offsetParent`, `getClientRects`): layout-free DOMs report no box for
+  // every node, and not every DOM implements `checkVisibility`.
+  for (let node: HTMLElement | null = element; node; node = node.parentElement) {
+    if (node.hidden || view.getComputedStyle(node).display === "none") return false;
+    const parent: HTMLElement | null = node.parentElement;
+    // Only a closed `details`' own summary stays rendered.
+    if (parent instanceof view.HTMLDetailsElement && !parent.open && !(node.tagName === "SUMMARY" && parent.querySelector(":scope > summary") === node)) {
+      return false;
+    }
+    if (node === container) break;
+  }
+  return true;
+}
+
 function focusableElements(container: HTMLElement): HTMLElement[] {
   return [...container.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR)].filter((element) => {
     if (element.closest("[inert],[aria-hidden='true']")) return false;
+    if (!isRendered(element, container)) return false;
     // Read the ATTRIBUTE, not the `tabIndex` property. The selector already
     // matches only natively focusable elements plus an explicit positive
     // `tabindex`, and the property is unreliable across DOM implementations:
