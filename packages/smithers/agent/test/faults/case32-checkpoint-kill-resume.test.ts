@@ -18,12 +18,12 @@ import * as NodeHost from "@smthrs/platform-node/NodeHost"
 import { Checkpoints } from "@smthrs/std"
 import { isAlive, killProcess } from "@smthrs/testing/Faults"
 import * as Effect from "effect/Effect"
-import { execFileSync, spawn } from "node:child_process"
+import { type ChildProcess, execFileSync, spawn } from "node:child_process"
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { fileURLToPath } from "node:url"
-import { afterAll, beforeAll, describe, expect, it } from "vitest"
+import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest"
 
 const runner = fileURLToPath(new URL("./fixtures/checkpointChild.ts", import.meta.url))
 const directory = mkdtempSync(join(tmpdir(), "smithers-e2e-case32-"))
@@ -41,11 +41,45 @@ beforeAll(() => {
 
 afterAll(() => rmSync(directory, { recursive: true, force: true }))
 
-const captureInDoomedProcess = (): Promise<{ readonly ref: string; readonly pid: number }> =>
-  new Promise((resolve, reject) => {
-    const child = spawn(process.execPath, [runner, directory, checkpointId], { stdio: ["ignore", "pipe", "pipe"] })
-    let out = ""
-    let err = ""
+// Every child this file spawns, until it has exited. A capture that stalls, a
+// marker that never arrives, or an assertion that fails before the deliberate
+// kill would otherwise leave the child holding itself open on the machine.
+const children = new Set<ChildProcess>()
+const captureDeadlineMs = 60_000
+const graceMs = 2_000
+
+const exited = (child: ChildProcess): boolean => child.exitCode !== null || child.signalCode !== null
+
+const teardown = async (child: ChildProcess): Promise<void> => {
+  if (!exited(child)) {
+    const exit = new Promise<void>((resolve) => child.once("exit", () => resolve()))
+    child.kill("SIGTERM")
+    const escalate = setTimeout(() => child.kill("SIGKILL"), graceMs)
+    await exit
+    clearTimeout(escalate)
+  }
+  children.delete(child)
+}
+
+afterEach(async () => {
+  await Promise.all([...children].map(teardown))
+})
+
+const captureInDoomedProcess = (
+  args: ReadonlyArray<string> = [runner, directory, checkpointId],
+  deadlineMs = captureDeadlineMs
+): Promise<{ readonly ref: string; readonly pid: number }> => {
+  const child = spawn(process.execPath, args, { stdio: ["ignore", "pipe", "pipe"] })
+  children.add(child)
+  child.once("exit", () => children.delete(child))
+  let out = ""
+  let err = ""
+  let timedOut = false
+  const timer = setTimeout(() => {
+    timedOut = true
+    void teardown(child)
+  }, deadlineMs)
+  return new Promise<{ readonly ref: string; readonly pid: number }>((resolve, reject) => {
     child.stdout.setEncoding("utf8")
     child.stderr.setEncoding("utf8")
     child.stdout.on("data", (chunk: string) => {
@@ -57,8 +91,17 @@ const captureInDoomedProcess = (): Promise<{ readonly ref: string; readonly pid:
       err += chunk
     })
     child.once("error", reject)
-    child.once("exit", (code) => reject(new Error(`checkpoint child exited with ${String(code)}\n${err}`)))
-  })
+    // A deadline rejects only once the child it killed has exited.
+    child.once("exit", (code) =>
+      reject(
+        new Error(
+          timedOut
+            ? `checkpoint child printed no CAPTURED marker within ${deadlineMs}ms\nstdout:\n${out}\nstderr:\n${err}`
+            : `checkpoint child exited with ${String(code)}\n${err}`
+        )
+      ))
+  }).finally(() => clearTimeout(timer))
+}
 
 const readAtCheckpoint = (): Promise<string> =>
   Effect.runPromise(
@@ -93,6 +136,20 @@ describe("case32 a checkpoint is a pinned tree", () => {
     // Materializing did not disturb the live tree.
     expect(readFileSync(ledger, "utf8")).toBe("two\n")
   }, 120_000)
+
+  it("tears down a child that never prints the marker, within the capture deadline", async () => {
+    const started = Date.now()
+    const pids: Array<number> = []
+    const capture = captureInDoomedProcess(
+      ["-e", "process.stderr.write('stalled\\n'); setInterval(() => {}, 1_000)"],
+      1_000
+    )
+    for (const child of children) if (child.pid !== undefined) pids.push(child.pid)
+    await expect(capture).rejects.toThrow(/no CAPTURED marker within 1000ms[\s\S]*stalled/)
+    expect(Date.now() - started).toBeLessThan(10_000)
+    expect(pids).toHaveLength(1)
+    expect(isAlive(pids[0] as number)).toBe(false)
+  }, 20_000)
 
   it("refuses a path that would read the live tree while claiming the pinned one", () => {
     const materialized = {
