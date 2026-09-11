@@ -418,7 +418,7 @@ export const make = (options: Options): Service => {
  * Renders a checklist to a string, for handlers that print through `Output`
  * and `Console` rather than writing to a stream themselves.
  *
- * The non-interactive text is byte-identical to `Doctor.render`; the
+ * The non-interactive text is what `Doctor.render` returns; the
  * interactive text carries clack's symbols and, when the real stdout has
  * colour, its escape sequences.
  *

@@ -30,6 +30,7 @@ import {
 } from "node:fs"
 import { homedir } from "node:os"
 import { dirname, join } from "node:path"
+import { errorCode } from "./internal/ErrorCode.ts"
 
 /**
  * The MCP server name Smithers registers under.
@@ -115,11 +116,6 @@ interface Configuration {
 }
 
 const isUnusable = (value: Configuration | Unusable): value is Unusable => "reason" in value
-
-const errorCode = (error: unknown): string | undefined =>
-  typeof error === "object" && error !== null && "code" in error && typeof error.code === "string"
-    ? error.code
-    : undefined
 
 /**
  * Reads an agent's configuration, or says why it must not be written over.

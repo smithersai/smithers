@@ -18,6 +18,7 @@ import { Cause, Effect, Exit, Layer } from "effect"
 import { existsSync, mkdirSync } from "node:fs"
 import { join } from "node:path"
 import { DatabaseSync } from "node:sqlite"
+import { hasTable } from "../internal/SqliteTable.ts"
 import * as NodeControl from "../NodeControl.ts"
 import * as Project from "../Project.ts"
 import * as Projection from "./Projection.ts"
@@ -199,8 +200,6 @@ export const preview = async (root: string, runId: string, options: Options, sig
     signal
   )
 
-const hasTable = (db: DatabaseSync, table: string): boolean =>
-  db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?").get(table) !== undefined
 const openControl = (root: string) => {
   const file = NodeControl.databasePath(root)
   if (!existsSync(file)) throw new Error("This operation requires a public CLI run with an approved control plan")

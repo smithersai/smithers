@@ -17,6 +17,7 @@
 import * as Migrations from "@smthrs/database/Migrations"
 import { existsSync, readdirSync } from "node:fs"
 import { DatabaseSync } from "node:sqlite"
+import { hasTable } from "./internal/SqliteTable.ts"
 import * as Environment from "./Environment.ts"
 import * as Legacy from "./Legacy.ts"
 import * as NodeControl from "./NodeControl.ts"
@@ -41,11 +42,7 @@ export type Level = "ok" | "warn" | "fail"
  * @category models
  * @since 1.0.0
  */
-export interface Check {
-  readonly name: string
-  readonly level: Level
-  readonly detail: string
-}
+export type Check = Ui.Check
 
 /**
  * The whole report.
@@ -109,10 +106,7 @@ const ladder = (file: string): Check => {
     database = new DatabaseSync(file, { readOnly: true })
     // `@smthrs/database` owns the name, so a rename there fails to compile
     // here rather than turning every database into "not created by Smithers".
-    const tables = database
-      .prepare(`SELECT name FROM sqlite_master WHERE type = 'table' AND name = '${Migrations.table}'`)
-      .all()
-    if (tables.length === 0) {
+    if (!hasTable(database, Migrations.table)) {
       return {
         name: `database ${file}`,
         level: "warn",
@@ -344,10 +338,7 @@ const describeLegacyDatabase = (path: string): string => {
  * @since 1.0.0
  */
 export const render = (report: Report): string =>
-  [
-    `smthrs doctor: ${report.root}`,
-    ...report.checks.map((check) => `${Ui.levelWord(check.level)} ${check.name}: ${check.detail}`)
-  ].join("\n")
+  Ui.renderChecklist(`smthrs doctor: ${report.root}`, report.checks, { interactive: false })
 
 /**
  * Whether the report contains a failing check, which decides the exit status.

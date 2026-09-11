@@ -7,9 +7,7 @@ import { resolve } from "node:path"
 import { DatabaseSync } from "node:sqlite"
 import { databasePath } from "../internal/ControlDatabasePath.ts"
 import { executionDatabasePath } from "../internal/ExecutionDatabasePath.ts"
-
-const table = (db: DatabaseSync, name: string): boolean =>
-  db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?").get(name) !== undefined
+import { hasTable } from "../internal/SqliteTable.ts"
 
 interface ResolvedWorkspace {
   readonly path: string
@@ -21,8 +19,8 @@ const resolveWorkspace = (root: string, runId: string): ResolvedWorkspace | unde
   if (!existsSync(file)) return { path: resolve(root) }
   const db = new DatabaseSync(file, { readOnly: true })
   try {
-    const routes = table(db, "smthrs_history_workspaces")
-    const edges = table(db, "flows_time_travel_edges")
+    const routes = hasTable(db, "smthrs_history_workspaces")
+    const edges = hasTable(db, "flows_time_travel_edges")
     const seen = new Set<string>()
     let id: string | null = runId
     while (id !== null) {
@@ -68,7 +66,7 @@ export const canExecute = (root: string, workspace: string, runId: string): bool
   if (!existsSync(file) || !existsSync(controlFile)) return expected.boundRunId === undefined
   const engine = new DatabaseSync(file, { readOnly: true })
   try {
-    const audits = table(engine, "flows_time_travel_audits")
+    const audits = hasTable(engine, "flows_time_travel_audits")
       ? engine.prepare(
         "SELECT id FROM flows_time_travel_audits WHERE run_id=? AND status IN ('in_progress','completed')"
       ).all(runId)
@@ -84,7 +82,7 @@ export const canExecute = (root: string, workspace: string, runId: string): bool
         control.prepare("SELECT 1 FROM flows_runs WHERE run_id=?").get(expected.boundRunId) === undefined
       ) return false
       if (audits.length === 0) return true
-      if (!table(control, "smthrs_history_applied")) return false
+      if (!hasTable(control, "smthrs_history_applied")) return false
       return audits.every((audit) =>
         control.prepare("SELECT 1 FROM smthrs_history_applied WHERE audit_id=?").get(String(audit.id)) !== undefined
       )

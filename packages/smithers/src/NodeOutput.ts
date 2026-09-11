@@ -18,6 +18,7 @@
  * @since 1.0.0
  */
 import type { ControlSchema } from "@smthrs/control"
+import { asRecord, asString } from "@smthrs/gateway/Diagnosis"
 
 /**
  * The reserved node id for the run's final output.
@@ -56,11 +57,6 @@ export interface Node {
   readonly startedSequence?: number | undefined
   readonly settledSequence?: number | undefined
 }
-
-const asRecord = (value: unknown): Record<string, unknown> =>
-  typeof value === "object" && value !== null && !Array.isArray(value) ? value as Record<string, unknown> : {}
-
-const asString = (value: unknown): string | undefined => typeof value === "string" ? value : undefined
 
 /**
  * Projects a run's events into its node outputs, in the order they started.

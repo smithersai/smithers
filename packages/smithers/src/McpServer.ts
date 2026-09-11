@@ -26,6 +26,7 @@
  * @since 1.0.0
  */
 import { Control as ControlService, ControlError, ControlSchema } from "@smthrs/control"
+import { asString } from "@smthrs/gateway/Diagnosis"
 import * as Redaction from "@smthrs/journal/Redaction"
 import { Cause, Context, Deferred, Effect, Queue, Schema, Stream } from "effect"
 import * as Argv from "./cli/Argv.ts"
@@ -190,9 +191,7 @@ const nodeDetailArguments = Schema.Struct({
   nodeId: describedString("The node, as `smthrs output <run-id>` lists it.")
 })
 
-const text = (value: unknown): string | undefined => typeof value === "string" ? value : undefined
-
-const requireRunId = (args: Record<string, unknown>): string | undefined => text(args["runId"]) ?? text(args["run_id"])
+const requireRunId = (args: Record<string, unknown>): string | undefined => asString(args["runId"]) ?? asString(args["run_id"])
 
 /** Events of one run after the cursor, oldest first. */
 const eventsOf = (runId: string, afterSequence = 0) =>
@@ -322,7 +321,7 @@ export const supportedTools: ReadonlyArray<Tool> = [
     readOnly: false,
     schema: runFlowArguments,
     call: (args) => {
-      const flowId = text(args["flowId"])
+      const flowId = asString(args["flowId"])
       if (flowId === undefined) return Effect.succeed(missingArgument("flowId"))
       if (Unsupported.isReservedFlow(flowId)) {
         return Effect.succeed(
@@ -360,10 +359,10 @@ export const supportedTools: ReadonlyArray<Tool> = [
           control.list({
             _tag: "runs",
             filters: {
-              ...(text(args["flowId"]) === undefined ? {} : { flowId: text(args["flowId"])! }),
-              ...(text(args["status"]) === undefined
+              ...(asString(args["flowId"]) === undefined ? {} : { flowId: asString(args["flowId"])! }),
+              ...(asString(args["status"]) === undefined
                 ? {}
-                : { status: text(args["status"])! as ControlSchema.RunStatus })
+                : { status: asString(args["status"])! as ControlSchema.RunStatus })
             }
           })),
         (listed) => succeeded(listed._tag === "runs" ? listed.items : [])
@@ -467,7 +466,7 @@ export const supportedTools: ReadonlyArray<Tool> = [
     call: (args) => {
       const payload = decodeApproval(args["approval"])
       if (payload === undefined) return Effect.succeed(missingArgument("approval"))
-      const decision = text(args["decision"])
+      const decision = asString(args["decision"])
       if (decision !== "approve" && decision !== "deny") {
         return Effect.succeed(failed("INVALID_INPUT", "decision must be \"approve\" or \"deny\""))
       }
@@ -476,7 +475,7 @@ export const supportedTools: ReadonlyArray<Tool> = [
       // silence means the narrowest grant. Coercing both to "run" handed an
       // MCP client the whole run's capabilities for an argument it never sent
       // and for a typo it would never see reported.
-      const scope = args["scope"] === undefined ? "once" : text(args["scope"])
+      const scope = args["scope"] === undefined ? "once" : asString(args["scope"])
       if (scope !== "once" && scope !== "run" && scope !== "remembered") {
         return Effect.succeed(failed("INVALID_INPUT", "scope must be \"once\", \"run\", or \"remembered\""))
       }
@@ -500,7 +499,7 @@ export const supportedTools: ReadonlyArray<Tool> = [
     call: (args) => {
       const runId = requireRunId(args)
       if (runId === undefined) return Effect.succeed(missingArgument("runId"))
-      const nodeId = text(args["nodeId"])
+      const nodeId = asString(args["nodeId"])
       if (nodeId === undefined) return Effect.succeed(missingArgument("nodeId"))
       return envelope(eventsOf(runId), (events) => {
         const nodes = NodeOutput.project(events)
@@ -751,7 +750,7 @@ export const respond = (
         const params = typeof request.params === "object" && request.params !== null
           ? request.params as Record<string, unknown>
           : {}
-        const name = text(params["name"]) ?? ""
+        const name = asString(params["name"]) ?? ""
         const tool = session.find((candidate) => candidate.name === name)
         if (tool === undefined) {
           return boundedReply(toolResult(failed("unknown_tool", `No tool named ${name} is exposed by this session`)))

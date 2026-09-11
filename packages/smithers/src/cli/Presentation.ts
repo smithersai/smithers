@@ -7,10 +7,12 @@ import * as clack from "@clack/prompts"
 import * as Audience from "@smthrs/build-cli/Audience"
 import type { RuntimeConfig } from "@smthrs/build-cli/Cli"
 import * as NodeDatabase from "@smthrs/database/node/NodeDatabase"
+import { asRecord, asString } from "@smthrs/gateway/Diagnosis"
 import * as Redaction from "@smthrs/journal/Redaction"
 import { AsyncLocalStorage } from "node:async_hooks"
 import { Writable } from "node:stream"
 import { stripVTControlCharacters } from "node:util"
+import * as Forensics from "../Forensics.ts"
 import * as Failure from "../internal/Failure.ts"
 
 interface Session {
@@ -126,10 +128,8 @@ export type FollowUps =
  * @category formatting
  * @since 1.0.0
  */
-export const quote = (value: string) => /^[a-zA-Z0-9_./:@-]+$/.test(value) ? value : `'${value.replaceAll("'", "'\\''")}'`
-const record = (value: unknown): Record<string, unknown> =>
-  typeof value === "object" && value !== null && !Array.isArray(value) ? value as Record<string, unknown> : {}
-const text = (value: unknown): string | undefined => typeof value === "string" && value.length > 0 ? value : undefined
+export const quote = Forensics.shellQuote
+const text = (value: unknown): string | undefined => asString(value) || undefined
 
 /**
  * Follow-ups for a result that names a durable run, falling back to
@@ -173,7 +173,7 @@ export const nextActions = (value: unknown, context: Context = {}, next: FollowU
       if (!url.username && !url.password && !url.search && !url.hash) connection += ` --remote ${quote(remote)}`
     } catch { /* Malformed connection arguments are handled before execution. */ }
   }
-  const declared = typeof next === "function" ? next(record(value), context.args ?? {}) : next
+  const declared = typeof next === "function" ? next(asRecord(value), context.args ?? {}) : next
   return declared.slice(0, 3).map((action) => ({ command: action.command + connection, description: action.description }))
 }
 

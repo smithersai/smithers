@@ -34,6 +34,7 @@ import { randomUUID } from "node:crypto"
 import { closeSync, fsyncSync, openSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs"
 import { homedir } from "node:os"
 import { dirname, join } from "node:path"
+import { errorCode } from "./internal/ErrorCode.ts"
 
 /**
  * The OAuth token endpoint the refresh grant is sent to. This is the auth
@@ -245,11 +246,6 @@ export const make = (options: MakeOptions): Store => {
 
   const lockError = (): ModelError =>
     authenticationError(`ChatGPT credentials at ${file} are busy refreshing; retry the request`)
-
-  const errorCode = (error: unknown): string | undefined =>
-    typeof error === "object" && error !== null && "code" in error && typeof error.code === "string"
-      ? error.code
-      : undefined
 
   /** A lock is recoverable only when its recorded process is provably gone. */
   const lockOwnerAlive = (token: string): boolean => {

@@ -22,6 +22,7 @@
  * @since 1.0.0
  */
 import type { ControlSchema } from "@smthrs/control"
+import { asRecord } from "@smthrs/gateway/Diagnosis"
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
 import * as NodeOutput from "./NodeOutput.ts"
@@ -63,9 +64,6 @@ export interface Subscription {
   readonly sessionId: string
   readonly updatedAtMs: number
 }
-
-const asRecord = (value: unknown): Record<string, unknown> =>
-  typeof value === "object" && value !== null && !Array.isArray(value) ? value as Record<string, unknown> : {}
 
 /**
  * Reads the live subscriptions, dropping expired and malformed entries.
