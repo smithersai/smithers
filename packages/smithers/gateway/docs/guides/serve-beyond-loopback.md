@@ -54,10 +54,12 @@ From the command line, bind the machine's concrete LAN address so that address
 is also admitted by the Host policy (replace this example with your address):
 
 ```bash
-smthrs serve --host 192.168.1.10 --port 3000 --listen --credential "$SMITHERS_API_KEY"
+export SMITHERS_API_KEY="<the bearer token from your secret manager>"
+smthrs serve --host 192.168.1.10 --port 3000 --listen
 ```
 
-`--credential` falls back to `SMITHERS_API_KEY`. See
+The server reads the bearer from `SMITHERS_API_KEY`, which keeps it out of the
+long-lived process's argv. See
 [Serve the workspace gateway](/pkg/cli/guides/serve-the-workspace-gateway).
 
 ## What the credential then covers

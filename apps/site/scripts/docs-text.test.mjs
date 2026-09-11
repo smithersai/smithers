@@ -12,6 +12,23 @@ test("Dispatcher documents the registration refusal and supported alternatives u
   assert.ok(source.includes("/docs/guides/triggers/"))
 })
 
+test("remote serve docs never send the bearer over cleartext HTTP or in argv", () => {
+  const read = (path) => readFileSync(new URL(path, import.meta.url), "utf8")
+  const guide = read("../src/content/docs/docs/guides/control-plane.mdx")
+  const gateway = read("../../../packages/smithers/gateway/docs/guides/serve-beyond-loopback.md")
+  for (const page of [guide, gateway]) {
+    assert.doesNotMatch(page, /--credential "\$SMITHERS_API_KEY"/)
+    assert.doesNotMatch(page, /(?:--remote |SMITHERS_REMOTE=)http:\/\/(?!127\.0\.0\.1|localhost|\[::1\])/)
+  }
+  for (const path of [
+    "../src/content/docs/docs/guides/control-plane.mdx",
+    "../src/content/docs/docs/reference/cli/serve.mdx",
+    "../src/content/docs/docs/reference/http-api.mdx"
+  ]) {
+    assert.match(read(path), /plain HTTP only/, path)
+  }
+})
+
 test("sync follower guide requires explicit compaction recovery and a restored cursor", () => {
   const guide = readFileSync(new URL("../src/content/docs/docs/guides/sync-followers.mdx", import.meta.url), "utf8")
   assert.doesNotMatch(guide, /The default hook logs the skipped range and continues/)
