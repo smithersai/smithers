@@ -2,7 +2,7 @@ import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem"
 import * as NodePath from "@effect/platform-node/NodePath"
 import * as Digest from "@smthrs/core/Digest"
 import { Effect, Layer } from "effect"
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
@@ -61,6 +61,29 @@ describe("the documented scan cost model", () => {
     } finally {
       rmSync(root, { force: true, recursive: true })
     }
+  })
+})
+
+/**
+ * A changelog entry that names a file sends a reader to it. The rc.0 entry
+ * named `packages/registry/PACKAGE.ts`, `docs/Manifest.ts`, and
+ * `scripts/docs.mjs`, none of which existed, so every repo-relative path the
+ * changelog quotes must resolve from the workspace root.
+ */
+describe("the changelog's file references", () => {
+  const workspaceRoot = join(packageRoot, "..", "..", "..", "..")
+  const changelog = readFileSync(join(packageRoot, "CHANGELOG.md"), "utf8")
+  const paths = Array.from(
+    changelog.matchAll(/`((?:[\w.-]+\/)+[\w.-]+\.[a-z]{2,4})`/g),
+    (match) => match[1]!
+  )
+
+  it("quotes at least one path", () => {
+    expect(paths.length).toBeGreaterThan(0)
+  })
+
+  it.each(paths)("names %s, which exists", (path) => {
+    expect(existsSync(join(workspaceRoot, path))).toBe(true)
   })
 })
 
