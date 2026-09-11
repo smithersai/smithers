@@ -83,18 +83,21 @@ line:
 curl -s http://127.0.0.1:3000/projections \
   -H 'content-type: application/json' \
   --data-binary '{"_tag":"Request","id":1,"tag":"Projection.Snapshot","payload":{"selector":{"_tag":"workspace-runs"}},"headers":[]}
-' | head -1 | jq -r '.exit.value.rows[] | "\(.runId)  \(.verdict)"'
+' | head -1 | jq -ac '.exit.value.rows[] | {runId, verdict}'
 ```
 
-```text
-run-1  completed — shipped
-run-2  waiting-approval — asks: Write to src/index.ts?
-run-3  failed — could not resolve seat anthropic:claude-sonnet-4-5
+```json
+{"runId":"run-1","verdict":"completed \u2014 shipped"}
+{"runId":"run-2","verdict":"waiting-approval \u2014 asks: Write to src/index.ts?"}
+{"runId":"run-3","verdict":"failed \u2014 could not resolve seat anthropic:claude-sonnet-4-5"}
 ```
 
 No client library, no schema of your own, and nothing that knows what a table
-looks like. The same request on `/projections/ws` answers a snapshot and then
-keeps sending, so a view follows a run instead of polling it.
+looks like. The tag, not the mount, decides whether a request streams, and
+`/projections/ws` addresses both procedures: `Projection.Snapshot` there still
+answers once, while `Projection.Subscribe` with the same payload on
+`/projections/ws` answers a snapshot and then keeps sending, so a view follows
+a run instead of polling it.
 
 The folds behind those rows are exported, so a program holding a run's control
 events computes the identical row with no gateway at all:
@@ -107,8 +110,9 @@ const row = GatewayProjection.runSummary(run, events)
 ```
 
 That bind is loopback, so it needs no credential and no opt-in. Its requests
-still need a loopback `Host`, and any supplied browser `Origin` must be
-loopback; Origin-less CLI clients remain accepted. Anything else needs both a
+still need a loopback `Host`, and any supplied browser `Origin` must be a
+canonical HTTP(S) origin whose host and port equal the request's `Host`;
+Origin-less CLI clients remain accepted. Anything else needs both a
 bind opt-in and a bearer, and the layer fails with a typed `bind_failed`
 `GatewayError` rather than binding. See
 [Serve beyond loopback](./guides/serve-beyond-loopback.md).

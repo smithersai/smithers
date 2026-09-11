@@ -17,12 +17,8 @@ fields are the whole diagnosis:
 A client that renders a run card renders those two strings. Nothing else is
 needed, and nothing has to be recomputed.
 
-```text
-Verdict   completed — shipped
-Run       run-1 · deploy · opus · 5s
-Activity  1 turns · 1 calls (0 refused) · edits 1/1
-Tokens    0 in / 0 out
-Output    shipped
+```json
+"Verdict   completed \u2014 shipped\nRun       run-1 · deploy · opus · 5s\nActivity  1 turns · 1 calls (0 refused) · edits 1/1\nTokens    0 in / 0 out\nOutput    shipped"
 ```
 
 ## What the verdict leads with
@@ -36,12 +32,14 @@ Output    shipped
 4. The resolved output.
 5. The bare status, when none of the above applies.
 
-```text
-failed — could not resolve seat anthropic:claude-sonnet-4-5
-failed — no cause recorded in the journal
-waiting-approval — asks: Write to src/index.ts?
-completed — but 0 of 12 calls attempted an edit; the run only read
-completed — shipped
+```json
+[
+  "failed \u2014 could not resolve seat anthropic:claude-sonnet-4-5",
+  "failed \u2014 no cause recorded in the journal",
+  "waiting-approval \u2014 asks: Write to src/index.ts?",
+  "completed \u2014 but 0 of 12 calls attempted an edit; the run only read",
+  "completed \u2014 shipped"
+]
 ```
 
 An unlaunched run, one with no status event at all, reads `unlaunched`.

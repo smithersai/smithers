@@ -50,11 +50,14 @@ milliseconds and 1,048,576 bytes.
 **Cause** The operating system refused the listen: the port is already in use,
 the address is not local, or the port is privileged.
 
-**Fix** Check what already holds the port. A gateway already serving this
-workspace answers `GET /health` with the workspace hash, which is how a
-supervisor decides whether to keep it. The original operating-system failure is
-deliberately not on the error, because that error reaches every bearer holder;
-it is in the server log.
+**Fix** Read the server log. The Node host writes one error-level line before
+it sanitizes the failure: `The gateway socket could not be bound`, with the
+requested `host` and `port` and the `ServeError` whose `cause` is the
+operating-system error (`EADDRINUSE`, `EACCES`, `EADDRNOTAVAIL`). The wire error
+deliberately omits all of that, because it reaches every bearer holder. Then
+check what already holds the port. A gateway already serving this workspace
+answers `GET /health` with the workspace hash, which is how a supervisor decides
+whether to keep it.
 
 ## The gateway is up but a request is refused
 
@@ -65,12 +68,15 @@ a browser request or WebSocket upgrade answers with `invalid_origin`.
 
 **Cause** Local mode accepts `Host` values naming only `localhost`,
 `127.0.0.1`, or `[::1]`, with an optional port. If an `Origin` header is
-present, it must use `http` or `https` on one of the same hosts. This prevents
-a web page or DNS-rebound hostname from acting as the local operator.
+present, it must be a canonical `http` or `https` origin whose host and port
+equal the request's `Host`, in every mode. An app on `http://localhost:5173`
+calling a gateway on `localhost:3000` is refused. This prevents a web page or
+DNS-rebound hostname from acting as the local operator.
 
-**Fix** Connect through the loopback URL the server printed. Browser clients
-must be served from a loopback origin. CLI clients should omit `Origin`, as
-usual; an Origin-less request is accepted.
+**Fix** Connect through the loopback URL the server printed. Serve the browser
+client from that same origin, or put it behind a dev-server proxy that
+forwards to the gateway so the browser only ever talks to one origin. CLI
+clients should omit `Origin`, as usual; an Origin-less request is accepted.
 
 ### 401 on /projections or /sync, but /rpc answers something else
 
@@ -246,8 +252,10 @@ with no error from the gateway.
 sooner than the keepalive cadence. The default is one frame every 30 seconds,
 sized for a relay that cuts at 600 seconds.
 
-**Fix** Shorten the cadence at the bind with `heartbeatMillis`, or with
-`Projections.layerWith({ heartbeatMillis })` for the read path alone.
+**Fix** Shorten the cadence at the bind with `heartbeatMillis`, which re-times
+both the `/projections/ws` heartbeat and the `/rpc/ws` `Watch` keepalive, or
+build the read path with `Projections.layerWith({ heartbeatMillis })` to
+shorten the projection heartbeat alone.
 
 ### A followed Watch delivers events nothing emitted
 

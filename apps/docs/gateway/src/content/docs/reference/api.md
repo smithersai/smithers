@@ -4,10 +4,9 @@ description: "Every public export of @smthrs/gateway: the assembled server and i
 editUrl: "https://github.com/smithersai/smithers/edit/main/packages/smithers/gateway/docs/api.md"
 ---
 
-The gateway requires `effect`, `@effect/platform-node`, and
-`@effect/platform-node-shared` as exact `4.0.0-rc.112` peers. The shared
-platform pin keeps npm from selecting a later release candidate under the
-Node platform's transitive range. Use the same Effect version in the host.
+The gateway declares `effect` and `@effect/platform-node` as exact
+`4.0.0-rc.112` peers; `@effect/platform-node` is optional and only
+`node/NodeGateway` imports it. Use the same Effect version in the host.
 
 The root entry point exports one namespace per module, and every local module is
 also importable from `@smthrs/gateway/<Module>`.
@@ -127,28 +126,29 @@ Every holder of the shared credential has the same delegated authority. See
 [Serve beyond loopback](/guides/serve-beyond-loopback/).
 
 Without that bearer, `NodeGateway.layer` enables `loopbackOnly`: every request
-must carry a loopback `Host`, and a browser `Origin` must use `http` or `https`
-on `localhost`, `127.0.0.1`, or `[::1]`, with an optional port. An Origin-less
-CLI request remains accepted. The same guard runs on HTTP and WebSocket
+must carry a loopback `Host`. With or without a bearer, a supplied browser
+`Origin` must be a canonical HTTP(S) origin whose host and port equal the
+request's `Host`; serve a browser client from the gateway's origin or through a
+same-origin proxy. An Origin-less CLI request remains accepted. The same guard runs on HTTP and WebSocket
 upgrades before any mount handles them.
 
 ## `Projections`
 
 The read path, served as bounded snapshots and followed deltas.
 
-| Export                    | Signature                                                                                              | Meaning                                                                                                            |
-| ------------------------- | ------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------ |
-| `Projections`             | `Context.Service` tagged `@smthrs/gateway/Projections`                                                 | The service tag the mounts read through.                                                                           |
-| `Service`                 | `{ snapshot; subscribe }`                                                                              | Read-path operations served by the gateway.                                                                        |
+| Export                    | Signature                                                                                                      | Meaning                                                                                                            |
+| ------------------------- | -------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| `Projections`             | `Context.Service` tagged `@smthrs/gateway/Projections`                                                         | The service tag the mounts read through.                                                                           |
+| `Service`                 | `{ snapshot; subscribe }`                                                                                      | Read-path operations served by the gateway.                                                                        |
 | `Service.snapshot`        | `<S extends ProjectionSelector>(selector: S, after?: ProjectionCursor) => Effect<SnapshotOf<S>, GatewayError>` | Current rows, or the run-events suffix after `after`, with the current cursor.                                     |
 | `Service.subscribe`       | `<S extends ProjectionSelector>(selector: S, after?: ProjectionCursor) => Stream<FrameOf<S>, GatewayError>`    | A snapshot followed by deltas and keepalives, or, with `after`, the deltas after that cursor alone.                |
-| `make`                    | `(control: ControlService, options?: { heartbeatMillis?: number }) => Effect<Service, GatewayError>`   | Builds the read path over a control plane. Invalid settings are `bind_failed` failures; construction never throws. |
-| `layer`                   | `Layer<Projections, GatewayError, Control>`                                                            | The read path over the ambient control plane, at the default cadence.                                              |
-| `layerWith`               | `(options: { heartbeatMillis?: number }) => Layer<Projections, GatewayError, Control>`                 | The same under an explicit keepalive cadence.                                                                      |
-| `heartbeatIntervalMillis` | `30_000`                                                                                               | How often an idle subscription emits a keepalive frame.                                                            |
-| `maxWorkspaceRuns`        | `500`                                                                                                  | The most runs one workspace projection folds. Equals `ControlSchema.maxPageSize`.                                  |
-| `maxEventsPerRun`         | `10_000`                                                                                               | The most journal events one run projection admits.                                                                 |
-| `maxProjectionBytes`      | `4 * 1024 * 1024`                                                                                      | The largest encoded event history, or projected row set, one run admits.                                           |
+| `make`                    | `(control: ControlService, options?: { heartbeatMillis?: number }) => Effect<Service, GatewayError>`           | Builds the read path over a control plane. Invalid settings are `bind_failed` failures; construction never throws. |
+| `layer`                   | `Layer<Projections, GatewayError, Control>`                                                                    | The read path over the ambient control plane, at the default cadence.                                              |
+| `layerWith`               | `(options: { heartbeatMillis?: number }) => Layer<Projections, GatewayError, Control>`                         | The same under an explicit keepalive cadence.                                                                      |
+| `heartbeatIntervalMillis` | `30_000`                                                                                                       | How often an idle subscription emits a keepalive frame.                                                            |
+| `maxWorkspaceRuns`        | `500`                                                                                                          | The most runs one workspace projection folds. Equals `ControlSchema.maxPageSize`.                                  |
+| `maxEventsPerRun`         | `10_000`                                                                                                       | The most journal events one run projection admits.                                                                 |
+| `maxProjectionBytes`      | `4 * 1024 * 1024`                                                                                              | The largest encoded event history, or projected row set, one run admits.                                           |
 
 `ControlService` is `@smthrs/control` `Control`'s service interface, the shape
 the tag carries.
@@ -322,8 +322,8 @@ the set those paths produce.
 | Code                | Status | Produced by                                                                                                                                              |
 | ------------------- | ------ | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `bind_failed`       | none   | `NodeGateway.bindRefusal`, `NodeGateway.listenOptions`, `GatewayServer.layer`, `GatewayServer.layerIngress`, and `Projections.make`, at composition time |
-| `invalid_host`      | 421    | the local-only ingress guard, when `Host` does not name `localhost`, `127.0.0.1`, or `[::1]`                                                             |
-| `invalid_origin`    | 403    | the local-only ingress guard, when a supplied browser `Origin` does not name HTTP(S) on a loopback host                                                  |
+| `invalid_host`      | 421    | the ingress guard, when `Host` is not in `allowedHosts`, or under `loopbackOnly` does not name `localhost`, `127.0.0.1`, or `[::1]`                      |
+| `invalid_origin`    | 403    | the ingress guard, when a supplied browser `Origin` is not a canonical HTTP(S) origin whose host and port equal the request's `Host`                     |
 | `unauthorized`      | 401    | the ingress guard, on any protected path without the configured credential                                                                               |
 | `malformed_request` | 400    | the ingress guard, for a `POST` body carrying no RPC request message or a body it could not read, and the read path, for an invalid resume cursor        |
 | `request_too_large` | 413    | the ingress guard, for a body over the configured limit                                                                                                  |

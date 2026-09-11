@@ -10,18 +10,16 @@ Every `run-summary` row already answers "what happened to this run". Two of its
 fields are the whole diagnosis:
 
 - `verdict`: one line, the status plus the reason that most explains it.
-- `diagnosis`: the whole card, the same text
-  [`smthrs ps`](https://smithers.sh/docs/reference/cli/ps/) and the CLI's forensics rendering print.
+- `diagnosis`: the whole card, folded by `Diagnosis.digest`, which is also
+  what [`smthrs status`](https://smithers.sh/docs/reference/cli/status/) folds. The terminal card adds lines a
+  client does not need, such as the command that unblocks a parked run, so the
+  two read the same facts and print different cards.
 
 A client that renders a run card renders those two strings. Nothing else is
 needed, and nothing has to be recomputed.
 
-```text
-Verdict   completed — shipped
-Run       run-1 · deploy · opus · 5s
-Activity  1 turns · 1 calls (0 refused) · edits 1/1
-Tokens    0 in / 0 out
-Output    shipped
+```json
+"Verdict   completed \u2014 shipped\nRun       run-1 · deploy · opus · 5s\nActivity  1 turns · 1 calls (0 refused) · edits 1/1\nTokens    0 in / 0 out\nOutput    shipped"
 ```
 
 ## What the verdict leads with
@@ -35,15 +33,18 @@ Output    shipped
 4. The resolved output.
 5. The bare status, when none of the above applies.
 
-```text
-failed — could not resolve seat anthropic:claude-sonnet-4-5
-failed — no cause recorded in the journal
-waiting-approval — asks: Write to src/index.ts?
-completed — but 0 of 12 calls attempted an edit; the run only read
-completed — shipped
+```json
+[
+  "failed \u2014 could not resolve seat anthropic:claude-sonnet-4-5",
+  "failed \u2014 no cause recorded in the journal",
+  "waiting-approval \u2014 asks: Write to src/index.ts?",
+  "completed \u2014 but 0 of 12 calls attempted an edit; the run only read",
+  "completed \u2014 shipped"
+]
 ```
 
 An unlaunched run, one with no status event at all, reads `unlaunched`.
+Status events use the vocabulary from `ControlSchema.RunStatus.literals`.
 
 ## Fold your own
 
@@ -67,6 +68,9 @@ events cover.
 The fold is total on purpose: an event kind outside its vocabulary contributes
 nothing rather than failing it, and a payload that is not a record reads as an
 empty one. A malformed journal produces a sparse digest, never a throw.
+Unknown kinds include `__proto__`, `hasOwnProperty`, and `toString`; none changes
+the digest or its timestamps. The unknown-kind cases in
+[`Diagnosis.test.ts`](https://github.com/smithersai/smithers/blob/main/packages/smithers/gateway/test/Diagnosis.test.ts) pin this guarantee.
 
 ## What counts as an edit
 

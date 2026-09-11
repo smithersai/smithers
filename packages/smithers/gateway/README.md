@@ -1,7 +1,8 @@
 # @smthrs/gateway
 
-This package declares `effect`, `@effect/platform-node`, and `@effect/platform-node-shared` as exact
-`4.0.0-rc.112` peer dependencies. Keep the application on that version so
+This package declares `effect` and `@effect/platform-node` as exact
+`4.0.0-rc.112` peer dependencies; `@effect/platform-node` is optional and only
+the `node/NodeGateway` host needs it. Keep the application on that version so
 all Smithers packages share one Effect runtime.
 
 **Documentation:** https://gateway.smithers.sh
@@ -68,9 +69,11 @@ const refusal = NodeGateway.bindRefusal({ host: "0.0.0.0", port: 7331 })
 // => GatewayError { code: "bind_failed", message: "Refusing non-loopback gateway bind 0.0.0.0 without an explicit --listen opt-in" }
 ```
 
-A credential-less loopback host also enables the request guard: `Host` must be
-loopback, and a supplied browser `Origin` must be HTTP(S) on `localhost`,
-`127.0.0.1`, or `[::1]`. Origin-less CLI requests remain accepted. Refusals
+A credential-less loopback host also requires a loopback `Host`. On every
+host, a supplied browser `Origin` must be a canonical HTTP(S) origin whose host
+and port equal the request's `Host`, so a browser client is served from the
+gateway's own origin or through a same-origin proxy. Origin-less CLI requests
+remain accepted. Refusals
 are typed `GatewayError` bodies with stable `invalid_host` or `invalid_origin`
 codes, and the same rule runs on HTTP and WebSocket upgrades.
 

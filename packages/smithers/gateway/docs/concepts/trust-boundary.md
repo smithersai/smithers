@@ -58,9 +58,9 @@ omit Origin. Forwarded headers do not override these checks.
 
 A loopback bind with no credential is allowed, and is the local default. The
 trust boundary there is the machine account, so the ingress guard requires a
-loopback `Host` value. A browser request carrying `Origin` must also name
-`http` or `https` on `localhost`, `127.0.0.1`, or `[::1]`, with an optional
-port. That rejects cross-site WebSockets and DNS-rebound hostnames without
+loopback `Host` value. A browser request carrying `Origin` must also carry a
+canonical `http` or `https` origin whose host and port equal that `Host`. That
+rejects cross-site WebSockets and DNS-rebound hostnames without
 requiring a CLI to invent a credential: non-browser clients carrying no
 `Origin` remain accepted.
 The default accepted Host names are `127.0.0.1`, `localhost`, and `[::1]`.
@@ -81,14 +81,16 @@ same sanitized `bind_failed` contract, so a caller has one shape to handle.
 `NodeGateway.layer` enables `IngressOptions.loopbackOnly` whenever no bearer
 credential is configured. Before any route, request body, or WebSocket upgrade
 is handled, `layerIngress` refuses a foreign or absent `Host` with 421
-`invalid_host`. It refuses an `Origin` that is not HTTP(S) on `localhost`,
-`127.0.0.1`, or `[::1]`, with an optional port, with 403 `invalid_origin`.
+`invalid_host`. It refuses an `Origin` whose host and port differ from the
+request's `Host`, or that is not a canonical HTTP(S) origin, with 403
+`invalid_origin`.
 
 The Origin header is optional on purpose. Browsers attach it to WebSocket and
-cross-origin requests; CLI clients normally do not. A loopback Origin and an
+cross-origin requests; CLI clients normally do not. A same-origin Origin and an
 Origin-less request both continue to reach the mount. A bearer-protected
-non-loopback gateway does not enable this local-only policy; its configured
-credential remains the request boundary.
+non-loopback gateway does not enable the loopback `Host` rule, but the Origin
+check still runs there: a browser client is served from the gateway's origin or
+through a same-origin proxy.
 
 ## Edge authentication, and where it deliberately stops
 
@@ -149,8 +151,9 @@ unauthenticated caller nothing it was entitled to.
 `GatewayServer.layerIngress` is one global middleware, and it applies these
 checks in order:
 
-1. When configured as `loopbackOnly`, refuses a non-loopback `Host` with 421
-   `invalid_host`, then a non-loopback browser `Origin` with 403
+1. Refuses a `Host` outside `allowedHosts`, or a non-loopback `Host` when
+   configured as `loopbackOnly`, with 421 `invalid_host`, then a browser
+   `Origin` whose host and port differ from the request's `Host` with 403
    `invalid_origin`. These checks cover HTTP and WebSocket upgrades alike.
 2. Refuses an unauthenticated request to a protected path with 401
    `unauthorized`.

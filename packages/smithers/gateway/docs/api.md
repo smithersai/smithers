@@ -3,10 +3,9 @@ title: "API reference"
 description: "Every public export of @smthrs/gateway: the assembled server and its Node host, the served read path, the wire schemas and folds, the RPC group, the diagnosis renderer, the failure vocabulary, and the supervision port."
 ---
 
-The gateway requires `effect`, `@effect/platform-node`, and
-`@effect/platform-node-shared` as exact `4.0.0-rc.112` peers. The shared
-platform pin keeps npm from selecting a later release candidate under the
-Node platform's transitive range. Use the same Effect version in the host.
+The gateway declares `effect` and `@effect/platform-node` as exact
+`4.0.0-rc.112` peers; `@effect/platform-node` is optional and only
+`node/NodeGateway` imports it. Use the same Effect version in the host.
 
 The root entry point exports one namespace per module, and every local module is
 also importable from `@smthrs/gateway/<Module>`.
@@ -126,9 +125,10 @@ Every holder of the shared credential has the same delegated authority. See
 [Serve beyond loopback](./guides/serve-beyond-loopback.md).
 
 Without that bearer, `NodeGateway.layer` enables `loopbackOnly`: every request
-must carry a loopback `Host`, and a browser `Origin` must use `http` or `https`
-on `localhost`, `127.0.0.1`, or `[::1]`, with an optional port. An Origin-less
-CLI request remains accepted. The same guard runs on HTTP and WebSocket
+must carry a loopback `Host`. With or without a bearer, a supplied browser
+`Origin` must be a canonical HTTP(S) origin whose host and port equal the
+request's `Host`; serve a browser client from the gateway's origin or through a
+same-origin proxy. An Origin-less CLI request remains accepted. The same guard runs on HTTP and WebSocket
 upgrades before any mount handles them.
 
 ## `Projections`
@@ -321,8 +321,8 @@ the set those paths produce.
 | Code                | Status | Produced by                                                                                                                                              |
 | ------------------- | ------ | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `bind_failed`       | none   | `NodeGateway.bindRefusal`, `NodeGateway.listenOptions`, `GatewayServer.layer`, `GatewayServer.layerIngress`, and `Projections.make`, at composition time |
-| `invalid_host`      | 421    | the local-only ingress guard, when `Host` does not name `localhost`, `127.0.0.1`, or `[::1]`                                                             |
-| `invalid_origin`    | 403    | the local-only ingress guard, when a supplied browser `Origin` does not name HTTP(S) on a loopback host                                                  |
+| `invalid_host`      | 421    | the ingress guard, when `Host` is not in `allowedHosts`, or under `loopbackOnly` does not name `localhost`, `127.0.0.1`, or `[::1]`                      |
+| `invalid_origin`    | 403    | the ingress guard, when a supplied browser `Origin` is not a canonical HTTP(S) origin whose host and port equal the request's `Host`                     |
 | `unauthorized`      | 401    | the ingress guard, on any protected path without the configured credential                                                                               |
 | `malformed_request` | 400    | the ingress guard, for a `POST` body carrying no RPC request message or a body it could not read, and the read path, for an invalid resume cursor        |
 | `request_too_large` | 413    | the ingress guard, for a body over the configured limit                                                                                                  |

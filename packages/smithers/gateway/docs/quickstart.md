@@ -103,8 +103,8 @@ curl -s http://127.0.0.1:3000/projections \
   "editsSucceeded": 1,
   "inputTokens": 0,
   "outputTokens": 0,
-  "verdict": "completed — shipped",
-  "diagnosis": "Verdict   completed — shipped\nRun       run-1 · hello · anthropic:claude-sonnet-4-5 · 5s\nActivity  1 turns · 1 calls (0 refused) · edits 1/1\nTokens    0 in / 0 out\nOutput    shipped",
+  "verdict": "completed \u2014 shipped",
+  "diagnosis": "Verdict   completed \u2014 shipped\nRun       run-1 · hello · anthropic:claude-sonnet-4-5 · 5s\nActivity  1 turns · 1 calls (0 refused) · edits 1/1\nTokens    0 in / 0 out\nOutput    shipped",
   "finalOutput": "shipped"
 }
 ```
