@@ -4,20 +4,15 @@ import * as Fs from "node:fs/promises"
 import * as Os from "node:os"
 import * as NodePath from "node:path"
 import { afterAll, describe, expect, it, vi } from "vitest"
-import { makeCli, normalizeArgv } from "../src/Cli.ts"
 import * as GoExec from "../src/GoExec.ts"
 import * as PackageTree from "../src/PackageTree.ts"
-import { executionPresentation } from "./fixtures/presentation.ts"
+import { serve } from "./helpers/ServeCli.ts"
+import { write } from "./helpers/WriteFile.ts"
 
 const temporaryDirectories: Array<string> = []
 afterAll(async () =>
   Promise.all(temporaryDirectories.map((directory) => Fs.rm(directory, { recursive: true, force: true })))
 )
-const write = async (root: string, relative: string, text: string): Promise<void> => {
-  const path = NodePath.join(root, relative)
-  await Fs.mkdir(NodePath.dirname(path), { recursive: true })
-  await Fs.writeFile(path, text, "utf8")
-}
 // Probe from a module with the fixture's minimum version so an older launcher
 // can still select a compatible toolchain through GOTOOLCHAIN.
 const goPath = PackageTree.findOnPath("go")
@@ -66,27 +61,6 @@ const withBarePath = async <A>(
   }
 }
 
-const serve = async (root: string, args: ReadonlyArray<string>) => {
-  let exitCode = 0, output = "", logs = ""
-  const original = process.stderr.write.bind(process.stderr)
-  process.stderr.write = ((chunk: string | Uint8Array): boolean => {
-    logs += String(chunk)
-    return true
-  }) as typeof process.stderr.write
-  try {
-    await makeCli({ presentation: executionPresentation }).serve([...normalizeArgv(args), "--workspace", root], {
-      exit: (code) => {
-        exitCode = code
-      },
-      stdout: (text) => {
-        output += text
-      }
-    })
-  } finally {
-    process.stderr.write = original
-  }
-  return { exitCode, output, logs }
-}
 const packageWithoutSandbox = (source: string): string =>
   source.replaceAll("sandbox: { network: true }", "sandbox: \"none\"")
 

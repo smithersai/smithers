@@ -307,7 +307,9 @@ export const gitState = async (
 
 /**
  * Executes one repository target through this CLI and streams both output
- * pipes to the parent process while retaining a bounded diagnostic tail.
+ * pipes to `output` while retaining a bounded diagnostic tail. `output`
+ * defaults to the parent process streams; a run passes its reporter so an
+ * injected terminal receives the child's output.
  *
  * @category execution
  * @since 0.1.0
@@ -318,6 +320,7 @@ export const execute = (
     readonly write?: boolean | undefined
     readonly plan?: boolean | undefined
     readonly signal?: AbortSignal | undefined
+    readonly output?: ((stream: "stdout" | "stderr", chunk: string) => void) | undefined
   } = {}
 ): Promise<void> =>
   new Promise((resolve, reject) => {
@@ -359,9 +362,11 @@ export const execute = (
       kill()
       finish(() => reject(options.signal?.reason ?? new Error("child target aborted")))
     }
-    child.stdout.on("data", (chunk: Buffer) => process.stdout.write(chunk))
+    const output = options.output ??
+      ((stream: "stdout" | "stderr", chunk: string) => void (stream === "stdout" ? process.stdout : process.stderr).write(chunk))
+    child.stdout.on("data", (chunk: Buffer) => output("stdout", chunk.toString("utf8")))
     child.stderr.on("data", (chunk: Buffer) => {
-      process.stderr.write(chunk)
+      output("stderr", chunk.toString("utf8"))
       stderrTail = tail(stderrTail + chunk.toString("utf8"))
     })
     child.on("error", (cause) => finish(() => reject(cause)))

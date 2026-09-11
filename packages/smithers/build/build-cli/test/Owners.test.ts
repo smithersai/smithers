@@ -4,49 +4,16 @@ import * as Fs from "node:fs/promises"
 import * as Os from "node:os"
 import * as NodePath from "node:path"
 import { afterAll, describe, expect, it, vi } from "vitest"
-import { makeCli, normalizeArgv } from "../src/Cli.ts"
 import * as Owners from "../src/Owners.ts"
 import { PackageIndex } from "../src/PackageIndex.ts"
 import * as PackageTree from "../src/PackageTree.ts"
+import { serve } from "./helpers/ServeCli.ts"
+import { write } from "./helpers/WriteFile.ts"
 
 const temporaryDirectories: Array<string> = []
 afterAll(async () => {
   await Promise.all(temporaryDirectories.map((directory) => Fs.rm(directory, { recursive: true, force: true })))
 })
-
-const write = async (root: string, relative: string, text: string): Promise<void> => {
-  const path = NodePath.join(root, relative)
-  await Fs.mkdir(NodePath.dirname(path), { recursive: true })
-  await Fs.writeFile(path, text, "utf8")
-}
-
-const serve = async (
-  root: string,
-  args: ReadonlyArray<string>
-): Promise<{ readonly exitCode: number; readonly output: string; readonly logs: string }> => {
-  let exitCode = 0
-  let output = ""
-  let logs = ""
-  const errWrite = process.stderr.write.bind(process.stderr)
-  // Package execution logs status lines to stderr; capture them for asserts.
-  process.stderr.write = ((chunk: string | Uint8Array): boolean => {
-    logs += typeof chunk === "string" ? chunk : Buffer.from(chunk).toString("utf8")
-    return true
-  }) as typeof process.stderr.write
-  try {
-    await makeCli({}).serve([...normalizeArgv(args), "--workspace", root], {
-      exit: (code) => {
-        exitCode = code
-      },
-      stdout: (text) => {
-        output += text
-      }
-    })
-  } finally {
-    process.stderr.write = errWrite
-  }
-  return { exitCode, output, logs }
-}
 
 const workspaceModule = (teams: string) =>
   `import { Smithers as S } from "@smthrs/targets"

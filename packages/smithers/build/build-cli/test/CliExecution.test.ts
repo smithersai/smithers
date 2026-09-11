@@ -2,7 +2,8 @@ import * as Fs from "node:fs/promises"
 import * as Os from "node:os"
 import * as NodePath from "node:path"
 import { afterAll, describe, expect, it } from "vitest"
-import { makeCli } from "../src/Cli.ts"
+import { serve } from "./helpers/ServeCli.ts"
+import { write } from "./helpers/WriteFile.ts"
 
 /** Temp directories this file created; removed after the suite so a run leaves nothing in the OS temp dir. */
 const temporaryDirectories: Array<string> = []
@@ -14,12 +15,6 @@ const tracked = async (directory: Promise<string>): Promise<string> => {
 afterAll(async () => {
   await Promise.all(temporaryDirectories.map((directory) => Fs.rm(directory, { recursive: true, force: true })))
 })
-
-const write = async (root: string, relative: string, text: string): Promise<void> => {
-  const path = NodePath.join(root, relative)
-  await Fs.mkdir(NodePath.dirname(path), { recursive: true })
-  await Fs.writeFile(path, text, "utf8")
-}
 
 const workspaceModule = (cacheDirectory: string): string =>
   `import { Smithers as S } from "@smthrs/targets"
@@ -42,24 +37,6 @@ export const Package = S.Package({ targets: { run: S.Shell.Run({ shell: "echo hi
 
 const temporaryWorkspace = async (): Promise<string> =>
   tracked(Fs.realpath(await Fs.mkdtemp(NodePath.join(Os.tmpdir(), "smthrs-package-cli-"))))
-
-/** Serves one command against a workspace, capturing exit code and output. */
-const serve = async (
-  root: string,
-  args: ReadonlyArray<string>
-): Promise<{ readonly exitCode: number; readonly output: string }> => {
-  let exitCode = 0
-  let output = ""
-  await makeCli({}).serve([...args, "--workspace", root], {
-    exit: (code) => {
-      exitCode = code
-    },
-    stdout: (text) => {
-      output += text
-    }
-  })
-  return { exitCode, output }
-}
 
 describe("PACKAGE.ts CLI", () => {
   // The vitest process cwd is the build-cli package, which is outside every

@@ -3,19 +3,13 @@ import * as Fs from "node:fs/promises"
 import * as Os from "node:os"
 import * as NodePath from "node:path"
 import { afterAll, describe, expect, it } from "vitest"
-import { makeCli, normalizeArgv } from "../src/Cli.ts"
-import { executionPresentation } from "./fixtures/presentation.ts"
+import { serve } from "./helpers/ServeCli.ts"
+import { write } from "./helpers/WriteFile.ts"
 
 const temporaryDirectories: Array<string> = []
 afterAll(async () => {
   await Promise.all(temporaryDirectories.map((directory) => Fs.rm(directory, { recursive: true, force: true })))
 })
-
-const write = async (root: string, relative: string, text: string): Promise<void> => {
-  const path = NodePath.join(root, relative)
-  await Fs.mkdir(NodePath.dirname(path), { recursive: true })
-  await Fs.writeFile(path, text, "utf8")
-}
 
 const workspace = `import { Smithers as S } from "@smthrs/targets"
 const packageJson = S.file("//package.json")
@@ -230,26 +224,6 @@ const markdownFixture = async (): Promise<string> => {
     workspace.replace("  cache:", "  sandboxes: S.Sandboxes({ default: S.Sandbox.None() }),\n  cache:")
   )
   return root
-}
-
-const serve = async (root: string, args: ReadonlyArray<string>) => {
-  let exitCode = 0
-  let output = ""
-  let logs = ""
-  const writeError = process.stderr.write.bind(process.stderr)
-  process.stderr.write = ((chunk: string | Uint8Array): boolean => {
-    logs += typeof chunk === "string" ? chunk : Buffer.from(chunk).toString("utf8")
-    return true
-  }) as typeof process.stderr.write
-  try {
-    await makeCli({ presentation: executionPresentation }).serve([...normalizeArgv(args), "--workspace", root], {
-      exit: (code) => void (exitCode = code),
-      stdout: (text) => void (output += text)
-    })
-  } finally {
-    process.stderr.write = writeError
-  }
-  return { exitCode, output, logs }
 }
 
 describe("Node lane package execution", () => {

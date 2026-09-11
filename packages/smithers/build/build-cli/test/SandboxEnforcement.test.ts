@@ -13,18 +13,13 @@ import * as NodeHttp from "node:http"
 import * as Os from "node:os"
 import * as NodePath from "node:path"
 import { afterAll, describe, expect, it } from "vitest"
-import { makeCli, normalizeArgv } from "../src/Cli.ts"
+import { serve } from "./helpers/ServeCli.ts"
+import { write } from "./helpers/WriteFile.ts"
 
 const temporaryDirectories: Array<string> = []
 afterAll(async () => {
   await Promise.all(temporaryDirectories.map((directory) => Fs.rm(directory, { recursive: true, force: true })))
 })
-
-const write = async (root: string, relative: string, text: string): Promise<void> => {
-  const path = NodePath.join(root, relative)
-  await Fs.mkdir(NodePath.dirname(path), { recursive: true })
-  await Fs.writeFile(path, text, "utf8")
-}
 
 const workspaceModule = (extra = ""): string =>
   `import { Smithers as S } from "@smthrs/targets"
@@ -54,33 +49,6 @@ const temporaryWorkspace = async (): Promise<string> => {
   await write(root, "package.json", `${JSON.stringify({ name: "fixture", private: true }, undefined, 2)}\n`)
   await write(root, "yarn.lock", "")
   return root
-}
-
-const serve = async (
-  root: string,
-  args: ReadonlyArray<string>
-): Promise<{ readonly exitCode: number; readonly output: string; readonly logs: string }> => {
-  let exitCode = 0
-  let output = ""
-  let logs = ""
-  const errWrite = process.stderr.write.bind(process.stderr)
-  process.stderr.write = ((chunk: string | Uint8Array): boolean => {
-    logs += typeof chunk === "string" ? chunk : Buffer.from(chunk).toString("utf8")
-    return true
-  }) as typeof process.stderr.write
-  try {
-    await makeCli({}).serve([...normalizeArgv(args), "--workspace", root], {
-      exit: (code) => {
-        exitCode = code
-      },
-      stdout: (text) => {
-        output += text
-      }
-    })
-  } finally {
-    process.stderr.write = errWrite
-  }
-  return { exitCode, output, logs }
 }
 
 /** Runs `body` with `PATH` reduced to one directory holding only the named tools. */

@@ -8,12 +8,12 @@ import * as Fs from "node:fs/promises"
 import * as Os from "node:os"
 import * as Path from "node:path"
 import { afterEach, describe, expect, it } from "vitest"
-import { makeCli, normalizeArgv } from "../src/Cli.ts"
 import * as PackageDiscovery from "../src/PackageDiscovery.ts"
 import * as PackageExec from "../src/PackageExec.ts"
 import { PackageIndex } from "../src/PackageIndex.ts"
 import * as PackageLoader from "../src/PackageLoader.ts"
-import { executionPresentation } from "./fixtures/presentation.ts"
+import { serve as serveCli } from "./helpers/ServeCli.ts"
+import { write } from "./helpers/WriteFile.ts"
 
 const temporary: Array<string> = []
 const originalPath = process.env["PATH"]
@@ -22,12 +22,6 @@ afterEach(async () => {
   else process.env["PATH"] = originalPath
   await Promise.all(temporary.splice(0).map((root) => Fs.rm(root, { recursive: true, force: true })))
 })
-
-const write = async (root: string, relative: string, text: string): Promise<void> => {
-  const file = Path.join(root, relative)
-  await Fs.mkdir(Path.dirname(file), { recursive: true })
-  await Fs.writeFile(file, text)
-}
 
 const manifestText = (manager = "11.25.0", description = "first"): string =>
   JSON.stringify({
@@ -96,34 +90,13 @@ if (args.length === 1 && args[0] === "--version") {
   return root
 }
 
-/** The real Incur entry point and package executor, with only presentation captured. */
+/** The real Incur entry point and package executor, with standard error and standard output read as one log. */
 const serve = async (
   root: string,
   args: ReadonlyArray<string> = ["build", "//:check", "--no-cache", "--jobs", "1"]
 ): Promise<{ readonly code: number; readonly output: string }> => {
-  let code = 0
-  let output = ""
-  const previous = process.stderr.write
-  process.stderr.write = ((chunk: string | Uint8Array): boolean => {
-    output += typeof chunk === "string" ? chunk : Buffer.from(chunk).toString("utf8")
-    return true
-  }) as typeof process.stderr.write
-  try {
-    await makeCli({ presentation: executionPresentation }).serve(
-      [...normalizeArgv(args), "--workspace", root],
-      {
-        exit: (value) => {
-          code = value
-        },
-        stdout: (value) => {
-          output += value
-        }
-      }
-    )
-  } finally {
-    process.stderr.write = previous
-  }
-  return { code, output }
+  const { exitCode, output, logs } = await serveCli(root, args)
+  return { code: exitCode, output: logs + output }
 }
 
 describe("manifest toolchain execution", () => {

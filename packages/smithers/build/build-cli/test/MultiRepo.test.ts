@@ -10,12 +10,12 @@ import * as Os from "node:os"
 import * as NodePath from "node:path"
 import { promisify } from "node:util"
 import { afterAll, describe, expect, it } from "vitest"
-import { makeCli, normalizeArgv, openPackageIndex } from "../src/Cli.ts"
+import { openPackageIndex } from "../src/Cli.ts"
 import * as PackageDiscovery from "../src/PackageDiscovery.ts"
 import { isPackageError } from "../src/PackageError.ts"
 import * as PackageLoader from "../src/PackageLoader.ts"
 import * as RepoResolution from "../src/RepoResolution.ts"
-import { executionPresentation } from "./fixtures/presentation.ts"
+import { serve } from "./helpers/ServeCli.ts"
 
 const executeFile = promisify(execFile)
 const fixture = NodePath.join(import.meta.dirname, "fixtures", "multi-repo")
@@ -64,37 +64,13 @@ const runCli = async (
   }
 }
 
+/** The in-process CLI, read in the same shape as {@link runCli}. */
 const serveCli = async (
   root: string,
   args: ReadonlyArray<string>
 ): Promise<{ readonly exitCode: number; readonly stdout: string; readonly stderr: string }> => {
-  let exitCode = 0
-  let stdout = ""
-  let stderr = ""
-  const stdoutWrite = process.stdout.write.bind(process.stdout)
-  const stderrWrite = process.stderr.write.bind(process.stderr)
-  process.stdout.write = ((chunk: string | Uint8Array): boolean => {
-    stdout += typeof chunk === "string" ? chunk : Buffer.from(chunk).toString("utf8")
-    return true
-  }) as typeof process.stdout.write
-  process.stderr.write = ((chunk: string | Uint8Array): boolean => {
-    stderr += typeof chunk === "string" ? chunk : Buffer.from(chunk).toString("utf8")
-    return true
-  }) as typeof process.stderr.write
-  try {
-    await makeCli({ presentation: executionPresentation }).serve([...normalizeArgv(args), "--workspace", root], {
-      exit: (code) => {
-        exitCode = code
-      },
-      stdout: (text) => {
-        stdout += text
-      }
-    })
-  } finally {
-    process.stdout.write = stdoutWrite
-    process.stderr.write = stderrWrite
-  }
-  return { exitCode, stdout, stderr }
+  const { exitCode, output, logs } = await serve(root, args)
+  return { exitCode, stdout: output, stderr: logs }
 }
 
 describe("opaque local repositories", () => {

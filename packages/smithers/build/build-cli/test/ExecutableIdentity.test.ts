@@ -8,12 +8,11 @@ import * as Fs from "node:fs/promises"
 import * as Os from "node:os"
 import * as Path from "node:path"
 import { afterEach, describe, expect, it } from "vitest"
-import { makeCli, normalizeArgv } from "../src/Cli.ts"
 import * as PackageDiscovery from "../src/PackageDiscovery.ts"
 import * as PackageExec from "../src/PackageExec.ts"
 import { PackageIndex } from "../src/PackageIndex.ts"
 import * as PackageLoader from "../src/PackageLoader.ts"
-import { executionPresentation } from "./fixtures/presentation.ts"
+import { serve as serveCli } from "./helpers/ServeCli.ts"
 
 const temporary: Array<string> = []
 const originalPath = process.env["PATH"]
@@ -71,25 +70,9 @@ export const Package = S.Package({ targets: { dist: ${target} } })`
   }
   return { root, tools }
 }
-const serve = async (root: string) => {
-  let exitCode = 0, output = "", logs = ""
-  const previous = process.stderr.write
-  process.stderr.write = ((chunk: string | Uint8Array): boolean => {
-    logs += String(chunk)
-    return true
-  }) as typeof process.stderr.write
-  try {
-    await makeCli({ presentation: executionPresentation }).serve([...normalizeArgv(["//:dist"]), "--workspace", root], {
-      exit: (code) => {
-        exitCode = code
-      },
-      stdout: (text) => {
-        output += text
-      }
-    })
-  } finally {
-    process.stderr.write = previous
-  }
+/** Builds `//:dist`, requires it green, and returns the standard error log. */
+const serve = async (root: string): Promise<string> => {
+  const { exitCode, output, logs } = await serveCli(root, ["//:dist"])
   expect(exitCode, logs + output).toBe(0)
   return logs
 }

@@ -1,23 +1,13 @@
 import * as NodePath from "node:path"
 import { fileURLToPath } from "node:url"
 import { describe, expect, it } from "vitest"
-import { makeCli, normalizeArgv } from "../src/Cli.ts"
+import { serve } from "./helpers/ServeCli.ts"
 
 const fixture = NodePath.join(NodePath.dirname(fileURLToPath(import.meta.url)), "fixtures", "viem-node-spec")
 
-const serve = async (args: ReadonlyArray<string>) => {
-  let exitCode = 0
-  let output = ""
-  await makeCli({}).serve([...normalizeArgv(args), "--workspace", fixture], {
-    exit: (code) => void (exitCode = code),
-    stdout: (text) => void (output += text)
-  })
-  return { exitCode, output }
-}
-
 describe("verbatim viem Node-only PACKAGE.ts fixture", () => {
   it("loads the packages that do not touch chain tooling", async () => {
-    const result = await serve(["query", "//...", "--format", "json"])
+    const result = await serve(fixture, ["query", "//...", "--format", "json"])
     expect(result.exitCode, result.output).toBe(0)
     const rows = JSON.parse(result.output).targets as ReadonlyArray<{ readonly target: string }>
     const rules = new Set(rows.map((row) => row.target))
@@ -29,7 +19,7 @@ describe("verbatim viem Node-only PACKAGE.ts fixture", () => {
   })
 
   it("graphs with exactly data/gates/services edges and zero warnings", async () => {
-    const result = await serve(["graph", "//...", "--format", "json"])
+    const result = await serve(fixture, ["graph", "//...", "--format", "json"])
     expect(result.exitCode, result.output).toBe(0)
     const graph = JSON.parse(result.output) as {
       readonly edges: ReadonlyArray<{ readonly kind: string }>

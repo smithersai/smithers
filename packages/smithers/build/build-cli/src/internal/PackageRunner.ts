@@ -419,9 +419,9 @@ export const execute = async (
       timeoutMs: node.timeoutMs
     }
     const ambient = options.environment ?? process.env
-    // A repository child streams to the parent process, which forwards both
-    // pipes verbatim, so its live view is written straight out instead of
-    // through this run's reporter. It stays an observer view either way:
+    // A repository child streams to the parent CLI, which forwards both pipes
+    // through its own reporter, so the child's live view is written straight
+    // to its process pipes instead of through a second reporter. It stays an observer view either way:
     // redacted, terminal-injection stripped, and line bounded.
     const repositoryChild = ambient["SMTHRS_REPO_CHILD"] === "1"
     const output = OutputStream.make({
@@ -1866,7 +1866,8 @@ export const execute = async (
           }
           await RepoResolution.execute(node.lane.resolution, {
             write: options.write,
-            signal
+            signal,
+            output: (stream, text) => reporter.toolOutput(node.label, stream, text)
           })
           await cachePut(node, {
             kind: "repo-target",

@@ -27,8 +27,8 @@ import * as NodeNet from "node:net"
 import * as Os from "node:os"
 import * as NodePath from "node:path"
 import { afterAll, describe, expect, it } from "vitest"
-import { makeCli, normalizeArgv } from "../src/Cli.ts"
-import { executionPresentation } from "./fixtures/presentation.ts"
+import { serve as serveCli, type ServeOptions } from "./helpers/ServeCli.ts"
+import { write } from "./helpers/WriteFile.ts"
 
 /** Temp directories this file created; removed after the suite so a run leaves nothing in the OS temp dir. */
 const temporaryDirectories: Array<string> = []
@@ -40,12 +40,6 @@ const tracked = async (directory: Promise<string>): Promise<string> => {
 afterAll(async () => {
   await Promise.all(temporaryDirectories.map((directory) => Fs.rm(directory, { recursive: true, force: true })))
 })
-
-const write = async (root: string, relative: string, text: string): Promise<void> => {
-  const path = NodePath.join(root, relative)
-  await Fs.mkdir(NodePath.dirname(path), { recursive: true })
-  await Fs.writeFile(path, text, "utf8")
-}
 
 const exists = async (path: string): Promise<boolean> => Fs.access(path).then(() => true, () => false)
 
@@ -115,41 +109,9 @@ const spawns = async (logPath: string): Promise<number> => {
   }
 }
 
-interface ServeOptions {
-  readonly environment?: Readonly<Record<string, string | undefined>>
-}
-
-/** Serves one command against a workspace, capturing exit code and output. */
-const serve = async (
-  root: string,
-  args: ReadonlyArray<string>,
-  options: ServeOptions = {}
-): Promise<{ readonly exitCode: number; readonly output: string; readonly logs: string }> => {
-  let exitCode = 0
-  let output = ""
-  let logs = ""
-  const errWrite = process.stderr.write.bind(process.stderr)
-  process.stderr.write = ((chunk: string | Uint8Array): boolean => {
-    logs += typeof chunk === "string" ? chunk : Buffer.from(chunk).toString("utf8")
-    return true
-  }) as typeof process.stderr.write
-  try {
-    await makeCli({
-      presentation: executionPresentation,
-      environment: options.environment ?? { ...process.env, SMTHRS_AGENT_FAKE: "fake.json" }
-    }).serve([...normalizeArgv(args), "--workspace", root], {
-      exit: (code) => {
-        exitCode = code
-      },
-      stdout: (text) => {
-        output += text
-      }
-    })
-  } finally {
-    process.stderr.write = errWrite
-  }
-  return { exitCode, output, logs }
-}
+/** Serves one command with the fake agent selected unless a case supplies its own environment. */
+const serve = (root: string, args: ReadonlyArray<string>, options: ServeOptions = {}) =>
+  serveCli(root, args, { environment: options.environment ?? { ...process.env, SMTHRS_AGENT_FAKE: "fake.json" } })
 
 /** A TCP port nothing listens on. */
 const closedPort = (): Promise<number> =>

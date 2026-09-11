@@ -6,10 +6,9 @@ import * as Os from "node:os"
 import * as NodePath from "node:path"
 import { afterAll, describe, expect, it } from "vitest"
 import * as AnvilExec from "../src/AnvilExec.ts"
-import { makeCli, normalizeArgv } from "../src/Cli.ts"
 import * as DockerExec from "../src/DockerExec.ts"
 import * as PackageTree from "../src/PackageTree.ts"
-import { executionPresentation } from "./fixtures/presentation.ts"
+import { serve } from "./helpers/ServeCli.ts"
 
 const fixture = NodePath.resolve(import.meta.dirname, "fixtures/chain-exec")
 const temporaryDirectories: Array<string> = []
@@ -95,38 +94,6 @@ const workspace = async (): Promise<string> => {
   temporaryDirectories.push(root)
   await Fs.cp(fixture, root, { recursive: true })
   return root
-}
-
-const serve = async (
-  root: string,
-  args: ReadonlyArray<string>,
-  environment?: Readonly<Record<string, string | undefined>>
-): Promise<{ readonly exitCode: number; readonly output: string; readonly logs: string }> => {
-  let exitCode = 0
-  let output = ""
-  let logs = ""
-  const errWrite = process.stderr.write.bind(process.stderr)
-  process.stderr.write = ((chunk: string | Uint8Array): boolean => {
-    logs += typeof chunk === "string" ? chunk : Buffer.from(chunk).toString("utf8")
-    return true
-  }) as typeof process.stderr.write
-  try {
-    await makeCli({ presentation: executionPresentation, environment }).serve([
-      ...normalizeArgv(args),
-      "--workspace",
-      root
-    ], {
-      exit: (code) => {
-        exitCode = code
-      },
-      stdout: (text) => {
-        output += text
-      }
-    })
-  } finally {
-    process.stderr.write = errWrite
-  }
-  return { exitCode, output, logs }
 }
 
 const freePort = (): Promise<number> =>
@@ -652,7 +619,10 @@ export const Package = S.Package({ targets: { tool } })
 `,
       "utf8"
     )
-    const result = await withoutOnPath("mise", () => serve(root, ["//:tool", "--plan"], { ...process.env, PATH: "" }))
+    const result = await withoutOnPath(
+      "mise",
+      () => serve(root, ["//:tool", "--plan"], { environment: { ...process.env, PATH: "" } })
+    )
     expect(result.exitCode).toBe(0)
     expect(result.output).toContain("host binary")
     expect(result.output).toContain("mise")

@@ -20,17 +20,12 @@ import * as PackageExec from "../src/PackageExec.ts"
 import { PackageIndex } from "../src/PackageIndex.ts"
 import * as PackageLoader from "../src/PackageLoader.ts"
 import type * as Reporter from "../src/Reporter.ts"
+import { write } from "./helpers/WriteFile.ts"
 
 const temporaryDirectories: Array<string> = []
 afterAll(async () => {
   await Promise.all(temporaryDirectories.map((directory) => Fs.rm(directory, { recursive: true, force: true })))
 })
-
-const write = async (root: string, relative: string, text: string): Promise<void> => {
-  const path = NodePath.join(root, relative)
-  await Fs.mkdir(NodePath.dirname(path), { recursive: true })
-  await Fs.writeFile(path, text, "utf8")
-}
 
 const git = (root: string, ...args: ReadonlyArray<string>): string =>
   NodeChildProcess.execFileSync("git", ["-C", root, ...args], { encoding: "utf8" })

@@ -290,6 +290,8 @@ interface PlanContext {
   readonly repoResolutions: RepoResolution.ResolutionCache
   /** Whether Repo.Target must ask the child CLI for its inert plan. */
   readonly childPlan: boolean
+  /** Receives the child CLI's plan output, so it reaches the run's terminals. */
+  readonly reporter: Reporter.Reporter
   /** Whether the parent invocation selected write mode. */
   readonly write: boolean
   /** The verb-effective target view, absent only for the bare-label form. */
@@ -1396,11 +1398,13 @@ const visit = async (
         noteRefusal(`child repository @${repositoryResolution.repoName}: ${Diagnostic.describe(cause)}`)
       }
       if (context.childPlan && refusal === undefined) {
+        const childLabel = `@${repositoryResolution.repoName}${repositoryResolution.label}`
         try {
           await RepoResolution.execute(repositoryResolution, {
             plan: true,
             write: context.write,
-            signal: context.signal
+            signal: context.signal,
+            output: (stream, text) => context.reporter.toolOutput(childLabel, stream, text)
           })
         } catch (cause) {
           noteRefusal(`child repository @${repositoryResolution.repoName} plan refused: ${Diagnostic.describe(cause)}`)
@@ -3068,7 +3072,8 @@ export const planEnvironment = (
  */
 export const plan = async (options: RunOptions): Promise<PackagePlan> => {
   const index = options.index
-  const log = Reporter.of(options).note
+  const reporter = Reporter.of(options)
+  const log = reporter.note
   const verb = options.verb
   const parsedPattern = Label.parse(options.pattern, index.currentPackage ?? "")
   const omitExclusive = (verb === "test" || options.unattended === true) &&
@@ -3175,6 +3180,7 @@ export const plan = async (options: RunOptions): Promise<PackagePlan> => {
     graphDigests: new Map(),
     repoResolutions,
     childPlan: options.plan === true,
+    reporter,
     write: options.write === true,
     kind: verb === "auto" ? undefined : verb
   }

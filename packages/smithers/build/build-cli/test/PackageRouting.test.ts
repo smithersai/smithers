@@ -7,6 +7,7 @@ import * as PackageDiscovery from "../src/PackageDiscovery.ts"
 import { isPackageError, PackageError } from "../src/PackageError.ts"
 import { PackageIndex } from "../src/PackageIndex.ts"
 import * as PackageLoader from "../src/PackageLoader.ts"
+import { write } from "./helpers/WriteFile.ts"
 
 /** Temp directories this file created; removed after the suite so a run leaves nothing in the OS temp dir. */
 const temporaryDirectories: Array<string> = []
@@ -130,12 +131,6 @@ const errorCode = async (work: () => Promise<unknown>): Promise<PackageError["co
     throw cause
   }
   throw new Error("expected a PackageError")
-}
-
-const write = async (root: string, relative: string, text: string): Promise<void> => {
-  const path = NodePath.join(root, relative)
-  await Fs.mkdir(NodePath.dirname(path), { recursive: true })
-  await Fs.writeFile(path, text, "utf8")
 }
 
 const workspaceModule = `import { Smithers as S } from "@smthrs/targets"

@@ -29,10 +29,10 @@ import * as NodePath from "node:path"
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest"
 import * as AgentFake from "../src/AgentFake.ts"
 import type * as AgentSession from "../src/AgentSession.ts"
-import { makeCli, normalizeArgv } from "../src/Cli.ts"
 import { graphKeySentinel, keyMaterialWithGraph } from "../src/PackageExec.ts"
 import * as PackageTree from "../src/PackageTree.ts"
-import { executionPresentation } from "./fixtures/presentation.ts"
+import { serve } from "./helpers/ServeCli.ts"
+import { write } from "./helpers/WriteFile.ts"
 
 /** Temp directories this file created; removed after the suite so a run leaves nothing in the OS temp dir. */
 const temporaryDirectories: Array<string> = []
@@ -47,12 +47,6 @@ afterAll(async () => {
 
 const fixtureServer = NodePath.resolve(import.meta.dirname, "fixtures/service-supervisor/server.mjs")
 const rsbuildFixture = NodePath.resolve(import.meta.dirname, "fixtures/rsbuild-mini")
-
-const write = async (root: string, relative: string, text: string): Promise<void> => {
-  const path = NodePath.join(root, relative)
-  await Fs.mkdir(NodePath.dirname(path), { recursive: true })
-  await Fs.writeFile(path, text, "utf8")
-}
 
 const workspaceModule = (): string =>
   `import { Smithers as S } from "@smthrs/targets"
@@ -77,41 +71,6 @@ const commitAll = (root: string): void => {
 
 const temporaryWorkspace = async (): Promise<string> =>
   tracked(Fs.realpath(await Fs.mkdtemp(NodePath.join(Os.tmpdir(), "smthrs-lane-exec-"))))
-
-/** Serves one command against a workspace, capturing exit code and output. */
-const serve = async (
-  root: string,
-  args: ReadonlyArray<string>,
-  live: { readonly signal?: AbortSignal; readonly onLog?: (line: string) => void } = {}
-): Promise<{ readonly exitCode: number; readonly output: string; readonly logs: string }> => {
-  let exitCode = 0
-  let output = ""
-  let logs = ""
-  const errWrite = process.stderr.write.bind(process.stderr)
-  process.stderr.write = ((chunk: string | Uint8Array): boolean => {
-    const text = typeof chunk === "string" ? chunk : Buffer.from(chunk).toString("utf8")
-    logs += text
-    live.onLog?.(text)
-    return true
-  }) as typeof process.stderr.write
-  try {
-    await makeCli({ presentation: executionPresentation, signal: live.signal }).serve([
-      ...normalizeArgv(args),
-      "--workspace",
-      root
-    ], {
-      exit: (code) => {
-        exitCode = code
-      },
-      stdout: (text) => {
-        output += text
-      }
-    })
-  } finally {
-    process.stderr.write = errWrite
-  }
-  return { exitCode, output, logs }
-}
 
 const freePort = (): Promise<number> =>
   new Promise((resolve, reject) => {
