@@ -22,7 +22,7 @@ import * as fs from "node:fs"
 import * as path from "node:path"
 import { FlowEngine } from "@smthrs/engine"
 import { Action, Flow, Interpreter } from "@smthrs/flow"
-import { libraryPackages } from "../../scripts/workspace-packages.mjs"
+import { libraryPackages, type WorkspacePackage } from "../../scripts/workspace-packages.mjs"
 
 export const REPO_ROOT = path.resolve(import.meta.dirname, "../..")
 export const REPORTS_DIR = path.join(REPO_ROOT, "factory/reports")
@@ -351,27 +351,22 @@ export const chunk = <T>(items: ReadonlyArray<T>, size: number): Array<Array<T>>
   return waves
 }
 
-export interface WorkspacePackage {
-  /** Repository-relative directory, including the packages/ prefix. */
-  readonly dir: string
-  readonly npmName: string
-}
-
-/** Reads and validates every workspace package identity before it reaches a command argument. */
-export const listWorkspacePackages = (): Array<WorkspacePackage> =>
-  libraryPackages(REPO_ROOT).map(({ dir, manifest, manifestPath }) => {
+/**
+ * The library packages the factory may hand to a command argument, as the
+ * shared workspace reader names them: `dir` is the repository-relative
+ * directory and `name` is the manifest's npm name. Both are validated here
+ * because they are spliced into prompts and `pnpm --filter` arguments.
+ */
+export const listWorkspacePackages = (): Array<Pick<WorkspacePackage, "dir" | "name">> =>
+  libraryPackages(REPO_ROOT).map(({ dir, name, manifestPath }) => {
     if (!/^packages\/[a-z0-9]+(?:-[a-z0-9]+)*(?:\/[a-z0-9]+(?:-[a-z0-9]+)*)*$/.test(dir)) {
       throw new Error(`Unsafe workspace package directory: ${JSON.stringify(dir)}`)
     }
-    const npmName = manifest.name
-    if (typeof npmName !== "string" || !/^(?:@[a-z0-9][a-z0-9._-]*\/)?[a-z0-9][a-z0-9._-]*$/.test(npmName)) {
+    if (typeof name !== "string" || !/^(?:@[a-z0-9][a-z0-9._-]*\/)?[a-z0-9][a-z0-9._-]*$/.test(name)) {
       throw new Error(`${manifestPath} must declare a safe npm package name`)
     }
-    return { dir, npmName }
+    return { dir, name }
   })
-
-/** Lists validated repository-relative workspace package directories. */
-export const listPackages = (): Array<string> => listWorkspacePackages().map((pkg) => pkg.dir)
 
 /** Parses an optional exact `--packages a,b` selection and rejects every ambiguous form. */
 export const selectPackages = (

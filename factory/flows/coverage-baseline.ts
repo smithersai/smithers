@@ -77,7 +77,7 @@ for (let index = 0; index < waves.length; index++) {
               ShellTask.call({
                 id: pkg.replaceAll("/", "."),
                 command: "pnpm",
-                args: ["--filter", descriptor.npmName, "exec", "vitest", "run", "--coverage"],
+                args: ["--filter", descriptor.name, "exec", "vitest", "run", "--coverage"],
                 cwd: REPO_ROOT,
                 timeoutMs: TIMEOUT_MS,
                 logDir

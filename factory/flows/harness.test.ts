@@ -8,7 +8,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { libraryPackages } from "../../scripts/workspace-packages.mjs"
-import { listPackages, listWorkspacePackages, makeConfinementValidator, REPO_ROOT, runProcess, selectPackages } from "./harness.ts"
+import { listWorkspacePackages, makeConfinementValidator, REPO_ROOT, runProcess, selectPackages } from "./harness.ts"
 
 const temporaryRoots: string[] = []
 afterEach(() => {
@@ -19,14 +19,13 @@ describe("factory harness guards", () => {
   test("workspace package identities are read from exact manifests", () => {
     const packages = listWorkspacePackages()
     expect(packages.length).toBeGreaterThan(0)
-    expect(packages.map((pkg) => pkg.dir)).toEqual(libraryPackages().map((pkg) => pkg.dir))
-    expect(listPackages()).toEqual(packages.map((pkg) => pkg.dir))
-    expect(packages).toContainEqual({ dir: "packages/smithers", npmName: "@smthrs/cli" })
-    expect(packages).toContainEqual({ dir: "packages/smthrs-deprecation", npmName: "smthrs" })
-    expect(packages).toContainEqual({ dir: "packages/smithers/flows/flow", npmName: "@smthrs/flow" })
+    expect(packages).toEqual(libraryPackages().map(({ dir, name }) => ({ dir, name })))
+    expect(packages).toContainEqual({ dir: "packages/smithers", name: "@smthrs/cli" })
+    expect(packages).toContainEqual({ dir: "packages/smthrs-deprecation", name: "smthrs" })
+    expect(packages).toContainEqual({ dir: "packages/smithers/flows/flow", name: "@smthrs/flow" })
     for (const pkg of packages) {
       const manifest = JSON.parse(readFileSync(join(REPO_ROOT, pkg.dir, "package.json"), "utf8"))
-      expect(pkg.npmName).toBe(manifest.name)
+      expect(pkg.name).toBe(manifest.name)
     }
   })
 

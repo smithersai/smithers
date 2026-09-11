@@ -13,7 +13,7 @@ import * as fs from "node:fs"
 import * as path from "node:path"
 import { Flow } from "@smthrs/flow"
 import { Node } from "@smthrs/plan"
-import { AgentTask, chunk, listPackages, REPO_ROOT, REPORTS_DIR, runFlow, type TaskResult } from "./harness.ts"
+import { AgentTask, chunk, listWorkspacePackages, REPO_ROOT, REPORTS_DIR, runFlow, type TaskResult } from "./harness.ts"
 
 const WAVE_SIZE = 8
 const MODEL = "sonnet"
@@ -32,7 +32,7 @@ const promptFor = (pkg: string): string =>
     "When finished, print DONE followed by the number of @slop tags you added."
   ].join(" ")
 
-const packages = listPackages()
+const packages = listWorkspacePackages().map((pkg) => pkg.dir)
 const waves = chunk(packages, WAVE_SIZE)
 const countCommand = `grep -rn "@slop" ${packages.map((pkg) => `${pkg}/src`).join(" ")} 2>/dev/null | wc -l`
 const results: Array<TaskResult> = []
