@@ -110,7 +110,7 @@ export { Input, Textarea } from "./input";
 export { Label, Field } from "./label";
 export { ChatMessage, type ChatMessageProps, type ChatMessageRole } from "./chat/ChatMessage";
 export { ChatTranscript, type ChatTranscriptProps } from "./chat/ChatTranscript";
-export { ChatComposer, type ChatComposerProps, type ChatComposerStatus } from "./chat/ChatComposer";
+export { ChatComposer, type ChatComposerError, type ChatComposerProps, type ChatComposerStatus } from "./chat/ChatComposer";
 export {
   MessageScrollerProvider,
   MessageScrollerViewport,

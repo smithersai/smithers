@@ -85,6 +85,15 @@ reports the same code.
 what the user typed is the worst outcome available, so the text and its
 attachments stay until a submit succeeds.
 
+### `ChatComposer`
+
+`src/chat/ChatComposer.tsx` reports through `onError` with
+`ChatComposerError = { code: "submit-failed", cause }`. It fires once when
+`onSubmit` throws synchronously or its returned promise rejects. Without
+`onError`, the cause goes to `globalThis.reportError`, so the failure is never
+an unhandled rejection. The composer is controlled and never changes `value`;
+the host decides whether to keep or clear the draft.
+
 ### The vault autosave machine
 
 `src/vault/autosaveMachine.ts` carries the failure on the snapshot beside the

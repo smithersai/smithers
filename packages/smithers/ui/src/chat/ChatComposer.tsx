@@ -18,10 +18,15 @@ export type ChatComposerStatus = "ready" | "streaming" | "submitted";
 /** Matches the 160px max-height on .sui-chat-composer-input in uiCss. */
 const COMPOSER_INPUT_MAX_HEIGHT = 160;
 
-export type ChatComposerProps = Omit<ComponentProps<"form">, "onSubmit"> & {
+/** Mirrors PromptInput's `submit-failed`: `onSubmit` threw or its promise rejected. */
+export type ChatComposerError = { code: "submit-failed"; cause: unknown; };
+
+export type ChatComposerProps = Omit<ComponentProps<"form">, "onSubmit" | "onError"> & {
   value: string;
   onValueChange: (value: string) => void;
   onSubmit: (value: string) => void | Promise<void>;
+  /** Receives a thrown or rejected `onSubmit`. Without it the cause goes to `globalThis.reportError`. The draft is never touched. */
+  onError?: (error: ChatComposerError) => void;
   placeholder?: string;
   /** Lifecycle state, mirroring PromptInput: while submitted|streaming the composer is busy, submission is blocked, and a Stop button appears when `onStop` is set. */
   lifecycleStatus?: ChatComposerStatus;
@@ -62,6 +67,7 @@ export function ChatComposer({
   value,
   onValueChange,
   onSubmit,
+  onError,
   placeholder = "Message Smithers…",
   lifecycleStatus = "ready",
   onStop,
@@ -106,7 +112,16 @@ export function ChatComposer({
     event.preventDefault();
     const nextValue = value.trim();
     if (!nextValue || disabled || busy) return;
-    void onSubmit(nextValue);
+    // The host owns the draft, so a failure only reports; it never clears.
+    const fail = (cause: unknown) => {
+      if (onError) onError({ code: "submit-failed", cause });
+      else globalThis.reportError?.(cause);
+    };
+    try {
+      void Promise.resolve(onSubmit(nextValue)).catch(fail);
+    } catch (cause) {
+      fail(cause);
+    }
   };
 
   const onKeyDown = (event: ReactKeyboardEvent<HTMLTextAreaElement>) => {
