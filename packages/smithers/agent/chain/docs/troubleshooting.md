@@ -107,8 +107,9 @@ them; they never reach the run's error channel:
   serialize.
 - `script_failed`: the script failed to compile (`compile`), threw at
   runtime (`runtime`), returned a non-outcome or non-JSON value
-  (`invalid_outcome`), or awaited a promise outside `ctx.call`, which never
-  settles. A `runtime` message starting with `host:` came from the
+  (`invalid_outcome`), or stalled on a promise that no runnable jobs and no
+  queued `ctx.call` can settle (`runtime`; local promise composition over
+  calls is fine). A `runtime` message starting with `host:` came from the
   QuickJS runner itself, not the script; the runner logs the defect and its
   cause at `Warning` level.
 

@@ -44,11 +44,16 @@ it returns:
 - `park(code, message)` suspends the lineage with a typed waiting reason.
 
 Returning anything else, or a value that is not JSON, fails the script with
-`invalid_outcome`. Awaiting anything other than `ctx.call` fails it too: a
-promise outside the one supported async door never settles, and both runners
-report it as a runtime failure. These failures become journaled
-`script_failed` observations the next author routes around; they never reach
-the run's error channel.
+`invalid_outcome`. `ctx.call` is the only EXTERNAL asynchronous operation:
+there is no timer, network, or file system door, so nothing else can settle
+from outside the script. Local promise composition works in both runners
+(`await Promise.resolve(42)`, `Promise.all` over several calls,
+`Promise.race`, `.catch`), because each runner drains the script's own
+promise jobs before it decides the script is stuck. A script that is still
+pending with no runnable jobs and no queued catalog call, such as
+`await new Promise(function () {})`, fails with `runtime`. These failures
+become journaled `script_failed` observations the next author routes around;
+they never reach the run's error channel.
 
 ## The sealed realm
 

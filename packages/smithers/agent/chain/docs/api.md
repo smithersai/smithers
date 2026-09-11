@@ -54,8 +54,15 @@ no promise.
 `ScriptRunner`) and picks up `Authorize` and `Steering` when they are
 mounted.
 
+Neither `Chain` nor `ModelAuthor` writes a prompt. `Chain.run` defaults
+`prefix` to the empty string and `ModelAuthor` sends no system part for an
+empty prefix, so a model-backed run that passes only a `goal` hands the model
+nothing about links, flow scripts, `ctx.call`, outcomes, or the entries it may
+call. Assemble the prefix from the mounted catalog with `Prompt.forCatalog`
+and pass it to every `Chain.run`.
+
 ```ts
-import { Catalog, Chain, Journal, ModelAuthor, QuickJsRunner } from "@smthrs/chain"
+import { Catalog, Chain, Journal, ModelAuthor, Prompt, QuickJsRunner } from "@smthrs/chain"
 import { Effect, Layer } from "effect"
 
 // `ModelAuthor.layer` needs `Model.Model`, and `Layer.mergeAll` does not
@@ -70,14 +77,22 @@ const layers = Layer.mergeAll(
   Catalog.layer(Catalog.withSystem(hostEntries))
 )
 
+// The prefix is assembled from the SAME catalog service the chain dispatches
+// against, so the entries the model reads are the entries it can call.
+const program = Effect.gen(function*() {
+  const catalog = yield* Catalog.Catalog
+  return yield* Chain.run({
+    goal: "fix the failing test",
+    prefix: Prompt.forCatalog(catalog, "concierge")
+  })
+})
+
 // `QuickJsRunner.layer()` carries a `ScriptFailure` error, so the composed
 // program can also fail with `runner_unavailable` while the layers are being
 // built, before any run starts. Compiling the WebAssembly module is the
 // thing that can fail (a browser CSP blocking WebAssembly, say), and that is
 // a typed, retryable unavailability rather than a defect.
-const terminal = await Effect.runPromise(
-  Chain.run({ goal: "fix the failing test" }).pipe(Effect.provide(layers))
-)
+const terminal = await Effect.runPromise(program.pipe(Effect.provide(layers)))
 ```
 
 A catalog layer that itself needs the base services (`SubChains.make` is

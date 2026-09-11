@@ -149,6 +149,50 @@ executing anything, and a half-finished link replays its settled calls by
 ordinal before running live. For the re-keying rules and the failures that
 guard them, see [Resume and replay](./guides/resume-and-replay.md).
 
+## 7. Drive it with a model
+
+Swap the scripted author for `ModelAuthor.layer(config)` over a `Model.Model`
+layer from the [@smthrs/model package](/api/model). The model layer goes
+UNDER the author layer with `Layer.provide`: siblings in one `Layer.mergeAll`
+cannot satisfy each other.
+
+Neither `Chain` nor `ModelAuthor` writes a prompt. `Chain.run` defaults
+`prefix` to the empty string and `ModelAuthor` sends no system part for an
+empty prefix, so a run that passes only a `goal` gives the model no flow
+contract and no catalog. Read the mounted catalog and assemble the prefix
+with `Prompt.forCatalog` so the entries the model reads are the entries the
+chain dispatches:
+
+```ts
+import { Catalog, Chain, Journal, ModelAuthor, Prompt, QuickJsRunner } from "@smthrs/chain"
+import { Effect, Layer } from "effect"
+
+const author = ModelAuthor.layer({ modelId: "claude-opus-5" }).pipe(
+  Layer.provide(modelLayer)
+)
+
+const layers = Layer.mergeAll(
+  Journal.layerMemory(),
+  author,
+  QuickJsRunner.layer(),
+  Catalog.layer(Catalog.withSystem([grep, edit]))
+)
+
+const program = Effect.gen(function*() {
+  const catalog = yield* Catalog.Catalog
+  return yield* Chain.run({
+    goal: "fix TODOs",
+    prefix: Prompt.forCatalog(catalog, "concierge")
+  })
+})
+
+const outcome = await Effect.runPromise(program.pipe(Effect.provide(layers)))
+```
+
+The prefix is byte-stable for the same catalog, so the provider's prompt
+cache hits across links. A host that mounts more than the chain dispatches
+passes the prose that teaches it as the third `forCatalog` argument.
+
 ## Next steps
 
 - [Concepts](./concepts/journal.md): the journal, keyed replay, the

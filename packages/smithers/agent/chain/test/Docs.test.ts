@@ -204,6 +204,46 @@ describe("package documentation", () => {
     expect(readme).toContain("https://chain.smithers.sh/contract/")
   })
 
+  // Neither `Chain` nor `ModelAuthor` supplies a prompt: `Chain.run` defaults
+  // `prefix` to "" and `ModelAuthor` emits no system part for it. Every
+  // model-backed composition the docs show must therefore hand the model
+  // the flow contract and the mounted catalog through `Prompt.forCatalog`.
+  it.each([
+    ["docs", "api.md"],
+    ["docs", "quickstart.md"],
+    ["README.md"]
+  ])("hands the model a catalog prefix in the model-backed composition in %s", (...parts) => {
+    const document = read(...parts)
+    expect(document).toContain("ModelAuthor.layer(")
+    expect(document).toContain("prefix: Prompt.forCatalog(catalog, \"concierge\")")
+    expect(document).not.toContain("the same four layers drive a real agent")
+  })
+
+  // Both runners execute ordinary promise jobs; `ctx.call` is the only
+  // EXTERNAL async operation. The failure is a still-pending script with no
+  // runnable jobs and no queued catalog calls, never "any await that is not
+  // ctx.call".
+  it.each([
+    ["docs", "concepts", "flow-scripts.md"],
+    ["docs", "guides", "testing.md"],
+    ["docs", "troubleshooting.md"]
+  ])("scopes the pending-script failure to idle promises in %s", (...parts) => {
+    const document = read(...parts).replace(/\s+/g, " ")
+    expect(document).not.toContain("Awaiting anything other than `ctx.call` fails")
+    expect(document).not.toContain("a promise outside `ctx.call` never settles")
+    expect(document).not.toContain("awaited a promise outside `ctx.call`, which never settles")
+    expect(document).toContain("no runnable jobs")
+  })
+
+  // `Chain` builds `[...context, ...promoted.map(line => \`[steering] ${line}\`)]`
+  // (see test/Steering.test.ts), so drained lines follow the caller's context.
+  it("orders promoted steering lines after the caller's context in the steering guide", () => {
+    const document = read("docs", "guides", "steering.md").replace(/\s+/g, " ")
+    expect(document).not.toContain("prepends each drained line")
+    expect(document).toContain("appends each drained line to the author context")
+    expect(document).toContain("`[\"fix TODOs\", \"[steering] ship it today\"]`")
+  })
+
   it("leaves no source file citing a document this repository does not carry", () => {
     // Every module used to name a `docs/specs/Concepts/*.md` file as its
     // governing contract. That directory never came across with the package,

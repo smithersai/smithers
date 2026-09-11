@@ -65,12 +65,15 @@ const outcome = await Effect.runPromise(
 // { _tag: "Done", value: { matched: 2 } }
 ````
 
-Swap `Author.layerMock` for `ModelAuthor.layer(config)` over a real model and
-the same four layers drive a real agent. `Chain.run` requires `Journal`,
-`Catalog`, `Author`, and `ScriptRunner`, and picks up the optional
-`Authorize` and `Steering` seams when they are mounted. A catalog layer that
-itself needs those services, such as `SubChains`, must be built over the SAME
-instances the chain runs on.
+To drive a real agent, swap `Author.layerMock` for `ModelAuthor.layer(config)`
+over a real model AND pass the model its instructions: neither `Chain` nor
+`ModelAuthor` writes a prompt, so read the mounted catalog and call
+`Chain.run({ goal, prefix: Prompt.forCatalog(catalog, "concierge") })`. The
+[Quickstart](https://chain.smithers.sh/quickstart/) shows that composition.
+`Chain.run` requires `Journal`, `Catalog`, `Author`, and `ScriptRunner`, and
+picks up the optional `Authorize` and `Steering` seams when they are mounted.
+A catalog layer that itself needs those services, such as `SubChains`, must
+be built over the SAME instances the chain runs on.
 
 ## Two runners, one sandbox
 

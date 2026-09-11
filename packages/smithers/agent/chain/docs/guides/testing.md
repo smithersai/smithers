@@ -50,9 +50,11 @@ This package runs a conformance set over BOTH bindings, so they agree on the
 behavior a host depends on: calls settle one at a time in issue order, race
 losers settle durably, `to` re-derives the successor digest (a forged digest
 is discarded), `park` defaults its message, thrown scripts fail `runtime`,
-non-outcomes fail `invalid_outcome`, and a promise outside `ctx.call` never
-settles. Keep your own runner doubles inside that envelope and the two
-bindings stay interchangeable in tests.
+non-outcomes fail `invalid_outcome`, local promise composition
+(`Promise.all`, `Promise.race`, `.catch`) works, and a script left pending
+with no runnable jobs and no queued catalog call fails `runtime`. Keep your
+own runner doubles inside that envelope and the two bindings stay
+interchangeable in tests.
 
 To test the runner's load failure path, inject the loader:
 `QuickJsRunner.make({}, () => Promise.reject(new Error("csp blocked wasm")))`

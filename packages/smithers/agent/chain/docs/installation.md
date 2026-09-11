@@ -60,4 +60,6 @@ entries shadow reserved names. For the failure taxonomy, see
 [@smthrs/model package](/api/model). Provide the model layer UNDER the author
 layer with `Layer.provide`, not beside it in `Layer.mergeAll`: siblings in one
 `mergeAll` cannot satisfy each other. The
-[Quickstart](./quickstart.md) shows the full composition.
+[Quickstart](./quickstart.md#7-drive-it-with-a-model) shows the full
+composition, including the `Prompt.forCatalog` prefix a model-backed run
+must pass to `Chain.run`.
