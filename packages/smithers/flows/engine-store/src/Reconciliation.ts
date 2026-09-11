@@ -171,17 +171,20 @@ export const layer = (service: Service): Layer.Layer<Reconciliation> => Layer.su
 export const makeDefault = (): Service => ({
   onDeviation: Effect.fn("Reconciliation.onDeviation")((deviation) => {
     const paths = [...new Set(deviation.paths)]
+    // Own keys only: a path named `toString` must not resolve to Object.prototype.
+    const ownerOf = (path: string): string | undefined =>
+      Object.hasOwn(deviation.declaredBy, path) ? deviation.declaredBy[path] : undefined
     const discovered = [
       ...new Set(
         paths
-          .map((path) => deviation.declaredBy[path])
+          .map(ownerOf)
           .filter((owner): owner is string => owner !== undefined && owner !== deviation.nodeId)
       )
     ]
     if (
       discovered.length > 0 &&
       paths.every((path) => {
-        const owner = deviation.declaredBy[path]
+        const owner = ownerOf(path)
         return owner !== undefined && owner !== deviation.nodeId
       })
     ) {

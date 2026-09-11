@@ -1321,11 +1321,15 @@ export const make = (options: Options): Service => {
             const alsoDeviatedBy = [...deviationSignatures.entries()]
               .filter(([other, otherSignature]) => other !== nodeId && otherSignature === signature)
               .map(([other]) => other)
-            const declaredBy = Object.fromEntries(
-              payload.paths.flatMap((path) => {
-                const owner = writerFor(path)
-                return owner === undefined ? [] : [[path, owner] as const]
-              })
+            // Null prototype: a reconciler's lookup of a path named `toString` must miss.
+            const declaredBy: Record<string, string> = Object.assign(
+              Object.create(null),
+              Object.fromEntries(
+                payload.paths.flatMap((path) => {
+                  const owner = writerFor(path)
+                  return owner === undefined ? [] : [[path, owner] as const]
+                })
+              )
             )
             const verdict = yield* reconciler.onDeviation({
               nodeId,
