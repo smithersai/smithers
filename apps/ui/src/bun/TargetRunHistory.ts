@@ -1,5 +1,6 @@
 import { appendFile, mkdir, readdir, writeFile } from "node:fs/promises"
 import { join } from "node:path"
+import * as Redaction from "@smthrs/journal/Redaction"
 import { RunRecordSchema, TargetRunEventSchema } from "@smthrs/rpc/TargetGraph"
 import type { RunRecord, RunReplayResponse, TargetRunEvent } from "@smthrs/rpc/TargetGraph"
 import { readJournalLines } from "./JournalLines"
@@ -16,6 +17,10 @@ interface StoredRun {
   appendError?: Error
   /** Retained stdout/stderr characters, kept under MAX_RETAINED_LOG_CHARS. */
   logChars: number
+  /** Log characters written to the journal, kept under the on-disk cap. */
+  journalChars: number
+  /** The truncation marker was written; later log frames are dropped. */
+  truncated: boolean
   /** Log characters enqueued for append and not yet written or failed. */
   pendingChars: number
   /** Callers waiting for `pendingChars` to fall back under MAX_PENDING_LOG_CHARS. */
@@ -39,7 +44,7 @@ export interface TargetRunHistory {
 
 /*
  * The in-memory cap on one run's retained stdout/stderr. The .jsonl journal on
- * disk keeps every successfully appended frame; append failures mark the run
+ * disk keeps every appended frame up to MAX_JOURNAL_LOG_CHARS; append failures mark the run
  * degraded and stop further writes. This bounds the heap per run, because a
  * chatty node emits megabytes. The TAIL is what a human reads, so eviction
  * drops the OLDEST log frames and never a structured frame
@@ -62,11 +67,29 @@ export const MAX_PENDING_LOG_CHARS = 4_000_000
  */
 export const MAX_RESIDENT_RUNS = 16
 
+/*
+ * The stdout/stderr characters one run's journal keeps on disk. Past it the
+ * journal records JOURNAL_TRUNCATED_MARKER once as a stderr frame and drops
+ * further log frames; structured frames are still written.
+ */
+export const MAX_JOURNAL_LOG_CHARS = 32_000_000
+
+export const JOURNAL_TRUNCATED_MARKER = "[smithers: run output exceeded the journal cap; later output was not recorded]\n"
+
 /** Journals read at once while a repository's history loads. */
 export const MAX_JOURNAL_LOADS = 4
 
-const runsDir = (repo: string): string => join(repo, ".flows", "ui", "runs")
+const uiDir = (repo: string): string => join(repo, ".flows", "ui")
+const runsDir = (repo: string): string => join(uiDir(repo), "runs")
 const encode = (line: HistoryLine): string => `${JSON.stringify(line)}\n`
+
+/*
+ * Build and test output routinely carries a credential a failing tool printed,
+ * and the journal lives inside the repository. Log frames pass through the
+ * engine journal's redactor before they are retained or written.
+ */
+const redactLog = Redaction.make()
+const defaultRedact = (text: string): string => String(redactLog(text))
 
 const logChars = (event: TargetRunEvent): number =>
   event.type === "stdout" || event.type === "stderr" ? event.data.length : 0
@@ -151,7 +174,15 @@ const readJournal = async (path: string, repoId: string, keep: boolean): Promise
 
 const settled = (stored: StoredRun): boolean => stored.record.status === "done" || stored.record.status === "failed"
 
-export const createTargetRunHistory = (options: { readonly log?: (line: string) => void } = {}): TargetRunHistory => {
+export const createTargetRunHistory = (options: {
+  readonly log?: (line: string) => void
+  /** The on-disk log cap per journal; defaults to MAX_JOURNAL_LOG_CHARS. */
+  readonly maxJournalLogChars?: number
+  /** Redacts one log frame's text; defaults to the engine journal's redactor. */
+  readonly redact?: (text: string) => string
+} = {}): TargetRunHistory => {
+  const maxJournalLogChars = options.maxJournalLogChars ?? MAX_JOURNAL_LOG_CHARS
+  const redact = options.redact ?? defaultRedact
   const runs = new Map<string, StoredRun>()
   /*
    * One load per repository, INCLUDING the one still in flight: two requests
@@ -203,7 +234,7 @@ export const createTargetRunHistory = (options: { readonly log?: (line: string) 
       }
       // A run started in this process is already registered; its live state wins.
       if (runs.has(record.runId)) return
-      runs.set(record.runId, { record, events: undefined, path, queue: Promise.resolve(), logChars: 0, pendingChars: 0, waiters: [] })
+      runs.set(record.runId, { record, events: undefined, path, queue: Promise.resolve(), logChars: 0, journalChars: 0, truncated: false, pendingChars: 0, waiters: [] })
     }
     await Promise.all(Array.from({ length: MAX_JOURNAL_LOADS }, async () => {
       for (let name = pending.shift(); name !== undefined; name = pending.shift()) await load(name)
@@ -233,10 +264,12 @@ export const createTargetRunHistory = (options: { readonly log?: (line: string) 
       // Register now: the runner may emit while old journals are loading. Its
       // appends queue behind initialization instead of being silently dropped.
       const initialized = loadRepo(run.repoId, run.repo).then(async () => {
-        await mkdir(dir, { recursive: true })
-        await writeFile(path, encode({ type: "record", record }))
+        await mkdir(dir, { recursive: true, mode: 0o700 })
+        // Run output is local state: keep every journal out of commits.
+        await writeFile(join(uiDir(run.repo), ".gitignore"), "*\n")
+        await writeFile(path, encode({ type: "record", record }), { mode: 0o600 })
       })
-      const stored: StoredRun = { record, events: [], path, queue: initialized, logChars: 0, pendingChars: 0, waiters: [] }
+      const stored: StoredRun = { record, events: [], path, queue: initialized, logChars: 0, journalChars: 0, truncated: false, pendingChars: 0, waiters: [] }
       runs.set(run.runId, stored)
       touch(stored)
       try {
@@ -249,20 +282,30 @@ export const createTargetRunHistory = (options: { readonly log?: (line: string) 
         throw error
       }
     },
-    event: (run, event) => {
+    event: (run, raw) => {
       const stored = runs.get(run.runId)
       if (stored === undefined) return Promise.resolve()
       const endedAt = Date.now()
-      const chars = logChars(event)
+      const chars = logChars(raw)
       stored.pendingChars += chars
       stored.queue = stored.queue.then(async () => {
         // A missing frame must never be followed by an apparently complete
         // journal. Keep the first error and the last acknowledged prefix.
         if (stored.appendError !== undefined) return
+        if (chars > 0 && stored.truncated) return
+        // Redacting here, inside the queue, lets the pending budget pace a
+        // producer by the redactor's cost as well as the disk's.
+        const received = raw.type === "stdout" || raw.type === "stderr" ? { ...raw, data: redact(raw.data) } : raw
+        const written = logChars(received)
+        const event: TargetRunEvent = chars > 0 && stored.journalChars + written > maxJournalLogChars
+          ? { type: "stderr", data: JOURNAL_TRUNCATED_MARKER, ...(raw.seq === undefined ? {} : { seq: raw.seq }) }
+          : received
         const record = applyEvent(stored.record, event, endedAt)
         const line = encode({ type: "event", event }) + (event.type === "exit" ? encode({ type: "record", record }) : "")
         await appendFile(stored.path, line)
         stored.record = record
+        if (event !== received) stored.truncated = true
+        else stored.journalChars += written
         if (stored.events !== undefined) {
           const tail: Tail = { events: stored.events, logChars: stored.logChars }
           retain(tail, event)

@@ -1,10 +1,10 @@
 import { expect, test } from "bun:test"
 import { closeSync, constants, openSync } from "node:fs"
-import { mkdir, mkdtemp, readFile, rename, rm, writeFile } from "node:fs/promises"
+import { mkdir, mkdtemp, readFile, rename, rm, stat, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { RunHistoryResponseSchema, RunReplayResponseSchema } from "@smthrs/rpc/TargetGraph"
-import { createTargetRunHistory, MAX_JOURNAL_LOADS, MAX_PENDING_LOG_CHARS, MAX_RESIDENT_RUNS, MAX_RETAINED_LOG_CHARS } from "./TargetRunHistory"
+import { createTargetRunHistory, JOURNAL_TRUNCATED_MARKER, MAX_JOURNAL_LOADS, MAX_PENDING_LOG_CHARS, MAX_RESIDENT_RUNS, MAX_RETAINED_LOG_CHARS } from "./TargetRunHistory"
 import type { TargetRun } from "./Targets"
 
 test("run history persists and reloads ordered events", async () => {
@@ -216,7 +216,8 @@ test.skipIf(process.platform === "win32")("a log backlog the disk has not taken 
     const gate = join(dir, "gate.jsonl")
     mkfifo(gate)
     const run: TargetRun = { runId: "backlog", repoId: "repo-1", repo, workspace: ".", label: "//:test", labels: ["//:test"], status: "running", exitCode: null, startedAt: 100 }
-    const history = createTargetRunHistory()
+    /* This pins the pending budget; redacting 4 MB of filler only adds CPU time. */
+    const history = createTargetRunHistory({ redact: (text) => text })
     const started = history.start(run)
     /*
      * Every frame used to extend the append chain at once, so a child that
@@ -324,6 +325,65 @@ test("a multi-megabyte journal reloads with the capped tail and every structured
     expect((logs[logs.length - 1] as { data: string }).data.startsWith(`${frames - 1}:`)).toBe(true)
     expect(replay.events[0]?.type).toBe("started")
     expect(replay.events[replay.events.length - 1]?.type).toBe("exit")
+  } finally {
+    await rm(repo, { recursive: true, force: true })
+  }
+})
+
+test("log frames reach the journal and the replay redacted", async () => {
+  const repo = await mkdtemp(join(tmpdir(), "smithers-history-"))
+  try {
+    const run: TargetRun = { runId: "secret", repoId: "repo-1", repo, workspace: ".", label: "//:test", labels: ["//:test"], status: "running", exitCode: null, startedAt: 100 }
+    const history = createTargetRunHistory()
+    await history.start(run)
+    const token = `ghp_${"a".repeat(36)}`
+    void history.event(run, { type: "stdout", data: `token=${token}\n`, seq: 0 })
+    void history.event(run, { type: "stderr", data: `Authorization: Bearer ${token}\n`, seq: 1 })
+    void history.event(run, { type: "exit", code: 0, seq: 2 })
+    await history.flush()
+    const journal = await readFile(join(runsDirOf(repo), `${run.runId}.jsonl`), "utf8")
+    expect(journal).not.toContain(token)
+    expect(journal).toContain("REDACTED")
+    const replay = await history.replay(run.runId)
+    expect(JSON.stringify(replay)).not.toContain(token)
+  } finally {
+    await rm(repo, { recursive: true, force: true })
+  }
+})
+
+test.skipIf(process.platform === "win32")("the journal is private to its owner and ignored by git", async () => {
+  const repo = await mkdtemp(join(tmpdir(), "smithers-history-"))
+  try {
+    const run: TargetRun = { runId: "mode", repoId: "repo-1", repo, workspace: ".", label: "//:test", labels: ["//:test"], status: "running", exitCode: null, startedAt: 100 }
+    const history = createTargetRunHistory()
+    await history.start(run)
+    void history.event(run, { type: "exit", code: 0 })
+    await history.flush()
+    expect((await stat(join(runsDirOf(repo), `${run.runId}.jsonl`))).mode & 0o777).toBe(0o600)
+    expect(await readFile(join(repo, ".flows", "ui", ".gitignore"), "utf8")).toBe("*\n")
+  } finally {
+    await rm(repo, { recursive: true, force: true })
+  }
+})
+
+test("log output past the journal cap ends in one truncation marker", async () => {
+  const repo = await mkdtemp(join(tmpdir(), "smithers-history-"))
+  try {
+    const run: TargetRun = { runId: "capped", repoId: "repo-1", repo, workspace: ".", label: "//:test", labels: ["//:test"], status: "running", exitCode: null, startedAt: 100 }
+    const history = createTargetRunHistory({ maxJournalLogChars: 250 })
+    await history.start(run)
+    for (let index = 0; index < 10; index++) void history.event(run, { type: "stdout", data: "x".repeat(100), seq: index })
+    void history.event(run, { type: "exit", code: 0, seq: 10 })
+    await history.flush()
+    const lines = (await readFile(join(runsDirOf(repo), `${run.runId}.jsonl`), "utf8")).split("\n").filter((line) => line !== "")
+      .map((line) => JSON.parse(line) as { type: string; event?: { type: string; data?: string } })
+    const events = lines.flatMap((line) => line.event === undefined ? [] : [line.event])
+    expect(events.filter((event) => event.type === "stdout")).toHaveLength(2)
+    const markers = events.filter((event) => event.data === JOURNAL_TRUNCATED_MARKER)
+    expect(markers).toHaveLength(1)
+    expect(events.map((event) => event.type)).toEqual(["stdout", "stdout", "stderr", "exit"])
+    expect(lines[lines.length - 1]?.type).toBe("record")
+    expect((await history.replay(run.runId))?.run.status).toBe("done")
   } finally {
     await rm(repo, { recursive: true, force: true })
   }
