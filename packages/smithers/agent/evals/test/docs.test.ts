@@ -70,6 +70,28 @@ describe("documentation", () => {
     }
   })
 
+  // Runner re-invokes executor and scorer effects on every run, so identical
+  // options guarantee stable output only when those callbacks are stable, and
+  // an Observation carries `at` but not `runId`.
+  it("states determinism as conditional on caller-owned callbacks", () => {
+    for (const page of ["../docs/api.md", "../docs/guides/run-a-suite.md", "../docs/concepts/determinism.md"]) {
+      const text = read(page).replace(/\s+/g, " ")
+      expect(text, page).not.toMatch(/stamps every observation with them/)
+      expect(text, page).not.toMatch(/two runs (?:of the same suite )?over the same inputs produce (?:byte-)?identical/i)
+    }
+    const determinism = read("../docs/concepts/determinism.md").replace(/\s+/g, " ")
+    expect(determinism).not.toContain("controls every input that could vary")
+    for (const input of ["clock", "model", "random", "external state", "mutat"]) {
+      expect(determinism).toContain(input)
+    }
+  })
+
+  it("states that a declared case expected wins over binding groundTruth", () => {
+    for (const page of ["../src/Suite.ts", "../docs/api.md", "../docs/guides/author-a-suite.md"]) {
+      expect(read(page).replace(/\s*\*?\s+/g, " "), page).toMatch(/only an absent (?:one|`expected`) defers to the binding/)
+    }
+  })
+
   it("files the release notes under the released version", () => {
     expect(read("../CHANGELOG.md")).toContain("## [1.0.0-rc.0]")
   })

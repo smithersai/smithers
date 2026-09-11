@@ -69,9 +69,11 @@ interrupts the run.
 
 ## Pass run identity
 
-`Runner.run` takes `runId` and `at` from the caller and stamps every
-observation with them, so two runs over the same inputs produce identical
-observations:
+`Runner.run` takes `runId` and `at` from the caller. `runId` identifies the
+`RunResult` and joins every score job's identity; `at` stamps every
+observation. Two runs produce identical observations when their executor and
+scorer results are identical too, since the runner invokes those effects afresh
+each time:
 
 ```ts
 Effect.gen(function*() {

@@ -147,9 +147,12 @@ cases share a step key and scorer, without invoking scorer callbacks.
 
 ## Determinism and limits
 
-- `Runner.run` takes `runId` and `at` from the caller and stamps every
-  observation with them, so two runs over the same inputs produce identical
-  observations and identical `Report.json` bytes.
+- `Runner.run` takes `runId` and `at` from the caller. `runId` identifies the
+  `RunResult` and joins every score job's identity; `at` stamps every
+  observation. Given identical executor results, scorer results, metadata, and
+  options, two runs produce identical observations and identical `Report.json`
+  bytes. Executor and scorer effects run afresh each time, so clocks, models,
+  randomness, and external state inside them are the caller's to control.
 - When the `Suite.make` effect runs, it snapshots its options, copies case and
   binding data with `structuredClone`, and freezes the arrays it returns. The
   suite cannot change after it is validated.

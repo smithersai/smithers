@@ -5,17 +5,26 @@ sidebar:
   order: 3
 ---
 
-Two runs of the same suite over the same inputs produce byte-identical
-observations, and two identical comparisons produce byte-identical reports.
-That property is engineered, not accidental, and it comes from four decisions.
+The runner guarantees determinism only for what it controls. Given identical
+executor results, scorer results, metadata, and run options, two runs produce
+byte-identical observations, and two identical comparisons produce
+byte-identical reports. Ordering, sampling, job identity, and serialization are
+stable by construction, through four decisions.
+
+The runner cannot make your callbacks deterministic. `Runner.run` invokes every
+executor and scorer effect afresh on each run, so the caller owns every input
+those effects read: clocks, model responses, randomness, external state, and
+mutation inside a callback. A scorer that counts its own calls grades the same
+suite `0` on the first run and `1` on the second, with identical options.
 
 ## Identity and time come from the caller
 
-`Runner.run` takes `runId` and `at` as options and stamps every observation
-with them. Nothing in a run reads a clock or generates an identifier, so the
-caller controls every input that could vary. Pin `at` to a fixed instant when
-you want a suite to be comparable across days: observation timestamps are report
-material, and pinning them keeps two runs of an unchanged suite byte-identical.
+`Runner.run` takes `runId` and `at` as options. `runId` identifies the
+`RunResult` and joins every score job's identity; `at` stamps every
+observation. The runner itself reads no clock and generates no identifier.
+Pin `at` to a fixed instant when you want a suite to be comparable across days:
+observation timestamps are report material, and pinning them keeps two runs
+with stable callbacks byte-identical.
 
 The format is strict because reproducibility is strict: `at` must be a
 canonical UTC timestamp with millisecond precision that parses and re-renders
