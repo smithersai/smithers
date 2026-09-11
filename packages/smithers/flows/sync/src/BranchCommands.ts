@@ -22,6 +22,7 @@
  */
 import { Journal } from "@smthrs/journal"
 import * as JournalEvent from "@smthrs/journal/JournalEvent"
+import * as Clock from "effect/Clock"
 import * as Context from "effect/Context"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
@@ -37,6 +38,7 @@ import {
   CommandSubmission,
   SubmitRequest
 } from "./BranchProtocol.ts"
+import { maximumBranchTtlMs } from "./BranchRpcs.ts"
 import * as BranchShare from "./BranchShare.ts"
 import * as Admission from "./internal/Admission.ts"
 import { causeCode } from "./internal/CauseText.ts"
@@ -121,6 +123,30 @@ const pageSize = 256
 export const defaultLedgerCapacity = 4096
 
 /**
+ * Inclusive UTF-8 JSON submission ceiling. The separate sync entry ceiling
+ * leaves room for the durable envelope around every admitted command.
+ *
+ * @category constants
+ * @since 1.0.0-rc.0
+ */
+export const defaultMaxCommandBytes = 1024 * 1024
+
+/**
+ * Milliseconds a branch may go untouched before its in-memory state is
+ * dropped.
+ *
+ * The receipt ledger is bounded per branch; this bounds the branches. A
+ * dropped branch re-hydrates on its next submission exactly as it does after
+ * a restart, so eviction costs a journal read, never correctness. The default
+ * is the longest lifetime a branch capability may carry, so a branch is only
+ * dropped once every capability minted at its last touch can have expired.
+ *
+ * @category constants
+ * @since 1.0.0-rc.0
+ */
+export const defaultBranchIdleMs = maximumBranchTtlMs
+
+/**
  * Entries one branch's first-touch hydration reads before it stops.
  *
  * Hydration is the only full history read that ever sat on the WRITE path: the
@@ -183,6 +209,26 @@ export interface Options {
    * Defaults to {@link defaultHydrationLimit}.
    */
   readonly hydrationLimit?: number | undefined
+  /**
+   * Milliseconds a branch may go untouched before its in-memory state is
+   * dropped. Defaults to {@link defaultBranchIdleMs}.
+   */
+  readonly branchIdleMs?: number | undefined
+}
+
+/** Everything one process holds for one branch. */
+interface BranchState {
+  // One permit PER BRANCH. A single process-wide permit serialized admission
+  // across every branch the process served, so one branch's first-touch
+  // history replay blocked every other branch's writes.
+  readonly permit: Semaphore.Semaphore
+  receipts: Map<CommandId, CommandReceipt>
+  cursor: JournalEvent.Seq | undefined
+  hydrated: boolean
+  touchedMs: number
+  // Submissions holding or waiting on `permit`; a branch with any is never
+  // dropped, so two permits can never exist for one branch.
+  inFlight: number
 }
 
 /** The ledger over an already-validated policy. */
@@ -192,33 +238,44 @@ const makeWith = (
     readonly maxFrameBytes: number
     readonly ledgerCapacity: number
     readonly hydrationLimit: number
+    readonly branchIdleMs: number
   }
 ): Effect.Effect<Service, never, Journal.Journal | BranchShare.BranchShare> =>
   Effect.gen(
     function*() {
       const journal = yield* Journal.Journal
       const share = yield* BranchShare.BranchShare
-      // One permit PER BRANCH. A single process-wide permit serialized
-      // admission across every branch the process served, so one branch's
-      // first-touch history replay blocked every other branch's writes.
-      const permits = new Map<BranchId, Semaphore.Semaphore>()
-      const permitFor = (branchId: BranchId): Semaphore.Semaphore => {
-        const known = permits.get(branchId)
-        if (known !== undefined) return known
-        const fresh = Semaphore.makeUnsafe(1)
-        permits.set(branchId, fresh)
-        return fresh
-      }
-      // Nested, never a concatenated key: `${branchId} ${commandId}` collides
-      // for valid branded strings, so `("a", "b c")` and `("a b", "c")` shared
-      // a slot and one branch's receipt answered another branch's command.
-      const ledger = new Map<BranchId, Map<CommandId, CommandReceipt>>()
-      const cursors = new Map<BranchId, JournalEvent.Seq>()
-      const hydrated = new Set<BranchId>()
-      const { hydrationLimit, ledgerCapacity, maxCommandBytes, maxFrameBytes } = resolved
+      // Keyed by branch, never by a concatenated `${branchId} ${commandId}`:
+      // that collides for valid branded strings, so `("a", "b c")` and
+      // `("a b", "c")` shared a slot and one branch's receipt answered another
+      // branch's command. Held in least-recently-touched order, so the idle
+      // sweep stops at the first branch still inside the window.
+      const branches = new Map<BranchId, BranchState>()
+      const { branchIdleMs, hydrationLimit, ledgerCapacity, maxCommandBytes, maxFrameBytes } = resolved
 
-      const receiptOf = (branchId: BranchId, commandId: CommandId): CommandReceipt | undefined =>
-        ledger.get(branchId)?.get(commandId)
+      /** Drops every idle branch no submission is holding. */
+      const sweep = (nowMs: number): void => {
+        for (const [branchId, state] of branches) {
+          if (nowMs - state.touchedMs <= branchIdleMs) break
+          if (state.inFlight === 0) branches.delete(branchId)
+        }
+      }
+
+      /** The branch's state, created cold on first touch and moved to the back. */
+      const stateFor = (branchId: BranchId, nowMs: number): BranchState => {
+        const state = branches.get(branchId) ?? {
+          permit: Semaphore.makeUnsafe(1),
+          receipts: new Map(),
+          cursor: undefined,
+          hydrated: false,
+          touchedMs: nowMs,
+          inFlight: 0
+        }
+        branches.delete(branchId)
+        branches.set(branchId, state)
+        state.touchedMs = nowMs
+        return state
+      }
 
       /**
        * Records one receipt, evicting the branch's oldest once the branch is
@@ -233,11 +290,6 @@ const makeWith = (
           if (branch.size <= ledgerCapacity) break
           branch.delete(oldest)
         }
-      }
-
-      const record = (receipt: CommandReceipt): void => {
-        // Successful hydration installs the branch map before admission.
-        recordIn(ledger.get(receipt.branchId)!, receipt)
       }
 
       const duplicateOf = (known: CommandReceipt): CommandReceipt =>
@@ -304,20 +356,20 @@ const makeWith = (
        * commits exactly where it stopped, so the next replay resumes there.
        * Failure or interruption discards the staged cursor and receipts together.
        */
-      const replay = (branchId: BranchId, budget: number): Effect.Effect<void, SyncError> =>
+      const replay = (branchId: BranchId, state: BranchState, budget: number): Effect.Effect<void, SyncError> =>
         Effect.gen(function*() {
           // Stage at most ledgerCapacity receipts. A malformed later page or an
           // interruption must leave both the ledger and replay cursor untouched.
-          const staged = new Map(ledger.get(branchId))
-          let position = cursors.get(branchId)
+          const staged = new Map(state.receipts)
+          let position = state.cursor
           yield* walk(branchId, position, budget, (entry, commandId) => {
             position = entry.seq
             if (commandId !== undefined) {
               recordIn(staged, new CommandReceipt({ branchId, commandId, status: "admitted", seq: entry.seq }))
             }
           })
-          if (position !== undefined) cursors.set(branchId, position)
-          ledger.set(branchId, staged)
+          state.cursor = position
+          state.receipts = staged
         })
 
       /**
@@ -355,11 +407,11 @@ const makeWith = (
        * reach is answered by the journal, and by the unbounded replay
        * {@link lostRace} runs when the journal reports a conflict.
        */
-      const hydrate = (branchId: BranchId): Effect.Effect<void, SyncError> =>
+      const hydrate = (branchId: BranchId, state: BranchState): Effect.Effect<void, SyncError> =>
         Effect.gen(function*() {
-          if (hydrated.has(branchId)) return
-          yield* replay(branchId, hydrationLimit)
-          hydrated.add(branchId)
+          if (state.hydrated) return
+          yield* replay(branchId, state, hydrationLimit)
+          state.hydrated = true
         })
 
       /**
@@ -380,21 +432,21 @@ const makeWith = (
        */
       const lostRace = (
         submission: CommandSubmission,
+        state: BranchState,
         cause: Journal.JournalError
       ): Effect.Effect<CommandReceipt, SyncError> =>
         Effect.gen(function*() {
           // Unbounded, unlike hydration: this is the recovery read, and the
           // sequence it is looking for may sit anywhere in the history.
-          yield* replay(submission.branchId, Number.POSITIVE_INFINITY)
-          const known = receiptOf(submission.branchId, submission.commandId)
+          yield* replay(submission.branchId, state, Number.POSITIVE_INFINITY)
+          const known = state.receipts.get(submission.commandId)
           if (known !== undefined) return duplicateOf(known)
           // A branch still under the ledger's capacity has never evicted
           // anything, and `replay` has just read this branch to its tail, so a
           // command missing from the ledger is missing from the journal too.
           // Reading the whole history to confirm that would let one small
           // request cost one full log scan.
-          // Successful replay always installs the branch's staged map.
-          const mayHaveEvicted = ledger.get(submission.branchId)!.size >= ledgerCapacity
+          const mayHaveEvicted = state.receipts.size >= ledgerCapacity
           const seq = mayHaveEvicted
             ? yield* admittedSeq(submission.branchId, submission.commandId)
             : undefined
@@ -424,11 +476,11 @@ const makeWith = (
           meta: null
         })
 
-      const admit = (request: SubmitRequest): Effect.Effect<CommandReceipt, SyncError> =>
+      const admit = (request: SubmitRequest, state: BranchState): Effect.Effect<CommandReceipt, SyncError> =>
         Effect.gen(function*() {
           const submission = request.submission
-          yield* hydrate(submission.branchId)
-          const known = receiptOf(submission.branchId, submission.commandId)
+          yield* hydrate(submission.branchId, state)
+          const known = state.receipts.get(submission.commandId)
           if (known !== undefined) return duplicateOf(known)
           // Unfenced: the sync command journal is a multi-writer admission
           // log — participants own no branch run, and command admissions are
@@ -449,11 +501,12 @@ const makeWith = (
             ),
             Effect.catch((cause) =>
               cause.code === "idempotency_conflict"
-                ? lostRace(submission, cause)
+                ? lostRace(submission, state, cause)
                 : Effect.fail(journalFailure(cause))
             )
           )
-          record(
+          recordIn(
+            state.receipts,
             new CommandReceipt({
               branchId: submission.branchId,
               commandId: submission.commandId,
@@ -508,27 +561,27 @@ const makeWith = (
         // The permit is taken AFTER authorization so an unauthorized caller
         // cannot serialize (and therefore stall) legitimate collaborators,
         // and it is this BRANCH's permit so a slow branch stalls only itself.
-        return yield* permitFor(request.submission.branchId).withPermits(1)(admit(request))
+        const nowMs = yield* Clock.currentTimeMillis
+        sweep(nowMs)
+        const state = stateFor(request.submission.branchId, nowMs)
+        state.inFlight += 1
+        return yield* state.permit.withPermits(1)(admit(request, state)).pipe(
+          Effect.ensuring(Effect.sync(() => {
+            state.inFlight -= 1
+          }))
+        )
       })
 
       return BranchCommands.of({ submit })
     }
   )
 
-/**
- * Inclusive UTF-8 JSON submission ceiling. The separate sync entry ceiling
- * leaves room for the durable envelope around every admitted command.
- *
- * @category constants
- * @since 1.0.0
- */
-export const defaultMaxCommandBytes = 1024 * 1024
-
 const defaults = {
   maxCommandBytes: defaultMaxCommandBytes,
   maxFrameBytes: SyncProtocol.defaultMaxFrameBytes,
   ledgerCapacity: defaultLedgerCapacity,
-  hydrationLimit: defaultHydrationLimit
+  hydrationLimit: defaultHydrationLimit,
+  branchIdleMs: defaultBranchIdleMs
 }
 
 /**
@@ -575,6 +628,11 @@ export const makeLiveWith = (
         "BranchCommands.Options.hydrationLimit",
         options.hydrationLimit,
         defaults.hydrationLimit
+      ),
+      branchIdleMs: positiveInt(
+        "BranchCommands.Options.branchIdleMs",
+        options.branchIdleMs,
+        defaults.branchIdleMs
       )
     }),
     makeWith

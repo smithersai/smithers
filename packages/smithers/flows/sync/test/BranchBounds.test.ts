@@ -209,12 +209,65 @@ describe("BranchCommands identity and bounds", () => {
       expect(full.appends).toBe(0)
     }))
 
+  // The ledger bound is per branch, and nothing bounded the branches: every
+  // branch a process ever admitted a command for kept its permit, cursor and
+  // up to `ledgerCapacity` receipts for the life of the service. An idle
+  // branch is now dropped, and the next touch re-hydrates it from the journal
+  // exactly as a restarted server does, so `reads` says which door answered.
+  it.effect("drops an idle branch's state and re-hydrates it on the next touch", () =>
+    Effect.gen(function*() {
+      const [original, idle, recent] = yield* durable(
+        Effect.gen(function*() {
+          const journal = yield* Journal.Journal
+          let reads = 0
+          const counted = Journal.make({
+            ...journal,
+            entries: (request) => {
+              if (request.runId === BranchProtocol.branchRunId(branchId)) reads += 1
+              return journal.entries(request)
+            }
+          })
+          const commands = yield* BranchCommands.makeLiveWith({ branchIdleMs: 1_000 }).pipe(
+            Effect.provideService(Journal.Journal, counted)
+          )
+          const submit = (target: BranchProtocol.BranchId, id: string) =>
+            Effect.gen(function*() {
+              const capability = yield* capabilityFor(target)
+              const submission = yield* BranchCommands.submission({
+                branchId: target,
+                commandId: commandId(id),
+                participantId: alice,
+                name: BranchProtocol.SayCommand
+              })
+              return yield* commands.submit({ capability, submission })
+            })
+          const first = yield* submit(branchId, "c1")
+          // Touched again inside the window: the ledger answers, no read.
+          yield* TestClock.adjust(500)
+          reads = 0
+          yield* submit(branchId, "c1")
+          const withinWindow = reads
+          // Idle past the window while another branch is served.
+          yield* TestClock.adjust(1_001)
+          yield* submit(otherBranchId, "o1")
+          reads = 0
+          const again = yield* submit(branchId, "c1")
+          return [first, { receipt: again, reads }, withinWindow] as const
+        })
+      )
+
+      expect(recent).toBe(0)
+      expect(idle.receipt).toMatchObject({ status: "duplicate", seq: original.seq })
+      expect(idle.reads).toBeGreaterThan(0)
+    }))
+
   it.effect("refuses a ledger policy that is not a positive safe integer", () =>
     Effect.gen(function*() {
       const refusals = yield* durable(
         Effect.gen(function*() {
           return [
             yield* Effect.flip(BranchCommands.makeLiveWith({ ledgerCapacity: 0 })),
+            yield* Effect.flip(BranchCommands.makeLiveWith({ branchIdleMs: 0 })),
             yield* Effect.flip(BranchCommands.makeLiveWith({ hydrationLimit: -1 })),
             yield* Effect.flip(BranchCommands.makeLiveWith({ maxCommandBytes: Number.NaN }))
           ] as const
