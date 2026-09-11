@@ -141,14 +141,19 @@ export const layer = (root: string, filename: string, hostId: string) => {
           workspaceRoot: root,
           owner: { hostId },
           signals: [],
-          // A compensable action's pre-image and its restore are the engine's
-          // own bookkeeping, but the message the engine snapshots under is not
-          // the one `NodeRuntime.engineRules` narrows to, so this host grants
-          // the two jj capabilities outright. Nothing else is granted.
+          // The engine takes a compensable action's pre-image on its privileged
+          // Jj, which no rule governs. `TimeTravel.rewind` resolves the guarded
+          // Jj instead: it snapshots the tree before restoring ("flows rewind
+          // pre-restore") and then restores the frame's change. Those two jj
+          // capabilities are all this host grants; anything else is denied.
           rules: [
             new Permission.Rule({
               effect: "allow",
-              pattern: new Capability.CapabilityPattern({ action: "*", resource: "*" })
+              pattern: new Capability.CapabilityPattern({ action: "jj:snapshot", resource: "*" })
+            }),
+            new Permission.Rule({
+              effect: "allow",
+              pattern: new Capability.CapabilityPattern({ action: "jj:restore", resource: "*" })
             })
           ]
         },

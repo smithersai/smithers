@@ -9,14 +9,19 @@
  * assertion that matters — a rewind that only edited rows would leave the
  * workspace lying.
  */
+import { Jj } from "@smthrs/jj"
 import { Journal, type JournalEvent } from "@smthrs/journal"
 import { RunStore } from "@smthrs/run-store"
 import { TimeTravel } from "@smthrs/time-travel"
+import * as Cause from "effect/Cause"
 import * as Effect from "effect/Effect"
+import * as Exit from "effect/Exit"
+import * as FileSystem from "effect/FileSystem"
 import * as Schedule from "effect/Schedule"
 import * as SqlClient from "effect/unstable/sql/SqlClient"
 import { execFileSync } from "node:child_process"
-import { readFileSync, rmSync } from "node:fs"
+import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs"
+import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterAll, beforeAll, describe, expect, it } from "vitest"
 import { layer, Ledger, ledgerFile, lineageOf, makeWorkspace } from "./harness/timeTravelRun.ts"
@@ -123,4 +128,32 @@ describe.skipIf(!jjInstalled)("case12 rewind reverts the workspace with an audit
     expect(observed.ledgerAfter).not.toContain("posted")
     expect(observed.ledgerAfter).toContain("baseline")
   }, 180_000)
+
+  it("denies every capability beyond the two jj grants rewind needs", async () => {
+    const outside = mkdtempSync(join(tmpdir(), "smithers-e2e-case12-outside-"))
+    try {
+      const observed = await Effect.runPromise(
+        Effect.gen(function*() {
+          const jj = yield* Jj
+          const fileSystem = yield* FileSystem.FileSystem
+          const workspaceAdd = yield* Effect.exit(jj.workspaceAdd("case12-lane", join(workspace.root, "case12-lane")))
+          const write = yield* Effect.exit(fileSystem.writeFileString(join(outside, "escaped.txt"), "escaped"))
+          return { workspaceAdd, write }
+        }).pipe(
+          Effect.provide(layer(workspace.root, workspace.filename, "case12-denial-host")),
+          Effect.scoped,
+          Effect.orDie
+        )
+      )
+
+      expect(Exit.isFailure(observed.workspaceAdd)).toBe(true)
+      expect(String(Cause.squash((observed.workspaceAdd as Exit.Failure<unknown, unknown>).cause))).toMatch(
+        /Permission/
+      )
+      expect(Exit.isFailure(observed.write)).toBe(true)
+      expect(existsSync(join(outside, "escaped.txt"))).toBe(false)
+    } finally {
+      rmSync(outside, { recursive: true, force: true })
+    }
+  }, 60_000)
 })
