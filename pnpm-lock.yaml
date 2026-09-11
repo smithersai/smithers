@@ -5678,6 +5678,9 @@ importers:
       '@smthrs/harness':
         specifier: 1.0.0-rc.0
         version: link:../agent/harness
+      '@smthrs/journal':
+        specifier: 1.0.0-rc.0
+        version: link:../flows/journal
       '@smthrs/kernel':
         specifier: 1.0.0-rc.0
         version: link:../flows/kernel

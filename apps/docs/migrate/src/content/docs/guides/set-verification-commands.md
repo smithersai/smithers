@@ -49,8 +49,8 @@ npx @smthrs/migrate@next --verify-typecheck ""
 
 These flags matter more than convenience. A project whose typecheck lives in a
 Makefile has no other way to be migrated, because every unit is verified with
-these lines and the model's shell is granted exactly them. A command the tool
-never derived is a command the model can never run.
+these lines and the model's shell is confined to literal grants derived from
+them. A command the tool never derived is a command the model can never run.
 
 ## Derived commands get no shell
 
@@ -71,14 +71,25 @@ as written.
 ## One derivation serves the prompt and the grant
 
 The same derivation builds the command list shown to the model, the list
-recorded in the report, and the `proc:spawn` grants the kernel enforces. A
-model shown one set of commands and granted another would be refused the very
-lines its brief listed, so there is one source for all three, and the line a
-grant names is the kernel's own rendering of the argv it spawns.
+recorded in the report, and the inputs to the `proc:spawn` grants the kernel
+enforces. A grant names the kernel's own rendering of the argv it spawns. Only
+lines that the capability grammar can represent literally become grants.
+
+## Commands containing wildcard characters
+
+The capability pattern grammar cannot represent literal `*` or `?` characters.
+A command line containing either gets no agent process grant, including when
+the character is quoted or backslash-prefixed. This prevents a shell glob such
+as `tests/*` from granting appended commands or command substitutions.
+
+Deterministic verification still executes the exact configured command. To let
+the agent run it through its shell or `migrate/verify` self-check, put the glob
+inside a package script and configure a literal line such as `npm run test`.
 
 ## Bounded output
 
 Each verification command's streams keep their last 12 KB through a rolling
 window, and the report says how many earlier bytes were dropped. The captured
-output is rendered into `report.md` verbatim and is not redacted; see
+output passes through the journal's shared redaction rules before it reaches
+`report.json`; see
 [The migration report](/concepts/report/).

@@ -73,10 +73,10 @@ An apply run handles one unit at a time:
 
 </Steps>
 
-The run exits 0 when every planned unit finished, 1 when a unit failed and was restored from its checkpoint, and 3 when it parked at a gate. Commit `report.md`: it records what the tool changed, what it could not translate, and what a person still has to decide.
+The run exits 0 when every planned unit finished, 1 when a unit failed and was restored from its checkpoint, and 3 when it parked at a gate. Review, then commit `report.md`: it records what the tool changed, what it could not translate, and what a person still has to decide.
 
 :::caution
-Read the verification output in the report before you commit it. Each command's captured output is rendered verbatim, and the tool does not redact it: a failing install or test suite in a 0.x project prints whatever it prints, secret or not.
+Read the verification output in the report before you commit it. The tool passes each command's captured output through the journal's shared redaction rules, which catch known credential shapes such as bearer tokens and `*_KEY=` values, but not every secret a failing 0.x install or test suite can print.
 :::
 
 ## The two gates

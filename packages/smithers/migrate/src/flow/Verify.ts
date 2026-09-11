@@ -14,6 +14,7 @@
  * @since 1.0.0-rc.0
  */
 import { Action } from "@smthrs/flow"
+import * as Redaction from "@smthrs/journal/Redaction"
 import * as Clock from "effect/Clock"
 import * as Effect from "effect/Effect"
 import type * as FileSystem from "effect/FileSystem"
@@ -94,6 +95,14 @@ const skipped = (reason: string): Report.CommandResult => ({
   skipped: reason
 })
 
+/**
+ * A captured stream after the journal's shared redaction rules, the same net
+ * `smthrs bug` applies before upload. The tail lands in `report.json`, which
+ * the operator commits, and a failing 0.x install or test suite can print a
+ * registry token or a value read from `.env`.
+ */
+const redact = (text: string): string => Redaction.redact(text) as string
+
 const one = (
   root: string,
   command: Contract.VerificationCommand,
@@ -110,8 +119,8 @@ const one = (
         command: line,
         exitCode: result.exitCode,
         durationMs: result.durationMs,
-        stdoutTail: Exec.tail(result.stdout),
-        stderrTail: Exec.tail(result.stderr)
+        stdoutTail: redact(Exec.tail(result.stdout)),
+        stderrTail: redact(Exec.tail(result.stderr))
       })),
       // A command that could not start, or that ran out of time, is a failing
       // command rather than a failing tool: the repair round has to see it.

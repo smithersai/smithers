@@ -12,8 +12,8 @@ record; the Markdown is a pure function of it, and every list inside both is
 sorted, so two runs of the same project differ only in the `generatedAt`
 timestamp. A reviewer sees what actually changed.
 
-Commit `report.md`. It is the record of what the tool changed, what it could
-not translate, and what a person still has to decide.
+Review, then commit `report.md`. It is the record of what the tool changed,
+what it could not translate, and what a person still has to decide.
 
 ## The sections, in order
 
@@ -74,17 +74,18 @@ the flows harness or an API seat, and each says that a pool stays a pool.
 Workflow import cycles land here too, naming the order the tool had to choose
 for itself.
 
-## Verification output is captured verbatim
+## Verification output is redacted, then captured
 
 Every verification command's last 12 KB of stdout and stderr is captured into
-`report.json` exactly as the command printed it, and the report says how many
-earlier bytes were dropped.
+`report.json`, and the report says how many earlier bytes were dropped.
 
-Nothing redacts it. A failing install or test suite in a 0.x project prints
-whatever it prints, a registry token or a value read from `.env` included, and
-this tool cannot tell a secret from a stack frame. The Verification section
-says so beside the commands whenever any output was captured, because the
-report is a file you are told to commit. Read that section before you do.
+Before the report is written, that output passes through the journal's shared
+redaction rules, the same rules `smthrs bug` applies: bearer and basic
+authorization values, `*_KEY=`, `*_TOKEN=`, `*_SECRET=` and `*_PASSWORD=`
+assignments, URL credentials, private key blocks, JWTs, and known provider key
+shapes become `[REDACTED]`. The rules match known shapes only. The
+Verification section says so beside the commands whenever any output was
+captured. Read that section before you commit the report.
 
 ## Reading it from a script
 

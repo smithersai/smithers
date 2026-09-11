@@ -56,7 +56,7 @@ The verb has three modes. With neither flag, the mode is `plan`; when both are p
 
 Prints a summary of the migration: the mode and project root, unit counts by status (planned, migrated, failed, blocked), construct and mapping counts, the run-state verdict, the operator instructions any remaining run state needs, the follow-ups a person must settle, the report path, and the exit status. `--json` prints the full report document instead.
 
-Plan and apply write the report itself to `.smithers-migrate/report.json` and `.smithers-migrate/report.md`; `--report-dir` moves both. Commit `report.md`: it is the record of what the tool changed, what it could not translate, and what a person still has to decide.
+Plan and apply write the report itself to `.smithers-migrate/report.json` and `.smithers-migrate/report.md`; `--report-dir` moves both. Review, then commit `report.md`: it is the record of what the tool changed, what it could not translate, and what a person still has to decide. Captured verification output passes through the journal's shared redaction rules first, which catch known credential shapes such as bearer tokens and `*_KEY=` values but not every secret.
 
 A project that still holds non-terminal 0.x runs is refused before the tool runs: the refusal names each such run and tells you to finish, archive, or discard it with the 0.x CLI first, and the command exits 1.
 

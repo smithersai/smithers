@@ -7,8 +7,9 @@
 import * as NodeServices from "@effect/platform-node/NodeServices"
 import { describe, expect, it } from "@effect/vitest"
 import * as Verify from "@smthrs/migrate/flow/Verify"
+import * as Report from "@smthrs/migrate/Report"
 import * as Effect from "effect/Effect"
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs"
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 
@@ -87,6 +88,38 @@ describe("Verify.run", () => {
       expect(result.typecheck[0]?.stderrTail).toContain("error TS2304")
       expect(Verify.verdict(result)).toBe("fail")
       expect(Verify.failures(result)[0]).toContain("exited 2")
+    }).pipe(Effect.provide(platform)))
+
+  it.effect("redacts credentials a command prints before the report captures them", () =>
+    Effect.gen(function*() {
+      const root = projectWithFlow("redact", discoverable)
+
+      // Each secret is assembled inside the child, so only its output, and not
+      // the command line the report also records, carries the whole value.
+      const result = yield* Verify.run({
+        root,
+        commands: {
+          typecheck: [
+            nodeCommand("process.stderr.write('Authorization: Bearer ' + 'abc123' + 'def456ghi789'); process.exit(1)")
+          ],
+          test: nodeCommand("process.stdout.write('OPENAI_API_KEY=' + 'live-' + '9f8e7d6c5b4a')"),
+          flowsDir: "flows"
+        }
+      })
+      const directory = scratch("redact-report")
+      const report = new Report.MigrationReport({
+        ...Report.empty(root, "apply", "2026-09-10T00:00:00.000Z"),
+        verification: result
+      })
+      const written = yield* Report.write(directory, report)
+
+      expect(result.tests?.stdoutTail).toBe("OPENAI_API_KEY=[REDACTED]")
+      expect(result.typecheck[0]?.stderrTail).toBe("Authorization: Bearer [REDACTED_TOKEN]")
+      for (const path of written) {
+        const text = readFileSync(path, "utf8")
+        expect(text).not.toContain("live-9f8e7d6c5b4a")
+        expect(text).not.toContain("abc123def456ghi789")
+      }
     }).pipe(Effect.provide(platform)))
 
   it.effect("skips install and format with a reason, and a skip is not a failure", () =>

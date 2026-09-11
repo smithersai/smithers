@@ -48,16 +48,16 @@ export const CommandResult = Schema.Struct({
   exitCode: Schema.Number,
   durationMs: Schema.Number,
   /**
-   * The last 12 KB the command wrote to stdout, exactly as it wrote it.
+   * The last 12 KB the command wrote to stdout.
    *
-   * Captured verbatim and never redacted: the operator commits this report,
-   * and a failing install or test suite in a 0.x project can print a registry
-   * token, a value read from `.env`, or a CI credential. Nothing here can tell
-   * a secret from a stack frame, so the Markdown says so beside the commands
-   * and the decision stays with the person committing the file.
+   * The verification step passes it through the journal's shared redaction
+   * rules before it lands here, because the operator commits this report and
+   * a failing install or test suite in a 0.x project can print a registry
+   * token or a value read from `.env`. The rules match known credential
+   * shapes only, so the Markdown still asks for a review beside the commands.
    */
   stdoutTail: Schema.String,
-  /** The last 12 KB of stderr, with the same caveat as {@link CommandResult.stdoutTail}. */
+  /** The last 12 KB of stderr, redacted like {@link CommandResult.stdoutTail}. */
   stderrTail: Schema.String,
   skipped: Schema.optional(Schema.String)
 })
@@ -749,15 +749,14 @@ const capturedOutput = (result: VerificationResult): boolean =>
 /**
  * The sentence an operator has to read before committing the report.
  *
- * The README tells them to commit `report.md`, and `report.json` beside it
- * carries every command's last {@link CommandResult.stdoutTail} bytes exactly
- * as the command printed them. A failing install or test suite in a 0.x
- * project prints whatever it prints, a registry token and a value read from
- * `.env` included, and nothing here can tell a secret from a stack frame, so
- * the report says so rather than pretending the capture is safe.
+ * The docs tell them to review, then commit, the report, and `report.json`
+ * beside it carries every command's last {@link CommandResult.stdoutTail}
+ * bytes after the journal's redaction rules. Those rules match known
+ * credential shapes only, so the report says so rather than pretending the
+ * capture is safe.
  */
 const captureWarning =
-  "Command output is captured verbatim into `report.json`, up to the last 12 KB of each stream. Review it before committing the report: a failing command can print a token or another secret, and nothing redacts it."
+  "Command output is captured into `report.json`, up to the last 12 KB of each stream, with known credential shapes such as bearer tokens and `*_KEY=` values redacted. Review it before committing the report: the redaction rules cannot catch every secret."
 
 const verificationLines = (result: VerificationResult | undefined): ReadonlyArray<string> => {
   if (result === undefined) return ["Not run."]

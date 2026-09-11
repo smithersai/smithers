@@ -255,6 +255,7 @@
     "@smthrs/engine": "1.0.0-rc.0",
     "@smthrs/flow": "1.0.0-rc.0",
     "@smthrs/harness": "1.0.0-rc.0",
+    "@smthrs/journal": "1.0.0-rc.0",
     "@smthrs/kernel": "1.0.0-rc.0",
     "@smthrs/model": "1.0.0-rc.0",
     "@smthrs/plan": "1.0.0-rc.0",

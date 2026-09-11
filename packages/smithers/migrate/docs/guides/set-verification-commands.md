@@ -89,5 +89,6 @@ inside a package script and configure a literal line such as `npm run test`.
 
 Each verification command's streams keep their last 12 KB through a rolling
 window, and the report says how many earlier bytes were dropped. The captured
-output is rendered into `report.md` verbatim and is not redacted; see
+output passes through the journal's shared redaction rules before it reaches
+`report.json`; see
 [The migration report](../concepts/report.md).
