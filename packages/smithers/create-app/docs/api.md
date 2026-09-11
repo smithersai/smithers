@@ -236,13 +236,19 @@ flow engine, and the caller's crypto. It requires no service in return, which
 the package asserts at compile time through the exported type
 `CompositionRootsAreComplete`.
 
-| `LayerOptions` field | Type                         |
-| -------------------- | ---------------------------- |
-| `agent`              | `AgentSpec`                  |
-| `sandbox`            | `SandboxSpec`                |
-| `tools`              | `ToolsSpec`                  |
-| `seats`              | `SeatProvider`               |
-| `crypto`             | `Layer.Layer<Crypto.Crypto>` |
+| `LayerOptions` field | Type                                            |
+| -------------------- | ----------------------------------------------- |
+| `agent`              | `AgentSpec`                                     |
+| `sandbox`            | `SandboxSpec`                                   |
+| `tools`              | `ToolsSpec`                                     |
+| `seats`              | `SeatProvider`                                  |
+| `crypto`             | `Layer.Layer<Crypto.Crypto>`                    |
+| `sandboxVariant`     | `Layer.Layer<QuickJSSandbox.Variant>`, optional |
+
+`sandboxVariant` names the QuickJS build the sandbox compiles. Omitted, the
+host gets the single-file build, which Node and a browser compile from bytes
+and Cloudflare's workerd refuses. A workerd host builds a variant from a
+`.wasm` module import with `QuickJSSandbox.layerVariant` and passes it here.
 
 `SeatProvider` is one method:
 

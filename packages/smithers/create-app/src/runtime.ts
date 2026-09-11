@@ -18,6 +18,7 @@ import * as SeatResolver from "@smthrs/agent/SeatResolver"
 import * as Capability from "@smthrs/capability/Capability"
 import { FlowEngine } from "@smthrs/engine"
 import { Action, Flow } from "@smthrs/flow"
+import type * as QuickJSSandbox from "@smthrs/harness/QuickJSSandbox"
 import type * as Sandbox from "@smthrs/harness/Sandbox"
 import type * as Model from "@smthrs/model/Model"
 import * as Registry from "@smthrs/registry/Registry"
@@ -97,7 +98,11 @@ export interface SeatProvider {
 }
 
 /**
- * The three resolved layer files plus the two things only a host can supply.
+ * The three resolved layer files plus the things only a host can supply.
+ *
+ * `sandboxVariant` names the QuickJS build the sandbox compiles. Omitted, the
+ * host gets the single-file build, which Node and a browser compile from bytes
+ * and Cloudflare's workerd refuses; see {@link layerFor}.
  *
  * @category models
  * @since 0.1.0
@@ -108,6 +113,7 @@ export interface LayerOptions {
   readonly tools: ToolsSpec
   readonly seats: SeatProvider
   readonly crypto: Layer.Layer<Crypto.Crypto>
+  readonly sandboxVariant?: Layer.Layer<QuickJSSandbox.Variant> | undefined
 }
 
 /**
@@ -212,6 +218,15 @@ export const emptyRegistry = (): Registry.Registry =>
  * loop, the sandbox and steering defaults, the action implementations, an
  * in-memory flow engine, and the caller's crypto.
  *
+ * This is where the QuickJS build is selected, and the one place that says
+ * why a Worker host cannot run a live turn yet. Without `sandboxVariant` the
+ * host gets `Agent.layerDefaults`, whose sandbox compiles the single-file
+ * QuickJS build with `WebAssembly.compile` over bytes. workerd refuses that:
+ * it instantiates only a module the toolchain compiled. Such a host builds a
+ * variant from a `.wasm` module import (`QuickJSSandbox.layerVariant`) and
+ * passes it here, which composes `Agent.layerDefaultsWithVariant` instead.
+ * The `aomi` template's Worker does not pass one yet.
+ *
  * @category layers
  * @since 0.1.0
  */
@@ -236,9 +251,12 @@ export const layerFor = (options: LayerOptions) => {
   // would be policy the app author never chose.
   // eslint-disable-next-line no-restricted-syntax -- no approved envelope exists, see above
   const agentPolicy = Layer.mergeAll(QuotaPolicy.layerDefault(), Budget.layerUnbounded())
+  const defaults = options.sandboxVariant === undefined
+    ? Agent.layerDefaults
+    : Agent.layerDefaultsWithVariant.pipe(Layer.provide(options.sandboxVariant))
   return Layer.mergeAll(host, seats, Agent.layer).pipe(
     Layer.provideMerge(agentPolicy),
-    Layer.provideMerge(Agent.layerDefaults),
+    Layer.provideMerge(defaults),
     Layer.provideMerge(Action.layerImplementations),
     Layer.provideMerge(FlowEngine.layerMemory),
     Layer.provideMerge(options.crypto)

@@ -56,9 +56,17 @@ pnpm test          # replay every flow's recorded fixture, plus the wire contrac
 pnpm test:record   # re-record against the live seat; needs a provider key
 ```
 
-A recording reads the credential for the provider `AGENT.ts` names, and
-`test/tevm.test.ts` reads `TEVM_FORK_RPC_URL` for its fork. Put both in
-`.dev.vars` for local runs; see `.dev.vars.example`.
+Vitest runs as a plain Node process and never reads `.dev.vars`; that file
+feeds only `pnpm dev`'s workerd. A recording reads the credential for the
+provider `AGENT.ts` names from the test process environment, and
+`test/tevm.test.ts` reads `TEVM_FORK_RPC_URL` the same way, skipping the fork
+suite when it is absent. Export both before running:
+
+```sh
+export OPENAI_API_KEY=<key>
+export TEVM_FORK_RPC_URL=<archive-capable JSON-RPC endpoint>
+pnpm test:record
+```
 
 The shipped `TOOLS.ts` uses the deterministic Tevm mock with an empty grant.
 A host using `layerTevm` sets `TevmOptions.rpcUrl` or exports

@@ -87,10 +87,12 @@ declaration in `PACKAGE.ts`. See [Brand an app](./brand-an-app.md).
 
 ## How the templates route in the browser
 
-The generated `routes.ui.gen.ts` is a table, not a router. The templates ship a
-small entry point that reads it and matches on the location hash, which needs
-no server rewrite rules and matches the
-`not_found_handling: single-page-application` their assets are served with.
+The generated `routes.ui.gen.ts` is a table, not a router. Each template ships
+a small entry point that reads it. The `default` template matches on the
+location hash, which needs no server rewrite rules. The `aomi` template routes
+on history (`pushState`) and honors a `#/path` hash as a fallback, which the
+`not_found_handling: single-page-application` its assets are served with
+allows.
 
 Replace that entry point with any router you like. Its only obligation is to
 read `pages` and `layout` from the generated module rather than importing pages

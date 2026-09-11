@@ -10,9 +10,9 @@
  * plausible sequence so the shell works end to end. `"0"` asks for the real
  * `Agent.run` path, which is written out in full at {@link liveTurn} and does
  * not run under workerd yet, so it is refused with
- * {@link liveRuntimeUnsupported} rather than started: two upstream blockers
- * stop it, and a caller that flips the flag deserves to be told which rather
- * than handed whichever of them fails first.
+ * {@link liveRuntimeUnsupported} rather than started: two blockers stop it,
+ * and a caller that flips the flag deserves to be told which rather than
+ * handed whichever of them fails first.
  */
 import type { AgentSpec, AnyFlowSpec, SandboxSpec, ToolsSpec } from "@smthrs/create-app/app"
 import { layerFor, materializeFlow } from "@smthrs/create-app/runtime"
@@ -149,9 +149,9 @@ const failureMessage = (cause: unknown): string =>
  * The refusal `APP_MOCK_TURN=0` gets today, exported so the flow-run path and
  * the tests state the same thing once.
  *
- * Both blockers are named in full because each one is a fix in a different
- * package, and a deployer who set the flag has no other way to learn why
- * nothing ran. {@link liveTurn} carries the file and line for each.
+ * Both blockers are named because each one is a fix in a different place,
+ * and a deployer who set the flag has no other way to learn why nothing ran.
+ * {@link liveTurn} says where each lives.
  *
  * A third blocker used to be listed here: `@smthrs/create-app/runtime` built
  * `AgentAction.layerHost` without `flows`, so an app's tool sources never
@@ -159,8 +159,8 @@ const failureMessage = (cause: unknown): string =>
  * was false and is gone.
  */
 export const liveRuntimeUnsupported =
-  "unsupported_runtime: the live agent path does not run under workerd yet. Two upstream blockers: "
-  + "(1) @smthrs/harness compiles its QuickJS variant with WebAssembly.compile, which workerd refuses; "
+  "unsupported_runtime: the live agent path does not run under workerd yet. Two blockers: "
+  + "(1) this Worker passes layerFor no sandboxVariant, so the QuickJS sandbox compiles WebAssembly from bytes, which workerd refuses; "
   + "(2) @smthrs/database has no Durable Object SQLite driver, so a turn's journal does "
   + "not survive the request. Leave APP_MOCK_TURN at \"1\" until both land."
 
@@ -368,18 +368,15 @@ const sessionSources = (
 /**
  * One turn on the real agent, streaming every event as a frame.
  *
- * TODO(upstream): this path cannot run inside workerd yet. Two items, both in
- * the Smithers packages:
+ * TODO: this path cannot run inside workerd yet. Two items:
  *
- *  1. `packages/smithers/agent/harness/src/QuickJSSandbox.ts:22` imports
- *     `@jitl/quickjs-singlefile-browser-release-sync` and compiles it at
- *     `:383` with `newQuickJSWASMModuleFromVariant(variant)`. That is a
- *     runtime `WebAssembly.compile` over bytes, which workerd refuses; a
- *     Worker needs the wasmfile variant behind a real `.wasm` module import.
- *     `packages/smithers/agent/src/Agent.ts:474` (`layerDefaults`) merges that layer
- *     unconditionally, and `layerFor` composes `layerDefaults`, so every real
- *     turn dies there before it reaches the model.
- *  2. `packages/smithers/flows/database` has no Durable Object SQLite driver, so the turn
+ *  1. The QuickJS build. `layerFor` in `@smthrs/create-app/runtime` selects
+ *     it, and its doc comment is the one statement of what a Worker host
+ *     needs: a variant built from a `.wasm` module import, passed as
+ *     `sandboxVariant`. This Worker passes none, so the sandbox compiles
+ *     WebAssembly from bytes, which workerd refuses, and every real turn dies
+ *     there before it reaches the model.
+ *  2. `@smthrs/database` has no Durable Object SQLite driver, so the turn
  *     runs on `FlowEngine.layerMemory` (composed by `layerFor`) and its
  *     journal does not survive the request. `AppSession` persists the app's
  *     own state instead.

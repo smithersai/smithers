@@ -155,9 +155,12 @@ earlier cards. An unrouted flow emits one error frame and settles as `failed`,
 including when the flow registry is empty.
 
 Setting it to `0` asks for the real agent path, which is written out in full
-but refuses with a message naming two upstream blockers: the QuickJS sandbox
-compiles its WebAssembly at runtime, which workerd refuses, and there is no
-Durable Object engine store, so a turn's journal does not survive the request.
+but refuses with a message naming two blockers. The Worker passes `layerFor`
+no `sandboxVariant`, so the QuickJS sandbox compiles its WebAssembly from
+bytes, which workerd refuses; the `layerFor` doc comment in
+`@smthrs/create-app/runtime` is the one statement of that seam. And there is
+no Durable Object engine store, so a turn's journal does not survive the
+request.
 
 ### What it needs to run
 

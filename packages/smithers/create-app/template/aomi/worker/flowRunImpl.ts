@@ -14,7 +14,8 @@
  * Like `turnImpl.ts`, this ships a mock path and a live path.
  * `env.APP_MOCK_TURN !== "0"` walks the stages without calling a model; `"0"`
  * asks for {@link liveRun}, which is written out in full and does not run under
- * workerd yet for the three reasons listed at `worker/turnImpl.ts`.
+ * workerd yet, for the reasons `liveRuntimeUnsupported` in `worker/turnImpl.ts`
+ * states.
  */
 import type { AgentSpec, AnyFlowSpec, SandboxSpec, ToolsSpec } from "@smthrs/create-app/app"
 import { layerFor, materializeFlow } from "@smthrs/create-app/runtime"
@@ -163,8 +164,8 @@ export const runFlowRun = async (options: FlowRunOptions): Promise<Phase> => {
   if (route === undefined) {
     return card.settle("failed", { error: `No flow is routed as "${options.request.flowId}".` })
   }
-  // `APP_MOCK_TURN=0` is refused rather than started, for the same three
-  // upstream reasons the turn path names. A run that dies inside the sandbox
+  // `APP_MOCK_TURN=0` is refused rather than started, for the same reasons
+  // the turn path names. A run that dies inside the sandbox
   // loader tells a deployer nothing; the shared message tells them what to
   // wait for.
   if (options.env.APP_MOCK_TURN === "0") {
@@ -250,14 +251,13 @@ const failureMessage = (cause: unknown): string =>
  * and once when it settles, and the settled card carries the flow's typed
  * output as `result`.
  *
- * TODO(upstream): this path cannot run inside workerd yet, for the three
- * reasons written out at `worker/turnImpl.ts` (`liveTurn`): the QuickJS variant
- * `Agent.layerDefaults` compiles, the tool sources missing from
- * `AgentAction.layerHost`, and the absent Durable Object journal driver.
+ * TODO: this path cannot run inside workerd yet, for the two reasons
+ * `liveTurn` in `worker/turnImpl.ts` names: the QuickJS build `layerFor`
+ * selects, and the absent Durable Object journal driver.
  */
 // Exported, and unreachable from `runFlowRun`, on purpose: it is the
 // written-out shape the fix will take, kept compiling against the current
-// package APIs so the three blockers are the only thing left to land.
+// package APIs so those two blockers are the only thing left to land.
 export const liveRun = async (options: FlowRunOptions, route: FlowRoute, card: RunCard): Promise<Phase> => {
   const { env, request, signal } = options
   // `AnyFlowSpec` erases the payload's field types, so the struct built from it

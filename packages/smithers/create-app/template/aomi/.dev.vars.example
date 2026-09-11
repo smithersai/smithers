@@ -8,6 +8,7 @@
 OPENAI_API_KEY=
 
 # JSON-RPC the Tevm fork reads chain state from. Any archive-capable endpoint.
+# Vitest never reads this file: export it in the shell for `pnpm test`.
 # layerTevm reads it from the process environment unless options.rpcUrl is set.
 # The shipped Worker uses the mock; a real Worker host must pass its binding as rpcUrl.
 TEVM_FORK_RPC_URL=

@@ -126,7 +126,8 @@ go through the build.
 
 The templates put the SPA in the assets bucket and scope
 `run_worker_first` to `/api/*`, so an asset request never wakes the Worker.
-`not_found_handling` is `single-page-application`, which is why the templates
-route in the browser on the location hash rather than on the path. An unrouted
+`not_found_handling` is `single-page-application`, which is what lets the
+templates route in the browser: the `default` template on the location hash,
+the `aomi` template on history with a hash fallback. An unrouted
 `/api/*` path answers the Worker's own JSON 404 rather than the SPA's
 `index.html`.

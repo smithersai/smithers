@@ -19,7 +19,7 @@ second deployable and no origin server.
 | `turn.ts` | One agent turn as an NDJSON stream of `TurnFrame` lines, with the runtime imported lazily |
 | `turnImpl.ts` | The turn itself: the mock stream, and the live `Agent.run` path behind it |
 | `flowRunImpl.ts` | `POST /api/flows/run`: a routed flow executed outside the conversation |
-| `seats.ts` | `anthropic:<model>` resolved to a live model over workerd's `fetch` |
+| `seats.ts` | `<provider>:<model>` resolved to a live model over workerd's `fetch`; knows `openai` and `anthropic`, and refuses any other provider |
 | `crypto.ts` | `effect/Crypto` over WebCrypto, because effect ships no Worker layer |
 
 ## Routes
@@ -29,7 +29,7 @@ second deployable and no origin server.
 | `POST /api/agent/turn` | NDJSON stream of `TurnFrame`, forwarded from the session object |
 | `POST /api/agent/turn/cancel` | `{ cancelled }` |
 | `GET /api/session?id=` | `SessionState` |
-| `GET /api/session` | `{ sessions: [] }` — the shell keeps its own list |
+| `GET /api/session` | `{ sessions: SessionSummary[] }`, newest first, read from the registry object; the shell's Recent column renders it. An object evicted mid-turn never reports its settle, so a `running` row can outlive its turn; `?id=` reads the session object itself |
 | `GET /api/flows?sessionId=` | File flows from `routes.gen.ts` plus the session's saved flows |
 | `POST /api/flows/run` | `{ executionId }` |
 | `GET /api/health` | `{ ok, build, app }`, reachable without a credential |
@@ -57,8 +57,8 @@ pnpm dev
 
 `pnpm dev` runs Vite, and `@cloudflare/vite-plugin` runs `worker/index.ts`
 inside workerd in the same process. Durable Objects, the SQLite storage, and the
-assets binding are all local. `.dev.vars` supplies the secrets; it is
-gitignored. The example explicitly sets `APP_API_OPEN=1` to admit local API
+assets binding are all local. `.dev.vars` supplies the Worker's secrets to
+`pnpm dev`; it is gitignored, and Vitest never reads it (see below). The example explicitly sets `APP_API_OPEN=1` to admit local API
 requests without a token. A nonempty `APP_API_TOKEN` still requires a matching
 bearer header. Keep `APP_API_OPEN` out of deployed vars and secrets.
 
@@ -100,7 +100,20 @@ wrangler secret put APP_API_TOKEN --config worker/wrangler.jsonc
 `seats.ts` reads the credential for the provider the seat names, so the secret
 follows `AGENT.ts`: `OPENAI_API_KEY` for the `openai:gpt-5.5` this template
 ships, `ANTHROPIC_API_KEY` for an `anthropic:` seat. `TEVM_FORK_RPC_URL` is not
-a deploy secret: only `test/tevm.test.ts` reads it, from `.dev.vars`.
+a deploy secret: only `test/tevm.test.ts` reads it, from the test process
+environment.
+
+`pnpm test` runs Vitest as a plain Node process, outside workerd, so nothing
+in `.dev.vars` reaches it. A recording (`pnpm test:record`) reads the seat's
+provider key from `process.env` and the fork suite reads `TEVM_FORK_RPC_URL`
+the same way, skipping itself when the variable is absent. Export both in the
+shell that runs the tests:
+
+```sh
+export OPENAI_API_KEY=<key>          # the provider AGENT.ts names
+export TEVM_FORK_RPC_URL=<archive-capable JSON-RPC endpoint>
+pnpm test:record
+```
 
 `routes: [{ pattern: "aomi.smithers.sh", custom_domain: true }]` binds the
 custom domain. Wrangler creates the DNS record and the certificate on the
@@ -164,18 +177,15 @@ shell, the pane host, and cancel all work end to end. Setting it to `0` selects
 the real `Agent.run` path, which is written out in full in `liveTurn` and does
 not run under workerd yet.
 
-Two upstream items in the Smithers packages block it:
+Two items block it:
 
-1. **The sandbox cannot load.** `packages/smithers/agent/harness/src/QuickJSSandbox.ts:22`
-   imports `@jitl/quickjs-singlefile-browser-release-sync` and compiles it at
-   `:383` with `newQuickJSWASMModuleFromVariant(variant)`. That is a runtime
-   `WebAssembly.compile` over bytes, which workerd refuses. The Worker needs the
-   wasmfile variant behind a real `.wasm` module import, which means
-   `QuickJSSandbox.layer({ variant })`. `packages/smithers/agent/src/Agent.ts:474`
-   (`layerDefaults`) merges the sandbox layer unconditionally and
-   `@smthrs/create-app/runtime`'s `layerFor` composes `layerDefaults`, so every
-   real turn dies here before it reaches the model. This is the hard blocker.
-2. **No Durable Object engine store.** `packages/smithers/flows/database` has no
+1. **The sandbox build.** `layerFor` in `@smthrs/create-app/runtime` selects
+   the QuickJS build, and its doc comment is the one statement of what a
+   Worker host needs: a variant built from a `.wasm` module import, passed as
+   `sandboxVariant`. Without it the sandbox compiles WebAssembly from bytes,
+   which workerd refuses, so every real turn dies before it reaches the model.
+   This Worker does not build or pass that variant yet.
+2. **No Durable Object engine store.** `@smthrs/database` has no
    `ctx.storage.sql` driver, so a turn runs on `FlowEngine.layerMemory` and its
    journal does not survive the request. `AppSession` persists the app's own
    state (messages, cards, flows) instead, which is why a reload redraws the

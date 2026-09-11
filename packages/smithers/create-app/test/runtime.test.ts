@@ -12,6 +12,7 @@ import * as Capability from "@smthrs/capability/Capability"
 import { Interpreter } from "@smthrs/flow"
 import type * as AgentEvent from "@smthrs/harness/AgentEvent"
 import * as FlowBinding from "@smthrs/harness/FlowBinding"
+import * as QuickJSSandbox from "@smthrs/harness/QuickJSSandbox"
 import * as Model from "@smthrs/model/Model"
 import * as ModelEvent from "@smthrs/model/ModelEvent"
 import * as Effect from "effect/Effect"
@@ -93,6 +94,30 @@ describe("layer inputs", () => {
       expect(host.flows).toEqual([])
     })
   }
+
+  it("compiles the QuickJS build a host names through sandboxVariant", async () => {
+    const options = {
+      agent: defineAgent({ seat: "s", system: [] }),
+      sandbox: defineSandbox({ limits: {} }),
+      tools: defineTools({ sources: [] }),
+      seats: { resolve: () => Effect.die("host inspection must not resolve a seat") },
+      crypto: NodeCrypto.layer
+    }
+    const named = await Effect.runPromise(
+      AgentAction.Host.pipe(Effect.provide(layerFor({ ...options, sandboxVariant: QuickJSSandbox.layerVariantLive })))
+    )
+    expect(named.flows).toEqual([])
+    // A build that cannot load must fail the host, which proves the option is
+    // what the sandbox compiles rather than an ignored field.
+    const unloadable = {} as Parameters<typeof QuickJSSandbox.layerVariant>[0]
+    await expect(
+      Effect.runPromise(
+        AgentAction.Host.pipe(
+          Effect.provide(layerFor({ ...options, sandboxVariant: QuickJSSandbox.layerVariant(unloadable) }))
+        )
+      )
+    ).rejects.toThrow()
+  })
 
   it("shows a cell an empty catalog", async () => {
     const registry = emptyRegistry()
