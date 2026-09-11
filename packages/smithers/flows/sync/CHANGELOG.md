@@ -63,6 +63,14 @@
 - **Breaking.** `BranchRpcs`'s submit, announce, leave, and roster payloads are
   the service schemas rather than copies of them, so `displayName: ""` is a
   typed wire refusal instead of a defect raised inside the presence service.
+- **Breaking.** The branch request schemas `SubmitRequest`, `Announcement`,
+  `RosterRequest`, and `LeaveRequest` live in `BranchProtocol` beside every
+  other branch wire shape, so `BranchRpcs` no longer imports the command ledger
+  or the presence registry. `BranchCommands.SubmitRequest`, the three
+  `BranchPresence` request schemas, and the `BranchRpcs` aliases
+  `SubmitPayload`, `AnnouncePayload`, `LeavePayload`, and `RosterPayload` are
+  removed. `BranchProtocol.CommandIdentity` is removed: the ledger reads a
+  command's id from the payload admission already decoded.
 - **Breaking.** `makeLiveWith`, `layerWith`, and `BranchPresence.layer` fail
   with `invalid_request` when an option is not a positive safe integer.
   `BranchPresence.Service` gained `leaseMs`.

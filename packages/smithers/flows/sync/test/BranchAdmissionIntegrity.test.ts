@@ -98,7 +98,7 @@ describe("branch write admission integrity", () => {
         )
       )))
       for (const invalid of [null, {}, { capability: {}, submission: { branchId } }]) {
-        expect(yield* Effect.flip(commands.submit(invalid as BranchCommands.SubmitRequest)))
+        expect(yield* Effect.flip(commands.submit(invalid as BranchProtocol.SubmitRequest)))
           .toMatchObject({ code: "invalid_request", cause: expect.any(String) })
       }
       expect(authorized).toBe(0)

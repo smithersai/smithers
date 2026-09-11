@@ -16,9 +16,17 @@
  */
 import * as Schema from "effect/Schema"
 import { Rpc, RpcGroup } from "effect/unstable/rpc"
-import * as BranchCommands from "./BranchCommands.ts"
-import * as BranchPresence from "./BranchPresence.ts"
-import { Access, BranchId, CommandReceipt, Participant, ShareCapability } from "./BranchProtocol.ts"
+import {
+  Access,
+  Announcement,
+  BranchId,
+  CommandReceipt,
+  LeaveRequest,
+  Participant,
+  RosterRequest,
+  ShareCapability,
+  SubmitRequest
+} from "./BranchProtocol.ts"
 import { SyncError } from "./SyncError.ts"
 import { SyncAuth } from "./SyncRpcs.ts"
 
@@ -29,78 +37,6 @@ import { SyncAuth } from "./SyncRpcs.ts"
  * @since 0.1.0
  */
 export const maximumBranchTtlMs = 24 * 60 * 60 * 1000
-
-/**
- * Schema for a capability-bearing command submission.
- *
- * It IS `BranchCommands.SubmitRequest`, not a copy of it. Four wire payloads
- * used to re-declare the message their service already owned, and the
- * announce copy had already drifted: it accepted `displayName: ""` where the
- * service requires a non-empty name, so a wire-legal announce reached a
- * `Participant` constructor and threw a defect outside the declared
- * `SyncError` channel. Naming the service's schema makes that drift
- * impossible rather than fixed once.
- *
- * @category schemas
- * @since 0.1.0
- */
-export const SubmitPayload = BranchCommands.SubmitRequest
-
-/**
- * A capability-bearing command submission.
- *
- * @category models
- * @since 0.1.0
- */
-export type SubmitPayload = typeof SubmitPayload.Type
-
-/**
- * Schema for one participant's announcement of itself on a branch.
- *
- * @category schemas
- * @since 0.1.0
- */
-export const AnnouncePayload = BranchPresence.Announcement
-
-/**
- * One participant's announcement of itself on a branch.
- *
- * @category models
- * @since 0.1.0
- */
-export type AnnouncePayload = typeof AnnouncePayload.Type
-
-/**
- * Schema for a capability-bearing request to drop one participant.
- *
- * @category schemas
- * @since 0.1.0
- */
-export const LeavePayload = BranchPresence.LeaveRequest
-
-/**
- * A capability-bearing request to drop one participant.
- *
- * @category models
- * @since 0.1.0
- */
-export type LeavePayload = typeof LeavePayload.Type
-
-/**
- * Schema for a capability-bearing request for one branch's roster.
- *
- * @category schemas
- * @since 0.1.0
- */
-export const RosterPayload = BranchPresence.RosterRequest
-
-/**
- * A capability-bearing request for one branch's roster.
- *
- * @category models
- * @since 0.1.0
- */
-export type RosterPayload = typeof RosterPayload.Type
 
 /**
  * Schema for a request to open a new shared branch.
@@ -190,6 +126,15 @@ export type RosterFrame = typeof RosterFrame.Type
 /**
  * The remote procedures of branch collaboration.
  *
+ * The capability-bearing payloads ARE the `BranchProtocol` request schemas the
+ * branch services take, not copies of them. Four wire payloads used to
+ * re-declare the message their service already owned, and the announce copy
+ * had already drifted: it accepted `displayName: ""` where the service
+ * requires a non-empty name, so a wire-legal announce reached a `Participant`
+ * constructor and threw a defect outside the declared `SyncError` channel.
+ * Naming one schema on both sides makes that drift impossible rather than
+ * fixed once, and keeps this group free of the services themselves.
+ *
  * @category groups
  * @since 0.1.0
  */
@@ -200,13 +145,13 @@ export const BranchRpcs = RpcGroup.make(
     error: SyncError
   }),
   Rpc.make("Branch.MintShare", { payload: MintSharePayload, success: ShareCapability, error: SyncError }),
-  Rpc.make("Branch.Submit", { payload: SubmitPayload, success: CommandReceipt, error: SyncError }),
-  Rpc.make("Branch.Announce", { payload: AnnouncePayload, success: Participant, error: SyncError }),
-  Rpc.make("Branch.Leave", { payload: LeavePayload, success: Schema.Null, error: SyncError }),
+  Rpc.make("Branch.Submit", { payload: SubmitRequest, success: CommandReceipt, error: SyncError }),
+  Rpc.make("Branch.Announce", { payload: Announcement, success: Participant, error: SyncError }),
+  Rpc.make("Branch.Leave", { payload: LeaveRequest, success: Schema.Null, error: SyncError }),
   Rpc.make("Branch.Roster", {
-    payload: RosterPayload,
+    payload: RosterRequest,
     success: Schema.Array(Participant),
     error: SyncError
   }),
-  Rpc.make("Branch.WatchRoster", { payload: RosterPayload, success: RosterFrame, error: SyncError, stream: true })
+  Rpc.make("Branch.WatchRoster", { payload: RosterRequest, success: RosterFrame, error: SyncError, stream: true })
 ).middleware(SyncAuth)

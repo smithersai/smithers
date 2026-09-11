@@ -63,7 +63,7 @@ const emit = (value: unknown): Effect.Effect<void> =>
 const request = (
   capability: BranchProtocol.ShareCapability,
   index: number
-): Effect.Effect<BranchCommands.SubmitRequest, SyncError> =>
+): Effect.Effect<BranchProtocol.SubmitRequest, SyncError> =>
   Effect.map(
     BranchCommands.submission({
       branchId,

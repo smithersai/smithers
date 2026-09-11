@@ -34,9 +34,11 @@ import * as BranchCommands from "../src/BranchCommands.ts"
 import * as BranchIds from "../src/BranchIds.ts"
 import * as BranchPresence from "../src/BranchPresence.ts"
 import {
+  Announcement,
   type BranchId,
   branchRunId,
   type CommandId,
+  type CommandSubmission,
   Cursor,
   type ParticipantId,
   SayCommand,
@@ -151,7 +153,7 @@ const say = (
   participantId: ParticipantId,
   commandId: string,
   text: string
-): Effect.Effect<BranchRpcs.SubmitPayload["submission"], SyncError> =>
+): Effect.Effect<CommandSubmission, SyncError> =>
   BranchCommands.submission({
     branchId,
     commandId: commandId as CommandId,
@@ -456,13 +458,14 @@ describe("BranchRpcs over the wire", () => {
 
   it.effect("refuses an empty displayName at the wire schema, before any handler runs", () =>
     Effect.gen(function*() {
-      // `BranchRpcs.AnnouncePayload` IS `BranchPresence.Announcement`, so the
-      // wire and the service cannot disagree about what a legal announcement
-      // is. It used to accept `""` and hand it to a `NonEmptyString`
-      // `Participant` constructor, which THREW: a defect outside the
-      // `SyncError` channel the RPC declares, which an `Exit.isFailure`
-      // assertion could not tell from a typed refusal.
-      const decoded = Schema.decodeUnknownResult(BranchRpcs.AnnouncePayload)({
+      // `Branch.Announce` carries `BranchProtocol.Announcement`, the schema
+      // `BranchPresence.announce` takes, so the wire and the service cannot
+      // disagree about what a legal announcement is. The wire copy used to
+      // accept `""` and hand it to a `NonEmptyString` `Participant`
+      // constructor, which THREW: a defect outside the `SyncError` channel
+      // the RPC declares, which an `Exit.isFailure` assertion could not tell
+      // from a typed refusal.
+      const decoded = Schema.decodeUnknownResult(Announcement)({
         capability: null,
         branchId: "b",
         participantId: alice,

@@ -221,6 +221,63 @@ export class Participant extends Schema.Class<Participant>("@smthrs/sync/BranchP
 }) {}
 
 /**
+ * Schema for a capability-bearing request for one branch's roster.
+ *
+ * @category schemas
+ * @since 0.1.0
+ */
+export const RosterRequest = Schema.Struct({ capability: ShareCapability, branchId: BranchId })
+
+/**
+ * A capability-bearing request for one branch's roster.
+ *
+ * @category models
+ * @since 0.1.0
+ */
+export type RosterRequest = typeof RosterRequest.Type
+
+/**
+ * Schema for a capability-bearing request to drop one participant.
+ *
+ * @category schemas
+ * @since 0.1.0
+ */
+export const LeaveRequest = Schema.Struct({ ...RosterRequest.fields, participantId: ParticipantId })
+
+/**
+ * A capability-bearing request to drop one participant.
+ *
+ * @category models
+ * @since 0.1.0
+ */
+export type LeaveRequest = typeof LeaveRequest.Type
+
+/**
+ * Schema for one participant's announcement of itself on a branch.
+ *
+ * The same shape serves join, heartbeat, and cursor movement: an announcement
+ * is idempotent, so a client that reconnects simply announces again.
+ *
+ * @category schemas
+ * @since 0.1.0
+ */
+export const Announcement = Schema.Struct({
+  capability: ShareCapability,
+  branchId: BranchId,
+  participantId: ParticipantId,
+  displayName: Schema.NonEmptyString,
+  cursor: Schema.NullOr(Cursor)
+})
+
+/**
+ * One participant's announcement of itself on a branch.
+ *
+ * @category models
+ * @since 0.1.0
+ */
+export type Announcement = typeof Announcement.Type
+
+/**
  * Schema for one submitted command or flow invocation.
  *
  * Every user action on a shared branch arrives here first — chat messages are
@@ -243,6 +300,22 @@ export class CommandSubmission extends Schema.Class<CommandSubmission>(
 }) {}
 
 /**
+ * Schema for a capability-bearing command submission.
+ *
+ * @category schemas
+ * @since 0.1.0
+ */
+export const SubmitRequest = Schema.Struct({ capability: ShareCapability, submission: CommandSubmission })
+
+/**
+ * A capability-bearing command submission.
+ *
+ * @category models
+ * @since 0.1.0
+ */
+export type SubmitRequest = typeof SubmitRequest.Type
+
+/**
  * The durable payload stored for an admitted command.
  *
  * Distinct from the wire request: `args` and `target` carry decoding defaults,
@@ -260,21 +333,6 @@ export class CommandEventPayload extends Schema.Class<CommandEventPayload>(
   name: Schema.NonEmptyString,
   args: Schema.String.pipe(Schema.withDecodingDefaultKey(Effect.succeed(""))),
   target: Schema.String.pipe(Schema.withDecodingDefaultKey(Effect.succeed("")))
-}) {}
-
-/**
- * The one field a ledger rebuild needs from a stored command: its id.
- *
- * Kept as its own schema for callers that need the identity alone. Sync
- * hydration validates the complete known command before extracting this field.
- *
- * @category schemas
- * @since 0.1.0
- */
-export class CommandIdentity extends Schema.Class<CommandIdentity>(
-  "@smthrs/sync/BranchProtocol/CommandIdentity"
-)({
-  commandId: CommandId
 }) {}
 
 /**

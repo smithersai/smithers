@@ -19,66 +19,19 @@ import * as Context from "effect/Context"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
 import * as PubSub from "effect/PubSub"
-import * as Schema from "effect/Schema"
 import * as Stream from "effect/Stream"
-import { BranchId, Cursor, Participant, ParticipantId, ShareCapability } from "./BranchProtocol.ts"
+import {
+  type Announcement,
+  type BranchId,
+  Cursor,
+  type LeaveRequest,
+  Participant,
+  type ParticipantId,
+  type RosterRequest
+} from "./BranchProtocol.ts"
 import * as BranchShare from "./BranchShare.ts"
 import { positiveInt } from "./internal/options.ts"
 import { SyncError } from "./SyncError.ts"
-
-/**
- * One participant's announcement of itself on a branch.
- *
- * The same shape serves join, heartbeat, and cursor movement: an announcement
- * is idempotent, so a client that reconnects simply announces again.
- *
- * @category models
- * @since 0.1.0
- */
-export const Announcement = Schema.Struct({
-  capability: ShareCapability,
-  branchId: BranchId,
-  participantId: ParticipantId,
-  displayName: Schema.NonEmptyString,
-  cursor: Schema.NullOr(Cursor)
-})
-/**
- * The value form of {@link Announcement}.
- *
- * @category models
- * @since 0.1.0
- */
-export type Announcement = typeof Announcement.Type
-
-/**
- * A capability-bearing request for one branch's roster.
- *
- * @category models
- * @since 0.1.0
- */
-export const RosterRequest = Schema.Struct({ capability: ShareCapability, branchId: BranchId })
-/**
- * The value form of {@link RosterRequest}.
- *
- * @category models
- * @since 0.1.0
- */
-export type RosterRequest = typeof RosterRequest.Type
-
-/**
- * A capability-bearing request to drop one participant.
- *
- * @category models
- * @since 0.1.0
- */
-export const LeaveRequest = Schema.Struct({ ...RosterRequest.fields, participantId: ParticipantId })
-/**
- * The value form of {@link LeaveRequest}.
- *
- * @category models
- * @since 0.1.0
- */
-export type LeaveRequest = typeof LeaveRequest.Type
 
 /**
  * Ephemeral branch presence operations.

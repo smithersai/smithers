@@ -25,19 +25,17 @@ import * as JournalEvent from "@smthrs/journal/JournalEvent"
 import * as Context from "effect/Context"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
-import * as Schema from "effect/Schema"
 import * as Semaphore from "effect/Semaphore"
 import {
   type BranchId,
   branchRunId,
   CommandEvent,
   type CommandId,
-  CommandIdentity,
   CommandReceipt,
   commandSourceId,
   commandSourceSeq,
   CommandSubmission,
-  ShareCapability
+  SubmitRequest
 } from "./BranchProtocol.ts"
 import * as BranchShare from "./BranchShare.ts"
 import * as Admission from "./internal/admission.ts"
@@ -45,21 +43,6 @@ import { causeCode, journalErrorCode } from "./internal/causeText.ts"
 import { positiveInt } from "./internal/options.ts"
 import { SyncError } from "./SyncError.ts"
 import * as SyncProtocol from "./SyncProtocol.ts"
-
-/**
- * A capability-bearing command submission.
- *
- * @category models
- * @since 0.1.0
- */
-export const SubmitRequest = Schema.Struct({ capability: ShareCapability, submission: CommandSubmission })
-/**
- * The value form of {@link SubmitRequest}.
- *
- * @category models
- * @since 0.1.0
- */
-export type SubmitRequest = typeof SubmitRequest.Type
 
 /**
  * Branch command admission operations.
@@ -275,7 +258,9 @@ const makeWith = (
       /**
        * Pages a branch's journal forward from `from`, handing each entry to
        * `visit` along with the command identity it carries, if any, and
-       * stopping once it has visited `budget` entries.
+       * stopping once it has visited `budget` entries. Admission already
+       * decoded every command payload in full, so the identity is read off
+       * that decoded command rather than decoded a second time.
        *
        * The budget is entries VISITED, not pages read, so a caller names a
        * bound in the unit its own memory is measured in.
@@ -300,14 +285,11 @@ const makeWith = (
               ...(after === undefined ? {} : { after }),
               limit: Math.min(pageSize, remaining)
             }).pipe(Effect.mapError(journalFailure))
-            const admitted = yield* Admission.entries(page.entries, runId, after ?? -1)
-            for (const entry of admitted) {
+            const admitted = yield* Admission.withCommands(page.entries, runId, after ?? -1)
+            for (const { command, entry } of admitted) {
               after = entry.seq
               remaining -= 1
-              const commandId = entry.eventType === CommandEvent
-                ? Schema.decodeUnknownSync(CommandIdentity)(entry.payload).commandId
-                : undefined
-              visit(entry, commandId)
+              visit(entry, command?.commandId)
             }
             // An empty page ends the walk whatever the page claims, the same
             // guard `SyncServer.tail` carries: `after` cannot move, so the
