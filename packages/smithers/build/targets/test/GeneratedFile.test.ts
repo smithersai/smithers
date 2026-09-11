@@ -309,7 +309,7 @@ describe("checkGenerator", () => {
    */
   it("compares and restores a declared output inside a nested package", async () => {
     await Fs.mkdir(NodePath.join(root, "pkg"), { recursive: true })
-    await Fs.writeFile(NodePath.join(root, "pkg/legacy declaration"), "export const nested = 1\n", "utf8")
+    await Fs.writeFile(NodePath.join(root, "pkg/PACKAGE.ts"), "export const nested = 1\n", "utf8")
     await generator(`import { writeFileSync } from "node:fs"\nwriteFileSync("pkg/out.txt", "generated\\n")\n`)
     await Fs.writeFile(NodePath.join(root, "pkg/out.txt"), "hand edited\n", "utf8")
 
@@ -361,7 +361,7 @@ describe("checkGenerator", () => {
  * What a `S.Generate` declaration has to say about the paths it writes.
  *
  * `changes` and `stdout` are the write set: the build system confines the spawn to
- * it, and a legacy declaration workspace compares and restores exactly those paths under
+ * it, and a PACKAGE.ts workspace compares and restores exactly those paths under
  * the `lint` verb. A process form that declares neither is unconfined, so the
  * declaration is refused rather than checked against nothing.
  */

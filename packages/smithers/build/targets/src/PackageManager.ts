@@ -1,10 +1,10 @@
 /**
- * Declared package manager for legacy declaration targets.
+ * Declared package manager for PACKAGE.ts targets.
  *
  * A package-manager declaration names which manager a workspace installs and
  * runs tools with, the version it requires, and the runtime that manager runs
  * under. It is inert data: the constructors validate and perform no I/O, so
- * legacy declaration evaluation stays pure.
+ * PACKAGE.ts evaluation stays pure.
  *
  * Before this module every target spelled `["pnpm", "exec", ...]` into its own
  * argv. That made the manager an undeclared constant of the target catalog: a
@@ -17,7 +17,7 @@
  * their reviewed version enumerations; tagged resolved variants also admit
  * requirements read from the workspace's declared manifest.
  * The Bun variant additionally types its `runtime` as the Bun runtime, so a Bun
- * manager declared against a Node runtime is not a value a legacy declaration file can
+ * manager declared against a Node runtime is not a value a PACKAGE.ts file can
  * write. The variant list is deliberately short — pnpm and Bun are what this
  * workspace pins and exercises — and it grows the same way the version lists
  * do: by review.
@@ -254,7 +254,7 @@ export interface PnpmWorkspaceOptions {
  * Two forms, one per era. The WORKSPACE.ts form mirrors {@link Yarn}:
  * `{ manifest, lockfile, version?, audit?, workspaces? }`, no `runtime` —
  * the Workspace declares the runtime once and the manager reads it from
- * there. The legacy declaration form keeps `{ version, runtime }` for legacy declaration users.
+ * there. The PACKAGE.ts form keeps `{ version, runtime }` for PACKAGE.ts users.
  *
  * @example
  * ```ts
@@ -302,7 +302,7 @@ export function Pnpm(
  *
  * Bun is its own runtime, so this constructor takes no separate version: the
  * manager version is the runtime version, and declaring them apart would let a
- * legacy declaration file state two versions of one program.
+ * PACKAGE.ts file state two versions of one program.
  *
  * @example
  * ```ts
@@ -355,7 +355,7 @@ export const YarnAudit = Schema.Struct({
 /**
  * Schema for the WORKSPACE.ts Yarn package-manager declaration.
  *
- * Unlike the legacy declaration variants above, the Artsy workspace form pins the
+ * Unlike the PACKAGE.ts variants above, the Artsy workspace form pins the
  * manager through the repository's own manifest and lockfile rather than an
  * enumerated version, so its identity is content, not a version literal.
  *

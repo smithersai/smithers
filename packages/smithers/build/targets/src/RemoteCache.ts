@@ -1,5 +1,5 @@
 /**
- * Inert remote-cache configuration for a workspace root legacy declaration file.
+ * Inert remote-cache configuration for a workspace root PACKAGE.ts file.
  *
  * @since 0.1.0
  */
@@ -43,7 +43,7 @@ export const maximumTokenEnvironmentLength = 256
  *
  * The declaration carries only the HTTPS endpoint and the name of the
  * environment variable holding its bearer token. The token value remains
- * host state and is never part of legacy declaration or target key material.
+ * host state and is never part of PACKAGE.ts or target key material.
  *
  * @category models
  * @since 0.1.0
@@ -69,7 +69,7 @@ export interface RemoteCache {
   /**
    * A public read token committed to the repository, or undefined.
    *
-   * The one credential that may appear in legacy declaration as a literal. Smithers Cloud mints
+   * The one credential that may appear in PACKAGE.ts as a literal. Smithers Cloud mints
    * it per repository (`smithers cache token create`); it can only read that
    * repository's cache, is refused with 403 on every publication before the
    * body is read, and never authenticates anywhere else, so committing it is
@@ -99,7 +99,7 @@ export const normalizePublicReadToken = (value: string): string => {
   if (!publicReadTokenShape.test(trimmed)) {
     throw new Error(
       `remote cache publicReadToken must be a Smithers Cloud public read token (${publicReadTokenPrefix} followed by 40 hex characters); ` +
-        "any other credential belongs in the environment, never in legacy declaration"
+        "any other credential belongs in the environment, never in PACKAGE.ts"
     )
   }
   return trimmed
@@ -313,7 +313,7 @@ export const smithersCloud = (options: SmithersCloudOptions): RemoteCache => {
 }
 
 /**
- * Checks whether a legacy declaration export is a remote-cache declaration.
+ * Checks whether a PACKAGE.ts export is a remote-cache declaration.
  *
  * @category guards
  * @since 0.1.0

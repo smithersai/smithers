@@ -7,10 +7,10 @@
  * this target is modelled on it. The deviation is the runner union below: Bazel
  * hands the entry point to a launcher and lets the program pick its own harness,
  * while this target names the three forms explicitly so the interpreter flag
- * never has to be written by a legacy declaration author.
+ * never has to be written by a PACKAGE.ts author.
  *
  * The interpreter is the declared {@link Runtime}, never a hardcoded `node`, so
- * the same declaration runs under Bun by editing one line in the root legacy declaration.
+ * the same declaration runs under Bun by editing one line in the root PACKAGE.ts.
  *
  * @since 0.1.0
  */
@@ -103,7 +103,7 @@ export type Entrypoint = typeof Entrypoint.Type
  * Schema for how a declared test program is started.
  *
  * A discriminated union, so the fields a form does not have are fields a
- * legacy declaration file cannot write: there is no argument list on a test-runner run and
+ * PACKAGE.ts file cannot write: there is no argument list on a test-runner run and
  * no file list on an entry-point run.
  *
  * @category schemas

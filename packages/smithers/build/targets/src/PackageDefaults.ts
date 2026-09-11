@@ -20,7 +20,7 @@ import * as Target from "./Target.ts"
 export const TypeId: unique symbol = Symbol.for("smithers-build/PackageDefaults") as never
 
 /**
- * A macro the planner may apply to a directory without its own legacy declaration file.
+ * A macro the planner may apply to a directory without its own PACKAGE.ts file.
  *
  * The declared `attrs` value is passed as the macro's argument. Every target
  * in the returned record becomes a synthesized named export.
@@ -32,11 +32,11 @@ export type Macro = (attrs: never) => object
 
 /**
  * A pure declaration of targets the planner synthesizes for directories
- * without their own legacy declaration file.
+ * without their own PACKAGE.ts file.
  *
  * The planner matches `directories` against workspace directories that contain
  * the `marker` file and lack the `unless` file, then applies the macro to
- * every match. Declare workspace-wide defaults in the root legacy declaration file; the
+ * every match. Declare workspace-wide defaults in the root PACKAGE.ts file; the
  * planner loads it before it synthesizes anything.
  *
  * @category models
@@ -109,7 +109,7 @@ export const make = (options: Options): PackageDefaults => {
 }
 
 /**
- * Declares pure workspace defaults using the legacy declaration calling convention.
+ * Declares pure workspace defaults using the PACKAGE.ts calling convention.
  *
  * A string `directories` value is lifted to {@link Input.glob}. Construction
  * validates the declaration and performs no I/O.
@@ -171,7 +171,7 @@ const isStringArray = (value: unknown): value is ReadonlyArray<string> => {
 }
 
 /**
- * Checks whether a legacy declaration export is a default-target declaration.
+ * Checks whether a PACKAGE.ts export is a default-target declaration.
  *
  * @category guards
  * @since 0.1.0
@@ -193,7 +193,7 @@ export const isPackageDefaults = (value: unknown): value is PackageDefaults => {
 /**
  * Checks whether one workspace directory matches a declaration's glob.
  *
- * `declaringPackage` is the package path of the legacy declaration file that exported
+ * `declaringPackage` is the package path of the PACKAGE.ts file that exported
  * the declaration; the glob and its excludes resolve relative to it.
  *
  * @category synthesis
@@ -204,6 +204,9 @@ export const matches = (
   declaringPackage: string,
   directory: string
 ): boolean => {
+  // A scaffold killed mid-write leaves `.smthrs-scaffold-<uuid>.tmp` holding a
+  // package.json; it is never a package, whatever the glob admits.
+  if (directory.split("/").some((segment) => /^\.smthrs-scaffold-.*\.tmp$/.test(segment))) return false
   const pattern = Input.resolvePath(declaringPackage, target.directories.pattern)
   if (!minimatch(directory, pattern, { dot: true })) return false
   return !target.directories.exclude.some((exclude) =>

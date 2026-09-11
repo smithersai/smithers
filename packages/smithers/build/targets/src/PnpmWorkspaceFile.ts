@@ -3,7 +3,7 @@
  *
  * The workspace definition decides which directories are packages, which makes
  * it part of the build definition. This target renders the file from attrs and
- * drift-checks the checked-in copy, so the legacy declaration graph and the manager's
+ * drift-checks the checked-in copy, so the PACKAGE.ts graph and the manager's
  * own discovery cannot disagree about workspace membership.
  *
  * The target is pnpm-specific because the file is: npm, Bun, and Yarn read
@@ -36,7 +36,7 @@ export const Attrs = Schema.Struct({
   /**
    * The `allowBuilds` map: which dependencies may run lifecycle scripts.
    *
-   * Rendered sorted by key, so reordering a literal in legacy declaration is not drift.
+   * Rendered sorted by key, so reordering a literal in PACKAGE.ts is not drift.
    *
    * @default {}
    */

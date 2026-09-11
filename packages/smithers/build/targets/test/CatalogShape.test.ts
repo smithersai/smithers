@@ -1,7 +1,7 @@
 /**
  * One shape for the whole catalog.
  *
- * Every rule a legacy declaration file can declare exposes the same three things: the
+ * Every rule a PACKAGE.ts file can declare exposes the same three things: the
  * rule id, the attrs schema, and the verbs it participates in. Half the
  * catalog used to export a hand-written wrapper annotated `Target.AnyTarget`
  * that carried none of them, so a tool reading a rule's attrs schema for

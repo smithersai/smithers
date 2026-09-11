@@ -1,7 +1,7 @@
 /**
  * Strict JSON validation for package-manifest values.
  *
- * `package.json` fields originate in executable legacy declaration modules. TypeScript's
+ * `package.json` fields originate in executable PACKAGE.ts modules. TypeScript's
  * `unknown` type is not a runtime boundary: a caller can still supply a Proxy,
  * an accessor, a cycle, a bigint, or another value that `JSON.stringify`
  * executes or changes. This module copies exactly the JSON domain without

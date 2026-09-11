@@ -316,7 +316,7 @@ const checkCancelled = (options: Options): void => options.signal?.throwIfAborte
  * canonical root and ends at a regular file. A link that leaves the root is
  * refused by name, so a link planted in a workspace can never decide that
  * something outside it is repository content. This is the one policy every
- * caller shares: a declared file input, a `.gitignore`, and a `legacy declaration` probe
+ * caller shares: a declared file input, a `.gitignore`, and a `PACKAGE.ts` probe
  * all admit exactly the same set of files.
  *
  * The returned path is the resolved one. Reads happen through it, so the

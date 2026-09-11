@@ -1,10 +1,10 @@
 /**
  * Inert shared manifest fields every package merges under its own declaration.
  *
- * A template is a value, never a target. The root legacy declaration exports one, every
+ * A template is a value, never a target. The root PACKAGE.ts exports one, every
  * package declaration imports it, and {@link PackageJson.PackageJson} deep
  * merges the package over it. Nothing here reads the filesystem or spawns a
- * process, so importing a root legacy declaration to read the template stays pure and
+ * process, so importing a root PACKAGE.ts to read the template stays pure and
  * costs one module evaluation.
  *
  * @since 0.1.0
@@ -77,7 +77,7 @@ export const standardScripts: Readonly<Record<string, string>> = {
  * and a generator that rewrote a manifest without them would silently
  * uninstall the package. Declaring one is refused where it is declared rather
  * than dropped where it is rendered, so the mistake is reported against the
- * legacy declaration line that made it.
+ * PACKAGE.ts line that made it.
  *
  * @category constants
  * @since 0.1.0

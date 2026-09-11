@@ -64,7 +64,7 @@ export const SortPackageJson = Target.make("SortPackageJson", {
   error: BuildError,
   cache: false,
   outputs: (attrs) => ({ cwd: attrs.cwd, paths: attrs.manifests.map((manifest) => manifest.path) }),
-  // The `lint` verb never rewrites a manifest. Without this a legacy declaration that
+  // The `lint` verb never rewrites a manifest. Without this a PACKAGE.ts that
   // declared `check: false` — the rewriting form, which belongs to `build` —
   // made `smithers-build lint` and `smithers-build ci` sort every declared manifest in
   // place, so a drift that should have failed the run was repaired by the

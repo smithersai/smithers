@@ -200,7 +200,7 @@ export const declaredOutputs = (target: string, value: DeclaredOutputs): Declare
 export interface KindView {
   readonly attrs: unknown
   readonly dependencies: ReadonlyArray<AnyTarget>
-  /** Workspace targets selected without importing their legacy declaration modules. */
+  /** Workspace targets selected without importing their PACKAGE.ts modules. */
   readonly dependencySelectors: ReadonlyArray<DependencySelector>
   readonly inputs: ReadonlyArray<Input.Declared>
   readonly cacheable: boolean
@@ -424,8 +424,8 @@ export const Target = Schema.declare<AnyTarget>(
   (value): value is AnyTarget => isTarget(value),
   {
     identifier: "smithers-build/Target",
-    title: "legacy declaration target reference",
-    description: "A direct import of another legacy declaration target"
+    title: "PACKAGE.ts target reference",
+    description: "A direct import of another PACKAGE.ts target"
   }
 )
 
@@ -435,7 +435,7 @@ const dependencyTargetPattern = /^[A-Za-z0-9_@+=,.-]+$/
 /**
  * A graph dependency selected from every package below one workspace subtree.
  *
- * This is the graph-native form for aggregate legacy declaration targets whose
+ * This is the graph-native form for aggregate PACKAGE.ts targets whose
  * dependencies include synthesized packages and therefore cannot be imported
  * as target objects. Selection is intentionally narrow: a recursive package
  * pattern plus one exact exported target name.
@@ -553,7 +553,7 @@ export const notImplemented = (
 export const catalogNotImplemented = () => notImplemented("catalog target")
 
 /**
- * Checks whether a value is a legacy declaration target.
+ * Checks whether a value is a PACKAGE.ts target.
  *
  * @category guards
  * @since 0.1.0
@@ -784,8 +784,8 @@ export interface Definition<
  * Declaration-site context passed to a target implementation.
  *
  * `packageDirectory` is the absolute directory containing the declaring
- * legacy declaration file. It is undefined only when a target was constructed outside a
- * legacy declaration module.
+ * PACKAGE.ts file. It is undefined only when a target was constructed outside a
+ * PACKAGE.ts module.
  *
  * @category models
  * @since 0.1.0
@@ -1067,7 +1067,7 @@ const freezeView = (view: KindView): KindView => {
 }
 
 /**
- * The legacy declaration call site a declaration was written at.
+ * The PACKAGE.ts call site a declaration was written at.
  *
  * `path` alone identifies the declaring package. `line` and `column` are
  * reported back to the author when a declaration is rejected, and are absent
@@ -1387,7 +1387,7 @@ export const make = <
   })).digest("hex")
   const definition = (attrsInput: Attrs["~type.make.in"] & Presentation) => {
     // Resolved before the attrs are constructed so a rejection can name the
-    // legacy declaration line the author has to edit.
+    // PACKAGE.ts line the author has to edit.
     const site = sourceSite()
     let attrs: Attrs["Type"]
     let presentation: DeclaredPresentation

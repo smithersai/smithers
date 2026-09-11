@@ -3,7 +3,7 @@
  *
  * `//:newPackage` writes the smallest tree a workspace default target can pick
  * up: a manifest, a tsconfig, one source file, one test, and a README. It
- * deliberately writes NO `legacy declaration`. A standard package needs none — the root
+ * deliberately writes NO `PACKAGE.ts`. A standard package needs none — the root
  * default target synthesizes its `lib`, `test`, `lint`, and manifest targets from
  * the directory alone — and scaffolding one would opt the new package out of
  * exactly the defaults it was created to follow.
@@ -205,7 +205,7 @@ export const boilerplate = (
     ],
     [
       "README.md",
-      `# ${name}\n\nCreated by \`smthrs generate package ${name}\`.\n\nThis package has no legacy declaration: the workspace default target synthesizes its\ntargets from this directory.\n`
+      `# ${name}\n\nCreated by \`smthrs generate package ${name}\`.\n\nThis package has no \`PACKAGE.ts\`: the workspace default target synthesizes its\ntargets from this directory.\n`
     ]
   ]
 }
@@ -269,6 +269,32 @@ const ensureDirectory = async (root: string, relative: string): Promise<string> 
   return current
 }
 
+/**
+ * How old a scaffold temporary directory must be before a later run reclaims it.
+ * A younger one may belong to a concurrent scaffold that is still writing.
+ */
+const staleTemporaryMs = 5 * 60 * 1000
+
+/**
+ * Removes scaffold temporary directories a killed process left under `parent`.
+ * In-process failures clean up after themselves; SIGKILL, OOM, and power loss
+ * do not, and a leftover holds a `package.json` under the packages glob.
+ */
+const reclaimStaleTemporaries = async (
+  parent: string,
+  remove: (path: string) => Promise<void>
+): Promise<void> => {
+  const cutoff = Date.now() - staleTemporaryMs
+  for (const entry of await Fs.readdir(parent)) {
+    if (!/^\.smthrs-scaffold-.*\.tmp$/.test(entry)) continue
+    const path = NodePath.join(parent, entry)
+    // Best effort: a leftover that vanished or cannot be read is not ours to fail on.
+    // lstat reports a symbolic link as a non-directory, so links are never followed.
+    const stats = await Fs.lstat(path).catch(() => undefined)
+    if (stats?.isDirectory() === true && stats.mtimeMs < cutoff) await remove(path)
+  }
+}
+
 const absent = async (path: string): Promise<boolean> => {
   try {
     await Fs.lstat(path)
@@ -313,6 +339,7 @@ export const scaffold = (
         Effect.runPromise(writeGeneratedFile(workspaceRoot, file), { signal: childSignal }))
       const rename = io?.rename ?? Fs.rename
       const remove = io?.remove ?? ((path) => Fs.rm(path, { recursive: true, force: true }))
+      await reclaimStaleTemporaries(parent, remove)
       const temporary = NodePath.join(parent, `.smthrs-scaffold-${randomUUID()}.tmp`)
       const temporaryRelative = NodePath.relative(root, temporary).split(NodePath.sep).join("/")
       const files: Array<string> = []
@@ -419,7 +446,7 @@ export type Attrs = typeof Attrs.Type
  * ```
  *
  * A scoped name maps to an unscoped directory, so `@smthrs/widget` creates
- * `packages/widget`. Nothing in the created tree is a `legacy declaration`; the workspace
+ * `packages/widget`. Nothing in the created tree is a `PACKAGE.ts`; the workspace
  * default target takes it from there.
  *
  * @category targets

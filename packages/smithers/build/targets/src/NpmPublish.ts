@@ -13,7 +13,7 @@ import * as Target from "./Target.ts"
 
 /**
  * Attributes for {@link NpmPublish}. `dryRun` defaults to true, so a real
- * publish is always an explicit opt-out in legacy declaration.
+ * publish is always an explicit opt-out in PACKAGE.ts.
  *
  * @category schemas
  * @since 0.1.0

@@ -1,9 +1,9 @@
 /**
- * Declared secrets for legacy declaration targets.
+ * Declared secrets for PACKAGE.ts targets.
  *
  * A secret declaration names the environment variable a value is read from. It
- * is inert: `Secret("SMITHERS_CACHE_TOKEN")` performs no read, so legacy declaration
- * evaluation stays pure and a legacy declaration file never contains a credential.
+ * is inert: `Secret("SMITHERS_CACHE_TOKEN")` performs no read, so PACKAGE.ts
+ * evaluation stays pure and a PACKAGE.ts file never contains a credential.
  *
  * The source declaration is still not authority to send the value. A child
  * target must wrap it in {@link HttpSecret}, binding it to exact HTTP origins.
@@ -22,7 +22,7 @@
  *   Keys record the name; they never record the value, and a cache entry
  *   therefore cannot carry a credential between machines.
  * - **Lazy, request-scoped resolution.** The host variable is read once when
- *   an authorized request needs it, not when legacy declaration is evaluated or planned.
+ *   an authorized request needs it, not when PACKAGE.ts is evaluated or planned.
  *   Exact values echoed by the upstream are replaced before the response is
  *   returned to the job.
  *

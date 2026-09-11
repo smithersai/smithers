@@ -1,14 +1,14 @@
 /**
- * Declared Rust toolchain for legacy declaration targets.
+ * Declared Rust toolchain for PACKAGE.ts targets.
  *
  * A Rust toolchain declaration names how a workspace obtains `rustc` and
  * `cargo`, and where the pin that fixes their version lives. It is inert data:
- * the constructors validate and perform no I/O, so legacy declaration evaluation stays
+ * the constructors validate and perform no I/O, so PACKAGE.ts evaluation stays
  * pure.
  *
  * The declaration exists for the same reason {@link Runtime} does. Before it,
  * the only way to say "CI installs the pinned Rust toolchain and then runs
- * clippy" was a pair of shell strings in a legacy declaration file, which put an argv
+ * clippy" was a pair of shell strings in a PACKAGE.ts file, which put an argv
  * outside every target implementation and left the toolchain undeclared key
  * material. A declaration makes the pin a content-digested input:
  * {@link CargoCheck} takes it as an attr and asks this module for the argv, and
@@ -19,7 +19,7 @@
  * reads `rust-toolchain.toml` and installs exactly what it pins, components and
  * targets included, so the pin cannot drift from what runs. A workspace that
  * needs a channel it does not pin adds a variant here, which is the point — the
- * set of toolchains a legacy declaration file may declare is reviewed, not free text.
+ * set of toolchains a PACKAGE.ts file may declare is reviewed, not free text.
  *
  * @since 0.1.0
  */

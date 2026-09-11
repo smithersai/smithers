@@ -139,7 +139,7 @@ export class FilegroupError extends Schema.TaggedError<FilegroupError>()(
  * `srcs` names declared files, declared globs, and other targets in the order
  * they should be read. `cwd` is the workspace-relative package directory the
  * declared paths and patterns resolve from when the group expands. The CLI
- * interprets the default `.` as the declaring legacy declaration package, matching
+ * interprets the default `.` as the declaring PACKAGE.ts package, matching
  * Bazel; an explicit non-dot value is workspace relative.
  *
  * @category schemas

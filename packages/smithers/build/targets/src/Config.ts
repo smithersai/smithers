@@ -1,8 +1,8 @@
 /**
- * Workspace configuration declared in the root legacy declaration file.
+ * Workspace configuration declared in the root PACKAGE.ts file.
  *
  * A configuration value is inert: {@link Workspace} validates its fields and
- * performs no I/O, so legacy declaration evaluation stays pure. The CLI discovers the
+ * performs no I/O, so PACKAGE.ts evaluation stays pure. The CLI discovers the
  * declaration and resolves it against the `--cache-dir` flag. The CLI passes
  * the result explicitly to input expansion and tool execution as host state.
  *
@@ -25,7 +25,7 @@ import type * as WorkspaceDeclaration from "./WorkspaceDeclaration.ts"
 export const TypeId: unique symbol = Symbol.for("smithers-build/Workspace") as never
 
 /**
- * The cache directory used when no legacy declaration declaration and no flag name one.
+ * The cache directory used when no PACKAGE.ts declaration and no flag name one.
  *
  * @category constants
  * @since 0.1.0
@@ -159,7 +159,7 @@ export const normalizeCacheDirectory = (value: string): string => {
 }
 
 /**
- * Creates a pure workspace configuration declaration using legacy declaration syntax.
+ * Creates a pure workspace configuration declaration using PACKAGE.ts syntax.
  *
  * @example
  * ```ts
@@ -230,7 +230,7 @@ export const Workspace = (options: Options = {}): Workspace => {
 }
 
 /**
- * Checks whether a legacy declaration export is a workspace configuration declaration.
+ * Checks whether a PACKAGE.ts export is a workspace configuration declaration.
  *
  * @category guards
  * @since 0.1.0

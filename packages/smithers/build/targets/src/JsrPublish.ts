@@ -26,7 +26,7 @@ export const CliVersion = Schema.String.check(
 
 /**
  * Attributes for {@link JsrPublish}. `dryRun` defaults to true, so a real
- * publish is always an explicit opt-out in legacy declaration. `cliVersion`
+ * publish is always an explicit opt-out in PACKAGE.ts. `cliVersion`
  * is required: the publish command downloads the `jsr` CLI through `dlx`,
  * and an unpinned name would execute whatever the registry serves at run
  * time.

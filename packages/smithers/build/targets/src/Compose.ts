@@ -527,7 +527,7 @@ const walkOutputDirectory = async (
  *
  * The expansion is not package scoped. `changes` is a write set, not an input
  * glob: a root declaration that names `packages/smithers/generated.ts` owns that
- * path even though `packages/smithers/legacy declaration` makes the directory its own
+ * path even though `packages/smithers/PACKAGE.ts` makes the directory its own
  * package. Scoping it would expand to nothing, so the check would snapshot
  * nothing, compare nothing, and leave the generator's rewrite in the tree
  * while reporting success.
@@ -919,14 +919,14 @@ const generateDefinition = Target.make("Generate", {
   attrs: GenerateAttrs,
   kinds: ["run", "lint"],
   // The three failures this target reports: the generator exited non-zero, a
-  // declared output drifted, or the declaration is one no legacy declaration workspace
+  // declared output drifted, or the declaration is one no PACKAGE.ts workspace
   // can run. Declaring them keeps a drift report a target failure rather than
   // a flow body failing outside its schema.
   error: Schema.Union([Exec.ExecError, GeneratedFile.DriftError, Target.NotImplemented]),
   // The script and bin forms plan the shared exec node: the generator runs
   // under the workspace runtime (script) or the referenced tool (bin), and
   // the package executor brackets the spawn with write-set enforcement in
-  // write mode or a scratch-copy drift check in check mode. A legacy declaration
+  // write mode or a scratch-copy drift check in check mode. A PACKAGE.ts
   // workspace has no package executor to bracket it, so `check` plans
   // {@link GenerateCheck} instead: the same spawn, with the declared outputs
   // compared and restored around it. The emit form plans no process at all —
@@ -953,7 +953,7 @@ const generateDefinition = Target.make("Generate", {
     const changes = attrs.changes ?? []
     if (attrs.mode !== "check") {
       return changes.length === 0
-        ? Target.notImplemented("Generate stdout form in a legacy declaration workspace")
+        ? Target.notImplemented("Generate stdout form in a PACKAGE.ts workspace")
         : Exec.runTool(payload)
     }
     return changes.length === 0
@@ -966,7 +966,7 @@ const generateDefinition = Target.make("Generate", {
  * Refuses a process form that names none of the paths it writes.
  *
  * `changes` and `stdout` are the write set: the build system confines the spawn to
- * it and reverts everything else, and a legacy declaration workspace compares and
+ * it and reverts everything else, and a PACKAGE.ts workspace compares and
  * restores exactly the `changes` paths under the `lint` verb. A script, bin,
  * or command form that declares neither is confined by nothing, so it is
  * rejected where it is written rather than checked against an empty set. The

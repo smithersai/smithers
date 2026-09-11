@@ -4,13 +4,13 @@
  * A hosted runner starts empty. Something has to check the tree out, install an
  * interpreter, install the workspace, and put `cargo` or `jj` on `PATH` before
  * the first target executes. That "something" used to be a list of hand-written
- * steps in a legacy declaration file, half `uses:` references and half shell.
+ * steps in a PACKAGE.ts file, half `uses:` references and half shell.
  *
  * This module replaces the list with a declaration of what the job REQUIRES.
  * {@link GithubCiGen} derives the steps: the install argv comes from
  * {@link PackageManager.install}, the interpreter version from the declared
  * {@link Runtime}, the Rust install from {@link RustToolchain.install}. A
- * legacy declaration file states requirements; only the generator knows how a runner
+ * PACKAGE.ts file states requirements; only the generator knows how a runner
  * satisfies them, which is the same division {@link Runtime} draws between a
  * declared requirement and the service that measures the host.
  *

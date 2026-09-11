@@ -148,7 +148,7 @@ describe("ImportClosure", () => {
   it("anchors direct sources at the declaration context supplied by the caller", () => {
     expect(Compose.closureEntrySources(
       [Input.file("index.ts"), Input.glob("src/**/*.ts")],
-      { sourceFile: "/workspace/packages/app/legacy declaration", packageDirectory: "/workspace/packages/app" }
+      { sourceFile: "/workspace/packages/app/PACKAGE.ts", packageDirectory: "/workspace/packages/app" }
     )).toEqual([
       { base: "/workspace/packages/app", source: Input.file("index.ts") },
       { base: "/workspace/packages/app", source: Input.glob("src/**/*.ts") }

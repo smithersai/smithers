@@ -4,7 +4,7 @@
  * A workspace declares the Nix closure its tools come from once, the way it
  * declares a runtime version or an installed `node_modules` tree, and every
  * tool-running target resolves executables from that closure. The
- * declaration is inert data: constructing it performs no I/O, so legacy declaration
+ * declaration is inert data: constructing it performs no I/O, so PACKAGE.ts
  * and WORKSPACE.ts evaluation stay pure. Resolving it to a store path, its
  * `PATH`, and its transitive closure is the planner's job, in
  * `@smthrs/build-cli`.

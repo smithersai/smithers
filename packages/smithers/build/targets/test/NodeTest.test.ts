@@ -3,7 +3,7 @@
  * verb each one participates in.
  *
  * These replaced the `node --test …` and `node scripts/….mjs` strings a
- * legacy declaration file used to carry. The assertions that matter are the argv ones:
+ * PACKAGE.ts file used to carry. The assertions that matter are the argv ones:
  * the interpreter comes from the declared runtime, so a workspace that switches
  * interpreters gets different argv from the same declaration.
  */
@@ -95,7 +95,7 @@ describe("NodeTest", () => {
 
   /**
    * The runner is a discriminated union, so the fields one form does not have
-   * are fields a legacy declaration file cannot write: no argument list on a test-runner
+   * are fields a PACKAGE.ts file cannot write: no argument list on a test-runner
    * run, no file list on an entry-point run, and never both.
    */
   it("refuses a runner that is neither form", () => {

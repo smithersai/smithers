@@ -3,7 +3,7 @@
  *
  * A target declares a policy (`Attr.Sandbox`): the default confinement, a
  * loopback opening, the full network opening, or the `"none"` opt-out. The
- * surfaces (`PackageExec` for `PACKAGE.ts`, `ExecLive` for `legacy declaration`) turn the
+ * surfaces (`PackageExec` and `ExecLive`) turn the
  * policy plus the planner's read and write sets into a {@link Request}; this
  * module turns the request into an argv that the host enforces, or into an
  * {@link Unenforceable} refusal naming what the host lacks.

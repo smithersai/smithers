@@ -1,5 +1,5 @@
 /**
- * The generated CI workflow: what a legacy declaration file may declare, and what the
+ * The generated CI workflow: what a PACKAGE.ts file may declare, and what the
  * generator renders from it.
  *
  * The load-bearing assertion in this file is the first one. Every other test
@@ -233,7 +233,7 @@ const holdsString = (node: AstNode, seen = new Set<AstNode>()): boolean => {
 describe("the declaration surface", () => {
   /**
    * Will's ruling, 2026-08-19: "We should never ever ever ever ever in a
-   * legacy declaration file hardcode bash commands like this to run node scripts or even
+   * PACKAGE.ts file hardcode bash commands like this to run node scripts or even
    * run node --test. It needs to be a real target."
    *
    * The rule is enforced by the schema, not by review. A step declares a verb
@@ -320,7 +320,7 @@ describe("the declaration surface", () => {
   it("has no value for the manual run verb at all", () => {
     // `run` targets include watchers, development servers, and source-tree
     // scaffolds. The CLI exposes them for explicit use, not for generated CI,
-    // so the module exports no value a legacy declaration file could name.
+    // so the module exports no value a PACKAGE.ts file could name.
     expect(Object.keys(Verb).filter((name) => name.toLowerCase() === "run")).toEqual([])
     expect(Verb.all.map(Verb.kind)).toEqual(["build", "test", "lint", "docs"])
     expect(Verb.isPipelineVerb({ name: "run" })).toBe(false)
@@ -1303,7 +1303,7 @@ describe("GithubCiGen target wiring", () => {
  * say so with a condition. It says so with data: each row carries its own
  * `advisory` bit in an `include:` row, and the job's `continue-on-error` reads
  * that bit out of the matrix context. A platform is promoted from advisory to
- * required by flipping one boolean in legacy declaration, which is a diff a reviewer can
+ * required by flipping one boolean in PACKAGE.ts, which is a diff a reviewer can
  * read, and the promotion is checked — a job listed in `requiredJobs` whose
  * every lane is advisory is refused rather than rendered.
  */

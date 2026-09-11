@@ -4,7 +4,7 @@ import { Smithers } from "../src/index.ts"
 import * as Flat from "../src/Smithers.ts"
 
 /**
- * The package entry point is the legacy declaration authoring contract. A legacy declaration file
+ * The package entry point is the PACKAGE.ts authoring contract. A PACKAGE.ts file
  * writes one import line and reaches the whole catalog through the namespace,
  * so anything that escapes the namespace, or anything the namespace stops
  * carrying, is a break in that contract rather than an internal detail.
@@ -22,7 +22,7 @@ describe("the package entry point", () => {
 describe("the Smithers namespace", () => {
   it("declares a runtime, and the namespace name is also the type", () => {
     // The annotation is the assertion: `Smithers.Runtime` resolves in type
-    // position as well as value position, so a legacy declaration author never writes
+    // position as well as value position, so a PACKAGE.ts author never writes
     // `Smithers.Runtime.Runtime`.
     const runtime: Smithers.Runtime = Smithers.Runtime.Node({ version: ">=22.19.0" })
 

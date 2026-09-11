@@ -5,7 +5,9 @@ import * as Os from "node:os"
 import * as NodePath from "node:path"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
 import { writeGeneratedFile } from "../src/GeneratedFile.ts"
+import * as Input from "../src/Input.ts"
 import { boilerplate, scaffold, type ScaffoldPayload, type ScaffoldReport } from "../src/NewPackage.ts"
+import { matches, PackageDefaults } from "../src/PackageDefaults.ts"
 import * as PackageJsonTemplate from "../src/PackageJsonTemplate.ts"
 
 let root: string
@@ -44,7 +46,7 @@ const temporaryEntries = async (): Promise<ReadonlyArray<string>> =>
     .filter((entry) => entry.startsWith(".smthrs-scaffold-"))
 
 describe("scaffold", () => {
-  it("creates a package a default target can pick up, with no legacy declaration", async () => {
+  it("creates a package a default target can pick up, with no PACKAGE.ts", async () => {
     const report = await run("@smthrs/widget")
     expect(report.directory).toBe("packages/widget")
     expect(report.files).toEqual([
@@ -54,9 +56,36 @@ describe("scaffold", () => {
       "packages/widget/test/index.test.ts",
       "packages/widget/README.md"
     ])
-    expect(await Fs.readdir(NodePath.join(root, "packages/widget"))).not.toContain("legacy declaration")
-    expect(await Fs.readFile(NodePath.join(root, "packages/widget/README.md"), "utf8"))
-      .toContain("Created by `smthrs generate package @smthrs/widget`")
+    expect(await Fs.readdir(NodePath.join(root, "packages/widget"))).not.toContain("PACKAGE.ts")
+    const readme = await Fs.readFile(NodePath.join(root, "packages/widget/README.md"), "utf8")
+    expect(readme).toContain("Created by `smthrs generate package @smthrs/widget`")
+    expect(readme).toContain("This package has no `PACKAGE.ts`")
+  })
+
+  it("reclaims a temporary directory a crashed scaffold left behind", async () => {
+    const leftover = NodePath.join(root, "packages/.smthrs-scaffold-crashed.tmp")
+    await Fs.mkdir(leftover, { recursive: true })
+    await Fs.writeFile(NodePath.join(leftover, "package.json"), "{}\n", "utf8")
+    const past = new Date(Date.now() - 60 * 60 * 1000)
+    await Fs.utimes(leftover, past, past)
+
+    await run("@smthrs/widget")
+
+    expect(await temporaryEntries()).toEqual([])
+  })
+
+  it("leaves a fresh temporary directory a concurrent scaffold may still own", async () => {
+    await Fs.mkdir(NodePath.join(root, "packages/.smthrs-scaffold-live.tmp"), { recursive: true })
+
+    await run("@smthrs/widget")
+
+    expect(await temporaryEntries()).toEqual([".smthrs-scaffold-live.tmp"])
+  })
+
+  it("keeps scaffold temporary directories out of default-target matches", () => {
+    const declaration = PackageDefaults({ directories: Input.glob("packages/*"), macro: () => ({}) })
+    expect(matches(declaration, "", "packages/widget")).toBe(true)
+    expect(matches(declaration, "", "packages/.smthrs-scaffold-crashed.tmp")).toBe(false)
   })
 
   it("writes a manifest carrying the template fields", async () => {

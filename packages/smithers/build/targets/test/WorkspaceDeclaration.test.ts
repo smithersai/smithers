@@ -1,7 +1,7 @@
 /**
  * Runtime validation contracts for workspace-only declarations.
  *
- * legacy declaration and WORKSPACE.ts files are loaded as executable JavaScript, so
+ * PACKAGE.ts and WORKSPACE.ts files are loaded as executable JavaScript, so
  * callers are owed precise rejection types for malformed names, options,
  * repositories, flags, and sandbox declarations rather than type-only safety.
  */
