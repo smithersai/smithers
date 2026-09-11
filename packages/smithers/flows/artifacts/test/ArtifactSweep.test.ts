@@ -627,3 +627,134 @@ it.effect("skips fanouts that become unreadable during inventory", () =>
     }
     expect(yield* ArtifactSweep.makeFileSystem(fs).inventory).toEqual([])
   }))
+
+describe("stale lock reclamation", () => {
+  it.live("never lets a second stale reclaimer displace a sweep between its age fence and delete", () =>
+    Effect.gen(function*() {
+      // Two processes measure the same crashed lock as stale. The sweep
+      // reclaims it first and passes its age fence; the writer's stale verdict
+      // is now about a lock generation that no longer exists. Renaming the path
+      // anyway would move the sweep's fresh lock, let the writer freshen the
+      // blob as published, and leave the sweep to delete it on pre-publication
+      // age evidence.
+      const payload = bytes("artifact that was republished")
+      const address = sha256(payload)
+      const directory = "objects"
+      const blob = `${directory}/${address.slice(0, 2)}/${address}`
+      const lock = `${directory}/.locks/${address}.lock`
+      const old = Date.now() - 120_000
+      const files = new Map<string, { bytes: Uint8Array; mtime: number }>([
+        [blob, { bytes: payload, mtime: old }],
+        [lock, { bytes: bytes("crashed"), mtime: old }]
+      ])
+      const missing = (method: string, tag: PlatformError.SystemErrorTag = "NotFound") => systemError(tag, method)
+      const writerSawStale = yield* Deferred.make<void>()
+      const resumeWriter = yield* Deferred.make<void>()
+      const sweepPassedFence = yield* Deferred.make<void>()
+      const resumeSweep = yield* Deferred.make<void>()
+      let writerPaused = false
+      let sweepBlobStats = 0
+      const host = (role: "writer" | "sweep"): FileSystem.FileSystem => {
+        const self: FileSystem.FileSystem = FileSystem.makeNoop({
+          makeDirectory: (() => Effect.void) as never,
+          readLink: ((path: string) => Effect.fail(missing(`readLink ${path}`))) as never,
+          exists: ((path: string) => Effect.sync(() => files.has(path))) as never,
+          readFile: ((path: string) =>
+            Effect.suspend(() =>
+              files.has(path) ? Effect.succeed(files.get(path)!.bytes.slice()) : Effect.fail(missing("readFile"))
+            )) as never,
+          readFileString: ((path: string) =>
+            Effect.suspend(() =>
+              files.has(path) ? Effect.succeed(text(files.get(path)!.bytes)) : Effect.fail(missing("readFileString"))
+            )) as never,
+          writeFileString: ((path: string, value: string, options?: { flag?: string }) =>
+            Effect.suspend(() => {
+              if (options?.flag === "wx" && files.has(path)) return Effect.fail(missing("writeFileString", "AlreadyExists"))
+              files.set(path, { bytes: bytes(value), mtime: Date.now() })
+              return Effect.void
+            })) as never,
+          writeFile: ((path: string, content: Uint8Array) =>
+            Effect.sync(() => {
+              files.set(path, { bytes: content, mtime: Date.now() })
+            })) as never,
+          open: ((path: string, options?: { flag?: string }) =>
+            Effect.suspend(() => {
+              if (options?.flag === "wx") {
+                if (files.has(path)) return Effect.fail(missing("open", "AlreadyExists"))
+                files.set(path, { bytes: new Uint8Array(), mtime: Date.now() })
+              }
+              return Effect.succeed({
+                stat: self.stat(path),
+                writeAll: (content: Uint8Array) => self.writeFile(path, content),
+                sync: Effect.void
+              })
+            })) as never,
+          stat: ((path: string) =>
+            Effect.suspend(() => {
+              const file = files.get(path)
+              const info = {
+                type: file === undefined ? "Directory" : "File",
+                dev: 1,
+                ino: Option.some(1),
+                mtime: Option.some(new Date(file?.mtime ?? 0)),
+                size: BigInt(file?.bytes.length ?? 0)
+              } as FileSystem.File.Info
+              if (file === undefined && (path.endsWith(".lock") || path.includes(".reclaim-") || path === blob)) {
+                return Effect.fail(missing("stat"))
+              }
+              if (role === "writer" && path === lock && !writerPaused) {
+                writerPaused = true
+                return Deferred.succeed(writerSawStale, undefined).pipe(
+                  Effect.andThen(Deferred.await(resumeWriter)),
+                  Effect.as(info)
+                )
+              }
+              // The second stat of the blob is the sweep's age fence.
+              if (role === "sweep" && path === blob && ++sweepBlobStats === 2) {
+                return Deferred.succeed(sweepPassedFence, undefined).pipe(
+                  Effect.andThen(Deferred.await(resumeSweep)),
+                  Effect.as(info)
+                )
+              }
+              return Effect.succeed(info)
+            })) as never,
+          rename: ((from: string, to: string) =>
+            Effect.suspend(() => {
+              const file = files.get(from)
+              if (file === undefined) return Effect.fail(missing("rename"))
+              files.set(to, file)
+              files.delete(from)
+              return Effect.void
+            })) as never,
+          remove: ((path: string) =>
+            Effect.suspend(() => files.delete(path) ? Effect.void : Effect.fail(missing("remove")))) as never,
+          utimes: ((path: string, _atime: Date | number, mtime: Date | number) =>
+            Effect.suspend(() => {
+              const file = files.get(path)
+              if (file === undefined) return Effect.fail(missing("utimes"))
+              file.mtime = mtime instanceof Date ? mtime.getTime() : mtime * 1000
+              return Effect.void
+            })) as never
+        })
+        return self
+      }
+      const writer = ArtifactStore.makeFileSystem(host("writer"), { directory, durability: "best-effort" })
+      const sweep = ArtifactSweep.makeFileSystem(host("sweep"), { directory })
+
+      const writing = yield* writer.put(payload).pipe(withCrypto, Effect.forkChild({ startImmediately: true }))
+      yield* Deferred.await(writerSawStale)
+      const deleting = yield* sweep.remove(address, { ifUnmodifiedSinceMs: old }).pipe(
+        Effect.forkChild({ startImmediately: true })
+      )
+      yield* Deferred.await(sweepPassedFence)
+      yield* Deferred.succeed(resumeWriter, undefined)
+      // The writer must now wait on the sweep's lock instead of taking it.
+      yield* Effect.sleep("200 millis")
+      expect(writing.pollUnsafe()).toBeUndefined()
+      yield* Deferred.succeed(resumeSweep, undefined)
+      expect(yield* Fiber.join(deleting)).toBe(true)
+      expect(yield* Fiber.join(writing)).toBe(address)
+      expect(files.has(blob)).toBe(true)
+      expect([...files.keys()].filter((path) => path.includes(".reclaim-") || path.includes(".stale-"))).toEqual([])
+    }))
+})

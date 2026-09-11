@@ -109,6 +109,32 @@ export const withDigest = <A, E, R, E2>(
          */
         let acquired = false
 
+        const readOwner = (path: string): Effect.Effect<Option.Option<string>, E2> =>
+          fs.readFileString(path).pipe(
+            Effect.map(Option.some),
+            Effect.catch((cause): Effect.Effect<Option.Option<string>, E2> =>
+              isReason(cause, "NotFound") ? Effect.succeed(Option.none()) : Effect.fail(failure(cause))
+            )
+          )
+
+        const isStale = (path: string): Effect.Effect<boolean, E2> =>
+          Effect.gen(function*() {
+            const info = yield* fs.stat(path).pipe(
+              Effect.map(Option.some),
+              Effect.catch((cause): Effect.Effect<Option.Option<FileSystem.File.Info>, E2> =>
+                isReason(cause, "NotFound") ? Effect.succeed(Option.none()) : Effect.fail(failure(cause))
+              )
+            )
+            const modified = Option.isSome(info) ? Option.getOrUndefined(info.value.mtime) : undefined
+            return modified !== undefined && (yield* Clock.currentTimeMillis) - modified.getTime() > staleAfterMs
+          })
+
+        const removeIfOwnedBy = (path: string, expected: string): Effect.Effect<void> =>
+          fs.readFileString(path).pipe(
+            Effect.flatMap((found) => found === expected ? fs.remove(path) : Effect.void),
+            Effect.ignore
+          )
+
         const acquire = Effect.gen(function*() {
           while (true) {
             const created = yield* Effect.uninterruptible(
@@ -124,44 +150,75 @@ export const withDigest = <A, E, R, E2>(
             )
             if (created) return
 
-            const info = yield* fs.stat(lockPath).pipe(
-              Effect.map(Option.some),
-              Effect.catch((cause): Effect.Effect<Option.Option<FileSystem.File.Info>, E2> =>
-                isReason(cause, "NotFound") ? Effect.succeed(Option.none()) : Effect.fail(failure(cause))
+            // The owner is read before the age, so a stale verdict always
+            // belongs to the lock generation this read named.
+            const observed = yield* readOwner(lockPath)
+            if (Option.isNone(observed)) continue
+            if (yield* isStale(lockPath)) {
+              const reclaimed = yield* reclaim(observed.value)
+              if (reclaimed) continue
+            }
+            yield* Effect.sleep(retryEvery)
+          }
+        })
+
+        /**
+         * Moves away the stale lock generation `observed` names, at most once.
+         *
+         * Measuring a lock and renaming it are two steps, so two contenders
+         * that both measure the same generation as stale would otherwise both
+         * rename, and the second would move away the fresh lock the first just
+         * took. Reclaimers of one generation therefore race for a `wx` claim
+         * named after its owner token first. Only the winner renames, and only
+         * after re-reading that the path still holds that stale generation. A
+         * loser, or a winner whose generation is already gone, moves nothing.
+         * Owner tokens are unique per acquisition, so a claim never outlives
+         * the generation it names in any way that matters.
+         */
+        const reclaim = (observed: string): Effect.Effect<boolean, E2> => {
+          const claimPath = `${lockPath}.reclaim-${observed.replace(/[^0-9A-Za-z-]/g, "_").slice(0, 96)}`
+          return Effect.acquireUseRelease(
+            fs.writeFileString(claimPath, owner, { flag: "wx", mode: 0o600 }).pipe(
+              Effect.as(true),
+              Effect.catch((cause): Effect.Effect<boolean, E2> =>
+                isReason(cause, "AlreadyExists") ? Effect.succeed(false) : Effect.fail(failure(cause))
               )
-            )
-            if (Option.isSome(info)) {
-              const modified = Option.getOrUndefined(info.value.mtime)
-              const now = yield* Clock.currentTimeMillis
-              if (modified !== undefined && now - modified.getTime() > staleAfterMs) {
-                // This measurement and the rename below are two steps, so two
-                // processes that both read the same lock as stale both reclaim
-                // it and the second moves away whatever now sits at the path,
-                // including the first's fresh lock. `FileSystemOptions`'
-                // `coordination` documents the exposure; the heartbeat above is
-                // what makes a holder that loses this way say so.
-                //
-                // Closing it is a protocol change, not a local edit. File
-                // identity is observable — effect's `File.Info` carries `ino` —
-                // but the host offers no remove-if-unchanged and no
-                // rename-if-unchanged, so an identity check can only be made
-                // after the move, which means the repair is another unguarded
-                // rename. A sound version serializes reclamation itself, and
-                // that decision belongs to a review, not to a patch here.
+            ),
+            (claimed) =>
+              Effect.gen(function*() {
+                if (!claimed) {
+                  // A claimant that died mid-reclaim leaves its claim behind.
+                  // It ages out on the same bound as a lock.
+                  const holder = yield* readOwner(claimPath)
+                  if (Option.isSome(holder) && (yield* isStale(claimPath))) {
+                    yield* removeIfOwnedBy(claimPath, holder.value)
+                  }
+                  return false
+                }
+                const current = yield* readOwner(lockPath)
+                if (Option.isNone(current) || current.value !== observed || !(yield* isStale(lockPath))) return true
                 const tombstone = `${lockPath}.stale-${owner}`
-                const reaped = yield* fs.rename(lockPath, tombstone).pipe(
+                const moved = yield* fs.rename(lockPath, tombstone).pipe(
                   Effect.as(true),
                   Effect.catch((cause): Effect.Effect<boolean, E2> =>
                     isReason(cause, "NotFound") ? Effect.succeed(false) : Effect.fail(failure(cause))
                   )
                 )
-                if (reaped) yield* fs.remove(tombstone).pipe(Effect.ignore)
-                continue
-              }
-            }
-            yield* Effect.sleep(retryEvery)
-          }
-        })
+                if (!moved) return true
+                // Only a stalled owner releasing between the re-read and the
+                // rename, and a new owner acquiring in that gap, puts a live
+                // lock here. Hand it back with an atomic create, which cannot
+                // displace anyone who took the path since.
+                const displaced = yield* readOwner(tombstone)
+                if (Option.isSome(displaced) && displaced.value !== observed) {
+                  yield* fs.writeFileString(lockPath, displaced.value, { flag: "wx", mode: 0o600 }).pipe(Effect.ignore)
+                }
+                yield* fs.remove(tombstone).pipe(Effect.ignore)
+                return true
+              }),
+            (claimed) => claimed ? removeIfOwnedBy(claimPath, owner) : Effect.void
+          )
+        }
 
         const release = fs.readFileString(lockPath).pipe(
           Effect.flatMap((found) => found === owner ? fs.remove(lockPath) : Effect.void),

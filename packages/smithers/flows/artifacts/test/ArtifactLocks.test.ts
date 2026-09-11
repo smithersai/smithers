@@ -13,6 +13,7 @@ import * as ArtifactLocks from "../src/internal/ArtifactLocks.ts"
 
 const digest = "0".repeat(64)
 const directory = ".objects"
+const lockPath = `${directory}/${ArtifactLocks.directoryName}/${digest}.lock`
 
 const platformError = (tag: PlatformError.SystemErrorTag, method: string): PlatformError.PlatformError =>
   PlatformError.systemError({ _tag: tag, module: "test", method })
@@ -62,6 +63,193 @@ const capture = () => {
   const messages: Array<unknown> = []
   return { messages, logger: Logger.layer([Logger.make<unknown, void>(({ message }) => messages.push(message))]) }
 }
+
+const claimPath = `${lockPath}.reclaim-crashed`
+
+/**
+ * A path-aware host for the reclaim protocol: each file has an owner token and
+ * an mtime, `wx` refuses an existing path, and `hooks` script the interleavings
+ * a second process would cause.
+ */
+const files = (
+  initial: Record<string, { readonly value: string; readonly mtime: number }>,
+  hooks: {
+    readonly read?: (path: string) => Effect.Effect<string, PlatformError.PlatformError> | undefined
+    readonly write?: (path: string) => Effect.Effect<void, PlatformError.PlatformError> | undefined
+    readonly rename?: (from: string) => void
+  } = {}
+) => {
+  const state = new Map(Object.entries(initial).map(([path, file]) => [path, { ...file }]))
+  const renames: Array<string> = []
+  // Hooks run when the operation runs, not when the effect is built: the lock
+  // module builds its release read before acquiring.
+  const fs = FileSystem.makeNoop({
+    makeDirectory: (() => Effect.void) as never,
+    writeFileString: ((path: string, value: string, options?: { flag?: string }) =>
+      Effect.suspend(() =>
+        hooks.write?.(path) ?? Effect.flatMap(Clock.currentTimeMillis, (now) =>
+          Effect.suspend(() => {
+            if (options?.flag === "wx" && state.has(path)) {
+              return Effect.fail(platformError("AlreadyExists", "writeFileString"))
+            }
+            state.set(path, { value, mtime: now })
+            return Effect.void
+          }))
+      )) as never,
+    readFileString: ((path: string) =>
+      Effect.suspend(() => {
+        const hooked = hooks.read?.(path)
+        if (hooked !== undefined) return hooked
+        const file = state.get(path)
+        return file === undefined
+          ? Effect.fail(platformError("NotFound", "readFileString"))
+          : Effect.succeed(file.value)
+      })) as never,
+    stat: ((path: string) =>
+      Effect.suspend(() => {
+        const file = state.get(path)
+        return file === undefined
+          ? Effect.fail(platformError("NotFound", "stat"))
+          : Effect.succeed(fileInfo(new Date(file.mtime)))
+      })) as never,
+    rename: ((from: string, to: string) =>
+      Effect.suspend(() => {
+        hooks.rename?.(from)
+        const file = state.get(from)
+        if (file === undefined) return Effect.fail(platformError("NotFound", "rename"))
+        renames.push(file.value)
+        state.set(to, file)
+        state.delete(from)
+        return Effect.void
+      })) as never,
+    remove: ((path: string) => Effect.sync(() => void state.delete(path))) as never,
+    utimes: (() => Effect.void) as never
+  })
+  return { fs, state, renames }
+}
+
+describe("stale lock reclamation", () => {
+  it.effect("treats a lock that vanishes before its owner is read as free", () =>
+    Effect.gen(function*() {
+      let reads = 0
+      const fixture = files({ [lockPath]: { value: "crashed", mtime: 0 } }, {
+        read: (path) => {
+          if (path !== lockPath || reads++ > 0) return undefined
+          fixture.state.delete(lockPath)
+          return Effect.fail(platformError("NotFound", "readFileString"))
+        }
+      })
+      yield* run(fixture.fs, Effect.void)
+      // One read found nothing during acquisition; the other is the release.
+      expect(reads).toBe(2)
+      expect(fixture.renames).toEqual([])
+    }))
+
+  it.effect("propagates an owner read refusal", () =>
+    Effect.gen(function*() {
+      const fixture = files({ [lockPath]: { value: "crashed", mtime: 0 } }, {
+        read: () => Effect.fail(platformError("PermissionDenied", "readFileString"))
+      })
+      expect(Exit.isFailure(yield* run(fixture.fs, Effect.void).pipe(Effect.exit))).toBe(true)
+    }))
+
+  it.effect("propagates a claim refusal other than AlreadyExists", () =>
+    Effect.gen(function*() {
+      yield* TestClock.adjust("2 minutes")
+      const fixture = files({ [lockPath]: { value: "crashed", mtime: 0 } }, {
+        write: (path) => path === claimPath ? Effect.fail(platformError("PermissionDenied", "writeFileString")) : undefined
+      })
+      expect(Exit.isFailure(yield* run(fixture.fs, Effect.void).pipe(Effect.exit))).toBe(true)
+      expect(fixture.renames).toEqual([])
+    }))
+
+  it.effect("leaves a stale lock to the contender holding its claim", () =>
+    Effect.gen(function*() {
+      yield* TestClock.adjust("2 minutes")
+      const now = yield* Clock.currentTimeMillis
+      const fixture = files({
+        [lockPath]: { value: "crashed", mtime: 0 },
+        [claimPath]: { value: "a-peer", mtime: now }
+      })
+      const running = yield* run(fixture.fs, Effect.void).pipe(Effect.forkChild({ startImmediately: true }))
+      yield* TestClock.adjust("50 millis")
+      expect(fixture.renames).toEqual([])
+      expect(fixture.state.get(claimPath)?.value).toBe("a-peer")
+      expect(running.pollUnsafe()).toBeUndefined()
+      // The peer finishes without moving anything; the claim is free again.
+      fixture.state.delete(claimPath)
+      yield* TestClock.adjust("25 millis")
+      yield* Fiber.join(running)
+      expect(fixture.renames).toEqual(["crashed"])
+      expect([...fixture.state.keys()]).toEqual([])
+    }))
+
+  it.effect("clears a claim abandoned by a crashed reclaimer", () =>
+    Effect.gen(function*() {
+      yield* TestClock.adjust("2 minutes")
+      const fixture = files({
+        [lockPath]: { value: "crashed", mtime: 0 },
+        [claimPath]: { value: "a-dead-peer", mtime: 0 }
+      })
+      const running = yield* run(fixture.fs, Effect.void).pipe(Effect.forkChild({ startImmediately: true }))
+      yield* TestClock.adjust("25 millis")
+      yield* Fiber.join(running)
+      expect(fixture.renames).toEqual(["crashed"])
+      expect([...fixture.state.keys()]).toEqual([])
+    }))
+
+  it.effect("keeps an abandoned claim that a peer replaced or removed before cleanup", () =>
+    Effect.gen(function*() {
+      yield* TestClock.adjust("2 minutes")
+      const now = yield* Clock.currentTimeMillis
+      let claimReads = 0
+      const fixture = files({
+        [lockPath]: { value: "crashed", mtime: 0 },
+        [claimPath]: { value: "a-dead-peer", mtime: 0 }
+      }, {
+        read: (path) => {
+          if (path !== claimPath) return undefined
+          claimReads += 1
+          // First pass: the claim is gone by the time its owner is read.
+          if (claimReads === 1) return Effect.fail(platformError("NotFound", "readFileString"))
+          // Second pass: a live peer replaced it between the age check and removal.
+          if (claimReads === 3) {
+            fixture.state.set(claimPath, { value: "a-live-peer", mtime: now })
+            return Effect.succeed("a-live-peer")
+          }
+          return undefined
+        }
+      })
+      const running = yield* run(fixture.fs, Effect.void).pipe(Effect.forkChild({ startImmediately: true }))
+      yield* TestClock.adjust("50 millis")
+      expect(fixture.state.get(claimPath)?.value).toBe("a-live-peer")
+      expect(fixture.renames).toEqual([])
+      expect(running.pollUnsafe()).toBeUndefined()
+      yield* Fiber.interrupt(running)
+    }))
+
+  it.effect("hands back a live lock that took the path between the re-read and the rename", () =>
+    Effect.gen(function*() {
+      // A stalled owner released and a new owner acquired inside the claim
+      // winner's last gap, so the rename moved a live lock. It goes back with
+      // an atomic create, and the winner keeps waiting on it.
+      yield* TestClock.adjust("2 minutes")
+      const fixture = files({ [lockPath]: { value: "crashed", mtime: 0 } }, {
+        rename: (from) => {
+          if (from === lockPath && fixture.renames.length === 0) {
+            fixture.state.set(lockPath, { value: "a-live-owner", mtime: 120_000 })
+          }
+        }
+      })
+      const running = yield* run(fixture.fs, Effect.void).pipe(Effect.forkChild({ startImmediately: true }))
+      yield* TestClock.adjust("50 millis")
+      expect(fixture.renames).toEqual(["a-live-owner"])
+      expect(fixture.state.get(lockPath)?.value).toBe("a-live-owner")
+      expect([...fixture.state.keys()]).toEqual([lockPath])
+      expect(running.pollUnsafe()).toBeUndefined()
+      yield* Fiber.interrupt(running)
+    }))
+})
 
 describe("artifact lockfile failure and race handling", () => {
   it.effect("includes same-process semaphore contention in the acquisition deadline", () =>
@@ -167,33 +355,119 @@ describe("artifact lockfile failure and race handling", () => {
   it.effect("retries when a stale lock vanishes before its atomic rename", () =>
     Effect.gen(function*() {
       yield* TestClock.adjust("2 minutes")
-      let writes = 0
-      let owner = ""
+      let lockWrites = 0
+      const files = new Map<string, string>([[lockPath, "crashed"]])
       const fixture = host({
-        writeFileString: ((_path: string, value: string) =>
+        writeFileString: ((path: string, value: string) =>
           Effect.suspend(() => {
-            writes++
-            if (writes === 1) return Effect.fail(platformError("AlreadyExists", "writeFileString"))
-            owner = value
+            if (path === lockPath) lockWrites++
+            if (path === lockPath && lockWrites === 1) {
+              return Effect.fail(platformError("AlreadyExists", "writeFileString"))
+            }
+            files.set(path, value)
             return Effect.void
           })) as never,
         stat: (() => Effect.succeed(fileInfo(new Date(0)))) as never,
         rename: (() => Effect.fail(platformError("NotFound", "rename"))) as never,
-        readFileString: (() => Effect.sync(() => owner)) as never
+        readFileString: ((path: string) => Effect.sync(() => files.get(path) ?? "")) as never
       })
       yield* run(fixture.fs, Effect.void)
-      expect(writes).toBe(2)
+      expect(lockWrites).toBe(2)
     }))
 
   it.effect("propagates a stale-lock rename refusal", () =>
     Effect.gen(function*() {
       yield* TestClock.adjust("2 minutes")
+      const files = new Map<string, string>([[lockPath, "crashed"]])
       const fixture = host({
-        writeFileString: (() => Effect.fail(platformError("AlreadyExists", "writeFileString"))) as never,
+        writeFileString: ((path: string, value: string) =>
+          Effect.suspend(() => {
+            if (files.has(path)) return Effect.fail(platformError("AlreadyExists", "writeFileString"))
+            files.set(path, value)
+            return Effect.void
+          })) as never,
+        readFileString: ((path: string) => Effect.sync(() => files.get(path) ?? "")) as never,
         stat: (() => Effect.succeed(fileInfo(new Date(0)))) as never,
         rename: (() => Effect.fail(platformError("PermissionDenied", "rename"))) as never
       })
       expect(Exit.isFailure(yield* run(fixture.fs, Effect.void).pipe(Effect.exit))).toBe(true)
+    }))
+
+  it.effect("moves a stale lock generation at most once across concurrent reclaimers", () =>
+    Effect.gen(function*() {
+      // Both contenders read the crashed owner and measure it stale before
+      // either renames. The first reclaims and takes the lock; the second's
+      // verdict names a generation that is gone, so it must not move the
+      // first's fresh lock.
+      yield* TestClock.adjust("2 minutes")
+      const files = new Map<string, { value: string; mtime: number }>([[lockPath, { value: "crashed", mtime: 0 }]])
+      const renames: Array<string> = []
+      let staleReads = 0
+      const bothMeasured = yield* Deferred.make<void>()
+      const fs = FileSystem.makeNoop({
+        makeDirectory: (() => Effect.void) as never,
+        writeFileString: ((path: string, value: string, options?: { flag?: string }) =>
+          Effect.flatMap(Clock.currentTimeMillis, (now) =>
+            Effect.suspend(() => {
+              if (options?.flag === "wx" && files.has(path)) {
+                return Effect.fail(platformError("AlreadyExists", "writeFileString"))
+              }
+              files.set(path, { value, mtime: now })
+              return Effect.void
+            }))) as never,
+        readFileString: ((path: string) =>
+          Effect.suspend(() => {
+            const file = files.get(path)
+            return file === undefined
+              ? Effect.fail(platformError("NotFound", "readFileString"))
+              : Effect.succeed(file.value)
+          })) as never,
+        stat: ((path: string) =>
+          Effect.suspend(() => {
+            const file = files.get(path)
+            if (file === undefined) return Effect.fail(platformError("NotFound", "stat"))
+            const info = Effect.succeed(fileInfo(new Date(file.mtime)))
+            if (path !== lockPath || file.value !== "crashed" || staleReads >= 2) return info
+            staleReads++
+            return staleReads === 2
+              ? Deferred.succeed(bothMeasured, undefined).pipe(Effect.andThen(info))
+              : Deferred.await(bothMeasured).pipe(Effect.andThen(info))
+          })) as never,
+        rename: ((from: string, to: string) =>
+          Effect.suspend(() => {
+            const file = files.get(from)
+            if (file === undefined) return Effect.fail(platformError("NotFound", "rename"))
+            renames.push(file.value)
+            files.set(to, file)
+            files.delete(from)
+            return Effect.void
+          })) as never,
+        remove: ((path: string) => Effect.sync(() => void files.delete(path))) as never,
+        utimes: (() => Effect.void) as never
+      })
+      const entered = yield* Deferred.make<void>()
+      const release = yield* Deferred.make<void>()
+      const first = yield* ArtifactLocks.withDigest(
+        fs,
+        directory,
+        digest,
+        Deferred.succeed(entered, undefined).pipe(Effect.andThen(Deferred.await(release))),
+        (cause) => cause
+      ).pipe(Effect.forkChild({ startImmediately: true }))
+      // A second FileSystem service stands in for another process, so the
+      // in-process semaphore does not serialize the two.
+      const second = yield* ArtifactLocks.withDigest({ ...fs }, directory, digest, Effect.void, (cause) => cause)
+        .pipe(Effect.forkChild({ startImmediately: true }))
+      yield* Deferred.await(entered)
+      yield* TestClock.adjust("25 millis")
+      expect(renames).toEqual(["crashed"])
+      expect(second.pollUnsafe()).toBeUndefined()
+      yield* Deferred.succeed(release, undefined)
+      yield* Fiber.join(first)
+      yield* TestClock.adjust("25 millis")
+      yield* Fiber.join(second)
+      expect(renames).toEqual(["crashed"])
+      expect([...files.keys()]).toEqual([])
     }))
 
   it.effect("bounds acquisition when a live owner never releases", () =>

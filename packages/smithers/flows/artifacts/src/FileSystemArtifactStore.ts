@@ -68,16 +68,12 @@ export interface FileSystemOptions {
    * whose host stalls past the stale bound can therefore be reaped while it is
    * still running.
    *
-   * Reclaiming a stale lock is a measurement followed by a separate removal,
-   * not one atomic compare-and-swap, so the exposure outlives the stalled
-   * holder: two processes that both measure the same lock as stale both go on
-   * to reclaim it, and the second reclaims whatever now sits at that path,
-   * including the fresh lock the first just took. A release is the same shape,
-   * reading the owner and then removing the path. Neither the mtime check nor
-   * the backup lease independently protects against loss of mutual exclusion:
-   * the check precedes a separate delete, and the gate uses this same protocol.
-   * A sweep can delete a successful publication using pre-publication age
-   * evidence if another stale reclaimer displaces its lock.
+   * Contenders that measure the same lock as stale race for a claim file named
+   * after its owner token, so each lock generation is moved away at most once
+   * and a fresh replacement is never displaced by a late stale verdict.
+   * Neither the mtime check nor the backup lease independently protects
+   * against a reaped stalled holder: the check precedes a separate delete, and
+   * the gate uses this same protocol.
    *
    * It also only fences parties that agree. An `ArtifactSweep` over the same
    * directory must be built with the same `coordination`: a store on `process`

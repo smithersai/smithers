@@ -41,19 +41,20 @@ objects directory, and digest; unrelated objects roots do not share permits.
 
 ## The fence is bounded, not absolute
 
-Reclaiming a stale lock is a measurement followed by a separate removal, not
-one atomic compare-and-swap. Once some holder has already gone stale, two
-processes that both measure the same lock as stale both go on to reclaim it,
-and the second reclaims whatever now sits at that path, including the fresh
-lock the first just took. Releasing has the same shape: read the owner, then
-remove the path.
+Reclaiming a stale lock is serialized per lock generation. A contender reads
+the owner token, then measures the age. If the lock is stale, the contender
+races for a `wx` claim file named after that token. Only the claim winner
+renames the lock away, and only after re-reading that the path still holds the
+same stale token. Two contenders that measured the same lock as stale
+therefore move it at most once, and neither moves the fresh lock the other
+just took.
 
-These windows can remove a fresh owner's lock. Neither the mtime check nor the
-backup gate independently protects against this loss of mutual exclusion. The
-mtime check is followed by a separate delete, and the backup gate uses the
-same reclaim protocol. A successful publication can therefore be deleted using
-age evidence collected before publication. A holder whose host stalls past
-60 seconds can also be reaped while it is still running.
+The fence still assumes a holder that stops heartbeating is dead. A holder
+whose host stalls past 60 seconds is reaped while it is still running, and its
+heartbeat only logs the loss. Neither the mtime check nor the backup gate
+independently protects against that loss of mutual exclusion. The mtime check
+is followed by a separate delete, and the backup gate uses the same lock
+protocol.
 
 ## Both sides must agree
 
