@@ -1,7 +1,8 @@
 import { describe, expect, it } from "@effect/vitest"
 import * as Effect from "effect/Effect"
-import { chmodSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs"
-import { join } from "node:path"
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs"
+import { tmpdir } from "node:os"
+import { join, relative } from "node:path"
 import { pathToFileURL } from "node:url"
 import * as Detect from "../src/Detect.ts"
 import * as RunState from "../src/RunState.ts"
@@ -221,21 +222,31 @@ describe("RunState.scan", () => {
       // nothing while the report claims the project is protected, so the scan
       // records it apart and blocks instead.
       const root = copyFixture("jsx-single")
-      const outside = join(root, "..", `outside-${process.pid}.db`)
+      // The external databases live in a directory this test allocates, never
+      // at a fixed path beside `root` that another process may own.
+      const externalDir = mkdtempSync(join(tmpdir(), "smithers-migrate-external-"))
+      const outside = join(externalDir, "outside.db")
+      const absolute = join(externalDir, "absolute.db")
+      const outsideDeclared = relative(root, outside)
+      for (const path of [outside, absolute]) {
+        expect(path.startsWith(`${externalDir}/`)).toBe(true)
+        expect(path.startsWith(`${root}/`)).toBe(false)
+      }
+      expect(outsideDeclared.startsWith("../")).toBe(true)
       writeFileSync(outside, "")
-      writeFileSync(join(root, ".env"), `SMITHERS_DB=../${outside.split("/").pop()}\n`)
+      writeFileSync(join(root, ".env"), `SMITHERS_DB=${outsideDeclared}\n`)
       writeFileSync(
         join(root, "smithers.config.ts"),
-        `export default { dbPath: ${JSON.stringify(join(root, "..", "absolute.db"))} }\n`
+        `export default { dbPath: ${JSON.stringify(absolute)} }\n`
       )
-      writeFileSync(join(root, "..", "absolute.db"), "")
+      writeFileSync(absolute, "")
 
       try {
         const result = yield* report(root)
 
         expect(result.external.map((entry) => entry.declared).sort()).toEqual([
-          `../${outside.split("/").pop()}`,
-          join(root, "..", "absolute.db")
+          outsideDeclared,
+          absolute
         ].sort())
         for (const entry of result.external) {
           expect(entry.resolved.startsWith(`${root}/`)).toBe(false)
@@ -251,8 +262,7 @@ describe("RunState.scan", () => {
         }
         expect(result.verdict).toBe("blocked")
       } finally {
-        rmSync(outside, { force: true })
-        rmSync(join(root, "..", "absolute.db"), { force: true })
+        rmSync(externalDir, { recursive: true, force: true })
       }
     }))
 })
