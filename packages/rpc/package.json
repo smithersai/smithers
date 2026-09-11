@@ -6,7 +6,7 @@
     "group": "tooling"
   },
   "type": "module",
-  "description": "Contract modules shared by the Smithers native app (apps/ui) and the Cloudflare Worker (apps/server): runtime-free zod schemas, route constants, and RPC types",
+  "description": "Contract modules shared by the Smithers native app (apps/ui) and the Cloudflare Worker (apps/server): zod schemas, route constants, and RPC types, plus BrowserFetch, the shared browser-tool fetch handler both hosts run",
   "exports": {
     "./package.json": "./package.json",
     "./*": {

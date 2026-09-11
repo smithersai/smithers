@@ -4,6 +4,8 @@ Shared product contracts for the local host, browser, and server. Import individ
 
 `LocalApp` defines the local harness, repository, file, terminal, and target execution records. `LocalLsp` defines local code intelligence: the language-server routes, caps, requests, and answers. `CloudTunnel` defines the Smithers Cloud seam on the local origin: the proxy and WebSocket tunnel routes, frame caps, close codes, and browser sign-in. `LinearAuth` defines the Linear OAuth handoff. Parse incoming data with their Zod schemas; the inferred types describe validated values. `TargetGraph` defines graph nodes, edges, run summaries, and traversal helpers. `AppLinks` defines the native download and handoff links without inventing a release URL when none is configured.
 
+`BrowserFetch` is the one implementation module: the browser tool's guarded fetch-and-extract handler, shared by the product Worker and the local host. It is the only module that performs network I/O, with the DNS resolver injected by each host.
+
 `LocalApp` re-exports the names that moved to `LocalLsp`, `CloudTunnel`, and `LinearAuth` for one release. Import them from their home; a new name is exported from its home alone.
 
 ## Route ownership
