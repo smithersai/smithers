@@ -4,12 +4,16 @@
  * V1 intentionally brute-forces cosine similarity over the selected banks;
  * sqlite-vec is deferred to an optimization ticket. Projection is advisory:
  * authoritative MemoryStore writes complete first, projection failures retry
- * once and are logged without changing the write result.
+ * once, time out after `Options.projectionTimeout`, and are logged without
+ * changing the write result. The vector upsert keeps the newest row by
+ * `updatedAtMs`, so a late projection from another process cannot replace a
+ * newer one.
  *
  * @see https://smithers.sh/docs/reference/api/memory
  * @since 0.1.0
  */
 import * as Clock from "effect/Clock"
+import type * as Duration from "effect/Duration"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
 import * as Option from "effect/Option"
@@ -25,7 +29,9 @@ import * as Namespace from "./Namespace.ts"
 import * as Recall from "./Recall.ts"
 
 /**
- * Durable vector projection row.
+ * Durable vector projection row. `recordKind` and `recordId` name the
+ * authoritative fact or note the vector describes; a fact's id is its key and
+ * a note's id is its note id.
  *
  * @category models
  * @since 0.1.0
@@ -33,14 +39,13 @@ import * as Recall from "./Recall.ts"
  */
 export interface Vector {
   readonly bank: string
-  readonly key: string
+  readonly recordKind: "fact" | "note"
+  readonly recordId: string
   readonly model: string
   readonly contentDigest: string
   readonly dimensions: number
   readonly vector: ReadonlyArray<number> | Float32Array
   readonly updatedAtMs: number
-  readonly recordKind?: "fact" | "note" | undefined
-  readonly recordId?: string | undefined
 }
 
 /**
@@ -60,6 +65,10 @@ export interface VectorStore {
     banks: ReadonlyArray<string>,
     model: string
   ) => Stream.Stream<ReadonlyArray<Vector>, MemoryError.MemoryError>
+  /**
+   * Store a projection, keeping the newest by `updatedAtMs`: an upsert older
+   * than the stored row for the same identity and model is a no-op.
+   */
   readonly upsert: (vector: Vector) => Effect.Effect<void, MemoryError.MemoryError>
 }
 
@@ -74,6 +83,12 @@ export interface Options {
   readonly vectorStore: VectorStore
   readonly model?: string
   readonly halfLifeMs?: number
+  /**
+   * Deadline for one after-commit projection, embedding and vector write
+   * included. A projection that exceeds it is logged and dropped like any
+   * other failure. Defaults to `defaultProjectionTimeout`.
+   */
+  readonly projectionTimeout?: Duration.Input | undefined
 }
 
 interface SqlVectorRow {
@@ -109,6 +124,14 @@ export const budgetLimits = {
  * @slop
  */
 export const defaultModel = Embedding.inProcessModel
+
+/**
+ * The projection deadline used when `Options.projectionTimeout` is absent.
+ *
+ * @category constants
+ * @since 0.1.0
+ */
+export const defaultProjectionTimeout: Duration.Input = "5 seconds"
 const defaultHalfLifeMs = 7 * 24 * 60 * 60 * 1000
 
 const maximumDimensions = 65_536
@@ -155,7 +178,7 @@ const invalidArgument = (message: string, path: ReadonlyArray<string>): MemoryEr
   new MemoryError.MemoryError({ code: "invalid_argument", message, path })
 
 const validateVector = (vector: Vector): MemoryError.MemoryError | undefined => {
-  if (vector.key.length === 0) return invalidArgument("vector key must not be empty", ["key"])
+  if (vector.recordId.length === 0) return invalidArgument("vector recordId must not be empty", ["recordId"])
   if (vector.model.length === 0) return invalidArgument("vector model must not be empty", ["model"])
   if (vector.contentDigest.length === 0) {
     return invalidArgument("vector contentDigest must not be empty", ["contentDigest"])
@@ -220,14 +243,13 @@ export const makeSqlVectorStore = (database: DatabaseService): VectorStore => {
                     readVector(row).pipe(
                       Effect.map((vector): Vector => ({
                         bank,
-                        key: row.record_id,
+                        recordKind: row.record_kind,
+                        recordId: row.record_id,
                         model: row.embedding_model,
                         contentDigest: row.content_digest,
                         dimensions: row.dimensions,
                         vector,
-                        updatedAtMs: row.updated_at_ms,
-                        recordKind: row.record_kind,
-                        recordId: row.record_id
+                        updatedAtMs: row.updated_at_ms
                       }))
                     ))
                   const last = rows.at(-1)
@@ -259,8 +281,8 @@ export const makeSqlVectorStore = (database: DatabaseService): VectorStore => {
         record_kind, record_id, namespace_kind, namespace_id,
         embedding_model, content_digest, dimensions, vector_bytes, updated_at_ms
       ) VALUES (
-        ${vector.recordKind ?? "note"},
-        ${vector.recordId ?? vector.key},
+        ${vector.recordKind},
+        ${vector.recordId},
         ${namespace.kind},
         ${namespace.id},
         ${vector.model},
@@ -276,6 +298,7 @@ export const makeSqlVectorStore = (database: DatabaseService): VectorStore => {
         dimensions = excluded.dimensions,
         vector_bytes = excluded.vector_bytes,
         updated_at_ms = excluded.updated_at_ms
+      WHERE excluded.updated_at_ms >= memory_vectors.updated_at_ms
     `
         ).pipe(Effect.mapError(sqlError("memory vector upsert failed")), Effect.asVoid)
       })
@@ -355,10 +378,7 @@ export const recall = (
             const rows = yield* store.searchRows({
               namespace,
               status: "accepted",
-              records: vectors.map((vector) => ({
-                kind: vector.recordKind ?? "note",
-                id: vector.recordId ?? vector.key
-              }))
+              records: vectors.map((vector) => ({ kind: vector.recordKind, id: vector.recordId }))
             })
             const byIdentity = new Map(
               rows.filter((row) => row.namespace.kind === namespace.kind && row.namespace.id === namespace.id).map((
@@ -366,7 +386,7 @@ export const recall = (
               ) => [`${row.kind}\u0000${row.id}`, row] as const)
             )
             for (const vector of vectors) {
-              const row = byIdentity.get(`${vector.recordKind ?? "note"}\u0000${vector.recordId ?? vector.key}`)
+              const row = byIdentity.get(`${vector.recordKind}\u0000${vector.recordId}`)
               if (row === undefined || vector.contentDigest !== digest(searchableText(row.text))) continue
               if (row.status !== undefined && row.status !== "accepted") continue
               if (
@@ -393,15 +413,14 @@ export const recall = (
  */
 export interface ProjectionInput {
   readonly bank: string
-  readonly key: string
+  readonly recordKind: "fact" | "note"
+  readonly recordId: string
   readonly text: string
   readonly updatedAtMs: number
-  readonly recordKind?: "fact" | "note" | undefined
-  readonly recordId?: string | undefined
 }
 
 /**
- * Per-key serialized semantic projection coordinator.
+ * Per-record serialized semantic projection coordinator.
  *
  * @category models
  * @since 0.1.0
@@ -424,32 +443,31 @@ export const makeProjector = (options: Options): Projector => {
       const model = options.model ?? defaultModel
       const snapshot = Object.freeze({
         bank: row.bank,
-        key: row.key,
-        text: row.text,
-        updatedAtMs: row.updatedAtMs,
         recordKind: row.recordKind,
-        recordId: row.recordId
+        recordId: row.recordId,
+        text: row.text,
+        updatedAtMs: row.updatedAtMs
       })
       const task = Effect.gen(function*() {
         const embedding = yield* Embedding.Embedding
         const response = yield* embedding.embed(snapshot.text)
         yield* options.vectorStore.upsert({
           bank: snapshot.bank,
-          key: snapshot.key,
+          recordKind: snapshot.recordKind,
+          recordId: snapshot.recordId,
           model,
           contentDigest: digest(snapshot.text),
           dimensions: response.vector.length,
           vector: response.vector,
-          updatedAtMs: snapshot.updatedAtMs,
-          recordKind: snapshot.recordKind,
-          recordId: snapshot.recordId
+          updatedAtMs: snapshot.updatedAtMs
         })
       }).pipe(
         Effect.retry({ times: 1 }),
+        Effect.timeout(options.projectionTimeout ?? defaultProjectionTimeout),
         Effect.catch((cause) => Effect.logWarning(`memory semantic projection failed: ${String(cause)}`)),
         Effect.asVoid
       )
-      const identity = `${model}\u0000${snapshot.bank}\u0000${snapshot.key}`
+      const identity = `${model}\u0000${snapshot.bank}\u0000${snapshot.recordKind}\u0000${snapshot.recordId}`
       let entry = locks.get(identity)
       if (entry === undefined) {
         entry = { lock: Semaphore.makeUnsafe(1), users: 0 }
@@ -497,11 +515,10 @@ export const decorateStore = (
                   ? Effect.void
                   : project({
                     bank: bankForNamespace(fact.namespace),
-                    key: fact.key,
+                    recordKind: "fact",
+                    recordId: fact.key,
                     text: searchableText(fact.value),
-                    updatedAtMs: fact.updatedAtMs,
-                    recordKind: "fact" as const,
-                    recordId: fact.key
+                    updatedAtMs: fact.updatedAtMs
                   })
               )
             )
@@ -514,11 +531,10 @@ export const decorateStore = (
           superviseAfterCommit(
             project({
               bank: bankForNamespace(note.namespace),
-              key: note.id,
-              text: note.text,
-              updatedAtMs: note.createdAtMs,
               recordKind: "note",
-              recordId: note.id
+              recordId: note.id,
+              text: note.text,
+              updatedAtMs: note.createdAtMs
             })
           )
         )

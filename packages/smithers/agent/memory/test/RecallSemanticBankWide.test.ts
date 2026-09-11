@@ -21,9 +21,8 @@ const fixture = <A, E>(
 
 const projection = (key: string, overrides: Partial<Semantic.Vector> = {}): Semantic.Vector => ({
   bank: "flow-bank",
-  key,
-  recordId: key,
   recordKind: "note",
+  recordId: key,
   model: Semantic.defaultModel,
   contentDigest: digest(key),
   dimensions: 2,
@@ -173,7 +172,7 @@ describe("bank-wide semantic recall", () => {
           Effect.gen(function*() {
             pages++
             expect(pages).toBeLessThanOrEqual(2)
-            collected.push(...page.map((row) => row.key))
+            collected.push(...page.map((row) => row.recordId))
             for (let index = 0; index < 64; index++) {
               yield* vectors.upsert(projection(`z-new-${pages}-${index}`))
             }

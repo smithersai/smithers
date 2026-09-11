@@ -1,5 +1,5 @@
 import { DurableWriter } from "@smthrs/database/DurableWriter"
-import { Cause, Effect, Stream } from "effect"
+import { Cause, Deferred, Effect, Fiber, Stream } from "effect"
 import { TestClock } from "effect/testing"
 import * as SqlClient from "effect/unstable/sql/SqlClient"
 import { describe, expect, it } from "vitest"
@@ -30,7 +30,8 @@ const storeOf = (rows: ReadonlyArray<MemoryStore.SearchRow>) =>
 
 const projection = (overrides: Partial<Semantic.Vector>): Semantic.Vector => ({
   bank: "flow-bank",
-  key: "key",
+  recordKind: "note",
+  recordId: "key",
   model: Semantic.defaultModel,
   contentDigest: digest("text"),
   dimensions: 2,
@@ -84,7 +85,8 @@ describe("RecallSemantic", () => {
     const vectors: Semantic.Vector[] = [
       {
         bank: "bank",
-        key: "near",
+        recordKind: "note",
+        recordId: "near",
         model: "test",
         contentDigest: digest("near"),
         dimensions: 2,
@@ -93,7 +95,8 @@ describe("RecallSemantic", () => {
       },
       {
         bank: "bank",
-        key: "old",
+        recordKind: "note",
+        recordId: "old",
         model: "test",
         contentDigest: digest("old"),
         dimensions: 2,
@@ -135,7 +138,7 @@ describe("RecallSemantic", () => {
           scan: (banks) =>
             Stream.fromEffect(Effect.sync(() => {
               listedBanks.push(banks)
-              return [projection({ bank: "bank", key: "one", recordId: "one", contentDigest: digest("one") })]
+              return [projection({ bank: "bank", recordId: "one", contentDigest: digest("one") })]
             })),
           upsert: () => Effect.void
         },
@@ -163,17 +166,101 @@ describe("RecallSemantic", () => {
     await expect(Effect.runPromise(
       projector.project({
         bank: "bank",
-        key: "key",
+        recordKind: "note",
+        recordId: "key",
         text: "text",
         updatedAtMs: 0
       }).pipe(Effect.provideService(Embedding.Embedding, embedding))
     )).resolves.toBeUndefined()
   })
 
-  it("serializes same-key projections without replaying prior effects", async () => {
-    let writes = 0
-    const embedding = Embedding.make(() => Effect.succeed([[1]]))
+  it("serializes same-record projections while other records proceed, then releases the key", async () => {
+    const entered = Deferred.makeUnsafe<void>()
+    const gate = Deferred.makeUnsafe<void>()
+    const embedded: Array<string> = []
+    const writes: Array<string> = []
+    const embedding = Embedding.make((inputs) =>
+      Effect.gen(function*() {
+        embedded.push(...inputs)
+        if (inputs[0] === "first") {
+          yield* Deferred.succeed(entered, undefined)
+          yield* Deferred.await(gate)
+        }
+        return inputs.map(() => [1])
+      })
+    )
     const projector = Semantic.makeProjector({
+      vectorStore: {
+        scan: () => Stream.empty,
+        upsert: (vector) =>
+          Effect.sync(() => {
+            writes.push(vector.contentDigest)
+          })
+      }
+    })
+    const row = (text: string, recordId = "key"): Semantic.ProjectionInput => ({
+      bank: "bank",
+      recordKind: "fact",
+      recordId,
+      text,
+      updatedAtMs: 0
+    })
+
+    const observed = await Effect.runPromise(
+      Effect.gen(function*() {
+        const first = yield* Effect.forkChild(projector.project(row("first")), { startImmediately: true })
+        yield* Deferred.await(entered)
+        const second = yield* Effect.forkChild(projector.project(row("second")), { startImmediately: true })
+        yield* Effect.sleep("10 millis")
+        const whileBlocked = { embedded: [...embedded], writes: [...writes], active: projector.activeKeys() }
+        yield* projector.project(row("other", "other-key"))
+        const otherDone = { embedded: [...embedded], writes: [...writes], active: projector.activeKeys() }
+        yield* Deferred.succeed(gate, undefined)
+        yield* Fiber.join(first)
+        yield* Fiber.join(second)
+        return { whileBlocked, otherDone }
+      }).pipe(Effect.provideService(Embedding.Embedding, embedding))
+    )
+
+    expect(observed.whileBlocked).toEqual({ embedded: ["first"], writes: [], active: 1 })
+    expect(observed.otherDone).toEqual({ embedded: ["first", "other"], writes: [digest("other")], active: 1 })
+    expect(embedded).toEqual(["first", "other", "second"])
+    expect(writes).toEqual([digest("other"), digest("first"), digest("second")])
+    expect(projector.activeKeys()).toBe(0)
+  })
+
+  it("releases the record key when a blocked projection is interrupted", async () => {
+    const entered = Deferred.makeUnsafe<void>()
+    const embedding = Embedding.make(() => Deferred.succeed(entered, undefined).pipe(Effect.andThen(Effect.never)))
+    const projector = Semantic.makeProjector({
+      vectorStore: { scan: () => Stream.empty, upsert: () => Effect.void }
+    })
+    const row: Semantic.ProjectionInput = {
+      bank: "bank",
+      recordKind: "note",
+      recordId: "key",
+      text: "t",
+      updatedAtMs: 0
+    }
+
+    const activeWhileHeld = await Effect.runPromise(
+      Effect.gen(function*() {
+        const fiber = yield* Effect.forkChild(projector.project(row), { startImmediately: true })
+        yield* Deferred.await(entered)
+        const active = projector.activeKeys()
+        yield* Fiber.interrupt(fiber)
+        return active
+      }).pipe(Effect.provideService(Embedding.Embedding, embedding))
+    )
+
+    expect(activeWhileHeld).toBe(1)
+    expect(projector.activeKeys()).toBe(0)
+  })
+
+  it("drops a projection whose provider exceeds the projection timeout", async () => {
+    let writes = 0
+    const projector = Semantic.makeProjector({
+      projectionTimeout: "20 millis",
       vectorStore: {
         scan: () => Stream.empty,
         upsert: () =>
@@ -182,20 +269,83 @@ describe("RecallSemantic", () => {
           })
       }
     })
-    const row = {
-      bank: "bank",
-      key: "key",
-      text: "text",
-      updatedAtMs: 0
-    }
 
-    await Effect.runPromise(
-      Effect.all([projector.project(row), projector.project(row)], { concurrency: "unbounded" }).pipe(
-        Effect.provideService(Embedding.Embedding, embedding)
+    await expect(Effect.runPromise(
+      projector.project({ bank: "bank", recordKind: "note", recordId: "key", text: "t", updatedAtMs: 0 }).pipe(
+        Effect.provideService(Embedding.Embedding, Embedding.make(() => Effect.never)),
+        Effect.timeout("2 seconds")
       )
+    )).resolves.toBeUndefined()
+    expect(writes).toBe(0)
+    expect(projector.activeKeys()).toBe(0)
+  })
+
+  it("returns a decorated write at commit when the embedding provider hangs", async () => {
+    const namespace = { kind: "flow", id: "hung" } as const
+    const committed = await Effect.runPromise(
+      Effect.gen(function*() {
+        const store = yield* MemoryStore.MemoryStore
+        const sql = yield* Effect.service(SqlClient.SqlClient)
+        const writer = yield* DurableWriter
+        const vectorStore = Semantic.makeSqlVectorStore({ sql, write: writer.write })
+        const decorated = Semantic.decorateStore(
+          store,
+          Semantic.makeProjector({ vectorStore, projectionTimeout: "20 millis" }),
+          Embedding.make(() => Effect.never)
+        )
+        yield* decorated.putFact({ namespace, key: "k", value: { content: "v" }, provenance: {} }).pipe(
+          Effect.timeout("2 seconds")
+        )
+        return yield* store.getFact({ namespace, key: "k" })
+      }).pipe(Effect.provide(TestMemory.layerWithDatabase))
     )
 
-    expect(writes).toBe(2)
+    expect(committed?.value).toEqual({ content: "v" })
+  })
+
+  it("keeps the newest vector when an older projection from another projector lands late", async () => {
+    const namespace = { kind: "flow", id: "race" } as const
+    const result = await Effect.runPromise(
+      Effect.gen(function*() {
+        const store = yield* MemoryStore.MemoryStore
+        const sql = yield* Effect.service(SqlClient.SqlClient)
+        const writer = yield* DurableWriter
+        const vectorStore = Semantic.makeSqlVectorStore({ sql, write: writer.write })
+        const entered = yield* Deferred.make<void>()
+        const gate = yield* Deferred.make<void>()
+        const slow = Embedding.make((inputs) =>
+          Deferred.succeed(entered, undefined).pipe(
+            Effect.andThen(Deferred.await(gate)),
+            Effect.as(inputs.map(Embedding.inProcessVector))
+          )
+        )
+        const fast = Embedding.makeInProcess()
+        const writerOne = Semantic.decorateStore(store, Semantic.makeProjector({ vectorStore }), slow)
+        const writerTwo = Semantic.decorateStore(store, Semantic.makeProjector({ vectorStore }), fast)
+
+        const first = yield* Effect.forkChild(
+          writerOne.putFact({ namespace, key: "k", value: { content: "first" }, provenance: {} }),
+          { startImmediately: true }
+        )
+        yield* Deferred.await(entered)
+        yield* Effect.sleep("5 millis")
+        yield* writerTwo.putFact({ namespace, key: "k", value: { content: "second" }, provenance: {} })
+        yield* Deferred.succeed(gate, undefined)
+        yield* Fiber.join(first)
+
+        const fact = yield* store.getFact({ namespace, key: "k" })
+        const rows = yield* sql<{ readonly content_digest: string; readonly updated_at_ms: number }>`
+          SELECT content_digest, updated_at_ms FROM memory_vectors WHERE record_kind = 'fact' AND record_id = 'k'`
+        const recalled = yield* Semantic.recall({ banks: ["flow-race"], query: "second" }, { vectorStore }).pipe(
+          Effect.provideService(Embedding.Embedding, fast)
+        )
+        return { fact, rows, recalled: recalled.map((row) => row.key) }
+      }).pipe(Effect.provide(TestMemory.layerWithDatabase))
+    )
+
+    expect(result.fact?.value).toEqual({ content: "second" })
+    expect(result.rows).toEqual([{ content_digest: digest("second"), updated_at_ms: result.fact?.updatedAtMs }])
+    expect(result.recalled).toEqual(["k"])
   })
 
   it("propagates projection interruption", async () => {
@@ -207,7 +357,7 @@ describe("RecallSemantic", () => {
       }
     })
     const exit = await Effect.runPromiseExit(
-      projector.project({ bank: "bank", key: "key", text: "text", updatedAtMs: 0 }).pipe(
+      projector.project({ bank: "bank", recordKind: "note", recordId: "key", text: "text", updatedAtMs: 0 }).pipe(
         Effect.provideService(Embedding.Embedding, embedding)
       )
     )
@@ -273,29 +423,12 @@ describe("RecallSemantic", () => {
         tagGroups: [{ tags: ["scope:project"], match: "all_strict" }]
       }, {
         vectorStore: vectorStoreOf([
-          projection({
-            key: "tie-b",
-            recordId: "tie-b",
-            recordKind: "note",
-            contentDigest: digest("b"),
-            updatedAtMs: 5
-          }),
-          projection({
-            key: "tie-a",
-            recordId: "tie-a",
-            recordKind: "note",
-            contentDigest: digest("a"),
-            updatedAtMs: 5
-          }),
-          projection({ key: "orphan", recordId: "orphan" }),
-          projection({ key: "pending", recordId: "pending", contentDigest: digest("p") }),
-          projection({ key: "untagged", recordId: "untagged", contentDigest: digest("u") }),
-          projection({
-            key: "orthogonal",
-            recordId: "orthogonal",
-            contentDigest: digest("o"),
-            vector: [0, 1]
-          })
+          projection({ recordId: "tie-b", recordKind: "note", contentDigest: digest("b"), updatedAtMs: 5 }),
+          projection({ recordId: "tie-a", recordKind: "note", contentDigest: digest("a"), updatedAtMs: 5 }),
+          projection({ recordId: "orphan" }),
+          projection({ recordId: "pending", contentDigest: digest("p") }),
+          projection({ recordId: "untagged", contentDigest: digest("u") }),
+          projection({ recordId: "orthogonal", contentDigest: digest("o"), vector: [0, 1] })
         ]),
         halfLifeMs: 1000
       }).pipe(
@@ -315,7 +448,7 @@ describe("RecallSemantic", () => {
     const rows = await Effect.runPromise(
       Semantic.recall({ banks: ["flow-bank"], query: "q" }, {
         vectorStore: vectorStoreOf([
-          projection({ key: "changed", recordId: "changed", contentDigest: digest("old text") })
+          projection({ recordId: "changed", contentDigest: digest("old text") })
         ]),
         halfLifeMs: 1_000
       }).pipe(
@@ -354,10 +487,22 @@ describe("RecallSemantic", () => {
 
     const rows = await Effect.runPromise(
       Effect.gen(function*() {
-        yield* projector.project({ bank: "flow-bank", key: "row", text: currentText, updatedAtMs: 0 })
+        yield* projector.project({
+          bank: "flow-bank",
+          recordKind: "note",
+          recordId: "row",
+          text: currentText,
+          updatedAtMs: 0
+        })
         currentText = "unrelated replacement"
         rejectProjection = true
-        yield* projector.project({ bank: "flow-bank", key: "row", text: currentText, updatedAtMs: 1 })
+        yield* projector.project({
+          bank: "flow-bank",
+          recordKind: "note",
+          recordId: "row",
+          text: currentText,
+          updatedAtMs: 1
+        })
         return yield* Semantic.recall({ banks: ["flow-bank"], query: "q" }, { vectorStore, halfLifeMs: 1_000 })
       }).pipe(
         Effect.provideService(MemoryStore.MemoryStore, store),
@@ -377,7 +522,7 @@ describe("RecallSemantic", () => {
     const options = {
       vectorStore: vectorStoreOf(
         keys.map((key, index) =>
-          projection({ key, recordId: key, contentDigest: digest(`text for ${key}`), vector: [1, index / 100] })
+          projection({ recordId: key, contentDigest: digest(`text for ${key}`), vector: [1, index / 100] })
         )
       ),
       halfLifeMs: 1000
@@ -408,7 +553,7 @@ describe("RecallSemantic", () => {
     const rows = await Effect.runPromise(
       Semantic.recall({ banks: ["flow-bank"], query: "q" }, {
         vectorStore: vectorStoreOf([
-          projection({ key: "fresh", recordId: "fresh", contentDigest: digest("fresh"), updatedAtMs: Date.now() })
+          projection({ recordId: "fresh", contentDigest: digest("fresh"), updatedAtMs: Date.now() })
         ])
       }).pipe(
         Effect.provideService(MemoryStore.MemoryStore, store),
@@ -448,18 +593,18 @@ describe("RecallSemantic", () => {
         const vectors = Semantic.makeSqlVectorStore({ sql, write: writer.write })
         yield* vectors.upsert({
           bank: "flow-one",
-          key: "runbook",
+          recordKind: "fact",
+          recordId: "runbook",
           model: "test",
           contentDigest: "a",
           dimensions: 2,
           vector: [0.5, -0.25],
-          updatedAtMs: 7,
-          recordKind: "fact",
-          recordId: "runbook"
+          updatedAtMs: 7
         })
         yield* vectors.upsert({
           bank: "agent-fleet",
-          key: "note",
+          recordKind: "note",
+          recordId: "note",
           model: "test",
           contentDigest: "b",
           dimensions: 1,
@@ -468,7 +613,8 @@ describe("RecallSemantic", () => {
         })
         yield* vectors.upsert({
           bank: "flow-one",
-          key: "foreign",
+          recordKind: "note",
+          recordId: "foreign",
           model: "other",
           contentDigest: "foreign",
           dimensions: 1,
@@ -478,24 +624,35 @@ describe("RecallSemantic", () => {
         const before = yield* collectVectors(vectors, ["flow-one", "agent-fleet", "user-empty"], "test")
         yield* vectors.upsert({
           bank: "flow-one",
-          key: "runbook",
+          recordKind: "fact",
+          recordId: "runbook",
           model: "test",
           contentDigest: "c",
           dimensions: 2,
           vector: [1, 0],
-          updatedAtMs: 9,
+          updatedAtMs: 9
+        })
+        yield* vectors.upsert({
+          bank: "flow-one",
           recordKind: "fact",
-          recordId: "runbook"
+          recordId: "runbook",
+          model: "test",
+          contentDigest: "stale",
+          dimensions: 2,
+          vector: [0, 1],
+          updatedAtMs: 8
         })
         const after = yield* collectVectors(vectors, ["flow-one"], "test")
         return { before, after }
       }).pipe(Effect.provide(TestMemory.layerWithDatabase))
     )
 
-    expect(result.before.map((vector) => [vector.bank, vector.key, vector.recordKind, vector.dimensions])).toEqual([
-      ["flow-one", "runbook", "fact", 2],
-      ["agent-fleet", "note", "note", 1]
-    ])
+    expect(result.before.map((vector) => [vector.bank, vector.recordId, vector.recordKind, vector.dimensions])).toEqual(
+      [
+        ["flow-one", "runbook", "fact", 2],
+        ["agent-fleet", "note", "note", 1]
+      ]
+    )
     expect(Array.from(result.before[0]!.vector)).toEqual([0.5, -0.25])
     expect(result.after).toHaveLength(1)
     expect(result.after[0]).toMatchObject({ contentDigest: "c", updatedAtMs: 9 })
@@ -505,7 +662,7 @@ describe("RecallSemantic", () => {
   it.each(
     [
       ["bank", { bank: "" }, ["bank"]],
-      ["key", { key: "" }, ["key"]],
+      ["recordId", { recordId: "" }, ["recordId"]],
       ["model", { model: "" }, ["model"]],
       ["contentDigest", { contentDigest: "" }, ["contentDigest"]],
       ["dimension length", { dimensions: 2, vector: [1] }, ["dimensions"]],
@@ -523,7 +680,8 @@ describe("RecallSemantic", () => {
         const vectors = Semantic.makeSqlVectorStore({ sql, write: writer.write })
         return yield* Effect.flip(vectors.upsert({
           bank: "flow-one",
-          key: "key",
+          recordKind: "note",
+          recordId: "key",
           model: "test",
           contentDigest: "digest",
           dimensions: 1,
@@ -555,7 +713,8 @@ describe("RecallSemantic", () => {
     const failure = await Effect.runPromise(Effect.flip(
       Semantic.makeSqlVectorStore(database).upsert({
         bank: "",
-        key: "key",
+        recordKind: "note",
+        recordId: "key",
         model: "test",
         contentDigest: "digest",
         dimensions: 1,
@@ -578,7 +737,8 @@ describe("RecallSemantic", () => {
         return [
           yield* Effect.flip(vectors.upsert({
             bank: "flow-one",
-            key: "runbook",
+            recordKind: "fact",
+            recordId: "runbook",
             model: "test",
             contentDigest: "a",
             dimensions: 1,
@@ -673,7 +833,7 @@ describe("RecallSemantic", () => {
     }))
     const passthrough = await Effect.runPromise(Effect.flip(decorated.listAllFacts))
 
-    expect(projected.map((row) => [row.recordKind, row.key, row.text])).toEqual([
+    expect(projected.map((row) => [row.recordKind, row.recordId, row.text])).toEqual([
       ["fact", "string", "already text"],
       ["fact", "json", "structured"],
       ["fact", "fallback", "{\"other\":\"value\"}"],
@@ -771,9 +931,27 @@ describe("RecallSemantic", () => {
     })
     await Effect.runPromise(
       Effect.gen(function*() {
-        yield* projector.project({ bank: "flow-one", key: "k", text: "same text", updatedAtMs: 1 })
-        yield* projector.project({ bank: "flow-one", key: "k", text: "same text", updatedAtMs: 2 })
-        yield* projector.project({ bank: "flow-one", key: "k", text: "edited text", updatedAtMs: 3 })
+        yield* projector.project({
+          bank: "flow-one",
+          recordKind: "fact",
+          recordId: "k",
+          text: "same text",
+          updatedAtMs: 1
+        })
+        yield* projector.project({
+          bank: "flow-one",
+          recordKind: "fact",
+          recordId: "k",
+          text: "same text",
+          updatedAtMs: 2
+        })
+        yield* projector.project({
+          bank: "flow-one",
+          recordKind: "fact",
+          recordId: "k",
+          text: "edited text",
+          updatedAtMs: 3
+        })
       }).pipe(Effect.provideService(Embedding.Embedding, Embedding.makeInProcess()))
     )
 
@@ -788,16 +966,14 @@ describe("RecallSemantic", () => {
     const upserted: Array<Semantic.Vector> = []
     const row = {
       bank: "flow-one",
-      key: "key",
-      text: "embedded text",
-      updatedAtMs: 1,
       recordKind: "fact" as "fact" | "note",
-      recordId: "record"
+      recordId: "record",
+      text: "embedded text",
+      updatedAtMs: 1
     }
     const embedding = Embedding.make((inputs) =>
       Effect.sync(() => {
         row.bank = "flow-mutated"
-        row.key = "mutated-key"
         row.text = "mutated text"
         row.updatedAtMs = 2
         row.recordKind = "note"
@@ -821,7 +997,6 @@ describe("RecallSemantic", () => {
     expect(upserted).toHaveLength(1)
     expect(upserted[0]).toMatchObject({
       bank: "flow-one",
-      key: "key",
       contentDigest: digest("embedded text"),
       updatedAtMs: 1,
       recordKind: "fact",
@@ -882,12 +1057,7 @@ describe("RecallSemantic", () => {
         Effect.flatMap((recall) => recall.recall({ banks: ["flow-bank"], query: "runbook" })),
         Effect.provide(Semantic.layer({
           vectorStore: vectorStoreOf([
-            projection({
-              key: "runbook",
-              recordId: "runbook",
-              model: "test",
-              contentDigest: digest("durable recovery")
-            })
+            projection({ recordId: "runbook", model: "test", contentDigest: digest("durable recovery") })
           ]),
           model: "test",
           halfLifeMs: 1_000

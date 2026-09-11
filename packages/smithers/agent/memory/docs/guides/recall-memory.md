@@ -66,7 +66,7 @@ The store maintains the FTS projection on every write, so no reindex step exists
 
 ## Semantic recall
 
-`RecallSemantic.layer` ranks rows by cosine similarity between each row's stored vector and the query embedding, decayed by a recency half-life. It needs an `Embedding` service and a vector store. The authoritative store writes no vectors itself, so decorate it: every `putFact` and `putNote` then projects a vector after commit, retrying once and logging failures without changing the write result.
+`RecallSemantic.layer` ranks rows by cosine similarity between each row's stored vector and the query embedding, decayed by a recency half-life. It needs an `Embedding` service and a vector store. The authoritative store writes no vectors itself, so decorate it: every `putFact` and `putNote` then projects a vector after commit, retrying once and logging failures without changing the write result. The projection runs in the caller's fiber under `projectionTimeout` (default 5 seconds), so a hung embedding provider delays the write by at most that deadline and is logged like any other failure. The vector upsert keeps the newest projection by `updatedAtMs`, so when two processes write the same record, a slower embedding for the older write cannot replace the newer vector.
 
 ```ts
 import * as DurableWriter from "@smthrs/database/DurableWriter"

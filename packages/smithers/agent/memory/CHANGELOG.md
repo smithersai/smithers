@@ -2,6 +2,15 @@
 
 ## [Unreleased]
 
+### Changed
+
+- `RecallSemantic.Vector` and `ProjectionInput` now require `recordKind` and
+  `recordId` and no longer carry `key`; the SQL vector upsert keeps the newest
+  row by `updatedAtMs`, so a late projection cannot replace a newer one.
+- Semantic projection is bounded by `Options.projectionTimeout` (default
+  5 seconds); a hung embedding provider is logged and dropped instead of
+  stalling the decorated write.
+
 ## [1.0.0-rc.0] - 2026-09-01
 
 ### Added
