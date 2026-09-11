@@ -28,8 +28,9 @@ export const raceAll = <const Actions extends NonEmptyReadonlyArray<Any>>(
 ): Effect.Effect<
   Actions[number] extends Action<infer _A, infer _E, infer _R> ? _A["Type"] : never,
   Actions[number] extends Action<infer _A, infer _E, infer _R> ? _E["Type"] : never,
-  | (Actions[number] extends Action<infer Success, infer Error, infer R>
-    ? Success["DecodingServices"] | Error["DecodingServices"] | R
+  | Effect.Services<Actions[number]>
+  | (Actions[number] extends Action<infer Success, infer Error, infer _R>
+    ? Success["DecodingServices"] | Success["EncodingServices"] | Error["DecodingServices"] | Error["EncodingServices"]
     : never)
   | FlowRuntime
   | FlowInstance

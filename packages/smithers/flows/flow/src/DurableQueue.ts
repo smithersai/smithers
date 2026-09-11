@@ -14,6 +14,7 @@
  */
 import * as Arr from "effect/Array"
 import * as Cause from "effect/Cause"
+import type * as Crypto from "effect/Crypto"
 import * as Effect from "effect/Effect"
 import * as Exit from "effect/Exit"
 import * as Filter from "effect/Filter"
@@ -218,6 +219,7 @@ export const process: <
   Error["Type"],
   | FlowRuntime
   | FlowInstance
+  | Crypto.Crypto
   | PersistedQueue.PersistedQueueFactory
   | Payload["EncodingServices"]
   | Payload["DecodingServices"]

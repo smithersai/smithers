@@ -257,7 +257,7 @@ Declares a system action, one whose implementation ships with the engine rather 
 - **Signature:** `raceAll(name: string, actions: Actions): Effect.Effect<...>`
 - **Since:** `0.1.0`
 
-Runs a non-empty collection of actions as a durable race and returns the first success, under the unioned success and error schemas. A losing failure is ignored while another action runs; the race fails only when every action fails. To settle on the first exit, success or failure, race `Effect.exit` of each action and unwrap the winner. One winner is persisted under `name`, so a re-driven round replays it instead of racing again.
+Runs a non-empty collection of actions as a durable race and returns the first success, under the unioned success and error schemas. A losing failure is ignored while another action runs; the race fails only when every action fails. To settle on the first exit, success or failure, race `Effect.exit` of each action and unwrap the winner. One winner is persisted under `name`, so a re-driven round replays it instead of racing again. The race requires every action's services, including `Crypto`, plus the decoding and encoding services of each action's success and error schemas.
 
 ### `Action.retry`
 
@@ -358,7 +358,7 @@ Waits for the durable deferred, suspending the current flow when no persisted co
 
 ### `DurableDeferred.into`
 
-- **Signature:** `into(effect: Effect.Effect<Success["Type"], Error["Type"], R>, self: DurableDeferred<Success, Error>): Effect.Effect<Success["Type"], Error["Type"], ...>`
+- **Signature:** `into(effect: Effect.Effect<Success["Type"], Error["Type"], R>, self: DurableDeferred<Success, Error>): Effect.Effect<Success["Type"], Error["Type"], R | FlowRuntime | FlowInstance | Success["DecodingServices"] | Success["EncodingServices"] | Error["DecodingServices"] | Error["EncodingServices"]>`
 - **Since:** `0.1.0`
 
 Runs an effect and records its exit into the durable deferred, resuming the flows waiting on that deferred. The data-last form takes the deferred alone.
@@ -476,7 +476,7 @@ Creates a durable queue that waits for persisted items to finish processing thro
 
 ### `DurableQueue.process`
 
-- **Signature:** `process(self: DurableQueue<Payload, Success, Error>, payload: Payload["~type.make.in"], options?: { readonly retrySchedule?: Schedule.Schedule<any, PersistedQueue.PersistedQueueError> | undefined }): Effect.Effect<Success["Type"], Error["Type"], ...>`
+- **Signature:** `process(self: DurableQueue<Payload, Success, Error>, payload: Payload["~type.make.in"], options?: { readonly retrySchedule?: Schedule.Schedule<any, PersistedQueue.PersistedQueueError> | undefined }): Effect.Effect<Success["Type"], Error["Type"], FlowRuntime | FlowInstance | Crypto.Crypto | PersistedQueue.PersistedQueueFactory | Payload["EncodingServices"] | Payload["DecodingServices"] | Success["DecodingServices"] | Error["DecodingServices"]>`
 - **Default:** `retrySchedule` is unbounded, with exponential delays capped at one minute
 - **Since:** `0.1.0`
 

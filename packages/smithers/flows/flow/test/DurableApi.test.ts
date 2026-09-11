@@ -1,9 +1,11 @@
-import { describe, expect, it } from "@effect/vitest"
-import { Action, DurableDeferred, Flow, FlowRuntime, Interpreter, RetryPolicy } from "@smthrs/flow"
+import { describe, expect, expectTypeOf, it } from "@effect/vitest"
+import { Action, DurableDeferred, DurableQueue, Flow, FlowRuntime, Interpreter, RetryPolicy } from "@smthrs/flow"
 import { Node } from "@smthrs/plan"
-import { Cause, Context, Effect, Exit, Layer, Option, Schema } from "effect"
+import { Cause, Context, Effect, Exit, Layer, Option, Schema, SchemaGetter } from "effect"
+import type * as Crypto from "effect/Crypto"
+import { PersistedQueue } from "effect/unstable/persistence"
 import { withCrypto } from "./Crypto.ts"
-import { layerMemory } from "./MemoryFlowRuntime.ts"
+import { layerMemory, makeInstance } from "./MemoryFlowRuntime.ts"
 
 const Read = Action.make("DurableApi/read", { payload: { value: Schema.String }, success: Schema.String })
 const pipeline = Flow.make("DurableApi/pipeline", {
@@ -318,3 +320,92 @@ const negativeTypes = () => {
   })
 }
 void negativeTypes
+
+class Encoder extends Context.Service<Encoder, { readonly encode: (value: string) => string }>()("DurableApi/Encoder") {}
+
+/** A success codec whose encode side, and only its encode side, needs `Encoder`. */
+const encoded = Schema.String.pipe(Schema.decodeTo(Schema.String, {
+  decode: SchemaGetter.transform((value: string) => value),
+  encode: SchemaGetter.transformOrFail((value: string) =>
+    Effect.gen(function*() {
+      const encoder = yield* Encoder
+      return encoder.encode(value)
+    })
+  )
+}))
+
+const host = Flow.make("DurableApi/requirements", { payload: {}, body: () => Node.succeed(undefined) })
+
+const countingEncoder = () => {
+  const state = { encodes: 0 }
+  const service = Encoder.of({
+    encode: (value) => {
+      state.encodes++
+      return value
+    }
+  })
+  return { state, service }
+}
+
+describe("advertised requirements", () => {
+  it.effect("DurableDeferred.into advertises the encoding services it records the exit with", () =>
+    Effect.gen(function*() {
+      const recorded = DurableDeferred.into(Effect.succeed("ok"), DurableDeferred.make("DurableApi/into", { success: encoded }))
+      expectTypeOf<Effect.Services<typeof recorded>>().toEqualTypeOf<
+        FlowRuntime.FlowRuntime | FlowRuntime.FlowInstance | Encoder
+      >()
+      const { state, service } = countingEncoder()
+      const exit = yield* Effect.exit(recorded.pipe(
+        Effect.provideService(Encoder, service),
+        Effect.provideService(FlowRuntime.FlowInstance, makeInstance(host, "into")),
+        Effect.provide(layerMemory)
+      ))
+      expect(exit).toStrictEqual(Exit.succeed("ok"))
+      expect(state.encodes).toBe(1)
+    }))
+
+  it.effect("Action.raceAll advertises Crypto and the encoding services that persist the winner", () =>
+    Effect.gen(function*() {
+      const race = Action.raceAll("DurableApi/race", [
+        Action.make({ name: "DurableApi/race/encoded", success: encoded, execute: Effect.succeed("ok") })
+      ])
+      expectTypeOf<Crypto.Crypto | Encoder>().toMatchTypeOf<Effect.Services<typeof race>>()
+      const { state, service } = countingEncoder()
+      const exit = yield* Effect.exit(withCrypto(race.pipe(
+        Effect.provideService(Encoder, service),
+        Effect.provideService(FlowRuntime.FlowInstance, makeInstance(host, "race")),
+        Effect.provide(layerMemory)
+      )))
+      expect(exit).toStrictEqual(Exit.succeed("ok"))
+      expect(state.encodes).toBeGreaterThan(0)
+    }))
+
+  // Runs on its own fiber: the suspension after the offer interrupts the caller.
+  it("DurableQueue.process advertises the Crypto its invocation key needs", async () => {
+    const queue = DurableQueue.make({
+      name: "DurableApi/queue",
+      payload: Schema.Struct({}),
+      success: Schema.String,
+      idempotencyKey: () => "one"
+    })
+    const processed = DurableQueue.process(queue, {})
+    expectTypeOf<Effect.Services<typeof processed>>().toEqualTypeOf<
+      | FlowRuntime.FlowRuntime
+      | FlowRuntime.FlowInstance
+      | Crypto.Crypto
+      | PersistedQueue.PersistedQueueFactory
+    >()
+    // The factory is inert, so the call suspends after keying and offering.
+    let offers = 0
+    const factory = PersistedQueue.PersistedQueueFactory.of({
+      make: () => Effect.succeed({ offer: () => Effect.sync(() => void offers++) } as never)
+    })
+    const exit = await Effect.runPromiseExit(withCrypto(processed.pipe(
+      Effect.provideService(PersistedQueue.PersistedQueueFactory, factory),
+      Effect.provideService(FlowRuntime.FlowInstance, makeInstance(host, "queue")),
+      Effect.provide(layerMemory)
+    )))
+    if (Exit.isFailure(exit)) expect(Cause.pretty(exit.cause)).not.toContain("Service not found")
+    expect(offers).toBe(1)
+  })
+})

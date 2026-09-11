@@ -204,7 +204,9 @@ export const into: {
     | FlowRuntime
     | FlowInstance
     | Success["DecodingServices"]
+    | Success["EncodingServices"]
     | Error["DecodingServices"]
+    | Error["EncodingServices"]
   >
   <Success extends Schema.Constraint, Error extends Schema.Constraint, R>(
     effect: Effect.Effect<Success["Type"], Error["Type"], R>,
@@ -216,7 +218,9 @@ export const into: {
     | FlowRuntime
     | FlowInstance
     | Success["DecodingServices"]
+    | Success["EncodingServices"]
     | Error["DecodingServices"]
+    | Error["EncodingServices"]
   >
 } = dual(
   2,
@@ -230,7 +234,9 @@ export const into: {
     | FlowRuntime
     | FlowInstance
     | Success["DecodingServices"]
+    | Success["EncodingServices"]
     | Error["DecodingServices"]
+    | Error["EncodingServices"]
   > =>
     Effect.contextWith(
       (context: Context.Context<FlowRuntime | FlowInstance>) => {
