@@ -134,11 +134,12 @@ export const VerifyReviewPayload = Schema.Struct({
 export const NarrateReviewPayload = VerifyReviewPayload;
 
 /**
- * The walkthrough file the last round writes, plus the derived material the
- * CLI composes a pull-request body from.
+ * The walkthrough file the last round writes, plus the counts the CLI's run
+ * summary prints.
  *
- * `story` and `quiz` are JSON strings so a consumer can rehydrate them without
- * re-deriving them from the HTML.
+ * The story and quiz ride once, decoded, on {@link ReviewResult}. `impact` is
+ * the assessed level even when no quiz was generated, so it is not a copy of
+ * `quiz.impact`.
  *
  * @since 1.0.0
  * @category schemas
@@ -151,8 +152,6 @@ export const WalkthroughOutput = Schema.Struct({
   files: Schema.Number,
   findings: Schema.Number,
   message: withDefault(Schema.String, ""),
-  story: withDefault(Schema.String, ""),
-  quiz: withDefault(Schema.String, ""),
   impact: withDefault(Schema.String, ""),
   questions: withDefault(Schema.Number, 0),
 });

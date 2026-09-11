@@ -296,8 +296,6 @@ export const renderWalkthroughLayer = RenderWalkthrough.toLayer(
           message: `Walkthrough written to ${outPath} (${pluralize(story.chapters.length, "chapter")}, ${
             pluralize(review.comments.length, "finding")
           }).`,
-          story: JSON.stringify(story),
-          quiz: quiz ? JSON.stringify(quiz) : "",
           impact: impact.level,
           questions: quiz ? quiz.questions.length : 0,
         },

@@ -68,6 +68,14 @@ test("render action carries failed review diagnostics into HTML", async () => {
   expect(html).not.toContain('findings <strong>0</strong>');
 });
 
+test("render action carries the story and quiz once, decoded, not again as JSON strings", async () => {
+  const result = await render(outputPath());
+  expect(result.story.chapters.length).toBeGreaterThan(0);
+  expect(result.quiz).toBeNull();
+  expect(Object.keys(result.walkthrough)).not.toContain("story");
+  expect(Object.keys(result.walkthrough)).not.toContain("quiz");
+});
+
 test("each render retains its own artifact when the user-facing output is replaced", async () => {
   const out = outputPath();
   const first = await render(out);
