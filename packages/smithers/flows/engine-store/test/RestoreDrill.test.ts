@@ -145,6 +145,7 @@ describe("restore drill", () => {
       const counters = { recorded: 0, inflightLive: 0, inflightRestored: 0 }
       let mode: "live" | "restored" = "live"
       let liveGate: Deferred.Deferred<void>
+      let liveStarted: Deferred.Deferred<void>
 
       const recorded = Action.make({
         name: "restore-drill-recorded",
@@ -164,6 +165,7 @@ describe("restore drill", () => {
         execute: Effect.gen(function*() {
           if (mode === "live") {
             counters.inflightLive++
+            yield* Deferred.succeed(liveStarted, undefined)
             yield* Deferred.await(liveGate)
             return "inflight-live"
           }
@@ -187,6 +189,7 @@ describe("restore drill", () => {
         Effect.scoped(
           Effect.gen(function*() {
             liveGate = yield* Deferred.make<void>()
+            liveStarted = yield* Deferred.make<void>()
             const engine = yield* EngineStore.make({
               owner: { hostId: ownerA.hostId },
               journalSource: "restore-drill-engine",
@@ -199,15 +202,17 @@ describe("restore drill", () => {
               discard: false
             }).pipe(Effect.forkChild({ startImmediately: true }))
 
+            // The action body runs only after durable admission, so its
+            // signal means the running attempt row is committed. Awaiting it
+            // never touches the frozen TestClock, unlike a sleep-poll.
+            yield* Deferred.await(liveStarted)
             const sql = yield* SqlClient.SqlClient
-            while (
+            expect(
               (yield* sql<{ readonly state: string }>`
             SELECT state FROM flows_attempts
             WHERE run_id = ${engineRunId} AND state = 'running'
-          `).length === 0
-            ) {
-              yield* Effect.sleep(Duration.millis(2))
-            }
+          `).length
+            ).toBe(1)
 
             const manifest = yield* DisasterRecovery.backup({
               directory: backupDirectory,
@@ -320,18 +325,21 @@ describe("restore drill", () => {
 
           // An admitted attempt still executing when the backup runs.
           const gate = yield* Deferred.make<void>()
+          const started = yield* Deferred.make<void>()
           const inflight = yield* dispatch({
             owner: ownerA,
             key: "drill/inflight",
-            execute: Deferred.await(gate).pipe(Effect.as("inflight-live"))
-          }).pipe(Effect.forkChild({ startImmediately: true }))
-          while (
-            Option.isNone(
-              yield* attempts.get({ runId, stepKeyDigest: sha256("drill/inflight"), attempt: 1 })
+            execute: Deferred.succeed(started, undefined).pipe(
+              Effect.andThen(Deferred.await(gate)),
+              Effect.as("inflight-live")
             )
-          ) {
-            yield* Effect.sleep(Duration.millis(2))
-          }
+          }).pipe(Effect.forkChild({ startImmediately: true }))
+          // Signalled from the body after durable admission; a sleep-poll
+          // here would park forever on the frozen TestClock.
+          yield* Deferred.await(started)
+          expect(
+            Option.isSome(yield* attempts.get({ runId, stepKeyDigest: sha256("drill/inflight"), attempt: 1 }))
+          ).toBe(true)
 
           // A journal writer that keeps appending while the backup runs.
           let hotSeq = 5
