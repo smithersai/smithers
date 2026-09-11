@@ -1,11 +1,13 @@
-import type { StorageApi } from "@tanstack/db"
 import { describe, expect, test } from "bun:test"
 import type { StartAgentTurnResult } from "@smthrs/rpc/NativeAgent"
 import type { NativeRepositories } from "../native/NativeBridge"
 import type { AgentPort } from "../runtime/AgentPort"
-import { createAppController } from "./AppController"
+import { scopedControllers } from "./ControllerTestScope"
 import { createAppStore } from "./AppStore"
 import type { AppStore } from "./AppStore"
+import { memoryStorage, settled } from "./TestFixtures"
+
+const createAppController = scopedControllers()
 
 /*
  * The anonymous turn ceiling (apps/server turnLimit.ts; factory mock 22). A
@@ -19,21 +21,10 @@ import type { AppStore } from "./AppStore"
  * failure keeps today's message.
  */
 
-const memoryStorage = (): StorageApi => {
-  const data = new Map<string, string>()
-  return {
-    getItem: (key) => data.get(key) ?? null,
-    setItem: (key, value) => void data.set(key, value),
-    removeItem: (key) => void data.delete(key)
-  }
-}
-
 const repositories: NativeRepositories = {
   available: false,
   pickLocalRepository: async () => ({ status: "error", code: "native-required", message: "native only" })
 }
-
-const settled = () => new Promise((resolve) => setTimeout(resolve, 0))
 
 const PER_ADDRESS =
   "That is 20 turns today without signing in, which is as far as exploring goes. Sign in with GitHub to keep going, or come back in about 6 hours. Nothing was charged."

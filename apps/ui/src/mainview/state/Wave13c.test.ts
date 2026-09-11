@@ -10,69 +10,16 @@
  * class's deterministic honest line (Instructions.ts ASK_HONEST_LINES)
  * instead. Keyed on the ask, so ordinary conversation never enters the gate.
  */
-import type { StorageApi } from "@tanstack/db"
 import { describe, expect, test } from "bun:test"
-import type { AgentTurnFrame, StartAgentTurnRequest } from "@smthrs/rpc/NativeAgent"
-import type { NativeRepositories } from "../native/NativeBridge"
-import type { AgentPort } from "../runtime/AgentPort"
-import { createAppController } from "./AppController"
+import { scopedControllers } from "./ControllerTestScope"
 import { createAppStore } from "./AppStore"
 import { ASK_HONEST_LINES } from "./Instructions"
 import { impossibleAskOf, offersAskClassAct, renderedAskTurnText } from "./RunClaims"
+import { memoryStorage, scriptedToolAgent, settle, unavailableRepositories } from "./TestFixtures"
 
-const memoryStorage = (): StorageApi => {
-  const data = new Map<string, string>()
-  return {
-    getItem: (key) => data.get(key) ?? null,
-    setItem: (key, value) => void data.set(key, value),
-    removeItem: (key) => void data.delete(key)
-  }
-}
+const createAppController = scopedControllers()
 
 const webStore = () => createAppStore({ kind: "localStorage", storage: memoryStorage() })
-
-const unavailableRepositories: NativeRepositories = {
-  available: false,
-  pickLocalRepository: async () => ({
-    status: "error",
-    code: "native-required",
-    message: "Local repositories can only be connected from the Smithers native app."
-  })
-}
-
-const settle = async (ticks = 12): Promise<void> => {
-  for (let index = 0; index < ticks; index += 1) await new Promise((resolve) => setTimeout(resolve, 1))
-}
-
-const scriptedToolAgent = (
-  steps: ReadonlyArray<(request: StartAgentTurnRequest) => ReadonlyArray<Omit<AgentTurnFrame, "runId">>>
-): { agent: AgentPort; requests: Array<StartAgentTurnRequest> } => {
-  const listeners = new Set<(frame: AgentTurnFrame) => void>()
-  const requests: Array<StartAgentTurnRequest> = []
-  let step = 0
-  return {
-    requests,
-    agent: {
-      available: true,
-      startTurn: async (request) => {
-        requests.push(request)
-        const frames = (steps[Math.min(step, steps.length - 1)] ?? (() => []))(request)
-        step += 1
-        queueMicrotask(() => {
-          for (const frame of frames) {
-            for (const listener of listeners) listener({ ...frame, runId: request.runId } as AgentTurnFrame)
-          }
-        })
-        return { status: "started" }
-      },
-      cancelTurn: async () => {},
-      subscribe: (listener) => {
-        listeners.add(listener)
-        return () => listeners.delete(listener)
-      }
-    }
-  }
-}
 
 const signIn = async (store: Awaited<ReturnType<typeof webStore>>) => {
   store.dispatch({

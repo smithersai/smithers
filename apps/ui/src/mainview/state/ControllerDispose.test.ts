@@ -1,11 +1,10 @@
 import type { AgentTurnFrame } from "@smthrs/rpc/NativeAgent"
-import type { StorageApi } from "@tanstack/db"
 import { describe, expect, test } from "bun:test"
-import type { NativeRepositories } from "../native/NativeBridge"
 import type { AgentPort } from "../runtime/AgentPort"
 import { createAppController } from "./AppController"
 import { createAppStore } from "./AppStore"
 import { createControllerContext } from "./controller/context"
+import { memoryStorage, unavailableRepositories } from "./TestFixtures"
 
 /*
  * Ruling B (docs/persistence.md): everything a controller opens is released
@@ -13,24 +12,6 @@ import { createControllerContext } from "./controller/context"
  * unsubscribe was discarded, and the cross-tab identity listeners and
  * BroadcastChannel leaked for the page lifetime.
  */
-
-const memoryStorage = (): StorageApi => {
-  const data = new Map<string, string>()
-  return {
-    getItem: (key) => data.get(key) ?? null,
-    setItem: (key, value) => void data.set(key, value),
-    removeItem: (key) => void data.delete(key)
-  }
-}
-
-const unavailableRepositories: NativeRepositories = {
-  available: false,
-  pickLocalRepository: async () => ({
-    status: "error",
-    code: "native-required",
-    message: "Local repositories can only be connected from the Smithers native app."
-  })
-}
 
 const countingAgent = (): { agent: AgentPort; listeners: Set<(frame: AgentTurnFrame) => void> } => {
   const listeners = new Set<(frame: AgentTurnFrame) => void>()

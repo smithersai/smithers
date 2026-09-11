@@ -1,11 +1,11 @@
-import type { StorageApi } from "@tanstack/db"
 import { describe, expect, test } from "bun:test"
 import type { StartAgentTurnRequest } from "@smthrs/rpc/NativeAgent"
-import type { NativeRepositories } from "../native/NativeBridge"
-import type { AgentPort } from "../runtime/AgentPort"
-import { createAppController } from "./AppController"
+import { scopedControllers } from "./ControllerTestScope"
 import { createAppStore } from "./AppStore"
 import { WORLD_BODY_PER_DOCUMENT, worldContextDocuments } from "./WorldContext"
+import { memoryStorage, recordingAgent, settled, unavailableRepositories } from "./TestFixtures"
+
+const createAppController = scopedControllers()
 
 /*
  * §10.8 — the World reaches the model, or it is decoration.
@@ -18,37 +18,7 @@ import { WORLD_BODY_PER_DOCUMENT, worldContextDocuments } from "./WorldContext"
  * confidence, never by body.
  */
 
-const memoryStorage = (): StorageApi => {
-  const data = new Map<string, string>()
-  return {
-    getItem: (key) => data.get(key) ?? null,
-    setItem: (key, value) => void data.set(key, value),
-    removeItem: (key) => void data.delete(key)
-  }
-}
-
-const unavailableRepositories: NativeRepositories = {
-  available: false,
-  pickLocalRepository: async () => ({
-    status: "error",
-    code: "native-required",
-    message: "Local repositories can only be connected from the Smithers native app."
-  })
-}
-
 /** An agent double that records every turn request and ends the turn fast. */
-const recordingAgent = (requests: StartAgentTurnRequest[]): AgentPort => ({
-  available: true,
-  startTurn: async (request) => {
-    requests.push(request)
-    return { status: "error", message: "Recorded." }
-  },
-  cancelTurn: async () => {},
-  subscribe: () => () => {}
-})
-
-const settled = () => new Promise((resolve) => setTimeout(resolve, 0))
-
 const note = (id: string, body: string, path = `${id}.md`) => ({
   id,
   path,

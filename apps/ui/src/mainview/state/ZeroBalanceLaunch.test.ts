@@ -7,40 +7,16 @@
  * embedded transcript message and never reach the workspace/gateway seam at
  * all (no hang, no stack trace, deterministic).
  */
-import type { StorageApi } from "@tanstack/db"
 import { describe, expect, test } from "bun:test"
-import type { NativeRepositories } from "../native/NativeBridge"
 import type { AgentPort } from "../runtime/AgentPort"
-import { createAppController } from "./AppController"
+import { scopedControllers } from "./ControllerTestScope"
 import type { AppServices } from "./AppController"
 import { createAppStore } from "./AppStore"
+import { memoryStorage, silentAgent, unavailableRepositories } from "./TestFixtures"
 
-const memoryStorage = (): StorageApi => {
-  const data = new Map<string, string>()
-  return {
-    getItem: (key) => data.get(key) ?? null,
-    setItem: (key, value) => void data.set(key, value),
-    removeItem: (key) => void data.delete(key)
-  }
-}
+const createAppController = scopedControllers()
 
 const webStore = () => createAppStore({ kind: "localStorage", storage: memoryStorage() })
-
-const unavailableRepositories: NativeRepositories = {
-  available: false,
-  pickLocalRepository: async () => ({
-    status: "error",
-    code: "native-required",
-    message: "Local repositories can only be connected from the Smithers native app."
-  })
-}
-
-const silentAgent = (): AgentPort => ({
-  available: true,
-  startTurn: async () => ({ status: "started" }),
-  cancelTurn: async () => {},
-  subscribe: () => () => {}
-})
 
 const settle = async (ticks = 4): Promise<void> => {
   for (let index = 0; index < ticks; index += 1) await new Promise((resolve) => setTimeout(resolve, 1))
@@ -100,7 +76,7 @@ const transcriptTexts = (store: Awaited<ReturnType<typeof webStore>>): ReadonlyA
 describe("zero-balance workflow launch (Launch Checklist D-4)", () => {
   test("flow.run at $0 fails deterministically with the exhausted-balance message, no seam call", async () => {
     const store = await webStore()
-    const controller = createAppController(store, unavailableRepositories, silentAgent(), noWorkflowSeam())
+    const controller = createAppController(store, unavailableRepositories, silentAgent, noWorkflowSeam())
     await signInAtZeroBalance(store)
 
     const outcome = await controller.commands.run("flow.run", "review-pr")
@@ -111,7 +87,7 @@ describe("zero-balance workflow launch (Launch Checklist D-4)", () => {
 
   test("flow.create at $0 fails deterministically with the exhausted-balance message, no seam call", async () => {
     const store = await webStore()
-    const controller = createAppController(store, unavailableRepositories, silentAgent(), noWorkflowSeam())
+    const controller = createAppController(store, unavailableRepositories, silentAgent, noWorkflowSeam())
     await signInAtZeroBalance(store)
 
     const outcome = await controller.commands.run("flow.create", "summarize my open issues")
@@ -122,7 +98,7 @@ describe("zero-balance workflow launch (Launch Checklist D-4)", () => {
 
   test("the exhausted-balance message renders embedded in the transcript (THE EMBED LAW), not a toast-only surface", async () => {
     const store = await webStore()
-    const controller = createAppController(store, unavailableRepositories, silentAgent(), noWorkflowSeam())
+    const controller = createAppController(store, unavailableRepositories, silentAgent, noWorkflowSeam())
     await signInAtZeroBalance(store)
 
     await controller.commands.run("flow.run", "review-pr")
@@ -137,7 +113,7 @@ describe("zero-balance workflow launch (Launch Checklist D-4)", () => {
     const store = await webStore()
     let turns = 0
     const countingAgent: AgentPort = {
-      ...silentAgent(),
+      ...silentAgent,
       startTurn: async () => {
         turns += 1
         return { status: "started" }
@@ -155,7 +131,7 @@ describe("zero-balance workflow launch (Launch Checklist D-4)", () => {
 
   test("a positive balance never triggers the exhausted-balance guard", async () => {
     const store = await webStore()
-    const controller = createAppController(store, unavailableRepositories, silentAgent(), noWorkflowSeam())
+    const controller = createAppController(store, unavailableRepositories, silentAgent, noWorkflowSeam())
     store.dispatch({
       type: "identity.session.loaded",
       actor: "system",
@@ -197,7 +173,7 @@ describe("zero-balance workflow launch (Launch Checklist D-4)", () => {
 
   test("an unread/unavailable billing seam never blocks a workflow launch (gate on answers, not silence)", async () => {
     const store = await webStore()
-    const controller = createAppController(store, unavailableRepositories, silentAgent(), noWorkflowSeam())
+    const controller = createAppController(store, unavailableRepositories, silentAgent, noWorkflowSeam())
     store.dispatch({
       type: "identity.session.loaded",
       actor: "system",
@@ -235,7 +211,7 @@ describe("zero-balance workflow launch (Launch Checklist D-4)", () => {
 
   test("a button-driven flow.run at $0 does not double-surface the refusal as a toast", async () => {
     const store = await webStore()
-    const controller = createAppController(store, unavailableRepositories, silentAgent(), noWorkflowSeam())
+    const controller = createAppController(store, unavailableRepositories, silentAgent, noWorkflowSeam())
     await signInAtZeroBalance(store)
 
     controller.runCommand("flow.run", "review-pr")

@@ -1,10 +1,11 @@
-import type { StorageApi } from "@tanstack/db"
 import { describe, expect, test } from "bun:test"
-import type { NativeRepositories } from "../native/NativeBridge"
 import type { AgentPort } from "../runtime/AgentPort"
-import { createAppController } from "./AppController"
+import { scopedControllers } from "./ControllerTestScope"
 import { createAppStore } from "./AppStore"
 import type { AppStore } from "./AppStore"
+import { memoryStorage, settled, unavailableRepositories } from "./TestFixtures"
+
+const createAppController = scopedControllers()
 
 /*
  * The §26 debug reads answer the human who typed them.
@@ -13,24 +14,6 @@ import type { AppStore } from "./AppStore"
  * a read whose only answer is a value was a silent no-op in the transcript —
  * the flow ran, the payload was correct, and the admin saw nothing.
  */
-
-const memoryStorage = (): StorageApi => {
-  const data = new Map<string, string>()
-  return {
-    getItem: (key) => data.get(key) ?? null,
-    setItem: (key, value) => void data.set(key, value),
-    removeItem: (key) => void data.delete(key)
-  }
-}
-
-const unavailableRepositories: NativeRepositories = {
-  available: false,
-  pickLocalRepository: async () => ({
-    status: "error",
-    code: "native-required",
-    message: "Local repositories can only be connected from the Smithers native app."
-  })
-}
 
 const agentWithGrants = (revoked: { count: number }): AgentPort => ({
   available: true,
@@ -41,8 +24,6 @@ const agentWithGrants = (revoked: { count: number }): AgentPort => ({
     revoked.count += 1
   }
 })
-
-const settled = () => new Promise((resolve) => setTimeout(resolve, 0))
 
 /** The only session the debug plugin registers for. */
 const adminStore = async (): Promise<AppStore> => {

@@ -10,6 +10,7 @@ import type { AgentPort } from "../runtime/AgentPort"
 import { scopedControllers } from "./ControllerTestScope"
 import { createAppStore } from "./AppStore"
 import type { Card } from "./AppState"
+import { json } from "./TestFixtures"
 
 const createAppController = scopedControllers()
 
@@ -62,9 +63,6 @@ const HARNESSES: ReadonlyArray<Harness> = [
 const settle = async (ticks = 6): Promise<void> => {
   for (let tick = 0; tick < ticks; tick += 1) await new Promise((resolve) => setTimeout(resolve, 1))
 }
-
-const json = (status: number, body: unknown): Response =>
-  new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } })
 
 /** The recorder: the agents store as the routes answer it, every PTY create, and every instructions string sent. */
 const boot = async () => {

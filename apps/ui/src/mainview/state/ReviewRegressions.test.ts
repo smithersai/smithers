@@ -4,10 +4,12 @@ import { RuntimeCapabilitySchema } from "@smthrs/rpc/AppBootstrap"
 import { AGENT_ROLES } from "@smthrs/rpc/AgentRoles"
 import type { Harness, Repo } from "@smthrs/rpc/LocalApp"
 import { fileArgs } from "../flows/FileArgs"
-import { createAppController } from "./AppController"
+import { scopedControllers } from "./ControllerTestScope"
 import type { AppController, AppServices } from "./AppController"
 import { createAppStore } from "./AppStore"
 import { repoKeyOf } from "./AppState"
+
+const createAppController = scopedControllers()
 
 const controllers: AppController[] = []
 afterEach(() => { for (const controller of controllers.splice(0)) controller.dispose() })

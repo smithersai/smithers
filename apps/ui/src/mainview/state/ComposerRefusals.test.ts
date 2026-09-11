@@ -1,10 +1,10 @@
-import type { StorageApi } from "@tanstack/db"
 import { describe, expect, test } from "bun:test"
-import type { NativeRepositories } from "../native/NativeBridge"
-import type { AgentPort } from "../runtime/AgentPort"
-import { createAppController } from "./AppController"
+import { scopedControllers } from "./ControllerTestScope"
 import { createAppStore } from "./AppStore"
 import type { AppStore } from "./AppStore"
+import { json, memoryStorage, settled, silentAgent, unavailableRepositories } from "./TestFixtures"
+
+const createAppController = scopedControllers()
 
 /*
  * The composer is an invocation surface, not a second contract.
@@ -15,36 +15,6 @@ import type { AppStore } from "./AppStore"
  * `/issues.view` (which the slash menu routes through the pointer path) stated
  * its refusal — the same flow, the same seam, two behaviours.
  */
-
-const memoryStorage = (): StorageApi => {
-  const data = new Map<string, string>()
-  return {
-    getItem: (key) => data.get(key) ?? null,
-    setItem: (key, value) => void data.set(key, value),
-    removeItem: (key) => void data.delete(key)
-  }
-}
-
-const unavailableRepositories: NativeRepositories = {
-  available: false,
-  pickLocalRepository: async () => ({
-    status: "error",
-    code: "native-required",
-    message: "Local repositories can only be connected from the Smithers native app."
-  })
-}
-
-const silentAgent = (): AgentPort => ({
-  available: true,
-  startTurn: async () => ({ status: "started" }),
-  cancelTurn: async () => {},
-  subscribe: () => () => {}
-})
-
-const settled = () => new Promise((resolve) => setTimeout(resolve, 0))
-
-const json = (status: number, body: unknown): Response =>
-  new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } })
 
 /** A signed-in, allowlisted session: the state every repository flow requires. */
 const signedInStore = async (): Promise<AppStore> => {
@@ -67,7 +37,7 @@ const failedToasts = (store: AppStore) =>
 describe("a flow typed into the composer states its refusal", () => {
   test("an upstream 404 on /issues.view <n> <repo> surfaces the seam's own message", async () => {
     const store = await signedInStore()
-    const controller = createAppController(store, unavailableRepositories, silentAgent(), {
+    const controller = createAppController(store, unavailableRepositories, silentAgent, {
       fetchImpl: async (input) => {
         const path = new URL(
           typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url,
@@ -90,7 +60,7 @@ describe("a flow typed into the composer states its refusal", () => {
   test("a malformed argument is refused before the flow runs", async () => {
     const store = await signedInStore()
     let calls = 0
-    const controller = createAppController(store, unavailableRepositories, silentAgent(), {
+    const controller = createAppController(store, unavailableRepositories, silentAgent, {
       fetchImpl: async () => {
         calls += 1
         return json(200, {})
@@ -108,7 +78,7 @@ describe("a flow typed into the composer states its refusal", () => {
 
   test("a flow that succeeds raises no refusal", async () => {
     const store = await signedInStore()
-    const controller = createAppController(store, unavailableRepositories, silentAgent(), {
+    const controller = createAppController(store, unavailableRepositories, silentAgent, {
       fetchImpl: async () => json(200, [])
     })
     controller.send("/issues.list open codeplanesmithers/canary-sandbox")

@@ -1,5 +1,4 @@
 import { GlobalRegistrator } from "@happy-dom/global-registrator"
-import type { StorageApi } from "@tanstack/db"
 import { afterAll, afterEach, describe, expect, test } from "bun:test"
 import { flushSync } from "react-dom"
 import { createRoot } from "react-dom/client"
@@ -7,12 +6,13 @@ import type { AppBootstrap } from "@smthrs/rpc/AppBootstrap"
 import App from "../App"
 import { SidebarRepositoryPicker } from "../Composer"
 import { ControllerTestProvider } from "../ControllerContext"
-import type { NativeRepositories } from "../native/NativeBridge"
-import type { AgentPort } from "../runtime/AgentPort"
-import { createAppController } from "./AppController"
+import { scopedControllers } from "./ControllerTestScope"
 import type { AppController as AppControllerType } from "./AppController"
 import { createAppStore } from "./AppStore"
 import type { AppStore } from "./AppStore"
+import { backend, json, memoryStorage, nativeRepositories, settled, silentAgent } from "./TestFixtures"
+
+const createAppController = scopedControllers()
 
 /*
  * The composer's layout (will's brief, 2026-08-30): a header row above the box
@@ -37,27 +37,6 @@ afterEach(() => {
   while (mounted.length > 0) mounted.pop()?.()
 })
 
-const memoryStorage = (): StorageApi => {
-  const data = new Map<string, string>()
-  return {
-    getItem: (key) => data.get(key) ?? null,
-    setItem: (key, value) => void data.set(key, value),
-    removeItem: (key) => void data.delete(key)
-  }
-}
-
-const silentAgent: AgentPort = {
-  available: true,
-  startTurn: async () => ({ status: "started" }),
-  cancelTurn: async () => {},
-  subscribe: () => () => {}
-}
-
-const nativeRepositories: NativeRepositories = {
-  available: true,
-  pickLocalRepository: async () => ({ status: "cancelled" })
-}
-
 const localBootstrap: AppBootstrap = {
   apiVersion: 1,
   host: "local",
@@ -67,18 +46,6 @@ const localBootstrap: AppBootstrap = {
   authFlow: "none",
   sandbox: { platform: "darwin", mode: "enforced" }
 }
-
-const json = (status: number, body: unknown): Response =>
-  new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } })
-
-const backend = (routes: Record<string, Response>) => ({
-  fetchImpl: async (input: unknown) => {
-    const path = new URL(String(input), "https://app.test").pathname
-    return (routes[path] ?? json(404, { status: "error" })).clone()
-  }
-})
-
-const settled = () => new Promise((resolve) => setTimeout(resolve, 0))
 
 const text = (node: Element | null): string => (node?.textContent ?? "").replace(/\s+/g, " ").trim()
 
@@ -514,7 +481,6 @@ describe("the composer's + menu and surface pill", () => {
     expect(rows.map((row) => row.querySelector("button")?.dataset.flow)).toEqual(["flow.run", "flow.run"])
   })
 })
-
 
 test("signed-out sidebar loads public repositories and selects one without connection setup", async () => {
   const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })

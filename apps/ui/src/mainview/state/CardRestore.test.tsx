@@ -1,16 +1,16 @@
 import { GlobalRegistrator } from "@happy-dom/global-registrator"
-import type { StorageApi } from "@tanstack/db"
 import { afterAll, afterEach, describe, expect, test } from "bun:test"
 import { flushSync } from "react-dom"
 import { createRoot } from "react-dom/client"
 import App from "../App"
 import { ControllerTestProvider } from "../ControllerContext"
-import type { NativeRepositories } from "../native/NativeBridge"
-import type { AgentPort } from "../runtime/AgentPort"
-import { createAppController } from "./AppController"
+import { scopedControllers } from "./ControllerTestScope"
 import type { AppController as AppControllerType } from "./AppController"
 import { createAppStore } from "./AppStore"
 import type { AppStore } from "./AppStore"
+import { memoryStorage, settled, silentAgent, unavailableRepositories } from "./TestFixtures"
+
+const createAppController = scopedControllers()
 
 /*
  * Ask 8 (will, 2026-09-02): "when I maximize a file I have no way of
@@ -34,33 +34,6 @@ const mounted: Array<() => void> = []
 afterEach(() => {
   while (mounted.length > 0) mounted.pop()?.()
 })
-
-const memoryStorage = (): StorageApi => {
-  const data = new Map<string, string>()
-  return {
-    getItem: (key) => data.get(key) ?? null,
-    setItem: (key, value) => void data.set(key, value),
-    removeItem: (key) => void data.delete(key)
-  }
-}
-
-const unavailableRepositories: NativeRepositories = {
-  available: false,
-  pickLocalRepository: async () => ({
-    status: "error",
-    code: "native-required",
-    message: "Local repositories can only be connected from the Smithers native app."
-  })
-}
-
-const silentAgent: AgentPort = {
-  available: true,
-  startTurn: async () => ({ status: "started" }),
-  cancelTurn: async () => {},
-  subscribe: () => () => {}
-}
-
-const settled = () => new Promise((resolve) => setTimeout(resolve, 0))
 
 const mount = (controller: AppControllerType): HTMLElement => {
   const host = document.createElement("div")

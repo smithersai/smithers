@@ -1,9 +1,9 @@
-import type { StorageApi } from "@tanstack/db"
 import { describe, expect, test } from "bun:test"
-import type { NativeRepositories } from "../native/NativeBridge"
-import type { AgentPort } from "../runtime/AgentPort"
-import { createAppController } from "./AppController"
+import { scopedControllers } from "./ControllerTestScope"
 import { createAppStore } from "./AppStore"
+import { memoryStorage, settled, silentAgent, unavailableRepositories } from "./TestFixtures"
+
+const createAppController = scopedControllers()
 
 /*
  * The 300ms toast law (2026-08-09): background work not settled within 300ms
@@ -11,33 +11,6 @@ import { createAppStore } from "./AppStore"
  * flashes anything; a settled toast resolves into the result; a failure toast
  * is honest and stays until dismissed.
  */
-
-const memoryStorage = (): StorageApi => {
-  const data = new Map<string, string>()
-  return {
-    getItem: (key) => data.get(key) ?? null,
-    setItem: (key, value) => void data.set(key, value),
-    removeItem: (key) => void data.delete(key)
-  }
-}
-
-const unavailableRepositories: NativeRepositories = {
-  available: false,
-  pickLocalRepository: async () => ({
-    status: "error",
-    code: "native-required",
-    message: "Local repositories can only be connected from the Smithers native app."
-  })
-}
-
-const silentAgent: AgentPort = {
-  available: true,
-  startTurn: async () => ({ status: "started" }),
-  cancelTurn: async () => {},
-  subscribe: () => () => {}
-}
-
-const settled = () => new Promise((resolve) => setTimeout(resolve, 0))
 
 const balanceJson = new Response(
   JSON.stringify({

@@ -1,14 +1,14 @@
-import type { StorageApi } from "@tanstack/db"
 import { describe, expect, test } from "bun:test"
 import type { AppBootstrap } from "@smthrs/rpc/AppBootstrap"
-import type { NativeRepositories } from "../native/NativeBridge"
-import type { AgentPort } from "../runtime/AgentPort"
 import { RECOMMENDATION_ID } from "./AppState"
 import type { Repo } from "./AppState"
-import { createAppController } from "./AppController"
+import { scopedControllers } from "./ControllerTestScope"
 import type { AppServices } from "./AppController"
 import { createAppStore } from "./AppStore"
 import { RECOMMEND_OUTCOME_PATH, RECOMMEND_PATH } from "./Recommend"
+import { json, memoryStorage, nativeRepositories, silentAgent, unavailableRepositories } from "./TestFixtures"
+
+const createAppController = scopedControllers()
 
 /*
  * The recommender as a workflow: a material change → the `recommend` flow →
@@ -16,36 +16,6 @@ import { RECOMMEND_OUTCOME_PATH, RECOMMEND_PATH } from "./Recommend"
  * answer replaces them, and the user's next dispatch reported once as the
  * outcome. No real model is ever asked here: the Worker is a recorder.
  */
-
-const memoryStorage = (): StorageApi => {
-  const data = new Map<string, string>()
-  return {
-    getItem: (key) => data.get(key) ?? null,
-    setItem: (key, value) => void data.set(key, value),
-    removeItem: (key) => void data.delete(key)
-  }
-}
-
-const unavailableRepositories: NativeRepositories = {
-  available: false,
-  pickLocalRepository: async () => ({
-    status: "error",
-    code: "native-required",
-    message: "Local repositories can only be connected from the Smithers native app."
-  })
-}
-
-const nativeRepositories: NativeRepositories = {
-  available: true,
-  pickLocalRepository: async () => ({ status: "cancelled" })
-}
-
-const silentAgent: AgentPort = {
-  available: true,
-  startTurn: async () => ({ status: "started" }),
-  cancelTurn: async () => {},
-  subscribe: () => () => {}
-}
 
 const cloudBootstrap: AppBootstrap = {
   apiVersion: 1,
@@ -85,9 +55,6 @@ const repo: Repo = {
 const settle = async (ticks = 6) => {
   for (let tick = 0; tick < ticks; tick += 1) await new Promise((resolve) => setTimeout(resolve, 0))
 }
-
-const json = (status: number, body: unknown): Response =>
-  new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } })
 
 interface Hit {
   readonly path: string

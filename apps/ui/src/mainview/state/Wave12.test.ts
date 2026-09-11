@@ -12,62 +12,19 @@
  * §4 (the residuals) are pinned the same way: through the real controller,
  * against a relay double speaking the shapes the receipts recorded.
  */
-import type { StorageApi } from "@tanstack/db"
 import { describe, expect, test } from "bun:test"
 import type { Card } from "@smthrs/rpc/Cards"
-import type { AgentTurnFrame, StartAgentTurnRequest } from "@smthrs/rpc/NativeAgent"
-import type { NativeRepositories } from "../native/NativeBridge"
-import type { AgentPort } from "../runtime/AgentPort"
 import { scopedControllers } from "./ControllerTestScope"
 import type { AppServices } from "./AppController"
 import { createAppStore } from "./AppStore"
 import { claimsRunState, renderedRunTurnText, runLaunchCommandOf, toolResultLaunchedRun } from "./RunClaims"
+import { json, memoryStorage, scriptedToolAgent, settle, silentAgent, unavailableRepositories, waitFor } from "./TestFixtures"
 
 const createAppController = scopedControllers()
 
-const memoryStorage = (): StorageApi => {
-  const data = new Map<string, string>()
-  return {
-    getItem: (key) => data.get(key) ?? null,
-    setItem: (key, value) => void data.set(key, value),
-    removeItem: (key) => void data.delete(key)
-  }
-}
-
 const webStore = () => createAppStore({ kind: "localStorage", storage: memoryStorage() })
 
-const unavailableRepositories: NativeRepositories = {
-  available: false,
-  pickLocalRepository: async () => ({
-    status: "error",
-    code: "native-required",
-    message: "Local repositories can only be connected from the Smithers native app."
-  })
-}
-
-const silentAgent = (): AgentPort => ({
-  available: true,
-  startTurn: async () => ({ status: "started" }),
-  cancelTurn: async () => {},
-  subscribe: () => () => {}
-})
-
-const json = (status: number, body: unknown): Response =>
-  new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } })
-
-const settle = async (ticks = 12): Promise<void> => {
-  for (let index = 0; index < ticks; index += 1) await new Promise((resolve) => setTimeout(resolve, 1))
-}
-
 /** Wait for a condition rather than a fixed sleep — a loaded machine still passes. */
-const waitFor = async (condition: () => boolean, timeoutMs = 2_000): Promise<void> => {
-  const deadline = Date.now() + timeoutMs
-  while (!condition() && Date.now() < deadline) {
-    await new Promise((resolve) => setTimeout(resolve, 2))
-  }
-  if (!condition()) throw new Error("condition never held")
-}
-
 const REPO = "codeplanesmithers/smithers-demo"
 const OTHER_REPO = "codeplanesmithers/smithers-cloud"
 
@@ -222,36 +179,6 @@ const transcript = (store: Awaited<ReturnType<typeof webStore>>): string =>
     .sort((left, right) => left.ordinal - right.ordinal)
     .map((message) => message.text)
     .join("\n")
-
-const scriptedToolAgent = (
-  steps: ReadonlyArray<(request: StartAgentTurnRequest) => ReadonlyArray<Omit<AgentTurnFrame, "runId">>>
-): { agent: AgentPort; requests: Array<StartAgentTurnRequest> } => {
-  const listeners = new Set<(frame: AgentTurnFrame) => void>()
-  const requests: Array<StartAgentTurnRequest> = []
-  let step = 0
-  return {
-    requests,
-    agent: {
-      available: true,
-      startTurn: async (request) => {
-        requests.push(request)
-        const frames = (steps[Math.min(step, steps.length - 1)] ?? (() => []))(request)
-        step += 1
-        queueMicrotask(() => {
-          for (const frame of frames) {
-            for (const listener of listeners) listener({ ...frame, runId: request.runId } as AgentTurnFrame)
-          }
-        })
-        return { status: "started" }
-      },
-      cancelTurn: async () => {},
-      subscribe: (listener) => {
-        listeners.add(listener)
-        return () => listeners.delete(listener)
-      }
-    }
-  }
-}
 
 /** The exact frames the canary turn produced, replayed. */
 const WAVE11_LIE =
@@ -515,7 +442,7 @@ describe("wave 12 §2 — flow.create asks WHICH loaded repo", () => {
   test("one loaded repo is not a question", async () => {
     const store = await webStore()
     const double = relay()
-    const controller = createAppController(store, unavailableRepositories, silentAgent(), double.services)
+    const controller = createAppController(store, unavailableRepositories, silentAgent, double.services)
     await signIn(store, [REPO])
 
     const outcome = await controller.commands.run("flow.create", "summarize my issues")
@@ -527,7 +454,7 @@ describe("wave 12 §2 — flow.create asks WHICH loaded repo", () => {
   test("an owner/repo argument targets it directly — slash and agent alike", async () => {
     const store = await webStore()
     const double = relay()
-    const controller = createAppController(store, unavailableRepositories, silentAgent(), double.services)
+    const controller = createAppController(store, unavailableRepositories, silentAgent, double.services)
     await signIn(store, [REPO, OTHER_REPO])
 
     const outcome = await controller.commands.run("flow.create", `summarize my open issues ${OTHER_REPO}`)
@@ -544,7 +471,7 @@ describe("wave 12 §2 — flow.create asks WHICH loaded repo", () => {
   test("more than one loaded repo and no argument: the chooser-among-loaded, then one act creates it", async () => {
     const store = await webStore()
     const double = relay()
-    const controller = createAppController(store, unavailableRepositories, silentAgent(), double.services)
+    const controller = createAppController(store, unavailableRepositories, silentAgent, double.services)
     await signIn(store, [REPO, OTHER_REPO])
 
     const asked = await controller.commands.run("flow.create", "summarize my open issues")
@@ -601,7 +528,7 @@ describe("wave 12 §2 — flow.create asks WHICH loaded repo", () => {
      */
     const store = await webStore()
     const double = relay()
-    const controller = createAppController(store, unavailableRepositories, silentAgent(), double.services)
+    const controller = createAppController(store, unavailableRepositories, silentAgent, double.services)
     await signIn(store, [REPO, OTHER_REPO])
 
     await controller.commands.run("flow.create", "summarize my open issues")
@@ -643,7 +570,7 @@ describe("wave 12 §3 — a run the workspace never finishes", () => {
   test("no progress for the bound: the card says it has gone quiet and the pump stops", async () => {
     const store = await webStore()
     const double = relay()
-    const controller = createAppController(store, unavailableRepositories, silentAgent(), {
+    const controller = createAppController(store, unavailableRepositories, silentAgent, {
       ...double.services,
       // A bound the test can actually wait out; production is 10 minutes.
       workflowQuietMs: 25
@@ -669,7 +596,7 @@ describe("wave 12 §3 — a run the workspace never finishes", () => {
   test("real progress keeps the clock honest — a moving run never goes quiet", async () => {
     const store = await webStore()
     const double = relay()
-    const controller = createAppController(store, unavailableRepositories, silentAgent(), {
+    const controller = createAppController(store, unavailableRepositories, silentAgent, {
       ...double.services,
       // Generous next to the emit cadence below: what is being pinned is
       // that progress RESETS the clock, not a race against the wall.
@@ -688,7 +615,7 @@ describe("wave 12 §3 — a run the workspace never finishes", () => {
   test("the quiet card's two acts are registered commands: check again, or stop watching", async () => {
     const store = await webStore()
     const double = relay()
-    const controller = createAppController(store, unavailableRepositories, silentAgent(), {
+    const controller = createAppController(store, unavailableRepositories, silentAgent, {
       ...double.services,
       workflowQuietMs: 25
     })
@@ -728,7 +655,7 @@ describe("wave 12 §4 — the residuals", () => {
         message: `${REPO} isn't on Smithers Cloud yet, so there is no workspace to provision for it.`
       })
     })
-    const controller = createAppController(store, unavailableRepositories, silentAgent(), double.services)
+    const controller = createAppController(store, unavailableRepositories, silentAgent, double.services)
     await signIn(store)
 
     const outcome = await controller.commands.run("flow.create", "summarize my issues")

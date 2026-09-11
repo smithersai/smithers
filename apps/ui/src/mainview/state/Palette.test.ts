@@ -1,13 +1,13 @@
 import { GlobalRegistrator } from "@happy-dom/global-registrator"
-import type { StorageApi } from "@tanstack/db"
 import { afterAll, describe, expect, test } from "bun:test"
 import { readFileSync } from "node:fs"
 import { fileURLToPath } from "node:url"
-import type { NativeRepositories } from "../native/NativeBridge"
-import type { AgentPort } from "../runtime/AgentPort"
-import { createAppController } from "./AppController"
+import { scopedControllers } from "./ControllerTestScope"
 import { DEFAULT_PALETTE, PALETTES } from "./AppState"
 import { createAppStore } from "./AppStore"
+import { memoryStorage, unavailableAgent, unavailableRepositories } from "./TestFixtures"
+
+const createAppController = scopedControllers()
 
 /*
  * The color-theme axis (/theme), orthogonal to light/dark (/dark-mode). Three
@@ -30,31 +30,6 @@ GlobalRegistrator.register()
 afterAll(async () => {
   await GlobalRegistrator.unregister()
 })
-
-const memoryStorage = (): StorageApi => {
-  const data = new Map<string, string>()
-  return {
-    getItem: (key) => data.get(key) ?? null,
-    setItem: (key, value) => void data.set(key, value),
-    removeItem: (key) => void data.delete(key)
-  }
-}
-
-const unavailableAgent: AgentPort = {
-  available: false,
-  startTurn: async () => ({ status: "error", message: "unavailable" }),
-  cancelTurn: async () => {},
-  subscribe: () => () => {}
-}
-
-const unavailableRepositories: NativeRepositories = {
-  available: false,
-  pickLocalRepository: async () => ({
-    status: "error",
-    code: "native-required",
-    message: "Local repositories can only be connected from the Smithers native app."
-  })
-}
 
 const tokens = readFileSync(fileURLToPath(new URL("../styles/tokens.css", import.meta.url)), "utf8")
 /** Comments carry braces and selector-looking text, so the block scan reads the code alone. */

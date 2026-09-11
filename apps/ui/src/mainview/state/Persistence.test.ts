@@ -6,6 +6,7 @@ import { openSqliteRowStorage, ROW_TABLE_NAME } from "../chain/SqliteRowStorage"
 import { ENVELOPE_STORAGE_KEY } from "../chain/TransactionalStorage"
 import type { ChainEventRecord, ToolCallRecord, TransitionRecord } from "./AppState"
 import { createAppStore, MAX_TOOL_CALL_RECORDS, MAX_TRANSITION_RECORDS } from "./AppStore"
+import { memoryStorage } from "./TestFixtures"
 
 /*
  * Ruling A, store level (docs/persistence.md): a dispatch is one atomic
@@ -13,15 +14,6 @@ import { createAppStore, MAX_TOOL_CALL_RECORDS, MAX_TRANSITION_RECORDS } from ".
  * compact to their documented retention bounds inside the committing
  * transaction.
  */
-
-const memoryStorage = (): StorageApi => {
-  const data = new Map<string, string>()
-  return {
-    getItem: (key) => data.get(key) ?? null,
-    setItem: (key, value) => void data.set(key, value),
-    removeItem: (key) => void data.delete(key)
-  }
-}
 
 /** A host whose envelope commit write can be made to crash mid-dispatch. */
 const crashableStorage = (): StorageApi & { crashCommit: () => void; heal: () => void } => {

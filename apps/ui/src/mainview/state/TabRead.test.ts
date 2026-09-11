@@ -1,10 +1,12 @@
-import type { StorageApi } from "@tanstack/db"
 import { describe, expect, test } from "bun:test"
 import type { NativeRepositories } from "../native/NativeBridge"
 import type { AgentPort } from "../runtime/AgentPort"
-import { createAppController } from "./AppController"
+import { scopedControllers } from "./ControllerTestScope"
 import { createAppStore } from "./AppStore"
 import { TAB_READ_TAIL_BYTES } from "./controller/tabs"
+import { memoryStorage } from "./TestFixtures"
+
+const createAppController = scopedControllers()
 
 /*
  * `tab.read` (docs/LOCAL-APP.md "Tabs"): Smithers is the first tab and reads
@@ -12,15 +14,6 @@ import { TAB_READ_TAIL_BYTES } from "./controller/tabs"
  * tail; a card tab with its payload; main with the note that it IS the
  * conversation; an unknown id with the list of tabs that exist.
  */
-
-const memoryStorage = (): StorageApi => {
-  const data = new Map<string, string>()
-  return {
-    getItem: (key) => data.get(key) ?? null,
-    setItem: (key, value) => void data.set(key, value),
-    removeItem: (key) => void data.delete(key)
-  }
-}
 
 const unavailableRepositories: NativeRepositories = {
   available: false,

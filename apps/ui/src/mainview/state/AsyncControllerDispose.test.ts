@@ -1,9 +1,11 @@
 import { describe, expect, test } from "bun:test"
 import type { NativeRepositories } from "../native/NativeBridge"
 import type { AgentPort } from "../runtime/AgentPort"
-import { createAppController } from "./AppController"
+import { scopedControllers } from "./ControllerTestScope"
 import { createAppStore } from "./AppStore"
 import { createControllerContext } from "./controller/context"
+
+const createAppController = scopedControllers()
 
 const repositories: NativeRepositories = {
   available: false,

@@ -1,11 +1,8 @@
-import type { StorageApi } from "@tanstack/db"
 import { describe, expect, test } from "bun:test"
-import type { AgentTurnFrame, StartAgentTurnRequest } from "@smthrs/rpc/NativeAgent"
-import type { NativeRepositories } from "../native/NativeBridge"
-import type { AgentPort } from "../runtime/AgentPort"
 import { scopedControllers } from "./ControllerTestScope"
 import type { AppServices } from "./AppController"
 import { createAppStore } from "./AppStore"
+import { json, memoryStorage, scriptedToolAgent, settled, silentAgent, unavailableRepositories } from "./TestFixtures"
 
 const createAppController = scopedControllers()
 
@@ -16,37 +13,7 @@ const createAppController = scopedControllers()
  * the watch subsystem — lane piper.)
  */
 
-const memoryStorage = (): StorageApi => {
-  const data = new Map<string, string>()
-  return {
-    getItem: (key) => data.get(key) ?? null,
-    setItem: (key, value) => void data.set(key, value),
-    removeItem: (key) => void data.delete(key)
-  }
-}
-
 const webStore = () => createAppStore({ kind: "localStorage", storage: memoryStorage() })
-
-const unavailableRepositories: NativeRepositories = {
-  available: false,
-  pickLocalRepository: async () => ({
-    status: "error",
-    code: "native-required",
-    message: "Local repositories can only be connected from the Smithers native app."
-  })
-}
-
-const silentAgent = (): AgentPort => ({
-  available: true,
-  startTurn: async () => ({ status: "started" }),
-  cancelTurn: async () => {},
-  subscribe: () => () => {}
-})
-
-const settled = () => new Promise((resolve) => setTimeout(resolve, 0))
-
-const json = (status: number, body: unknown): Response =>
-  new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } })
 
 const backend = (
   routes: Record<string, Response | ((request: Request) => Response | Promise<Response>)>,
@@ -86,36 +53,6 @@ const signIn = async (store: Awaited<ReturnType<typeof webStore>>): Promise<void
 }
 
 /** A scripted tool-loop agent (the ToolLoop.test.ts pattern). */
-const scriptedToolAgent = (
-  steps: ReadonlyArray<(request: StartAgentTurnRequest) => ReadonlyArray<Omit<AgentTurnFrame, "runId">>>
-): { agent: AgentPort; requests: Array<StartAgentTurnRequest> } => {
-  const listeners = new Set<(frame: AgentTurnFrame) => void>()
-  const requests: Array<StartAgentTurnRequest> = []
-  let step = 0
-  return {
-    requests,
-    agent: {
-      available: true,
-      startTurn: async (request) => {
-        requests.push(request)
-        const frames = (steps[Math.min(step, steps.length - 1)] ?? (() => []))(request)
-        step += 1
-        queueMicrotask(() => {
-          for (const frame of frames) {
-            for (const listener of listeners) listener({ ...frame, runId: request.runId } as AgentTurnFrame)
-          }
-        })
-        return { status: "started" }
-      },
-      cancelTurn: async () => {},
-      subscribe: (listener) => {
-        listeners.add(listener)
-        return () => listeners.delete(listener)
-      }
-    }
-  }
-}
-
 describe("wave 10 — the embed law's in-app half (§2c″)", () => {
   test("'what is in world?' through the tool double: the answer + an embedded card; the surface NEVER changes", async () => {
     const store = await webStore()
@@ -155,7 +92,7 @@ describe("wave 10 — the embed law's in-app half (§2c″)", () => {
 
   test("the agent's connect invocation renders the embedded connect card, not the pane", async () => {
     const store = await webStore()
-    const controller = createAppController(store, unavailableRepositories, silentAgent())
+    const controller = createAppController(store, unavailableRepositories, silentAgent)
     await signIn(store)
     const result = await controller.commands.executeForAgent({
       name: "commands",
@@ -215,7 +152,7 @@ describe("/chat.clear — optional summaries and atomic local archives", () => {
   test("an explicit summary commits new world notes and the archive together", async () => {
     const store = await webStore()
     const calls: Array<{ path: string; method: string; body: unknown }> = []
-    const controller = createAppController(store, unavailableRepositories, silentAgent(), {
+    const controller = createAppController(store, unavailableRepositories, silentAgent, {
       ...backend(
         {
           "/api/model/stream": () =>
@@ -270,7 +207,7 @@ describe("/chat.clear — optional summaries and atomic local archives", () => {
 
   test("a failed sweep leaves the chat UNcleared with an honest line", async () => {
     const store = await webStore()
-    const controller = createAppController(store, unavailableRepositories, silentAgent(), {
+    const controller = createAppController(store, unavailableRepositories, silentAgent, {
       ...backend({
         "/api/model/stream": json(500, { status: "error", message: "chat upstream down" })
       })
@@ -293,7 +230,7 @@ describe("/chat.clear — optional summaries and atomic local archives", () => {
 
   test("a transcript with nothing worth keeping clears with the zero-kept line", async () => {
     const store = await webStore()
-    const controller = createAppController(store, unavailableRepositories, silentAgent(), {
+    const controller = createAppController(store, unavailableRepositories, silentAgent, {
       ...backend({
         "/api/model/stream": () =>
           new Response(
@@ -317,7 +254,7 @@ describe("/chat.clear — optional summaries and atomic local archives", () => {
 describe("wave 10 — the browser tool (§2d)", () => {
   test("the agent's browser call returns the extracted text and renders the embedded card", async () => {
     const store = await webStore()
-    const controller = createAppController(store, unavailableRepositories, silentAgent(), {
+    const controller = createAppController(store, unavailableRepositories, silentAgent, {
       ...backend({
         "/api/tools/browser-fetch": json(200, {
           status: 200,
@@ -345,7 +282,7 @@ describe("wave 10 — the browser tool (§2d)", () => {
 
   test("a site that refuses framing lands the honest blocked state on the card", async () => {
     const store = await webStore()
-    const controller = createAppController(store, unavailableRepositories, silentAgent(), {
+    const controller = createAppController(store, unavailableRepositories, silentAgent, {
       ...backend({
         "/api/tools/browser-fetch": json(200, {
           status: 200,
@@ -412,7 +349,7 @@ describe("wave 10 — the browser tool (§2d)", () => {
 describe("wave 10 — sign-in IS the GitHub connector (§2a′)", () => {
   test("a signed-in session means connected: the snapshot and the agent context derive it", async () => {
     const store = await webStore()
-    const controller = createAppController(store, unavailableRepositories, silentAgent())
+    const controller = createAppController(store, unavailableRepositories, silentAgent)
     expect(controller.commands.state().hasConnectors).toBe(false)
     await signIn(store)
     expect(controller.commands.state().hasConnectors).toBe(true)
@@ -420,7 +357,7 @@ describe("wave 10 — sign-in IS the GitHub connector (§2a′)", () => {
 
   test("the agent answering from the debug reads (admin) — snapshot/events contracts", async () => {
     const store = await webStore()
-    const controller = createAppController(store, unavailableRepositories, silentAgent())
+    const controller = createAppController(store, unavailableRepositories, silentAgent)
     store.dispatch({
       type: "identity.session.loaded",
       actor: "system",

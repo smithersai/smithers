@@ -1,32 +1,15 @@
-import type { StorageApi } from "@tanstack/db"
 import { describe, expect, test } from "bun:test"
 import { readFileSync } from "node:fs"
 import { fileURLToPath } from "node:url"
 import type { AgentTurnFrame } from "@smthrs/rpc/NativeAgent"
-import type { NativeRepositories } from "../native/NativeBridge"
 import type { AgentPort } from "../runtime/AgentPort"
-import { createAppController } from "./AppController"
+import { scopedControllers } from "./ControllerTestScope"
 import { createAppStore } from "./AppStore"
+import { memoryStorage, settled, unavailableRepositories } from "./TestFixtures"
 
-const memoryStorage = (): StorageApi => {
-  const data = new Map<string, string>()
-  return {
-    getItem: (key) => data.get(key) ?? null,
-    setItem: (key, value) => void data.set(key, value),
-    removeItem: (key) => void data.delete(key)
-  }
-}
+const createAppController = scopedControllers()
 
 const webStore = () => createAppStore({ kind: "localStorage", storage: memoryStorage() })
-
-const unavailableRepositories: NativeRepositories = {
-  available: false,
-  pickLocalRepository: async () => ({
-    status: "error",
-    code: "native-required",
-    message: "Local repositories can only be connected from the Smithers native app."
-  })
-}
 
 /** Mirrors a web-mode agent whose server boundary is unreachable: every turn errors. */
 const webAgent = (message = "Could not reach the Smithers web agent."): AgentPort => ({
@@ -35,8 +18,6 @@ const webAgent = (message = "Could not reach the Smithers web agent."): AgentPor
   cancelTurn: async () => {},
   subscribe: () => () => {}
 })
-
-const settled = () => new Promise((resolve) => setTimeout(resolve, 0))
 
 describe("createAppController in pure web mode", () => {
   test("reports the native agent as unavailable without blocking the composer path", async () => {

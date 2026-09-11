@@ -1,16 +1,17 @@
 import { GlobalRegistrator } from "@happy-dom/global-registrator"
-import type { StorageApi } from "@tanstack/db"
 import { afterAll, afterEach, describe, expect, test } from "bun:test"
 import { flushSync } from "react-dom"
 import { createRoot } from "react-dom/client"
 import App from "../App"
 import { ControllerTestProvider } from "../ControllerContext"
-import type { NativeRepositories } from "../native/NativeBridge"
 import type { AgentPort } from "../runtime/AgentPort"
-import { createAppController } from "./AppController"
+import { scopedControllers } from "./ControllerTestScope"
 import type { AppController as AppControllerType } from "./AppController"
 import { createAppStore } from "./AppStore"
 import type { AppStore } from "./AppStore"
+import { memoryStorage, settled, silentAgent, unavailableRepositories } from "./TestFixtures"
+
+const createAppController = scopedControllers()
 
 /*
  * Wave 10, DOM half: the derived pill row (§2a/§2f), the admin-only
@@ -55,33 +56,6 @@ const mount = (controller: AppControllerType): { host: HTMLElement; markup: () =
 const act = (work: () => void): void => {
   flushSync(work)
 }
-
-const memoryStorage = (): StorageApi => {
-  const data = new Map<string, string>()
-  return {
-    getItem: (key) => data.get(key) ?? null,
-    setItem: (key, value) => void data.set(key, value),
-    removeItem: (key) => void data.delete(key)
-  }
-}
-
-const unavailableRepositories: NativeRepositories = {
-  available: false,
-  pickLocalRepository: async () => ({
-    status: "error",
-    code: "native-required",
-    message: "Local repositories can only be connected from the Smithers native app."
-  })
-}
-
-const silentAgent: AgentPort = {
-  available: true,
-  startTurn: async () => ({ status: "started" }),
-  cancelTurn: async () => {},
-  subscribe: () => () => {}
-}
-
-const settled = () => new Promise((resolve) => setTimeout(resolve, 0))
 
 const signedIn = async (store: AppStore, admin = false): Promise<void> => {
   store.dispatch({

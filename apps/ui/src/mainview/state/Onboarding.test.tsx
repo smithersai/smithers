@@ -1,5 +1,4 @@
 import { GlobalRegistrator } from "@happy-dom/global-registrator"
-import type { StorageApi } from "@tanstack/db"
 import { afterAll, afterEach, describe, expect, test } from "bun:test"
 import { flushSync } from "react-dom"
 import { createRoot } from "react-dom/client"
@@ -7,11 +6,13 @@ import type { AppBootstrap } from "@smthrs/rpc/AppBootstrap"
 import App from "../App"
 import { ControllerTestProvider } from "../ControllerContext"
 import type { NativeRepositories } from "../native/NativeBridge"
-import type { AgentPort } from "../runtime/AgentPort"
 import { identityMessage, INIT_GREETING, INIT_TITLE, initMessage, repoStep, repoSuggestion, SMITHERS_HELPERS } from "../Onboarding"
-import { createAppController } from "./AppController"
+import { scopedControllers } from "./ControllerTestScope"
 import type { AppController as AppControllerType } from "./AppController"
 import { createAppStore } from "./AppStore"
+import { backend, json, memoryStorage, settled, silentAgent, unavailableRepositories } from "./TestFixtures"
+
+const createAppController = scopedControllers()
 
 /*
  * Onboarding — the opening entry of a fresh session.
@@ -56,31 +57,6 @@ const mount = (controller: AppControllerType): HTMLElement => {
   return host
 }
 
-const memoryStorage = (): StorageApi => {
-  const data = new Map<string, string>()
-  return {
-    getItem: (key) => data.get(key) ?? null,
-    setItem: (key, value) => void data.set(key, value),
-    removeItem: (key) => void data.delete(key)
-  }
-}
-
-const silentAgent: AgentPort = {
-  available: true,
-  startTurn: async () => ({ status: "started" }),
-  cancelTurn: async () => {},
-  subscribe: () => () => {}
-}
-
-const unavailableRepositories: NativeRepositories = {
-  available: false,
-  pickLocalRepository: async () => ({
-    status: "error",
-    code: "native-required",
-    message: "Local repositories can only be connected from the Smithers native app."
-  })
-}
-
 const nativeRepositories = (picks: Array<string>): NativeRepositories => ({
   available: true,
   pickLocalRepository: async (access) => {
@@ -98,18 +74,6 @@ const localBootstrap: AppBootstrap = {
   authFlow: "none",
   sandbox: { platform: "darwin", mode: "enforced" }
 }
-
-const json = (status: number, body: unknown): Response =>
-  new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } })
-
-const backend = (routes: Record<string, Response>) => ({
-  fetchImpl: async (input: unknown) => {
-    const path = new URL(String(input), "https://app.test").pathname
-    return (routes[path] ?? json(404, { status: "error" })).clone()
-  }
-})
-
-const settled = () => new Promise((resolve) => setTimeout(resolve, 0))
 
 const SMITHERS_MESSAGES = "[data-slot=\"chat-message\"][data-role=\"assistant\"]"
 

@@ -1,8 +1,8 @@
-import type { StorageApi } from "@tanstack/db"
 import { describe, expect, test } from "bun:test"
 import type { Harness, Repo } from "./AppState"
 import { createAppStore } from "./AppStore"
 import type { AppStore } from "./AppStore"
+import { memoryStorage } from "./TestFixtures"
 
 /*
  * `repos.loaded` and `harnesses.loaded` replace a list the server owns. A
@@ -11,15 +11,6 @@ import type { AppStore } from "./AppStore"
  * refused by the collection ("Unhandled mutation combination:
  * delete-insert"), which left the repo chip empty after the second open.
  */
-
-const memoryStorage = (): StorageApi => {
-  const data = new Map<string, string>()
-  return {
-    getItem: (key) => data.get(key) ?? null,
-    setItem: (key, value) => void data.set(key, value),
-    removeItem: (key) => void data.delete(key)
-  }
-}
 
 const boot = (): Promise<AppStore> => createAppStore({ kind: "localStorage", storage: memoryStorage() })
 

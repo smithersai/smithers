@@ -8,39 +8,12 @@
  */
 import { createCommandRegistry } from "../flows/Commands"
 import type { CommandActions } from "../flows/Flows"
-import type { StorageApi } from "@tanstack/db"
 import { afterEach, describe, expect, test } from "bun:test"
-import type { NativeRepositories } from "../native/NativeBridge"
-import type { AgentPort } from "../runtime/AgentPort"
 import { scopedControllers } from "./ControllerTestScope"
 import { createAppStore, TRACE_MESSAGE_PREFIX, VERBOSE_OFF_TEXT, VERBOSE_ON_TEXT, verboseTrace } from "./AppStore"
+import { memoryStorage, unavailableAgent, unavailableRepositories } from "./TestFixtures"
 
 const createAppController = scopedControllers()
-
-const memoryStorage = (): StorageApi => {
-  const data = new Map<string, string>()
-  return {
-    getItem: (key) => data.get(key) ?? null,
-    setItem: (key, value) => void data.set(key, value),
-    removeItem: (key) => void data.delete(key)
-  }
-}
-
-const unavailableAgent: AgentPort = {
-  available: false,
-  startTurn: async () => ({ status: "error", message: "unavailable" }),
-  cancelTurn: async () => {},
-  subscribe: () => () => {}
-}
-
-const unavailableRepositories: NativeRepositories = {
-  available: false,
-  pickLocalRepository: async () => ({
-    status: "error",
-    code: "native-required",
-    message: "Local repositories can only be connected from the Smithers native app."
-  })
-}
 
 const fresh = async () => {
   const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
@@ -147,7 +120,6 @@ describe("/verbose", () => {
     expect(logged.length).toBe(count)
   })
 })
-
 
 describe("sensitive flow traces", () => {
   for (const verbose of [false, true]) {

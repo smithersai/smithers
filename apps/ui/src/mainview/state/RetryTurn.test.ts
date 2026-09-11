@@ -1,37 +1,18 @@
-import type { StorageApi } from "@tanstack/db"
 import { describe, expect, spyOn, test } from "bun:test"
 import type { AgentTurnFrame, StartAgentTurnRequest, StartAgentTurnResult } from "@smthrs/rpc/NativeAgent"
-import type { NativeRepositories } from "../native/NativeBridge"
 import type { AgentPort } from "../runtime/AgentPort"
-import { createAppController } from "./AppController"
+import { scopedControllers } from "./ControllerTestScope"
 import { createAppStore } from "./AppStore"
 import type { AppStore } from "./AppStore"
+import { memoryStorage, settled, unavailableRepositories } from "./TestFixtures"
+
+const createAppController = scopedControllers()
 
 /*
  * /retry re-RUNS the last turn. Re-SENDING the prompt appended a second user
  * bubble per attempt, so the transcript grew a duplicate pair every time and
  * each retry shipped a longer history than the one before it.
  */
-
-const memoryStorage = (): StorageApi => {
-  const data = new Map<string, string>()
-  return {
-    getItem: (key) => data.get(key) ?? null,
-    setItem: (key, value) => void data.set(key, value),
-    removeItem: (key) => void data.delete(key)
-  }
-}
-
-const unavailableRepositories: NativeRepositories = {
-  available: false,
-  pickLocalRepository: async () => ({
-    status: "error",
-    code: "native-required",
-    message: "Local repositories can only be connected from the Smithers native app."
-  })
-}
-
-const settled = () => new Promise((resolve) => setTimeout(resolve, 0))
 
 /** An agent that records every leg it is asked to run and ends turns on demand. */
 const recordingAgent = (overrides: Partial<AgentPort> = {}) => {

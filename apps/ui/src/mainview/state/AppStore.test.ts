@@ -1,4 +1,3 @@
-import type { StorageApi } from "@tanstack/db"
 import { describe, expect, test } from "bun:test"
 import { cardFrameId, DEFAULT_BRANCH_ID, initialGuide, type Card } from "./AppState"
 import { createAppStore } from "./AppStore"
@@ -7,17 +6,9 @@ import { createControllerContext } from "./controller/context"
 import { createTurnController } from "./controller/turns"
 import { createWorkflowController } from "./controller/workflows"
 import type { AppStore } from "./AppStore"
+import { memoryStorage } from "./TestFixtures"
 
 /** Each test gets its own storage so cases never observe another case's writes. */
-const memoryStorage = (): StorageApi => {
-  const data = new Map<string, string>()
-  return {
-    getItem: (key) => data.get(key) ?? null,
-    setItem: (key, value) => void data.set(key, value),
-    removeItem: (key) => void data.delete(key)
-  }
-}
-
 describe("createAppStore with the localStorage fallback backend", () => {
   test("boots, seeds state, and reports the fallback persistence mode", async () => {
     const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
@@ -364,7 +355,6 @@ describe("a decided approval card", () => {
   })
 })
 
-
 describe("runtime-owned pending approvals", () => {
   const envelope = (requestId: string) => ({
     target: { _tag: "Node", runId: "run-1", requestId, digest: `sha256:${requestId}`,
@@ -510,7 +500,6 @@ describe("runtime-owned pending approvals", () => {
 
 })
 
-
 describe("persisted account ownership", () => {
   const identity = (store: AppStore, state: "signed-in" | "signed-out" | "unavailable", login: string | null = null) =>
     store.dispatch({ type: "identity.session.loaded", actor: "system", state, login,
@@ -566,7 +555,6 @@ describe("persisted account ownership", () => {
     }
   }
 })
-
 
 test("card updates merge partial payloads, refuse kind changes, and persist redacted env values", async () => {
   const storage = memoryStorage()

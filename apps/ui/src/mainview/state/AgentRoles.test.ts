@@ -1,13 +1,15 @@
-import type { StorageApi } from "@tanstack/db"
 import { describe, expect, test } from "bun:test"
 import type { AppBootstrap } from "@smthrs/rpc/AppBootstrap"
 import type { Harness } from "@smthrs/rpc/LocalApp"
 import type { AgentTurnFrame, StartAgentTurnRequest } from "@smthrs/rpc/NativeAgent"
 import type { NativeRepositories } from "../native/NativeBridge"
 import type { AgentPort } from "../runtime/AgentPort"
-import { createAppController } from "./AppController"
+import { scopedControllers } from "./ControllerTestScope"
 import { createAppStore } from "./AppStore"
 import { smithersInstructions } from "./Instructions"
+import { memoryStorage } from "./TestFixtures"
+
+const createAppController = scopedControllers()
 
 /*
  * The named roles end to end: the `+` flows launch a role's harness through
@@ -17,15 +19,6 @@ import { smithersInstructions } from "./Instructions"
  * host can launch. No real process or model is touched: the server and the
  * agent are recorders.
  */
-
-const memoryStorage = (): StorageApi => {
-  const data = new Map<string, string>()
-  return {
-    getItem: (key) => data.get(key) ?? null,
-    setItem: (key, value) => void data.set(key, value),
-    removeItem: (key) => void data.delete(key)
-  }
-}
 
 const repositories: NativeRepositories = {
   available: true,

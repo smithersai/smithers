@@ -1,14 +1,14 @@
-import type { StorageApi } from "@tanstack/db"
 import { describe, expect, test } from "bun:test"
 import type { AgentRuntimeContext } from "@smthrs/rpc/AgentContext"
 import type { StartAgentTurnRequest } from "@smthrs/rpc/NativeAgent"
-import type { NativeRepositories } from "../native/NativeBridge"
-import type { AgentPort } from "../runtime/AgentPort"
-import { createAppController } from "./AppController"
+import { scopedControllers } from "./ControllerTestScope"
 import type { AppServices } from "./AppController"
 import { createAppStore } from "./AppStore"
 import type { AppStore } from "./AppStore"
 import { SMITHERS_INSTRUCTIONS } from "./Instructions"
+import { json, memoryStorage, settled, unavailableAgent, unavailableRepositories } from "./TestFixtures"
+
+const createAppController = scopedControllers()
 
 /*
  * A discarded failure does not just hide from the user — it makes the MODEL
@@ -18,36 +18,6 @@ import { SMITHERS_INSTRUCTIONS } from "./Instructions"
  * (§22.7). Both halves are pinned here: what the tool boundary hands back, and
  * what the runtime context states before the model ever calls anything.
  */
-
-const memoryStorage = (): StorageApi => {
-  const data = new Map<string, string>()
-  return {
-    getItem: (key) => data.get(key) ?? null,
-    setItem: (key, value) => void data.set(key, value),
-    removeItem: (key) => void data.delete(key)
-  }
-}
-
-const unavailableAgent: AgentPort = {
-  available: false,
-  startTurn: async () => ({ status: "error", message: "unavailable" }),
-  cancelTurn: async () => {},
-  subscribe: () => () => {}
-}
-
-const unavailableRepositories: NativeRepositories = {
-  available: false,
-  pickLocalRepository: async () => ({
-    status: "error",
-    code: "native-required",
-    message: "Local repositories can only be connected from the Smithers native app."
-  })
-}
-
-const json = (status: number, body: unknown): Response =>
-  new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } })
-
-const settled = () => new Promise((resolve) => setTimeout(resolve, 0))
 
 const BALANCE = {
   user: "codeplanesmithers",

@@ -6,26 +6,16 @@
  * (`fix the crash in src/index.ts`) used to lose its last word to a
  * `src/index.ts` repository.
  */
-import type { StorageApi } from "@tanstack/db"
 import { describe, expect, test } from "bun:test"
 import { payloadFor } from "../flows/SlashPayload"
 import type { NativeRepositories } from "../native/NativeBridge"
 import type { AgentPort } from "../runtime/AgentPort"
-import { createAppController } from "./AppController"
+import { scopedControllers } from "./ControllerTestScope"
 import type { AppServices } from "./AppController"
 import type { Repo } from "./AppState"
 import { createAppStore } from "./AppStore"
 import type { AppStore } from "./AppStore"
 import { knownRepositories, resolveOpenRepo, resolveTargetRepo, splitTrailingRepo } from "./RepoContext"
-
-const memoryStorage = (): StorageApi => {
-  const data = new Map<string, string>()
-  return {
-    getItem: (key) => data.get(key) ?? null,
-    setItem: (key, value) => void data.set(key, value),
-    removeItem: (key) => void data.delete(key)
-  }
-}
 
 const freshStore = () => createAppStore({ kind: "localStorage", storage: memoryStorage() })
 
@@ -277,6 +267,9 @@ describe("a repo-scoped command whose text ends in a path", () => {
 
 import { GatewayWorkspaceIdSchema, isGatewayWorkspaceId } from "@smthrs/rpc/GatewayWorkspace"
 import { CardSchema } from "@smthrs/rpc/Cards"
+import { memoryStorage } from "./TestFixtures"
+
+const createAppController = scopedControllers()
 
 test("all persisted gateway cards accept exactly the Worker's canonical non-nil identity", () => {
   for (const value of ["ffffffff-ffff-ffff-ffff-ffffffffffff", "83e75ae5-0920-4000-8000-000000000001", "00000000-0000-0000-0000-000000000000", "FFFFFFFF-FFFF-FFFF-FFFF-FFFFFFFFFFFF", "../other"]) {

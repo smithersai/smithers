@@ -1,11 +1,11 @@
-import type { StorageApi } from "@tanstack/db"
 import { describe, expect, test } from "bun:test"
-import type { NativeRepositories } from "../native/NativeBridge"
-import type { AgentPort } from "../runtime/AgentPort"
-import { createAppController } from "./AppController"
+import { scopedControllers } from "./ControllerTestScope"
 import type { AppServices } from "./AppController"
 import { createAppStore } from "./AppStore"
 import type { AppStore } from "./AppStore"
+import { json, memoryStorage, unavailableAgent, unavailableRepositories } from "./TestFixtures"
+
+const createAppController = scopedControllers()
 
 /*
  * The native sign-in handoff: with the system-browser door (openExternal),
@@ -14,34 +14,6 @@ import type { AppStore } from "./AppStore"
  * Passkeys cannot run inside an embedded webview — this flow exists so they
  * never have to.
  */
-
-const memoryStorage = (): StorageApi => {
-  const data = new Map<string, string>()
-  return {
-    getItem: (key) => data.get(key) ?? null,
-    setItem: (key, value) => void data.set(key, value),
-    removeItem: (key) => void data.delete(key)
-  }
-}
-
-const unavailableAgent: AgentPort = {
-  available: false,
-  startTurn: async () => ({ status: "error", message: "unavailable" }),
-  cancelTurn: async () => {},
-  subscribe: () => () => {}
-}
-
-const unavailableRepositories: NativeRepositories = {
-  available: false,
-  pickLocalRepository: async () => ({
-    status: "error",
-    code: "native-required",
-    message: "Local repositories can only be connected from the Smithers native app."
-  })
-}
-
-const json = (status: number, body: unknown): Response =>
-  new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } })
 
 const settled = () => new Promise((resolve) => setTimeout(resolve, 0))
 const until = async (predicate: () => boolean): Promise<void> => {
@@ -77,6 +49,8 @@ const harness = async (options: {
   /** What the session probe answers after a ready claim; default signed-in as will. */
   readonly sessionAnswer?: { readonly status: number; readonly body: unknown }
   readonly toastAutoDismissMs?: number
+  /** While this returns true every claim answers pending, whatever the script says. */
+  readonly holdClaims?: () => boolean
 }): Promise<Harness> => {
   const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
   const opened: string[] = []
@@ -104,6 +78,7 @@ const harness = async (options: {
         return json(answer.status, answer.body)
       }
       if (path === "/api/auth/native/claim") {
+        if (options.holdClaims?.()) return json(200, { status: "pending" })
         const next = claims.length > 1 ? claims.shift() : claims[0]
         return json(next?.status ?? 404, next?.body ?? { status: "error", message: "expired" })
       }
@@ -193,18 +168,21 @@ describe("the native sign-in handoff", () => {
    * "Signed in" toast with "Sign-in timed out".
    */
   test("a second sign-in while a handoff is pending reopens it instead of minting another", async () => {
+    // The claim stays pending until the second click lands; a 1 ms poll must
+    // not ready the handoff before the test gets to click again.
+    let held = true
     const h = await harness({
       claims: [
         { status: 200, body: { status: "pending" } },
-        { status: 200, body: { status: "pending" } },
-        { status: 200, body: { status: "pending" } },
         { status: 200, body: { status: "ready" } }
-      ]
+      ],
+      holdClaims: () => held
     })
     await h.signIn()
     await until(() => h.opened.length === 1)
     await h.signIn()
     await until(() => h.opened.length === 2)
+    held = false
     // Same handoff, same browser page — never a second start.
     expect(h.opened).toEqual([
       "https://app.test/api/auth/github/start?handoff=handoff-1",

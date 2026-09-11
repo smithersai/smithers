@@ -1,11 +1,12 @@
-import type { StorageApi } from "@tanstack/db"
 import { describe, expect, test } from "bun:test"
 import type { AgentChatMessage, AgentTurnFrame, StartAgentTurnRequest } from "@smthrs/rpc/NativeAgent"
-import type { NativeRepositories } from "../native/NativeBridge"
 import type { AgentPort } from "../runtime/AgentPort"
 import { MAX_TOOL_RESULT_BYTES, MAX_TURN_REQUEST_BYTES, turnRequestBytes, utf8Bytes } from "./AgentTurnPolicy"
-import { createAppController } from "./AppController"
+import { scopedControllers } from "./ControllerTestScope"
 import { createAppStore } from "./AppStore"
+import { memoryStorage, recordingAgent, settled, unavailableRepositories } from "./TestFixtures"
+
+const createAppController = scopedControllers()
 
 /** `AgentChatMessage` is a union: a chat turn, or a tool call/result item. */
 const textOf = (message: AgentChatMessage | undefined): string =>
@@ -23,37 +24,7 @@ const textOf = (message: AgentChatMessage | undefined): string =>
  * policy: the request that actually leaves the client is the thing under test.
  */
 
-const memoryStorage = (): StorageApi => {
-  const data = new Map<string, string>()
-  return {
-    getItem: (key) => data.get(key) ?? null,
-    setItem: (key, value) => void data.set(key, value),
-    removeItem: (key) => void data.delete(key)
-  }
-}
-
-const unavailableRepositories: NativeRepositories = {
-  available: false,
-  pickLocalRepository: async () => ({
-    status: "error",
-    code: "native-required",
-    message: "Local repositories can only be connected from the Smithers native app."
-  })
-}
-
 /** An agent double that records every turn request and ends the turn fast. */
-const recordingAgent = (requests: StartAgentTurnRequest[]): AgentPort => ({
-  available: true,
-  startTurn: async (request) => {
-    requests.push(request)
-    return { status: "error", message: "Recorded." }
-  },
-  cancelTurn: async () => {},
-  subscribe: () => () => {}
-})
-
-const settled = () => new Promise((resolve) => setTimeout(resolve, 0))
-
 describe("a long conversation still sends a turn the boundary accepts", () => {
   test("the turn is bounded, the newest prompt survives, and the drop is stated", async () => {
     const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })

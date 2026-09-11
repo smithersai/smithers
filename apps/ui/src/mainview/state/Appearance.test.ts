@@ -1,9 +1,9 @@
-import type { StorageApi } from "@tanstack/db"
 import { afterEach, beforeEach, describe, expect, test } from "bun:test"
 import { readFileSync } from "node:fs"
 import { fileURLToPath } from "node:url"
 import { PALETTE_MIRROR_KEY, rememberAppearance, THEME_MIRROR_KEY } from "./Appearance"
 import { createAppStore } from "./AppStore"
+import { memoryStorage } from "./TestFixtures"
 
 /*
  * §20.4 — the persisted theme is painted BEFORE the first paint.
@@ -19,15 +19,6 @@ import { createAppStore } from "./AppStore"
  * file and run against a fake window and document. A regression that deletes
  * the script, or breaks it, fails here.
  */
-
-const memoryStorage = (): StorageApi => {
-  const data = new Map<string, string>()
-  return {
-    getItem: (key) => data.get(key) ?? null,
-    setItem: (key, value) => void data.set(key, value),
-    removeItem: (key) => void data.delete(key)
-  }
-}
 
 const html = readFileSync(fileURLToPath(new URL("../index.html", import.meta.url)), "utf8")
 

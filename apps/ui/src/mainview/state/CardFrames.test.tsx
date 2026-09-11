@@ -1,33 +1,14 @@
-import type { StorageApi } from "@tanstack/db"
 import { describe, expect, test } from "bun:test"
 import { renderToStaticMarkup } from "react-dom/server"
 import type { Card } from "@smthrs/rpc/Cards"
 import type { AgentTurnFrame } from "@smthrs/rpc/NativeAgent"
 import { CardView } from "../ChatCards"
-import type { NativeRepositories } from "../native/NativeBridge"
 import type { AgentPort } from "../runtime/AgentPort"
-import { createAppController } from "./AppController"
+import { scopedControllers } from "./ControllerTestScope"
 import { createAppStore } from "./AppStore"
+import { memoryStorage, settled, unavailableRepositories } from "./TestFixtures"
 
-const memoryStorage = (): StorageApi => {
-  const data = new Map<string, string>()
-  return {
-    getItem: (key) => data.get(key) ?? null,
-    setItem: (key, value) => void data.set(key, value),
-    removeItem: (key) => void data.delete(key)
-  }
-}
-
-const unavailableRepositories: NativeRepositories = {
-  available: false,
-  pickLocalRepository: async () => ({
-    status: "error",
-    code: "native-required",
-    message: "Local repositories can only be connected from the Smithers native app."
-  })
-}
-
-const settled = () => new Promise((resolve) => setTimeout(resolve, 0))
+const createAppController = scopedControllers()
 
 /** An agent that replays a fixed server-emitted frame stream for each turn. */
 const scriptedAgent = (frames: ReadonlyArray<AgentTurnFrame>): AgentPort => {

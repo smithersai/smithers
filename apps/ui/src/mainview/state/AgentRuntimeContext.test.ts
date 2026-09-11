@@ -1,48 +1,19 @@
-import type { StorageApi } from "@tanstack/db"
 import { describe, expect, test } from "bun:test"
 import { renderAgentRuntimeContext } from "@smthrs/rpc/AgentContext"
 import type { AgentRuntimeContext } from "@smthrs/rpc/AgentContext"
 import type { AgentTurnFrame, StartAgentTurnRequest } from "@smthrs/rpc/NativeAgent"
-import type { NativeRepositories } from "../native/NativeBridge"
 import { GUIDE_LAST_STEP, GUIDE_LESSONS } from "../onboarding/lessons"
 import type { AgentPort } from "../runtime/AgentPort"
-import { createAppController } from "./AppController"
+import { scopedControllers } from "./ControllerTestScope"
 import { createAppStore } from "./AppStore"
 import { initialGuide } from "./AppState"
+import { memoryStorage, recordingAgent, settled, unavailableRepositories } from "./TestFixtures"
 
-const memoryStorage = (): StorageApi => {
-  const data = new Map<string, string>()
-  return {
-    getItem: (key) => data.get(key) ?? null,
-    setItem: (key, value) => void data.set(key, value),
-    removeItem: (key) => void data.delete(key)
-  }
-}
+const createAppController = scopedControllers()
 
 const webStore = () => createAppStore({ kind: "localStorage", storage: memoryStorage() })
 
-const unavailableRepositories: NativeRepositories = {
-  available: false,
-  pickLocalRepository: async () => ({
-    status: "error",
-    code: "native-required",
-    message: "Local repositories can only be connected from the Smithers native app."
-  })
-}
-
 /** An agent double that records every turn request and ends the turn fast. */
-const recordingAgent = (requests: StartAgentTurnRequest[]): AgentPort => ({
-  available: true,
-  startTurn: async (request) => {
-    requests.push(request)
-    return { status: "error", message: "Recorded." }
-  },
-  cancelTurn: async () => {},
-  subscribe: () => () => {}
-})
-
-const settled = () => new Promise((resolve) => setTimeout(resolve, 0))
-
 describe("per-turn runtime context", () => {
   test("every turn carries a freshly derived context identifying the Smithers product", async () => {
     const store = await webStore()

@@ -1,9 +1,10 @@
-import type { StorageApi } from "@tanstack/db"
 import { describe, expect, test } from "bun:test"
 import type { NativeRepositories } from "../native/NativeBridge"
-import type { AgentPort } from "../runtime/AgentPort"
-import { createAppController } from "./AppController"
+import { scopedControllers } from "./ControllerTestScope"
 import { createAppStore } from "./AppStore"
+import { memoryStorage, silentAgent } from "./TestFixtures"
+
+const createAppController = scopedControllers()
 
 /*
  * The vault kit's three flows (Librarian L5) through the one run path, each
@@ -13,22 +14,6 @@ import { createAppStore } from "./AppStore"
  * A path no note answers refuses with the note's name in the reason, from
  * every door.
  */
-
-const memoryStorage = (): StorageApi => {
-  const data = new Map<string, string>()
-  return {
-    getItem: (key) => data.get(key) ?? null,
-    setItem: (key, value) => void data.set(key, value),
-    removeItem: (key) => void data.delete(key)
-  }
-}
-
-const silentAgent: AgentPort = {
-  available: true,
-  startTurn: async () => ({ status: "started" }),
-  cancelTurn: async () => {},
-  subscribe: () => () => {}
-}
 
 const noRepositories: NativeRepositories = {
   available: false,

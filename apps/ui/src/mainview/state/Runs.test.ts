@@ -10,62 +10,20 @@
  * approvals inbox, including the `inboxCardId:requestId` decision routing
  * that lets a human decide a gate whose own approval card never landed.
  */
-import type { StorageApi } from "@tanstack/db"
 import { CODING_PLAN } from "../cards/fixtures/CodingPlan"
 import { preparedCodingJournal } from "../cards/fixtures/CodingJournal"
 import { describe, expect, test } from "bun:test"
 import type { Card } from "@smthrs/rpc/Cards"
 import { runCardInScope, approvalCardIdFor } from "./RunReference"
 import { gatewayRunContextFor } from "./RepoContext"
-import type { NativeRepositories } from "../native/NativeBridge"
-import type { AgentPort } from "../runtime/AgentPort"
 import { scopedControllers } from "./ControllerTestScope"
 import type { AppServices } from "./AppController"
 import { createAppStore } from "./AppStore"
+import { json, memoryStorage, settle, silentAgent, unavailableRepositories, waitFor } from "./TestFixtures"
 
 const createAppController = scopedControllers()
 
-const memoryStorage = (): StorageApi => {
-  const data = new Map<string, string>()
-  return {
-    getItem: (key) => data.get(key) ?? null,
-    setItem: (key, value) => void data.set(key, value),
-    removeItem: (key) => void data.delete(key)
-  }
-}
-
 const webStore = () => createAppStore({ kind: "localStorage", storage: memoryStorage() })
-
-const unavailableRepositories: NativeRepositories = {
-  available: false,
-  pickLocalRepository: async () => ({
-    status: "error",
-    code: "native-required",
-    message: "Local repositories can only be connected from the Smithers native app."
-  })
-}
-
-const silentAgent = (): AgentPort => ({
-  available: true,
-  startTurn: async () => ({ status: "started" }),
-  cancelTurn: async () => {},
-  subscribe: () => () => {}
-})
-
-const json = (status: number, body: unknown): Response =>
-  new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } })
-
-const settle = async (ticks = 12): Promise<void> => {
-  for (let index = 0; index < ticks; index += 1) await new Promise((resolve) => setTimeout(resolve, 1))
-}
-
-const waitFor = async (condition: () => boolean, timeoutMs = 2_000): Promise<void> => {
-  const deadline = Date.now() + timeoutMs
-  while (!condition() && Date.now() < deadline) {
-    await new Promise((resolve) => setTimeout(resolve, 2))
-  }
-  if (!condition()) throw new Error("condition never held")
-}
 
 const REPO = "codeplanesmithers/smithers-demo"
 
@@ -306,7 +264,7 @@ describe("runs.list — the run inbox", () => {
         { runId: "run-mid", flowId: "review-pr", status: "accepted", createdAt: 3 }
       ]
     })
-    const controller = createAppController(store, unavailableRepositories, silentAgent(), double.services)
+    const controller = createAppController(store, unavailableRepositories, silentAgent, double.services)
     await signIn(store)
 
     const listed = await controller.commands.run("runs.list")
@@ -330,7 +288,7 @@ describe("runs.list — the run inbox", () => {
   test("by= refuses honestly — the wire records no launcher — and asks nothing", async () => {
     const store = await webStore()
     const double = relay({ runs: [{ runId: "run-1", flowId: "review-pr", status: "running" }] })
-    const controller = createAppController(store, unavailableRepositories, silentAgent(), double.services)
+    const controller = createAppController(store, unavailableRepositories, silentAgent, double.services)
     await signIn(store)
 
     const before = double.calls.length
@@ -343,7 +301,7 @@ describe("runs.list — the run inbox", () => {
   test("signed-out is the identity guard's refusal, not a workspace call", async () => {
     const store = await webStore()
     const double = relay()
-    const controller = createAppController(store, unavailableRepositories, silentAgent(), double.services)
+    const controller = createAppController(store, unavailableRepositories, silentAgent, double.services)
     const refused = await controller.commands.run("runs.list")
     expect(said(refused)).toContain("Sign in with GitHub first")
     expect(double.calls).toHaveLength(0)
@@ -354,7 +312,7 @@ describe("runs.open / resume / signal / steer — the run's acts", () => {
   test("runs.open materializes the run's card from its summary", async () => {
     const store = await webStore()
     const double = relay({ runs: [{ runId: "run-9", flowId: "deploy", status: "running" }] })
-    const controller = createAppController(store, unavailableRepositories, silentAgent(), double.services)
+    const controller = createAppController(store, unavailableRepositories, silentAgent, double.services)
     await signIn(store)
 
     const opened = await controller.commands.run("runs.open", "run-9")
@@ -367,7 +325,7 @@ describe("runs.open / resume / signal / steer — the run's acts", () => {
   test("runs.open names the miss honestly", async () => {
     const store = await webStore()
     const double = relay({ runs: [] })
-    const controller = createAppController(store, unavailableRepositories, silentAgent(), double.services)
+    const controller = createAppController(store, unavailableRepositories, silentAgent, double.services)
     await signIn(store)
     const opened = await controller.commands.run("runs.open", "run-absent")
     expect(said(opened)).toContain("no run run-absent")
@@ -376,7 +334,7 @@ describe("runs.open / resume / signal / steer — the run's acts", () => {
   test("runs.resume sends the control Resume with an idempotency key", async () => {
     const store = await webStore()
     const double = relay({ runs: [{ runId: "run-2", flowId: "review-pr", status: "parked", waitingReason: "quota" }] })
-    const controller = createAppController(store, unavailableRepositories, silentAgent(), double.services)
+    const controller = createAppController(store, unavailableRepositories, silentAgent, double.services)
     await signIn(store)
 
     const resumed = await controller.commands.run("runs.resume", "run-2")
@@ -390,7 +348,7 @@ describe("runs.open / resume / signal / steer — the run's acts", () => {
       runs: [{ runId: "run-2", flowId: "review-pr", status: "completed" }],
       refusals: { Resume: "Terminal: the run is completed" }
     })
-    const controller = createAppController(store, unavailableRepositories, silentAgent(), double.services)
+    const controller = createAppController(store, unavailableRepositories, silentAgent, double.services)
     await signIn(store)
     const resumed = await controller.commands.run("runs.resume", "run-2")
     expect(resumed.status).toBe("failed")
@@ -400,7 +358,7 @@ describe("runs.open / resume / signal / steer — the run's acts", () => {
   test("runs.signal parses the JSON payload; invalid JSON refuses without a call", async () => {
     const store = await webStore()
     const double = relay({ runs: [{ runId: "run-3", flowId: "deploy", status: "parked", waitingReason: "event" }] })
-    const controller = createAppController(store, unavailableRepositories, silentAgent(), double.services)
+    const controller = createAppController(store, unavailableRepositories, silentAgent, double.services)
     await signIn(store)
 
     const sent = await controller.commands.run("runs.signal", `run-3 deploy-done {"ok":true}`)
@@ -416,7 +374,7 @@ describe("runs.open / resume / signal / steer — the run's acts", () => {
   test("the steer family sends the steer envelope; the card notes the queued steer", async () => {
     const store = await webStore()
     const double = relay({ runs: [{ runId: "run-4", flowId: "review-pr", status: "running" }] })
-    const controller = createAppController(store, unavailableRepositories, silentAgent(), double.services)
+    const controller = createAppController(store, unavailableRepositories, silentAgent, double.services)
     await signIn(store)
     await controller.commands.run("runs.open", "run-4")
 
@@ -438,7 +396,7 @@ describe("runs.rerun — the same flow, the same input, or the honest refusal", 
   test("a run launched from here reruns with its recorded input as a NEW run", async () => {
     const store = await webStore()
     const double = relay({ runs: [] })
-    const controller = createAppController(store, unavailableRepositories, silentAgent(), double.services)
+    const controller = createAppController(store, unavailableRepositories, silentAgent, double.services)
     await signIn(store)
 
     await controller.commands.run("flow.run", "review-pr")
@@ -470,7 +428,7 @@ describe("runs.rerun — the same flow, the same input, or the honest refusal", 
   test("a run whose input was never recorded refuses instead of guessing", async () => {
     const store = await webStore()
     const double = relay({ runs: [{ runId: "run-5", flowId: "deploy", status: "completed" }] })
-    const controller = createAppController(store, unavailableRepositories, silentAgent(), double.services)
+    const controller = createAppController(store, unavailableRepositories, silentAgent, double.services)
     await signIn(store)
     // Opened from the inbox: the client never saw this run's launch input.
     await controller.commands.run("runs.open", "run-5")
@@ -494,7 +452,7 @@ describe("the run card's facets — transcript, follow, and the verbose events t
       runs: [{ runId: "run-6", flowId: "deploy", status: "running" }],
       transcriptLines: lines
     })
-    const controller = createAppController(store, unavailableRepositories, silentAgent(), double.services)
+    const controller = createAppController(store, unavailableRepositories, silentAgent, double.services)
     await signIn(store)
     await controller.commands.run("runs.open", "run-6")
 
@@ -531,7 +489,7 @@ describe("the run card's facets — transcript, follow, and the verbose events t
       runs: [{ runId: "run-7", flowId: "deploy", status: "running" }],
       events: [{ kind: "control.run.accepted", payload: {}, sequence: 1, occurredAt: 100 }]
     })
-    const controller = createAppController(store, unavailableRepositories, silentAgent(), double.services)
+    const controller = createAppController(store, unavailableRepositories, silentAgent, double.services)
     await signIn(store)
     await controller.commands.run("runs.open", "run-7")
 
@@ -550,7 +508,7 @@ describe("the run card's facets — transcript, follow, and the verbose events t
 describe("the run trace's reader gestures and the pump's tail (spec 06 §5, §6)", () => {
   test("an incomplete agent request renders the view form with the known run prefilled", async () => {
     const store = await webStore()
-    const controller = createAppController(store, unavailableRepositories, silentAgent(), relay().services)
+    const controller = createAppController(store, unavailableRepositories, silentAgent, relay().services)
     await signIn(store)
     const result = await controller.commands.runForAgent("runs.trace.view", "run-8")
     expect(result).toMatchObject({ status: "form", flow: "runs.trace.view", fields: ["view"] })
@@ -571,7 +529,7 @@ describe("the run trace's reader gestures and the pump's tail (spec 06 §5, §6)
       runs: [{ runId: "run-8", flowId: "deploy", status: "running" }],
       events: journal
     })
-    const controller = createAppController(store, unavailableRepositories, silentAgent(), double.services)
+    const controller = createAppController(store, unavailableRepositories, silentAgent, double.services)
     await signIn(store)
     await controller.commands.run("runs.open", "run-8")
     let card = store.collections.cards.get("flow-run-run-8")
@@ -641,7 +599,7 @@ describe("the run trace's reader gestures and the pump's tail (spec 06 §5, §6)
   test("both gestures need the run's card first", async () => {
     const store = await webStore()
     const double = relay({ runs: [{ runId: "run-9", flowId: "deploy", status: "running" }] })
-    const controller = createAppController(store, unavailableRepositories, silentAgent(), double.services)
+    const controller = createAppController(store, unavailableRepositories, silentAgent, double.services)
     await signIn(store)
     expect(said(await controller.commands.run("runs.trace.filter", "run-9 failed"))).toContain("runs.open run-9")
     expect(said(await controller.commands.run("runs.trace.select", "run-9 frame-1"))).toContain("runs.open run-9")
@@ -659,7 +617,7 @@ describe("flow.run.stop-all — every live run, cancelled", () => {
         { runId: "run-b", flowId: "review-pr", status: "running" }
       ]
     })
-    const controller = createAppController(store, unavailableRepositories, silentAgent(), double.services)
+    const controller = createAppController(store, unavailableRepositories, silentAgent, double.services)
     await signIn(store)
     await controller.commands.run("runs.open", "run-a")
     await controller.commands.run("runs.open", "run-b")
@@ -673,7 +631,7 @@ describe("flow.run.stop-all — every live run, cancelled", () => {
   test("with nothing live there is nothing to stop", async () => {
     const store = await webStore()
     const double = relay()
-    const controller = createAppController(store, unavailableRepositories, silentAgent(), double.services)
+    const controller = createAppController(store, unavailableRepositories, silentAgent, double.services)
     await signIn(store)
     const stopped = await controller.commands.run("flow.run.stop-all")
     expect(said(stopped)).toContain("No runs are live")
@@ -687,7 +645,7 @@ describe("the approvals inbox — list, open, and the row decision", () => {
     const double = relay({
       approvals: [approvalRow("run-a", "req-1", "Run the deploy script?"), approvalRow("run-b", "req-2", "Push the branch?")]
     })
-    const controller = createAppController(store, unavailableRepositories, silentAgent(), double.services)
+    const controller = createAppController(store, unavailableRepositories, silentAgent, double.services)
     await signIn(store)
 
     const listed = await controller.commands.run("approvals.list")
@@ -704,7 +662,7 @@ describe("the approvals inbox — list, open, and the row decision", () => {
   test("a row decision submits the gateway's own envelope unchanged and freezes the row", async () => {
     const store = await webStore()
     const double = relay({ approvals: [approvalRow("run-a", "req-1", "Run the deploy script?")] })
-    const controller = createAppController(store, unavailableRepositories, silentAgent(), double.services)
+    const controller = createAppController(store, unavailableRepositories, silentAgent, double.services)
     await signIn(store)
     await controller.commands.run("approvals.list")
 
@@ -727,7 +685,7 @@ describe("the approvals inbox — list, open, and the row decision", () => {
       approvals: [approvalRow("run-a", "req-1", "Run the deploy script?")],
       refusals: { "Approval.Submit": "Stale: the gate was already decided" }
     })
-    const controller = createAppController(store, unavailableRepositories, silentAgent(), double.services)
+    const controller = createAppController(store, unavailableRepositories, silentAgent, double.services)
     await signIn(store)
     await controller.commands.run("approvals.list")
     await controller.commands.run("approval.deny", `approvals-inbox-${REPO}:req-1`)
@@ -740,7 +698,7 @@ describe("the approvals inbox — list, open, and the row decision", () => {
   test("approvals.open materializes a run's pending gates as ordinary approval cards", async () => {
     const store = await webStore()
     const double = relay({ approvals: [approvalRow("run-a", "req-1", "Run the deploy script?")] })
-    const controller = createAppController(store, unavailableRepositories, silentAgent(), double.services)
+    const controller = createAppController(store, unavailableRepositories, silentAgent, double.services)
     await signIn(store)
 
     const opened = await controller.commands.run("approvals.open", "run-a")
@@ -756,12 +714,11 @@ describe("the approvals inbox — list, open, and the row decision", () => {
   })
 })
 
-
 describe("typed coding launch and plan inspection", () => {
   test("the existing actor-tagged selection command reads prepared native plan evidence and respects the cursor", async () => {
     const store = await webStore()
     const double = relay({ runs: [{ runId: "run-1", flowId: "coding", status: "running" }] })
-    const controller = createAppController(store, unavailableRepositories, silentAgent(), double.services)
+    const controller = createAppController(store, unavailableRepositories, silentAgent, double.services)
     await signIn(store)
     await controller.commands.run("runs.open", `run-1 ${REPO}`)
     const original = store.collections.cards.get("flow-run-run-1") as Extract<Card, { kind: "run-trace" }>
@@ -779,7 +736,7 @@ describe("typed coding launch and plan inspection", () => {
     const storage = memoryStorage()
     const store = await createAppStore({ kind: "localStorage", storage })
     const double = relay({ runs: [{ runId: "run-1", flowId: "coding", status: "running" }] })
-    const controller = createAppController(store, unavailableRepositories, silentAgent(), double.services)
+    const controller = createAppController(store, unavailableRepositories, silentAgent, double.services)
     await signIn(store)
     const launched = await controller.commands.run("flow.run", `coding ${REPO} ${JSON.stringify({ plan: CODING_PLAN })}`)
     expect(launched.status).toBe("executed")
@@ -800,7 +757,7 @@ describe("typed coding launch and plan inspection", () => {
     const restored = reloaded.collections.cards.get("flow-run-run-1") as typeof card
     expect(restored.payload.codingChangeId).toBe("memory")
     expect(restored.payload.input).toEqual({ plan: CODING_PLAN })
-    const second = createAppController(reloaded, unavailableRepositories, silentAgent(), double.services)
+    const second = createAppController(reloaded, unavailableRepositories, silentAgent, double.services)
     await second.commands.run("runs.coding.select", "run-1 memory")
     expect((reloaded.collections.cards.get(card.id) as typeof card).payload.codingChangeId).toBeUndefined()
     second.dispose()
@@ -810,7 +767,7 @@ describe("typed coding launch and plan inspection", () => {
   test("JSON input uses the existing schema form and malformed JSON launches nothing", async () => {
     const store = await webStore()
     const double = relay()
-    const controller = createAppController(store, unavailableRepositories, silentAgent(), double.services)
+    const controller = createAppController(store, unavailableRepositories, silentAgent, double.services)
     await signIn(store)
     const invalid = await controller.commands.run("flow.run", `coding ${REPO} {invalid`)
     expect(invalid.status).toBe("form")
@@ -848,7 +805,7 @@ describe("workspace-bound run cards", () => {
     const storage = memoryStorage()
     let store = await createAppStore({ kind: "localStorage", storage })
     const double = relay({ runs: [{ runId: "run-1", flowId: "coding/request", status: "completed" }] })
-    let controller = createAppController(store, unavailableRepositories, silentAgent(), double.services)
+    let controller = createAppController(store, unavailableRepositories, silentAgent, double.services)
     await signIn(store, [REPO, "other/repo"])
     await selectWorkspace(store)
     expect((await controller.commands.run("flow.run", "coding/request")).status).toBe("executed")
@@ -873,7 +830,7 @@ describe("workspace-bound run cards", () => {
     await settle()
     await controller.dispose()
     store = await createAppStore({ kind: "localStorage", storage })
-    controller = createAppController(store, unavailableRepositories, silentAgent(), double.services)
+    controller = createAppController(store, unavailableRepositories, silentAgent, double.services)
     expect(store.collections.cards.get(catalog.id)).toMatchObject({ payload: { workspaceId, gatewayBindingVersion: 1 } })
     const afterReload = double.calls.length
     expect((await controller.commands.run("flow.run", `sourceCard=${catalog.id} review-pr`)).status).toBe("executed")
@@ -893,7 +850,7 @@ describe("workspace-bound run cards", () => {
       if (url.endsWith("/api/workflow/provision")) store.dispatch({ type: "repo.selected", actor: "user", id: REPO })
       return fetch(input, init)
     } }
-    let controller = createAppController(store, unavailableRepositories, silentAgent(), services)
+    let controller = createAppController(store, unavailableRepositories, silentAgent, services)
     await signIn(store)
     await selectWorkspace(store)
     expect((await controller.commands.run("runs.list", REPO)).status).toBe("executed")
@@ -906,7 +863,7 @@ describe("workspace-bound run cards", () => {
     await settle(10)
     await controller.dispose()
     store = await createAppStore({ kind: "localStorage", storage })
-    controller = createAppController(store, unavailableRepositories, silentAgent(), services)
+    controller = createAppController(store, unavailableRepositories, silentAgent, services)
     await signIn(store)
     await selectWorkspace(store, "ffffffff-ffff-ffff-ffff-ffffffffffff")
     await controller.commands.run("runs.list", `completed sourceCard=${listId} ${REPO}`)
@@ -924,7 +881,7 @@ describe("workspace-bound run cards", () => {
     const storage = memoryStorage()
     let store = await createAppStore({ kind: "localStorage", storage })
     const double = relay({ runs: [{ runId: "run-1", flowId: "review-pr", status: "completed" }], approvals: [approvalRow("run-1", "old-gate", "Approve")] })
-    let controller = createAppController(store, unavailableRepositories, silentAgent(), double.services)
+    let controller = createAppController(store, unavailableRepositories, silentAgent, double.services)
     await signIn(store)
     // Actual pre-binding rows: persisted before the new writer/version existed.
     const approval = approvalRow("run-1", "old-gate", "Approve")
@@ -938,7 +895,7 @@ describe("workspace-bound run cards", () => {
     await settle(10)
     await controller.dispose()
     store = await createAppStore({ kind: "localStorage", storage })
-    controller = createAppController(store, unavailableRepositories, silentAgent(), double.services)
+    controller = createAppController(store, unavailableRepositories, silentAgent, double.services)
     await signIn(store)
     await selectWorkspace(store, "ffffffff-ffff-ffff-ffff-ffffffffffff")
     expect(gatewayRunContextFor(store, "run-1")).toEqual({ repo: REPO, workspaceId })
@@ -967,7 +924,7 @@ describe("workspace-bound run cards", () => {
   test("legacy list rows stay unbound and conflicting recorded workspace identities refuse", async () => {
     const store = await webStore()
     const double = relay({ runs: [{ runId: "legacy", flowId: "review-pr", status: "completed" }] })
-    const controller = createAppController(store, unavailableRepositories, silentAgent(), double.services)
+    const controller = createAppController(store, unavailableRepositories, silentAgent, double.services)
     await signIn(store)
     await controller.commands.run("runs.list", REPO)
     await selectWorkspace(store)
@@ -991,7 +948,7 @@ describe("workspace-bound run cards", () => {
       const store = await webStore()
       const double = relay({ runs: [{ runId: "run-1", flowId: "review-pr", status: "completed" }] })
       const fetch = double.services.fetchImpl!
-      const controller = createAppController(store, unavailableRepositories, silentAgent(), {
+      const controller = createAppController(store, unavailableRepositories, silentAgent, {
         ...double.services,
         fetchImpl: async (input, init) => {
           const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url
@@ -1039,7 +996,7 @@ describe("workspace-bound run cards", () => {
       const body = typeof init?.body === "string" ? JSON.parse(init.body) : {}
       return (body.workspaceId === workspaceB ? b : a).services.fetchImpl!(input, init)
     } }
-    let controller = createAppController(store, unavailableRepositories, silentAgent(), services)
+    let controller = createAppController(store, unavailableRepositories, silentAgent, services)
     // The slash grammar recognizes a trailing repository beside text only
     // when it is loaded. This makes the mismatch reach the gateway guard.
     await signIn(store, [REPO, "other/repo"])
@@ -1095,7 +1052,7 @@ describe("workspace-bound run cards", () => {
     await settle(10)
     await controller.dispose()
     store = await createAppStore({ kind: "localStorage", storage })
-    controller = createAppController(store, unavailableRepositories, silentAgent(), services)
+    controller = createAppController(store, unavailableRepositories, silentAgent, services)
     await signIn(store)
     await selectWorkspace(store, workspaceB)
     expect(runCardInScope(store, scopeA)).toMatchObject({ id: cardA.id, payload: { filter: "failed", traceView: "timeline" } })
@@ -1151,7 +1108,7 @@ describe("workspace-bound run cards", () => {
   test("historical raw card addresses survive while new explicit legacy cards never inherit a workspace", async () => {
     const store = await webStore()
     const double = relay({ runs: [{ runId: "run-1", flowId: "review-pr", status: "completed" }, { runId: "child-1", flowId: "review-pr", status: "completed" }] })
-    const controller = createAppController(store, unavailableRepositories, silentAgent(), double.services)
+    const controller = createAppController(store, unavailableRepositories, silentAgent, double.services)
     await signIn(store)
     const old: Extract<Card, { kind: "run-trace" }> = {
       id: "flow-run-run-1", kind: "run-trace", title: "Old", status: "active", createdAt: 1, ordinal: 1,

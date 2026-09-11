@@ -1,5 +1,4 @@
 import { GlobalRegistrator } from "@happy-dom/global-registrator"
-import type { StorageApi } from "@tanstack/db"
 import { afterAll, afterEach, describe, expect, test } from "bun:test"
 import { flushSync } from "react-dom"
 import { createRoot } from "react-dom/client"
@@ -7,11 +6,12 @@ import type { AppBootstrap } from "@smthrs/rpc/AppBootstrap"
 import { cloudCapabilities } from "@smthrs/rpc/HostCapabilities"
 import App from "../App"
 import { ControllerTestProvider } from "../ControllerContext"
-import type { NativeRepositories } from "../native/NativeBridge"
-import type { AgentPort } from "../runtime/AgentPort"
-import { createAppController } from "./AppController"
+import { scopedControllers } from "./ControllerTestScope"
 import type { AppController as AppControllerType } from "./AppController"
 import { createAppStore } from "./AppStore"
+import { backend, json, memoryStorage, settled, silentAgent, unavailableRepositories } from "./TestFixtures"
+
+const createAppController = scopedControllers()
 
 /*
  * One page: the chat. Auth is a conversation state, never a view — these pin
@@ -53,46 +53,6 @@ const mount = (controller: AppControllerType): { host: HTMLElement; markup: () =
   })
   return { host, markup: () => host.innerHTML }
 }
-
-const memoryStorage = (): StorageApi => {
-  const data = new Map<string, string>()
-  return {
-    getItem: (key) => data.get(key) ?? null,
-    setItem: (key, value) => void data.set(key, value),
-    removeItem: (key) => void data.delete(key)
-  }
-}
-
-const unavailableRepositories: NativeRepositories = {
-  available: false,
-  pickLocalRepository: async () => ({
-    status: "error",
-    code: "native-required",
-    message: "Local repositories can only be connected from the Smithers native app."
-  })
-}
-
-const silentAgent: AgentPort = {
-  available: true,
-  startTurn: async () => ({ status: "started" }),
-  cancelTurn: async () => {},
-  subscribe: () => () => {}
-}
-
-const json = (status: number, body: unknown): Response =>
-  new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } })
-
-const backend = (
-  routes: Record<string, Response>
-): { fetchImpl: (input: unknown) => Promise<Response> } => ({
-  fetchImpl: async (input) => {
-    const url = typeof input === "string" ? input : String(input)
-    const path = new URL(url, "https://app.test").pathname
-    return (routes[path] ?? json(404, { status: "error" })).clone()
-  }
-})
-
-const settled = () => new Promise((resolve) => setTimeout(resolve, 0))
 
 /** What the Worker emits (docs/web-mode/PLAN.md §1): host `cloud`, built from the same table the server calls. */
 const WEB: AppBootstrap = {

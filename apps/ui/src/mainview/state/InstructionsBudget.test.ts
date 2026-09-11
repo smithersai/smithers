@@ -2,12 +2,14 @@ import type { StorageApi } from "@tanstack/db"
 import { describe, expect, test } from "bun:test"
 import type { NativeRepositories } from "../native/NativeBridge"
 import type { AgentPort } from "../runtime/AgentPort"
-import { createAppController } from "./AppController"
+import { scopedControllers } from "./ControllerTestScope"
 import { createAppStore } from "./AppStore"
 import { composeAgentInstructions } from "@smthrs/rpc/AgentContext"
 import type { AgentRuntimeContext } from "@smthrs/rpc/AgentContext"
 import { CHAT_INSTRUCTIONS_CAP_BYTES, CODE_INTEL_LINE, INSTRUCTIONS_BUDGET_BYTES, INSTRUCTIONS_HEADROOM_BYTES, instructionStageOf, smithersInstructions } from "./Instructions"
 import { WORLD_BODY_BUDGET, WORLD_BODY_PER_DOCUMENT } from "./WorldContext"
+
+const createAppController = scopedControllers()
 
 /*
  * 2026-09-02: a turn failed with "Smithers Cloud chat failed (HTTP 400):
