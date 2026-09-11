@@ -1,19 +1,34 @@
 /*
- * The issues cards: the list ("issue-list") and the detail ("issue"). Every
- * act binds a command through onRunCommand — the one delegated dispatch
- * CardView threads from App.tsx (parity.test.ts allowlists it). List rows open
- * the detail (issues.view); the detail carries the one state toggle
+ * The issues cards: the list ("issue-list") and the detail ("issue"), laid out
+ * like GitHub's Issues (ported from multi src/issues: IssuesListView's
+ * IssueRow and GithubIssueDetailView). Every act binds a command through
+ * onRunCommand — the one delegated dispatch CardView threads from App.tsx
+ * (parity.test.ts allowlists it). List rows open the detail (issues.view);
+ * the detail carries the comment box (issues.comment), the one state toggle
  * (issues.close / issues.reopen) and, on an unlinked issue, the door onto
  * issues.link-linear. Every interactive element carries data-flow with its
  * registered command name.
  */
-import { Badge, Button, Markdown } from "@smthrs/ui"
-import { MessageSquare } from "lucide-react"
+import { Button, Markdown } from "@smthrs/ui"
+import { useState } from "react"
 import type { Card } from "../state/AppState"
 import { dateLabel } from "../Timestamps"
 import { trustedHttpsUrl } from "../state/seams/SeamContext"
 import type { CardFamily, RunCommand } from "./CardFamily"
 import { settledPill } from "./CardFamily"
+import {
+  AvatarStack,
+  CommentBox,
+  issueDisplay,
+  LabelPill,
+  people,
+  RelativeTime,
+  repoLabel,
+  SideSection,
+  StateIcon,
+  StatePill
+} from "./GithubParts"
+import { Octicon } from "./Octicon"
 
 export interface IssueCardActions {
   readonly onRunCommand: RunCommand
@@ -22,142 +37,249 @@ export interface IssueCardActions {
 /** Only an https linear.app URL off the DTO is followed; anything else renders the identifier as text. */
 export const trustedLinearUrl = (value: string): string | null => trustedHttpsUrl(value, "linear.app")
 
-const stateBadge = (state: "open" | "closed") => <Badge variant={state === "open" ? "success" : "muted"}>{state}</Badge>
+type IssueRow = Extract<Card, { kind: "issue-list" }>["payload"]["issues"][number] & IssueExtras
+type IssuePayload = Extract<Card, { kind: "issue" }>["payload"] & IssueExtras
+
+/** Avatar-bearing people as a read may carry them ({ login, avatar }). */
+type PersonRow = { readonly login: string; readonly avatar?: string | undefined }
+
+/**
+ * GitHub facts the cards render when a read carries them. They are not in the
+ * rpc card schema today (a zod parse strips them), so live cards fall back to
+ * what the schema has; the practice bundle and any future read can supply them.
+ */
+interface IssueExtras {
+  readonly createdAt?: string | null
+  readonly assignees?: ReadonlyArray<PersonRow>
+  /** Label name to hex color, with or without the #. */
+  readonly labelColors?: Readonly<Record<string, string>>
+  readonly authorAvatar?: string
+}
+
+const IssueListRow = ({ repo, issue, onRunCommand }: { readonly repo: string; readonly issue: IssueRow } & IssueCardActions) => {
+  const extra = issue
+  const labels = issue.labels ?? []
+  const assignees = people(issue.assignees)
+  return (
+    <li
+      className="world-card-row ghc-row"
+      data-issue={issue.number}
+      data-good-first={labels.includes("good first issue") ? "true" : undefined}
+    >
+      <button
+        type="button"
+        className="ghc-row-btn"
+        data-flow="issues.view"
+        onClick={() => onRunCommand("issues.view", `${issue.number} ${repo}`)}
+      >
+        <StateIcon display={issueDisplay(issue.state)} />
+        <span className="ghc-row-main">
+          <span className="ghc-row-title">
+            <span className="ghc-row-title-text">{issue.title}</span>
+            {labels.map((label) => <LabelPill key={label} name={label} color={extra.labelColors?.[label]} />)}
+          </span>
+          <span className="ghc-row-meta">
+            #{issue.number}
+            {extra.createdAt != null ?
+              <>
+                {" · "}
+                {issue.author !== null ? <span className="ghc-author-muted">{issue.author} </span> : null}
+                opened <RelativeTime iso={extra.createdAt} />
+              </> :
+              <>
+                {issue.author !== null ? <> · opened by <span className="ghc-author-muted">{issue.author}</span></> : null}
+                {issue.updatedAt !== null ? <> · updated <RelativeTime iso={issue.updatedAt} /></> : null}
+              </>}
+            {issue.source === "github" ? " · GitHub" : null}
+          </span>
+        </span>
+        <span className="ghc-row-side">
+          {assignees.length > 0 ? <AvatarStack people={assignees} /> : null}
+          {issue.comments > 0 ?
+            (
+              <span className="ghc-row-count" aria-label={`${issue.comments} comments`}>
+                <Octicon name="comment" /> {issue.comments}
+              </span>
+            ) :
+            null}
+        </span>
+      </button>
+    </li>
+  )
+}
 
 export const IssueListCardBody = ({
   card,
   onRunCommand
-}: { readonly card: Extract<Card, { kind: "issue-list" }> } & IssueCardActions) => (
-  <ul className="world-card-list">
-    {card.payload.github !== undefined ?
-      (
-        <li className="world-card-path">
-          {card.payload.github.refusal !== null
-            ? `GitHub: ${card.payload.github.refusal}`
-            : `GitHub · ${card.payload.github.source}${card.payload.github.syncedAt !== null ? ` · synced ${dateLabel(card.payload.github.syncedAt)}` : ""}${card.payload.github.stale ? " · stale" : ""}${card.payload.github.syncError !== null ? ` · sync error: ${card.payload.github.syncError}` : ""}`}
-        </li>
-      ) :
-      null}
-    {card.payload.issues.length === 0 ?
-      (
-        <li className="world-card-empty">
-          {card.body ?? (card.payload.filter === "all"
-            ? `No issues in ${card.payload.repo}.`
-            : `No ${card.payload.filter} issues in ${card.payload.repo}.`)}
-        </li>
-      ) :
-      (
-        card.payload.issues.map((issue) => (
-          <li key={issue.number} className="world-card-row">
-            <Button
-              variant="ghost"
-              size="sm"
-              data-flow="issues.view"
-              onClick={() => onRunCommand("issues.view", `${issue.number} ${card.payload.repo}`)}
-            >
-              <span className="world-card-title">
-                #{issue.number} {issue.title}
-              </span>
-            </Button>
-            {stateBadge(issue.state)}
-            {issue.source === "github" ? <span className="world-card-path">GitHub</span> : null}
-            <span className="world-card-path">
-              <MessageSquare size={12} aria-hidden="true" /> {issue.comments}
+}: { readonly card: Extract<Card, { kind: "issue-list" }> } & IssueCardActions) => {
+  const { repo, filter, issues, github } = card.payload
+  const open = issues.filter((issue) => issue.state === "open").length
+  return (
+    <div className="ghc ghc-box" data-testid="issue-list">
+      <div className="ghc-toolbar">
+        {filter !== "closed" ?
+          <span className="ghc-count" data-active={filter === "open" ? "true" : undefined}><Octicon name="issue-opened" /> {open} Open</span> :
+          null}
+        {filter !== "open" ?
+          <span className="ghc-count" data-active={filter === "closed" ? "true" : undefined}><Octicon name="check" /> {issues.length - open} Closed</span> :
+          null}
+        <span className="ghc-toolbar-repo">{repoLabel(repo)}</span>
+      </div>
+      {github !== undefined ?
+        (
+          <p className="ghc-note">
+            {github.refusal !== null
+              ? `GitHub: ${github.refusal}`
+              : `GitHub · ${github.source}${github.syncedAt !== null ? ` · synced ${dateLabel(github.syncedAt)}` : ""}${github.stale ? " · stale" : ""}${github.syncError !== null ? ` · sync error: ${github.syncError}` : ""}`}
+          </p>
+        ) :
+        null}
+      {issues.length === 0 ?
+        (
+          <p className="world-card-empty ghc-empty">
+            <Octicon name="issue-opened" size={24} />
+            <span>
+              {card.body ?? (filter === "all" ? `No issues in ${repoLabel(repo)}.` : `No ${filter} issues in ${repoLabel(repo)}.`)}
             </span>
-            {issue.updatedAt !== null ? <span className="world-card-path">{dateLabel(issue.updatedAt)}</span> : null}
-          </li>
-        ))
-      )}
-  </ul>
-)
+          </p>
+        ) :
+        (
+          <ul className="ghc-rows">
+            {issues.map((issue) => <IssueListRow key={issue.number} repo={repo} issue={issue} onRunCommand={onRunCommand} />)}
+          </ul>
+        )}
+    </div>
+  )
+}
+
+/** The comment composer: its submit rides issues.comment with the number, the text, and the repository. */
+const IssueCommentForm = ({ repo, number, onRunCommand }: { readonly repo: string; readonly number: number } & IssueCardActions) => {
+  const [text, setText] = useState("")
+  const trimmed = text.trim()
+  return (
+    <form
+      className="ghc-composer"
+      aria-label={`Comment on issue #${number}`}
+      onSubmit={(event) => {
+        event.preventDefault()
+        if (trimmed === "") return
+        onRunCommand("issues.comment", `${number} ${trimmed} ${repo}`)
+        setText("")
+      }}
+    >
+      <label className="ghc-composer-label" htmlFor={`ghc-comment-${repo}-${number}`}>Add a comment</label>
+      <textarea
+        id={`ghc-comment-${repo}-${number}`}
+        className="ghc-composer-input"
+        rows={3}
+        placeholder="Leave a comment. Markdown is supported."
+        value={text}
+        onChange={(event) => setText(event.target.value)}
+        onKeyDown={(event) => {
+          if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) event.currentTarget.form?.requestSubmit()
+        }}
+      />
+      <div className="ghc-composer-actions">
+        <Button type="submit" size="sm" data-flow="issues.comment" disabled={trimmed === ""}>Comment</Button>
+      </div>
+    </form>
+  )
+}
 
 export const IssueCardBody = ({
   card,
   onRunCommand
 }: { readonly card: Extract<Card, { kind: "issue" }> } & IssueCardActions) => {
   const { repo, number, title, state, author, issueBody, labels, comments, linear } = card.payload
+  const extra: IssuePayload = card.payload
   const toggleCommand = state === "open" ? "issues.close" : "issues.reopen"
   /* The DTO's URL is vetted like the install URL (review finding 10): https on linear.app, or no link at all. */
   const linearHref = linear != null ? trustedLinearUrl(linear.url) : null
+  const assignees = people(extra.assignees)
   return (
-    <div className="world-card-list">
-      <div className="world-card-row">
-        <span className="world-card-title">
-          #{number} {title}
-        </span>
-        {stateBadge(state)}
-      </div>
-      <p className="world-card-path">
-        {repo}
-        {author !== null ? ` · opened by ${author}` : ""}
-      </p>
-      {/*
-        * Lane sync (ADR 0005): the Linear link the DTO carries, or the act
-        * that would set it. The act is a door ONTO the flow's form (THE FORM
-        * LAW, superseding the ADR's composer prefill): it carries the issue
-        * number it knows and issues.link-linear asks for the identifier.
-        */}
-      {linear != null ?
-        (
-          <p className="world-card-path">
-            Linear{" "}
-            {linearHref !== null ?
-              <a href={linearHref} target="_blank" rel="noreferrer">{linear.identifier}</a> :
-              <span>{linear.identifier}</span>}
-          </p>
-        ) :
-        (
-          <div className="world-card-row">
-            <Button
-              variant="ghost"
-              size="sm"
-              data-flow="issues.link-linear"
-              onClick={() => onRunCommand("issues.link-linear", String(number))}
-            >
-              Link to Linear…
-            </Button>
+    <article className="ghc ghc-detail" data-issue={number}>
+      <header className="ghc-detail-head">
+        <h3 className="ghc-detail-title">
+          {title} <span className="ghc-detail-number">#{number}</span>
+        </h3>
+        <div className="ghc-detail-sub">
+          <StatePill display={issueDisplay(state)} />
+          <span>
+            <strong className="ghc-author">{author ?? "Someone"}</strong> opened this issue
+            {extra.createdAt != null ? <> <RelativeTime iso={extra.createdAt} /></> : null}
+            {` · ${comments.length} ${comments.length === 1 ? "comment" : "comments"}`}
+          </span>
+        </div>
+      </header>
+      <div className="ghc-detail-grid">
+        <div className="ghc-detail-main">
+          <CommentBox author={author} avatarUrl={extra.authorAvatar} createdAt={extra.createdAt} verb="opened this issue">
+            {issueBody === "" ?
+              <p className="world-card-empty ghc-muted">No description provided.</p> :
+              <Markdown className="smithers-card-markdown" content={issueBody} />}
+          </CommentBox>
+          {comments.map((comment, index) => (
+            <CommentBox key={`comment-${index}`} author={comment.author} avatarUrl={(comment as { readonly authorAvatar?: string }).authorAvatar} createdAt={comment.createdAt} verb="commented">
+              <Markdown className="smithers-card-markdown" content={comment.commentBody} />
+            </CommentBox>
+          ))}
+          <div className="ghc-detail-foot">
+            <IssueCommentForm repo={repo} number={number} onRunCommand={onRunCommand} />
+            <div className="ghc-actions">
+              <Button
+                variant="outline"
+                size="sm"
+                data-flow={toggleCommand}
+                onClick={() => onRunCommand(toggleCommand, `${number} ${repo}`)}
+              >
+                <span className={state === "open" ? "ghc-tone-done" : "ghc-tone-open"}>
+                  <Octicon name={state === "open" ? "issue-closed" : "issue-opened"} />
+                </span>
+                {state === "open" ? "Close issue" : "Reopen issue"}
+              </Button>
+            </div>
           </div>
-        )}
-      {labels.length > 0 ?
-        (
-          <div className="world-card-row">
-            {labels.map((label) => (
-              <Badge key={label} variant="outline">
-                {label}
-              </Badge>
-            ))}
-          </div>
-        ) :
-        null}
-      {issueBody === "" ?
-        <p className="world-card-empty">No description.</p> :
-        <Markdown className="smithers-card-markdown" content={issueBody} />}
-      {comments.length > 0 ?
-        (
-          <ul className="world-card-list">
-            {comments.map((comment, index) => (
-              <li key={`comment-${index}`}>
-                <p className="world-card-path">
-                  <MessageSquare size={12} aria-hidden="true" /> {comment.author ?? "unknown"}
-                  {comment.createdAt !== null ? ` · ${dateLabel(comment.createdAt)}` : ""}
-                </p>
-                <Markdown className="smithers-card-markdown" content={comment.commentBody} />
-              </li>
-            ))}
-          </ul>
-        ) :
-        null}
-      <div className="world-card-row">
-        <Button
-          variant="outline"
-          size="sm"
-          data-flow={toggleCommand}
-          onClick={() => onRunCommand(toggleCommand, `${number} ${repo}`)}
-        >
-          {state === "open" ? "Close issue" : "Reopen issue"}
-        </Button>
+        </div>
+        <aside className="ghc-side" aria-label={`Issue #${number} details`}>
+          <SideSection title="Assignees" empty="No one assigned">
+            {assignees.length > 0 ? <AvatarStack people={assignees} /> : null}
+          </SideSection>
+          <SideSection title="Labels">
+            {labels.length > 0 ? labels.map((label) => <LabelPill key={label} name={label} color={extra.labelColors?.[label]} />) : null}
+          </SideSection>
+          {/*
+            * Lane sync (ADR 0005): the Linear link the DTO carries, or the act
+            * that would set it. The act is a door ONTO the flow's form (THE FORM
+            * LAW, superseding the ADR's composer prefill): it carries the issue
+            * number it knows and issues.link-linear asks for the identifier.
+            */}
+          <SideSection title="Linear">
+            {linear != null ?
+              (
+                <span>
+                  <span className="ghc-visually-hidden">Linear </span>
+                  {linearHref !== null ?
+                    <a href={linearHref} target="_blank" rel="noreferrer">{linear.identifier}</a> :
+                    <span>{linear.identifier}</span>}
+                </span>
+              ) :
+              (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  data-flow="issues.link-linear"
+                  onClick={() => onRunCommand("issues.link-linear", String(number))}
+                >
+                  Link to Linear…
+                </Button>
+              )}
+          </SideSection>
+          <SideSection title="Repository">
+            <span className="ghc-mono">{repoLabel(repo)}</span>
+          </SideSection>
+        </aside>
       </div>
-    </div>
+    </article>
   )
 }
 

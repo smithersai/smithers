@@ -3,6 +3,7 @@
 @import "./styles/base.css";
 @import "./styles/chat.css";
 @import "./styles/cards.css";
+@import "./styles/github-cards.css";
 @import "./styles/surfaces.css";
 @import "./styles/chrome.css";
 @config "../../tailwind.config.js";
