@@ -416,13 +416,17 @@ export const layerMemory: Layer.Layer<FlowRuntime.FlowRuntime> = Layer.effect(Fl
  * The table goes UNDER the layers that file into it, because filing is a
  * build-time effect: a table merged beside an implementation is not the table
  * the interpreter reads.
+ *
+ * Pass `state` to build over a durable record a later build can reopen;
+ * without it each build gets a record of its own.
  */
 export const layerWired = <Implemented = never>(
-  registrations: Layer.Layer<Implemented, never, Crypto.Crypto | FlowRuntime.FlowRuntime | Action.Implementations>
+  registrations: Layer.Layer<Implemented, never, Crypto.Crypto | FlowRuntime.FlowRuntime | Action.Implementations>,
+  state?: MemoryState
 ): Layer.Layer<Implemented | FlowRuntime.FlowRuntime | Action.Implementations, never, Crypto.Crypto> =>
   registrations.pipe(
     Layer.provideMerge(Action.layerImplementations),
-    Layer.provideMerge(layerMemory)
+    Layer.provideMerge(state === undefined ? layerMemory : layerMemoryOver(state))
   )
 
 /** Re-exported for the suites that only need the deferred token helpers. */

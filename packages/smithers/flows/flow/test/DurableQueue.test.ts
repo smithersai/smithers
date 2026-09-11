@@ -6,28 +6,12 @@ import { Cause, Effect, Exit, Fiber, Layer, Logger, Option, Schedule, Schema } f
 import type * as Crypto from "effect/Crypto"
 import { TestClock } from "effect/testing"
 import { PersistedQueue } from "effect/unstable/persistence"
-import { withCrypto } from "./Crypto.ts"
+import { effectOnTestClock as effect, isComplete, pollUntil } from "./Harness.ts"
 import { layerMemory, makeInstance } from "./MemoryFlowRuntime.ts"
-
-const effect = (name: string, body: () => Effect.Effect<void, unknown, Crypto.Crypto>) =>
-  it.effect(name, () => withCrypto(body().pipe(Effect.provide(TestClock.layer()))))
 
 const PersistedQueueLayer = PersistedQueue.layer.pipe(
   Layer.provideMerge(PersistedQueue.layerStoreMemory)
 )
-
-const pollUntilComplete = <A, E, R>(
-  poll: Effect.Effect<Option.Option<Flow.Result<A, E>>, FlowRuntime.FlowExecutionNotFound, R>
-) =>
-  Effect.gen(function*() {
-    let result = yield* poll
-    for (let i = 0; i < 10 && (Option.isNone(result) || result.value._tag !== "Complete"); i++) {
-      yield* Effect.yieldNow
-      yield* TestClock.adjust("10 millis")
-      result = yield* poll
-    }
-    return result
-  })
 
 describe("DurableQueue", () => {
   const Queue = DurableQueue.make({
@@ -62,7 +46,7 @@ describe("DurableQueue", () => {
   effect("processes queued work through the supplied-key engine seam", () =>
     Effect.gen(function*() {
       const executionId = yield* Flow_.execute({ id: "success", value: 41 }, { discard: true })
-      const result = yield* pollUntilComplete(Flow_.poll(executionId))
+      const result = yield* pollUntil(Flow_.poll(executionId), isComplete, { turns: 10, advance: "10 millis" })
       expect(Option.isSome(result) && result.value._tag === "Complete" && Exit.isSuccess(result.value.exit)).toBe(true)
       if (Option.isSome(result) && result.value._tag === "Complete" && Exit.isSuccess(result.value.exit)) {
         expect(result.value.exit.value).toBe(42)
@@ -94,7 +78,7 @@ describe("DurableQueue", () => {
 
     return Effect.gen(function*() {
       const executionId = yield* Failure.execute({ id: "failure" }, { discard: true })
-      const result = yield* pollUntilComplete(Failure.poll(executionId))
+      const result = yield* pollUntil(Failure.poll(executionId), isComplete, { turns: 10, advance: "10 millis" })
       expect(Option.isSome(result) && result.value._tag === "Complete" && Exit.isFailure(result.value.exit)).toBe(true)
       if (Option.isSome(result) && result.value._tag === "Complete" && Exit.isFailure(result.value.exit)) {
         expect(result.value.exit.cause.reasons.find(Cause.isFailReason)?.error).toBe("boom")
@@ -139,7 +123,7 @@ describe("DurableQueue", () => {
 
     return Effect.gen(function*() {
       const executionId = yield* SchemaFlow.execute({ id: "schema", value: 21 }, { discard: true })
-      const result = yield* pollUntilComplete(SchemaFlow.poll(executionId))
+      const result = yield* pollUntil(SchemaFlow.poll(executionId), isComplete, { turns: 10, advance: "10 millis" })
       expect(
         Option.isSome(result) && result.value._tag === "Complete" && Exit.isSuccess(result.value.exit) &&
           result.value.exit.value
@@ -452,7 +436,7 @@ describe("DurableQueue", () => {
         const id = yield* Flow_.execute({ id: `write-${maxAttempts}`, value: 41 }, { discard: true })
         for (let turn = 0; turn < 50 && writes === 0; turn++) yield* Effect.yieldNow
         yield* TestClock.adjust(1500)
-        const result = yield* pollUntilComplete(Flow_.poll(id))
+        const result = yield* pollUntil(Flow_.poll(id), isComplete, { turns: 10, advance: "10 millis" })
         expect(handled).toBe(maxAttempts)
         expect(writes).toBe(maxAttempts)
         const errors = logs.filter((entry) => entry.level === "Error")

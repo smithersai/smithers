@@ -12,7 +12,8 @@ import { Action, DurableDeferred, Flow, FlowRuntime, Graph, Interpreter } from "
 import { Node } from "@smthrs/plan"
 import { Effect, Exit, Layer, Option, Schema } from "effect"
 import { withCrypto } from "./Crypto.ts"
-import { layerMemory, makeInstance } from "./MemoryFlowRuntime.ts"
+import { isComplete, pollUntil } from "./Harness.ts"
+import { layerMemory, layerWired, makeInstance } from "./MemoryFlowRuntime.ts"
 
 const Bump = Action.make("child/bump", {
   payload: { value: Schema.Number },
@@ -49,29 +50,9 @@ const node = (graph: Graph.Graph, id: string): Graph.GraphNode =>
 
 const wired = (
   registration: Layer.Layer<never, never, FlowRuntime.FlowRuntime | Action.Implementations>
-): Layer.Layer<
-  Layer.Success<typeof bumps> | FlowRuntime.FlowRuntime | Action.Implementations
-> =>
-  Layer.merge(bumps, registration).pipe(
-    Layer.provideMerge(Action.layerImplementations),
-    Layer.provideMerge(layerMemory)
-  )
-
-const pollUntil = <A, E, R>(
-  poll: Effect.Effect<Option.Option<Flow.Result<A, E>>, FlowRuntime.FlowExecutionNotFound, R>,
-  predicate: (result: Flow.Result<A, E>) => boolean
-) =>
-  Effect.gen(function*() {
-    let result = yield* poll
-    for (let index = 0; index < 200 && (Option.isNone(result) || !predicate(result.value)); index++) {
-      yield* Effect.yieldNow
-      result = yield* poll
-    }
-    return result
-  })
+) => layerWired(Layer.merge(bumps, registration))
 
 const isSuspended = (result: Flow.Result<unknown, unknown>) => result._tag === "Suspended"
-const isComplete = (result: Flow.Result<unknown, unknown>) => result._tag === "Complete"
 
 describe("Graph.build keeps a child boundary as a leaf", () => {
   it("records one node for the whole callee, with its tag, payload, and declared envelope", () => {
@@ -336,14 +317,14 @@ describe("the interpreter drives a child boundary as a real execution", () => {
         Effect.gen(function*() {
           const childId = yield* Interpreter.childExecutionId("child-waiting", "root.flow.map", Gated._tag, {})
           yield* Waiting.execute({}, { executionId: "child-waiting", discard: true })
-          const parked = yield* pollUntil(Waiting.poll("child-waiting"), isSuspended)
-          const childParked = yield* pollUntil(Gated.poll(childId), isSuspended)
+          const parked = yield* pollUntil(Waiting.poll("child-waiting"), isSuspended, { turns: 200 })
+          const childParked = yield* pollUntil(Gated.poll(childId), isSuspended, { turns: 200 })
 
           yield* DurableDeferred.succeed(Gate, {
             token: DurableDeferred.tokenFromExecutionId(Gate, { flow: Gated, executionId: childId }),
             value: 41
           })
-          const done = yield* pollUntil(Waiting.poll("child-waiting"), isComplete)
+          const done = yield* pollUntil(Waiting.poll("child-waiting"), isComplete, { turns: 200 })
           return { childParked, done, parked }
         }).pipe(Effect.provide(layer))
       )

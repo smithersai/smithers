@@ -4,11 +4,8 @@ import { describe, expect, it } from "@effect/vitest"
 import { Action, Flow, Interpreter } from "@smthrs/flow"
 import { Context, Effect, Layer, Schema, Tracer } from "effect"
 import type * as Crypto from "effect/Crypto"
-import { withCrypto } from "./Crypto.ts"
+import { effect } from "./Harness.ts"
 import { layerWired } from "./MemoryFlowRuntime.ts"
-
-const effect = (name: string, body: () => Effect.Effect<void, unknown, Crypto.Crypto>) =>
-  it.effect(name, () => withCrypto(body()))
 
 const Label = Context.Reference<string>("test/Label", { defaultValue: () => "none" })
 const Owner = Context.Reference<string>("test/Owner", { defaultValue: () => "none" })

@@ -21,10 +21,8 @@ import { TestClock } from "effect/testing"
 import { Buffer } from "node:buffer"
 import * as BoundedJson from "../src/internal/BoundedJson.ts"
 import { withCrypto } from "./Crypto.ts"
-import { layerMemoryOver, makeInstance, makeMemoryState, type MemoryState } from "./MemoryFlowRuntime.ts"
-
-const effect = (name: string, body: () => Effect.Effect<void, unknown, Crypto.Crypto>) =>
-  it.effect(name, () => withCrypto(body()))
+import { effect, pollUntil } from "./Harness.ts"
+import { layerWired, makeInstance, makeMemoryState, type MemoryState } from "./MemoryFlowRuntime.ts"
 
 /**
  * A case whose waits are steps it takes on the `TestClock`, so a deadline is
@@ -43,11 +41,8 @@ const reaches = <A, E, R>(
   tag: Flow.Result<A, E>["_tag"]
 ): Effect.Effect<Flow.Result<A, E>, FlowRuntime.FlowExecutionNotFound, R> =>
   Effect.gen(function*() {
-    for (let turn = 0; turn < 200; turn++) {
-      yield* Effect.yieldNow
-      const polled = yield* poll
-      if (Option.isSome(polled) && polled.value._tag === tag) return polled.value
-    }
+    const polled = yield* pollUntil(poll, (result) => result._tag === tag, { turns: 200 })
+    if (Option.isSome(polled) && polled.value._tag === tag) return polled.value
     return yield* Effect.die(`the execution never reached ${tag}`)
   })
 
@@ -55,10 +50,7 @@ const wiredOver = (
   state: MemoryState,
   registration: Layer.Layer<never, never, FlowRuntime.FlowRuntime | Action.Implementations> = Layer.empty
 ): Layer.Layer<FlowRuntime.FlowRuntime | Action.Implementations, never, Crypto.Crypto> =>
-  Layer.mergeAll(HumanTask.layer, registration).pipe(
-    Layer.provideMerge(Action.layerImplementations),
-    Layer.provideMerge(layerMemoryOver(state))
-  )
+  layerWired(Layer.mergeAll(HumanTask.layer, registration), state)
 
 const wired = (
   registration: Layer.Layer<never, never, FlowRuntime.FlowRuntime | Action.Implementations> = Layer.empty

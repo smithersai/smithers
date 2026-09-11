@@ -1,27 +1,11 @@
 // Deep reviewed and polished by a human on 2026-08-10.
 
 import { describe, expect, it } from "@effect/vitest"
-import { Action, DurableDeferred, Flow, FlowRuntime, Interpreter } from "@smthrs/flow"
+import { Action, DurableDeferred, Flow, Interpreter } from "@smthrs/flow"
 import { Cause, Effect, Exit, Layer, Option, Schema } from "effect"
 import type * as Crypto from "effect/Crypto"
-import { withCrypto } from "./Crypto.ts"
+import { effect, isComplete, pollUntil } from "./Harness.ts"
 import { layerWired } from "./MemoryFlowRuntime.ts"
-
-const effect = (name: string, body: () => Effect.Effect<void, unknown, Crypto.Crypto>) =>
-  it.effect(name, () => withCrypto(body()))
-
-const pollUntil = <A, E, R>(
-  poll: Effect.Effect<Option.Option<Flow.Result<A, E>>, FlowRuntime.FlowExecutionNotFound, R>,
-  predicate: (result: Flow.Result<A, E>) => boolean
-) =>
-  Effect.gen(function*() {
-    let result = yield* poll
-    for (let i = 0; i < 50 && (Option.isNone(result) || !predicate(result.value)); i++) {
-      yield* Effect.yieldNow
-      result = yield* poll
-    }
-    return result
-  })
 
 /**
  * A step that keeps working until something cancels it, so a case can tell a
@@ -49,7 +33,6 @@ const ticking = () => {
 }
 
 const isSuspended = (result: Flow.Result<any, any>) => result._tag === "Suspended"
-const isComplete = (result: Flow.Result<any, any>) => result._tag === "Complete"
 
 describe("SuspendOnFailure", () => {
   effect("a failing flow suspends instead of completing, carrying the cause as a defect", () => {
@@ -79,7 +62,7 @@ describe("SuspendOnFailure", () => {
 
     return Effect.gen(function*() {
       const executionId = yield* flow.execute({ id: "f" }, { discard: true })
-      const suspended = yield* pollUntil(flow.poll(executionId), isSuspended)
+      const suspended = yield* pollUntil(flow.poll(executionId), isSuspended, { turns: 50 })
       expect(Option.isSome(suspended) && suspended.value._tag).toBe("Suspended")
       // the failure is retained on the suspended result as a defect
       if (Option.isSome(suspended) && suspended.value._tag === "Suspended") {
@@ -90,7 +73,7 @@ describe("SuspendOnFailure", () => {
 
       // resuming re-runs the handler, which now succeeds
       yield* flow.resume(executionId)
-      const done = yield* pollUntil(flow.poll(executionId), isComplete)
+      const done = yield* pollUntil(flow.poll(executionId), isComplete, { turns: 50 })
       expect(
         Option.isSome(done) && done.value._tag === "Complete" && Exit.isSuccess(done.value.exit) &&
           done.value.exit.value
@@ -142,7 +125,7 @@ describe("SuspendOnFailure", () => {
       const executionId = yield* flow.execute({ id: "h" }, { discard: true })
       yield* Effect.yieldNow
       yield* flow.interrupt(executionId)
-      const polled = yield* pollUntil(flow.poll(executionId), isComplete)
+      const polled = yield* pollUntil(flow.poll(executionId), isComplete, { turns: 50 })
       // the cancellation reaches the step itself, so its finalizers run
       expect(step.cancelled).toBe(1)
       // and the round settles as a completion carrying the interruption:
@@ -177,7 +160,7 @@ describe("SuspendOnFailure", () => {
       const executionId = yield* flow.execute({ id: "h" }, { discard: true })
       yield* Effect.yieldNow
       yield* flow.interrupt(executionId)
-      const polled = yield* pollUntil(flow.poll(executionId), isSuspended)
+      const polled = yield* pollUntil(flow.poll(executionId), isSuspended, { turns: 50 })
       expect(step.cancelled).toBe(1)
       // the annotation catches the cancellation along with every other cause,
       // so this round is classified as suspended rather than as the interrupted
@@ -232,7 +215,7 @@ describe("concurrent action suspension", () => {
 
     return Effect.gen(function*() {
       const executionId = yield* flow.execute({ id: "c" }, { discard: true })
-      const suspended = yield* pollUntil(flow.poll(executionId), isSuspended)
+      const suspended = yield* pollUntil(flow.poll(executionId), isSuspended, { turns: 50 })
       expect(Option.isSome(suspended) && suspended.value._tag).toBe("Suspended")
       // the unresolved deferred suspends the whole flow before the sibling action settles
       expect(slowRuns).toBe(0)
@@ -240,7 +223,7 @@ describe("concurrent action suspension", () => {
       const token = DurableDeferred.tokenFromExecutionId(Gate, { flow, executionId })
       yield* DurableDeferred.succeed(Gate, { token, value: "gate" })
 
-      const done = yield* pollUntil(flow.poll(executionId), isComplete)
+      const done = yield* pollUntil(flow.poll(executionId), isComplete, { turns: 50 })
       expect(
         Option.isSome(done) && done.value._tag === "Complete" && Exit.isSuccess(done.value.exit) &&
           done.value.exit.value

@@ -6,24 +6,8 @@ import { Node } from "@smthrs/plan"
 import { Duration, Effect, Exit, Layer, Option, Schema } from "effect"
 import type * as Crypto from "effect/Crypto"
 import { TestClock } from "effect/testing"
-import { withCrypto } from "./Crypto.ts"
+import { effectOnTestClock as effect, isComplete, pollUntil } from "./Harness.ts"
 import { layerMemory, layerWired, makeInstance } from "./MemoryFlowRuntime.ts"
-
-const effect = (name: string, body: () => Effect.Effect<void, unknown, Crypto.Crypto>) =>
-  it.effect(name, () => withCrypto(body().pipe(Effect.provide(TestClock.layer()))))
-
-const pollComplete = <A, E, R>(
-  poll: Effect.Effect<Option.Option<Flow.Result<A, E>>, FlowRuntime.FlowExecutionNotFound, R>
-) =>
-  Effect.gen(function*() {
-    let result = yield* poll
-    for (let i = 0; i < 10 && (Option.isNone(result) || result.value._tag !== "Complete"); i++) {
-      yield* Effect.yieldNow
-      yield* TestClock.adjust("1 milli")
-      result = yield* poll
-    }
-    return result
-  })
 
 describe("DurableClock", () => {
   effect("make derives a deferred named after the clock", () =>
@@ -102,7 +86,7 @@ describe("DurableClock", () => {
       expect(Option.isNone(pending)).toBe(true)
 
       yield* TestClock.adjust("1 second")
-      const result = yield* pollComplete(flow.poll(executionId))
+      const result = yield* pollUntil(flow.poll(executionId), isComplete, { turns: 10, advance: "1 milli" })
       expect(Option.isSome(result) && result.value._tag === "Complete" && Exit.isSuccess(result.value.exit)).toBe(true)
       if (Option.isSome(result) && result.value._tag === "Complete" && Exit.isSuccess(result.value.exit)) {
         expect(result.value.exit.value).toBe("slept")
@@ -158,8 +142,11 @@ describe("DurableClock", () => {
       expect(Option.isNone(yield* flow.poll(defaultExecutionId))).toBe(true)
 
       yield* TestClock.adjust("5 millis")
-      const zeroResult = yield* pollComplete(flow.poll(zeroExecutionId))
-      const defaultResult = yield* pollComplete(flow.poll(defaultExecutionId))
+      const zeroResult = yield* pollUntil(flow.poll(zeroExecutionId), isComplete, { turns: 10, advance: "1 milli" })
+      const defaultResult = yield* pollUntil(flow.poll(defaultExecutionId), isComplete, {
+        turns: 10,
+        advance: "1 milli"
+      })
       expect(Option.isSome(zeroResult) && zeroResult.value._tag === "Complete").toBe(true)
       expect(Option.isSome(defaultResult) && defaultResult.value._tag === "Complete").toBe(true)
     }).pipe(Effect.provide(layer))
@@ -196,7 +183,7 @@ describe("DurableClock", () => {
       expect(Option.isNone(yield* flow.poll(executionId))).toBe(true)
 
       yield* TestClock.adjust("2 minutes")
-      const result = yield* pollComplete(flow.poll(executionId))
+      const result = yield* pollUntil(flow.poll(executionId), isComplete, { turns: 10, advance: "1 milli" })
       expect(Option.isSome(result) && result.value._tag === "Complete" && Exit.isSuccess(result.value.exit)).toBe(true)
     }).pipe(Effect.provide(layer))
   })
@@ -232,7 +219,7 @@ describe("DurableClock", () => {
       expect(Option.isSome(pending) && pending.value._tag).toBe("Suspended")
 
       yield* TestClock.adjust("1 minute")
-      const result = yield* pollComplete(flow.poll(executionId))
+      const result = yield* pollUntil(flow.poll(executionId), isComplete, { turns: 10, advance: "1 milli" })
       expect(Option.isSome(result) && result.value._tag === "Complete" && Exit.isSuccess(result.value.exit)).toBe(true)
       if (Option.isSome(result) && result.value._tag === "Complete" && Exit.isSuccess(result.value.exit)) {
         expect(result.value.exit.value).toBe("woke")
@@ -288,7 +275,7 @@ describe("DurableClock", () => {
       expect(Option.isSome(midway) && midway.value._tag).toBe("Suspended")
 
       yield* TestClock.adjust("5 minutes")
-      const result = yield* pollComplete(flow.poll(executionId))
+      const result = yield* pollUntil(flow.poll(executionId), isComplete, { turns: 10, advance: "1 milli" })
       expect(Option.isSome(result) && result.value._tag === "Complete" && Exit.isSuccess(result.value.exit)).toBe(true)
       if (Option.isSome(result) && result.value._tag === "Complete" && Exit.isSuccess(result.value.exit)) {
         expect(result.value.exit.value).toBe(1)
@@ -330,7 +317,7 @@ describe("DurableClock", () => {
       const token = DurableDeferred.tokenFromExecutionId(clock.deferred, { flow, executionId })
       yield* DurableDeferred.succeed(clock.deferred, { token, value: undefined })
 
-      const woken = yield* pollComplete(flow.poll(executionId))
+      const woken = yield* pollUntil(flow.poll(executionId), isComplete, { turns: 10, advance: "1 milli" })
       expect(Option.isSome(woken) && woken.value._tag).toBe("Complete")
       expect(bodiesPastSleep).toBe(1)
 

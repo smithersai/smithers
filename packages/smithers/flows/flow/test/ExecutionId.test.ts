@@ -4,11 +4,8 @@ import { describe, expect, it } from "@effect/vitest"
 import { Action, Flow, Interpreter } from "@smthrs/flow"
 import { Cause, Effect, Exit, Layer, Schema } from "effect"
 import type * as Crypto from "effect/Crypto"
-import { withCrypto } from "./Crypto.ts"
+import { effect } from "./Harness.ts"
 import { layerWired } from "./MemoryFlowRuntime.ts"
-
-const effect = (name: string, body: () => Effect.Effect<void, unknown, Crypto.Crypto>) =>
-  it.effect(name, () => withCrypto(body()))
 
 const Echo = Action.make("ExecutionId/echo", {
   payload: { value: Schema.String },

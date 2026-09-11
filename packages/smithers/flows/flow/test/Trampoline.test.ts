@@ -14,7 +14,7 @@ import { Node } from "@smthrs/plan"
 import { Effect, Exit, Layer, Option, Schema } from "effect"
 import { readFileSync } from "node:fs"
 import { withCrypto } from "./Crypto.ts"
-import { layerMemory, makeInstance } from "./MemoryFlowRuntime.ts"
+import { layerWired, makeInstance } from "./MemoryFlowRuntime.ts"
 
 const Increment = Action.make("trampoline/increment", {
   payload: { value: Schema.Number },
@@ -67,13 +67,7 @@ const EncodedSource = Flow.make("trampoline/encoded-source", {
 
 const wired = (
   registration: Layer.Layer<never, never, FlowRuntime.FlowRuntime | Action.Implementations>
-): Layer.Layer<
-  Layer.Success<typeof increments> | FlowRuntime.FlowRuntime | Action.Implementations
-> =>
-  Layer.merge(increments, registration).pipe(
-    Layer.provideMerge(Action.layerImplementations),
-    Layer.provideMerge(layerMemory)
-  )
+) => layerWired(Layer.merge(increments, registration))
 
 describe("Flow.Handoff", () => {
   it.effect("is a Result beside Complete and Suspended, and survives the result codec", () =>

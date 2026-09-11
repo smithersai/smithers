@@ -16,8 +16,8 @@ import { Node } from "@smthrs/plan"
 import { Duration, Effect, Exit, Layer, Option, Schema } from "effect"
 import type * as Crypto from "effect/Crypto"
 import { TestClock } from "effect/testing"
-import { withCrypto } from "./Crypto.ts"
-import { layerMemoryOver, makeMemoryState, type MemoryState } from "./MemoryFlowRuntime.ts"
+import { effectOnTestClock as effect } from "./Harness.ts"
+import { layerWired, makeMemoryState } from "./MemoryFlowRuntime.ts"
 
 /** Attempts observed by the check, in dispatch order. */
 const probes: Array<number> = []
@@ -103,18 +103,6 @@ const Hanging = Poll.make("poll/hanging", {
   onTimeout: "return-last",
   check: ({ attempt }) => Hung.call({ attempt })
 })
-
-const wired = <Implemented>(
-  registration: Layer.Layer<Implemented, never, Crypto.Crypto | FlowRuntime.FlowRuntime | Action.Implementations>,
-  state: MemoryState = makeMemoryState()
-): Layer.Layer<Implemented | FlowRuntime.FlowRuntime | Action.Implementations, never, Crypto.Crypto> =>
-  registration.pipe(
-    Layer.provideMerge(Action.layerImplementations),
-    Layer.provideMerge(layerMemoryOver(state))
-  )
-
-const effect = (name: string, body: () => Effect.Effect<void, unknown, Crypto.Crypto>) =>
-  it.effect(name, () => withCrypto(body().pipe(Effect.provide(TestClock.layer()))))
 
 /** One round of a poll lineage, whatever it settles with. */
 type Round = Flow.Result<string, typeof Poll.Failure.Type>
@@ -417,7 +405,7 @@ describe("Poll rounds", () => {
       expect(String(result)).toContain("attempt")
       expect(probes).toEqual([])
     }).pipe(
-      Effect.provide(wired(Layer.mergeAll(probeLayer, Sleep.layer, Poll.layer, Interpreter.layer(Rising))))
+      Effect.provide(layerWired(Layer.mergeAll(probeLayer, Sleep.layer, Poll.layer, Interpreter.layer(Rising))))
     )
   })
 
@@ -461,7 +449,7 @@ describe("Poll rounds", () => {
       expect(probes).toEqual([1, 2, 3])
       expect(succeededWith(third)).toBe("ready:3")
     }).pipe(
-      Effect.provide(wired(Layer.mergeAll(probeLayer, Sleep.layer, Poll.layer, Interpreter.layer(Rising))))
+      Effect.provide(layerWired(Layer.mergeAll(probeLayer, Sleep.layer, Poll.layer, Interpreter.layer(Rising))))
     )
   })
 
@@ -477,7 +465,7 @@ describe("Poll rounds", () => {
       expect(succeededWith(second)).toBe("ready:2")
       expect(probes).toEqual([1, 2])
     }).pipe(
-      Effect.provide(wired(Layer.mergeAll(probeLayer, Sleep.layer, Poll.layer, Interpreter.layer(Bounded))))
+      Effect.provide(layerWired(Layer.mergeAll(probeLayer, Sleep.layer, Poll.layer, Interpreter.layer(Bounded))))
     )
   })
 
@@ -505,7 +493,7 @@ describe("Poll rounds", () => {
       }
       expect(probes).toEqual([1, 2])
     }).pipe(
-      Effect.provide(wired(Layer.mergeAll(probeLayer, Sleep.layer, Poll.layer, Interpreter.layer(Failing))))
+      Effect.provide(layerWired(Layer.mergeAll(probeLayer, Sleep.layer, Poll.layer, Interpreter.layer(Failing))))
     )
   })
 })
@@ -517,7 +505,8 @@ describe("Poll across a restart", () => {
     // settled wakes. Everything else — registrations, live executions, armed
     // timers — is process state the second runtime rebuilds for itself.
     const durable = makeMemoryState()
-    const runtime = () => wired(Layer.mergeAll(probeLayer, Sleep.layer, Poll.layer, Interpreter.layer(Rising)), durable)
+    const runtime = () =>
+      layerWired(Layer.mergeAll(probeLayer, Sleep.layer, Poll.layer, Interpreter.layer(Rising)), durable)
     return Effect.gen(function*() {
       // The first process: attempt one, its wait, and attempt two, which parks
       // on a two-hundred millisecond wait it will not live to see the end of.
@@ -591,6 +580,6 @@ describe("Poll with a bounded check", () => {
 
       expect(succeededWith(settledRound)).toBe("unknown:2")
     }).pipe(
-      Effect.provide(wired(Layer.mergeAll(hungLayer, Sleep.layer, Poll.layer, Interpreter.layer(Hanging))))
+      Effect.provide(layerWired(Layer.mergeAll(hungLayer, Sleep.layer, Poll.layer, Interpreter.layer(Hanging))))
     ))
 })

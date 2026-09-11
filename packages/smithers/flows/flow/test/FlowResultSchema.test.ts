@@ -4,10 +4,7 @@ import { describe, expect, it } from "@effect/vitest"
 import { Flow } from "@smthrs/flow"
 import { Cause, Effect, Exit, Schema } from "effect"
 import type * as Crypto from "effect/Crypto"
-import { withCrypto } from "./Crypto.ts"
-
-const effect = (name: string, body: () => Effect.Effect<void, unknown, Crypto.Crypto>) =>
-  it.effect(name, () => withCrypto(body()))
+import { effect } from "./Harness.ts"
 
 const CompleteSchema = Flow.Complete.Schema({
   success: Schema.Number,

@@ -9,22 +9,8 @@ import { Node } from "@smthrs/plan"
 import { Effect, Exit, Layer, Option, Schema } from "effect"
 import type * as Crypto from "effect/Crypto"
 import { withCrypto } from "./Crypto.ts"
-import { layerMemory, makeInstance } from "./MemoryFlowRuntime.ts"
-
-const effect = (name: string, body: () => Effect.Effect<void, unknown, Crypto.Crypto>) =>
-  it.effect(name, () => withCrypto(body()))
-
-const pollComplete = <A, E, R>(
-  poll: Effect.Effect<Option.Option<Flow.Result<A, E>>, FlowRuntime.FlowExecutionNotFound, R>
-) =>
-  Effect.gen(function*() {
-    let result = yield* poll
-    for (let i = 0; i < 20 && (Option.isNone(result) || result.value._tag !== "Complete"); i++) {
-      yield* Effect.yieldNow
-      result = yield* poll
-    }
-    return result
-  })
+import { effect, isComplete, pollUntil } from "./Harness.ts"
+import { layerWired, makeInstance } from "./MemoryFlowRuntime.ts"
 
 /** The step before a wait, so a replay that re-ran it would be visible. */
 const Mark = Action.make("waitFor/mark", {
@@ -50,10 +36,7 @@ const wired = (
       })
     ),
     registration
-  ).pipe(
-    Layer.provideMerge(Action.layerImplementations),
-    Layer.provideMerge(layerMemory)
-  )
+  ).pipe(layerWired)
 
 /** A host flow for interpretations driven outside a registered execution. */
 const Host = Flow.make("waitFor/host", { payload: {}, body: () => Node.succeed(undefined) })
@@ -151,7 +134,7 @@ describe("WaitFor parks", () => {
       const token = DurableDeferred.tokenFromExecutionId(gate, { flow: Gated, executionId })
       yield* DurableDeferred.succeed(gate, { token, value: { approved: true } })
 
-      const result = yield* pollComplete(Gated.poll(executionId))
+      const result = yield* pollUntil(Gated.poll(executionId), isComplete, { turns: 20 })
       expect(Option.isSome(result) && result.value._tag === "Complete" && Exit.isSuccess(result.value.exit)).toBe(true)
       if (Option.isSome(result) && result.value._tag === "Complete" && Exit.isSuccess(result.value.exit)) {
         expect(result.value.exit.value).toEqual({ approved: true })

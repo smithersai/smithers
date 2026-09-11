@@ -9,7 +9,7 @@ import { Node, Planned } from "@smthrs/plan"
 import { Context, Effect, Exit, Layer, Schema } from "effect"
 import type * as Crypto from "effect/Crypto"
 import { withCrypto } from "./Crypto.ts"
-import { layerMemory, makeInstance } from "./MemoryFlowRuntime.ts"
+import { layerMemory, layerWired, makeInstance } from "./MemoryFlowRuntime.ts"
 
 const Read = Action.make("interpreter/read", {
   payload: { path: Schema.String },
@@ -61,15 +61,7 @@ const implementations = Layer.mergeAll(
 type Wiring = Layer.Layer<never, never, FlowRuntime.FlowRuntime | Action.Implementations>
 
 /** Everything a driven body needs: the table, the implementations, a runtime. */
-const wired = (
-  registration: Wiring = Layer.empty
-): Layer.Layer<
-  Layer.Success<typeof implementations> | FlowRuntime.FlowRuntime | Action.Implementations
-> =>
-  Layer.merge(implementations, registration).pipe(
-    Layer.provideMerge(Action.layerImplementations),
-    Layer.provideMerge(layerMemory)
-  )
+const wired = (registration: Wiring = Layer.empty) => layerWired(Layer.merge(implementations, registration))
 
 /** A bare interpretation, outside any registered flow execution. */
 const drive = <A, E>(
@@ -81,7 +73,7 @@ const drive = <A, E>(
   layer: Layer.Layer<
     FlowRuntime.FlowRuntime | Action.Implementations,
     never,
-    never
+    Crypto.Crypto
   > = wired()
 ) =>
   withCrypto(

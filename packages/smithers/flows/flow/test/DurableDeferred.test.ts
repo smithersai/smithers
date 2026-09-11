@@ -5,35 +5,8 @@ import { Action, DurableDeferred, Flow, FlowRuntime, Interpreter } from "@smthrs
 import { Node } from "@smthrs/plan"
 import { Cause, Effect, Exit, Fiber, Latch, Layer, Option, Schema, Scope } from "effect"
 import type * as Crypto from "effect/Crypto"
-import { withCrypto } from "./Crypto.ts"
+import { effect, isComplete, pollUntil } from "./Harness.ts"
 import { layerWired, makeInstance } from "./MemoryFlowRuntime.ts"
-
-const effect = (name: string, body: () => Effect.Effect<void, unknown, Crypto.Crypto>) =>
-  it.effect(name, () => withCrypto(body()))
-
-const pollSuspended = <A, E, R>(
-  poll: Effect.Effect<Option.Option<Flow.Result<A, E>>, FlowRuntime.FlowExecutionNotFound, R>
-) =>
-  Effect.gen(function*() {
-    let result = yield* poll
-    for (let i = 0; i < 20 && Option.isNone(result); i++) {
-      yield* Effect.yieldNow
-      result = yield* poll
-    }
-    return result
-  })
-
-const pollComplete = <A, E, R>(
-  poll: Effect.Effect<Option.Option<Flow.Result<A, E>>, FlowRuntime.FlowExecutionNotFound, R>
-) =>
-  Effect.gen(function*() {
-    let result = yield* poll
-    for (let i = 0; i < 20 && (Option.isNone(result) || result.value._tag !== "Complete"); i++) {
-      yield* Effect.yieldNow
-      result = yield* poll
-    }
-    return result
-  })
 
 const Gate = DurableDeferred.make("DurableDeferred/Gate", {
   success: Schema.String,
@@ -272,7 +245,7 @@ describe("DurableDeferred", () => {
       const token = yield* completeToken(Gate, flow, executionId)
       yield* DurableDeferred.succeed(Gate, { token, value: "hello" })
 
-      const result = yield* pollComplete(flow.poll(executionId))
+      const result = yield* pollUntil(flow.poll(executionId), isComplete, { turns: 20 })
       expect(Option.isSome(result) && result.value._tag === "Complete" && Exit.isSuccess(result.value.exit)).toBe(true)
       if (Option.isSome(result) && result.value._tag === "Complete" && Exit.isSuccess(result.value.exit)) {
         expect(result.value.exit.value).toBe("got:hello")
@@ -291,7 +264,7 @@ describe("DurableDeferred", () => {
       const token = yield* completeToken(Gate, flow, executionId)
       yield* DurableDeferred.fail(Gate, { token, error: "boom" })
 
-      const result = yield* pollComplete(flow.poll(executionId))
+      const result = yield* pollUntil(flow.poll(executionId), isComplete, { turns: 20 })
       expect(Option.isSome(result) && result.value._tag === "Complete" && Exit.isFailure(result.value.exit)).toBe(true)
       if (Option.isSome(result) && result.value._tag === "Complete" && Exit.isFailure(result.value.exit)) {
         expect(result.value.exit.cause.reasons.find(Cause.isFailReason)?.error).toBe("boom")
@@ -312,7 +285,7 @@ describe("DurableDeferred", () => {
       const token = yield* completeToken(Gate, flow, executionId)
       yield* DurableDeferred.fail(Gate, { token, error: "boom" })
 
-      const result = yield* pollComplete(flow.poll(executionId))
+      const result = yield* pollUntil(flow.poll(executionId), isComplete, { turns: 20 })
       expect(Option.isSome(result) && result.value._tag === "Complete" && Exit.isSuccess(result.value.exit)).toBe(true)
       if (Option.isSome(result) && result.value._tag === "Complete" && Exit.isSuccess(result.value.exit)) {
         expect(result.value.exit.value).toBe("recovered:boom")
@@ -334,7 +307,7 @@ describe("DurableDeferred", () => {
         cause: Cause.die("defective")
       })
 
-      const result = yield* pollComplete(flow.poll(executionId))
+      const result = yield* pollUntil(flow.poll(executionId), isComplete, { turns: 20 })
       expect(Option.isSome(result) && result.value._tag === "Complete" && Exit.isFailure(result.value.exit)).toBe(true)
       if (Option.isSome(result) && result.value._tag === "Complete" && Exit.isFailure(result.value.exit)) {
         expect(result.value.exit.cause.reasons.some(Cause.isDieReason)).toBe(true)
@@ -355,7 +328,7 @@ describe("DurableDeferred", () => {
 
       // an interrupt-only cause must terminate the run; if it were mistaken for
       // an external suspension interrupt the run would spin in suspended-retry
-      const result = yield* pollComplete(flow.poll(executionId))
+      const result = yield* pollUntil(flow.poll(executionId), isComplete, { turns: 20 })
       expect(Option.isSome(result) && result.value._tag).toBe("Complete")
       if (Option.isSome(result) && result.value._tag === "Complete") {
         expect(Exit.isFailure(result.value.exit)).toBe(true)
@@ -386,7 +359,7 @@ describe("DurableDeferred", () => {
       const token = yield* completeToken(Raced, flow, executionId)
       yield* DurableDeferred.failCause(Raced, { token, cause: Cause.interrupt(2) })
 
-      const result = yield* pollComplete(flow.poll(executionId))
+      const result = yield* pollUntil(flow.poll(executionId), isComplete, { turns: 20 })
       expect(Option.isSome(result) && result.value._tag).toBe("Complete")
       if (Option.isSome(result) && result.value._tag === "Complete") {
         expect(Exit.isFailure(result.value.exit)).toBe(true)
@@ -505,7 +478,7 @@ describe("DurableDeferred", () => {
       yield* DurableDeferred.succeed(Gate, { token, value: "second" })
       yield* DurableDeferred.fail(Gate, { token, error: "late-failure" })
 
-      const result = yield* pollComplete(flow.poll(executionId))
+      const result = yield* pollUntil(flow.poll(executionId), isComplete, { turns: 20 })
       expect(Option.isSome(result) && result.value._tag === "Complete" && Exit.isSuccess(result.value.exit)).toBe(true)
       if (Option.isSome(result) && result.value._tag === "Complete" && Exit.isSuccess(result.value.exit)) {
         expect(result.value.exit.value).toBe("got:first")
@@ -524,7 +497,7 @@ describe("DurableDeferred", () => {
     )
     return Effect.gen(function*() {
       const executionId = yield* flow.execute({ id: "contended" }, { discard: true })
-      const suspended = yield* pollSuspended(flow.poll(executionId))
+      const suspended = yield* pollUntil(flow.poll(executionId), () => true, { turns: 20 })
       expect(Option.isSome(suspended) && suspended.value._tag).toBe("Suspended")
       const token = yield* completeToken(Contended, flow, executionId)
       const release = yield* Latch.make()
@@ -542,7 +515,7 @@ describe("DurableDeferred", () => {
       yield* Fiber.join(success)
       yield* Fiber.join(failure)
 
-      const settled = yield* pollComplete(flow.poll(executionId))
+      const settled = yield* pollUntil(flow.poll(executionId), isComplete, { turns: 20 })
       expect(Option.isSome(settled) && settled.value._tag).toBe("Complete")
       if (Option.isNone(settled) || settled.value._tag !== "Complete") return
       const first = JSON.stringify(settled.value.exit)
@@ -767,12 +740,12 @@ describe("DurableDeferred", () => {
       const executionId = yield* flow.execute({ id: "rp" }, { discard: true })
       yield* Effect.yieldNow
       // neither branch has a result yet, so the race itself is suspended
-      const suspended = yield* pollSuspended(flow.poll(executionId))
+      const suspended = yield* pollUntil(flow.poll(executionId), () => true, { turns: 20 })
       expect(Option.isSome(suspended) && suspended.value._tag).toBe("Suspended")
 
       const tokenSlow = DurableDeferred.tokenFromExecutionId(Slow, { flow, executionId })
       yield* DurableDeferred.succeed(Slow, { token: tokenSlow, value: "slow" })
-      const result = yield* pollComplete(flow.poll(executionId))
+      const result = yield* pollUntil(flow.poll(executionId), isComplete, { turns: 20 })
       expect(Option.isSome(result) && result.value._tag === "Complete" && Exit.isSuccess(result.value.exit)).toBe(true)
       if (Option.isSome(result) && result.value._tag === "Complete" && Exit.isSuccess(result.value.exit)) {
         expect(result.value.exit.value).toBe("slow")
@@ -836,12 +809,12 @@ describe("DurableDeferred", () => {
       // the flow re-runs, records A's result, and suspends again on B
       const tokenA = DurableDeferred.tokenFromExecutionId(A, { flow, executionId })
       yield* DurableDeferred.succeed(A, { token: tokenA, value: "a" })
-      const partial = yield* pollSuspended(flow.poll(executionId))
+      const partial = yield* pollUntil(flow.poll(executionId), () => true, { turns: 20 })
       expect(Option.isSome(partial) && partial.value._tag).toBe("Suspended")
 
       const tokenB = DurableDeferred.tokenFromExecutionId(B, { flow, executionId })
       yield* DurableDeferred.succeed(B, { token: tokenB, value: "b" })
-      const result = yield* pollComplete(flow.poll(executionId))
+      const result = yield* pollUntil(flow.poll(executionId), isComplete, { turns: 20 })
       expect(Option.isSome(result) && result.value._tag === "Complete" && Exit.isSuccess(result.value.exit)).toBe(true)
       if (Option.isSome(result) && result.value._tag === "Complete" && Exit.isSuccess(result.value.exit)) {
         expect(result.value.exit.value).toBe("a+b")
@@ -893,7 +866,7 @@ describe("DurableDeferred", () => {
 
       const startedId = yield* flow.execute({ id: "pre" }, { discard: true })
       expect(startedId).toBe(executionId)
-      const result = yield* pollComplete(flow.poll(executionId))
+      const result = yield* pollUntil(flow.poll(executionId), isComplete, { turns: 20 })
       expect(Option.isSome(result) && result.value._tag === "Complete" && Exit.isSuccess(result.value.exit)).toBe(true)
       if (Option.isSome(result) && result.value._tag === "Complete" && Exit.isSuccess(result.value.exit)) {
         expect(result.value.exit.value).toBe("a+b")
@@ -933,12 +906,12 @@ describe("DurableDeferred", () => {
       const tokenB = DurableDeferred.tokenFromExecutionId(B, { flow, executionId })
       // resolving the not-yet-awaited deferred first must not complete the flow
       yield* DurableDeferred.succeed(B, { token: tokenB, value: "b" })
-      const stillSuspended = yield* pollSuspended(flow.poll(executionId))
+      const stillSuspended = yield* pollUntil(flow.poll(executionId), () => true, { turns: 20 })
       expect(Option.isSome(stillSuspended) && stillSuspended.value._tag).toBe("Suspended")
 
       const tokenA = DurableDeferred.tokenFromExecutionId(A, { flow, executionId })
       yield* DurableDeferred.succeed(A, { token: tokenA, value: "a" })
-      const result = yield* pollComplete(flow.poll(executionId))
+      const result = yield* pollUntil(flow.poll(executionId), isComplete, { turns: 20 })
       expect(Option.isSome(result) && result.value._tag === "Complete" && Exit.isSuccess(result.value.exit)).toBe(true)
       if (Option.isSome(result) && result.value._tag === "Complete" && Exit.isSuccess(result.value.exit)) {
         expect(result.value.exit.value).toBe("a+b")

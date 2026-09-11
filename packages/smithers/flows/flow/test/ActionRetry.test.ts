@@ -11,11 +11,8 @@ import { describe, expect, it } from "@effect/vitest"
 import { Action, Flow, FlowRuntime, Interpreter } from "@smthrs/flow"
 import { Effect, Latch, Layer, Schema } from "effect"
 import type * as Crypto from "effect/Crypto"
-import { withCrypto } from "./Crypto.ts"
+import { effect } from "./Harness.ts"
 import { layerWired } from "./MemoryFlowRuntime.ts"
-
-const effect = (name: string, body: () => Effect.Effect<void, unknown, Crypto.Crypto>) =>
-  it.effect(name, () => withCrypto(body()))
 
 /** The one step the host flow is made of; each case supplies its body. */
 const Block = Action.make("Retry/Block", {

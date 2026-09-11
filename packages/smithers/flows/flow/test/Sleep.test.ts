@@ -9,23 +9,8 @@ import { Clock, Effect, Exit, Layer, Option, Schema } from "effect"
 import type * as Crypto from "effect/Crypto"
 import { TestClock } from "effect/testing"
 import { withCrypto } from "./Crypto.ts"
-import { dispatchKey, layerMemory, makeInstance } from "./MemoryFlowRuntime.ts"
-
-const effect = (name: string, body: () => Effect.Effect<void, unknown, Crypto.Crypto>) =>
-  it.effect(name, () => withCrypto(body().pipe(Effect.provide(TestClock.layer()))))
-
-const pollComplete = <A, E, R>(
-  poll: Effect.Effect<Option.Option<Flow.Result<A, E>>, FlowRuntime.FlowExecutionNotFound, R>
-) =>
-  Effect.gen(function*() {
-    let result = yield* poll
-    for (let i = 0; i < 20 && (Option.isNone(result) || result.value._tag !== "Complete"); i++) {
-      yield* Effect.yieldNow
-      yield* TestClock.adjust("1 milli")
-      result = yield* poll
-    }
-    return result
-  })
+import { effectOnTestClock as effect, isComplete, pollUntil } from "./Harness.ts"
+import { dispatchKey, layerWired, makeInstance } from "./MemoryFlowRuntime.ts"
 
 /** The steps around a wait, so a replay that re-ran one would be visible. */
 const Mark = Action.make("sleep/mark", {
@@ -51,10 +36,7 @@ const wired = (
       })
     ),
     registration
-  ).pipe(
-    Layer.provideMerge(Action.layerImplementations),
-    Layer.provideMerge(layerMemory)
-  )
+  ).pipe(layerWired)
 
 /** A host flow for interpretations driven outside a registered execution. */
 const Host = Flow.make("sleep/host", { payload: {}, body: () => Node.succeed(undefined) })
@@ -139,7 +121,7 @@ describe("Sleep parks", () => {
       expect(marks).toEqual(["before"])
 
       yield* TestClock.adjust("10 minutes")
-      const result = yield* pollComplete(Timed.poll(executionId))
+      const result = yield* pollUntil(Timed.poll(executionId), isComplete, { turns: 20, advance: "1 milli" })
       expect(Option.isSome(result) && result.value._tag === "Complete" && Exit.isSuccess(result.value.exit)).toBe(true)
       if (Option.isSome(result) && result.value._tag === "Complete" && Exit.isSuccess(result.value.exit)) {
         expect(result.value.exit.value).toBe("after")
@@ -184,7 +166,7 @@ describe("Sleep parks", () => {
       expect(marks).toEqual([])
 
       yield* TestClock.adjust("10 minutes")
-      const result = yield* pollComplete(Twice.poll(executionId))
+      const result = yield* pollUntil(Twice.poll(executionId), isComplete, { turns: 20, advance: "1 milli" })
       expect(Option.isSome(result) && result.value._tag === "Complete" && Exit.isSuccess(result.value.exit)).toBe(true)
       expect(marks).toEqual(["done"])
 
@@ -231,7 +213,7 @@ describe("Sleep parks", () => {
       // A name that drifted per drive would have armed a second ten-minute
       // timer here, and the run would still be parked five minutes from now.
       yield* TestClock.adjust("5 minutes")
-      const result = yield* pollComplete(Rearmed.poll(executionId))
+      const result = yield* pollUntil(Rearmed.poll(executionId), isComplete, { turns: 20, advance: "1 milli" })
       expect(Option.isSome(result) && result.value._tag === "Complete" && Exit.isSuccess(result.value.exit)).toBe(true)
       // Three re-drives, and every step around the wait still ran once.
       expect(marks).toEqual(["before", "after"])

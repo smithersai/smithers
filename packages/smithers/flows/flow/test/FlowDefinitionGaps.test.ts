@@ -6,24 +6,8 @@ import { Node } from "@smthrs/plan"
 import { Cause, Effect, Exit, Layer, Option, Schema } from "effect"
 import type * as Crypto from "effect/Crypto"
 import type * as Scope from "effect/Scope"
-import { withCrypto } from "./Crypto.ts"
+import { effect, pollUntil } from "./Harness.ts"
 import { layerWired } from "./MemoryFlowRuntime.ts"
-
-const effect = (name: string, body: () => Effect.Effect<void, unknown, Crypto.Crypto>) =>
-  it.effect(name, () => withCrypto(body()))
-
-const pollUntil = <A, E, R>(
-  poll: Effect.Effect<Option.Option<Flow.Result<A, E>>, FlowRuntime.FlowExecutionNotFound, R>,
-  predicate: (result: Flow.Result<A, E>) => boolean
-) =>
-  Effect.gen(function*() {
-    let result = yield* poll
-    for (let i = 0; i < 200 && (Option.isNone(result) || !predicate(result.value)); i++) {
-      yield* Effect.yieldNow
-      result = yield* poll
-    }
-    return result
-  })
 
 describe("Flow.make payload and schema defaults", () => {
   effect("accepts an already-built payload schema as well as a field record", () => {
@@ -286,7 +270,9 @@ describe("concurrent action bookkeeping", () => {
     ))
     return Effect.gen(function*() {
       yield* flow.execute({}, { executionId: "run-race-suspend", discard: true })
-      const suspended = yield* pollUntil(flow.poll("run-race-suspend"), (result) => result._tag === "Suspended")
+      const suspended = yield* pollUntil(flow.poll("run-race-suspend"), (result) => result._tag === "Suspended", {
+        turns: 200
+      })
       expect(Option.isSome(suspended) && suspended.value._tag).toBe("Suspended")
       if (Option.isSome(suspended) && suspended.value._tag === "Suspended") {
         expect(String(suspended.value.cause)).toContain("race-boom")
@@ -334,7 +320,8 @@ describe("concurrent action bookkeeping", () => {
       yield* flow.execute({ id: "x" }, { executionId: "run-two-suspend", discard: true })
       const suspended = yield* pollUntil(
         flow.poll("run-two-suspend"),
-        (result) => result._tag === "Suspended"
+        (result) => result._tag === "Suspended",
+        { turns: 200 }
       )
       expect(Option.isSome(suspended)).toBe(true)
       if (Option.isSome(suspended) && suspended.value._tag === "Suspended") {
@@ -406,7 +393,8 @@ describe("suspension while siblings are still running", () => {
       yield* flow.execute({ id: "x" }, { executionId: "run-sibling", discard: true })
       const suspended = yield* pollUntil(
         flow.poll("run-sibling"),
-        (result) => result._tag === "Suspended"
+        (result) => result._tag === "Suspended",
+        { turns: 200 }
       )
       expect(Option.isSome(suspended)).toBe(true)
       if (Option.isSome(suspended) && suspended.value._tag === "Suspended") {
@@ -419,7 +407,8 @@ describe("suspension while siblings are still running", () => {
       yield* flow.resume("run-sibling")
       const done = yield* pollUntil(
         flow.poll("run-sibling"),
-        (result) => result._tag === "Complete"
+        (result) => result._tag === "Complete",
+        { turns: 200 }
       )
       expect(
         Option.isSome(done) && done.value._tag === "Complete" && Exit.isSuccess(done.value.exit) &&
