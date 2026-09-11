@@ -1,6 +1,8 @@
 import { z } from "zod";
+import { checkRateLimit } from "./checkRateLimit.ts";
 import type { BugWorkerEnv } from "./env.ts";
-import { checkRateLimit, isOperator, readBodyBounded } from "./worker.ts";
+import { isOperator } from "./isOperator.ts";
+import { readBodyBounded } from "./readBodyBounded.ts";
 
 const input = z.object({
   id: z.string().uuid(),

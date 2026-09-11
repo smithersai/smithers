@@ -1,6 +1,10 @@
+import { checkRateLimit } from "./checkRateLimit.ts";
+import type { BugWorkerDeps } from "./deps.ts";
 import type { BugWorkerEnv } from "./env.ts";
+import { isOperator } from "./isOperator.ts";
+import { readBodyBounded } from "./readBodyBounded.ts";
 import { forkRepo } from "./repoForks.ts";
-import { checkRateLimit, isOperator, readBodyBounded, type BugWorkerDeps } from "./worker.ts";
+import { repoName } from "./repoName.ts";
 
 const prefix = "repo-request:";
 const cors = {
@@ -28,14 +32,6 @@ const listCache = { ...cors, "cache-control": "public, max-age=60" };
  * read per submission, so a well-behaved visitor never meets this bound.
  */
 const readsPerIpPerHour = 100;
-
-/** Accept repository roots only; never fetch a user-supplied host. */
-export function repoName(value: unknown): string | null {
-  if (typeof value !== "string" || value.length > 250) return null;
-  const name = value.trim().replace(/^https:\/\/github\.com\//i, "").replace(/\/$/, "").replace(/\.git$/i, "");
-  return /^[a-z\d](?:[a-z\d-]{0,38})\/[a-z\d_.-]{1,100}$/i.test(name) && !/[\/]\.{1,2}$/.test(name)
-    ? name.toLowerCase() : null;
-}
 
 async function hash(value: string) {
   return Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value))))

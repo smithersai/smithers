@@ -1,5 +1,5 @@
+import type { BugWorkerDeps } from "./deps.ts";
 import type { BugWorkerEnv } from "./env.ts";
-import type { BugWorkerDeps } from "./worker.ts";
 
 /** GitHub organization that receives one fork per nominated repository. */
 export const forkOrganization = "smithers-community";

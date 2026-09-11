@@ -1,6 +1,9 @@
+import { checkRateLimit } from "./checkRateLimit.ts";
+import type { BugWorkerDeps } from "./deps.ts";
 import type { BugWorkerEnv } from "./env.ts";
-import { repoName } from "./repoRequests.ts";
-import { checkRateLimit, isOperator, readBodyBounded, type BugWorkerDeps } from "./worker.ts";
+import { isOperator } from "./isOperator.ts";
+import { readBodyBounded } from "./readBodyBounded.ts";
+import { repoName } from "./repoName.ts";
 
 const cors = {
   "access-control-allow-origin": "*",

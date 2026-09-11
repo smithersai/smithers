@@ -1,6 +1,6 @@
 import { describe, expect, spyOn, test } from "bun:test";
 import { createBugWorker } from "../src/worker.ts";
-import { repoName } from "../src/repoRequests.ts";
+import { repoName } from "../src/repoName.ts";
 import { memoryKv } from "./helpers/memoryKv.ts";
 import { memoryRepoCompletions } from "./helpers/memoryRepoCompletions.ts";
 import type { BugWorkerEnv } from "../src/env.ts";
