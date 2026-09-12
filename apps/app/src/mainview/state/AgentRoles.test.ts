@@ -216,7 +216,7 @@ describe("agent roles — the orchestrator's instructions", () => {
     expect(prompt).toContain("You are the ORCHESTRATOR role")
     expect(prompt).toContain("agent.delegate <role> <task>")
     expect(prompt).toContain("- explainer (Kimi K3): Explains things very well.")
-    expect(prompt).toContain("- fast-ui (Cerebras gpt-oss-120b): Fast, cheap UI iterations. — NOT available here: OpenCode · Cerebras has no credential")
+    expect(prompt).toContain("- fast-ui (Cerebras gpt-oss-120b): Fast, cheap UI iterations. — NOT available: OpenCode · Cerebras has no credential")
     // The orchestrator is not listed as something to delegate to.
     expect(prompt).not.toContain("- orchestrator (")
   })

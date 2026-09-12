@@ -224,7 +224,7 @@ const orchestratorLines = (roles: ReadonlyArray<InstructionRole>): ReadonlyArray
   const rows = roles
     .filter((role) => role.id !== "orchestrator")
     .map((role) =>
-      `- ${role.id} (${role.model}): ${role.purpose}${role.available ? "" : ` — NOT available here: ${role.reason}`}`
+      `- ${role.id} (${role.model}): ${role.purpose}${role.available ? "" : ` — NOT available: ${role.reason}`}`
     )
   return [
     "You are the ORCHESTRATOR role: the smartest agent, whose job is mostly to delegate. Plan the work, write it as a flow frame by frame, and hand each frame to the role built for it with agent.delegate <role> <task>; read what a delegate produced with tab.read <tabId>. Do yourself only what no role fits.",
@@ -282,7 +282,7 @@ const catalogLinesFor = (catalog: ReadonlyArray<InstructionCommand>, stage: Inst
       ]
     }
     return [
-      "Commands, by namespace (call the \"commands\" tool with action \"list\" for each one's summary and arguments before you use it):",
+      "Commands, by namespace (call \"commands\" with action \"list\" for each one's summary and arguments before use):",
       ...[...byNamespace.entries()].map(([namespace, names]) => `- ${namespace}: ${names.join(", ")}`)
     ]
   }
