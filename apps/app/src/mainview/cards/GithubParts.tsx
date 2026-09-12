@@ -18,6 +18,20 @@ export interface Person {
 
 export type Tone = "open" | "done" | "closed" | "draft" | "queued"
 
+/*
+ * Each tone's classes, spelled out: a template like `ghc-tone-${tone}` hides
+ * the names github-cards.css defines from styles/DeadCss.test.ts.
+ */
+export const TONE_CLASS: Readonly<Record<Tone, string>> = {
+  open: "ghc-tone-open", done: "ghc-tone-done", closed: "ghc-tone-closed", draft: "ghc-tone-draft", queued: "ghc-tone-queued"
+}
+const PILL_CLASS: Readonly<Record<Tone, string>> = {
+  open: "ghc-pill-open", done: "ghc-pill-done", closed: "ghc-pill-closed", draft: "ghc-pill-draft", queued: "ghc-pill-queued"
+}
+export const BADGE_CLASS: Readonly<Record<Tone, string>> = {
+  open: "ghc-badge-open", done: "ghc-badge-done", closed: "ghc-badge-closed", draft: "ghc-badge-draft", queued: "ghc-badge-queued"
+}
+
 export interface StateDisplay {
   readonly icon: OcticonName
   readonly tone: Tone
@@ -52,14 +66,14 @@ export const checkDisplay = (state: string): StateDisplay => {
 
 /** The leading 16px state glyph of a list row. */
 export const StateIcon = ({ display }: { readonly display: StateDisplay }) => (
-  <span className={`ghc-state-icon ghc-tone-${display.tone}`} data-tone={display.tone}>
+  <span className={`ghc-state-icon ${TONE_CLASS[display.tone]}`} data-tone={display.tone}>
     <Octicon name={display.icon} label={display.label} />
   </span>
 )
 
 /** The filled state badge of a detail header. */
 export const StatePill = ({ display }: { readonly display: StateDisplay }) => (
-  <span className={`ghc-pill ghc-pill-${display.tone}`} data-tone={display.tone}>
+  <span className={`ghc-pill ${PILL_CLASS[display.tone]}`} data-tone={display.tone}>
     <Octicon name={display.icon} />
     {display.label}
   </span>

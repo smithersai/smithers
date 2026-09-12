@@ -15,6 +15,7 @@ import { settledPill } from "./CardFamily"
 import {
   Avatar,
   AvatarStack,
+  BADGE_CLASS,
   checkDisplay,
   CommentBox,
   LabelPill,
@@ -24,7 +25,9 @@ import {
   repoLabel,
   SideSection,
   StateIcon,
-  StatePill
+  StatePill,
+  TONE_CLASS,
+  type Tone
 } from "./GithubParts"
 import { Octicon } from "./Octicon"
 
@@ -156,14 +159,14 @@ export const LandingListCardBody = ({
 
 type PrTab = "conversation" | "commits" | "checks" | "files"
 
-const reviewVerb = (type: string): { readonly icon: "check" | "file-diff" | "comment"; readonly tone: string; readonly verb: string } => {
+const reviewVerb = (type: string): { readonly icon: "check" | "file-diff" | "comment"; readonly tone: Tone; readonly verb: string } => {
   const word = type.toLowerCase()
   if (word === "approved" || word === "approve") return { icon: "check", tone: "open", verb: "approved these changes" }
   if (word.includes("change")) return { icon: "file-diff", tone: "closed", verb: "requested changes" }
   return { icon: "comment", tone: "draft", verb: "reviewed" }
 }
 
-const checksSummary = (checks: LandingPayload["checks"]): { readonly tone: string; readonly icon: "check-circle-fill" | "x-circle-fill" | "dot-fill"; readonly text: string } => {
+const checksSummary = (checks: LandingPayload["checks"]): { readonly tone: Tone; readonly icon: "check-circle-fill" | "x-circle-fill" | "dot-fill"; readonly text: string } => {
   if (checks.length === 0) return { tone: "draft", icon: "dot-fill", text: "No checks reported" }
   const tones = checks.map((check) => checkDisplay(check.state).tone)
   const failing = tones.filter((tone) => tone === "closed").length
@@ -303,7 +306,7 @@ export const LandingCardBody = ({
                     return (
                       <div key={index} className="ghc-review">
                         <p className="ghc-event">
-                          <span className={`ghc-event-badge ghc-badge-${verb.tone}`}><Octicon name={verb.icon} size={14} /></span>
+                          <span className={`ghc-event-badge ${BADGE_CLASS[verb.tone]}`}><Octicon name={verb.icon} size={14} /></span>
                           <strong className="ghc-author">{review.author ?? "Someone"}</strong> {verb.verb}
                         </p>
                         {review.reviewBody !== "" ?
@@ -324,7 +327,7 @@ export const LandingCardBody = ({
           {tab === "conversation" || tab === "checks" ?
             (
               <section className="ghc-box ghc-merge" aria-label="Checks and landing">
-                <header className={`ghc-merge-head ghc-tone-${summary.tone}`}>
+                <header className={`ghc-merge-head ${TONE_CLASS[summary.tone]}`}>
                   <Octicon name={summary.icon} size={20} />
                   <span className="ghc-merge-title">{summary.text}</span>
                 </header>
