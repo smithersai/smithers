@@ -46,96 +46,82 @@ describe("compareVars", () => {
   const plain: ReadonlyArray<LiveBinding> = Object.entries(WORKER_IDENTITY.vars).map(([name, text]) => ({ type: "plain_text", name, text }))
 
   /*
-   * An Alchemy upload replaces the binding set wholesale, so a live secret
-   * the shell does not carry is dropped and its route answers its honest
-   * 501/503 from that moment. That is an outage, so the preflight FAILS and
-   * the deploy stops; retiring one on purpose is `--allow-secret-drop`.
+   * wrangler uploads with `keep_bindings: ["secret_text"]`, so a live secret
+   * survives a deploy from a shell that does not carry it. The preflight
+   * therefore reports presence and never asks for a value: there is no
+   * environment argument to read one from.
    */
-  test("a live secret absent from the shell is a FAIL naming the drop, never the value", () => {
-    const findings = compareVars([...plain, { type: "secret_text", name: "CEREBRAS_API_KEY" }], {})
-    const fail = findings.find((f) => f.check === "secret CEREBRAS_API_KEY")
-    expect(fail?.level).toBe("FAIL")
-    expect(fail?.detail).toContain("DROPS")
-    expect(fail?.detail).toContain("--allow-secret-drop")
-  })
-
-  test("--allow-secret-drop downgrades that FAIL to a WARN and stops advertising itself", () => {
-    const live = [...plain, { type: "secret_text", name: "CEREBRAS_API_KEY" } as const]
-    const findings = compareVars(live, {}, { allowSecretDrop: true })
-    const warn = findings.find((f) => f.check === "secret CEREBRAS_API_KEY")
-    expect(warn?.level).toBe("WARN")
-    expect(warn?.detail).toContain("DROPS")
-    expect(warn?.detail).not.toContain("--allow-secret-drop")
-  })
-
-  test("a live knob absent from the shell is a FAIL too, and the flag downgrades it", () => {
-    const live = [...plain, { type: "secret_text", name: "CEREBRAS_MODEL" } as const]
-    expect(compareVars(live, {}).find((f) => f.check === "knob CEREBRAS_MODEL")?.level).toBe("FAIL")
-    expect(compareVars(live, {}, { allowSecretDrop: true }).find((f) => f.check === "knob CEREBRAS_MODEL")?.level).toBe("WARN")
-  })
-
-  /*
-   * A name outside src/workerIdentity.ts feeds nothing the Worker reads and
-   * cannot be exported into a declared slot, so failing on it would make
-   * every deploy pass the escape hatch — the same as having no gate.
-   */
-  test("an UNDECLARED live secret stays a WARN, with or without the flag", () => {
-    const live = [...plain, { type: "secret_text", name: "GATEWAY_UPSTREAM_TOKEN" } as const]
-    expect(compareVars(live, {}).find((f) => f.check === "live secret GATEWAY_UPSTREAM_TOKEN")?.level).toBe("WARN")
-    expect(compareVars(live, {}, { allowSecretDrop: true }).find((f) => f.check === "live secret GATEWAY_UPSTREAM_TOKEN")?.level).toBe("WARN")
-  })
-
-  test("a live secret present in the shell passes without printing it", () => {
-    const findings = compareVars([...plain, { type: "secret_text", name: "CEREBRAS_API_KEY" }], { CEREBRAS_API_KEY: "sk-live-value" })
+  test("a live secret is a PASS that says the deploy keeps it", () => {
+    const findings = compareVars([...plain, { type: "secret_text", name: "CEREBRAS_API_KEY" }])
     const pass = findings.find((f) => f.check === "secret CEREBRAS_API_KEY")
     expect(pass?.level).toBe("PASS")
+    expect(pass?.detail).toContain("keeps it")
+  })
+
+  test("a declared secret that is not live is an INFO naming the honest 501/503, not a failure", () => {
+    const info = compareVars(plain).find((f) => f.check === "secret CEREBRAS_API_KEY")
+    expect(info?.level).toBe("INFO")
+    expect(info?.detail).toContain("wrangler secret put")
+  })
+
+  test("no finding ever carries a value, because none is read", () => {
+    const findings = compareVars([...plain, { type: "secret_text", name: "CEREBRAS_API_KEY", text: "sk-live-value" }])
     expect(JSON.stringify(findings)).not.toContain("sk-live-value")
   })
 
   test("a frozen var whose live value differs is a FAIL", () => {
     const drifted = plain.map((b) => (b.name === "BILLING_UPSTREAM_URL" ? { ...b, text: "https://elsewhere" } : b))
-    expect(compareVars(drifted, {}).find((f) => f.check === "var BILLING_UPSTREAM_URL")?.level).toBe("FAIL")
+    expect(compareVars(drifted).find((f) => f.check === "var BILLING_UPSTREAM_URL")?.level).toBe("FAIL")
+  })
+
+  test("a frozen var missing live is a WARN the deploy resolves", () => {
+    expect(compareVars(plain.slice(1)).find((f) => f.check === `var ${plain[0]!.name}`)?.level).toBe("WARN")
+  })
+
+  test("an undeclared live var is a WARN naming the drop", () => {
+    const findings = compareVars([...plain, { type: "plain_text", name: "SOMETHING_OLD", text: "1" }])
+    expect(findings.find((f) => f.check === "live var SOMETHING_OLD")?.detail).toContain("DROPS")
   })
 
   /*
-   * Alchemy's ConfigProvider interceptor records every `Config` the init
-   * phase reads as a Redacted output (Platform.ts:572-577), `Config.string`
-   * included, so an optional knob lands on the live script as `secret_text`.
-   * Reading it back as an undeclared secret would tell the operator to delete
-   * a knob src/workerIdentity.ts declares.
+   * A name outside src/workerIdentity.ts feeds nothing the Worker reads. The
+   * deploy keeps it like any secret, so retiring it is a hand step, and the
+   * preflight says so instead of failing every deploy over a leftover.
    */
-  test("an optional knob living as a secret is a knob, not an undeclared secret", () => {
-    const live = [...plain, { type: "secret_text", name: "CEREBRAS_MODEL" } as const]
-    const findings = compareVars(live, {})
-    expect(findings.find((f) => f.check === "knob CEREBRAS_MODEL")?.detail).toContain("DROPS")
+  test("an UNDECLARED live secret is a WARN that names the retirement command", () => {
+    const warn = compareVars([...plain, { type: "secret_text", name: "GATEWAY_UPSTREAM_TOKEN" }]).find((f) => f.check === "live secret GATEWAY_UPSTREAM_TOKEN")
+    expect(warn?.level).toBe("WARN")
+    expect(warn?.detail).toContain("wrangler secret delete")
+  })
+
+  test("an optional knob living as a secret is a kept knob, not an undeclared secret", () => {
+    const findings = compareVars([...plain, { type: "secret_text", name: "CEREBRAS_MODEL" }])
+    expect(findings.find((f) => f.check === "knob CEREBRAS_MODEL")?.level).toBe("PASS")
     expect(findings.find((f) => f.check === "live secret CEREBRAS_MODEL")).toBeUndefined()
   })
 
-  test("an optional knob present in the shell passes without printing it", () => {
-    const live = [...plain, { type: "secret_text", name: "CEREBRAS_MODEL" } as const]
-    const findings = compareVars(live, { CEREBRAS_MODEL: "qwen-3-coder-480b" })
-    expect(findings.find((f) => f.check === "knob CEREBRAS_MODEL")?.level).toBe("PASS")
-    expect(JSON.stringify(findings)).not.toContain("qwen-3-coder-480b")
-  })
-
-  test("a Wrangler-era knob still bound as plain_text is reported the same way", () => {
-    const live = [...plain, { type: "plain_text", name: "UPSTREAM_TIMEOUT_MS", text: "20000" } as const]
-    const findings = compareVars(live, {})
-    expect(findings.find((f) => f.check === "knob UPSTREAM_TIMEOUT_MS")?.level).toBe("FAIL")
+  /*
+   * wrangler replaces the plain-text set with wrangler.jsonc `vars`, which
+   * never lists a knob, so a knob a Wrangler-era deploy bound as plain_text
+   * is the one thing this deploy loses; the report says how to keep it.
+   */
+  test("a knob still bound as plain_text is a WARN pointing at `wrangler secret put`", () => {
+    const findings = compareVars([...plain, { type: "plain_text", name: "UPSTREAM_TIMEOUT_MS", text: "20000" }])
+    const warn = findings.find((f) => f.check === "knob UPSTREAM_TIMEOUT_MS")
+    expect(warn?.level).toBe("WARN")
+    expect(warn?.detail).toContain("wrangler secret put")
     expect(findings.find((f) => f.check === "live var UPSTREAM_TIMEOUT_MS")).toBeUndefined()
   })
 
   test("a knob the live script does not carry is not reported at all", () => {
-    const findings = compareVars(plain, {})
-    expect(findings.filter((f) => f.check.startsWith("knob "))).toEqual([])
+    expect(compareVars(plain).filter((f) => f.check.startsWith("knob "))).toEqual([])
   })
-
 })
 
 /*
- * The script is read-only. It used to carry a `--apply` branch that spawned
- * `alchemy deploy` directly, skipping the site build, the sha stamp and the
- * receipt every canary probe grades the deployment against.
+ * The script is read-only. It used to carry a `--apply` branch that deployed
+ * directly, skipping the site build, the sha stamp and the receipt every
+ * canary probe grades the deployment against.
  */
 describe("the preflight never deploys", () => {
   const code = stripComments(readFileSync(new URL("./adopt-durable-objects.ts", import.meta.url), "utf8"))
@@ -143,11 +129,12 @@ describe("the preflight never deploys", () => {
   test("no --apply flag and no process spawn", () => {
     expect(code).not.toContain("--apply")
     expect(code).not.toContain("Bun.spawn")
-    expect(code).not.toContain("alchemy.ts")
+    expect(code).not.toContain("wrangler deploy")
   })
 
-  test("it reads the flag that downgrades a dropped secret, and nothing else", () => {
-    expect(code).toContain('process.argv.includes("--allow-secret-drop")')
+  test("no flag can make a dropped secret acceptable, because the deploy drops none", () => {
+    expect(code).not.toContain("--allow-secret-drop")
+    expect(code).not.toContain("process.env[")
   })
 
   test("the header points at the one deploy path", () => {
@@ -157,6 +144,6 @@ describe("the preflight never deploys", () => {
   })
 })
 
-test("wrangler.jsonc, the adoption bridge, agrees with src/workerIdentity.ts", () => {
+test("wrangler.jsonc agrees with src/workerIdentity.ts", () => {
   expect(compareBridge().map((f) => f.level)).toEqual(["PASS", "PASS"])
 })

@@ -1,16 +1,13 @@
 /*
  * The frozen identity of the deployed Worker, as plain data.
  *
- * src/Worker.ts builds its Alchemy props from this object and
- * src/workerIdentity.test.ts pins every field, so a change to the Worker's
- * name, its domain or route, its Durable Object bindings and classes, or its
- * assets configuration is a deliberate edit here (recorded in DEPLOY.md's
+ * wrangler.jsonc is what `wrangler deploy` reads, and src/workerIdentity.test.ts
+ * holds it to this object field by field, so a change to the Worker's name,
+ * its domain or route, its Durable Object bindings and classes, or its assets
+ * configuration is a deliberate edit in both places (recorded in DEPLOY.md's
  * cutover log) and never a diff that slips through with a deploy.
- *
- * wrangler.jsonc stays checked in as the adoption bridge: it describes the
- * Worker exactly as Wrangler last deployed it, and the same test holds it to
- * this object so scripts/adopt-durable-objects.ts can compare both against
- * the live script. Nothing in the Worker imports wrangler.jsonc.
+ * scripts/adopt-durable-objects.ts compares both against the live script
+ * before every deploy. Nothing in the Worker imports wrangler.jsonc.
  *
  * This module has no imports on purpose: scripts and tests read it without
  * pulling the Worker's runtime graph.
@@ -22,7 +19,7 @@ export interface DurableObjectIdentity {
   readonly className: string
 }
 
-/** One Durable Object migration as Wrangler recorded it (the adoption bridge). */
+/** One Durable Object migration as wrangler.jsonc records it. */
 export interface MigrationIdentity {
   readonly tag: string
   readonly newSqliteClasses: ReadonlyArray<string>
@@ -31,12 +28,9 @@ export interface MigrationIdentity {
 export const WORKER_IDENTITY = {
   /** The physical script name. Durable Object storage is keyed to it. */
   name: "smithers-mvp-web",
-  /** The Alchemy stack and stage the state is filed under; the physical name above is what Cloudflare sees. */
-  stack: "smithers-mvp-web",
-  stage: "prod",
   accountId: "dd3525a4132493566aeb38de533c8827",
-  /** The Effect-native entry Alchemy bundles (wrangler.jsonc's `main` was src/index.ts). */
-  entry: "src/Worker.ts",
+  /** The entry wrangler bundles (wrangler.jsonc `main`): the native adapter over the router. */
+  entry: "src/index.ts",
   compatibility: { date: "2026-08-01", flags: ["nodejs_compat"] as ReadonlyArray<string> },
   /** The canary custom domain (wrangler: `routes[0]`, `custom_domain: true`). */
   domain: { name: "canary.smithers.sh", zoneId: "8ebd98d2f0dc7d8db2e61f31ebc19c14" },
@@ -50,12 +44,7 @@ export const WORKER_IDENTITY = {
   assets: {
     /** Relative to apps/server: the smithers.sh Astro build. */
     directory: "../site/dist",
-    /**
-     * Alchemy hard-codes the assets binding name (`metadata.bindings` gets
-     * `{ type: "assets", name: "ASSETS" }`, WorkerProvider.ts:2901), so
-     * src/Worker.ts does not pass this; it is here because wrangler.jsonc
-     * declares it and src/workerIdentity.test.ts holds the two together.
-     */
+    /** The assets binding the router reads (`serveAsset` in src/index.ts). */
     binding: "ASSETS",
     notFoundHandling: "404-page" as const,
     /**
@@ -77,14 +66,12 @@ export const WORKER_IDENTITY = {
     ] as ReadonlyArray<string>
   },
   /**
-   * The five Durable Objects, binding name and class name both frozen. Alchemy
-   * adopts a foreign Worker by matching each declared binding to the live one
-   * BY BINDING NAME and reusing its class (WorkerProvider.ts:3445-3474); a
-   * binding it cannot match is a class to create (:3514), and a live binding
-   * it does not find in this list is a class to DELETE (:3310-3331, applied
-   * at :3377-3392). Either mismatch
-   * is data loss, so scripts/adopt-durable-objects.ts refuses to proceed
-   * unless the live script agrees with this list exactly.
+   * The five Durable Objects, binding name and class name both frozen. A
+   * declared binding the live script lacks deploys as a fresh, empty class; a
+   * live binding this list lacks is deleted with its storage; a class renamed
+   * under the same binding is a migration. Every one is data loss, so
+   * scripts/adopt-durable-objects.ts refuses a deploy unless the live script
+   * agrees with this list exactly.
    */
   durableObjects: [
     { binding: "TURN_CANCELS", className: "TurnCancelRegistry" },
@@ -94,13 +81,10 @@ export const WORKER_IDENTITY = {
     { binding: "RECOMMEND_LOG", className: "RecommendLog" }
   ] as ReadonlyArray<DurableObjectIdentity>,
   /**
-   * The Wrangler migration history. Alchemy does not replay it: it reads the
-   * live tag (`v4`) back from Cloudflare's precondition error and re-uploads
-   * with `old_tag: "v4"`, `new_tag: "alchemy:v5"`
-   * (WorkerProvider.ts:3707-3747, :5404-5410). The retry carries the SAME
-   * class lists as the first attempt, so it is safe exactly when the
-   * reconciliation found nothing to create, rename or delete — which is what
-   * scripts/adopt-durable-objects.ts proves before a deploy.
+   * The migration history wrangler.jsonc carries. wrangler sends only the
+   * steps after the script's live tag, so a deploy with the same list is a
+   * no-op; appending a step is how a class is added, renamed or deleted, and
+   * every one of those is a cutover-log entry.
    */
   migrations: [
     { tag: "v1", newSqliteClasses: ["TurnCancelRegistry"] },
@@ -117,20 +101,13 @@ export const WORKER_IDENTITY = {
     SMITHERS_CHAT_ORIGIN: "https://canary.smithers.sh"
   } as Readonly<Record<string, string>>,
   /**
-   * Every secret the Worker reads, declared through `Config` in src/Worker.ts
-   * and supplied from the operator's environment at deploy time. An Alchemy
-   * upload replaces the script's bindings wholesale (`keepBindings:
-   * undefined`, WorkerProvider.ts:3584), so a secret set with `wrangler secret
-   * put` but absent from the deploying shell is DROPPED by the deploy. All are
-   * optional to the code (an unset one makes its route answer an honest 501 or
-   * 503); none is optional to the deploy of a working canary.
-   *
-   * `optionalVars` below deploy through the same channel: Alchemy records
-   * EVERY Config the init phase reads as a Redacted output
-   * (Platform.ts:572-577), so a knob read with `Config.string` lands on the
-   * live script as `secret_text`, not `plain_text`, and is dropped by a
-   * deploy that does not export it. Only `vars` above — literal strings in
-   * the Worker's `env` props — are plain text.
+   * Every secret the Worker reads (src/Config.ts). Each is set once on the
+   * live script with `wrangler secret put` and kept by every `wrangler deploy`
+   * after that: wrangler uploads with `keep_bindings: ["secret_text"]`, so a
+   * deploying shell never needs to carry a value, and the preflight only
+   * reports each name as live or not. All are optional to the code (an unset
+   * one makes its route answer an honest 501 or 503); none is optional to a
+   * working canary.
    */
   secrets: [
     "SMITHERS_CHAT_AUTH_TOKEN",
@@ -146,7 +123,12 @@ export const WORKER_IDENTITY = {
     "SMITHERS_GITHUB_APP_PRIVATE_KEY",
     "GITHUB_TOKEN"
   ] as ReadonlyArray<string>,
-  /** Optional plain knobs, read from the deploying environment when set. */
+  /**
+   * Optional knobs. `SMITHERS_BUILD_SHA` is not a binding at all: it is baked
+   * into the site build as /__build.json. The rest are set like secrets
+   * (`wrangler secret put`) and kept across deploys the same way; a plain var
+   * under one of these names would be replaced by the `vars` above.
+   */
   optionalVars: [
     "SMITHERS_BUILD_SHA",
     "UPSTREAM_TIMEOUT_MS",

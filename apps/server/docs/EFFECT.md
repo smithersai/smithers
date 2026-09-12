@@ -11,14 +11,12 @@ read `node_modules/effect/src/*.ts`; there is no v3 idiom in this package
 
 ## Entrypoints
 
-There are two, and they share everything but the adapter.
+There is one: `src/index.ts` `export default`, workerd's
+`fetch(request, env, ctx)` shape, deployed by wrangler (`wrangler.jsonc`
+`main`) and run as-is by the tests and the local host, with `runRequest` in
+`src/Boundary.ts` as its adapter.
 
-| Entry | Runs where | Adapter |
-| --- | --- | --- |
-| `src/Worker.ts` | the deployment (Alchemy bundles it; `alchemy.run.ts` files it under a Stack) | Alchemy's Effect-native Worker bridge runs the Effects itself |
-| `src/index.ts` `export default` | tests and the local host | `runRequest` in `src/Boundary.ts` |
-
-Both call the same router, `handleRequest(request)` in `src/index.ts`, an
+It calls the router, `handleRequest(request)` in `src/index.ts`, an
 `Effect<Response, never, RequestServices>`: typed failures are already mapped
 to responses inside, so the error channel is `never`, and everything it needs
 is a service.
@@ -32,82 +30,6 @@ client hangs up) keeps the isolate alive past the response. Each adapter
 therefore provides two things — the isolate's `AllServices` context and its own
 `ExecutionContext` — and neither adapter can accidentally share a `waitUntil`
 between requests, because the type will not let it.
-
-### `src/Worker.ts`, phase by phase
-
-Alchemy's `Cloudflare.Worker(id, props, init)` has two phases. The `init`
-Effect runs at plan time on the deploying machine and once per isolate at cold
-start; what it returns is the runtime shape, whose `fetch` runs per request.
-
-Init, in order:
-
-1. Every secret and optional knob is `yield*`ed as
-   `Config.option(Config.redacted(name))` / `Config.option(Config.string(name))`.
-   At plan time Alchemy's ConfigProvider interceptor (`Platform.ts:554-593`)
-   records each present value as `Output.literal(Redacted.make(value))`, which
-   the runtime context stores with the `Redacted` wrapper outermost
-   (`WorkerRuntimeContext.ts:48-57`) and the binding lowering turns into
-   `secret_text` (`WorkerAsyncBindings.ts:366-373`). `Config.string` is not
-   exempt: the optional knobs deploy as secrets too. At runtime the same yield
-   reads the binding back. The values are unwrapped here, once, into a plain
-   record. A value absent from the deploying shell is simply not bound.
-2. `yield* Cloudflare.WorkerEnvironment` is the raw platform env: `{}` at plan
-   time (`WorkerRuntimeContext.ts:82-83`), the bindings (`ASSETS`, the five
-   namespaces, the plain vars) at runtime (`WorkerBridge.ts:310`). The record
-   from step 1 is spread over it into `deployment`, the one bag everything
-   downstream reads. The spread is not a convenience: a Config-bound value
-   reaches workerd's `env` packed as the string
-   `{"_tag":"Redacted","value":…}` (`RuntimeContext.ts:100-114`), so the
-   resolved record from step 1 is the only place the Worker reads a secret
-   from.
-3. `yield* Cloudflare.Worker` gives the Worker's runtime context. For each
-   Durable Object class in `WORKER_IDENTITY.durableObjects`,
-   `self.export(className, durableObjectExport(durableObjectClasses(deployment)[className]))`
-   registers the class body under its frozen class name (`worker.export`
-   stores it at `WorkerRuntimeContext.ts:78-81`); the bundle's generated entry
-   exports one `class <name> extends DurableObjectBridge("<name>")` per
-   registered key (alchemy `Sources/Rolldown.ts:211-262`, emitted at `:251`).
-   **This runs after step 2 on purpose**: `durableObjectClasses` takes the
-   deployment bag, because the gateway registry provisions inside the object
-   and cannot do it from an empty env (see "Durable Objects" below).
-4. `layersFromEnv(deployment)` builds the Layer every route runs under, **once
-   per isolate**, lazily on the first request:
-   `Effect.cached(Layer.buildWithScope(layer, isolateScope))`. The scope is
-   never closed; workerd has no isolate-teardown hook, and Alchemy's own bridge
-   does the same (`WorkerBridge.ts:271-279`). Building per request would reset
-   every service that holds state across requests (the single-flight GitHub
-   App mint, the public-catalog cache).
-
-Runtime (`fetch`):
-
-```ts
-const request = yield* Cloudflare.Workers.Request            // the web Request, untouched
-const execution = yield* Cloudflare.WorkerExecutionContext   // this invocation's ctx
-const context = yield* services                              // the cached isolate context
-const response = yield* handleRequest(request).pipe(
-  Effect.provideService(
-    ExecutionContext,
-    executionContextFrom({ waitUntil: (promise: Promise<unknown>) => execution.raw.waitUntil(promise) })
-  ),
-  Effect.provideContext(context)
-)
-return HttpServerResponse.fromWeb(response)
-```
-
-`WorkerExecutionContext` is yielded **inside** `fetch`, not in init. The init
-closure can yield it, but what it gets there is the *deferred* context whose
-`raw` throws outside a handler (`Worker.ts:178-183`); the per-event Layer that
-`processEvent` merges over the isolate context is the live one
-(`WorkerBridge.ts:104-108`). Alchemy's own `execution.waitUntil` takes an
-Effect, while `executionContextFrom` (`src/Environment.ts:204`) wants the
-platform's promise-shaped `waitUntil` — the same thing the native adapter in
-`src/index.ts` is handed by workerd — so both entrypoints hand the router an
-identical `ExecutionContext` service.
-
-The router works in web `Request`/`Response` terms (that is what every seam
-and test speaks), so the only conversion is `HttpServerResponse.fromWeb` on
-the way out; a streaming body (the NDJSON turn stream) passes through as a
-`Stream` and becomes a `ReadableStream` again at Alchemy's edge.
 
 ### Durable Objects
 
@@ -125,13 +47,11 @@ Each Durable Object module exports, in this order of importance:
    `NativeNamespace | undefined` (undefined = the binding is absent, unit-test
    behaviour).
 
-`src/Worker.ts` deploys (1) through Alchemy's bridge: `durableObjectExport`
-resolves `Cloudflare.DurableObjectState` once per in-memory object, builds the
-module's Layers from `state.raw.storage` (`storageLayer` in
-`src/DurableStorage.ts`, `recommendStorageLayer` in `src/recommend.ts`), and
-its `fetch` runs the request Effect over them. `HttpServerRequest.toWeb` hands
-back the very `Request` the bridge started from
-(`HttpServerRequest.ts:1051-1053`), so nothing is re-streamed.
+The native class (2) is what deploys: workerd constructs it with
+`(ctx, env)`, it builds the module's Layers from `ctx.storage` (`storageLayer`
+in `src/DurableStorage.ts`, `recommendStorageLayer` in `src/recommend.ts`)
+once, and its `fetch` line runs the request Effect over them through
+`runDurable`.
 
 **A Durable Object's in-memory state is made once by the object.** The object,
 not the request, is the thing that remembers. Two services live by that rule:
@@ -143,10 +63,8 @@ not the request, is the thing that remembers. Two services live by that rule:
   built inside `gatewayRegistryLayers`. A map rebuilt per request joins
   nothing, and eight cold callers would provision eight workspaces.
 
-Both are created in the per-object factory: the native class's field
-initialiser (`src/clientErrorLog.ts:306`, `src/gateway.ts:284`) and, under
-Alchemy, the `layers` callback that `durableObjectExport` invokes in the outer
-per-object Effect. So `clientErrorLogRequest` requires
+Both are created in the native class's field initialiser
+(`src/clientErrorLog.ts:306`, `src/gateway.ts:284`). So `clientErrorLogRequest` requires
 `DurableStorage | ClientErrorThrottle` and `gatewaySessionRequest` requires
 `GatewayRegistryServices = DurableStorage | Transport | ServerConfig |
 GatewayResolutions`. The same rule governs any future per-object counter,
@@ -157,13 +75,12 @@ an outage.** Since upstream `e089305e5d` the object serves `POST /resolve`: it
 mints the Cloud token and provisions the workspace itself, so it reads
 `IDENTITY_UPSTREAM_URL`, `IDENTITY_SERVICE_TOKEN`,
 `SMITHERS_CLOUD_API_BASE_URL` and `UPSTREAM_TIMEOUT_MS` from its own
-`ServerConfig`. That is why `durableObjectClasses(env)` is a function of the
-deployment bag and why the Worker registers its exports only after building
-`deployment`. An empty bag typechecks, deploys, and passes every router test —
-the router just forwards to the binding — while every resolution answers
-`unavailable: IDENTITY_UPSTREAM_URL is unset on this deployment.`
-`src/Worker.test.ts` is the gate: it builds the registry's Layer from a
-fixture bag and asserts the `ServerConfig` the object would run on.
+`ServerConfig`, built from the `env` workerd hands the class constructor
+(`src/gateway.ts:284`). An empty bag typechecks, deploys, and passes every
+router test — the router just forwards to the binding — while every
+resolution answers `unavailable: IDENTITY_UPSTREAM_URL is unset on this
+deployment.` `src/gateway.test.ts` is the gate: it builds the registry from a
+fixture bag and asserts the `ServerConfig` the object runs on.
 
 Why both names survive adoption, briefly (DEPLOY.md has the procedure): the
 binding is declared in `env` with the props form
@@ -208,8 +125,7 @@ Failures are typed in `src/Failures.ts` (`UpstreamTimeout`,
 `UpstreamUnreachable`, `BodyTooLarge`, `BodyNotJson`, `StorageFailure`,
 `CryptoFailure`, `NotConfigured`, ...) and mapped to responses where the
 route maps them, with the same status codes and message text as before. An
-interruption is never a 500: `src/Boundary.ts` answers 499, and under
-Alchemy the platform cancels the invocation.
+interruption is never a 500: `src/Boundary.ts` answers 499.
 
 ## Boundaries
 
@@ -224,13 +140,6 @@ Promise interop exists in exactly these places:
   classes; `responseFromExit` is the pure policy both entrypoints share
   (success / 499 for interrupts-only / a logged, generic 500 with the
   isolation headers for a defect).
-- `src/Worker.ts`: Alchemy's bridge runs Effects, so the only promise here is
-  handing `ctx.waitUntil` to the router as a function. The bridge attaches no
-  abort listener (`HttpServer.ts:24-52` calls `toHandled`, not
-  `toWebHandlerWith`), so `runFetch` owns the disconnect: it forks the router,
-  interrupts that fiber from the request's `AbortSignal`, and maps the exit
-  with `responseFromExit` from `src/Boundary.ts` — the same policy the native
-  adapter applies, one implementation.
 - The native Durable Object class `fetch` methods, one line each, marked
   `// effect-policy: boundary`.
 - WebCrypto and stream readers, wrapped once in `Effect.tryPromise` where
@@ -252,8 +161,9 @@ whose finalizers settle the registry and release the upstream body.
    is a Durable Object's own in-memory state, it is a `Ref` the object makes
    once — see above. If it needs a new binding, add the binding to
    `WORKER_IDENTITY` (`src/workerIdentity.ts`), to `WorkerEnv`, and, if it is
-   a secret, to `WORKER_IDENTITY.secrets`; `src/Worker.ts` declares bindings
-   from that object, and `src/workerIdentity.test.ts` pins it.
+   a secret, to `WORKER_IDENTITY.secrets` and, once, `wrangler secret put`;
+   `wrangler.jsonc` declares the rest, and `src/workerIdentity.test.ts` holds
+   the two together.
 3. Use it: `yield* Thing` inside the handler; the handler's `R` grows by
    `Thing` and the compiler tells every caller.
 4. Test it with an injected Layer, not with a global patch. Keep state that
@@ -266,25 +176,19 @@ whose finalizers settle the registry and release the upstream body.
 `pnpm run check:effect` runs `scripts/effect-policy.ts`, which scans every
 `src/**/*.ts` that is not a test and fails on `async `, `await `, `.then(`,
 `Effect.runPromise`, `Effect.runFork`, `runWeb`, or `EffectPlatform` outside
-the allowlist (`src/Http.ts`, `src/DurableStorage.ts`, `src/Boundary.ts`,
-`src/Worker.ts`) and off a line carrying `// effect-policy: boundary`, which
+the allowlist (`src/Http.ts`, `src/DurableStorage.ts`, `src/Boundary.ts`)
+and off a line carrying `// effect-policy: boundary`, which
 is reserved for a native Durable Object class's `fetch`. Comments are stripped
 first, so prose may say the words. `scripts/effect-policy.test.ts` holds the
 scanner to fixtures.
 
 ## Deploying
 
-`DEPLOY.md`: the frozen identity, the adopting deploy and its preflight
+`DEPLOY.md`: the frozen identity, the preflight
 (`scripts/adopt-durable-objects.ts`), the secrets list, dry runs, rollback.
 
-Two rules worth repeating here, because they bite in this file's territory:
-
-- **Run the Alchemy CLI under bun**, on its own TypeScript entry
-  (`bun node_modules/alchemy/bin/alchemy.ts <command>`).
-  `node_modules/.bin/alchemy` re-execs under node unless the environment names
-  bun (`alchemy bin/cli.js:98-116`), and node's ESM resolver does not
-  implement the extensionless imports this package uses.
-- **`alchemy plan` is not the adoption verdict.** It evaluates the program —
-  the Worker module, its init closure, the bindings it declares — with no
-  credential and no live read, so it prints `create` from an empty local
-  state no matter what is deployed. The preflight is the verdict.
+One rule worth repeating here, because it bites in this file's territory:
+**`wrangler deploy --dry-run` is not the identity verdict.** It bundles the
+Worker and reads the assets with no credential and no live read, so it says
+nothing about the Durable Objects the live script carries. The preflight is
+the verdict.

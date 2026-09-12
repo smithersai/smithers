@@ -113,7 +113,7 @@ const recordFromRow = (row: GatewayRecordRow | null | undefined): GatewayRecord 
  * join point: concurrent cold or expired misses for one login/repo share a
  * single token-door + provision sequence, and every joiner reads back the
  * record the leader persisted. The native class creates it once per object
- * (a per-request map would join nothing); the Alchemy export does the same.
+ * (a per-request map would join nothing).
  */
 export class GatewayResolutions
   extends Context.Service<GatewayResolutions, Map<string, Deferred.Deferred<ProvisionOutcome>>>()("smithers-server/GatewayResolutions") {}

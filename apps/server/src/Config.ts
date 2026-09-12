@@ -5,8 +5,8 @@ import { DEFAULT_UPSTREAM_TIMEOUT_MS } from "./Http"
 
 /*
  * The deployment's configuration, read once and typed. Vars and secrets
- * arrive as Worker bindings (wrangler `vars`/`secret put`, or Alchemy `env`
- * and `Config` bindings, src/Worker.ts) under the names in `ServerEnvVars`;
+ * arrive as Worker bindings (wrangler.jsonc `vars` and `wrangler secret put`)
+ * under the names in `ServerEnvVars`;
  * this module turns that bag into `ServerConfig`, the service every seam
  * reads. Secrets are `Redacted` so a log line or an error message can never
  * carry one by accident; a seam unwraps the value at the moment it sets a

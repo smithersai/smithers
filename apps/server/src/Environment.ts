@@ -29,7 +29,7 @@ import type { TurnCancels } from "./turns"
 /*
  * The deployment as the Worker's Effects see it. workerd hands the native
  * adapter an `env` bag of vars, secrets, and bindings (wrangler.jsonc; the
- * Alchemy stack in src/Worker.ts binds the same names); `layersFromEnv` turns
+ * wrangler.jsonc binds the same names); `layersFromEnv` turns
  * that bag into the Layer every route runs under, one service per binding,
  * and `runtimeFor` keeps the services built from one bag alive for as long
  * as the bag is — one isolate, in production.
@@ -221,9 +221,9 @@ export const executionContextFrom = (ctx: NativeExecutionContext | undefined): E
 
 /**
  * Every service the deployment provides for the life of an isolate.
- * `ExecutionContext` is the one per-request service: the adapters
- * (src/index.ts, src/Worker.ts) provide it beside these, and the router
- * requires `RequestServices`.
+ * `ExecutionContext` is the one per-request service: the entry
+ * (src/index.ts) provides it beside these, and the router requires
+ * `RequestServices`.
  */
 export type AllServices =
   | ServerConfig

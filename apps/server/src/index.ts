@@ -70,9 +70,9 @@ import { handleWorkflowProvision, handleWorkflowRpc, handleWorkflowTriggers } fr
  * body lives in the module that owns its seam (src/turns.ts, src/identity.ts,
  * src/billing.ts, src/admin.ts, src/proxies.ts, src/workflows.ts, the public
  * catalog modules), and `handleRequest` decides which one answers. The
- * deployed composition is src/Worker.ts; the `default` export at the bottom is
- * the same router under workerd's plain `fetch(request, env, ctx)` shape, for
- * the tests and a local host.
+ * `default` export at the bottom is the deployed entry (wrangler.jsonc
+ * `main`): the same router under workerd's plain `fetch(request, env, ctx)`
+ * shape, which the tests and a local host run as well.
  */
 
 /* The five Durable Object classes wrangler binds, under their frozen names. */
@@ -388,9 +388,9 @@ export const handleRequest = (request: Request): Effect.Effect<Response, never, 
   })
 
 /**
- * The native adapter: workerd's `fetch(request, env, ctx)` shape over the
- * router, for the tests and a local host (src/Worker.ts is the deployed
- * composition). This is the one place a request's Effect meets a Promise:
+ * The deployed entry: workerd's `fetch(request, env, ctx)` shape over the
+ * router, the same one the tests and a local host run. This is the one
+ * place a request's Effect meets a Promise:
  * `runRequest` (src/Boundary.ts) wires the client's disconnect to fiber
  * interruption, and `runtimeFor` keeps the isolate's services alive across
  * requests, so a cache or a single-flight gate built once is reused. The

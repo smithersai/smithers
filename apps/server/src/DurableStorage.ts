@@ -9,8 +9,8 @@ import { readJson, readText } from "./Http"
  * Durable Object state as this Worker's Effects see it.
  *
  * Inside a Durable Object the class body is an Effect over `DurableStorage`;
- * the native class (`fetch(request)`) and the Alchemy `.make()` adapter both
- * provide it from the platform's `ctx.storage`. From the Worker side, a
+ * the native class (`fetch(request)`) provides it from the platform's
+ * `ctx.storage`. From the Worker side, a
  * Durable Object is reached through its namespace binding, one internal
  * `fetch` per call; `namespaceCall` is that one boundary. The keys written
  * through here ("state", "reports", "recommendations", "gateway:*", the
@@ -39,7 +39,7 @@ export const storageFrom = (storage: NativeStorage): DurableStorageShape => ({
 
 export const storageLayer = (storage: NativeStorage): Layer.Layer<DurableStorage> => Layer.succeed(DurableStorage, storageFrom(storage))
 
-/** An in-memory storage for tests and for the Alchemy plan phase. */
+/** An in-memory storage for tests. */
 export const memoryStorage = (initial?: Record<string, unknown>): NativeStorage & { readonly data: Map<string, unknown> } => {
   const data = new Map<string, unknown>(Object.entries(initial ?? {}))
   return {

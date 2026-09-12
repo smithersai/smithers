@@ -24,7 +24,7 @@ import { fileURLToPath } from "node:url"
 export const BOUNDARY_MARKER = "// effect-policy: boundary"
 
 /** Files whose whole body is a platform boundary (CONTRACTS.md "Non-negotiables"). */
-export const ALLOWED_FILES: ReadonlyArray<string> = ["src/Http.ts", "src/DurableStorage.ts", "src/Boundary.ts", "src/Worker.ts"]
+export const ALLOWED_FILES: ReadonlyArray<string> = ["src/Http.ts", "src/DurableStorage.ts", "src/Boundary.ts"]
 
 export interface PolicyRule {
   readonly name: string

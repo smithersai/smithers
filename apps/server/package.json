@@ -24,17 +24,16 @@
     "canary:uptime": "bun scripts/canary/uptime-probe.ts",
     "canary:invite": "bun scripts/canary/invite-probe.ts",
     "canary:rollback": "bun scripts/canary/rollback-probe.ts",
-    "deploy:plan": "bun node_modules/alchemy/bin/alchemy.ts plan --stage prod",
     "deploy:preflight": "bun scripts/adopt-durable-objects.ts",
     "check:effect": "bun scripts/effect-policy.ts"
   },
   "dependencies": {
     "@smthrs/rpc": "workspace:*",
-    "alchemy": "2.0.0-beta.76",
     "effect": "4.0.0-rc.112"
   },
   "devDependencies": {
     "@types/bun": "latest",
-    "typescript": "^5.9.3"
+    "typescript": "^5.9.3",
+    "wrangler": "^4.129.0"
   }
 }

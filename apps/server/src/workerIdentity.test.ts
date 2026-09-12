@@ -12,15 +12,14 @@ const bridge = readWranglerConfig()
  * renamed class deploys a fresh Worker with empty storage and orphans the
  * old one, so every one of those is pinned here and a change to any of them
  * is a deliberate decision recorded in DEPLOY.md, never a diff that slips
- * through with a deploy. src/Worker.ts builds its Alchemy props from
- * WORKER_IDENTITY, so pinning the object pins the deploy.
+ * through with a deploy. wrangler.jsonc is what deploys, and the tests below
+ * hold it to WORKER_IDENTITY, so pinning the object pins the deploy.
  */
 describe("the Worker identity stays frozen", () => {
-  test("the name, the stack, the stage, and the entry module", () => {
+  test("the name, the entry module, and the account", () => {
     expect(WORKER_IDENTITY.name).toBe("smithers-mvp-web")
-    expect(WORKER_IDENTITY.stack).toBe("smithers-mvp-web")
-    expect(WORKER_IDENTITY.stage).toBe("prod")
-    expect(WORKER_IDENTITY.entry).toBe("src/Worker.ts")
+    expect(WORKER_IDENTITY.entry).toBe("src/index.ts")
+    expect(bridge.main).toBe(WORKER_IDENTITY.entry)
     expect(WORKER_IDENTITY.accountId).toBe("dd3525a4132493566aeb38de533c8827")
   })
 

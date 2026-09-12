@@ -6,10 +6,8 @@ import type * as ManagedRuntime from "effect/ManagedRuntime"
 
 /*
  * Where an Effect meets a Web callback. Exactly three callers exist: the
- * Worker's native `fetch(request, env)` adapter (src/index.ts), the native
- * Durable Object classes' `fetch(request)`, and test helpers. Alchemy's
- * Effect-native bridge (src/Worker.ts) runs Effects itself and never comes
- * here.
+ * Worker's `fetch(request, env)` entry (src/index.ts), the native Durable
+ * Object classes' `fetch(request)`, and test helpers.
  *
  * The request's AbortSignal interrupts the fiber: a client that disconnects
  * mid-turn interrupts the upstream fetch and runs every finalizer (the cancel
@@ -49,11 +47,9 @@ const clientDisconnected = (): Response => answer(CLIENT_DISCONNECTED_STATUS, { 
  * the route's own answer; an interruption is 499 and never restated as a 500;
  * anything else is a defect, logged once and answered generically.
  *
- * This is the boundary's whole policy, kept pure and exported because there
- * are two entrypoints — the native adapter below (src/index.ts) and Alchemy's
- * Effect-native bridge (src/Worker.ts), which runs the fiber itself and so
- * cannot call `runRequest`. One implementation, so the deployed path and the
- * tested path cannot drift.
+ * This is the boundary's whole policy, kept pure and exported so the Worker
+ * entry (src/index.ts) and the Durable Object classes apply one
+ * implementation, and the deployed path and the tested path cannot drift.
  */
 export const responseFromExit = (exit: Exit.Exit<Response, never>): Response => {
   if (Exit.isSuccess(exit)) return exit.value
