@@ -722,7 +722,11 @@ const FIXTURES: Record<Card["kind"], KindFixtures> = {
       issueBody: "shard-3 wedges on sqlite",
       labels: ["ci", "flaky"],
       linear: { identifier: "ENG-482", url: "https://linear.app/smithers/issue/ENG-482" },
-      comments: [{ author: null, commentBody: "reproduced", createdAt: "2026-09-05T09:00:00Z" }]
+      comments: [{ author: null, commentBody: "reproduced", createdAt: "2026-09-05T09:00:00Z" }],
+      createdAt: "2026-09-04T08:00:00Z",
+      assignees: [{ login: "ada", avatar: "https://avatars.githubusercontent.com/u/1" }],
+      labelColors: { ci: "0e8a16", flaky: "d93f0b" },
+      authorAvatar: "https://avatars.githubusercontent.com/u/2"
     }
   },
   "pr-list": {
@@ -757,7 +761,16 @@ const FIXTURES: Record<Card["kind"], KindFixtures> = {
       author: "will",
       prBody: "one bounded route",
       reviews: [{ author: "ada", type: "APPROVED", reviewBody: "ship it" }],
-      checks: [{ context: "typecheck", state: "success" }]
+      checks: [{ context: "typecheck", state: "success" }],
+      branch: "serve-files",
+      baseBranch: "main",
+      draft: false,
+      createdAt: "2026-09-04T08:00:00Z",
+      authorAvatar: "https://avatars.githubusercontent.com/u/2",
+      labels: ["api"],
+      labelColors: { api: "1d76db" },
+      commits: [{ changeId: "kkmpptxz", commitId: "a1b2c3d4", message: "Serve repository files", author: "will", timestamp: "2026-09-04T08:00:00Z" }],
+      files: [{ path: "src/files.ts", oldPath: "src/read.ts", status: "renamed", additions: 12, deletions: 3, patch: "@@ -1 +1 @@" }]
     }
   },
   notifications: {
@@ -1746,6 +1759,77 @@ const FIXTURES: Record<Card["kind"], KindFixtures> = {
   "anonymous-ceiling": {
     minimal: { message: "too many turns from this address", retryAt: null },
     full: { message: "too many turns from this address", retryAt: "2026-09-05T10:00:00Z" }
+  },
+  /* The tutorial's commit picker: every field is required, so both fixtures name all five. */
+  "commit-pick": {
+    minimal: { repo: "practice:smithersai/demo", branch: "tutorial", targetBookmark: "main", rows: [], picked: [] },
+    full: {
+      repo: "practice:smithersai/demo",
+      branch: "tutorial",
+      targetBookmark: "main",
+      rows: [{
+        index: 1,
+        commitId: "a1b2c3d4",
+        changeId: "kkmpptxz",
+        message: "Add the greeting",
+        additions: 4,
+        deletions: 0,
+        locked: true,
+        hint: "the run's first commit"
+      }],
+      picked: [1]
+    }
+  },
+  "commit-list": {
+    minimal: { repo: "smithersai/smithers", branch: null, commits: [] },
+    full: {
+      repo: "smithersai/smithers",
+      branch: "main",
+      commits: [{
+        commitId: "a1b2c3d4",
+        changeId: "kkmpptxz",
+        title: "Serve repository files",
+        author: { name: "Will", email: "will@example.com", login: "will", avatarUrl: "https://avatars.githubusercontent.com/u/2" },
+        authoredAt: "2026-09-05T09:00:00Z",
+        status: "success",
+        verified: true
+      }],
+      truncated: true,
+      error: "the history read stopped at its cap"
+    }
+  },
+  commit: {
+    minimal: {
+      repo: "smithersai/smithers",
+      commit: { commitId: "a1b2c3d4", changeId: null, title: "Serve repository files", author: { name: null, email: null }, authoredAt: null },
+      message: "Serve repository files",
+      parents: [],
+      files: []
+    },
+    full: {
+      repo: "smithersai/smithers",
+      commit: {
+        commitId: "a1b2c3d4",
+        changeId: "kkmpptxz",
+        title: "Serve repository files",
+        author: { name: "Will", email: "will@example.com" },
+        authoredAt: "2026-09-05T09:00:00Z"
+      },
+      message: "Serve repository files\n\nOne bounded route.",
+      committer: { name: "Will", email: "will@example.com" },
+      parents: [{ changeId: "zzzzzzzz", commitId: "0000aaaa" }],
+      files: [{
+        path: "src/files.ts",
+        oldPath: "src/read.ts",
+        changeType: "renamed",
+        isBinary: false,
+        additions: 12,
+        deletions: 3,
+        patch: "@@ -1 +1 @@"
+      }],
+      diffError: "the diff exceeded its cap",
+      error: "the status read failed"
+    }
   },
   /* The tutorial's repository chooser: every field is required, so both fixtures name all six. */
   "repository-choice": {
