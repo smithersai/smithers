@@ -1,5 +1,5 @@
 import type { Card } from "../state/AppState"
-import type { CardFamily } from "./CardFamily"
+import type { CardFamily, RunCommand } from "./CardFamily"
 
 type CommitPickCard = Extract<Card, { kind: "commit-pick" }>
 
@@ -10,7 +10,7 @@ type CommitPickCard = Extract<Card, { kind: "commit-pick" }>
  * the checkbox is `change.pick <row>`, the button is `change.open`, so the
  * pill, the digit keys and the agent all take the same door.
  */
-export const CommitPickBody = ({ card, onRunCommand }: { readonly card: CommitPickCard; readonly onRunCommand: (name: string, args?: string) => void }) => {
+export const CommitPickBody = ({ card, onRunCommand }: { readonly card: CommitPickCard; readonly onRunCommand: RunCommand }) => {
   const { repo, branch, targetBookmark, rows, picked } = card.payload
   const chosen = rows.filter((row) => picked.includes(row.index))
   return (

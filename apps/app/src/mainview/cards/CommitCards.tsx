@@ -23,7 +23,7 @@ import type { CommitFileStatusKind } from "@smthrs/ui"
 import { lazy, Suspense } from "react"
 import type { KeyboardEvent } from "react"
 import type { Card } from "../state/AppState"
-import type { CardFamily } from "./CardFamily"
+import type { CardFamily, RunCommand } from "./CardFamily"
 import { settledPill } from "./CardFamily"
 import { Avatar, RelativeTime } from "./GithubParts"
 
@@ -45,7 +45,6 @@ const DiffSurface = lazy(() =>
 type CommitListCard = Extract<Card, { kind: "commit-list" }>
 type CommitCard = Extract<Card, { kind: "commit" }>
 type Summary = CommitListCard["payload"]["commits"][number]
-type RunCommand = (name: string, args?: string) => void
 
 /** The login a row shows: the stated login, else the author's name. */
 const personOf = (author: Summary["author"]) => ({

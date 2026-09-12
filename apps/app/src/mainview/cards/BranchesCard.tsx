@@ -6,7 +6,7 @@
  */
 import { GitBranch } from "lucide-react"
 import type { Card } from "../state/AppState"
-import type { CardFamily } from "./CardFamily"
+import type { CardFamily, RunCommand } from "./CardFamily"
 import { settledPill } from "./CardFamily"
 import { moveRowFocus } from "./CommitCards"
 
@@ -15,7 +15,7 @@ export const BranchesCardBody = ({
   onRunCommand
 }: {
   readonly card: Extract<Card, { kind: "branches" }>
-  readonly onRunCommand: (name: string, args?: string) => void
+  readonly onRunCommand: RunCommand
 }) => (
   <div className="world-card-list">
     <ul className="world-card-list" onKeyDown={moveRowFocus}>
