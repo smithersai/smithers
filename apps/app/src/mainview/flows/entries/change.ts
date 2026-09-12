@@ -169,12 +169,6 @@ export const changeOpenFlows = (actions: import("../../state/controller/tutorial
     summary: "Open a Change with the picked commits, bottom to top",
     args: "<repo> <commit…>",
     confirm: "open a Change with these commits",
-    grammar: (args) => {
-      const [repo, ...commits] = (args ?? "").trim().split(/\s+/).filter(Boolean)
-      if (repo === undefined) return { error: "change.open needs a repository and the commits to include" }
-      if (commits.length === 0) return { error: "change.open needs at least one commit" }
-      return { payload: { repo, commits } }
-    },
     input: Schema.Struct({ repo: Schema.String, commits: Schema.Array(Schema.String) }),
     handler: ({ repo, commits }) => actions.openChange(repo, commits)
   }),
@@ -183,10 +177,6 @@ export const changeOpenFlows = (actions: import("../../state/controller/tutorial
     hidden: true,
     summary: "Check or uncheck one commit in the commit picker",
     args: "<row>",
-    grammar: (args) => {
-      const row = Number((args ?? "").trim())
-      return Number.isInteger(row) && row > 0 ? { payload: { row } } : { error: "change.pick needs a row number, 1 from the bottom" }
-    },
     input: Schema.Struct({ row: Schema.Number }),
     handler: ({ row }) => actions.pickCommit(row)
   })

@@ -532,6 +532,18 @@ const GRAMMAR: Readonly<Record<string, Grammar>> = {
   "history.amend": (args) => repoOnly("history.amend", args),
   "history.fold": (args) => repoOnly("history.fold", args),
   "branches.list": (args) => repoOnly("branches.list", args),
+  /* The commit picker's Change: the repository, then the picked commits bottom to top. */
+  "change.open": (args) => {
+    const [repo, ...commits] = tokensOf(args)
+    if (repo === undefined) return no("change.open needs a repository and the commits to include")
+    if (commits.length === 0) return no("change.open needs at least one commit")
+    return ok({ repo, commits })
+  },
+  /* One picker row, counted 1 from the bottom like `jj log`. */
+  "change.pick": (args) => {
+    const row = Number(trimmed(args))
+    return Number.isInteger(row) && row > 0 ? ok({ row }) : no("change.pick needs a row number, 1 from the bottom")
+  },
   /* A lone token with a slash is the repository; name both to list a branch whose name has one. */
   "commits.list": (args) => {
     const { rest, repo } = splitTrailingRepo(args)
