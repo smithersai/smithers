@@ -6,6 +6,7 @@
  * avatar gutter, and the metadata sidebar section. Styles: styles/github-cards.css.
  */
 import type { CSSProperties, ReactNode } from "react"
+import { dateLabel } from "../Timestamps"
 import { trustedHttpsUrl } from "../state/seams/SeamContext"
 import { Octicon, type OcticonName } from "./Octicon"
 
@@ -157,7 +158,7 @@ export const relativeTime = (iso: string, now: number = Date.now()): string => {
 }
 
 export const RelativeTime = ({ iso }: { readonly iso: string }) => (
-  <time className="ghc-time" dateTime={iso} title={iso.replace("T", " ").slice(0, 16)}>{relativeTime(iso)}</time>
+  <time className="ghc-time" dateTime={iso} title={dateLabel(iso)}>{relativeTime(iso)}</time>
 )
 
 /** The comment box: avatar gutter, a header (author · verb · time), and the body. */
