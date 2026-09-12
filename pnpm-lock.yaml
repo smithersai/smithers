@@ -92,6 +92,187 @@ importers:
         specifier: 2.9.0
         version: 2.9.0
 
+  apps/app:
+    dependencies:
+      '@fontsource/ibm-plex-mono':
+        specifier: 5.3.0
+        version: 5.3.0
+      '@fontsource/inter':
+        specifier: 5.3.0
+        version: 5.3.0
+      '@journeyapps/wa-sqlite':
+        specifier: 1.7.2
+        version: 1.7.2
+      '@smthrs/canonical':
+        specifier: workspace:*
+        version: link:../../packages/smithers/flows/canonical
+      '@smthrs/capability':
+        specifier: workspace:*
+        version: link:../../packages/smithers/flows/capability
+      '@smthrs/chain':
+        specifier: workspace:*
+        version: link:../../packages/smithers/agent/chain
+      '@smthrs/core':
+        specifier: workspace:*
+        version: link:../../packages/smithers/flows/core
+      '@smthrs/crypto':
+        specifier: workspace:*
+        version: link:../../packages/smithers/flows/crypto
+      '@smthrs/database':
+        specifier: workspace:*
+        version: link:../../packages/smithers/flows/database
+      '@smthrs/engine-store':
+        specifier: workspace:*
+        version: link:../../packages/smithers/flows/engine-store
+      '@smthrs/flow':
+        specifier: workspace:*
+        version: link:../../packages/smithers/flows/flow
+      '@smthrs/gateway':
+        specifier: workspace:*
+        version: link:../../packages/smithers/gateway
+      '@smthrs/harness':
+        specifier: workspace:*
+        version: link:../../packages/smithers/agent/harness
+      '@smthrs/jj':
+        specifier: workspace:*
+        version: link:../../packages/smithers/flows/jj
+      '@smthrs/journal':
+        specifier: workspace:*
+        version: link:../../packages/smithers/flows/journal
+      '@smthrs/kernel':
+        specifier: workspace:*
+        version: link:../../packages/smithers/flows/kernel
+      '@smthrs/memory':
+        specifier: workspace:*
+        version: link:../../packages/smithers/agent/memory
+      '@smthrs/model':
+        specifier: workspace:*
+        version: link:../../packages/smithers/agent/model
+      '@smthrs/patterns':
+        specifier: workspace:*
+        version: link:../../packages/smithers/flows/patterns
+      '@smthrs/platform-browser':
+        specifier: workspace:*
+        version: link:../../packages/smithers/flows/platform-browser
+      '@smthrs/registry':
+        specifier: workspace:*
+        version: link:../../packages/smithers/agent/registry
+      '@smthrs/rpc':
+        specifier: workspace:*
+        version: link:../../packages/rpc
+      '@smthrs/ui':
+        specifier: workspace:*
+        version: link:../../packages/smithers/ui
+      '@standard-schema/spec':
+        specifier: 1.1.0
+        version: 1.1.0
+      '@tanstack/browser-db-sqlite-persistence':
+        specifier: 0.2.20
+        version: 0.2.20(@journeyapps/wa-sqlite@1.7.2)(typescript@5.9.3)
+      '@tanstack/db':
+        specifier: 0.8.7
+        version: 0.8.7(typescript@5.9.3)
+      '@tanstack/react-db':
+        specifier: 0.3.7
+        version: 0.3.7(react@19.2.8)(typescript@5.9.3)
+      '@xyflow/react':
+        specifier: ^12.11.6
+        version: 12.11.6(@types/react-dom@19.2.7(@types/react@19.2.18))(@types/react@19.2.18)(immer@11.1.18)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
+      dagre:
+        specifier: ^0.8.5
+        version: 0.8.5
+      effect:
+        specifier: 4.0.0-rc.112
+        version: 4.0.0-rc.112
+      electrobun:
+        specifier: 2.0.1
+        version: 2.0.1
+      lucide-react:
+        specifier: 1.40.0
+        version: 1.40.0(react@19.2.8)
+      react:
+        specifier: 19.2.8
+        version: 19.2.8
+      react-dom:
+        specifier: 19.2.8
+        version: 19.2.8(react@19.2.8)
+      yjs:
+        specifier: 13.6.32
+        version: 13.6.32
+      zod:
+        specifier: 4.5.4
+        version: 4.5.4
+    devDependencies:
+      '@effect/platform-node':
+        specifier: 4.0.0-rc.112
+        version: 4.0.0-rc.112(effect@4.0.0-rc.112)(redis@6.2.1(@opentelemetry/api@1.9.1))
+      '@happy-dom/global-registrator':
+        specifier: ^20.13.2
+        version: 20.13.2
+      '@playwright/test':
+        specifier: 1.62.1
+        version: 1.62.1
+      '@smthrs/control':
+        specifier: workspace:*
+        version: link:../../packages/smithers/control
+      '@smthrs/notifications':
+        specifier: workspace:*
+        version: link:../../packages/smithers/notifications
+      '@smthrs/run-store':
+        specifier: workspace:*
+        version: link:../../packages/smithers/flows/run-store
+      '@smthrs/sync':
+        specifier: workspace:*
+        version: link:../../packages/smithers/flows/sync
+      '@tailwindcss/postcss':
+        specifier: 4.3.3
+        version: 4.3.3
+      '@types/bun':
+        specifier: latest
+        version: 1.4.2
+      '@types/d3-force':
+        specifier: 3.0.10
+        version: 3.0.10
+      '@types/dagre':
+        specifier: 0.7.54
+        version: 0.7.54
+      '@types/react':
+        specifier: 19.2.18
+        version: 19.2.18
+      '@types/react-dom':
+        specifier: 19.2.7
+        version: 19.2.7(@types/react@19.2.18)
+      '@types/three':
+        specifier: 0.185.4
+        version: 0.185.4
+      '@vitejs/plugin-react':
+        specifier: 6.1.1
+        version: 6.1.1(vite@8.2.2(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
+      autoprefixer:
+        specifier: ^10.5.4
+        version: 10.5.4(postcss@8.5.28)
+      playwright:
+        specifier: 1.62.1
+        version: 1.62.1
+      postcss:
+        specifier: ^8.5.28
+        version: 8.5.28
+      smithers-server:
+        specifier: workspace:*
+        version: link:../server
+      tailwindcss:
+        specifier: ^4.3.3
+        version: 4.3.3
+      tsx:
+        specifier: 4.23.13
+        version: 4.23.13
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
+      vite:
+        specifier: 8.2.2
+        version: 8.2.2(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0)
+
   apps/bug-worker:
     dependencies:
       zod:
@@ -1254,13 +1435,16 @@ importers:
       '@smthrs/rpc':
         specifier: workspace:*
         version: link:../../packages/rpc
+      alchemy:
+        specifier: 2.0.0-beta.76
+        version: 2.0.0-beta.76(@effect/platform-bun@4.0.0-rc.112(effect@4.0.0-rc.112))(@effect/platform-node@4.0.0-rc.112(effect@4.0.0-rc.112)(redis@6.2.1(@opentelemetry/api@1.9.1)))(@types/node@26.4.1)(@types/react@19.2.18)(effect@4.0.0-rc.112)(react-devtools-core@7.0.1)(typescript@5.9.3)(vite@8.2.2(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))(vitest@4.1.9)(ws@8.21.3)
+      effect:
+        specifier: 4.0.0-rc.112
+        version: 4.0.0-rc.112
     devDependencies:
       '@types/bun':
         specifier: latest
         version: 1.4.2
-      effect:
-        specifier: 4.0.0-rc.112
-        version: 4.0.0-rc.112
       typescript:
         specifier: ^5.9.3
         version: 5.9.3
@@ -1400,187 +1584,6 @@ importers:
       wrangler:
         specifier: ^4.129.0
         version: 4.129.0(@cloudflare/workers-types@5.20260903.1)
-
-  apps/ui:
-    dependencies:
-      '@fontsource/ibm-plex-mono':
-        specifier: 5.3.0
-        version: 5.3.0
-      '@fontsource/inter':
-        specifier: 5.3.0
-        version: 5.3.0
-      '@journeyapps/wa-sqlite':
-        specifier: 1.7.2
-        version: 1.7.2
-      '@smthrs/canonical':
-        specifier: workspace:*
-        version: link:../../packages/smithers/flows/canonical
-      '@smthrs/capability':
-        specifier: workspace:*
-        version: link:../../packages/smithers/flows/capability
-      '@smthrs/chain':
-        specifier: workspace:*
-        version: link:../../packages/smithers/agent/chain
-      '@smthrs/core':
-        specifier: workspace:*
-        version: link:../../packages/smithers/flows/core
-      '@smthrs/crypto':
-        specifier: workspace:*
-        version: link:../../packages/smithers/flows/crypto
-      '@smthrs/database':
-        specifier: workspace:*
-        version: link:../../packages/smithers/flows/database
-      '@smthrs/engine-store':
-        specifier: workspace:*
-        version: link:../../packages/smithers/flows/engine-store
-      '@smthrs/flow':
-        specifier: workspace:*
-        version: link:../../packages/smithers/flows/flow
-      '@smthrs/gateway':
-        specifier: workspace:*
-        version: link:../../packages/smithers/gateway
-      '@smthrs/harness':
-        specifier: workspace:*
-        version: link:../../packages/smithers/agent/harness
-      '@smthrs/jj':
-        specifier: workspace:*
-        version: link:../../packages/smithers/flows/jj
-      '@smthrs/journal':
-        specifier: workspace:*
-        version: link:../../packages/smithers/flows/journal
-      '@smthrs/kernel':
-        specifier: workspace:*
-        version: link:../../packages/smithers/flows/kernel
-      '@smthrs/memory':
-        specifier: workspace:*
-        version: link:../../packages/smithers/agent/memory
-      '@smthrs/model':
-        specifier: workspace:*
-        version: link:../../packages/smithers/agent/model
-      '@smthrs/patterns':
-        specifier: workspace:*
-        version: link:../../packages/smithers/flows/patterns
-      '@smthrs/platform-browser':
-        specifier: workspace:*
-        version: link:../../packages/smithers/flows/platform-browser
-      '@smthrs/registry':
-        specifier: workspace:*
-        version: link:../../packages/smithers/agent/registry
-      '@smthrs/rpc':
-        specifier: workspace:*
-        version: link:../../packages/rpc
-      '@smthrs/ui':
-        specifier: workspace:*
-        version: link:../../packages/smithers/ui
-      '@standard-schema/spec':
-        specifier: 1.1.0
-        version: 1.1.0
-      '@tanstack/browser-db-sqlite-persistence':
-        specifier: 0.2.20
-        version: 0.2.20(@journeyapps/wa-sqlite@1.7.2)(typescript@5.9.3)
-      '@tanstack/db':
-        specifier: 0.8.7
-        version: 0.8.7(typescript@5.9.3)
-      '@tanstack/react-db':
-        specifier: 0.3.7
-        version: 0.3.7(react@19.2.8)(typescript@5.9.3)
-      '@xyflow/react':
-        specifier: ^12.11.6
-        version: 12.11.6(@types/react-dom@19.2.7(@types/react@19.2.18))(@types/react@19.2.18)(immer@11.1.18)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
-      dagre:
-        specifier: ^0.8.5
-        version: 0.8.5
-      effect:
-        specifier: 4.0.0-rc.112
-        version: 4.0.0-rc.112
-      electrobun:
-        specifier: 2.0.1
-        version: 2.0.1
-      lucide-react:
-        specifier: 1.40.0
-        version: 1.40.0(react@19.2.8)
-      react:
-        specifier: 19.2.8
-        version: 19.2.8
-      react-dom:
-        specifier: 19.2.8
-        version: 19.2.8(react@19.2.8)
-      yjs:
-        specifier: 13.6.32
-        version: 13.6.32
-      zod:
-        specifier: 4.5.4
-        version: 4.5.4
-    devDependencies:
-      '@effect/platform-node':
-        specifier: 4.0.0-rc.112
-        version: 4.0.0-rc.112(effect@4.0.0-rc.112)(redis@6.2.1(@opentelemetry/api@1.9.1))
-      '@happy-dom/global-registrator':
-        specifier: ^20.13.2
-        version: 20.13.2
-      '@playwright/test':
-        specifier: 1.62.1
-        version: 1.62.1
-      '@smthrs/control':
-        specifier: workspace:*
-        version: link:../../packages/smithers/control
-      '@smthrs/notifications':
-        specifier: workspace:*
-        version: link:../../packages/smithers/notifications
-      '@smthrs/run-store':
-        specifier: workspace:*
-        version: link:../../packages/smithers/flows/run-store
-      '@smthrs/sync':
-        specifier: workspace:*
-        version: link:../../packages/smithers/flows/sync
-      '@tailwindcss/postcss':
-        specifier: 4.3.3
-        version: 4.3.3
-      '@types/bun':
-        specifier: latest
-        version: 1.4.2
-      '@types/d3-force':
-        specifier: 3.0.10
-        version: 3.0.10
-      '@types/dagre':
-        specifier: 0.7.54
-        version: 0.7.54
-      '@types/react':
-        specifier: 19.2.18
-        version: 19.2.18
-      '@types/react-dom':
-        specifier: 19.2.7
-        version: 19.2.7(@types/react@19.2.18)
-      '@types/three':
-        specifier: 0.185.4
-        version: 0.185.4
-      '@vitejs/plugin-react':
-        specifier: 6.1.1
-        version: 6.1.1(vite@8.2.2(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
-      autoprefixer:
-        specifier: ^10.5.4
-        version: 10.5.4(postcss@8.5.28)
-      playwright:
-        specifier: 1.62.1
-        version: 1.62.1
-      postcss:
-        specifier: ^8.5.28
-        version: 8.5.28
-      smithers-server:
-        specifier: workspace:*
-        version: link:../server
-      tailwindcss:
-        specifier: ^4.3.3
-        version: 4.3.3
-      tsx:
-        specifier: 4.23.13
-        version: 4.23.13
-      typescript:
-        specifier: ^5.9.3
-        version: 5.9.3
-      vite:
-        specifier: 8.2.2
-        version: 8.2.2(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0)
 
   evals/agent:
     dependencies:
@@ -10013,9 +10016,6 @@ packages:
   '@types/node@25.9.5':
     resolution: {integrity: sha512-OScDchr2fwuUmWdf4kZ9h7PcJiYDVInhJizG/biAq3cAvqwYktuy/TYGGdZNMtNTFUP7rnb0NU4TUdm82kt4Rg==}
 
-  '@types/node@26.1.0':
-    resolution: {integrity: sha512-O0A1G3xPGy4w7AgQdAQYUlQ+BKk2Oovw8eRpofyp5KdBZULnbe+WqaOVNrm705SHphCiG4XHsACrSmPu1f+Kgw==}
-
   '@types/node@26.4.1':
     resolution: {integrity: sha512-k97ENvZWtvA6yqz5/FS6a7duDgOPEeOQOc2iKS/nY6mX6qJUKtLnWzQS+Xj6tXweyj6ZcTAK2Qecetnvi9nCLA==}
 
@@ -13989,7 +13989,6 @@ packages:
 
   tailwindcss@4.3.3:
     resolution: {integrity: sha512-gOhV3P7ufE62QDGg1zVaTgCR+EtPv92k2nIhVcVKcLmxT1sUBsQGhnZj175j+MqRt4zLF7ic+sCYjfhxMxj7YQ==}
-    hasBin: true
 
   tapable@2.3.3:
     resolution: {integrity: sha512-uxc/zpqFg6x7C8vOE7lh6Lbda8eEL9zmVm/PLeTPBRhh1xCgdWaQ+J1CUieGpIfm2HdtsUpRv+HshiasBMcc6A==}
@@ -14735,9 +14734,6 @@ packages:
 
   zeptomatch@2.1.0:
     resolution: {integrity: sha512-KiGErG2J0G82LSpniV0CtIzjlJ10E04j02VOudJsPyPwNZgGnRKQy7I1R7GMyg/QswnE4l7ohSGrQbQbjXPPDA==}
-
-  zod@4.4.3:
-    resolution: {integrity: sha512-ytENFjIJFl2UwYglde2jchW2Hwm4GJFLDiSXWdTrJQBIN9Fcyp7n4DhxJEiWNAJMV1/BqWfW/kkg71UDcHJyTQ==}
 
   zod@4.5.4:
     resolution: {integrity: sha512-sC95tT5iHHH9gtpj6A81kh+NEaRAUFN+qlUPDUbRfOMvNf5QCBqsb3WgvnpVtK5Y+4UfA6KqufotuTvMGiTlsA==}
@@ -16288,7 +16284,7 @@ snapshots:
 
   '@happy-dom/global-registrator@20.13.2':
     dependencies:
-      '@types/node': 26.1.0
+      '@types/node': 26.4.1
       happy-dom: 20.13.2
     transitivePeerDependencies:
       - bufferutil
@@ -18972,10 +18968,6 @@ snapshots:
   '@types/node@25.9.5':
     dependencies:
       undici-types: 7.24.6
-
-  '@types/node@26.1.0':
-    dependencies:
-      undici-types: 8.3.0
 
   '@types/node@26.4.1':
     dependencies:
@@ -21944,7 +21936,7 @@ snapshots:
       tinyglobby: 0.2.17
       unbash: 4.0.11
       yaml: 2.9.0
-      zod: 4.4.3
+      zod: 4.5.4
 
   layout-base@1.0.2: {}
 
@@ -24949,8 +24941,6 @@ snapshots:
     dependencies:
       grammex: 3.1.13
       graphmatch: 1.1.1
-
-  zod@4.4.3: {}
 
   zod@4.5.4: {}
 

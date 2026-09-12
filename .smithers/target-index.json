@@ -548,6 +548,328 @@
     }
   },
   {
+    "label": "//apps/app:browserE2e",
+    "package": "apps/app",
+    "name": "browserE2e",
+    "rule": "NodeTest",
+    "kinds": [
+      "test"
+    ],
+    "cacheable": false,
+    "inputs": [
+      {
+        "kind": "file",
+        "path": "apps/app/scripts/run-pr-e2e.mjs"
+      },
+      {
+        "kind": "glob",
+        "pattern": "apps/app/src/**/*.ts",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "apps/app/src/**/*.tsx",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "apps/app/src/**/*.css",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "apps/app/scripts/**/*",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "apps/app/e2e/**/*",
+        "exclude": []
+      },
+      {
+        "kind": "file",
+        "path": "apps/app/vite.config.ts"
+      },
+      {
+        "kind": "file",
+        "path": "apps/app/tailwind.config.js"
+      },
+      {
+        "kind": "file",
+        "path": "apps/app/postcss.config.js"
+      },
+      {
+        "kind": "file",
+        "path": "apps/app/playwright.config.ts"
+      },
+      {
+        "kind": "file",
+        "path": "apps/app/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "pnpm-lock.yaml"
+      }
+    ],
+    "outputs": [],
+    "dependencies": [],
+    "source": {
+      "file": "apps/app/PACKAGE.ts"
+    }
+  },
+  {
+    "label": "//apps/app:check",
+    "package": "apps/app",
+    "name": "check",
+    "rule": "Typecheck",
+    "kinds": [
+      "build"
+    ],
+    "cacheable": false,
+    "inputs": [
+      {
+        "kind": "glob",
+        "pattern": "apps/app/src/**/*.ts",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "apps/app/src/**/*.tsx",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "apps/app/scripts/**/*",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "apps/app/e2e/**/*",
+        "exclude": []
+      },
+      {
+        "kind": "file",
+        "path": "apps/app/vite.config.ts"
+      },
+      {
+        "kind": "file",
+        "path": "apps/app/tailwind.config.js"
+      },
+      {
+        "kind": "file",
+        "path": "apps/app/postcss.config.js"
+      },
+      {
+        "kind": "file",
+        "path": "apps/app/electrobun.config.ts"
+      },
+      {
+        "kind": "file",
+        "path": "apps/app/hutch.config.ts"
+      },
+      {
+        "kind": "file",
+        "path": "apps/app/playwright.config.ts"
+      },
+      {
+        "kind": "file",
+        "path": "apps/app/tsconfig.json"
+      }
+    ],
+    "outputs": [],
+    "dependencies": [
+      "//apps/app:devkit"
+    ],
+    "source": {
+      "file": "apps/app/PACKAGE.ts"
+    }
+  },
+  {
+    "label": "//apps/app:devkit",
+    "package": "apps/app",
+    "name": "devkit",
+    "rule": "NodeBinary",
+    "kinds": [
+      "build"
+    ],
+    "cacheable": false,
+    "inputs": [
+      {
+        "kind": "file",
+        "path": "apps/app/scripts/ensure-devkit.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "apps/app/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "apps/app/electrobun.config.ts"
+      },
+      {
+        "kind": "file",
+        "path": "apps/app/hutch.config.ts"
+      },
+      {
+        "kind": "file",
+        "path": "pnpm-lock.yaml"
+      }
+    ],
+    "outputs": [],
+    "dependencies": [],
+    "source": {
+      "file": "apps/app/PACKAGE.ts"
+    }
+  },
+  {
+    "label": "//apps/app:solidCodegenInputs",
+    "package": "apps/app",
+    "name": "solidCodegenInputs",
+    "rule": "Filegroup",
+    "kinds": [],
+    "cacheable": true,
+    "inputs": [
+      {
+        "kind": "glob",
+        "pattern": "apps/app/src/**/*",
+        "exclude": []
+      },
+      {
+        "kind": "file",
+        "path": "apps/app/package.json"
+      }
+    ],
+    "outputs": [],
+    "dependencies": [],
+    "source": {
+      "file": "apps/app/PACKAGE.ts"
+    }
+  },
+  {
+    "label": "//apps/app:unitTests",
+    "package": "apps/app",
+    "name": "unitTests",
+    "rule": "NodeTest",
+    "kinds": [
+      "test"
+    ],
+    "cacheable": false,
+    "inputs": [
+      {
+        "kind": "glob",
+        "pattern": "apps/app/src/**/*.ts",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "apps/app/src/**/*.tsx",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "apps/app/src/**/*.css",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "apps/app/e2e/contracts/**/*.ts",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "apps/app/scripts/**/*",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "apps/app/e2e/**/*",
+        "exclude": []
+      },
+      {
+        "kind": "file",
+        "path": "apps/app/vite.config.ts"
+      },
+      {
+        "kind": "file",
+        "path": "apps/app/tailwind.config.js"
+      },
+      {
+        "kind": "file",
+        "path": "apps/app/postcss.config.js"
+      },
+      {
+        "kind": "glob",
+        "pattern": "apps/app/*.ts",
+        "exclude": []
+      },
+      {
+        "kind": "file",
+        "path": "apps/app/tsconfig.json"
+      },
+      {
+        "kind": "file",
+        "path": "apps/app/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "package.json"
+      },
+      {
+        "kind": "file",
+        "path": "pnpm-lock.yaml"
+      },
+      {
+        "kind": "file",
+        "path": "packages/rpc/fixtures/force/graph.json"
+      },
+      {
+        "kind": "file",
+        "path": "packages/rpc/fixtures/force/plan-typeCheck.json"
+      }
+    ],
+    "outputs": [],
+    "dependencies": [
+      "//packages/rpc:check",
+      "//packages/smithers/gateway:check",
+      "//packages/smithers/ui:check"
+    ],
+    "source": {
+      "file": "apps/app/PACKAGE.ts"
+    }
+  },
+  {
+    "label": "//apps/app:webSources",
+    "package": "apps/app",
+    "name": "webSources",
+    "rule": "Filegroup",
+    "kinds": [],
+    "cacheable": true,
+    "inputs": [
+      {
+        "kind": "glob",
+        "pattern": "apps/app/src/mainview/**/*",
+        "exclude": []
+      },
+      {
+        "kind": "file",
+        "path": "apps/app/tailwind.config.js"
+      },
+      {
+        "kind": "file",
+        "path": "apps/app/scripts/build-stamp.ts"
+      },
+      {
+        "kind": "file",
+        "path": "apps/app/package.json"
+      }
+    ],
+    "outputs": [],
+    "dependencies": [],
+    "source": {
+      "file": "apps/app/PACKAGE.ts"
+    }
+  },
+  {
     "label": "//apps/bug-worker:check",
     "package": "apps/bug-worker",
     "name": "check",
@@ -6455,9 +6777,9 @@
       "apps/site/dist"
     ],
     "dependencies": [
+      "//apps/app:devkit",
+      "//apps/app:webSources",
       "//apps/docs/shared:sources",
-      "//apps/ui:devkit",
-      "//apps/ui:webSources",
       "//packages/smithers:docsSources"
     ],
     "source": {
@@ -6493,6 +6815,10 @@
       {
         "kind": "file",
         "path": "scripts/workspace-packages.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "apps/app/package.json"
       },
       {
         "kind": "file",
@@ -6709,10 +7035,6 @@
       {
         "kind": "file",
         "path": "apps/status-site/package.json"
-      },
-      {
-        "kind": "file",
-        "path": "apps/ui/package.json"
       },
       {
         "kind": "file",
@@ -7017,8 +7339,8 @@
     ],
     "outputs": [],
     "dependencies": [
-      "//apps/docs/shared:sources",
-      "//apps/ui:webSources"
+      "//apps/app:webSources",
+      "//apps/docs/shared:sources"
     ],
     "source": {
       "file": "apps/site/PACKAGE.ts"
@@ -7764,6 +8086,10 @@
       },
       {
         "kind": "file",
+        "path": "apps/app/package.json"
+      },
+      {
+        "kind": "file",
         "path": "apps/bug-worker/package.json"
       },
       {
@@ -7977,10 +8303,6 @@
       {
         "kind": "file",
         "path": "apps/status-site/package.json"
-      },
-      {
-        "kind": "file",
-        "path": "apps/ui/package.json"
       },
       {
         "kind": "file",
@@ -8517,304 +8839,6 @@
     "dependencies": [],
     "source": {
       "file": "apps/status-site/PACKAGE.ts"
-    }
-  },
-  {
-    "label": "//apps/ui:browserE2e",
-    "package": "apps/ui",
-    "name": "browserE2e",
-    "rule": "NodeTest",
-    "kinds": [
-      "test"
-    ],
-    "cacheable": false,
-    "inputs": [
-      {
-        "kind": "file",
-        "path": "apps/ui/scripts/run-pr-e2e.mjs"
-      },
-      {
-        "kind": "glob",
-        "pattern": "apps/ui/src/**/*.ts",
-        "exclude": []
-      },
-      {
-        "kind": "glob",
-        "pattern": "apps/ui/src/**/*.tsx",
-        "exclude": []
-      },
-      {
-        "kind": "glob",
-        "pattern": "apps/ui/src/**/*.css",
-        "exclude": []
-      },
-      {
-        "kind": "glob",
-        "pattern": "apps/ui/scripts/**/*",
-        "exclude": []
-      },
-      {
-        "kind": "glob",
-        "pattern": "apps/ui/e2e/**/*",
-        "exclude": []
-      },
-      {
-        "kind": "file",
-        "path": "apps/ui/vite.config.ts"
-      },
-      {
-        "kind": "file",
-        "path": "apps/ui/tailwind.config.js"
-      },
-      {
-        "kind": "file",
-        "path": "apps/ui/postcss.config.js"
-      },
-      {
-        "kind": "file",
-        "path": "apps/ui/playwright.config.ts"
-      },
-      {
-        "kind": "file",
-        "path": "apps/ui/package.json"
-      },
-      {
-        "kind": "file",
-        "path": "pnpm-lock.yaml"
-      }
-    ],
-    "outputs": [],
-    "dependencies": [],
-    "source": {
-      "file": "apps/ui/PACKAGE.ts"
-    }
-  },
-  {
-    "label": "//apps/ui:check",
-    "package": "apps/ui",
-    "name": "check",
-    "rule": "Typecheck",
-    "kinds": [
-      "build"
-    ],
-    "cacheable": false,
-    "inputs": [
-      {
-        "kind": "glob",
-        "pattern": "apps/ui/src/**/*.ts",
-        "exclude": []
-      },
-      {
-        "kind": "glob",
-        "pattern": "apps/ui/src/**/*.tsx",
-        "exclude": []
-      },
-      {
-        "kind": "glob",
-        "pattern": "apps/ui/scripts/**/*",
-        "exclude": []
-      },
-      {
-        "kind": "glob",
-        "pattern": "apps/ui/e2e/**/*",
-        "exclude": []
-      },
-      {
-        "kind": "file",
-        "path": "apps/ui/vite.config.ts"
-      },
-      {
-        "kind": "file",
-        "path": "apps/ui/tailwind.config.js"
-      },
-      {
-        "kind": "file",
-        "path": "apps/ui/postcss.config.js"
-      },
-      {
-        "kind": "file",
-        "path": "apps/ui/electrobun.config.ts"
-      },
-      {
-        "kind": "file",
-        "path": "apps/ui/hutch.config.ts"
-      },
-      {
-        "kind": "file",
-        "path": "apps/ui/playwright.config.ts"
-      },
-      {
-        "kind": "file",
-        "path": "apps/ui/tsconfig.json"
-      }
-    ],
-    "outputs": [],
-    "dependencies": [
-      "//apps/ui:devkit"
-    ],
-    "source": {
-      "file": "apps/ui/PACKAGE.ts"
-    }
-  },
-  {
-    "label": "//apps/ui:devkit",
-    "package": "apps/ui",
-    "name": "devkit",
-    "rule": "NodeBinary",
-    "kinds": [
-      "build"
-    ],
-    "cacheable": false,
-    "inputs": [
-      {
-        "kind": "file",
-        "path": "apps/ui/scripts/ensure-devkit.mjs"
-      },
-      {
-        "kind": "file",
-        "path": "apps/ui/package.json"
-      },
-      {
-        "kind": "file",
-        "path": "apps/ui/electrobun.config.ts"
-      },
-      {
-        "kind": "file",
-        "path": "apps/ui/hutch.config.ts"
-      },
-      {
-        "kind": "file",
-        "path": "pnpm-lock.yaml"
-      }
-    ],
-    "outputs": [],
-    "dependencies": [],
-    "source": {
-      "file": "apps/ui/PACKAGE.ts"
-    }
-  },
-  {
-    "label": "//apps/ui:unitTests",
-    "package": "apps/ui",
-    "name": "unitTests",
-    "rule": "NodeTest",
-    "kinds": [
-      "test"
-    ],
-    "cacheable": false,
-    "inputs": [
-      {
-        "kind": "glob",
-        "pattern": "apps/ui/src/**/*.ts",
-        "exclude": []
-      },
-      {
-        "kind": "glob",
-        "pattern": "apps/ui/src/**/*.tsx",
-        "exclude": []
-      },
-      {
-        "kind": "glob",
-        "pattern": "apps/ui/src/**/*.css",
-        "exclude": []
-      },
-      {
-        "kind": "glob",
-        "pattern": "apps/ui/e2e/contracts/**/*.ts",
-        "exclude": []
-      },
-      {
-        "kind": "glob",
-        "pattern": "apps/ui/scripts/**/*",
-        "exclude": []
-      },
-      {
-        "kind": "glob",
-        "pattern": "apps/ui/e2e/**/*",
-        "exclude": []
-      },
-      {
-        "kind": "file",
-        "path": "apps/ui/vite.config.ts"
-      },
-      {
-        "kind": "file",
-        "path": "apps/ui/tailwind.config.js"
-      },
-      {
-        "kind": "file",
-        "path": "apps/ui/postcss.config.js"
-      },
-      {
-        "kind": "glob",
-        "pattern": "apps/ui/*.ts",
-        "exclude": []
-      },
-      {
-        "kind": "file",
-        "path": "apps/ui/tsconfig.json"
-      },
-      {
-        "kind": "file",
-        "path": "apps/ui/package.json"
-      },
-      {
-        "kind": "file",
-        "path": "package.json"
-      },
-      {
-        "kind": "file",
-        "path": "pnpm-lock.yaml"
-      },
-      {
-        "kind": "file",
-        "path": "packages/rpc/fixtures/force/graph.json"
-      },
-      {
-        "kind": "file",
-        "path": "packages/rpc/fixtures/force/plan-typeCheck.json"
-      }
-    ],
-    "outputs": [],
-    "dependencies": [
-      "//packages/rpc:check",
-      "//packages/smithers/gateway:check",
-      "//packages/smithers/ui:check"
-    ],
-    "source": {
-      "file": "apps/ui/PACKAGE.ts"
-    }
-  },
-  {
-    "label": "//apps/ui:webSources",
-    "package": "apps/ui",
-    "name": "webSources",
-    "rule": "Filegroup",
-    "kinds": [],
-    "cacheable": true,
-    "inputs": [
-      {
-        "kind": "glob",
-        "pattern": "apps/ui/src/mainview/**/*",
-        "exclude": []
-      },
-      {
-        "kind": "file",
-        "path": "apps/ui/tailwind.config.js"
-      },
-      {
-        "kind": "file",
-        "path": "apps/ui/scripts/build-stamp.ts"
-      },
-      {
-        "kind": "file",
-        "path": "apps/ui/package.json"
-      }
-    ],
-    "outputs": [],
-    "dependencies": [],
-    "source": {
-      "file": "apps/ui/PACKAGE.ts"
     }
   },
   {
@@ -9627,123 +9651,123 @@
       },
       {
         "kind": "file",
-        "path": "apps/ui/AGENTS.md"
+        "path": "apps/app/AGENTS.md"
       },
       {
         "kind": "file",
-        "path": "apps/ui/docs/ONBOARDING.md"
+        "path": "apps/app/docs/ONBOARDING.md"
       },
       {
         "kind": "file",
-        "path": "apps/ui/docs/workbench-lanes/coding-plans.md"
+        "path": "apps/app/docs/workbench-lanes/coding-plans.md"
       },
       {
         "kind": "file",
-        "path": "apps/ui/docs/workbench-lanes/native-engine-evidence.md"
+        "path": "apps/app/docs/workbench-lanes/native-engine-evidence.md"
       },
       {
         "kind": "file",
-        "path": "apps/ui/docs/workbench-lanes/runs.md"
+        "path": "apps/app/docs/workbench-lanes/runs.md"
       },
       {
         "kind": "file",
-        "path": "apps/ui/docs/workbench-lanes/wiki-collaboration.md"
+        "path": "apps/app/docs/workbench-lanes/wiki-collaboration.md"
       },
       {
         "kind": "file",
-        "path": "apps/ui/package.json"
+        "path": "apps/app/package.json"
       },
       {
         "kind": "file",
-        "path": "apps/ui/src/mainview/cards/CodingPlan.test.ts"
+        "path": "apps/app/src/mainview/cards/CodingPlan.test.ts"
       },
       {
         "kind": "file",
-        "path": "apps/ui/src/mainview/cards/CodingPlan.ts"
+        "path": "apps/app/src/mainview/cards/CodingPlan.ts"
       },
       {
         "kind": "file",
-        "path": "apps/ui/src/mainview/cards/CodingPlanCard.tsx"
+        "path": "apps/app/src/mainview/cards/CodingPlanCard.tsx"
       },
       {
         "kind": "file",
-        "path": "apps/ui/src/mainview/cards/CodingPoc.test.ts"
+        "path": "apps/app/src/mainview/cards/CodingPoc.test.ts"
       },
       {
         "kind": "file",
-        "path": "apps/ui/src/mainview/cards/CodingPoc.ts"
+        "path": "apps/app/src/mainview/cards/CodingPoc.ts"
       },
       {
         "kind": "file",
-        "path": "apps/ui/src/mainview/cards/CodingPocCard.tsx"
+        "path": "apps/app/src/mainview/cards/CodingPocCard.tsx"
       },
       {
         "kind": "file",
-        "path": "apps/ui/src/mainview/cards/CodingVibe.ts"
+        "path": "apps/app/src/mainview/cards/CodingVibe.ts"
       },
       {
         "kind": "file",
-        "path": "apps/ui/src/mainview/cards/CodingVibeCard.tsx"
+        "path": "apps/app/src/mainview/cards/CodingVibeCard.tsx"
       },
       {
         "kind": "file",
-        "path": "apps/ui/src/mainview/cards/ConversationCards.tsx"
+        "path": "apps/app/src/mainview/cards/ConversationCards.tsx"
       },
       {
         "kind": "file",
-        "path": "apps/ui/src/mainview/cards/EngineTrace.ts"
+        "path": "apps/app/src/mainview/cards/EngineTrace.ts"
       },
       {
         "kind": "file",
-        "path": "apps/ui/src/mainview/cards/RunTrace.ts"
+        "path": "apps/app/src/mainview/cards/RunTrace.ts"
       },
       {
         "kind": "file",
-        "path": "apps/ui/src/mainview/cards/RunTraceCard.tsx"
+        "path": "apps/app/src/mainview/cards/RunTraceCard.tsx"
       },
       {
         "kind": "file",
-        "path": "apps/ui/src/mainview/flows/entries/runs.ts"
+        "path": "apps/app/src/mainview/flows/entries/runs.ts"
       },
       {
         "kind": "file",
-        "path": "apps/ui/src/mainview/flows/entries/wiki.ts"
+        "path": "apps/app/src/mainview/flows/entries/wiki.ts"
       },
       {
         "kind": "file",
-        "path": "apps/ui/src/mainview/runtime/FrameHistory.ts"
+        "path": "apps/app/src/mainview/runtime/FrameHistory.ts"
       },
       {
         "kind": "file",
-        "path": "apps/ui/src/mainview/state/RunReference.ts"
+        "path": "apps/app/src/mainview/state/RunReference.ts"
       },
       {
         "kind": "file",
-        "path": "apps/ui/src/mainview/state/controller/cloud-wiki.ts"
+        "path": "apps/app/src/mainview/state/controller/cloud-wiki.ts"
       },
       {
         "kind": "file",
-        "path": "apps/ui/src/mainview/state/controller/runs.ts"
+        "path": "apps/app/src/mainview/state/controller/runs.ts"
       },
       {
         "kind": "file",
-        "path": "apps/ui/src/mainview/state/controller/workflow-pump.ts"
+        "path": "apps/app/src/mainview/state/controller/workflow-pump.ts"
       },
       {
         "kind": "file",
-        "path": "apps/ui/src/mainview/wiki/CloudWiki.test.ts"
+        "path": "apps/app/src/mainview/wiki/CloudWiki.test.ts"
       },
       {
         "kind": "file",
-        "path": "apps/ui/src/mainview/wiki/CloudWiki.ts"
+        "path": "apps/app/src/mainview/wiki/CloudWiki.ts"
       },
       {
         "kind": "file",
-        "path": "apps/ui/src/mainview/wiki/CloudWikiState.ts"
+        "path": "apps/app/src/mainview/wiki/CloudWikiState.ts"
       },
       {
         "kind": "file",
-        "path": "apps/ui/src/mainview/wiki/fixtures/yrs-deletion-ack.json"
+        "path": "apps/app/src/mainview/wiki/fixtures/yrs-deletion-ack.json"
       },
       {
         "kind": "file",
@@ -10290,123 +10314,123 @@
       },
       {
         "kind": "file",
-        "path": "apps/ui/AGENTS.md"
+        "path": "apps/app/AGENTS.md"
       },
       {
         "kind": "file",
-        "path": "apps/ui/docs/ONBOARDING.md"
+        "path": "apps/app/docs/ONBOARDING.md"
       },
       {
         "kind": "file",
-        "path": "apps/ui/docs/workbench-lanes/coding-plans.md"
+        "path": "apps/app/docs/workbench-lanes/coding-plans.md"
       },
       {
         "kind": "file",
-        "path": "apps/ui/docs/workbench-lanes/native-engine-evidence.md"
+        "path": "apps/app/docs/workbench-lanes/native-engine-evidence.md"
       },
       {
         "kind": "file",
-        "path": "apps/ui/docs/workbench-lanes/runs.md"
+        "path": "apps/app/docs/workbench-lanes/runs.md"
       },
       {
         "kind": "file",
-        "path": "apps/ui/docs/workbench-lanes/wiki-collaboration.md"
+        "path": "apps/app/docs/workbench-lanes/wiki-collaboration.md"
       },
       {
         "kind": "file",
-        "path": "apps/ui/package.json"
+        "path": "apps/app/package.json"
       },
       {
         "kind": "file",
-        "path": "apps/ui/src/mainview/cards/CodingPlan.test.ts"
+        "path": "apps/app/src/mainview/cards/CodingPlan.test.ts"
       },
       {
         "kind": "file",
-        "path": "apps/ui/src/mainview/cards/CodingPlan.ts"
+        "path": "apps/app/src/mainview/cards/CodingPlan.ts"
       },
       {
         "kind": "file",
-        "path": "apps/ui/src/mainview/cards/CodingPlanCard.tsx"
+        "path": "apps/app/src/mainview/cards/CodingPlanCard.tsx"
       },
       {
         "kind": "file",
-        "path": "apps/ui/src/mainview/cards/CodingPoc.test.ts"
+        "path": "apps/app/src/mainview/cards/CodingPoc.test.ts"
       },
       {
         "kind": "file",
-        "path": "apps/ui/src/mainview/cards/CodingPoc.ts"
+        "path": "apps/app/src/mainview/cards/CodingPoc.ts"
       },
       {
         "kind": "file",
-        "path": "apps/ui/src/mainview/cards/CodingPocCard.tsx"
+        "path": "apps/app/src/mainview/cards/CodingPocCard.tsx"
       },
       {
         "kind": "file",
-        "path": "apps/ui/src/mainview/cards/CodingVibe.ts"
+        "path": "apps/app/src/mainview/cards/CodingVibe.ts"
       },
       {
         "kind": "file",
-        "path": "apps/ui/src/mainview/cards/CodingVibeCard.tsx"
+        "path": "apps/app/src/mainview/cards/CodingVibeCard.tsx"
       },
       {
         "kind": "file",
-        "path": "apps/ui/src/mainview/cards/ConversationCards.tsx"
+        "path": "apps/app/src/mainview/cards/ConversationCards.tsx"
       },
       {
         "kind": "file",
-        "path": "apps/ui/src/mainview/cards/EngineTrace.ts"
+        "path": "apps/app/src/mainview/cards/EngineTrace.ts"
       },
       {
         "kind": "file",
-        "path": "apps/ui/src/mainview/cards/RunTrace.ts"
+        "path": "apps/app/src/mainview/cards/RunTrace.ts"
       },
       {
         "kind": "file",
-        "path": "apps/ui/src/mainview/cards/RunTraceCard.tsx"
+        "path": "apps/app/src/mainview/cards/RunTraceCard.tsx"
       },
       {
         "kind": "file",
-        "path": "apps/ui/src/mainview/flows/entries/runs.ts"
+        "path": "apps/app/src/mainview/flows/entries/runs.ts"
       },
       {
         "kind": "file",
-        "path": "apps/ui/src/mainview/flows/entries/wiki.ts"
+        "path": "apps/app/src/mainview/flows/entries/wiki.ts"
       },
       {
         "kind": "file",
-        "path": "apps/ui/src/mainview/runtime/FrameHistory.ts"
+        "path": "apps/app/src/mainview/runtime/FrameHistory.ts"
       },
       {
         "kind": "file",
-        "path": "apps/ui/src/mainview/state/RunReference.ts"
+        "path": "apps/app/src/mainview/state/RunReference.ts"
       },
       {
         "kind": "file",
-        "path": "apps/ui/src/mainview/state/controller/cloud-wiki.ts"
+        "path": "apps/app/src/mainview/state/controller/cloud-wiki.ts"
       },
       {
         "kind": "file",
-        "path": "apps/ui/src/mainview/state/controller/runs.ts"
+        "path": "apps/app/src/mainview/state/controller/runs.ts"
       },
       {
         "kind": "file",
-        "path": "apps/ui/src/mainview/state/controller/workflow-pump.ts"
+        "path": "apps/app/src/mainview/state/controller/workflow-pump.ts"
       },
       {
         "kind": "file",
-        "path": "apps/ui/src/mainview/wiki/CloudWiki.test.ts"
+        "path": "apps/app/src/mainview/wiki/CloudWiki.test.ts"
       },
       {
         "kind": "file",
-        "path": "apps/ui/src/mainview/wiki/CloudWiki.ts"
+        "path": "apps/app/src/mainview/wiki/CloudWiki.ts"
       },
       {
         "kind": "file",
-        "path": "apps/ui/src/mainview/wiki/CloudWikiState.ts"
+        "path": "apps/app/src/mainview/wiki/CloudWikiState.ts"
       },
       {
         "kind": "file",
-        "path": "apps/ui/src/mainview/wiki/fixtures/yrs-deletion-ack.json"
+        "path": "apps/app/src/mainview/wiki/fixtures/yrs-deletion-ack.json"
       },
       {
         "kind": "file",
@@ -10951,123 +10975,123 @@
       },
       {
         "kind": "file",
-        "path": "apps/ui/AGENTS.md"
+        "path": "apps/app/AGENTS.md"
       },
       {
         "kind": "file",
-        "path": "apps/ui/docs/ONBOARDING.md"
+        "path": "apps/app/docs/ONBOARDING.md"
       },
       {
         "kind": "file",
-        "path": "apps/ui/docs/workbench-lanes/coding-plans.md"
+        "path": "apps/app/docs/workbench-lanes/coding-plans.md"
       },
       {
         "kind": "file",
-        "path": "apps/ui/docs/workbench-lanes/native-engine-evidence.md"
+        "path": "apps/app/docs/workbench-lanes/native-engine-evidence.md"
       },
       {
         "kind": "file",
-        "path": "apps/ui/docs/workbench-lanes/runs.md"
+        "path": "apps/app/docs/workbench-lanes/runs.md"
       },
       {
         "kind": "file",
-        "path": "apps/ui/docs/workbench-lanes/wiki-collaboration.md"
+        "path": "apps/app/docs/workbench-lanes/wiki-collaboration.md"
       },
       {
         "kind": "file",
-        "path": "apps/ui/package.json"
+        "path": "apps/app/package.json"
       },
       {
         "kind": "file",
-        "path": "apps/ui/src/mainview/cards/CodingPlan.test.ts"
+        "path": "apps/app/src/mainview/cards/CodingPlan.test.ts"
       },
       {
         "kind": "file",
-        "path": "apps/ui/src/mainview/cards/CodingPlan.ts"
+        "path": "apps/app/src/mainview/cards/CodingPlan.ts"
       },
       {
         "kind": "file",
-        "path": "apps/ui/src/mainview/cards/CodingPlanCard.tsx"
+        "path": "apps/app/src/mainview/cards/CodingPlanCard.tsx"
       },
       {
         "kind": "file",
-        "path": "apps/ui/src/mainview/cards/CodingPoc.test.ts"
+        "path": "apps/app/src/mainview/cards/CodingPoc.test.ts"
       },
       {
         "kind": "file",
-        "path": "apps/ui/src/mainview/cards/CodingPoc.ts"
+        "path": "apps/app/src/mainview/cards/CodingPoc.ts"
       },
       {
         "kind": "file",
-        "path": "apps/ui/src/mainview/cards/CodingPocCard.tsx"
+        "path": "apps/app/src/mainview/cards/CodingPocCard.tsx"
       },
       {
         "kind": "file",
-        "path": "apps/ui/src/mainview/cards/CodingVibe.ts"
+        "path": "apps/app/src/mainview/cards/CodingVibe.ts"
       },
       {
         "kind": "file",
-        "path": "apps/ui/src/mainview/cards/CodingVibeCard.tsx"
+        "path": "apps/app/src/mainview/cards/CodingVibeCard.tsx"
       },
       {
         "kind": "file",
-        "path": "apps/ui/src/mainview/cards/ConversationCards.tsx"
+        "path": "apps/app/src/mainview/cards/ConversationCards.tsx"
       },
       {
         "kind": "file",
-        "path": "apps/ui/src/mainview/cards/EngineTrace.ts"
+        "path": "apps/app/src/mainview/cards/EngineTrace.ts"
       },
       {
         "kind": "file",
-        "path": "apps/ui/src/mainview/cards/RunTrace.ts"
+        "path": "apps/app/src/mainview/cards/RunTrace.ts"
       },
       {
         "kind": "file",
-        "path": "apps/ui/src/mainview/cards/RunTraceCard.tsx"
+        "path": "apps/app/src/mainview/cards/RunTraceCard.tsx"
       },
       {
         "kind": "file",
-        "path": "apps/ui/src/mainview/flows/entries/runs.ts"
+        "path": "apps/app/src/mainview/flows/entries/runs.ts"
       },
       {
         "kind": "file",
-        "path": "apps/ui/src/mainview/flows/entries/wiki.ts"
+        "path": "apps/app/src/mainview/flows/entries/wiki.ts"
       },
       {
         "kind": "file",
-        "path": "apps/ui/src/mainview/runtime/FrameHistory.ts"
+        "path": "apps/app/src/mainview/runtime/FrameHistory.ts"
       },
       {
         "kind": "file",
-        "path": "apps/ui/src/mainview/state/RunReference.ts"
+        "path": "apps/app/src/mainview/state/RunReference.ts"
       },
       {
         "kind": "file",
-        "path": "apps/ui/src/mainview/state/controller/cloud-wiki.ts"
+        "path": "apps/app/src/mainview/state/controller/cloud-wiki.ts"
       },
       {
         "kind": "file",
-        "path": "apps/ui/src/mainview/state/controller/runs.ts"
+        "path": "apps/app/src/mainview/state/controller/runs.ts"
       },
       {
         "kind": "file",
-        "path": "apps/ui/src/mainview/state/controller/workflow-pump.ts"
+        "path": "apps/app/src/mainview/state/controller/workflow-pump.ts"
       },
       {
         "kind": "file",
-        "path": "apps/ui/src/mainview/wiki/CloudWiki.test.ts"
+        "path": "apps/app/src/mainview/wiki/CloudWiki.test.ts"
       },
       {
         "kind": "file",
-        "path": "apps/ui/src/mainview/wiki/CloudWiki.ts"
+        "path": "apps/app/src/mainview/wiki/CloudWiki.ts"
       },
       {
         "kind": "file",
-        "path": "apps/ui/src/mainview/wiki/CloudWikiState.ts"
+        "path": "apps/app/src/mainview/wiki/CloudWikiState.ts"
       },
       {
         "kind": "file",
-        "path": "apps/ui/src/mainview/wiki/fixtures/yrs-deletion-ack.json"
+        "path": "apps/app/src/mainview/wiki/fixtures/yrs-deletion-ack.json"
       },
       {
         "kind": "file",
@@ -26145,6 +26169,30 @@
     }
   },
   {
+    "label": "//packages/smithers/ui:solidCodegenInputs",
+    "package": "packages/smithers/ui",
+    "name": "solidCodegenInputs",
+    "rule": "Filegroup",
+    "kinds": [],
+    "cacheable": true,
+    "inputs": [
+      {
+        "kind": "glob",
+        "pattern": "packages/smithers/ui/src/**/*",
+        "exclude": []
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/ui/package.json"
+      }
+    ],
+    "outputs": [],
+    "dependencies": [],
+    "source": {
+      "file": "packages/smithers/ui/PACKAGE.ts"
+    }
+  },
+  {
     "label": "//packages/smithers/ui:unitTests",
     "package": "packages/smithers/ui",
     "name": "unitTests",
@@ -27456,31 +27504,31 @@
       },
       {
         "kind": "file",
-        "path": "apps/ui/PACKAGE.ts"
+        "path": "apps/app/PACKAGE.ts"
       },
       {
         "kind": "file",
-        "path": "apps/ui/scripts/ensure-devkit.mjs"
+        "path": "apps/app/scripts/ensure-devkit.mjs"
       },
       {
         "kind": "file",
-        "path": "apps/ui/scripts/run-pr-e2e.mjs"
+        "path": "apps/app/scripts/run-pr-e2e.mjs"
       },
       {
         "kind": "file",
-        "path": "apps/ui/package.json"
+        "path": "apps/app/package.json"
       },
       {
         "kind": "file",
-        "path": "apps/ui/electrobun.config.ts"
+        "path": "apps/app/electrobun.config.ts"
       },
       {
         "kind": "file",
-        "path": "apps/ui/hutch.config.ts"
+        "path": "apps/app/hutch.config.ts"
       },
       {
         "kind": "file",
-        "path": "apps/ui/tsconfig.json"
+        "path": "apps/app/tsconfig.json"
       },
       {
         "kind": "file",
