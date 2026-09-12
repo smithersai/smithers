@@ -92,29 +92,29 @@ export function checkAssetHeaders(root) {
 }
 
 /**
- * The landing page's primary action opens the product; the documentation keeps
- * a button of its own beside it. The link check above cannot see this: both
- * targets are pages this build emits, so a CTA that points into /docs is a
- * working link that sends every first visitor to the documentation instead of
- * the app.
+ * The landing page's one action, Start Here, opens the product. The link check
+ * above cannot see this: the app page is one this build emits, so a Start Here
+ * that points into /docs is a working link that sends every first visitor to
+ * the documentation instead of the app (it did, before the app moved home).
+ *
+ * The page is src/pages/index.astro, whose styles are scoped, so the built
+ * markup carries Astro's generated class beside `actions` and `start`; the
+ * match reads the class list, not the exact attribute.
  */
 export function checkLandingActions(root, appPath) {
   const landing = join(root, "index.html")
   if (!existsSync(landing)) return ["index.html: missing from the build"]
-  const actions = readFileSync(landing, "utf8").match(/<div class="actions">([\s\S]*?)<\/div>/)
+  const actions = readFileSync(landing, "utf8").match(/<div class="actions(?:\s[^"]*)?"[^>]*>([\s\S]*?)<\/div>/)
   if (actions === null) return ["index.html: the landing page has no actions"]
   const anchors = [...actions[1].matchAll(/<a\b[^>]*>/g)].map((match) => match[0])
   const href = (tag) => tag.match(/href="([^"]*)"/)?.[1]
-  const primary = anchors.find((tag) => /class="[^"]*\bprimary\b[^"]*"/.test(tag))
-  const failures = []
-  if (primary === undefined) failures.push("index.html: the landing page has no primary action")
-  else if (href(primary) !== appPath) {
-    failures.push(`index.html: the primary action must open the app at ${appPath}, got ${href(primary) ?? "no href"}`)
+  const classes = (tag) => tag.match(/class="([^"]*)"/)?.[1]?.split(/\s+/) ?? []
+  const start = anchors.find((tag) => /\bid="start"/.test(tag) || classes(tag).includes("start"))
+  if (start === undefined) return ["index.html: the landing page has no Start Here action"]
+  if (href(start) !== appPath) {
+    return [`index.html: Start Here must open the app at ${appPath}, got ${href(start) ?? "no href"}`]
   }
-  if (!anchors.some((tag) => href(tag)?.startsWith("/docs/"))) {
-    failures.push("index.html: the landing page must keep an action that opens the documentation")
-  }
-  return failures
+  return []
 }
 
 export async function releaseReferences(repoRoot) {

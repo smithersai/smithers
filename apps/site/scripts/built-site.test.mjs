@@ -230,18 +230,19 @@ test("the source public/_headers the build copies into dist already passes, so t
   assert.deepEqual(Object.keys(ASSET_HEADERS), ["cross-origin-embedder-policy", "cross-origin-resource-policy"])
 })
 
-test("the landing page's primary action opens the app and the documentation keeps its own button", (t) => {
-  const actions = (primary, docs) =>
-    `<div class="actions"><a class="btn primary" href="${primary}">Start Here</a>` +
-    `<a class="btn ghost" href="${docs}"><svg viewBox="0 0 24 24"></svg><span>Docs</span></a></div>`
+test("the landing page's Start Here opens the app, through Astro's scoped class names", (t) => {
+  const actions = (href, attrs = "") =>
+    `<div class="actions astro-lcdefpme"><script>document.documentElement.classList.add("js")</script>` +
+    `<a id="start" class="start astro-lcdefpme" href="${href}" aria-keyshortcuts="s"${attrs}><span>Start Here</span></a></div>`
   const app = "/smithersai/smithers/"
-  assert.deepEqual(
-    checkLandingActions(fixture(t, { "index.html": actions(app, "/docs/quickstart/") }), app),
-    []
+  assert.deepEqual(checkLandingActions(fixture(t, { "index.html": actions(app) }), app), [])
+  const intoDocs = checkLandingActions(fixture(t, { "index.html": actions("/docs/quickstart/") }), app)
+  assert.deepEqual(intoDocs, ["index.html: Start Here must open the app at /smithersai/smithers/, got /docs/quickstart/"])
+  const noStart = checkLandingActions(
+    fixture(t, { "index.html": `<div class="actions"><a class="btn ghost" href="/docs/">Docs</a></div>` }),
+    app
   )
-  const intoDocs = checkLandingActions(fixture(t, { "index.html": actions("/docs/quickstart/", "/docs/") }), app)
-  assert.equal(intoDocs.length, 1)
-  assert.match(intoDocs[0], /primary action must open the app at \/smithersai\/smithers\/, got \/docs\/quickstart\//)
-  const noDocs = checkLandingActions(fixture(t, { "index.html": actions(app, "https://github.com/smithersai/smithers") }), app)
-  assert.deepEqual(noDocs, ["index.html: the landing page must keep an action that opens the documentation"])
+  assert.deepEqual(noStart, ["index.html: the landing page has no Start Here action"])
+  const noActions = checkLandingActions(fixture(t, { "index.html": `<main><a id="start" href="${app}">x</a></main>` }), app)
+  assert.deepEqual(noActions, ["index.html: the landing page has no actions"])
 })
