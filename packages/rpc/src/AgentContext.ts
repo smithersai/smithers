@@ -395,7 +395,7 @@ export const renderAgentRuntimeContext = (context: AgentRuntimeContext): string 
       if (body === "") {
         lines.push(
           document.bodyTruncated === true
-            ? "    | (this note's text did not fit this turn's context budget — read it in the Wiki pane)"
+            ? "    | (did not fit this turn's context budget; see Wiki pane)"
             : "    (empty note)"
         )
         continue
