@@ -155,7 +155,7 @@ describe("per-turn runtime context", () => {
     expect(requests[1]?.context?.activeRepository).toBe("smithersai/smithers")
     expect(requests[1]?.context?.activeRepositorySummary).toBe("A durable framework for agents to plan, run, and review code changes.")
     expect(renderAgentRuntimeContext(requests[1]?.context as AgentRuntimeContext)).toContain("- Active repository: smithersai/smithers.")
-    expect(renderAgentRuntimeContext(requests[1]?.context as AgentRuntimeContext)).toContain("Selected repository description (public catalog): A durable framework")
+    expect(renderAgentRuntimeContext(requests[1]?.context as AgentRuntimeContext)).toContain("Selected repository description (public catalog):\n    | A durable framework")
   })
 
   test("Smithers is the first tab and sees every other one: the context lists the tabs and their status", async () => {
@@ -342,4 +342,23 @@ describe("per-turn runtime context", () => {
     await settled()
     expect(requests[2]?.context?.onboarding).toBeUndefined()
   })
+})
+
+
+test("tutorial repository observations reach the agent as hidden structured context", async () => {
+  const store = await webStore()
+  const requests: StartAgentTurnRequest[] = []
+  const controller = createAppController(store, unavailableRepositories, recordingAgent(requests))
+  await controller.guideAct("start")
+  controller.send("What issues are available?")
+  await settled()
+  const context = requests[0]?.context
+  expect(context?.repositoryUpdate).toMatchObject({ repo: "practice:smithersai/hello-server", openIssues: 2, openPrs: 1 })
+  expect(renderAgentRuntimeContext(context!)).toContain("repo.update refreshes hidden observations")
+  expect([...store.collections.cards.values()].some(card => card.kind === "repo-update")).toBe(false)
+  expect([...store.collections.messages.values()].some(message => message.text.includes('"openIssues"'))).toBe(false)
+  await controller.guideAct("restart")
+  controller.send("What does this new tutorial know?")
+  await settled()
+  expect(requests[1]?.context?.repositoryUpdate).toBeUndefined()
 })

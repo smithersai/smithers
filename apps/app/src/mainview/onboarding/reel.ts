@@ -1,6 +1,7 @@
+import { GUIDE_KEYS } from "./GuideButton"
 import { bindPressActions, createPressActions, type PressAction } from "../runtime/PressActions"
 
-/* e, not w: w is Create Wiki in the lessons (onboarding SCRIPT v4). */
+/* Bare e opens the optional reel after the tutorial. */
 export const REEL_BUTTON = { label: "What else can you do?", command: "tut.more", key: "e" } as const
 
 export const REEL_STAGES = [
@@ -33,10 +34,10 @@ export function scheduleReel({ target, root, advance, exit }: {
   let pending = true
   const resolve = (event: KeyboardEvent): PressAction | undefined => {
     if (!pending || event.isComposing || event.metaKey || event.ctrlKey || event.altKey || event.shiftKey) return
-    if (!["Escape", "ArrowLeft", "ArrowRight"].includes(event.key)) return
+    if (!["Escape", GUIDE_KEYS.back, "ArrowRight"].includes(event.key)) return
     if (event.key !== "Escape" && (event.target as Element | null)?.closest?.('input,textarea,select,[contenteditable="true"]')) return
     const forward = event.key === 'ArrowRight'
-    return { element: root?.querySelector<HTMLElement>(`[aria-keyshortcuts="${forward ? 'ArrowRight' : 'Escape ArrowLeft'}"]`) ?? undefined,
+    return { element: root?.querySelector<HTMLElement>(`[aria-keyshortcuts="${forward ? 'ArrowRight' : GUIDE_KEYS.back}"]`) ?? undefined,
       activate: () => { if (!pending) return; pending = false; forward ? advance() : exit() } }
   }
   if (root) {

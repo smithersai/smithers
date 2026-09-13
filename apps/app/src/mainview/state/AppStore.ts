@@ -1,3 +1,4 @@
+import { RepositoryContextSchema } from "./RepositoryContext"
 import { RepositoryNotificationSchema } from "./RepositoryNotifications"
 import { migrateGuideV3 } from "./controller/guide"
 import { resumeTutorial } from "../onboarding/resume"
@@ -696,6 +697,7 @@ const COLLECTION_DEFINITIONS = {
   worldDocuments: persistedCollection("world-documents", WorldDocumentSchema, byId),
   cards: persistedCollection("app-cards", CardSchema, byId),
   practiceIssues: persistedCollection("app-practice-issues", PracticeIssueSchema, byId),
+  repositoryContexts: persistedCollection("app-repository-contexts", RepositoryContextSchema, byId),
   repositoryNotifications: persistedCollection("app-repository-notifications", RepositoryNotificationSchema, byId),
   cardHistories: persistedCollection("app-card-histories", CardHistorySchema, byId),
   approvalRequests: persistedCollection("app-approval-requests", CardSchema, byId),
@@ -2123,6 +2125,16 @@ const initializeAppStore = async (resolved: ResolvedPersistence): Promise<AppSto
           for (const card of collections.cards.values()) if (card.kind === "repo-update") collections.cards.update(card.id, draft => {
             if (draft.kind === "repo-update") draft.payload.items = draft.payload.items.map(item => item.id === row.id ? { ...item, tags } : item)
           })
+          break
+        }
+        case "repo.update.observed": {
+          const row = transition.context
+          if (collections.repositoryContexts.has(row.id)) collections.repositoryContexts.update(row.id, draft => { Object.assign(draft, row) })
+          else collections.repositoryContexts.insert(row)
+          for (const notice of transition.notifications) {
+            if (collections.repositoryNotifications.has(notice.id)) collections.repositoryNotifications.update(notice.id, draft => { Object.assign(draft, notice) })
+            else collections.repositoryNotifications.insert(notice)
+          }
           break
         }
         case "repo.update.published":

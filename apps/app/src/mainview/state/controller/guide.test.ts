@@ -61,3 +61,14 @@ test("theme and notification shortcuts do not complete repository lessons", asyn
   expect(store.session().guide?.step).toBe(2)
   await store.dispose?.()
 })
+
+test("starting tutorial runs its start hook without creating a tutorial tip notification", async () => {
+  const { store } = await setup(0, fetch)
+  let starts = 0
+  const controller = createGuideController({ store, rawHttp: fetch, commandActor: "user" } as unknown as ControllerContext, async () => { starts++ })
+  await controller.guideAct("start")
+  expect(starts).toBe(1)
+  expect(store.session().guide?.step).toBe(1)
+  expect([...store.collections.toasts.values()].filter(toast => toast.key.startsWith("guide-tip-"))).toHaveLength(0)
+  await store.dispose?.()
+})

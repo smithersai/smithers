@@ -759,6 +759,7 @@ describe("command registry bindings", () => {
       "tab.close.confirm",
       "tab.close.cancel",
       "tab.menu",
+      "repo.overview",
       "repo.update",
       "repo.select",
       "repo.unpin",
@@ -817,6 +818,8 @@ describe("command registry bindings", () => {
       "tut",
       "tut.more",
       "debug.reset",
+      "tutorial.live.inspect",
+      "tutorial.live.retry",
       "onboarding.act"
     ])
 

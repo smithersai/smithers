@@ -1090,6 +1090,7 @@ export const CardHistorySchema = z.object({ id: z.string(), index: z.number().in
 
 export type AppTransition =
   | { type: "practice.issue.updated"; actor: Actor; id: string; card: Extract<Card, { kind: "issue" }> }
+  | { type: "repo.update.observed"; actor: Actor; context: import("./RepositoryContext").RepositoryContext; notifications: import("./RepositoryNotifications").RepositoryNotification[] }
   | { type: "repo.update.published"; actor: Actor; card: Extract<Card, { kind: "repo-update" }>; notifications: import("./RepositoryNotifications").RepositoryNotification[] }
   | { type: "notifications.read"; actor: Actor; receipts: Array<{ id: string; version: string }> }
   | { type: "notification.tagged"; actor: Actor; id: string; tag: string }

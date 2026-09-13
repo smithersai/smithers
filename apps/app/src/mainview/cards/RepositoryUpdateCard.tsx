@@ -77,7 +77,7 @@ export const repositoryUpdateCardFamily: CardFamily<"repo-update"> = {
           </ul>}
         <div className="repo-update-actions">
           <span className="repo-update-unread-count">{unread === 0 ? "All read" : unread === 1 ? "1 unread" : `${unread} unread`}</span>
-          <Button size="sm" variant="outline" data-flow="repo.update" onClick={() => actions.onRunCommand("repo.update", repo)}>
+          <Button size="sm" variant="outline" data-flow="repo.overview" onClick={() => actions.onRunCommand("repo.overview", repo)}>
             <RefreshCw size={14} aria-hidden="true" /> Refresh
           </Button>
           {unread > 0 && <Button size="sm" data-flow="notifications.read-update"

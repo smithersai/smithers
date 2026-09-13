@@ -255,7 +255,7 @@ test("the whole tutorial walks every beat, keyboard first, through asynchronous 
   // Beat 12: Create Wiki · W, Create Mythical history · H — two launches, two chips, no run card opened.
   await expectBeat(page, 12, { repo: INSTALLED_REPO })
   await expect(page.locator(".guide-primary-subtitle")).toHaveText("On its own branch. Your branches stay untouched.")
-  await page.keyboard.press("b")
+  await page.keyboard.press("k")
   await until(page, page.locator('[data-run-chip="wiki"]'), "the Wiki run chip")
   await page.keyboard.press("h")
   await until(page, page.locator('[data-run-chip="history"]'), "the history run chip")
@@ -322,7 +322,7 @@ test.describe("beat 9: four commit selections are sent to the live Change operat
     await page.keyboard.press("m")
     await until(page, card(page, "change"), "the stack view")
     await until(page, followup(page, 9), "the Change is recorded")
-    await page.keyboard.press("ArrowLeft")
+    await page.keyboard.press("b")
     await until(page, card(page, "commit-pick"), "Back restores the picker")
     await expect(shell(page)).toHaveAttribute("data-stage", "9")
     await expect(pickRow(1)).toHaveAttribute("data-picked", "false")
@@ -350,7 +350,7 @@ test.describe("escape hatches", () => {
     await page.keyboard.press("q")
     await atStage(page, 10)
     await expect(page.locator(".guide-goal")).toHaveAttribute("data-goal-state", "skipped")
-    await expect(page.locator(".guide-goal")).toContainText("Skipped")
+    await expect(page.locator(".guide-goal li")).toHaveText(["Issue", "Plan", "Commits", "Change"])
   })
 
   test("Not now (X) at login skips beats 11 and 12; the workspace stays on hello-server", async ({ page, baseURL }) => {
@@ -435,7 +435,7 @@ test("@live beats 10–12 cross the real login, install check and background lau
     await expect(followup(page, 11).or(page.locator("[data-notice]"))).toBeVisible({ timeout: 120_000 })
     if (await followup(page, 11).count() === 1) {
       await atStage(page, 12)
-      await page.keyboard.press("b")
+      await page.keyboard.press("k")
       await page.keyboard.press("h")
       await expect(page.locator("[data-run-chip]").or(page.locator("[data-tutorial-cards] .smithers-card")).first()).toBeVisible({ timeout: 120_000 })
     }

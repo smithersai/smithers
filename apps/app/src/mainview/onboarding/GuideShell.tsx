@@ -8,18 +8,20 @@ import { ReelShell } from "./Reel.tsx"
 import { guideForwardAction } from "./navigation"
 import { useLiveQuery } from "@tanstack/react-db"
 import { useCallback, useRef, useState, type ReactNode, type CSSProperties } from "react"
-import { Check, Command, Mic, Volume2, VolumeX, X } from "lucide-react"
+import { Check, Mic, Volume2, VolumeX, X } from "lucide-react"
 import { useController } from "../ControllerContext"
 import { initialGuide, conversationTabIdOf, inConversation, type Card } from "../state/AppState"
 import { useCardRows } from "../state/useCardRows"
 import { CardView } from "../ChatCards"
 import { cardActions } from "../cards/CardActions"
-import { PRACTICE_CARD, PRACTICE_NAME, PRACTICE_REPO, PRACTICE_RUN_ID } from "../state/practice/PracticeRepository"
+import { PRACTICE_CARD, PRACTICE_REPO, PRACTICE_RUN_ID } from "../state/practice/PracticeRepository"
 import "./guide.css"
 
 import { bindPressActions, type PressAction } from "../runtime/PressActions"
+import { GuideButton, GUIDE_KEYS } from "./GuideButton"
 import { GuideComposerHost } from "./GuideComposerHost"
 import { InTutorial, tutorialTranscript } from "./transcriptScope"
+import { HelpBubble } from "../HelpBubble"
 
 /** An original, short opt-in interval; no autoplay or copyrighted game audio. */
 function chime() {
@@ -65,7 +67,9 @@ const frameIds = (card: Card | undefined): ReadonlyArray<string> => {
 export function GuideShell({ children, clock = guideClock }: { children: ReactNode; clock?: GuideClock }) {
   const controller = useController()
   const { data: sessions } = useLiveQuery(controller.store.collections.sessions)
-  const { data: toasts } = useLiveQuery(controller.store.collections.toasts)
+  const { data: storedToasts } = useLiveQuery(controller.store.collections.toasts)
+  // Old persisted tutorial tips are superseded by the action-anchored guidance.
+  const toasts = storedToasts.filter(toast => !toast.key.startsWith("guide-tip-"))
   const cards = useCardRows(controller.store.collections.cards)
   const { data: worldDocuments } = useLiveQuery(controller.store.collections.worldDocuments)
   const session = sessions[0] ?? controller.store.session()
@@ -93,6 +97,11 @@ export function GuideShell({ children, clock = guideClock }: { children: ReactNo
   }
   const skipped = guide.declined?.includes("practice") === true
   const goalComplete = GOAL.every(([goal]) => goalDone(goal))
+  // Dismissal is transient guidance chrome; lesson completion remains in the store.
+  const [dismissedHelp, setDismissedHelp] = useState<string | null>(null)
+  const helpKey = `${guide.playthrough ?? 0}:${stage}`
+  const showTutorialHelp = lesson?.kind === "do" && lesson.help !== undefined && !done(stage)
+    && dismissedHelp !== helpKey && !guide.conversationOpen && !session.paletteOpen
   const paused = guide.autoPaused === true
   const showNext = lesson === undefined || (lesson.kind === "say" ? paused : lesson.skippable)
   const lastScrolledStep = useRef(-1)
@@ -176,9 +185,6 @@ export function GuideShell({ children, clock = guideClock }: { children: ReactNo
     controller.runCommand("runs.trace.select", `${PRACTICE_RUN_ID} ${next}`)
     return true
   }
-  const keyHint = (keys = "→") => (
-    <kbd className="guide-button-key" aria-hidden="true" title={keys === "Tab ↵" ? "Tab to this button, then press Enter" : undefined}>{keys}</kbd>
-  )
   const lineOf = (step: number): string | undefined => {
     const asked = GUIDE_STAGES[step]
     if (asked?.kind !== "do" || !done(step)) return undefined
@@ -199,6 +205,7 @@ export function GuideShell({ children, clock = guideClock }: { children: ReactNo
       }
       if (event.metaKey || event.ctrlKey || event.altKey || event.shiftKey) return
       if (key === 'escape' && guide.conversationOpen) return action(runCommandClose)
+      if (key === GUIDE_KEYS.dictation && stage >= 1) return action(runCommandDictation)
       if (guide.conversationOpen || session.paletteOpen) return
       const lessonAction = lesson?.kind === 'do'
         ? [...lesson.actions, ...(lesson.secondary === undefined ? [] : [lesson.secondary])].find(candidate => candidate.key.toLowerCase() === key)
@@ -211,11 +218,11 @@ export function GuideShell({ children, clock = guideClock }: { children: ReactNo
       if ((key === 'arrowdown' || key === 'arrowup') && runCard?.kind === 'run-trace' && runCard.payload.selection !== undefined) {
         return action(() => { moveTrace(key === 'arrowdown' ? 1 : -1) })
       }
-      if (key === 's') return action(runCommandSound)
+      if (key === GUIDE_KEYS.sound) return action(runCommandSound)
       if (key === 'c') return action(() => runCommandGuide('dark'))
       if (key === 'n') return action(() => runCommandGuide('notify'))
       if (key === 'arrowright') return action(() => runCommandGuide(guideForwardAction(stage)))
-      if (key === 'arrowleft' && stage > 0) return action(() => runCommandGuide('back'))
+      if (key === GUIDE_KEYS.back && stage > 0) return action(() => runCommandGuide('back'))
       if (key === 'e' && stage === GUIDE_LAST_STEP) return action(() => controller.runCommand('tut.more'))
     },
   }
@@ -295,33 +302,30 @@ export function GuideShell({ children, clock = guideClock }: { children: ReactNo
         <section className="guide-lesson" aria-label={`Lesson ${stage + 1}`}>
           {stage > 0 && stage < GUIDE_LAST_STEP && (
             <nav className="guide-navigation" aria-label="Lesson navigation">
-              <button className="guide-back" disabled={stage === 0} aria-keyshortcuts="ArrowLeft" data-flow="onboarding.act" onClick={() => runCommandGuide("back")}>
-                <span aria-hidden="true">←</span> Back {keyHint("←")}
-              </button>
+              <GuideButton className="guide-back" disabled={stage === 0} shortcut={GUIDE_KEYS.back} data-flow="onboarding.act" onClick={() => runCommandGuide("back")}>
+                Back
+              </GuideButton>
               {lesson?.kind === "do" && lesson.practice === true && (
-                <button className="guide-back guide-skip" type="button" aria-keyshortcuts="q" data-flow="onboarding.act"
+                <GuideButton className="guide-back guide-skip" shortcut="q" data-flow="onboarding.act"
                   onClick={() => runCommandGuide("skip-practice")}>
-                  Skip tutorial {keyHint("q")}
-                </button>
+                  Skip tutorial
+                </GuideButton>
               )}
               {showNext && (
-                <button
+                <GuideButton
                   className="guide-back"
-                  type="button"
-                  aria-keyshortcuts="ArrowRight"
+                  shortcut="ArrowRight"
                   data-flow="onboarding.act"
                   onClick={() => runCommandGuide("next")}
                 >
-                  Next <span aria-hidden="true">→</span> {keyHint()}
-                </button>
+                  Next
+                </GuideButton>
               )}
             </nav>
           )}
-          {/* The goal and the stakes, pinned above the transcript (SCRIPT v4 principle 4). */}
+          {/* Tutorial progress, pinned above the transcript. */}
           {stage > 0 && (practice || (skipped && stage === GUIDE_BRIDGE)) && (
             <section className="guide-goal" aria-label="Goal" data-goal-state={skipped ? "skipped" : goalComplete ? "complete" : "open"}>
-              <p className="guide-goal-title">{PRACTICE_NAME} · Practice{skipped ? " · Skipped" : ""}</p>
-              <p className="guide-goal-line">Fix a bug and send it for review as a Change.</p>
               <ol className="guide-goal-checkpoints">
                 {GOAL.map(([goal, label]) => (
                   <li key={goal} data-checkpoint={goal} data-done={goalDone(goal)}>
@@ -410,27 +414,34 @@ export function GuideShell({ children, clock = guideClock }: { children: ReactNo
           </div>
           <div className="guide-actions">
             {lesson?.kind === "do" && lesson.actions.map(action => {
-              const chord = action.key.length > 1
-              return (
-                <button key={action.flow} type="button" className="guide-primary"
-                  data-flow={action.flow} aria-keyshortcuts={chord ? "Meta+K Control+K" : action.key.toLowerCase()}
-                  aria-describedby={`guide-instruction-${stage}`}
+              const guidedAction = lesson.help?.actionKey === action.key
+              const helpOpen = guidedAction && showTutorialHelp
+              const button = (
+                <GuideButton key={action.flow} className="guide-primary"
+                  data-flow={action.flow} shortcut={action.key}
+                  aria-describedby={`guide-instruction-${stage}${helpOpen ? ` guide-help-${stage}` : ""}`}
+                  data-guided={helpOpen || undefined}
                   data-done={done(stage)}
                   onClick={() => runLessonAction(action)}>
                   <span className="guide-primary-label">
                     {lessonText(action.label, guide)}
                     {action.subtitle !== undefined ? <small className="guide-primary-subtitle">{action.subtitle}</small> : null}
                   </span>
-                  {keyHint(action.key)}
-                </button>
+                </GuideButton>
               )
+              return guidedAction ? (
+                <HelpBubble key={action.flow} id={`guide-help-${stage}`} open={helpOpen}
+                  content={lesson.help?.content} onDismiss={() => setDismissedHelp(helpKey)}>
+                  {button}
+                </HelpBubble>
+              ) : button
             })}
             {lesson?.kind === "do" && lesson.secondary !== undefined && (
-              <button type="button" className="guide-secondary" data-flow={lesson.secondary.flow}
-                data-secondary="" aria-keyshortcuts={lesson.secondary.key.toLowerCase()}
+              <GuideButton className="guide-secondary" data-flow={lesson.secondary.flow}
+                data-secondary="" shortcut={lesson.secondary.key}
                 onClick={() => runLessonAction(lesson.secondary!)}>
-                {lesson.secondary.label} {keyHint(lesson.secondary.key)}
-              </button>
+                {lesson.secondary.label}
+              </GuideButton>
             )}
             {lesson?.kind === "do" && <span id={`guide-instruction-${stage}`} hidden>{lesson.instruction}</span>}
           </div>
@@ -456,9 +467,9 @@ export function GuideShell({ children, clock = guideClock }: { children: ReactNo
             aria-label="Chat"
           >
             {session.dictating && (
-              <button type="button" className="guide-dictation-stop" data-flow="chat.dictate" onClick={runCommandDictation}>
+              <GuideButton className="guide-dictation-stop" data-flow="chat.dictate" shortcut={GUIDE_KEYS.dictation} onClick={runCommandDictation}>
                 <Mic size={16} /> Stop dictation
-              </button>
+              </GuideButton>
             )}
             <div className="guide-composer-host" ref={setComposerHost} />
           </section>
@@ -466,16 +477,15 @@ export function GuideShell({ children, clock = guideClock }: { children: ReactNo
         </div>
       {/* The footer is the shell's last row; the palette overlay floats above it. */}
       <footer className="guide-footer">
-        <button
+        <GuideButton
           data-flow="onboarding.act"
           onClick={runCommandSound}
-          aria-keyshortcuts="s"
+          shortcut={GUIDE_KEYS.sound}
           aria-label={guide.sound ? "Mute tutorial sounds" : "Enable tutorial sounds"}
         >
           {guide.sound ? <Volume2 size={15} /> : <VolumeX size={15} />}
           <span>Sound {guide.sound ? "on" : "off"}</span>
-          {keyHint("s")}
-        </button>
+        </GuideButton>
         {/* Background runs stay in the chrome after the tutorial ends (SCRIPT v4 beat 12): the footer is the chrome the terminal keeps. */}
         {librarianRuns.length > 0 && stage >= GUIDE_BRIDGE && (
           <span className="guide-run-chips" aria-label="Background runs">
@@ -494,30 +504,28 @@ export function GuideShell({ children, clock = guideClock }: { children: ReactNo
         </div>
         {stage >= 1 && (
           <div className="guide-chat-controls">
-            <button ref={opener} aria-keyshortcuts="Meta+K Control+K" data-flow="palette.open" data-pulse={lesson?.kind === "do" && lesson.completion === "palette.opened" && !done(stage)}
+            <GuideButton ref={opener} shortcut={GUIDE_KEYS.chat} data-flow="palette.open" data-pulse={lesson?.kind === "do" && lesson.completion === "palette.opened" && !done(stage)}
               onClick={runCommandOpen}>
-              <Command size={14} />
               <span>Chat</span>
-              {keyHint("⌘ K")}
-            </button>
-            <button type="button" data-flow="chat.dictate" aria-pressed={session.dictating === true}
+            </GuideButton>
+            <GuideButton data-flow="chat.dictate" shortcut={GUIDE_KEYS.dictation} aria-pressed={session.dictating === true}
               onClick={runCommandDictation}>
               <Mic size={14} />
               <span>{session.dictating ? "Stop dictation" : "Dictation"}</span>
-            </button>
+            </GuideButton>
           </div>
         )}
         {stage === GUIDE_LAST_STEP && (
-          <button data-flow="onboarding.act" onClick={() => runCommandGuide("restart")}>
-            Replay introduction {keyHint("Tab ↵")}
-          </button>
+          <GuideButton data-flow="onboarding.act" shortcut="Tab ↵" onClick={() => runCommandGuide("restart")}>
+            Replay introduction
+          </GuideButton>
         )}
       </footer>
       {toasts.length > 0 && (
         <aside className="guide-toasts" aria-label="Notifications">
           {[...toasts].sort((a, b) => b.createdAt - a.createdAt).map((toast) => (
-            <div className={`guide-toast${toast.key.startsWith("guide-tip-") ? " guide-tip" : ""}`} key={toast.id} data-toast-status={toast.status} role={toast.status === "failed" ? "alert" : "status"}>
-              {!toast.key.startsWith("guide-tip-") && (toast.status === "running" ? <Spinner size="sm" aria-label="Working" /> : toast.status === "ok" ? <Check size={17} aria-hidden="true" /> : <X size={17} aria-hidden="true" />)}
+            <div className="guide-toast" key={toast.id} data-toast-status={toast.status} role={toast.status === "failed" ? "alert" : "status"}>
+              {toast.status === "running" ? <Spinner size="sm" aria-label="Working" /> : toast.status === "ok" ? <Check size={17} aria-hidden="true" /> : <X size={17} aria-hidden="true" />}
               <div>
                 <strong>{toast.title}</strong>
                 {toast.detail && <p>{toast.detail}</p>}

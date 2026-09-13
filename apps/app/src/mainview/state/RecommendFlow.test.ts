@@ -346,3 +346,17 @@ describe("recommend: the flow", () => {
     expect(row(store)?.suggestions.map((suggestion) => suggestion.flow)).not.toContain("repo.open")
   })
 })
+
+
+test("a background repository check regenerates suggestions using hidden observations", async () => {
+  const worker = recorder([answer("repo-check", ["issues.list"])])
+  const { store, controller } = await boot({ fetchImpl: worker.fetchImpl })
+  await controller.guideAct("start")
+  await settle(12)
+  const request = worker.recommends().at(-1)?.body
+  expect(request).toBeDefined()
+  const tail = request!.tail as { role: string; text: string }[]
+  expect(tail.some(entry => entry.role === "system" && entry.text.includes('"openIssues":2'))).toBe(true)
+  expect(row(store)?.suggestions.some(suggestion => suggestion.flow === "issues.list")).toBe(true)
+  expect([...store.collections.cards.values()].some(card => card.kind === "repo-update")).toBe(false)
+})

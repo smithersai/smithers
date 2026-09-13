@@ -1,3 +1,4 @@
+import { currentRepositoryUpdate } from "../RepositoryContext"
 import type { CatalogItem, CommandState } from "../../flows/registry"
 import type { RepoStep } from "../../Onboarding"
 import {
@@ -77,6 +78,7 @@ export const createRecommendController = (ctx: ControllerContext, deps: Recommen
   let pendingId: string | undefined
 
   const input = (): RecommendInput => ({
+    repositoryUpdate: currentRepositoryUpdate(store),
     state: deps.state(),
     catalog: deps.catalog(),
     repoStep: deps.repoStep(),

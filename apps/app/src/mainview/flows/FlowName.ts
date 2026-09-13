@@ -193,6 +193,7 @@ export const FLOW_NAMES = [
   "repo.select",
   "repo.tree",
   "repo.unpin",
+  "repo.overview",
   "repo.update",
   "repo.welcome",
   "repos.import",

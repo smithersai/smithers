@@ -1,3 +1,4 @@
+import { currentRepositoryUpdate } from "../RepositoryContext"
 import { AGENT_RUNTIME_CONTEXT_VERSION, composeAgentInstructions, renderAgentRuntimeContext } from "@smthrs/rpc/AgentContext"
 import type { AgentRuntimeContext } from "@smthrs/rpc/AgentContext"
 import type { AgentChatMessage, AgentTurnFrame, TurnRefusal } from "@smthrs/rpc/NativeAgent"
@@ -193,6 +194,7 @@ export const createTurnController = (
       ? undefined
       : store.collections.worldDocuments.get(current.selectedWorldDocumentId)
     return {
+      repositoryUpdate: currentRepositoryUpdate(store),
       version: AGENT_RUNTIME_CONTEXT_VERSION,
       product: "smithers",
       capturedAt: snapshot.capturedAt,

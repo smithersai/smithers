@@ -1,3 +1,4 @@
+import { repositoryScope } from "../RepositoryContext"
 import { readResult } from "../seams/SeamContext"
 import type { SeamContext } from "../seams/SeamContext"
 import { readRepositoryUpdate } from "../seams/RepositoryUpdateSource"
@@ -8,13 +9,11 @@ import { isPracticeRepo, PRACTICE_REPO } from "../practice/PracticeRepository"
 
 type UpdateCard = Extract<Card, { kind: "repo-update" }>
 export function repositoryUpdateScope(ctx: SeamContext, repo: string): string {
-  if (isPracticeRepo(repo)) return `practice:${ctx.store.session().guide?.playthrough ?? 0}`
-  const identity = ctx.store.collections.identitySessions.get("identity")
-  return identity?.state === "signed-in" ? `github:${identity.login}` : "anonymous"
+  return repositoryScope(ctx.store, repo)
 }
 export function createRepositoryUpdate(ctx: SeamContext) {
   const pending = new Map<string, Promise<string | { value: string }>>()
-  const updateRepo = async (explicit?: string): Promise<string | { value: string }> => {
+  const readUpdate = async (explicit?: string, show = false): Promise<string | { value: string }> => {
     const target = isPracticeRepo(explicit) ? { repo: PRACTICE_REPO } : resolveTargetRepo(ctx.store, explicit)
     if ("error" in target) return target.error
     const { repo } = target
@@ -23,7 +22,8 @@ export function createRepositoryUpdate(ctx: SeamContext) {
     const conversation = conversationTabIdOf(session)
     const context = JSON.stringify([scope, conversation, session.activeRepoKey, session.activeWorkspaceId, session.activeBranchId])
     const key = JSON.stringify([scope, repo, conversation])
-    const prior = pending.get(key)
+    const pendingKey = JSON.stringify([key, show])
+    const prior = pending.get(pendingKey)
     if (prior) return prior
     const work = (async () => {
       const snapshot = await readRepositoryUpdate(ctx, repo)
@@ -39,6 +39,22 @@ export function createRepositoryUpdate(ctx: SeamContext) {
       const summary = fresh.length === 0
         ? problems.length ? "Some repository activity could not be checked." : "You're up to date. No new issue or PR updates since my last check."
         : `${newIssues.length} issue ${newIssues.length === 1 ? "update" : "updates"}, ${prs.length} PR ${prs.length === 1 ? "update" : "updates"}${notices.length ? `, and ${notices.length} ${notices.length === 1 ? "notification" : "notifications"}` : ""} since my last check.`
+      const events = [...snapshot.issues.events, ...snapshot.prs.events, ...snapshot.notifications.events]
+      const data = {
+        repo, checkedAt: at, ...(snapshot.branch ? { branch: snapshot.branch.slice(0, 250) } : {}),
+        openIssues: snapshot.issues.available ? snapshot.issues.events.filter(row => row.state === "open").length : null,
+        openPrs: snapshot.prs.available ? snapshot.prs.events.filter(row => row.state === "open").length : null,
+        problems: problems.slice(0, 10).map(value => value.slice(0, 250)),
+        items: [...events].sort((a, b) => Number(b.state === "open") - Number(a.state === "open")).slice(0, 20).map(row => ({
+          source: row.source.slice(0, 80), kind: row.kind, ...(row.number ? { number: row.number } : {}),
+          title: row.title.slice(0, 250), state: row.state.slice(0, 80), tags: row.tags.slice(0, 5).map(tag => tag.slice(0, 80))
+        })),
+        truncated: events.length > 20
+      }
+      await ctx.dispatch({ type: "repo.update.observed", actor: ctx.actor(),
+        context: { id: key, scope, conversation, data }, notifications: processed.rows
+      }).isPersisted.promise
+      if (!show) return readResult(JSON.stringify(data))
       const id = `repo-update-${encodeURIComponent(key)}`
       const existing = ctx.store.collections.cards.get(id)
       const visible = new Map(fresh.map(row => [row.id, row]))
@@ -61,8 +77,8 @@ export function createRepositoryUpdate(ctx: SeamContext) {
       }).isPersisted.promise
       return readResult(`${summary}\n${items.map(row => `${row.kind}${row.number ? ` #${row.number}` : ""}: ${row.title}`).join("\n")}${problems.length ? `\nPartial update: ${problems.join(" ")}` : ""}`)
     })()
-    pending.set(key, work)
-    try { return await work } finally { pending.delete(key) }
+    pending.set(pendingKey, work)
+    try { return await work } finally { pending.delete(pendingKey) }
   }
   const markUpdateRead = async (cardId: string): Promise<string | void> => {
     const card = ctx.store.collections.cards.get(cardId)
@@ -76,5 +92,5 @@ export function createRepositoryUpdate(ctx: SeamContext) {
     if (!tag.trim() || tag.trim().length > 48) return "Use a tag between 1 and 48 characters."
     await ctx.dispatch({ type: "notification.tagged", actor: ctx.actor(), id, tag: tag.trim() }).isPersisted.promise
   }
-  return { updateRepo, markUpdateRead, tagNotification }
+  return { updateRepo: (repo?: string) => readUpdate(repo), showRepoOverview: (repo?: string) => readUpdate(repo, true), markUpdateRead, tagNotification }
 }

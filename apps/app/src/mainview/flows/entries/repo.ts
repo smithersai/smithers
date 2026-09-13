@@ -81,7 +81,9 @@ export const repoStarterFlows = (actions: CommandActions): ReadonlyArray<FlowEnt
 
 /** The sidebar repository flows: select, unpin, tree. */
 export const repoFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> => [
-  flow({ name: "repo.update", summary: "Check new issues, PR updates and repository status", args: "[owner/repo]", input: RepoTarget,
+  flow({ name: "repo.overview", summary: "Show the repository update overview", args: "[owner/repo]", input: RepoTarget,
+    handler: ({ repo }) => actions.showRepoOverview(repo) }),
+  flow({ name: "repo.update", summary: "Read repository activity into context without displaying an overview", args: "[owner/repo]", input: RepoTarget,
     handler: ({ repo }) => actions.updateRepo(repo) }),
   /* The sidebar's pinned repositories (docs/LOCAL-APP.md "Tabs"). */
   flow({

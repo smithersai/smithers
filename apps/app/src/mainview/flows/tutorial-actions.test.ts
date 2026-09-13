@@ -15,8 +15,8 @@ const setup = async () => {
 
 test("repo update, read receipts, and tags execute through their registered slash/button paths", async () => {
   const {store,controller,fetched} = await setup()
-  expect(payloadFor("repo.update",PRACTICE_REPO)).toEqual({payload:{repo:PRACTICE_REPO}})
-  expect((await controller.commands.run("repo.update",PRACTICE_REPO)).status).toBe("executed")
+  expect(payloadFor("repo.overview",PRACTICE_REPO)).toEqual({payload:{repo:PRACTICE_REPO}})
+  expect((await controller.commands.run("repo.overview",PRACTICE_REPO)).status).toBe("executed")
   const card = [...store.collections.cards.values()].find(c=>c.kind==="repo-update")
   if(card?.kind!=="repo-update") throw new Error("No status card was rendered")
   expect(card.payload.openIssues).toBe(2)
@@ -30,7 +30,7 @@ test("repo update, read receipts, and tags execute through their registered slas
   expect(store.collections.repositoryNotifications.get(first.id)?.readVersion).toBe(first.version)
   const read = store.collections.cards.get(card.id)
   expect(read?.kind === "repo-update" && read.payload.items.every(item=>item.read)).toBe(true)
-  expect((await controller.commands.run("repo.update",PRACTICE_REPO)).status).toBe("executed")
+  expect((await controller.commands.run("repo.overview",PRACTICE_REPO)).status).toBe("executed")
   const refreshed = store.collections.cards.get(card.id)
   expect(refreshed?.kind === "repo-update" && refreshed.payload.items).toEqual([])
   expect(fetched()).toBe(0)
@@ -55,7 +55,7 @@ test("registered issue navigation, Back and Forward preserve one embedded frame"
 
 test("the repository overview is the web pane's home: issues, a detail and a PR are locations in its one frame", async () => {
   const {store,controller,fetched} = await setup()
-  expect((await controller.commands.run("repo.update",PRACTICE_REPO)).status).toBe("executed")
+  expect((await controller.commands.run("repo.overview",PRACTICE_REPO)).status).toBe("executed")
   const overview = [...store.collections.cards.values()].find(c=>c.kind==="repo-update")
   if(overview?.kind!=="repo-update") throw new Error("No status card was rendered")
   expect((await controller.commands.run("issues.list",`open ${PRACTICE_REPO}`)).status).toBe("executed")
@@ -83,4 +83,16 @@ test("numbered issue and PR targets accept explicit repositories before catalog 
   for(const name of ["issues.view","issues.close","issues.reopen","prs.view","issue.flows","issue.repro","issue.implement"]){
     expect(payloadFor(name,"3 owner/not-loaded",undefined,new Set())).toEqual({payload:{number:3,repo:"owner/not-loaded"}})
   }
+})
+
+
+test("starting the tutorial gathers context, then Show issues is its first repository view", async () => {
+  const { store, controller } = await setup()
+  await controller.guideAct("start")
+  expect(store.collections.repositoryContexts.size).toBe(1)
+  expect([...store.collections.cards.values()].filter(card => card.kind === "repo-update")).toEqual([])
+  expect((await controller.commands.run("repo.update", PRACTICE_REPO)).status).toBe("executed")
+  expect([...store.collections.cards.values()].filter(card => card.kind === "repo-update")).toEqual([])
+  expect((await controller.commands.run("issues.list", `open ${PRACTICE_REPO}`)).status).toBe("executed")
+  expect([...store.collections.cards.values()].filter(card => card.kind === "issue-list")).toHaveLength(1)
 })

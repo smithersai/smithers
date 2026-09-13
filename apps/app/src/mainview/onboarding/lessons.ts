@@ -25,7 +25,9 @@ export type GuideLesson = {
   /** The terminal line after an escape hatch: login declined, or install declined. */
   variants?: { readonly login: string; readonly install: string }
 } | {
-  kind: "do"; message: string; tip?: string; completion: string
+  kind: "do"; message: string; completion: string
+  /** Optional guidance anchored to one action, never sent as a notification. */
+  help?: { actionKey: string; content: string }
   /** Screen-reader description of the pill (aria-describedby); never rendered as numbered steps. */
   instruction: string
   actions: readonly GuideAction[]
@@ -47,7 +49,8 @@ export const GUIDE_STAGES: readonly GuideLesson[] = [
   /* 0 */ { kind: "do", message: "", completion: "tutorial.started", skippable: false,
     instruction: "Starts the tutorial.",
     actions: [{ label: "Start tutorial", key: "t", flow: "onboarding.act", args: "start" }] },
-  /* 1 */ { kind: "do", practice: true, message: "", tip: "We are in an example repo to show how you use Smithers. At all times Smithers will suggest next actions to you which you can select via hitting the key on the button.", completion: "issues.opened", skippable: false,
+  /* 1 */ { kind: "do", practice: true, message: "", completion: "issues.opened", skippable: false,
+    help: { actionKey: "i", content: "Start with the practice repository’s issues. Click Show issues or press i." },
     instruction: "Lists the practice repository's open issues.",
     actions: [{ label: "Show issues", key: "i", flow: "issues.list", args: `open ${PRACTICE_REPO}` }] },
   /* 2 */ { kind: "do", practice: true, goal: "issue", message: "", completion: "issue.opened", skippable: false,
@@ -84,9 +87,9 @@ export const GUIDE_STAGES: readonly GuideLesson[] = [
     secondary: { label: "Later", key: "z", flow: "onboarding.act", args: "decline install" } },
   /* 12 */ { kind: "do", requires: "installed", message: "I can study {repo} in the background. Start a Wiki that explains the code, and a Mythical history of how it got here.", completion: "librarian.runs.launched", skippable: false,
     instruction: "Starts both background flows on your repository.", success: "Both are running. I'll tell you when they're done.",
-    actions: [{ label: "Create Wiki for {repo}", key: "b", flow: "wiki.create", args: "{repo}" },
+    actions: [{ label: "Create Wiki for {repo}", key: "k", flow: "wiki.create", args: "{repo}" },
       { label: "Create Mythical history", key: "h", flow: "history.bootstrap", args: "{repo}", subtitle: "On its own branch. Your branches stay untouched." }] },
-  /* 13 */ { kind: "do", message: "If you ever need to just chat with me rather than using the fast controls or UI to interact you can always hit command k. From there you can type any message.\n\nYou can also choose Dictation in the bottom bar to speak your message. Review the text, then send it.", completion: "palette.opened", skippable: false,
+  /* 13 */ { kind: "do", message: "If you ever need to just chat with me rather than using the fast controls or UI to interact you can always hit command k. From there you can type any message.\n\nYou can also press v or choose Dictation in the bottom bar to speak your message. Review the text, then send it.", completion: "palette.opened", skippable: false,
     instruction: "Opens Chat. Escape closes it.", success: "Type a message here, or choose Dictation to speak. Escape closes Chat.",
     actions: [{ label: "Press", key: "⌘K", flow: "palette.open" }] },
   /* 14 */ { kind: "say", terminal: true, optionalAction: REEL_BUTTON,

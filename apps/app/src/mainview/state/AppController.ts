@@ -340,6 +340,7 @@ export interface AppController extends TutorialChangeController, IssueFlowsContr
    */
   readonly searchPalette: (text: string) => PaletteAnswer
   readonly search: SearchSeam["search"]
+  readonly showRepoOverview: (repo?: string) => Promise<string | { value: string }>
   readonly updateRepo: (repo?: string) => Promise<string | { value: string }>
   readonly markUpdateRead: (cardId: string) => Promise<string | void>
   readonly tagNotification: (id: string, tag: string) => Promise<string | void>

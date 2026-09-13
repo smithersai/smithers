@@ -342,6 +342,7 @@ const GRAMMAR: Readonly<Record<string, Grammar>> = {
     const [id, ...rest] = tokensOf(args)
     return ok({ ...(id ? { id } : {}), ...(rest.length ? { tag: rest.join(" ") } : {}) })
   },
+  "repo.overview": (args) => repoOnly("repo.overview", args),
   "repo.update": (args) => repoOnly("repo.update", args),
   "card.maximize": (args) => required("cardId", args, "card.maximize needs the card id"),
   "card.dismiss": (args) => required("cardId", args, "card.dismiss needs the card id"),

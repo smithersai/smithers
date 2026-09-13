@@ -107,7 +107,8 @@ textarea {
 
 /* The logo owns a real header row; navigation opens beneath it. */
 .session-shell { padding-top: 44px; min-height: 100dvh; box-sizing: border-box; }
-.session-navigation { position: absolute; inset: 0 0 auto; height: 44px; z-index: 60; background: var(--background, #f7f6f1); }
+/* The session shell already follows the guide theme; keep its header on the same surface. */
+.session-navigation { position: absolute; inset: 0 0 auto; height: 44px; z-index: 60; background: inherit; }
 .session-navigation .guide-wordmark { border: 0; padding: 0; background: transparent; cursor: pointer; }
 .session-navigation .guide-wordmark:focus-visible { outline: 2px solid var(--g-accent); outline-offset: 5px; }
 .session-sidebar { position: absolute; top: 44px; bottom: 0; left: 0; width: 240px; z-index: 55; display: flex; }

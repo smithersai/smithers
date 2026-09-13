@@ -15,7 +15,7 @@ test("every capability keeps its copy and demo", () => {
     expect(sounded).toBe(stage.demo === "sound")
   }
 })
-for (const key of ["Escape", "ArrowLeft", "ArrowRight", "x", null]) test(`reel waits for intentional input: ${key}`, () => {
+for (const key of ["Escape", "b", "ArrowRight", "x", null]) test(`reel waits for intentional input: ${key}`, () => {
   let advanced = 0, exited = 0
   const target = new EventTarget()
   const stop = scheduleReel({ target, advance: () => advanced++, exit: () => exited++ })
@@ -24,7 +24,7 @@ for (const key of ["Escape", "ArrowLeft", "ArrowRight", "x", null]) test(`reel w
   expect(advanced).toBe(0)
   if (key) target.dispatchEvent(Object.assign(new Event("keyup", { cancelable: true }), { key }))
   expect(advanced).toBe(key === "ArrowRight" ? 1 : 0)
-  expect(exited).toBe(key === "Escape" || key === "ArrowLeft" ? 1 : 0)
+  expect(exited).toBe(key === "Escape" || key === "b" ? 1 : 0)
   stop()
 })
 test("holding a shortcut and unmounted listeners cannot skip examples", () => {

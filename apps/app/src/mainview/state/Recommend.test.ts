@@ -7,6 +7,7 @@ import {
   parseRecommendation,
   recommendRequest,
   recommendTail,
+  repositoryRecommendationTail,
   ruleSuggestions,
   TAIL_MAX_CHARS,
   TAIL_MAX_MESSAGES
@@ -246,4 +247,21 @@ describe("recommend: the rule", () => {
   test("a streaming turn offers nothing: the pills are disabled anyway", () => {
     expect(ruleSuggestions({ state: { ...state, typing: true }, catalog, repoStep: "none" })).toEqual([])
   })
+})
+
+
+test("hidden repository observations fit the recommender contract without cutting structured data", () => {
+  const tail = repositoryRecommendationTail({
+    messages: [{ role: "user", text: "x".repeat(4000) }],
+    repositoryUpdate: {
+      repo: "owner/repo", checkedAt: 1, openIssues: 20, openPrs: null,
+      problems: ["partial"], truncated: false,
+      items: Array.from({ length: 20 }, (_, number) => ({ source: "github", kind: "issue", number,
+        title: '"'.repeat(250), state: "open", tags: ["x".repeat(80), "y".repeat(80)] }))
+    }
+  })
+  expect(tail.reduce((sum, row) => sum + row.text.length, 0)).toBeLessThanOrEqual(TAIL_MAX_CHARS)
+  const observation = tail.at(-1)!
+  expect(observation.role).toBe("system")
+  expect(JSON.parse(observation.text.slice(observation.text.indexOf("\n") + 1))).toMatchObject({ truncated: true, openIssues: 20 })
 })

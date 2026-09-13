@@ -2,6 +2,7 @@ import { useCallback } from "react"
 import { useLiveQuery } from "@tanstack/react-db"
 import { useController } from "../ControllerContext"
 import { guideClock, type GuideClock } from "./advance"
+import { GuideButton, GUIDE_KEYS } from "./GuideButton"
 import { GUIDE_LAST_STEP } from "./lessons"
 import { REEL_BUTTON, REEL_STAGES, dispatchReelDemo, playReelChime, scheduleReel, type ReelDispatch, type ReelState } from "./reel.ts"
 
@@ -31,8 +32,8 @@ export function Reel({ index, epoch = 0, demo, dispatch, playSound = playReelChi
         {demo === "prototype" ? "A little room for big ideas" : demo === "revision" ? "Our next big idea" : demo === "plan" ? "Change the heading → check → review" : <><del>A little room for big ideas</del> → <ins>Our next big idea</ins></>}
       </div>}
     </article>
-    <button className="guide-primary" data-flow="onboarding.act" aria-keyshortcuts="ArrowRight" onClick={() => dispatch("reel-next", `${epoch}:${index}`)}>{index === REEL_STAGES.length - 1 ? "Finish" : "Next"} <kbd className="guide-button-key">→</kbd></button>
-    <button className="guide-primary" data-flow="onboarding.act" aria-keyshortcuts="Escape ArrowLeft" onClick={() => dispatch("reel-exit")}>Back <kbd className="guide-button-key">Esc</kbd></button>
+    <GuideButton className="guide-primary" data-flow="onboarding.act" shortcut="ArrowRight" onClick={() => dispatch("reel-next", `${epoch}:${index}`)}>{index === REEL_STAGES.length - 1 ? "Finish" : "Next"}</GuideButton>
+    <GuideButton className="guide-primary" data-flow="onboarding.act" shortcut={GUIDE_KEYS.back} onClick={() => dispatch("reel-exit")}>Back</GuideButton>
   </section>
 }
 
@@ -51,8 +52,8 @@ export function ReelShell({ clock = guideClock }: { clock?: GuideClock }) {
   }, [controller, guide?.reelSeen])
   if (guide?.step !== GUIDE_LAST_STEP) return null
   if (guide.reelIndex !== undefined) return <Reel index={guide.reelIndex} epoch={guide.reelEpoch} demo={guide.reelDemo} dispatch={dispatch} clock={clock} />
-  return <><button className="guide-primary" data-flow="onboarding.act" onClick={() => dispatch("finish")}>Finish tutorial</button>
-  <button ref={launchRef} className="guide-primary" style={{ border: "1px solid currentColor", borderRadius: 999 }} data-flow="tut.more" aria-keyshortcuts={REEL_BUTTON.key.toLowerCase()} onClick={() => controller.runCommand(REEL_BUTTON.command)}>
-    {REEL_BUTTON.label} <kbd className="guide-button-key" aria-hidden="true">{REEL_BUTTON.key}</kbd>
-  </button></>
+  return <><GuideButton className="guide-primary" data-flow="onboarding.act" shortcut="Tab ↵" onClick={() => dispatch("finish")}>Finish tutorial</GuideButton>
+  <GuideButton ref={launchRef} className="guide-primary" style={{ border: "1px solid currentColor", borderRadius: 999 }} data-flow="tut.more" shortcut={REEL_BUTTON.key} onClick={() => controller.runCommand(REEL_BUTTON.command)}>
+    {REEL_BUTTON.label}
+  </GuideButton></>
 }

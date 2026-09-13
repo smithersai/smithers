@@ -1,0 +1,70 @@
+.help-anchor {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  max-width: 100%;
+  min-width: 0;
+}
+
+.help-bubble {
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  width: min(340px, 100%);
+  box-sizing: border-box;
+  margin-bottom: 18px;
+  padding: 14px 12px 14px 16px;
+  border: 1px solid var(--g-accent, #286447);
+  border-radius: 12px;
+  background: var(--g-panel, #fff);
+  color: var(--g-ink, #183e2d);
+  box-shadow: 0 4px 14px #1e393012;
+  text-align: left;
+}
+
+.help-bubble::after {
+  content: "";
+  position: absolute;
+  bottom: -6px;
+  left: calc(50% - 5px);
+  width: 10px;
+  height: 10px;
+  border-right: 1px solid var(--g-accent, #286447);
+  border-bottom: 1px solid var(--g-accent, #286447);
+  background: var(--g-panel, #fff);
+  transform: rotate(45deg);
+}
+
+.help-bubble-content {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--fs-small, 14px);
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+
+.help-bubble-dismiss {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 30px;
+  height: 30px;
+  margin: -4px -3px 0 0;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+
+.help-bubble-dismiss:hover { background: color-mix(in srgb, currentColor 8%, transparent); }
+.help-bubble-dismiss:focus-visible { outline: 2px solid var(--g-accent, #286447); outline-offset: 2px; }
+.help-anchor-target { display: flex; justify-content: center; max-width: 100%; }
+
+/* No pulse or entrance animation: guidance is stable, including reduced motion. */
+.help-anchor[data-help-open] .help-anchor-target > button {
+  outline: 2px solid var(--g-accent, #286447);
+  outline-offset: 4px;
+}
