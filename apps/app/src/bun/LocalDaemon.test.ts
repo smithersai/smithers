@@ -1,14 +1,14 @@
 import { afterEach, expect, test } from "bun:test"
 import { chmod, lstat, mkdtemp, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
-import { join } from "node:path"
+import { dirname, join } from "node:path"
 import { LOCAL_SESSION_HEADER, localSessionProtocol } from "@smthrs/rpc/LocalSession"
 import { attachLocalDaemon, type LocalDaemonAttachment } from "./LocalDaemonClient"
 import { daemonRequest, descriptorPath, readDaemonDescriptor, type DaemonConfiguration } from "./LocalDaemonProtocol"
 import { createPtyClient } from "../mainview/state/PtyClient"
+import { shutdownLocalDaemon } from "./LocalDaemonStop"
 
 const roots: string[] = []
-const owners: LocalDaemonAttachment[] = []
 const until = async (check: () => boolean | Promise<boolean>) => {
   const deadline = Date.now() + 5000
   while (!await check()) {
@@ -17,11 +17,7 @@ const until = async (check: () => boolean | Promise<boolean>) => {
   }
 }
 afterEach(async () => {
-  for (const owner of new Map(owners.splice(0).map((owner) => [owner.instance, owner])).values()) {
-    try { await owner.shutdown() } catch (error) {
-      if (!(error && typeof error === "object" && "code" in error && ["ECONNREFUSED", "ENOENT", "FailedToOpenSocket"].includes(String(error.code)))) throw error
-    }
-  }
+  for (const root of roots) await shutdownLocalDaemon(join(root, "state"))
   for (const root of roots.splice(0)) await rm(root, { recursive: true, force: true })
 })
 const fixture = async () => {
@@ -38,7 +34,6 @@ const fixture = async () => {
   }
   const attach = async () => {
     const owner = await attachLocalDaemon(configuration, options)
-    owners.push(owner)
     return owner
   }
   return { root, configuration, options, attach }
@@ -164,6 +159,5 @@ test("the bundled main entry runs the daemon without importing the native SDK", 
   })
   expect(build.success).toBe(true)
   const owner = await attachLocalDaemon(f.configuration, { ...f.options, entrypoint: join(outdir, "index.js") })
-  owners.push(owner)
   expect((await (await api(owner)).request("/api/pty")).status).toBe(200)
 }, 20_000)

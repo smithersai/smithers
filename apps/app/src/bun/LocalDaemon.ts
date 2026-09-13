@@ -7,6 +7,7 @@ import { z } from "zod"
 import * as Redaction from "@smthrs/journal/Redaction"
 import { startWithPersistentOrigin } from "./NativeOrigin"
 import { startLocalServer } from "./server"
+import { acquireDaemonLease } from "./LocalDaemonLease"
 import {
   DAEMON_PROTOCOL, DaemonConfigurationSchema, descriptorPath, prepareDaemonDirectory,
   type DaemonConfiguration, type DaemonDescriptor
@@ -25,11 +26,14 @@ const daemonLogger = (directory: string) => (line: string): void => {
 export const startLocalDaemon = async (configuration: DaemonConfiguration) => {
   const directory = await prepareDaemonDirectory(configuration.stateDir)
   const log = daemonLogger(directory)
+  const releaseLease = acquireDaemonLease(directory)
   const instance = crypto.randomUUID()
   const token = randomBytes(32).toString("base64url")
   // A private address per generation avoids PID locks and stale-socket reclamation.
-  const socketDirectory = await mkdtemp(join(tmpdir(), "smthrs-"))
-  chmodSync(socketDirectory, 0o700)
+  const socketDirectory = await mkdtemp(join(tmpdir(), "smthrs-")).catch((error) => {
+    releaseLease()
+    throw error
+  })
   const socket = join(socketDirectory, "owner.sock")
   let host: Awaited<ReturnType<typeof startLocalServer>> | undefined
   let control: ReturnType<typeof Bun.serve> | undefined
@@ -52,9 +56,11 @@ export const startLocalDaemon = async (configuration: DaemonConfiguration) => {
   const retire = async (): Promise<void> => {
     await control?.stop(false)
     await rm(socketDirectory, { recursive: true, force: true })
+    releaseLease()
     finished.resolve()
   }
   try {
+    chmodSync(socketDirectory, 0o700)
     host = await startWithPersistentOrigin(configuration.stateDir, (port) => startLocalServer({
       ...configuration, port, log
     }), configuration.port === 0 ? undefined : configuration.port)
@@ -108,6 +114,7 @@ export const startLocalDaemon = async (configuration: DaemonConfiguration) => {
     await host?.stop()
     await control?.stop(true)
     await rm(socketDirectory, { recursive: true, force: true })
+    releaseLease()
     throw error
   }
 }

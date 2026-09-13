@@ -337,6 +337,7 @@ const githubHref = "https://github.com/smithersai/smithers"
     width: 40px;
     height: 40px;
     border-radius: 999px;
+    overflow: hidden;
     color: var(--home-accent);
     transition: color 0.15s var(--ease), background-color 0.15s var(--ease);
   }
@@ -353,6 +354,8 @@ const githubHref = "https://github.com/smithersai/smithers"
   }
 
   .start {
+    position: relative;
+    overflow: hidden;
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -437,7 +440,7 @@ const githubHref = "https://github.com/smithersai/smithers"
   }
   .start.ready {
     /* Release transform after the entrance so hover and press can take over. */
-    animation: start-in 0.45s var(--ease) backwards;
+    animation: control-reveal 420ms cubic-bezier(0.16, 1, 0.3, 1) backwards;
   }
   .start.ready.pending,
   .start.ready[data-pressed] {
@@ -448,16 +451,36 @@ const githubHref = "https://github.com/smithersai/smithers"
   :global(html.entering) .github {
     visibility: hidden;
   }
-  @keyframes start-in {
-    from { opacity: 0; transform: translateY(8px) scale(0.98); }
+  @keyframes control-reveal {
+    from { opacity: 0.88; clip-path: inset(0 8% 0 0 round 999px); transform: translateX(-0.12em); }
     to { opacity: 1; transform: none; }
   }
-  @keyframes start-fade {
-    from { opacity: 0; }
-    to { opacity: 1; }
+  @media (prefers-reduced-motion: no-preference) {
+    .github { animation: control-reveal 420ms cubic-bezier(0.16, 1, 0.3, 1) 40ms backwards; }
+    .start.ready::after,
+    .github::after {
+      content: "";
+      position: absolute;
+      inset: 0;
+      border-radius: inherit;
+      pointer-events: none;
+      background: linear-gradient(105deg, transparent 42%, rgb(255 255 255 / 12%) 49%, transparent 56%);
+      background-size: 300% 100%;
+      opacity: 0;
+      animation: control-sweep 480ms cubic-bezier(0.4, 0, 0.2, 1) 360ms;
+    }
+    .start.pending::after,
+    .start[data-pressed]::after,
+    .github:active::after { animation: none; }
+    .github:active { animation: none; }
+  }
+  @keyframes control-sweep {
+    0% { opacity: 0; background-position: 100% 0; }
+    15%, 85% { opacity: 1; }
+    100% { opacity: 0; background-position: 0 0; }
   }
   @media (prefers-reduced-motion: reduce) {
-    .start.ready { animation-name: start-fade; animation-duration: 0.2s; }
+    .start.ready { animation: none; }
     .start, .start-key, .github { transition: none; }
     .start:hover, .start:active, .start[data-pressed], .start.pending,
     .start:active .start-key,

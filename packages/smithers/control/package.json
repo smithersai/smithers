@@ -64,7 +64,8 @@
     "./WebCryptoCipher": "./src/WebCryptoCipher.ts",
     "./WebhookChannel": "./src/WebhookChannel.ts",
     "./index": "./src/index.ts",
-    "./test/TestControl": "./src/test/TestControl.ts"
+    "./test/TestControl": "./src/test/TestControl.ts",
+    "./Health": "./src/Health.ts"
   },
   "files": [
     "src/**/*.ts",
@@ -364,6 +365,16 @@
         "require": {
           "types": "./dist/cjs/test/TestControl.d.ts",
           "default": "./dist/cjs/test/TestControl.js"
+        }
+      },
+      "./Health": {
+        "import": {
+          "types": "./dist/esm/Health.d.ts",
+          "default": "./dist/esm/Health.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Health.d.ts",
+          "default": "./dist/cjs/Health.js"
         }
       }
     }

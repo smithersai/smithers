@@ -278,6 +278,8 @@ export const PtySessionSchema = z.object({
   sessionId: z.string(),
   kind: z.enum(["terminal", "harness"]),
   harnessId: z.enum(HARNESS_IDS).optional(),
+  /** Trusted role selected by the owner when composing this session's command. */
+  roleId: z.string().optional(),
   cwd: z.string(),
   pid: z.number(),
   alive: z.boolean(),

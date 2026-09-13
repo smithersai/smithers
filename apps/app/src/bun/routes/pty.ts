@@ -9,6 +9,7 @@ import { AgentRoleIdSchema } from "@smthrs/rpc/AgentRoles"
 import { HARNESS_IDS } from "@smthrs/rpc/LocalApp"
 import { z } from "zod"
 import type { PtyManager } from "../Pty"
+import type { SessionMonitor } from "../SessionMonitor"
 import { json, jsonError, readJson, Router } from "../routes"
 import type { WsMessageHandler } from "../server"
 
@@ -46,14 +47,15 @@ export interface PtyRepositoryResolver {
 export const registerPtyRoutes = (
   host: PtyRouteHost,
   manager: PtyManager,
-  repositories: PtyRepositoryResolver
+  repositories: PtyRepositoryResolver,
+  health?: Pick<SessionMonitor, "list">
 ): { readonly revokeRepo: (repoId: string) => Promise<void> } => {
   const { router } = host
   const sessionRepos = new Map<string, string>()
   const epochs = new Map<string, number>()
   const creating = new Map<string, Set<Promise<void>>>()
 
-  router.add("GET", PTY_PATH, () => json({ sessions: manager.list() }))
+  router.add("GET", PTY_PATH, () => json({ sessions: health?.list() ?? manager.list() }))
 
   router.add("POST", PTY_PATH, async ({ request }) => {
     const parsed = await readJson(request)

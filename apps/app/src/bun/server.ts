@@ -24,6 +24,8 @@ import {
   TURN_PATH
 } from "@smthrs/rpc/AgentApiRoutes"
 import * as Redaction from "@smthrs/journal/Redaction"
+import * as Health from "@smthrs/control/Health"
+import { createSessionMonitor, type SessionMonitor } from "./SessionMonitor"
 import type { AgentRole } from "@smthrs/rpc/AgentRoles"
 import { APP_API_VERSION, APP_BOOTSTRAP_PATH } from "@smthrs/rpc/AppBootstrap"
 import { AgentRuntimeContextSchema } from "@smthrs/rpc/AgentContext"
@@ -168,6 +170,8 @@ export interface LocalServerOptions {
    * test passes a temp dir or nothing.
    */
   readonly stateDir?: string
+  /** Trusted Effect checks selected by role or harness; never accepted from renderer requests. */
+  readonly health?: Health.HealthConfig
   /** The smithers-build build-cli entry for the targets lane; the default resolves it from the checkout (or SMITHERS_BUILD_CLI). */
   readonly buildCli?: string
   /** The home directory used for PTYs without a repoId and reported by `/api/health`. */
@@ -569,6 +573,9 @@ const proxyCloud = async (
 }
 
 export const startLocalServer = async (options: LocalServerOptions): Promise<LocalServer> => {
+  // Invalid trusted configuration fails before listeners or child owners exist.
+  Health.makeRegistry(options.health, "session")
+  let sessionMonitor: SessionMonitor | undefined
   const log = options.log ?? ((line: string) => console.log(line))
   const distDir = resolve(options.distDir)
   const version = options.version ?? APP_VERSION
@@ -1181,6 +1188,11 @@ export const startLocalServer = async (options: LocalServerOptions): Promise<Loc
                 ? { type: "pty.missing", sessionId }
                 : { type: "pty.replay", sessionId, ...replay }))
             }
+            if (topic.startsWith("pty:")) {
+              const sessionId = topic.slice(4)
+              const status = sessionMonitor?.status(sessionId)
+              if (status !== undefined) socket.send(JSON.stringify({ type: "pty.status", sessionId, status }))
+            }
           } else {
             socket.unsubscribe(topic)
             socket.data.topics.delete(topic)
@@ -1266,9 +1278,12 @@ export const startLocalServer = async (options: LocalServerOptions): Promise<Loc
     log
   }
   const pty = options.pty === undefined ? createPtyManager(ptyDeps) : options.pty(ptyDeps)
+  sessionMonitor = await createSessionMonitor({
+    manager: pty, configuration: options.health, stateDir: options.stateDir, publish, log
+  })
   const ptyRoutes = registerPtyRoutes(routeHost, pty, {
     resolveRepo: (repoId) => repoTargets.resolveRepo(repoId, "read-write")
-  })
+  }, sessionMonitor)
   // A language server reads: read access suffices.
   registerLspRoutes(routeHost, lsp, {
     resolveRepo: (repoId) => repoTargets.resolveRepo(repoId, "read")
@@ -1299,6 +1314,7 @@ export const startLocalServer = async (options: LocalServerOptions): Promise<Loc
         () => cloudAuth?.stop(),
         () => linearAuth?.stop(),
         () => ptyStopped,
+        () => sessionMonitor?.stop(),
         () => lsp.killAll(),
         // Target children are reaped before the journal flushes, so their
         // exit frames land on disk instead of in a queue nobody awaits.

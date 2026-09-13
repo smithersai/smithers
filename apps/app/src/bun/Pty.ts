@@ -379,6 +379,7 @@ export const createPtyManager = (options: PtyManagerOptions): PtyManager => {
       sessionId,
       kind: input.kind,
       ...(harnessId === undefined ? {} : { harnessId }),
+      ...(input.roleId === undefined ? {} : { roleId: input.roleId }),
       cwd,
       pid: proc.pid,
       alive: true
