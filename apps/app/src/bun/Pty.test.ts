@@ -191,7 +191,7 @@ describe("sessions", () => {
     if (created.status !== "ok") throw new Error(created.message)
     expect(created.session).toMatchObject({ kind: "harness", harnessId: "codex" })
     await until(() => exitOf(created.session.sessionId) !== undefined)
-    expect(outputOf(created.session.sessionId)).toContain("-m gpt-5.6-sol add a retry")
+    expect(outputOf(created.session.sessionId)).toContain("-m gpt-5.6-sol -- add a retry")
     // A role whose harness is not installed is refused like any other harness.
     const refused = await m.create({ kind: "harness", cwd: "~", cols: 80, rows: 24, roleId: "explainer" })
     expect(refused).toMatchObject({ status: "error", code: "unknown_harness" })
@@ -223,7 +223,7 @@ describe("sessions", () => {
     if (created.status !== "ok") throw new Error(created.message)
     expect(created.session).toMatchObject({ kind: "harness", harnessId: "codex" })
     await until(() => exitOf(created.session.sessionId) !== undefined)
-    expect(outputOf(created.session.sessionId)).toContain("-m gpt-5.6-terra review it")
+    expect(outputOf(created.session.sessionId)).toContain("-m gpt-5.6-terra -- review it")
     // The store is the truth: an id it lacks is not a role, however well-formed.
     expect(await m.create({ kind: "harness", cwd: "~", cols: 80, rows: 24, roleId: "poet" })).toMatchObject({ status: "error", code: "unknown_role" })
     // Without a store the built-ins alone resolve.

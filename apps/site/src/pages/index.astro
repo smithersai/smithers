@@ -25,7 +25,7 @@ const githubHref = "https://github.com/smithersai/smithers"
   </a>
   <main class="wrap hero home">
     <h1 class="wordmark" aria-label="Smithers">
-      <pre aria-hidden="true">{WORDMARK.join("\n")}</pre>
+      <pre aria-hidden="true">{WORDMARK.map((line, row) => <span class="wordmark-row" style={`--row: ${row}`}>{line}</span>)}</pre>
     </h1>
     <p class="sub">{project.tagline}</p>
     <div class="actions">
@@ -63,16 +63,16 @@ const githubHref = "https://github.com/smithersai/smithers"
   const APP_MARK = { left: 12, top: 12, fontSize: 2.75 }
   const TRANSITION_CSS = `
     @media (prefers-reduced-motion: no-preference) {
-      ::view-transition-group(${MARK_NAME}) { animation-duration: 380ms; animation-timing-function: cubic-bezier(0.2, 0, 0, 1); }
-      ::view-transition-old(${MARK_NAME}) { animation: smithers-mark-out 380ms linear both; }
-      ::view-transition-new(${MARK_NAME}) { animation: smithers-mark-in 380ms linear both; }
-      ::view-transition-old(root) { animation: smithers-home-out 180ms cubic-bezier(0.4, 0, 1, 1) both; }
-      ::view-transition-new(root) { animation: smithers-app-in 300ms cubic-bezier(0.22, 0.61, 0.21, 1) 120ms both; }
+      ::view-transition-group(${MARK_NAME}) { animation-duration: 210ms; animation-timing-function: cubic-bezier(0.2, 0, 0, 1); }
+      ::view-transition-old(${MARK_NAME}) { animation: smithers-mark-out 210ms linear both; }
+      ::view-transition-new(${MARK_NAME}) { animation: smithers-mark-in 210ms linear both; }
+      ::view-transition-old(root) { animation: smithers-home-out 100ms cubic-bezier(0.4, 0, 1, 1) both; }
+      ::view-transition-new(root) { animation: smithers-app-in 180ms cubic-bezier(0.22, 0.61, 0.21, 1) both; }
     }
     @keyframes smithers-mark-out { 0%, 80% { opacity: 1; } 100% { opacity: 0; } }
     @keyframes smithers-mark-in { 0%, 80% { opacity: 0; } 100% { opacity: 1; } }
-    @keyframes smithers-home-out { to { opacity: 0; transform: translateY(-12px); } }
-    @keyframes smithers-app-in { from { opacity: 0; transform: translateY(10px); } }
+    @keyframes smithers-home-out { to { opacity: 0; transform: translateY(-6px); } }
+    @keyframes smithers-app-in { from { opacity: 0; transform: translateY(6px); } }
   `
 
   if (start) {
@@ -177,14 +177,14 @@ const githubHref = "https://github.com/smithersai/smithers"
       const scale = APP_MARK.fontSize / parseFloat(getComputedStyle(pre).fontSize)
       const easing = "cubic-bezier(0.2, 0, 0, 1)"
       for (const el of document.querySelectorAll<HTMLElement>(".home .sub, .home .actions, .github")) {
-        el.animate([{ opacity: 1 }, { opacity: 0, transform: "translateY(-10px)" }], { duration: 180, easing, fill: "forwards" })
+        el.animate([{ opacity: 1 }, { opacity: 0, transform: "translateY(-6px)" }], { duration: 100, easing, fill: "forwards" })
       }
       await pre.animate(
         [
           { transformOrigin: "0 0", transform: "none" },
           { transformOrigin: "0 0", transform: `translate(${APP_MARK.left - rect.left}px, ${APP_MARK.top - rect.top}px) scale(${scale})` }
         ],
-        { duration: 380, easing, fill: "forwards" }
+        { duration: 210, easing, fill: "forwards" }
       ).finished
     }
 
@@ -192,16 +192,13 @@ const githubHref = "https://github.com/smithersai/smithers"
     const enter = async (instant = false): Promise<void> => {
       if (entering) return
       entering = true
+      // Finish the entrance before the complete mark flies into the app header.
+      document.querySelector(".wordmark")?.classList.add("settled")
       start.classList.add("pending")
       start.setAttribute("aria-busy", "true")
-      // Let every activation visibly press the same control before the page leaves.
-      const pressed = instant || reduced.matches ? Promise.resolve() : start.animate(
-        [{ transform: "translateY(1px) scale(0.975)" }, { transform: "translateY(1px) scale(0.985)" }],
-        { duration: 140, easing: "cubic-bezier(0.2, 0.8, 0.2, 1)" }
-      ).finished.catch(() => {})
       let mount: AppMount
       try {
-        ;[mount] = await Promise.all([load(), pressed])
+        mount = await load()
       } catch {
         // The chunk did not arrive (offline, a deploy replaced it): Start Here stays and can be pressed again.
         entering = false
@@ -295,6 +292,39 @@ const githubHref = "https://github.com/smithersai/smithers"
     white-space: pre;
     /* Shared with the app's mark while Start Here's view transition runs. */
     view-transition-name: smithers-wordmark;
+  }
+
+  .wordmark-row { display: block; }
+  @media (prefers-reduced-motion: no-preference) {
+    .wordmark-row {
+      --scan-edge: 0 100% 0 0;
+      --scan-offset: -0.6em;
+      color: transparent;
+      background-image: linear-gradient(105deg,
+        var(--home-accent) 42%,
+        color-mix(in srgb, var(--home-accent), white 42%) 49%,
+        var(--home-accent) 56%);
+      background-size: 300% 100%;
+      background-position: 0 0;
+      background-clip: text;
+      -webkit-background-clip: text;
+      animation:
+        wordmark-scan 580ms cubic-bezier(0.16, 1, 0.3, 1) calc(60ms + var(--row) * 38ms) backwards,
+        wordmark-sweep 620ms cubic-bezier(0.4, 0, 0.2, 1) 700ms backwards;
+    }
+    .wordmark-row:nth-child(even) {
+      --scan-edge: 0 0 0 100%;
+      --scan-offset: 0.6em;
+    }
+    .wordmark.settled .wordmark-row { animation: none; }
+  }
+  @keyframes wordmark-scan {
+    from { clip-path: inset(var(--scan-edge)); transform: translateX(var(--scan-offset)); }
+    to { clip-path: inset(0); transform: none; }
+  }
+  @keyframes wordmark-sweep {
+    from { background-position: 100% 0; }
+    to { background-position: 0 0; }
   }
 
   .github {

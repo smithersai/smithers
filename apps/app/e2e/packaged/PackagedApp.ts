@@ -6,6 +6,7 @@ import { access, mkdir, mkdtemp, readdir, readFile, rm, stat, writeFile } from "
 import { createServer } from "node:net"
 import { tmpdir } from "node:os"
 import { dirname, join, resolve } from "node:path"
+import { daemonRequest, hasCode, readDaemonDescriptor } from "../../src/bun/LocalDaemonProtocol"
 
 const DEFAULT_STARTUP_TIMEOUT_MS = 90_000
 const REQUEST_TIMEOUT_MS = 5_000
@@ -561,6 +562,21 @@ export class PackagedApp {
   async cleanup(): Promise<void> {
     if (this.cleaned) return
     await this.quit()
+    // Quit/relaunch preserve the independent owner. Only final fixture cleanup
+    // explicitly stops it, through its private capability, never by PID/path.
+    const state = process.platform === "darwin"
+      ? join(this.stateDirectory, "Library", "Application Support", "Smithers")
+      : join(this.stateDirectory, ".local", "share", "smithers")
+    const owner = await readDaemonDescriptor(state)
+    if (owner !== undefined) {
+      try {
+        const response = await daemonRequest(owner, "/shutdown", {})
+        if (!response.ok) throw new Error("The isolated session owner did not shut down; its state was retained.")
+        await response.arrayBuffer()
+      } catch (error) {
+        if (!hasCode(error, "ECONNREFUSED") && !hasCode(error, "ENOENT")) throw error
+      }
+    }
     this.cleaned = true
     const expectedPrefix = join(tmpdir(), "smithers-electrobun-e2e-")
     if (!this.temporaryRoot.startsWith(expectedPrefix)) {

@@ -2,6 +2,7 @@ import {
   HarnessesResponseSchema,
   PtyCreateResponseSchema,
   PtyOutputResponseSchema,
+  PtySessionSchema,
   ReposResponseSchema
 } from "@smthrs/rpc/LocalApp"
 import { agentRoleTitle, findAgentRole } from "@smthrs/rpc/AgentRoles"
@@ -13,6 +14,7 @@ import { activeRepoOf, MAIN_TAB_ID, parseRepoSelection, repoKeyOf } from "../App
 import type { PinnedRepo, Repo, TabRow } from "../AppState"
 import type { CommandResult } from "../../flows/Flows"
 import type { ControllerContext } from "./context"
+import { z } from "zod"
 
 /*
  * The local-app tabs (docs/LOCAL-APP.md "Tabs"): opening a terminal, a
@@ -405,9 +407,44 @@ export const createTabsController = (ctx: ControllerContext): TabsController => 
       const parsed = ReposResponseSchema.safeParse(await response.json())
       if (!parsed.success) return
       store.dispatch({ type: "repos.loaded", actor: "system", repos: parsed.data.repos })
+      await restoreSessions()
     } catch {
       // Same as the harnesses: an absent seam means no repository, not a failure.
     }
+  }
+
+  let restoredSessions = false
+  const restoreSessions = async (): Promise<void> => {
+    if (restoredSessions) return
+    const response = await ctx.boundedFetch(`${baseUrl}/api/pty`)
+    if (!response.ok) return
+    const parsed = z.object({ sessions: z.array(PtySessionSchema) }).safeParse(await response.json())
+    if (!parsed.success) return
+    restoredSessions = true
+    const sessions = new Map(parsed.data.sessions.map((session) => [session.sessionId, session]))
+    for (const tab of orderedTabs()) {
+      if (!isProcessTab(tab) || (tab.kind === "terminal" && tab.workspaceId !== undefined)) continue
+      const session = sessions.get(tab.sessionId)
+      if (session?.alive !== true && tab.exitCode === undefined) notePtyExit(tab.sessionId, session?.exitCode ?? null)
+    }
+    // A create may have committed in the owner just before the renderer quit,
+    // before it could persist the returned id. Recover those owned sessions too.
+    const selected = store.session().activeTabId ?? MAIN_TAB_ID
+    for (const session of sessions.values()) {
+      if (orderedTabs().some((tab) => isProcessTab(tab) && tab.sessionId === session.sessionId)) continue
+      const repo = [...collections.repos.values()].find((repo) => repo.path === session.cwd)
+      const common = {
+        id: session.sessionId, sessionId: session.sessionId, cwd: session.cwd,
+        title: tabTitleFor(session.kind === "terminal" ? "Terminal" : session.harnessId ?? "Agent", repo),
+        ...repoKeyFor(repo), ...(session.alive ? {} : { exitCode: session.exitCode ?? null })
+      }
+      if (session.kind === "harness" && session.harnessId !== undefined) {
+        store.dispatch({ type: "tab.opened", actor: "system", tab: { ...common, kind: "harness", harnessId: session.harnessId } })
+      } else if (session.kind === "terminal") {
+        store.dispatch({ type: "tab.opened", actor: "system", tab: { ...common, kind: "terminal" } })
+      }
+    }
+    if (store.session().activeTabId !== selected) store.dispatch({ type: "tab.selected", actor: "system", id: selected })
   }
 
   const toggleTabMenu: TabsController["toggleTabMenu"] = async (repoKey) => {

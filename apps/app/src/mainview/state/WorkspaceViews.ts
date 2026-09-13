@@ -104,7 +104,7 @@ const projectApprovalCard = (card: Card, request: Card | undefined): Card => {
     return { ...card, title: request.title, body: request.body, payload: {
       ...request.payload,
       approvals: request.payload.approvals.map((row) => {
-        const state = card.payload.approvals.find((entry) => entry.requestId === row.requestId)
+        const state = card.payload.approvals.find((entry) => entry.runId === row.runId && entry.requestId === row.requestId)
         return { ...row, decision: state?.decision, decidedAt: state?.decidedAt, pending: state?.pending,
           decisionError: state?.decisionError }
       })

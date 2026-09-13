@@ -32,7 +32,7 @@ const probe = async (stateDir: string): Promise<DaemonDescriptor | undefined> =>
 }
 export const attachLocalDaemon = async (
   configuration: DaemonConfiguration,
-  options: { readonly entrypoint: string; readonly executable?: string; readonly timeoutMs?: number }
+  options: { readonly entrypoint: string; readonly executable?: string; readonly timeoutMs?: number; readonly env?: NodeJS.ProcessEnv }
 ): Promise<LocalDaemonAttachment> => {
   await prepareDaemonDirectory(configuration.stateDir)
   let descriptor = await probe(configuration.stateDir)
@@ -40,7 +40,7 @@ export const attachLocalDaemon = async (
     const child = spawn(options.executable ?? process.execPath, [options.entrypoint], {
       detached: true,
       stdio: "ignore",
-      env: { ...process.env, SMITHERS_LOCAL_DAEMON: "1", SMITHERS_DAEMON_CONFIGURATION: JSON.stringify(configuration) }
+      env: { ...(options.env ?? process.env), SMITHERS_LOCAL_DAEMON: "1", SMITHERS_DAEMON_CONFIGURATION: JSON.stringify(configuration) }
     })
     let failed: Error | undefined
     child.on("error", (error) => { failed = error })

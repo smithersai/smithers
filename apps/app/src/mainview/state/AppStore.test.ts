@@ -379,7 +379,7 @@ describe("runtime-owned pending approvals", () => {
       startTurn: async () => ({ status: "started" }), cancelTurn: async () => {}
     }, { fetchImpl: async (_input, init) => {
       calls.push(JSON.parse(String(init?.body)))
-      return Response.json({ ok: true, payload: {} })
+      return Response.json({ ok: true, payload: { decision: { _tag: "Accepted", receiptId: "approval-receipt" } } })
     } })
     const workflows = createWorkflowController(ctx, () => 1, async () => {})
     let forwarded: Card | undefined
@@ -466,7 +466,7 @@ describe("runtime-owned pending approvals", () => {
     }, { available: false, subscribe: () => () => {}, startTurn: async () => ({ status: "started" }), cancelTurn: async () => {} }, {
       fetchImpl: async (_input, init) => {
         calls.push(JSON.parse(String(init?.body)))
-        return Response.json({ ok: true, payload: {} })
+        return Response.json({ ok: true, payload: { decision: { _tag: "Accepted", receiptId: "approval-receipt" } } })
       }
     })
     try {

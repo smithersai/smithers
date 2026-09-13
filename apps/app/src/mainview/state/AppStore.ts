@@ -2207,7 +2207,7 @@ const initializeAppStore = async (resolved: ResolvedPersistence): Promise<AppSto
             // keeps the exact description and envelope first shown to the human.
             if (card.kind === "approvals-inbox" && trusted?.kind === "approvals-inbox") {
               card = { ...card, title: trusted.title, payload: { ...trusted.payload, approvals: card.payload.approvals.map((row) => {
-                const prior = trusted.payload.approvals.find((entry) => entry.requestId === row.requestId)
+                const prior = trusted.payload.approvals.find((entry) => sameApproval(entry, row))
                 return prior === undefined ? row : { ...row, runId: prior.runId, title: prior.title,
                   approval: prior.approval, requestedAt: prior.requestedAt }
               }) } }

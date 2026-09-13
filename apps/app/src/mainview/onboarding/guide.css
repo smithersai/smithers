@@ -285,7 +285,7 @@
 .guide-actions {
   display: flex;
   flex-wrap: wrap;
-  align-items: center;
+  align-items: flex-end;
   justify-content: center;
   gap: 18px 28px;
   /* The transcript's -10px bottom margin leaves a 12px visual gap. */
@@ -1436,7 +1436,7 @@
 /* ---- Onboarding script v4 (onboarding/lessons.ts) ---- */
 .guide-goal {
   margin: 0 0 .75rem; padding: .7rem .9rem; border: 1px solid var(--border, rgba(0,0,0,.12)); border-radius: 12px;
-  background: var(--surface, rgba(255,255,255,.7)); animation: guide-goal-in .35s ease-out both;
+  background: var(--surface, rgba(255,255,255,.7)); animation: guide-goal-in .18s ease-out both;
 }
 .guide-goal[data-goal-state="complete"] { border-color: var(--success, #1a7f37); }
 .guide-goal-checkpoints { display: flex; flex-wrap: wrap; gap: .4rem .9rem; margin: 0; padding: 0; list-style: none; }

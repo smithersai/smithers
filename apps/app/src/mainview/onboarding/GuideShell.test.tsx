@@ -113,7 +113,7 @@ test("every beat has keyboard navigation, one pill shape, and no numbered instru
         expect(text(button)).toContain(lessonText(action.label, { repo: "acme/api" }))
         expect(text(button?.querySelector("kbd") ?? null)).toBe(action.key === "⌘K" ? "⌘ K" : action.key)
         expect(button?.getAttribute("aria-keyshortcuts")).toBe(action.key.length === 1 ? action.key.toLowerCase() : "Meta+K Control+K")
-        expect(button?.getAttribute("aria-describedby")).toBe(`guide-instruction-${step}${step === 1 ? " guide-help-1" : ""}`)
+        expect(button?.getAttribute("aria-describedby")).toBe(`guide-instruction-${step}${lesson.help?.actionKey === action.key ? ` guide-help-${step}` : ""}`)
       }
       if (lesson.secondary !== undefined) expect(text(host.querySelector(".guide-actions [data-secondary]"))).toContain(lesson.secondary.label)
       // Skip practice (Q) sits beside Back on the practice beats only.
@@ -256,7 +256,7 @@ test("first practice help describes the suggested action without emitting a noti
   let controller!: ReturnType<typeof createAppController>
   const host = await mountGuide(1, still, {}, c => { controller = c })
   const target = host.querySelector<HTMLButtonElement>('.guide-actions [data-flow="issues.list"]')!
-  expect(text(host.querySelector('#guide-help-1'))).toContain("Click Show issues or press i")
+  expect(text(host.querySelector('#guide-help-1'))).toContain("Smithers makes suggestions")
   expect(target.getAttribute('aria-describedby')).toContain('guide-help-1')
   expect(host.querySelector('.guide-toasts .guide-tip')).toBeNull()
   const dismiss = host.querySelector<HTMLButtonElement>('[aria-label="Dismiss help"]')!

@@ -1,4 +1,5 @@
 .help-anchor {
+  position: relative;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -27,7 +28,7 @@
   content: "";
   position: absolute;
   bottom: -6px;
-  left: calc(50% - 5px);
+  left: calc(var(--help-tip-x, 50%) - 5px);
   width: 10px;
   height: 10px;
   border-right: 1px solid var(--g-accent, #286447);
@@ -62,6 +63,30 @@
 .help-bubble-dismiss:hover { background: color-mix(in srgb, currentColor 8%, transparent); }
 .help-bubble-dismiss:focus-visible { outline: 2px solid var(--g-accent, #286447); outline-offset: 2px; }
 .help-anchor-target { display: flex; justify-content: center; max-width: 100%; }
+
+.help-anchor[data-placement="above"] > .help-bubble {
+  position: absolute;
+  bottom: 100%;
+  width: min(340px, calc(100vw - 32px));
+  max-width: none;
+  z-index: 10;
+}
+.guidance-text-accessible {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+.guidance-text-visual > span {
+  opacity: 0;
+  animation: guidance-character 1ms step-end var(--character-delay) forwards;
+}
+@keyframes guidance-character { to { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) {
+  .guidance-text-visual > span { opacity: 1; animation: none; }
+}
 
 /* No pulse or entrance animation: guidance is stable, including reduced motion. */
 .help-anchor[data-help-open] .help-anchor-target > button {

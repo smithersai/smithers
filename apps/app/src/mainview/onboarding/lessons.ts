@@ -27,7 +27,7 @@ export type GuideLesson = {
 } | {
   kind: "do"; message: string; completion: string
   /** Optional guidance anchored to one action, never sent as a notification. */
-  help?: { actionKey: string; content: string }
+  help?: { actionKey: string; content: string; introduction?: ReadonlyArray<{ target: "action" | "chat"; content: string }> }
   /** Screen-reader description of the pill (aria-describedby); never rendered as numbered steps. */
   instruction: string
   actions: readonly GuideAction[]
@@ -50,9 +50,16 @@ export const GUIDE_STAGES: readonly GuideLesson[] = [
     instruction: "",
     actions: [] },
   /* 1 */ { kind: "do", practice: true, message: "", completion: "issues.opened", skippable: false,
-    help: { actionKey: "i", content: "Start with the practice repository’s issues. Click Show issues or press i." },
+    help: { actionKey: "i", content: "Start with the practice repository’s issues. Click Show issues or press i.",
+      introduction: [
+        { target: "action", content: "Smithers makes suggestions as to what we should do next as you use it." },
+        { target: "chat", content: "You can also talk to Smithers anytime by pressing Command K." },
+      ] },
     instruction: "Lists the practice repository's open issues.",
-    actions: [{ label: "Show issues", key: "i", flow: "issues.list", args: `open ${PRACTICE_REPO}` }] },
+    actions: [
+      { label: "Show issues", key: "i", flow: "issues.list", args: `open ${PRACTICE_REPO}` },
+      { label: "Review changes", key: "r", flow: "prs.list", args: PRACTICE_REPO },
+    ] },
   /* 2 */ { kind: "do", practice: true, goal: "issue", message: "", completion: "issue.opened", skippable: false,
     instruction: "Opens issue #3 with its body.",
     actions: [{ label: "Read issue #3", key: "r", flow: "issues.view", args: `3 ${PRACTICE_REPO}` }] },

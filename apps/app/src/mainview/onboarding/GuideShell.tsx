@@ -22,6 +22,7 @@ import { GuideButton, GUIDE_KEYS } from "./GuideButton"
 import { GuideComposerHost } from "./GuideComposerHost"
 import { InTutorial, tutorialTranscript } from "./transcriptScope"
 import { HelpBubble } from "../HelpBubble"
+import { GuidanceText } from "../GuidanceText"
 
 /** An original, short opt-in interval; no autoplay or copyrighted game audio. */
 function chime() {
@@ -100,8 +101,20 @@ export function GuideShell({ children, clock = guideClock }: { children: ReactNo
   // Dismissal is transient guidance chrome; lesson completion remains in the store.
   const [dismissedHelp, setDismissedHelp] = useState<string | null>(null)
   const helpKey = `${guide.playthrough ?? 0}:${stage}`
+  const [guidance, setGuidance] = useState({ key: "", index: 0 })
+  const guidanceIndex = guidance.key === helpKey ? guidance.index : 0
+  const introduction = lesson?.kind === "do" ? lesson.help?.introduction?.[guidanceIndex] : undefined
+  const advanceGuidance = useCallback(() => setGuidance(previous => ({
+    key: helpKey, index: (previous.key === helpKey ? previous.index : 0) + 1,
+  })), [helpKey])
   const showTutorialHelp = lesson?.kind === "do" && lesson.help !== undefined && !done(stage)
     && dismissedHelp !== helpKey && !guide.conversationOpen && !session.paletteOpen
+  const chatHelpOpen = showTutorialHelp && introduction?.target === "chat"
+  const guidanceContent = lesson?.kind === "do" && lesson.help ? <GuidanceText
+    key={`${helpKey}:${guidanceIndex}`}
+    text={introduction?.content ?? lesson.help.content}
+    onRead={introduction ? advanceGuidance : undefined}
+  /> : null
   const paused = guide.autoPaused === true
   const showNext = lesson === undefined || (lesson.kind === "say" ? paused : lesson.skippable)
   const lastScrolledStep = useRef(-1)
@@ -415,7 +428,7 @@ export function GuideShell({ children, clock = guideClock }: { children: ReactNo
           <div className="guide-actions">
             {lesson?.kind === "do" && lesson.actions.map(action => {
               const guidedAction = lesson.help?.actionKey === action.key
-              const helpOpen = guidedAction && showTutorialHelp
+              const helpOpen = guidedAction && showTutorialHelp && !chatHelpOpen
               const button = (
                 <GuideButton key={action.flow} className="guide-primary"
                   data-flow={action.flow} shortcut={action.key}
@@ -431,7 +444,7 @@ export function GuideShell({ children, clock = guideClock }: { children: ReactNo
               )
               return guidedAction ? (
                 <HelpBubble key={action.flow} id={`guide-help-${stage}`} open={helpOpen}
-                  content={lesson.help?.content} onDismiss={() => setDismissedHelp(helpKey)}>
+                  content={guidanceContent} onDismiss={() => setDismissedHelp(helpKey)}>
                   {button}
                 </HelpBubble>
               ) : button
@@ -504,10 +517,14 @@ export function GuideShell({ children, clock = guideClock }: { children: ReactNo
         </div>
         {stage >= 1 && (
           <div className="guide-chat-controls">
+            <HelpBubble id={`guide-chat-help-${stage}`} placement="above" open={chatHelpOpen}
+              content={guidanceContent} onDismiss={() => setDismissedHelp(helpKey)}>
             <GuideButton ref={opener} shortcut={GUIDE_KEYS.chat} data-flow="palette.open" data-pulse={lesson?.kind === "do" && lesson.completion === "palette.opened" && !done(stage)}
+              aria-describedby={chatHelpOpen ? `guide-chat-help-${stage}` : undefined}
               onClick={runCommandOpen}>
               <span>Chat</span>
             </GuideButton>
+            </HelpBubble>
             <GuideButton data-flow="chat.dictate" shortcut={GUIDE_KEYS.dictation} aria-pressed={session.dictating === true}
               onClick={runCommandDictation}>
               <Mic size={14} />

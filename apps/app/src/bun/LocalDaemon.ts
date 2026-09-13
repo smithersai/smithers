@@ -55,7 +55,7 @@ export const startLocalDaemon = async (configuration: DaemonConfiguration) => {
   try {
     host = await startWithPersistentOrigin(configuration.stateDir, (port) => startLocalServer({
       ...configuration, port, log
-    }), configuration.port)
+    }), configuration.port === 0 ? undefined : configuration.port)
     control = Bun.serve({
       unix: socket,
       maxRequestBodySize: 16 * 1024,
