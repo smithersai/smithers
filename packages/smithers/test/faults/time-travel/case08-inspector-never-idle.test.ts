@@ -16,7 +16,7 @@ import { TimeTravel } from "@smthrs/time-travel"
 import * as Effect from "effect/Effect"
 import { rmSync } from "node:fs"
 import { afterAll, beforeAll, describe, expect, it } from "vitest"
-import { layer, Ledger, lineageOf, makeWorkspace } from "./harness/timeTravelRun.ts"
+import { layer, lineageOf, makeWorkspace, parkLedger } from "./harness/timeTravelRun.ts"
 
 const workspace = makeWorkspace("case08")
 beforeAll(() => workspace.enter())
@@ -39,7 +39,7 @@ describe("case08 the inspector is never idle", () => {
       Effect.gen(function*() {
         // Drive the run until it parks. It releases its claim on the way out,
         // which is the state the inspector reads.
-        yield* Ledger.execute({ entry: "posted" }, { executionId, discard: true })
+        yield* parkLedger(executionId)
 
         const journal = yield* Journal.Journal
         yield* journal.flush

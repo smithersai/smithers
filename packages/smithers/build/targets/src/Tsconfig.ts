@@ -32,7 +32,6 @@
  */
 import * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
-import * as NodeUtil from "node:util/types"
 import * as GeneratedFile from "./GeneratedFile.ts"
 import * as Input from "./Input.ts"
 import * as ManifestJson from "./ManifestJson.ts"
@@ -185,26 +184,6 @@ const definition = Target.make("Tsconfig", {
 })
 
 /**
- * Reports whether a declaration is the plain object this rule may copy before
- * {@link Target.make} snapshots it.
- *
- * Copying is a read of the author's object, and {@link Target.make} refuses
- * three things by reading it exactly once: a `Proxy`, whose traps must not run
- * at all; an accessor property, which would answer differently on two reads;
- * and a value carrying a prototype of its own. A declaration that is any of
- * them is handed on untouched so the construction boundary still raises the
- * error it always did, rather than being flattened into a plain object first.
- */
-const isPlainDeclaration = (attrs: object): boolean => {
-  if (NodeUtil.isProxy(attrs)) return false
-  const prototype = Object.getPrototypeOf(attrs)
-  if (prototype !== Object.prototype && prototype !== null) return false
-  return Object.getOwnPropertyNames(attrs).every((key) =>
-    "value" in (Object.getOwnPropertyDescriptor(attrs, key) as PropertyDescriptor)
-  )
-}
-
-/**
  * Resolves every declared `include` and `exclude` entry to its pattern text.
  *
  * This runs before {@link Target.make}'s own attr walk, which is the whole
@@ -216,7 +195,9 @@ const isPlainDeclaration = (attrs: object): boolean => {
 const resolveDeclarations = (
   attrs: (typeof Attrs)["~type.make.in"]
 ): (typeof Attrs)["~type.make.in"] => {
-  if (typeof attrs !== "object" || attrs === null || !isPlainDeclaration(attrs)) return attrs
+  // Target.guard has already rejected proxies, accessors and custom
+  // prototypes and supplied a plain-data snapshot. Normalize that snapshot;
+  // do not maintain a second, unreachable declaration-validation path here.
   const cwd = attrs.cwd ?? defaultCwd
   const text = (entries: ReadonlyArray<(typeof Pattern)["~type.make.in"]>): ReadonlyArray<string> =>
     entries.map((entry) => patternText(cwd, Pattern.make(entry)))

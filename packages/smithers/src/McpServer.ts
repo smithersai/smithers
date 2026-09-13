@@ -125,7 +125,7 @@ export interface Tool {
 }
 
 const inputSchemaOf = (schema: Schema.Codec<unknown, unknown>): Record<string, unknown> => {
-  const document = Schema.toJsonSchemaDocument(schema)
+  const document = Schema.toJsonSchemaDocument(schema, { onExcessProperty: "error" })
   const root = document.schema as Record<string, unknown>
   return Object.keys(document.definitions).length === 0
     ? root
@@ -162,8 +162,7 @@ const runFlowArguments = Schema.Struct({
 const pageArguments = {
   cursor: Schema.optionalKey(describedString("The nextCursor of the previous page.")),
   limit: Schema.optionalKey(ControlSchema.PageLimit.annotate({
-    description:
-      `Items per page, 1 to ${ControlSchema.maxPageSize}. Omitted means ${ControlSchema.defaultPageSize}.`
+    description: `Items per page, 1 to ${ControlSchema.maxPageSize}. Omitted means ${ControlSchema.defaultPageSize}.`
   }))
 }
 
@@ -211,7 +210,8 @@ const nodeDetailArguments = Schema.Struct({
   nodeId: describedString("The node, as `smthrs output <run-id>` lists it.")
 })
 
-const requireRunId = (args: Record<string, unknown>): string | undefined => asString(args["runId"]) ?? asString(args["run_id"])
+const requireRunId = (args: Record<string, unknown>): string | undefined =>
+  asString(args["runId"]) ?? asString(args["run_id"])
 
 /** Events of one run after the cursor, oldest first. */
 const eventsOf = (runId: string, afterSequence = 0) =>
@@ -282,6 +282,8 @@ const safeFailure = (failure: ControlError.ControlError | CliError.ResourceLimit
         "NO_MATCHING_WAIT",
         `Run ${safeText(failure.runId)} has no wait named ${safeText(failure.waitName)}`
       )
+    case "/notifications/NotificationError":
+      return failed("NOTIFICATION_ERROR", "The notification queue could not complete the operation")
     case "/control/CredentialConflict":
       return failed("CREDENTIAL_CONFLICT", `Credential ${safeText(failure.id)} changed before this write committed`)
   }
@@ -673,7 +675,8 @@ export const tools = (options: Options = {}): ReadonlyArray<Tool> => {
  * @category predicates
  * @since 1.0.0
  */
-export const requested = (args: ReadonlyArray<string> | Argv.Globals): boolean => Argv.parse(args).options.get("--mcp") === true
+export const requested = (args: ReadonlyArray<string> | Argv.Globals): boolean =>
+  Argv.parse(args).options.get("--mcp") === true
 
 /**
  * Reads the session's scope out of raw argv.

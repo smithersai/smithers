@@ -1,5 +1,6 @@
 import { describe, expect, it } from "@effect/vitest"
 import * as DatabaseMigrations from "@smthrs/database/Migrations"
+import * as NodeDatabase from "@smthrs/database/node/NodeDatabase"
 import * as TestDatabase from "@smthrs/database/test/TestDatabase"
 import * as EngineMigrations from "@smthrs/engine-store/Migrations"
 import * as JournalMigrations from "@smthrs/journal/Migrations"
@@ -9,6 +10,10 @@ import * as StepCacheMigrations from "@smthrs/step-cache/Migrations"
 import * as TimeTravelMigrations from "@smthrs/time-travel/Migrations"
 import * as Effect from "effect/Effect"
 import * as SqlClient from "effect/unstable/sql/SqlClient"
+import { mkdtempSync, rmSync } from "node:fs"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
+import { DatabaseSync } from "node:sqlite"
 import * as Migrations from "../src/Migrations.ts"
 import { initial } from "../src/migrations/0001_control_tables.ts"
 import * as SqlControlRuntime from "../src/SqlControlRuntime.ts"
@@ -41,6 +46,39 @@ const withDatabase = <A, E>(effect: Effect.Effect<A, E, SqlClient.SqlClient>) =>
   effect.pipe(Effect.provide(TestDatabase.layer))
 
 describe("control migrations", () => {
+  it.live("retries standalone bootstrap behind another connection's write lock without advancing the ledger", () =>
+    Effect.scoped(Effect.gen(function*() {
+      const directory = yield* Effect.acquireRelease(
+        Effect.sync(() => mkdtempSync(join(tmpdir(), "control-bootstrap-lock-"))),
+        (path) => Effect.sync(() => rmSync(path, { recursive: true, force: true }))
+      )
+      const filename = join(directory, "control.sqlite")
+      yield* Effect.gen(function*() {
+        yield* DatabaseMigrations.run([])
+        const blocker = yield* Effect.acquireRelease(
+          Effect.sync(() => new DatabaseSync(filename)),
+          (database) => Effect.sync(() => database.close())
+        )
+        blocker.exec("BEGIN IMMEDIATE")
+        let released = false
+        const release = () => {
+          if (!released) {
+            blocker.exec("ROLLBACK")
+            released = true
+          }
+        }
+        const timer = setTimeout(release, 100)
+        yield* SqlControlRuntime.migrate.pipe(Effect.ensuring(Effect.sync(() => {
+          clearTimeout(timer)
+          release()
+        })))
+        const sql = yield* SqlClient.SqlClient
+        expect(yield* sql`SELECT * FROM control_runs`).toEqual([])
+        expect(yield* sql`SELECT * FROM flows_migrations`).toEqual([])
+        expect(yield* Migrations.run).toHaveLength(4)
+      }).pipe(Effect.provide(NodeDatabase.layer({ filename })))
+    })))
+
   it("reserves the next migration block without colliding with a sibling", () => {
     expect(Migrations.set.idOffset % DatabaseMigrations.idBlock).toBe(0)
     expect(Migrations.set.idOffset).toBe(Math.max(...siblingOffsets) + DatabaseMigrations.idBlock)

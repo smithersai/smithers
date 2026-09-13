@@ -109,7 +109,7 @@ const isWaitingForApproval = (value: unknown): boolean =>
 
 const addressUrl = (server: HttpServer.HttpServer["Service"]): string => {
   const address = server.address
-  if (address._tag !== "TcpAddress") throw new Error("expected a TCP control server")
+  if (address._tag !== "InetAddressV4") throw new Error("expected a TCP control server")
   return `http://127.0.0.1:${address.port}`
 }
 
@@ -643,7 +643,7 @@ describe("Control surface", () => {
           Effect.provide(NodeControl.layerControl(NodeControl.makeConfig(shared, {}, "/work"))),
           Effect.provide(scenarioServices)
         )
-        return { hostname: server.address._tag === "TcpAddress" ? server.address.hostname : "", result }
+        return { hostname: server.address._tag === "InetAddressV4" ? server.address.address.toString() : "", result }
       }).pipe(
         Effect.provide(
           NodeControl.layerServerBearerAuth({

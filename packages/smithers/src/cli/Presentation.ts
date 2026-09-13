@@ -146,9 +146,15 @@ export const runs = (
   if (runId === undefined) return options.otherwise ?? []
   const actions: Array<Next> = []
   if (options.show !== false) {
-    actions.push({ command: `runs show ${quote(runId)}`, description: "Inspect status and the reason execution stopped" })
+    actions.push({
+      command: `runs show ${quote(runId)}`,
+      description: "Inspect status and the reason execution stopped"
+    })
   }
-  actions.push({ command: `runs logs ${quote(runId)} --format jsonl`, description: "Read detailed events only when needed" })
+  actions.push({
+    command: `runs logs ${quote(runId)} --format jsonl`,
+    description: "Read detailed events only when needed"
+  })
   if (data["status"] === "waiting-approval" || data["_tag"] === "Parked") {
     actions.push({ command: "approvals list", description: "Inspect pending approval payloads" })
   }
@@ -174,7 +180,10 @@ export const nextActions = (value: unknown, context: Context = {}, next: FollowU
     } catch { /* Malformed connection arguments are handled before execution. */ }
   }
   const declared = typeof next === "function" ? next(asRecord(value), context.args ?? {}) : next
-  return declared.slice(0, 3).map((action) => ({ command: action.command + connection, description: action.description }))
+  return declared.slice(0, 3).map((action) => ({
+    command: action.command + connection,
+    description: action.description
+  }))
 }
 
 const clean = (value: unknown): string =>

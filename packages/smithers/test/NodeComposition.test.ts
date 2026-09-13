@@ -828,7 +828,7 @@ describe("NodeControl server binds", () => {
     const hostname = await Effect.runPromise(
       Effect.gen(function*() {
         const server = yield* HttpServer.HttpServer
-        return server.address._tag === "TcpAddress" ? server.address.hostname : ""
+        return server.address._tag === "InetAddressV4" ? server.address.address.toString() : ""
       }).pipe(
         Effect.provide(NodeControl.layerServerNoopAuth({ port: 0 }).pipe(Layer.provide(TestControl.layer()))),
         Effect.scoped
@@ -884,7 +884,7 @@ describe("Application remote endpoint resolution", () => {
       Effect.gen(function*() {
         const server = yield* HttpServer.HttpServer
         const address = server.address
-        if (address._tag !== "TcpAddress") return yield* Effect.fail(new Error("expected a TCP control server"))
+        if (address._tag !== "InetAddressV4") return yield* Effect.fail(new Error("expected a TCP control server"))
         const base = `http://127.0.0.1:${address.port}`
         const plan = (remote: string) =>
           Effect.flatMap(ControlService.Control, (control) => control.plan({ flowId: "system/test", input: {} })).pipe(

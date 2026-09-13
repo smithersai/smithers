@@ -3,30 +3,50 @@
  *
  * @since 0.1.0
  */
-import { NodeHttpClient, NodeHttpServer, NodeServices, NodeSocket } from "@effect/platform-node"
-import { Control, ControlRpcs, ControlRuntime, ControlServer } from "@smthrs/control"
+import { NodeHttpClient, NodeHttpServer, NodeServices } from "@effect/platform-node"
+import { Control, ControlRpcs, type ControlRuntime, ControlServer } from "@smthrs/control"
 
+import type * as Journal from "@smthrs/journal/Journal"
 
-import * as Journal from "@smthrs/journal/Journal"
 import * as McpClient from "@smthrs/mcp/McpClient"
+
 import * as MemoryError from "@smthrs/memory/MemoryError"
+
 import * as MemoryStore from "@smthrs/memory/MemoryStore"
+
 import type { NotificationQueue } from "@smthrs/notifications"
-import * as Registry from "@smthrs/registry/Registry"
+
+import type * as Registry from "@smthrs/registry/Registry"
+
 import { Effect, Layer, Result, Schema } from "effect"
+
 import { HttpRouter } from "effect/unstable/http"
+
 import { RpcSerialization } from "effect/unstable/rpc"
+
 import { Socket } from "effect/unstable/socket"
+
 import { existsSync, readFileSync } from "node:fs"
+
 import { createServer } from "node:http"
+
 import type { ListenOptions } from "node:net"
+
 import * as Application from "./Application.ts"
+
 import * as Argv from "./cli/Argv.ts"
+
 import * as CliError from "./CliError.ts"
+
 import * as Environment_ from "./Environment.ts"
+
 import { native } from "./internal/NodeControlHost.ts"
+
 import type { EngineDurable, ModuleRegistration } from "./internal/NativeControl.ts"
+
 import * as CommandStatus from "./internal/CommandStatus.ts"
+
+import * as NodeWebSocket from "./internal/NodeWebSocket.ts"
 import * as Output from "./Output.ts"
 import * as Project from "./Project.ts"
 import * as Serve from "./Serve.ts"
@@ -94,10 +114,13 @@ const mcpServersFromArguments = (
     const reason = cause instanceof Error ? cause.message : String(cause)
     throw new CliError.UsageError({ message: `--mcp-config ${path} is not valid JSON: ${reason}` })
   }
-  const decoded = Schema.decodeUnknownResult(Schema.Array(McpClient.ConnectOptionsSchema), {
-    // Projection options are consumed by McpFlows.connected, not the connection schema.
-    onExcessProperty: "preserve"
-  })(parsed)
+  // Projection options are consumed by McpFlows.connected, not the connection schema.
+  const decoded = Schema.decodeUnknownResult(Schema.Array(Schema.Struct({
+    ...McpClient.ConnectOptionsSchema.fields,
+    include: Schema.optional(Schema.Array(Schema.String)),
+    exclude: Schema.optional(Schema.Array(Schema.String)),
+    namePrefix: Schema.optional(Schema.String)
+  })))(parsed)
   if (Result.isFailure(decoded)) {
     throw new CliError.UsageError({
       message: `--mcp-config ${path} must contain a JSON array of MCP server entries`
@@ -203,22 +226,15 @@ const websocketUrl = (remote: string): string => {
 
 const websocketLayer = (remote: string, credential: string | undefined) => {
   const url = websocketUrl(remote)
-  if (credential === undefined) return NodeSocket.layerWebSocket(url)
   return Socket.layerWebSocket(url).pipe(
     Layer.provide(
-      Layer.succeed(
-        Socket.WebSocketConstructor,
-        (address, protocols) =>
-          new NodeSocket.NodeWS.WebSocket(address, protocols, {
-            headers: { authorization: `Bearer ${credential}` }
-          }) as unknown as globalThis.WebSocket
-      )
+      Layer.succeed(Socket.WebSocketConstructor, NodeWebSocket.make(credential))
     )
   )
 }
 
 export type { EngineDurable, ModuleRegistration } from "./internal/NativeControl.ts"
-export { seatResolver, layerSeatResolver, testRunner, checkpointStore, testFlows } from "./internal/NativeEquipment.ts"
+export { checkpointStore, layerSeatResolver, seatResolver, testFlows, testRunner } from "./internal/NativeEquipment.ts"
 
 export { rebuildableTransport } from "./internal/NodeControlHost.ts"
 
@@ -394,10 +410,16 @@ const layerControlFromEngine = (
   engine: EngineDurable,
   modules?: ModuleRegistration
 ) => {
-  if (applicationConfig.remote === undefined) return native.layerControlFromEngine(applicationConfig, registry, engine, modules)
+  if (applicationConfig.remote === undefined) {
+    return native.layerControlFromEngine(applicationConfig, registry, engine, modules)
+  }
   const remote = applicationConfig.remote
   return Application.layer(applicationConfig, registry, engine).pipe(
-    Layer.provide([NodeHttpClient.layerUndici, websocketLayer(remote, applicationConfig.credential), RpcSerialization.layerNdjson])
+    Layer.provide([
+      NodeHttpClient.layerUndici,
+      websocketLayer(remote, applicationConfig.credential),
+      RpcSerialization.layerNdjson
+    ])
   )
 }
 
@@ -651,7 +673,10 @@ export const layerServer = (
  * @category layers
  * @since 1.0.0
  */
-export const layerGateway = native.layerGateway
+export const layerGateway: typeof native.layerGateway = (health, options, root, engine, journal) => {
+  listenOptions(options ?? defaultServerOptions)
+  return native.layerGateway(health, options, root, engine, journal)
+}
 
 /**
  * Hosts Control using the alpha's single shared bearer token.

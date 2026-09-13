@@ -822,7 +822,7 @@ export const scan = (
     }
 
     // The root manifest's declaration is the pin the report names; every
-    // declaration is judged. Exactly one version, `4.0.0-rc.112`, is
+    // declaration is judged. Exactly one version, `4.0.0-rc.115`, is
     // acceptable: a range resolves to whatever is newest on install day, a
     // later prerelease is one this release was never built against, and two
     // manifests that disagree install two Effects.

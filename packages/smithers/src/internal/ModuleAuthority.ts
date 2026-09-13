@@ -2,8 +2,8 @@
  * Restores approved control authority at native handler boundaries, including resume.
  * @since 1.0.0
  */
-import * as AgentSession from "@smthrs/agent/AgentSession"
 import * as AgentAction from "@smthrs/agent/AgentAction"
+import * as AgentSession from "@smthrs/agent/AgentSession"
 import * as Budget from "@smthrs/agent/Budget"
 import * as QuotaPolicy from "@smthrs/agent/QuotaPolicy"
 import { LaunchFailed } from "@smthrs/control/ControlError"
@@ -130,9 +130,12 @@ export const make = (catalog: Effect.Effect<Executable.Catalog>, actionHost: Age
 
     // Construction closes the service dependency but grants no root identity.
     // Every admitted handler installs the real queue source below, once.
-    const unowned = Effect.fail(new HarnessError({
-      code: "assembly_failed", message: "Native steering requires an approved execution context"
-    }))
+    const unowned = Effect.fail(
+      new HarnessError({
+        code: "assembly_failed",
+        message: "Native steering requires an approved execution context"
+      })
+    )
     const steering = Steering.make({
       read: () => unowned,
       drain: () => unowned
@@ -148,9 +151,11 @@ export const make = (catalog: Effect.Effect<Executable.Catalog>, actionHost: Age
             )
             const handlerSteering = Steering.make({
               read: notificationsForRoot.read,
-              drain: input => notificationsForRoot.drain({
-                ...input, boundary: JSON.stringify([executionId, input.boundary])
-              })
+              drain: (input) =>
+                notificationsForRoot.drain({
+                  ...input,
+                  boundary: JSON.stringify([executionId, input.boundary])
+                })
             })
             const budget = yield* RcMap.get(budgets, rootId).pipe(Effect.orDie)
             const instance = yield* FlowRuntime.FlowInstance
@@ -170,8 +175,10 @@ export const make = (catalog: Effect.Effect<Executable.Catalog>, actionHost: Age
             }
             return yield* handler(payload, executionId).pipe(
               CapabilitySet.attenuate(AgentSession.patterns(envelope.capabilities)),
-              Effect.provideService(AgentAction.Host, { ...actionHost,
-                capabilityEnvelope: AgentSession.patterns(envelope.capabilities) }),
+              Effect.provideService(AgentAction.Host, {
+                ...actionHost,
+                capabilityEnvelope: AgentSession.patterns(envelope.capabilities)
+              }),
               Effect.provideService(Budget.Budget, shared),
               Effect.provideService(ModuleOwner, { rootId, flowId }),
               Effect.provideService(NotificationQueue.NotificationQueue, notifications),

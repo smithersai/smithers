@@ -118,6 +118,7 @@ const containment = async (mode: "shell" | "mcp", recovery: "automatic" | "reape
           `name: ${name}`,
           "description: Recorded process containment exercise.",
           "model: openai:gpt-4o-mini",
+          name === "busy" && mode === "shell" ? "capabilities: [\"proc:spawn:*\"]" : "capabilities: []",
           "---",
           "Perform the recorded exercise."
         ].join("\n")
@@ -167,7 +168,9 @@ const containment = async (mode: "shell" | "mcp", recovery: "automatic" | "reape
       () => mode === "mcp" ? ownedMcp() !== undefined : existsSync(marker),
       "the real child to announce itself under its recorded supervisor",
       30_000
-    )
+    ).catch((cause) => {
+      throw new Error(`${String(cause)}\n${readFileSync(launched.value.logFile, "utf8")}`, { cause })
+    })
     const child = remember(mode === "mcp" ? ownedMcp()!.pid : Number(readFileSync(marker, "utf8")))
     expect(Number.isSafeInteger(child) && child > 1).toBe(true)
     const supervisor = remember(parentPid(child)!)

@@ -14,21 +14,25 @@ export const make = (database: (filename: string) => Layer.Layer<SqlClient>) => 
   // Memoize the entire asynchronous adapter construction. Layer.unwrap only
   // memoizes its factory effect; its generated dependency graph can otherwise
   // acquire a distinct client for the journal, writer and runtime.
-  const sql = Layer.suspend(() => Layer.unwrap(Effect.gen(function*() {
-    const fs = yield* FileSystem.FileSystem
-    const path = yield* Path.Path
-    const directory = path.dirname(file)
-    yield* fs.makeDirectory(directory, { recursive: true, mode: 0o700 })
-    if (process.platform !== "win32") yield* fs.chmod(directory, 0o700)
-    return database(file)
-  })))
-  return Layer.provideMerge(Migrations.layer, Layer.provideMerge(DurableWriter.layer(), sql)).pipe(
-    Layer.tap(() => Effect.gen(function*() {
-      if (process.platform === "win32") return
+  const sql = Layer.suspend(() =>
+    Layer.unwrap(Effect.gen(function*() {
       const fs = yield* FileSystem.FileSystem
-      for (const filename of [file, `${file}-wal`, `${file}-shm`]) {
-        if (yield* fs.exists(filename)) yield* fs.chmod(filename, 0o600)
-      }
+      const path = yield* Path.Path
+      const directory = path.dirname(file)
+      yield* fs.makeDirectory(directory, { recursive: true, mode: 0o700 })
+      if (process.platform !== "win32") yield* fs.chmod(directory, 0o700)
+      return database(file)
     }))
+  )
+  return Layer.provideMerge(Migrations.layer, Layer.provideMerge(DurableWriter.layer(), sql)).pipe(
+    Layer.tap(() =>
+      Effect.gen(function*() {
+        if (process.platform === "win32") return
+        const fs = yield* FileSystem.FileSystem
+        for (const filename of [file, `${file}-wal`, `${file}-shm`]) {
+          if (yield* fs.exists(filename)) yield* fs.chmod(filename, 0o600)
+        }
+      })
+    )
   )
 }

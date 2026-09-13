@@ -94,6 +94,44 @@ const assertReplacement = async (root: string, tools: string, replace: () => Pro
 }
 
 describe("executable cache identity", () => {
+  it.each(["compiler", "@fixture/compiler"])(
+    "admits the complete installed %s package but not its siblings",
+    async (name) => {
+      const { root, tools } = await fixture(
+        "S.Shell.Build({ bin: S.Host.bin(\"identity-compiler\"), outDirs: [\"dist\"] })"
+      )
+      const installation = await directory()
+      const packageRoot = Path.join(installation, "node_modules", name)
+      const sibling = Path.join(installation, "node_modules/private.txt")
+      await write(installation, "node_modules/private.txt", "private sibling")
+      await write(packageRoot, "bin/compiler.mjs", "#!/usr/bin/env node\nimport \"../dist/main.mjs\"\n")
+      await write(
+        packageRoot,
+        "dist/main.mjs",
+        `import * as fs from "node:fs";
+if (process.argv.includes("--version")) { console.log("1.0.0"); } else {
+  let readable = false;
+  try { fs.readFileSync(${JSON.stringify(sibling)}); readable = true; } catch {}
+  if (readable) throw new Error("sibling package data is readable");
+  fs.mkdirSync("dist", { recursive: true }); fs.writeFileSync("dist/value", "compiled");
+}`
+      )
+      await Fs.symlink(Path.join(packageRoot, "bin/compiler.mjs"), Path.join(tools, "identity-compiler"))
+      const loaded = await PackageLoader.load(await PackageDiscovery.discover(root))
+      const planned = await PackageExec.plan({
+        index: PackageIndex.make(loaded),
+        pattern: "//:dist",
+        cacheDirectory: ".flows",
+        verb: "auto"
+      })
+      const reads = planned.nodes.get("//:dist")?.externalReads
+      expect(reads).toContain(packageRoot)
+      expect(reads).not.toContain(Path.join(installation, "node_modules"))
+      expect(await serve(root)).toContain("//:dist  ran")
+      expect(await Fs.readFile(Path.join(root, "dist/value"), "utf8")).toBe("compiled")
+    }
+  )
+
   it.each(["host", "command"])("admits the resolved %s tool and interpreter directories read-only", async (kind) => {
     const { root, tools } = await fixture(
       `S.Shell.Build({ ${
@@ -152,8 +190,19 @@ if printf changed > '${installed}/value' 2>/dev/null; then exit 1; fi
     const { root } = await fixture("S.Shell.Build({ shell: \"true\", outDirs: [\"dist\"] })")
     const name = `${Path.basename(root)}.compiler`
     const binary = Path.join("/tmp", name)
-    temporary.push(binary)
-    await write("/tmp", name, "#!/bin/sh\nmkdir -p dist\nprintf compiled > dist/value\n")
+    const sibling = `${binary}.private`
+    temporary.push(binary, sibling)
+    await Fs.writeFile(sibling, "private sibling")
+    await write(
+      "/tmp",
+      name,
+      `#!/bin/sh
+if cat '${sibling}' >/dev/null 2>&1; then exit 41; fi
+if ls /tmp >/dev/null 2>&1; then exit 42; fi
+mkdir -p dist
+printf compiled > dist/value
+`
+    )
     await write(
       root,
       "PACKAGE.ts",
@@ -169,6 +218,7 @@ export const Package = S.Package({ targets: { dist: S.Shell.Build({ shell: "${bi
     })
     expect(planned.nodes.get("//:dist")?.externalReads).toContain(binary)
     expect(planned.nodes.get("//:dist")?.externalReads).not.toContain("/tmp")
+    expect(planned.nodes.get("//:dist")?.externalReads).not.toContain(await Fs.realpath("/tmp"))
     expect(await serve(root)).toContain("//:dist  ran")
     expect(await Fs.readFile(Path.join(root, "dist/value"), "utf8")).toBe("compiled")
   })

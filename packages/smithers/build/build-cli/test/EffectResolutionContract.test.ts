@@ -37,11 +37,29 @@ afterAll(async () => {
 describe("declaration dependency preflight", () => {
   it("does not provide dependency-free CommonJS aliases", async () => {
     const directory = await fixture(false)
-    installEffectResolution()
-    const require = createRequire(Path.join(directory, "PACKAGE.ts"))
-    for (const dependency of ["effect", "@smthrs/targets"]) {
-      expect(() => require.resolve(dependency)).toThrowError(expect.objectContaining({ code: "MODULE_NOT_FOUND" }))
-    }
+    // Run outside Vitest's module runner: this contract is ordinary Node
+    // require resolution, which Vitest may redirect through its own graph.
+    // pnpm can expose workspace dependencies through NODE_PATH; remove that
+    // ambient installation from this deliberately dependency-free fixture.
+    const child = spawnSync(process.execPath, [
+      "--input-type=module",
+      "-e",
+      `
+      import assert from "node:assert/strict";
+      import { createRequire } from "node:module";
+      import { installEffectResolution } from ${
+        JSON.stringify(new URL("../src/effect-resolution.js", import.meta.url).href)
+      };
+      installEffectResolution();
+      const require = createRequire(${JSON.stringify(Path.join(directory, "PACKAGE.ts"))});
+      for (const dependency of ["effect", "@smthrs/targets"]) {
+        let resolved;
+        try { resolved = require.resolve(dependency); } catch (error) { assert.equal(error.code, "MODULE_NOT_FOUND"); continue; }
+        assert.fail(dependency + " resolved unexpectedly to " + resolved);
+      }
+    `
+    ], { encoding: "utf8", cwd: directory, env: { ...process.env, NODE_PATH: "" } })
+    expect(child.status, child.stderr).toBe(0)
   })
 
   it("accepts ordinary shared packages, including repeated files in one directory", async () => {

@@ -30,7 +30,7 @@ const fixture = async (): Promise<{ readonly templates: string }> => {
         dependencies: {
           "@smthrs/create-app": "1.0.0-rc.0",
           "@smthrs/targets": "1.0.0-rc.0",
-          effect: "4.0.0-rc.112"
+          effect: "4.0.0-rc.115"
         },
         devDependencies: { typescript: "7.0.2" }
       },
@@ -97,7 +97,7 @@ describe("scaffold", () => {
     }
     expect(manifest.dependencies["@smthrs/create-app"]).toBe("1.0.0-rc.0")
     expect(manifest.dependencies["@smthrs/targets"]).toBe("1.0.0-rc.0")
-    expect(manifest.dependencies["effect"]).toBe("4.0.0-rc.112")
+    expect(manifest.dependencies["effect"]).toBe("4.0.0-rc.115")
   })
 
   it("leaves a dirty template's build output behind", async () => {

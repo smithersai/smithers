@@ -4,7 +4,7 @@
  * `AgentAction.layer` and `Flow.execute` both require `Crypto.Crypto`: the
  * digests that key a sealed step and the ids a flow execution is named by come
  * from it, so the composition never reaches `globalThis.crypto` itself. effect
- * 4.0.0-rc.112 ships `Crypto.make` plus platform layers for Node and Bun; it
+ * 4.0.0-rc.115 ships `Crypto.make` plus platform layers for Node and Bun; it
  * ships none for a Worker, and `@effect/platform-browser` is not a dependency
  * here. `Crypto.make` takes exactly the two primitives workerd already has, so
  * this is the whole adapter.

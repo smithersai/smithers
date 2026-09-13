@@ -59,7 +59,14 @@ export const normalizeArguments = (args: ReadonlyArray<string>): Array<string> =
   if (command === undefined) return [...args]
   const bare = command.startsWith("//") || command.startsWith(":")
   const generator = command === "generate" && ["ci", "package"].includes(args[index + 1] ?? "")
-  if (!bare && !targets.has(command) && !generator) return [...args]
+  if (!bare && !targets.has(command) && !generator) {
+    // Connection flags belong to the leaf command in Incur. Legacy callers
+    // put them before the command; move that prefix after the command's
+    // arguments, retaining the literal tail behind `--` untouched.
+    const separator = args.indexOf("--", index)
+    const end = separator < 0 ? args.length : separator
+    return [...args.slice(index, end), ...args.slice(0, index), ...args.slice(end)]
+  }
   const depth = generator || command === "show" || command === "cache" ? 2 : 1
   const commandPath = bare ? ["target", command] : args.slice(index, index + depth)
   const options = [...args.slice(0, index), ...args.slice(index + (bare ? 1 : depth))]

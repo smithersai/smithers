@@ -31,6 +31,23 @@ afterEach(() => {
   while (staged.length > 0) rmSync(staged.pop()!, { recursive: true, force: true })
 })
 
+it("distinguishes current build definitions from legacy run state without hiding unknown files", () => {
+  const root = project(".smithers/", ".smithers/WORKSPACE.ts", ".smithers/FACTORY.ts", ".smithers/home.json")
+  expect(Project.legacyState(root)).toEqual([])
+  writeFileSync(join(root, ".smithers", "runs.sqlite"), "")
+  expect(Project.legacyState(root)).toEqual([join(root, ".smithers")])
+  rmSync(join(root, ".smithers", "runs.sqlite"))
+  mkdirSync(join(root, ".smithers", "unknown-state"))
+  expect(Project.legacyState(root)).toEqual([join(root, ".smithers")])
+  rmSync(join(root, ".smithers"), { recursive: true })
+  writeFileSync(join(root, ".smithers"), "unreadable as a directory")
+  const exists = (path: string) =>
+    path === join(root, ".smithers") ||
+    path === join(root, ".smithers", "WORKSPACE.ts") || path === join(root, ".smithers", "FACTORY.ts") ||
+    path === join(root, ".git")
+  expect(Project.legacyState(root, exists)).toEqual([join(root, ".smithers")])
+})
+
 describe("the project root", () => {
   it("resolves an explicit --root against the invocation directory", () => {
     expect(Project.root("sub/dir", "/a/b")).toBe(resolve("/a/b", "sub/dir"))

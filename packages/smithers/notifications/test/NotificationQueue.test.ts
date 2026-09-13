@@ -609,7 +609,7 @@ describe("NotificationQueue", () => {
     ])
   })
 
-  it("pages through foreign journal history and ignores missing promoted ids", async () => {
+  it("pages through foreign journal history and refuses missing promoted ids", async () => {
     const result = await Effect.runPromise(
       Effect.gen(function*() {
         const journal = yield* Journal.Journal
@@ -647,7 +647,7 @@ describe("NotificationQueue", () => {
           targetLineageId: "run/root",
           boundary: "missing",
           wouldIdle: false
-        })
+        }).pipe(Effect.flip)
         const arrayPayload = {
           ...item("array", "queue"),
           payload: [1, null, { keep: true }]
@@ -668,7 +668,7 @@ describe("NotificationQueue", () => {
       )
     )
 
-    expect(result.missing.notifications).toEqual([])
+    expect(result.missing).toMatchObject({ code: "notification_unavailable", notificationId: "not-admitted" })
     expect(result.admission.decision).toBe("admitted")
     expect(result.duplicate.duplicate).toBe(true)
     expect(result.empty.notifications).toEqual([])

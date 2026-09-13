@@ -24,7 +24,7 @@ import { killProcess } from "@smthrs/testing/Faults"
 import * as Layer from "effect/Layer"
 import { RpcSerialization } from "effect/unstable/rpc"
 import { Socket } from "effect/unstable/socket"
-import { type ChildProcess, spawn } from "node:child_process"
+import { type ChildProcess, execFile, spawn } from "node:child_process"
 import { randomUUID } from "node:crypto"
 import { readFileSync } from "node:fs"
 import { createRequire } from "node:module"
@@ -48,6 +48,30 @@ export const smithersBin: string = (() => {
   if (bin === undefined) throw new Error("@smthrs/cli declares no `smithers` bin")
   return resolve(dirname(manifest), bin)
 })()
+
+/** Runs a real local operator command against the server's workspace. */
+export const localDecision = (root: string, decision: "approve" | "deny", approval: unknown): Promise<{
+  readonly status: number
+  readonly stdout: string
+  readonly stderr: string
+}> =>
+  new Promise((resolveDecision, reject) => {
+    execFile(
+      process.execPath,
+      [smithersBin, "approvals", decision, JSON.stringify(approval), "--root", root, "--json"],
+      {
+        cwd: root,
+        env: { ...process.env, SMITHERS_REMOTE: undefined, SMITHERS_API_KEY: undefined },
+        timeout: 120_000,
+        encoding: "utf8"
+      },
+      (error, stdout, stderr) => {
+        if (error === null) resolveDecision({ status: 0, stdout, stderr })
+        else if (typeof error.code === "number") resolveDecision({ status: error.code, stdout, stderr })
+        else reject(error)
+      }
+    )
+  })
 
 /** Where `smthrs serve` keeps the control database for a project root. */
 const controlDatabase = (root: string): string => join(root, ".flows", "control.db")

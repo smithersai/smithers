@@ -23,6 +23,7 @@ vi.mock("node:fs/promises", async (importOriginal) => {
     copyFile: vi.fn(original.copyFile),
     chmod: vi.fn(original.chmod),
     rename: vi.fn(original.rename),
+    rm: vi.fn(original.rm),
     lstat: async (path: NodeFs.PathLike): Promise<NodeFs.Stats> => {
       const stats = await original.lstat(path)
       if (lstatSizeOverride.path === String(path)) {
@@ -375,6 +376,30 @@ describe("snapshot rollback preserves file permissions", () => {
 })
 
 describe("failed snapshot acquisition removes its partial stash", () => {
+  it.each(["tree", "portals"] as const)("preserves the %s acquisition error when cleanup also fails", async (kind) => {
+    ChildProcess.execFileSync("git", ["init", "--quiet", "."], { cwd: root, stdio: "ignore" })
+    await Fs.writeFile(NodePath.join(kind === "tree" ? root : outside, "source.txt"), "source")
+    if (kind === "portals") await Fs.symlink(NodePath.join(outside, "source.txt"), NodePath.join(root, "portal"))
+    const original = await vi.importActual<typeof Fs>("node:fs/promises")
+    const failure = new Error("snapshot acquisition failed")
+    let stash: string | undefined
+    vi.mocked(Fs.copyFile).mockImplementationOnce(async (_source, destination) => {
+      stash = NodePath.dirname(String(destination))
+      throw failure
+    })
+    vi.mocked(Fs.rm).mockRejectedValueOnce(new Error("snapshot cleanup failed"))
+    try {
+      await expect((kind === "tree" ? PackageTree.snapshotTree : PackageTree.snapshotPortals)(root, ".flows")).rejects
+        .toBe(failure)
+      expect(stash).toBeDefined()
+      expect((await original.stat(stash!)).isDirectory()).toBe(true)
+    } finally {
+      vi.mocked(Fs.copyFile).mockReset().mockImplementation(original.copyFile)
+      vi.mocked(Fs.rm).mockReset().mockImplementation(original.rm)
+      if (stash !== undefined) await original.rm(stash, { recursive: true, force: true })
+    }
+  })
+
   for (const kind of ["tree", "portals"] as const) {
     it(`removes the ${kind} stash when the second copy fails`, async () => {
       ChildProcess.execFileSync("git", ["init", "--quiet", "."], { cwd: root, stdio: "ignore" })

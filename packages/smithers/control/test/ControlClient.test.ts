@@ -50,7 +50,7 @@ const served = (
   )
 
 const baseUrl = Effect.map(HttpServer.HttpServer, (server) => {
-  if (server.address._tag !== "TcpAddress") throw new Error("expected a TCP control server")
+  if (server.address._tag !== "InetAddressV4") throw new Error("expected a TCP control server")
   return `http://127.0.0.1:${server.address.port}`
 })
 

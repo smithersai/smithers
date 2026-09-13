@@ -30,6 +30,7 @@ import * as Schema from "effect/Schema"
 import { minimatch } from "minimatch"
 import * as NodeFs from "node:fs"
 import * as Fs from "node:fs/promises"
+import * as NodeOs from "node:os"
 import * as NodePath from "node:path"
 import * as AgentSession from "../AgentSession.ts"
 import * as AnvilExec from "../AnvilExec.ts"
@@ -2699,15 +2700,23 @@ const visit = async (
   // Admit both the launcher and its real installation, including shebang
   // interpreters. Docker gets its toolchain from the image instead.
   if (context.index.workspace.sandboxes?.sandboxes["default"]?._tag !== "SandboxDocker") {
+    const temporaryRoots = new Set(["/tmp", "/private/tmp", "/var/tmp", "/private/var/tmp", NodeOs.tmpdir()])
+    for (const root of [...temporaryRoots]) {
+      if (NodeFs.existsSync(root)) temporaryRoots.add(NodeFs.realpathSync(root))
+    }
     const identities: Array<Record<string, unknown>> = []
     collectTagged([toolchain, executable], "Executable", identities, new Set())
     for (const identity of identities) {
       for (const field of ["source", "path"]) {
         const path = String(identity[field])
         if (!NodePath.isAbsolute(path)) continue
-        const directory = NodePath.dirname(path)
+        // npm executables often live in package/bin and import package/dist.
+        // Admit that one installed package, never its sibling packages or the
+        // containing node_modules tree. Use the final segment for pnpm stores.
+        const installedPackage = /^(.*[\\/]node_modules[\\/](?:@[^\\/]+[\\/])?[^\\/]+)[\\/]/.exec(path)?.[1]
+        const directory = installedPackage ?? NodePath.dirname(path)
         // Keep the private temp root and undeclared workspace inputs hidden.
-        const read = directory === "/tmp" || Path.contains(directory, context.root) ? path : directory
+        const read = temporaryRoots.has(directory) || Path.contains(directory, context.root) ? path : directory
         if (!externalReads.includes(read)) externalReads.push(read)
       }
     }

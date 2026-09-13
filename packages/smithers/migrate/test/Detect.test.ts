@@ -167,7 +167,7 @@ describe("Detect.scan over jsx-single", () => {
       }
       // A range, a later prerelease, and a second manifest that disagrees:
       // each is a version this release was not built against.
-      manifest.dependencies["effect"] = "^4.0.0-rc.112"
+      manifest.dependencies["effect"] = "^4.0.0-rc.115"
       manifest.devDependencies = { effect: "4.0.0-rc.999" }
       writeFileSync(join(root, "package.json"), `${JSON.stringify(manifest, null, 2)}\n`)
       mkdirSync(join(root, "packages", "member"), { recursive: true })
@@ -177,37 +177,37 @@ describe("Detect.scan over jsx-single", () => {
       )
       writeFileSync(
         join(root, "pnpm-lock.yaml"),
-        "lockfileVersion: '9.0'\n\npackages:\n\n  effect@4.0.0-rc.107:\n    resolution: {integrity: sha512-x}\n\n  '@effect/platform-node@4.0.0-rc.112':\n    resolution: {integrity: sha512-y}\n"
+        "lockfileVersion: '9.0'\n\npackages:\n\n  effect@4.0.0-rc.107:\n    resolution: {integrity: sha512-x}\n\n  '@effect/platform-node@4.0.0-rc.115':\n    resolution: {integrity: sha512-y}\n"
       )
 
       const detection = yield* detect(root)
 
-      expect(detection.effectPin).toBe("^4.0.0-rc.112")
+      expect(detection.effectPin).toBe("^4.0.0-rc.115")
       expect(detection.effectDeclarations).toEqual([
-        { file: "package.json", field: "dependencies", version: "^4.0.0-rc.112" },
+        { file: "package.json", field: "dependencies", version: "^4.0.0-rc.115" },
         { file: "package.json", field: "devDependencies", version: "4.0.0-rc.999" },
         { file: "packages/member/package.json", field: "dependencies", version: "4.0.0-rc.107" }
       ])
       const conflicts = detection.warnings.filter((warning) => warning.code === "effect-pin-conflict")
       expect(conflicts.map((warning) => `${warning.file}: ${warning.message}`)).toEqual([
-        "package.json: dependencies.\"effect\" is \"^4.0.0-rc.112\"; Smithers 1.0 requires exactly 4.0.0-rc.112",
-        "package.json: devDependencies.\"effect\" is \"4.0.0-rc.999\"; Smithers 1.0 requires exactly 4.0.0-rc.112",
-        "packages/member/package.json: dependencies.\"effect\" is \"4.0.0-rc.107\"; Smithers 1.0 requires exactly 4.0.0-rc.112",
-        "package.json: the manifests declare effect as \"4.0.0-rc.107\", \"4.0.0-rc.999\", \"^4.0.0-rc.112\"; one version, 4.0.0-rc.112, has to be declared everywhere",
-        "pnpm-lock.yaml: \"pnpm-lock.yaml\" resolves effect to \"4.0.0-rc.107\"; Smithers 1.0 requires exactly 4.0.0-rc.112"
+        "package.json: dependencies.\"effect\" is \"^4.0.0-rc.115\"; Smithers 1.0 requires exactly 4.0.0-rc.115",
+        "package.json: devDependencies.\"effect\" is \"4.0.0-rc.999\"; Smithers 1.0 requires exactly 4.0.0-rc.115",
+        "packages/member/package.json: dependencies.\"effect\" is \"4.0.0-rc.107\"; Smithers 1.0 requires exactly 4.0.0-rc.115",
+        "package.json: the manifests declare effect as \"4.0.0-rc.107\", \"4.0.0-rc.999\", \"^4.0.0-rc.115\"; one version, 4.0.0-rc.115, has to be declared everywhere",
+        "pnpm-lock.yaml: \"pnpm-lock.yaml\" resolves effect to \"4.0.0-rc.107\"; Smithers 1.0 requires exactly 4.0.0-rc.115"
       ])
 
       // The exact pin everywhere is the one shape that earns no warning.
-      manifest.dependencies["effect"] = "4.0.0-rc.112"
-      manifest.devDependencies = { effect: "4.0.0-rc.112" }
+      manifest.dependencies["effect"] = "4.0.0-rc.115"
+      manifest.devDependencies = { effect: "4.0.0-rc.115" }
       writeFileSync(join(root, "package.json"), `${JSON.stringify(manifest, null, 2)}\n`)
       writeFileSync(
         join(root, "packages", "member", "package.json"),
-        `${JSON.stringify({ name: "member", dependencies: { effect: "4.0.0-rc.112" } })}\n`
+        `${JSON.stringify({ name: "member", dependencies: { effect: "4.0.0-rc.115" } })}\n`
       )
       writeFileSync(
         join(root, "pnpm-lock.yaml"),
-        "packages:\n\n  effect@4.0.0-rc.112:\n    resolution: {integrity: sha512-x}\n"
+        "packages:\n\n  effect@4.0.0-rc.115:\n    resolution: {integrity: sha512-x}\n"
       )
       const pinned = yield* detect(root)
       expect(pinned.warnings.filter((warning) => warning.code === "effect-pin-conflict")).toEqual([])
@@ -216,18 +216,18 @@ describe("Detect.scan over jsx-single", () => {
   it("reads the version each lockfile dialect resolved effect to", () => {
     expect(
       Detect.resolvedEffectVersions(
-        "  effect@4.0.0-rc.112:\n  '@effect/platform-node@4.0.0-rc.112':\n  redux-effect@1.2.3:\n"
+        "  effect@4.0.0-rc.115:\n  '@effect/platform-node@4.0.0-rc.115':\n  redux-effect@1.2.3:\n"
       )
     )
-      .toEqual(["4.0.0-rc.112"])
+      .toEqual(["4.0.0-rc.115"])
     expect(Detect.resolvedEffectVersions("\"effect\": [\"effect@4.0.0-rc.107\", \"\", {}, \"sha512-x\"],"))
       .toEqual(["4.0.0-rc.107"])
     expect(
       Detect.resolvedEffectVersions("\"node_modules/effect\": {\n  \"version\": \"3.19.0\",\n  \"resolved\": \"x\"\n}")
     )
       .toEqual(["3.19.0"])
-    expect(Detect.resolvedEffectVersions("\"effect@npm:^4.0.0-rc.112\":\n  version: 4.0.0-rc.112\n  resolution: x\n"))
-      .toEqual(["4.0.0-rc.112"])
+    expect(Detect.resolvedEffectVersions("\"effect@npm:^4.0.0-rc.115\":\n  version: 4.0.0-rc.115\n  resolution: x\n"))
+      .toEqual(["4.0.0-rc.115"])
     expect(Detect.resolvedEffectVersions("nothing here")).toEqual([])
   })
 

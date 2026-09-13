@@ -119,7 +119,7 @@ const printableAscii = /^[!-~]+$/
  * `1234…`, `----…`) is the shape of a memorable value, which an offline
  * dictionary recovers from the verifier however long it is.
  */
-const characterClasses: ReadonlyArray<RegExp> = [/[0-9]/, /[a-z]/, /[A-Z]/, /[!-\/:-@[-`{-~]/]
+const characterClasses: ReadonlyArray<RegExp> = [/[0-9]/, /[a-z]/, /[A-Z]/, /[!-/:-@[-`{-~]/]
 
 const characterClassCount = (value: string): number =>
   characterClasses.filter((characterClass) => characterClass.test(value)).length
@@ -188,8 +188,8 @@ const configError = (message: string): Config.ConfigError =>
  * @since 0.1.0
  */
 export const cacheTokenVerifier = (name: CacheTokenName): Config.Config<Redacted.Redacted<string>> =>
-  Config.redacted(name).pipe(
-    Config.mapOrFail((token) => {
+  Config.Redacted(name).pipe(
+    Config.mapEffect((token) => {
       const value = Redacted.value(token)
       const fault = cacheTokenFault(name, value)
       return fault === null ? Effect.succeed(Redacted.make(sha256Hex(value))) : Effect.fail(configError(fault))
@@ -224,7 +224,7 @@ export const cacheCredentialVerifiers: Config.Config<CacheCredentialVerifiers> =
   read: cacheTokenVerifier("SMITHERS_CACHE_READ_TOKEN"),
   write: cacheTokenVerifier("SMITHERS_CACHE_WRITE_TOKEN")
 }).pipe(
-  Config.mapOrFail((verifiers) =>
+  Config.mapEffect((verifiers) =>
     Redacted.value(verifiers.read) === Redacted.value(verifiers.write)
       ? Effect.fail(
         configError(

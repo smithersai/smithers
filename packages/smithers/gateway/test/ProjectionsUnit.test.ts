@@ -1814,6 +1814,29 @@ describe("Projections delta cost", () => {
       expect(runLookups - lookupsAtSnapshotEnd).toBe(changedRuns.length)
     }))
 
+  it.effect("starts transcript turns at one after non-transcript history and updates", () =>
+    Effect.gen(function*() {
+      const history = [event(1, "flow.step.started", {})]
+      const following = [
+        event(2, "flow.step.completed", {}),
+        event(3, "control.agent.turn-opened", { runId: "run-1", seat: "opus" }),
+        event(4, "control.agent.model-settled", { runId: "run-1", text: "first answer", usage: {} })
+      ]
+      const projections = make(
+        control({
+          list: () => Effect.succeed({ _tag: "runs", items: [run] }),
+          watch: (filter) => Stream.fromIterable(filter.follow === true ? following : history)
+        }),
+        { heartbeatMillis: 60_000 }
+      )
+      const selector = { _tag: "transcript", runId: "run-1" } as const
+      const frames = yield* Stream.runCollect(projections.subscribe(selector, issuedCursor(selector, 1)))
+      const sent = frames.flatMap((frame) => frame._tag === "delta" ? [...frame.delta] : [])
+      expect(sent).toEqual(GatewayProjection.transcript([...history, ...following]))
+      expect(sent).toHaveLength(2)
+      expect(sent).toEqual(expect.arrayContaining([expect.objectContaining({ turn: 1 })]))
+    }))
+
   it.effect("appends transcript rows instead of re-sending the folded history", () =>
     Effect.gen(function*() {
       const history = Array.from({ length: 200 }, (_, index) =>

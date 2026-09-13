@@ -53,6 +53,11 @@ afterEach(async () => {
 })
 
 describe("failureMessage", () => {
+  it("preserves an own native error message without accepting inherited messages", () => {
+    expect(failureMessage(new Error("disk failed"))).toBe("disk failed")
+    expect(failureMessage(Object.create({ message: "inherited" }))).toBe("unknown failure")
+  })
+
   it("does not invoke accessors, proxy traps, or user string conversion", () => {
     let calls = 0
     const getter = Object.defineProperty({}, "message", {

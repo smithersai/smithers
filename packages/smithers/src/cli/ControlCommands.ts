@@ -9,8 +9,8 @@ import { Cli, z } from "incur"
 import { readFile } from "node:fs/promises"
 import * as Forensics from "../Forensics.ts"
 import { defaultApprovalScope } from "../internal/ApprovalScope.ts"
-import * as FeaturedFlows from "../internal/FeaturedFlows.ts"
 import * as BoundedEvents from "../internal/BoundedEvents.ts"
+import * as FeaturedFlows from "../internal/FeaturedFlows.ts"
 import * as Bridge from "./ControlBridge.ts"
 import { prepareHistoryRun, reconcileHistory } from "./HistoryCommands.ts"
 import * as Presentation from "./Presentation.ts"
@@ -23,7 +23,9 @@ const statuses = ["accepted", "running", "parked", "waiting-approval", "cancelle
 
 const guard = Presentation.guard
 const runsList = { command: "runs list", description: "List the current durable run records" }
-const afterDecision = Presentation.runs({ otherwise: [{ command: "runs list", description: "Check the run after the decision" }] })
+const afterDecision = Presentation.runs({
+  otherwise: [{ command: "runs list", description: "Check the run after the decision" }]
+})
 
 const dataArgs = (data: string | undefined) => data === undefined ? [] : ["--data", data]
 
@@ -50,10 +52,15 @@ export const createFlowCli = (runtime: Bridge.Runtime = {}) =>
           {
             render: (page) => FeaturedFlows.isFlowPage(page) ? { human: FeaturedFlows.human(page.items) } : {},
             next: (page) => {
-              const first = Array.isArray(page["items"]) ? page["items"][0] as { flowId?: unknown } | undefined : undefined
+              const first = Array.isArray(page["items"])
+                ? page["items"][0] as { flowId?: unknown } | undefined
+                : undefined
               return [
                 ...(typeof first?.flowId === "string" && first.flowId.length > 0
-                  ? [{ command: `flow show ${Presentation.quote(first.flowId)}`, description: "Inspect a discovered flow" }]
+                  ? [{
+                    command: `flow show ${Presentation.quote(first.flowId)}`,
+                    description: "Inspect a discovered flow"
+                  }]
                   : []),
                 { command: "flow plan --help", description: "See how to preview a flow before starting it" }
               ]
@@ -92,7 +99,10 @@ export const createFlowCli = (runtime: Bridge.Runtime = {}) =>
         guard(c, () =>
           Bridge.invoke(["plan", c.args.flow, ...c.args.input, ...dataArgs(c.options.data)], c.options, runtime), {
           next: [
-            { command: "approvals approve --help", description: "Approve the returned plan.approval payload or an @file" },
+            {
+              command: "approvals approve --help",
+              description: "Approve the returned plan.approval payload or an @file"
+            },
             { command: "flow execute --help", description: "Execute that same payload after approval" }
           ]
         })
@@ -116,7 +126,8 @@ export const createFlowCli = (runtime: Bridge.Runtime = {}) =>
       args: z.object({ approval: z.string().describe("Serialized payload or @file") }),
       options,
       run: (c) =>
-        guard(c, async () => Bridge.invoke(["run", await payload(c.args.approval)], c.options, runtime))
+        guard(c, async () =>
+          Bridge.invoke(["run", await payload(c.args.approval)], c.options, runtime))
     })
 
 /**
@@ -346,7 +357,8 @@ export const createApprovalsCli = (runtime: Bridge.Runtime = {}) =>
     .command("list", {
       description: "List pending in-run approvals with their exact authorization payloads",
       options: options.extend({ run: z.string().optional() }),
-      run: (c) => guard(c, () => Bridge.query(pendingApprovals(c.options.run), c.options, runtime), { next: afterDecision })
+      run: (c) =>
+        guard(c, () => Bridge.query(pendingApprovals(c.options.run), c.options, runtime), { next: afterDecision })
     })
     .command("approve", {
       description: "Approve the exact serialized payload or @file",

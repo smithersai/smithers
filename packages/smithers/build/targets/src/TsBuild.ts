@@ -241,8 +241,9 @@ export const distributionLayout = (attrs: Attrs): ReadonlyArray<DistributionLayo
  * @category rendering
  * @since 0.1.0
  */
-export const outputPaths = (attrs: Attrs): ReadonlyArray<string> =>
-  [...new Set(distributionLayout(attrs).map((layout) => layout.directory))]
+export const outputPaths = (
+  attrs: Attrs
+): ReadonlyArray<string> => [...new Set(distributionLayout(attrs).map((layout) => layout.directory))]
 
 /**
  * Builds a JavaScript distribution with `tsc -p <tsconfig>`, `tsup`, or the

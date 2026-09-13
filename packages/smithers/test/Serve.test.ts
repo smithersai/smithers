@@ -7,8 +7,7 @@
  */
 import { ApprovalAuthority, Control, ControlRpcs } from "@smthrs/control"
 import * as NodeGateway from "@smthrs/gateway/node/NodeGateway"
-import { Cause, Effect, Exit, Fiber, Layer } from "effect"
-import { Command } from "effect/unstable/cli"
+import { Cause, Effect, Exit, Layer } from "effect"
 import { spawn } from "node:child_process"
 import { mkdtempSync, rmSync } from "node:fs"
 import { createServer } from "node:net"
@@ -17,13 +16,11 @@ import { join } from "node:path"
 import { afterEach, describe, expect, it } from "vitest"
 import * as Bridge from "../src/cli/ControlBridge.ts"
 import * as CliError from "../src/CliError.ts"
-import { cli } from "../src/Command.ts"
 import * as NodeControl from "../src/NodeControl.ts"
 import * as Serve from "../src/Serve.ts"
-import { packageVersion } from "../src/Version.ts"
+import { invokeCanonical } from "./fixtures/invokeCanonical.ts"
 
 const staged: Array<string> = []
-const runCommand = Command.runWith(cli, { version: packageVersion })
 
 afterEach(() => {
   while (staged.length > 0) rmSync(staged.pop()!, { recursive: true, force: true })
@@ -313,11 +310,10 @@ describe("the serve command", () => {
     const root = mkdtempSync(join(tmpdir(), "smithers-serve-"))
     staged.push(root)
     const port = await freePort()
-    const fiber = Effect.runFork(
-      runCommand(["--root", root, "serve", "--host", "127.0.0.1", "--port", String(port)]).pipe(
-        Effect.provide(NodeControl.layer({ root, migrationRoot: root }))
-      )
-    )
+    const controller = new AbortController()
+    const running = invokeCanonical(["--root", root, "serve", "--host", "127.0.0.1", "--port", String(port)], {
+      signal: controller.signal
+    })
 
     try {
       const response = await waitForHealth(port)
@@ -325,7 +321,8 @@ describe("the serve command", () => {
       expect(response.status).toBe(200)
       expect(await response.json()).toEqual(Serve.health(root))
     } finally {
-      await Effect.runPromise(Fiber.interrupt(fiber))
+      controller.abort()
+      await running
     }
   }, 60_000)
 })

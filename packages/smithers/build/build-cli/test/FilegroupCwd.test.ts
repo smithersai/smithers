@@ -5,10 +5,10 @@ import * as Os from "node:os"
 import * as Path from "node:path"
 import { expect, it } from "vitest"
 import * as Affected from "../src/Affected.ts"
+import { inputPackage } from "../src/internal/InputPackage.ts"
+import { plan } from "../src/internal/PackagePlanner.ts"
 import { PackageIndex } from "../src/PackageIndex.ts"
 import * as TargetIndex from "../src/TargetIndex.ts"
-import { plan } from "../src/internal/PackagePlanner.ts"
-import { inputPackage } from "../src/internal/InputPackage.ts"
 
 it("keeps the existing default and explicit root cwd while refusing workspace escapes", () => {
   const anchor = (cwd: string) => inputPackage(Target.metadata(S.Filegroup({ cwd, srcs: [] })), "flows")
@@ -25,41 +25,63 @@ it("plans an explicit Filegroup cwd without crossing nested packages or changing
     await Fs.writeFile(Path.join(root, name), contents)
   }
   try {
-    for (const [name, contents] of Object.entries({
-      "package.json": "{}", "yarn.lock": "", "flows/PACKAGE.ts": "", "lib/PACKAGE.ts": "",
-      "lib/src/value.ts": "export const value = 1", "lib/src/generated.ts": "excluded",
-      "lib/.gitignore": "ignored.ts\n", "lib/src/ignored.ts": "ignored",
-      "lib/src/nested/PACKAGE.ts": "", "lib/src/nested/child.ts": "nested package",
-      "other/PACKAGE.ts": "", "other/src/value.ts": "export const other = 2",
-      "flows/local.txt": "default cwd"
-    })) await write(name, contents)
+    for (
+      const [name, contents] of Object.entries({
+        "package.json": "{}",
+        "yarn.lock": "",
+        "flows/PACKAGE.ts": "",
+        "lib/PACKAGE.ts": "",
+        "lib/src/value.ts": "export const value = 1",
+        "lib/src/generated.ts": "excluded",
+        "lib/.gitignore": "ignored.ts\n",
+        "lib/src/ignored.ts": "ignored",
+        "lib/src/nested/PACKAGE.ts": "",
+        "lib/src/nested/child.ts": "nested package",
+        "other/PACKAGE.ts": "",
+        "other/src/value.ts": "export const other = 2",
+        "flows/local.txt": "default cwd"
+      })
+    ) await write(name, contents)
     await Fs.symlink(Path.join(root, "other/src"), Path.join(root, "lib/src/link"))
     const external = S.Filegroup({ cwd: "lib", srcs: [S.glob("src/**/*.ts", { exclude: ["**/generated.ts"] })] })
     const other = S.Filegroup({ cwd: "other", srcs: [S.glob("src/**/*.ts")] })
     const consumer = S.Filegroup({ srcs: [external, other, S.file("local.txt")] })
     const packageJson = S.file("//package.json")
     const workspace = S.Workspace("fixture", {
-      repository: "git+https://example.invalid/fixture.git", cache: S.Cache({ directory: ".flows" }),
+      repository: "git+https://example.invalid/fixture.git",
+      cache: S.Cache({ directory: ".flows" }),
       runtime: S.Runtime.Node({ version: ">=22.19.0" }),
       packageManager: S.PackageManager.Yarn({ manifest: packageJson, lockfile: S.file("//yarn.lock") }),
       nodeModules: S.Npm.NodeModules({ packageJson })
     })
-    const index = PackageIndex.make({ root, workspace, factory: undefined, packages: [
-      { file: "flows/PACKAGE.ts", packagePath: "flows", value: S.Package({ targets: { consumer, external } }) },
-      { file: "lib/PACKAGE.ts", packagePath: "lib", value: S.Package({ targets: { owned: S.Filegroup({ srcs: [] }) } }) }
-    ] })
+    const index = PackageIndex.make({
+      root,
+      workspace,
+      factory: undefined,
+      packages: [
+        { file: "flows/PACKAGE.ts", packagePath: "flows", value: S.Package({ targets: { consumer, external } }) },
+        {
+          file: "lib/PACKAGE.ts",
+          packagePath: "lib",
+          value: S.Package({ targets: { owned: S.Filegroup({ srcs: [] }) } })
+        }
+      ]
+    })
     const inspect = () => plan({ index, cacheDirectory: ".flows", verb: "auto", pattern: "//flows:consumer" })
     const first = await inspect()
     const group = first.nodes.get("//flows:external")!
-    expect(group.declaredInputs.flatMap(input => input.files.map(file => file.path))).toEqual(["lib/src/value.ts"])
+    expect(group.declaredInputs.flatMap((input) => input.files.map((file) => file.path))).toEqual(["lib/src/value.ts"])
     expect(first.nodes.get("//flows:consumer")!.declaredInputs[0]!.files[0]!.path).toBe("flows/local.txt")
-    expect(first.workList.find(node => (node.attrs as { cwd?: string }).cwd === "other")!
-      .declaredInputs[0]!.files[0]!.path).toBe("other/src/value.ts")
+    expect(
+      first.workList.find((node) => (node.attrs as { cwd?: string }).cwd === "other")!
+        .declaredInputs[0]!.files[0]!.path
+    ).toBe("other/src/value.ts")
     expect((await TargetIndex.build(index, "//flows:external")).targets[0]!.inputs).toEqual([
       { kind: "glob", pattern: "lib/src/**/*.ts", exclude: ["lib/**/generated.ts"] }
     ])
     expect(Affected.select(index, "//flows:consumer", ["lib/src/value.ts"])).toMatchObject({
-      conservative: false, targets: [{ label: "//flows:consumer", reasons: ["lib/src/value.ts"] }]
+      conservative: false,
+      targets: [{ label: "//flows:consumer", reasons: ["lib/src/value.ts"] }]
     })
     await write("lib/src/value.ts", "export const value = 3")
     const changed = await inspect()

@@ -52,6 +52,7 @@ const load = async (): Promise<Entrypoint> => {
   // through Incur, whose lifecycle is covered by UnifiedEntry.test.ts.
   await import("../src/cli/LegacyBin.ts")
   const call = runMain.mock.calls[0]
+  expect(runMain).toHaveBeenCalledTimes(1)
   if (call === undefined) throw new Error("the entrypoint did not start a Node runtime")
   const onSigint = process.listeners("SIGINT").find((listener) => !beforeSigint.includes(listener))
   const onSigterm = process.listeners("SIGTERM").find((listener) => !beforeSigterm.includes(listener))
@@ -99,7 +100,7 @@ afterAll(() => {
 
 describe("smithers entrypoint", () => {
   it("starts the command tree on the Node runtime with a teardown", () => {
-    expect(runMain).toHaveBeenCalledTimes(1)
+    expect(entrypoint.main).toBeDefined()
     expect(typeof entrypoint.teardown).toBe("function")
   })
 
@@ -189,10 +190,7 @@ describe("smithers entrypoint", () => {
   it.each([
     { args: ["--json", "plan"], code: 2, error: ["flow-id", "--wizard"], document: "" },
     { args: ["--json", "steer", "run-1"], code: 2, error: ["--message", "--wizard"], document: "" },
-    { args: ["--json", "memory"], code: 2, error: ["subcommand", "list, get, set, rm"], document: "SUBCOMMANDS" },
-    { args: ["--json"], code: 2, error: ["subcommand", "plan, run, up"], document: "SUBCOMMANDS" },
-    { args: ["--json", "memory", "--help"], code: 0, error: [], document: "SUBCOMMANDS" },
-    { args: ["--json", "memory", "--nope"], code: 2, error: ["Unrecognized flag", "--nope"], document: "SUBCOMMANDS" }
+    { args: ["--json"], code: 2, error: ["subcommand", "plan, run, up"], document: "SUBCOMMANDS" }
   ])("preserves the parser output contract for $args", async ({ args, code, error, document }) => {
     const argv = process.argv
     const cwd = process.cwd()

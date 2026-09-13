@@ -1400,7 +1400,7 @@ export const Package = S.Package({ targets: { push } })
 })
 
 describe.runIf(process.platform === "darwin")("sandbox enforcement (macOS)", () => {
-  it("documents the native boundary: host files outside the workspace remain readable", async () => {
+  it("denies undeclared host files outside the workspace", async () => {
     const root = await temporaryWorkspace()
     const hostFiles = await temporaryWorkspace()
     await write(hostFiles, ".ssh/fixture", "synthetic ssh data")
@@ -1421,8 +1421,11 @@ export const Package = S.Package({ targets: { probe } })
     )
     commitAll(root)
     const result = await serve(root, ["//:probe"])
-    expect(result.exitCode, result.logs).toBe(0)
-    expect(result.logs).toContain("//:probe  ran")
+    expect(result.exitCode, result.logs).toBe(1)
+    expect(result.logs).toContain("//:probe  failed")
+    for (const file of [".ssh/fixture", ".aws/fixture", "smithers/fixture"]) {
+      expect(result.logs).toContain(`${hostFiles}/${file}: Operation not permitted`)
+    }
   })
 
   it("denies network by default, allows it under { network: true }, and skips the wrapper for none", async () => {

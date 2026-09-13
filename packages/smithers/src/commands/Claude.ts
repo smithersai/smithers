@@ -30,7 +30,7 @@ export interface Options<E, R> {
   readonly required: (name: string) => Argument.Argument<string>
 }
 
-const claudeSession = Flag.string("session").pipe(
+const claudeSession = Flag.String("session").pipe(
   Flag.optional,
   Flag.withDescription("Claude Code session id; falls back to CLAUDE_CODE_SESSION_ID")
 )
@@ -55,7 +55,7 @@ export const make = <E, R>({ guard, required }: Options<E, R>) => {
   const tick = Command.make("tick", {
     runId: required("run-id"),
     session: claudeSession,
-    afterSeq: Flag.integer("after-seq").pipe(
+    afterSeq: Flag.Int("after-seq").pipe(
       Flag.withDefault(0),
       Flag.withDescription("Only include events after this sequence number")
     )
@@ -81,7 +81,7 @@ export const make = <E, R>({ guard, required }: Options<E, R>) => {
   const nodeWait = Command.make("node-wait", {
     runId: required("run-id"),
     nodeId: required("node-id"),
-    timeout: Flag.integer("timeout-ms").pipe(
+    timeout: Flag.Int("timeout-ms").pipe(
       Flag.withDefault(30_000),
       Flag.withDescription("Maximum time in milliseconds to wait for the node to settle")
     )
@@ -129,11 +129,11 @@ export const make = <E, R>({ guard, required }: Options<E, R>) => {
 
   const monitor = Command.make("monitor", {
     session: claudeSession,
-    allRuns: Flag.boolean("all-runs").pipe(
+    allRuns: Flag.Boolean("all-runs").pipe(
       Flag.withDefault(false),
       Flag.withDescription("Include all runs, beyond this session’s subscriptions")
     ),
-    limit: Flag.integer("limit").pipe(
+    limit: Flag.Int("limit").pipe(
       Flag.withDefault(200),
       Flag.withDescription("Maximum number of runs in the monitor frame")
     )

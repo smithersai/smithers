@@ -18,7 +18,7 @@
  * @since 1.0.0
  */
 import { Context, Layer } from "effect"
-import { existsSync, statSync } from "node:fs"
+import { existsSync, readdirSync, statSync } from "node:fs"
 import { dirname, isAbsolute, join, resolve } from "node:path"
 import * as CliError from "./CliError.ts"
 import * as Environment from "./Environment.ts"
@@ -190,12 +190,29 @@ export const legacyDatabases = (
   }
 }
 
+const buildDefinitionFiles = new Set(["WORKSPACE.ts", "FACTORY.ts", "factory.json", "home.json", "target-index.json"])
+
+const onlyBuildDefinitions = (directory: string, exists: (path: string) => boolean): boolean => {
+  if (!exists(join(directory, "WORKSPACE.ts")) || !exists(join(directory, "FACTORY.ts"))) return false
+  try {
+    return readdirSync(directory, { withFileTypes: true }).every((entry) =>
+      entry.isFile() && buildDefinitionFiles.has(entry.name)
+    )
+  } catch {
+    return false
+  }
+}
+
 /**
  * Smithers 0.x state found beside a project, newest ancestor first.
  *
  * A directory that already holds `.flows/` is an rc.0 project and reports
  * nothing: a repository mid-migration would otherwise print the notice on
  * every command forever.
+ *
+ * A `.smithers` directory containing only current build definitions is also
+ * excluded. Unknown files, subdirectories and unreadable metadata remain
+ * legacy markers.
  *
  * @category getters
  * @since 1.0.0
@@ -210,7 +227,9 @@ export const legacyState = (
     if (!exists(join(directory, ".flows"))) {
       for (const marker of legacyMarkers) {
         const candidate = join(directory, marker)
-        if (exists(candidate)) found.push(candidate)
+        if (exists(candidate) && !(marker === ".smithers" && onlyBuildDefinitions(candidate, exists))) {
+          found.push(candidate)
+        }
       }
     }
     const parent = dirname(directory)

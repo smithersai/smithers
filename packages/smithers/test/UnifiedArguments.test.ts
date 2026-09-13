@@ -17,6 +17,9 @@ describe("public workspace spelling", () => {
       "//:sources"
     ]],
     [["generate", "ci", "--root", "/project"], ["generate", "ci", "--workspace", "/project"]],
+    [["--root", "/project", "gateway", "--port", "8080"], ["gateway", "--port", "8080", "--root", "/project"]],
+    [["--root", "/project", "runs", "show", "run-1"], ["runs", "show", "run-1", "--root", "/project"]],
+    [["--root", "/project", "init", "--", "literal"], ["init", "--root", "/project", "--", "literal"]],
     [["flow", "list", "--root", "/project"], ["flow", "list", "--root", "/project"]],
     [["generate", "flow", "hello", "--root", "/project"], ["generate", "flow", "hello", "--root", "/project"]],
     [["run", "//:app", "--", "--root", "/argument"], ["run", "//:app", "--", "--root", "/argument"]]

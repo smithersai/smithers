@@ -55,6 +55,8 @@ describe("case06 concurrent resume against a sweep", () => {
     // hosts below race for the claim rather than for the signal.
     const notifier = spawnWaitChild({ ...shared, hostId: "case06-notifier", phase: "notify" })
     expect(await notifier.exited).toBe(0)
+    expect(counterLines(counterFile)).toEqual([preparedStep])
+    expect((await waitingRow(filename, executionId))?.reason).toBe("event")
 
     // Two independent hosts, started together, each believing the run is theirs
     // to pick up.

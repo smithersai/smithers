@@ -734,7 +734,9 @@ export const Package = S.Package({ targets: { retain } })
     const argvFile = NodePath.join(root, "argv.txt")
     await write(root, "bin-stub/smithers", `#!/bin/sh\nprintf '%s\\n' "$*" > ${JSON.stringify(argvFile)}\n`)
     await Fs.chmod(NodePath.join(stubBin, "smithers"), 0o755)
-    const called = await serve(root, ["//:retain"], { environment: { ...process.env, PATH: stubBin } })
+    const called = await serve(root, ["//:retain"], {
+      environment: { ...process.env, PATH: [stubBin, process.env["PATH"]].join(NodePath.delimiter) }
+    })
     const sha = NodeChildProcess.execFileSync("git", ["-C", root, "rev-parse", "HEAD"], { encoding: "utf8" }).trim()
     expect(called.exitCode).toBe(0)
     expect(called.logs).toContain(`//:retain  retained repo/commit:${sha} through`)
@@ -743,7 +745,9 @@ export const Package = S.Package({ targets: { retain } })
 
     // A refusing backend is a typed command failure naming the argv.
     await write(root, "bin-stub/smithers", `#!/bin/sh\necho "bank not found" >&2\nexit 3\n`)
-    const refused = await serve(root, ["//:retain"], { environment: { ...process.env, PATH: stubBin } })
+    const refused = await serve(root, ["//:retain"], {
+      environment: { ...process.env, PATH: [stubBin, process.env["PATH"]].join(NodePath.delimiter) }
+    })
     expect(refused.exitCode).toBe(1)
     expect(refused.logs).toContain(`smithers memory set repo commit:${sha}`)
     expect(refused.logs).toContain("exited 3: bank not found")

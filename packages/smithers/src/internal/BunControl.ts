@@ -21,8 +21,11 @@ import * as NativeControlDatabase from "./NativeControlDatabase.ts"
 export const platform: NativeControl.Platform = {
   host: Layer.provideMerge(AtomicFileSystem.layer, BunServices.layer),
   crypto: BunCrypto.layer,
-  database: file => NativeControlDatabase.make(filename => Database.layer({ filename }))(file).pipe(
-    Layer.provide(BunServices.layer), Layer.orDie),
+  database: (file) =>
+    NativeControlDatabase.make((filename) => Database.layer({ filename }))(file).pipe(
+      Layer.provide(BunServices.layer),
+      Layer.orDie
+    ),
   runtime: Runtime.layer,
   jj: Jj.layerAt,
   // Bun's fetch client exposes no replaceable dispatcher. The existing fixed

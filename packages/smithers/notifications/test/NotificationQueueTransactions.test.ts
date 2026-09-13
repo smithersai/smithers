@@ -3,6 +3,7 @@ import * as TestJournal from "@smthrs/journal/test/TestJournal"
 import { Context, Effect, Layer } from "effect"
 import { describe, expect, it } from "vitest"
 import type { Notification } from "../src/Notification.ts"
+import * as NotificationEvent from "../src/NotificationEvent.ts"
 import * as NotificationQueue from "../src/NotificationQueue.ts"
 
 const item: Notification = {
@@ -169,4 +170,129 @@ describe("NotificationQueue commit ownership", () => {
       }).pipe(Effect.provide(TestJournal.layer()), Effect.scoped)
     )
   })
+})
+
+describe("NotificationQueue replay integrity", () => {
+  it.each(["missing", "wrong-sequence", "invalid", "foreign"] as const)(
+    "refuses %s readback of a legacy admission or committed drain",
+    async (fault) => {
+      await Effect.runPromise(
+        Effect.gen(function*() {
+          const journal = yield* Journal.Journal
+          let corrupt = false
+          const wrapped: Journal.Service = {
+            ...journal,
+            entries: (options) =>
+              Effect.map(journal.entries(options), (page) => {
+                if (!corrupt || options.limit !== 1) return page
+                const entry = page.entries[0]!
+                const entries = fault === "missing" ? [] : [{
+                  ...entry,
+                  ...(fault === "wrong-sequence" ?
+                    { seq: JournalEvent.Seq.make(entry.seq + 1) }
+                    : fault === "invalid" ?
+                    { payload: {} }
+                    : { eventType: "foreign/event" })
+                }]
+                return { ...page, entries }
+              })
+          }
+          yield* journal.emitDurableUnfenced(
+            new JournalEvent.Input({
+              runId: JournalEvent.RunId.make("run"),
+              sourceId: JournalEvent.SourceId.make("legacy"),
+              sourceSeq: JournalEvent.SourceSeq.make(0),
+              eventType: NotificationEvent.AdmittedEventType,
+              payload: { notification: item, decision: "admitted" }
+            })
+          )
+          yield* withQueue(
+            wrapped,
+            Effect.gen(function*() {
+              const queue = yield* NotificationQueue.NotificationQueue
+              yield* queue.pending("run")
+              corrupt = true
+              expect(yield* Effect.flip(queue.admit("run", item))).toMatchObject({ code: "notification_unavailable" })
+              corrupt = false
+              yield* queue.drain(boundary)
+              corrupt = true
+              expect(yield* Effect.flip(queue.drain(boundary))).toMatchObject({ code: "notification_unavailable" })
+            })
+          )
+        }).pipe(Effect.provide(TestJournal.layer()), Effect.scoped)
+      )
+    }
+  )
+
+  it.each(["missing", "unindexed"] as const)(
+    "refuses a partial replay when a delivered notification is %s",
+    async (fault) => {
+      await Effect.runPromise(
+        Effect.gen(function*() {
+          const journal = yield* Journal.Journal
+          let corrupt = false
+          const wrapped: Journal.Service = {
+            ...journal,
+            entries: (options) =>
+              Effect.map(journal.entries(options), (page) => {
+                if (!corrupt || options.limit !== 1) return page
+                const entry = page.entries[0]!
+                if (fault === "missing" && entry.eventType === NotificationEvent.AdmittedEventType) {
+                  return { ...page, entries: [] }
+                }
+                if (fault === "unindexed" && entry.eventType === NotificationEvent.PromotedEventType) {
+                  return { ...page, entries: [{ ...entry, payload: { ...boundary, ids: ["absent"] } }] }
+                }
+                return page
+              })
+          }
+          yield* withQueue(
+            wrapped,
+            Effect.gen(function*() {
+              const queue = yield* NotificationQueue.NotificationQueue
+              yield* queue.admit("run", item)
+              yield* queue.drain(boundary)
+              corrupt = true
+              expect(yield* Effect.flip(queue.drain(boundary))).toMatchObject({ code: "notification_unavailable" })
+            })
+          )
+        }).pipe(Effect.provide(TestJournal.layer()), Effect.scoped)
+      )
+    }
+  )
+})
+
+it("replays the winning drain when the journal deduplicates a racing emission", async () => {
+  await Effect.runPromise(
+    Effect.gen(function*() {
+      const journal = yield* Journal.Journal
+      let raced = false
+      const wrapped: Journal.Service = {
+        ...journal,
+        emitDurableUnfenced: (input) =>
+          Effect.gen(function*() {
+            if (!raced && input.eventType === NotificationEvent.PromotedEventType) {
+              raced = true
+              // Model a rival committing this identity after our fold was read.
+              // Its empty delivery, not our speculative pending set, is durable.
+              yield* journal.emitDurableUnfenced(
+                new JournalEvent.Input({
+                  ...input,
+                  payload: { boundary: boundary.boundary, targetLineageId: boundary.targetLineageId, ids: [] }
+                })
+              )
+            }
+            return yield* journal.emitDurableUnfenced(input)
+          })
+      }
+      yield* withQueue(
+        wrapped,
+        Effect.gen(function*() {
+          const queue = yield* NotificationQueue.NotificationQueue
+          yield* queue.admit("run", item)
+          expect(yield* queue.drain(boundary)).toMatchObject({ duplicate: true, notifications: [] })
+        })
+      )
+    }).pipe(Effect.provide(TestJournal.layer()), Effect.scoped)
+  )
 })

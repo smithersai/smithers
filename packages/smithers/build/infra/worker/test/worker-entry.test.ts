@@ -20,7 +20,7 @@ const budget = (success = true) => {
       keys.push(key)
       return { success }
     }
-  } as unknown as RateLimit
+  }
   return { binding, keys }
 }
 

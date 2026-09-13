@@ -27,7 +27,9 @@ const relativeImports = (file: string): ReadonlyArray<string> => {
     if (ts.isImportDeclaration(statement) && ts.isStringLiteral(statement.moduleSpecifier)) {
       return statement.moduleSpecifier.text.startsWith(".") ? [statement.moduleSpecifier.text] : []
     }
-    if (ts.isExportDeclaration(statement) && statement.moduleSpecifier && ts.isStringLiteral(statement.moduleSpecifier)) {
+    if (
+      ts.isExportDeclaration(statement) && statement.moduleSpecifier && ts.isStringLiteral(statement.moduleSpecifier)
+    ) {
       return statement.moduleSpecifier.text.startsWith(".") ? [statement.moduleSpecifier.text] : []
     }
     return []

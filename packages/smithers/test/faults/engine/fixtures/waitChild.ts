@@ -17,10 +17,20 @@
  *     <linger|settle|resolve|notify|race-timer> <counterFile> <hostId> [millis]
  */
 import { DurableDeferred, FlowRuntime, HumanTask } from "@smthrs/flow"
+import * as NodeRuntime from "@smthrs/flows/NodeRuntime"
 import * as Effect from "effect/Effect"
 import * as Exit from "effect/Exit"
-import type * as Layer from "effect/Layer"
-import { ApprovalFlow, EventFlow, EventSignal, host, taskName, TimerFlow, type WaitMode } from "../harness/waitFlows.ts"
+import * as Layer from "effect/Layer"
+import {
+  ApprovalFlow,
+  EventFlow,
+  EventSignal,
+  host,
+  hostOptions,
+  taskName,
+  TimerFlow,
+  type WaitMode
+} from "../harness/waitFlows.ts"
 
 const [filename, executionId, modeArg, phase, counterFile, hostId, millisArg] = process.argv.slice(2)
 
@@ -98,13 +108,19 @@ const completeSignal = Effect.gen(function*() {
   })
 })
 
+// Completing a deferred schedules a wake. A notifier must register no flows,
+// or it can claim the run before the two racing hosts have even started.
+const runtimeLayer = phase === "notify"
+  ? NodeRuntime.layerHost(hostOptions(options), Layer.empty)
+  : host(mode, options)
+
 const exit: Exit.Exit<unknown, unknown> = mode === "approval"
   ? await run(
     answerQuestion as never,
     phase === "linger"
       ? ApprovalFlow.execute({ label }, { executionId, discard: true })
       : ApprovalFlow.execute({ label }, { executionId }),
-    host("approval", options) as never
+    runtimeLayer as never
   )
   : mode === "event"
   ? await run(
@@ -112,7 +128,7 @@ const exit: Exit.Exit<unknown, unknown> = mode === "approval"
     phase === "linger"
       ? EventFlow.execute({ label }, { executionId, discard: true })
       : EventFlow.execute({ label }, { executionId }),
-    host("event", options) as never
+    runtimeLayer as never
   )
   : await run(
     Effect.void as never,
@@ -127,7 +143,7 @@ const exit: Exit.Exit<unknown, unknown> = mode === "approval"
         return yield* TimerFlow.execute({ millis }, { executionId })
       })
       : TimerFlow.execute({ millis }, { executionId }),
-    host("timer", options) as never
+    runtimeLayer as never
   )
 
 if (Exit.isFailure(exit)) {

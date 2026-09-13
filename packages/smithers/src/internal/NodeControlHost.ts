@@ -75,7 +75,7 @@ const layerRequestExecutor: Layer.Layer<RequestExecutor.RequestExecutor> = Layer
 export const platform: NativeControl.Platform = {
   host: Layer.provideMerge(AtomicFileSystem.layer, NodeServices.layer),
   crypto: NodeCrypto.layer,
-  database: file => ControlDatabase.layer(file).pipe(Layer.orDie),
+  database: (file) => ControlDatabase.layer(file).pipe(Layer.orDie),
   runtime: NodeFlowsRuntime.layer,
   jj: NodeJj.layerAt,
   requestExecutor: layerRequestExecutor,

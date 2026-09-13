@@ -11,12 +11,17 @@ import * as RecallKeyword from "@smthrs/memory/RecallKeyword"
 import { Effect, Layer, Schema } from "effect"
 import { Cli, z } from "incur"
 import { randomUUID } from "node:crypto"
-import { databaseLayer, localFields, type LocalOptions, localRoot } from "./Store.ts"
 import * as Presentation from "../cli/Presentation.ts"
+import { databaseLayer, localFields, type LocalOptions, localRoot } from "./Store.ts"
 
 // Every operator command reports failures as operator_failed.
 const execute = <A>(context: Presentation.Failing, body: () => Promise<A>) =>
-  Presentation.guard(context, body, { code: "operator_failed", next: Presentation.runs({ otherwise: [{ command: "memory recall --help", description: "Recall relevant stored context" }] }) })
+  Presentation.guard(context, body, {
+    code: "operator_failed",
+    next: Presentation.runs({
+      otherwise: [{ command: "memory recall --help", description: "Recall relevant stored context" }]
+    })
+  })
 
 const namespaceFields = {
   namespace: z.string().default("user:cli").describe(

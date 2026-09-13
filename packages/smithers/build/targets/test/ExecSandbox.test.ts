@@ -969,6 +969,8 @@ describe("every mechanism renders the same text on any host", () => {
         " (subpath \"/work/ws/.flows/sandbox/run1\"))" +
         "(deny file-write* (subpath \"/work/ws/.flows/cache\"))" +
         "(deny file-read*)(allow file-read* (literal \"/\") (subpath \"/dev\"))" +
+        "(allow file-read* (literal \"/tmp\") (literal \"/var\") (literal \"/etc\"))" +
+        "(allow file-read-metadata (literal \"/\") (literal \"/work\"))" +
         "(deny file-read* (subpath \"/work/ws\"))" +
         "(allow file-read-metadata (subpath \"/work/ws\"))" +
         "(allow file-read* (literal \"/work/ws\") (literal \"/work/ws/.flows\") (literal \"/work/ws/.flows/sandbox\")" +

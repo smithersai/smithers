@@ -18,7 +18,7 @@
  * no open call, a settled call whose value is not a string.
  */
 import type { ControlSchema } from "@smthrs/control"
-import { FastCheck } from "effect/testing"
+import * as FastCheck from "fast-check"
 import { describe, expect, it } from "vitest"
 import * as GatewayProjection from "../src/GatewayProjection.ts"
 

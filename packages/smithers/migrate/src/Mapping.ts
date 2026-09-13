@@ -478,7 +478,7 @@ const table: ReadonlyArray<MappingRow> = [
   ),
   row(
     "package.json",
-    "@smthrs/* at 1.0.0-rc.0 and effect at 4.0.0-rc.112",
+    "@smthrs/* at 1.0.0-rc.0 and effect at 4.0.0-rc.115",
     null,
     "Old packages are removed only in the final `project` unit. `zod` stays only if non-workflow code still imports it.",
     "automatic"

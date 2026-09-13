@@ -1677,7 +1677,7 @@ describe("admitted body cancellation edges", () => {
       const response = await handler(request(`/ac/${keyDigest}`, {
         method, signal: aborter.signal, headers: { "content-type": "application/json" },
         ...(method === "PUT" ? { body, duplex: "half" } : {})
-      } as RequestInit))
+      }))
       expect(response.status).toBe(503)
       expect(get).not.toHaveBeenCalled()
       expect(body.locked).toBe(false)

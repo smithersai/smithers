@@ -33,7 +33,7 @@ import { ControlRuntime } from "@smthrs/control/ControlRuntime"
 import { type ApprovalPayload, type PlanCard, RunStatus } from "@smthrs/control/ControlSchema"
 import { SyncAuth as SyncAuthTag } from "@smthrs/sync/SyncRpcs"
 import * as SyncServer from "@smthrs/sync/SyncServer"
-import { Deferred, Effect, Fiber, Layer, Logger, type Scope, Stream } from "effect"
+import { Deferred, Effect, Fiber, Layer, Logger, Schema, type Scope, Stream } from "effect"
 import { HttpRouter, HttpServer, HttpServerRequest, HttpServerResponse } from "effect/unstable/http"
 import { RpcClient, RpcSerialization } from "effect/unstable/rpc"
 import { createServer } from "node:http"
@@ -64,7 +64,7 @@ const delegatedBearer = Effect.runSync(ApprovalAuthority.make([
 ]))
 
 const baseUrl = Effect.map(HttpServer.HttpServer, (server) => {
-  if (server.address._tag !== "TcpAddress") throw new Error("expected a TCP gateway")
+  if (server.address._tag !== "InetAddressV4") throw new Error("expected a TCP gateway")
   return `http://127.0.0.1:${server.address.port}`
 })
 
@@ -380,7 +380,10 @@ describe("the RPC body a mount will act on", () => {
   })
 
   it("leaves a binary framing to the mount, since its body is not text", () => {
-    expect(GatewayServer.carriesRpcRequest(RpcSerialization.msgPack, "{}")).toBe(true)
+    const binary = Effect.runSync(RpcSerialization.RpcSerialization.pipe(
+      Effect.provide(RpcSerialization.layerSchemaBinary())
+    ))
+    expect(GatewayServer.carriesRpcRequest(binary, "{}")).toBe(true)
   })
 })
 
@@ -509,12 +512,17 @@ it.effect("leaves an invalid percent escape as an unknown route", () =>
   ))
 
 describe("a binary serialization through ingress on the Node adapter", () => {
-  /** One framed MessagePack request. Its bytes are not valid UTF-8. */
-  const framed = RpcSerialization.msgPack.makeUnsafe().encode({
+  const serialization = Effect.runSync(
+    RpcSerialization.RpcSerialization.pipe(Effect.provide(RpcSerialization.layerSchemaBinary()))
+  )
+  /** One framed binary request. Its bytes are not valid UTF-8. */
+  const framed = serialization.makeUnsafe().encode({
     _tag: "Request",
-    id: 1,
+    id: "1",
     tag: "List",
-    payload: { _tag: "runs" },
+    payload: Schema.encodeSync(serialization.codecFor(Schema.Struct({ _tag: Schema.Literal("runs") })))({
+      _tag: "runs"
+    }),
     headers: []
   }) as Uint8Array
   const hex = (bytes: Uint8Array) => Buffer.from(bytes).toString("hex")
@@ -532,7 +540,7 @@ describe("a binary serialization through ingress on the Node adapter", () => {
   const bound = (maxRequestBodyBytes: number) =>
     HttpRouter.serve(
       Layer.mergeAll(HttpRouter.add("POST", "/rpc", echo), GatewayServer.layerIngress({ maxRequestBodyBytes })).pipe(
-        Layer.provide(RpcSerialization.layerMsgPack)
+        Layer.provide(RpcSerialization.layerSchemaBinary())
       ),
       { disableListenLog: true, disableLogger: true }
     ).pipe(Layer.provideMerge(NodeHttpServer.layer(createServer, { host: "127.0.0.1", port: 0 })))
@@ -541,7 +549,7 @@ describe("a binary serialization through ingress on the Node adapter", () => {
     Effect.promise(() =>
       fetch(`${url}/rpc`, {
         method: "POST",
-        headers: { "content-type": "application/msgpack" },
+        headers: { "content-type": serialization.contentType },
         body: new Blob([body as Uint8Array<ArrayBuffer>])
       })
     )
@@ -1581,7 +1589,9 @@ describe("gateway bind policy", () => {
     test(`serves health through the ingress authority for bind ${host ?? "default"}`, () =>
       Effect.gen(function*() {
         const server = yield* HttpServer.HttpServer
-        if (server.address._tag !== "TcpAddress") return yield* Effect.die("expected TCP")
+        if (server.address._tag !== "InetAddressV4" && server.address._tag !== "InetAddressV6") {
+          return yield* Effect.die("expected TCP")
+        }
         const hostname = host === "::1" || host === "::" ? "[::1]" : "127.0.0.1"
         const port = server.address.port
         const response = yield* Effect.promise(() => fetch(`http://${hostname}:${port}/health`))

@@ -30,14 +30,14 @@ export const verb = (name: string): Unsupported.RemovedVerb =>
  * @category constructors
  * @since 1.0.0
  */
-export const flag = (_parent: string, name: string) => Flag.boolean(name).pipe(Flag.withDefault(false), Flag.withHidden)
+export const flag = (_parent: string, name: string) => Flag.Boolean(name).pipe(Flag.withDefault(false), Flag.withHidden)
 
 /**
  * A hidden value flag whose presence is a refusal.
  * @category constructors
  * @since 1.0.0
  */
-export const valueFlag = (name: string) => Flag.string(name).pipe(Flag.optional, Flag.withHidden)
+export const valueFlag = (name: string) => Flag.String(name).pipe(Flag.optional, Flag.withHidden)
 
 /**
  * Fails when a removed flag was passed.
@@ -72,7 +72,7 @@ export const commands = Unsupported.removedVerbs
   .map((verb) =>
     Command.make(
       verb.name,
-      { rest: Argument.string("argument").pipe(Argument.variadic()) },
+      { rest: Argument.String("argument").pipe(Argument.variadic()) },
       (config) => Effect.fail(Unsupported.verbError(verb, verb.subcommands === undefined ? undefined : config.rest[0]))
     ).pipe(
       Command.withDescription(`Removed in 1.0.0-rc.0: ${verb.reason}`),

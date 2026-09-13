@@ -68,6 +68,7 @@ const recover = async (mode: "approval" | "timer" | "checkpoint") => {
         "name: recovery",
         "description: Exercises a recorded cell and durable recovery.",
         "model: openai:gpt-4o-mini",
+        mode === "checkpoint" ? "capabilities: [\"fs:read:/**\"]" : "capabilities: []",
         "---",
         "Perform the recorded recovery exercise."
       ].join("\n")

@@ -843,7 +843,8 @@ export const resolveSpecifier = async (
       return { specifier: site.specifier, status: "builtin" }
     }
     if (
-      target === "" || target.startsWith(".") || target.startsWith("/") || target.startsWith("#") || target.includes(":")
+      target === "" || target.startsWith(".") || target.startsWith("/") || target.startsWith("#") ||
+      target.includes(":")
     ) {
       return unresolved
     }

@@ -1,14 +1,14 @@
 /**
  * A run on a served control plane, planned and launched over the wire.
  *
- * Every gateway case needs the same three round trips before it can assert
- * anything: plan, approve, launch. They are here so a case reads as the fault
- * it injects rather than as its setup.
+ * Planning and launching use RPC; a separate local operator process approves
+ * against the same workspace. Bearer authentication is not approval authority.
  *
  * @since 1.0.0
  */
 import { Control } from "@smthrs/control"
 import * as Effect from "effect/Effect"
+import { localDecision } from "./serveProcess.ts"
 
 /**
  * Plans, approves, and launches `system/test`, returning the run id.
@@ -16,15 +16,12 @@ import * as Effect from "effect/Effect"
  * @since 1.0.0
  * @category constructors
  */
-export const launchRun = (label: string) =>
+export const launchRun = (label: string, root: string) =>
   Effect.gen(function*() {
     const control = yield* Control.Control
     const card = yield* control.plan({ flowId: "system/test", input: { case: label } })
-    yield* control.approve({
-      target: { _tag: "Plan", planId: card.planId, digest: card.digest, envelope: card.envelope },
-      scope: card.approval.scope,
-      idempotencyKey: `approve:${card.planId}`
-    })
+    const decision = yield* Effect.promise(() => localDecision(root, "approve", card.approval))
+    if (decision.status !== 0) return yield* Effect.die(new Error(`local approval failed: ${decision.stderr}`))
     const receipt = yield* control.run({
       _tag: "Plan",
       planId: card.planId,

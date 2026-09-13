@@ -123,6 +123,9 @@ const reasonClassification: Record<Exclude<TransportReason, "HttpError">, Transp
   SocketReadError: connectionFailure,
   SocketWriteError: connectionFailure,
   SocketOpenError: connectionFailure,
+  // The socket cannot perform a requested protocol upgrade; retries of the
+  // same unsupported operation cannot change that host capability.
+  SocketUpgradeError: unknownClientFailure,
   SocketCloseError: connectionFailure,
   // A worker transport is not composable with this client, which speaks HTTP
   // and WebSocket. The entries exist so the table stays exhaustive.

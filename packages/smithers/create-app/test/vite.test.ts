@@ -284,6 +284,22 @@ describe("createApp", () => {
     expect((thrown as NodeJS.ErrnoException).code).toBe("ENOENT")
   })
 
+  it("propagates a regeneration defect without an errno code", async () => {
+    const root = tree({ ...layers, "app/page.tsx": "export default () => null\n" })
+    const manifest = manifestOf(minimal)
+    const plugin = createApp({ root, manifest: async () => manifest })
+    await plugin.configResolved({ root })
+    const listeners: Array<(file: string) => void> = []
+    plugin.configureServer({ watcher: { on: (_event, listener) => listeners.push(listener) } })
+    const defect = new Error("manifest unavailable")
+    Object.defineProperty(manifest, "dirs", {
+      get: () => {
+        throw defect
+      }
+    })
+    expect(() => listeners[0]!(join(root, "app/page.tsx"))).toThrow(defect)
+  })
+
   it("resolves only its own virtual modules", () => {
     const plugin = createApp()
     expect(plugin.resolveId(brandModuleId)).toBe(`\0${brandModuleId}`)

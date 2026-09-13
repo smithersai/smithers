@@ -174,12 +174,12 @@ const run = <A, E, R>(body: Effect.Effect<A, E, R>, bridged = false): Promise<A>
     Effect.provide(body, stack(bridged) as unknown as Layer.Layer<R>).pipe(Effect.scoped, Effect.orDie)
   )
 
-/** Polls the run row until it leaves `suspended`, or gives up and reports it. */
+/** Polls until the run reaches a terminal state, or gives up and reports it. */
 const settled = (runId: string, attempts = 2_000): Effect.Effect<string, unknown, RunStore.RunStore> =>
   Effect.gen(function*() {
     const store = yield* RunStore.RunStore
     const row = yield* store.get(runId)
-    if (row.status !== "suspended" || attempts <= 0) return row.status
+    if (!["suspended", "running", "pending"].includes(row.status) || attempts <= 0) return row.status
     yield* Effect.yieldNow
     return yield* settled(runId, attempts - 1)
   })

@@ -9,7 +9,8 @@
  *
  * @since 1.0.0
  */
-import * as NodeSocket from "@effect/platform-node/NodeSocket"
+import type * as Socket from "effect/unstable/socket/Socket"
+import * as NodeWebSocket from "../../../src/internal/NodeWebSocket.ts"
 
 /**
  * How a socket is taken away.
@@ -90,7 +91,7 @@ export const dropWebSocket = async (socket: DroppableSocket, mode: DropMode = "a
  */
 export interface TrackedWebSockets {
   /** The value to provide as `Socket.WebSocketConstructor`. */
-  readonly construct: (address: string, protocols?: string | ReadonlyArray<string>) => globalThis.WebSocket
+  readonly construct: (address: string, options?: Socket.WebSocketConstructorOptions) => globalThis.WebSocket
   /** Every socket constructed so far, oldest first. */
   readonly sockets: ReadonlyArray<DroppableSocket>
   /** How many sockets have been constructed. A reconnect is a second one. */
@@ -116,12 +117,8 @@ export interface TrackedWebSockets {
  */
 export const trackingWebSocketConstructor = (credential?: string): TrackedWebSockets => {
   const sockets: Array<DroppableSocket> = []
-  const construct = (address: string, protocols?: string | ReadonlyArray<string>): globalThis.WebSocket => {
-    const socket = new NodeSocket.NodeWS.WebSocket(
-      address,
-      protocols as string | Array<string> | undefined,
-      credential === undefined ? {} : { headers: { authorization: `Bearer ${credential}` } }
-    )
+  const construct = (address: string, options?: Socket.WebSocketConstructorOptions): globalThis.WebSocket => {
+    const socket = NodeWebSocket.make(credential)(address, options)
     sockets.push(socket as unknown as DroppableSocket)
     return socket as unknown as globalThis.WebSocket
   }

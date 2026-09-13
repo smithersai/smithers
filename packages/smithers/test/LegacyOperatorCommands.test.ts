@@ -15,6 +15,7 @@ import * as NodeControl from "../src/NodeControl.ts"
 import * as Output from "../src/Output.ts"
 import * as Project from "../src/Project.ts"
 import { packageVersion } from "../src/Version.ts"
+import { invokeCanonical } from "./fixtures/invokeCanonical.ts"
 
 const ports = vi.hoisted(() => ({
   migrate: vi.fn(),
@@ -59,6 +60,13 @@ afterEach(() => {
 })
 
 const invoke = async (args: Array<string>) => {
+  if (args[0] === "suggest" || args[0] === "mcp") {
+    const result = await invokeCanonical([...args, "--root", root, "--json"])
+    const error = result.codes.some((code) => code !== 0 && code !== 130)
+      ? JSON.parse(result.stdout) as { readonly message: string }
+      : undefined
+    return { ...result, exit: error === undefined ? Exit.void : Exit.fail(error), failure: error?.message }
+  }
   const codes: Array<number> = []
   const result = await Effect.runPromise(
     Effect.gen(function*() {
@@ -231,7 +239,7 @@ describe("legacy operator command contracts", () => {
     const agent = Agents.agents[0]!
     const result = await invoke(["mcp", "add", "--agent", agent.id, "--json"])
     expect(result.failure).toBeUndefined()
-    expect(ports.addMcp).toHaveBeenCalledExactlyOnceWith(agent)
+    expect(ports.addMcp).toHaveBeenCalledExactlyOnceWith(agent, undefined)
     expect(JSON.parse(result.stdout)).toEqual([{ agent: agent.id, path: `/fixture/${agent.id}`, status: "written" }])
   })
 
@@ -245,7 +253,10 @@ describe("legacy operator command contracts", () => {
     const result = await invoke(["mcp", "add", "--json"])
     expect(ports.addMcp).toHaveBeenCalledTimes(Agents.agents.length)
     expect(result.failure).toContain("Could not register the MCP server")
-    expect(result.stderr).toBe(Agents.manualInstructions(Agents.agents.map((agent) => agent.id)))
-    expect(result.stdout).toBe("")
+    expect(result.stderr).toBe(`${Agents.manualInstructions(Agents.agents.map((agent) => agent.id))}\n`)
+    expect(JSON.parse(result.stdout)).toEqual({
+      code: "UnsupportedError",
+      message: "Could not register the MCP server"
+    })
   })
 })

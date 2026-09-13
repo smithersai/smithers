@@ -36,9 +36,9 @@ import * as Environment from "./Environment.ts"
 import * as Forensics from "./Forensics.ts"
 import * as Gc from "./Gc.ts"
 import { defaultApprovalScope } from "./internal/ApprovalScope.ts"
+import * as BoundedEvents from "./internal/BoundedEvents.ts"
 import * as CommandStatus from "./internal/CommandStatus.ts"
 import * as FeaturedFlows from "./internal/FeaturedFlows.ts"
-import * as BoundedEvents from "./internal/BoundedEvents.ts"
 import * as NodeOutput from "./NodeOutput.ts"
 import { Output, renderValue } from "./Output.ts"
 import * as Project from "./Project.ts"
@@ -48,56 +48,56 @@ import * as Update from "./Update.ts"
 import * as Verb from "./Verb.ts"
 
 const global = {
-  credential: Flag.string("credential").pipe(
+  credential: Flag.String("credential").pipe(
     Flag.optional,
     Flag.withDescription("Bearer token for the remote control plane; prefer SMITHERS_API_KEY to avoid exposing argv")
   ),
-  json: Flag.boolean("json").pipe(
+  json: Flag.Boolean("json").pipe(
     Flag.withDefault(false),
     Flag.withDescription("Print the machine-readable document instead of the human rendering")
   ),
-  remote: Flag.string("remote").pipe(
+  remote: Flag.String("remote").pipe(
     Flag.optional,
     Flag.withDescription("http(s) URL of the control plane to act on; falls back to SMITHERS_REMOTE")
   ),
-  quiet: Flag.boolean("quiet").pipe(
+  quiet: Flag.Boolean("quiet").pipe(
     Flag.withDefault(false),
     Flag.withDescription("Suppress banners and progress on stderr; stdout documents still print")
   ),
-  silent: Flag.boolean("silent").pipe(
+  silent: Flag.Boolean("silent").pipe(
     Flag.withDefault(false),
     Flag.withDescription("Suppress progress while preserving the command result")
   ),
-  audience: Flag.choice("audience", ["auto", "human", "agent"] as const).pipe(
+  audience: Flag.Literals("audience", ["auto", "human", "agent"] as const).pipe(
     Flag.withDefault("auto"),
     Flag.withDescription("Choose human or agent presentation; auto detects the calling harness")
   ),
-  verbose: Flag.boolean("verbose").pipe(
+  verbose: Flag.Boolean("verbose").pipe(
     Flag.withDefault(false),
     Flag.withDescription("Show progress even when running inside an agent harness")
   ),
   // Declared here so the CLI's own flag validation accepts them; the values
   // are read from raw argv by `NodeControl.makeConfig`, which runs before the
   // durable layers are built.
-  mcpConfig: Flag.string("mcp-config").pipe(
+  mcpConfig: Flag.String("mcp-config").pipe(
     Flag.optional,
     Flag.withDescription(
       "Path to the JSON array of MCP servers the local executor projects into a run's flow catalog"
     )
   ),
-  root: Flag.string("root").pipe(
+  root: Flag.String("root").pipe(
     Flag.optional,
     Flag.withDescription("Project root to act on, instead of walking up from the working directory")
   ),
   // Hidden, and the one removed flag with a supported value: `sqlite` names
   // the backend rc.0 has, so it is a no-op rather than a refusal.
-  backend: Flag.string("backend").pipe(Flag.optional, Flag.withHidden)
+  backend: Flag.String("backend").pipe(Flag.optional, Flag.withHidden)
 }
 
 const rootCommand = Command.make("smthrs").pipe(Command.withSharedFlags(global))
 
-const input = Argument.string("key=value").pipe(Argument.variadic())
-const data = Flag.string("data").pipe(
+const input = Argument.String("key=value").pipe(Argument.variadic())
+const data = Flag.String("data").pipe(
   Flag.optional,
   Flag.withDescription("Flow input as JSON; object members override key=value entries")
 )
@@ -122,7 +122,7 @@ const inputPrompt = (name: string, pickFlow = false) =>
   })
 
 const requiredArgument = (name: string, pickFlow = false) =>
-  Argument.string(name).pipe(Argument.withFallbackPrompt(inputPrompt(name, pickFlow)))
+  Argument.String(name).pipe(Argument.withFallbackPrompt(inputPrompt(name, pickFlow)))
 
 const selectedFlow = (value: string) =>
   Effect.gen(function*() {
@@ -344,7 +344,7 @@ const runLaunch = (payload: ControlService.ApprovalInput) =>
 
 const run = Command.make("run", {
   plan: requiredArgument("plan-payload"),
-  resume: Flag.boolean("resume").pipe(
+  resume: Flag.Boolean("resume").pipe(
     Flag.withDefault(false),
     Flag.withDescription("Resume the parked run named by the positional argument")
   )
@@ -364,7 +364,7 @@ const resume = Command.make("resume", { runId: requiredArgument("run-id") }, (co
 const upFlags = {
   flow: requiredArgument("flow", true),
   data,
-  detached: Flag.boolean("detached").pipe(
+  detached: Flag.Boolean("detached").pipe(
     Flag.withDefault(false),
     Flag.withAlias("d"),
     Flag.withDescription("Launch a local executor in the background and print its run id and log path")
@@ -475,7 +475,7 @@ const approve = Command.make("approve", {
   // The interactive CLI is an operator affirming the whole launch, matching
   // `up`. MCP defaults to `once` because an omitted tool argument must not
   // widen a client's capabilities for the rest of the run.
-  scope: Flag.choice("scope", ["once", "run", "remembered"] as const).pipe(
+  scope: Flag.Literals("scope", ["once", "run", "remembered"] as const).pipe(
     Flag.withDefault(defaultApprovalScope),
     Flag.withDescription(
       "How far the grant reaches: this ask only, the whole run (the default, matching `up`), or every later run. " +
@@ -554,7 +554,7 @@ const signalCommand = Command.make("signal", {
 
 const steer = Command.make("steer", {
   runId: requiredArgument("run-id"),
-  message: Flag.string("message").pipe(
+  message: Flag.String("message").pipe(
     Flag.withDescription("Text to deliver as an attributed steering message to the run"),
     Flag.withFallbackPrompt(inputPrompt("--message"))
   ),
@@ -615,7 +615,7 @@ const workflowList = Command.make("list", {}, () => listFlows).pipe(
 
 const workflow = Command.make(
   "workflow",
-  { rest: Argument.string("subcommand").pipe(Argument.variadic()) },
+  { rest: Argument.String("subcommand").pipe(Argument.variadic()) },
   (config) => Effect.fail(Unsupported.verbError(Removed.verb("workflow"), config.rest[0]))
 ).pipe(
   Command.withDescription("Removed; only `workflow list` survives, as an alias of `ls`"),
@@ -624,13 +624,13 @@ const workflow = Command.make(
 )
 
 const ps = Command.make("ps", {
-  flow: Flag.string("flow").pipe(
+  flow: Flag.String("flow").pipe(
     Flag.optional,
     Flag.withDescription("Only list runs of this flow id")
   ),
   // Validated, not cast: at the import reference any string reached the store
   // as a `RunStatus`, so `--status done` listed nothing and said nothing.
-  status: Flag.choice(
+  status: Flag.Literals(
     "status",
     [
       "accepted",
@@ -737,14 +737,14 @@ const statusOf = (runId: Option.Option<string>) =>
   })
 
 const status = Command.make("status", {
-  runId: Argument.string("run-id").pipe(Argument.optional)
+  runId: Argument.String("run-id").pipe(Argument.optional)
 }, (config) => statusOf(config.runId)).pipe(
   Command.withDescription(Verb.find("status")!.help),
   Command.withAlias("inspect")
 )
 
 const why = Command.make("why", {
-  runId: Argument.string("run-id").pipe(Argument.optional)
+  runId: Argument.String("run-id").pipe(Argument.optional)
 }, (config) => statusOf(config.runId)).pipe(Command.withDescription("Alias of `status`"), Command.unlisted)
 
 const readLogs = (runId: Option.Option<string>, follow: boolean, forceJson: boolean) =>
@@ -794,8 +794,8 @@ const readLogs = (runId: Option.Option<string>, follow: boolean, forceJson: bool
   })
 
 const logs = Command.make("logs", {
-  runId: Argument.string("run-id").pipe(Argument.optional),
-  follow: Flag.boolean("follow").pipe(
+  runId: Argument.String("run-id").pipe(Argument.optional),
+  follow: Flag.Boolean("follow").pipe(
     Flag.withDefault(false),
     Flag.withDescription("Keep streaming new run events after the recorded history")
   )
@@ -804,8 +804,8 @@ const logs = Command.make("logs", {
 )
 
 const events = Command.make("events", {
-  runId: Argument.string("run-id").pipe(Argument.optional),
-  follow: Flag.boolean("follow").pipe(
+  runId: Argument.String("run-id").pipe(Argument.optional),
+  follow: Flag.Boolean("follow").pipe(
     Flag.withDefault(false),
     Flag.withDescription("Keep streaming new run events after the recorded history")
   )
@@ -816,7 +816,7 @@ const events = Command.make("events", {
 
 const output = Command.make("output", {
   runId: requiredArgument("run-id"),
-  nodeId: Argument.string("node-id").pipe(Argument.optional)
+  nodeId: Argument.String("node-id").pipe(Argument.optional)
 }, (config) =>
   Effect.gen(function*() {
     yield* guardGlobals
@@ -855,72 +855,72 @@ const down = Command.make("down", {}, () =>
  * `--json` is not repeated here because it is already a shared global.
  */
 const migrateFlags = {
-  scan: Flag.boolean("scan").pipe(
+  scan: Flag.Boolean("scan").pipe(
     Flag.withDefault(false),
     Flag.withDescription("Inventory the project and write the report without planning any unit")
   ),
-  apply: Flag.boolean("apply").pipe(
+  apply: Flag.Boolean("apply").pipe(
     Flag.withDefault(false),
     Flag.withDescription("Convert the project source, instead of planning the conversion")
   ),
-  seat: Flag.string("seat").pipe(
+  seat: Flag.String("seat").pipe(
     Flag.withDescription("The model seat the migration's agent runs on"),
     Flag.optional
   ),
-  allowUnsafe: Flag.string("allow-unsafe").pipe(
+  allowUnsafe: Flag.String("allow-unsafe").pipe(
     Flag.withDescription("Accept the named unsafe constructs, or `all`"),
     Flag.optional
   ),
-  acknowledgeRunState: Flag.boolean("acknowledge-run-state").pipe(
+  acknowledgeRunState: Flag.Boolean("acknowledge-run-state").pipe(
     Flag.withDefault(false),
     Flag.withDescription("Accept the 0.x run state the report lists and migrate the source anyway")
   ),
-  allowNoVcs: Flag.boolean("allow-no-vcs").pipe(
+  allowNoVcs: Flag.Boolean("allow-no-vcs").pipe(
     Flag.withDefault(false),
     Flag.withDescription("Accept a file copy as the only checkpoint, in a project under no version control")
   ),
-  keepOldSources: Flag.boolean("keep-old-sources").pipe(
+  keepOldSources: Flag.Boolean("keep-old-sources").pipe(
     Flag.withDefault(false),
     Flag.withDescription("Leave the 0.x sources in place beside the flows written from them")
   ),
-  unit: Flag.string("unit").pipe(
+  unit: Flag.String("unit").pipe(
     Flag.withDescription("Migrate only these units, comma separated"),
     Flag.optional
   ),
-  maxRepairRounds: Flag.integer("max-repair-rounds").pipe(
+  maxRepairRounds: Flag.Int("max-repair-rounds").pipe(
     Flag.withDescription("How many times one unit may be repaired before it is reported as failed"),
     Flag.optional
   ),
-  reportDir: Flag.string("report-dir").pipe(
+  reportDir: Flag.String("report-dir").pipe(
     Flag.withDescription("Where the report is written, relative to the project root"),
     Flag.optional
   ),
-  flowsDir: Flag.string("flows-dir").pipe(
+  flowsDir: Flag.String("flows-dir").pipe(
     Flag.withDescription("Where the written flows go, instead of `flows/`"),
     Flag.optional
   ),
-  verifyInstall: Flag.string("verify-install").pipe(
+  verifyInstall: Flag.String("verify-install").pipe(
     Flag.withDescription("The command that installs dependencies, instead of the one the lockfile implies"),
     Flag.optional
   ),
-  verifyFormat: Flag.string("verify-format").pipe(
+  verifyFormat: Flag.String("verify-format").pipe(
     Flag.withDescription("The command that formats the project, instead of the one its config implies"),
     Flag.optional
   ),
-  verifyTypecheck: Flag.string("verify-typecheck").pipe(
+  verifyTypecheck: Flag.String("verify-typecheck").pipe(
     Flag.withDescription(
       "The command that typechecks the project, repeatable; one empty value runs no typecheck at all"
     ),
     Flag.atLeast(0)
   ),
-  verifyTest: Flag.string("verify-test").pipe(
+  verifyTest: Flag.String("verify-test").pipe(
     Flag.withDescription("The command that runs the tests, instead of the project's own test script"),
     Flag.optional
   )
 }
 
 const migrate = Command.make("migrate", {
-  path: Argument.string("path").pipe(Argument.optional),
+  path: Argument.String("path").pipe(Argument.optional),
   to: Removed.valueFlag("to"),
   ...migrateFlags
 }, (config) =>
@@ -973,13 +973,13 @@ const update = Command.make("update", {}, () =>
 
 const bug = Command.make("bug", {
   summary: requiredArgument("summary"),
-  rest: Argument.string("summary").pipe(Argument.variadic()),
-  runId: Flag.string("run").pipe(Flag.optional, Flag.withDescription("Include only this run and its event digest")),
-  yes: Flag.boolean("yes").pipe(
+  rest: Argument.String("summary").pipe(Argument.variadic()),
+  runId: Flag.String("run").pipe(Flag.optional, Flag.withDescription("Include only this run and its event digest")),
+  yes: Flag.Boolean("yes").pipe(
     Flag.withDefault(false),
     Flag.withDescription("Post the previewed payload without an interactive confirmation")
   ),
-  dryRun: Flag.boolean("dry-run").pipe(
+  dryRun: Flag.Boolean("dry-run").pipe(
     Flag.withDefault(false),
     Flag.withDescription("Print the exact redacted payload and endpoint without posting")
   )
@@ -1014,11 +1014,11 @@ const doctor = Command.make("doctor", {}, () =>
   })).pipe(Command.withDescription(Verb.find("doctor")!.help))
 
 const gc = Command.make("gc", {
-  olderThan: Flag.string("older-than").pipe(
+  olderThan: Flag.String("older-than").pipe(
     Flag.withDefault(Gc.defaultRetention),
     Flag.withDescription("Delete terminal runs older than this duration, for example 7d")
   ),
-  dryRun: Flag.boolean("dry-run").pipe(
+  dryRun: Flag.Boolean("dry-run").pipe(
     Flag.withDescription("Report the runs and rows that would be deleted without deleting them")
   ).pipe(Flag.withDefault(false))
 }, (config) =>

@@ -204,7 +204,9 @@ const asBuildModule = (resolved, base) => {
  */
 const parentHooks = {
   resolve(specifier, context, nextResolve) {
-    const resolved = isCliOwned(specifier)
+    // CommonJS consumers must install their ordinary dependencies. Node 26
+    // also sends require() through these synchronous hooks.
+    const resolved = !context.conditions.includes("require") && isCliOwned(specifier)
       ? nextResolve(specifier, { ...context, parentURL: cliParentUrl })
       : nextResolve(specifier, context)
     const url = withoutNamespace(resolved.url)

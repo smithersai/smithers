@@ -746,9 +746,18 @@ const runtimeReads = (hostFacts: Host): ReadonlyArray<string> => {
     "/System/Library",
     "/System/Volumes/Preboot/Cryptexes/OS",
     "/private/var/db/dyld",
+    // macOS shell and developer-tool dispatch read these system selectors.
+    "/var/select/sh",
+    "/private/var/select/sh",
+    "/var/select/developer_dir",
+    "/private/var/select/developer_dir",
     "/Library/Apple",
     "/Library/Developer",
     "/Applications/Xcode.app/Contents/Developer",
+    "/Applications/Xcode.app/Contents/Info.plist",
+    "/Applications/Xcode.app/Contents/Frameworks",
+    "/Applications/Xcode.app/Contents/SharedFrameworks",
+    "/Applications/Xcode.app/Contents/PlugIns",
     "/etc/ld.so.cache",
     "/etc/ld.so.conf",
     "/etc/ld.so.conf.d",
@@ -934,10 +943,22 @@ export const seatbelt = (confinement: Plan, hostFacts: Host = host()): string =>
   if (confinement.readOnly.length > 0) {
     lines.push(`(deny file-write* ${confinement.readOnly.map((path) => `(subpath ${sbpl(path)})`).join(" ")})`)
   }
-  lines.push("(deny file-read*)", "(allow file-read* (literal \"/\") (subpath \"/dev\"))")
+  lines.push(
+    "(deny file-read*)",
+    "(allow file-read* (literal \"/\") (subpath \"/dev\"))",
+    // macOS's system aliases need readlink access before a shell can execute
+    // an admitted file through them. Literal grants expose the links only;
+    // their target directories still cannot be listed or read wholesale.
+    "(allow file-read* (literal \"/tmp\") (literal \"/var\") (literal \"/etc\"))"
+  )
   const runtime = runtimeReads(hostFacts)
   if (runtime.length > 0) lines.push(`(allow file-read* ${runtime.map((path) => `(subpath ${sbpl(path)})`).join(" ")})`)
   const readable = [...confinement.reads, ...confinement.writes, confinement.tmp]
+  // Node realpath walks every ancestor, including parents outside the
+  // workspace. Grant only their metadata, without listing or reading bytes.
+  const traversable = ancestors("/", [...runtime, ...readable, ...confinement.externalReads])
+    .filter((path) => !insideRoot(confinement.workspaceRoot, path))
+  lines.push(`(allow file-read-metadata ${traversable.map((path) => `(literal ${sbpl(path)})`).join(" ")})`)
   const listable = ancestors(
     confinement.workspaceRoot,
     readable.filter((path) => insideRoot(confinement.workspaceRoot, path))

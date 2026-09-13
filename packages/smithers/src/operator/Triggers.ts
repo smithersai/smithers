@@ -10,17 +10,22 @@ import { Effect, Layer, Option, Result } from "effect"
 import { Cli, z } from "incur"
 import { readFileSync } from "node:fs"
 import { resolve } from "node:path"
+import * as Presentation from "../cli/Presentation.ts"
 import * as NodeControl from "../NodeControl.ts"
 import { databaseLayer, localFields, type LocalOptions, localRoot } from "./Store.ts"
 import * as TriggerPlans from "./TriggerPlans.ts"
-import * as Presentation from "../cli/Presentation.ts"
 
 // Every operator command reports failures as operator_failed.
 const execute = <A>(context: Presentation.Failing, body: () => Promise<A>) =>
-  Presentation.guard(context, body, { code: "operator_failed", next: Presentation.runs({ otherwise: [
-    { command: "triggers list", description: "Inspect schedules and active launches" },
-    { command: "triggers show --help", description: "Inspect the exact approval card for a scheduled launch" }
-  ] }) })
+  Presentation.guard(context, body, {
+    code: "operator_failed",
+    next: Presentation.runs({
+      otherwise: [
+        { command: "triggers list", description: "Inspect schedules and active launches" },
+        { command: "triggers show --help", description: "Inspect the exact approval card for a scheduled launch" }
+      ]
+    })
+  })
 
 /** Executes one operation against the shared durable trigger store.
  * @category execution
@@ -68,8 +73,11 @@ export const createTriggersCli = (runtime: { readonly signal?: AbortSignal | und
               // The listing isolates a row it could not decode so a scheduler
               // tick can skip it. An operator asking for the registrations
               // wants the failure instead, naming the row that needs repair.
-              return yield* Effect.forEach(listing, (row) =>
-                Result.isFailure(row.trigger) ? Effect.fail(row.trigger.failure) : Effect.succeed(row.trigger.success))
+              return yield* Effect.forEach(
+                listing,
+                (row) =>
+                  Result.isFailure(row.trigger) ? Effect.fail(row.trigger.failure) : Effect.succeed(row.trigger.success)
+              )
             })
           ))
     })

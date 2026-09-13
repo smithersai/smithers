@@ -136,7 +136,10 @@ describe("shared command presentation", () => {
   it("does not put credentials or whole approval payloads in next actions", () => {
     const actions = Presentation.nextActions({ approval: { secret: "private" } }, {
       options: { remote: "https://user:secret@example.invalid/?token=secret", credential: "private" }
-    }, [{ command: "approvals approve --help", description: "Approve" }, { command: "flow execute --help", description: "Execute" }])
+    }, [{ command: "approvals approve --help", description: "Approve" }, {
+      command: "flow execute --help",
+      description: "Execute"
+    }])
     expect(actions).toHaveLength(2)
     expect(JSON.stringify(actions)).not.toMatch(/secret|private|example/)
   })
@@ -185,7 +188,12 @@ describe("shared command presentation", () => {
   it.each(
     [
       [{ _tag: "/cli/UsageError", message: "bad flag" }, {}, "UsageError", 2],
-      [{ _tag: "/cli/UsageError", message: "bad flag" }, { code: "operator_failed", exitCode: 5 }, "operator_failed", 2],
+      [
+        { _tag: "/cli/UsageError", message: "bad flag" },
+        { code: "operator_failed", exitCode: 5 },
+        "operator_failed",
+        2
+      ],
       [{ _tag: "/control/Unavailable", message: "down" }, {}, "Unavailable", 1],
       [new Error("Authorization: Bearer private-fixture"), { code: "history_failed" }, "history_failed", 1],
       ["plain", { exitCode: 5 }, "command_failed", 5]
@@ -278,8 +286,7 @@ describe("agent-friendly compatibility spellings", () => {
     expect(formattedLogArguments(["logs", "run-1", "--json"])).toBeUndefined()
     expect(formattedLogArguments(["logs", "run-1", "--format", "jsonl", "--backend=sqlite"])).toBeUndefined()
     expect(formattedLogArguments(["--backend", "sqlite", "logs", "run-1", "--format", "jsonl"])).toBeUndefined()
-    expect(legacyArguments(["init", "change", "--global"]))
-      .toEqual(["init", "change", "--global"])
+    expect(legacyArguments(["init", "change", "--global"])).toBeUndefined()
     expect(agentArguments(["--audience", "agent", "ps"])).toEqual(["runs", "list", "--audience", "agent"])
     expect(legacyArguments(["--audience", "human", "up", "hello", "--silent"])).toBeDefined()
   })

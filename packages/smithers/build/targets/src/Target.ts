@@ -1359,9 +1359,9 @@ export const make = <
   const errorSchema = options.error ?? Schema.Unknown
   const decodeSuccess = Schema.decodeUnknownSync(Schema.toType(successSchema))
   const schemaIdentity = freezeDocument({
-    attrs: Schema.toJsonSchemaDocument(options.attrs),
-    success: Schema.toJsonSchemaDocument(successSchema),
-    error: Schema.toJsonSchemaDocument(errorSchema)
+    attrs: Schema.toJsonSchemaDocument(options.attrs, { onExcessProperty: "error" }),
+    success: Schema.toJsonSchemaDocument(successSchema, { onExcessProperty: "error" }),
+    error: Schema.toJsonSchemaDocument(errorSchema, { onExcessProperty: "error" })
   })
   // The digest identifies the text of the functions a declaration passes in.
   // `Node.functionIdentity` is the wrong tool for that: for an uncaptured

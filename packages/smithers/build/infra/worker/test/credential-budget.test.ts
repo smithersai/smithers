@@ -229,7 +229,7 @@ describe("Rate Limiting bindings", () => {
   it("charges the request binding and the findMissing binding under the credential digest", async () => {
     const requests = binding(true)
     const probes = binding(false)
-    const budget = makeCredentialBudget(requests as unknown as RateLimit, probes as unknown as RateLimit)
+    const budget = makeCredentialBudget(requests, probes)
 
     expect(await budget.charge("digest-1", "request")).toBe(true)
     expect(await budget.charge("digest-2", "findMissing")).toBe(false)

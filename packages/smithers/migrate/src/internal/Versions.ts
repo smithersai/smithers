@@ -15,7 +15,7 @@
  * @since 1.0.0-rc.0
  * @private
  */
-export const effectVersion = "4.0.0-rc.112"
+export const effectVersion = "4.0.0-rc.115"
 
 /**
  * The version every `@smthrs/*` package a migrated project depends on ends on.

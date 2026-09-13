@@ -17,7 +17,7 @@ import * as Option from "effect/Option"
 import { readFileSync, rmSync } from "node:fs"
 import { join } from "node:path"
 import { afterAll, beforeAll, describe, expect, it } from "vitest"
-import { layer, Ledger, ledgerFile, lineageOf, makeWorkspace } from "./harness/timeTravelRun.ts"
+import { layer, ledgerFile, lineageOf, makeWorkspace, parkLedger } from "./harness/timeTravelRun.ts"
 
 const workspace = makeWorkspace("case11")
 beforeAll(() => workspace.enter())
@@ -46,7 +46,7 @@ describe("case11 frame scrub is view-only", () => {
   it("leaves the journal, the waiting row, and the workspace untouched", async () => {
     const observed = await Effect.runPromise(
       Effect.gen(function*() {
-        yield* Ledger.execute({ entry: "posted" }, { executionId, discard: true })
+        yield* parkLedger(executionId)
 
         const before = yield* fingerprint
         const timeTravel = yield* TimeTravel

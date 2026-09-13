@@ -4,7 +4,7 @@ exports[`Fetch extraction goldens recorded through the original PackageExec path
 {
   "cacheable": true,
   "inputs": [],
-  "key": "ef1b16f5bbb086f7d391f95456e4fe1d476386f5ee9f04f7fdb8c011b22faadc",
+  "key": "db826b250e6288a2169366659970def1f8169cc8bd74d8c44440e4c5e83c63ec",
   "material": {
     "body": {
       "cwd": ".",
@@ -51,16 +51,12 @@ exports[`Fetch extraction goldens recorded through the original PackageExec path
         "error": {
           "definitions": {},
           "dialect": "draft-2020-12",
-          "schema": {
-            "not": {},
-          },
+          "schema": {},
         },
         "success": {
           "definitions": {},
           "dialect": "draft-2020-12",
-          "schema": {
-            "type": "null",
-          },
+          "schema": {},
         },
       },
       "target": "Fetch",
@@ -117,7 +113,7 @@ exports[`Fetch extraction goldens recorded through the original PackageExec path
 exports[`Fetch extraction goldens recorded through the original PackageExec path > preserves complete key material, output, provenance, report, and cache replay > pre-extraction provenance 1`] = `
 {
   "exitOk": true,
-  "key": "ef1b16f5bbb086f7d391f95456e4fe1d476386f5ee9f04f7fdb8c011b22faadc",
+  "key": "db826b250e6288a2169366659970def1f8169cc8bd74d8c44440e4c5e83c63ec",
   "label": "//data:pinned",
   "output": {
     "files": [
@@ -138,7 +134,7 @@ exports[`Fetch extraction goldens recorded through the original PackageExec path
 exports[`Fetch extraction goldens recorded through the original PackageExec path > preserves complete key material, output, provenance, report, and cache replay > pre-extraction report 1`] = `
 [
   {
-    "key": "ef1b16f5bbb086f7d391f95456e4fe1d476386f5ee9f04f7fdb8c011b22faadc",
+    "key": "db826b250e6288a2169366659970def1f8169cc8bd74d8c44440e4c5e83c63ec",
     "label": "//data:pinned",
     "status": "ran",
     "target": "Fetch",

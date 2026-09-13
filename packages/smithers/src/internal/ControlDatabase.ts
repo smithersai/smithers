@@ -10,6 +10,7 @@ import * as NativeControlDatabase from "./NativeControlDatabase.ts"
  * @category layers
  * @since 1.0.0
  */
-export const layer = (file: string) => NativeControlDatabase.make(filename => NodeDatabase.layer({ filename }))(file).pipe(
-  Layer.provide(NodeServices.layer)
-)
+export const layer = (file: string) =>
+  NativeControlDatabase.make((filename) => NodeDatabase.layer({ filename }))(file).pipe(
+    Layer.provide(NodeServices.layer)
+  )

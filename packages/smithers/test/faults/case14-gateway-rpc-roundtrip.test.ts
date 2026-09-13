@@ -2,9 +2,10 @@
  * Case 14 — `smthrs serve` answers a real remote round trip.
  *
  * The whole point of the case is that nothing here shares a process with the
- * server: the plan, the approval, the launch, and the listing all cross a
- * socket to another operating-system process, are encoded and decoded by the
- * shipped RPC schemas, and land in a SQLite file this process never opens.
+ * server: planning, launching, and listing cross a socket through the shipped
+ * RPC schemas. Approval uses a separate local operator CLI, since bearer
+ * authentication does not delegate approval authority. Both paths land in a
+ * SQLite file this process never opens.
  * The server is the product's own command — `smthrs serve`, spawned from the
  * bin `@smthrs/cli` declares — so the composition, the authentication, and the
  * database location are the verb's decisions rather than the suite's.
@@ -16,7 +17,7 @@ import { existsSync, mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterAll, beforeAll, describe, expect, it } from "vitest"
-import { controlClient, type ServeProcess, startServe } from "./harness/serveProcess.ts"
+import { controlClient, localDecision, type ServeProcess, startServe } from "./harness/serveProcess.ts"
 
 const directory = mkdtempSync(join(tmpdir(), "smithers-e2e-case14-"))
 let server: ServeProcess
@@ -39,16 +40,14 @@ const remote = <A, E>(body: Effect.Effect<A, E, Control.Control>): Promise<A> =>
   )
 
 describe("case14 gateway RPC round trip", () => {
-  it("plans, approves, launches, and lists a run over the wire", async () => {
+  it("plans remotely, refuses bearer approval, then launches a locally approved run", async () => {
     const result = await remote(
       Effect.gen(function*() {
         const control = yield* Control.Control
         const card = yield* control.plan({ flowId: "system/test", input: { case: "case14" } })
-        yield* control.approve({
-          target: { _tag: "Plan", planId: card.planId, digest: card.digest, envelope: card.envelope },
-          scope: card.approval.scope,
-          idempotencyKey: `approve:${card.planId}`
-        })
+        expect((yield* Effect.flip(control.approve(card.approval)))._tag).toBe("/control/Unauthorized")
+        const decision = yield* Effect.promise(() => localDecision(directory, "approve", card.approval))
+        expect(decision, decision.stderr).toMatchObject({ status: 0 })
         const receipt = yield* control.run({
           _tag: "Plan",
           planId: card.planId,
@@ -83,11 +82,12 @@ describe("case14 gateway RPC round trip", () => {
     expect(existsSync(server.databasePath)).toBe(true)
   })
 
-  it("keeps an approval across restart and accepts the environment credential for later decisions", async () => {
+  it("keeps local approval across restart while environment credentials remain unable to decide", async () => {
     const card = await remote(Effect.gen(function*() {
       const control = yield* Control.Control
       const card = yield* control.plan({ flowId: "system/test", input: { case: "case14-restart" } })
-      yield* control.approve(card.approval)
+      const decision = yield* Effect.promise(() => localDecision(directory, "approve", card.approval))
+      expect(decision, decision.stderr).toMatchObject({ status: 0 })
       return card
     }))
     const pid = server.pid
@@ -107,7 +107,9 @@ describe("case14 gateway RPC round trip", () => {
       })
       expect(receipt._tag).toBe("Accepted")
       const approved = yield* control.plan({ flowId: "system/test", input: { case: "case14-env-approve" } })
-      yield* control.approve(approved.approval)
+      expect((yield* Effect.flip(control.approve(approved.approval)))._tag).toBe("/control/Unauthorized")
+      const approval = yield* Effect.promise(() => localDecision(directory, "approve", approved.approval))
+      expect(approval, approval.stderr).toMatchObject({ status: 0 })
       expect(
         (yield* control.run({
           _tag: "Plan",
@@ -118,7 +120,9 @@ describe("case14 gateway RPC round trip", () => {
         }))._tag
       ).toBe("Accepted")
       const denied = yield* control.plan({ flowId: "system/test", input: { case: "case14-env-deny" } })
-      yield* control.deny(denied.approval)
+      expect((yield* Effect.flip(control.deny(denied.approval)))._tag).toBe("/control/Unauthorized")
+      const denial = yield* Effect.promise(() => localDecision(directory, "deny", denied.approval))
+      expect(denial, denial.stderr).toMatchObject({ status: 0 })
       expect(
         (yield* Effect.flip(control.run({
           _tag: "Plan",

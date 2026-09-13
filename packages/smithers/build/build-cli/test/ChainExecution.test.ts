@@ -148,7 +148,7 @@ if (!hasForge) {
   console.warn("Foundry package execution tests SKIPPED: no `forge` on PATH")
 }
 
-describe.skipIf(!hasForge).sequential("Foundry package execution", () => {
+describe.skipIf(!hasForge)("Foundry package execution", { concurrent: false }, () => {
   it("builds and tests for real, caches both, and reports fmt drift", async () => {
     const root = await workspace()
     const built = await serve(root, ["//:foundryBuild"])
@@ -232,7 +232,7 @@ if (!engineAvailable) {
   )
 }
 
-describe.skipIf(!engineAvailable).sequential("Docker package execution", () => {
+describe.skipIf(!engineAvailable)("Docker package execution", { concurrent: false }, () => {
   it("builds an OCI archive through CAS and restores it on a cache hit", async () => {
     const root = await workspace()
     const built = await serve(root, ["//:dockerBuild"])

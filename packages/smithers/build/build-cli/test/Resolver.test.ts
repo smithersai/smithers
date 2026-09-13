@@ -435,22 +435,37 @@ describe("package imports closure", () => {
   })
 
   it("selects active nested conditions, arrays, and the most specific wildcard", async () => {
-    await write("package.json", JSON.stringify({ imports: {
-      "#lib/*": "./broad/*.ts",
-      "#lib/*.js": { browser: "./wrong.ts", node: { import: "./lib/*/*.ts", default: "./wrong.ts" } },
-      "#lib/exact.js": "./exact.ts",
-      "#lib/private.js": null,
-      "#fallback": [{ browser: "./wrong.ts" }, { default: "./fallback.ts" }],
-      "#inactive": { browser: "./wrong.ts" },
-      "#blocked": { node: null, default: "./wrong.ts" }
-    } }))
-    await write("entry.ts", `import "#lib/util.js"\nimport "#lib/$&.js"\nimport "#lib/exact.js"\nimport "#lib/private.js"\nimport "#fallback"\nimport "#inactive"\nimport "#blocked"\n`)
+    await write(
+      "package.json",
+      JSON.stringify({
+        imports: {
+          "#lib/*": "./broad/*.ts",
+          "#lib/*.js": { browser: "./wrong.ts", node: { import: "./lib/*/*.ts", default: "./wrong.ts" } },
+          "#lib/exact.js": "./exact.ts",
+          "#lib/private.js": null,
+          "#fallback": [{ browser: "./wrong.ts" }, { default: "./fallback.ts" }],
+          "#inactive": { browser: "./wrong.ts" },
+          "#blocked": { node: null, default: "./wrong.ts" }
+        }
+      })
+    )
+    await write(
+      "entry.ts",
+      `import "#lib/util.js"\nimport "#lib/$&.js"\nimport "#lib/exact.js"\nimport "#lib/private.js"\nimport "#fallback"\nimport "#inactive"\nimport "#blocked"\n`
+    )
     await write("lib/util/util.ts", `export const value = 1\n`)
     await write("lib/$&/$&.ts", `export const value = 4\n`)
     await write("exact.ts", `export const value = 2\n`)
     await write("fallback.ts", `export const value = 3\n`)
     const outcome = await closureOf(["entry.ts"])
-    expect(paths(outcome)).toEqual(["entry.ts", "exact.ts", "fallback.ts", "lib/$&/$&.ts", "lib/util/util.ts", "package.json"])
+    expect(paths(outcome)).toEqual([
+      "entry.ts",
+      "exact.ts",
+      "fallback.ts",
+      "lib/$&/$&.ts",
+      "lib/util/util.ts",
+      "package.json"
+    ])
     expect(outcome.result.packages).toEqual([])
     expect(outcome.result.unresolved).toEqual([
       { file: "entry.ts", specifier: "#blocked" },
@@ -460,9 +475,14 @@ describe("package imports closure", () => {
   })
 
   it("selects import and require conditions for their respective sites", async () => {
-    await write("package.json", JSON.stringify({ imports: {
-      "#lib": { import: "./esm.ts", require: "./cjs.cts" }
-    } }))
+    await write(
+      "package.json",
+      JSON.stringify({
+        imports: {
+          "#lib": { import: "./esm.ts", require: "./cjs.cts" }
+        }
+      })
+    )
     await write("entry.ts", `import "#lib"\nconst lib = require("#lib")\n`)
     await write("esm.ts", `export const value = 1\n`)
     await write("cjs.cts", `module.exports = 2\n`)
@@ -472,9 +492,16 @@ describe("package imports closure", () => {
   })
 
   it("resolves external aliases from the owning package and retains the original unresolved specifier", async () => {
-    await write("package.json", JSON.stringify({ imports: {
-      "#dep/*": "dep/*", "#missing": "absent", "#fs": "node:fs"
-    } }))
+    await write(
+      "package.json",
+      JSON.stringify({
+        imports: {
+          "#dep/*": "dep/*",
+          "#missing": "absent",
+          "#fs": "node:fs"
+        }
+      })
+    )
     await write("src/entry.ts", `import "#dep/public"\nimport "#dep/private"\nimport "#missing"\nimport "#fs"\n`)
     await write("node_modules/dep/package.json", JSON.stringify({ exports: { "./public": "./public.js" } }))
     await write("src/node_modules/dep/package.json", JSON.stringify({ exports: {} }))

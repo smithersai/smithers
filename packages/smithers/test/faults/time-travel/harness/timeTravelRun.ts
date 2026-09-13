@@ -17,9 +17,12 @@ import { Capability, Permission } from "@smthrs/capability"
 import { Action, DurableDeferred, Flow, Interpreter } from "@smthrs/flow"
 import { Engine } from "@smthrs/flows"
 import * as NodeRuntime from "@smthrs/flows/NodeRuntime"
+import { RunStore } from "@smthrs/run-store"
 import { SqlTimeTravelStore, TimeTravel } from "@smthrs/time-travel"
 import * as Effect from "effect/Effect"
+import * as Fiber from "effect/Fiber"
 import * as Layer from "effect/Layer"
+import * as Option from "effect/Option"
 import * as Schema from "effect/Schema"
 import { execFileSync } from "node:child_process"
 import { appendFileSync, mkdtempSync } from "node:fs"
@@ -62,6 +65,22 @@ export const Ledger = Flow.make("e2e/time-travel/ledger", {
   success: Schema.String,
   body: (payload) => Post.call(payload)
 })
+
+/** Stops a parked caller's automatic follow loop before inspecting its stable history. */
+export const parkLedger = (executionId: string) =>
+  Effect.gen(function*() {
+    const running = yield* Ledger.execute({ entry: "posted" }, { executionId }).pipe(Effect.forkChild)
+    const runs = yield* RunStore.RunStore
+    for (let attempt = 0; attempt < 1_000; attempt++) {
+      const row = yield* runs.get(executionId).pipe(Effect.option)
+      if (Option.isSome(row) && row.value.status === "suspended") {
+        yield* Fiber.interrupt(running)
+        return
+      }
+      yield* Effect.sleep("10 millis")
+    }
+    return yield* Effect.die(new Error(`Run ${executionId} did not park`))
+  })
 
 /**
  * A jj repository with a committed baseline, and the paths inside it.

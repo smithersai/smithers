@@ -15,6 +15,7 @@ import {
 } from "@smthrs/control"
 import * as TestControl from "@smthrs/control/test/TestControl"
 import * as McpClient from "@smthrs/mcp/McpClient"
+import { NotificationError } from "@smthrs/notifications/NotificationQueue"
 import { Cause, Effect, Exit, Layer, Schema, Stream } from "effect"
 import { mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
@@ -418,6 +419,7 @@ describe("the envelope", () => {
       [new ControlError.TransportError({ message: secret, retryable: true }), "TRANSPORT_ERROR"],
       [new ControlError.PersistenceError({ operation: "list", message: secret }), "PERSISTENCE_ERROR"],
       [new ControlError.LaunchFailed({ runId: "run", message: secret }), "LAUNCH_FAILED"],
+      [new NotificationError({ code: "notification_unavailable", message: secret }), "NOTIFICATION_ERROR"],
       [new ControlError.NoMatchingWait({ runId: "run", waitName: "wake" }), "NO_MATCHING_WAIT"],
       [
         new ControlError.CredentialConflict({ id: "credential", expectedVersion: 1, actualVersion: 2 }),
@@ -1149,7 +1151,11 @@ describe("list tools page past the first Control page", () => {
       }))
   ).pipe(Layer.provide(control))
 
-  type Paged = { readonly ok: true; readonly data: ReadonlyArray<Record<string, unknown>>; readonly nextCursor?: string }
+  type Paged = {
+    readonly ok: true
+    readonly data: ReadonlyArray<Record<string, unknown>>
+    readonly nextCursor?: string
+  }
 
   it("continues list_flows across the boundary and still hides reserved flows", async () => {
     const first = await rpcCallWith(pagedControl, "list_flows") as Paged

@@ -31,7 +31,7 @@ describe("case15 WebSocket drop and reconnect", () => {
     const runId = await suite.remoteWith(
       { credential, sockets },
       Effect.gen(function*() {
-        const run = yield* launchRun("case15")
+        const run = yield* launchRun("case15", suite.server().root)
         yield* emitSignals(run.runId, 5, "before")
         return run.runId
       })

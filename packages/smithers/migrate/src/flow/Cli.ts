@@ -29,42 +29,42 @@ const optional = <A>(value: { readonly _tag: "Some"; readonly value: A } | { rea
   value._tag === "Some" ? value.value : undefined
 
 const flags = {
-  root: Flag.string("root").pipe(Flag.optional),
-  scan: Flag.boolean("scan").pipe(Flag.withDefault(false)),
-  apply: Flag.boolean("apply").pipe(Flag.withDefault(false)),
-  seat: Flag.string("seat").pipe(Flag.optional),
-  allowUnsafe: Flag.string("allow-unsafe").pipe(Flag.optional),
-  acknowledgeRunState: Flag.boolean("acknowledge-run-state").pipe(Flag.withDefault(false)),
-  allowNoVcs: Flag.boolean("allow-no-vcs").pipe(Flag.withDefault(false)),
-  keepOldSources: Flag.boolean("keep-old-sources").pipe(Flag.withDefault(false)),
-  unit: Flag.string("unit").pipe(Flag.optional),
-  maxRepairRounds: Flag.integer("max-repair-rounds").pipe(Flag.optional),
-  reportDir: Flag.string("report-dir").pipe(Flag.optional),
-  flowsDir: Flag.string("flows-dir").pipe(Flag.optional),
+  root: Flag.String("root").pipe(Flag.optional),
+  scan: Flag.Boolean("scan").pipe(Flag.withDefault(false)),
+  apply: Flag.Boolean("apply").pipe(Flag.withDefault(false)),
+  seat: Flag.String("seat").pipe(Flag.optional),
+  allowUnsafe: Flag.String("allow-unsafe").pipe(Flag.optional),
+  acknowledgeRunState: Flag.Boolean("acknowledge-run-state").pipe(Flag.withDefault(false)),
+  allowNoVcs: Flag.Boolean("allow-no-vcs").pipe(Flag.withDefault(false)),
+  keepOldSources: Flag.Boolean("keep-old-sources").pipe(Flag.withDefault(false)),
+  unit: Flag.String("unit").pipe(Flag.optional),
+  maxRepairRounds: Flag.Int("max-repair-rounds").pipe(Flag.optional),
+  reportDir: Flag.String("report-dir").pipe(Flag.optional),
+  flowsDir: Flag.String("flows-dir").pipe(Flag.optional),
   // What the project really runs to verify itself. The detection ladder reads
   // the manifests and the lockfile and is right about most projects; these are
   // for the rest. They matter more than a convenience: the agent's shell is
   // confined to these exact command lines, so a wrongly derived command is one
   // an operator has no other way to correct.
-  verifyInstall: Flag.string("verify-install").pipe(
+  verifyInstall: Flag.String("verify-install").pipe(
     Flag.withDescription("The command that installs dependencies, instead of the one the lockfile implies"),
     Flag.optional
   ),
-  verifyFormat: Flag.string("verify-format").pipe(
+  verifyFormat: Flag.String("verify-format").pipe(
     Flag.withDescription("The command that formats the project, instead of the one its config implies"),
     Flag.optional
   ),
-  verifyTypecheck: Flag.string("verify-typecheck").pipe(
+  verifyTypecheck: Flag.String("verify-typecheck").pipe(
     Flag.withDescription(
       "The command that typechecks the project, repeatable; one empty value runs no typecheck at all"
     ),
     Flag.atLeast(0)
   ),
-  verifyTest: Flag.string("verify-test").pipe(
+  verifyTest: Flag.String("verify-test").pipe(
     Flag.withDescription("The command that runs the tests, instead of the project's own test script"),
     Flag.optional
   ),
-  json: Flag.boolean("json").pipe(Flag.withDefault(false))
+  json: Flag.Boolean("json").pipe(Flag.withDefault(false))
 }
 
 /**

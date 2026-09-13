@@ -14,8 +14,8 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { describe, expect, it } from "vitest"
 import * as CoreFlow from "../flows/core/src/Flow.ts"
-import * as NodeControl from "../src/NodeControl.ts"
 import { ModuleOwner } from "../src/internal/ModuleOwner.ts"
+import * as NodeControl from "../src/NodeControl.ts"
 
 const definition = {
   description: "A native module with durable children.",

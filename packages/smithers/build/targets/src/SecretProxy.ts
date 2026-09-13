@@ -586,11 +586,11 @@ export const startProxy = (vault: Vault): Promise<Proxy> =>
         // process instead of this one target.
         let upstream: NodeHttp.ClientRequest | undefined
         let incoming: NodeHttp.IncomingMessage | undefined
-        let deadline: ReturnType<typeof setTimeout> | undefined
+        const timer: { deadline: ReturnType<typeof setTimeout> | undefined } = { deadline: undefined }
         const responseChunks: Array<Buffer> = []
         let settled = false
         const clear = () => {
-          clearTimeout(deadline)
+          clearTimeout(timer.deadline)
           upstream?.setTimeout(0)
           chunks.length = 0
           responseChunks.length = 0
@@ -686,7 +686,7 @@ export const startProxy = (vault: Vault): Promise<Proxy> =>
         response.once("close", () => {
           if (!response.writableEnded) fail("upstream request failed: child disconnected")
         })
-        deadline = setTimeout(timedOut, upstreamTimeoutMs)
+        timer.deadline = setTimeout(timedOut, upstreamTimeoutMs)
         upstream.end(body)
       })
     })

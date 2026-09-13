@@ -31,7 +31,7 @@ import * as ControlServer from "@smthrs/control/ControlServer"
 import { SyncRpcs } from "@smthrs/sync/SyncRpcs"
 import * as SyncServer from "@smthrs/sync/SyncServer"
 import { Effect, Layer, Schema, Stream, type Types } from "effect"
-import * as FileSystem from "effect/FileSystem"
+import * as ByteSize from "effect/ByteSize"
 import { HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/unstable/http"
 import { RpcSerialization, RpcServer } from "effect/unstable/rpc"
 import { GatewayError, settingRefusal } from "./GatewayError.ts"
@@ -640,7 +640,7 @@ export const layerIngress = (options: IngressOptions = {}) => {
           // re-encoding of its MessagePack bytes, with every invalid sequence
           // replaced. A binary body is bounded here and framed by the mount.
           const read = yield* (binary ? Effect.as(request.arrayBuffer, undefined) : request.text).pipe(
-            Effect.provideService(HttpServerRequest.MaxBodySize, FileSystem.Size(maxBytes)),
+            Effect.provideService(HttpServerRequest.MaxBodySize, ByteSize.bytes(maxBytes)),
             Effect.match({
               onFailure: (error): { readonly body: string | undefined; readonly error: unknown } => ({
                 body: undefined,

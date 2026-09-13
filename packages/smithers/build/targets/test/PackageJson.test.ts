@@ -299,19 +299,23 @@ describe("publish derivation", () => {
     expect(layout.every((output) => output.entry === null && output.declaration === null)).toBe(true)
     expect(() => publishFields(lib, "//packages/widget:lib", { access: "public", provenance: true }))
       .toThrow(/publish entry .*lib.*no declarations/)
-    expect(() => manifest(
-      PackageJson({ name: "widget", version: "0.1.0", publish: { entry: lib } }),
-      [[lib, "//packages/widget:lib"]]
-    )).toThrow(/no declarations/)
+    expect(() =>
+      manifest(
+        PackageJson({ name: "widget", version: "0.1.0", publish: { entry: lib } }),
+        [[lib, "//packages/widget:lib"]]
+      )
+    ).toThrow(/no declarations/)
   })
 
-  it.each([
-    ["tsc", "esm"],
-    ["tsc", "cjs"],
-    ["program", "esm"],
-    ["program", "cjs"],
-    ["program", "dual"]
-  ] as const)("derives %s %s entry paths within the build outputs", (name, format) => {
+  it.each(
+    [
+      ["tsc", "esm"],
+      ["tsc", "cjs"],
+      ["program", "esm"],
+      ["program", "cjs"],
+      ["program", "dual"]
+    ] as const
+  )("derives %s %s entry paths within the build outputs", (name, format) => {
     const tool: Tool = name === "tsc" ? { name } : { name, entry: Input.file("scripts/build.mjs") }
     const lib = build("packages/widget", format, tool)
     const fields = publishFields(lib, "//packages/widget:lib", { access: "public", provenance: true })

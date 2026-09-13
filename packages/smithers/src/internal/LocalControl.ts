@@ -10,7 +10,10 @@ import { Effect, Layer } from "effect"
 import type { Engine } from "../Application.ts"
 import * as ExecutorOwnership from "../ExecutorOwnership.ts"
 
-/** Private host policy over the same durable queue and runtime. */
+/** Private host policy over the same durable queue and runtime.
+ * @since 1.0.0
+ * @private
+ */
 export type NotificationDecorator = (
   queue: NotificationQueue.Service,
   control: ControlRuntime.Service,
@@ -37,18 +40,24 @@ export const layer = (
   const notifications = decorateNotifications === undefined ? queue : Layer.effect(
     NotificationQueue.NotificationQueue,
     Effect.gen(function*() {
-      return decorateNotifications(yield* NotificationQueue.NotificationQueue, yield* ControlRuntime.ControlRuntime,
-        yield* Journal.Journal)
+      return decorateNotifications(
+        yield* NotificationQueue.NotificationQueue,
+        yield* ControlRuntime.ControlRuntime,
+        yield* Journal.Journal
+      )
     })
   ).pipe(Layer.provide([queue, engine.runtime, engine.journal]))
-  return Layer.merge((executor === undefined ? ControlLive.layer : ControlLive.layer.pipe(Layer.provide(executor))).pipe(
-    Layer.provide([
-      engine.runtime,
-      engine.journal,
-      // The real queue, over the same journal the control plane writes to.
-      // `layerNoop` dropped every notification on the floor.
-      notifications,
-      registry
-    ])
-  ), ExecutorOwnership.layer(executor !== undefined))
+  return Layer.merge(
+    (executor === undefined ? ControlLive.layer : ControlLive.layer.pipe(Layer.provide(executor))).pipe(
+      Layer.provide([
+        engine.runtime,
+        engine.journal,
+        // The real queue, over the same journal the control plane writes to.
+        // `layerNoop` dropped every notification on the floor.
+        notifications,
+        registry
+      ])
+    ),
+    ExecutorOwnership.layer(executor !== undefined)
+  )
 }

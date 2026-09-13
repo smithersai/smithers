@@ -20,6 +20,7 @@ const ports = vi.hoisted(() => ({
   watch: vi.fn(),
   reconcile: vi.fn(),
   prepare: vi.fn(),
+  localRoot: vi.fn(),
   progress: vi.fn(),
   event: vi.fn(),
   close: vi.fn()
@@ -38,6 +39,11 @@ vi.mock("../src/history/History.ts", async (load) => ({
 vi.mock("../src/cli/RunProgress.ts", async (load) => ({
   ...await load<typeof import("../src/cli/RunProgress.ts")>(),
   make: ports.progress
+}))
+
+vi.mock("../src/Project.ts", async (load) => ({
+  ...await load<typeof import("../src/Project.ts")>(),
+  localRoot: ports.localRoot
 }))
 
 const directories: Array<string> = []
@@ -66,6 +72,7 @@ beforeEach(() => {
   )
   ports.watch.mockReturnValue(Stream.empty)
   ports.events.mockImplementation(async function*() {})
+  ports.localRoot.mockImplementation((options) => options.root ?? process.cwd())
   ports.prepare.mockReturnValue({ executionRoot: "/isolated-child" })
   ports.progress.mockReturnValue({ event: ports.event, close: ports.close })
 })
@@ -370,11 +377,7 @@ describe("unified control dispatch", () => {
       cancelled: ["accepted", "running", "parked", "approval"].map((runId) => ({
         runId,
         receipt: { _tag: "Accepted", receiptId: `cli:cancel:${runId}`, runId }
-      })),
-      cta: {
-        description: "Suggested command:",
-        commands: [{ command: "smthrs runs list --root /fixture", description: "List the current durable run records" }]
-      }
+      }))
     })
   })
 

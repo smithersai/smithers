@@ -9,7 +9,7 @@
  * rest. They are written as laws rather than as a second implementation, so a
  * mistake made twice cannot pass them.
  */
-import { FastCheck } from "effect/testing"
+import * as FastCheck from "fast-check"
 import { describe, expect, it } from "vitest"
 import type { Notification } from "../src/Notification.ts"
 import * as NotificationState from "../src/NotificationState.ts"

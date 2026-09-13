@@ -3,6 +3,11 @@ import * as GithubTarget from "../src/GithubTarget.ts"
 import * as Target from "../src/Target.ts"
 
 describe("Github.Workflow build-system attrs", () => {
+  it("refuses attributes read through the wrong rule accessor", () => {
+    const setup = GithubTarget.Setup({})
+    expect(() => GithubTarget.workflowAttrsOf(setup)).toThrow("expected a Github.Workflow target")
+  })
+
   it("accepts typed triggers, workflow policy, and raw steps without run targets", () => {
     const workflow = GithubTarget.Workflow({
       name: "coordinate",

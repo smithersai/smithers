@@ -190,18 +190,36 @@ describe("bulk cancellation", processBudget, () => {
         const insert = seeded.prepare(
           "INSERT INTO flows_runs (run_id, status, created_at_ms, state_json) VALUES (?, ?, ?, ?)"
         )
-        insert.run("older-live-run", "suspended", 1, JSON.stringify({
-          runId: "older-live-run", flowId: "demo/ship", status: "parked", createdAt: 1, updatedAt: 1
-        }))
+        insert.run(
+          "older-live-run",
+          "suspended",
+          1,
+          JSON.stringify({
+            runId: "older-live-run",
+            flowId: "demo/ship",
+            status: "parked",
+            createdAt: 1,
+            updatedAt: 1
+          })
+        )
         // Control-launched runs sort before unindexed engine children,
         // even when the child is older than all the terminal history.
         const indexRun = seeded.prepare("INSERT INTO control_runs (run_id, created_seq) VALUES (?, ?)")
         for (let index = 0; index < 101; index++) {
           const runId = `terminal-${index}`
           indexRun.run(runId, index + 1)
-          insert.run(runId, "completed", index + 2, JSON.stringify({
-            runId, flowId: "demo/ship", status: "completed", createdAt: index + 2, updatedAt: index + 2
-          }))
+          insert.run(
+            runId,
+            "completed",
+            index + 2,
+            JSON.stringify({
+              runId,
+              flowId: "demo/ship",
+              status: "completed",
+              createdAt: index + 2,
+              updatedAt: index + 2
+            })
+          )
         }
       } finally {
         seeded.close()
@@ -1383,6 +1401,7 @@ const stageUnservableSeat = (): string => {
       "---",
       "name: failing",
       "description: A flow whose seat resolves and whose first turn cannot.",
+      "capabilities: []",
       "model: openai:gpt-5-mini",
       "---",
       "",
@@ -1682,21 +1701,6 @@ describe("the smthrs init scaffold, launched as written", processBudget, () => {
       env: environment
     })
 
-  /** One run's control row, as the next process finds it on disk. */
-  const controlRun = (
-    cwd: string,
-    runId: string
-  ): { status: string; finished_at_ms: number | null } | undefined => {
-    const handle = new DatabaseSync(join(cwd, ".flows", "control.db"), { readOnly: true })
-    try {
-      return handle.prepare(
-        "SELECT status, finished_at_ms FROM flows_runs WHERE run_id = ?"
-      ).get(runId) as unknown as { status: string; finished_at_ms: number | null } | undefined
-    } finally {
-      handle.close()
-    }
-  }
-
   /** Every run row `engine.db` holds, which for an unlaunched run is none. */
   const engineRunIds = (cwd: string): ReadonlyArray<string> => {
     const file = join(cwd, ".flows", "engine.db")
@@ -1745,7 +1749,7 @@ describe("the smthrs init scaffold, launched as written", processBudget, () => {
     }
   })
 
-  it("refuses the launch by naming the missing key, and leaves both databases terminal", () => {
+  it("refuses the launch by naming the missing key and rolls back its admission", () => {
     const cwd = stageEmptyProject()
     try {
       const environment = withoutSeats()
@@ -1765,29 +1769,18 @@ describe("the smthrs init scaffold, launched as written", processBudget, () => {
       // document for a pipeline to choke on.
       expect(launched.stdout).toBe("")
 
-      // The run the refusal is about is over, on disk, in the process that
-      // refused it. Before this it stayed `accepted` under an owner with pid
-      // 0, and `smthrs cancel` was the only way to end it.
+      // Control rows and their journal now share one transaction. A refused
+      // admission rolls back completely, leaving no ownerless run to reclaim.
       const listed = smithers(cwd, ["ps", "--json"], environment)
       expect(listed.status).toBe(0)
       const runs = (JSON.parse(listed.stdout) as {
         readonly items: ReadonlyArray<{ readonly runId: string; readonly status: string }>
       }).items
-      expect(runs).toHaveLength(1)
-      const runId = runs[0]!.runId
-      expect(runs[0]!.status).toBe("failed")
-
-      const row = controlRun(cwd, runId)
-      expect(row?.status).toBe("failed")
-      expect(row?.finished_at_ms).not.toBeNull()
+      expect(runs).toEqual([])
       // No engine row was ever created: the executor refused before the engine
       // was handed anything, so there is nothing for a later sweep to reclaim.
       expect(engineRunIds(cwd)).toEqual([])
 
-      // The verbs an operator reaches for next all read it as over.
-      const status = smithers(cwd, ["status", runId], environment)
-      expect(status.status).toBe(0)
-      expect(status.stdout).toContain("failed")
       // `--older-than 0s` is refused, because "delete everything" wearing the
       // spelling of a retention policy is the flag's most destructive value.
       // A sweep therefore has to name a real window and wait it out.
@@ -1797,7 +1790,6 @@ describe("the smthrs init scaffold, launched as written", processBudget, () => {
       waitOut(1_100)
       const swept = smithers(cwd, ["gc", "--older-than", "1s", "--dry-run", "--json"], environment)
       expect(swept.status).toBe(0)
-      expect(swept.stdout).toContain(runId)
     } finally {
       rmSync(cwd, { recursive: true, force: true })
     }
@@ -1809,10 +1801,10 @@ describe("the smthrs init scaffold, launched as written", processBudget, () => {
       const environment = withoutSeats()
       expect(smithers(cwd, ["init", "hello", "--json"], environment).status).toBe(0)
       expect(smithers(cwd, ["up", "hello", "--json"], environment).status).toBe(1)
-      const runId = (JSON.parse(smithers(cwd, ["ps", "--json"], environment).stdout) as {
-        readonly items: ReadonlyArray<{ readonly runId: string }>
-      }).items[0]!.runId
-      const settled = controlRun(cwd, runId)
+      const initial = JSON.parse(smithers(cwd, ["ps", "--json"], environment).stdout) as {
+        items: ReadonlyArray<unknown>
+      }
+      expect(initial.items).toEqual([])
 
       // A second `smithers` over the same `.flows` composes its own executor,
       // exactly as every local verb does, and sweeps for stale rows as it
@@ -1820,12 +1812,11 @@ describe("the smthrs init scaffold, launched as written", processBudget, () => {
       const second = smithers(cwd, ["up", "hello", "--json"], environment)
       expect(second.status).toBe(1)
 
-      expect(controlRun(cwd, runId)).toEqual(settled)
       expect(engineRunIds(cwd)).toEqual([])
       const runs = (JSON.parse(smithers(cwd, ["ps", "--json"], environment).stdout) as {
         readonly items: ReadonlyArray<{ readonly runId: string; readonly status: string }>
       }).items
-      expect(runs.map((entry) => entry.status)).toEqual(["failed", "failed"])
+      expect(runs).toEqual([])
     } finally {
       rmSync(cwd, { recursive: true, force: true })
     }

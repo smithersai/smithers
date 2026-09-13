@@ -4,6 +4,12 @@
  */
 import { Context } from "effect"
 
+/**
+ * Native module identity supplied by the owning host.
+ *
+ * @since 1.0.0
+ * @private
+ */
 export class ModuleOwner extends Context.Service<ModuleOwner, {
   readonly rootId: string
   readonly flowId: string

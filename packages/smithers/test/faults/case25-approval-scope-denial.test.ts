@@ -1,11 +1,10 @@
 /**
  * Case 25 — an approval authorises exactly what was reviewed, and nothing else.
  *
- * Three refusals, all from the served control plane rather than from a client
- * guard: an unauthenticated caller never reaches `Control` at all; a caller who
- * mutates the envelope after reading the card is refused; and a caller who
- * quotes a digest the server did not issue is refused. Each refusal is a typed
- * control failure on the wire, not a transport error.
+ * Unauthenticated callers and bearer callers without approval delegation are
+ * refused over RPC. An authorized local operator is still bound by the exact
+ * reviewed envelope, digest and single-decision token. The operator runs the
+ * shipped CLI in another process against the served workspace.
  */
 import { Control, ControlError } from "@smthrs/control"
 import * as Cause from "effect/Cause"
@@ -13,6 +12,7 @@ import * as Effect from "effect/Effect"
 import * as Exit from "effect/Exit"
 import { afterAll, beforeAll, describe, expect, it } from "vitest"
 import { servedSuite } from "./harness/servedSuite.ts"
+import { localDecision } from "./harness/serveProcess.ts"
 
 const suite = servedSuite("case25")
 
@@ -41,67 +41,61 @@ describe("case25 approval scope denial", () => {
     }
   })
 
-  it("refuses an approval whose envelope was edited after the card was read", async () => {
-    const outcome = await suite.remote(
-      Effect.gen(function*() {
-        const control = yield* Control.Control
-        const card = yield* plan
-        const widened = { ...card.envelope, capabilities: [...card.envelope.capabilities, "fs:write *"] }
-        return yield* Effect.exit(
-          control.approve({
-            target: { _tag: "Plan", planId: card.planId, digest: card.digest, envelope: widened as never },
-            scope: card.approval.scope,
-            idempotencyKey: `envelope:${card.planId}`
-          })
-        )
-      })
-    )
-    expect(Exit.isFailure(outcome)).toBe(true)
-    if (Exit.isFailure(outcome)) {
-      expect(Cause.squash(outcome.cause)).toBeInstanceOf(ControlError.EnvelopeMismatch)
-    }
-  })
-
-  it("refuses an approval quoting a digest the server never issued", async () => {
-    const outcome = await suite.remote(
-      Effect.gen(function*() {
-        const control = yield* Control.Control
-        const card = yield* plan
-        return yield* Effect.exit(
-          control.approve({
-            target: { _tag: "Plan", planId: card.planId, digest: `${card.digest}-tampered`, envelope: card.envelope },
-            scope: card.approval.scope,
-            idempotencyKey: `digest:${card.planId}`
-          })
-        )
-      })
-    )
-    expect(Exit.isFailure(outcome)).toBe(true)
-    if (Exit.isFailure(outcome)) {
-      expect(Cause.squash(outcome.cause)).toBeInstanceOf(ControlError.PlanDigestMismatch)
-    }
-  })
-
-  it("refuses a second decision on a token that is already resolved", async () => {
-    const outcome = await suite.remote(
-      Effect.gen(function*() {
-        const control = yield* Control.Control
-        const card = yield* plan
-        const target = {
-          _tag: "Plan" as const,
-          planId: card.planId,
-          digest: card.digest,
-          envelope: card.envelope
+  it("refuses bearer decisions before disclosing target validation or resolution", async () => {
+    await suite.remote(Effect.gen(function*() {
+      const control = yield* Control.Control
+      const card = yield* plan
+      const targets = [
+        card.approval.target,
+        { ...card.approval.target, digest: `${card.digest}-tampered` },
+        {
+          ...card.approval.target,
+          envelope: { ...card.envelope, capabilities: [...card.envelope.capabilities, "fs:write *"] }
         }
-        yield* control.approve({ target, scope: card.approval.scope, idempotencyKey: `once:${card.planId}` })
-        return yield* Effect.exit(
-          control.deny({ target, scope: card.approval.scope, idempotencyKey: `twice:${card.planId}` })
-        )
-      })
-    )
-    expect(Exit.isFailure(outcome)).toBe(true)
-    if (Exit.isFailure(outcome)) {
-      expect(Cause.squash(outcome.cause)).toBeInstanceOf(ControlError.AlreadyResolved)
-    }
+      ]
+      for (const target of targets) {
+        const input = { ...card.approval, target }
+        expect((yield* Effect.flip(control.approve(input)))._tag).toBe("/control/Unauthorized")
+        expect((yield* Effect.flip(control.deny(input)))._tag).toBe("/control/Unauthorized")
+      }
+      const decision = yield* Effect.promise(() => localDecision(suite.server().root, "approve", card.approval))
+      expect(decision, decision.stderr).toMatchObject({ status: 0 })
+      expect((yield* Effect.flip(control.deny(card.approval)))._tag).toBe("/control/Unauthorized")
+    }))
+  })
+
+  it("refuses a local approval whose envelope was edited after the card was read", async () => {
+    const card = await suite.remote(plan)
+    const outcome = await localDecision(suite.server().root, "approve", {
+      ...card.approval,
+      target: {
+        ...card.approval.target,
+        envelope: { ...card.envelope, capabilities: [...card.envelope.capabilities, "fs:write *"] }
+      }
+    })
+    expect(outcome.status).toBe(1)
+    expect(outcome.stdout + outcome.stderr).toContain("EnvelopeMismatch")
+  })
+
+  it("refuses a local approval quoting a digest the server never issued", async () => {
+    const card = await suite.remote(plan)
+    const outcome = await localDecision(suite.server().root, "approve", {
+      ...card.approval,
+      target: { ...card.approval.target, digest: `${card.digest}-tampered` }
+    })
+    expect(outcome.status).toBe(1)
+    expect(outcome.stdout + outcome.stderr).toContain("PlanDigestMismatch")
+  })
+
+  it("refuses a second authorized decision on a token that is already resolved", async () => {
+    const card = await suite.remote(plan)
+    const approved = await localDecision(suite.server().root, "approve", card.approval)
+    expect(approved, approved.stderr).toMatchObject({ status: 0 })
+    const outcome = await localDecision(suite.server().root, "deny", {
+      ...card.approval,
+      idempotencyKey: `twice:${card.planId}`
+    })
+    expect(outcome.status).toBe(1)
+    expect(outcome.stdout + outcome.stderr).toContain("AlreadyResolved")
   })
 })

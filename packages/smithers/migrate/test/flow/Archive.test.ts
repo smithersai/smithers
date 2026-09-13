@@ -39,7 +39,7 @@ describe("Archive.rewriteManifest", () => {
       add: ["effect"]
     })
     expect((JSON.parse(text) as { dependencies: Record<string, string> }).dependencies.effect)
-      .toBe("4.0.0-rc.112")
+      .toBe("4.0.0-rc.115")
   })
 
   it("rewrites `smithers up <file>` into the canonical flow start command", () => {

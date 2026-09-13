@@ -301,6 +301,89 @@ describe("generator backup recovery and bounds", () => {
   })
 
   it.each([
+    { fileBytes: -1 },
+    { totalBytes: -1 },
+    { fileBytes: NaN },
+    { totalBytes: 1.5 },
+    { fileBytes: 256 * 1024 * 1024 + 1 },
+    { totalBytes: 1024 * 1024 * 1024 + 1 }
+  ])("refuses invalid snapshot budgets without starting the generator: %j", async (limits) => {
+    const root = await directory()
+    const result = await check(root, "require('node:fs').writeFileSync('ran', 'yes')", ["out"], limits)
+    expect(Exit.isFailure(result)).toBe(true)
+    expect(JSON.stringify(result)).toContain("must be an integer")
+    await expect(Fs.stat(NodePath.join(root, "ran"))).rejects.toThrow()
+  })
+
+  it("restores a symlink changed by the generator without modifying either target", async () => {
+    const root = await directory()
+    await Fs.writeFile(NodePath.join(root, "a"), "original")
+    await Fs.writeFile(NodePath.join(root, "b"), "other")
+    await Fs.symlink("a", NodePath.join(root, "out"))
+    const result = await check(root, "const fs=require('node:fs');fs.unlinkSync('out');fs.symlinkSync('b','out')")
+    expect(Exit.isFailure(result)).toBe(true)
+    expect(await Fs.readlink(NodePath.join(root, "out"))).toBe("a")
+    expect(await Fs.readFile(NodePath.join(root, "a"), "utf8")).toBe("original")
+    expect(await Fs.readFile(NodePath.join(root, "b"), "utf8")).toBe("other")
+  })
+
+  it("rejects a non-directory ancestor before running a generator", async () => {
+    const root = await directory()
+    await Fs.writeFile(NodePath.join(root, "out"), "keep")
+    const result = await check(root, "void 0", ["out/deep/file"])
+    expect(Exit.isFailure(result)).toBe(true)
+    expect(JSON.stringify(result)).toContain("non-directory ancestor")
+    expect(await Fs.readFile(NodePath.join(root, "out"), "utf8")).toBe("keep")
+  })
+
+  it.each(["non-file", "growing-file", "growing-total", "changed-after-read"])(
+    "refuses output mutation during a snapshot: %s",
+    async (fault) => {
+      const root = await directory()
+      const path = NodePath.join(root, "out")
+      await Fs.writeFile(path, "keep")
+      const open = Fs.open
+      vi.spyOn(Fs, "open").mockImplementation(async (...args) => {
+        const handle = await open(...args)
+        if (args[0] === path) {
+          const stat = handle.stat.bind(handle)
+          let reads = 0
+          vi.spyOn(handle, "stat").mockImplementation(async () => {
+            const info = await stat()
+            reads++
+            if (fault === "non-file") info.isFile = () => false
+            if (fault.startsWith("growing")) info.size = 0
+            if (fault === "changed-after-read" && reads > 1) info.mtimeMs++
+            return info
+          })
+        }
+        return handle
+      })
+      const limits = fault === "growing-file" ? { fileBytes: 2 } : fault === "growing-total" ? { totalBytes: 2 } : {}
+      const result = await check(root, "require('node:fs').writeFileSync('ran','yes')", ["out"], limits)
+      expect(Exit.isFailure(result)).toBe(true)
+      expect(JSON.stringify(result)).toContain(fault.startsWith("growing") ? "byte limit" : "changed while")
+      await expect(Fs.stat(NodePath.join(root, "ran"))).rejects.toThrow()
+      expect(await Fs.readFile(path, "utf8")).toBe("keep")
+    }
+  )
+
+  it.each(["out", "out/parent"])("preserves inspection errors at %s", async (failingPath) => {
+    const root = await directory()
+    await Fs.mkdir(NodePath.join(root, "out/parent"), { recursive: true })
+    const lstat = Fs.lstat
+    vi.spyOn(Fs, "lstat").mockImplementation(async (...args) => {
+      if (args[0] === NodePath.join(root, failingPath)) {
+        throw Object.assign(new Error("inspection denied"), { code: "EACCES" })
+      }
+      return lstat(...args)
+    })
+    const result = await check(root, "void 0", [failingPath === "out" ? "out" : "out/parent/file"])
+    expect(Exit.isFailure(result)).toBe(true)
+    expect(JSON.stringify(result)).toContain("inspection denied")
+  })
+
+  it.each([
     [{ fileBytes: 3 }, "file byte limit"],
     [{ totalBytes: 7 }, "aggregate byte limit"]
   ])("refuses snapshot limits before running the generator: %s", async (limits, message) => {

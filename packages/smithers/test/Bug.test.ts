@@ -4,7 +4,7 @@
  * Every rule here answers a way a credential actually reached a 0.x report.
  */
 import * as Redaction from "@smthrs/journal/Redaction"
-import { FastCheck } from "effect/testing"
+import * as FastCheck from "fast-check"
 import { describe, expect, it } from "vitest"
 import * as Bug from "../src/Bug.ts"
 

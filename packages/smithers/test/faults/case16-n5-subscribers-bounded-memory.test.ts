@@ -45,7 +45,7 @@ describe("case16 five subscribers, bounded memory", () => {
   it("fans one run's journal out to five readers inside the RSS budget", async () => {
     const runId = await suite.remote(
       Effect.gen(function*() {
-        const run = yield* launchRun("case16")
+        const run = yield* launchRun("case16", suite.server().root)
         yield* emitSignals(run.runId, events)
         return run.runId
       })

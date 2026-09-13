@@ -5,7 +5,10 @@ import * as BoundedEvents from "../src/internal/BoundedEvents.ts"
 
 const context = { operation: "test history", subject: "run test" }
 
-const limits = (values: ReadonlyArray<unknown>, overrides: Partial<BoundedEvents.Limits> = {}): BoundedEvents.Limits => ({
+const limits = (
+  values: ReadonlyArray<unknown>,
+  overrides: Partial<BoundedEvents.Limits> = {}
+): BoundedEvents.Limits => ({
   maxEvents: values.length,
   maxBytes: values.reduce<number>((total, value) => total + BoundedEvents.encodedBytes(value), 0),
   maxEventBytes: Math.max(...values.map(BoundedEvents.encodedBytes), 1),

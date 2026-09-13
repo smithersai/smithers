@@ -363,7 +363,8 @@ export const execute = (
       finish(() => reject(options.signal?.reason ?? new Error("child target aborted")))
     }
     const output = options.output ??
-      ((stream: "stdout" | "stderr", chunk: string) => void (stream === "stdout" ? process.stdout : process.stderr).write(chunk))
+      ((stream: "stdout" | "stderr", chunk: string) =>
+        void (stream === "stdout" ? process.stdout : process.stderr).write(chunk))
     child.stdout.on("data", (chunk: Buffer) => output("stdout", chunk.toString("utf8")))
     child.stderr.on("data", (chunk: Buffer) => {
       output("stderr", chunk.toString("utf8"))

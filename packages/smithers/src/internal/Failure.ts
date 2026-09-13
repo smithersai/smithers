@@ -28,8 +28,7 @@ import { stripVTControlCharacters } from "node:util"
  * @category getters
  * @since 1.0.0
  */
-export const terminalSafe = (text: string): string =>
-  stripVTControlCharacters(text).replace(/[\p{Cc}\p{Cf}]/gu, " ")
+export const terminalSafe = (text: string): string => stripVTControlCharacters(text).replace(/[\p{Cc}\p{Cf}]/gu, " ")
 
 /**
  * The most specific recorded cause, including older nested Error stacks.

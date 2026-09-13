@@ -19,6 +19,7 @@ import * as Environment from "../src/Environment.ts"
 import * as Output from "../src/Output.ts"
 import * as Unsupported from "../src/Unsupported.ts"
 import { packageVersion } from "../src/Version.ts"
+import { invokeCanonical } from "./fixtures/invokeCanonical.ts"
 
 const runCommand = Command.runWith(cli, { version: packageVersion })
 
@@ -26,6 +27,10 @@ const services = Layer.mergeAll(TestConsole.layer, Output.layer, TestControl.lay
 
 /** The failure one invocation produced, or `undefined` when it succeeded. */
 const failure = async (args: ReadonlyArray<string>): Promise<unknown> => {
+  if (args.includes("init")) {
+    const result = await invokeCanonical([...args, "--json"])
+    return JSON.parse(result.stdout) as unknown
+  }
   const exit = await Effect.runPromise(
     Effect.exit(runCommand(args)).pipe(
       Effect.provide(services),
@@ -174,7 +179,8 @@ describe("every removed flag", () => {
     async (_label, flag) => {
       const error = await failure(invocation(flag))
 
-      expect(error).toBeInstanceOf(CliError.UnsupportedError)
+      if (flag.parent === "init") expect(error).toMatchObject({ code: "UnsupportedError" })
+      else expect(error).toBeInstanceOf(CliError.UnsupportedError)
       const message = (error as CliError.UnsupportedError).message
       // `--backend` is the one entry whose refusal is the database contract's
       // own error code rather than the removal sentence, because

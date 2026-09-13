@@ -426,7 +426,7 @@ const enumKey = function*(value: unknown): Generator<void, string> {
     }
     return `{${members.join(",")}}`
   }
-  return JSON.stringify(value)!
+  return JSON.stringify(value)
 }
 
 type EnumIndexes = WeakMap<Record<string, unknown>, ReadonlySet<string>>

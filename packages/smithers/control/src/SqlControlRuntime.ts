@@ -46,6 +46,7 @@
  * @since 0.1.0
  */
 import { DurableWriter } from "@smthrs/database/DurableWriter"
+import * as DurableWrites from "@smthrs/database/DurableWriter"
 import { Ownership, RunStore } from "@smthrs/run-store"
 import { Clock, Crypto, Effect, Fiber, Layer, Option, Schema } from "effect"
 import * as SqlClient from "effect/unstable/sql/SqlClient"
@@ -94,10 +95,7 @@ import * as ActiveFibers from "./internal/activeFibers.ts"
 import { canonicalIssue, cappedIssue, schemaIssuePath } from "./internal/issues.ts"
 import { accepted, alreadyApplied, canonical, emptyEnvelope, planCard, sameEnvelope } from "./internal/planning.ts"
 import * as Lineage from "./Lineage.ts"
-import { initial } from "./migrations/0001_control_tables.ts"
-import { runKeys } from "./migrations/0002_run_keys.ts"
-import { signalCommands } from "./migrations/0003_signal_commands.ts"
-import { approvalDecisions } from "./migrations/0004_approval_decisions.ts"
+import * as Migrations from "./Migrations.ts"
 import { plannable } from "./SystemFlows.ts"
 
 /**
@@ -331,17 +329,19 @@ const EngineStateProjection = Schema.Struct({ flowName: Schema.NonEmptyString })
  * @since 0.1.0
  * @slop
  */
-export const migrate: Effect.Effect<void, PersistenceError, SqlClient.SqlClient> = initial.pipe(
-  Effect.andThen(runKeys),
-  Effect.andThen(signalCommands),
-  Effect.andThen(approvalDecisions),
+export const migrate: Effect.Effect<void, PersistenceError, SqlClient.SqlClient> = Effect.gen(function*() {
+  const sql = yield* SqlClient.SqlClient
   // A standalone runtime cannot record control's high-offset migration first:
   // that high-water mark would make later journal and run-store sets look
   // skipped. The idempotent bootstrap keeps standalone construction safe. The
   // cross-package follow-up is for the host to compose `Migrations.set` beside
   // the journal and run-store sets before it constructs any adapter.
-  Effect.mapError(persistence("migrate"))
-)
+  // Reuse the canonical migration set and the shared transaction/retry policy,
+  // without advancing the shared migration ledger during standalone bootstrap.
+  yield* DurableWrites.make(sql).write(
+    Effect.forEach(Object.values(Migrations.set.migrations), (migration) => migration, { discard: true })
+  )
+}).pipe(Effect.mapError(persistence("migrate")))
 
 /**
  * Constructs a durable runtime over the ambient database and run store.

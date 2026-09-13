@@ -49,19 +49,33 @@ describe("the shipped surface", () => {
     ])
   })
 
-  it("registers every shipped verb as a subcommand, except the built-in one", () => {
+  it("registers every shipped verb in the compatibility or canonical tree", async () => {
+    let manifest = ""
+    await makeCli({ environment: {} }).serve(["--llms-full", "--format", "json"], {
+      env: {},
+      stdout: (text) => {
+        manifest += text
+      },
+      exit: () => {}
+    })
+    const canonical = (JSON.parse(manifest).commands as Array<{ name: string }>).map((command) =>
+      command.name.split(" ")[0]
+    )
     // `completions` is `effect/unstable/cli`'s own `--completions <shell>`
     // global flag, not a subcommand of ours.
     expect(Verb.subcommands.map((verb) => verb.name)).toEqual(
       Verb.shipped.filter((verb) => verb.name !== "completions").map((verb) => verb.name)
     )
-    for (const verb of Verb.subcommands) expect(subcommandNames).toContain(verb.name)
+    for (const verb of Verb.subcommands) expect([...subcommandNames, ...canonical]).toContain(verb.name)
   })
 
-  it("shows only the shipped-command contract verbs in --help", () => {
+  it("shows only retained Effect handlers in compatibility help", () => {
     // Aliases and every removed verb are registered but unlisted, so the help
     // surface is the contract's list and nothing else.
-    expect(listed.slice().sort()).toEqual(Verb.subcommands.map((verb) => verb.name).slice().sort())
+    const canonicalOnly = new Set(["serve", "init", "suggest", "memory", "mcp"])
+    expect(listed.slice().sort()).toEqual(
+      Verb.subcommands.map((verb) => verb.name).filter((name) => !canonicalOnly.has(name)).sort()
+    )
   })
 
   it("keeps exactly the six surviving aliases", () => {

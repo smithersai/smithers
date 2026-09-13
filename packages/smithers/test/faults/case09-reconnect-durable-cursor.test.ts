@@ -45,7 +45,7 @@ describe("case09 reconnect from a durable cursor", () => {
     const runId = await suite.remoteWith(
       { credential, sockets },
       Effect.gen(function*() {
-        const run = yield* launchRun("case09")
+        const run = yield* launchRun("case09", suite.server().root)
         yield* emitSignals(run.runId, 40)
         return run.runId
       })

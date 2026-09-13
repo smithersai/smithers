@@ -651,16 +651,27 @@ export const layerWith = (
               const delivered = (
                 record: NotificationEvent.Promoted,
                 admissions: HashMap.HashMap<string, Committed>
-              ): Effect.Effect<ReadonlyArray<NotificationModel.Notification>, Journal.JournalError> =>
-                Effect.map(
-                  Effect.forEach(record.ids, (id) => {
+              ): Effect.Effect<
+                ReadonlyArray<NotificationModel.Notification>,
+                Journal.JournalError | NotificationError
+              > =>
+                Effect.forEach(record.ids, (id) =>
+                  Effect.gen(function*() {
                     const committed = HashMap.get(admissions, id)
-                    return Option.isNone(committed)
-                      ? Effect.succeed(Option.none<NotificationEvent.Admitted>())
-                      : admittedAt(runId, committed.value.seq)
-                  }),
-                  (found) => found.flatMap((event) => Option.isNone(event) ? [] : [event.value.notification])
-                )
+                    const event = Option.isNone(committed)
+                      ? Option.none<NotificationEvent.Admitted>()
+                      : yield* admittedAt(runId, committed.value.seq)
+                    // A committed drain promises this exact delivery. Missing or
+                    // corrupt payloads cannot become a successful partial replay.
+                    if (Option.isNone(event)) {
+                      return yield* new NotificationError({
+                        code: "notification_unavailable",
+                        notificationId: id,
+                        message: `The delivered notification ${id} is no longer readable`
+                      })
+                    }
+                    return event.value.notification
+                  }))
 
               const replayed = (seq: number, admissions: HashMap.HashMap<string, Committed>) =>
                 Effect.gen(function*() {
