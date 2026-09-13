@@ -1,4 +1,6 @@
 import { handleLiveTutorial } from "./liveTutorial"
+import { handleTutorialProviderProxy } from "./tutorialProviderProxy"
+import { TUTORIAL_PROVIDER_PROXY_PATH } from "@smthrs/rpc/TutorialProviderProxy"
 import { handleGitHubAppInstall, INSTALLATIONS_PATH } from "./githubAppInstall"
 import * as Effect from "effect/Effect"
 import * as Option from "effect/Option"
@@ -284,6 +286,7 @@ export const handleRequest = (request: Request): Effect.Effect<Response, never, 
       return json(403, { status: "error", message: "This API only answers requests from its own origin." })
     }
     if (url.pathname.startsWith("/api/tutorial/live/")) return yield* handleLiveTutorial(request)
+    if (url.pathname.startsWith(`${TUTORIAL_PROVIDER_PROXY_PATH}/`)) return yield* handleTutorialProviderProxy(request)
     // The command recommender (src/recommend.ts): open to a visitor as well
     // as a login, under its own ceilings. A login is the bucket when the
     // session validates; anything else, including identity being down, is

@@ -76,6 +76,7 @@ spec:
             - { name: TUTORIAL_NAMESPACE, value: smithers-tutorial }
             - { name: TUTORIAL_EXECUTOR_IMAGE, value: __EXECUTOR_IMAGE__ }
             - { name: TUTORIAL_DATA_DIR, value: /data }
+            - { name: TUTORIAL_PROVIDER_PROXY_URL, value: "https://smithers.sh/api/tutorial/provider" }
             - { name: TUTORIAL_CHATGPT_AUTH_FILE, value: /data/auth/chatgpt.json }
             - { name: TUTORIAL_CHATGPT_BOOTSTRAP_FILE, value: /subscription-bootstrap/auth.json }
           envFrom:

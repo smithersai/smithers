@@ -8,6 +8,8 @@ import * as ModelRequest from "@smthrs/model/ModelRequest"
 import * as RequestExecutor from "@smthrs/model/RequestExecutor"
 import { modelSeats, modelSettings } from "./model"
 import { prepareSubscription } from "./subscription"
+import { throughProxy, proxySettings } from "./proxy"
+import * as HttpClientRequest from "effect/unstable/http/HttpClientRequest"
 
 const directory = await mkdtemp(join(tmpdir(), "tutorial-subscription-"))
 const authFile = join(directory, "auth.json")
@@ -15,12 +17,13 @@ const jwt = (exp: number) => `test.${Buffer.from(JSON.stringify({ exp })).toStri
 const fresh = jwt(Math.floor(Date.now() / 1000) + 3600)
 let refreshes = 0, generations = 0
 const executor = RequestExecutor.RequestExecutor.of({ execute: (request) => {
-  if (request.url === "https://auth.openai.com/oauth/token") {
+  assert.equal(request.headers["x-smithers-proxy-token"], "proxy-secret")
+  if (request.url === "https://smithers.sh/api/tutorial/provider/refresh") {
     refreshes++
     return Effect.succeed(HttpClientResponse.fromWeb(request, Response.json({ access_token: fresh, refresh_token: "rotated-refresh", expires_in: 3600 })))
   }
   generations++
-  assert.equal(request.url, "https://chatgpt.com/backend-api/codex/responses")
+  assert.equal(request.url, "https://smithers.sh/api/tutorial/provider/chatgpt")
   assert.equal(request.headers.authorization, `Bearer ${fresh}`)
   assert.equal(request.headers["chatgpt-account-id"], "test-account")
   assert.equal(request.body._tag, "Uint8Array")
@@ -36,6 +39,15 @@ const executor = RequestExecutor.RequestExecutor.of({ execute: (request) => {
 try {
   await writeFile(authFile, JSON.stringify({ auth_mode: "chatgpt", tokens: { access_token: jwt(1), refresh_token: "initial-refresh", account_id: "test-account" } }), { mode: 0o600 })
   const settings = modelSettings({ TUTORIAL_CHATGPT_AUTH_FILE: authFile, OPENAI_API_KEY: "ignored-api-key" })
+  const proxy = proxySettings({ TUTORIAL_SERVICE_TOKEN: "proxy-secret" })
+  const proxied = throughProxy(executor, proxy)
+  assert.throws(() => proxySettings({}), /authentication/)
+  assert.throws(() => proxySettings({ TUTORIAL_SERVICE_TOKEN: "proxy-secret", TUTORIAL_PROVIDER_PROXY_URL: "http://unsafe.invalid" }), /HTTPS/)
+  const refused = await Effect.runPromise(Effect.scoped(proxied.execute(HttpClientRequest.post("https://unexpected.invalid"), { modelId: settings.modelId }).pipe(Effect.flip)))
+  assert.equal(refused._tag, "flows/model/ModelError")
+  const queryRefused = await Effect.runPromise(Effect.scoped(proxied.execute(HttpClientRequest.post("https://chatgpt.com/backend-api/codex/responses").pipe(HttpClientRequest.setUrlParam("url", "https://unexpected.invalid")), { modelId: settings.modelId }).pipe(Effect.flip)))
+  assert.equal(queryRefused._tag, "flows/model/ModelError")
+  assert.equal(refreshes + generations, 0, "unmapped destinations must never make a direct request")
   assert.deepEqual(settings, { provider: "chatgpt", modelId: "gpt-5.6-luna", authFile })
   assert.throws(() => modelSettings({ OPENAI_API_KEY: "ignored-api-key" }), /TUTORIAL_CHATGPT_AUTH_FILE/)
   const request = ModelRequest.ModelRequest.make({ modelId: settings.modelId, system: [], messages: [], tools: [], params: ModelRequest.GenerationParams.make() })
@@ -46,7 +58,7 @@ try {
     assert(!JSON.stringify(prepared).includes("test-account"))
     assert(!JSON.stringify(prepared).includes(fresh))
     yield* seat.model.stream(request).pipe(Stream.runDrain)
-  }).pipe(Effect.provideService(RequestExecutor.RequestExecutor, executor)))
+  }).pipe(Effect.provideService(RequestExecutor.RequestExecutor, proxied)))
   await Promise.all([execute(), execute()])
   assert.equal(refreshes, 1, "concurrent runs must share one refresh")
   assert.equal(generations, 2)
@@ -61,5 +73,5 @@ try {
   await assert.rejects(prepareSubscription(join(directory, "missing.json")), /bootstrap login/)
   await execute()
   assert.equal(refreshes, 1, "subsequent runs must retain rotated credentials")
-  console.log("Subscription route passed: Luna, no API-key fallback, one concurrent refresh, durable rotation, credential-free sealed request")
+  console.log("Subscription route passed: Luna generation and refresh through Cloudflare, no direct/API-key fallback, one concurrent refresh, durable rotation, credential-free sealed request")
 } finally { await rm(directory, { recursive: true, force: true }) }

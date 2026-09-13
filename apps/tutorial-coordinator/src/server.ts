@@ -7,14 +7,16 @@ import { runAgent } from "./agent"
 import { Coordinator } from "./coordinator"
 import { modelSettings } from "./model"
 import { prepareSubscription } from "./subscription"
+import { proxySettings } from "./proxy"
 
 const directory=process.env.TUTORIAL_DATA_DIR??"/data"
 const settings=modelSettings(process.env)
+const proxy=proxySettings(process.env)
 const token=process.env.TUTORIAL_SERVICE_TOKEN
 if(!token)throw new Error("Configure tutorial service authentication before starting")
 await mkdir(directory,{recursive:true})
 if(settings.provider==="chatgpt")await prepareSubscription(settings.authFile,process.env.TUTORIAL_CHATGPT_BOOTSTRAP_FILE)
-const coordinator=new Coordinator(directory,{ensure,agent:(filename,id,instructions,context)=>runAgent(filename,settings,id,instructions,context)})
+const coordinator=new Coordinator(directory,{ensure,agent:(filename,id,instructions,context)=>runAgent(filename,settings,id,instructions,context,proxy)})
 coordinator.resume()
 setInterval(()=>{void coordinator.prune().catch(()=>console.error("Tutorial artifact cleanup failed"))},5*60*1000).unref()
 createServer(async(request,response)=>{
