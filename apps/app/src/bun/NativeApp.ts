@@ -11,8 +11,9 @@ import Electrobun, { BrowserView, BrowserWindow, BuildConfig, Screen, Utils } fr
 import type { SmithersNativeRPC } from "@smthrs/rpc/NativeRPC"
 import { encodeRgbaPng, startPackagedE2EBridge } from "./PackagedE2EBridge"
 import { createNativeShutdown } from "./NativeShutdown"
-import { defaultDistDir, startLocalServer } from "./server"
-import { startWithPersistentOrigin } from "./NativeOrigin"
+import { defaultDistDir } from "./server"
+import { attachLocalDaemon } from "./LocalDaemonClient"
+import { daemonBuild } from "./LocalDaemonProtocol"
 
 const headless = Bun.env.SMITHERS_LOCAL_HEADLESS === "1"
 const port = Bun.env.SMITHERS_LOCAL_PORT === undefined ? undefined : Number(Bun.env.SMITHERS_LOCAL_PORT)
@@ -34,14 +35,16 @@ const stateDir = process.platform === "darwin"
   ? join(homedir(), "Library", "Application Support", "Smithers")
   : join(Bun.env.XDG_DATA_HOME ?? join(homedir(), ".local", "share"), "smithers")
 
-const server = await startWithPersistentOrigin(stateDir, (port) => startLocalServer({
+const entrypoint = process.argv[1]!
+const server = await attachLocalDaemon({
   port,
   distDir: defaultDistDir(import.meta.dir),
   stateDir,
   chatStub: Bun.env.SMITHERS_CHAT_STUB === "1",
   cloudMode: Bun.env.SMITHERS_LOCAL_MODE === "offline" ? "offline" : "hybrid",
-  allowManualRepositoryPaths: headless
-}), port)
+  allowManualRepositoryPaths: headless,
+  build: await daemonBuild(entrypoint)
+}, { entrypoint })
 
 let mainWindow: BrowserWindow | undefined
 let bridge: ReturnType<typeof startPackagedE2EBridge>
@@ -49,7 +52,7 @@ const queuedRepositorySelections: Array<{ readonly path: string | null }> = []
 const shutdown = createNativeShutdown({
   stop: async () => {
     bridge?.stop()
-    await server.stop()
+    await server.detach()
   },
   quit: (code) => process.exit(code),
   onBeforeQuit: (handler) => { Electrobun.events.on("before-quit", handler) },
