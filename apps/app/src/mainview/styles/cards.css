@@ -227,13 +227,17 @@
 }
 
 .palette-foot kbd {
-	padding: 0 5px;
-	border: 1px solid var(--border-strong);
+	display: inline-flex;
+	min-height: 20px;
+	align-items: center;
+	justify-content: center;
+	padding: 0 var(--sp-2);
+	border: 1px solid var(--border);
 	border-radius: 4px;
 	color: var(--text-muted);
 	font-family: var(--font-mono);
 	font-size: var(--fs-caption);
-	line-height: 1.7;
+	line-height: 1;
 }
 
 .palette-hint {

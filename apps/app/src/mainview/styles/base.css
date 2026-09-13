@@ -87,8 +87,14 @@ textarea {
 	flex: 1;
 	min-width: 0;
 	min-height: 100dvh;
-	background: #f7f6f1;
+	/* The app paints its own palette background; the guide's paper belongs to
+	   the guide alone. Hardcoding it here put warm paper under every app
+	   surface (white bubbles floated on cream in app context). */
+	background: var(--bg);
 	--g-accent: #3a756b;
+}
+.session-shell:has(.guide-shell) {
+	background: #f7f6f1;
 }
 .session-shell:has(.guide-shell[data-theme="dark"]) {
 	--g-accent: #9bd5c6;

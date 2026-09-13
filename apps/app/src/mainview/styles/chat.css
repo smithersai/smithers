@@ -278,7 +278,7 @@
 	z-index: 25;
 	width: min(100%, var(--chat-max-width));
 	margin: 0 auto;
-	padding: 10px 24px 18px;
+	padding: var(--sp-2) var(--sp-6) var(--sp-5);
 	background: linear-gradient(to top, var(--bg) 60%, transparent);
 }
 
@@ -303,8 +303,8 @@
 
 .app-shell .smithers-suggestion {
 	display: inline-flex;
-	height: 27px;
-	padding: 0 11px;
+	height: 28px;
+	padding: 0 var(--sp-3);
 	align-items: center;
 	gap: 6px;
 	border: 1px solid var(--border);
@@ -323,10 +323,12 @@
 
 .app-shell .smithers-composer {
 	width: 100%;
-	padding: 14px 16px 8px;
+	padding: var(--sp-4) var(--sp-4) var(--sp-2);
 	gap: 6px;
 	border-color: var(--border-strong);
-	border-radius: 20px;
+	/* The guide palette's layer is --r-4; the app composer was a one-off 20px
+	   blob. One radius system. */
+	border-radius: var(--r-4);
 	background: var(--surface-glass-strong);
 	box-shadow: var(--shadow-2);
 }
@@ -339,7 +341,7 @@
 }
 
 .app-shell .smithers-composer .sui-chat-composer-toolbar {
-	min-height: 34px;
+	min-height: var(--ctl-h-sm);
 }
 
 .app-shell .smithers-composer .sui-chat-composer-status {
@@ -1084,10 +1086,10 @@
 .composer-menu-item {
 	display: flex;
 	align-items: center;
-	gap: 0.5rem;
-	padding: 0.4375rem 0.5rem;
+	gap: var(--sp-2);
+	padding: var(--sp-2);
 	border: none;
-	border-radius: 8px;
+	border-radius: var(--r-sm);
 	background: transparent;
 	font: inherit;
 	text-align: left;
@@ -1096,18 +1098,18 @@
 .composer-menu-item:focus,
 .composer-menu-item:focus-visible {
 	/*
-	 * Palette-proof focus: --accent is the SATURATED brand under the color
+	 * Palette-proof focus: --brand is the SATURATED brand under the color
 	 * themes, so painting it behind inherited text went unreadable in both
 	 * modes. The soft brand tint keeps the row's own text readable and the
 	 * brand ring carries the focus, whatever the palette.
 	 */
-	background: var(--brand-soft, var(--surface-2, #f0ece1));
-	color: var(--text, inherit);
-	outline: 2px solid var(--brand, #0f766e);
+	background: var(--brand-soft);
+	color: var(--text);
+	outline: 2px solid var(--brand);
 	outline-offset: -2px;
 }
 .composer-menu-item[data-active="true"] {
-	color: var(--primary, #0f766e);
+	color: var(--brand);
 	font-weight: 600;
 }
 .composer-menu-item:disabled {
