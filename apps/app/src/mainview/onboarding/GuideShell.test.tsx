@@ -11,7 +11,7 @@ import { initialGuide } from "../state/AppState"
 import { createAppStore } from "../state/AppStore"
 import type { GuideClock } from "./advance"
 import { GuideShell } from "./GuideShell"
-import { GUIDE_KEYS } from "./GuideButton"
+import { GUIDE_KEYS, guideShortcut } from "./GuideButton"
 import { GUIDE_BRIDGE, GUIDE_LAST_STEP, GUIDE_STAGES, lessonText } from "./lessons"
 
 
@@ -112,7 +112,7 @@ test("every beat has keyboard navigation, one pill shape, and no numbered instru
         const button = host.querySelector(`.guide-actions [data-flow="${action.flow}"]`)
         expect(text(button)).toContain(lessonText(action.label, { repo: "acme/api" }))
         expect(text(button?.querySelector("kbd") ?? null)).toBe(action.key === "⌘K" ? "⌘ K" : action.key)
-        expect(button?.getAttribute("aria-keyshortcuts")).toBe(action.key.length === 1 ? action.key.toLowerCase() : "Meta+K Control+K")
+        expect(button?.getAttribute("aria-keyshortcuts")).toBe(guideShortcut(action.key))
         expect(button?.getAttribute("aria-describedby")).toBe(`guide-instruction-${step}${lesson.help?.actionKey === action.key ? ` guide-help-${step}` : ""}`)
       }
       if (lesson.secondary !== undefined) expect(text(host.querySelector(".guide-actions [data-secondary]"))).toContain(lesson.secondary.label)
@@ -143,8 +143,8 @@ test("lesson shortcuts share the button dispatch and preserve keyboard guards", 
     spyOn(c, "runCommand").mockImplementation(name => { calls.push(name); return true })
   })
   const press = (init: KeyboardEventInit = {}, target: EventTarget = document) => {
-    target.dispatchEvent(new KeyboardEvent("keydown", { key: "l", bubbles: true, ...init }))
-    target.dispatchEvent(new KeyboardEvent("keyup", { key: "l", bubbles: true, ...init }))
+    target.dispatchEvent(new KeyboardEvent("keydown", { key: "a", bubbles: true, ...init }))
+    target.dispatchEvent(new KeyboardEvent("keyup", { key: "a", bubbles: true, ...init }))
   }
   for (const init of [{ repeat: true }, { ctrlKey: true }, { metaKey: true }, { altKey: true }, { shiftKey: true }, { isComposing: true }]) press(init)
   const input = document.createElement("input")
@@ -278,20 +278,20 @@ test("completion removes the help before the next lesson advances", async () => 
 })
 
 
-test("lesson keys cannot collide with Back, Dictation, or Sound", () => {
-  const reserved = [GUIDE_KEYS.back, GUIDE_KEYS.dictation, GUIDE_KEYS.sound, 'w']
+test("lesson keys cannot collide with Back, Mode, Sound, or Vim navigation", () => {
+  const reserved = [GUIDE_KEYS.back, GUIDE_KEYS.mode, GUIDE_KEYS.sound, 'w', 'h', 'j', 'k', 'l']
   for (const lesson of GUIDE_STAGES) {
     if (lesson.kind !== 'do') continue
     const keys = [...lesson.actions, ...(lesson.secondary ? [lesson.secondary] : [])].map(action => action.key.toLowerCase())
     expect(new Set(keys).size).toBe(keys.length)
     expect(keys.some(key => reserved.includes(key as typeof reserved[number]))).toBe(false)
   }
-  expect(GUIDE_STAGES.flatMap(lesson => lesson.kind === 'do' ? lesson.actions : []).find(action => action.flow === 'wiki.create')?.key).toBe('k')
+  expect(GUIDE_STAGES.flatMap(lesson => lesson.kind === 'do' ? lesson.actions : []).find(action => action.flow === 'wiki.create')?.key).toBe('u')
 })
 
-test("Show issues, Chat, Sound, and Dictation share a keycap control; Back starts at the next lesson", async () => {
+test("Show issues, Chat, Sound, and Mode share a keycap control; Back starts at the next lesson", async () => {
   const host = await mountGuide(1, still)
-  for (const shortcut of ['i', 'Meta+K Control+K', 's', 'v']) {
+  for (const shortcut of ['i', 'c Meta+K Control+K', 's', 'm']) {
     const button = host.querySelector<HTMLButtonElement>(`button[aria-keyshortcuts="${shortcut}"]`)!
     expect(button).not.toBeNull()
     expect(button.classList.contains('guide-button')).toBe(true)
@@ -303,20 +303,50 @@ test("Show issues, Chat, Sound, and Dictation share a keycap control; Back start
   expect(text(next.querySelector('[aria-keyshortcuts="b"]'))).toBe('Back b')
 })
 
-test("Back and Dictation compete on release; Wiki uses its own key", async () => {
+test("Back and Chat compete on release; Wiki keeps its own key", async () => {
   const calls: Array<[string, string?]> = []
   const host = await mountGuide(12, still, { repo: 'acme/api' }, c => {
     spyOn(c, 'runCommand').mockImplementation((name, args) => { calls.push([name, args]); return true })
   })
   const key = (type: string, key: string) => document.dispatchEvent(new KeyboardEvent(type, { key, bubbles: true, cancelable: true }))
-  key('keydown', 'b'); key('keydown', 'v')
+  key('keydown', 'b'); key('keydown', 'c')
   expect(host.querySelector('[aria-keyshortcuts="b"]')!.hasAttribute('data-pressed')).toBe(true)
-  expect(host.querySelector('[aria-keyshortcuts="v"]')!.hasAttribute('data-pressed')).toBe(true)
+  expect(host.querySelector('[data-flow="chat.open"]')!.hasAttribute('data-pressed')).toBe(true)
   expect(calls).toEqual([])
-  key('keyup', 'b'); key('keyup', 'v')
-  expect(calls).toEqual([['chat.dictate', undefined]])
-  key('keydown', 'k'); key('keyup', 'k')
+  key('keyup', 'b'); key('keyup', 'c')
+  expect(calls).toEqual([['chat.open', undefined]])
+  key('keydown', 'u'); key('keyup', 'u')
   expect(calls[1]).toEqual(['wiki.create', 'acme/api'])
   key('keydown', 'b'); key('keyup', 'b')
   expect(calls[2]).toEqual(['onboarding.act', 'back'])
+})
+
+test("Mode opens on release and selecting Dictation does not open Chat", async () => {
+  let controller!: ReturnType<typeof createAppController>
+  const host = await mountGuide(1, still, {}, c => { controller = c })
+  const key = (type: string, key: string) => flushSync(() => (document.activeElement ?? document).dispatchEvent(new KeyboardEvent(type, { key, bubbles: true, cancelable: true })))
+  key('keydown', 'm')
+  expect(host.querySelector('[aria-keyshortcuts="m"]')!.hasAttribute('data-pressed')).toBe(true)
+  expect(host.querySelector('[role="menu"]')).toBeNull()
+  key('keyup', 'm')
+  expect(host.querySelector('[role="menu"]')).not.toBeNull()
+  const options = host.querySelectorAll<HTMLButtonElement>('[role="menuitemradio"]')
+  expect(document.activeElement).toBe(options[0])
+  key('keydown', 'ArrowDown')
+  expect(document.activeElement).toBe(options[0])
+  key('keyup', 'ArrowDown')
+  key('keydown', 'ArrowDown'); key('keyup', 'ArrowDown')
+  expect(document.activeElement).toBe(options[2])
+  key('keydown', 'Enter')
+  expect(controller.store.session().inputMode).toBe('normal')
+  key('keyup', 'Enter')
+  await settle()
+  expect(controller.store.session().inputMode).toBe('dictation')
+  expect(controller.store.session().paletteOpen).toBe(false)
+  expect(controller.store.session().dictating).not.toBe(true)
+  expect(text(host.querySelector('[aria-keyshortcuts="m"]'))).toBe('Mode: Dictation m')
+  key('keydown', 'm'); key('keyup', 'm')
+  key('keydown', 'Escape'); key('keyup', 'Escape')
+  expect(host.querySelector('[role="menu"]')).toBeNull()
+  expect(document.activeElement).toBe(host.querySelector('[aria-keyshortcuts="m"]'))
 })

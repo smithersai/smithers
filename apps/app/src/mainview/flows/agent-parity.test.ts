@@ -67,6 +67,7 @@ const USER_ONLY_ALLOWLIST: Readonly<Record<string, string>> = {
   "repo.select": "which pinned repository is active is the human's selection; an act names its working copy instead (tab.terminal [cwd])",
   "workspace.rename.edit": "opening the inline editor is the human's gesture; the agent names the workspace with workspace.rename",
   "composer.add": "opening the composer's menu is the human's gesture",
+  "chat.open": "opening Chat and starting the selected microphone mode is the human's gesture",
   "chat.dictate": "microphone capture is the human's explicit gesture",
   "palette.open": PALETTE_OPEN_REASON,
   "plugins": PLUGINS_USER_ONLY_REASON,

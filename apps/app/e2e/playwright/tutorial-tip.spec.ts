@@ -18,7 +18,7 @@ for (const width of [1280, 390]) {
     await expect(page.locator("[data-help-pulse]")).toHaveCount(0)
     const initialButton = await target.boundingBox()
     await page.clock.runFor(3800)
-    await expect(help.locator(".guidance-text-visual")).toHaveText("You can also talk to Smithers anytime by pressing Command K.")
+    await expect(help.locator(".guidance-text-visual")).toHaveText("You can also talk to Smithers anytime by pressing C.")
     const chat = page.getByRole("button", { name: "Chat", exact: true })
     await expect(chat).toHaveAttribute("aria-describedby", "guide-chat-help-1")
     const chatBounds = await chat.boundingBox()

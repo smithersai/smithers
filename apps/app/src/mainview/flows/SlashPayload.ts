@@ -528,6 +528,7 @@ const GRAMMAR: Readonly<Record<string, Grammar>> = {
   "tut.more": () => NONE,
   "tutorial.live.inspect": (args) => { const [cardId, eventId] = tokensOf(args); return ok({ ...(cardId ? { cardId } : {}), ...(eventId ? { eventId } : {}) }) },
   "tutorial.live.retry": (args) => required("cardId", args, "Choose a live tutorial run"),
+  "input.mode": (args) => required("mode", args, "Choose an input mode."),
   "onboarding.act": (args) => {
     const [action = "next", ...rest] = trimmed(args).split(" ")
     const raw = rest.join(" ")

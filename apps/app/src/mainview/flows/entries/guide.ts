@@ -4,6 +4,9 @@ import type { CommandActions } from "./Declare"
 import type { FlowEntry } from "../registry"
 
 export const guideFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> => [
+  flow({ name: "input.mode", summary: "Choose Normal, Vim, or Dictation input mode", args: "<mode>",
+    input: Schema.Struct({ mode: Schema.Literals(["normal", "vim", "dictation"]) }),
+    handler: ({ mode }) => actions.setInputMode(mode) }),
   flow({ name: "tut", summary: "Replay the Smithers introduction from the beginning", input: NoPayload,
     handler: () => actions.guideAct("restart") }),
   flow({ name: "tut.more", hidden: true, summary: "Watch Smithers demonstrate the optional capabilities", input: NoPayload,

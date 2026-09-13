@@ -78,6 +78,23 @@
 	font-size: var(--fs-small);
 }
 
+.tab:has([data-testid="status-details"]) {
+	height: 52px;
+}
+
+.tab-select:has([data-testid="status-details"]) {
+	display: flex;
+	flex-direction: column;
+	align-items: flex-start;
+	gap: 2px;
+}
+
+.tab-title {
+	max-width: 100%;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
 /* The workspace heading: the name is the way back to the chat; the pencil renames it inline. */
 .workspace-heading {
 	display: flex;

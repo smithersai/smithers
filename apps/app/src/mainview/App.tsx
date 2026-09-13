@@ -1,3 +1,5 @@
+import { GuideButton, GUIDE_KEYS } from "./onboarding/GuideButton"
+import { InputModeMenu } from "./InputModeMenu"
 import { GuideShell } from "./onboarding/GuideShell"
 import { GuideComposerHost } from "./onboarding/GuideComposerHost"
 import {
@@ -733,13 +735,11 @@ function App() {
       {/* Terminal, harness, and card tabs; hidden while inactive, never unmounted. */}
       <TabBodies />
       {composerHost === undefined && <footer className="app-chat-controls" aria-label="Chat controls">
-        <button type="button" data-flow="palette.open" aria-keyshortcuts="Meta+K Control+K" onClick={() => {
-          controller.runCommand("palette.open")
+        <GuideButton shortcut={GUIDE_KEYS.chat} data-flow="chat.open" onClick={() => {
+          controller.runCommand("chat.open")
           requestAnimationFrame(() => composerWrapRef.current?.querySelector("textarea")?.focus())
-        }}><Command size={14} aria-hidden="true" /><span>Chat</span><kbd>⌘ K</kbd></button>
-        <button type="button" data-flow="chat.dictate" aria-pressed={session.dictating === true} aria-keyshortcuts="Meta+D Control+D" onClick={() => controller.runCommand("chat.dictate")}>
-          <Mic size={14} aria-hidden="true" /><span>{session.dictating ? "Stop dictation" : "Dictation"}</span><kbd>⌘ D</kbd>
-        </button>
+        }}>Chat</GuideButton>
+        <InputModeMenu mode={session.inputMode ?? "normal"} onChange={mode => controller.runCommand("input.mode", mode)} />
       </footer>}
       </div>
 

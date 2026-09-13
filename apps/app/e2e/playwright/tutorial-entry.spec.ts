@@ -35,7 +35,7 @@ for (const width of [1280, 390]) {
     expect(action!.y - (goal!.y + goal!.height)).toBeGreaterThanOrEqual(0)
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
     await expect(page.getByRole("button", { name: "Chat", exact: true })).toBeVisible()
-    await expect(page.getByRole("button", { name: "Dictation", exact: true })).toBeVisible()
+    await expect(page.getByRole("button", { name: "Mode: Normal", exact: true })).toBeVisible()
     await page.screenshot({ path: `/tmp/smithers-actions-${width}.png` })
   })
 }
@@ -51,7 +51,10 @@ test("dictation opens chat, appends recognized speech, and Escape releases the m
     }
   })
   await page.goto("/")
-  await page.getByRole("button", { name: "Dictation", exact: true }).click()
+  await page.keyboard.press("m")
+  await page.getByRole("menuitemradio", { name: "Dictation", exact: true }).click()
+  await expect(page.getByTestId("composer-input")).toBeHidden()
+  await page.keyboard.press("c")
   const input = page.getByTestId("composer-input")
   await expect(input).toBeVisible()
   await input.fill("Please check")
@@ -62,5 +65,5 @@ test("dictation opens chat, appends recognized speech, and Escape releases the m
   await page.keyboard.press("Escape")
   await expect(input).toBeHidden()
   expect(await page.evaluate(() => (window as any).dictationAborted)).toBe(true)
-  await expect(page.getByRole("button", { name: "Dictation", exact: true })).toHaveAttribute("aria-pressed", "false")
+  await expect(page.getByRole("button", { name: "Mode: Dictation", exact: true })).toBeVisible()
 })

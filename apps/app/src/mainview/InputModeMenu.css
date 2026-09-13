@@ -1,0 +1,14 @@
+.input-mode-control { position: relative; }
+.input-mode-menu {
+  position: absolute; z-index: 100; bottom: calc(100% + 8px); right: 0;
+  min-width: 170px; padding: 5px; border: 1px solid var(--g-line, #ccd6d2); border-radius: 12px;
+  background: var(--g-panel, #fff); color: var(--g-ink, #183e2d); box-shadow: 0 6px 22px #001c2524;
+}
+.input-mode-control[data-placement="below"] .input-mode-menu { top: calc(100% + 8px); bottom: auto; }
+.input-mode-menu [role="menuitemradio"], .guide-footer .input-mode-menu [role="menuitemradio"] {
+  display: flex; align-items: center; justify-content: space-between; width: 100%; gap: 24px;
+  min-height: 36px; padding: 8px 10px; border: 0; border-radius: 7px; color: inherit; background: transparent; text-align: left;
+}
+.input-mode-menu [role="menuitemradio"]:is(:hover,:focus-visible,[data-pressed]) { background: color-mix(in srgb, var(--g-accent, #3a756b) 14%, transparent); outline: none; }
+.session-input-controls { position: absolute; right: 12px; top: 3px; display: flex; align-items: center; gap: 8px; }
+.session-input-controls .guide-button { min-height: 36px; }

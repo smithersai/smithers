@@ -77,6 +77,9 @@ export const chatFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> => 
     input: NoPayload,
     handler: () => actions.showChat()
   }),
+  flow({ name: "chat.open", summary: "Open Chat using the selected input mode (C)", input: NoPayload,
+    userOnly: true, userOnlyReason: "opening Chat and starting the selected microphone mode is the human's gesture",
+    handler: () => actions.openChat() }),
   flow({
     name: "chat.dictate",
     summary: "Start or stop dictation into the chat draft (⌘D)",
