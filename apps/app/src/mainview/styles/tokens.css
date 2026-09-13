@@ -55,9 +55,10 @@
 	/* ── Type & app scale ────────────────────────────────────── */
 	--font-ui: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
 	--font-mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-	--fs-small: 0.7813rem;
-	--fs-body: 0.8438rem;
-	--fs-md: 0.9375rem;
+	--fs-caption: 0.75rem;
+	--fs-small: 0.875rem;
+	--fs-body: 1rem;
+	--fs-md: 1.125rem;
 	--r-sm: 8px;
 	--r-bubble: 18px;
 	--r-full: 999px;
@@ -138,22 +139,22 @@
 	--sp-6: 24px;
 	--sp-7: 28px;
 	--sp-8: 32px;
-	--fs-1: 11px;
+	--fs-1: var(--fs-caption);
 	--fs-2: var(--fs-small);
 	--fs-3: var(--fs-body);
 	--fs-4: var(--fs-md);
-	--fs-5: 17px;
-	--fs-6: 20px;
-	--fs-7: 24px;
+	--fs-5: 1.25rem;
+	--fs-6: 1.5rem;
+	--fs-7: 1.75rem;
 	--lh-tight: 1.35;
 	--lh-body: 1.5;
 	--r-1: var(--r-sm);
 	--r-2: 10px;
 	--r-3: 12px;
 	--r-4: 16px;
-	--ctl-h: 32px;
-	--ctl-h-sm: 28px;
-	--ctl-h-lg: 38px;
+	--ctl-h: 36px;
+	--ctl-h-sm: 32px;
+	--ctl-h-lg: 44px;
 
 	/* ── @smthrs/ui bridge: legacy workflow-UI aliases ───────── */
 	--panel: var(--surface);

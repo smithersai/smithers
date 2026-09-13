@@ -207,14 +207,14 @@
 
 .app-shell .smithers-chat-message .message-reasoning .sui-reasoning-title {
 	font-family: var(--font-mono);
-	font-size: 10px;
+	font-size: var(--fs-caption);
 	font-weight: 600;
 }
 
 .app-shell .smithers-chat-message .message-reasoning .sui-reasoning-body {
 	padding: 0 10px 8px;
 	color: var(--text-muted);
-	font-size: 12px;
+	font-size: var(--fs-small);
 }
 
 .app-shell .smithers-chat-message .message-reasoning-text {
@@ -228,7 +228,7 @@
 	justify-content: flex-start;
 	color: var(--confluence-text);
 	font-family: var(--font-mono);
-	font-size: 10px;
+	font-size: var(--fs-caption);
 	/*
 	 * Tool-act lines carry unbroken mono payloads. The chat column is narrow
 	 * whenever a pane is open, so an unbreakable run has to wrap rather than
@@ -253,7 +253,7 @@
 	margin: 5px 0 -2px 10px;
 	color: var(--bubble-meta);
 	font-family: var(--font-mono);
-	font-size: 9px;
+	font-size: var(--fs-caption);
 	line-height: 1;
 }
 
@@ -346,7 +346,7 @@
 .app-shell .smithers-composer .sui-chat-composer-status {
 	color: var(--text-faint);
 	font-family: var(--font-mono);
-	font-size: 10px;
+	font-size: var(--fs-caption);
 }
 
 .app-shell .smithers-composer .sui-chat-composer-send {
@@ -442,7 +442,7 @@
 .composer-origin-branch {
 	color: var(--text-faint);
 	font-family: var(--font-mono);
-	font-size: 10px;
+	font-size: var(--fs-caption);
 }
 
 /*
@@ -764,7 +764,7 @@
 	border: 1px solid var(--border);
 	border-radius: var(--r-full);
 	color: var(--text-faint);
-	font-size: 0.6875rem;
+	font-size: var(--fs-caption);
 }
 
 .plugin-steps {
@@ -801,7 +801,7 @@
 
 .plugin-version {
 	color: var(--text-faint);
-	font-size: 0.6875rem;
+	font-size: var(--fs-caption);
 }
 
 @media (max-width: 720px) {
@@ -849,7 +849,7 @@
 	max-width: 680px;
 	margin-top: 5px;
 	color: var(--text-muted);
-	font-size: 12px;
+	font-size: var(--fs-small);
 }
 
 .connected-repository-card {
@@ -866,12 +866,12 @@
 }
 
 .connected-repository-card [data-slot="card-title"] {
-	font-size: 13px;
+	font-size: var(--fs-small);
 }
 
 .connected-repository-card [data-slot="card-description"] {
 	margin-top: 3px;
-	font-size: 10px;
+	font-size: var(--fs-caption);
 	line-height: 1.45;
 }
 
@@ -901,11 +901,11 @@
 
 .connector-empty strong {
 	color: var(--text);
-	font-size: 12px;
+	font-size: var(--fs-small);
 }
 
 .connector-empty span {
-	font-size: 10px;
+	font-size: var(--fs-caption);
 }
 
 /* §11.6: the empty state's own next step sits under the sentence naming it. */
@@ -998,7 +998,7 @@
 	border-bottom: 1px solid var(--border);
 	color: var(--text-muted);
 	font-family: var(--font-mono);
-	font-size: 10px;
+	font-size: var(--fs-caption);
 }
 
 .world-document-meta > div {
@@ -1160,7 +1160,7 @@
 	margin-left: auto;
 	color: var(--text-faint);
 	font-family: var(--font-mono);
-	font-size: 10px;
+	font-size: var(--fs-caption);
 }
 
 /* Wave 10 — the admin dev-tools panel (§2b/§2d): chat-attached chrome. */
@@ -1198,7 +1198,7 @@
 }
 .devtools-section h3 {
 	margin: 0 0 0.375rem;
-	font-size: 0.8125rem;
+	font-size: var(--fs-small);
 }
 .devtools-toolcalls {
 	list-style: none;
@@ -1214,7 +1214,7 @@
 	padding: 0.375rem;
 	border-radius: 6px;
 	background: var(--accent, #f0ece1);
-	font-size: 0.6875rem;
+	font-size: var(--fs-caption);
 	white-space: pre-wrap;
 	word-break: break-word;
 	max-height: 10rem;
@@ -1224,10 +1224,10 @@
 	list-style: none;
 	margin: 0;
 	padding: 0;
-	font-size: 0.75rem;
+	font-size: var(--fs-small);
 	columns: 2;
 }
 .devtools-empty {
 	color: var(--muted-foreground, #6b6457);
-	font-size: 0.8125rem;
+	font-size: var(--fs-small);
 }

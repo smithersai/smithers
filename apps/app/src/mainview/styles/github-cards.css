@@ -16,7 +16,7 @@
 	--ghc-pill-queued: #9a6700;
 	--ghc-head-bg: color-mix(in srgb, var(--text) 3%, var(--surface));
 	color: var(--text);
-	font-size: 13px;
+	font-size: var(--fs-small);
 	line-height: 1.45;
 }
 :root[data-theme="dark"] .ghc {
@@ -43,7 +43,7 @@
 .ghc-pill {
 	display: inline-flex; align-items: center; gap: 4px;
 	padding: 4px 10px; border-radius: 999px;
-	font-size: 12.5px; font-weight: 600; line-height: 16px; color: #fff; white-space: nowrap;
+	font-size: var(--fs-small); font-weight: 600; line-height: 16px; color: #fff; white-space: nowrap;
 }
 .ghc-pill-open { background: var(--ghc-pill-open); }
 .ghc-pill-done { background: var(--ghc-pill-done); }
@@ -60,7 +60,7 @@
 	border: 1px solid color-mix(in srgb, var(--ghc-label) 50%, transparent);
 	background: color-mix(in srgb, var(--ghc-label) 18%, var(--surface));
 	color: color-mix(in srgb, var(--ghc-label) 62%, var(--text));
-	font-size: 12px; font-weight: 500; line-height: 18px; white-space: nowrap;
+	font-size: var(--fs-small); font-weight: 500; line-height: 18px; white-space: nowrap;
 	vertical-align: 1px;
 }
 
@@ -75,7 +75,7 @@
 .ghc-author { font-weight: 600; color: var(--text); }
 .ghc-author-muted { color: var(--text-muted); }
 .ghc-muted { color: var(--text-muted); margin: 0; }
-.ghc-mono { font-family: var(--font-mono); font-size: 12px; }
+.ghc-mono { font-family: var(--font-mono); font-size: var(--fs-small); }
 .ghc-time { white-space: nowrap; }
 .ghc-visually-hidden {
 	position: absolute; width: 1px; height: 1px; overflow: hidden;
@@ -88,12 +88,12 @@
 	display: flex; flex-wrap: wrap; align-items: center; gap: 4px 16px;
 	padding: 9px 14px; border-bottom: 1px solid var(--border-strong);
 	border-radius: 8px 8px 0 0; background: var(--ghc-head-bg);
-	color: var(--text-muted); font-size: 13px;
+	color: var(--text-muted); font-size: var(--fs-small);
 }
 .ghc-count { display: inline-flex; align-items: center; gap: 6px; }
 .ghc-count[data-active="true"] { color: var(--text); font-weight: 600; }
-.ghc-toolbar-repo { margin-left: auto; font-family: var(--font-mono); font-size: 11.5px; color: var(--text-faint); }
-.ghc-note { margin: 0; padding: 7px 14px; border-bottom: 1px solid var(--border); color: var(--text-muted); font-size: 12px; }
+.ghc-toolbar-repo { margin-left: auto; font-family: var(--font-mono); font-size: var(--fs-small); color: var(--text-faint); }
+.ghc-note { margin: 0; padding: 7px 14px; border-bottom: 1px solid var(--border); color: var(--text-muted); font-size: var(--fs-small); }
 .ghc-empty {
 	display: flex; flex-direction: column; align-items: center; gap: 8px;
 	margin: 0; padding: 28px 16px; color: var(--text-faint); text-align: center;
@@ -113,23 +113,23 @@
 .ghc-row-btn:hover { background: var(--hover-subtle); }
 .ghc-row-btn:focus-visible { outline: 2px solid var(--ring-border); outline-offset: -2px; background: var(--hover-subtle); }
 .ghc-row-main { display: flex; flex: 1; flex-direction: column; min-width: 0; }
-.ghc-row-title { font-size: 14px; font-weight: 600; line-height: 1.4; color: var(--text); overflow-wrap: anywhere; }
+.ghc-row-title { font-size: var(--fs-body); font-weight: 600; line-height: 1.4; color: var(--text); overflow-wrap: anywhere; }
 .ghc-row-title .ghc-label { margin-left: 4px; }
 .ghc-row-btn:hover .ghc-row-title-text,
 .ghc-row-btn:focus-visible .ghc-row-title-text { color: var(--brand); }
 .ghc-row-meta {
 	display: block; margin-top: 2px;
-	color: var(--text-muted); font-size: 12px; font-weight: 400;
+	color: var(--text-muted); font-size: var(--fs-small); font-weight: 400;
 }
-.ghc-row-files { display: inline-flex; align-items: center; gap: 4px; margin-top: 3px; color: var(--text-faint); font-family: var(--font-mono); font-size: 11.5px; }
+.ghc-row-files { display: inline-flex; align-items: center; gap: 4px; margin-top: 3px; color: var(--text-faint); font-family: var(--font-mono); font-size: var(--fs-small); }
 .ghc-row-side { display: flex; flex: none; align-items: center; gap: 12px; padding-top: 2px; }
-.ghc-row-count { display: inline-flex; align-items: center; gap: 4px; color: var(--text-muted); font-size: 12px; }
+.ghc-row-count { display: inline-flex; align-items: center; gap: 4px; color: var(--text-muted); font-size: var(--fs-small); }
 .ghc-branch {
 	display: inline-flex; align-items: center; gap: 3px;
 	padding: 0 6px; border-radius: 6px;
 	background: color-mix(in srgb, var(--info) 12%, var(--surface));
 	color: color-mix(in srgb, var(--info) 78%, var(--text));
-	font-family: var(--font-mono); font-size: 11.5px; line-height: 18px; white-space: nowrap;
+	font-family: var(--font-mono); font-size: var(--fs-small); line-height: 18px; white-space: nowrap;
 }
 
 /* --------------------------------------------------------------- detail */
@@ -137,7 +137,7 @@
 .ghc-detail-head { padding-bottom: 12px; border-bottom: 1px solid var(--border); }
 .ghc-detail-title { margin: 0; font-size: 20px; font-weight: 400; line-height: 1.3; letter-spacing: -0.01em; overflow-wrap: anywhere; }
 .ghc-detail-number { color: var(--text-faint); font-weight: 300; }
-.ghc-detail-sub { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 10px; color: var(--text-muted); font-size: 13px; }
+.ghc-detail-sub { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 10px; color: var(--text-muted); font-size: var(--fs-small); }
 .ghc-detail-grid { display: grid; grid-template-columns: minmax(0, 1fr) 180px; gap: 20px; align-items: start; }
 .ghc-detail-main { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
 
@@ -154,7 +154,7 @@
 	display: flex; flex-wrap: wrap; align-items: center; gap: 4px;
 	padding: 7px 12px; border-bottom: 1px solid var(--border-strong);
 	border-radius: 8px 8px 0 0; background: var(--ghc-head-bg);
-	color: var(--text-muted); font-size: 13px;
+	color: var(--text-muted); font-size: var(--fs-small);
 }
 .ghc-comment-body { padding: 10px 12px; overflow-wrap: anywhere; }
 .ghc-comment-body .smithers-card-markdown > :first-child { margin-top: 0; }
@@ -169,11 +169,11 @@
 
 .ghc-detail-foot { display: flex; flex-direction: column; gap: 8px; margin-left: 42px; }
 .ghc-composer { display: flex; flex-direction: column; gap: 6px; }
-.ghc-composer-label { color: var(--text); font-size: 13px; font-weight: 600; }
+.ghc-composer-label { color: var(--text); font-size: var(--fs-small); font-weight: 600; }
 .ghc-composer-input {
 	width: 100%; min-height: 64px; padding: 8px 10px; resize: vertical;
 	border: 1px solid var(--border-strong); border-radius: 6px;
-	background: var(--surface); color: var(--text); font: inherit; font-size: 13px;
+	background: var(--surface); color: var(--text); font: inherit; font-size: var(--fs-small);
 }
 .ghc-composer-input:focus-visible { outline: 2px solid var(--ring); outline-offset: 0; border-color: var(--ring-border); }
 .ghc-composer-actions,
@@ -183,8 +183,8 @@
 
 .ghc-side-section { padding-bottom: 10px; margin-bottom: 10px; border-bottom: 1px solid var(--border); }
 .ghc-side-section:last-child { border-bottom: 0; margin-bottom: 0; }
-.ghc-side-title { margin: 0 0 6px; color: var(--text-muted); font-size: 12px; font-weight: 600; }
-.ghc-side-body { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; font-size: 13px; overflow-wrap: anywhere; }
+.ghc-side-title { margin: 0 0 6px; color: var(--text-muted); font-size: var(--fs-small); font-weight: 600; }
+.ghc-side-body { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; font-size: var(--fs-small); overflow-wrap: anywhere; }
 .ghc-side-empty { color: var(--text-faint); }
 .ghc-side-person { display: inline-flex; align-items: center; gap: 6px; }
 
@@ -194,18 +194,18 @@
 	display: inline-flex; align-items: center; gap: 6px; flex: none;
 	margin-bottom: -1px; padding: 7px 12px;
 	border: 1px solid transparent; border-radius: 6px 6px 0 0; background: transparent;
-	color: var(--text-muted); font: inherit; font-size: 13px; cursor: pointer;
+	color: var(--text-muted); font: inherit; font-size: var(--fs-small); cursor: pointer;
 }
 .ghc-tab:hover { color: var(--text); }
 .ghc-tab[aria-selected="true"] { border-color: var(--border-strong); border-bottom-color: var(--surface); background: var(--surface); color: var(--text); font-weight: 600; }
 .ghc-tab:focus-visible { outline: 2px solid var(--ring-border); outline-offset: -2px; }
-.ghc-tab-count { padding: 0 6px; border-radius: 999px; background: var(--hover); color: var(--text); font-size: 11.5px; font-weight: 500; line-height: 18px; }
+.ghc-tab-count { padding: 0 6px; border-radius: 999px; background: var(--hover); color: var(--text); font-size: var(--fs-small); font-weight: 500; line-height: 18px; }
 .ghc-tab-empty { margin: 0; padding: 24px 12px; color: var(--text-faint); text-align: center; }
-.ghc-diffstat { font-family: var(--font-mono); font-size: 11.5px; }
+.ghc-diffstat { font-family: var(--font-mono); font-size: var(--fs-small); }
 .ghc-add { color: var(--ghc-open); }
 .ghc-del { color: var(--ghc-closed); }
 
-.ghc-event { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 0; padding-left: 4px; color: var(--text-muted); font-size: 13px; }
+.ghc-event { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 0; padding-left: 4px; color: var(--text-muted); font-size: var(--fs-small); }
 .ghc-event-badge { display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; border-radius: 50%; background: var(--hover); color: var(--text-muted); }
 .ghc-badge-open { background: var(--ghc-pill-open); color: #fff; }
 .ghc-badge-closed { background: var(--ghc-pill-closed); color: #fff; }
@@ -214,7 +214,7 @@
 .ghc-commit { display: flex; align-items: flex-start; gap: 8px; padding: 8px 14px; }
 .ghc-commit-icon { padding-top: 2px; color: var(--text-muted); }
 .ghc-commit-title { font-weight: 600; overflow-wrap: anywhere; }
-.ghc-sha { flex: none; padding: 1px 6px; border-radius: 6px; background: var(--inline-code-bg); font-family: var(--font-mono); font-size: 11.5px; }
+.ghc-sha { flex: none; padding: 1px 6px; border-radius: 6px; background: var(--inline-code-bg); font-family: var(--font-mono); font-size: var(--fs-small); }
 
 .ghc-files { display: flex; flex-direction: column; gap: 10px; }
 .ghc-file { overflow: hidden; }
@@ -230,7 +230,7 @@
 .ghc-check { display: flex; align-items: center; gap: 8px; padding: 6px 14px; }
 .ghc-check .ghc-state-icon { padding-top: 0; }
 .ghc-check-name { flex: 1; min-width: 0; overflow-wrap: anywhere; }
-.ghc-check-state { color: var(--text-muted); font-size: 12px; }
+.ghc-check-state { color: var(--text-muted); font-size: var(--fs-small); }
 .ghc-merge-foot { display: flex; flex-wrap: wrap; gap: 8px; padding: 10px 14px; border-top: 1px solid var(--border); background: var(--ghc-head-bg); }
 
 /* A narrow card (the 400px phone column, a split pane) stacks the sidebar under the thread. */
