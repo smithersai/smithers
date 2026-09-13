@@ -1,3 +1,4 @@
+import { createDictation } from "./controller/dictation"
 import { lessonCompletion } from "../onboarding/completion"
 import { createGuideController } from "./controller/guide"
 import type { CommandActions } from "../flows/Flows"
@@ -333,6 +334,8 @@ export interface AppController extends TutorialChangeController {
    */
   readonly searchPalette: (text: string) => PaletteAnswer
   readonly search: SearchSeam["search"]
+  readonly toggleDictation: () => Promise<string | void>
+  readonly cancelDictation: () => void
   readonly openPalette: (prefix?: string) => void
   readonly closePalette: (lastQuery?: string) => void
   readonly togglePaletteActions: (ref: string) => void
@@ -1091,6 +1094,17 @@ export const createAppController = (
     store.dispatch({ type: "command.ran", actor: "user", name })
   }
 
+  const dictation = createDictation(store)
+  ctx.onDispose(dictation.cancel)
+  const cancelDictation = dictation.cancel
+  const toggleDictation = async (): Promise<string | void> => {
+    if (!store.session().dictating) {
+      await guideAct("open")
+      closePalette()
+    }
+    return dictation.toggle()
+  }
+
   /* The palette's session acts (palette spec §3): open, close, the actions panel, the recents ledger. */
   const openPalette = (prefix?: string): void => {
     if (prefix !== undefined && prefix !== "") store.dispatch({ type: "composer.changed", actor: "user", draft: prefix })
@@ -1471,6 +1485,8 @@ export const createAppController = (
     openTargetSource: targetGraph.openSource,
     toggleDevtools,
     toggleSurfacesMenu,
+    toggleDictation,
+    cancelDictation,
     searchPalette: searchSeam.palette,
     search: searchSeam.search,
     openPalette,

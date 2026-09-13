@@ -44,6 +44,12 @@ export function createGuideController(ctx: ControllerContext) {
     if (await reelAct(action, value)) return
     const guide: GuideState = migrateGuideV3(ctx.store.session().guide ?? initialGuide())
     switch (action) {
+      case "start":
+        if (guide.step !== 0) return
+        guide.completed = [...new Set([...(guide.completed ?? []), "tutorial.started"])]
+        guide.autoPaused = false
+        guide.step = 1
+        break
       case "pause":
         guide.autoPaused = true
         break

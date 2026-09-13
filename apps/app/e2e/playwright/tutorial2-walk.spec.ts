@@ -75,6 +75,10 @@ const boot = async (page: Page, baseURL: string | undefined): Promise<TutorialHo
   await expect(shell(page)).toHaveAttribute("data-theme", "light")
   const now = await page.evaluate(() => Date.now())
   await page.clock.pauseAt(new Date(now + 5))
+  if (await stageOf(page) === 0) {
+    await page.getByRole("button", { name: "Start tutorial" }).click()
+    await advanceTo(page, 1)
+  }
   return host
 }
 /** A reload under the paused clock (the OAuth and install hops): pump until the shell is back. */
@@ -123,9 +127,9 @@ test("the whole tutorial walks every beat, keyboard first, offline through beat 
   const host = await boot(page, baseURL)
 
   // Beat 0: both greeting lines and the goal card with four empty checkpoints; it advances with no input.
-  // (Under reduced motion its read pause is 0 ms, so the transcript is where beat 0 is read.)
+  // The boot helper explicitly starts the tutorial.
   await expect(line(page, 0)).toHaveText(lessonMessage(0, {}))
-  await expect(page.locator('[data-message-step="0"] p[data-line="2"]')).toHaveText(GUIDE_STAGES[0]!.kind === "say" ? GUIDE_STAGES[0]!.more ?? "" : "")
+  await expect(page.locator('[data-message-step="0"] p[data-line="2"]')).toHaveCount(0)
   await expect(page.locator(".guide-goal [data-checkpoint]")).toHaveCount(4)
   await expect(page.locator('.guide-goal [data-done="true"]')).toHaveCount(0)
   await expect(page.locator(".guide-repo-chip[data-practice]")).toContainText("hello-server")

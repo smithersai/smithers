@@ -43,9 +43,10 @@ export type GuideLesson = {
 }
 
 export const GUIDE_STAGES: readonly GuideLesson[] = [
-  /* 0: Will's original greeting, verbatim; the practice framing and the goal follow it and sit on the goal card. */
-  /* 0 */ { kind: "say", message: "I'm Smithers, I help your team manage your repository.",
-    more: "Let's warm up on a practice repo. One goal: fix a bug and send it for review as a Change." },
+  /* The greeting waits for the explicit Start tutorial action. */
+  /* 0 */ { kind: "do", message: "I'm Smithers, I help your team manage your repository.", completion: "tutorial.started", skippable: false,
+    instruction: "Starts the tutorial.",
+    actions: [{ label: "Start tutorial", key: "T", flow: "onboarding.act", args: "start" }] },
   /* 1 */ { kind: "do", practice: true, message: "Someone on the team filed a bug. Let's look at the issues.", completion: "issues.opened", skippable: false,
     instruction: "Lists the practice repository's open issues.",
     actions: [{ label: "Show issues", key: "I", flow: "issues.list", args: `open ${PRACTICE_REPO}` }] },

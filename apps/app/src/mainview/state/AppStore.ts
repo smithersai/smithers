@@ -1317,6 +1317,10 @@ const initializeAppStore = async (resolved: ResolvedPersistence): Promise<AppSto
         return frame
       }
       switch (transition.type) {
+        case "dictation.changed":
+          collections.sessions.update(SESSION_ID, (draft) => { draft.dictating = transition.listening })
+          break
+
         case "composer.changed":
           collections.sessions.update(SESSION_ID, (draft) => {
             draft.draft = transition.draft

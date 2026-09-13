@@ -157,9 +157,8 @@
   text-align: center;
   animation: none;
   /*
-   * The lesson is a column that fills the window: the transcript takes every
-   * row the cards, the interactive example and the actions do not, so the
-   * actions land immediately above the footer instead of floating mid-page.
+   * The lesson keeps navigation in a full-height sticky range. Its transcript
+   * sizes to its content, so suggested actions follow the last chat card.
    */
   display: flex;
   flex-direction: column;
@@ -391,8 +390,15 @@
 .guide-progress span[data-passed="true"] {
   background: var(--g-gold);
 }
-.guide-footer button:nth-of-type(2) {
+.guide-chat-controls {
   margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 24px;
+}
+.guide-chat-controls button[aria-pressed="true"] { color: var(--g-accent); }
+@media (max-width: 600px) {
+  .guide-chat-controls { gap: 12px; flex-wrap: wrap; }
 }
 .guide-form {
   margin-top: 15px;
@@ -1175,12 +1181,11 @@
   display: grid;
   gap: 16px;
   /*
-   * No cap: the chat takes the whole window. It is the only row that flexes,
-   * so it grows to the footer and scrolls inside itself. The floor keeps a
-   * readable log when a lesson's example widget is unusually tall.
+   * Size to the messages rather than filling the remaining window. The
+   * lesson scroller accommodates longer conversations and their actions.
    */
-  flex: 1 1 0;
-  min-height: 200px;
+  flex: 0 0 auto;
+  min-height: 0;
   align-content: start;
   overflow-y: auto;
   overscroll-behavior: contain;
@@ -1395,7 +1400,7 @@
 
 /* ---- Onboarding script v4 (onboarding/lessons.ts) ---- */
 .guide-repo-chip { display: inline-flex; align-items: center; gap: .4rem; font-weight: 600; }
-.guide-practice-badge, .smithers-card-practice {
+.smithers-card-practice {
   display: inline-block; padding: .05rem .45rem; border-radius: 999px; font-size: var(--fs-small); font-weight: 600;
   letter-spacing: .02em; color: var(--accent, #6b4fd8); background: color-mix(in srgb, var(--accent, #6b4fd8) 12%, transparent);
 }
@@ -1455,3 +1460,6 @@
 @media (prefers-reduced-motion: reduce) {
   .guide-goal, .change-stack-row, .world-card-row[data-good-first="true"], .guide-footer [data-pulse="true"] { animation: none; }
 }
+
+.guide-composer-layer:has(.guide-dictation-stop) { flex-direction: column; }
+.guide-dictation-stop { display: flex; align-items: center; gap: 8px; padding: 8px 12px !important; color: var(--g-accent) !important; }

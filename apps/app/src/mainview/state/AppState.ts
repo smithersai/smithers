@@ -831,6 +831,7 @@ export const SessionSchema = z.object({
    * Session state like the menus above, never a component's; all optional so
    * sessions persisted before the fields parse without a schema reset.
    */
+  dictating: z.boolean().optional(),
   paletteOpen: z.boolean().optional(),
   paletteActionsRef: z.string().nullable().optional(),
   paletteLastQuery: z.string().optional(),
@@ -1082,6 +1083,7 @@ export const BillingAccountSchema = z.object({
 export type BillingAccount = z.infer<typeof BillingAccountSchema>
 
 export type AppTransition =
+  | { type: "dictation.changed"; actor: Actor; listening: boolean }
   | { type: "composer.changed"; actor: Actor; draft: string }
   | { type: "message.submitted"; actor: "user" | "smithers"; turnId: string; text: string }
   | {

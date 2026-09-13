@@ -32,11 +32,12 @@ const walkTo = async (page: Page, target: number) => {
   }
 }
 
-test("the greeting auto-advances to the first practice beat and navigation cannot complete it", async ({ page }) => {
+test("the greeting waits for Start tutorial and navigation cannot complete the first lesson", async ({ page }) => {
   await page.goto("/")
+  await page.getByRole("button", { name: "Start tutorial" }).click()
   await expectStage(page, 1)
   await expect(page.locator('[data-message-step="0"] p[data-line="1"]')).toHaveText("I'm Smithers, I help your team manage your repository.")
-  await expect(page.locator('[data-message-step="0"] p[data-line="2"]')).toHaveText("Let's warm up on a practice repo. One goal: fix a bug and send it for review as a Change.")
+  await expect(page.locator('[data-message-step="0"] p[data-line="2"]')).toHaveCount(0)
   // Script v4 principle 1: the pill is the instruction; there are no numbered "Click X" rows.
   await expect(page.locator(".guide-steps")).toHaveCount(0)
   await expect(page.locator('.guide-actions [data-flow="issues.list"]')).toContainText("Show issues")
@@ -48,19 +49,21 @@ test("the greeting auto-advances to the first practice beat and navigation canno
 
 test("all lessons walk end-to-end through named skeleton signals and the real plugin install", async ({ page }) => {
   await page.goto("/")
+  await page.getByRole("button", { name: "Start tutorial" }).click()
   await walkTo(page, 14)
   await page.reload()
   await expectStage(page, 14)
   await expect(page.getByTestId("composer-input")).toBeHidden()
   await slash(page, "/tut")
   await page.keyboard.press("Escape")
-  await page.keyboard.press("ArrowRight")
+  await page.getByRole("button", { name: "Start tutorial" }).click()
   await expectStage(page, 1)
   await expect(page.locator('[data-message-step="1"] .guide-step-done')).toHaveCount(0)
 })
 
 test("Back pauses, only ArrowRight navigates, composer restores focus", async ({ page }) => {
   await page.goto("/")
+  await page.getByRole("button", { name: "Start tutorial" }).click()
   await expectStage(page, 1)
   await page.keyboard.press("ArrowLeft")
   await expectStage(page, 0)
@@ -70,12 +73,13 @@ test("Back pauses, only ArrowRight navigates, composer restores focus", async ({
   await page.keyboard.press("Control+k")
   await expect(page.getByTestId("composer-input")).toBeFocused()
   await page.keyboard.press("Escape")
-  await page.keyboard.press("ArrowRight")
+  await page.getByRole("button", { name: "Start tutorial" }).click()
   await expectStage(page, 1)
 })
 
 test("a practice beat needs no account: Show issues reads the bundled repository", async ({ page }) => {
   await page.goto("/")
+  await page.getByRole("button", { name: "Start tutorial" }).click()
   await expectStage(page, 1)
   await page.keyboard.press("i")
   await expect(page.locator('[data-tutorial-cards] [data-kind="issue-list"] [data-issue="3"]')).toBeVisible()
@@ -87,6 +91,7 @@ test("reduced motion and a narrow viewport keep the first pill and the goal card
   await page.setViewportSize({ width: 390, height: 844 })
   await page.emulateMedia({ reducedMotion: "reduce" })
   await page.goto("/")
+  await page.getByRole("button", { name: "Start tutorial" }).click()
   await expectStage(page, 1)
   expect(await page.locator(".guide-shell").evaluate(node => node.scrollWidth <= node.clientWidth)).toBe(true)
   await expect(page.locator('.guide-actions [data-flow="issues.list"]')).toBeVisible()
@@ -104,6 +109,7 @@ test("the login pill (beat 10) carries L and L dispatches the GitHub sign-in rou
     contentType: "text/html", body: "<p>GitHub sign-in route reached</p>"
   }))
   await page.goto("/")
+  await page.getByRole("button", { name: "Start tutorial" }).click()
   await expectStage(page, 1)
   await page.keyboard.press("q")
   await expectStage(page, 10)
@@ -121,6 +127,7 @@ test("the login pill (beat 10) carries L and L dispatches the GitHub sign-in rou
 
 test("Open hello.ts reads the bundled practice file anchored on line 2", async ({ page }) => {
   await page.goto("/")
+  await page.getByRole("button", { name: "Start tutorial" }).click()
   await walkTo(page, 4)
   await page.getByRole("button", { name: /Open hello\.ts/ }).click()
   await expect(page.locator('.guide-transcript [data-kind="file"] [data-line="2"]')).toBeVisible()

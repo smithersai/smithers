@@ -73,6 +73,7 @@ export const FLOW_NAMES = [
   "change.view",
   "chat",
   "chat.clear",
+  "chat.dictate",
   "chat.commands",
   "chat.copy-message",
   "chat.reload",

@@ -90,7 +90,7 @@ const settle = async () => {
 test("every beat has keyboard navigation, one pill shape, and no numbered instruction rows", async () => {
   for (let step = 0; step <= GUIDE_LAST_STEP; step++) {
     const host = await mountGuide(step, still, { repo: "acme/api" })
-    if (step < GUIDE_LAST_STEP) {
+    if (step > 0 && step < GUIDE_LAST_STEP) {
       const back = host.querySelector('[aria-keyshortcuts="ArrowLeft"]')
       expect(back).not.toBeNull()
       expect(text(back)).toContain("←")
@@ -119,7 +119,7 @@ test("every beat has keyboard navigation, one pill shape, and no numbered instru
       expect(host.querySelector(".guide-skip") !== null).toBe(lesson.practice === true)
     }
     // The goal card is pinned through the practice beats.
-    expect(host.querySelector(".guide-goal") !== null).toBe(step <= 9)
+    expect(host.querySelector(".guide-goal") !== null).toBe(step > 0 && step <= 9)
     mounted.pop()?.()
   }
 })

@@ -164,7 +164,7 @@ describe("launch-law parity: every affordance is a command", () => {
         .filter(([, count]) => count > 0)
     )
     expect(counts).toEqual({
-      "../onboarding/GuideShell.tsx": 9, // + Skip practice (onboarding.act) and the secondary pill (Not now, Later)
+      "../onboarding/GuideShell.tsx": 11, // Includes skip/secondary actions and the footer/dialog dictation controls.
       // The optional capability reel after the last lesson: its launch pill and its Back.
       "../onboarding/Reel.tsx": 2, // Delegates to the shared onboarding and existing app flows; the Command-K overlay is the summoned composer with no chrome of its own. The sidebar lists Wiki and Mythical history only — no Library entry.
       /*

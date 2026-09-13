@@ -8,7 +8,7 @@ import { ReelShell } from "./Reel.tsx"
 import { guideForwardAction } from "./navigation"
 import { useLiveQuery } from "@tanstack/react-db"
 import { useRef, useState, type ReactNode, type CSSProperties } from "react"
-import { Check, Command, Volume2, VolumeX, X } from "lucide-react"
+import { Check, Command, Mic, Volume2, VolumeX, X } from "lucide-react"
 import { useController } from "../ControllerContext"
 import { initialGuide, conversationTabIdOf, inConversation, type Card } from "../state/AppState"
 import { useCardRows } from "../state/useCardRows"
@@ -130,7 +130,13 @@ export function GuideShell({ children, clock = guideClock }: { children: ReactNo
       document.querySelector<HTMLTextAreaElement>(".guide-composer-layer textarea")?.focus(),
     )
   }
+  const runCommandDictation = () => {
+    previousFocus.current = document.activeElement instanceof HTMLElement ? document.activeElement : null
+    controller.runCommand("chat.dictate")
+    requestAnimationFrame(() => document.querySelector<HTMLTextAreaElement>(".guide-composer-layer textarea")?.focus())
+  }
   const runCommandClose = () => {
+    controller.cancelDictation()
     controller.closePalette()
     runCommandGuide("close")
     if (previousFocus.current?.isConnected) previousFocus.current.focus()
@@ -180,7 +186,7 @@ export function GuideShell({ children, clock = guideClock }: { children: ReactNo
     return guide.said?.[asked.completion] ?? asked.success
   }
   const repoChip = stillPractice
-    ? <span className="guide-repo-chip" data-practice="">{PRACTICE_NAME} <span className="guide-practice-badge">Practice</span></span>
+    ? <span className="guide-repo-chip" data-practice="">{PRACTICE_NAME}</span>
     : <span className="guide-repo-chip" data-your-repo="">{guide.repo ?? "Your repository"}</span>
   return (
     <GuideComposerHost.Provider value={composerHost}>
@@ -322,7 +328,7 @@ export function GuideShell({ children, clock = guideClock }: { children: ReactNo
       </header>
       <main className="guide-main">
         <section className="guide-lesson" aria-label={`Lesson ${stage + 1}`}>
-          {stage < GUIDE_LAST_STEP && (
+          {stage > 0 && stage < GUIDE_LAST_STEP && (
             <nav className="guide-navigation" aria-label="Lesson navigation">
               <button className="guide-back" disabled={stage === 0} aria-keyshortcuts="ArrowLeft" data-flow="onboarding.act" onClick={() => runCommandGuide("back")}>
                 <span aria-hidden="true">←</span> Back {keyHint("←")}
@@ -347,7 +353,7 @@ export function GuideShell({ children, clock = guideClock }: { children: ReactNo
             </nav>
           )}
           {/* The goal and the stakes, pinned above the transcript (SCRIPT v4 principle 4). */}
-          {(practice || (skipped && stage === GUIDE_BRIDGE)) && (
+          {stage > 0 && (practice || (skipped && stage === GUIDE_BRIDGE)) && (
             <section className="guide-goal" aria-label="Goal" data-goal-state={skipped ? "skipped" : goalComplete ? "complete" : "open"}>
               <p className="guide-goal-title">{PRACTICE_NAME} · Practice{skipped ? " · Skipped" : ""}</p>
               <p className="guide-goal-line">Fix a bug and send it for review as a Change.</p>
@@ -407,7 +413,7 @@ export function GuideShell({ children, clock = guideClock }: { children: ReactNo
                     <div className="guide-speaker"><span />SMITHERS</div>
                     <p data-line="1">{words(message)}</p>
                     {asked.kind === "say" && asked.more !== undefined && <p data-line="2">{words(asked.more, message.split(" ").length)}</p>}
-                    {asked.kind === "do" && done(messageStep) && (
+                    {messageStep > 0 && asked.kind === "do" && done(messageStep) && (
                       <p className="guide-followup" data-followup="">
                         <Check className="guide-step-done" size={16} aria-label="Done" role="img" />
                         {line !== undefined ? <span>{line}</span> : null}
@@ -477,8 +483,13 @@ export function GuideShell({ children, clock = guideClock }: { children: ReactNo
           <section
             className="guide-composer-layer"
             role="dialog"
-            aria-label="Ask Smithers"
+            aria-label="Chat"
           >
+            {session.dictating && (
+              <button type="button" className="guide-dictation-stop" data-flow="chat.dictate" onClick={runCommandDictation}>
+                <Mic size={16} /> Stop dictation
+              </button>
+            )}
             <div className="guide-composer-host" ref={setComposerHost} />
           </section>
         </div>
@@ -512,12 +523,19 @@ export function GuideShell({ children, clock = guideClock }: { children: ReactNo
           ))}
         </div>
         {stage >= 1 && (
-          <button ref={opener} data-flow="palette.open" data-pulse={lesson?.kind === "do" && lesson.completion === "palette.opened" && !done(stage)}
-            onClick={runCommandOpen}>
-            <Command size={14} />
-            <span>Ask Smithers</span>
-            {keyHint("⌘ K")}
-          </button>
+          <div className="guide-chat-controls">
+            <button ref={opener} aria-keyshortcuts="Meta+K Control+K" data-flow="palette.open" data-pulse={lesson?.kind === "do" && lesson.completion === "palette.opened" && !done(stage)}
+              onClick={runCommandOpen}>
+              <Command size={14} />
+              <span>Chat</span>
+              {keyHint("⌘ K")}
+            </button>
+            <button type="button" data-flow="chat.dictate" aria-pressed={session.dictating === true}
+              onClick={runCommandDictation}>
+              <Mic size={14} />
+              <span>{session.dictating ? "Stop dictation" : "Dictation"}</span>
+            </button>
+          </div>
         )}
         {stage === GUIDE_LAST_STEP && (
           <button data-flow="onboarding.act" onClick={() => runCommandGuide("restart")}>

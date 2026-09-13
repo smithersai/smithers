@@ -37,6 +37,8 @@ test("Back pauses, stale timers cannot advance and replay clears completion", as
   await controller.guideAct("advance", "0:0")
   expect(store.session().guide?.step).toBe(0)
   await controller.guideAct("next")
+  expect(store.session().guide?.step).toBe(0)
+  await controller.guideAct("start")
   await controller.guideAct("advance", "0:0")
   expect(store.session().guide?.step).toBe(1)
   await controller.guideAct("signal", "identity.signed-in")
