@@ -330,7 +330,7 @@ export function GuideShell({ children, clock = guideClock }: { children: ReactNo
               {lesson?.kind === "do" && lesson.practice === true && (
                 <button className="guide-back guide-skip" type="button" aria-keyshortcuts="q" data-flow="onboarding.act"
                   onClick={() => runCommandGuide("skip-practice")}>
-                  Skip practice {keyHint("Q")}
+                  Skip tutorial {keyHint("Q")}
                 </button>
               )}
               {showNext && (

@@ -94,7 +94,7 @@ export function createGuideController(ctx: ControllerContext) {
       }
       case "skip-practice": {
         const stage = GUIDE_STAGES[guide.step]
-        if (stage?.kind !== "do" || stage.practice !== true) return "Skip practice is offered on the practice lessons."
+        if (stage?.kind !== "do" || stage.practice !== true) return "Skip tutorial is offered on the practice lessons."
         guide.declined = [...new Set([...(guide.declined ?? []), "practice" as const])]
         guide.autoPaused = false
         guide.step = GUIDE_BRIDGE
