@@ -40,6 +40,7 @@ const githubHref = "https://github.com/smithersai/smithers"
 </Base>
 
 <script>
+  import { hasSavedApp } from "../lib/appHistory"
   /*
    * The app arrives in this document. After `load` and an idle moment the
    * page reads the prerendered app page (Start Here's href) for the app's
@@ -248,7 +249,7 @@ const githubHref = "https://github.com/smithersai/smithers"
      */
     const params = new URLSearchParams(location.search)
     const auth = params.get("auth")
-    if (params.has("signed-in") || auth === "failed" || auth === "error") {
+    if (params.has("signed-in") || auth === "failed" || auth === "error" || hasSavedApp(key => localStorage.getItem(key))) {
       document.documentElement.classList.add("entering")
       void enter(true)
     } else if (document.readyState === "complete") idle()
