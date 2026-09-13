@@ -93,6 +93,7 @@ describe("the slash menu is a tree", () => {
 
   test("Enter or ArrowRight on a namespace opens the branch; ArrowLeft returns to the top", async () => {
     const view = await mount()
+    const recent = view.controller.store.session().recentCommands ?? []
     await view.act(() => view.controller.changeDraft("/app"))
     // `/app` offers the namespace row first.
     expect(rows(view.host)[0]).toBe("appearance/")
@@ -100,7 +101,7 @@ describe("the slash menu is a tree", () => {
     expect(view.controller.store.session().draft).toBe("/appearance.")
     expect(rows(view.host)).toEqual(["appearance.theme", "appearance.dark-mode"])
     // Nothing ran: opening a branch is a draft edit.
-    expect(view.controller.store.session().recentCommands ?? []).toEqual([])
+    expect(view.controller.store.session().recentCommands ?? []).toEqual(recent)
     await press(view, "ArrowLeft")
     expect(view.controller.store.session().draft).toBe("/")
     // connect, wiki, plugins, flows, chat (the surface leaves) and tut, then the first namespace row.
@@ -123,5 +124,17 @@ describe("the slash menu is a tree", () => {
     await press(view, "Enter")
     expect(view.controller.store.session().draft).toBe("")
     expect(view.controller.store.session().recentCommands?.[0]).toBe("appearance.dark-mode")
+  })
+
+  test("Enter on exact /tut replays instead of opening the tutorial namespace", async () => {
+    const view = await mount()
+    const before = view.controller.store.session().guide?.playthrough ?? 0
+    await view.act(() => view.controller.changeDraft("/tut"))
+    expect(rows(view.host)[0]).toBe("tut")
+    expect(rows(view.host)).toContain("tutorial/")
+    await press(view, "Enter")
+    expect(view.controller.store.session().draft).toBe("")
+    expect(view.controller.store.session().guide).toMatchObject({ step: 1, playthrough: before + 1 })
+    expect(view.controller.store.session().recentCommands?.[0]).toBe("tut")
   })
 })

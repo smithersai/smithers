@@ -310,6 +310,21 @@ describe("command registry pure model", () => {
     expect(fuzzy.map((row) => (row.kind === "flow" ? row.flow.name : ""))).toEqual(["appearance.dark-mode"])
   })
 
+  test("an exact bare command ranks ahead of a longer namespace prefix", () => {
+    const commands = [
+      { name: "tutorial.live.retry", summary: "Retry tutorial" },
+      { name: "tut", summary: "Replay introduction" },
+    ]
+    for (const query of ["tut", "TUT"]) {
+      const rows = slashTree(chatState, query, commands)
+      expect(rows[0]?.kind === "flow" && rows[0].flow.name).toBe("tut")
+      expect(rows[1]?.kind === "namespace" && rows[1].namespace.id).toBe("tutorial")
+      expect(rows.filter(row => row.kind === "flow" && row.flow.name === "tut")).toHaveLength(1)
+    }
+    expect(slashTree(chatState, "tu", commands)[0]?.kind).toBe("namespace")
+    expect(slashTree(chatState, "tutorial.", commands)[0]).toMatchObject({ kind: "flow", flow: { name: "tutorial.live.retry" } })
+  })
+
   test("/flows and the data-flows manifest differ by exactly the hidden set", async () => {
     const { controller } = await freshController()
     const manifest = controller.commands.all().map((command) => command.name)

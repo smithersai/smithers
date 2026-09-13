@@ -511,7 +511,8 @@ export const collisionNote = <C extends CatalogItem>(id: string): SlashRow<C> =>
  *    namespace's visible flows, uncapped — the branch IS the listing;
  *  - anything else is the flat fuzzy filter `slashItems` already does, so a
  *    user who knows a name loses nothing, plus the namespaces whose id the
- *    query starts (`/app` offers `appearance ›` above the leaves).
+ *    query starts (`/app` offers `appearance ›` above fuzzy leaves). An exact
+ *    flow name always precedes prefix namespaces so Enter runs what was typed.
  */
 export const slashTree = <C extends CatalogItem>(
   state: CommandState,
@@ -554,7 +555,10 @@ export const slashTree = <C extends CatalogItem>(
   const collides = !query.includes(".") &&
     namespaces.some((row) => row.id === query) &&
     visible(commands).some((command) => command.name === query)
-  return [...(collides ? [collisionNote<C>(query)] : []), ...heads, ...slashItems(state, needle, commands).map(asFlow)]
+  const matches = slashItems(state, needle, commands)
+  const exact = matches.filter(item => item.flow.name.toLowerCase() === query)
+  const fuzzy = matches.filter(item => item.flow.name.toLowerCase() !== query)
+  return [...(collides ? [collisionNote<C>(query)] : []), ...exact.map(asFlow), ...heads, ...fuzzy.map(asFlow)]
 }
 
 /**
