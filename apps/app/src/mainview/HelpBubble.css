@@ -8,6 +8,8 @@
 }
 
 .help-bubble {
+  --help-tip-border: color-mix(in srgb, var(--g-accent, #286447) 28%, transparent);
+  --help-tip-background: color-mix(in srgb, var(--g-panel, #fff) 92%, var(--g-accent, #286447));
   position: relative;
   display: flex;
   align-items: flex-start;
@@ -16,9 +18,10 @@
   box-sizing: border-box;
   margin-bottom: 18px;
   padding: 14px 12px 14px 16px;
-  border: 1px solid var(--g-accent, #286447);
+  border: 1px solid var(--help-tip-border);
+  border-left: 4px solid var(--g-accent, #286447);
   border-radius: 12px;
-  background: var(--g-panel, #fff);
+  background: var(--help-tip-background);
   color: var(--g-ink, #183e2d);
   box-shadow: 0 4px 14px #1e393012;
   text-align: left;
@@ -31,9 +34,9 @@
   left: calc(var(--help-tip-x, 50%) - 5px);
   width: 10px;
   height: 10px;
-  border-right: 1px solid var(--g-accent, #286447);
-  border-bottom: 1px solid var(--g-accent, #286447);
-  background: var(--g-panel, #fff);
+  border-right: 1px solid var(--help-tip-border);
+  border-bottom: 1px solid var(--help-tip-border);
+  background: var(--help-tip-background);
   transform: rotate(45deg);
 }
 
@@ -43,6 +46,12 @@
   font-size: var(--fs-small, 14px);
   line-height: 1.6;
   overflow-wrap: anywhere;
+}
+
+.help-bubble-icon {
+  flex-shrink: 0;
+  margin-top: 3px;
+  color: var(--g-accent, #286447);
 }
 
 .help-bubble-dismiss {
@@ -88,8 +97,28 @@
   .guidance-text-visual > span { opacity: 1; animation: none; }
 }
 
-/* No pulse or entrance animation: guidance is stable, including reduced motion. */
 .help-anchor[data-help-open] .help-anchor-target > button {
   outline: 2px solid var(--g-accent, #286447);
   outline-offset: 4px;
+}
+
+/* Only the action we are waiting for pulses; explanatory tips stay quiet. */
+.help-anchor[data-help-pulse] .help-anchor-target > button,
+.help-anchor[data-help-pulse] .guide-button-key {
+  animation: help-target-glow 1600ms ease-in-out infinite;
+}
+@keyframes help-target-glow {
+  0%, 100% { box-shadow: 0 0 0 0 transparent; }
+  50% { box-shadow: 0 0 16px 4px color-mix(in srgb, var(--g-accent, #286447) 32%, transparent); }
+}
+.help-anchor[data-help-pulse] .help-anchor-target > button[data-pressed],
+.help-anchor[data-help-pulse] button[data-pressed] .guide-button-key {
+  animation: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  .help-anchor[data-help-pulse] .help-anchor-target > button,
+  .help-anchor[data-help-pulse] .guide-button-key {
+    animation: none;
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--g-accent, #286447) 18%, transparent);
+  }
 }

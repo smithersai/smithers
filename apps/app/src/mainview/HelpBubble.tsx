@@ -1,5 +1,5 @@
 import { useCallback, useRef, type ReactNode } from "react"
-import { X } from "lucide-react"
+import { Lightbulb, X } from "lucide-react"
 import "./HelpBubble.css"
 
 export type HelpBubbleProps = {
@@ -10,6 +10,8 @@ export type HelpBubbleProps = {
   onDismiss: () => void
   /** Footer controls can float guidance above themselves without growing the bar. */
   placement?: "flow" | "above"
+  /** Draw attention to the target while awaiting its action. */
+  pulse?: boolean
   /** The control being explained. It remains mounted when guidance is dismissed. */
   children: ReactNode
 }
@@ -20,7 +22,7 @@ export type HelpBubbleProps = {
  * The caller owns when to show it; no tutorial, timer, or permission policy
  * belongs here. Opening guidance neither moves focus nor traps the keyboard.
  */
-export function HelpBubble({ id, open, content, onDismiss, children, placement = "flow" }: HelpBubbleProps) {
+export function HelpBubble({ id, open, content, onDismiss, children, placement = "flow", pulse = false }: HelpBubbleProps) {
   const target = useRef<HTMLDivElement>(null)
   const bubble = useRef<HTMLDivElement>(null)
   const anchor = useCallback((node: HTMLDivElement | null) => {
@@ -62,7 +64,7 @@ export function HelpBubble({ id, open, content, onDismiss, children, placement =
     onDismiss()
   }
   return (
-    <div className="help-anchor" ref={anchor} data-placement={placement} data-help-open={open || undefined} onKeyDown={event => {
+    <div className="help-anchor" ref={anchor} data-placement={placement} data-help-open={open || undefined} data-help-pulse={open && pulse || undefined} onKeyDown={event => {
       if (!open || event.key !== "Escape") return
       event.preventDefault()
       event.stopPropagation()
@@ -70,6 +72,7 @@ export function HelpBubble({ id, open, content, onDismiss, children, placement =
     }}>
       {open && (
         <div className="help-bubble" ref={bubble} role="note" aria-label="Help">
+          <Lightbulb className="help-bubble-icon" size={17} aria-hidden="true" />
           <div id={id} className="help-bubble-content">{content}</div>
           <button className="help-bubble-dismiss" type="button" aria-label="Dismiss help" onClick={dismiss}>
             <X size={15} aria-hidden="true" />

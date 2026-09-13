@@ -18,6 +18,8 @@ import { PRACTICE_CARD, PRACTICE_REPO, PRACTICE_RUN_ID } from "../state/practice
 import "./guide.css"
 
 import { bindPressActions, type PressAction } from "../runtime/PressActions"
+import { InputModeMenu } from "../InputModeMenu"
+import { vimFocusAction } from "../runtime/VimNavigation"
 import { GuideButton, GUIDE_KEYS } from "./GuideButton"
 import { GuideComposerHost } from "./GuideComposerHost"
 import { InTutorial, tutorialTranscript } from "./transcriptScope"
@@ -140,21 +142,15 @@ export function GuideShell({ children, clock = guideClock }: { children: ReactNo
     if (guide.sound && !["close", "sound"].includes(action)) chime()
   }
   /*
-   * ⌘K opens the palette (SCRIPT v4 "Open decision"): the composer rises
+   * C opens Chat (Cmd/Ctrl-K remains an alias) (SCRIPT v4 "Open decision"): the composer rises
    * into the palette layer with "Ask Smithers" as its first row.
    */
   const runCommandOpen = () => {
     previousFocus.current = document.activeElement instanceof HTMLElement ? document.activeElement : null
-    runCommandGuide("open")
-    controller.runCommand("palette.open")
+    controller.runCommand("chat.open")
     requestAnimationFrame(() =>
       document.querySelector<HTMLTextAreaElement>(".guide-composer-layer textarea")?.focus(),
     )
-  }
-  const runCommandDictation = () => {
-    previousFocus.current = document.activeElement instanceof HTMLElement ? document.activeElement : null
-    controller.runCommand("chat.dictate")
-    requestAnimationFrame(() => document.querySelector<HTMLTextAreaElement>(".guide-composer-layer textarea")?.focus())
   }
   const runCommandClose = () => {
     controller.cancelDictation()
@@ -175,7 +171,7 @@ export function GuideShell({ children, clock = guideClock }: { children: ReactNo
     return action.args
   }
   const runLessonAction = (action: GuideAction) => {
-    if (action.flow === "palette.open") {
+    if (action.flow === "chat.open" || action.flow === "palette.open") {
       runCommandOpen()
       return
     }
@@ -205,11 +201,11 @@ export function GuideShell({ children, clock = guideClock }: { children: ReactNo
   }
   const inputHandlers = useRef<{ resolve: (event: KeyboardEvent) => PressAction | undefined; enabled: () => boolean }>(null!)
   inputHandlers.current = {
-    enabled: () => !guide.finished && guide.reelIndex === undefined,
+    enabled: () => !guide.finished && guide.reelIndex === undefined && !document.querySelector(".input-mode-menu"),
     resolve: (event) => {
       const key = event.key.toLowerCase()
       const action = (activate: () => void, shortcut = key): PressAction => ({
-        element: Array.from(document.querySelectorAll<HTMLElement>('.guide-shell [aria-keyshortcuts]'))
+        element: Array.from(document.querySelectorAll<HTMLElement>('.session-shell [aria-keyshortcuts], .guide-shell [aria-keyshortcuts]'))
           .find(button => !button.closest('[inert], [aria-hidden="true"]') && button.getAttribute('aria-keyshortcuts')?.toLowerCase().split(' ').includes(shortcut)),
         activate,
       })
@@ -218,7 +214,12 @@ export function GuideShell({ children, clock = guideClock }: { children: ReactNo
       }
       if (event.metaKey || event.ctrlKey || event.altKey || event.shiftKey) return
       if (key === 'escape' && guide.conversationOpen) return action(runCommandClose)
-      if (key === GUIDE_KEYS.dictation && stage >= 1) return action(runCommandDictation)
+      if (key === GUIDE_KEYS.mode) return action(() => document.querySelector<HTMLButtonElement>('.guide-shell [aria-haspopup="menu"][aria-keyshortcuts="m"]')?.click())
+      if (key === GUIDE_KEYS.chat) return action(() => guide.conversationOpen ? runCommandClose() : runCommandOpen())
+      if (session.inputMode === 'vim' && ['h', 'j', 'k', 'l'].includes(key)) {
+        const root = document.querySelector<HTMLElement>(guide.conversationOpen ? '.guide-composer-layer' : '.guide-shell')
+        return root ? vimFocusAction(root, key) : undefined
+      }
       if (guide.conversationOpen || session.paletteOpen) return
       const lessonAction = lesson?.kind === 'do'
         ? [...lesson.actions, ...(lesson.secondary === undefined ? [] : [lesson.secondary])].find(candidate => candidate.key.toLowerCase() === key)
@@ -231,8 +232,8 @@ export function GuideShell({ children, clock = guideClock }: { children: ReactNo
       if ((key === 'arrowdown' || key === 'arrowup') && runCard?.kind === 'run-trace' && runCard.payload.selection !== undefined) {
         return action(() => { moveTrace(key === 'arrowdown' ? 1 : -1) })
       }
+      if (key === 'w') return action(() => controller.runCommand('sidebar.toggle'))
       if (key === GUIDE_KEYS.sound) return action(runCommandSound)
-      if (key === 'c') return action(() => runCommandGuide('dark'))
       if (key === 'n') return action(() => runCommandGuide('notify'))
       if (key === 'arrowright') return action(() => runCommandGuide(guideForwardAction(stage)))
       if (key === GUIDE_KEYS.back && stage > 1) return action(() => runCommandGuide('back'))
@@ -242,7 +243,7 @@ export function GuideShell({ children, clock = guideClock }: { children: ReactNo
   // Ref ownership survives incidental renders (for example the auto-advance pause on keydown).
   const bindInputs = useCallback((node: HTMLDivElement | null) => {
     if (!node?.parentElement) return
-    return bindPressActions({ root: node.parentElement,
+    return bindPressActions({ root: node.closest<HTMLElement>(".session-shell") ?? node.parentElement,
       resolveShortcut: event => inputHandlers.current.resolve(event),
       enabled: () => inputHandlers.current.enabled(),
     })
@@ -444,6 +445,7 @@ export function GuideShell({ children, clock = guideClock }: { children: ReactNo
               )
               return guidedAction ? (
                 <HelpBubble key={action.flow} id={`guide-help-${stage}`} open={helpOpen}
+                  pulse={introduction === undefined}
                   placement={lesson.help?.introduction ? "above" : "flow"}
                   content={guidanceContent} onDismiss={() => setDismissedHelp(helpKey)}>
                   {button}
@@ -481,7 +483,7 @@ export function GuideShell({ children, clock = guideClock }: { children: ReactNo
             aria-label="Chat"
           >
             {session.dictating && (
-              <GuideButton className="guide-dictation-stop" data-flow="chat.dictate" shortcut={GUIDE_KEYS.dictation} onClick={runCommandDictation}>
+              <GuideButton className="guide-dictation-stop" data-flow="chat.dictate" shortcut="Tab ↵" onClick={() => controller.runCommand("chat.dictate")}>
                 <Mic size={16} /> Stop dictation
               </GuideButton>
             )}
@@ -520,17 +522,13 @@ export function GuideShell({ children, clock = guideClock }: { children: ReactNo
           <div className="guide-chat-controls">
             <HelpBubble id={`guide-chat-help-${stage}`} placement="above" open={chatHelpOpen}
               content={guidanceContent} onDismiss={() => setDismissedHelp(helpKey)}>
-            <GuideButton ref={opener} shortcut={GUIDE_KEYS.chat} data-flow="palette.open" data-pulse={lesson?.kind === "do" && lesson.completion === "palette.opened" && !done(stage)}
+            <GuideButton ref={opener} shortcut={GUIDE_KEYS.chat} data-flow="chat.open" data-pulse={lesson?.kind === "do" && lesson.completion === "palette.opened" && !done(stage)}
               aria-describedby={chatHelpOpen ? `guide-chat-help-${stage}` : undefined}
               onClick={runCommandOpen}>
               <span>Chat</span>
             </GuideButton>
             </HelpBubble>
-            <GuideButton data-flow="chat.dictate" shortcut={GUIDE_KEYS.dictation} aria-pressed={session.dictating === true}
-              onClick={runCommandDictation}>
-              <Mic size={14} />
-              <span>{session.dictating ? "Stop dictation" : "Dictation"}</span>
-            </GuideButton>
+            <InputModeMenu mode={session.inputMode ?? "normal"} onChange={mode => controller.runCommand("input.mode", mode)} />
           </div>
         )}
         {stage === GUIDE_LAST_STEP && (

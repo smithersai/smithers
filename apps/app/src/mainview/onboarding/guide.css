@@ -699,8 +699,8 @@
   align-items: flex-start;
   justify-content: center;
   padding: clamp(24px, 12dvh, 120px) 16px 16px;
-  background: color-mix(in srgb, var(--g-ink) 28%, transparent);
-  backdrop-filter: blur(3px);
+  background: color-mix(in srgb, var(--g-ink) 20%, transparent);
+  backdrop-filter: blur(6px);
   visibility: hidden;
   opacity: 0;
   transition: opacity var(--dur) var(--ease-current), visibility 0s var(--dur);
