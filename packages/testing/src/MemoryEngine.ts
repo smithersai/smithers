@@ -203,7 +203,7 @@ const recordedWinner = (
   for (let index = 0; index < race.branches.length; index++) {
     const branch = race.branches[index]
     if (branch === undefined) continue
-    const recorded = recordedOutcome(journal, branch, slots.get(branchPath(path, index)) ?? 0)
+    const recorded = recordedOutcome(journal, branch, slots.get(branchPath(path, index))!)
     if (recorded !== undefined) return { branch, recorded }
   }
   return undefined
@@ -219,7 +219,7 @@ const firstFrontier = (
     if (step === undefined) continue
     const path = String(index)
     if (step.kind === "step") {
-      if (recordedOutcome(journal, step, slots.get(path) ?? 0) === undefined) return step
+      if (recordedOutcome(journal, step, slots.get(path)!) === undefined) return step
       continue
     }
     if (recordedWinner(journal, step, slots, path) === undefined) return step
@@ -425,7 +425,7 @@ const executeStep = (
   getExecution(store, executionId).pipe(
     Effect.flatMap((execution) => {
       const recorded = step.kind === "step"
-        ? recordedOutcome(execution.journal, step, slots.get(path) ?? 0)
+        ? recordedOutcome(execution.journal, step, slots.get(path)!)
         : recordedWinner(execution.journal, step, slots, path)?.recorded
       if (recorded !== undefined) {
         return Effect.succeed({ status: "completed" as const, value: recorded.value })
@@ -695,7 +695,9 @@ export const make = (
       }).pipe(
         Effect.onError(() =>
           Effect.sync(() => {
-            if (active.get(executionId) === activeExecution) active.delete(executionId)
+            // Only this claimant can publish here. Arming failed before a
+            // worker was forked; concurrent callers only join this entry.
+            active.delete(executionId)
           })
         ),
         Effect.uninterruptible

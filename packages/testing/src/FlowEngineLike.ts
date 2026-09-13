@@ -231,7 +231,7 @@ const raceStep = (
 ): Effect.Effect<
   unknown,
   unknown,
-  FlowRuntime.FlowRuntime | FlowRuntime.FlowInstance
+  FlowRuntime.FlowRuntime | FlowRuntime.FlowInstance | Crypto.Crypto
 > =>
   race.branches.length === 0
     ? Effect.fail(unavailable(`Race ${race.key} has no branches`))

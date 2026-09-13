@@ -81,9 +81,11 @@ describe("the export map", () => {
   it("keeps a require condition for every other module", () => {
     for (const [key, value] of Object.entries(manifest.publishConfig.exports)) {
       if (value === null || key === "./package.json" || key === "./Vitest") continue
-      const entry = value as Record<string, string>
-      expect(entry.require, key).toBe(entry.import?.replace("./dist/esm/", "./dist/cjs/"))
-      expect(entry.require, key).toMatch(/^\.\/dist\/cjs\/.+\.js$/)
+      const entry = value as { import: { types: string; default: string }; require: { types: string; default: string } }
+      expect(entry.require.default, key).toBe(entry.import.default.replace("./dist/esm/", "./dist/cjs/"))
+      expect(entry.require.types, key).toBe(entry.import.types.replace("./dist/esm/", "./dist/cjs/"))
+      expect(entry.require.default, key).toMatch(/^\.\/dist\/cjs\/.+\.js$/)
+      expect(entry.require.types, key).toMatch(/^\.\/dist\/cjs\/.+\.d\.ts$/)
     }
   })
 

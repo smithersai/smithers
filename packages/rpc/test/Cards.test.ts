@@ -769,8 +769,21 @@ const FIXTURES: Record<Card["kind"], KindFixtures> = {
       authorAvatar: "https://avatars.githubusercontent.com/u/2",
       labels: ["api"],
       labelColors: { api: "1d76db" },
-      commits: [{ changeId: "kkmpptxz", commitId: "a1b2c3d4", message: "Serve repository files", author: "will", timestamp: "2026-09-04T08:00:00Z" }],
-      files: [{ path: "src/files.ts", oldPath: "src/read.ts", status: "renamed", additions: 12, deletions: 3, patch: "@@ -1 +1 @@" }]
+      commits: [{
+        changeId: "kkmpptxz",
+        commitId: "a1b2c3d4",
+        message: "Serve repository files",
+        author: "will",
+        timestamp: "2026-09-04T08:00:00Z"
+      }],
+      files: [{
+        path: "src/files.ts",
+        oldPath: "src/read.ts",
+        status: "renamed",
+        additions: 12,
+        deletions: 3,
+        patch: "@@ -1 +1 @@"
+      }]
     }
   },
   notifications: {
@@ -1789,7 +1802,12 @@ const FIXTURES: Record<Card["kind"], KindFixtures> = {
         commitId: "a1b2c3d4",
         changeId: "kkmpptxz",
         title: "Serve repository files",
-        author: { name: "Will", email: "will@example.com", login: "will", avatarUrl: "https://avatars.githubusercontent.com/u/2" },
+        author: {
+          name: "Will",
+          email: "will@example.com",
+          login: "will",
+          avatarUrl: "https://avatars.githubusercontent.com/u/2"
+        },
         authoredAt: "2026-09-05T09:00:00Z",
         status: "success",
         verified: true
@@ -1801,7 +1819,13 @@ const FIXTURES: Record<Card["kind"], KindFixtures> = {
   commit: {
     minimal: {
       repo: "smithersai/smithers",
-      commit: { commitId: "a1b2c3d4", changeId: null, title: "Serve repository files", author: { name: null, email: null }, authoredAt: null },
+      commit: {
+        commitId: "a1b2c3d4",
+        changeId: null,
+        title: "Serve repository files",
+        author: { name: null, email: null },
+        authoredAt: null
+      },
       message: "Serve repository files",
       parents: [],
       files: []
@@ -1833,7 +1857,14 @@ const FIXTURES: Record<Card["kind"], KindFixtures> = {
   },
   /* The tutorial's repository chooser: every field is required, so both fixtures name all six. */
   "repository-choice": {
-    minimal: { cutoff: "2026-08-10T00:00:00Z", partial: false, error: null, selected: null, created: null, repositories: [] },
+    minimal: {
+      cutoff: "2026-08-10T00:00:00Z",
+      partial: false,
+      error: null,
+      selected: null,
+      created: null,
+      repositories: []
+    },
     full: {
       cutoff: "2026-08-10T00:00:00Z",
       partial: true,

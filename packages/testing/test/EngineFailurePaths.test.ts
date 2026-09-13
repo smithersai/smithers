@@ -39,6 +39,38 @@ const onEachSubject = (
 }
 
 describe("execution lifecycle parity", () => {
+  it.scoped("MemoryEngine skips sparse positions when replaying and locating the interrupted frontier", () =>
+    Effect.gen(function*() {
+      const store = yield* MemoryEngine.makeStore()
+      const engine = yield* MemoryEngine.make(store)
+      let calls = 0
+      const winner: StepSpec = {
+        kind: "step",
+        key: "sparse-winner",
+        sealed: true,
+        run: () =>
+          Effect.sync(() => {
+            calls++
+            return "winner"
+          })
+      }
+      const branches = new Array<StepSpec>(2)
+      branches[1] = winner
+      const steps = new Array<StepSpec>(4)
+      steps[1] = winner
+      steps[2] = { kind: "race", key: "sparse-race", sealed: false, branches }
+      steps[3] = { kind: "step", key: "frontier", sealed: false, run: () => Effect.interrupt }
+      const executionId = "testing/sparse-replay"
+      expect((yield* engine.run({ flow: { name: executionId, steps }, executionId, payload: null })).status)
+        .toBe("suspended")
+      yield* engine.interrupt(executionId)
+      expect((yield* engine.result(executionId)).status).toBe("aborted")
+      expect(calls).toBe(1)
+      expect(yield* engine.journal(executionId)).toEqual(expect.arrayContaining([
+        expect.objectContaining({ stepKey: "frontier", outcome: "aborted" })
+      ]))
+    }))
+
   for (const operation of ["result", "resume", "run"] as const) {
     onEachSubject(
       `reports aborted through ${operation} after interrupting a suspended execution`,
