@@ -510,8 +510,8 @@
  */
 .toast-stack {
 	position: fixed;
-	right: 16px;
-	top: 16px;
+	right: var(--sp-4);
+	top: var(--sp-4);
 	/* Several failures stack; the column stops well above the composer and scrolls instead of covering it. */
 	max-height: calc(100vh - 240px);
 	overflow-y: auto;
@@ -519,7 +519,7 @@
 	z-index: 40;
 	display: flex;
 	flex-direction: column;
-	gap: 8px;
+	gap: var(--sp-2);
 	width: min(320px, calc(100vw - 32px));
 }
 
@@ -527,9 +527,14 @@
 	pointer-events: auto;
 	display: flex;
 	align-items: flex-start;
-	gap: 8px;
-	background: var(--surface);
-	box-shadow: 0 8px 24px rgb(0 0 0 / 0.12);
+	gap: var(--sp-2);
+	/* The house overlay anatomy: glass, hairline, r-3, shadow-2 — the same
+	   recipe as the composer, the palette and the guide's toasts. */
+	border: 1px solid var(--border);
+	border-radius: var(--r-3);
+	background: var(--surface-glass-strong);
+	backdrop-filter: blur(20px);
+	box-shadow: var(--shadow-2);
 	animation: view-in var(--dur) var(--ease-current);
 }
 
