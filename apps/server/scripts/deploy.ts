@@ -84,8 +84,14 @@ const run = async (
  * artifact is that commit, which is not true when uncommitted work went into
  * the build.
  */
-const gitSha = (await run(["git", "rev-parse", "HEAD"], { cwd: serverDir, capture: true })).output.trim()
-const gitDirty = (await run(["git", "status", "--porcelain"], { cwd: serverDir, capture: true })).output.trim() !== ""
+const gitHead = await run(["git", "rev-parse", "HEAD"], { cwd: serverDir, capture: true })
+// Native jj workspaces have no .git directory. Stamp their parent revision
+// and record any working changes, just as a Git checkout does.
+const head = gitHead.exitCode === 0 ? gitHead : await run(["jj", "log", "-r", "@-", "--no-graph", "-T", "commit_id"], { cwd: serverDir, capture: true })
+const status = await run(gitHead.exitCode === 0 ? ["git", "status", "--porcelain"] : ["jj", "diff", "--summary"], { cwd: serverDir, capture: true })
+const gitSha = head.output.trim()
+if (head.exitCode !== 0 || status.exitCode !== 0 || !/^[0-9a-f]{40}$/.test(gitSha)) throw new Error("Cannot determine the deployment revision and working-tree state")
+const gitDirty = status.output.trim() !== ""
 
 /*
  * The island's sources are transformed under apps/app/tsconfig.json, which
