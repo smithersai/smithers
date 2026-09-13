@@ -75,6 +75,17 @@ export interface PtyManager {
    * so the result may use fewer bytes. Undefined when the session is unknown.
    */
   readonly read: (sessionId: string, tailBytes?: number) => PtyOutput | undefined
+  /** Synchronous replay snapshot; cursors count UTF-16 code units, never input bytes. */
+  readonly replay: (sessionId: string, cursor?: number) => PtyReplay | undefined
+}
+
+export interface PtyReplay {
+  readonly data: string
+  readonly start: number
+  readonly cursor: number
+  readonly truncated: boolean
+  readonly alive: boolean
+  readonly code: number | null
 }
 
 export interface PtyOutput {
@@ -235,6 +246,7 @@ interface LiveSession {
   exited: Promise<void>
   /** The bounded scrollback `read` serves; appended by every output frame. */
   scrollback: string
+  cursor: number
   /** True once older output has fallen off the front of `scrollback`. */
   dropped: boolean
   processExited: boolean
@@ -276,12 +288,14 @@ export const createPtyManager = (options: PtyManagerOptions): PtyManager => {
   const emitOutput = (sessionId: string, text: string): void => {
     if (text === "") return
     const live = sessions.get(sessionId)
+    const start = live?.cursor ?? 0
     if (live !== undefined) {
+      live.cursor += text.length
       const joined = live.scrollback + text
       live.scrollback = tailUtf8(joined, PTY_SCROLLBACK_BYTES)
       if (live.scrollback !== joined) live.dropped = true
     }
-    publish(topic(sessionId), { type: "pty.output", sessionId, data: text })
+    publish(topic(sessionId), { type: "pty.output", sessionId, data: text, start, cursor: start + text.length })
   }
 
   const prepare = async (
@@ -366,7 +380,7 @@ export const createPtyManager = (options: PtyManagerOptions): PtyManager => {
       pid: proc.pid,
       alive: true
     }
-    const live: LiveSession = { record, proc, decoder, exited: Promise.resolve(), scrollback: "", dropped: false, processExited: false }
+    const live: LiveSession = { record, proc, decoder, exited: Promise.resolve(), scrollback: "", cursor: 0, dropped: false, processExited: false }
     sessions.set(sessionId, live)
     preparing.delete(admission)
     children.set(sessionId, live)
@@ -501,7 +515,22 @@ export const createPtyManager = (options: PtyManagerOptions): PtyManager => {
     }
   }
 
-  return { create, list, get, write, resize, kill, dispose, read }
+  const replay: PtyManager["replay"] = (sessionId, cursor = 0) => {
+    if (!Number.isSafeInteger(cursor) || cursor < 0) throw new RangeError("cursor must be a non-negative safe integer.")
+    const live = sessions.get(sessionId)
+    if (live === undefined) return undefined
+    const earliest = live.cursor - live.scrollback.length
+    let start = Math.max(earliest, Math.min(cursor, live.cursor))
+    // A forged/misaligned cursor cannot split a surrogate pair.
+    const at = live.scrollback.charCodeAt(start - earliest)
+    if (at >= 0xdc00 && at <= 0xdfff) start += 1
+    return {
+      data: live.scrollback.slice(start - earliest), start, cursor: live.cursor,
+      truncated: start !== cursor, alive: live.record.alive, code: live.record.exitCode ?? null
+    }
+  }
+
+  return { create, list, get, write, resize, kill, dispose, read, replay }
 }
 
 const safeRealpath = (path: string): string => {

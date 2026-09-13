@@ -37,6 +37,10 @@ export function TerminalView({ tab }: { readonly tab: Extract<TabRow, { kind: "t
           ? controller.cloudTerminal.attach(workspace.repo, sessionId, { onOutput: write })
           : controller.pty.attach(sessionId, {
             onOutput: write,
+            onUnavailable: () => {
+              write("\r\nThis terminal session is no longer available.\r\n")
+              controller.notePtyExit(sessionId, null)
+            },
             onExit: (code) => {
               write(`\r\nprocess exited (${code === null ? "null" : String(code)})\r\n`)
               controller.notePtyExit(sessionId, code)

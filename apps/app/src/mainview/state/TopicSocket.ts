@@ -22,6 +22,8 @@ export interface TopicSocketOptions<Listener> {
   readonly reconnectMs?: number | undefined
   /** The server-side topic name of one key. */
   readonly topicOf: (key: string) => string
+  /** Optional protocol metadata, recomputed on every (re)subscription. */
+  readonly subscription?: (key: string) => Readonly<Record<string, unknown>>
   /**
    * One parsed message. Binary frames and text that is not JSON never reach
    * it; deciding what a frame means, and which key it belongs to, is the
@@ -68,7 +70,7 @@ export const createTopicSocket = <Listener>(options: TopicSocketOptions<Listener
   }
 
   const subscribe = (target: WebSocket, key: string): void => {
-    target.send(JSON.stringify({ type: "subscribe", topic: options.topicOf(key) }))
+    target.send(JSON.stringify({ ...options.subscription?.(key), type: "subscribe", topic: options.topicOf(key) }))
     options.onSubscribe?.(key, (text) => target.send(text))
   }
 

@@ -1161,12 +1161,26 @@ export const startLocalServer = async (options: LocalServerOptions): Promise<Loc
             return
           }
           if (message.type === "subscribe") {
+            if (topic.startsWith("pty:") && message.cursor !== undefined &&
+              (typeof message.cursor !== "number" || !Number.isSafeInteger(message.cursor) || message.cursor < 0)) {
+              socket.send(JSON.stringify({ type: "error", message: "A PTY cursor must be a non-negative safe integer." }))
+              return
+            }
             if (!socket.data.topics.has(topic) && socket.data.topics.size >= MAX_WS_SUBSCRIPTIONS) {
               socket.send(JSON.stringify({ type: "error", message: `At most ${MAX_WS_SUBSCRIPTIONS} topics may be subscribed.` }))
               return
             }
             socket.subscribe(topic)
             socket.data.topics.add(topic)
+            if (topic.startsWith("pty:") && message.cursor !== undefined) {
+              const sessionId = topic.slice(4)
+              // Subscription, snapshot and sends are synchronous: output can
+              // only land before the snapshot or after the replay/ack, never between.
+              const replay = pty.replay(sessionId, message.cursor as number)
+              socket.send(JSON.stringify(replay === undefined
+                ? { type: "pty.missing", sessionId }
+                : { type: "pty.replay", sessionId, ...replay }))
+            }
           } else {
             socket.unsubscribe(topic)
             socket.data.topics.delete(topic)
