@@ -70,6 +70,7 @@ import type * as Application from "../Application.ts"
 import * as Serve from "../Serve.ts"
 import * as ControlDatabasePath from "./ControlDatabasePath.ts"
 import * as EngineJournalSupervisor from "./EngineJournalSupervisor.ts"
+import * as HealthHost from "./HealthHost.ts"
 import * as ExecutionDatabasePath from "./ExecutionDatabasePath.ts"
 import * as LocalControl from "./LocalControl.ts"
 import * as ModuleAdmission from "./ModuleAdmission.ts"
@@ -785,7 +786,10 @@ export const make = (
         modules
       }),
       decorateNotifications
-    )
+    ).pipe(Layer.tap((context) => HealthHost.start(config.health).pipe(
+      Effect.provideService(Control.Control, Context.get(context, Control.Control)),
+      Effect.provide(engine.journal)
+    )))
   }
   const layerControl = (
     config: Application.Config,

@@ -12,7 +12,7 @@
  *
  * @since 1.0.0
  */
-import { ControlSchema } from "@smthrs/control"
+import { ControlSchema, Health, Monitor } from "@smthrs/control"
 import { Schema } from "effect"
 import * as Diagnosis from "./Diagnosis.ts"
 
@@ -30,6 +30,7 @@ import * as Diagnosis from "./Diagnosis.ts"
 export const RunSummaryRow = Schema.Struct({
   runId: Schema.String,
   flowId: Schema.String,
+  statusRollup: Schema.optional(Health.StatusRollup),
   status: ControlSchema.RunStatus,
   createdAt: Schema.Number,
   updatedAt: Schema.Number,
@@ -189,7 +190,8 @@ const optional = <A>(key: string, value: A | undefined): Record<string, A> =>
  */
 export const runSummary = (
   run: ControlSchema.RunSummary,
-  events: ReadonlyArray<ControlSchema.ControlEvent>
+  events: ReadonlyArray<ControlSchema.ControlEvent>,
+  now: number = Math.max(run.updatedAt, events.at(-1)?.occurredAt ?? 0)
 ): RunSummaryRow => {
   // The run row is the authority on status; the journal is the evidence for
   // everything else. A status written under a fence does not always journal an
@@ -200,6 +202,7 @@ export const runSummary = (
     runId: run.runId,
     flowId: run.flowId,
     status: run.status,
+    statusRollup: statusRollup(run, events, now),
     createdAt: run.createdAt,
     updatedAt: run.updatedAt,
     ...optional("planId", run.planId),
@@ -531,4 +534,31 @@ const line = (kind: string, payload: Record<string, unknown>): string => {
     default:
       return kind.slice("control.".length)
   }
+}
+
+/** Fold health from the same authoritative summary and committed event buffer as the run card.
+ * Invalid observations and foreign incarnations cannot color the current owner.
+ * @category projections @since 1.0.0
+ */
+export const statusRollup = (
+  run: ControlSchema.RunSummary,
+  events: ReadonlyArray<ControlSchema.ControlEvent>,
+  now: number
+): Health.StatusRollup => {
+  const incarnation = Health.runIncarnation(run)
+  const candidates: Array<Health.RecordedObservation> = []
+  const decode = Schema.decodeUnknownOption(Health.HealthObservation)
+  let evidenceSeq = 0
+  for (const event of events) {
+    if (event.kind === Health.statusObservedEventType) {
+      const reading = decode(event.payload)
+      if (reading._tag === "Some") candidates.push({ observation: reading.value, sequence: event.sequence })
+    } else if (!Monitor.isBookkeepingEvent(event.kind)) evidenceSeq = Math.max(evidenceSeq, event.sequence)
+  }
+  const latest = Health.latestObservation(candidates, `run:${run.runId}`, incarnation)
+  return Health.rollup({
+    subjectId: `run:${run.runId}`, state: run.status, incarnation, waitingReason: run.waitingReason,
+    baseHealth: latest?.observation.baseHealth ?? Monitor.classify({ summary: run, events, beatsWithoutProgress: 0, stallBeats: 3 }),
+    latest, now, evidenceSeq, updatedAt: run.updatedAt
+  })
 }

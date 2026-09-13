@@ -1,3 +1,4 @@
+import { INPUT_MODES, type InputMode } from "./InputMode"
 import {
   CardPatchSchema,
   CardPlanItemSchema,
@@ -12,6 +13,7 @@ import {
 } from "@smthrs/rpc/Cards"
 import { AgentRoleIdSchema, AgentRoleSchema } from "@smthrs/rpc/AgentRoles"
 import type { AgentRole } from "@smthrs/rpc/AgentRoles"
+import { StatusRollupSchema, type StatusRollup } from "@smthrs/rpc/Health"
 import { HARNESS_IDS, HarnessSchema, RepoFileEntrySchema, RepoSchema } from "@smthrs/rpc/LocalApp"
 import type { Harness, Repo } from "@smthrs/rpc/LocalApp"
 import { REPOSITORY_ACCESS_VALUES } from "@smthrs/rpc/NativeRepository"
@@ -833,6 +835,7 @@ export const SessionSchema = z.object({
    * Session state like the menus above, never a component's; all optional so
    * sessions persisted before the fields parse without a schema reset.
    */
+  inputMode: z.enum(INPUT_MODES).optional(),
   dictating: z.boolean().optional(),
   paletteOpen: z.boolean().optional(),
   paletteActionsRef: z.string().nullable().optional(),
@@ -897,6 +900,7 @@ export const TabSchema = z.discriminatedUnion("kind", [
     ...tabRowShape,
     id: z.string(),
     kind: z.literal("terminal"),
+    statusRollup: StatusRollupSchema.optional(),
     title: z.string(),
     sessionId: z.string(),
     /* A workspace terminal (lane citc) runs inside the cloud workspace, so it has no local cwd. */
@@ -910,6 +914,7 @@ export const TabSchema = z.discriminatedUnion("kind", [
     ...tabRowShape,
     id: z.string(),
     kind: z.literal("harness"),
+    statusRollup: StatusRollupSchema.optional(),
     title: z.string(),
     sessionId: z.string(),
     cwd: z.string(),
@@ -1096,6 +1101,7 @@ export type AppTransition =
   | { type: "notification.tagged"; actor: Actor; id: string; tag: string }
   | { type: "card.navigated"; actor: Actor; card: Card }
   | { type: "card.history.moved"; actor: Actor; id: string; delta: -1 | 1 }
+  | { type: "input.mode.changed"; actor: Actor; mode: InputMode }
   | { type: "dictation.changed"; actor: Actor; listening: boolean }
   | { type: "composer.changed"; actor: Actor; draft: string }
   | { type: "message.submitted"; actor: "user" | "smithers"; turnId: string; text: string }
@@ -1525,6 +1531,8 @@ export type AppTransition =
   | { type: "tab.closed"; actor: "user" | "system"; id: string }
   | { type: "tab.menu.toggled"; actor: Actor; open: boolean }
   | { type: "pty.exited"; actor: "system"; sessionId: string; code: number | null }
+  | { type: "pty.status.observed"; actor: "system"; sessionId: string; status: StatusRollup }
+  | { type: "status.expired"; actor: "system"; now: number }
   | { type: "harnesses.loaded"; actor: "system"; harnesses: ReadonlyArray<Harness> }
   /* Agents as data (custom-agents.md): `GET /api/agents` replaces the app-agents mirror the way the harness list does. */
   | { type: "agents.loaded"; actor: "system"; agents: ReadonlyArray<AgentRole> }
@@ -1655,6 +1663,7 @@ export type AppTransition =
 
 export const initialSession = (theme: Session["theme"]): Session => ({
   id: "main",
+  inputMode: "normal",
   draft: "",
   phase: "idle",
   theme,

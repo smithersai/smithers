@@ -5,6 +5,7 @@ import type { ControllerContext } from "./context"
 import type { ApprovalRow, RunStatus, RunSummaryRow } from "./gateway"
 import { engineProjectionPending } from "../../cards/EngineTrace"
 import { reconcileRunApprovals } from "./approval-reconciliation"
+import { expireStatus } from "../HealthStatus"
 
 export interface WorkflowPumpController {
   readonly pumpWorkflowRun: (cardId: string) => Promise<void>
@@ -194,7 +195,7 @@ export const createWorkflowPumpController = (
          * act on is the silent stall in a different costume.
          */
         const quietFor = Date.now() - lastProgressAt
-        if (quietFor >= RUN_QUIET_AFTER_MS) {
+        if (quietFor >= RUN_QUIET_AFTER_MS && (card.payload.statusRollup === undefined || failures > 0 || projectionPending)) {
           patchRunCard(cardId, alreadyTerminal
             ? { observationError: "The run has settled, but its recorded engine evidence has not finished synchronizing." }
             : { phase: "quiet", quietForMs: quietFor })
@@ -335,6 +336,8 @@ export const createWorkflowPumpController = (
         const steeringPending = (row.steeringPending ?? 0) > 0
 
         const phase = PHASE_OF_STATUS[row.status]
+        const statusRollup = row.statusRollup?.subjectId === `run:${row.runId}` && row.statusRollup.state === row.status
+          ? expireStatus(row.statusRollup, Date.now()) : undefined
         if (TERMINAL_PHASES.has(phase)) {
           const steps = [...card.payload.steps, ...newSteps].slice(-RUN_STEPS_TAIL)
           const observationError = eventReadError === undefined ? { observationError: undefined } : {
@@ -344,7 +347,7 @@ export const createWorkflowPumpController = (
             // The run summary's own verdict, which is what `whatHappened`
             // used to answer out of the engine database.
             const result = row.verdict
-            patchRunCard(cardId, { phase, steps, lastSeq: row.updatedAt, result, waiting: undefined, steeringPending, error: undefined, ...observationError, ...(transcriptRows === undefined ? {} : { transcriptRows }), ...(events === undefined ? {} : { events }) }, "acted")
+            patchRunCard(cardId, { phase, statusRollup, steps, lastSeq: row.updatedAt, result, waiting: undefined, steeringPending, error: undefined, ...observationError, ...(transcriptRows === undefined ? {} : { transcriptRows }), ...(events === undefined ? {} : { events }) }, "acted")
             await ctx.finishTutorialChange(cardId)
             if (!alreadyTerminal) store.dispatch({ type: "message.appended", actor: "system", text: result })
           } else {
@@ -356,7 +359,7 @@ export const createWorkflowPumpController = (
               : "The run was cancelled."
             patchRunCard(
               cardId,
-              { phase, steps, lastSeq: row.updatedAt, waiting: undefined, steeringPending, ...(transcriptRows === undefined ? {} : { transcriptRows }), ...(events === undefined ? {} : { events }), ...(detail === undefined ? {} : { error: detail }), ...observationError },
+              { phase, statusRollup, steps, lastSeq: row.updatedAt, waiting: undefined, steeringPending, ...(transcriptRows === undefined ? {} : { transcriptRows }), ...(events === undefined ? {} : { events }), ...(detail === undefined ? {} : { error: detail }), ...observationError },
               "error"
             )
             if (!alreadyTerminal) store.dispatch({ type: "message.appended", actor: "system", text: message })
@@ -391,6 +394,7 @@ export const createWorkflowPumpController = (
           nextPhase !== card.payload.phase || waiting !== card.payload.waiting || steeringPending !== card.payload.steeringPending) {
           patchRunCard(cardId, {
             phase: nextPhase,
+            statusRollup,
             steps: [...card.payload.steps, ...newSteps].slice(-RUN_STEPS_TAIL),
             lastSeq: row.updatedAt,
             waiting,

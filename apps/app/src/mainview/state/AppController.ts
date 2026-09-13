@@ -1,3 +1,5 @@
+import { createInputModeController } from "./controller/inputMode"
+import type { InputMode } from "./InputMode"
 import { createLiveTutorialController } from "./controller/liveTutorial"
 import { createRepositoryUpdate } from "./controller/repositoryUpdate"
 import { createDictation } from "./controller/dictation"
@@ -23,6 +25,7 @@ import type { AppStore } from "./AppStore"
 import { activeCatalogRepositoryId, activeRepositoryId, knownRepositories, resolveTargetRepo } from "./RepoContext"
 import type { KnownRepositories } from "./RepoContext"
 import { createPtyClient, pageSocketUrl } from "./PtyClient"
+import { createHealthStatusController } from "./controller/health-status"
 import { createSearchSeam } from "./seams/SearchSeam"
 import type { PaletteAnswer, SearchSeam } from "./seams/SearchSeam"
 import type { PtyClient } from "./PtyClient"
@@ -345,6 +348,8 @@ export interface AppController extends TutorialChangeController, IssueFlowsContr
   readonly markUpdateRead: (cardId: string) => Promise<string | void>
   readonly tagNotification: (id: string, tag: string) => Promise<string | void>
   readonly moveCardHistory: (id: string, delta: -1 | 1) => void
+  readonly setInputMode: (mode: InputMode) => Promise<void>
+  readonly openChat: () => Promise<string | void>
   readonly toggleDictation: () => Promise<string | void>
   readonly cancelDictation: () => void
   readonly toggleSidebar: () => Promise<void>
@@ -947,7 +952,9 @@ export const createAppController = (
   }
   const socketUrl = services.socketUrl ?? pageSocketUrl
   const socketProtocols = services.socketProtocols ?? localSocketProtocols
-  const pty = createPtyClient({ http, baseUrl, socketUrl, socketProtocols })
+  createHealthStatusController(ctx)
+  const pty = createPtyClient({ http, baseUrl, socketUrl, socketProtocols,
+    onStatus: (sessionId, status) => { store.dispatch({ type: "pty.status.observed", actor: "system", sessionId, status }) } })
   ctx.onDispose(pty.dispose)
   /* Lane citc: the cloud-workspace terminal transport, one socket per session. */
   const cloudTerminal = createCloudTerminalClient({
@@ -1146,6 +1153,12 @@ export const createAppController = (
     const learned = lessonCompletion(store.session().guide, "palette.opened")
     if (learned !== undefined) store.dispatch({ type: "guide.changed", actor: "user", guide: learned })
   }
+  const inputMode = createInputModeController(store, {
+    actor: () => ctx.commandActor,
+    cancelDictation,
+    startDictation: dictation.toggle,
+    openChat: async () => { await guideAct("open"); openPalette() },
+  })
   const closePalette = (lastQuery?: string): void => {
     if (store.session().paletteOpen !== true) return
     store.dispatch({ type: "palette.toggled", actor: "user", open: false, ...(lastQuery === undefined ? {} : { lastQuery }) })
@@ -1525,6 +1538,8 @@ export const createAppController = (
     moveCardHistory: (id, delta) => { store.dispatch({ type: "card.history.moved", actor: ctx.commandActor, id, delta }) },
     toggleDictation,
     cancelDictation,
+    setInputMode: inputMode.setInputMode,
+    openChat: inputMode.openChat,
     searchPalette: searchSeam.palette,
     search: searchSeam.search,
     openPalette,

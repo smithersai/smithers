@@ -4,7 +4,7 @@
  * @since 0.1.0
  */
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
-import type { ApprovalAuthority, Control, ControlExecutor, ControlSchema } from "@smthrs/control"
+import type { ApprovalAuthority, Control, ControlExecutor, ControlSchema, Health } from "@smthrs/control"
 import { ControlClient, ControlRuntime } from "@smthrs/control"
 import type { Journal } from "@smthrs/journal"
 import * as TestJournal from "@smthrs/journal/test/TestJournal"
@@ -31,6 +31,8 @@ import * as LocalControl from "./internal/LocalControl.ts"
  * @since 0.1.0
  */
 export interface Config {
+  /** Trusted local observational checkers, keyed by flow id. Remote clients never execute these callbacks. */
+  readonly health?: Health.HealthConfig | undefined
   /** Trusted local host configuration, never decoded from command arguments. */
   readonly approvalAuthority?: ApprovalAuthority.Service | undefined
   /** Transport-owned local identity; remote RPC authentication owns its own actor. */

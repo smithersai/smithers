@@ -1,4 +1,5 @@
 import { useLiveQuery } from "@tanstack/react-db"
+import { StatusDetails } from "../StatusDetails"
 import { BookOpen, ChevronRight, Download, FolderGit2, History, KeyRound, Moon, Pencil, Plus, RotateCcw, Sun, Timer, UserRound, Workflow, X } from "lucide-react"
 import { useMemo } from "react"
 import { roleMenuEntries } from "../AgentRoleMenu"
@@ -167,12 +168,16 @@ export function ChromeBar() {
         role="tab"
         className="tab-select"
         aria-selected={tab.id === activeTabId}
+        aria-label={tab.title}
+        aria-describedby={tab.kind === "harness" || tab.kind === "terminal" && tab.workspaceId === undefined ? `status-${tab.id}` : undefined}
         title={tab.title}
         data-flow="tab.select"
         data-tab-id={tab.id}
         onClick={() => controller.runCommand("tab.select", tab.id)}
       >
-        {tab.title}
+        <span className="tab-title">{tab.title}</span>
+        {(tab.kind === "harness" || tab.kind === "terminal" && tab.workspaceId === undefined) &&
+          <StatusDetails id={`status-${tab.id}`} status={tab.statusRollup} fallback={tab.exitCode === undefined ? "running" : tab.exitCode === 0 ? "completed" : tab.exitCode === null ? "stopped" : "failed"} />}
       </button>
       <button
         type="button"

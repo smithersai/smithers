@@ -4,6 +4,7 @@
  * @since 1.0.0
  */
 import { z } from "zod"
+import { StatusRollupSchema } from "./Health.ts"
 import { AgentRoleIdSchema, AgentRoleModelSchema } from "./AgentRoles.ts"
 import {
   ChangeAnalyzerRunSchema,
@@ -882,6 +883,7 @@ const CurrentCardSchema = z.discriminatedUnion("kind", [
     ...cardBaseShape,
     kind: z.literal("run-trace"),
     payload: z.object({
+      statusRollup: StatusRollupSchema.optional(),
       repo: z.string(),
       /** Owning Plue gateway binding; omission identifies a legacy unbound run. */
       workspaceId: GatewayWorkspaceIdSchema.optional(),
@@ -2161,6 +2163,7 @@ const CurrentCardSchema = z.discriminatedUnion("kind", [
     ...cardBaseShape,
     kind: z.literal("agent"),
     payload: z.object({
+      statusRollup: StatusRollupSchema.optional(),
       harnessId: z.enum(HARNESS_IDS),
       displayName: z.string(),
       /** The named role the agent was launched as (AgentRoles.ts); absent for a raw harness. */

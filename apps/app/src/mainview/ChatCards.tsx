@@ -38,6 +38,7 @@ class CardBodyBoundary extends Component<{ readonly cardId: string; readonly chi
 }
 import type { Card } from "./state/AppState"
 import { timeLabel as clockLabel } from "./Timestamps"
+import { StatusDetails } from "./StatusDetails"
 
 export interface CardViewProps extends CardActions {
   readonly card: Card
@@ -131,7 +132,9 @@ export const CardView = memo(function CardView({
           </nav>}
           <span className="smithers-card-title">{title}</span>
           {/* A family that has no status word for a card (a picker awaiting its human) renders no pill: "" is not a status. */}
-          {pillStatus(card) === "" ? null : <StatusPill status={pillStatus(card)} />}
+          {card.kind === "agent" || card.kind === "run-trace" ?
+            <StatusDetails status={card.payload.statusRollup} fallback={pillStatus(card)} /> :
+            pillStatus(card) === "" ? null : <StatusPill status={pillStatus(card)} />}
           {card.kind !== "repo-update" && <span className="smithers-card-meta" data-testid={`card-kind-${card.kind}`}>
             {clockLabel(card.createdAt)}
           </span>}

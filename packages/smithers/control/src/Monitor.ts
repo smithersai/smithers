@@ -273,6 +273,8 @@ export interface Options {
   readonly withProbePermit?: (<A>(effect: Effect.Effect<A>) => Effect.Effect<A>) | undefined
   /** Bounded retained beat history for long-lived host monitoring. */
   readonly retainBeats?: number | undefined
+  /** Hosts with structured status observations omit redundant legacy heartbeat records. */
+  readonly recordBeats?: boolean | undefined
   /**
    * Who is watching. Defaults to `default`.
    *
@@ -353,6 +355,7 @@ export const run = (
     const journal = yield* Journal.Journal
     const intervalMs = options.intervalMs ?? options.healthCheck?.policy.intervalMs ?? 1_000
     let consecutiveProbeFailures = 0
+    let lastPublished: SubjectHealth.HealthObservation | undefined
     const maxChecks = options.maxChecks ?? 10
     const stallBeats = options.stallBeats ?? 3
     const autoHeal = options.autoHeal ?? []
@@ -481,15 +484,23 @@ export const run = (
           subjectId, state: summary.status, incarnation, waitingReason: summary.waitingReason,
           baseHealth, latest: { observation, sequence: 0 }, now: observation.observedAt, updatedAt: summary.updatedAt
         })
-        yield* emit(SubjectHealth.statusObservedEventType, {
-          ...observation, status: summary.status, health: status.health, activity: status.activity,
-          attention: status.attention, freshness: status.freshness, waitingReason: summary.waitingReason ?? ""
-        }, "health observation")
+        const changed = lastPublished === undefined || lastPublished.incarnation !== observation.incarnation ||
+          lastPublished.outcome !== observation.outcome || lastPublished.baseHealth !== observation.baseHealth ||
+          JSON.stringify(lastPublished.report) !== JSON.stringify(observation.report) ||
+          lastPublished.reason !== observation.reason
+        // Renew before expiry, but do not fill the journal with identical per-probe records.
+        if (changed || observation.observedAt >= lastPublished!.observedAt + check.policy.ttlMs / 2) {
+          yield* emit(SubjectHealth.statusObservedEventType, {
+            ...observation, status: summary.status, health: status.health, activity: status.activity,
+            attention: status.attention, freshness: status.freshness, waitingReason: summary.waitingReason ?? ""
+          }, "health observation")
+          lastPublished = observation
+        }
       }
       // Checker output is observational and never participates in remedy authorization.
       const remedy = autoHeal.includes(health) ? remedyFor(health) : "none"
       const observed: Beat = { beat, health, sequence }
-      yield* record(observed, remedy)
+      if (options.recordBeats !== false) yield* record(observed, remedy)
       if (remedy === "none") {
         beats.push(observed)
       } else {

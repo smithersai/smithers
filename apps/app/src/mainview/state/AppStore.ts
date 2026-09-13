@@ -1,6 +1,8 @@
 import { RepositoryContextSchema } from "./RepositoryContext"
 import { RepositoryNotificationSchema } from "./RepositoryNotifications"
 import { sameApproval } from "./ApprovalReference"
+import { StatusRollupSchema } from "@smthrs/rpc/Health"
+import { acceptStatus, expireStatus, exitedStatus } from "./HealthStatus"
 import { migrateGuideV3 } from "./controller/guide"
 import { resumeTutorial } from "../onboarding/resume"
 import { PRACTICE_REPO } from "./practice/PracticeRepository"
@@ -1337,6 +1339,10 @@ const initializeAppStore = async (resolved: ResolvedPersistence): Promise<AppSto
         return frame
       }
       switch (transition.type) {
+        case "input.mode.changed":
+          collections.sessions.update(SESSION_ID, (draft) => { draft.inputMode = transition.mode })
+          break
+
         case "dictation.changed":
           collections.sessions.update(SESSION_ID, (draft) => { draft.dictating = transition.listening })
           break
@@ -2602,11 +2608,57 @@ const initializeAppStore = async (resolved: ResolvedPersistence): Promise<AppSto
           })
           break
 
+        case "pty.status.observed": {
+          if (transition.actor !== "system") return
+          const decoded = StatusRollupSchema.safeParse(transition.status)
+          if (!decoded.success || decoded.data.subjectId !== `session:${transition.sessionId}` ||
+            !["spawning", "running", "exited"].includes(decoded.data.state)) return
+          const status = expireStatus(decoded.data, createdAt)
+          for (const tab of collections.tabs.values()) {
+            if ((tab.kind !== "terminal" && tab.kind !== "harness") || tab.sessionId !== transition.sessionId ||
+              (tab.kind === "terminal" && tab.workspaceId !== undefined) || !acceptStatus(tab.statusRollup, status)) continue
+            if (tab.exitCode === undefined && status.state === "exited") continue
+            collections.tabs.update(tab.id, (draft) => {
+              if (draft.kind === "terminal" || draft.kind === "harness") draft.statusRollup = draft.exitCode === undefined
+                ? status : exitedStatus(transition.sessionId, draft.exitCode, status, createdAt)
+            })
+          }
+          for (const card of collections.cards.values()) {
+            if (card.kind !== "agent" || card.payload.sessionId !== transition.sessionId || !acceptStatus(card.payload.statusRollup, status)) continue
+            if (card.payload.phase === "running" && status.state === "exited") continue
+            collections.cards.update(card.id, (draft) => {
+              if (draft.kind === "agent") draft.payload.statusRollup = draft.payload.phase === "exited"
+                ? exitedStatus(transition.sessionId, draft.payload.exitCode, status, createdAt) : status
+            })
+          }
+          break
+        }
+        case "status.expired": {
+          if (transition.actor !== "system" || !Number.isFinite(transition.now)) return
+          for (const tab of collections.tabs.values()) {
+            if ((tab.kind !== "terminal" && tab.kind !== "harness") || tab.statusRollup === undefined) continue
+            const status = expireStatus(tab.statusRollup, transition.now)
+            if (status !== tab.statusRollup) collections.tabs.update(tab.id, (draft) => {
+              if (draft.kind === "terminal" || draft.kind === "harness") draft.statusRollup = status
+            })
+          }
+          for (const card of collections.cards.values()) {
+            if ((card.kind !== "agent" && card.kind !== "run-trace") || card.payload.statusRollup === undefined) continue
+            const status = expireStatus(card.payload.statusRollup, transition.now)
+            if (status !== card.payload.statusRollup) collections.cards.update(card.id, (draft) => {
+              if (draft.kind === "agent" || draft.kind === "run-trace") draft.payload.statusRollup = status
+            })
+          }
+          break
+        }
         case "pty.exited": {
           for (const tab of collections.tabs.values()) {
             if ((tab.kind === "terminal" || tab.kind === "harness") && tab.sessionId === transition.sessionId) {
               collections.tabs.update(tab.id, (draft) => {
-                if (draft.kind === "terminal" || draft.kind === "harness") draft.exitCode = transition.code
+                if (draft.kind === "terminal" || draft.kind === "harness") {
+                  draft.exitCode = transition.code
+                  draft.statusRollup = exitedStatus(transition.sessionId, transition.code, draft.statusRollup, createdAt)
+                }
               })
             }
           }
@@ -2617,6 +2669,7 @@ const initializeAppStore = async (resolved: ResolvedPersistence): Promise<AppSto
                 if (draft.kind !== "agent") return
                 draft.payload.phase = "exited"
                 draft.payload.exitCode = transition.code
+                draft.payload.statusRollup = exitedStatus(transition.sessionId, transition.code, draft.payload.statusRollup, createdAt)
                 draft.status = transition.code === 0 || transition.code === null ? "acted" : "error"
               })
             }

@@ -1,10 +1,13 @@
 import type { FetchLike } from "@smthrs/rpc/NativeAgent"
+import { PtyStatusFrameSchema, type StatusRollup } from "@smthrs/rpc/Health"
+import { acceptStatus } from "./HealthStatus"
 import { createTopicSocket } from "./TopicSocket"
 
 export interface PtyAttachment {
   readonly onOutput: (data: string) => void
   readonly onExit: (code: number | null) => void
   readonly onUnavailable?: () => void
+  readonly onStatus?: (status: StatusRollup) => void
 }
 export interface PtyClient {
   readonly attach: (sessionId: string, attachment: PtyAttachment) => () => void
@@ -19,6 +22,8 @@ export interface PtyClientOptions {
   readonly socketUrl: () => string | undefined
   readonly socketProtocols?: () => ReadonlyArray<string>
   readonly reconnectMs?: number
+  /** One dispatcher callback per observed frame, independent of the number of terminal views. */
+  readonly onStatus?: (sessionId: string, status: StatusRollup) => void
 }
 
 export const pageSocketUrl = (): string | undefined => {
@@ -32,6 +37,7 @@ interface Stream {
   tail: string
   exit?: number | null
   missing?: boolean
+  status?: StatusRollup
 }
 /** Absolute output cursors are UTF-16 offsets, shared with Pty.replay. */
 export const createPtyClient = (options: PtyClientOptions): PtyClient => {
@@ -77,6 +83,14 @@ export const createPtyClient = (options: PtyClientOptions): PtyClient => {
       const stream = streams.get(frame.sessionId)
       const listeners = attachments(frame.sessionId)
       if (stream === undefined || listeners === undefined) return
+      if (frame.type === "pty.status") {
+        const decoded = PtyStatusFrameSchema.safeParse(frame)
+        if (!decoded.success || !acceptStatus(stream.status, decoded.data.status)) return
+        stream.status = decoded.data.status
+        options.onStatus?.(frame.sessionId, stream.status)
+        for (const listener of listeners) listener.onStatus?.(stream.status)
+        return
+      }
       if (frame.type === "pty.missing") {
         if (!stream.missing) for (const listener of listeners) listener.onUnavailable?.()
         stream.missing = true
@@ -115,6 +129,7 @@ export const createPtyClient = (options: PtyClientOptions): PtyClient => {
         if (previous.tail !== "") attachment.onOutput(previous.tail)
         if (previous.exit !== undefined) attachment.onExit(previous.exit)
         if (previous.missing) attachment.onUnavailable?.()
+        if (previous.status !== undefined) attachment.onStatus?.(previous.status)
       }
       return topics.attach(id, attachment)
     },

@@ -439,10 +439,14 @@ export const createTabsController = (ctx: ControllerContext): TabsController => 
         ...repoKeyFor(repo), ...(session.alive ? {} : { exitCode: session.exitCode ?? null })
       }
       if (session.kind === "harness" && session.harnessId !== undefined) {
-        store.dispatch({ type: "tab.opened", actor: "system", tab: { ...common, kind: "harness", harnessId: session.harnessId } })
+        store.dispatch({ type: "tab.opened", actor: "system", tab: { ...common, kind: "harness", harnessId: session.harnessId,
+          ...(session.roleId === undefined ? {} : { roleId: session.roleId }) } })
       } else if (session.kind === "terminal") {
         store.dispatch({ type: "tab.opened", actor: "system", tab: { ...common, kind: "terminal" } })
       }
+    }
+    for (const session of sessions.values()) if (session.status !== undefined) {
+      store.dispatch({ type: "pty.status.observed", actor: "system", sessionId: session.sessionId, status: session.status })
     }
     if (store.session().activeTabId !== selected) store.dispatch({ type: "tab.selected", actor: "system", id: selected })
   }

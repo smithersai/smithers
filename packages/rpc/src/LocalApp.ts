@@ -4,6 +4,7 @@
  * @since 1.0.0
  */
 import { z } from "zod"
+import { StatusRollupSchema } from "./Health.ts"
 import { type TargetRunEvent, TargetRunEventSchema } from "./TargetGraph.ts"
 
 /*
@@ -275,6 +276,7 @@ export type RepoFilesResponse = z.infer<typeof RepoFilesResponseSchema>
  * @category schemas
  */
 export const PtySessionSchema = z.object({
+  status: StatusRollupSchema.optional(),
   sessionId: z.string(),
   kind: z.enum(["terminal", "harness"]),
   harnessId: z.enum(HARNESS_IDS).optional(),
