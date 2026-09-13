@@ -66,61 +66,116 @@
     "exports": {
       "./package.json": "./package.json",
       ".": {
-        "types": "./dist/esm/index.d.ts",
-        "import": "./dist/esm/index.js",
-        "require": "./dist/cjs/index.js"
+        "import": {
+          "types": "./dist/esm/index.d.ts",
+          "default": "./dist/esm/index.js"
+        },
+        "require": {
+          "types": "./dist/cjs/index.d.ts",
+          "default": "./dist/cjs/index.js"
+        }
       },
       "./internal/*": null,
       "./*/index": null,
       "./CompensationHandlers": {
-        "types": "./dist/esm/CompensationHandlers.d.ts",
-        "import": "./dist/esm/CompensationHandlers.js",
-        "require": "./dist/cjs/CompensationHandlers.js"
+        "import": {
+          "types": "./dist/esm/CompensationHandlers.d.ts",
+          "default": "./dist/esm/CompensationHandlers.js"
+        },
+        "require": {
+          "types": "./dist/cjs/CompensationHandlers.d.ts",
+          "default": "./dist/cjs/CompensationHandlers.js"
+        }
       },
       "./EffectBoundary": {
-        "types": "./dist/esm/EffectBoundary.d.ts",
-        "import": "./dist/esm/EffectBoundary.js",
-        "require": "./dist/cjs/EffectBoundary.js"
+        "import": {
+          "types": "./dist/esm/EffectBoundary.d.ts",
+          "default": "./dist/esm/EffectBoundary.js"
+        },
+        "require": {
+          "types": "./dist/cjs/EffectBoundary.d.ts",
+          "default": "./dist/cjs/EffectBoundary.js"
+        }
       },
       "./Frame": {
-        "types": "./dist/esm/Frame.d.ts",
-        "import": "./dist/esm/Frame.js",
-        "require": "./dist/cjs/Frame.js"
+        "import": {
+          "types": "./dist/esm/Frame.d.ts",
+          "default": "./dist/esm/Frame.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Frame.d.ts",
+          "default": "./dist/cjs/Frame.js"
+        }
       },
       "./MemoryTimeTravelStore": {
-        "types": "./dist/esm/MemoryTimeTravelStore.d.ts",
-        "import": "./dist/esm/MemoryTimeTravelStore.js",
-        "require": "./dist/cjs/MemoryTimeTravelStore.js"
+        "import": {
+          "types": "./dist/esm/MemoryTimeTravelStore.d.ts",
+          "default": "./dist/esm/MemoryTimeTravelStore.js"
+        },
+        "require": {
+          "types": "./dist/cjs/MemoryTimeTravelStore.d.ts",
+          "default": "./dist/cjs/MemoryTimeTravelStore.js"
+        }
       },
       "./Migrations": {
-        "types": "./dist/esm/Migrations.d.ts",
-        "import": "./dist/esm/Migrations.js",
-        "require": "./dist/cjs/Migrations.js"
+        "import": {
+          "types": "./dist/esm/Migrations.d.ts",
+          "default": "./dist/esm/Migrations.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Migrations.d.ts",
+          "default": "./dist/cjs/Migrations.js"
+        }
       },
       "./SqlTimeTravelStore": {
-        "types": "./dist/esm/SqlTimeTravelStore.d.ts",
-        "import": "./dist/esm/SqlTimeTravelStore.js",
-        "require": "./dist/cjs/SqlTimeTravelStore.js"
+        "import": {
+          "types": "./dist/esm/SqlTimeTravelStore.d.ts",
+          "default": "./dist/esm/SqlTimeTravelStore.js"
+        },
+        "require": {
+          "types": "./dist/cjs/SqlTimeTravelStore.d.ts",
+          "default": "./dist/cjs/SqlTimeTravelStore.js"
+        }
       },
       "./TimeTravel": {
-        "types": "./dist/esm/TimeTravel.d.ts",
-        "import": "./dist/esm/TimeTravel.js",
-        "require": "./dist/cjs/TimeTravel.js"
+        "import": {
+          "types": "./dist/esm/TimeTravel.d.ts",
+          "default": "./dist/esm/TimeTravel.js"
+        },
+        "require": {
+          "types": "./dist/cjs/TimeTravel.d.ts",
+          "default": "./dist/cjs/TimeTravel.js"
+        }
       },
       "./TimeTravelError": {
-        "types": "./dist/esm/TimeTravelError.d.ts",
-        "import": "./dist/esm/TimeTravelError.js",
-        "require": "./dist/cjs/TimeTravelError.js"
+        "import": {
+          "types": "./dist/esm/TimeTravelError.d.ts",
+          "default": "./dist/esm/TimeTravelError.js"
+        },
+        "require": {
+          "types": "./dist/cjs/TimeTravelError.d.ts",
+          "default": "./dist/cjs/TimeTravelError.js"
+        }
       },
       "./TimeTravelStore": {
-        "types": "./dist/esm/TimeTravelStore.d.ts",
-        "import": "./dist/esm/TimeTravelStore.js",
-        "require": "./dist/cjs/TimeTravelStore.js"
+        "import": {
+          "types": "./dist/esm/TimeTravelStore.d.ts",
+          "default": "./dist/esm/TimeTravelStore.js"
+        },
+        "require": {
+          "types": "./dist/cjs/TimeTravelStore.d.ts",
+          "default": "./dist/cjs/TimeTravelStore.js"
+        }
       },
       "./index": {
-        "types": "./dist/esm/index.d.ts",
-        "import": "./dist/esm/index.js",
-        "require": "./dist/cjs/index.js"
+        "import": {
+          "types": "./dist/esm/index.d.ts",
+          "default": "./dist/esm/index.js"
+        },
+        "require": {
+          "types": "./dist/cjs/index.d.ts",
+          "default": "./dist/cjs/index.js"
+        }
       }
     }
   },
@@ -143,8 +198,8 @@
   },
   "devDependencies": {
     "@effect/language-service": "0.87.2",
-    "@effect/platform-node": "4.0.0-rc.112",
-    "@effect/vitest": "4.0.0-rc.112",
+    "@effect/platform-node": "4.0.0-rc.115",
+    "@effect/vitest": "4.0.0-rc.115",
     "@eslint/js": "9.39.5",
     "@smthrs/artifacts": "1.0.0-rc.0",
     "@smthrs/engine": "1.0.0-rc.0",
@@ -152,9 +207,9 @@
     "@smthrs/kernel": "1.0.0-rc.0",
     "@smthrs/plan": "1.0.0-rc.0",
     "@types/node": "26.4.1",
-    "@vitest/coverage-v8": "4.1.9",
+    "@vitest/coverage-v8": "5.0.0",
     "dprint": "0.57.1",
-    "effect": "4.0.0-rc.112",
+    "effect": "4.0.0-rc.115",
     "esbuild": "0.28.2",
     "eslint": "9.39.5",
     "eslint-import-resolver-typescript": "4.4.5",
@@ -164,9 +219,9 @@
     "madge": "8.0.0",
     "typescript": "5.9.3",
     "typescript-eslint": "8.69.0",
-    "vitest": "4.1.9"
+    "vitest": "5.0.0"
   },
   "peerDependencies": {
-    "effect": "4.0.0-rc.112"
+    "effect": "4.0.0-rc.115"
   }
 }

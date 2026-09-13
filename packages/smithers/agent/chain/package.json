@@ -89,7 +89,7 @@
     "@smthrs/memory": "workspace:*",
     "@smthrs/model": "workspace:*",
     "@smthrs/registry": "workspace:*",
-    "effect": "4.0.0-rc.112",
+    "effect": "4.0.0-rc.115",
     "quickjs-emscripten-core": "0.32.0"
   },
   "devDependencies": {
@@ -97,7 +97,7 @@
     "@eslint/js": "9.39.5",
     "@smthrs/testing": "workspace:*",
     "@types/node": "26.4.1",
-    "@vitest/coverage-v8": "4.1.9",
+    "@vitest/coverage-v8": "5.0.0",
     "dprint": "0.57.1",
     "esbuild": "0.28.2",
     "eslint": "9.39.5",
@@ -108,6 +108,6 @@
     "madge": "8.0.0",
     "typescript": "5.9.3",
     "typescript-eslint": "8.69.0",
-    "vitest": "4.1.9"
+    "vitest": "5.0.0"
   }
 }

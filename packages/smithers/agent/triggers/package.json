@@ -71,82 +71,157 @@
     "exports": {
       "./package.json": "./package.json",
       ".": {
-        "types": "./dist/esm/index.d.ts",
-        "import": "./dist/esm/index.js",
-        "require": "./dist/cjs/index.js"
+        "import": {
+          "types": "./dist/esm/index.d.ts",
+          "default": "./dist/esm/index.js"
+        },
+        "require": {
+          "types": "./dist/cjs/index.d.ts",
+          "default": "./dist/cjs/index.js"
+        }
       },
       "./migrations/*": null,
       "./internal/*": null,
       "./*/index": null,
       "./CatchUp": {
-        "types": "./dist/esm/CatchUp.d.ts",
-        "import": "./dist/esm/CatchUp.js",
-        "require": "./dist/cjs/CatchUp.js"
+        "import": {
+          "types": "./dist/esm/CatchUp.d.ts",
+          "default": "./dist/esm/CatchUp.js"
+        },
+        "require": {
+          "types": "./dist/cjs/CatchUp.d.ts",
+          "default": "./dist/cjs/CatchUp.js"
+        }
       },
       "./Channel": {
-        "types": "./dist/esm/Channel.d.ts",
-        "import": "./dist/esm/Channel.js",
-        "require": "./dist/cjs/Channel.js"
+        "import": {
+          "types": "./dist/esm/Channel.d.ts",
+          "default": "./dist/esm/Channel.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Channel.d.ts",
+          "default": "./dist/cjs/Channel.js"
+        }
       },
       "./Cron": {
-        "types": "./dist/esm/Cron.d.ts",
-        "import": "./dist/esm/Cron.js",
-        "require": "./dist/cjs/Cron.js"
+        "import": {
+          "types": "./dist/esm/Cron.d.ts",
+          "default": "./dist/esm/Cron.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Cron.d.ts",
+          "default": "./dist/cjs/Cron.js"
+        }
       },
       "./DispatchReader": {
-        "types": "./dist/esm/DispatchReader.d.ts",
-        "import": "./dist/esm/DispatchReader.js",
-        "require": "./dist/cjs/DispatchReader.js"
+        "import": {
+          "types": "./dist/esm/DispatchReader.d.ts",
+          "default": "./dist/esm/DispatchReader.js"
+        },
+        "require": {
+          "types": "./dist/cjs/DispatchReader.d.ts",
+          "default": "./dist/cjs/DispatchReader.js"
+        }
       },
       "./Overlap": {
-        "types": "./dist/esm/Overlap.d.ts",
-        "import": "./dist/esm/Overlap.js",
-        "require": "./dist/cjs/Overlap.js"
+        "import": {
+          "types": "./dist/esm/Overlap.d.ts",
+          "default": "./dist/esm/Overlap.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Overlap.d.ts",
+          "default": "./dist/cjs/Overlap.js"
+        }
       },
       "./Schedule": {
-        "types": "./dist/esm/Schedule.d.ts",
-        "import": "./dist/esm/Schedule.js",
-        "require": "./dist/cjs/Schedule.js"
+        "import": {
+          "types": "./dist/esm/Schedule.d.ts",
+          "default": "./dist/esm/Schedule.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Schedule.d.ts",
+          "default": "./dist/cjs/Schedule.js"
+        }
       },
       "./Scheduler": {
-        "types": "./dist/esm/Scheduler.d.ts",
-        "import": "./dist/esm/Scheduler.js",
-        "require": "./dist/cjs/Scheduler.js"
+        "import": {
+          "types": "./dist/esm/Scheduler.d.ts",
+          "default": "./dist/esm/Scheduler.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Scheduler.d.ts",
+          "default": "./dist/cjs/Scheduler.js"
+        }
       },
       "./SqlTriggerStore": {
-        "types": "./dist/esm/SqlTriggerStore.d.ts",
-        "import": "./dist/esm/SqlTriggerStore.js",
-        "require": "./dist/cjs/SqlTriggerStore.js"
+        "import": {
+          "types": "./dist/esm/SqlTriggerStore.d.ts",
+          "default": "./dist/esm/SqlTriggerStore.js"
+        },
+        "require": {
+          "types": "./dist/cjs/SqlTriggerStore.d.ts",
+          "default": "./dist/cjs/SqlTriggerStore.js"
+        }
       },
       "./Trigger": {
-        "types": "./dist/esm/Trigger.d.ts",
-        "import": "./dist/esm/Trigger.js",
-        "require": "./dist/cjs/Trigger.js"
+        "import": {
+          "types": "./dist/esm/Trigger.d.ts",
+          "default": "./dist/esm/Trigger.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Trigger.d.ts",
+          "default": "./dist/cjs/Trigger.js"
+        }
       },
       "./TriggerError": {
-        "types": "./dist/esm/TriggerError.d.ts",
-        "import": "./dist/esm/TriggerError.js",
-        "require": "./dist/cjs/TriggerError.js"
+        "import": {
+          "types": "./dist/esm/TriggerError.d.ts",
+          "default": "./dist/esm/TriggerError.js"
+        },
+        "require": {
+          "types": "./dist/cjs/TriggerError.d.ts",
+          "default": "./dist/cjs/TriggerError.js"
+        }
       },
       "./TriggerStore": {
-        "types": "./dist/esm/TriggerStore.d.ts",
-        "import": "./dist/esm/TriggerStore.js",
-        "require": "./dist/cjs/TriggerStore.js"
+        "import": {
+          "types": "./dist/esm/TriggerStore.d.ts",
+          "default": "./dist/esm/TriggerStore.js"
+        },
+        "require": {
+          "types": "./dist/cjs/TriggerStore.d.ts",
+          "default": "./dist/cjs/TriggerStore.js"
+        }
       },
       "./Webhook": {
-        "types": "./dist/esm/Webhook.d.ts",
-        "import": "./dist/esm/Webhook.js",
-        "require": "./dist/cjs/Webhook.js"
+        "import": {
+          "types": "./dist/esm/Webhook.d.ts",
+          "default": "./dist/esm/Webhook.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Webhook.d.ts",
+          "default": "./dist/cjs/Webhook.js"
+        }
       },
       "./index": {
-        "types": "./dist/esm/index.d.ts",
-        "import": "./dist/esm/index.js",
-        "require": "./dist/cjs/index.js"
+        "import": {
+          "types": "./dist/esm/index.d.ts",
+          "default": "./dist/esm/index.js"
+        },
+        "require": {
+          "types": "./dist/cjs/index.d.ts",
+          "default": "./dist/cjs/index.js"
+        }
       },
       "./test/TestTriggers": {
-        "types": "./dist/esm/test/TestTriggers.d.ts",
-        "import": "./dist/esm/test/TestTriggers.js",
-        "require": "./dist/cjs/test/TestTriggers.js"
+        "import": {
+          "types": "./dist/esm/test/TestTriggers.d.ts",
+          "default": "./dist/esm/test/TestTriggers.js"
+        },
+        "require": {
+          "types": "./dist/cjs/test/TestTriggers.d.ts",
+          "default": "./dist/cjs/test/TestTriggers.js"
+        }
       }
     }
   },
@@ -164,16 +239,16 @@
     "@smthrs/database": "1.0.0-rc.0"
   },
   "peerDependencies": {
-    "effect": "4.0.0-rc.112"
+    "effect": "4.0.0-rc.115"
   },
   "devDependencies": {
     "@effect/language-service": "0.87.2",
-    "@effect/vitest": "4.0.0-rc.112",
+    "@effect/vitest": "4.0.0-rc.115",
     "@eslint/js": "9.39.5",
     "@types/node": "26.4.1",
-    "@vitest/coverage-v8": "4.1.9",
+    "@vitest/coverage-v8": "5.0.0",
     "dprint": "0.57.1",
-    "effect": "4.0.0-rc.112",
+    "effect": "4.0.0-rc.115",
     "esbuild": "0.28.2",
     "eslint": "9.39.5",
     "eslint-import-resolver-typescript": "4.4.5",
@@ -183,6 +258,6 @@
     "madge": "8.0.0",
     "typescript": "5.9.3",
     "typescript-eslint": "8.69.0",
-    "vitest": "4.1.9"
+    "vitest": "5.0.0"
   }
 }

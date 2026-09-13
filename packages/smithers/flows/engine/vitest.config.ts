@@ -29,7 +29,7 @@ export default defineConfig({
       // profile with every test passing (issues #115/#121).
       reportsDirectory: join(tmpdir(), `flows-engine-coverage-${process.pid}`),
       // Every production module, including the public barrel, is measured.
-      include: ["src/**"].map((pattern) => join(import.meta.dirname, pattern)),
+      include: ["src/**"],
       // The suite must earn complete coverage in every category.
       thresholds: {
         branches: 100,

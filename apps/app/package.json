@@ -51,7 +51,7 @@
     "@tanstack/react-db": "0.3.7",
     "@xyflow/react": "^12.11.6",
     "dagre": "^0.8.5",
-    "effect": "4.0.0-rc.112",
+    "effect": "4.0.0-rc.115",
     "electrobun": "2.0.1",
     "lucide-react": "1.40.0",
     "react": "19.2.8",
@@ -60,7 +60,7 @@
     "zod": "4.5.4"
   },
   "devDependencies": {
-    "@effect/platform-node": "4.0.0-rc.112",
+    "@effect/platform-node": "4.0.0-rc.115",
     "@happy-dom/global-registrator": "^20.13.2",
     "@playwright/test": "1.62.1",
     "@smthrs/control": "workspace:*",

@@ -16,7 +16,7 @@ export default defineConfig({
       // Per-process report directory so concurrent vitest runs do not destroy
       // each other's coverage scratch state (issues #115/#121).
       reportsDirectory: join(tmpdir(), `flows-memory-coverage-${process.pid}`),
-      include: ["src/**/*.ts"].map((pattern) => join(import.meta.dirname, pattern)),
+      include: ["src/**/*.ts"],
       // An honest measured floor: every value is at or below what the suite
       // actually reaches (99.31 statements / 95.00 branches / 99.14 functions /
       // 99.57 lines), so a change that drops coverage fails here. The package is

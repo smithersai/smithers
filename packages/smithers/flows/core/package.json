@@ -67,66 +67,126 @@
     "exports": {
       "./package.json": "./package.json",
       ".": {
-        "types": "./dist/esm/index.d.ts",
-        "import": "./dist/esm/index.js",
-        "require": "./dist/cjs/index.js"
+        "import": {
+          "types": "./dist/esm/index.d.ts",
+          "default": "./dist/esm/index.js"
+        },
+        "require": {
+          "types": "./dist/cjs/index.d.ts",
+          "default": "./dist/cjs/index.js"
+        }
       },
       "./internal/*": null,
       "./*/index": null,
       "./Annotations": {
-        "types": "./dist/esm/Annotations.d.ts",
-        "import": "./dist/esm/Annotations.js",
-        "require": "./dist/cjs/Annotations.js"
+        "import": {
+          "types": "./dist/esm/Annotations.d.ts",
+          "default": "./dist/esm/Annotations.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Annotations.d.ts",
+          "default": "./dist/cjs/Annotations.js"
+        }
       },
       "./Digest": {
-        "types": "./dist/esm/Digest.d.ts",
-        "import": "./dist/esm/Digest.js",
-        "require": "./dist/cjs/Digest.js"
+        "import": {
+          "types": "./dist/esm/Digest.d.ts",
+          "default": "./dist/esm/Digest.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Digest.d.ts",
+          "default": "./dist/cjs/Digest.js"
+        }
       },
       "./Effects": {
-        "types": "./dist/esm/Effects.d.ts",
-        "import": "./dist/esm/Effects.js",
-        "require": "./dist/cjs/Effects.js"
+        "import": {
+          "types": "./dist/esm/Effects.d.ts",
+          "default": "./dist/esm/Effects.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Effects.d.ts",
+          "default": "./dist/cjs/Effects.js"
+        }
       },
       "./Flow": {
-        "types": "./dist/esm/Flow.d.ts",
-        "import": "./dist/esm/Flow.js",
-        "require": "./dist/cjs/Flow.js"
+        "import": {
+          "types": "./dist/esm/Flow.d.ts",
+          "default": "./dist/esm/Flow.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Flow.d.ts",
+          "default": "./dist/cjs/Flow.js"
+        }
       },
       "./Graph": {
-        "types": "./dist/esm/Graph.d.ts",
-        "import": "./dist/esm/Graph.js",
-        "require": "./dist/cjs/Graph.js"
+        "import": {
+          "types": "./dist/esm/Graph.d.ts",
+          "default": "./dist/esm/Graph.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Graph.d.ts",
+          "default": "./dist/cjs/Graph.js"
+        }
       },
       "./KeyMaterial": {
-        "types": "./dist/esm/KeyMaterial.d.ts",
-        "import": "./dist/esm/KeyMaterial.js",
-        "require": "./dist/cjs/KeyMaterial.js"
+        "import": {
+          "types": "./dist/esm/KeyMaterial.d.ts",
+          "default": "./dist/esm/KeyMaterial.js"
+        },
+        "require": {
+          "types": "./dist/cjs/KeyMaterial.d.ts",
+          "default": "./dist/cjs/KeyMaterial.js"
+        }
       },
       "./Markdown": {
-        "types": "./dist/esm/Markdown.d.ts",
-        "import": "./dist/esm/Markdown.js",
-        "require": "./dist/cjs/Markdown.js"
+        "import": {
+          "types": "./dist/esm/Markdown.d.ts",
+          "default": "./dist/esm/Markdown.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Markdown.d.ts",
+          "default": "./dist/cjs/Markdown.js"
+        }
       },
       "./Node": {
-        "types": "./dist/esm/Node.d.ts",
-        "import": "./dist/esm/Node.js",
-        "require": "./dist/cjs/Node.js"
+        "import": {
+          "types": "./dist/esm/Node.d.ts",
+          "default": "./dist/esm/Node.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Node.d.ts",
+          "default": "./dist/cjs/Node.js"
+        }
       },
       "./Placement": {
-        "types": "./dist/esm/Placement.d.ts",
-        "import": "./dist/esm/Placement.js",
-        "require": "./dist/cjs/Placement.js"
+        "import": {
+          "types": "./dist/esm/Placement.d.ts",
+          "default": "./dist/esm/Placement.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Placement.d.ts",
+          "default": "./dist/cjs/Placement.js"
+        }
       },
       "./TestRuntime": {
-        "types": "./dist/esm/TestRuntime.d.ts",
-        "import": "./dist/esm/TestRuntime.js",
-        "require": "./dist/cjs/TestRuntime.js"
+        "import": {
+          "types": "./dist/esm/TestRuntime.d.ts",
+          "default": "./dist/esm/TestRuntime.js"
+        },
+        "require": {
+          "types": "./dist/cjs/TestRuntime.d.ts",
+          "default": "./dist/cjs/TestRuntime.js"
+        }
       },
       "./index": {
-        "types": "./dist/esm/index.d.ts",
-        "import": "./dist/esm/index.js",
-        "require": "./dist/cjs/index.js"
+        "import": {
+          "types": "./dist/esm/index.d.ts",
+          "default": "./dist/esm/index.js"
+        },
+        "require": {
+          "types": "./dist/cjs/index.d.ts",
+          "default": "./dist/cjs/index.js"
+        }
       }
     }
   },
@@ -146,13 +206,13 @@
   },
   "devDependencies": {
     "@effect/language-service": "0.87.2",
-    "@effect/platform-node": "4.0.0-rc.112",
-    "@effect/vitest": "4.0.0-rc.112",
+    "@effect/platform-node": "4.0.0-rc.115",
+    "@effect/vitest": "4.0.0-rc.115",
     "@eslint/js": "9.39.5",
     "@types/node": "26.4.1",
-    "@vitest/coverage-v8": "4.1.9",
+    "@vitest/coverage-v8": "5.0.0",
     "dprint": "0.57.1",
-    "effect": "4.0.0-rc.112",
+    "effect": "4.0.0-rc.115",
     "esbuild": "0.28.2",
     "eslint": "9.39.5",
     "eslint-import-resolver-typescript": "4.4.5",
@@ -162,9 +222,9 @@
     "madge": "8.0.0",
     "typescript": "5.9.3",
     "typescript-eslint": "8.69.0",
-    "vitest": "4.1.9"
+    "vitest": "5.0.0"
   },
   "peerDependencies": {
-    "effect": "4.0.0-rc.112"
+    "effect": "4.0.0-rc.115"
   }
 }

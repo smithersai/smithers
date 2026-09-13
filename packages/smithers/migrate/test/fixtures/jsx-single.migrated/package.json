@@ -13,6 +13,6 @@
     "@smthrs/engine": "1.0.0-rc.0",
     "@smthrs/flow": "1.0.0-rc.0",
     "@smthrs/plan": "1.0.0-rc.0",
-    "effect": "4.0.0-rc.112"
+    "effect": "4.0.0-rc.115"
   }
 }

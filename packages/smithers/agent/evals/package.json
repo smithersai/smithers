@@ -65,56 +65,106 @@
     "exports": {
       "./package.json": "./package.json",
       ".": {
-        "types": "./dist/esm/index.d.ts",
-        "import": "./dist/esm/index.js",
-        "require": "./dist/cjs/index.js"
+        "import": {
+          "types": "./dist/esm/index.d.ts",
+          "default": "./dist/esm/index.js"
+        },
+        "require": {
+          "types": "./dist/cjs/index.d.ts",
+          "default": "./dist/cjs/index.js"
+        }
       },
       "./internal/*": null,
       "./*/index": null,
       "./Baseline": {
-        "types": "./dist/esm/Baseline.d.ts",
-        "import": "./dist/esm/Baseline.js",
-        "require": "./dist/cjs/Baseline.js"
+        "import": {
+          "types": "./dist/esm/Baseline.d.ts",
+          "default": "./dist/esm/Baseline.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Baseline.d.ts",
+          "default": "./dist/cjs/Baseline.js"
+        }
       },
       "./CaseExecutor": {
-        "types": "./dist/esm/CaseExecutor.d.ts",
-        "import": "./dist/esm/CaseExecutor.js",
-        "require": "./dist/cjs/CaseExecutor.js"
+        "import": {
+          "types": "./dist/esm/CaseExecutor.d.ts",
+          "default": "./dist/esm/CaseExecutor.js"
+        },
+        "require": {
+          "types": "./dist/cjs/CaseExecutor.d.ts",
+          "default": "./dist/cjs/CaseExecutor.js"
+        }
       },
       "./EvalError": {
-        "types": "./dist/esm/EvalError.d.ts",
-        "import": "./dist/esm/EvalError.js",
-        "require": "./dist/cjs/EvalError.js"
+        "import": {
+          "types": "./dist/esm/EvalError.d.ts",
+          "default": "./dist/esm/EvalError.js"
+        },
+        "require": {
+          "types": "./dist/cjs/EvalError.d.ts",
+          "default": "./dist/cjs/EvalError.js"
+        }
       },
       "./Gate": {
-        "types": "./dist/esm/Gate.d.ts",
-        "import": "./dist/esm/Gate.js",
-        "require": "./dist/cjs/Gate.js"
+        "import": {
+          "types": "./dist/esm/Gate.d.ts",
+          "default": "./dist/esm/Gate.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Gate.d.ts",
+          "default": "./dist/cjs/Gate.js"
+        }
       },
       "./Regression": {
-        "types": "./dist/esm/Regression.d.ts",
-        "import": "./dist/esm/Regression.js",
-        "require": "./dist/cjs/Regression.js"
+        "import": {
+          "types": "./dist/esm/Regression.d.ts",
+          "default": "./dist/esm/Regression.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Regression.d.ts",
+          "default": "./dist/cjs/Regression.js"
+        }
       },
       "./Report": {
-        "types": "./dist/esm/Report.d.ts",
-        "import": "./dist/esm/Report.js",
-        "require": "./dist/cjs/Report.js"
+        "import": {
+          "types": "./dist/esm/Report.d.ts",
+          "default": "./dist/esm/Report.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Report.d.ts",
+          "default": "./dist/cjs/Report.js"
+        }
       },
       "./Runner": {
-        "types": "./dist/esm/Runner.d.ts",
-        "import": "./dist/esm/Runner.js",
-        "require": "./dist/cjs/Runner.js"
+        "import": {
+          "types": "./dist/esm/Runner.d.ts",
+          "default": "./dist/esm/Runner.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Runner.d.ts",
+          "default": "./dist/cjs/Runner.js"
+        }
       },
       "./Suite": {
-        "types": "./dist/esm/Suite.d.ts",
-        "import": "./dist/esm/Suite.js",
-        "require": "./dist/cjs/Suite.js"
+        "import": {
+          "types": "./dist/esm/Suite.d.ts",
+          "default": "./dist/esm/Suite.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Suite.d.ts",
+          "default": "./dist/cjs/Suite.js"
+        }
       },
       "./index": {
-        "types": "./dist/esm/index.d.ts",
-        "import": "./dist/esm/index.js",
-        "require": "./dist/cjs/index.js"
+        "import": {
+          "types": "./dist/esm/index.d.ts",
+          "default": "./dist/esm/index.js"
+        },
+        "require": {
+          "types": "./dist/cjs/index.d.ts",
+          "default": "./dist/cjs/index.js"
+        }
       }
     }
   },
@@ -132,15 +182,15 @@
     "@smthrs/scorers": "1.0.0-rc.0"
   },
   "peerDependencies": {
-    "effect": "4.0.0-rc.112"
+    "effect": "4.0.0-rc.115"
   },
   "devDependencies": {
     "@effect/language-service": "0.87.2",
     "@eslint/js": "9.39.5",
     "@types/node": "26.4.1",
-    "@vitest/coverage-v8": "4.1.9",
+    "@vitest/coverage-v8": "5.0.0",
     "dprint": "0.57.1",
-    "effect": "4.0.0-rc.112",
+    "effect": "4.0.0-rc.115",
     "esbuild": "0.28.2",
     "eslint": "9.39.5",
     "eslint-import-resolver-typescript": "4.4.5",
@@ -150,6 +200,6 @@
     "madge": "8.0.0",
     "typescript": "5.9.3",
     "typescript-eslint": "8.69.0",
-    "vitest": "4.1.9"
+    "vitest": "5.0.0"
   }
 }

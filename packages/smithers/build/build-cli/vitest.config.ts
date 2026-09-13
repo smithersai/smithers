@@ -18,7 +18,7 @@ export default defineConfig({
       enabled: true,
       provider: "v8",
       reportsDirectory: join(tmpdir(), `flows-build-cli-coverage-${process.pid}`),
-      include: ["src/**"].map((pattern) => join(import.meta.dirname, pattern)),
+      include: ["src/**"],
       // The floors are the measured coverage rounded down, an honest ratchet
       // raised as tests accrete toward the workspace's 100% norm.
       thresholds: {

@@ -1,8 +1,14 @@
 import { tmpdir } from "node:os"
 import { join } from "node:path"
+import { fileURLToPath } from "node:url"
 import { defineConfig } from "vitest/config"
 
 export default defineConfig({
+  resolve: {
+    // The colocated template has its own package.json, so its self-imports
+    // need this package's source entry when exercised by the unit suite.
+    alias: { "@smthrs/create-app/app": fileURLToPath(new URL("./src/app.ts", import.meta.url)) }
+  },
   test: {
     // Only this package's own suites. `template/` holds whole apps, tests
     // included, and those run against the scaffolded copy's node_modules
@@ -38,7 +44,7 @@ export default defineConfig({
       // regression case in `test/routesBin.test.ts` instead. That is the
       // stronger check anyway: only a real process proves that Node refuses to
       // strip types under `node_modules`.
-      include: ["src/**"].map((pattern) => join(import.meta.dirname, pattern)),
+      include: ["src/**"],
       thresholds: {
         branches: 100,
         functions: 100,

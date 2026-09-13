@@ -64,47 +64,87 @@
     "exports": {
       "./package.json": "./package.json",
       ".": {
-        "types": "./dist/esm/index.d.ts",
-        "import": "./dist/esm/index.js",
-        "require": "./dist/cjs/index.js"
+        "import": {
+          "types": "./dist/esm/index.d.ts",
+          "default": "./dist/esm/index.js"
+        },
+        "require": {
+          "types": "./dist/cjs/index.d.ts",
+          "default": "./dist/cjs/index.js"
+        }
       },
       "./migrations/*": null,
       "./internal/*": null,
       "./*/index": null,
       "./CacheStore": {
-        "types": "./dist/esm/CacheStore.d.ts",
-        "import": "./dist/esm/CacheStore.js",
-        "require": "./dist/cjs/CacheStore.js"
+        "import": {
+          "types": "./dist/esm/CacheStore.d.ts",
+          "default": "./dist/esm/CacheStore.js"
+        },
+        "require": {
+          "types": "./dist/cjs/CacheStore.d.ts",
+          "default": "./dist/cjs/CacheStore.js"
+        }
       },
       "./CacheStoreMetrics": {
-        "types": "./dist/esm/CacheStoreMetrics.d.ts",
-        "import": "./dist/esm/CacheStoreMetrics.js",
-        "require": "./dist/cjs/CacheStoreMetrics.js"
+        "import": {
+          "types": "./dist/esm/CacheStoreMetrics.d.ts",
+          "default": "./dist/esm/CacheStoreMetrics.js"
+        },
+        "require": {
+          "types": "./dist/cjs/CacheStoreMetrics.d.ts",
+          "default": "./dist/cjs/CacheStoreMetrics.js"
+        }
       },
       "./CombinedCacheStore": {
-        "types": "./dist/esm/CombinedCacheStore.d.ts",
-        "import": "./dist/esm/CombinedCacheStore.js",
-        "require": "./dist/cjs/CombinedCacheStore.js"
+        "import": {
+          "types": "./dist/esm/CombinedCacheStore.d.ts",
+          "default": "./dist/esm/CombinedCacheStore.js"
+        },
+        "require": {
+          "types": "./dist/cjs/CombinedCacheStore.d.ts",
+          "default": "./dist/cjs/CombinedCacheStore.js"
+        }
       },
       "./Migrations": {
-        "types": "./dist/esm/Migrations.d.ts",
-        "import": "./dist/esm/Migrations.js",
-        "require": "./dist/cjs/Migrations.js"
+        "import": {
+          "types": "./dist/esm/Migrations.d.ts",
+          "default": "./dist/esm/Migrations.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Migrations.d.ts",
+          "default": "./dist/cjs/Migrations.js"
+        }
       },
       "./RemoteCacheStore": {
-        "types": "./dist/esm/RemoteCacheStore.d.ts",
-        "import": "./dist/esm/RemoteCacheStore.js",
-        "require": "./dist/cjs/RemoteCacheStore.js"
+        "import": {
+          "types": "./dist/esm/RemoteCacheStore.d.ts",
+          "default": "./dist/esm/RemoteCacheStore.js"
+        },
+        "require": {
+          "types": "./dist/cjs/RemoteCacheStore.d.ts",
+          "default": "./dist/cjs/RemoteCacheStore.js"
+        }
       },
       "./index": {
-        "types": "./dist/esm/index.d.ts",
-        "import": "./dist/esm/index.js",
-        "require": "./dist/cjs/index.js"
+        "import": {
+          "types": "./dist/esm/index.d.ts",
+          "default": "./dist/esm/index.js"
+        },
+        "require": {
+          "types": "./dist/cjs/index.d.ts",
+          "default": "./dist/cjs/index.js"
+        }
       },
       "./test/TestCacheStore": {
-        "types": "./dist/esm/test/TestCacheStore.d.ts",
-        "import": "./dist/esm/test/TestCacheStore.js",
-        "require": "./dist/cjs/test/TestCacheStore.js"
+        "import": {
+          "types": "./dist/esm/test/TestCacheStore.d.ts",
+          "default": "./dist/esm/test/TestCacheStore.js"
+        },
+        "require": {
+          "types": "./dist/cjs/test/TestCacheStore.d.ts",
+          "default": "./dist/cjs/test/TestCacheStore.js"
+        }
       }
     }
   },
@@ -123,12 +163,12 @@
   },
   "devDependencies": {
     "@effect/language-service": "0.87.2",
-    "@effect/vitest": "4.0.0-rc.112",
+    "@effect/vitest": "4.0.0-rc.115",
     "@eslint/js": "9.39.5",
     "@types/node": "26.4.1",
-    "@vitest/coverage-v8": "4.1.9",
+    "@vitest/coverage-v8": "5.0.0",
     "dprint": "0.57.1",
-    "effect": "4.0.0-rc.112",
+    "effect": "4.0.0-rc.115",
     "esbuild": "0.28.2",
     "eslint": "9.39.5",
     "eslint-import-resolver-typescript": "4.4.5",
@@ -138,9 +178,9 @@
     "madge": "8.0.0",
     "typescript": "5.9.3",
     "typescript-eslint": "8.69.0",
-    "vitest": "4.1.9"
+    "vitest": "5.0.0"
   },
   "peerDependencies": {
-    "effect": "4.0.0-rc.112"
+    "effect": "4.0.0-rc.115"
   }
 }

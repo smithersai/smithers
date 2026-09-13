@@ -38,10 +38,10 @@ export default defineConfig({
       // instead so the report outlives the run.
       reportsDirectory: join(tmpdir(), `flows-flow-coverage-${process.pid}`),
       // Every production module, including the public barrel, is measured.
-      include: ["src/**"].map((pattern) => join(import.meta.dirname, pattern)),
+      include: ["src/**"],
       // The sibling package has its own gate; resolve it from this config so
       // a checkout ancestor cannot match the exclusion.
-      exclude: ["../canonical/**"].map((pattern) => join(import.meta.dirname, pattern)),
+      exclude: ["../canonical/**"],
       // The suite must earn complete coverage in every category.
       thresholds: {
         branches: 100,

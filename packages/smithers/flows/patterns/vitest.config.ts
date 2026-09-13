@@ -24,7 +24,7 @@ export default defineConfig({
       // Per-process report directory so concurrent vitest runs do not destroy
       // each other's coverage scratch state (issues #115/#121).
       reportsDirectory: join(tmpdir(), `flows-patterns-coverage-${process.pid}`),
-      include: ["src/**"].map((pattern) => join(import.meta.dirname, pattern)),
+      include: ["src/**"],
       // Frozen 1.0 command contract: deferred declaration callbacks are executed by the
       // pure core test runtime, so the same 100% gate covers both topology and
       // value behavior.

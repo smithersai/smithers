@@ -28,7 +28,7 @@ export default defineConfig({
       // directory error and the other enforces 100% against a partial
       // profile with every test passing.
       reportsDirectory: join(tmpdir(), `flows-chain-coverage-${process.pid}`),
-      include: ["src/**/*.ts"].map((pattern) => join(import.meta.dirname, pattern)),
+      include: ["src/**/*.ts"],
       // Accurate, enforceable floors measured against the committed suite.
       // Ratchet upward as tests land; never lower without a written
       // justification.

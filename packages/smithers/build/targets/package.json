@@ -149,458 +149,908 @@
     "exports": {
       "./package.json": "./package.json",
       ".": {
-        "types": "./dist/esm/index.d.ts",
-        "import": "./dist/esm/index.js",
-        "require": "./dist/cjs/index.js"
+        "import": {
+          "types": "./dist/esm/index.d.ts",
+          "default": "./dist/esm/index.js"
+        },
+        "require": {
+          "types": "./dist/cjs/index.d.ts",
+          "default": "./dist/cjs/index.js"
+        }
       },
       "./internal/*": null,
       "./index": null,
       "./ReviewLint": null,
       "./StandardPackage": null,
       "./AgentTarget": {
-        "types": "./dist/esm/AgentTarget.d.ts",
-        "import": "./dist/esm/AgentTarget.js",
-        "require": "./dist/cjs/AgentTarget.js"
+        "import": {
+          "types": "./dist/esm/AgentTarget.d.ts",
+          "default": "./dist/esm/AgentTarget.js"
+        },
+        "require": {
+          "types": "./dist/cjs/AgentTarget.d.ts",
+          "default": "./dist/cjs/AgentTarget.js"
+        }
       },
       "./Anvil": {
-        "types": "./dist/esm/Anvil.d.ts",
-        "import": "./dist/esm/Anvil.js",
-        "require": "./dist/cjs/Anvil.js"
+        "import": {
+          "types": "./dist/esm/Anvil.d.ts",
+          "default": "./dist/esm/Anvil.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Anvil.d.ts",
+          "default": "./dist/cjs/Anvil.js"
+        }
       },
       "./Attr": {
-        "types": "./dist/esm/Attr.d.ts",
-        "import": "./dist/esm/Attr.js",
-        "require": "./dist/cjs/Attr.js"
+        "import": {
+          "types": "./dist/esm/Attr.d.ts",
+          "default": "./dist/esm/Attr.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Attr.d.ts",
+          "default": "./dist/cjs/Attr.js"
+        }
       },
       "./BiomeCheck": {
-        "types": "./dist/esm/BiomeCheck.d.ts",
-        "import": "./dist/esm/BiomeCheck.js",
-        "require": "./dist/cjs/BiomeCheck.js"
+        "import": {
+          "types": "./dist/esm/BiomeCheck.d.ts",
+          "default": "./dist/esm/BiomeCheck.js"
+        },
+        "require": {
+          "types": "./dist/cjs/BiomeCheck.d.ts",
+          "default": "./dist/cjs/BiomeCheck.js"
+        }
       },
       "./BunSuite": {
-        "types": "./dist/esm/BunSuite.d.ts",
-        "import": "./dist/esm/BunSuite.js",
-        "require": "./dist/cjs/BunSuite.js"
+        "import": {
+          "types": "./dist/esm/BunSuite.d.ts",
+          "default": "./dist/esm/BunSuite.js"
+        },
+        "require": {
+          "types": "./dist/cjs/BunSuite.d.ts",
+          "default": "./dist/cjs/BunSuite.js"
+        }
       },
       "./BundlerTarget": {
-        "types": "./dist/esm/BundlerTarget.d.ts",
-        "import": "./dist/esm/BundlerTarget.js",
-        "require": "./dist/cjs/BundlerTarget.js"
+        "import": {
+          "types": "./dist/esm/BundlerTarget.d.ts",
+          "default": "./dist/esm/BundlerTarget.js"
+        },
+        "require": {
+          "types": "./dist/cjs/BundlerTarget.d.ts",
+          "default": "./dist/cjs/BundlerTarget.js"
+        }
       },
       "./Cargo": {
-        "types": "./dist/esm/Cargo.d.ts",
-        "import": "./dist/esm/Cargo.js",
-        "require": "./dist/cjs/Cargo.js"
+        "import": {
+          "types": "./dist/esm/Cargo.d.ts",
+          "default": "./dist/esm/Cargo.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Cargo.d.ts",
+          "default": "./dist/cjs/Cargo.js"
+        }
       },
       "./Changesets": {
-        "types": "./dist/esm/Changesets.d.ts",
-        "import": "./dist/esm/Changesets.js",
-        "require": "./dist/cjs/Changesets.js"
+        "import": {
+          "types": "./dist/esm/Changesets.d.ts",
+          "default": "./dist/esm/Changesets.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Changesets.d.ts",
+          "default": "./dist/cjs/Changesets.js"
+        }
       },
       "./ChangesetsTarget": {
-        "types": "./dist/esm/ChangesetsTarget.d.ts",
-        "import": "./dist/esm/ChangesetsTarget.js",
-        "require": "./dist/cjs/ChangesetsTarget.js"
+        "import": {
+          "types": "./dist/esm/ChangesetsTarget.d.ts",
+          "default": "./dist/esm/ChangesetsTarget.js"
+        },
+        "require": {
+          "types": "./dist/cjs/ChangesetsTarget.d.ts",
+          "default": "./dist/cjs/ChangesetsTarget.js"
+        }
       },
       "./CiToolchain": {
-        "types": "./dist/esm/CiToolchain.d.ts",
-        "import": "./dist/esm/CiToolchain.js",
-        "require": "./dist/cjs/CiToolchain.js"
+        "import": {
+          "types": "./dist/esm/CiToolchain.d.ts",
+          "default": "./dist/esm/CiToolchain.js"
+        },
+        "require": {
+          "types": "./dist/cjs/CiToolchain.d.ts",
+          "default": "./dist/cjs/CiToolchain.js"
+        }
       },
       "./Compose": {
-        "types": "./dist/esm/Compose.d.ts",
-        "import": "./dist/esm/Compose.js",
-        "require": "./dist/cjs/Compose.js"
+        "import": {
+          "types": "./dist/esm/Compose.d.ts",
+          "default": "./dist/esm/Compose.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Compose.d.ts",
+          "default": "./dist/cjs/Compose.js"
+        }
       },
       "./Config": {
-        "types": "./dist/esm/Config.d.ts",
-        "import": "./dist/esm/Config.js",
-        "require": "./dist/cjs/Config.js"
+        "import": {
+          "types": "./dist/esm/Config.d.ts",
+          "default": "./dist/esm/Config.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Config.d.ts",
+          "default": "./dist/cjs/Config.js"
+        }
       },
       "./CronTarget": {
-        "types": "./dist/esm/CronTarget.d.ts",
-        "import": "./dist/esm/CronTarget.js",
-        "require": "./dist/cjs/CronTarget.js"
+        "import": {
+          "types": "./dist/esm/CronTarget.d.ts",
+          "default": "./dist/esm/CronTarget.js"
+        },
+        "require": {
+          "types": "./dist/cjs/CronTarget.d.ts",
+          "default": "./dist/cjs/CronTarget.js"
+        }
       },
       "./DepsLint": {
-        "types": "./dist/esm/DepsLint.d.ts",
-        "import": "./dist/esm/DepsLint.js",
-        "require": "./dist/cjs/DepsLint.js"
+        "import": {
+          "types": "./dist/esm/DepsLint.d.ts",
+          "default": "./dist/esm/DepsLint.js"
+        },
+        "require": {
+          "types": "./dist/cjs/DepsLint.d.ts",
+          "default": "./dist/cjs/DepsLint.js"
+        }
       },
       "./Dev": {
-        "types": "./dist/esm/Dev.d.ts",
-        "import": "./dist/esm/Dev.js",
-        "require": "./dist/cjs/Dev.js"
+        "import": {
+          "types": "./dist/esm/Dev.d.ts",
+          "default": "./dist/esm/Dev.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Dev.d.ts",
+          "default": "./dist/cjs/Dev.js"
+        }
       },
       "./Docker": {
-        "types": "./dist/esm/Docker.d.ts",
-        "import": "./dist/esm/Docker.js",
-        "require": "./dist/cjs/Docker.js"
+        "import": {
+          "types": "./dist/esm/Docker.d.ts",
+          "default": "./dist/esm/Docker.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Docker.d.ts",
+          "default": "./dist/cjs/Docker.js"
+        }
       },
       "./DocsCheck": {
-        "types": "./dist/esm/DocsCheck.d.ts",
-        "import": "./dist/esm/DocsCheck.js",
-        "require": "./dist/cjs/DocsCheck.js"
+        "import": {
+          "types": "./dist/esm/DocsCheck.d.ts",
+          "default": "./dist/esm/DocsCheck.js"
+        },
+        "require": {
+          "types": "./dist/cjs/DocsCheck.d.ts",
+          "default": "./dist/cjs/DocsCheck.js"
+        }
       },
       "./DocsPage": {
-        "types": "./dist/esm/DocsPage.d.ts",
-        "import": "./dist/esm/DocsPage.js",
-        "require": "./dist/cjs/DocsPage.js"
+        "import": {
+          "types": "./dist/esm/DocsPage.d.ts",
+          "default": "./dist/esm/DocsPage.js"
+        },
+        "require": {
+          "types": "./dist/cjs/DocsPage.d.ts",
+          "default": "./dist/cjs/DocsPage.js"
+        }
       },
       "./DocsParity": {
-        "types": "./dist/esm/DocsParity.d.ts",
-        "import": "./dist/esm/DocsParity.js",
-        "require": "./dist/cjs/DocsParity.js"
+        "import": {
+          "types": "./dist/esm/DocsParity.d.ts",
+          "default": "./dist/esm/DocsParity.js"
+        },
+        "require": {
+          "types": "./dist/cjs/DocsParity.d.ts",
+          "default": "./dist/cjs/DocsParity.js"
+        }
       },
       "./Dprint": {
-        "types": "./dist/esm/Dprint.d.ts",
-        "import": "./dist/esm/Dprint.js",
-        "require": "./dist/cjs/Dprint.js"
+        "import": {
+          "types": "./dist/esm/Dprint.d.ts",
+          "default": "./dist/esm/Dprint.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Dprint.d.ts",
+          "default": "./dist/cjs/Dprint.js"
+        }
       },
       "./DtsBuild": {
-        "types": "./dist/esm/DtsBuild.d.ts",
-        "import": "./dist/esm/DtsBuild.js",
-        "require": "./dist/cjs/DtsBuild.js"
+        "import": {
+          "types": "./dist/esm/DtsBuild.d.ts",
+          "default": "./dist/esm/DtsBuild.js"
+        },
+        "require": {
+          "types": "./dist/cjs/DtsBuild.d.ts",
+          "default": "./dist/cjs/DtsBuild.js"
+        }
       },
       "./EsLint": {
-        "types": "./dist/esm/EsLint.d.ts",
-        "import": "./dist/esm/EsLint.js",
-        "require": "./dist/cjs/EsLint.js"
+        "import": {
+          "types": "./dist/esm/EsLint.d.ts",
+          "default": "./dist/esm/EsLint.js"
+        },
+        "require": {
+          "types": "./dist/cjs/EsLint.d.ts",
+          "default": "./dist/cjs/EsLint.js"
+        }
       },
       "./Exec": {
-        "types": "./dist/esm/Exec.d.ts",
-        "import": "./dist/esm/Exec.js",
-        "require": "./dist/cjs/Exec.js"
+        "import": {
+          "types": "./dist/esm/Exec.d.ts",
+          "default": "./dist/esm/Exec.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Exec.d.ts",
+          "default": "./dist/cjs/Exec.js"
+        }
       },
       "./ExecSandbox": {
-        "types": "./dist/esm/ExecSandbox.d.ts",
-        "import": "./dist/esm/ExecSandbox.js",
-        "require": "./dist/cjs/ExecSandbox.js"
+        "import": {
+          "types": "./dist/esm/ExecSandbox.d.ts",
+          "default": "./dist/esm/ExecSandbox.js"
+        },
+        "require": {
+          "types": "./dist/cjs/ExecSandbox.d.ts",
+          "default": "./dist/cjs/ExecSandbox.js"
+        }
       },
       "./FaultSuite": {
-        "types": "./dist/esm/FaultSuite.d.ts",
-        "import": "./dist/esm/FaultSuite.js",
-        "require": "./dist/cjs/FaultSuite.js"
+        "import": {
+          "types": "./dist/esm/FaultSuite.d.ts",
+          "default": "./dist/esm/FaultSuite.js"
+        },
+        "require": {
+          "types": "./dist/cjs/FaultSuite.d.ts",
+          "default": "./dist/cjs/FaultSuite.js"
+        }
       },
       "./Factory": {
-        "types": "./dist/esm/Factory.d.ts",
-        "import": "./dist/esm/Factory.js",
-        "require": "./dist/cjs/Factory.js"
+        "import": {
+          "types": "./dist/esm/Factory.d.ts",
+          "default": "./dist/esm/Factory.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Factory.d.ts",
+          "default": "./dist/cjs/Factory.js"
+        }
       },
       "./Fetch": {
-        "types": "./dist/esm/Fetch.d.ts",
-        "import": "./dist/esm/Fetch.js",
-        "require": "./dist/cjs/Fetch.js"
+        "import": {
+          "types": "./dist/esm/Fetch.d.ts",
+          "default": "./dist/esm/Fetch.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Fetch.d.ts",
+          "default": "./dist/cjs/Fetch.js"
+        }
       },
       "./Filegroup": {
-        "types": "./dist/esm/Filegroup.d.ts",
-        "import": "./dist/esm/Filegroup.js",
-        "require": "./dist/cjs/Filegroup.js"
+        "import": {
+          "types": "./dist/esm/Filegroup.d.ts",
+          "default": "./dist/esm/Filegroup.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Filegroup.d.ts",
+          "default": "./dist/cjs/Filegroup.js"
+        }
       },
       "./Flow": {
-        "types": "./dist/esm/Flow.d.ts",
-        "import": "./dist/esm/Flow.js",
-        "require": "./dist/cjs/Flow.js"
+        "import": {
+          "types": "./dist/esm/Flow.d.ts",
+          "default": "./dist/esm/Flow.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Flow.d.ts",
+          "default": "./dist/cjs/Flow.js"
+        }
       },
       "./FlowCatalog": {
-        "types": "./dist/esm/FlowCatalog.d.ts",
-        "import": "./dist/esm/FlowCatalog.js",
-        "require": "./dist/cjs/FlowCatalog.js"
+        "import": {
+          "types": "./dist/esm/FlowCatalog.d.ts",
+          "default": "./dist/esm/FlowCatalog.js"
+        },
+        "require": {
+          "types": "./dist/cjs/FlowCatalog.d.ts",
+          "default": "./dist/cjs/FlowCatalog.js"
+        }
       },
       "./Foundry": {
-        "types": "./dist/esm/Foundry.d.ts",
-        "import": "./dist/esm/Foundry.js",
-        "require": "./dist/cjs/Foundry.js"
+        "import": {
+          "types": "./dist/esm/Foundry.d.ts",
+          "default": "./dist/esm/Foundry.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Foundry.d.ts",
+          "default": "./dist/cjs/Foundry.js"
+        }
       },
       "./GeneratedFile": {
-        "types": "./dist/esm/GeneratedFile.d.ts",
-        "import": "./dist/esm/GeneratedFile.js",
-        "require": "./dist/cjs/GeneratedFile.js"
+        "import": {
+          "types": "./dist/esm/GeneratedFile.d.ts",
+          "default": "./dist/esm/GeneratedFile.js"
+        },
+        "require": {
+          "types": "./dist/cjs/GeneratedFile.d.ts",
+          "default": "./dist/cjs/GeneratedFile.js"
+        }
       },
       "./Home": {
-        "types": "./dist/esm/Home.d.ts",
-        "import": "./dist/esm/Home.js",
-        "require": "./dist/cjs/Home.js"
+        "import": {
+          "types": "./dist/esm/Home.d.ts",
+          "default": "./dist/esm/Home.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Home.d.ts",
+          "default": "./dist/cjs/Home.js"
+        }
       },
       "./GitTarget": {
-        "types": "./dist/esm/GitTarget.d.ts",
-        "import": "./dist/esm/GitTarget.js",
-        "require": "./dist/cjs/GitTarget.js"
+        "import": {
+          "types": "./dist/esm/GitTarget.d.ts",
+          "default": "./dist/esm/GitTarget.js"
+        },
+        "require": {
+          "types": "./dist/cjs/GitTarget.d.ts",
+          "default": "./dist/cjs/GitTarget.js"
+        }
       },
       "./GithubCiGen": {
-        "types": "./dist/esm/GithubCiGen.d.ts",
-        "import": "./dist/esm/GithubCiGen.js",
-        "require": "./dist/cjs/GithubCiGen.js"
+        "import": {
+          "types": "./dist/esm/GithubCiGen.d.ts",
+          "default": "./dist/esm/GithubCiGen.js"
+        },
+        "require": {
+          "types": "./dist/cjs/GithubCiGen.d.ts",
+          "default": "./dist/cjs/GithubCiGen.js"
+        }
       },
       "./GithubTarget": {
-        "types": "./dist/esm/GithubTarget.d.ts",
-        "import": "./dist/esm/GithubTarget.js",
-        "require": "./dist/cjs/GithubTarget.js"
+        "import": {
+          "types": "./dist/esm/GithubTarget.d.ts",
+          "default": "./dist/esm/GithubTarget.js"
+        },
+        "require": {
+          "types": "./dist/cjs/GithubTarget.d.ts",
+          "default": "./dist/cjs/GithubTarget.js"
+        }
       },
       "./GithubWorkflow": {
-        "types": "./dist/esm/GithubWorkflow.d.ts",
-        "import": "./dist/esm/GithubWorkflow.js",
-        "require": "./dist/cjs/GithubWorkflow.js"
+        "import": {
+          "types": "./dist/esm/GithubWorkflow.d.ts",
+          "default": "./dist/esm/GithubWorkflow.js"
+        },
+        "require": {
+          "types": "./dist/cjs/GithubWorkflow.d.ts",
+          "default": "./dist/cjs/GithubWorkflow.js"
+        }
       },
       "./Go": {
-        "types": "./dist/esm/Go.d.ts",
-        "import": "./dist/esm/Go.js",
-        "require": "./dist/cjs/Go.js"
+        "import": {
+          "types": "./dist/esm/Go.d.ts",
+          "default": "./dist/esm/Go.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Go.d.ts",
+          "default": "./dist/cjs/Go.js"
+        }
       },
       "./Input": {
-        "types": "./dist/esm/Input.d.ts",
-        "import": "./dist/esm/Input.js",
-        "require": "./dist/cjs/Input.js"
+        "import": {
+          "types": "./dist/esm/Input.d.ts",
+          "default": "./dist/esm/Input.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Input.d.ts",
+          "default": "./dist/cjs/Input.js"
+        }
       },
       "./Install": {
-        "types": "./dist/esm/Install.d.ts",
-        "import": "./dist/esm/Install.js",
-        "require": "./dist/cjs/Install.js"
+        "import": {
+          "types": "./dist/esm/Install.d.ts",
+          "default": "./dist/esm/Install.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Install.d.ts",
+          "default": "./dist/cjs/Install.js"
+        }
       },
       "./JsrPublish": {
-        "types": "./dist/esm/JsrPublish.d.ts",
-        "import": "./dist/esm/JsrPublish.js",
-        "require": "./dist/cjs/JsrPublish.js"
+        "import": {
+          "types": "./dist/esm/JsrPublish.d.ts",
+          "default": "./dist/esm/JsrPublish.js"
+        },
+        "require": {
+          "types": "./dist/cjs/JsrPublish.d.ts",
+          "default": "./dist/cjs/JsrPublish.js"
+        }
       },
       "./LlmLint": {
-        "types": "./dist/esm/LlmLint.d.ts",
-        "import": "./dist/esm/LlmLint.js",
-        "require": "./dist/cjs/LlmLint.js"
+        "import": {
+          "types": "./dist/esm/LlmLint.d.ts",
+          "default": "./dist/esm/LlmLint.js"
+        },
+        "require": {
+          "types": "./dist/cjs/LlmLint.d.ts",
+          "default": "./dist/cjs/LlmLint.js"
+        }
       },
       "./LocalRepository": {
-        "types": "./dist/esm/LocalRepository.d.ts",
-        "import": "./dist/esm/LocalRepository.js",
-        "require": "./dist/cjs/LocalRepository.js"
+        "import": {
+          "types": "./dist/esm/LocalRepository.d.ts",
+          "default": "./dist/esm/LocalRepository.js"
+        },
+        "require": {
+          "types": "./dist/cjs/LocalRepository.d.ts",
+          "default": "./dist/cjs/LocalRepository.js"
+        }
       },
       "./Lockfile": {
-        "types": "./dist/esm/Lockfile.d.ts",
-        "import": "./dist/esm/Lockfile.js",
-        "require": "./dist/cjs/Lockfile.js"
+        "import": {
+          "types": "./dist/esm/Lockfile.d.ts",
+          "default": "./dist/esm/Lockfile.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Lockfile.d.ts",
+          "default": "./dist/cjs/Lockfile.js"
+        }
       },
       "./ManifestJson": {
-        "types": "./dist/esm/ManifestJson.d.ts",
-        "import": "./dist/esm/ManifestJson.js",
-        "require": "./dist/cjs/ManifestJson.js"
+        "import": {
+          "types": "./dist/esm/ManifestJson.d.ts",
+          "default": "./dist/esm/ManifestJson.js"
+        },
+        "require": {
+          "types": "./dist/cjs/ManifestJson.d.ts",
+          "default": "./dist/cjs/ManifestJson.js"
+        }
       },
       "./MemoryTarget": {
-        "types": "./dist/esm/MemoryTarget.d.ts",
-        "import": "./dist/esm/MemoryTarget.js",
-        "require": "./dist/cjs/MemoryTarget.js"
+        "import": {
+          "types": "./dist/esm/MemoryTarget.d.ts",
+          "default": "./dist/esm/MemoryTarget.js"
+        },
+        "require": {
+          "types": "./dist/cjs/MemoryTarget.d.ts",
+          "default": "./dist/cjs/MemoryTarget.js"
+        }
       },
       "./Mise": {
-        "types": "./dist/esm/Mise.d.ts",
-        "import": "./dist/esm/Mise.js",
-        "require": "./dist/cjs/Mise.js"
+        "import": {
+          "types": "./dist/esm/Mise.d.ts",
+          "default": "./dist/esm/Mise.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Mise.d.ts",
+          "default": "./dist/cjs/Mise.js"
+        }
       },
       "./NewPackage": {
-        "types": "./dist/esm/NewPackage.d.ts",
-        "import": "./dist/esm/NewPackage.js",
-        "require": "./dist/cjs/NewPackage.js"
+        "import": {
+          "types": "./dist/esm/NewPackage.d.ts",
+          "default": "./dist/esm/NewPackage.js"
+        },
+        "require": {
+          "types": "./dist/cjs/NewPackage.d.ts",
+          "default": "./dist/cjs/NewPackage.js"
+        }
       },
       "./Nix": {
-        "types": "./dist/esm/Nix.d.ts",
-        "import": "./dist/esm/Nix.js",
-        "require": "./dist/cjs/Nix.js"
+        "import": {
+          "types": "./dist/esm/Nix.d.ts",
+          "default": "./dist/esm/Nix.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Nix.d.ts",
+          "default": "./dist/cjs/Nix.js"
+        }
       },
       "./NodeArtifact": {
-        "types": "./dist/esm/NodeArtifact.d.ts",
-        "import": "./dist/esm/NodeArtifact.js",
-        "require": "./dist/cjs/NodeArtifact.js"
+        "import": {
+          "types": "./dist/esm/NodeArtifact.d.ts",
+          "default": "./dist/esm/NodeArtifact.js"
+        },
+        "require": {
+          "types": "./dist/cjs/NodeArtifact.d.ts",
+          "default": "./dist/cjs/NodeArtifact.js"
+        }
       },
       "./NodeBinary": {
-        "types": "./dist/esm/NodeBinary.d.ts",
-        "import": "./dist/esm/NodeBinary.js",
-        "require": "./dist/cjs/NodeBinary.js"
+        "import": {
+          "types": "./dist/esm/NodeBinary.d.ts",
+          "default": "./dist/esm/NodeBinary.js"
+        },
+        "require": {
+          "types": "./dist/cjs/NodeBinary.d.ts",
+          "default": "./dist/cjs/NodeBinary.js"
+        }
       },
       "./NodeTest": {
-        "types": "./dist/esm/NodeTest.d.ts",
-        "import": "./dist/esm/NodeTest.js",
-        "require": "./dist/cjs/NodeTest.js"
+        "import": {
+          "types": "./dist/esm/NodeTest.d.ts",
+          "default": "./dist/esm/NodeTest.js"
+        },
+        "require": {
+          "types": "./dist/cjs/NodeTest.d.ts",
+          "default": "./dist/cjs/NodeTest.js"
+        }
       },
       "./NpmPublish": {
-        "types": "./dist/esm/NpmPublish.d.ts",
-        "import": "./dist/esm/NpmPublish.js",
-        "require": "./dist/cjs/NpmPublish.js"
+        "import": {
+          "types": "./dist/esm/NpmPublish.d.ts",
+          "default": "./dist/esm/NpmPublish.js"
+        },
+        "require": {
+          "types": "./dist/cjs/NpmPublish.d.ts",
+          "default": "./dist/cjs/NpmPublish.js"
+        }
       },
       "./NpmTarget": {
-        "types": "./dist/esm/NpmTarget.d.ts",
-        "import": "./dist/esm/NpmTarget.js",
-        "require": "./dist/cjs/NpmTarget.js"
+        "import": {
+          "types": "./dist/esm/NpmTarget.d.ts",
+          "default": "./dist/esm/NpmTarget.js"
+        },
+        "require": {
+          "types": "./dist/cjs/NpmTarget.d.ts",
+          "default": "./dist/cjs/NpmTarget.js"
+        }
       },
       "./Outward": {
-        "types": "./dist/esm/Outward.d.ts",
-        "import": "./dist/esm/Outward.js",
-        "require": "./dist/cjs/Outward.js"
+        "import": {
+          "types": "./dist/esm/Outward.d.ts",
+          "default": "./dist/esm/Outward.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Outward.d.ts",
+          "default": "./dist/cjs/Outward.js"
+        }
       },
       "./Owners": {
-        "types": "./dist/esm/Owners.d.ts",
-        "import": "./dist/esm/Owners.js",
-        "require": "./dist/cjs/Owners.js"
+        "import": {
+          "types": "./dist/esm/Owners.d.ts",
+          "default": "./dist/esm/Owners.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Owners.d.ts",
+          "default": "./dist/cjs/Owners.js"
+        }
       },
       "./Package": {
-        "types": "./dist/esm/Package.d.ts",
-        "import": "./dist/esm/Package.js",
-        "require": "./dist/cjs/Package.js"
+        "import": {
+          "types": "./dist/esm/Package.d.ts",
+          "default": "./dist/esm/Package.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Package.d.ts",
+          "default": "./dist/cjs/Package.js"
+        }
       },
       "./PackageDefaults": {
-        "types": "./dist/esm/PackageDefaults.d.ts",
-        "import": "./dist/esm/PackageDefaults.js",
-        "require": "./dist/cjs/PackageDefaults.js"
+        "import": {
+          "types": "./dist/esm/PackageDefaults.d.ts",
+          "default": "./dist/esm/PackageDefaults.js"
+        },
+        "require": {
+          "types": "./dist/cjs/PackageDefaults.d.ts",
+          "default": "./dist/cjs/PackageDefaults.js"
+        }
       },
       "./PackageJson": {
-        "types": "./dist/esm/PackageJson.d.ts",
-        "import": "./dist/esm/PackageJson.js",
-        "require": "./dist/cjs/PackageJson.js"
+        "import": {
+          "types": "./dist/esm/PackageJson.d.ts",
+          "default": "./dist/esm/PackageJson.js"
+        },
+        "require": {
+          "types": "./dist/cjs/PackageJson.d.ts",
+          "default": "./dist/cjs/PackageJson.js"
+        }
       },
       "./PackageJsonTemplate": {
-        "types": "./dist/esm/PackageJsonTemplate.d.ts",
-        "import": "./dist/esm/PackageJsonTemplate.js",
-        "require": "./dist/cjs/PackageJsonTemplate.js"
+        "import": {
+          "types": "./dist/esm/PackageJsonTemplate.d.ts",
+          "default": "./dist/esm/PackageJsonTemplate.js"
+        },
+        "require": {
+          "types": "./dist/cjs/PackageJsonTemplate.d.ts",
+          "default": "./dist/cjs/PackageJsonTemplate.js"
+        }
       },
       "./PackageLint": {
-        "types": "./dist/esm/PackageLint.d.ts",
-        "import": "./dist/esm/PackageLint.js",
-        "require": "./dist/cjs/PackageLint.js"
+        "import": {
+          "types": "./dist/esm/PackageLint.d.ts",
+          "default": "./dist/esm/PackageLint.js"
+        },
+        "require": {
+          "types": "./dist/cjs/PackageLint.d.ts",
+          "default": "./dist/cjs/PackageLint.js"
+        }
       },
       "./PackageManager": {
-        "types": "./dist/esm/PackageManager.d.ts",
-        "import": "./dist/esm/PackageManager.js",
-        "require": "./dist/cjs/PackageManager.js"
+        "import": {
+          "types": "./dist/esm/PackageManager.d.ts",
+          "default": "./dist/esm/PackageManager.js"
+        },
+        "require": {
+          "types": "./dist/cjs/PackageManager.d.ts",
+          "default": "./dist/cjs/PackageManager.js"
+        }
       },
       "./PnpmWorkspaceFile": {
-        "types": "./dist/esm/PnpmWorkspaceFile.d.ts",
-        "import": "./dist/esm/PnpmWorkspaceFile.js",
-        "require": "./dist/cjs/PnpmWorkspaceFile.js"
+        "import": {
+          "types": "./dist/esm/PnpmWorkspaceFile.d.ts",
+          "default": "./dist/esm/PnpmWorkspaceFile.js"
+        },
+        "require": {
+          "types": "./dist/cjs/PnpmWorkspaceFile.d.ts",
+          "default": "./dist/cjs/PnpmWorkspaceFile.js"
+        }
       },
       "./Reference": {
-        "types": "./dist/esm/Reference.d.ts",
-        "import": "./dist/esm/Reference.js",
-        "require": "./dist/cjs/Reference.js"
+        "import": {
+          "types": "./dist/esm/Reference.d.ts",
+          "default": "./dist/esm/Reference.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Reference.d.ts",
+          "default": "./dist/cjs/Reference.js"
+        }
       },
       "./RemoteCache": {
-        "types": "./dist/esm/RemoteCache.d.ts",
-        "import": "./dist/esm/RemoteCache.js",
-        "require": "./dist/cjs/RemoteCache.js"
+        "import": {
+          "types": "./dist/esm/RemoteCache.d.ts",
+          "default": "./dist/esm/RemoteCache.js"
+        },
+        "require": {
+          "types": "./dist/cjs/RemoteCache.d.ts",
+          "default": "./dist/cjs/RemoteCache.js"
+        }
       },
       "./RepoTarget": {
-        "types": "./dist/esm/RepoTarget.d.ts",
-        "import": "./dist/esm/RepoTarget.js",
-        "require": "./dist/cjs/RepoTarget.js"
+        "import": {
+          "types": "./dist/esm/RepoTarget.d.ts",
+          "default": "./dist/esm/RepoTarget.js"
+        },
+        "require": {
+          "types": "./dist/cjs/RepoTarget.d.ts",
+          "default": "./dist/cjs/RepoTarget.js"
+        }
       },
       "./Runtime": {
-        "types": "./dist/esm/Runtime.d.ts",
-        "import": "./dist/esm/Runtime.js",
-        "require": "./dist/cjs/Runtime.js"
+        "import": {
+          "types": "./dist/esm/Runtime.d.ts",
+          "default": "./dist/esm/Runtime.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Runtime.d.ts",
+          "default": "./dist/cjs/Runtime.js"
+        }
       },
       "./RustToolchain": {
-        "types": "./dist/esm/RustToolchain.d.ts",
-        "import": "./dist/esm/RustToolchain.js",
-        "require": "./dist/cjs/RustToolchain.js"
+        "import": {
+          "types": "./dist/esm/RustToolchain.d.ts",
+          "default": "./dist/esm/RustToolchain.js"
+        },
+        "require": {
+          "types": "./dist/cjs/RustToolchain.d.ts",
+          "default": "./dist/cjs/RustToolchain.js"
+        }
       },
       "./SafeFs": {
-        "types": "./dist/esm/SafeFs.d.ts",
-        "import": "./dist/esm/SafeFs.js",
-        "require": "./dist/cjs/SafeFs.js"
+        "import": {
+          "types": "./dist/esm/SafeFs.d.ts",
+          "default": "./dist/esm/SafeFs.js"
+        },
+        "require": {
+          "types": "./dist/cjs/SafeFs.d.ts",
+          "default": "./dist/cjs/SafeFs.js"
+        }
       },
       "./Secret": {
-        "types": "./dist/esm/Secret.d.ts",
-        "import": "./dist/esm/Secret.js",
-        "require": "./dist/cjs/Secret.js"
+        "import": {
+          "types": "./dist/esm/Secret.d.ts",
+          "default": "./dist/esm/Secret.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Secret.d.ts",
+          "default": "./dist/cjs/Secret.js"
+        }
       },
       "./SecretProxy": {
-        "types": "./dist/esm/SecretProxy.d.ts",
-        "import": "./dist/esm/SecretProxy.js",
-        "require": "./dist/cjs/SecretProxy.js"
+        "import": {
+          "types": "./dist/esm/SecretProxy.d.ts",
+          "default": "./dist/esm/SecretProxy.js"
+        },
+        "require": {
+          "types": "./dist/cjs/SecretProxy.d.ts",
+          "default": "./dist/cjs/SecretProxy.js"
+        }
       },
       "./Shell": {
-        "types": "./dist/esm/Shell.d.ts",
-        "import": "./dist/esm/Shell.js",
-        "require": "./dist/cjs/Shell.js"
+        "import": {
+          "types": "./dist/esm/Shell.d.ts",
+          "default": "./dist/esm/Shell.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Shell.d.ts",
+          "default": "./dist/cjs/Shell.js"
+        }
       },
       "./Smithers": {
-        "types": "./dist/esm/Smithers.d.ts",
-        "import": "./dist/esm/Smithers.js",
-        "require": "./dist/cjs/Smithers.js"
+        "import": {
+          "types": "./dist/esm/Smithers.d.ts",
+          "default": "./dist/esm/Smithers.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Smithers.d.ts",
+          "default": "./dist/cjs/Smithers.js"
+        }
       },
       "./SortPackageJson": {
-        "types": "./dist/esm/SortPackageJson.d.ts",
-        "import": "./dist/esm/SortPackageJson.js",
-        "require": "./dist/cjs/SortPackageJson.js"
+        "import": {
+          "types": "./dist/esm/SortPackageJson.d.ts",
+          "default": "./dist/esm/SortPackageJson.js"
+        },
+        "require": {
+          "types": "./dist/cjs/SortPackageJson.d.ts",
+          "default": "./dist/cjs/SortPackageJson.js"
+        }
       },
       "./Stamp": {
-        "types": "./dist/esm/Stamp.d.ts",
-        "import": "./dist/esm/Stamp.js",
-        "require": "./dist/cjs/Stamp.js"
+        "import": {
+          "types": "./dist/esm/Stamp.d.ts",
+          "default": "./dist/esm/Stamp.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Stamp.d.ts",
+          "default": "./dist/cjs/Stamp.js"
+        }
       },
       "./Target": {
-        "types": "./dist/esm/Target.d.ts",
-        "import": "./dist/esm/Target.js",
-        "require": "./dist/cjs/Target.js"
+        "import": {
+          "types": "./dist/esm/Target.d.ts",
+          "default": "./dist/esm/Target.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Target.d.ts",
+          "default": "./dist/cjs/Target.js"
+        }
       },
       "./TargetIndex": {
-        "types": "./dist/esm/TargetIndex.d.ts",
-        "import": "./dist/esm/TargetIndex.js",
-        "require": "./dist/cjs/TargetIndex.js"
+        "import": {
+          "types": "./dist/esm/TargetIndex.d.ts",
+          "default": "./dist/esm/TargetIndex.js"
+        },
+        "require": {
+          "types": "./dist/cjs/TargetIndex.d.ts",
+          "default": "./dist/cjs/TargetIndex.js"
+        }
       },
       "./ToolBuild": {
-        "types": "./dist/esm/ToolBuild.d.ts",
-        "import": "./dist/esm/ToolBuild.js",
-        "require": "./dist/cjs/ToolBuild.js"
+        "import": {
+          "types": "./dist/esm/ToolBuild.d.ts",
+          "default": "./dist/esm/ToolBuild.js"
+        },
+        "require": {
+          "types": "./dist/cjs/ToolBuild.d.ts",
+          "default": "./dist/cjs/ToolBuild.js"
+        }
       },
       "./ToolRun": {
-        "types": "./dist/esm/ToolRun.d.ts",
-        "import": "./dist/esm/ToolRun.js",
-        "require": "./dist/cjs/ToolRun.js"
+        "import": {
+          "types": "./dist/esm/ToolRun.d.ts",
+          "default": "./dist/esm/ToolRun.js"
+        },
+        "require": {
+          "types": "./dist/cjs/ToolRun.d.ts",
+          "default": "./dist/cjs/ToolRun.js"
+        }
       },
       "./Toolchain": {
-        "types": "./dist/esm/Toolchain.d.ts",
-        "import": "./dist/esm/Toolchain.js",
-        "require": "./dist/cjs/Toolchain.js"
+        "import": {
+          "types": "./dist/esm/Toolchain.d.ts",
+          "default": "./dist/esm/Toolchain.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Toolchain.d.ts",
+          "default": "./dist/cjs/Toolchain.js"
+        }
       },
       "./TsBuild": {
-        "types": "./dist/esm/TsBuild.d.ts",
-        "import": "./dist/esm/TsBuild.js",
-        "require": "./dist/cjs/TsBuild.js"
+        "import": {
+          "types": "./dist/esm/TsBuild.d.ts",
+          "default": "./dist/esm/TsBuild.js"
+        },
+        "require": {
+          "types": "./dist/cjs/TsBuild.d.ts",
+          "default": "./dist/cjs/TsBuild.js"
+        }
       },
       "./Tsconfig": {
-        "types": "./dist/esm/Tsconfig.d.ts",
-        "import": "./dist/esm/Tsconfig.js",
-        "require": "./dist/cjs/Tsconfig.js"
+        "import": {
+          "types": "./dist/esm/Tsconfig.d.ts",
+          "default": "./dist/esm/Tsconfig.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Tsconfig.d.ts",
+          "default": "./dist/cjs/Tsconfig.js"
+        }
       },
       "./Typecheck": {
-        "types": "./dist/esm/Typecheck.d.ts",
-        "import": "./dist/esm/Typecheck.js",
-        "require": "./dist/cjs/Typecheck.js"
+        "import": {
+          "types": "./dist/esm/Typecheck.d.ts",
+          "default": "./dist/esm/Typecheck.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Typecheck.d.ts",
+          "default": "./dist/cjs/Typecheck.js"
+        }
       },
       "./TypedocDocumentation": {
-        "types": "./dist/esm/TypedocDocumentation.d.ts",
-        "import": "./dist/esm/TypedocDocumentation.js",
-        "require": "./dist/cjs/TypedocDocumentation.js"
+        "import": {
+          "types": "./dist/esm/TypedocDocumentation.d.ts",
+          "default": "./dist/esm/TypedocDocumentation.js"
+        },
+        "require": {
+          "types": "./dist/cjs/TypedocDocumentation.d.ts",
+          "default": "./dist/cjs/TypedocDocumentation.js"
+        }
       },
       "./Verb": {
-        "types": "./dist/esm/Verb.d.ts",
-        "import": "./dist/esm/Verb.js",
-        "require": "./dist/cjs/Verb.js"
+        "import": {
+          "types": "./dist/esm/Verb.d.ts",
+          "default": "./dist/esm/Verb.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Verb.d.ts",
+          "default": "./dist/cjs/Verb.js"
+        }
       },
       "./Vitest": {
-        "types": "./dist/esm/Vitest.d.ts",
-        "import": "./dist/esm/Vitest.js",
-        "require": "./dist/cjs/Vitest.js"
+        "import": {
+          "types": "./dist/esm/Vitest.d.ts",
+          "default": "./dist/esm/Vitest.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Vitest.d.ts",
+          "default": "./dist/cjs/Vitest.js"
+        }
       },
       "./VitestCoverage": {
-        "types": "./dist/esm/VitestCoverage.d.ts",
-        "import": "./dist/esm/VitestCoverage.js",
-        "require": "./dist/cjs/VitestCoverage.js"
+        "import": {
+          "types": "./dist/esm/VitestCoverage.d.ts",
+          "default": "./dist/esm/VitestCoverage.js"
+        },
+        "require": {
+          "types": "./dist/cjs/VitestCoverage.d.ts",
+          "default": "./dist/cjs/VitestCoverage.js"
+        }
       },
       "./VitestWatch": {
-        "types": "./dist/esm/VitestWatch.d.ts",
-        "import": "./dist/esm/VitestWatch.js",
-        "require": "./dist/cjs/VitestWatch.js"
+        "import": {
+          "types": "./dist/esm/VitestWatch.d.ts",
+          "default": "./dist/esm/VitestWatch.js"
+        },
+        "require": {
+          "types": "./dist/cjs/VitestWatch.d.ts",
+          "default": "./dist/cjs/VitestWatch.js"
+        }
       },
       "./WorkspaceDeclaration": {
-        "types": "./dist/esm/WorkspaceDeclaration.d.ts",
-        "import": "./dist/esm/WorkspaceDeclaration.js",
-        "require": "./dist/cjs/WorkspaceDeclaration.js"
+        "import": {
+          "types": "./dist/esm/WorkspaceDeclaration.d.ts",
+          "default": "./dist/esm/WorkspaceDeclaration.js"
+        },
+        "require": {
+          "types": "./dist/cjs/WorkspaceDeclaration.d.ts",
+          "default": "./dist/cjs/WorkspaceDeclaration.js"
+        }
       },
       "./test-support/plan": null
     }
@@ -624,15 +1074,15 @@
     "yaml": "2.9.0"
   },
   "peerDependencies": {
-    "effect": "4.0.0-rc.112"
+    "effect": "4.0.0-rc.115"
   },
   "devDependencies": {
     "@effect/language-service": "0.87.2",
     "@eslint/js": "9.39.5",
     "@types/node": "26.4.1",
-    "@vitest/coverage-v8": "4.1.9",
+    "@vitest/coverage-v8": "5.0.0",
     "dprint": "0.57.1",
-    "effect": "4.0.0-rc.112",
+    "effect": "4.0.0-rc.115",
     "esbuild": "0.28.2",
     "eslint": "9.39.5",
     "eslint-import-resolver-typescript": "4.4.5",
@@ -642,6 +1092,6 @@
     "madge": "8.0.0",
     "typescript": "5.9.3",
     "typescript-eslint": "8.69.0",
-    "vitest": "4.1.9"
+    "vitest": "5.0.0"
   }
 }

@@ -16,7 +16,7 @@ export default defineConfig({
       // Per-process report directory so concurrent vitest runs do not destroy
       // each other's coverage scratch state (issues #115/#121).
       reportsDirectory: join(tmpdir(), `flows-registry-coverage-${process.pid}`),
-      include: ["src/**"].map((pattern) => join(import.meta.dirname, pattern)),
+      include: ["src/**"],
       // Everything reachable is covered. The remainder is three defensive
       // guards in `ModuleMetadata` that no input can reach: the `?? ""`
       // fallbacks in `skipTrivia` and `nextToken` (both sit behind an

@@ -63,32 +63,57 @@
     "exports": {
       "./package.json": "./package.json",
       ".": {
-        "types": "./dist/esm/index.d.ts",
-        "import": "./dist/esm/index.js",
-        "require": "./dist/cjs/index.js"
+        "import": {
+          "types": "./dist/esm/index.d.ts",
+          "default": "./dist/esm/index.js"
+        },
+        "require": {
+          "types": "./dist/cjs/index.d.ts",
+          "default": "./dist/cjs/index.js"
+        }
       },
       "./FlowEngine": {
-        "types": "./dist/esm/FlowEngine/index.d.ts",
-        "import": "./dist/esm/FlowEngine/index.js",
-        "require": "./dist/cjs/FlowEngine/index.js"
+        "import": {
+          "types": "./dist/esm/FlowEngine/index.d.ts",
+          "default": "./dist/esm/FlowEngine/index.js"
+        },
+        "require": {
+          "types": "./dist/cjs/FlowEngine/index.d.ts",
+          "default": "./dist/cjs/FlowEngine/index.js"
+        }
       },
       "./FlowEngine/*": null,
       "./internal/*": null,
       "./*/index": null,
       "./FlowProxy": {
-        "types": "./dist/esm/FlowProxy.d.ts",
-        "import": "./dist/esm/FlowProxy.js",
-        "require": "./dist/cjs/FlowProxy.js"
+        "import": {
+          "types": "./dist/esm/FlowProxy.d.ts",
+          "default": "./dist/esm/FlowProxy.js"
+        },
+        "require": {
+          "types": "./dist/cjs/FlowProxy.d.ts",
+          "default": "./dist/cjs/FlowProxy.js"
+        }
       },
       "./FlowProxyServer": {
-        "types": "./dist/esm/FlowProxyServer.d.ts",
-        "import": "./dist/esm/FlowProxyServer.js",
-        "require": "./dist/cjs/FlowProxyServer.js"
+        "import": {
+          "types": "./dist/esm/FlowProxyServer.d.ts",
+          "default": "./dist/esm/FlowProxyServer.js"
+        },
+        "require": {
+          "types": "./dist/cjs/FlowProxyServer.d.ts",
+          "default": "./dist/cjs/FlowProxyServer.js"
+        }
       },
       "./index": {
-        "types": "./dist/esm/index.d.ts",
-        "import": "./dist/esm/index.js",
-        "require": "./dist/cjs/index.js"
+        "import": {
+          "types": "./dist/esm/index.d.ts",
+          "default": "./dist/esm/index.js"
+        },
+        "require": {
+          "types": "./dist/cjs/index.d.ts",
+          "default": "./dist/cjs/index.js"
+        }
       }
     }
   },
@@ -108,14 +133,14 @@
   },
   "devDependencies": {
     "@effect/language-service": "0.87.2",
-    "@effect/platform-node": "4.0.0-rc.112",
-    "@effect/vitest": "4.0.0-rc.112",
+    "@effect/platform-node": "4.0.0-rc.115",
+    "@effect/vitest": "4.0.0-rc.115",
     "@eslint/js": "9.39.5",
     "@smthrs/plan": "1.0.0-rc.0",
     "@types/node": "26.4.1",
-    "@vitest/coverage-v8": "4.1.9",
+    "@vitest/coverage-v8": "5.0.0",
     "dprint": "0.57.1",
-    "effect": "4.0.0-rc.112",
+    "effect": "4.0.0-rc.115",
     "esbuild": "0.28.2",
     "eslint": "9.39.5",
     "eslint-import-resolver-typescript": "4.4.5",
@@ -126,9 +151,9 @@
     "madge": "8.0.0",
     "typescript": "5.9.3",
     "typescript-eslint": "8.69.0",
-    "vitest": "4.1.9"
+    "vitest": "5.0.0"
   },
   "peerDependencies": {
-    "effect": "4.0.0-rc.112"
+    "effect": "4.0.0-rc.115"
   }
 }

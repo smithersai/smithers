@@ -68,71 +68,136 @@
     "exports": {
       "./package.json": "./package.json",
       ".": {
-        "types": "./dist/esm/index.d.ts",
-        "import": "./dist/esm/index.js",
-        "require": "./dist/cjs/index.js"
+        "import": {
+          "types": "./dist/esm/index.d.ts",
+          "default": "./dist/esm/index.js"
+        },
+        "require": {
+          "types": "./dist/cjs/index.d.ts",
+          "default": "./dist/cjs/index.js"
+        }
       },
       "./internal/*": null,
       "./*/index": null,
       "./Diagnosis": {
-        "types": "./dist/esm/Diagnosis.d.ts",
-        "import": "./dist/esm/Diagnosis.js",
-        "require": "./dist/cjs/Diagnosis.js"
+        "import": {
+          "types": "./dist/esm/Diagnosis.d.ts",
+          "default": "./dist/esm/Diagnosis.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Diagnosis.d.ts",
+          "default": "./dist/cjs/Diagnosis.js"
+        }
       },
       "./GatewayError": {
-        "types": "./dist/esm/GatewayError.d.ts",
-        "import": "./dist/esm/GatewayError.js",
-        "require": "./dist/cjs/GatewayError.js"
+        "import": {
+          "types": "./dist/esm/GatewayError.d.ts",
+          "default": "./dist/esm/GatewayError.js"
+        },
+        "require": {
+          "types": "./dist/cjs/GatewayError.d.ts",
+          "default": "./dist/cjs/GatewayError.js"
+        }
       },
       "./GatewayProjection": {
-        "types": "./dist/esm/GatewayProjection.d.ts",
-        "import": "./dist/esm/GatewayProjection.js",
-        "require": "./dist/cjs/GatewayProjection.js"
+        "import": {
+          "types": "./dist/esm/GatewayProjection.d.ts",
+          "default": "./dist/esm/GatewayProjection.js"
+        },
+        "require": {
+          "types": "./dist/cjs/GatewayProjection.d.ts",
+          "default": "./dist/cjs/GatewayProjection.js"
+        }
       },
       "./GatewayRpcs": {
-        "types": "./dist/esm/GatewayRpcs.d.ts",
-        "import": "./dist/esm/GatewayRpcs.js",
-        "require": "./dist/cjs/GatewayRpcs.js"
+        "import": {
+          "types": "./dist/esm/GatewayRpcs.d.ts",
+          "default": "./dist/esm/GatewayRpcs.js"
+        },
+        "require": {
+          "types": "./dist/cjs/GatewayRpcs.d.ts",
+          "default": "./dist/cjs/GatewayRpcs.js"
+        }
       },
       "./GatewaySchema": {
-        "types": "./dist/esm/GatewaySchema.d.ts",
-        "import": "./dist/esm/GatewaySchema.js",
-        "require": "./dist/cjs/GatewaySchema.js"
+        "import": {
+          "types": "./dist/esm/GatewaySchema.d.ts",
+          "default": "./dist/esm/GatewaySchema.js"
+        },
+        "require": {
+          "types": "./dist/cjs/GatewaySchema.d.ts",
+          "default": "./dist/cjs/GatewaySchema.js"
+        }
       },
       "./GatewayServer": {
-        "types": "./dist/esm/GatewayServer.d.ts",
-        "import": "./dist/esm/GatewayServer.js",
-        "require": "./dist/cjs/GatewayServer.js"
+        "import": {
+          "types": "./dist/esm/GatewayServer.d.ts",
+          "default": "./dist/esm/GatewayServer.js"
+        },
+        "require": {
+          "types": "./dist/cjs/GatewayServer.d.ts",
+          "default": "./dist/cjs/GatewayServer.js"
+        }
       },
       "./Projections": {
-        "types": "./dist/esm/Projections.d.ts",
-        "import": "./dist/esm/Projections.js",
-        "require": "./dist/cjs/Projections.js"
+        "import": {
+          "types": "./dist/esm/Projections.d.ts",
+          "default": "./dist/esm/Projections.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Projections.d.ts",
+          "default": "./dist/cjs/Projections.js"
+        }
       },
       "./SuperviseRuntime": {
-        "types": "./dist/esm/SuperviseRuntime.d.ts",
-        "import": "./dist/esm/SuperviseRuntime.js",
-        "require": "./dist/cjs/SuperviseRuntime.js"
+        "import": {
+          "types": "./dist/esm/SuperviseRuntime.d.ts",
+          "default": "./dist/esm/SuperviseRuntime.js"
+        },
+        "require": {
+          "types": "./dist/cjs/SuperviseRuntime.d.ts",
+          "default": "./dist/cjs/SuperviseRuntime.js"
+        }
       },
       "./index": {
-        "types": "./dist/esm/index.d.ts",
-        "import": "./dist/esm/index.js",
-        "require": "./dist/cjs/index.js"
+        "import": {
+          "types": "./dist/esm/index.d.ts",
+          "default": "./dist/esm/index.js"
+        },
+        "require": {
+          "types": "./dist/cjs/index.d.ts",
+          "default": "./dist/cjs/index.js"
+        }
       },
       "./node/NodeGateway": {
-        "types": "./dist/esm/node/NodeGateway.d.ts",
-        "import": "./dist/esm/node/NodeGateway.js",
-        "require": "./dist/cjs/node/NodeGateway.js"
+        "import": {
+          "types": "./dist/esm/node/NodeGateway.d.ts",
+          "default": "./dist/esm/node/NodeGateway.js"
+        },
+        "require": {
+          "types": "./dist/cjs/node/NodeGateway.d.ts",
+          "default": "./dist/cjs/node/NodeGateway.js"
+        }
       },
       "./test/TestSuperviseRuntime": {
-        "types": "./dist/esm/test/TestSuperviseRuntime.d.ts",
-        "import": "./dist/esm/test/TestSuperviseRuntime.js",
-        "require": "./dist/cjs/test/TestSuperviseRuntime.js"
+        "import": {
+          "types": "./dist/esm/test/TestSuperviseRuntime.d.ts",
+          "default": "./dist/esm/test/TestSuperviseRuntime.js"
+        },
+        "require": {
+          "types": "./dist/cjs/test/TestSuperviseRuntime.d.ts",
+          "default": "./dist/cjs/test/TestSuperviseRuntime.js"
+        }
       },
       "./bun/BunGateway": {
-        "types": "./dist/esm/bun/BunGateway.d.ts",
-        "import": "./dist/esm/bun/BunGateway.js",
-        "require": "./dist/cjs/bun/BunGateway.js"
+        "import": {
+          "types": "./dist/esm/bun/BunGateway.d.ts",
+          "default": "./dist/esm/bun/BunGateway.js"
+        },
+        "require": {
+          "types": "./dist/cjs/bun/BunGateway.d.ts",
+          "default": "./dist/cjs/bun/BunGateway.js"
+        }
       }
     }
   },
@@ -147,13 +212,12 @@
   },
   "dependencies": {
     "@smthrs/control": "1.0.0-rc.0",
-    "@smthrs/sync": "1.0.0-rc.0",
-    "@effect/platform-bun": "4.0.0-rc.112"
+    "@smthrs/sync": "1.0.0-rc.0"
   },
   "devDependencies": {
     "@effect/language-service": "0.87.2",
-    "@effect/platform-node": "4.0.0-rc.112",
-    "@effect/vitest": "4.0.0-rc.112",
+    "@effect/platform-node": "4.0.0-rc.115",
+    "@effect/vitest": "4.0.0-rc.115",
     "@eslint/js": "9.39.5",
     "@smthrs/database": "1.0.0-rc.0",
     "@smthrs/engine-store": "1.0.0-rc.0",
@@ -165,9 +229,9 @@
     "@smthrs/registry": "1.0.0-rc.0",
     "@smthrs/run-store": "1.0.0-rc.0",
     "@types/node": "26.4.1",
-    "@vitest/coverage-v8": "4.1.9",
+    "@vitest/coverage-v8": "5.0.0",
     "dprint": "0.57.1",
-    "effect": "4.0.0-rc.112",
+    "effect": "4.0.0-rc.115",
     "esbuild": "0.28.2",
     "eslint": "9.39.5",
     "eslint-import-resolver-typescript": "4.4.5",
@@ -177,14 +241,20 @@
     "madge": "8.0.0",
     "typescript": "5.9.3",
     "typescript-eslint": "8.69.0",
-    "vitest": "4.1.9"
+    "vitest": "5.0.0",
+    "fast-check": "4.9.0",
+    "@effect/platform-bun": "4.0.0-rc.115"
   },
   "peerDependencies": {
-    "@effect/platform-node": "4.0.0-rc.112",
-    "effect": "4.0.0-rc.112"
+    "@effect/platform-node": "4.0.0-rc.115",
+    "effect": "4.0.0-rc.115",
+    "@effect/platform-bun": "4.0.0-rc.115"
   },
   "peerDependenciesMeta": {
     "@effect/platform-node": {
+      "optional": true
+    },
+    "@effect/platform-bun": {
       "optional": true
     }
   }

@@ -22,11 +22,11 @@
   "devDependencies": {
     "@cloudflare/workers-types": "5.20260903.1",
     "@types/node": "26.4.1",
-    "@vitest/coverage-v8": "4.1.9",
+    "@vitest/coverage-v8": "5.0.0",
     "alchemy": "2.0.0-beta.76",
-    "effect": "4.0.0-rc.112",
+    "effect": "4.0.0-rc.115",
     "typescript": "5.9.3",
-    "vitest": "4.1.9",
+    "vitest": "5.0.0",
     "eslint": "9.39.1",
     "typescript-eslint": "8.65.0",
     "dprint": "0.55.2"

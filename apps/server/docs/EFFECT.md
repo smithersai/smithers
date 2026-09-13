@@ -5,7 +5,7 @@ and every Durable Object. This page is the map: the entrypoint, how services
 and Layers compose, where the platform boundaries are, how to add a service,
 and the check that keeps promise interop out of the middle.
 
-Effect v4 (`effect@4.0.0-rc.112`) is authoritative. When an API is in doubt,
+Effect v4 (`effect@4.0.0-rc.115`) is authoritative. When an API is in doubt,
 read `node_modules/effect/src/*.ts`; there is no v3 idiom in this package
 (`Context.Service`, not `Context.Tag`; `Effect.catch`, not `catchAll`).
 

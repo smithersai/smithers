@@ -64,59 +64,114 @@
     "exports": {
       "./package.json": "./package.json",
       ".": {
-        "types": "./dist/esm/index.d.ts",
-        "import": "./dist/esm/index.js",
-        "require": "./dist/cjs/index.js"
+        "import": {
+          "types": "./dist/esm/index.d.ts",
+          "default": "./dist/esm/index.js"
+        },
+        "require": {
+          "types": "./dist/cjs/index.d.ts",
+          "default": "./dist/cjs/index.js"
+        }
       },
       "./BrowserOtel": {
-        "types": "./dist/esm/BrowserOtel.d.ts",
-        "import": "./dist/esm/BrowserOtel.js",
-        "require": "./dist/cjs/BrowserOtel.js"
+        "import": {
+          "types": "./dist/esm/BrowserOtel.d.ts",
+          "default": "./dist/esm/BrowserOtel.js"
+        },
+        "require": {
+          "types": "./dist/cjs/BrowserOtel.d.ts",
+          "default": "./dist/cjs/BrowserOtel.js"
+        }
       },
       "./Endpoint": {
-        "types": "./dist/esm/Endpoint.d.ts",
-        "import": "./dist/esm/Endpoint.js",
-        "require": "./dist/cjs/Endpoint.js"
+        "import": {
+          "types": "./dist/esm/Endpoint.d.ts",
+          "default": "./dist/esm/Endpoint.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Endpoint.d.ts",
+          "default": "./dist/cjs/Endpoint.js"
+        }
       },
       "./JournalLogger": {
-        "types": "./dist/esm/JournalLogger.d.ts",
-        "import": "./dist/esm/JournalLogger.js",
-        "require": "./dist/cjs/JournalLogger.js"
+        "import": {
+          "types": "./dist/esm/JournalLogger.d.ts",
+          "default": "./dist/esm/JournalLogger.js"
+        },
+        "require": {
+          "types": "./dist/cjs/JournalLogger.d.ts",
+          "default": "./dist/cjs/JournalLogger.js"
+        }
       },
       "./Logger": {
-        "types": "./dist/esm/Logger.d.ts",
-        "import": "./dist/esm/Logger.js",
-        "require": "./dist/cjs/Logger.js"
+        "import": {
+          "types": "./dist/esm/Logger.d.ts",
+          "default": "./dist/esm/Logger.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Logger.d.ts",
+          "default": "./dist/cjs/Logger.js"
+        }
       },
       "./Metric": {
-        "types": "./dist/esm/Metric.d.ts",
-        "import": "./dist/esm/Metric.js",
-        "require": "./dist/cjs/Metric.js"
+        "import": {
+          "types": "./dist/esm/Metric.d.ts",
+          "default": "./dist/esm/Metric.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Metric.d.ts",
+          "default": "./dist/cjs/Metric.js"
+        }
       },
       "./NodeOtel": {
-        "types": "./dist/esm/NodeOtel.d.ts",
-        "import": "./dist/esm/NodeOtel.js",
-        "require": "./dist/cjs/NodeOtel.js"
+        "import": {
+          "types": "./dist/esm/NodeOtel.d.ts",
+          "default": "./dist/esm/NodeOtel.js"
+        },
+        "require": {
+          "types": "./dist/cjs/NodeOtel.d.ts",
+          "default": "./dist/cjs/NodeOtel.js"
+        }
       },
       "./Otel": {
-        "types": "./dist/esm/Otel.d.ts",
-        "import": "./dist/esm/Otel.js",
-        "require": "./dist/cjs/Otel.js"
+        "import": {
+          "types": "./dist/esm/Otel.d.ts",
+          "default": "./dist/esm/Otel.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Otel.d.ts",
+          "default": "./dist/cjs/Otel.js"
+        }
       },
       "./Otlp": {
-        "types": "./dist/esm/Otlp.d.ts",
-        "import": "./dist/esm/Otlp.js",
-        "require": "./dist/cjs/Otlp.js"
+        "import": {
+          "types": "./dist/esm/Otlp.d.ts",
+          "default": "./dist/esm/Otlp.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Otlp.d.ts",
+          "default": "./dist/cjs/Otlp.js"
+        }
       },
       "./Resource": {
-        "types": "./dist/esm/Resource.d.ts",
-        "import": "./dist/esm/Resource.js",
-        "require": "./dist/cjs/Resource.js"
+        "import": {
+          "types": "./dist/esm/Resource.d.ts",
+          "default": "./dist/esm/Resource.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Resource.d.ts",
+          "default": "./dist/cjs/Resource.js"
+        }
       },
       "./index": {
-        "types": "./dist/esm/index.d.ts",
-        "import": "./dist/esm/index.js",
-        "require": "./dist/cjs/index.js"
+        "import": {
+          "types": "./dist/esm/index.d.ts",
+          "default": "./dist/esm/index.js"
+        },
+        "require": {
+          "types": "./dist/cjs/index.d.ts",
+          "default": "./dist/cjs/index.js"
+        }
       }
     }
   },
@@ -136,8 +191,8 @@
   },
   "devDependencies": {
     "@effect/language-service": "0.87.2",
-    "@effect/opentelemetry": "4.0.0-rc.112",
-    "@effect/vitest": "4.0.0-rc.112",
+    "@effect/opentelemetry": "4.0.0-rc.115",
+    "@effect/vitest": "4.0.0-rc.115",
     "@eslint/js": "9.39.5",
     "@opentelemetry/api": "1.9.1",
     "@opentelemetry/exporter-logs-otlp-http": "0.222.0",
@@ -147,9 +202,9 @@
     "@opentelemetry/sdk-trace-node": "2.11.0",
     "@opentelemetry/sdk-trace-web": "2.11.0",
     "@types/node": "26.4.1",
-    "@vitest/coverage-v8": "4.1.9",
+    "@vitest/coverage-v8": "5.0.0",
     "dprint": "0.57.1",
-    "effect": "4.0.0-rc.112",
+    "effect": "4.0.0-rc.115",
     "esbuild": "0.28.2",
     "eslint": "9.39.5",
     "eslint-import-resolver-typescript": "4.4.5",
@@ -159,10 +214,10 @@
     "madge": "8.0.0",
     "typescript": "5.9.3",
     "typescript-eslint": "8.69.0",
-    "vitest": "4.1.9"
+    "vitest": "5.0.0"
   },
   "peerDependencies": {
-    "@effect/opentelemetry": "4.0.0-rc.112",
+    "@effect/opentelemetry": "4.0.0-rc.115",
     "@opentelemetry/api": "1.9.1",
     "@opentelemetry/exporter-logs-otlp-http": "0.222.0",
     "@opentelemetry/exporter-metrics-otlp-http": "0.222.0",
@@ -170,7 +225,7 @@
     "@opentelemetry/sdk-trace-base": "2.11.0",
     "@opentelemetry/sdk-trace-node": "2.11.0",
     "@opentelemetry/sdk-trace-web": "2.11.0",
-    "effect": "4.0.0-rc.112"
+    "effect": "4.0.0-rc.115"
   },
   "peerDependenciesMeta": {
     "@opentelemetry/exporter-logs-otlp-http": {

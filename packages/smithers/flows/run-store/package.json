@@ -65,52 +65,97 @@
     "exports": {
       "./package.json": "./package.json",
       ".": {
-        "types": "./dist/esm/index.d.ts",
-        "import": "./dist/esm/index.js",
-        "require": "./dist/cjs/index.js"
+        "import": {
+          "types": "./dist/esm/index.d.ts",
+          "default": "./dist/esm/index.js"
+        },
+        "require": {
+          "types": "./dist/cjs/index.d.ts",
+          "default": "./dist/cjs/index.js"
+        }
       },
       "./internal/*": null,
       "./migrations/*": null,
       "./*/index": null,
       "./AttemptStore": {
-        "types": "./dist/esm/AttemptStore.d.ts",
-        "import": "./dist/esm/AttemptStore.js",
-        "require": "./dist/cjs/AttemptStore.js"
+        "import": {
+          "types": "./dist/esm/AttemptStore.d.ts",
+          "default": "./dist/esm/AttemptStore.js"
+        },
+        "require": {
+          "types": "./dist/cjs/AttemptStore.d.ts",
+          "default": "./dist/cjs/AttemptStore.js"
+        }
       },
       "./Heartbeat": {
-        "types": "./dist/esm/Heartbeat.d.ts",
-        "import": "./dist/esm/Heartbeat.js",
-        "require": "./dist/cjs/Heartbeat.js"
+        "import": {
+          "types": "./dist/esm/Heartbeat.d.ts",
+          "default": "./dist/esm/Heartbeat.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Heartbeat.d.ts",
+          "default": "./dist/cjs/Heartbeat.js"
+        }
       },
       "./Migrations": {
-        "types": "./dist/esm/Migrations.d.ts",
-        "import": "./dist/esm/Migrations.js",
-        "require": "./dist/cjs/Migrations.js"
+        "import": {
+          "types": "./dist/esm/Migrations.d.ts",
+          "default": "./dist/esm/Migrations.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Migrations.d.ts",
+          "default": "./dist/cjs/Migrations.js"
+        }
       },
       "./Ownership": {
-        "types": "./dist/esm/Ownership.d.ts",
-        "import": "./dist/esm/Ownership.js",
-        "require": "./dist/cjs/Ownership.js"
+        "import": {
+          "types": "./dist/esm/Ownership.d.ts",
+          "default": "./dist/esm/Ownership.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Ownership.d.ts",
+          "default": "./dist/cjs/Ownership.js"
+        }
       },
       "./RunStore": {
-        "types": "./dist/esm/RunStore.d.ts",
-        "import": "./dist/esm/RunStore.js",
-        "require": "./dist/cjs/RunStore.js"
+        "import": {
+          "types": "./dist/esm/RunStore.d.ts",
+          "default": "./dist/esm/RunStore.js"
+        },
+        "require": {
+          "types": "./dist/cjs/RunStore.d.ts",
+          "default": "./dist/cjs/RunStore.js"
+        }
       },
       "./RunStoreMetrics": {
-        "types": "./dist/esm/RunStoreMetrics.d.ts",
-        "import": "./dist/esm/RunStoreMetrics.js",
-        "require": "./dist/cjs/RunStoreMetrics.js"
+        "import": {
+          "types": "./dist/esm/RunStoreMetrics.d.ts",
+          "default": "./dist/esm/RunStoreMetrics.js"
+        },
+        "require": {
+          "types": "./dist/cjs/RunStoreMetrics.d.ts",
+          "default": "./dist/cjs/RunStoreMetrics.js"
+        }
       },
       "./index": {
-        "types": "./dist/esm/index.d.ts",
-        "import": "./dist/esm/index.js",
-        "require": "./dist/cjs/index.js"
+        "import": {
+          "types": "./dist/esm/index.d.ts",
+          "default": "./dist/esm/index.js"
+        },
+        "require": {
+          "types": "./dist/cjs/index.d.ts",
+          "default": "./dist/cjs/index.js"
+        }
       },
       "./test/TestRunStore": {
-        "types": "./dist/esm/test/TestRunStore.d.ts",
-        "import": "./dist/esm/test/TestRunStore.js",
-        "require": "./dist/cjs/test/TestRunStore.js"
+        "import": {
+          "types": "./dist/esm/test/TestRunStore.d.ts",
+          "default": "./dist/esm/test/TestRunStore.js"
+        },
+        "require": {
+          "types": "./dist/cjs/test/TestRunStore.d.ts",
+          "default": "./dist/cjs/test/TestRunStore.js"
+        }
       }
     }
   },
@@ -131,12 +176,12 @@
   },
   "devDependencies": {
     "@effect/language-service": "0.87.2",
-    "@effect/vitest": "4.0.0-rc.112",
+    "@effect/vitest": "4.0.0-rc.115",
     "@eslint/js": "9.39.5",
     "@types/node": "26.4.1",
-    "@vitest/coverage-v8": "4.1.9",
+    "@vitest/coverage-v8": "5.0.0",
     "dprint": "0.57.1",
-    "effect": "4.0.0-rc.112",
+    "effect": "4.0.0-rc.115",
     "esbuild": "0.28.2",
     "eslint": "9.39.5",
     "eslint-import-resolver-typescript": "4.4.5",
@@ -146,9 +191,9 @@
     "madge": "8.0.0",
     "typescript": "5.9.3",
     "typescript-eslint": "8.69.0",
-    "vitest": "4.1.9"
+    "vitest": "5.0.0"
   },
   "peerDependencies": {
-    "effect": "4.0.0-rc.112"
+    "effect": "4.0.0-rc.115"
   }
 }

@@ -40,31 +40,56 @@
     "exports": {
       "./package.json": "./package.json",
       ".": {
-        "types": "./dist/esm/index.d.ts",
-        "import": "./dist/esm/index.js",
-        "require": "./dist/cjs/index.js"
+        "import": {
+          "types": "./dist/esm/index.d.ts",
+          "default": "./dist/esm/index.js"
+        },
+        "require": {
+          "types": "./dist/cjs/index.d.ts",
+          "default": "./dist/cjs/index.js"
+        }
       },
       "./internal/*": null,
       "./*/index": null,
       "./Canonical": {
-        "types": "./dist/esm/Canonical.d.ts",
-        "import": "./dist/esm/Canonical.js",
-        "require": "./dist/cjs/Canonical.js"
+        "import": {
+          "types": "./dist/esm/Canonical.d.ts",
+          "default": "./dist/esm/Canonical.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Canonical.d.ts",
+          "default": "./dist/cjs/Canonical.js"
+        }
       },
       "./index": {
-        "types": "./dist/esm/index.d.ts",
-        "import": "./dist/esm/index.js",
-        "require": "./dist/cjs/index.js"
+        "import": {
+          "types": "./dist/esm/index.d.ts",
+          "default": "./dist/esm/index.js"
+        },
+        "require": {
+          "types": "./dist/cjs/index.d.ts",
+          "default": "./dist/cjs/index.js"
+        }
       },
       "./Record": {
-        "types": "./dist/esm/Record.d.ts",
-        "import": "./dist/esm/Record.js",
-        "require": "./dist/cjs/Record.js"
+        "import": {
+          "types": "./dist/esm/Record.d.ts",
+          "default": "./dist/esm/Record.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Record.d.ts",
+          "default": "./dist/cjs/Record.js"
+        }
       },
       "./BoundedJson": {
-        "types": "./dist/esm/BoundedJson.d.ts",
-        "import": "./dist/esm/BoundedJson.js",
-        "require": "./dist/cjs/BoundedJson.js"
+        "import": {
+          "types": "./dist/esm/BoundedJson.d.ts",
+          "default": "./dist/esm/BoundedJson.js"
+        },
+        "require": {
+          "types": "./dist/cjs/BoundedJson.d.ts",
+          "default": "./dist/cjs/BoundedJson.js"
+        }
       }
     }
   },
@@ -81,11 +106,11 @@
   },
   "devDependencies": {
     "@effect/language-service": "0.87.2",
-    "@effect/vitest": "4.0.0-rc.112",
+    "@effect/vitest": "4.0.0-rc.115",
     "@eslint/js": "9.39.5",
     "@types/node": "26.4.1",
     "dprint": "0.57.1",
-    "effect": "4.0.0-rc.112",
+    "effect": "4.0.0-rc.115",
     "esbuild": "0.28.2",
     "eslint": "9.39.5",
     "eslint-import-resolver-typescript": "4.4.5",
@@ -95,9 +120,10 @@
     "madge": "8.0.0",
     "typescript": "5.9.3",
     "typescript-eslint": "8.69.0",
-    "vitest": "4.1.9"
+    "vitest": "5.0.0",
+    "fast-check": "4.9.0"
   },
   "peerDependencies": {
-    "effect": "4.0.0-rc.112"
+    "effect": "4.0.0-rc.115"
   }
 }

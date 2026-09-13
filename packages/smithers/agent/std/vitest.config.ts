@@ -16,7 +16,7 @@ export default defineConfig({
       // Per-process report directory so concurrent vitest runs do not destroy
       // each other's coverage scratch state (issues #115/#121).
       reportsDirectory: join(tmpdir(), `flows-std-coverage-${process.pid}`),
-      include: ["src/**"].map((pattern) => join(import.meta.dirname, pattern)),
+      include: ["src/**"],
       // A floor below what the suite already measures is not a ratchet: it
       // lets a regression that deletes a covered branch land green. These sit
       // just under the measured run (93.38 / 84.45 / 88.73 / 95.13) and are

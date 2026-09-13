@@ -75,101 +75,206 @@
     "exports": {
       "./package.json": "./package.json",
       ".": {
-        "types": "./dist/esm/index.d.ts",
-        "import": "./dist/esm/index.js",
-        "require": "./dist/cjs/index.js"
+        "import": {
+          "types": "./dist/esm/index.d.ts",
+          "default": "./dist/esm/index.js"
+        },
+        "require": {
+          "types": "./dist/cjs/index.d.ts",
+          "default": "./dist/cjs/index.js"
+        }
       },
       "./internal/*": null,
       "./*/index": null,
       "./AnthropicMessages": {
-        "types": "./dist/esm/AnthropicMessages.d.ts",
-        "import": "./dist/esm/AnthropicMessages.js",
-        "require": "./dist/cjs/AnthropicMessages.js"
+        "import": {
+          "types": "./dist/esm/AnthropicMessages.d.ts",
+          "default": "./dist/esm/AnthropicMessages.js"
+        },
+        "require": {
+          "types": "./dist/cjs/AnthropicMessages.d.ts",
+          "default": "./dist/cjs/AnthropicMessages.js"
+        }
       },
       "./Auth": {
-        "types": "./dist/esm/Auth.d.ts",
-        "import": "./dist/esm/Auth.js",
-        "require": "./dist/cjs/Auth.js"
+        "import": {
+          "types": "./dist/esm/Auth.d.ts",
+          "default": "./dist/esm/Auth.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Auth.d.ts",
+          "default": "./dist/cjs/Auth.js"
+        }
       },
       "./CanonicalJson": {
-        "types": "./dist/esm/CanonicalJson.d.ts",
-        "import": "./dist/esm/CanonicalJson.js",
-        "require": "./dist/cjs/CanonicalJson.js"
+        "import": {
+          "types": "./dist/esm/CanonicalJson.d.ts",
+          "default": "./dist/esm/CanonicalJson.js"
+        },
+        "require": {
+          "types": "./dist/cjs/CanonicalJson.d.ts",
+          "default": "./dist/cjs/CanonicalJson.js"
+        }
       },
       "./DeferredTools": {
-        "types": "./dist/esm/DeferredTools.d.ts",
-        "import": "./dist/esm/DeferredTools.js",
-        "require": "./dist/cjs/DeferredTools.js"
+        "import": {
+          "types": "./dist/esm/DeferredTools.d.ts",
+          "default": "./dist/esm/DeferredTools.js"
+        },
+        "require": {
+          "types": "./dist/cjs/DeferredTools.d.ts",
+          "default": "./dist/cjs/DeferredTools.js"
+        }
       },
       "./Endpoint": {
-        "types": "./dist/esm/Endpoint.d.ts",
-        "import": "./dist/esm/Endpoint.js",
-        "require": "./dist/cjs/Endpoint.js"
+        "import": {
+          "types": "./dist/esm/Endpoint.d.ts",
+          "default": "./dist/esm/Endpoint.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Endpoint.d.ts",
+          "default": "./dist/cjs/Endpoint.js"
+        }
       },
       "./Framing": {
-        "types": "./dist/esm/Framing.d.ts",
-        "import": "./dist/esm/Framing.js",
-        "require": "./dist/cjs/Framing.js"
+        "import": {
+          "types": "./dist/esm/Framing.d.ts",
+          "default": "./dist/esm/Framing.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Framing.d.ts",
+          "default": "./dist/cjs/Framing.js"
+        }
       },
       "./Model": {
-        "types": "./dist/esm/Model.d.ts",
-        "import": "./dist/esm/Model.js",
-        "require": "./dist/cjs/Model.js"
+        "import": {
+          "types": "./dist/esm/Model.d.ts",
+          "default": "./dist/esm/Model.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Model.d.ts",
+          "default": "./dist/cjs/Model.js"
+        }
       },
       "./ModelError": {
-        "types": "./dist/esm/ModelError.d.ts",
-        "import": "./dist/esm/ModelError.js",
-        "require": "./dist/cjs/ModelError.js"
+        "import": {
+          "types": "./dist/esm/ModelError.d.ts",
+          "default": "./dist/esm/ModelError.js"
+        },
+        "require": {
+          "types": "./dist/cjs/ModelError.d.ts",
+          "default": "./dist/cjs/ModelError.js"
+        }
       },
       "./ModelEvent": {
-        "types": "./dist/esm/ModelEvent.d.ts",
-        "import": "./dist/esm/ModelEvent.js",
-        "require": "./dist/cjs/ModelEvent.js"
+        "import": {
+          "types": "./dist/esm/ModelEvent.d.ts",
+          "default": "./dist/esm/ModelEvent.js"
+        },
+        "require": {
+          "types": "./dist/cjs/ModelEvent.d.ts",
+          "default": "./dist/cjs/ModelEvent.js"
+        }
       },
       "./ModelRequest": {
-        "types": "./dist/esm/ModelRequest.d.ts",
-        "import": "./dist/esm/ModelRequest.js",
-        "require": "./dist/cjs/ModelRequest.js"
+        "import": {
+          "types": "./dist/esm/ModelRequest.d.ts",
+          "default": "./dist/esm/ModelRequest.js"
+        },
+        "require": {
+          "types": "./dist/cjs/ModelRequest.d.ts",
+          "default": "./dist/cjs/ModelRequest.js"
+        }
       },
       "./OpenAIChatCompletions": {
-        "types": "./dist/esm/OpenAIChatCompletions.d.ts",
-        "import": "./dist/esm/OpenAIChatCompletions.js",
-        "require": "./dist/cjs/OpenAIChatCompletions.js"
+        "import": {
+          "types": "./dist/esm/OpenAIChatCompletions.d.ts",
+          "default": "./dist/esm/OpenAIChatCompletions.js"
+        },
+        "require": {
+          "types": "./dist/cjs/OpenAIChatCompletions.d.ts",
+          "default": "./dist/cjs/OpenAIChatCompletions.js"
+        }
       },
       "./OpenAIChatGPT": {
-        "types": "./dist/esm/OpenAIChatGPT.d.ts",
-        "import": "./dist/esm/OpenAIChatGPT.js",
-        "require": "./dist/cjs/OpenAIChatGPT.js"
+        "import": {
+          "types": "./dist/esm/OpenAIChatGPT.d.ts",
+          "default": "./dist/esm/OpenAIChatGPT.js"
+        },
+        "require": {
+          "types": "./dist/cjs/OpenAIChatGPT.d.ts",
+          "default": "./dist/cjs/OpenAIChatGPT.js"
+        }
       },
       "./OpenAIResponses": {
-        "types": "./dist/esm/OpenAIResponses.d.ts",
-        "import": "./dist/esm/OpenAIResponses.js",
-        "require": "./dist/cjs/OpenAIResponses.js"
+        "import": {
+          "types": "./dist/esm/OpenAIResponses.d.ts",
+          "default": "./dist/esm/OpenAIResponses.js"
+        },
+        "require": {
+          "types": "./dist/cjs/OpenAIResponses.d.ts",
+          "default": "./dist/cjs/OpenAIResponses.js"
+        }
       },
       "./Protocol": {
-        "types": "./dist/esm/Protocol.d.ts",
-        "import": "./dist/esm/Protocol.js",
-        "require": "./dist/cjs/Protocol.js"
+        "import": {
+          "types": "./dist/esm/Protocol.d.ts",
+          "default": "./dist/esm/Protocol.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Protocol.d.ts",
+          "default": "./dist/cjs/Protocol.js"
+        }
       },
       "./RequestExecutor": {
-        "types": "./dist/esm/RequestExecutor.d.ts",
-        "import": "./dist/esm/RequestExecutor.js",
-        "require": "./dist/cjs/RequestExecutor.js"
+        "import": {
+          "types": "./dist/esm/RequestExecutor.d.ts",
+          "default": "./dist/esm/RequestExecutor.js"
+        },
+        "require": {
+          "types": "./dist/cjs/RequestExecutor.d.ts",
+          "default": "./dist/cjs/RequestExecutor.js"
+        }
       },
       "./Route": {
-        "types": "./dist/esm/Route.d.ts",
-        "import": "./dist/esm/Route.js",
-        "require": "./dist/cjs/Route.js"
+        "import": {
+          "types": "./dist/esm/Route.d.ts",
+          "default": "./dist/esm/Route.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Route.d.ts",
+          "default": "./dist/cjs/Route.js"
+        }
       },
       "./ToolStream": {
-        "types": "./dist/esm/ToolStream.d.ts",
-        "import": "./dist/esm/ToolStream.js",
-        "require": "./dist/cjs/ToolStream.js"
+        "import": {
+          "types": "./dist/esm/ToolStream.d.ts",
+          "default": "./dist/esm/ToolStream.js"
+        },
+        "require": {
+          "types": "./dist/cjs/ToolStream.d.ts",
+          "default": "./dist/cjs/ToolStream.js"
+        }
       },
       "./index": {
-        "types": "./dist/esm/index.d.ts",
-        "import": "./dist/esm/index.js",
-        "require": "./dist/cjs/index.js"
+        "import": {
+          "types": "./dist/esm/index.d.ts",
+          "default": "./dist/esm/index.js"
+        },
+        "require": {
+          "types": "./dist/cjs/index.d.ts",
+          "default": "./dist/cjs/index.js"
+        }
+      },
+      "./ModelCatalog": {
+        "import": {
+          "types": "./dist/esm/ModelCatalog.d.ts",
+          "default": "./dist/esm/ModelCatalog.js"
+        },
+        "require": {
+          "types": "./dist/cjs/ModelCatalog.d.ts",
+          "default": "./dist/cjs/ModelCatalog.js"
+        }
       }
     }
   },
@@ -189,12 +294,12 @@
   },
   "devDependencies": {
     "@effect/language-service": "0.87.2",
-    "@effect/vitest": "4.0.0-rc.112",
+    "@effect/vitest": "4.0.0-rc.115",
     "@eslint/js": "9.39.5",
     "@types/node": "26.4.1",
-    "@vitest/coverage-v8": "4.1.9",
+    "@vitest/coverage-v8": "5.0.0",
     "dprint": "0.57.1",
-    "effect": "4.0.0-rc.112",
+    "effect": "4.0.0-rc.115",
     "esbuild": "0.28.2",
     "eslint": "9.39.5",
     "eslint-import-resolver-typescript": "4.4.5",
@@ -204,9 +309,9 @@
     "madge": "8.0.0",
     "typescript": "5.9.3",
     "typescript-eslint": "8.69.0",
-    "vitest": "4.1.9"
+    "vitest": "5.0.0"
   },
   "peerDependencies": {
-    "effect": "4.0.0-rc.112"
+    "effect": "4.0.0-rc.115"
   }
 }

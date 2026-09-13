@@ -84,147 +84,287 @@
     "exports": {
       "./package.json": "./package.json",
       ".": {
-        "types": "./dist/esm/index.d.ts",
-        "import": "./dist/esm/index.js",
-        "require": "./dist/cjs/index.js"
+        "import": {
+          "types": "./dist/esm/index.d.ts",
+          "default": "./dist/esm/index.js"
+        },
+        "require": {
+          "types": "./dist/cjs/index.d.ts",
+          "default": "./dist/cjs/index.js"
+        }
       },
       "./internal/*": null,
       "./migrations/*": null,
       "./*/index": null,
       "./ApprovalAuthority": {
-        "types": "./dist/esm/ApprovalAuthority.d.ts",
-        "import": "./dist/esm/ApprovalAuthority.js",
-        "require": "./dist/cjs/ApprovalAuthority.js"
+        "import": {
+          "types": "./dist/esm/ApprovalAuthority.d.ts",
+          "default": "./dist/esm/ApprovalAuthority.js"
+        },
+        "require": {
+          "types": "./dist/cjs/ApprovalAuthority.d.ts",
+          "default": "./dist/cjs/ApprovalAuthority.js"
+        }
       },
       "./Cancellation": {
-        "types": "./dist/esm/Cancellation.d.ts",
-        "import": "./dist/esm/Cancellation.js",
-        "require": "./dist/cjs/Cancellation.js"
+        "import": {
+          "types": "./dist/esm/Cancellation.d.ts",
+          "default": "./dist/esm/Cancellation.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Cancellation.d.ts",
+          "default": "./dist/cjs/Cancellation.js"
+        }
       },
       "./Channels": {
-        "types": "./dist/esm/Channels.d.ts",
-        "import": "./dist/esm/Channels.js",
-        "require": "./dist/cjs/Channels.js"
+        "import": {
+          "types": "./dist/esm/Channels.d.ts",
+          "default": "./dist/esm/Channels.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Channels.d.ts",
+          "default": "./dist/cjs/Channels.js"
+        }
       },
       "./Control": {
-        "types": "./dist/esm/Control.d.ts",
-        "import": "./dist/esm/Control.js",
-        "require": "./dist/cjs/Control.js"
+        "import": {
+          "types": "./dist/esm/Control.d.ts",
+          "default": "./dist/esm/Control.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Control.d.ts",
+          "default": "./dist/cjs/Control.js"
+        }
       },
       "./ControlClient": {
-        "types": "./dist/esm/ControlClient.d.ts",
-        "import": "./dist/esm/ControlClient.js",
-        "require": "./dist/cjs/ControlClient.js"
+        "import": {
+          "types": "./dist/esm/ControlClient.d.ts",
+          "default": "./dist/esm/ControlClient.js"
+        },
+        "require": {
+          "types": "./dist/cjs/ControlClient.d.ts",
+          "default": "./dist/cjs/ControlClient.js"
+        }
       },
       "./ControlError": {
-        "types": "./dist/esm/ControlError.d.ts",
-        "import": "./dist/esm/ControlError.js",
-        "require": "./dist/cjs/ControlError.js"
+        "import": {
+          "types": "./dist/esm/ControlError.d.ts",
+          "default": "./dist/esm/ControlError.js"
+        },
+        "require": {
+          "types": "./dist/cjs/ControlError.d.ts",
+          "default": "./dist/cjs/ControlError.js"
+        }
       },
       "./ControlExecutor": {
-        "types": "./dist/esm/ControlExecutor.d.ts",
-        "import": "./dist/esm/ControlExecutor.js",
-        "require": "./dist/cjs/ControlExecutor.js"
+        "import": {
+          "types": "./dist/esm/ControlExecutor.d.ts",
+          "default": "./dist/esm/ControlExecutor.js"
+        },
+        "require": {
+          "types": "./dist/cjs/ControlExecutor.d.ts",
+          "default": "./dist/cjs/ControlExecutor.js"
+        }
       },
       "./ControlLive": {
-        "types": "./dist/esm/ControlLive.d.ts",
-        "import": "./dist/esm/ControlLive.js",
-        "require": "./dist/cjs/ControlLive.js"
+        "import": {
+          "types": "./dist/esm/ControlLive.d.ts",
+          "default": "./dist/esm/ControlLive.js"
+        },
+        "require": {
+          "types": "./dist/cjs/ControlLive.d.ts",
+          "default": "./dist/cjs/ControlLive.js"
+        }
       },
       "./ControlRpcs": {
-        "types": "./dist/esm/ControlRpcs.d.ts",
-        "import": "./dist/esm/ControlRpcs.js",
-        "require": "./dist/cjs/ControlRpcs.js"
+        "import": {
+          "types": "./dist/esm/ControlRpcs.d.ts",
+          "default": "./dist/esm/ControlRpcs.js"
+        },
+        "require": {
+          "types": "./dist/cjs/ControlRpcs.d.ts",
+          "default": "./dist/cjs/ControlRpcs.js"
+        }
       },
       "./ControlRuntime": {
-        "types": "./dist/esm/ControlRuntime.d.ts",
-        "import": "./dist/esm/ControlRuntime.js",
-        "require": "./dist/cjs/ControlRuntime.js"
+        "import": {
+          "types": "./dist/esm/ControlRuntime.d.ts",
+          "default": "./dist/esm/ControlRuntime.js"
+        },
+        "require": {
+          "types": "./dist/cjs/ControlRuntime.d.ts",
+          "default": "./dist/cjs/ControlRuntime.js"
+        }
       },
       "./ControlSchema": {
-        "types": "./dist/esm/ControlSchema.d.ts",
-        "import": "./dist/esm/ControlSchema.js",
-        "require": "./dist/cjs/ControlSchema.js"
+        "import": {
+          "types": "./dist/esm/ControlSchema.d.ts",
+          "default": "./dist/esm/ControlSchema.js"
+        },
+        "require": {
+          "types": "./dist/cjs/ControlSchema.d.ts",
+          "default": "./dist/cjs/ControlSchema.js"
+        }
       },
       "./ControlServer": {
-        "types": "./dist/esm/ControlServer.d.ts",
-        "import": "./dist/esm/ControlServer.js",
-        "require": "./dist/cjs/ControlServer.js"
+        "import": {
+          "types": "./dist/esm/ControlServer.d.ts",
+          "default": "./dist/esm/ControlServer.js"
+        },
+        "require": {
+          "types": "./dist/cjs/ControlServer.d.ts",
+          "default": "./dist/cjs/ControlServer.js"
+        }
       },
       "./Credential": {
-        "types": "./dist/esm/Credential.d.ts",
-        "import": "./dist/esm/Credential.js",
-        "require": "./dist/cjs/Credential.js"
+        "import": {
+          "types": "./dist/esm/Credential.d.ts",
+          "default": "./dist/esm/Credential.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Credential.d.ts",
+          "default": "./dist/cjs/Credential.js"
+        }
       },
       "./CredentialCipher": {
-        "types": "./dist/esm/CredentialCipher.d.ts",
-        "import": "./dist/esm/CredentialCipher.js",
-        "require": "./dist/cjs/CredentialCipher.js"
+        "import": {
+          "types": "./dist/esm/CredentialCipher.d.ts",
+          "default": "./dist/esm/CredentialCipher.js"
+        },
+        "require": {
+          "types": "./dist/cjs/CredentialCipher.d.ts",
+          "default": "./dist/cjs/CredentialCipher.js"
+        }
       },
       "./CredentialStore": {
-        "types": "./dist/esm/CredentialStore.d.ts",
-        "import": "./dist/esm/CredentialStore.js",
-        "require": "./dist/cjs/CredentialStore.js"
+        "import": {
+          "types": "./dist/esm/CredentialStore.d.ts",
+          "default": "./dist/esm/CredentialStore.js"
+        },
+        "require": {
+          "types": "./dist/cjs/CredentialStore.d.ts",
+          "default": "./dist/cjs/CredentialStore.js"
+        }
       },
       "./DispatchReader": {
-        "types": "./dist/esm/DispatchReader.d.ts",
-        "import": "./dist/esm/DispatchReader.js",
-        "require": "./dist/cjs/DispatchReader.js"
+        "import": {
+          "types": "./dist/esm/DispatchReader.d.ts",
+          "default": "./dist/esm/DispatchReader.js"
+        },
+        "require": {
+          "types": "./dist/cjs/DispatchReader.d.ts",
+          "default": "./dist/cjs/DispatchReader.js"
+        }
       },
       "./Lineage": {
-        "types": "./dist/esm/Lineage.d.ts",
-        "import": "./dist/esm/Lineage.js",
-        "require": "./dist/cjs/Lineage.js"
+        "import": {
+          "types": "./dist/esm/Lineage.d.ts",
+          "default": "./dist/esm/Lineage.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Lineage.d.ts",
+          "default": "./dist/cjs/Lineage.js"
+        }
       },
       "./Migrations": {
-        "types": "./dist/esm/Migrations.d.ts",
-        "import": "./dist/esm/Migrations.js",
-        "require": "./dist/cjs/Migrations.js"
+        "import": {
+          "types": "./dist/esm/Migrations.d.ts",
+          "default": "./dist/esm/Migrations.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Migrations.d.ts",
+          "default": "./dist/cjs/Migrations.js"
+        }
       },
       "./Monitor": {
-        "types": "./dist/esm/Monitor.d.ts",
-        "import": "./dist/esm/Monitor.js",
-        "require": "./dist/cjs/Monitor.js"
+        "import": {
+          "types": "./dist/esm/Monitor.d.ts",
+          "default": "./dist/esm/Monitor.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Monitor.d.ts",
+          "default": "./dist/cjs/Monitor.js"
+        }
       },
       "./SqlControlRuntime": {
-        "types": "./dist/esm/SqlControlRuntime.d.ts",
-        "import": "./dist/esm/SqlControlRuntime.js",
-        "require": "./dist/cjs/SqlControlRuntime.js"
+        "import": {
+          "types": "./dist/esm/SqlControlRuntime.d.ts",
+          "default": "./dist/esm/SqlControlRuntime.js"
+        },
+        "require": {
+          "types": "./dist/cjs/SqlControlRuntime.d.ts",
+          "default": "./dist/cjs/SqlControlRuntime.js"
+        }
       },
       "./SqlCredentialStore": {
-        "types": "./dist/esm/SqlCredentialStore.d.ts",
-        "import": "./dist/esm/SqlCredentialStore.js",
-        "require": "./dist/cjs/SqlCredentialStore.js"
+        "import": {
+          "types": "./dist/esm/SqlCredentialStore.d.ts",
+          "default": "./dist/esm/SqlCredentialStore.js"
+        },
+        "require": {
+          "types": "./dist/cjs/SqlCredentialStore.d.ts",
+          "default": "./dist/cjs/SqlCredentialStore.js"
+        }
       },
       "./Steering": {
-        "types": "./dist/esm/Steering.d.ts",
-        "import": "./dist/esm/Steering.js",
-        "require": "./dist/cjs/Steering.js"
+        "import": {
+          "types": "./dist/esm/Steering.d.ts",
+          "default": "./dist/esm/Steering.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Steering.d.ts",
+          "default": "./dist/cjs/Steering.js"
+        }
       },
       "./SystemFlows": {
-        "types": "./dist/esm/SystemFlows.d.ts",
-        "import": "./dist/esm/SystemFlows.js",
-        "require": "./dist/cjs/SystemFlows.js"
+        "import": {
+          "types": "./dist/esm/SystemFlows.d.ts",
+          "default": "./dist/esm/SystemFlows.js"
+        },
+        "require": {
+          "types": "./dist/cjs/SystemFlows.d.ts",
+          "default": "./dist/cjs/SystemFlows.js"
+        }
       },
       "./WebCryptoCipher": {
-        "types": "./dist/esm/WebCryptoCipher.d.ts",
-        "import": "./dist/esm/WebCryptoCipher.js",
-        "require": "./dist/cjs/WebCryptoCipher.js"
+        "import": {
+          "types": "./dist/esm/WebCryptoCipher.d.ts",
+          "default": "./dist/esm/WebCryptoCipher.js"
+        },
+        "require": {
+          "types": "./dist/cjs/WebCryptoCipher.d.ts",
+          "default": "./dist/cjs/WebCryptoCipher.js"
+        }
       },
       "./WebhookChannel": {
-        "types": "./dist/esm/WebhookChannel.d.ts",
-        "import": "./dist/esm/WebhookChannel.js",
-        "require": "./dist/cjs/WebhookChannel.js"
+        "import": {
+          "types": "./dist/esm/WebhookChannel.d.ts",
+          "default": "./dist/esm/WebhookChannel.js"
+        },
+        "require": {
+          "types": "./dist/cjs/WebhookChannel.d.ts",
+          "default": "./dist/cjs/WebhookChannel.js"
+        }
       },
       "./index": {
-        "types": "./dist/esm/index.d.ts",
-        "import": "./dist/esm/index.js",
-        "require": "./dist/cjs/index.js"
+        "import": {
+          "types": "./dist/esm/index.d.ts",
+          "default": "./dist/esm/index.js"
+        },
+        "require": {
+          "types": "./dist/cjs/index.d.ts",
+          "default": "./dist/cjs/index.js"
+        }
       },
       "./test/TestControl": {
-        "types": "./dist/esm/test/TestControl.d.ts",
-        "import": "./dist/esm/test/TestControl.js",
-        "require": "./dist/cjs/test/TestControl.js"
+        "import": {
+          "types": "./dist/esm/test/TestControl.d.ts",
+          "default": "./dist/esm/test/TestControl.js"
+        },
+        "require": {
+          "types": "./dist/cjs/test/TestControl.d.ts",
+          "default": "./dist/cjs/test/TestControl.js"
+        }
       }
     }
   },
@@ -249,7 +389,7 @@
   },
   "devDependencies": {
     "@effect/language-service": "0.87.2",
-    "@effect/vitest": "4.0.0-rc.112",
+    "@effect/vitest": "4.0.0-rc.115",
     "@eslint/js": "9.39.5",
     "@smthrs/core": "1.0.0-rc.0",
     "@smthrs/engine-store": "1.0.0-rc.0",
@@ -258,9 +398,9 @@
     "@smthrs/step-cache": "1.0.0-rc.0",
     "@smthrs/time-travel": "1.0.0-rc.0",
     "@types/node": "26.4.1",
-    "@vitest/coverage-v8": "4.1.9",
+    "@vitest/coverage-v8": "5.0.0",
     "dprint": "0.57.1",
-    "effect": "4.0.0-rc.112",
+    "effect": "4.0.0-rc.115",
     "esbuild": "0.28.2",
     "eslint": "9.39.5",
     "eslint-import-resolver-typescript": "4.4.5",
@@ -270,9 +410,9 @@
     "madge": "8.0.0",
     "typescript": "5.9.3",
     "typescript-eslint": "8.69.0",
-    "vitest": "4.1.9"
+    "vitest": "5.0.0"
   },
   "peerDependencies": {
-    "effect": "4.0.0-rc.112"
+    "effect": "4.0.0-rc.115"
   }
 }

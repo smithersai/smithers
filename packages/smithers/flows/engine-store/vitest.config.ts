@@ -43,7 +43,7 @@ export default defineConfig({
       // Gate on production code only — without this, well-covered helpers
       // under test/ (e.g. test/contract/DurableEngineStateContract.ts)
       // dilute the denominator and give src regressions slack (issue #51).
-      include: ["src/**"].map((pattern) => join(import.meta.dirname, pattern)),
+      include: ["src/**"],
       // The complete src tree, including barrel modules, is fully covered.
       thresholds: {
         branches: 100,

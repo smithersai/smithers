@@ -20,9 +20,7 @@ export default defineConfig({
       // deterministic and browser host bundles; keep its coverage with the
       // concrete conformance suite instead of duplicating platform fixtures in
       // the kernel package.
-      include: ["src/**", "../smithers/flows/kernel/src/test/HostContract.ts"].map((pattern) =>
-        join(import.meta.dirname, pattern)
-      ),
+      include: ["src/**", "../smithers/flows/kernel/src/test/HostContract.ts"],
       // This package meets the workspace coverage norm on every default run.
       thresholds: {
         branches: 100,

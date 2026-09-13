@@ -20,10 +20,8 @@ export default defineConfig({
       // `alchemy.run.ts` only names the Cloudflare resources; every option
       // object and the stack program come from `deployment.ts`, so importing
       // the graph executes all of it and the suite can hold it to 100% too.
-      include: ["worker/**/*.ts", "scripts/**/*.ts", "deployment.ts", "alchemy.run.ts"].map((pattern) =>
-        join(import.meta.dirname, pattern)
-      ),
-      exclude: ["worker/test/**", "scripts/**/*.test.ts"].map((pattern) => join(import.meta.dirname, pattern)),
+      include: ["worker/**/*.ts", "scripts/**/*.ts", "deployment.ts", "alchemy.run.ts"],
+      exclude: ["worker/test/**", "scripts/**/*.test.ts"],
       thresholds: {
         branches: 100,
         functions: 100,

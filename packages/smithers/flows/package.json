@@ -61,36 +61,66 @@
     "exports": {
       "./package.json": "./package.json",
       ".": {
-        "types": "./dist/esm/index.d.ts",
-        "import": "./dist/esm/index.js",
-        "require": "./dist/cjs/index.js"
+        "import": {
+          "types": "./dist/esm/index.d.ts",
+          "default": "./dist/esm/index.js"
+        },
+        "require": {
+          "types": "./dist/cjs/index.d.ts",
+          "default": "./dist/cjs/index.js"
+        }
       },
       "./internal/*": null,
       "./*/index": null,
       "./NodeRuntime": {
-        "types": "./dist/esm/NodeRuntime.d.ts",
-        "import": "./dist/esm/NodeRuntime.js",
-        "require": "./dist/cjs/NodeRuntime.js"
+        "import": {
+          "types": "./dist/esm/NodeRuntime.d.ts",
+          "default": "./dist/esm/NodeRuntime.js"
+        },
+        "require": {
+          "types": "./dist/cjs/NodeRuntime.d.ts",
+          "default": "./dist/cjs/NodeRuntime.js"
+        }
       },
       "./SandboxedFlow": {
-        "types": "./dist/esm/SandboxedFlow.d.ts",
-        "import": "./dist/esm/SandboxedFlow.js",
-        "require": "./dist/cjs/SandboxedFlow.js"
+        "import": {
+          "types": "./dist/esm/SandboxedFlow.d.ts",
+          "default": "./dist/esm/SandboxedFlow.js"
+        },
+        "require": {
+          "types": "./dist/cjs/SandboxedFlow.d.ts",
+          "default": "./dist/cjs/SandboxedFlow.js"
+        }
       },
       "./index": {
-        "types": "./dist/esm/index.d.ts",
-        "import": "./dist/esm/index.js",
-        "require": "./dist/cjs/index.js"
+        "import": {
+          "types": "./dist/esm/index.d.ts",
+          "default": "./dist/esm/index.js"
+        },
+        "require": {
+          "types": "./dist/cjs/index.d.ts",
+          "default": "./dist/cjs/index.js"
+        }
       },
       "./Runtime": {
-        "types": "./dist/esm/Runtime.d.ts",
-        "import": "./dist/esm/Runtime.js",
-        "require": "./dist/cjs/Runtime.js"
+        "import": {
+          "types": "./dist/esm/Runtime.d.ts",
+          "default": "./dist/esm/Runtime.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Runtime.d.ts",
+          "default": "./dist/cjs/Runtime.js"
+        }
       },
       "./BunRuntime": {
-        "types": "./dist/esm/BunRuntime.d.ts",
-        "import": "./dist/esm/BunRuntime.js",
-        "require": "./dist/cjs/BunRuntime.js"
+        "import": {
+          "types": "./dist/esm/BunRuntime.d.ts",
+          "default": "./dist/esm/BunRuntime.js"
+        },
+        "require": {
+          "types": "./dist/cjs/BunRuntime.d.ts",
+          "default": "./dist/cjs/BunRuntime.js"
+        }
       }
     }
   },
@@ -127,8 +157,8 @@
   },
   "devDependencies": {
     "@effect/language-service": "0.87.2",
-    "@effect/platform-node": "4.0.0-rc.112",
-    "@effect/vitest": "4.0.0-rc.112",
+    "@effect/platform-node": "4.0.0-rc.115",
+    "@effect/vitest": "4.0.0-rc.115",
     "@eslint/js": "9.39.5",
     "@smthrs/control": "1.0.0-rc.0",
     "@smthrs/model": "1.0.0-rc.0",
@@ -136,9 +166,9 @@
     "@smthrs/platform-node": "1.0.0-rc.0",
     "@smthrs/registry": "1.0.0-rc.0",
     "@types/node": "26.4.1",
-    "@vitest/coverage-v8": "4.1.9",
+    "@vitest/coverage-v8": "5.0.0",
     "dprint": "0.57.1",
-    "effect": "4.0.0-rc.112",
+    "effect": "4.0.0-rc.115",
     "eslint": "9.39.5",
     "eslint-import-resolver-typescript": "4.4.5",
     "eslint-plugin-import": "2.32.0",
@@ -148,12 +178,12 @@
     "microsandbox": "0.6.16",
     "typescript": "5.9.3",
     "typescript-eslint": "8.69.0",
-    "vitest": "4.1.9",
+    "vitest": "5.0.0",
     "@smthrs/platform-bun": "1.0.0-rc.0"
   },
   "peerDependencies": {
     "@smthrs/platform-node": "1.0.0-rc.0",
-    "effect": "4.0.0-rc.112",
+    "effect": "4.0.0-rc.115",
     "@smthrs/platform-bun": "1.0.0-rc.0"
   },
   "peerDependenciesMeta": {

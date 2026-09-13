@@ -214,10 +214,10 @@ describe("BuildAndCheckTypeScriptPackage test data", () => {
     const standard = BuildAndCheckTypeScriptPackage({ packageManager, cwd: options.cwd })
     const withData = BuildAndCheckTypeScriptPackage(options)
     expect(Target.metadata(withData.test).inputs).toEqual([
-      ...Target.metadata(standard.test).inputs.slice(0, 2),
+      ...Target.metadata(standard.test).inputs.slice(0, 3),
       Input.glob("test/fixtures/*.mjs"),
       Input.glob("test/fixtures/*.cjs"),
-      ...Target.metadata(standard.test).inputs.slice(2)
+      ...Target.metadata(standard.test).inputs.slice(3)
     ])
     expect(plannedArgv(withData.test)).toEqual(plannedArgv(standard.test))
     for (const name of ["lib", "check", "lint", "fmt", "docs", "circular", "docsFiles"] as const) {
@@ -373,7 +373,8 @@ describe("BuildAndCheckTypeScriptPackage option propagation", () => {
     })
     expect(attrsOf<Typecheck.Attrs>(relocated.check).srcs).toEqual([
       Input.glob("src/**/*.ts"),
-      Input.glob("spec/**/*.ts")
+      Input.glob("spec/**/*.ts"),
+      Input.glob("//packages/repo-targets/test-utils/effect-property.*")
     ])
     expect(attrsOf<Dprint.Attrs>(relocated.fmt).sources).toEqual([
       Input.glob("src/**/*.ts"),
@@ -389,9 +390,17 @@ describe("BuildAndCheckTypeScriptPackage option propagation", () => {
       cwd: "packages/example",
       sources: moved
     })
-    expect(attrsOf<TsBuild.Attrs>(relocated.lib).srcs).toEqual([moved])
-    expect(attrsOf<Typecheck.Attrs>(relocated.check).srcs).toEqual([moved, Input.glob("test/**/*.ts")])
-    expect(attrsOf<Vitest.Attrs>(relocated.test).sources).toEqual([moved])
+    expect(attrsOf<TsBuild.Attrs>(relocated.lib).srcs).toEqual([
+      moved,
+      Input.file("//packages/repo-targets/scripts/build-library.mjs"),
+      Input.file("//packages/smithers/scripts/compile-commonjs.mjs")
+    ])
+    expect(attrsOf<Typecheck.Attrs>(relocated.check).srcs).toEqual([
+      moved, Input.glob("test/**/*.ts"), Input.glob("//packages/repo-targets/test-utils/effect-property.*")
+    ])
+    expect(attrsOf<Vitest.Attrs>(relocated.test).sources).toEqual([
+      moved, Input.glob("//packages/repo-targets/test-utils/effect-property.*")
+    ])
     expect(attrsOf<EsLint.Attrs>(relocated.lint).sources).toEqual([moved])
     expect(attrsOf<Dprint.Attrs>(relocated.fmt).sources).toEqual([moved, Input.glob("test/**/*.ts")])
     expect(attrsOf<NodeTest.Attrs>(relocated.circular).srcs).toEqual([moved, Input.file("tsconfig.json")])

@@ -71,82 +71,157 @@
     "exports": {
       "./package.json": "./package.json",
       ".": {
-        "types": "./dist/esm/index.d.ts",
-        "import": "./dist/esm/index.js",
-        "require": "./dist/cjs/index.js"
+        "import": {
+          "types": "./dist/esm/index.d.ts",
+          "default": "./dist/esm/index.js"
+        },
+        "require": {
+          "types": "./dist/cjs/index.d.ts",
+          "default": "./dist/cjs/index.js"
+        }
       },
       "./internal/*": null,
       "./migrations/*": null,
       "./*/index": null,
       "./Journal": {
-        "types": "./dist/esm/Journal.d.ts",
-        "import": "./dist/esm/Journal.js",
-        "require": "./dist/cjs/Journal.js"
+        "import": {
+          "types": "./dist/esm/Journal.d.ts",
+          "default": "./dist/esm/Journal.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Journal.d.ts",
+          "default": "./dist/cjs/Journal.js"
+        }
       },
       "./JournalEvent": {
-        "types": "./dist/esm/JournalEvent.d.ts",
-        "import": "./dist/esm/JournalEvent.js",
-        "require": "./dist/cjs/JournalEvent.js"
+        "import": {
+          "types": "./dist/esm/JournalEvent.d.ts",
+          "default": "./dist/esm/JournalEvent.js"
+        },
+        "require": {
+          "types": "./dist/cjs/JournalEvent.d.ts",
+          "default": "./dist/cjs/JournalEvent.js"
+        }
       },
       "./EngineEvent": {
-        "types": "./dist/esm/EngineEvent.d.ts",
-        "import": "./dist/esm/EngineEvent.js",
-        "require": "./dist/cjs/EngineEvent.js"
+        "import": {
+          "types": "./dist/esm/EngineEvent.d.ts",
+          "default": "./dist/esm/EngineEvent.js"
+        },
+        "require": {
+          "types": "./dist/cjs/EngineEvent.d.ts",
+          "default": "./dist/cjs/EngineEvent.js"
+        }
       },
       "./JournalMetrics": {
-        "types": "./dist/esm/JournalMetrics.d.ts",
-        "import": "./dist/esm/JournalMetrics.js",
-        "require": "./dist/cjs/JournalMetrics.js"
+        "import": {
+          "types": "./dist/esm/JournalMetrics.d.ts",
+          "default": "./dist/esm/JournalMetrics.js"
+        },
+        "require": {
+          "types": "./dist/cjs/JournalMetrics.d.ts",
+          "default": "./dist/cjs/JournalMetrics.js"
+        }
       },
       "./Migrations": {
-        "types": "./dist/esm/Migrations.d.ts",
-        "import": "./dist/esm/Migrations.js",
-        "require": "./dist/cjs/Migrations.js"
+        "import": {
+          "types": "./dist/esm/Migrations.d.ts",
+          "default": "./dist/esm/Migrations.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Migrations.d.ts",
+          "default": "./dist/cjs/Migrations.js"
+        }
       },
       "./OwnerId": {
-        "types": "./dist/esm/OwnerId.d.ts",
-        "import": "./dist/esm/OwnerId.js",
-        "require": "./dist/cjs/OwnerId.js"
+        "import": {
+          "types": "./dist/esm/OwnerId.d.ts",
+          "default": "./dist/esm/OwnerId.js"
+        },
+        "require": {
+          "types": "./dist/cjs/OwnerId.d.ts",
+          "default": "./dist/cjs/OwnerId.js"
+        }
       },
       "./Projection": {
-        "types": "./dist/esm/Projection.d.ts",
-        "import": "./dist/esm/Projection.js",
-        "require": "./dist/cjs/Projection.js"
+        "import": {
+          "types": "./dist/esm/Projection.d.ts",
+          "default": "./dist/esm/Projection.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Projection.d.ts",
+          "default": "./dist/cjs/Projection.js"
+        }
       },
       "./RedactedLogger": {
-        "types": "./dist/esm/RedactedLogger.d.ts",
-        "import": "./dist/esm/RedactedLogger.js",
-        "require": "./dist/cjs/RedactedLogger.js"
+        "import": {
+          "types": "./dist/esm/RedactedLogger.d.ts",
+          "default": "./dist/esm/RedactedLogger.js"
+        },
+        "require": {
+          "types": "./dist/cjs/RedactedLogger.d.ts",
+          "default": "./dist/cjs/RedactedLogger.js"
+        }
       },
       "./Redaction": {
-        "types": "./dist/esm/Redaction.d.ts",
-        "import": "./dist/esm/Redaction.js",
-        "require": "./dist/cjs/Redaction.js"
+        "import": {
+          "types": "./dist/esm/Redaction.d.ts",
+          "default": "./dist/esm/Redaction.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Redaction.d.ts",
+          "default": "./dist/cjs/Redaction.js"
+        }
       },
       "./SqlJournal": {
-        "types": "./dist/esm/SqlJournal.d.ts",
-        "import": "./dist/esm/SqlJournal.js",
-        "require": "./dist/cjs/SqlJournal.js"
+        "import": {
+          "types": "./dist/esm/SqlJournal.d.ts",
+          "default": "./dist/esm/SqlJournal.js"
+        },
+        "require": {
+          "types": "./dist/cjs/SqlJournal.d.ts",
+          "default": "./dist/cjs/SqlJournal.js"
+        }
       },
       "./index": {
-        "types": "./dist/esm/index.d.ts",
-        "import": "./dist/esm/index.js",
-        "require": "./dist/cjs/index.js"
+        "import": {
+          "types": "./dist/esm/index.d.ts",
+          "default": "./dist/esm/index.js"
+        },
+        "require": {
+          "types": "./dist/cjs/index.d.ts",
+          "default": "./dist/cjs/index.js"
+        }
       },
       "./test/Notifying": {
-        "types": "./dist/esm/test/Notifying.d.ts",
-        "import": "./dist/esm/test/Notifying.js",
-        "require": "./dist/cjs/test/Notifying.js"
+        "import": {
+          "types": "./dist/esm/test/Notifying.d.ts",
+          "default": "./dist/esm/test/Notifying.js"
+        },
+        "require": {
+          "types": "./dist/cjs/test/Notifying.d.ts",
+          "default": "./dist/cjs/test/Notifying.js"
+        }
       },
       "./test/TestJournal": {
-        "types": "./dist/esm/test/TestJournal.d.ts",
-        "import": "./dist/esm/test/TestJournal.js",
-        "require": "./dist/cjs/test/TestJournal.js"
+        "import": {
+          "types": "./dist/esm/test/TestJournal.d.ts",
+          "default": "./dist/esm/test/TestJournal.js"
+        },
+        "require": {
+          "types": "./dist/cjs/test/TestJournal.d.ts",
+          "default": "./dist/cjs/test/TestJournal.js"
+        }
       },
       "./JournalGeneration": {
-        "types": "./dist/esm/JournalGeneration.d.ts",
-        "import": "./dist/esm/JournalGeneration.js",
-        "require": "./dist/cjs/JournalGeneration.js"
+        "import": {
+          "types": "./dist/esm/JournalGeneration.d.ts",
+          "default": "./dist/esm/JournalGeneration.js"
+        },
+        "require": {
+          "types": "./dist/cjs/JournalGeneration.d.ts",
+          "default": "./dist/cjs/JournalGeneration.js"
+        }
       }
     }
   },
@@ -164,14 +239,14 @@
   },
   "devDependencies": {
     "@effect/language-service": "0.87.2",
-    "@effect/sql-sqlite-node": "4.0.0-rc.112",
-    "@effect/vitest": "4.0.0-rc.112",
+    "@effect/sql-sqlite-node": "4.0.0-rc.115",
+    "@effect/vitest": "4.0.0-rc.115",
     "@eslint/js": "9.39.5",
     "@smthrs/flow": "1.0.0-rc.0",
     "@types/node": "26.4.1",
-    "@vitest/coverage-v8": "4.1.9",
+    "@vitest/coverage-v8": "5.0.0",
     "dprint": "0.57.1",
-    "effect": "4.0.0-rc.112",
+    "effect": "4.0.0-rc.115",
     "esbuild": "0.28.2",
     "eslint": "9.39.5",
     "eslint-import-resolver-typescript": "4.4.5",
@@ -181,9 +256,10 @@
     "madge": "8.0.0",
     "typescript": "5.9.3",
     "typescript-eslint": "8.69.0",
-    "vitest": "4.1.9"
+    "vitest": "5.0.0",
+    "fast-check": "4.9.0"
   },
   "peerDependencies": {
-    "effect": "4.0.0-rc.112"
+    "effect": "4.0.0-rc.115"
   }
 }

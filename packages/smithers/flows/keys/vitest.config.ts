@@ -26,7 +26,7 @@ export default defineConfig({
       // directory error and the other enforces 100% against a partial
       // profile with every test passing (issues #115/#121).
       reportsDirectory: join(tmpdir(), `flows-keys-coverage-${process.pid}`),
-      include: ["src/**/*.ts"].map((pattern) => join(import.meta.dirname, pattern)),
+      include: ["src/**/*.ts"],
       thresholds: { branches: 100, functions: 100, lines: 100, statements: 100 }
     }
   }

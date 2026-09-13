@@ -21,10 +21,10 @@ export default defineConfig({
       enabled: true,
       provider: "v8",
       reportsDirectory: join(tmpdir(), `flows-build-coverage-${process.pid}`),
-      include: ["src/**"].map((pattern) => join(import.meta.dirname, pattern)),
+      include: ["src/**"],
       // Nested packages have their own coverage gates. Absolute patterns keep
       // checkout ancestors such as `review-harness` out of exclusion matching.
-      exclude: ["build-cli/**", "infra/**", "targets/**"].map((pattern) => join(import.meta.dirname, pattern)),
+      exclude: ["build-cli/**", "infra/**", "targets/**"],
       thresholds: {
         branches: 91,
         functions: 89,

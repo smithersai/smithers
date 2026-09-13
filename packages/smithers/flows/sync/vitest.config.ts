@@ -36,7 +36,7 @@ export default defineConfig({
       // directory error and the other enforces 100% against a partial
       // profile with every test passing (issues #115/#121).
       reportsDirectory: join(tmpdir(), `flows-sync-coverage-${process.pid}`),
-      include: ["src/**"].map((pattern) => join(import.meta.dirname, pattern)),
+      include: ["src/**"],
       // The suite covers every reachable statement, branch, function, and
       // line in the package, including its test transport boundary.
       thresholds: {

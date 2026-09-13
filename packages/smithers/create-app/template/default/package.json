@@ -23,7 +23,7 @@
     "@smthrs/create-app": "1.0.0-rc.0",
     "@smthrs/harness": "1.0.0-rc.0",
     "@smthrs/targets": "1.0.0-rc.0",
-    "effect": "4.0.0-rc.112",
+    "effect": "4.0.0-rc.115",
     "react": "^19.2.8",
     "react-dom": "^19.2.8"
   },
@@ -37,9 +37,9 @@
     "@vitejs/plugin-react": "^6.1.1",
     "typescript": "7.0.2",
     "vite": "^8.2.2",
-    "vitest": "4.1.9",
+    "vitest": "5.0.0",
     "wrangler": "^4.129.0",
-    "@effect/platform-node": "4.0.0-rc.112",
+    "@effect/platform-node": "4.0.0-rc.115",
     "@smthrs/testing": "1.0.0-rc.0"
   }
 }

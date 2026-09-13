@@ -1,0 +1,26 @@
+diff --git a/lib/retry.js b/lib/retry.js
+index 63b00c1ccd1113f4bd22c7e2113f8970ccf3753e..da98224df011079df10730814bef55a96168631f 100644
+--- a/lib/retry.js
++++ b/lib/retry.js
+@@ -72,7 +72,7 @@ export const ServerRetryHintCapMs = Context.Service("@distilled.cloud/core/Serve
+  * Layer that pins the server `retryAfter` cap to a fixed value (milliseconds).
+  */
+ export const serverRetryHintCapLayer = (capMs) => Layer.succeed(ServerRetryHintCapMs, capMs);
+-const serverRetryHintCapMsConfig = Config.string(ENV_SERVER_RETRY_HINT_CAP_MS).pipe(Config.map((raw) => {
++const serverRetryHintCapMsConfig = Config.String(ENV_SERVER_RETRY_HINT_CAP_MS).pipe(Config.map((raw) => {
+     if (raw === "")
+         return DEFAULT_SERVER_RETRY_HINT_CAP_MS;
+     const n = Number(raw);
+diff --git a/src/retry.ts b/src/retry.ts
+index 5a4c9938ab1363af1a4745cc761a0e55a3c6d508..73ef50a6953e1d8b5739609b07eb635869afb6e5 100644
+--- a/src/retry.ts
++++ b/src/retry.ts
+@@ -121,7 +121,7 @@ export const ServerRetryHintCapMs = Context.Service<number>(
+ export const serverRetryHintCapLayer = (capMs: number) =>
+   Layer.succeed(ServerRetryHintCapMs, capMs);
+ 
+-const serverRetryHintCapMsConfig: Config.Config<number> = Config.string(
++const serverRetryHintCapMsConfig: Config.Config<number> = Config.String(
+   ENV_SERVER_RETRY_HINT_CAP_MS,
+ ).pipe(
+   Config.map((raw) => {

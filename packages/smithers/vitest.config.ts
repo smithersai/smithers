@@ -22,7 +22,7 @@ export default defineConfig({
       // Per-process report directory so concurrent vitest runs do not destroy
       // each other's coverage scratch state (issues #115/#121).
       reportsDirectory: join(tmpdir(), `flows-smithers-coverage-${process.pid}`),
-      include: ["src/**"].map((pattern) => join(import.meta.dirname, pattern)),
+      include: ["src/**"],
       // Nested packages have their own coverage gates. Absolute patterns keep
       // checkout ancestors such as `review-harness` out of exclusion matching.
       exclude: [
@@ -36,7 +36,7 @@ export default defineConfig({
         "migrate/**",
         "notifications/**",
         "ui/**"
-      ].map((pattern) => join(import.meta.dirname, pattern)),
+      ],
       // Measured (96.42 / 91.61 / 96.46 / 96.84 over 933 cases), then floored
       // to integers, which leaves under a point for the branches that depend on
       // the host: `jj` on PATH and provider keys exported. Deleted coverage

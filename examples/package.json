@@ -37,15 +37,15 @@
     "@smthrs/step-cache": "workspace:*",
     "@smthrs/sync": "workspace:*",
     "@smthrs/time-travel": "workspace:*",
-    "effect": "4.0.0-rc.112"
+    "effect": "4.0.0-rc.115"
   },
   "devDependencies": {
-    "@effect/platform-node": "4.0.0-rc.112",
-    "@effect/vitest": "4.0.0-rc.112",
+    "@effect/platform-node": "4.0.0-rc.115",
+    "@effect/vitest": "4.0.0-rc.115",
     "@smthrs/testing": "workspace:*",
     "@types/node": "26.4.1",
     "esbuild": "0.28.2",
     "typescript": "5.9.3",
-    "vitest": "4.1.9"
+    "vitest": "5.0.0"
   }
 }

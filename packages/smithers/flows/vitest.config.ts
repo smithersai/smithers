@@ -30,7 +30,7 @@ export default defineConfig({
       // directory error and the other enforces 100% against a partial
       // profile with every test passing (issues #115/#121).
       reportsDirectory: join(tmpdir(), `flows-flows-coverage-${process.pid}`),
-      include: ["src/**"].map((pattern) => join(import.meta.dirname, pattern)),
+      include: ["src/**"],
       // Nested packages have their own coverage gates. Absolute patterns keep
       // checkout ancestors such as `review-harness` out of exclusion matching.
       exclude: [
@@ -58,7 +58,7 @@ export default defineConfig({
         "step-cache/**",
         "sync/**",
         "time-travel/**"
-      ].map((pattern) => join(import.meta.dirname, pattern)),
+      ],
       // Accurate, enforceable floors measured against the committed suite.
       // Ratchet upward as tests land; never lower without a written
       // justification.

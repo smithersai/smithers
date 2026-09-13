@@ -30,6 +30,6 @@
     "eslint": "9.39.1",
     "typescript-eslint": "8.65.0",
     "@types/node": "25.9.5",
-    "vitest": "4.1.9"
+    "vitest": "5.0.0"
   }
 }

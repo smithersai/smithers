@@ -64,51 +64,96 @@
     "exports": {
       "./package.json": "./package.json",
       ".": {
-        "types": "./dist/esm/index.d.ts",
-        "import": "./dist/esm/index.js",
-        "require": "./dist/cjs/index.js"
+        "import": {
+          "types": "./dist/esm/index.d.ts",
+          "default": "./dist/esm/index.js"
+        },
+        "require": {
+          "types": "./dist/cjs/index.d.ts",
+          "default": "./dist/cjs/index.js"
+        }
       },
       "./internal/*": null,
       "./*/index": null,
       "./Alerts": {
-        "types": "./dist/esm/Alerts.d.ts",
-        "import": "./dist/esm/Alerts.js",
-        "require": "./dist/cjs/Alerts.js"
+        "import": {
+          "types": "./dist/esm/Alerts.d.ts",
+          "default": "./dist/esm/Alerts.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Alerts.d.ts",
+          "default": "./dist/cjs/Alerts.js"
+        }
       },
       "./Notification": {
-        "types": "./dist/esm/Notification.d.ts",
-        "import": "./dist/esm/Notification.js",
-        "require": "./dist/cjs/Notification.js"
+        "import": {
+          "types": "./dist/esm/Notification.d.ts",
+          "default": "./dist/esm/Notification.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Notification.d.ts",
+          "default": "./dist/cjs/Notification.js"
+        }
       },
       "./NotificationEvent": {
-        "types": "./dist/esm/NotificationEvent.d.ts",
-        "import": "./dist/esm/NotificationEvent.js",
-        "require": "./dist/cjs/NotificationEvent.js"
+        "import": {
+          "types": "./dist/esm/NotificationEvent.d.ts",
+          "default": "./dist/esm/NotificationEvent.js"
+        },
+        "require": {
+          "types": "./dist/cjs/NotificationEvent.d.ts",
+          "default": "./dist/cjs/NotificationEvent.js"
+        }
       },
       "./NotificationQueue": {
-        "types": "./dist/esm/NotificationQueue.d.ts",
-        "import": "./dist/esm/NotificationQueue.js",
-        "require": "./dist/cjs/NotificationQueue.js"
+        "import": {
+          "types": "./dist/esm/NotificationQueue.d.ts",
+          "default": "./dist/esm/NotificationQueue.js"
+        },
+        "require": {
+          "types": "./dist/cjs/NotificationQueue.d.ts",
+          "default": "./dist/cjs/NotificationQueue.js"
+        }
       },
       "./NotificationState": {
-        "types": "./dist/esm/NotificationState.d.ts",
-        "import": "./dist/esm/NotificationState.js",
-        "require": "./dist/cjs/NotificationState.js"
+        "import": {
+          "types": "./dist/esm/NotificationState.d.ts",
+          "default": "./dist/esm/NotificationState.js"
+        },
+        "require": {
+          "types": "./dist/cjs/NotificationState.d.ts",
+          "default": "./dist/cjs/NotificationState.js"
+        }
       },
       "./Projection": {
-        "types": "./dist/esm/Projection.d.ts",
-        "import": "./dist/esm/Projection.js",
-        "require": "./dist/cjs/Projection.js"
+        "import": {
+          "types": "./dist/esm/Projection.d.ts",
+          "default": "./dist/esm/Projection.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Projection.d.ts",
+          "default": "./dist/cjs/Projection.js"
+        }
       },
       "./SteerPayload": {
-        "types": "./dist/esm/SteerPayload.d.ts",
-        "import": "./dist/esm/SteerPayload.js",
-        "require": "./dist/cjs/SteerPayload.js"
+        "import": {
+          "types": "./dist/esm/SteerPayload.d.ts",
+          "default": "./dist/esm/SteerPayload.js"
+        },
+        "require": {
+          "types": "./dist/cjs/SteerPayload.d.ts",
+          "default": "./dist/cjs/SteerPayload.js"
+        }
       },
       "./index": {
-        "types": "./dist/esm/index.d.ts",
-        "import": "./dist/esm/index.js",
-        "require": "./dist/cjs/index.js"
+        "import": {
+          "types": "./dist/esm/index.d.ts",
+          "default": "./dist/esm/index.js"
+        },
+        "require": {
+          "types": "./dist/cjs/index.d.ts",
+          "default": "./dist/cjs/index.js"
+        }
       }
     }
   },
@@ -126,13 +171,13 @@
   },
   "devDependencies": {
     "@effect/language-service": "0.87.2",
-    "@effect/vitest": "4.0.0-rc.112",
+    "@effect/vitest": "4.0.0-rc.115",
     "@eslint/js": "9.39.5",
     "@smthrs/database": "1.0.0-rc.0",
     "@types/node": "26.4.1",
-    "@vitest/coverage-v8": "4.1.9",
+    "@vitest/coverage-v8": "5.0.0",
     "dprint": "0.57.1",
-    "effect": "4.0.0-rc.112",
+    "effect": "4.0.0-rc.115",
     "esbuild": "0.28.2",
     "eslint": "9.39.5",
     "eslint-import-resolver-typescript": "4.4.5",
@@ -142,9 +187,10 @@
     "madge": "8.0.0",
     "typescript": "5.9.3",
     "typescript-eslint": "8.69.0",
-    "vitest": "4.1.9"
+    "vitest": "5.0.0",
+    "fast-check": "4.9.0"
   },
   "peerDependencies": {
-    "effect": "4.0.0-rc.112"
+    "effect": "4.0.0-rc.115"
   }
 }

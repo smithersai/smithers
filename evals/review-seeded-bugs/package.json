@@ -13,7 +13,7 @@
     "@smthrs/agent": "workspace:*",
     "@smthrs/model": "workspace:*",
     "@smthrs/review": "workspace:*",
-    "effect": "4.0.0-rc.112"
+    "effect": "4.0.0-rc.115"
   },
   "devDependencies": {
     "@smthrs/targets": "workspace:*",

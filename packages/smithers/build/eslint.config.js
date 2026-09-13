@@ -14,6 +14,13 @@ export default tseslint.config(
   importPlugin.flatConfigs.typescript,
   {
     files: ["**/*.{js,cjs,mjs}"],
+    // Config dependencies can expose only package.json exports, without a
+    // legacy main field. Use the same exports-aware resolver as TypeScript.
+    settings: {
+      "import/resolver": {
+        typescript: { project: ["./tsconfig.json", "./infra/tsconfig.json"] }
+      }
+    },
     languageOptions: {
       ecmaVersion: "latest",
       sourceType: "module",

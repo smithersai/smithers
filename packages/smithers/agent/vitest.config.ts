@@ -22,7 +22,7 @@ export default defineConfig({
       // Per-process report directory so concurrent vitest runs do not destroy
       // each other's coverage scratch state (issues #115/#121).
       reportsDirectory: join(tmpdir(), `flows-agent-coverage-${process.pid}`),
-      include: ["src/**"].map((pattern) => join(import.meta.dirname, pattern)),
+      include: ["src/**"],
       // Nested packages have their own coverage gates. Absolute patterns keep
       // checkout ancestors such as `review-harness` out of exclusion matching.
       exclude: [
@@ -38,7 +38,7 @@ export default defineConfig({
         "scorers/**",
         "std/**",
         "triggers/**"
-      ].map((pattern) => join(import.meta.dirname, pattern)),
+      ],
       thresholds: {
         branches: 100,
         functions: 100,

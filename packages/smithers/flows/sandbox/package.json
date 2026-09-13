@@ -87,106 +87,191 @@
     "exports": {
       "./package.json": "./package.json",
       ".": {
-        "types": "./dist/esm/index.d.ts",
-        "import": "./dist/esm/index.js",
-        "require": "./dist/cjs/index.js"
+        "import": {
+          "types": "./dist/esm/index.d.ts",
+          "default": "./dist/esm/index.js"
+        },
+        "require": {
+          "types": "./dist/cjs/index.d.ts",
+          "default": "./dist/cjs/index.js"
+        }
       },
       "./ContainerSandbox": {
-        "types": "./dist/esm/ContainerSandbox/index.d.ts",
-        "import": "./dist/esm/ContainerSandbox/index.js",
-        "require": "./dist/cjs/ContainerSandbox/index.js"
+        "import": {
+          "types": "./dist/esm/ContainerSandbox/index.d.ts",
+          "default": "./dist/esm/ContainerSandbox/index.js"
+        },
+        "require": {
+          "types": "./dist/cjs/ContainerSandbox/index.d.ts",
+          "default": "./dist/cjs/ContainerSandbox/index.js"
+        }
       },
       "./ContainerSandbox/*": null,
       "./DirectorySandbox": {
-        "types": "./dist/esm/DirectorySandbox/index.d.ts",
-        "import": "./dist/esm/DirectorySandbox/index.js",
-        "require": "./dist/cjs/DirectorySandbox/index.js"
+        "import": {
+          "types": "./dist/esm/DirectorySandbox/index.d.ts",
+          "default": "./dist/esm/DirectorySandbox/index.js"
+        },
+        "require": {
+          "types": "./dist/cjs/DirectorySandbox/index.d.ts",
+          "default": "./dist/cjs/DirectorySandbox/index.js"
+        }
       },
       "./DirectorySandbox/*": null,
       "./ProviderConformance": {
-        "types": "./dist/esm/ProviderConformance/index.d.ts",
-        "import": "./dist/esm/ProviderConformance/index.js",
-        "require": "./dist/cjs/ProviderConformance/index.js"
+        "import": {
+          "types": "./dist/esm/ProviderConformance/index.d.ts",
+          "default": "./dist/esm/ProviderConformance/index.js"
+        },
+        "require": {
+          "types": "./dist/cjs/ProviderConformance/index.d.ts",
+          "default": "./dist/cjs/ProviderConformance/index.js"
+        }
       },
       "./ProviderConformance/*": null,
       "./RemoteChildProcessSpawner": {
-        "types": "./dist/esm/RemoteChildProcessSpawner/index.d.ts",
-        "import": "./dist/esm/RemoteChildProcessSpawner/index.js",
-        "require": "./dist/cjs/RemoteChildProcessSpawner/index.js"
+        "import": {
+          "types": "./dist/esm/RemoteChildProcessSpawner/index.d.ts",
+          "default": "./dist/esm/RemoteChildProcessSpawner/index.js"
+        },
+        "require": {
+          "types": "./dist/cjs/RemoteChildProcessSpawner/index.d.ts",
+          "default": "./dist/cjs/RemoteChildProcessSpawner/index.js"
+        }
       },
       "./RemoteChildProcessSpawner/*": null,
       "./Sandbox": {
-        "types": "./dist/esm/Sandbox/index.d.ts",
-        "import": "./dist/esm/Sandbox/index.js",
-        "require": "./dist/cjs/Sandbox/index.js"
+        "import": {
+          "types": "./dist/esm/Sandbox/index.d.ts",
+          "default": "./dist/esm/Sandbox/index.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Sandbox/index.d.ts",
+          "default": "./dist/cjs/Sandbox/index.js"
+        }
       },
       "./Sandbox/*": null,
       "./SandboxConformance": {
-        "types": "./dist/esm/SandboxConformance/index.d.ts",
-        "import": "./dist/esm/SandboxConformance/index.js",
-        "require": "./dist/cjs/SandboxConformance/index.js"
+        "import": {
+          "types": "./dist/esm/SandboxConformance/index.d.ts",
+          "default": "./dist/esm/SandboxConformance/index.js"
+        },
+        "require": {
+          "types": "./dist/cjs/SandboxConformance/index.d.ts",
+          "default": "./dist/cjs/SandboxConformance/index.js"
+        }
       },
       "./SandboxConformance/*": null,
       "./SandboxHealth": {
-        "types": "./dist/esm/SandboxHealth/index.d.ts",
-        "import": "./dist/esm/SandboxHealth/index.js",
-        "require": "./dist/cjs/SandboxHealth/index.js"
+        "import": {
+          "types": "./dist/esm/SandboxHealth/index.d.ts",
+          "default": "./dist/esm/SandboxHealth/index.js"
+        },
+        "require": {
+          "types": "./dist/cjs/SandboxHealth/index.d.ts",
+          "default": "./dist/cjs/SandboxHealth/index.js"
+        }
       },
       "./SandboxHealth/*": null,
       "./SandboxSupervision": {
-        "types": "./dist/esm/SandboxSupervision/index.d.ts",
-        "import": "./dist/esm/SandboxSupervision/index.js",
-        "require": "./dist/cjs/SandboxSupervision/index.js"
+        "import": {
+          "types": "./dist/esm/SandboxSupervision/index.d.ts",
+          "default": "./dist/esm/SandboxSupervision/index.js"
+        },
+        "require": {
+          "types": "./dist/cjs/SandboxSupervision/index.d.ts",
+          "default": "./dist/cjs/SandboxSupervision/index.js"
+        }
       },
       "./SandboxSupervision/*": null,
       "./AwsSandbox": {
-        "types": "./dist/esm/AwsSandbox/index.d.ts",
-        "import": "./dist/esm/AwsSandbox/index.js",
-        "require": "./dist/cjs/AwsSandbox/index.js"
+        "import": {
+          "types": "./dist/esm/AwsSandbox/index.d.ts",
+          "default": "./dist/esm/AwsSandbox/index.js"
+        },
+        "require": {
+          "types": "./dist/cjs/AwsSandbox/index.d.ts",
+          "default": "./dist/cjs/AwsSandbox/index.js"
+        }
       },
       "./AwsSandbox/*": null,
       "./CloudflareSandbox": {
-        "types": "./dist/esm/CloudflareSandbox/index.d.ts",
-        "import": "./dist/esm/CloudflareSandbox/index.js",
-        "require": "./dist/cjs/CloudflareSandbox/index.js"
+        "import": {
+          "types": "./dist/esm/CloudflareSandbox/index.d.ts",
+          "default": "./dist/esm/CloudflareSandbox/index.js"
+        },
+        "require": {
+          "types": "./dist/cjs/CloudflareSandbox/index.d.ts",
+          "default": "./dist/cjs/CloudflareSandbox/index.js"
+        }
       },
       "./CloudflareSandbox/*": null,
       "./DaytonaSandbox": {
-        "types": "./dist/esm/DaytonaSandbox/index.d.ts",
-        "import": "./dist/esm/DaytonaSandbox/index.js",
-        "require": "./dist/cjs/DaytonaSandbox/index.js"
+        "import": {
+          "types": "./dist/esm/DaytonaSandbox/index.d.ts",
+          "default": "./dist/esm/DaytonaSandbox/index.js"
+        },
+        "require": {
+          "types": "./dist/cjs/DaytonaSandbox/index.d.ts",
+          "default": "./dist/cjs/DaytonaSandbox/index.js"
+        }
       },
       "./DaytonaSandbox/*": null,
       "./JustBashSandbox": {
-        "types": "./dist/esm/JustBashSandbox/index.d.ts",
-        "import": "./dist/esm/JustBashSandbox/index.js",
-        "require": "./dist/cjs/JustBashSandbox/index.js"
+        "import": {
+          "types": "./dist/esm/JustBashSandbox/index.d.ts",
+          "default": "./dist/esm/JustBashSandbox/index.js"
+        },
+        "require": {
+          "types": "./dist/cjs/JustBashSandbox/index.d.ts",
+          "default": "./dist/cjs/JustBashSandbox/index.js"
+        }
       },
       "./JustBashSandbox/*": null,
       "./KubernetesSandbox": {
-        "types": "./dist/esm/KubernetesSandbox/index.d.ts",
-        "import": "./dist/esm/KubernetesSandbox/index.js",
-        "require": "./dist/cjs/KubernetesSandbox/index.js"
+        "import": {
+          "types": "./dist/esm/KubernetesSandbox/index.d.ts",
+          "default": "./dist/esm/KubernetesSandbox/index.js"
+        },
+        "require": {
+          "types": "./dist/cjs/KubernetesSandbox/index.d.ts",
+          "default": "./dist/cjs/KubernetesSandbox/index.js"
+        }
       },
       "./KubernetesSandbox/*": null,
       "./MicrosandboxSandbox": {
-        "types": "./dist/esm/MicrosandboxSandbox/index.d.ts",
-        "import": "./dist/esm/MicrosandboxSandbox/index.js",
-        "require": "./dist/cjs/MicrosandboxSandbox/index.js"
+        "import": {
+          "types": "./dist/esm/MicrosandboxSandbox/index.d.ts",
+          "default": "./dist/esm/MicrosandboxSandbox/index.js"
+        },
+        "require": {
+          "types": "./dist/cjs/MicrosandboxSandbox/index.d.ts",
+          "default": "./dist/cjs/MicrosandboxSandbox/index.js"
+        }
       },
       "./MicrosandboxSandbox/*": null,
       "./VercelSandbox": {
-        "types": "./dist/esm/VercelSandbox/index.d.ts",
-        "import": "./dist/esm/VercelSandbox/index.js",
-        "require": "./dist/cjs/VercelSandbox/index.js"
+        "import": {
+          "types": "./dist/esm/VercelSandbox/index.d.ts",
+          "default": "./dist/esm/VercelSandbox/index.js"
+        },
+        "require": {
+          "types": "./dist/cjs/VercelSandbox/index.d.ts",
+          "default": "./dist/cjs/VercelSandbox/index.js"
+        }
       },
       "./VercelSandbox/*": null,
       "./internal/*": null,
       "./*/index": null,
       "./index": {
-        "types": "./dist/esm/index.d.ts",
-        "import": "./dist/esm/index.js",
-        "require": "./dist/cjs/index.js"
+        "import": {
+          "types": "./dist/esm/index.d.ts",
+          "default": "./dist/esm/index.js"
+        },
+        "require": {
+          "types": "./dist/cjs/index.d.ts",
+          "default": "./dist/cjs/index.js"
+        }
       }
     }
   },
@@ -204,15 +289,15 @@
   },
   "devDependencies": {
     "@effect/language-service": "0.87.2",
-    "@effect/platform-node": "4.0.0-rc.112",
-    "@effect/vitest": "4.0.0-rc.112",
+    "@effect/platform-node": "4.0.0-rc.115",
+    "@effect/vitest": "4.0.0-rc.115",
     "@eslint/js": "9.39.5",
     "@smthrs/flow": "1.0.0-rc.0",
     "@smthrs/std": "1.0.0-rc.0",
     "@types/node": "26.4.1",
-    "@vitest/coverage-v8": "4.1.9",
+    "@vitest/coverage-v8": "5.0.0",
     "dprint": "0.57.1",
-    "effect": "4.0.0-rc.112",
+    "effect": "4.0.0-rc.115",
     "esbuild": "0.28.2",
     "eslint": "9.39.5",
     "eslint-import-resolver-typescript": "4.4.5",
@@ -223,10 +308,10 @@
     "microsandbox": "0.6.16",
     "typescript": "5.9.3",
     "typescript-eslint": "8.69.0",
-    "vitest": "4.1.9",
+    "vitest": "5.0.0",
     "@smthrs/platform-node": "1.0.0-rc.0"
   },
   "peerDependencies": {
-    "effect": "4.0.0-rc.112"
+    "effect": "4.0.0-rc.115"
   }
 }

@@ -63,38 +63,68 @@
     "exports": {
       "./package.json": "./package.json",
       ".": {
-        "types": "./dist/esm/index.d.ts",
-        "import": "./dist/esm/index.js",
-        "require": "./dist/cjs/index.js"
+        "import": {
+          "types": "./dist/esm/index.d.ts",
+          "default": "./dist/esm/index.js"
+        },
+        "require": {
+          "types": "./dist/cjs/index.d.ts",
+          "default": "./dist/cjs/index.js"
+        }
       },
       "./BrowserChildProcessSpawner": {
-        "types": "./dist/esm/BrowserChildProcessSpawner/index.d.ts",
-        "import": "./dist/esm/BrowserChildProcessSpawner/index.js",
-        "require": "./dist/cjs/BrowserChildProcessSpawner/index.js"
+        "import": {
+          "types": "./dist/esm/BrowserChildProcessSpawner/index.d.ts",
+          "default": "./dist/esm/BrowserChildProcessSpawner/index.js"
+        },
+        "require": {
+          "types": "./dist/cjs/BrowserChildProcessSpawner/index.d.ts",
+          "default": "./dist/cjs/BrowserChildProcessSpawner/index.js"
+        }
       },
       "./BrowserChildProcessSpawner/*": null,
       "./BrowserFileSystem": {
-        "types": "./dist/esm/BrowserFileSystem/index.d.ts",
-        "import": "./dist/esm/BrowserFileSystem/index.js",
-        "require": "./dist/cjs/BrowserFileSystem/index.js"
+        "import": {
+          "types": "./dist/esm/BrowserFileSystem/index.d.ts",
+          "default": "./dist/esm/BrowserFileSystem/index.js"
+        },
+        "require": {
+          "types": "./dist/cjs/BrowserFileSystem/index.d.ts",
+          "default": "./dist/cjs/BrowserFileSystem/index.js"
+        }
       },
       "./BrowserFileSystem/*": null,
       "./internal/*": null,
       "./*/index": null,
       "./BrowserHost": {
-        "types": "./dist/esm/BrowserHost.d.ts",
-        "import": "./dist/esm/BrowserHost.js",
-        "require": "./dist/cjs/BrowserHost.js"
+        "import": {
+          "types": "./dist/esm/BrowserHost.d.ts",
+          "default": "./dist/esm/BrowserHost.js"
+        },
+        "require": {
+          "types": "./dist/cjs/BrowserHost.d.ts",
+          "default": "./dist/cjs/BrowserHost.js"
+        }
       },
       "./BrowserServices": {
-        "types": "./dist/esm/BrowserServices.d.ts",
-        "import": "./dist/esm/BrowserServices.js",
-        "require": "./dist/cjs/BrowserServices.js"
+        "import": {
+          "types": "./dist/esm/BrowserServices.d.ts",
+          "default": "./dist/esm/BrowserServices.js"
+        },
+        "require": {
+          "types": "./dist/cjs/BrowserServices.d.ts",
+          "default": "./dist/cjs/BrowserServices.js"
+        }
       },
       "./index": {
-        "types": "./dist/esm/index.d.ts",
-        "import": "./dist/esm/index.js",
-        "require": "./dist/cjs/index.js"
+        "import": {
+          "types": "./dist/esm/index.d.ts",
+          "default": "./dist/esm/index.js"
+        },
+        "require": {
+          "types": "./dist/cjs/index.d.ts",
+          "default": "./dist/cjs/index.js"
+        }
       }
     }
   },
@@ -113,12 +143,12 @@
   },
   "devDependencies": {
     "@effect/language-service": "0.87.2",
-    "@effect/vitest": "4.0.0-rc.112",
+    "@effect/vitest": "4.0.0-rc.115",
     "@eslint/js": "9.39.5",
     "@types/node": "26.4.1",
-    "@vitest/coverage-v8": "4.1.9",
+    "@vitest/coverage-v8": "5.0.0",
     "dprint": "0.57.1",
-    "effect": "4.0.0-rc.112",
+    "effect": "4.0.0-rc.115",
     "esbuild": "0.28.2",
     "eslint": "9.39.5",
     "eslint-import-resolver-typescript": "4.4.5",
@@ -128,11 +158,11 @@
     "madge": "8.0.0",
     "typescript": "5.9.3",
     "typescript-eslint": "8.69.0",
-    "vitest": "4.1.9",
-    "@effect/platform-node": "4.0.0-rc.112",
+    "vitest": "5.0.0",
+    "@effect/platform-node": "4.0.0-rc.115",
     "@smthrs/artifacts": "1.0.0-rc.0"
   },
   "peerDependencies": {
-    "effect": "4.0.0-rc.112"
+    "effect": "4.0.0-rc.115"
   }
 }

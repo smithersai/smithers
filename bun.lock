@@ -5,15 +5,22 @@
     "": {
       "name": "smithers-monorepo",
       "devDependencies": {
-        "@effect/platform-node": "4.0.0-rc.112",
+        "@effect/platform-node": "4.0.0-rc.115",
         "@smthrs/build-cli": "workspace:*",
         "@smthrs/cli": "workspace:*",
         "@smthrs/database": "workspace:*",
+        "@smthrs/engine": "workspace:*",
         "@smthrs/engine-store": "workspace:*",
+        "@smthrs/flow": "workspace:*",
+        "@smthrs/flows": "workspace:*",
+        "@smthrs/journal": "workspace:*",
+        "@smthrs/kernel": "workspace:*",
+        "@smthrs/plan": "workspace:*",
         "@smthrs/repo-targets": "workspace:*",
+        "@smthrs/run-store": "workspace:*",
         "@smthrs/targets": "workspace:*",
         "@types/node": "26.4.1",
-        "effect": "4.0.0-rc.112",
+        "effect": "4.0.0-rc.115",
         "esbuild": "0.28.2",
         "eslint": "9.39.5",
         "eslint-plugin-jsdoc": "64.3.4",
@@ -24,6 +31,74 @@
         "typescript": "5.9.3",
         "typescript-eslint": "8.69.0",
         "vite": "^8.2.2",
+        "yaml": "2.9.0",
+      },
+    },
+    "apps/app": {
+      "name": "smithers-app",
+      "version": "1.0.0",
+      "dependencies": {
+        "@fontsource/ibm-plex-mono": "5.3.0",
+        "@fontsource/inter": "5.3.0",
+        "@journeyapps/wa-sqlite": "1.7.2",
+        "@smthrs/canonical": "workspace:*",
+        "@smthrs/capability": "workspace:*",
+        "@smthrs/chain": "workspace:*",
+        "@smthrs/core": "workspace:*",
+        "@smthrs/crypto": "workspace:*",
+        "@smthrs/database": "workspace:*",
+        "@smthrs/engine-store": "workspace:*",
+        "@smthrs/flow": "workspace:*",
+        "@smthrs/gateway": "workspace:*",
+        "@smthrs/harness": "workspace:*",
+        "@smthrs/jj": "workspace:*",
+        "@smthrs/journal": "workspace:*",
+        "@smthrs/kernel": "workspace:*",
+        "@smthrs/memory": "workspace:*",
+        "@smthrs/model": "workspace:*",
+        "@smthrs/patterns": "workspace:*",
+        "@smthrs/platform-browser": "workspace:*",
+        "@smthrs/registry": "workspace:*",
+        "@smthrs/rpc": "workspace:*",
+        "@smthrs/ui": "workspace:*",
+        "@standard-schema/spec": "1.1.0",
+        "@tanstack/browser-db-sqlite-persistence": "0.2.20",
+        "@tanstack/db": "0.8.7",
+        "@tanstack/react-db": "0.3.7",
+        "@xyflow/react": "^12.11.6",
+        "dagre": "^0.8.5",
+        "effect": "4.0.0-rc.115",
+        "electrobun": "2.0.1",
+        "lucide-react": "1.40.0",
+        "react": "19.2.8",
+        "react-dom": "19.2.8",
+        "yjs": "13.6.32",
+        "zod": "4.5.4",
+      },
+      "devDependencies": {
+        "@effect/platform-node": "4.0.0-rc.115",
+        "@happy-dom/global-registrator": "^20.13.2",
+        "@playwright/test": "1.62.1",
+        "@smthrs/control": "workspace:*",
+        "@smthrs/notifications": "workspace:*",
+        "@smthrs/run-store": "workspace:*",
+        "@smthrs/sync": "workspace:*",
+        "@tailwindcss/postcss": "4.3.3",
+        "@types/bun": "latest",
+        "@types/d3-force": "3.0.10",
+        "@types/dagre": "0.7.54",
+        "@types/react": "19.2.18",
+        "@types/react-dom": "19.2.7",
+        "@types/three": "0.185.4",
+        "@vitejs/plugin-react": "6.1.1",
+        "autoprefixer": "^10.5.4",
+        "playwright": "1.62.1",
+        "postcss": "^8.5.28",
+        "smithers-server": "workspace:*",
+        "tailwindcss": "^4.3.3",
+        "tsx": "4.23.13",
+        "typescript": "^5.9.3",
+        "vite": "8.2.2",
       },
     },
     "apps/bug-worker": {
@@ -37,7 +112,7 @@
         "@types/node": "26.4.1",
         "alchemy": "2.0.0-beta.76",
         "bun-types": "^1.4.0",
-        "effect": "4.0.0-rc.112",
+        "effect": "4.0.0-rc.115",
         "typescript": "~5.9.3",
       },
     },
@@ -731,7 +806,7 @@
         "smithers-review": "./bin/smithers-review.mjs",
       },
       "dependencies": {
-        "@effect/platform-node": "4.0.0-rc.112",
+        "@effect/platform-node": "4.0.0-rc.115",
         "@pierre/diffs": "^1.3.6",
         "@smthrs/agent": "workspace:*",
         "@smthrs/capability": "workspace:*",
@@ -744,13 +819,14 @@
         "@smthrs/plan": "workspace:*",
         "@smthrs/registry": "workspace:*",
         "@smthrs/ui-styleguide": "workspace:*",
-        "effect": "4.0.0-rc.112",
+        "effect": "4.0.0-rc.115",
         "mermaid": "^11.17.2",
       },
       "devDependencies": {
         "@types/node": "26.4.1",
         "alchemy": "2.0.0-beta.76",
         "bun-types": "^1.4.0",
+        "happy-dom": "^20.13.2",
         "typescript": "~5.9.3",
         "yaml": "^2.9.0",
       },
@@ -760,10 +836,12 @@
       "version": "1.0.0",
       "dependencies": {
         "@smthrs/rpc": "workspace:*",
+        "effect": "4.0.0-rc.115",
       },
       "devDependencies": {
         "@types/bun": "latest",
         "typescript": "^5.9.3",
+        "wrangler": "^4.129.0",
       },
     },
     "apps/site": {
@@ -780,8 +858,8 @@
       },
       "devDependencies": {
         "@astrojs/check": "^0.9.10",
-        "@effect/platform-node": "4.0.0-rc.112",
-        "@effect/platform-node-shared": "4.0.0-rc.112",
+        "@effect/platform-node": "4.0.0-rc.115",
+        "@effect/platform-node-shared": "4.0.0-rc.115",
         "@smthrs/agent": "workspace:*",
         "@smthrs/capability": "workspace:*",
         "@smthrs/control": "workspace:*",
@@ -808,7 +886,7 @@
         "@smthrs/time-travel": "workspace:*",
         "@types/react": "^19.2.18",
         "alchemy": "2.0.0-beta.76",
-        "effect": "4.0.0-rc.112",
+        "effect": "4.0.0-rc.115",
         "typescript": "~5.9.3",
       },
     },
@@ -821,70 +899,6 @@
         "bun-types": "^1.4.0",
         "typescript": "~5.9.3",
         "wrangler": "^4.129.0",
-      },
-    },
-    "apps/app": {
-      "name": "smithers-app",
-      "version": "1.0.0",
-      "dependencies": {
-        "@fontsource/ibm-plex-mono": "5.3.0",
-        "@fontsource/inter": "5.3.0",
-        "@journeyapps/wa-sqlite": "1.7.2",
-        "@smthrs/canonical": "workspace:*",
-        "@smthrs/capability": "workspace:*",
-        "@smthrs/chain": "workspace:*",
-        "@smthrs/core": "workspace:*",
-        "@smthrs/crypto": "workspace:*",
-        "@smthrs/database": "workspace:*",
-        "@smthrs/gateway": "workspace:*",
-        "@smthrs/harness": "workspace:*",
-        "@smthrs/jj": "workspace:*",
-        "@smthrs/journal": "workspace:*",
-        "@smthrs/kernel": "workspace:*",
-        "@smthrs/memory": "workspace:*",
-        "@smthrs/model": "workspace:*",
-        "@smthrs/patterns": "workspace:*",
-        "@smthrs/platform-browser": "workspace:*",
-        "@smthrs/registry": "workspace:*",
-        "@smthrs/rpc": "workspace:*",
-        "@smthrs/ui": "workspace:*",
-        "@standard-schema/spec": "1.1.0",
-        "@tanstack/browser-db-sqlite-persistence": "0.2.20",
-        "@tanstack/db": "0.8.7",
-        "@tanstack/react-db": "0.3.7",
-        "@xyflow/react": "^12.11.6",
-        "dagre": "^0.8.5",
-        "effect": "4.0.0-rc.112",
-        "electrobun": "2.0.1",
-        "lucide-react": "1.40.0",
-        "react": "19.2.8",
-        "react-dom": "19.2.8",
-        "zod": "4.5.4",
-      },
-      "devDependencies": {
-        "@effect/platform-node": "4.0.0-rc.112",
-        "@happy-dom/global-registrator": "^20.13.2",
-        "@playwright/test": "1.62.1",
-        "@smthrs/control": "workspace:*",
-        "@smthrs/notifications": "workspace:*",
-        "@smthrs/run-store": "workspace:*",
-        "@smthrs/sync": "workspace:*",
-        "@tailwindcss/postcss": "4.3.3",
-        "@types/bun": "latest",
-        "@types/d3-force": "3.0.10",
-        "@types/dagre": "0.7.54",
-        "@types/react": "19.2.18",
-        "@types/react-dom": "19.2.7",
-        "@types/three": "0.185.4",
-        "@vitejs/plugin-react": "6.1.1",
-        "autoprefixer": "^10.5.4",
-        "playwright": "1.62.1",
-        "postcss": "^8.5.28",
-        "smithers-server": "workspace:*",
-        "tailwindcss": "^4.3.3",
-        "tsx": "4.23.13",
-        "typescript": "^5.9.3",
-        "vite": "8.2.2",
       },
     },
     "evals/agent": {
@@ -901,7 +915,7 @@
         "@smthrs/plan": "workspace:*",
         "@smthrs/registry": "workspace:*",
         "@smthrs/scorers": "workspace:*",
-        "effect": "4.0.0-rc.112",
+        "effect": "4.0.0-rc.115",
       },
       "devDependencies": {
         "@smthrs/targets": "workspace:*",
@@ -935,7 +949,7 @@
         "@smthrs/agent": "workspace:*",
         "@smthrs/model": "workspace:*",
         "@smthrs/review": "workspace:*",
-        "effect": "4.0.0-rc.112",
+        "effect": "4.0.0-rc.115",
       },
       "devDependencies": {
         "@smthrs/targets": "workspace:*",
@@ -963,18 +977,15 @@
       "version": "0.0.0",
       "dependencies": {
         "@smthrs/agent": "workspace:*",
-        "@smthrs/artifacts": "workspace:*",
         "@smthrs/capability": "workspace:*",
         "@smthrs/control": "workspace:*",
         "@smthrs/core": "workspace:*",
         "@smthrs/database": "workspace:*",
         "@smthrs/engine": "workspace:*",
         "@smthrs/engine-store": "workspace:*",
-        "@smthrs/evals": "workspace:*",
         "@smthrs/flow": "workspace:*",
         "@smthrs/flows": "workspace:*",
         "@smthrs/harness": "workspace:*",
-        "@smthrs/jj": "workspace:*",
         "@smthrs/journal": "workspace:*",
         "@smthrs/kernel": "workspace:*",
         "@smthrs/keys": "workspace:*",
@@ -985,7 +996,6 @@
         "@smthrs/observability": "workspace:*",
         "@smthrs/patterns": "workspace:*",
         "@smthrs/plan": "workspace:*",
-        "@smthrs/platform-browser": "workspace:*",
         "@smthrs/platform-node": "workspace:*",
         "@smthrs/registry": "workspace:*",
         "@smthrs/run-store": "workspace:*",
@@ -994,35 +1004,39 @@
         "@smthrs/step-cache": "workspace:*",
         "@smthrs/sync": "workspace:*",
         "@smthrs/time-travel": "workspace:*",
-        "effect": "4.0.0-rc.112",
+        "effect": "4.0.0-rc.115",
       },
       "devDependencies": {
-        "@effect/platform-node": "4.0.0-rc.112",
-        "@effect/vitest": "4.0.0-rc.112",
+        "@effect/platform-node": "4.0.0-rc.115",
+        "@effect/vitest": "4.0.0-rc.115",
         "@smthrs/testing": "workspace:*",
         "@types/node": "26.4.1",
         "esbuild": "0.28.2",
         "typescript": "5.9.3",
-        "vitest": "4.1.9",
+        "vitest": "5.0.0",
       },
     },
     "flows": {
       "name": "@smithers/release-workflows",
       "dependencies": {
-        "@effect/platform-node": "4.0.0-rc.112",
+        "@effect/platform-bun": "4.0.0-rc.115",
+        "@effect/platform-node": "4.0.0-rc.115",
         "@smthrs/agent": "workspace:*",
+        "@smthrs/capability": "workspace:*",
         "@smthrs/cli": "workspace:*",
+        "@smthrs/control": "workspace:*",
         "@smthrs/core": "workspace:*",
         "@smthrs/engine": "workspace:*",
         "@smthrs/engine-store": "workspace:*",
         "@smthrs/flow": "workspace:*",
         "@smthrs/flows": "workspace:*",
+        "@smthrs/migrate": "workspace:*",
         "@smthrs/model": "workspace:*",
         "@smthrs/plan": "workspace:*",
         "@smthrs/registry": "workspace:*",
         "@smthrs/run-store": "workspace:*",
         "@smthrs/targets": "workspace:*",
-        "effect": "4.0.0-rc.112",
+        "effect": "4.0.0-rc.115",
         "playwright": "1.62.1",
       },
       "devDependencies": {
@@ -1037,7 +1051,7 @@
         "@effect/language-service": "0.87.2",
         "@eslint/js": "9.39.5",
         "@types/node": "26.4.1",
-        "@vitest/coverage-v8": "4.1.9",
+        "@vitest/coverage-v8": "5.0.0",
         "dprint": "0.57.1",
         "esbuild": "0.28.2",
         "eslint": "9.39.5",
@@ -1048,7 +1062,7 @@
         "madge": "8.0.0",
         "typescript": "5.9.3",
         "typescript-eslint": "8.69.0",
-        "vitest": "4.1.9",
+        "vitest": "5.0.0",
       },
     },
     "packages/repo-targets": {
@@ -1056,13 +1070,14 @@
       "version": "0.0.0",
       "dependencies": {
         "@smthrs/targets": "workspace:*",
-        "effect": "4.0.0-rc.112",
+        "effect": "4.0.0-rc.115",
       },
       "devDependencies": {
         "@smthrs/plan": "workspace:*",
-        "@vitest/coverage-v8": "4.1.9",
+        "@vitest/coverage-v8": "5.0.0",
+        "fast-check": "4.9.0",
         "typescript": "5.9.3",
-        "vitest": "4.1.9",
+        "vitest": "5.0.0",
       },
     },
     "packages/rpc": {
@@ -1078,7 +1093,7 @@
         "eslint": "9.39.1",
         "typescript": "^5.9.3",
         "typescript-eslint": "8.65.0",
-        "vitest": "4.1.9",
+        "vitest": "5.0.0",
       },
     },
     "packages/smithers": {
@@ -1090,7 +1105,8 @@
       },
       "dependencies": {
         "@clack/prompts": "1.7.0",
-        "@effect/platform-node": "4.0.0-rc.112",
+        "@effect/platform-bun": "4.0.0-rc.115",
+        "@effect/platform-node": "4.0.0-rc.115",
         "@smthrs/agent": "1.0.0-rc.0",
         "@smthrs/build-cli": "1.0.0-rc.0",
         "@smthrs/canonical": "1.0.0-rc.0",
@@ -1123,36 +1139,37 @@
         "@smthrs/targets": "1.0.0-rc.0",
         "@smthrs/time-travel": "1.0.0-rc.0",
         "@smthrs/triggers": "1.0.0-rc.0",
-        "effect": "4.0.0-rc.112",
+        "effect": "4.0.0-rc.115",
         "incur": "0.5.1",
       },
       "devDependencies": {
         "@effect/language-service": "0.87.2",
-        "@effect/platform-node": "4.0.0-rc.112",
-        "@effect/platform-node-shared": "4.0.0-rc.112",
-        "@effect/sql-sqlite-node": "4.0.0-rc.112",
-        "@effect/vitest": "4.0.0-rc.112",
+        "@effect/platform-node": "4.0.0-rc.115",
+        "@effect/platform-node-shared": "4.0.0-rc.115",
+        "@effect/sql-sqlite-node": "4.0.0-rc.115",
+        "@effect/vitest": "4.0.0-rc.115",
         "@eslint/js": "9.39.5",
         "@smthrs/plan": "1.0.0-rc.0",
         "@smthrs/sandbox": "1.0.0-rc.0",
         "@smthrs/testing": "1.0.0-rc.0",
         "@types/node": "26.4.1",
-        "@vitest/coverage-v8": "4.1.9",
+        "@vitest/coverage-v8": "5.0.0",
         "dprint": "0.57.1",
-        "effect": "4.0.0-rc.112",
+        "effect": "4.0.0-rc.115",
         "esbuild": "0.28.2",
         "eslint": "9.39.5",
         "eslint-import-resolver-typescript": "4.4.5",
         "eslint-plugin-import": "2.32.0",
         "eslint-plugin-jsdoc": "64.3.4",
         "eslint-plugin-unicorn": "65.0.0",
+        "fast-check": "4.9.0",
         "madge": "8.0.0",
         "typescript": "5.9.3",
         "typescript-eslint": "8.69.0",
-        "vitest": "4.1.9",
+        "vitest": "5.0.0",
       },
       "peerDependencies": {
-        "@effect/sql-sqlite-node": "4.0.0-rc.112",
+        "@effect/sql-sqlite-node": "4.0.0-rc.115",
       },
     },
     "packages/smithers/agent": {
@@ -1179,8 +1196,8 @@
       },
       "devDependencies": {
         "@effect/language-service": "0.87.2",
-        "@effect/platform-node": "4.0.0-rc.112",
-        "@effect/vitest": "4.0.0-rc.112",
+        "@effect/platform-node": "4.0.0-rc.115",
+        "@effect/vitest": "4.0.0-rc.115",
         "@eslint/js": "9.39.5",
         "@smthrs/database": "1.0.0-rc.0",
         "@smthrs/engine": "1.0.0-rc.0",
@@ -1189,9 +1206,9 @@
         "@smthrs/platform-node": "1.0.0-rc.0",
         "@smthrs/testing": "1.0.0-rc.0",
         "@types/node": "26.4.1",
-        "@vitest/coverage-v8": "4.1.9",
+        "@vitest/coverage-v8": "5.0.0",
         "dprint": "0.57.1",
-        "effect": "4.0.0-rc.112",
+        "effect": "4.0.0-rc.115",
         "esbuild": "0.28.2",
         "eslint": "9.39.5",
         "eslint-import-resolver-typescript": "4.4.5",
@@ -1201,10 +1218,10 @@
         "madge": "8.0.0",
         "typescript": "5.9.3",
         "typescript-eslint": "8.69.0",
-        "vitest": "4.1.9",
+        "vitest": "5.0.0",
       },
       "peerDependencies": {
-        "effect": "4.0.0-rc.112",
+        "effect": "4.0.0-rc.115",
       },
     },
     "packages/smithers/agent/chain": {
@@ -1217,16 +1234,15 @@
         "@smthrs/memory": "workspace:*",
         "@smthrs/model": "workspace:*",
         "@smthrs/registry": "workspace:*",
-        "effect": "4.0.0-rc.112",
+        "effect": "4.0.0-rc.115",
         "quickjs-emscripten-core": "0.32.0",
       },
       "devDependencies": {
         "@effect/language-service": "0.87.2",
-        "@effect/vitest": "4.0.0-rc.112",
         "@eslint/js": "9.39.5",
         "@smthrs/testing": "workspace:*",
         "@types/node": "26.4.1",
-        "@vitest/coverage-v8": "4.1.9",
+        "@vitest/coverage-v8": "5.0.0",
         "dprint": "0.57.1",
         "esbuild": "0.28.2",
         "eslint": "9.39.5",
@@ -1237,7 +1253,7 @@
         "madge": "8.0.0",
         "typescript": "5.9.3",
         "typescript-eslint": "8.69.0",
-        "vitest": "4.1.9",
+        "vitest": "5.0.0",
       },
     },
     "packages/smithers/agent/evals": {
@@ -1249,13 +1265,11 @@
       },
       "devDependencies": {
         "@effect/language-service": "0.87.2",
-        "@effect/vitest": "4.0.0-rc.112",
         "@eslint/js": "9.39.5",
-        "@smthrs/testing": "1.0.0-rc.0",
         "@types/node": "26.4.1",
-        "@vitest/coverage-v8": "4.1.9",
+        "@vitest/coverage-v8": "5.0.0",
         "dprint": "0.57.1",
-        "effect": "4.0.0-rc.112",
+        "effect": "4.0.0-rc.115",
         "esbuild": "0.28.2",
         "eslint": "9.39.5",
         "eslint-import-resolver-typescript": "4.4.5",
@@ -1265,10 +1279,10 @@
         "madge": "8.0.0",
         "typescript": "5.9.3",
         "typescript-eslint": "8.69.0",
-        "vitest": "4.1.9",
+        "vitest": "5.0.0",
       },
       "peerDependencies": {
-        "effect": "4.0.0-rc.112",
+        "effect": "4.0.0-rc.115",
       },
     },
     "packages/smithers/agent/fs": {
@@ -1277,16 +1291,16 @@
       "dependencies": {
         "@smthrs/core": "workspace:*",
         "@smthrs/registry": "workspace:*",
-        "effect": "4.0.0-rc.112",
+        "effect": "4.0.0-rc.115",
         "incur": "0.5.1",
       },
       "devDependencies": {
         "@effect/language-service": "0.87.2",
-        "@effect/platform-node": "4.0.0-rc.112",
-        "@effect/vitest": "4.0.0-rc.112",
+        "@effect/platform-node": "4.0.0-rc.115",
+        "@effect/vitest": "4.0.0-rc.115",
         "@eslint/js": "9.39.5",
         "@types/node": "26.4.1",
-        "@vitest/coverage-v8": "4.1.9",
+        "@vitest/coverage-v8": "5.0.0",
         "dprint": "0.57.1",
         "esbuild": "0.28.2",
         "eslint": "9.39.5",
@@ -1298,7 +1312,7 @@
         "typescript": "5.9.3",
         "typescript-eslint": "8.69.0",
         "vite": "^8.2.2",
-        "vitest": "4.1.9",
+        "vitest": "5.0.0",
       },
     },
     "packages/smithers/agent/harness": {
@@ -1321,14 +1335,14 @@
       },
       "devDependencies": {
         "@effect/language-service": "0.87.2",
-        "@effect/platform-node": "4.0.0-rc.112",
-        "@effect/vitest": "4.0.0-rc.112",
+        "@effect/platform-node": "4.0.0-rc.115",
+        "@effect/vitest": "4.0.0-rc.115",
         "@eslint/js": "9.39.5",
         "@jitl/quickjs-wasmfile-release-sync": "0.32.0",
         "@types/node": "26.4.1",
-        "@vitest/coverage-v8": "4.1.9",
+        "@vitest/coverage-v8": "5.0.0",
         "dprint": "0.57.1",
-        "effect": "4.0.0-rc.112",
+        "effect": "4.0.0-rc.115",
         "esbuild": "0.28.2",
         "eslint": "9.39.5",
         "eslint-import-resolver-typescript": "4.4.5",
@@ -1338,10 +1352,10 @@
         "madge": "8.0.0",
         "typescript": "5.9.3",
         "typescript-eslint": "8.69.0",
-        "vitest": "4.1.9",
+        "vitest": "5.0.0",
       },
       "peerDependencies": {
-        "effect": "4.0.0-rc.112",
+        "effect": "4.0.0-rc.115",
       },
     },
     "packages/smithers/agent/integrations": {
@@ -1357,14 +1371,14 @@
       },
       "devDependencies": {
         "@effect/language-service": "0.87.2",
-        "@effect/platform-node": "4.0.0-rc.112",
-        "@effect/vitest": "4.0.0-rc.112",
+        "@effect/platform-node": "4.0.0-rc.115",
+        "@effect/vitest": "4.0.0-rc.115",
         "@eslint/js": "9.39.5",
         "@smthrs/engine": "1.0.0-rc.0",
         "@types/node": "26.4.1",
-        "@vitest/coverage-v8": "4.1.9",
+        "@vitest/coverage-v8": "5.0.0",
         "dprint": "0.57.1",
-        "effect": "4.0.0-rc.112",
+        "effect": "4.0.0-rc.115",
         "esbuild": "0.28.2",
         "eslint": "9.39.5",
         "eslint-import-resolver-typescript": "4.4.5",
@@ -1374,10 +1388,10 @@
         "madge": "8.0.0",
         "typescript": "5.9.3",
         "typescript-eslint": "8.69.0",
-        "vitest": "4.1.9",
+        "vitest": "5.0.0",
       },
       "peerDependencies": {
-        "effect": "4.0.0-rc.112",
+        "effect": "4.0.0-rc.115",
       },
     },
     "packages/smithers/agent/memory": {
@@ -1390,12 +1404,12 @@
       },
       "devDependencies": {
         "@effect/language-service": "0.87.2",
-        "@effect/vitest": "4.0.0-rc.112",
+        "@effect/vitest": "4.0.0-rc.115",
         "@eslint/js": "9.39.5",
         "@types/node": "26.4.1",
-        "@vitest/coverage-v8": "4.1.9",
+        "@vitest/coverage-v8": "5.0.0",
         "dprint": "0.57.1",
-        "effect": "4.0.0-rc.112",
+        "effect": "4.0.0-rc.115",
         "esbuild": "0.28.2",
         "eslint": "9.39.5",
         "eslint-import-resolver-typescript": "4.4.5",
@@ -1405,10 +1419,10 @@
         "madge": "8.0.0",
         "typescript": "5.9.3",
         "typescript-eslint": "8.69.0",
-        "vitest": "4.1.9",
+        "vitest": "5.0.0",
       },
       "peerDependencies": {
-        "effect": "4.0.0-rc.112",
+        "effect": "4.0.0-rc.115",
       },
     },
     "packages/smithers/agent/model": {
@@ -1421,12 +1435,12 @@
       },
       "devDependencies": {
         "@effect/language-service": "0.87.2",
-        "@effect/vitest": "4.0.0-rc.112",
+        "@effect/vitest": "4.0.0-rc.115",
         "@eslint/js": "9.39.5",
         "@types/node": "26.4.1",
-        "@vitest/coverage-v8": "4.1.9",
+        "@vitest/coverage-v8": "5.0.0",
         "dprint": "0.57.1",
-        "effect": "4.0.0-rc.112",
+        "effect": "4.0.0-rc.115",
         "esbuild": "0.28.2",
         "eslint": "9.39.5",
         "eslint-import-resolver-typescript": "4.4.5",
@@ -1436,27 +1450,26 @@
         "madge": "8.0.0",
         "typescript": "5.9.3",
         "typescript-eslint": "8.69.0",
-        "vitest": "4.1.9",
+        "vitest": "5.0.0",
       },
       "peerDependencies": {
-        "effect": "4.0.0-rc.112",
+        "effect": "4.0.0-rc.115",
       },
     },
     "packages/smithers/agent/plugin": {
       "name": "@smthrs/plugin",
       "version": "1.0.0-rc.0",
       "dependencies": {
-        "@smthrs/canonical": "1.0.0-rc.0",
         "@smthrs/flow": "1.0.0-rc.0",
       },
       "devDependencies": {
         "@effect/language-service": "0.87.2",
-        "@effect/vitest": "4.0.0-rc.112",
+        "@effect/vitest": "4.0.0-rc.115",
         "@eslint/js": "9.39.5",
         "@types/node": "26.4.1",
-        "@vitest/coverage-v8": "4.1.9",
+        "@vitest/coverage-v8": "5.0.0",
         "dprint": "0.57.1",
-        "effect": "4.0.0-rc.112",
+        "effect": "4.0.0-rc.115",
         "esbuild": "0.28.2",
         "eslint": "9.39.5",
         "eslint-import-resolver-typescript": "4.4.5",
@@ -1466,10 +1479,10 @@
         "madge": "8.0.0",
         "typescript": "5.9.3",
         "typescript-eslint": "8.69.0",
-        "vitest": "4.1.9",
+        "vitest": "5.0.0",
       },
       "peerDependencies": {
-        "effect": "4.0.0-rc.112",
+        "effect": "4.0.0-rc.115",
       },
     },
     "packages/smithers/agent/registry": {
@@ -1483,8 +1496,8 @@
       },
       "devDependencies": {
         "@effect/language-service": "0.87.2",
-        "@effect/platform-node": "4.0.0-rc.112",
-        "@effect/vitest": "4.0.0-rc.112",
+        "@effect/platform-node": "4.0.0-rc.115",
+        "@effect/vitest": "4.0.0-rc.115",
         "@eslint/js": "9.39.5",
         "@smthrs/artifacts": "1.0.0-rc.0",
         "@smthrs/engine-store": "1.0.0-rc.0",
@@ -1492,9 +1505,9 @@
         "@smthrs/kernel": "1.0.0-rc.0",
         "@smthrs/run-store": "1.0.0-rc.0",
         "@types/node": "26.4.1",
-        "@vitest/coverage-v8": "4.1.9",
+        "@vitest/coverage-v8": "5.0.0",
         "dprint": "0.57.1",
-        "effect": "4.0.0-rc.112",
+        "effect": "4.0.0-rc.115",
         "esbuild": "0.28.2",
         "eslint": "9.39.5",
         "eslint-import-resolver-typescript": "4.4.5",
@@ -1504,10 +1517,10 @@
         "madge": "8.0.0",
         "typescript": "5.9.3",
         "typescript-eslint": "8.69.0",
-        "vitest": "4.1.9",
+        "vitest": "5.0.0",
       },
       "peerDependencies": {
-        "effect": "4.0.0-rc.112",
+        "effect": "4.0.0-rc.115",
       },
     },
     "packages/smithers/agent/scorers": {
@@ -1520,12 +1533,12 @@
       },
       "devDependencies": {
         "@effect/language-service": "0.87.2",
-        "@effect/vitest": "4.0.0-rc.112",
+        "@effect/vitest": "4.0.0-rc.115",
         "@eslint/js": "9.39.5",
         "@types/node": "26.4.1",
-        "@vitest/coverage-v8": "4.1.9",
+        "@vitest/coverage-v8": "5.0.0",
         "dprint": "0.57.1",
-        "effect": "4.0.0-rc.112",
+        "effect": "4.0.0-rc.115",
         "esbuild": "0.28.2",
         "eslint": "9.39.5",
         "eslint-import-resolver-typescript": "4.4.5",
@@ -1535,10 +1548,10 @@
         "madge": "8.0.0",
         "typescript": "5.9.3",
         "typescript-eslint": "8.69.0",
-        "vitest": "4.1.9",
+        "vitest": "5.0.0",
       },
       "peerDependencies": {
-        "effect": "4.0.0-rc.112",
+        "effect": "4.0.0-rc.115",
       },
     },
     "packages/smithers/agent/std": {
@@ -1552,13 +1565,13 @@
       },
       "devDependencies": {
         "@effect/language-service": "0.87.2",
-        "@effect/platform-node": "4.0.0-rc.112",
-        "@effect/vitest": "4.0.0-rc.112",
+        "@effect/platform-node": "4.0.0-rc.115",
+        "@effect/vitest": "4.0.0-rc.115",
         "@eslint/js": "9.39.5",
         "@types/node": "26.4.1",
-        "@vitest/coverage-v8": "4.1.9",
+        "@vitest/coverage-v8": "5.0.0",
         "dprint": "0.57.1",
-        "effect": "4.0.0-rc.112",
+        "effect": "4.0.0-rc.115",
         "esbuild": "0.28.2",
         "eslint": "9.39.5",
         "eslint-import-resolver-typescript": "4.4.5",
@@ -1568,10 +1581,10 @@
         "madge": "8.0.0",
         "typescript": "5.9.3",
         "typescript-eslint": "8.69.0",
-        "vitest": "4.1.9",
+        "vitest": "5.0.0",
       },
       "peerDependencies": {
-        "effect": "4.0.0-rc.112",
+        "effect": "4.0.0-rc.115",
       },
     },
     "packages/smithers/agent/triggers": {
@@ -1583,12 +1596,12 @@
       },
       "devDependencies": {
         "@effect/language-service": "0.87.2",
-        "@effect/vitest": "4.0.0-rc.112",
+        "@effect/vitest": "4.0.0-rc.115",
         "@eslint/js": "9.39.5",
         "@types/node": "26.4.1",
-        "@vitest/coverage-v8": "4.1.9",
+        "@vitest/coverage-v8": "5.0.0",
         "dprint": "0.57.1",
-        "effect": "4.0.0-rc.112",
+        "effect": "4.0.0-rc.115",
         "esbuild": "0.28.2",
         "eslint": "9.39.5",
         "eslint-import-resolver-typescript": "4.4.5",
@@ -1598,10 +1611,10 @@
         "madge": "8.0.0",
         "typescript": "5.9.3",
         "typescript-eslint": "8.69.0",
-        "vitest": "4.1.9",
+        "vitest": "5.0.0",
       },
       "peerDependencies": {
-        "effect": "4.0.0-rc.112",
+        "effect": "4.0.0-rc.115",
       },
     },
     "packages/smithers/build": {
@@ -1614,12 +1627,12 @@
       },
       "devDependencies": {
         "@effect/language-service": "0.87.2",
-        "@effect/platform-node": "4.0.0-rc.112",
+        "@effect/platform-node": "4.0.0-rc.115",
         "@eslint/js": "9.39.5",
         "@types/node": "26.4.1",
-        "@vitest/coverage-v8": "4.1.9",
+        "@vitest/coverage-v8": "5.0.0",
         "dprint": "0.57.1",
-        "effect": "4.0.0-rc.112",
+        "effect": "4.0.0-rc.115",
         "esbuild": "0.28.2",
         "eslint": "9.39.5",
         "eslint-import-resolver-typescript": "4.4.5",
@@ -1629,10 +1642,10 @@
         "madge": "8.0.0",
         "typescript": "5.9.3",
         "typescript-eslint": "8.69.0",
-        "vitest": "4.1.9",
+        "vitest": "5.0.0",
       },
       "peerDependencies": {
-        "effect": "4.0.0-rc.112",
+        "effect": "4.0.0-rc.115",
       },
     },
     "packages/smithers/build/build-cli": {
@@ -1643,8 +1656,8 @@
       },
       "dependencies": {
         "@clack/prompts": "1.7.0",
-        "@effect/platform-node": "4.0.0-rc.112",
-        "@effect/platform-node-shared": "4.0.0-rc.112",
+        "@effect/platform-node": "4.0.0-rc.115",
+        "@effect/platform-node-shared": "4.0.0-rc.115",
         "@smthrs/build": "1.0.0-rc.0",
         "@smthrs/canonical": "1.0.0-rc.0",
         "@smthrs/core": "1.0.0-rc.0",
@@ -1658,7 +1671,7 @@
         "@smthrs/platform-node": "1.0.0-rc.0",
         "@smthrs/registry": "1.0.0-rc.0",
         "@smthrs/targets": "1.0.0-rc.0",
-        "effect": "4.0.0-rc.112",
+        "effect": "4.0.0-rc.115",
         "ignore": "7.0.8",
         "incur": "0.5.1",
         "jsonc-parser": "3.3.1",
@@ -1671,7 +1684,7 @@
         "@eslint/js": "9.39.5",
         "@rsbuild/core": "2.2.3",
         "@types/node": "26.4.1",
-        "@vitest/coverage-v8": "4.1.9",
+        "@vitest/coverage-v8": "5.0.0",
         "dprint": "0.57.1",
         "esbuild": "0.28.2",
         "eslint": "9.39.5",
@@ -1681,7 +1694,7 @@
         "eslint-plugin-unicorn": "65.0.0",
         "madge": "8.0.0",
         "typescript-eslint": "8.69.0",
-        "vitest": "4.1.9",
+        "vitest": "5.0.0",
       },
     },
     "packages/smithers/build/infra": {
@@ -1689,18 +1702,19 @@
       "version": "0.1.0",
       "dependencies": {
         "@smthrs/canonical": "1.0.0-rc.0",
+        "@smthrs/targets": "1.0.0-rc.0",
       },
       "devDependencies": {
         "@cloudflare/workers-types": "5.20260903.1",
         "@types/node": "26.4.1",
-        "@vitest/coverage-v8": "4.1.9",
+        "@vitest/coverage-v8": "5.0.0",
         "alchemy": "2.0.0-beta.76",
         "dprint": "0.55.2",
-        "effect": "4.0.0-rc.112",
+        "effect": "4.0.0-rc.115",
         "eslint": "9.39.1",
         "typescript": "5.9.3",
         "typescript-eslint": "8.65.0",
-        "vitest": "4.1.9",
+        "vitest": "5.0.0",
       },
     },
     "packages/smithers/build/targets": {
@@ -1719,9 +1733,9 @@
         "@effect/language-service": "0.87.2",
         "@eslint/js": "9.39.5",
         "@types/node": "26.4.1",
-        "@vitest/coverage-v8": "4.1.9",
+        "@vitest/coverage-v8": "5.0.0",
         "dprint": "0.57.1",
-        "effect": "4.0.0-rc.112",
+        "effect": "4.0.0-rc.115",
         "esbuild": "0.28.2",
         "eslint": "9.39.5",
         "eslint-import-resolver-typescript": "4.4.5",
@@ -1731,10 +1745,10 @@
         "madge": "8.0.0",
         "typescript": "5.9.3",
         "typescript-eslint": "8.69.0",
-        "vitest": "4.1.9",
+        "vitest": "5.0.0",
       },
       "peerDependencies": {
-        "effect": "4.0.0-rc.112",
+        "effect": "4.0.0-rc.115",
       },
     },
     "packages/smithers/control": {
@@ -1752,7 +1766,7 @@
       },
       "devDependencies": {
         "@effect/language-service": "0.87.2",
-        "@effect/vitest": "4.0.0-rc.112",
+        "@effect/vitest": "4.0.0-rc.115",
         "@eslint/js": "9.39.5",
         "@smthrs/core": "1.0.0-rc.0",
         "@smthrs/engine-store": "1.0.0-rc.0",
@@ -1761,9 +1775,9 @@
         "@smthrs/step-cache": "1.0.0-rc.0",
         "@smthrs/time-travel": "1.0.0-rc.0",
         "@types/node": "26.4.1",
-        "@vitest/coverage-v8": "4.1.9",
+        "@vitest/coverage-v8": "5.0.0",
         "dprint": "0.57.1",
-        "effect": "4.0.0-rc.112",
+        "effect": "4.0.0-rc.115",
         "esbuild": "0.28.2",
         "eslint": "9.39.5",
         "eslint-import-resolver-typescript": "4.4.5",
@@ -1773,10 +1787,10 @@
         "madge": "8.0.0",
         "typescript": "5.9.3",
         "typescript-eslint": "8.69.0",
-        "vitest": "4.1.9",
+        "vitest": "5.0.0",
       },
       "peerDependencies": {
-        "effect": "4.0.0-rc.112",
+        "effect": "4.0.0-rc.115",
       },
     },
     "packages/smithers/create-app": {
@@ -1797,15 +1811,16 @@
       },
       "devDependencies": {
         "@effect/language-service": "0.87.2",
-        "@effect/platform-node": "4.0.0-rc.112",
-        "@effect/vitest": "4.0.0-rc.112",
+        "@effect/platform-node": "4.0.0-rc.115",
+        "@effect/vitest": "4.0.0-rc.115",
         "@eslint/js": "9.39.5",
+        "@smthrs/core": "1.0.0-rc.0",
         "@smthrs/testing": "1.0.0-rc.0",
         "@types/node": "26.4.1",
         "@types/react": "19.2.18",
-        "@vitest/coverage-v8": "4.1.9",
+        "@vitest/coverage-v8": "5.0.0",
         "dprint": "0.57.1",
-        "effect": "4.0.0-rc.112",
+        "effect": "4.0.0-rc.115",
         "esbuild": "0.28.2",
         "eslint": "9.39.5",
         "eslint-import-resolver-typescript": "4.4.5",
@@ -1818,16 +1833,16 @@
         "typescript": "5.9.3",
         "typescript-eslint": "8.69.0",
         "vite": "^8.2.2",
-        "vitest": "4.1.9",
+        "vitest": "5.0.0",
       },
       "peerDependencies": {
-        "@effect/platform-node": "4.0.0-rc.112",
+        "@effect/platform-node": "4.0.0-rc.115",
         "@smthrs/testing": "1.0.0-rc.0",
-        "effect": "4.0.0-rc.112",
+        "effect": "4.0.0-rc.115",
         "react": "^19.2.8",
         "tsx": "^4.23.13",
         "vite": "^8.2.2",
-        "vitest": "^4.1.9 || ^5.0.0",
+        "vitest": "^5.0.0",
       },
       "optionalPeers": [
         "@effect/platform-node",
@@ -1865,18 +1880,19 @@
       },
       "devDependencies": {
         "@effect/language-service": "0.87.2",
-        "@effect/platform-node": "4.0.0-rc.112",
-        "@effect/vitest": "4.0.0-rc.112",
+        "@effect/platform-node": "4.0.0-rc.115",
+        "@effect/vitest": "4.0.0-rc.115",
         "@eslint/js": "9.39.5",
         "@smthrs/control": "1.0.0-rc.0",
         "@smthrs/model": "1.0.0-rc.0",
         "@smthrs/notifications": "1.0.0-rc.0",
+        "@smthrs/platform-bun": "1.0.0-rc.0",
         "@smthrs/platform-node": "1.0.0-rc.0",
         "@smthrs/registry": "1.0.0-rc.0",
         "@types/node": "26.4.1",
-        "@vitest/coverage-v8": "4.1.9",
+        "@vitest/coverage-v8": "5.0.0",
         "dprint": "0.57.1",
-        "effect": "4.0.0-rc.112",
+        "effect": "4.0.0-rc.115",
         "eslint": "9.39.5",
         "eslint-import-resolver-typescript": "4.4.5",
         "eslint-plugin-import": "2.32.0",
@@ -1886,13 +1902,15 @@
         "microsandbox": "0.6.16",
         "typescript": "5.9.3",
         "typescript-eslint": "8.69.0",
-        "vitest": "4.1.9",
+        "vitest": "5.0.0",
       },
       "peerDependencies": {
+        "@smthrs/platform-bun": "1.0.0-rc.0",
         "@smthrs/platform-node": "1.0.0-rc.0",
-        "effect": "4.0.0-rc.112",
+        "effect": "4.0.0-rc.115",
       },
       "optionalPeers": [
+        "@smthrs/platform-bun",
         "@smthrs/platform-node",
       ],
     },
@@ -1904,13 +1922,13 @@
       },
       "devDependencies": {
         "@effect/language-service": "0.87.2",
-        "@effect/platform-node": "4.0.0-rc.112",
-        "@effect/vitest": "4.0.0-rc.112",
+        "@effect/platform-node": "4.0.0-rc.115",
+        "@effect/vitest": "4.0.0-rc.115",
         "@eslint/js": "9.39.5",
         "@types/node": "26.4.1",
-        "@vitest/coverage-v8": "4.1.9",
+        "@vitest/coverage-v8": "5.0.0",
         "dprint": "0.57.1",
-        "effect": "4.0.0-rc.112",
+        "effect": "4.0.0-rc.115",
         "esbuild": "0.28.2",
         "eslint": "9.39.5",
         "eslint-import-resolver-typescript": "4.4.5",
@@ -1920,10 +1938,10 @@
         "madge": "8.0.0",
         "typescript": "5.9.3",
         "typescript-eslint": "8.69.0",
-        "vitest": "4.1.9",
+        "vitest": "5.0.0",
       },
       "peerDependencies": {
-        "effect": "4.0.0-rc.112",
+        "effect": "4.0.0-rc.115",
       },
     },
     "packages/smithers/flows/canonical": {
@@ -1931,24 +1949,25 @@
       "version": "1.0.0-rc.0",
       "devDependencies": {
         "@effect/language-service": "0.87.2",
-        "@effect/vitest": "4.0.0-rc.112",
+        "@effect/vitest": "4.0.0-rc.115",
         "@eslint/js": "9.39.5",
         "@types/node": "26.4.1",
         "dprint": "0.57.1",
-        "effect": "4.0.0-rc.112",
+        "effect": "4.0.0-rc.115",
         "esbuild": "0.28.2",
         "eslint": "9.39.5",
         "eslint-import-resolver-typescript": "4.4.5",
         "eslint-plugin-import": "2.32.0",
         "eslint-plugin-jsdoc": "64.3.4",
         "eslint-plugin-unicorn": "65.0.0",
+        "fast-check": "4.9.0",
         "madge": "8.0.0",
         "typescript": "5.9.3",
         "typescript-eslint": "8.69.0",
-        "vitest": "4.1.9",
+        "vitest": "5.0.0",
       },
       "peerDependencies": {
-        "effect": "4.0.0-rc.112",
+        "effect": "4.0.0-rc.115",
       },
     },
     "packages/smithers/flows/capability": {
@@ -1959,25 +1978,26 @@
       },
       "devDependencies": {
         "@effect/language-service": "0.87.2",
-        "@effect/vitest": "4.0.0-rc.112",
+        "@effect/vitest": "4.0.0-rc.115",
         "@eslint/js": "9.39.5",
         "@types/node": "26.4.1",
-        "@vitest/coverage-v8": "4.1.9",
+        "@vitest/coverage-v8": "5.0.0",
         "dprint": "0.57.1",
-        "effect": "4.0.0-rc.112",
+        "effect": "4.0.0-rc.115",
         "esbuild": "0.28.2",
         "eslint": "9.39.5",
         "eslint-import-resolver-typescript": "4.4.5",
         "eslint-plugin-import": "2.32.0",
         "eslint-plugin-jsdoc": "64.3.4",
         "eslint-plugin-unicorn": "65.0.0",
+        "fast-check": "4.9.0",
         "madge": "8.0.0",
         "typescript": "5.9.3",
         "typescript-eslint": "8.69.0",
-        "vitest": "4.1.9",
+        "vitest": "5.0.0",
       },
       "peerDependencies": {
-        "effect": "4.0.0-rc.112",
+        "effect": "4.0.0-rc.115",
       },
     },
     "packages/smithers/flows/core": {
@@ -1990,13 +2010,13 @@
       },
       "devDependencies": {
         "@effect/language-service": "0.87.2",
-        "@effect/platform-node": "4.0.0-rc.112",
-        "@effect/vitest": "4.0.0-rc.112",
+        "@effect/platform-node": "4.0.0-rc.115",
+        "@effect/vitest": "4.0.0-rc.115",
         "@eslint/js": "9.39.5",
         "@types/node": "26.4.1",
-        "@vitest/coverage-v8": "4.1.9",
+        "@vitest/coverage-v8": "5.0.0",
         "dprint": "0.57.1",
-        "effect": "4.0.0-rc.112",
+        "effect": "4.0.0-rc.115",
         "esbuild": "0.28.2",
         "eslint": "9.39.5",
         "eslint-import-resolver-typescript": "4.4.5",
@@ -2006,10 +2026,10 @@
         "madge": "8.0.0",
         "typescript": "5.9.3",
         "typescript-eslint": "8.69.0",
-        "vitest": "4.1.9",
+        "vitest": "5.0.0",
       },
       "peerDependencies": {
-        "effect": "4.0.0-rc.112",
+        "effect": "4.0.0-rc.115",
       },
     },
     "packages/smithers/flows/crypto": {
@@ -2017,26 +2037,27 @@
       "version": "1.0.0-rc.0",
       "devDependencies": {
         "@effect/language-service": "0.87.2",
-        "@effect/platform-node": "4.0.0-rc.112",
-        "@effect/vitest": "4.0.0-rc.112",
+        "@effect/platform-node": "4.0.0-rc.115",
+        "@effect/vitest": "4.0.0-rc.115",
         "@eslint/js": "9.39.5",
         "@types/node": "26.4.1",
-        "@vitest/coverage-v8": "4.1.9",
+        "@vitest/coverage-v8": "5.0.0",
         "dprint": "0.57.1",
-        "effect": "4.0.0-rc.112",
+        "effect": "4.0.0-rc.115",
         "esbuild": "0.28.2",
         "eslint": "9.39.5",
         "eslint-import-resolver-typescript": "4.4.5",
         "eslint-plugin-import": "2.32.0",
         "eslint-plugin-jsdoc": "64.3.4",
         "eslint-plugin-unicorn": "65.0.0",
+        "fast-check": "4.9.0",
         "madge": "8.0.0",
         "typescript": "5.9.3",
         "typescript-eslint": "8.69.0",
-        "vitest": "4.1.9",
+        "vitest": "5.0.0",
       },
       "peerDependencies": {
-        "effect": "4.0.0-rc.112",
+        "effect": "4.0.0-rc.115",
       },
     },
     "packages/smithers/flows/database": {
@@ -2044,13 +2065,15 @@
       "version": "1.0.0-rc.0",
       "devDependencies": {
         "@effect/language-service": "0.87.2",
-        "@effect/sql-sqlite-node": "4.0.0-rc.112",
-        "@effect/vitest": "4.0.0-rc.112",
+        "@effect/sql-sqlite-bun": "4.0.0-rc.115",
+        "@effect/sql-sqlite-node": "4.0.0-rc.115",
+        "@effect/vitest": "4.0.0-rc.115",
         "@eslint/js": "9.39.5",
+        "@types/bun": "1.3.6",
         "@types/node": "26.4.1",
-        "@vitest/coverage-v8": "4.1.9",
+        "@vitest/coverage-v8": "5.0.0",
         "dprint": "0.57.1",
-        "effect": "4.0.0-rc.112",
+        "effect": "4.0.0-rc.115",
         "esbuild": "0.28.2",
         "eslint": "9.39.5",
         "eslint-import-resolver-typescript": "4.4.5",
@@ -2060,13 +2083,15 @@
         "madge": "8.0.0",
         "typescript": "5.9.3",
         "typescript-eslint": "8.69.0",
-        "vitest": "4.1.9",
+        "vitest": "5.0.0",
       },
       "peerDependencies": {
-        "@effect/sql-sqlite-node": "4.0.0-rc.112",
-        "effect": "4.0.0-rc.112",
+        "@effect/sql-sqlite-bun": "4.0.0-rc.115",
+        "@effect/sql-sqlite-node": "4.0.0-rc.115",
+        "effect": "4.0.0-rc.115",
       },
       "optionalPeers": [
+        "@effect/sql-sqlite-bun",
         "@effect/sql-sqlite-node",
       ],
     },
@@ -2080,14 +2105,14 @@
       },
       "devDependencies": {
         "@effect/language-service": "0.87.2",
-        "@effect/platform-node": "4.0.0-rc.112",
-        "@effect/vitest": "4.0.0-rc.112",
+        "@effect/platform-node": "4.0.0-rc.115",
+        "@effect/vitest": "4.0.0-rc.115",
         "@eslint/js": "9.39.5",
         "@smthrs/plan": "1.0.0-rc.0",
         "@types/node": "26.4.1",
-        "@vitest/coverage-v8": "4.1.9",
+        "@vitest/coverage-v8": "5.0.0",
         "dprint": "0.57.1",
-        "effect": "4.0.0-rc.112",
+        "effect": "4.0.0-rc.115",
         "esbuild": "0.28.2",
         "eslint": "9.39.5",
         "eslint-import-resolver-typescript": "4.4.5",
@@ -2098,10 +2123,10 @@
         "madge": "8.0.0",
         "typescript": "5.9.3",
         "typescript-eslint": "8.69.0",
-        "vitest": "4.1.9",
+        "vitest": "5.0.0",
       },
       "peerDependencies": {
-        "effect": "4.0.0-rc.112",
+        "effect": "4.0.0-rc.115",
       },
     },
     "packages/smithers/flows/engine-store": {
@@ -2122,16 +2147,16 @@
       },
       "devDependencies": {
         "@effect/language-service": "0.87.2",
-        "@effect/platform-node": "4.0.0-rc.112",
-        "@effect/vitest": "4.0.0-rc.112",
+        "@effect/platform-node": "4.0.0-rc.115",
+        "@effect/vitest": "4.0.0-rc.115",
         "@eslint/js": "9.39.5",
         "@smthrs/core": "1.0.0-rc.0",
         "@smthrs/patterns": "1.0.0-rc.0",
         "@smthrs/platform-node": "1.0.0-rc.0",
         "@types/node": "26.4.1",
-        "@vitest/coverage-v8": "4.1.9",
+        "@vitest/coverage-v8": "5.0.0",
         "dprint": "0.57.1",
-        "effect": "4.0.0-rc.112",
+        "effect": "4.0.0-rc.115",
         "esbuild": "0.28.2",
         "eslint": "9.39.5",
         "eslint-import-resolver-typescript": "4.4.5",
@@ -2141,10 +2166,10 @@
         "madge": "8.0.0",
         "typescript": "5.9.3",
         "typescript-eslint": "8.69.0",
-        "vitest": "4.1.9",
+        "vitest": "5.0.0",
       },
       "peerDependencies": {
-        "effect": "4.0.0-rc.112",
+        "effect": "4.0.0-rc.115",
       },
     },
     "packages/smithers/flows/flow": {
@@ -2158,13 +2183,13 @@
       },
       "devDependencies": {
         "@effect/language-service": "0.87.2",
-        "@effect/platform-node": "4.0.0-rc.112",
-        "@effect/vitest": "4.0.0-rc.112",
+        "@effect/platform-node": "4.0.0-rc.115",
+        "@effect/vitest": "4.0.0-rc.115",
         "@eslint/js": "9.39.5",
         "@types/node": "26.4.1",
-        "@vitest/coverage-v8": "4.1.9",
+        "@vitest/coverage-v8": "5.0.0",
         "dprint": "0.57.1",
-        "effect": "4.0.0-rc.112",
+        "effect": "4.0.0-rc.115",
         "esbuild": "0.28.2",
         "eslint": "9.39.5",
         "eslint-import-resolver-typescript": "4.4.5",
@@ -2174,10 +2199,10 @@
         "madge": "8.0.0",
         "typescript": "5.9.3",
         "typescript-eslint": "8.69.0",
-        "vitest": "4.1.9",
+        "vitest": "5.0.0",
       },
       "peerDependencies": {
-        "effect": "4.0.0-rc.112",
+        "effect": "4.0.0-rc.115",
       },
     },
     "packages/smithers/flows/jj": {
@@ -2189,12 +2214,12 @@
       },
       "devDependencies": {
         "@effect/language-service": "0.87.2",
-        "@effect/vitest": "4.0.0-rc.112",
+        "@effect/vitest": "4.0.0-rc.115",
         "@eslint/js": "9.39.5",
         "@types/node": "26.4.1",
-        "@vitest/coverage-v8": "4.1.9",
+        "@vitest/coverage-v8": "5.0.0",
         "dprint": "0.57.1",
-        "effect": "4.0.0-rc.112",
+        "effect": "4.0.0-rc.115",
         "esbuild": "0.28.2",
         "eslint": "9.39.5",
         "eslint-import-resolver-typescript": "4.4.5",
@@ -2204,10 +2229,10 @@
         "madge": "8.0.0",
         "typescript": "5.9.3",
         "typescript-eslint": "8.69.0",
-        "vitest": "4.1.9",
+        "vitest": "5.0.0",
       },
       "peerDependencies": {
-        "effect": "4.0.0-rc.112",
+        "effect": "4.0.0-rc.115",
       },
     },
     "packages/smithers/flows/journal": {
@@ -2218,27 +2243,28 @@
       },
       "devDependencies": {
         "@effect/language-service": "0.87.2",
-        "@effect/sql-sqlite-node": "4.0.0-rc.112",
-        "@effect/vitest": "4.0.0-rc.112",
+        "@effect/sql-sqlite-node": "4.0.0-rc.115",
+        "@effect/vitest": "4.0.0-rc.115",
         "@eslint/js": "9.39.5",
         "@smthrs/flow": "1.0.0-rc.0",
         "@types/node": "26.4.1",
-        "@vitest/coverage-v8": "4.1.9",
+        "@vitest/coverage-v8": "5.0.0",
         "dprint": "0.57.1",
-        "effect": "4.0.0-rc.112",
+        "effect": "4.0.0-rc.115",
         "esbuild": "0.28.2",
         "eslint": "9.39.5",
         "eslint-import-resolver-typescript": "4.4.5",
         "eslint-plugin-import": "2.32.0",
         "eslint-plugin-jsdoc": "64.3.4",
         "eslint-plugin-unicorn": "65.0.0",
+        "fast-check": "4.9.0",
         "madge": "8.0.0",
         "typescript": "5.9.3",
         "typescript-eslint": "8.69.0",
-        "vitest": "4.1.9",
+        "vitest": "5.0.0",
       },
       "peerDependencies": {
-        "effect": "4.0.0-rc.112",
+        "effect": "4.0.0-rc.115",
       },
     },
     "packages/smithers/flows/kernel": {
@@ -2252,35 +2278,33 @@
       },
       "devDependencies": {
         "@effect/language-service": "0.87.2",
-        "@effect/platform-node": "4.0.0-rc.112",
-        "@effect/vitest": "4.0.0-rc.112",
+        "@effect/platform-node": "4.0.0-rc.115",
+        "@effect/vitest": "4.0.0-rc.115",
         "@eslint/js": "9.39.5",
         "@smthrs/database": "1.0.0-rc.0",
-        "@smthrs/platform-browser": "1.0.0-rc.0",
         "@types/node": "26.4.1",
-        "@vitest/coverage-v8": "4.1.9",
+        "@vitest/coverage-v8": "5.0.0",
         "dprint": "0.57.1",
-        "effect": "4.0.0-rc.112",
+        "effect": "4.0.0-rc.115",
         "esbuild": "0.28.2",
         "eslint": "9.39.5",
         "eslint-import-resolver-typescript": "4.4.5",
         "eslint-plugin-import": "2.32.0",
         "eslint-plugin-jsdoc": "64.3.4",
         "eslint-plugin-unicorn": "65.0.0",
+        "fast-check": "4.9.0",
         "madge": "8.0.0",
         "typescript": "5.9.3",
         "typescript-eslint": "8.69.0",
-        "vitest": "4.1.9",
+        "vitest": "5.0.0",
       },
       "peerDependencies": {
-        "@effect/vitest": "4.0.0-rc.112",
-        "@smthrs/platform-browser": "1.0.0-rc.0",
-        "effect": "4.0.0-rc.112",
-        "vitest": "4.1.9",
+        "@effect/vitest": "4.0.0-rc.115",
+        "effect": "4.0.0-rc.115",
+        "vitest": "5.0.0",
       },
       "optionalPeers": [
         "@effect/vitest",
-        "@smthrs/platform-browser",
         "vitest",
       ],
     },
@@ -2293,26 +2317,27 @@
       },
       "devDependencies": {
         "@effect/language-service": "0.87.2",
-        "@effect/platform-node": "4.0.0-rc.112",
-        "@effect/vitest": "4.0.0-rc.112",
+        "@effect/platform-node": "4.0.0-rc.115",
+        "@effect/vitest": "4.0.0-rc.115",
         "@eslint/js": "9.39.5",
         "@types/node": "26.4.1",
-        "@vitest/coverage-v8": "4.1.9",
+        "@vitest/coverage-v8": "5.0.0",
         "dprint": "0.57.1",
-        "effect": "4.0.0-rc.112",
+        "effect": "4.0.0-rc.115",
         "esbuild": "0.28.2",
         "eslint": "9.39.5",
         "eslint-import-resolver-typescript": "4.4.5",
         "eslint-plugin-import": "2.32.0",
         "eslint-plugin-jsdoc": "64.3.4",
         "eslint-plugin-unicorn": "65.0.0",
+        "fast-check": "4.9.0",
         "madge": "8.0.0",
         "typescript": "5.9.3",
         "typescript-eslint": "8.69.0",
-        "vitest": "4.1.9",
+        "vitest": "5.0.0",
       },
       "peerDependencies": {
-        "effect": "4.0.0-rc.112",
+        "effect": "4.0.0-rc.115",
       },
     },
     "packages/smithers/flows/observability": {
@@ -2325,8 +2350,8 @@
       },
       "devDependencies": {
         "@effect/language-service": "0.87.2",
-        "@effect/opentelemetry": "4.0.0-rc.112",
-        "@effect/vitest": "4.0.0-rc.112",
+        "@effect/opentelemetry": "4.0.0-rc.115",
+        "@effect/vitest": "4.0.0-rc.115",
         "@eslint/js": "9.39.5",
         "@opentelemetry/api": "1.9.1",
         "@opentelemetry/exporter-logs-otlp-http": "0.222.0",
@@ -2336,9 +2361,9 @@
         "@opentelemetry/sdk-trace-node": "2.11.0",
         "@opentelemetry/sdk-trace-web": "2.11.0",
         "@types/node": "26.4.1",
-        "@vitest/coverage-v8": "4.1.9",
+        "@vitest/coverage-v8": "5.0.0",
         "dprint": "0.57.1",
-        "effect": "4.0.0-rc.112",
+        "effect": "4.0.0-rc.115",
         "esbuild": "0.28.2",
         "eslint": "9.39.5",
         "eslint-import-resolver-typescript": "4.4.5",
@@ -2348,10 +2373,10 @@
         "madge": "8.0.0",
         "typescript": "5.9.3",
         "typescript-eslint": "8.69.0",
-        "vitest": "4.1.9",
+        "vitest": "5.0.0",
       },
       "peerDependencies": {
-        "@effect/opentelemetry": "4.0.0-rc.112",
+        "@effect/opentelemetry": "4.0.0-rc.115",
         "@opentelemetry/api": "1.9.1",
         "@opentelemetry/exporter-logs-otlp-http": "0.222.0",
         "@opentelemetry/exporter-metrics-otlp-http": "0.222.0",
@@ -2359,7 +2384,7 @@
         "@opentelemetry/sdk-trace-base": "2.11.0",
         "@opentelemetry/sdk-trace-node": "2.11.0",
         "@opentelemetry/sdk-trace-web": "2.11.0",
-        "effect": "4.0.0-rc.112",
+        "effect": "4.0.0-rc.115",
       },
       "optionalPeers": [
         "@opentelemetry/exporter-logs-otlp-http",
@@ -2378,13 +2403,13 @@
       },
       "devDependencies": {
         "@effect/language-service": "0.87.2",
-        "@effect/vitest": "4.0.0-rc.112",
+        "@effect/vitest": "4.0.0-rc.115",
         "@eslint/js": "9.39.5",
         "@smthrs/flow": "1.0.0-rc.0",
         "@types/node": "26.4.1",
-        "@vitest/coverage-v8": "4.1.9",
+        "@vitest/coverage-v8": "5.0.0",
         "dprint": "0.57.1",
-        "effect": "4.0.0-rc.112",
+        "effect": "4.0.0-rc.115",
         "esbuild": "0.28.2",
         "eslint": "9.39.5",
         "eslint-import-resolver-typescript": "4.4.5",
@@ -2394,10 +2419,10 @@
         "madge": "8.0.0",
         "typescript": "5.9.3",
         "typescript-eslint": "8.69.0",
-        "vitest": "4.1.9",
+        "vitest": "5.0.0",
       },
       "peerDependencies": {
-        "effect": "4.0.0-rc.112",
+        "effect": "4.0.0-rc.115",
       },
     },
     "packages/smithers/flows/plan": {
@@ -2412,26 +2437,27 @@
       },
       "devDependencies": {
         "@effect/language-service": "0.87.2",
-        "@effect/platform-node": "4.0.0-rc.112",
-        "@effect/vitest": "4.0.0-rc.112",
+        "@effect/platform-node": "4.0.0-rc.115",
+        "@effect/vitest": "4.0.0-rc.115",
         "@eslint/js": "9.39.5",
         "@types/node": "26.4.1",
-        "@vitest/coverage-v8": "4.1.9",
+        "@vitest/coverage-v8": "5.0.0",
         "dprint": "0.57.1",
-        "effect": "4.0.0-rc.112",
+        "effect": "4.0.0-rc.115",
         "esbuild": "0.28.2",
         "eslint": "9.39.5",
         "eslint-import-resolver-typescript": "4.4.5",
         "eslint-plugin-import": "2.32.0",
         "eslint-plugin-jsdoc": "64.3.4",
         "eslint-plugin-unicorn": "65.0.0",
+        "fast-check": "4.9.0",
         "madge": "8.0.0",
         "typescript": "5.9.3",
         "typescript-eslint": "8.69.0",
-        "vitest": "4.1.9",
+        "vitest": "5.0.0",
       },
       "peerDependencies": {
-        "effect": "4.0.0-rc.112",
+        "effect": "4.0.0-rc.115",
       },
     },
     "packages/smithers/flows/platform-browser": {
@@ -2443,14 +2469,14 @@
       },
       "devDependencies": {
         "@effect/language-service": "0.87.2",
-        "@effect/platform-node": "4.0.0-rc.112",
-        "@effect/vitest": "4.0.0-rc.112",
+        "@effect/platform-node": "4.0.0-rc.115",
+        "@effect/vitest": "4.0.0-rc.115",
         "@eslint/js": "9.39.5",
         "@smthrs/artifacts": "1.0.0-rc.0",
         "@types/node": "26.4.1",
-        "@vitest/coverage-v8": "4.1.9",
+        "@vitest/coverage-v8": "5.0.0",
         "dprint": "0.57.1",
-        "effect": "4.0.0-rc.112",
+        "effect": "4.0.0-rc.115",
         "esbuild": "0.28.2",
         "eslint": "9.39.5",
         "eslint-import-resolver-typescript": "4.4.5",
@@ -2460,10 +2486,10 @@
         "madge": "8.0.0",
         "typescript": "5.9.3",
         "typescript-eslint": "8.69.0",
-        "vitest": "4.1.9",
+        "vitest": "5.0.0",
       },
       "peerDependencies": {
-        "effect": "4.0.0-rc.112",
+        "effect": "4.0.0-rc.115",
       },
     },
     "packages/smithers/flows/platform-bun": {
@@ -2475,17 +2501,17 @@
       },
       "devDependencies": {
         "@effect/language-service": "0.87.2",
-        "@effect/platform-bun": "4.0.0-rc.112",
-        "@effect/platform-node": "4.0.0-rc.112",
-        "@effect/platform-node-shared": "4.0.0-rc.112",
-        "@effect/vitest": "4.0.0-rc.112",
+        "@effect/platform-bun": "4.0.0-rc.115",
+        "@effect/platform-node": "4.0.0-rc.115",
+        "@effect/platform-node-shared": "4.0.0-rc.115",
+        "@effect/vitest": "4.0.0-rc.115",
         "@eslint/js": "9.39.5",
         "@smthrs/artifacts": "1.0.0-rc.0",
         "@smthrs/platform-node": "1.0.0-rc.0",
         "@types/node": "26.4.1",
-        "@vitest/coverage-v8": "4.1.9",
+        "@vitest/coverage-v8": "5.0.0",
         "dprint": "0.57.1",
-        "effect": "4.0.0-rc.112",
+        "effect": "4.0.0-rc.115",
         "esbuild": "0.28.2",
         "eslint": "9.39.5",
         "eslint-import-resolver-typescript": "4.4.5",
@@ -2495,14 +2521,14 @@
         "madge": "8.0.0",
         "typescript": "5.9.3",
         "typescript-eslint": "8.69.0",
-        "vitest": "4.1.9",
+        "vitest": "5.0.0",
       },
       "peerDependencies": {
-        "@effect/platform-bun": "4.0.0-rc.112",
-        "@effect/platform-node": "4.0.0-rc.112",
-        "@effect/platform-node-shared": "4.0.0-rc.112",
+        "@effect/platform-bun": "4.0.0-rc.115",
+        "@effect/platform-node": "4.0.0-rc.115",
+        "@effect/platform-node-shared": "4.0.0-rc.115",
         "@smthrs/platform-node": "1.0.0-rc.0",
-        "effect": "4.0.0-rc.112",
+        "effect": "4.0.0-rc.115",
       },
     },
     "packages/smithers/flows/platform-node": {
@@ -2514,15 +2540,15 @@
       },
       "devDependencies": {
         "@effect/language-service": "0.87.2",
-        "@effect/platform-node": "4.0.0-rc.112",
-        "@effect/platform-node-shared": "4.0.0-rc.112",
-        "@effect/vitest": "4.0.0-rc.112",
+        "@effect/platform-node": "4.0.0-rc.115",
+        "@effect/platform-node-shared": "4.0.0-rc.115",
+        "@effect/vitest": "4.0.0-rc.115",
         "@eslint/js": "9.39.5",
         "@smthrs/journal": "1.0.0-rc.0",
         "@types/node": "26.4.1",
-        "@vitest/coverage-v8": "4.1.9",
+        "@vitest/coverage-v8": "5.0.0",
         "dprint": "0.57.1",
-        "effect": "4.0.0-rc.112",
+        "effect": "4.0.0-rc.115",
         "esbuild": "0.28.2",
         "eslint": "9.39.5",
         "eslint-import-resolver-typescript": "4.4.5",
@@ -2532,11 +2558,11 @@
         "madge": "8.0.0",
         "typescript": "5.9.3",
         "typescript-eslint": "8.69.0",
-        "vitest": "4.1.9",
+        "vitest": "5.0.0",
       },
       "peerDependencies": {
-        "@effect/platform-node": "4.0.0-rc.112",
-        "effect": "4.0.0-rc.112",
+        "@effect/platform-node": "4.0.0-rc.115",
+        "effect": "4.0.0-rc.115",
       },
     },
     "packages/smithers/flows/run-store": {
@@ -2550,12 +2576,12 @@
       },
       "devDependencies": {
         "@effect/language-service": "0.87.2",
-        "@effect/vitest": "4.0.0-rc.112",
+        "@effect/vitest": "4.0.0-rc.115",
         "@eslint/js": "9.39.5",
         "@types/node": "26.4.1",
-        "@vitest/coverage-v8": "4.1.9",
+        "@vitest/coverage-v8": "5.0.0",
         "dprint": "0.57.1",
-        "effect": "4.0.0-rc.112",
+        "effect": "4.0.0-rc.115",
         "esbuild": "0.28.2",
         "eslint": "9.39.5",
         "eslint-import-resolver-typescript": "4.4.5",
@@ -2565,10 +2591,10 @@
         "madge": "8.0.0",
         "typescript": "5.9.3",
         "typescript-eslint": "8.69.0",
-        "vitest": "4.1.9",
+        "vitest": "5.0.0",
       },
       "peerDependencies": {
-        "effect": "4.0.0-rc.112",
+        "effect": "4.0.0-rc.115",
       },
     },
     "packages/smithers/flows/sandbox": {
@@ -2579,16 +2605,16 @@
       },
       "devDependencies": {
         "@effect/language-service": "0.87.2",
-        "@effect/platform-node": "4.0.0-rc.112",
-        "@effect/vitest": "4.0.0-rc.112",
+        "@effect/platform-node": "4.0.0-rc.115",
+        "@effect/vitest": "4.0.0-rc.115",
         "@eslint/js": "9.39.5",
         "@smthrs/flow": "1.0.0-rc.0",
         "@smthrs/platform-node": "1.0.0-rc.0",
         "@smthrs/std": "1.0.0-rc.0",
         "@types/node": "26.4.1",
-        "@vitest/coverage-v8": "4.1.9",
+        "@vitest/coverage-v8": "5.0.0",
         "dprint": "0.57.1",
-        "effect": "4.0.0-rc.112",
+        "effect": "4.0.0-rc.115",
         "esbuild": "0.28.2",
         "eslint": "9.39.5",
         "eslint-import-resolver-typescript": "4.4.5",
@@ -2599,10 +2625,10 @@
         "microsandbox": "0.6.16",
         "typescript": "5.9.3",
         "typescript-eslint": "8.69.0",
-        "vitest": "4.1.9",
+        "vitest": "5.0.0",
       },
       "peerDependencies": {
-        "effect": "4.0.0-rc.112",
+        "effect": "4.0.0-rc.115",
       },
     },
     "packages/smithers/flows/step-cache": {
@@ -2614,12 +2640,12 @@
       },
       "devDependencies": {
         "@effect/language-service": "0.87.2",
-        "@effect/vitest": "4.0.0-rc.112",
+        "@effect/vitest": "4.0.0-rc.115",
         "@eslint/js": "9.39.5",
         "@types/node": "26.4.1",
-        "@vitest/coverage-v8": "4.1.9",
+        "@vitest/coverage-v8": "5.0.0",
         "dprint": "0.57.1",
-        "effect": "4.0.0-rc.112",
+        "effect": "4.0.0-rc.115",
         "esbuild": "0.28.2",
         "eslint": "9.39.5",
         "eslint-import-resolver-typescript": "4.4.5",
@@ -2629,10 +2655,10 @@
         "madge": "8.0.0",
         "typescript": "5.9.3",
         "typescript-eslint": "8.69.0",
-        "vitest": "4.1.9",
+        "vitest": "5.0.0",
       },
       "peerDependencies": {
-        "effect": "4.0.0-rc.112",
+        "effect": "4.0.0-rc.115",
       },
     },
     "packages/smithers/flows/sync": {
@@ -2643,29 +2669,30 @@
       },
       "devDependencies": {
         "@effect/language-service": "0.87.2",
-        "@effect/platform-node": "4.0.0-rc.112",
-        "@effect/vitest": "4.0.0-rc.112",
+        "@effect/platform-node": "4.0.0-rc.115",
+        "@effect/vitest": "4.0.0-rc.115",
         "@eslint/js": "9.39.5",
         "@smthrs/database": "1.0.0-rc.0",
         "@smthrs/engine-store": "1.0.0-rc.0",
         "@smthrs/time-travel": "1.0.0-rc.0",
         "@types/node": "26.4.1",
-        "@vitest/coverage-v8": "4.1.9",
+        "@vitest/coverage-v8": "5.0.0",
         "dprint": "0.57.1",
-        "effect": "4.0.0-rc.112",
+        "effect": "4.0.0-rc.115",
         "esbuild": "0.28.2",
         "eslint": "9.39.5",
         "eslint-import-resolver-typescript": "4.4.5",
         "eslint-plugin-import": "2.32.0",
         "eslint-plugin-jsdoc": "64.3.4",
         "eslint-plugin-unicorn": "65.0.0",
+        "fast-check": "4.9.0",
         "madge": "8.0.0",
         "typescript": "5.9.3",
         "typescript-eslint": "8.69.0",
-        "vitest": "4.1.9",
+        "vitest": "5.0.0",
       },
       "peerDependencies": {
-        "effect": "4.0.0-rc.112",
+        "effect": "4.0.0-rc.115",
       },
     },
     "packages/smithers/flows/time-travel": {
@@ -2681,8 +2708,8 @@
       },
       "devDependencies": {
         "@effect/language-service": "0.87.2",
-        "@effect/platform-node": "4.0.0-rc.112",
-        "@effect/vitest": "4.0.0-rc.112",
+        "@effect/platform-node": "4.0.0-rc.115",
+        "@effect/vitest": "4.0.0-rc.115",
         "@eslint/js": "9.39.5",
         "@smthrs/artifacts": "1.0.0-rc.0",
         "@smthrs/engine": "1.0.0-rc.0",
@@ -2690,9 +2717,9 @@
         "@smthrs/kernel": "1.0.0-rc.0",
         "@smthrs/plan": "1.0.0-rc.0",
         "@types/node": "26.4.1",
-        "@vitest/coverage-v8": "4.1.9",
+        "@vitest/coverage-v8": "5.0.0",
         "dprint": "0.57.1",
-        "effect": "4.0.0-rc.112",
+        "effect": "4.0.0-rc.115",
         "esbuild": "0.28.2",
         "eslint": "9.39.5",
         "eslint-import-resolver-typescript": "4.4.5",
@@ -2702,10 +2729,10 @@
         "madge": "8.0.0",
         "typescript": "5.9.3",
         "typescript-eslint": "8.69.0",
-        "vitest": "4.1.9",
+        "vitest": "5.0.0",
       },
       "peerDependencies": {
-        "effect": "4.0.0-rc.112",
+        "effect": "4.0.0-rc.115",
       },
     },
     "packages/smithers/gateway": {
@@ -2713,13 +2740,13 @@
       "version": "1.0.0-rc.0",
       "dependencies": {
         "@smthrs/control": "1.0.0-rc.0",
-        "@smthrs/run-store": "1.0.0-rc.0",
         "@smthrs/sync": "1.0.0-rc.0",
       },
       "devDependencies": {
         "@effect/language-service": "0.87.2",
-        "@effect/platform-node": "4.0.0-rc.112",
-        "@effect/vitest": "4.0.0-rc.112",
+        "@effect/platform-bun": "4.0.0-rc.115",
+        "@effect/platform-node": "4.0.0-rc.115",
+        "@effect/vitest": "4.0.0-rc.115",
         "@eslint/js": "9.39.5",
         "@smthrs/database": "1.0.0-rc.0",
         "@smthrs/engine-store": "1.0.0-rc.0",
@@ -2729,26 +2756,30 @@
         "@smthrs/kernel": "1.0.0-rc.0",
         "@smthrs/notifications": "1.0.0-rc.0",
         "@smthrs/registry": "1.0.0-rc.0",
+        "@smthrs/run-store": "1.0.0-rc.0",
         "@types/node": "26.4.1",
-        "@vitest/coverage-v8": "4.1.9",
+        "@vitest/coverage-v8": "5.0.0",
         "dprint": "0.57.1",
-        "effect": "4.0.0-rc.112",
+        "effect": "4.0.0-rc.115",
         "esbuild": "0.28.2",
         "eslint": "9.39.5",
         "eslint-import-resolver-typescript": "4.4.5",
         "eslint-plugin-import": "2.32.0",
         "eslint-plugin-jsdoc": "64.3.4",
         "eslint-plugin-unicorn": "65.0.0",
+        "fast-check": "4.9.0",
         "madge": "8.0.0",
         "typescript": "5.9.3",
         "typescript-eslint": "8.69.0",
-        "vitest": "4.1.9",
+        "vitest": "5.0.0",
       },
       "peerDependencies": {
-        "@effect/platform-node": "4.0.0-rc.112",
-        "effect": "4.0.0-rc.112",
+        "@effect/platform-bun": "4.0.0-rc.115",
+        "@effect/platform-node": "4.0.0-rc.115",
+        "effect": "4.0.0-rc.115",
       },
       "optionalPeers": [
+        "@effect/platform-bun",
         "@effect/platform-node",
       ],
     },
@@ -2765,15 +2796,15 @@
       },
       "devDependencies": {
         "@effect/language-service": "0.87.2",
-        "@effect/platform-node": "4.0.0-rc.112",
-        "@effect/vitest": "4.0.0-rc.112",
+        "@effect/platform-node": "4.0.0-rc.115",
+        "@effect/vitest": "4.0.0-rc.115",
         "@eslint/js": "9.39.5",
         "@smthrs/model": "1.0.0-rc.0",
         "@smthrs/registry": "1.0.0-rc.0",
         "@types/node": "26.4.1",
-        "@vitest/coverage-v8": "4.1.9",
+        "@vitest/coverage-v8": "5.0.0",
         "dprint": "0.57.1",
-        "effect": "4.0.0-rc.112",
+        "effect": "4.0.0-rc.115",
         "esbuild": "0.28.2",
         "eslint": "9.39.5",
         "eslint-import-resolver-typescript": "4.4.5",
@@ -2783,10 +2814,10 @@
         "madge": "8.0.0",
         "typescript": "5.9.3",
         "typescript-eslint": "8.69.0",
-        "vitest": "4.1.9",
+        "vitest": "5.0.0",
       },
       "peerDependencies": {
-        "effect": "4.0.0-rc.112",
+        "effect": "4.0.0-rc.115",
       },
     },
     "packages/smithers/migrate": {
@@ -2796,21 +2827,21 @@
         "smithers-migrate": "./dist/esm/flow/bin.js",
       },
       "dependencies": {
-        "@effect/platform-node": "4.0.0-rc.112",
-        "effect": "4.0.0-rc.112",
+        "@effect/platform-node": "4.0.0-rc.115",
+        "effect": "4.0.0-rc.115",
         "typescript": "7.0.2",
       },
       "devDependencies": {
         "@effect/language-service": "0.87.2",
-        "@effect/platform-node": "4.0.0-rc.112",
-        "@effect/platform-node-shared": "4.0.0-rc.112",
-        "@effect/vitest": "4.0.0-rc.112",
+        "@effect/platform-node": "4.0.0-rc.115",
+        "@effect/platform-node-shared": "4.0.0-rc.115",
+        "@effect/vitest": "4.0.0-rc.115",
         "@eslint/js": "9.39.5",
         "@types/node": "26.4.1",
         "@typescript/typescript6": "6.0.2",
-        "@vitest/coverage-v8": "4.1.9",
+        "@vitest/coverage-v8": "5.0.0",
         "dprint": "0.57.1",
-        "effect": "4.0.0-rc.112",
+        "effect": "4.0.0-rc.115",
         "esbuild": "0.28.2",
         "eslint": "9.39.5",
         "eslint-import-resolver-typescript": "4.4.5",
@@ -2819,7 +2850,7 @@
         "eslint-plugin-unicorn": "65.0.0",
         "madge": "8.0.0",
         "typescript-eslint": "8.69.0",
-        "vitest": "4.1.9",
+        "vitest": "5.0.0",
       },
       "optionalDependencies": {
         "@smthrs/agent": "1.0.0-rc.0",
@@ -2828,6 +2859,7 @@
         "@smthrs/engine": "1.0.0-rc.0",
         "@smthrs/flow": "1.0.0-rc.0",
         "@smthrs/harness": "1.0.0-rc.0",
+        "@smthrs/journal": "1.0.0-rc.0",
         "@smthrs/kernel": "1.0.0-rc.0",
         "@smthrs/model": "1.0.0-rc.0",
         "@smthrs/plan": "1.0.0-rc.0",
@@ -2835,7 +2867,7 @@
         "@smthrs/registry": "1.0.0-rc.0",
       },
       "peerDependencies": {
-        "@effect/platform-node-shared": "4.0.0-rc.112",
+        "@effect/platform-node-shared": "4.0.0-rc.115",
       },
     },
     "packages/smithers/notifications": {
@@ -2846,26 +2878,27 @@
       },
       "devDependencies": {
         "@effect/language-service": "0.87.2",
-        "@effect/vitest": "4.0.0-rc.112",
+        "@effect/vitest": "4.0.0-rc.115",
         "@eslint/js": "9.39.5",
         "@smthrs/database": "1.0.0-rc.0",
         "@types/node": "26.4.1",
-        "@vitest/coverage-v8": "4.1.9",
+        "@vitest/coverage-v8": "5.0.0",
         "dprint": "0.57.1",
-        "effect": "4.0.0-rc.112",
+        "effect": "4.0.0-rc.115",
         "esbuild": "0.28.2",
         "eslint": "9.39.5",
         "eslint-import-resolver-typescript": "4.4.5",
         "eslint-plugin-import": "2.32.0",
         "eslint-plugin-jsdoc": "64.3.4",
         "eslint-plugin-unicorn": "65.0.0",
+        "fast-check": "4.9.0",
         "madge": "8.0.0",
         "typescript": "5.9.3",
         "typescript-eslint": "8.69.0",
-        "vitest": "4.1.9",
+        "vitest": "5.0.0",
       },
       "peerDependencies": {
-        "effect": "4.0.0-rc.112",
+        "effect": "4.0.0-rc.115",
       },
     },
     "packages/smithers/ui": {
@@ -2903,6 +2936,9 @@
     "packages/smithers/ui/ui-styleguide": {
       "name": "@smthrs/ui-styleguide",
       "version": "1.0.0-rc.0",
+      "devDependencies": {
+        "@shikijs/themes": "4.4.3",
+      },
     },
     "packages/smthrs-deprecation": {
       "name": "smthrs",
@@ -2910,7 +2946,7 @@
       "devDependencies": {
         "@eslint/js": "9.39.5",
         "@types/node": "26.4.1",
-        "@vitest/coverage-v8": "4.1.9",
+        "@vitest/coverage-v8": "5.0.0",
         "dprint": "0.57.1",
         "esbuild": "0.28.2",
         "eslint": "9.39.5",
@@ -2921,7 +2957,7 @@
         "madge": "8.0.0",
         "typescript": "5.9.3",
         "typescript-eslint": "8.69.0",
-        "vitest": "4.1.9",
+        "vitest": "5.0.0",
       },
     },
     "packages/testing": {
@@ -2942,12 +2978,12 @@
       },
       "devDependencies": {
         "@effect/language-service": "0.87.2",
-        "@effect/vitest": "4.0.0-rc.112",
+        "@effect/vitest": "4.0.0-rc.115",
         "@eslint/js": "9.39.5",
         "@types/node": "26.4.1",
-        "@vitest/coverage-v8": "4.1.9",
+        "@vitest/coverage-v8": "5.0.0",
         "dprint": "0.57.1",
-        "effect": "4.0.0-rc.112",
+        "effect": "4.0.0-rc.115",
         "esbuild": "0.28.2",
         "eslint": "9.39.5",
         "eslint-import-resolver-typescript": "4.4.5",
@@ -2957,18 +2993,37 @@
         "madge": "8.0.0",
         "typescript": "5.9.3",
         "typescript-eslint": "8.69.0",
-        "vitest": "4.1.9",
+        "vitest": "5.0.0",
       },
       "peerDependencies": {
-        "@effect/vitest": "4.0.0-rc.112",
-        "effect": "4.0.0-rc.112",
-        "vitest": "^4.1.9",
+        "@effect/vitest": "4.0.0-rc.115",
+        "effect": "4.0.0-rc.115",
+        "vitest": "^5.0.0",
       },
       "optionalPeers": [
         "@effect/vitest",
         "vitest",
       ],
     },
+  },
+  "patchedDependencies": {
+    "@distilled.cloud/core@1.0.0-rc.8": "patches/@distilled.cloud__core@1.0.0-rc.8.patch",
+    "@alchemy.run/cloudflare-runtime@2.0.0-beta.76": "patches/@alchemy.run__cloudflare-runtime@2.0.0-beta.76.patch",
+    "@distilled.cloud/cloudflare@1.0.0-rc.8": "patches/@distilled.cloud__cloudflare@1.0.0-rc.8.patch",
+    "alchemy@2.0.0-beta.76": "patches/alchemy@2.0.0-beta.76.patch",
+    "@distilled.cloud/aws@1.0.0-rc.8": "patches/@distilled.cloud__aws@1.0.0-rc.8.patch",
+  },
+  "overrides": {
+    "@effect/opentelemetry": "4.0.0-rc.115",
+    "@effect/platform-bun": "4.0.0-rc.115",
+    "@effect/platform-node": "4.0.0-rc.115",
+    "@effect/platform-node-shared": "4.0.0-rc.115",
+    "@effect/sql-d1": "4.0.0-rc.115",
+    "@effect/sql-sqlite-bun": "4.0.0-rc.115",
+    "@effect/sql-sqlite-do": "4.0.0-rc.115",
+    "@effect/sql-sqlite-node": "4.0.0-rc.115",
+    "@effect/vitest": "4.0.0-rc.115",
+    "effect": "4.0.0-rc.115",
   },
   "packages": {
     "@alcalzone/ansi-tokenize": ["@alcalzone/ansi-tokenize@0.2.5", "", { "dependencies": { "ansi-styles": "^6.2.1", "is-fullwidth-code-point": "^5.0.0" } }, "sha512-3NX/MpTdroi0aKz134A6RC2Gb2iXVECN4QaAXnvCIxxIm3C3AVB1mkUe8NaaiyvOpDfsrqWhYtj+Q6a62RrTsw=="],
@@ -3281,21 +3336,23 @@
 
     "@effect/language-service": ["@effect/language-service@0.87.2", "", { "bin": { "effect-language-service": "cli.js" } }, "sha512-CfiSoaVQO8pZgaMZGw5VvMvRGybsJ2LaSDoLYaqiVGvo/YYPYVR2GzUKY0h1NtIweq/+SQ5XLrvtzPIttWQ0GQ=="],
 
-    "@effect/opentelemetry": ["@effect/opentelemetry@4.0.0-rc.112", "", { "peerDependencies": { "@opentelemetry/api": ">=1.9.0 <2.0.0", "@opentelemetry/api-logs": ">=0.203.0 <0.300.0", "@opentelemetry/resources": ">=2.0.0 <3.0.0", "@opentelemetry/sdk-logs": ">=0.203.0 <0.300.0", "@opentelemetry/sdk-metrics": ">=2.0.0 <3.0.0", "@opentelemetry/sdk-trace-base": ">=2.0.0 <3.0.0", "@opentelemetry/sdk-trace-node": ">=2.0.0 <3.0.0", "@opentelemetry/sdk-trace-web": ">=2.0.0 <3.0.0", "@opentelemetry/semantic-conventions": ">=1.33.0 <2.0.0", "effect": "^4.0.0-rc.112" }, "optionalPeers": ["@opentelemetry/api", "@opentelemetry/api-logs", "@opentelemetry/resources", "@opentelemetry/sdk-logs", "@opentelemetry/sdk-metrics", "@opentelemetry/sdk-trace-base", "@opentelemetry/sdk-trace-node", "@opentelemetry/sdk-trace-web"] }, "sha512-OTRv1DxTHUmnakgJ6XVM8wVgF1KgZH4UXnOemwSLUwUjXO+RCikzF8oR/rlVmOGq81KtQzj1URM4M4nchlQOuQ=="],
+    "@effect/opentelemetry": ["@effect/opentelemetry@4.0.0-rc.115", "", { "peerDependencies": { "@opentelemetry/api": ">=1.9.0 <2.0.0", "@opentelemetry/api-logs": ">=0.203.0 <0.300.0", "@opentelemetry/resources": ">=2.0.0 <3.0.0", "@opentelemetry/sdk-logs": ">=0.203.0 <0.300.0", "@opentelemetry/sdk-metrics": ">=2.0.0 <3.0.0", "@opentelemetry/sdk-trace-base": ">=2.0.0 <3.0.0", "@opentelemetry/sdk-trace-node": ">=2.0.0 <3.0.0", "@opentelemetry/sdk-trace-web": ">=2.0.0 <3.0.0", "@opentelemetry/semantic-conventions": ">=1.33.0 <2.0.0", "effect": "^4.0.0-rc.115" }, "optionalPeers": ["@opentelemetry/api", "@opentelemetry/api-logs", "@opentelemetry/resources", "@opentelemetry/sdk-logs", "@opentelemetry/sdk-metrics", "@opentelemetry/sdk-trace-base", "@opentelemetry/sdk-trace-node", "@opentelemetry/sdk-trace-web"] }, "sha512-ITOqqf/Z0mrs6XhuV8wb4YYFt0sdMhXZGPtytr+YG87YG6mFdYkc8IaJj8cGQFKRkGota/2CN+zjBKhQVI64OQ=="],
 
-    "@effect/platform-bun": ["@effect/platform-bun@4.0.0-rc.112", "", { "dependencies": { "@effect/platform-node-shared": "^4.0.0-rc.112" }, "peerDependencies": { "effect": "^4.0.0-rc.112" } }, "sha512-Y5n2HhV/vsbrJls9ukX42RL7zqXQxISHegWFsP9njsCyDmGTnq7QYSO82rglwrLPwtTrv5dkSRTuGw4+oXxgMg=="],
+    "@effect/platform-bun": ["@effect/platform-bun@4.0.0-rc.115", "", { "dependencies": { "@effect/platform-node-shared": "^4.0.0-rc.115" }, "peerDependencies": { "effect": "^4.0.0-rc.115" } }, "sha512-ilTFcs66ghInP8WHCJYa4bx/yzohYM9dRR//qjmVBBpSKu1hrCTiRWpEcc1N6zrnOEPk2kyVaKg5ykSMgiBMqQ=="],
 
-    "@effect/platform-node": ["@effect/platform-node@4.0.0-rc.112", "", { "dependencies": { "@effect/platform-node-shared": "^4.0.0-rc.112", "mime": "^4.1.0", "undici": "^8.10.0" }, "peerDependencies": { "effect": "^4.0.0-rc.112", "redis": ">=5.0.0 <7.0.0" } }, "sha512-/BMAcdNGQQskLmI0Zoa95KfTZkr9HV9N4NSxaSrusG6GeW6Ulp9KvZ+Rlaiw8lnOt43CXjFLdfll5/k5rxL4hQ=="],
+    "@effect/platform-node": ["@effect/platform-node@4.0.0-rc.115", "", { "dependencies": { "@effect/platform-node-shared": "^4.0.0-rc.115", "undici": "^8.10.2" }, "peerDependencies": { "effect": "^4.0.0-rc.115", "redis": ">=5.0.0 <7.0.0" } }, "sha512-mW03Wjq2FiTL5oi9yOkaKpCyUNBaduKgTk7qMHNELvC21Jq2qOAfdsfH+p+s2zmpB9w2RSa+ApODv4WjO9wQfw=="],
 
-    "@effect/platform-node-shared": ["@effect/platform-node-shared@4.0.0-rc.112", "", { "dependencies": { "@types/ws": "^8.18.1", "ws": "^8.21.3" }, "peerDependencies": { "effect": "^4.0.0-rc.112" } }, "sha512-ttjz0xKamFN7vL8pNDYVwddJLjZvqKePc05djlz2VcdaKbLsnYbtMnL1rbOfHgEnIUSHGh7FkjaN4DM1Ov81sQ=="],
+    "@effect/platform-node-shared": ["@effect/platform-node-shared@4.0.0-rc.115", "", { "dependencies": { "@types/ws": "^8.18.1", "ws": "^8.21.3" }, "peerDependencies": { "effect": "^4.0.0-rc.115" } }, "sha512-rcBwhDIfb82akJoTv7Vwh8K5x9vC/XfuePS7JjOr+z+dORXzsmKqI1BUQF27ARCN9fTAbDh7I6YvBlWhLjnqNg=="],
 
-    "@effect/sql-d1": ["@effect/sql-d1@4.0.0-rc.112", "", { "dependencies": { "@cloudflare/workers-types": "^5.20260822.1" }, "peerDependencies": { "effect": "^4.0.0-rc.112" } }, "sha512-Wxdr6aU3pBHqhyBiybzbHmEK7qZ2w4iy0IxBgJHe9BLleYzCxObOaBQI9qq/VZSqEvc0IaOBMpbk2zh3dlPNSQ=="],
+    "@effect/sql-d1": ["@effect/sql-d1@4.0.0-rc.115", "", { "dependencies": { "@cloudflare/workers-types": "^5.20260905.1" }, "peerDependencies": { "effect": "^4.0.0-rc.115" } }, "sha512-o2JkGjN02NBMxwDtJbwcC4teyMiOApqN085fdVMid4FUC6ixj/WyKyPpe51QGOMQQTTl2BkXccA/IwDIywGXlA=="],
 
-    "@effect/sql-sqlite-do": ["@effect/sql-sqlite-do@4.0.0-rc.112", "", { "peerDependencies": { "effect": "^4.0.0-rc.112" } }, "sha512-PewNVasimmhrdxYbNU91O0YlCcalIHOoF0H5XAWXrmzcEQrKM7kVCyb5h0gmJAZjBM4ZgWRvPY0PUOfbNmWchQ=="],
+    "@effect/sql-sqlite-bun": ["@effect/sql-sqlite-bun@4.0.0-rc.115", "", { "peerDependencies": { "effect": "^4.0.0-rc.115" } }, "sha512-CypwmCPAUSOOhopcnSI9ocgpKHfpgOdERpei3GuXZm5cCGP31pk2NUETqNaYhonhr2bWd+6Rc8atctnEbIYKYQ=="],
 
-    "@effect/sql-sqlite-node": ["@effect/sql-sqlite-node@4.0.0-rc.112", "", { "peerDependencies": { "effect": "^4.0.0-rc.112" } }, "sha512-jGRtbJsn5z7DqsMEPSbXq2Q9mYEvMy1v9DTeziTtDEnDzlxhxfrXkSeupZbYqAP5pukIM1JBa10zfAn6KnHG2Q=="],
+    "@effect/sql-sqlite-do": ["@effect/sql-sqlite-do@4.0.0-rc.115", "", { "peerDependencies": { "effect": "^4.0.0-rc.115" } }, "sha512-7lH9h+w4DW2tI+dus4hEac5mSCy1wgiT+uw/VvjR8YhNDemd3zEFY03NkbD81ipfOpnu2QA1YwgM58ExyPlhug=="],
 
-    "@effect/vitest": ["@effect/vitest@4.0.0-rc.112", "", { "peerDependencies": { "effect": "^4.0.0-rc.112", "vitest": ">=4.1.0 <5.0.0" } }, "sha512-mEKh/FI64mt8JK1/v9mpOrJYdnp+UFZdRUBMEdZMiKz7klg6NPqVgg/oeAGH6wOOQc2iAPcfc2H9BbAv1KyzMQ=="],
+    "@effect/sql-sqlite-node": ["@effect/sql-sqlite-node@4.0.0-rc.115", "", { "peerDependencies": { "effect": "^4.0.0-rc.115" } }, "sha512-53n3Kbwush7K/8/G1CDz638ClEoMvnUOT5BltCxMZ8TqcxeNoMv+nty08ZdrJ7P6m1q1RIeWlqdy5J9ZDICpbw=="],
+
+    "@effect/vitest": ["@effect/vitest@4.0.0-rc.115", "", { "peerDependencies": { "effect": "^4.0.0-rc.115", "vitest": ">=5.0.0 <6.0.0" } }, "sha512-DJR0hfdr3HNXAkzW8AzfvUz6VmrNFLrKk9tZGDURi33faMyxkc7ZewxELMMZwGpOTGN4mfqYVbX2CXgI+ZJBeQ=="],
 
     "@electric-sql/pglite": ["@electric-sql/pglite@0.3.15", "", {}, "sha512-Cj++n1Mekf9ETfdc16TlDi+cDDQF0W7EcbyRHYOAeZdsAe8M/FJg18itDTSwyHfar2WIezawM9o0EKaRGVKygQ=="],
 
@@ -3489,8 +3546,6 @@
 
     "@img/sharp-win32-x64": ["@img/sharp-win32-x64@0.35.4", "", { "os": "win32", "cpu": "x64" }, "sha512-XtmnYhBcrORsJ4XJngyzr/EWP0hRZLAZRFaApdKuviyqF78+ylxh2y06ZmtULAMOnObJ3ucpN0AcwSWnMowTRg=="],
 
-    "@ioredis/commands": ["@ioredis/commands@1.10.0", "", {}, "sha512-UmeW7z4LfctwoQ5wkhVzgq8tXkreED2xZGpX+Bg+zA+WJFZCT6c062AfCK/Dfk81xZnnwdhJCUMkitihRaoC2Q=="],
-
     "@jitl/quickjs-ffi-types": ["@jitl/quickjs-ffi-types@0.32.0", "", {}, "sha512-v9T+GQpmk43VDJ7d72sf0Nexhk+ArvtUihW27dy7lqAl0zBObFKtSBBIm5RBjwIhE8VwsPPm9PNuvPvNqLWUEg=="],
 
     "@jitl/quickjs-singlefile-browser-release-sync": ["@jitl/quickjs-singlefile-browser-release-sync@0.32.0", "", { "dependencies": { "@jitl/quickjs-ffi-types": "0.32.0" } }, "sha512-Hfdl7rh8dzxNWFRiYAYNbhn0RMF1/tO6SMH2mUW0aTibqwaAtqPRbi4WkwaIDlhNz8Z4dksJi1Zjl1R54Jsc/Q=="],
@@ -3504,8 +3559,6 @@
     "@jridgewell/remapping": ["@jridgewell/remapping@2.3.5", "", { "dependencies": { "@jridgewell/gen-mapping": "^0.3.5", "@jridgewell/trace-mapping": "^0.3.24" } }, "sha512-LI9u/+laYG4Ds1TDKSJW2YPrIlcVYOwi2fUC6xB43lueCjgxV4lffOCZCtYFiH6TNOX+tQKXx97T4IKHbhyHEQ=="],
 
     "@jridgewell/resolve-uri": ["@jridgewell/resolve-uri@3.1.2", "", {}, "sha512-bRISgCIjP20/tbWSPWMEi54QVPRZExkuD9lJL+UIxUKtwVJA8wW1Trb1jMs1RFXo1CBTNZ/5hpC9QvmKWdopKw=="],
-
-    "@jridgewell/source-map": ["@jridgewell/source-map@0.3.11", "", { "dependencies": { "@jridgewell/gen-mapping": "^0.3.5", "@jridgewell/trace-mapping": "^0.3.25" } }, "sha512-ZMp1V8ZFcPG5dIWnQLr3NSI1MiCU7UETdS/A0G8V/XWHvJv3ZsFqutJn1Y5RPmAPX6F3BiE397OqveU/9NCuIA=="],
 
     "@jridgewell/sourcemap-codec": ["@jridgewell/sourcemap-codec@1.5.5", "", {}, "sha512-cYQ9310grqxueWbl+WuIUIaiUaDcj7WOq5fVhEljNVgRfOUhY9fy2zTvfoqWsnebh8Sl70VScFbICvJnLKB0Og=="],
 
@@ -3624,18 +3677,6 @@
     "@modelcontextprotocol/server": ["@modelcontextprotocol/server@2.0.0-alpha.4", "", { "dependencies": { "zod": "^4.2.0" } }, "sha512-/KEo3ZJ50HlagHp0lz2vPgfBZFtXHu6zTBXT9XqPc+4O9i4+IbBVWKq/a9yAfv/ifp0u3+mRo8SUk5kMKzhN8A=="],
 
     "@mrleebo/prisma-ast": ["@mrleebo/prisma-ast@0.13.1", "", { "dependencies": { "chevrotain": "^10.5.0", "lilconfig": "^2.1.0" } }, "sha512-XyroGQXcHrZdvmrGJvsA9KNeOOgGMg1Vg9OlheUsBOSKznLMDl+YChxbkboRHvtFYJEMRYmlV3uoo/njCw05iw=="],
-
-    "@msgpackr-extract/msgpackr-extract-darwin-arm64": ["@msgpackr-extract/msgpackr-extract-darwin-arm64@3.0.4", "", { "os": "darwin", "cpu": "arm64" }, "sha512-LCkGo6JDfaBhgST7UpPWgNgLINpcpabaHfyz5OBx75nUYxBsaEPxjnyNjWpeb/xBup/682QnBfRBy2/LvPutZQ=="],
-
-    "@msgpackr-extract/msgpackr-extract-darwin-x64": ["@msgpackr-extract/msgpackr-extract-darwin-x64@3.0.4", "", { "os": "darwin", "cpu": "x64" }, "sha512-zExlW9zUJKZH/tOtVMttwjKa4Xm/3KcNjnE3dPN92uCktwavMxpgCA3MoJK/DOnTWsQgo224OaST27/mPNAf+w=="],
-
-    "@msgpackr-extract/msgpackr-extract-linux-arm": ["@msgpackr-extract/msgpackr-extract-linux-arm@3.0.4", "", { "os": "linux", "cpu": "arm" }, "sha512-Tg3yX65f5GbtXLkrYEHE5oibZG9epyYWas7FogTTEJeDEF9JlXJzKgXaNhT3UXlTOeA+AfZpYZYZ0uPj7Cfquw=="],
-
-    "@msgpackr-extract/msgpackr-extract-linux-arm64": ["@msgpackr-extract/msgpackr-extract-linux-arm64@3.0.4", "", { "os": "linux", "cpu": "arm64" }, "sha512-dgX0P/9wGPJeHFBG+ZmhgE6bmtMt7NP5CRBGyyktpopdk/mW4POnrpQsSLtKI1dwpc+pPLuXHDh6vvskyQE/sw=="],
-
-    "@msgpackr-extract/msgpackr-extract-linux-x64": ["@msgpackr-extract/msgpackr-extract-linux-x64@3.0.4", "", { "os": "linux", "cpu": "x64" }, "sha512-8TNXMEjJc3QEy7R/x1INhgiU+XakDAFUzBhaz7+Rbrs8NH5UQeHQxxmzsSBJGyV6I1jW79undiQm8tOI+D+8FQ=="],
-
-    "@msgpackr-extract/msgpackr-extract-win32-x64": ["@msgpackr-extract/msgpackr-extract-win32-x64@3.0.4", "", { "os": "win32", "cpu": "x64" }, "sha512-CmCXPQrkbwExx3j946/PtHWHbYJiCRBRDl4BlkRQcJB/YOwQxJRTpoo7aTsortjgoJ1x7opzTSxn7C+ASSLVjQ=="],
 
     "@napi-rs/wasm-runtime": ["@napi-rs/wasm-runtime@1.2.3", "", { "dependencies": { "@tybys/wasm-util": "^0.10.3" }, "peerDependencies": { "@emnapi/core": "^1.7.1 || ^2.0.0-alpha.4", "@emnapi/runtime": "^1.7.1 || ^2.0.0-alpha.4" } }, "sha512-UMduMbqO5s5zF2NkNacMT/yK5Y5QiKvWr2+50bzIIxFDwVJ2h49b+oyjaCGPhJxd2/gC2x39EHv/gHVuu36x2Q=="],
 
@@ -4399,7 +4440,7 @@
 
     "@types/babel__traverse": ["@types/babel__traverse@7.28.0", "", { "dependencies": { "@babel/types": "^7.28.2" } }, "sha512-8PvcXf70gTDZBgt9ptxJ8elBeBjcLOAcOtoO/mPJjtji1+CdGbHgm77om1GrsPxsiE+uXIpNSK64UYaIwQXd4Q=="],
 
-    "@types/bun": ["@types/bun@1.4.1", "", { "dependencies": { "bun-types": "1.4.1" } }, "sha512-0AVGiTXGajf1rgKom3N+c5L7CBxuoyyv1i44M0nX4UDK0G/fnRAMiri93nHuVPIb429KKtAgj7HatVmmOjeQLA=="],
+    "@types/bun": ["@types/bun@1.3.6", "", { "dependencies": { "bun-types": "1.3.6" } }, "sha512-uWCv6FO/8LcpREhenN1d1b6fcspAB+cefwD7uti8C8VffIv0Um08TKMn98FynpTiU38+y2dUO55T11NgDt8VAA=="],
 
     "@types/chai": ["@types/chai@5.2.3", "", { "dependencies": { "@types/deep-eql": "*", "assertion-error": "^2.0.1" } }, "sha512-Mw558oeA9fFbv65/y4mHtXDs9bPnFMZAL/jxdPFUpOHHIXX91mcgEHbS5Lahr+pwZFR8A7GQleRWeI6cGFC2UA=="],
 
@@ -4635,21 +4676,15 @@
 
     "@vitejs/plugin-react": ["@vitejs/plugin-react@6.1.1", "", { "dependencies": { "@rolldown/pluginutils": "^1.0.1" }, "peerDependencies": { "@rolldown/plugin-babel": "^0.1.7 || ^0.2.0", "babel-plugin-react-compiler": "^1.0.0", "oxc-transform-react": "^0.145.0", "vite": "^8.0.0" }, "optionalPeers": ["@rolldown/plugin-babel", "babel-plugin-react-compiler", "oxc-transform-react"] }, "sha512-yxLaQV9gkhS8ezJqCM6+ndU7mDY6gqAg75NQ+0IjwEI8IYOmQCgkRwHKVSfWXW076DsqMo0Dk+0FK1U+M5RgFw=="],
 
-    "@vitest/coverage-v8": ["@vitest/coverage-v8@4.1.9", "", { "dependencies": { "@bcoe/v8-coverage": "^1.0.2", "@vitest/utils": "4.1.9", "ast-v8-to-istanbul": "^1.0.0", "istanbul-lib-coverage": "^3.2.2", "istanbul-lib-report": "^3.0.1", "istanbul-reports": "^3.2.0", "magicast": "^0.5.2", "obug": "^2.1.1", "std-env": "^4.0.0-rc.1", "tinyrainbow": "^3.1.0" }, "peerDependencies": { "@vitest/browser": "4.1.9", "vitest": "4.1.9" }, "optionalPeers": ["@vitest/browser"] }, "sha512-G9/lgqibheLVBDRuya45EbsEXTYcWoSG+TLg7i2axuzx0Eq62eXn+aWXyaVdV5vKvFSWd6ywcX8hA7la9Pvu8g=="],
+    "@vitest/coverage-v8": ["@vitest/coverage-v8@5.0.0", "", { "dependencies": { "@bcoe/v8-coverage": "^1.0.2", "@vitest/istanbul-lib-coverage": "^1.0.0", "@vitest/istanbul-lib-report": "^1.0.0", "ast-v8-to-istanbul": "^1.0.5", "magicast": "^0.5.4", "obug": "^2.1.4", "std-env": "^4.2.0", "tinyrainbow": "^3.1.1" }, "peerDependencies": { "@vitest/browser": "5.0.0", "vitest": "5.0.0" }, "optionalPeers": ["@vitest/browser"] }, "sha512-toMg6PZGCIa/lQNCDoASrfb1ly4hsUKXFtFYC9kD4t78o5Y6LyNJU7AENt8eHPr3quYdxaxK7hj2mnbFfUk9NA=="],
 
-    "@vitest/expect": ["@vitest/expect@4.1.9", "", { "dependencies": { "@standard-schema/spec": "^1.1.0", "@types/chai": "^5.2.2", "@vitest/spy": "4.1.9", "@vitest/utils": "4.1.9", "chai": "^6.2.2", "tinyrainbow": "^3.1.0" } }, "sha512-vl/rYsUKcBr3SnQn166+XR5ZQcgMx3DQhFWdfli/cWpLnLUmbxZvyrJZotLFUryib+LtArYMSTJ5RbQ57ZqrlA=="],
+    "@vitest/istanbul-lib-coverage": ["@vitest/istanbul-lib-coverage@1.0.1", "", {}, "sha512-k3DJZ8LhMBK9NS4SclF1ASD3OgXEWDorbIcPTRDK0/Zae6fRvu+fJRxtFdLfHsa9Y24beCdPnoNZ4LviTNstfA=="],
 
-    "@vitest/mocker": ["@vitest/mocker@4.1.9", "", { "dependencies": { "@vitest/spy": "4.1.9", "estree-walker": "^3.0.3", "magic-string": "^0.30.21" }, "peerDependencies": { "msw": "^2.4.9", "vite": "^6.0.0 || ^7.0.0 || ^8.0.0" }, "optionalPeers": ["msw", "vite"] }, "sha512-EVkXzBjrPGM+cK8/ANWgBrkUCfJfb38/EfTSO8h7pWvKkyPkpWxvR7BkD2MyItMF62C97zAEoqdpUixwR/e+Rw=="],
+    "@vitest/istanbul-lib-report": ["@vitest/istanbul-lib-report@1.0.1", "", { "dependencies": { "@vitest/istanbul-lib-coverage": "1.0.1" } }, "sha512-1EOLRfsTMnyAr3+kEAsP4o9dhaDlGPpD7H5iLBBeq//YpNB1VIahkPhB+eRp9N2Dkfw8oySROjE3yf9XDeaIkQ=="],
 
-    "@vitest/pretty-format": ["@vitest/pretty-format@4.1.9", "", { "dependencies": { "tinyrainbow": "^3.1.0" } }, "sha512-s0iufns3iIFitdgm+YR7g1whCAaGtXz459VS9/PqyKDEEFgYIhsHOQmXgIgDuYCt7DeQmiZT0Qe2OA2p4ZPu5A=="],
+    "@vitest/mocker": ["@vitest/mocker@5.0.0", "", { "dependencies": { "@jridgewell/trace-mapping": "0.3.31", "@vitest/spy": "5.0.0", "estree-walker": "^3.0.3", "magic-string": "^1.2.3" }, "peerDependencies": { "msw": "^2.4.9", "vite": "^6.0.0 || ^7.0.0 || ^8.0.0" }, "optionalPeers": ["msw", "vite"] }, "sha512-66PGTMIiVJP3t4a5yxU9qPtf7MdTBs8jmToMvy+HVflB3Yy13WJZTtPePdvU+wjRV02SKK5doLbSA6o9pwOmiA=="],
 
-    "@vitest/runner": ["@vitest/runner@4.1.9", "", { "dependencies": { "@vitest/utils": "4.1.9", "pathe": "^2.0.3" } }, "sha512-KXLMDtc7oe70+3mJfGrPUWPesswH+3sTxAMAMl8DG7I8IUQT4XW718dY5ID3vPUcmlu27CcKfY4P3h3I29SLJg=="],
-
-    "@vitest/snapshot": ["@vitest/snapshot@4.1.9", "", { "dependencies": { "@vitest/pretty-format": "4.1.9", "@vitest/utils": "4.1.9", "magic-string": "^0.30.21", "pathe": "^2.0.3" } }, "sha512-Jc7RKGNBo8Z28WYIm0Niej4xdSPByRf6mU58VpHQkd6Zh05rlnA+twjbK5HyeIGHxrzsc3mJgS43uM0CZKzaIA=="],
-
-    "@vitest/spy": ["@vitest/spy@4.1.9", "", {}, "sha512-fHpsS6mIi+PiEW+vcRVOMkX1oSaPKne3VOclSFICPcGOmfKgXPU5iAah+wcNcj2xPrCCmfq99IDGf+EojhhvhA=="],
-
-    "@vitest/utils": ["@vitest/utils@4.1.9", "", { "dependencies": { "@vitest/pretty-format": "4.1.9", "convert-source-map": "^2.0.0", "tinyrainbow": "^3.1.0" } }, "sha512-A51o8ymO5PpqlWNnBP9ZHPXDIpuMtTLlGSjN7la4US+LJzoUMyhwjA5QXlm39JexgwHKW4Xjs8Z2d3dLCXOeuA=="],
+    "@vitest/spy": ["@vitest/spy@5.0.0", "", {}, "sha512-uy+luWBAPw9XfthoHi5AkfHUnuPYEESjl0p/r+meoBnU8bxg5GDQ3Ey8MjcJ6sqahkL4PFyrvfMJJBw7LbU06g=="],
 
     "@volar/kit": ["@volar/kit@2.4.28", "", { "dependencies": { "@volar/language-service": "2.4.28", "@volar/typescript": "2.4.28", "typesafe-path": "^0.2.2", "vscode-languageserver-textdocument": "^1.0.11", "vscode-uri": "^3.0.8" }, "peerDependencies": { "typescript": "*" } }, "sha512-cKX4vK9dtZvDRaAzeoUdaAJEew6IdxHNCRrdp5Kvcl6zZOqb6jTOfk3kXkIkG3T7oTFXguEMt5+9ptyqYR84Pg=="],
 
@@ -4794,8 +4829,6 @@
     "browserslist": ["browserslist@4.28.7", "", { "dependencies": { "baseline-browser-mapping": "^2.10.44", "caniuse-lite": "^1.0.30001806", "electron-to-chromium": "^1.5.393", "node-releases": "^2.0.51", "update-browserslist-db": "^1.2.3" }, "bin": { "browserslist": "cli.js" } }, "sha512-JxV13hNrFxqjOc8alRbq9dK1MM79NEXYpma2B2J4wAtpWS5zIEIKqWPGCl7N4o7Uc7B7itylh7SuDujATRyyTw=="],
 
     "buffer": ["buffer@5.6.0", "", { "dependencies": { "base64-js": "^1.0.2", "ieee754": "^1.1.4" } }, "sha512-/gDYp/UtU0eA1ys8bOs9J6a+E/KWIY+DZ+Q2WESNUA0jFRsJOc0SNUO6xJ5SGA1xueg3NL65W6s+NY5l9cunuw=="],
-
-    "buffer-from": ["buffer-from@1.1.2", "", {}, "sha512-E+XQCRwSbaaiChtv6k6Dwgc+bx+Bs6vuKJHHl5kox/BaKbhiXzqQOwK4cO22yElGp2OCmjwVhT3HmxgyPGnJfQ=="],
 
     "buffer-image-size": ["buffer-image-size@0.6.4", "", { "dependencies": { "@types/node": "*" } }, "sha512-nEh+kZOPY1w+gcCMobZ6ETUp9WfibndnosbpwB1iJk/8Gt5ZF2bhS6+B6bPYz424KtwsR6Rflc3tCz1/ghX2dQ=="],
 
@@ -5017,8 +5050,6 @@
 
     "delaunator": ["delaunator@5.1.0", "", { "dependencies": { "robust-predicates": "^3.0.2" } }, "sha512-AGrQ4QSgssa1NGmWmLPqN5NY2KajF5MqxetNEO+o0n3ZwZZeTmt7bBnvzHWrmkZFxGgr4HdyFgelzgi06otLuQ=="],
 
-    "denque": ["denque@2.1.0", "", {}, "sha512-HVQE3AAb/pxF8fQAoiqpvg9i3evqug3hoiwakOyZAwJm+6vZehbkYXZ0l4JxS+I3QxM97v5aaRNhj8v5oBhekw=="],
-
     "dependency-tree": ["dependency-tree@11.5.0", "", { "dependencies": { "@discoveryjs/json-ext": "^1.1.0", "commander": "^12.1.0", "filing-cabinet": "^5.5.1", "precinct": "^12.3.2", "typescript": "^5.9.3" }, "bin": { "dependency-tree": "bin/cli.js" } }, "sha512-K9zBwKDZrot3RkxizugpVSdImxULAg4Ycp3+ydy2r561k96oiiw6nfsOR15fwNDQ5BF2UXe+2JFM/H5Xz4MGQg=="],
 
     "dequal": ["dequal@2.0.3", "", {}, "sha512-0je+qPKHEMohvfRTCEo3CrPG6cAzAYgmzKyxRiYSSDkS6eGJdyVJm7WaYA5ECaAD9wLB2T4EEeymA5aFVcYXCA=="],
@@ -5075,7 +5106,7 @@
 
     "dunder-proto": ["dunder-proto@1.0.1", "", { "dependencies": { "call-bind-apply-helpers": "^1.0.1", "es-errors": "^1.3.0", "gopd": "^1.2.0" } }, "sha512-KIN/nDJBQRcXw0MLVhZE9iQHmG68qAVIBg9CqmUYjmQIhgij9U5MFvrqkUL5FbtyyzZuOeOt0zdeRe4UY7ct+A=="],
 
-    "effect": ["effect@4.0.0-rc.112", "", { "dependencies": { "fast-check": "^4.9.0", "msgpackr": "^2.0.5" } }, "sha512-wXxwuh1Ywnv4cPRM3Wfa0vDwuOHnZ1TsTgHJkG9XgzND6inhBH9n1vBxhg3iIXOia/OrpmvVmd3lrD4vq6bF3A=="],
+    "effect": ["effect@4.0.0-rc.115", "", {}, "sha512-ogYulZ5ffeOzrJqQrG0XOkDO5lKn2s9KNHhoxJy/6wKUkF0i12dlVXWA9TgsgQ+zV/JzizyG0+XMPepZEQX6vw=="],
 
     "electrobun": ["electrobun@2.0.1", "", { "bin": { "electrobun": "bin/electrobun.cjs" } }, "sha512-1+OjJ0tMemjVrUEsh/AhmxnqUNpyCfJslCbcWOvkogFJuNVMmTlWMzyZem/Ts/7lg8f7ULWu8uuQBsKeGQsu7A=="],
 
@@ -5283,7 +5314,7 @@
 
     "hachure-fill": ["hachure-fill@0.5.2", "", {}, "sha512-3GKBOn+m2LX9iq+JC1064cSFprJY4jL1jCXTcpnfER5HYE2l/4EfWSGzkPa/ZDBmYI0ZOEj5VHV/eKnPGkHuOg=="],
 
-    "happy-dom": ["happy-dom@20.11.1", "", { "dependencies": { "@types/node": ">=20.0.0", "@types/whatwg-mimetype": "^3.0.2", "@types/ws": "^8.18.1", "buffer-image-size": "^0.6.4", "entities": "^7.0.1", "whatwg-mimetype": "^3.0.0", "ws": "^8.21.0" } }, "sha512-XSt8tMzbW9ymE7687xztkO1ckR7qJNQ3LywY9vlYGhGi3zXrGBHuUo2Cl1ztZaICW+1eAGdkLbj6iwVqDT33kg=="],
+    "happy-dom": ["happy-dom@20.14.0", "", { "dependencies": { "@types/node": ">=20.0.0", "@types/whatwg-mimetype": "^3.0.2", "@types/ws": "^8.18.1", "buffer-image-size": "^0.6.4", "entities": "^7.0.1", "whatwg-mimetype": "^3.0.0", "ws": "^8.21.0" } }, "sha512-4bRh1KzRvKDnFNTlLhzT1RZTpkKhQbQDl9j+7GXszWsvuspYdo29k6OHRf4PwiM6oLb8r/pMWeYiJjkfod5AvQ=="],
 
     "has-bigints": ["has-bigints@1.1.0", "", {}, "sha512-R3pbpkcIqv2Pm3dUwgjclDRVmWpTJW2DcMzcIhEXEx1oh/CEMObMm3KLmRJOdvhM7o4uQBnwr8pzRK2sJWIqfg=="],
 
@@ -5372,8 +5403,6 @@
     "internal-slot": ["internal-slot@1.1.0", "", { "dependencies": { "es-errors": "^1.3.0", "hasown": "^2.0.2", "side-channel": "^1.1.0" } }, "sha512-4gd7VpWNQNB4UKKCFFVcp1AVv+FMOgs9NKzjHKusc8jTMhd5eL1NqQqOpE0KzMds804/yHlglp3uxgluOqAPLw=="],
 
     "internmap": ["internmap@2.0.3", "", {}, "sha512-5Hh7Y1wQbvY5ooGgPbDaL5iYLAPzMTUrjMulskHLH6wnv/A+1q5rgEaiuqEjB+oxGXIVZs1FF+R/KPN3ZSQYYg=="],
-
-    "ioredis": ["ioredis@5.11.1", "", { "dependencies": { "@ioredis/commands": "1.10.0", "cluster-key-slot": "1.1.1", "debug": "4.4.3", "denque": "2.1.0", "redis-errors": "1.2.0", "redis-parser": "3.0.0", "standard-as-callback": "2.1.0" } }, "sha512-ehuGcf94bQXhfagULNXrJdfnWO38v070jxSx/qE87Kjzmu2fU7ro5EFAb+OPituLqgfyuQaym5DlrNydW2sJ9A=="],
 
     "iron-webcrypto": ["iron-webcrypto@1.2.1", "", {}, "sha512-feOM6FaSr6rEABp/eDfVseKyTMDt+KGpeB35SkVn9Tyn0CqvVsY3EwI0v5i8nMHyJnzCIQf7nsy3p41TPkJZhg=="],
 
@@ -5465,11 +5494,7 @@
 
     "isexe": ["isexe@2.0.0", "", {}, "sha512-RHxMLp9lnKHGHRng9QFhRCMbYAcVpn69smSGcq3f36xjgVVWThj4qqLbTLlq7Ssj8B+fIQ1EuCEGI2lKsyQeIw=="],
 
-    "istanbul-lib-coverage": ["istanbul-lib-coverage@3.2.2", "", {}, "sha512-O8dpsF+r0WV/8MNRKfnmrtCWhuKjxrq2w+jpzBL5UZKTi2LeVWnWOmWRxFlesJONmc+wLAGvKQZEOanko0LFTg=="],
-
-    "istanbul-lib-report": ["istanbul-lib-report@3.0.1", "", { "dependencies": { "istanbul-lib-coverage": "^3.0.0", "make-dir": "^4.0.0", "supports-color": "^7.1.0" } }, "sha512-GCfE1mtsHGOELCU8e/Z7YWzpmybrx/+dSTfLrvY8qRmaY6zXTKWn6WQIjaAFw069icm6GVMNkgu0NzI4iPZUNw=="],
-
-    "istanbul-reports": ["istanbul-reports@3.2.0", "", { "dependencies": { "html-escaper": "^2.0.0", "istanbul-lib-report": "^3.0.0" } }, "sha512-HGYWWS/ehqTV3xN10i23tkPkpH46MLCIMFNCaaKNavAXTF1RkqxawEPtnjnGZ6XKSInBKkiOA5BKS+aZiY3AvA=="],
+    "isomorphic.js": ["isomorphic.js@0.2.5", "", {}, "sha512-PIeMbHqMt4DnUP3MA/Flc0HElYjMXArsw1qwJZcm9sqR8mq3l8NYizFMty0pWwE/tzIGH3EKK5+jes5mAr85yw=="],
 
     "jiti": ["jiti@2.7.0", "", { "bin": { "jiti": "lib/jiti-cli.mjs" } }, "sha512-AC/7JofJvZGrrneWNaEnJeOLUx+JlGt7tNa0wZiRPT4MY1wmfKjt2+6O2p2uz2+skll8OZZmJMNqeke7kKbNgQ=="],
 
@@ -5512,6 +5537,8 @@
     "layout-base": ["layout-base@1.0.2", "", {}, "sha512-8h2oVEZNktL4BH2JCOI90iD1yXwL6iNW7KcCKT2QZgQJR2vbqDsldCTPRU9NifTCqHZci57XvQQ15YTu+sTYPg=="],
 
     "levn": ["levn@0.4.1", "", { "dependencies": { "prelude-ls": "^1.2.1", "type-check": "~0.4.0" } }, "sha512-+bT2uH4E5LGE7h/n3evcS/sQlJXCpIp6ym8OWJ5eV6+67Dsql/LaaT7qJBAt2rzfoa/5QBGBhxDix1dMt2kQKQ=="],
+
+    "lib0": ["lib0@0.2.117", "", { "dependencies": { "isomorphic.js": "^0.2.4" }, "bin": { "0serve": "bin/0serve.js", "0gentesthtml": "bin/gentesthtml.js", "0ecdsa-generate-keypair": "bin/0ecdsa-generate-keypair.js" } }, "sha512-DeXj9X5xDCjgKLU/7RR+/HQEVzuuEUiwldwOGsHK/sfAfELGWEyTcf0x+uOvCvK3O2zPmZePXWL85vtia6GyZw=="],
 
     "libsodium": ["libsodium@0.8.4", "", {}, "sha512-lMcYaRi0zcs7tarATsQUYC7rstliIXZuoq0c6zXSgNtSNtdvBgkSegjWhpMJAXzKX3SUSwIp7+zEsob+j3LuRw=="],
 
@@ -5572,8 +5599,6 @@
     "magic-string": ["magic-string@1.2.3", "", { "dependencies": { "@jridgewell/sourcemap-codec": "^1.5.5" } }, "sha512-Bpb0W2TbLKOZ7vJnOUnVRGq3WL2p+ISV29M6hYPL1AFCpyKZpdr5ytiXoTSSxRVhg8YW7f65+6gbG8WG6PCa/g=="],
 
     "magicast": ["magicast@0.5.4", "", { "dependencies": { "@babel/parser": "^7.29.7", "@babel/types": "^7.29.7", "source-map-js": "^1.2.1" } }, "sha512-llBEhWm1SacoRwgHUoQJYtwp4PBLF4faQi5TCpIGyGs9n4y5+juI0tDgyKIfpqxckRHaHzouUEph3THklWh03w=="],
-
-    "make-dir": ["make-dir@4.0.0", "", { "dependencies": { "semver": "^7.5.3" } }, "sha512-hXdUTZYIVOt1Ex//jAQi+wTZZpUpwBj/0QsOzqegb3rGMMeJiSEu5xLHnYfBrRV4RH2+OCSOO95Is/7x1WJ4bw=="],
 
     "markdown-table": ["markdown-table@3.0.4", "", {}, "sha512-wiYz4+JrLyb/DqW2hkFJxP7Vd7JuTDm77fvbM8VfEQdmSMqcImWeeRbHwZjBjIFki/VaMK2BhFi7oUUZeM5bqw=="],
 
@@ -5683,8 +5708,6 @@
 
     "microsandbox": ["microsandbox@0.6.16", "", { "optionalDependencies": { "@superradcompany/microsandbox-darwin-arm64": "0.6.16", "@superradcompany/microsandbox-linux-arm64-gnu": "0.6.16", "@superradcompany/microsandbox-linux-x64-gnu": "0.6.16", "@superradcompany/microsandbox-win32-arm64-msvc": "0.6.16", "@superradcompany/microsandbox-win32-x64-msvc": "0.6.16" }, "bin": { "microsandbox": "bin/microsandbox.cjs", "msb": "bin/microsandbox.cjs" } }, "sha512-D2BKR1CDXWiHkzRA9IwaJnSHpk25kY5/Il5POf08T8wo3q5jBGMQJ/bGTHB4Qr+W49DxD7HEOGMsXwa1plNAKg=="],
 
-    "mime": ["mime@4.1.0", "", { "bin": { "mime": "bin/cli.js" } }, "sha512-X5ju04+cAzsojXKes0B/S4tcYtFAJ6tTMuSPBEn9CPGlrWr8Fiw7qYeLT0XyH80HSoAoqWCaz+MWKh22P7G1cw=="],
-
     "mimic-fn": ["mimic-fn@2.1.0", "", {}, "sha512-OqbOk5oEQeAZ8WXWydlu9HJjz9WVdEIvamMCcXmuqUYjTknH/sqsWvhQ3vgwKFRR1HpjvNBKQ37nbJgYzGqGcg=="],
 
     "miniflare": ["miniflare@5.20260903.0-alpha", "", { "dependencies": { "@cspotcode/source-map-support": "0.8.1", "sharp": "0.35.2", "undici": "7.29.0", "workerd": "1.20260903.1", "ws": "8.21.0", "youch": "4.1.0-beta.10" } }, "sha512-VCZIFxOqFXeibRBJWwTlppqbv2lkeO10IX3QBRGK9j1QiMAfH/OSsCvbjp1MslBMhVZmy2VTRlVaVnsKnbDp6A=="],
@@ -5703,10 +5726,6 @@
 
     "ms": ["ms@2.1.3", "", {}, "sha512-6FlzubTLZG3J2a/NVCAleEhjzq5oxgHyaCU9yYXvcLsvoVaHJq/s5xXI6/XXP6tz7R9xAOtHnSO/tXtF3WRTlA=="],
 
-    "msgpackr": ["msgpackr@2.0.5", "", { "optionalDependencies": { "msgpackr-extract": "^3.0.4" } }, "sha512-cef05H/dSYpLpqp3sj/qyZh5vhUYCalnaLO7j1yOmpsR0y/XwLVtK7r5gn+U/F7CTEfMowcGhlUQJDLcLf7jcA=="],
-
-    "msgpackr-extract": ["msgpackr-extract@3.0.4", "", { "dependencies": { "node-gyp-build-optional-packages": "5.2.2" }, "optionalDependencies": { "@msgpackr-extract/msgpackr-extract-darwin-arm64": "3.0.4", "@msgpackr-extract/msgpackr-extract-darwin-x64": "3.0.4", "@msgpackr-extract/msgpackr-extract-linux-arm": "3.0.4", "@msgpackr-extract/msgpackr-extract-linux-arm64": "3.0.4", "@msgpackr-extract/msgpackr-extract-linux-x64": "3.0.4", "@msgpackr-extract/msgpackr-extract-win32-x64": "3.0.4" }, "bin": { "download-msgpackr-prebuilds": "bin/download-prebuilds.js" } }, "sha512-4kmO/MdyUIkLIvTPr8VHLil4AtoKIoniWPIEk5+CDy0xnWC84azhSFmuJ7PxZdsYtiP5kEeQsORAVIeMgxT+Hw=="],
-
     "muggle-string": ["muggle-string@0.4.1", "", {}, "sha512-VNTrAak/KhO2i8dqqnqnAHOa3cYBwXEZe9h+D5h/1ZqFSTEFHdM65lR7RoIqq3tBBYavsOXV84NoHXZ0AkPyqQ=="],
 
     "mz": ["mz@2.7.0", "", { "dependencies": { "any-promise": "^1.0.0", "object-assign": "^4.0.1", "thenify-all": "^1.0.0" } }, "sha512-z81GNO7nnYMEhrGh9LeymoE4+Yr0Wn5McHIZMK5cfQCl+NDX08sCZgUc9/6MHni9IWuFLm1Z3HTCXu2z9fN62Q=="],
@@ -5724,8 +5743,6 @@
     "node-exports-info": ["node-exports-info@1.6.2", "", { "dependencies": { "array.prototype.flatmap": "^1.3.3", "es-errors": "^1.3.0", "object.entries": "^1.1.9", "semver": "^6.3.1" } }, "sha512-kXs9Go0cah0qHVV2v389IXQLdLCeE1xfFtjOAF+iobu0OIoG1pje8At2vMHyaPMiPMnG/LWP50twML21eMcAag=="],
 
     "node-fetch-native": ["node-fetch-native@1.6.7", "", {}, "sha512-g9yhqoedzIUm0nTnTqAQvueMPVOuIY16bqgAJJC8XOOubYFNwz6IER9qs0Gq2Xd0+CecCKFjtdDTMA4u4xG06Q=="],
-
-    "node-gyp-build-optional-packages": ["node-gyp-build-optional-packages@5.2.2", "", { "dependencies": { "detect-libc": "^2.0.1" }, "bin": { "node-gyp-build-optional-packages": "bin.js", "node-gyp-build-optional-packages-optional": "optional.js", "node-gyp-build-optional-packages-test": "build-test.js" } }, "sha512-s+w+rBWnpTMwSFbaE0UXsRlg7hU4FjekKU4eyAih5T8nJuNZT1nNsskXpxmeqSK9UzkBl6UgRlnKc8hz8IEqOw=="],
 
     "node-mock-http": ["node-mock-http@1.0.5", "", {}, "sha512-KQyt/wLjG3TAc7DOUhpqWzgd4ERxR80JOlTK5VE5R1S12IaPVN5qkj4klBce9HPG1Njuup4Sb5bljaT34lIyjw=="],
 
@@ -5923,8 +5940,6 @@
 
     "react": ["react@19.2.8", "", {}, "sha512-PWaYA1L/q9u2u7xYQi+Y3L3Yfnie7XyLeaJICV1MGD6LprsBxcAqGjYyr0eY3p+QdsA+x/Irkt4Qif8D63+Sbw=="],
 
-    "react-devtools-core": ["react-devtools-core@7.0.1", "", { "dependencies": { "shell-quote": "^1.6.1", "ws": "^7" } }, "sha512-C3yNvRHaizlpiASzy7b9vbnBGLrhvdhl1CbdU6EnZgxPNbai60szdLtl+VL76UNOt5bOoVTOz5rNWZxgGt+Gsw=="],
-
     "react-dom": ["react-dom@19.2.8", "", { "dependencies": { "scheduler": "^0.27.0" }, "peerDependencies": { "react": "^19.2.8" } }, "sha512-rVprimfGBG3DR+Tq0IQG2DT5PxKth1WIGDmj5yPmlzr4YBe7uyE+Du4oVqTDXZSHGGGXRtTJEGSSePyQCMBglQ=="],
 
     "react-is": ["react-is@17.0.2", "", {}, "sha512-w2GsyukL62IJnlaff/nRegPQR94C/XXamvMWmSHRJ4y7Ts/4ocGRmTHvOs8PSE6pB3dWOrD/nueuU5sduBsQ4w=="],
@@ -5948,10 +5963,6 @@
     "recharts": ["recharts@3.10.1", "", { "dependencies": { "@reduxjs/toolkit": "^1.9.0 || 2.x.x", "clsx": "^2.1.1", "decimal.js-light": "^2.5.1", "es-toolkit": "^1.39.3", "eventemitter3": "^5.0.1", "immer": "^11.1.8", "react-redux": "8.x.x || 9.x.x", "reselect": "5.2.0", "tiny-invariant": "^1.3.3", "use-sync-external-store": "^1.2.2", "victory-vendor": "^37.0.2" }, "peerDependencies": { "react": "^16.8.0 || ^17.0.0 || ^18.0.0 || ^19.0.0", "react-dom": "^16.0.0 || ^17.0.0 || ^18.0.0 || ^19.0.0", "react-is": "^16.8.0 || ^17.0.0 || ^18.0.0 || ^19.0.0" } }, "sha512-QXFrvt6IVcw7eeZCoyXTwkIJAX3Dv1nyVhMicXJ47GsGDDpcN8z6o644DibE9XjpBTThtsomLKnTV6lc+cVFUA=="],
 
     "redis": ["redis@6.2.1", "", { "dependencies": { "@redis/bloom": "6.2.1", "@redis/client": "6.2.1", "@redis/json": "6.2.1", "@redis/search": "6.2.1", "@redis/time-series": "6.2.1" } }, "sha512-Z9VHtgYs48PiQC77X9O2Er8Hj4T+5BtFjT91/vi5Is1D04N72cA946ZslM1ImJw8ZctFBZWAVjM7S5wJNeHMpg=="],
-
-    "redis-errors": ["redis-errors@1.2.0", "", {}, "sha512-1qny3OExCf0UvUV/5wpYKf2YwPcOqXzkwKKSmKHiE6ZMQs5heeE/c8eXK+PNllPvmjgAbfnsbpkGZWy8cBpn9w=="],
-
-    "redis-parser": ["redis-parser@3.0.0", "", { "dependencies": { "redis-errors": "^1.0.0" } }, "sha512-DJnGAeenTdpMEH6uAJRK/uiyEIH9WVsUmoLwzudwGJUwZPp80PDBWPHXSAGNPwNvIXAbe7MSUB1zQFugFml66A=="],
 
     "redux": ["redux@5.0.1", "", {}, "sha512-M9/ELqF6fy8FwmkpnF0S3YKOqMyoWJ4+CS5Efg2ct3oY9daQvd/Pc71FpGZsVsbl3Cpb+IIcjBDUnnyBdQbq4w=="],
 
@@ -6063,8 +6074,6 @@
 
     "shebang-regex": ["shebang-regex@3.0.0", "", {}, "sha512-7++dFhtcx3353uBaq8DDR4NuxBetBzC7ZQOhmTQInHEd6bSrXdiEyzCvG07Z44UYdLShWUyXt5M/yhz8ekcb1A=="],
 
-    "shell-quote": ["shell-quote@1.10.0", "", {}, "sha512-w1aiOKwKuRgtwAReIIj89puqg+I7GvX4IbLrvmhXbzQsj1+Zwi4VO3+fa6ZF91TWSjIxoEkKnMeHcLEODK5ZXA=="],
-
     "shiki": ["shiki@4.4.1", "", { "dependencies": { "@shikijs/core": "4.4.1", "@shikijs/engine-javascript": "4.4.1", "@shikijs/engine-oniguruma": "4.4.1", "@shikijs/langs": "4.4.1", "@shikijs/themes": "4.4.1", "@shikijs/types": "4.4.1", "@shikijs/vscode-textmate": "^10.0.2", "@types/hast": "^3.0.5" } }, "sha512-rFP+iYKzjLEIqiMiKANhARqiAbk4deDhWnBtnUO/K0D0dPxMGDH4N0FVfBY/VeI+lPrV4wNGCHQZp7EOr7NNBw=="],
 
     "side-channel": ["side-channel@1.1.1", "", { "dependencies": { "es-errors": "^1.3.0", "object-inspect": "^1.13.4", "side-channel-list": "^1.0.1", "side-channel-map": "^1.0.1", "side-channel-weakmap": "^1.0.2" } }, "sha512-6x6dK6zJdpTzF4sQeNYxwtvBzf6Eg4GtlesS94HOvTudUeyK2WXAaIfmDgsyslYrRBeFIlsi54AYsFGUuhmvrQ=="],
@@ -6085,9 +6094,9 @@
 
     "slice-ansi": ["slice-ansi@8.0.0", "", { "dependencies": { "ansi-styles": "^6.2.3", "is-fullwidth-code-point": "^5.1.0" } }, "sha512-stxByr12oeeOyY2BlviTNQlYV5xOj47GirPr4yA1hE9JCtxfQN0+tVbkxwCtYDQWhEKWFHsEK48ORg5jrouCAg=="],
 
-    "smithers-server": ["smithers-server@workspace:apps/server"],
-
     "smithers-app": ["smithers-app@workspace:apps/app"],
+
+    "smithers-server": ["smithers-server@workspace:apps/server"],
 
     "smol-toml": ["smol-toml@1.8.0", "", {}, "sha512-kCZr2V3ch9i00x8zXRhjUNVcjG9ijES5dDudkXvUVCT5QlJNQWElSJdZqyPemffHoLNUYwOcou0Fy+ojN0uHSQ=="],
 
@@ -6098,8 +6107,6 @@
     "source-map": ["source-map@0.6.1", "", {}, "sha512-UjgapumWlbMhkBgzT7Ykc5YXUT46F0iKu8SGXq0bcwP5dz/h0Plj6enJqjz1Zbq2l5WaqYnrVbwWOWMyF3F47g=="],
 
     "source-map-js": ["source-map-js@1.2.1", "", {}, "sha512-UXWMKhLOwVKb728IUtQPXxfYU+usdybtUrK/8uGE8CQMvrhOpwvzDBwj0QhSL7MQc7vIsISBG8VQ8+IDQxpfQA=="],
-
-    "source-map-support": ["source-map-support@0.5.21", "", { "dependencies": { "buffer-from": "^1.0.0", "source-map": "^0.6.0" } }, "sha512-uBHU3L3czsIyYXKX88fdrGovxdSCoTGDRZ6SYXtSRxLZUzHg5P/66Ht6uoUlHu9EZod+inXhKo3qQgwXUT/y1w=="],
 
     "space-separated-tokens": ["space-separated-tokens@2.0.2", "", {}, "sha512-PEGlAwrG8yXGXRjW32fGbg66JAlOAwbObuqVoJpv/mRgoWDQfgH1wDPvtzWyUSNAXBGSk8h755YDbbcEy3SH2Q=="],
 
@@ -6114,8 +6121,6 @@
     "stack-utils": ["stack-utils@2.0.6", "", { "dependencies": { "escape-string-regexp": "^2.0.0" } }, "sha512-XlkWvfIm6RmsWtNJx+uqtKLS8eqFbxUg0ZzLXqY0caEy9l7hruX8IpiDnjsLavoBgqCCR71TqWO8MaXYheJ3RQ=="],
 
     "stackback": ["stackback@0.0.2", "", {}, "sha512-1XMJE5fQo1jGH6Y/7ebnwPOBEkIEnT4QF32d5R1+VXdXveM0IBMJt8zfaxX1P3QhVwrYe+576+jkANtSS2mBbw=="],
-
-    "standard-as-callback": ["standard-as-callback@2.1.0", "", {}, "sha512-qoRRSyROncaz1z0mvYqIE4lCd9p2R90i6GxW3uZv5ucSu8tU7B5HXUP1gG8pVZsYNVaXjk8ClXHPttLyxAL48A=="],
 
     "std-env": ["std-env@4.2.0", "", {}, "sha512-oCUKSupKTHX53EyjDtuZQ64pjLJ6yYCtpmEw0goYxtjG9KpbRe8KAsl2tBUGU9DyMcJ0RwJ8GqJAFzMXcXW1Rw=="],
 
@@ -6171,8 +6176,6 @@
 
     "terminal-size": ["terminal-size@4.0.1", "", {}, "sha512-avMLDQpUI9I5XFrklECw1ZEUPJhqzcwSWsyyI8blhRLT+8N1jLJWLWWYQpB2q2xthq8xDvjZPISVh53T/+CLYQ=="],
 
-    "terser": ["terser@5.51.2", "", { "dependencies": { "@jridgewell/source-map": "^0.3.3", "acorn": "^8.15.0", "commander": "^2.20.0", "source-map-support": "~0.5.20" }, "bin": { "terser": "bin/terser" } }, "sha512-bWnjSNscmuI+GJze6ZupnHP8G/cTcsJF+bXCeQknk2SHQsgbNJnLrqiH9jZ2W4STPVXH2mDKKRX3iwPhc9Cn/Q=="],
-
     "thenify": ["thenify@3.3.1", "", { "dependencies": { "any-promise": "^1.0.0" } }, "sha512-RVZSIV5IG10Hk3enotrhvz0T9em6cyHBLkH/YAZuKqd8hRkKhSfCGIcP2KUY0EPxndzANBmNllzWPwak+bheSw=="],
 
     "thenify-all": ["thenify-all@1.6.0", "", { "dependencies": { "thenify": ">= 3.1.0 < 4" } }, "sha512-RNxQH/qI8/t3thXJDwcstUO4zeqo64+Uy/+sNVRBx4Xn2OX+OZ9oP+iJnNFqplFra2ZUVeKCSa2oVWi3T4uVmA=="],
@@ -6181,7 +6184,7 @@
 
     "tiny-invariant": ["tiny-invariant@1.3.3", "", {}, "sha512-+FbBPE1o9QAYvviau/qC5SE3caw21q3xkvWKBtja5vgqOWIHHJ3ioaq1VPfn/Szqctz2bU/oYeKd9/z5BL+PVg=="],
 
-    "tinybench": ["tinybench@2.9.0", "", {}, "sha512-0+DUvqWMValLmha6lr4kD8iAMK1HzV0/aKnCtWb9v9641TnP/MFb7Pc2bxoxQjTXAErryXVgUOfv2YqNllqGeg=="],
+    "tinybench": ["tinybench@6.1.4", "", {}, "sha512-9APumHG7r4yOk4X4WlkmE71aZcv1gvin1czO3OQ1U9iJcFA5Ja/ygyb0vPOVHTthFozUYs8CLoLUlM8grb2lTQ=="],
 
     "tinyclip": ["tinyclip@0.1.15", "", {}, "sha512-uo33abH+Ays0xYaDysoBt494Hb3hsEczMpcC0MwFl773pazORx4fmvKhclhR1wonUbB6vvpRsvVMwnhfqeMc+A=="],
 
@@ -6303,7 +6306,7 @@
 
     "vitefu": ["vitefu@1.1.3", "", { "peerDependencies": { "vite": "^3.0.0 || ^4.0.0 || ^5.0.0 || ^6.0.0 || ^7.0.0 || ^8.0.0" }, "optionalPeers": ["vite"] }, "sha512-ub4okH7Z5KLjb6hDyjqrGXqWtWvoYdU3IGm/NorpgHncKoLTCfRIbvlhBm7r0YstIaQRYlp4yEbFqDcKSzXSSg=="],
 
-    "vitest": ["vitest@4.1.9", "", { "dependencies": { "@vitest/expect": "4.1.9", "@vitest/mocker": "4.1.9", "@vitest/pretty-format": "4.1.9", "@vitest/runner": "4.1.9", "@vitest/snapshot": "4.1.9", "@vitest/spy": "4.1.9", "@vitest/utils": "4.1.9", "es-module-lexer": "^2.0.0", "expect-type": "^1.3.0", "magic-string": "^0.30.21", "obug": "^2.1.1", "pathe": "^2.0.3", "picomatch": "^4.0.3", "std-env": "^4.0.0-rc.1", "tinybench": "^2.9.0", "tinyexec": "^1.0.2", "tinyglobby": "^0.2.15", "tinyrainbow": "^3.1.0", "vite": "^6.0.0 || ^7.0.0 || ^8.0.0", "why-is-node-running": "^2.3.0" }, "peerDependencies": { "@edge-runtime/vm": "*", "@opentelemetry/api": "^1.9.0", "@types/node": "^20.0.0 || ^22.0.0 || >=24.0.0", "@vitest/browser-playwright": "4.1.9", "@vitest/browser-preview": "4.1.9", "@vitest/browser-webdriverio": "4.1.9", "@vitest/coverage-istanbul": "4.1.9", "@vitest/coverage-v8": "4.1.9", "@vitest/ui": "4.1.9", "happy-dom": "*", "jsdom": "*" }, "optionalPeers": ["@edge-runtime/vm", "@opentelemetry/api", "@types/node", "@vitest/browser-playwright", "@vitest/browser-preview", "@vitest/browser-webdriverio", "@vitest/coverage-istanbul", "@vitest/coverage-v8", "@vitest/ui", "happy-dom", "jsdom"], "bin": { "vitest": "./vitest.mjs" } }, "sha512-nE3/LEyc0z87uHYLZebqCUOaJr2hdtuPp7BQ4BosVFnfltxgAvMG08NyrSGlPpOUWvR27c5flSmYFTNr78L9GQ=="],
+    "vitest": ["vitest@5.0.0", "", { "dependencies": { "@types/chai": "^5.2.2", "@vitest/mocker": "5.0.0", "chai": "^6.2.2", "es-module-lexer": "^2.3.2", "expect-type": "^1.4.0", "magic-string": "^1.2.3", "obug": "^2.1.4", "picomatch": "^4.0.7", "std-env": "^4.2.0", "tinybench": "6.1.4", "tinyexec": "1.3.0", "tinyglobby": "^0.2.17", "why-is-node-running": "^2.3.0" }, "peerDependencies": { "@edge-runtime/vm": "*", "@opentelemetry/api": "^1.9.0", "@types/node": "^22.0.0 || >=24.0.0", "@vitest/browser-playwright": "5.0.0", "@vitest/browser-preview": "5.0.0", "@vitest/browser-webdriverio": "^5.0.0-beta.5 || >=5.0.0", "@vitest/coverage-istanbul": "5.0.0", "@vitest/coverage-v8": "5.0.0", "@vitest/ui": "5.0.0", "happy-dom": "*", "jsdom": "*", "vite": "^6.4.0 || ^7.0.0 || ^8.0.0" }, "optionalPeers": ["@edge-runtime/vm", "@opentelemetry/api", "@types/node", "@vitest/browser-playwright", "@vitest/browser-preview", "@vitest/browser-webdriverio", "@vitest/coverage-istanbul", "@vitest/coverage-v8", "@vitest/ui", "happy-dom", "jsdom"], "bin": { "vitest": "./vitest.mjs" } }, "sha512-gpsMNoRhMjMktVxPtstOH4/PJuPyovVaMDr4oDilXaGH1EcqM2OE96SoHT2VIQ6fTGtTjqmHDrEu2X9RQiXf8Q=="],
 
     "volar-service-css": ["volar-service-css@0.0.71", "", { "dependencies": { "vscode-css-languageservice": "^6.3.0", "vscode-languageserver-textdocument": "^1.0.11", "vscode-uri": "^3.0.8" }, "peerDependencies": { "@volar/language-service": "~2.4.0" }, "optionalPeers": ["@volar/language-service"] }, "sha512-wRRFt9BpjMKCazcgOh67MSjUjiWUCAh99DyYSDIOTuxaRjEtDC7PpB0k1Y1wbJIW/pVtMUSVbpPo3UGSm0Byxw=="],
 
@@ -6392,6 +6395,8 @@
     "yargs-parser": ["yargs-parser@22.0.0", "", {}, "sha512-rwu/ClNdSMpkSrUb+d6BRsSkLUq1fmfsY6TOpYzTwvwkg1/NRG85KBy3kq++A8LKQwX6lsu+aWad+2khvuXrqw=="],
 
     "yauzl": ["yauzl@3.4.0", "", { "dependencies": { "pend": "~1.2.0" } }, "sha512-jIH9yLR9wqr0wOS0TpBvo/g/2UgZH5qePVbjgRliiF0BYvOZyaBknKsF+x9Iht0O6sqgnB93rCICdOZFecJuDw=="],
+
+    "yjs": ["yjs@13.6.32", "", { "dependencies": { "lib0": "^0.2.99" } }, "sha512-lfiJIIC4Xayt5ItynE407ehlE03pCjeOc4hkR4yxxvvNJ4kuiN25B0g+Qp8XagYz361LLL7DCzR5bvFJ81QKtQ=="],
 
     "yocto-queue": ["yocto-queue@1.2.2", "", {}, "sha512-4LCcse/U2MHZ63HAJVE+v71o7yOdIe4cZ70Wpf8D/IyjDKYQLV5GD46B+hSTjJsvV5PztjvHoU580EftxjDZFQ=="],
 
@@ -6495,7 +6500,7 @@
 
     "@cspotcode/source-map-support/@jridgewell/trace-mapping": ["@jridgewell/trace-mapping@0.3.9", "", { "dependencies": { "@jridgewell/resolve-uri": "^3.0.3", "@jridgewell/sourcemap-codec": "^1.4.10" } }, "sha512-3Belt6tdc8bPgAtbcmdtNJlirVoTmEb5e2gC94PnkwEW9jI6CAHUeoG85tjWP5WquqfavoMtMwiG4P926ZKKuQ=="],
 
-    "@effect/sql-d1/@cloudflare/workers-types": ["@cloudflare/workers-types@5.20260829.1", "", {}, "sha512-SsH4G9+JePvrBmz+b5Dl67LQ9w2/ycoIpAPcAkfg2aEs2SEisQHk7/AY0TymSXEBbDbWgcBqoLe4hNcuY3CxWA=="],
+    "@effect/sql-d1/@cloudflare/workers-types": ["@cloudflare/workers-types@5.20260911.1", "", {}, "sha512-yiAvknjulcU85B3yB4aKOn9+l+garWP+AbHgsdCFckeRYDdhZ1rPULi64BDf52R3VTaKqxi47kF+o9ZbjsCt5g=="],
 
     "@eslint-community/eslint-utils/eslint-visitor-keys": ["eslint-visitor-keys@3.4.3", "", {}, "sha512-wpc+LXeiyiisxPlEkUzU6svyS1frIO3Mgxj1fdy7Pm8Ygzguax2N3Fa/D/ag1WqbOprdI+uY6wMUl8/a2G+iag=="],
 
@@ -6508,8 +6513,6 @@
     "@eslint/eslintrc/minimatch": ["minimatch@3.1.5", "", { "dependencies": { "brace-expansion": "^1.1.7" } }, "sha512-VgjWUsnnT6n+NUk6eZq77zeFdpW2LWDzP6zFGrCbHXiYNul5Dzqk2HHQ5uFH2DNW5Xbp8+jVzaeNt94ssEEl4w=="],
 
     "@eslint/eslintrc/strip-json-comments": ["strip-json-comments@3.1.1", "", {}, "sha512-6fPc+R4ihwqP6N/aIv2f1gMH8lOVtWQHoqC4yK6oSDVVocumAsfCqjkXnqiYMhmMwS/mEHLp7Vehlt3ql6lEig=="],
-
-    "@happy-dom/global-registrator/happy-dom": ["happy-dom@20.14.0", "", { "dependencies": { "@types/node": ">=20.0.0", "@types/whatwg-mimetype": "^3.0.2", "@types/ws": "^8.18.1", "buffer-image-size": "^0.6.4", "entities": "^7.0.1", "whatwg-mimetype": "^3.0.0", "ws": "^8.21.0" } }, "sha512-4bRh1KzRvKDnFNTlLhzT1RZTpkKhQbQDl9j+7GXszWsvuspYdo29k6OHRf4PwiM6oLb8r/pMWeYiJjkfod5AvQ=="],
 
     "@img/sharp-wasm32/@emnapi/runtime": ["@emnapi/runtime@1.11.3", "", { "dependencies": { "tslib": "^2.4.0" } }, "sha512-Xz4Tpyki7XyrpbUK1jR1AhdAdaXyhhY4lZ3neLodmhpuWfy2PAQN5B46sAiU4liOXGLkHypn/qU+jvfWSCYYLA=="],
 
@@ -6587,6 +6590,8 @@
 
     "@smthrs/rpc/typescript-eslint": ["typescript-eslint@8.65.0", "", { "dependencies": { "@typescript-eslint/eslint-plugin": "8.65.0", "@typescript-eslint/parser": "8.65.0", "@typescript-eslint/typescript-estree": "8.65.0", "@typescript-eslint/utils": "8.65.0" }, "peerDependencies": { "eslint": "^8.57.0 || ^9.0.0 || ^10.0.0", "typescript": ">=4.8.4 <6.1.0" } }, "sha512-/ggrHAwyjENDusvyxbuqxAC2dTnZg/Z8F+fgQtYIz+L6n/9HfSlEZcFGV/NsMNa6CkGk0xUjUAFwC0vHOflvIA=="],
 
+    "@smthrs/ui/@types/bun": ["@types/bun@1.4.2", "", { "dependencies": { "bun-types": "1.4.2" } }, "sha512-GimotNn7+ZV0uVArItBbriZsR1oNf0+WTzPkdcFrzShI7k2norL0uzEaJT8T33dWr7O/c9ZDuAFQrctKCi72oQ=="],
+
     "@tailwindcss/node/lightningcss": ["lightningcss@1.32.0", "", { "dependencies": { "detect-libc": "^2.0.3" }, "optionalDependencies": { "lightningcss-android-arm64": "1.32.0", "lightningcss-darwin-arm64": "1.32.0", "lightningcss-darwin-x64": "1.32.0", "lightningcss-freebsd-x64": "1.32.0", "lightningcss-linux-arm-gnueabihf": "1.32.0", "lightningcss-linux-arm64-gnu": "1.32.0", "lightningcss-linux-arm64-musl": "1.32.0", "lightningcss-linux-x64-gnu": "1.32.0", "lightningcss-linux-x64-musl": "1.32.0", "lightningcss-win32-arm64-msvc": "1.32.0", "lightningcss-win32-x64-msvc": "1.32.0" } }, "sha512-NXYBzinNrblfraPGyrbPoD19C1h9lfI/1mzgWYvXUTe414Gz/X1FD2XBZSZM7rRTrMA8JL3OtAaGifrIKhQ5yQ=="],
 
     "@tailwindcss/node/magic-string": ["magic-string@0.30.21", "", { "dependencies": { "@jridgewell/sourcemap-codec": "^1.5.5" } }, "sha512-vd2F4YUyEXKGcLHoq+TEyCjxueSeHnFxyyjNp80yg0XV4vUhnDer/lvvlqM/arB5bXQN5K2/3oinyCRyx8T2CQ=="],
@@ -6615,6 +6620,8 @@
 
     "@types/babel__traverse/@babel/types": ["@babel/types@7.29.8", "", { "dependencies": { "@babel/helper-string-parser": "^7.29.7", "@babel/helper-validator-identifier": "^7.29.7" } }, "sha512-Vj1jF3cPfxg7OAfoI7QnVKLoILlm2JF9pnVHrX8qx7AHMiYWT+NDAA7jChlNgRS4WTLc/fD1lXLmPixluj+3Gg=="],
 
+    "@types/bun/bun-types": ["bun-types@1.3.6", "", { "dependencies": { "@types/node": "*" } }, "sha512-OlFwHcnNV99r//9v5IIOgQ9Uk37gZqrNMCcqEaExdkVq3Avwqok1bJFmvGMCkCE0FqzdY8VMOZpfpR3lwI+CsQ=="],
+
     "@types/sax/@types/node": ["@types/node@26.1.2", "", { "dependencies": { "undici-types": "~8.3.0" } }, "sha512-Vu4a5UFA9rIIFJ7rB/Vaafh9lrCQszopTCx6KjFboXTGQbPNasehVR5TEiithSDGyd1DEiUByggTZsg8jukeIg=="],
 
     "@types/ws/@types/node": ["@types/node@26.1.2", "", { "dependencies": { "undici-types": "~8.3.0" } }, "sha512-Vu4a5UFA9rIIFJ7rB/Vaafh9lrCQszopTCx6KjFboXTGQbPNasehVR5TEiithSDGyd1DEiUByggTZsg8jukeIg=="],
@@ -6640,10 +6647,6 @@
     "@unrs/resolver-binding-wasm32-wasi/@emnapi/runtime": ["@emnapi/runtime@1.10.0", "", { "dependencies": { "tslib": "^2.4.0" } }, "sha512-ewvYlk86xUoGI0zQRNq/mC+16R1QeDlKQy21Ki3oSYXNgLb45GV1P6A0M+/s6nyCuNDqe5VpaY84BzXGwVbwFA=="],
 
     "@unrs/resolver-binding-wasm32-wasi/@napi-rs/wasm-runtime": ["@napi-rs/wasm-runtime@1.2.2", "", { "dependencies": { "@tybys/wasm-util": "^0.10.3" }, "peerDependencies": { "@emnapi/core": "^1.7.1 || ^2.0.0-alpha.3", "@emnapi/runtime": "^1.7.1 || ^2.0.0-alpha.3" } }, "sha512-JfB4kuJQjaoHuCTseIINHtHWeJnvgEcxjwA5t/Y00ZgaOO1Crz3fjT/p8kT28zA/Caz7oiUMn3d6H2yOVCVwuw=="],
-
-    "@vitest/mocker/magic-string": ["magic-string@0.30.21", "", { "dependencies": { "@jridgewell/sourcemap-codec": "^1.5.5" } }, "sha512-vd2F4YUyEXKGcLHoq+TEyCjxueSeHnFxyyjNp80yg0XV4vUhnDer/lvvlqM/arB5bXQN5K2/3oinyCRyx8T2CQ=="],
-
-    "@vitest/snapshot/magic-string": ["magic-string@0.30.21", "", { "dependencies": { "@jridgewell/sourcemap-codec": "^1.5.5" } }, "sha512-vd2F4YUyEXKGcLHoq+TEyCjxueSeHnFxyyjNp80yg0XV4vUhnDer/lvvlqM/arB5bXQN5K2/3oinyCRyx8T2CQ=="],
 
     "@vscode/emmet-helper/jsonc-parser": ["jsonc-parser@2.3.1", "", {}, "sha512-H8jvkz1O50L3dMZCsLqiuB2tA7muqbSg1AtGEkN0leAqGjsUzDJir3Zwr02BhqdcITPg3ei3mZ+HjMocAknhhg=="],
 
@@ -6729,10 +6732,6 @@
 
     "foreground-child/signal-exit": ["signal-exit@4.1.0", "", {}, "sha512-bzyZ1e88w9O1iNJbKnOlvYTrWPDl46O1bG0D3XInv+9tkPrxrN8jUUTiFlDkkmKWgn1M6CfIA13SuGqOa9Korw=="],
 
-    "happy-dom/@types/node": ["@types/node@26.1.2", "", { "dependencies": { "undici-types": "~8.3.0" } }, "sha512-Vu4a5UFA9rIIFJ7rB/Vaafh9lrCQszopTCx6KjFboXTGQbPNasehVR5TEiithSDGyd1DEiUByggTZsg8jukeIg=="],
-
-    "happy-dom/ws": ["ws@8.21.1", "", { "peerDependencies": { "bufferutil": "^4.0.1", "utf-8-validate": ">=5.0.2" }, "optionalPeers": ["bufferutil", "utf-8-validate"] }, "sha512-+0NTnW77fFN/DjQi6k/Sq/Yvk4Sgajw7urW8V+asjXnRgDs9gyGkdb7EzgfhA4goXsRIZKE28fzIXBHEzhuiWw=="],
-
     "incur/zod": ["zod@4.4.3", "", {}, "sha512-ytENFjIJFl2UwYglde2jchW2Hwm4GJFLDiSXWdTrJQBIN9Fcyp7n4DhxJEiWNAJMV1/BqWfW/kkg71UDcHJyTQ=="],
 
     "ink/ansi-styles": ["ansi-styles@6.2.3", "", {}, "sha512-4Dj6M28JB+oAH8kFkTLUo+a2jwOFkuqb3yucU0CANcRRUbxS0cP0nZYCGjcc3BNXwRIsUVmDGgzawme7zvJHvg=="],
@@ -6740,10 +6739,6 @@
     "ink/chalk": ["chalk@5.6.2", "", {}, "sha512-7NzBL0rN6fMUW+f7A6Io4h40qQlG+xGmtMxfbnH/K7TAtt8JQWVQK+6g0UXKMeVJoyV5EkkNsErQ8pVD3bLHbA=="],
 
     "ink/ws": ["ws@8.21.1", "", { "peerDependencies": { "bufferutil": "^4.0.1", "utf-8-validate": ">=5.0.2" }, "optionalPeers": ["bufferutil", "utf-8-validate"] }, "sha512-+0NTnW77fFN/DjQi6k/Sq/Yvk4Sgajw7urW8V+asjXnRgDs9gyGkdb7EzgfhA4goXsRIZKE28fzIXBHEzhuiWw=="],
-
-    "ioredis/cluster-key-slot": ["cluster-key-slot@1.1.1", "", {}, "sha512-rwHwUfXL40Chm1r08yrhU3qpUvdVlgkKNeyeGPOxnW8/SyVDvgRaed/Uz54AqWNaTCAThlj6QAs3TZcKI0xDEw=="],
-
-    "istanbul-reports/html-escaper": ["html-escaper@2.0.2", "", {}, "sha512-H2iMtd0I4Mt5eYiapRdIDjp+XzelXQ0tFE4JS7YFwFevXXMmOp9myNrUvCg0D6ws8iqkRPBfKHgbwig1SmlLfg=="],
 
     "katex/commander": ["commander@8.3.0", "", {}, "sha512-OkTL9umf+He2DZkUq8f8J9of7yL6RJKI24dVITBmNfZBmri9zYZQrKkuXiKhyfPSu8tUhnVBB1iKXevvnlR4Ww=="],
 
@@ -6787,8 +6782,6 @@
 
     "rc/strip-json-comments": ["strip-json-comments@2.0.1", "", {}, "sha512-4gB8na07fecVVkOI6Rs4e7T6NOTki5EmL7TUduTs6bu3EdnSycntVJ4re8kgZA+wx9IueI2Y11bfbgwtzuE0KQ=="],
 
-    "react-devtools-core/ws": ["ws@7.5.13", "", { "peerDependencies": { "bufferutil": "^4.0.1", "utf-8-validate": "^5.0.2" }, "optionalPeers": ["bufferutil", "utf-8-validate"] }, "sha512-rsKI6xDBFVf4r/x8XyChGK04QR/XHroxs/jUcoWvtEZM8TPU/X/uIY9B1CsSzYws9ZJb/6bbBu7dPhFW00CAoA=="],
-
     "safe-array-concat/isarray": ["isarray@2.0.5", "", {}, "sha512-xHjhDr3cNBK0BzdUJSPXZntQUx/mwMS5Rw4A7lPJ90XGAO6ISP/ePDNuo0vhqOZU+UD5JoodwCAAoZQd3FeAKw=="],
 
     "safe-push-apply/isarray": ["isarray@2.0.5", "", {}, "sha512-xHjhDr3cNBK0BzdUJSPXZntQUx/mwMS5Rw4A7lPJ90XGAO6ISP/ePDNuo0vhqOZU+UD5JoodwCAAoZQd3FeAKw=="],
@@ -6803,6 +6796,10 @@
 
     "slice-ansi/ansi-styles": ["ansi-styles@6.2.3", "", {}, "sha512-4Dj6M28JB+oAH8kFkTLUo+a2jwOFkuqb3yucU0CANcRRUbxS0cP0nZYCGjcc3BNXwRIsUVmDGgzawme7zvJHvg=="],
 
+    "smithers-app/@types/bun": ["@types/bun@1.4.2", "", { "dependencies": { "bun-types": "1.4.2" } }, "sha512-GimotNn7+ZV0uVArItBbriZsR1oNf0+WTzPkdcFrzShI7k2norL0uzEaJT8T33dWr7O/c9ZDuAFQrctKCi72oQ=="],
+
+    "smithers-server/@types/bun": ["@types/bun@1.4.2", "", { "dependencies": { "bun-types": "1.4.2" } }, "sha512-GimotNn7+ZV0uVArItBbriZsR1oNf0+WTzPkdcFrzShI7k2norL0uzEaJT8T33dWr7O/c9ZDuAFQrctKCi72oQ=="],
+
     "stack-utils/escape-string-regexp": ["escape-string-regexp@2.0.0", "", {}, "sha512-UpzcLCXolUWcNu5HtVMHYdXJjArjsF9C0aNnquZYY4uW/Vu0miy5YoWvbV345HauVvcAUnpRuhMMcqTcGOY2+w=="],
 
     "string-width/strip-ansi": ["strip-ansi@7.1.2", "", { "dependencies": { "ansi-regex": "^6.0.1" } }, "sha512-gmBGslpoQJtgnMAvOVqGZpEz9dyoKTCzy2nfz/n8aIFhN/jCE/rCmcxabB6jOOHV+0WNnylOxaxBQPSvcWklhA=="],
@@ -6813,15 +6810,17 @@
 
     "svgo/commander": ["commander@11.1.0", "", {}, "sha512-yPVavfyCcRhmorC7rWlkHn15b4wDVgVmBA7kV4QVBsF7kv/9TKJAbAXVTxvTnwP8HHKjRCJDClKbciiYS7p0DQ=="],
 
-    "terser/commander": ["commander@2.20.3", "", {}, "sha512-GpVkmM8vF2vQUkj2LvZmD35JxeJOLCwJ9cUkugyk2nuhbv3+mJvpLYYt+0+USMxE+oj+ey/lJEnhZw75x/OMcQ=="],
-
     "unifont/undici": ["undici@8.9.0", "", {}, "sha512-aWZpUj7XoGonMClx4gdDRfgBjqeA+F473aDmROQQbM9n6PRfK/u1q/a0X4wMTgcHfT8H6fpbt98PFuDUwFg2YA=="],
 
     "unstorage/chokidar": ["chokidar@5.0.0", "", { "dependencies": { "readdirp": "^5.0.0" } }, "sha512-TQMmc3w+5AxjpL8iIiwebF73dRDF4fBIieAqGn9RGCWaEVwQ6Fb2cGe31Yns0RRIzii5goJ1Y7xbMwo1TxMplw=="],
 
     "vite/postcss": ["postcss@8.5.26", "", { "dependencies": { "nanoid": "^3.3.17", "picocolors": "^1.1.1", "source-map-js": "^1.2.1" } }, "sha512-u82N74LFzG8ca+dD8puPnplTXoGH4fTPpVGuIbt36G3qvNlkvfD0lEAZSxaly3KX8TS/L1A1gsCEmvKmBcVbkQ=="],
 
-    "vitest/magic-string": ["magic-string@0.30.21", "", { "dependencies": { "@jridgewell/sourcemap-codec": "^1.5.5" } }, "sha512-vd2F4YUyEXKGcLHoq+TEyCjxueSeHnFxyyjNp80yg0XV4vUhnDer/lvvlqM/arB5bXQN5K2/3oinyCRyx8T2CQ=="],
+    "vitest/es-module-lexer": ["es-module-lexer@2.3.2", "", {}, "sha512-poHGpORABojJJucnV9KbOavETW8lBVnphkW77ER5/BQ5Fz7oXSoCNek7IH3vR5nRjdsEz926ibFYX8KtLQmdyw=="],
+
+    "vitest/picomatch": ["picomatch@4.0.7", "", {}, "sha512-qcJu88Q2IWqJsDD529JKMdwGm/dvInW4HvQnRwiH9JtihJvzGOscDtHE3x1pBKeUOTysQ8kVmLnJ2kJu7yhcGA=="],
+
+    "vitest/tinyexec": ["tinyexec@1.3.0", "", {}, "sha512-QKAl9m8gWWGHV8jZcPeym6j+XULi6tOf1mT83WYJ4Lk2ytW/uwAWkrP0uFsdoYMdueVJ0qs26wZ+23xeB4ibNQ=="],
 
     "vscode-css-languageservice/vscode-languageserver-types": ["vscode-languageserver-types@3.17.5", "", {}, "sha512-Ld1VelNuX9pdF39h2Hgaeb5hEZM2Z3jUrrMgWQAu82jMtZp7p3vJT3BzToKtZI7NgQssZje5o0zryOrhQvzQAg=="],
 
@@ -6970,6 +6969,8 @@
     "@smthrs/rpc/typescript-eslint/@typescript-eslint/typescript-estree": ["@typescript-eslint/typescript-estree@8.65.0", "", { "dependencies": { "@typescript-eslint/project-service": "8.65.0", "@typescript-eslint/tsconfig-utils": "8.65.0", "@typescript-eslint/types": "8.65.0", "@typescript-eslint/visitor-keys": "8.65.0", "debug": "^4.4.3", "minimatch": "^10.2.2", "semver": "^7.7.3", "tinyglobby": "^0.2.15", "ts-api-utils": "^2.5.0" }, "peerDependencies": { "typescript": ">=4.8.4 <6.1.0" } }, "sha512-JboAE2swaYt4tb1fHhHTABE2K+OLy09XfcTbhnk4Pw96f9dd2e9iYsJ28gBggHlo5z5x1rkyWvcPoTuNTd4oGg=="],
 
     "@smthrs/rpc/typescript-eslint/@typescript-eslint/utils": ["@typescript-eslint/utils@8.65.0", "", { "dependencies": { "@eslint-community/eslint-utils": "^4.9.1", "@typescript-eslint/scope-manager": "8.65.0", "@typescript-eslint/types": "8.65.0", "@typescript-eslint/typescript-estree": "8.65.0" }, "peerDependencies": { "eslint": "^8.57.0 || ^9.0.0 || ^10.0.0", "typescript": ">=4.8.4 <6.1.0" } }, "sha512-gXiwIHsYreboxeJucHKPvgwl7dXt50mF8s1/c00cP/WoVTyWKFdtfhRWwZiXYFU5H2O8vVoSLNrexFZjYS/SGA=="],
+
+    "@smthrs/ui/@types/bun/bun-types": ["bun-types@1.4.2", "", { "dependencies": { "@types/node": "*" } }, "sha512-bxV1FgK7yBIzjRe5zBozIM4Bem11ZJcCXSrjWRG3YWLt8yFDePu4cLjpebO8OvPeIE9trbyPF4fuj3Cia4Fj3w=="],
 
     "@tailwindcss/node/lightningcss/lightningcss-android-arm64": ["lightningcss-android-arm64@1.32.0", "", { "os": "android", "cpu": "arm64" }, "sha512-YK7/ClTt4kAK0vo6w3X+Pnm0D2cf2vPHbhOXdoNti1Ga0al1P4TBZhwjATvjNwLEBCnKvjJc2jQgHXH0NEwlAg=="],
 
@@ -7126,6 +7127,10 @@
     "p-locate/p-limit/yocto-queue": ["yocto-queue@0.1.0", "", {}, "sha512-rVksvsnNCdJ/ohGc6xgPwyN8eheCxsiLM8mxuE/t/mOVqJewPuO1miLpTHQiRgTKCLexL4MeAFVagts7HmNZ2Q=="],
 
     "sitemap/@types/node/undici-types": ["undici-types@7.18.2", "", {}, "sha512-AsuCzffGHJybSaRrmr5eHr81mwJU3kjw6M+uprWvCXiNeN9SOGwQ3Jn8jb8m3Z6izVgknn1R0FTCEAP2QrLY/w=="],
+
+    "smithers-app/@types/bun/bun-types": ["bun-types@1.4.2", "", { "dependencies": { "@types/node": "*" } }, "sha512-bxV1FgK7yBIzjRe5zBozIM4Bem11ZJcCXSrjWRG3YWLt8yFDePu4cLjpebO8OvPeIE9trbyPF4fuj3Cia4Fj3w=="],
+
+    "smithers-server/@types/bun/bun-types": ["bun-types@1.4.2", "", { "dependencies": { "@types/node": "*" } }, "sha512-bxV1FgK7yBIzjRe5zBozIM4Bem11ZJcCXSrjWRG3YWLt8yFDePu4cLjpebO8OvPeIE9trbyPF4fuj3Cia4Fj3w=="],
 
     "string-width/strip-ansi/ansi-regex": ["ansi-regex@6.2.2", "", {}, "sha512-Bq3SmSpyFHaWjPk8If9yc6svM8c56dB5BAtW4Qbw5jHTwwXXcTLoRMkpDJp6VL0XzlWaCHTXrkFURMYmD0sLqg=="],
 

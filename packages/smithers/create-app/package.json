@@ -74,39 +74,74 @@
     "exports": {
       "./package.json": "./package.json",
       ".": {
-        "types": "./dist/esm/index.d.ts",
-        "import": "./dist/esm/index.js",
-        "require": "./dist/cjs/index.js"
+        "import": {
+          "types": "./dist/esm/index.d.ts",
+          "default": "./dist/esm/index.js"
+        },
+        "require": {
+          "types": "./dist/cjs/index.d.ts",
+          "default": "./dist/cjs/index.js"
+        }
       },
       "./app": {
-        "types": "./dist/esm/app.d.ts",
-        "import": "./dist/esm/app.js",
-        "require": "./dist/cjs/app.js"
+        "import": {
+          "types": "./dist/esm/app.d.ts",
+          "default": "./dist/esm/app.js"
+        },
+        "require": {
+          "types": "./dist/cjs/app.d.ts",
+          "default": "./dist/cjs/app.js"
+        }
       },
       "./package": {
-        "types": "./dist/esm/package.d.ts",
-        "import": "./dist/esm/package.js",
-        "require": "./dist/cjs/package.js"
+        "import": {
+          "types": "./dist/esm/package.d.ts",
+          "default": "./dist/esm/package.js"
+        },
+        "require": {
+          "types": "./dist/cjs/package.d.ts",
+          "default": "./dist/cjs/package.js"
+        }
       },
       "./ui": {
-        "types": "./dist/esm/ui.d.ts",
-        "import": "./dist/esm/ui.js",
-        "require": "./dist/cjs/ui.js"
+        "import": {
+          "types": "./dist/esm/ui.d.ts",
+          "default": "./dist/esm/ui.js"
+        },
+        "require": {
+          "types": "./dist/cjs/ui.d.ts",
+          "default": "./dist/cjs/ui.js"
+        }
       },
       "./runtime": {
-        "types": "./dist/esm/runtime.d.ts",
-        "import": "./dist/esm/runtime.js",
-        "require": "./dist/cjs/runtime.js"
+        "import": {
+          "types": "./dist/esm/runtime.d.ts",
+          "default": "./dist/esm/runtime.js"
+        },
+        "require": {
+          "types": "./dist/cjs/runtime.d.ts",
+          "default": "./dist/cjs/runtime.js"
+        }
       },
       "./router": {
-        "types": "./dist/esm/router.d.ts",
-        "import": "./dist/esm/router.js",
-        "require": "./dist/cjs/router.js"
+        "import": {
+          "types": "./dist/esm/router.d.ts",
+          "default": "./dist/esm/router.js"
+        },
+        "require": {
+          "types": "./dist/cjs/router.d.ts",
+          "default": "./dist/cjs/router.js"
+        }
       },
       "./vite": {
-        "types": "./dist/esm/vite.d.ts",
-        "import": "./dist/esm/vite.js",
-        "require": "./dist/cjs/vite.js"
+        "import": {
+          "types": "./dist/esm/vite.d.ts",
+          "default": "./dist/esm/vite.js"
+        },
+        "require": {
+          "types": "./dist/cjs/vite.d.ts",
+          "default": "./dist/cjs/vite.js"
+        }
       },
       "./testing": {
         "types": "./dist/esm/testing.d.ts",
@@ -115,14 +150,24 @@
       "./internal/*": null,
       "./*/index": null,
       "./index": {
-        "types": "./dist/esm/index.d.ts",
-        "import": "./dist/esm/index.js",
-        "require": "./dist/cjs/index.js"
+        "import": {
+          "types": "./dist/esm/index.d.ts",
+          "default": "./dist/esm/index.js"
+        },
+        "require": {
+          "types": "./dist/cjs/index.d.ts",
+          "default": "./dist/cjs/index.js"
+        }
       },
       "./routesBin": {
-        "types": "./dist/esm/routesBin.d.ts",
-        "import": "./dist/esm/routesBin.js",
-        "require": "./dist/cjs/routesBin.js"
+        "import": {
+          "types": "./dist/esm/routesBin.d.ts",
+          "default": "./dist/esm/routesBin.js"
+        },
+        "require": {
+          "types": "./dist/cjs/routesBin.d.ts",
+          "default": "./dist/cjs/routesBin.js"
+        }
       }
     }
   },
@@ -146,13 +191,13 @@
     "@smthrs/targets": "1.0.0-rc.0"
   },
   "peerDependencies": {
-    "@effect/platform-node": "4.0.0-rc.112",
+    "@effect/platform-node": "4.0.0-rc.115",
     "@smthrs/testing": "1.0.0-rc.0",
-    "effect": "4.0.0-rc.112",
+    "effect": "4.0.0-rc.115",
     "react": "^19.2.8",
     "tsx": "^4.23.13",
     "vite": "^8.2.2",
-    "vitest": "^4.1.9 || ^5.0.0"
+    "vitest": "^5.0.0"
   },
   "peerDependenciesMeta": {
     "@effect/platform-node": {
@@ -175,16 +220,17 @@
     }
   },
   "devDependencies": {
+    "@smthrs/core": "1.0.0-rc.0",
     "@effect/language-service": "0.87.2",
-    "@effect/platform-node": "4.0.0-rc.112",
-    "@effect/vitest": "4.0.0-rc.112",
+    "@effect/platform-node": "4.0.0-rc.115",
+    "@effect/vitest": "4.0.0-rc.115",
     "@eslint/js": "9.39.5",
     "@smthrs/testing": "1.0.0-rc.0",
     "@types/node": "26.4.1",
     "@types/react": "19.2.18",
-    "@vitest/coverage-v8": "4.1.9",
+    "@vitest/coverage-v8": "5.0.0",
     "dprint": "0.57.1",
-    "effect": "4.0.0-rc.112",
+    "effect": "4.0.0-rc.115",
     "esbuild": "0.28.2",
     "eslint": "9.39.5",
     "eslint-import-resolver-typescript": "4.4.5",
@@ -197,6 +243,6 @@
     "typescript": "5.9.3",
     "typescript-eslint": "8.69.0",
     "vite": "^8.2.2",
-    "vitest": "4.1.9"
+    "vitest": "5.0.0"
   }
 }

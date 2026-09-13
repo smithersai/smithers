@@ -64,51 +64,96 @@
     "exports": {
       "./package.json": "./package.json",
       ".": {
-        "types": "./dist/esm/index.d.ts",
-        "import": "./dist/esm/index.js",
-        "require": "./dist/cjs/index.js"
+        "import": {
+          "types": "./dist/esm/index.d.ts",
+          "default": "./dist/esm/index.js"
+        },
+        "require": {
+          "types": "./dist/cjs/index.d.ts",
+          "default": "./dist/cjs/index.js"
+        }
       },
       "./internal/*": null,
       "./*/index": null,
       "./Config": {
-        "types": "./dist/esm/Config.d.ts",
-        "import": "./dist/esm/Config.js",
-        "require": "./dist/cjs/Config.js"
+        "import": {
+          "types": "./dist/esm/Config.d.ts",
+          "default": "./dist/esm/Config.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Config.d.ts",
+          "default": "./dist/cjs/Config.js"
+        }
       },
       "./Hooks": {
-        "types": "./dist/esm/Hooks.d.ts",
-        "import": "./dist/esm/Hooks.js",
-        "require": "./dist/cjs/Hooks.js"
+        "import": {
+          "types": "./dist/esm/Hooks.d.ts",
+          "default": "./dist/esm/Hooks.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Hooks.d.ts",
+          "default": "./dist/cjs/Hooks.js"
+        }
       },
       "./Kernel": {
-        "types": "./dist/esm/Kernel.d.ts",
-        "import": "./dist/esm/Kernel.js",
-        "require": "./dist/cjs/Kernel.js"
+        "import": {
+          "types": "./dist/esm/Kernel.d.ts",
+          "default": "./dist/esm/Kernel.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Kernel.d.ts",
+          "default": "./dist/cjs/Kernel.js"
+        }
       },
       "./Plugin": {
-        "types": "./dist/esm/Plugin.d.ts",
-        "import": "./dist/esm/Plugin.js",
-        "require": "./dist/cjs/Plugin.js"
+        "import": {
+          "types": "./dist/esm/Plugin.d.ts",
+          "default": "./dist/esm/Plugin.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Plugin.d.ts",
+          "default": "./dist/cjs/Plugin.js"
+        }
       },
       "./PluginError": {
-        "types": "./dist/esm/PluginError.d.ts",
-        "import": "./dist/esm/PluginError.js",
-        "require": "./dist/cjs/PluginError.js"
+        "import": {
+          "types": "./dist/esm/PluginError.d.ts",
+          "default": "./dist/esm/PluginError.js"
+        },
+        "require": {
+          "types": "./dist/cjs/PluginError.d.ts",
+          "default": "./dist/cjs/PluginError.js"
+        }
       },
       "./Plugins": {
-        "types": "./dist/esm/Plugins.d.ts",
-        "import": "./dist/esm/Plugins.js",
-        "require": "./dist/cjs/Plugins.js"
+        "import": {
+          "types": "./dist/esm/Plugins.d.ts",
+          "default": "./dist/esm/Plugins.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Plugins.d.ts",
+          "default": "./dist/cjs/Plugins.js"
+        }
       },
       "./Resolve": {
-        "types": "./dist/esm/Resolve.d.ts",
-        "import": "./dist/esm/Resolve.js",
-        "require": "./dist/cjs/Resolve.js"
+        "import": {
+          "types": "./dist/esm/Resolve.d.ts",
+          "default": "./dist/esm/Resolve.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Resolve.d.ts",
+          "default": "./dist/cjs/Resolve.js"
+        }
       },
       "./index": {
-        "types": "./dist/esm/index.d.ts",
-        "import": "./dist/esm/index.js",
-        "require": "./dist/cjs/index.js"
+        "import": {
+          "types": "./dist/esm/index.d.ts",
+          "default": "./dist/esm/index.js"
+        },
+        "require": {
+          "types": "./dist/cjs/index.d.ts",
+          "default": "./dist/cjs/index.js"
+        }
       }
     }
   },
@@ -126,12 +171,12 @@
   },
   "devDependencies": {
     "@effect/language-service": "0.87.2",
-    "@effect/vitest": "4.0.0-rc.112",
+    "@effect/vitest": "4.0.0-rc.115",
     "@eslint/js": "9.39.5",
     "@types/node": "26.4.1",
-    "@vitest/coverage-v8": "4.1.9",
+    "@vitest/coverage-v8": "5.0.0",
     "dprint": "0.57.1",
-    "effect": "4.0.0-rc.112",
+    "effect": "4.0.0-rc.115",
     "esbuild": "0.28.2",
     "eslint": "9.39.5",
     "eslint-import-resolver-typescript": "4.4.5",
@@ -141,9 +186,9 @@
     "madge": "8.0.0",
     "typescript": "5.9.3",
     "typescript-eslint": "8.69.0",
-    "vitest": "4.1.9"
+    "vitest": "5.0.0"
   },
   "peerDependencies": {
-    "effect": "4.0.0-rc.112"
+    "effect": "4.0.0-rc.115"
   }
 }

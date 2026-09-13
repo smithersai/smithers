@@ -8,7 +8,8 @@ import { Smithers } from "@smthrs/targets"
 
 const { check, circular, docs, docsFiles, fmt, lib, lint, test } = BuildAndCheckTypeScriptPackage({
   deps: [],
-  cwd: "packages/smithers/flows/core"
+  cwd: "packages/smithers/flows/core",
+  testData: ["test/fixtures/*.json"]
 })
 
 export const Package = Smithers.Package({

@@ -91,147 +91,287 @@
     "exports": {
       "./package.json": "./package.json",
       ".": {
-        "types": "./dist/esm/index.d.ts",
-        "import": "./dist/esm/index.js",
-        "require": "./dist/cjs/index.js"
+        "import": {
+          "types": "./dist/esm/index.d.ts",
+          "default": "./dist/esm/index.js"
+        },
+        "require": {
+          "types": "./dist/cjs/index.d.ts",
+          "default": "./dist/cjs/index.js"
+        }
       },
       "./internal/*": null,
       "./flow/internal/*": null,
       "./*/index": null,
       "./Checks": {
-        "types": "./dist/esm/Checks.d.ts",
-        "import": "./dist/esm/Checks.js",
-        "require": "./dist/cjs/Checks.js"
+        "import": {
+          "types": "./dist/esm/Checks.d.ts",
+          "default": "./dist/esm/Checks.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Checks.d.ts",
+          "default": "./dist/cjs/Checks.js"
+        }
       },
       "./Constructs": {
-        "types": "./dist/esm/Constructs.d.ts",
-        "import": "./dist/esm/Constructs.js",
-        "require": "./dist/cjs/Constructs.js"
+        "import": {
+          "types": "./dist/esm/Constructs.d.ts",
+          "default": "./dist/esm/Constructs.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Constructs.d.ts",
+          "default": "./dist/cjs/Constructs.js"
+        }
       },
       "./Detect": {
-        "types": "./dist/esm/Detect.d.ts",
-        "import": "./dist/esm/Detect.js",
-        "require": "./dist/cjs/Detect.js"
+        "import": {
+          "types": "./dist/esm/Detect.d.ts",
+          "default": "./dist/esm/Detect.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Detect.d.ts",
+          "default": "./dist/cjs/Detect.js"
+        }
       },
       "./Inventory": {
-        "types": "./dist/esm/Inventory.d.ts",
-        "import": "./dist/esm/Inventory.js",
-        "require": "./dist/cjs/Inventory.js"
+        "import": {
+          "types": "./dist/esm/Inventory.d.ts",
+          "default": "./dist/esm/Inventory.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Inventory.d.ts",
+          "default": "./dist/cjs/Inventory.js"
+        }
       },
       "./Mapping": {
-        "types": "./dist/esm/Mapping.d.ts",
-        "import": "./dist/esm/Mapping.js",
-        "require": "./dist/cjs/Mapping.js"
+        "import": {
+          "types": "./dist/esm/Mapping.d.ts",
+          "default": "./dist/esm/Mapping.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Mapping.d.ts",
+          "default": "./dist/cjs/Mapping.js"
+        }
       },
       "./MigrateError": {
-        "types": "./dist/esm/MigrateError.d.ts",
-        "import": "./dist/esm/MigrateError.js",
-        "require": "./dist/cjs/MigrateError.js"
+        "import": {
+          "types": "./dist/esm/MigrateError.d.ts",
+          "default": "./dist/esm/MigrateError.js"
+        },
+        "require": {
+          "types": "./dist/cjs/MigrateError.d.ts",
+          "default": "./dist/cjs/MigrateError.js"
+        }
       },
       "./PromptHints": {
-        "types": "./dist/esm/PromptHints.d.ts",
-        "import": "./dist/esm/PromptHints.js",
-        "require": "./dist/cjs/PromptHints.js"
+        "import": {
+          "types": "./dist/esm/PromptHints.d.ts",
+          "default": "./dist/esm/PromptHints.js"
+        },
+        "require": {
+          "types": "./dist/cjs/PromptHints.d.ts",
+          "default": "./dist/cjs/PromptHints.js"
+        }
       },
       "./Report": {
-        "types": "./dist/esm/Report.d.ts",
-        "import": "./dist/esm/Report.js",
-        "require": "./dist/cjs/Report.js"
+        "import": {
+          "types": "./dist/esm/Report.d.ts",
+          "default": "./dist/esm/Report.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Report.d.ts",
+          "default": "./dist/cjs/Report.js"
+        }
       },
       "./RunState": {
-        "types": "./dist/esm/RunState.d.ts",
-        "import": "./dist/esm/RunState.js",
-        "require": "./dist/cjs/RunState.js"
+        "import": {
+          "types": "./dist/esm/RunState.d.ts",
+          "default": "./dist/esm/RunState.js"
+        },
+        "require": {
+          "types": "./dist/cjs/RunState.d.ts",
+          "default": "./dist/cjs/RunState.js"
+        }
       },
       "./Scan": {
-        "types": "./dist/esm/Scan.d.ts",
-        "import": "./dist/esm/Scan.js",
-        "require": "./dist/cjs/Scan.js"
+        "import": {
+          "types": "./dist/esm/Scan.d.ts",
+          "default": "./dist/esm/Scan.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Scan.d.ts",
+          "default": "./dist/cjs/Scan.js"
+        }
       },
       "./Units": {
-        "types": "./dist/esm/Units.d.ts",
-        "import": "./dist/esm/Units.js",
-        "require": "./dist/cjs/Units.js"
+        "import": {
+          "types": "./dist/esm/Units.d.ts",
+          "default": "./dist/esm/Units.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Units.d.ts",
+          "default": "./dist/cjs/Units.js"
+        }
       },
       "./ZodSchemaHints": {
-        "types": "./dist/esm/ZodSchemaHints.d.ts",
-        "import": "./dist/esm/ZodSchemaHints.js",
-        "require": "./dist/cjs/ZodSchemaHints.js"
+        "import": {
+          "types": "./dist/esm/ZodSchemaHints.d.ts",
+          "default": "./dist/esm/ZodSchemaHints.js"
+        },
+        "require": {
+          "types": "./dist/cjs/ZodSchemaHints.d.ts",
+          "default": "./dist/cjs/ZodSchemaHints.js"
+        }
       },
       "./flow/Archive": {
-        "types": "./dist/esm/flow/Archive.d.ts",
-        "import": "./dist/esm/flow/Archive.js",
-        "require": "./dist/cjs/flow/Archive.js"
+        "import": {
+          "types": "./dist/esm/flow/Archive.d.ts",
+          "default": "./dist/esm/flow/Archive.js"
+        },
+        "require": {
+          "types": "./dist/cjs/flow/Archive.d.ts",
+          "default": "./dist/cjs/flow/Archive.js"
+        }
       },
       "./flow/Checkpoint": {
-        "types": "./dist/esm/flow/Checkpoint.d.ts",
-        "import": "./dist/esm/flow/Checkpoint.js",
-        "require": "./dist/cjs/flow/Checkpoint.js"
+        "import": {
+          "types": "./dist/esm/flow/Checkpoint.d.ts",
+          "default": "./dist/esm/flow/Checkpoint.js"
+        },
+        "require": {
+          "types": "./dist/cjs/flow/Checkpoint.d.ts",
+          "default": "./dist/cjs/flow/Checkpoint.js"
+        }
       },
       "./flow/Cli": {
-        "types": "./dist/esm/flow/Cli.d.ts",
-        "import": "./dist/esm/flow/Cli.js",
-        "require": "./dist/cjs/flow/Cli.js"
+        "import": {
+          "types": "./dist/esm/flow/Cli.d.ts",
+          "default": "./dist/esm/flow/Cli.js"
+        },
+        "require": {
+          "types": "./dist/cjs/flow/Cli.d.ts",
+          "default": "./dist/cjs/flow/Cli.js"
+        }
       },
       "./flow/Command": {
-        "types": "./dist/esm/flow/Command.d.ts",
-        "import": "./dist/esm/flow/Command.js",
-        "require": "./dist/cjs/flow/Command.js"
+        "import": {
+          "types": "./dist/esm/flow/Command.d.ts",
+          "default": "./dist/esm/flow/Command.js"
+        },
+        "require": {
+          "types": "./dist/cjs/flow/Command.d.ts",
+          "default": "./dist/cjs/flow/Command.js"
+        }
       },
       "./flow/Contract": {
-        "types": "./dist/esm/flow/Contract.d.ts",
-        "import": "./dist/esm/flow/Contract.js",
-        "require": "./dist/cjs/flow/Contract.js"
+        "import": {
+          "types": "./dist/esm/flow/Contract.d.ts",
+          "default": "./dist/esm/flow/Contract.js"
+        },
+        "require": {
+          "types": "./dist/cjs/flow/Contract.d.ts",
+          "default": "./dist/cjs/flow/Contract.js"
+        }
       },
       "./flow/Gate": {
-        "types": "./dist/esm/flow/Gate.d.ts",
-        "import": "./dist/esm/flow/Gate.js",
-        "require": "./dist/cjs/flow/Gate.js"
+        "import": {
+          "types": "./dist/esm/flow/Gate.d.ts",
+          "default": "./dist/esm/flow/Gate.js"
+        },
+        "require": {
+          "types": "./dist/cjs/flow/Gate.d.ts",
+          "default": "./dist/cjs/flow/Gate.js"
+        }
       },
       "./flow/Layers": {
-        "types": "./dist/esm/flow/Layers.d.ts",
-        "import": "./dist/esm/flow/Layers.js",
-        "require": "./dist/cjs/flow/Layers.js"
+        "import": {
+          "types": "./dist/esm/flow/Layers.d.ts",
+          "default": "./dist/esm/flow/Layers.js"
+        },
+        "require": {
+          "types": "./dist/cjs/flow/Layers.d.ts",
+          "default": "./dist/cjs/flow/Layers.js"
+        }
       },
       "./flow/Lock": {
-        "types": "./dist/esm/flow/Lock.d.ts",
-        "import": "./dist/esm/flow/Lock.js",
-        "require": "./dist/cjs/flow/Lock.js"
+        "import": {
+          "types": "./dist/esm/flow/Lock.d.ts",
+          "default": "./dist/esm/flow/Lock.js"
+        },
+        "require": {
+          "types": "./dist/cjs/flow/Lock.d.ts",
+          "default": "./dist/cjs/flow/Lock.js"
+        }
       },
       "./flow/MigrateFlow": {
-        "types": "./dist/esm/flow/MigrateFlow.d.ts",
-        "import": "./dist/esm/flow/MigrateFlow.js",
-        "require": "./dist/cjs/flow/MigrateFlow.js"
+        "import": {
+          "types": "./dist/esm/flow/MigrateFlow.d.ts",
+          "default": "./dist/esm/flow/MigrateFlow.js"
+        },
+        "require": {
+          "types": "./dist/cjs/flow/MigrateFlow.d.ts",
+          "default": "./dist/cjs/flow/MigrateFlow.js"
+        }
       },
       "./flow/Options": {
-        "types": "./dist/esm/flow/Options.d.ts",
-        "import": "./dist/esm/flow/Options.js",
-        "require": "./dist/cjs/flow/Options.js"
+        "import": {
+          "types": "./dist/esm/flow/Options.d.ts",
+          "default": "./dist/esm/flow/Options.js"
+        },
+        "require": {
+          "types": "./dist/cjs/flow/Options.d.ts",
+          "default": "./dist/cjs/flow/Options.js"
+        }
       },
       "./flow/Repair": {
-        "types": "./dist/esm/flow/Repair.d.ts",
-        "import": "./dist/esm/flow/Repair.js",
-        "require": "./dist/cjs/flow/Repair.js"
+        "import": {
+          "types": "./dist/esm/flow/Repair.d.ts",
+          "default": "./dist/esm/flow/Repair.js"
+        },
+        "require": {
+          "types": "./dist/cjs/flow/Repair.d.ts",
+          "default": "./dist/cjs/flow/Repair.js"
+        }
       },
       "./flow/Transform": {
-        "types": "./dist/esm/flow/Transform.d.ts",
-        "import": "./dist/esm/flow/Transform.js",
-        "require": "./dist/cjs/flow/Transform.js"
+        "import": {
+          "types": "./dist/esm/flow/Transform.d.ts",
+          "default": "./dist/esm/flow/Transform.js"
+        },
+        "require": {
+          "types": "./dist/cjs/flow/Transform.d.ts",
+          "default": "./dist/cjs/flow/Transform.js"
+        }
       },
       "./flow/Verify": {
-        "types": "./dist/esm/flow/Verify.d.ts",
-        "import": "./dist/esm/flow/Verify.js",
-        "require": "./dist/cjs/flow/Verify.js"
+        "import": {
+          "types": "./dist/esm/flow/Verify.d.ts",
+          "default": "./dist/esm/flow/Verify.js"
+        },
+        "require": {
+          "types": "./dist/cjs/flow/Verify.d.ts",
+          "default": "./dist/cjs/flow/Verify.js"
+        }
       },
       "./flow/bin": {
-        "types": "./dist/esm/flow/bin.d.ts",
-        "import": "./dist/esm/flow/bin.js",
-        "require": "./dist/cjs/flow/bin.js"
+        "import": {
+          "types": "./dist/esm/flow/bin.d.ts",
+          "default": "./dist/esm/flow/bin.js"
+        },
+        "require": {
+          "types": "./dist/cjs/flow/bin.d.ts",
+          "default": "./dist/cjs/flow/bin.js"
+        }
       },
       "./index": {
-        "types": "./dist/esm/index.d.ts",
-        "import": "./dist/esm/index.js",
-        "require": "./dist/cjs/index.js"
+        "import": {
+          "types": "./dist/esm/index.d.ts",
+          "default": "./dist/esm/index.js"
+        },
+        "require": {
+          "types": "./dist/cjs/index.d.ts",
+          "default": "./dist/cjs/index.js"
+        }
       }
     }
   },
@@ -245,8 +385,8 @@
     "coverage": "vitest --coverage"
   },
   "dependencies": {
-    "@effect/platform-node": "4.0.0-rc.112",
-    "effect": "4.0.0-rc.112",
+    "@effect/platform-node": "4.0.0-rc.115",
+    "effect": "4.0.0-rc.115",
     "typescript": "7.0.2"
   },
   "optionalDependencies": {
@@ -265,11 +405,11 @@
   },
   "devDependencies": {
     "@effect/language-service": "0.87.2",
-    "@effect/vitest": "4.0.0-rc.112",
+    "@effect/vitest": "4.0.0-rc.115",
     "@eslint/js": "9.39.5",
     "@types/node": "26.4.1",
     "@typescript/typescript6": "6.0.2",
-    "@vitest/coverage-v8": "4.1.9",
+    "@vitest/coverage-v8": "5.0.0",
     "dprint": "0.57.1",
     "esbuild": "0.28.2",
     "eslint": "9.39.5",
@@ -279,12 +419,12 @@
     "eslint-plugin-unicorn": "65.0.0",
     "madge": "8.0.0",
     "typescript-eslint": "8.69.0",
-    "vitest": "4.1.9",
-    "@effect/platform-node": "4.0.0-rc.112",
-    "@effect/platform-node-shared": "4.0.0-rc.112",
-    "effect": "4.0.0-rc.112"
+    "vitest": "5.0.0",
+    "@effect/platform-node": "4.0.0-rc.115",
+    "@effect/platform-node-shared": "4.0.0-rc.115",
+    "effect": "4.0.0-rc.115"
   },
   "peerDependencies": {
-    "@effect/platform-node-shared": "4.0.0-rc.112"
+    "@effect/platform-node-shared": "4.0.0-rc.115"
   }
 }

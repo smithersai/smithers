@@ -3,6 +3,7 @@ import { build } from "esbuild"
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs"
 import { dirname, join, relative } from "node:path"
 import ts from "typescript"
+import { copyCommonJsDeclarations } from "../../repo-targets/scripts/build-library.mjs"
 
 const files = (directory) =>
   readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
@@ -59,4 +60,5 @@ export const compileCommonJs = async (src, cjs, esm) => {
       `void import(${JSON.stringify(relative(dirname(target), executable))}).catch((error) => { console.error(error); process.exitCode = 1 })\n`
     )
   }
+  copyCommonJsDeclarations(dirname(src))
 }

@@ -85,151 +85,296 @@
     "exports": {
       "./package.json": "./package.json",
       ".": {
-        "types": "./dist/esm/index.d.ts",
-        "import": "./dist/esm/index.js",
-        "require": "./dist/cjs/index.js"
+        "import": {
+          "types": "./dist/esm/index.d.ts",
+          "default": "./dist/esm/index.js"
+        },
+        "require": {
+          "types": "./dist/cjs/index.d.ts",
+          "default": "./dist/cjs/index.js"
+        }
       },
       "./internal/*": null,
       "./*/index": null,
       "./AgentEvent": {
-        "types": "./dist/esm/AgentEvent.d.ts",
-        "import": "./dist/esm/AgentEvent.js",
-        "require": "./dist/cjs/AgentEvent.js"
+        "import": {
+          "types": "./dist/esm/AgentEvent.d.ts",
+          "default": "./dist/esm/AgentEvent.js"
+        },
+        "require": {
+          "types": "./dist/cjs/AgentEvent.d.ts",
+          "default": "./dist/cjs/AgentEvent.js"
+        }
       },
       "./CallLedger": {
-        "types": "./dist/esm/CallLedger.d.ts",
-        "import": "./dist/esm/CallLedger.js",
-        "require": "./dist/cjs/CallLedger.js"
+        "import": {
+          "types": "./dist/esm/CallLedger.d.ts",
+          "default": "./dist/esm/CallLedger.js"
+        },
+        "require": {
+          "types": "./dist/cjs/CallLedger.d.ts",
+          "default": "./dist/cjs/CallLedger.js"
+        }
       },
       "./Cell": {
-        "types": "./dist/esm/Cell.d.ts",
-        "import": "./dist/esm/Cell.js",
-        "require": "./dist/cjs/Cell.js"
+        "import": {
+          "types": "./dist/esm/Cell.d.ts",
+          "default": "./dist/esm/Cell.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Cell.d.ts",
+          "default": "./dist/cjs/Cell.js"
+        }
       },
       "./CellCalls": {
-        "types": "./dist/esm/CellCalls.d.ts",
-        "import": "./dist/esm/CellCalls.js",
-        "require": "./dist/cjs/CellCalls.js"
+        "import": {
+          "types": "./dist/esm/CellCalls.d.ts",
+          "default": "./dist/esm/CellCalls.js"
+        },
+        "require": {
+          "types": "./dist/cjs/CellCalls.d.ts",
+          "default": "./dist/cjs/CellCalls.js"
+        }
       },
       "./CellHistory": {
-        "types": "./dist/esm/CellHistory.d.ts",
-        "import": "./dist/esm/CellHistory.js",
-        "require": "./dist/cjs/CellHistory.js"
+        "import": {
+          "types": "./dist/esm/CellHistory.d.ts",
+          "default": "./dist/esm/CellHistory.js"
+        },
+        "require": {
+          "types": "./dist/cjs/CellHistory.d.ts",
+          "default": "./dist/cjs/CellHistory.js"
+        }
       },
       "./CellTurn": {
-        "types": "./dist/esm/CellTurn.d.ts",
-        "import": "./dist/esm/CellTurn.js",
-        "require": "./dist/cjs/CellTurn.js"
+        "import": {
+          "types": "./dist/esm/CellTurn.d.ts",
+          "default": "./dist/esm/CellTurn.js"
+        },
+        "require": {
+          "types": "./dist/cjs/CellTurn.d.ts",
+          "default": "./dist/cjs/CellTurn.js"
+        }
       },
       "./CellValidation": {
-        "types": "./dist/esm/CellValidation.d.ts",
-        "import": "./dist/esm/CellValidation.js",
-        "require": "./dist/cjs/CellValidation.js"
+        "import": {
+          "types": "./dist/esm/CellValidation.d.ts",
+          "default": "./dist/esm/CellValidation.js"
+        },
+        "require": {
+          "types": "./dist/cjs/CellValidation.d.ts",
+          "default": "./dist/cjs/CellValidation.js"
+        }
       },
       "./Compaction": {
-        "types": "./dist/esm/Compaction.d.ts",
-        "import": "./dist/esm/Compaction.js",
-        "require": "./dist/cjs/Compaction.js"
+        "import": {
+          "types": "./dist/esm/Compaction.d.ts",
+          "default": "./dist/esm/Compaction.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Compaction.d.ts",
+          "default": "./dist/cjs/Compaction.js"
+        }
       },
       "./ContextWindow": {
-        "types": "./dist/esm/ContextWindow.d.ts",
-        "import": "./dist/esm/ContextWindow.js",
-        "require": "./dist/cjs/ContextWindow.js"
+        "import": {
+          "types": "./dist/esm/ContextWindow.d.ts",
+          "default": "./dist/esm/ContextWindow.js"
+        },
+        "require": {
+          "types": "./dist/cjs/ContextWindow.d.ts",
+          "default": "./dist/cjs/ContextWindow.js"
+        }
       },
       "./EngineLike": {
-        "types": "./dist/esm/EngineLike.d.ts",
-        "import": "./dist/esm/EngineLike.js",
-        "require": "./dist/cjs/EngineLike.js"
+        "import": {
+          "types": "./dist/esm/EngineLike.d.ts",
+          "default": "./dist/esm/EngineLike.js"
+        },
+        "require": {
+          "types": "./dist/cjs/EngineLike.d.ts",
+          "default": "./dist/cjs/EngineLike.js"
+        }
       },
       "./FlowBinding": {
-        "types": "./dist/esm/FlowBinding.d.ts",
-        "import": "./dist/esm/FlowBinding.js",
-        "require": "./dist/cjs/FlowBinding.js"
+        "import": {
+          "types": "./dist/esm/FlowBinding.d.ts",
+          "default": "./dist/esm/FlowBinding.js"
+        },
+        "require": {
+          "types": "./dist/cjs/FlowBinding.d.ts",
+          "default": "./dist/cjs/FlowBinding.js"
+        }
       },
       "./HarnessError": {
-        "types": "./dist/esm/HarnessError.d.ts",
-        "import": "./dist/esm/HarnessError.js",
-        "require": "./dist/cjs/HarnessError.js"
+        "import": {
+          "types": "./dist/esm/HarnessError.d.ts",
+          "default": "./dist/esm/HarnessError.js"
+        },
+        "require": {
+          "types": "./dist/cjs/HarnessError.d.ts",
+          "default": "./dist/cjs/HarnessError.js"
+        }
       },
       "./NarrowedCheck": {
-        "types": "./dist/esm/NarrowedCheck.d.ts",
-        "import": "./dist/esm/NarrowedCheck.js",
-        "require": "./dist/cjs/NarrowedCheck.js"
+        "import": {
+          "types": "./dist/esm/NarrowedCheck.d.ts",
+          "default": "./dist/esm/NarrowedCheck.js"
+        },
+        "require": {
+          "types": "./dist/cjs/NarrowedCheck.d.ts",
+          "default": "./dist/cjs/NarrowedCheck.js"
+        }
       },
       "./Notifications": {
-        "types": "./dist/esm/Notifications.d.ts",
-        "import": "./dist/esm/Notifications.js",
-        "require": "./dist/cjs/Notifications.js"
+        "import": {
+          "types": "./dist/esm/Notifications.d.ts",
+          "default": "./dist/esm/Notifications.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Notifications.d.ts",
+          "default": "./dist/cjs/Notifications.js"
+        }
       },
       "./Plan": {
-        "types": "./dist/esm/Plan.d.ts",
-        "import": "./dist/esm/Plan.js",
-        "require": "./dist/cjs/Plan.js"
+        "import": {
+          "types": "./dist/esm/Plan.d.ts",
+          "default": "./dist/esm/Plan.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Plan.d.ts",
+          "default": "./dist/cjs/Plan.js"
+        }
       },
       "./QuickJSSandbox": {
-        "types": "./dist/esm/QuickJSSandbox.d.ts",
-        "import": "./dist/esm/QuickJSSandbox.js",
-        "require": "./dist/cjs/QuickJSSandbox.js"
+        "import": {
+          "types": "./dist/esm/QuickJSSandbox.d.ts",
+          "default": "./dist/esm/QuickJSSandbox.js"
+        },
+        "require": {
+          "types": "./dist/cjs/QuickJSSandbox.d.ts",
+          "default": "./dist/cjs/QuickJSSandbox.js"
+        }
       },
       "./Sandbox": {
-        "types": "./dist/esm/Sandbox.d.ts",
-        "import": "./dist/esm/Sandbox.js",
-        "require": "./dist/cjs/Sandbox.js"
+        "import": {
+          "types": "./dist/esm/Sandbox.d.ts",
+          "default": "./dist/esm/Sandbox.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Sandbox.d.ts",
+          "default": "./dist/cjs/Sandbox.js"
+        }
       },
       "./Steering": {
-        "types": "./dist/esm/Steering.d.ts",
-        "import": "./dist/esm/Steering.js",
-        "require": "./dist/cjs/Steering.js"
+        "import": {
+          "types": "./dist/esm/Steering.d.ts",
+          "default": "./dist/esm/Steering.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Steering.d.ts",
+          "default": "./dist/cjs/Steering.js"
+        }
       },
       "./StructuredOutput": {
-        "types": "./dist/esm/StructuredOutput.d.ts",
-        "import": "./dist/esm/StructuredOutput.js",
-        "require": "./dist/cjs/StructuredOutput.js"
+        "import": {
+          "types": "./dist/esm/StructuredOutput.d.ts",
+          "default": "./dist/esm/StructuredOutput.js"
+        },
+        "require": {
+          "types": "./dist/cjs/StructuredOutput.d.ts",
+          "default": "./dist/cjs/StructuredOutput.js"
+        }
       },
       "./Sufficiency": {
-        "types": "./dist/esm/Sufficiency.d.ts",
-        "import": "./dist/esm/Sufficiency.js",
-        "require": "./dist/cjs/Sufficiency.js"
+        "import": {
+          "types": "./dist/esm/Sufficiency.d.ts",
+          "default": "./dist/esm/Sufficiency.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Sufficiency.d.ts",
+          "default": "./dist/cjs/Sufficiency.js"
+        }
       },
       "./Tokens": {
-        "types": "./dist/esm/Tokens.d.ts",
-        "import": "./dist/esm/Tokens.js",
-        "require": "./dist/cjs/Tokens.js"
+        "import": {
+          "types": "./dist/esm/Tokens.d.ts",
+          "default": "./dist/esm/Tokens.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Tokens.d.ts",
+          "default": "./dist/cjs/Tokens.js"
+        }
       },
       "./Transcript": {
-        "types": "./dist/esm/Transcript.d.ts",
-        "import": "./dist/esm/Transcript.js",
-        "require": "./dist/cjs/Transcript.js"
+        "import": {
+          "types": "./dist/esm/Transcript.d.ts",
+          "default": "./dist/esm/Transcript.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Transcript.d.ts",
+          "default": "./dist/cjs/Transcript.js"
+        }
       },
       "./TruncatedOutput": {
-        "types": "./dist/esm/TruncatedOutput.d.ts",
-        "import": "./dist/esm/TruncatedOutput.js",
-        "require": "./dist/cjs/TruncatedOutput.js"
+        "import": {
+          "types": "./dist/esm/TruncatedOutput.d.ts",
+          "default": "./dist/esm/TruncatedOutput.js"
+        },
+        "require": {
+          "types": "./dist/cjs/TruncatedOutput.d.ts",
+          "default": "./dist/cjs/TruncatedOutput.js"
+        }
       },
       "./UnmovedTree": {
-        "types": "./dist/esm/UnmovedTree.d.ts",
-        "import": "./dist/esm/UnmovedTree.js",
-        "require": "./dist/cjs/UnmovedTree.js"
+        "import": {
+          "types": "./dist/esm/UnmovedTree.d.ts",
+          "default": "./dist/esm/UnmovedTree.js"
+        },
+        "require": {
+          "types": "./dist/cjs/UnmovedTree.d.ts",
+          "default": "./dist/cjs/UnmovedTree.js"
+        }
       },
       "./UnresolvedFailure": {
-        "types": "./dist/esm/UnresolvedFailure.d.ts",
-        "import": "./dist/esm/UnresolvedFailure.js",
-        "require": "./dist/cjs/UnresolvedFailure.js"
+        "import": {
+          "types": "./dist/esm/UnresolvedFailure.d.ts",
+          "default": "./dist/esm/UnresolvedFailure.js"
+        },
+        "require": {
+          "types": "./dist/cjs/UnresolvedFailure.d.ts",
+          "default": "./dist/cjs/UnresolvedFailure.js"
+        }
       },
       "./VacuousVerification": {
-        "types": "./dist/esm/VacuousVerification.d.ts",
-        "import": "./dist/esm/VacuousVerification.js",
-        "require": "./dist/cjs/VacuousVerification.js"
+        "import": {
+          "types": "./dist/esm/VacuousVerification.d.ts",
+          "default": "./dist/esm/VacuousVerification.js"
+        },
+        "require": {
+          "types": "./dist/cjs/VacuousVerification.d.ts",
+          "default": "./dist/cjs/VacuousVerification.js"
+        }
       },
       "./VariablesPanel": {
-        "types": "./dist/esm/VariablesPanel.d.ts",
-        "import": "./dist/esm/VariablesPanel.js",
-        "require": "./dist/cjs/VariablesPanel.js"
+        "import": {
+          "types": "./dist/esm/VariablesPanel.d.ts",
+          "default": "./dist/esm/VariablesPanel.js"
+        },
+        "require": {
+          "types": "./dist/cjs/VariablesPanel.d.ts",
+          "default": "./dist/cjs/VariablesPanel.js"
+        }
       },
       "./index": {
-        "types": "./dist/esm/index.d.ts",
-        "import": "./dist/esm/index.js",
-        "require": "./dist/cjs/index.js"
+        "import": {
+          "types": "./dist/esm/index.d.ts",
+          "default": "./dist/esm/index.js"
+        },
+        "require": {
+          "types": "./dist/cjs/index.d.ts",
+          "default": "./dist/cjs/index.js"
+        }
       }
     }
   },
@@ -259,14 +404,14 @@
   },
   "devDependencies": {
     "@effect/language-service": "0.87.2",
-    "@effect/platform-node": "4.0.0-rc.112",
-    "@effect/vitest": "4.0.0-rc.112",
+    "@effect/platform-node": "4.0.0-rc.115",
+    "@effect/vitest": "4.0.0-rc.115",
     "@eslint/js": "9.39.5",
     "@jitl/quickjs-wasmfile-release-sync": "0.32.0",
     "@types/node": "26.4.1",
-    "@vitest/coverage-v8": "4.1.9",
+    "@vitest/coverage-v8": "5.0.0",
     "dprint": "0.57.1",
-    "effect": "4.0.0-rc.112",
+    "effect": "4.0.0-rc.115",
     "esbuild": "0.28.2",
     "eslint": "9.39.5",
     "eslint-import-resolver-typescript": "4.4.5",
@@ -276,9 +421,9 @@
     "madge": "8.0.0",
     "typescript": "5.9.3",
     "typescript-eslint": "8.69.0",
-    "vitest": "4.1.9"
+    "vitest": "5.0.0"
   },
   "peerDependencies": {
-    "effect": "4.0.0-rc.112"
+    "effect": "4.0.0-rc.115"
   }
 }

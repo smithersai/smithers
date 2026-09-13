@@ -4,7 +4,7 @@
   "type": "module",
   "description": "Source contract for programs copied into isolated packed consumers; never executed from this directory",
   "dependencies": {
-    "@effect/platform-node": "4.0.0-rc.112",
+    "@effect/platform-node": "4.0.0-rc.115",
     "@smthrs/cli": "*",
     "@smthrs/create-app": "*",
     "@smthrs/flow": "*",
@@ -18,7 +18,7 @@
     "@smthrs/platform-node": "*",
     "@smthrs/sandbox": "*",
     "@smthrs/testing": "*",
-    "effect": "4.0.0-rc.112",
-    "vitest": "4.1.9"
+    "effect": "4.0.0-rc.115",
+    "vitest": "5.0.0"
   }
 }

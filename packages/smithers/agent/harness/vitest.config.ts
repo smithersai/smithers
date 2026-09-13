@@ -21,7 +21,7 @@ export default defineConfig({
       // run end only when it is empty, so the default html, clover, and json
       // reporters left one directory per run in the temp dir.
       reporter: ["text"],
-      include: ["src/**"].map((pattern) => join(import.meta.dirname, pattern)),
+      include: ["src/**"],
       // Every remaining unreachable site carries a `v8 ignore` comment stating
       // why a test cannot reach it, so anything short of 100 is new untested
       // code rather than a known gap.

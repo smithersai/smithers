@@ -56,7 +56,7 @@
     "bun": ">=1.4.0"
   },
   "devDependencies": {
-    "@effect/platform-node": "4.0.0-rc.112",
+    "@effect/platform-node": "4.0.0-rc.115",
     "@smthrs/build-cli": "workspace:*",
     "@smthrs/cli": "workspace:*",
     "@smthrs/database": "workspace:*",
@@ -71,7 +71,7 @@
     "@smthrs/run-store": "workspace:*",
     "@smthrs/targets": "workspace:*",
     "@types/node": "26.4.1",
-    "effect": "4.0.0-rc.112",
+    "effect": "4.0.0-rc.115",
     "esbuild": "0.28.2",
     "eslint-plugin-jsdoc": "64.3.4",
     "mermaid": "^11.17.2",
@@ -83,5 +83,24 @@
     "eslint": "9.39.5",
     "typescript-eslint": "8.69.0",
     "yaml": "2.9.0"
+  },
+  "overrides": {
+    "effect": "4.0.0-rc.115",
+    "@effect/opentelemetry": "4.0.0-rc.115",
+    "@effect/platform-bun": "4.0.0-rc.115",
+    "@effect/platform-node": "4.0.0-rc.115",
+    "@effect/platform-node-shared": "4.0.0-rc.115",
+    "@effect/sql-d1": "4.0.0-rc.115",
+    "@effect/sql-sqlite-bun": "4.0.0-rc.115",
+    "@effect/sql-sqlite-do": "4.0.0-rc.115",
+    "@effect/sql-sqlite-node": "4.0.0-rc.115",
+    "@effect/vitest": "4.0.0-rc.115"
+  },
+  "patchedDependencies": {
+    "@alchemy.run/cloudflare-runtime@2.0.0-beta.76": "patches/@alchemy.run__cloudflare-runtime@2.0.0-beta.76.patch",
+    "@distilled.cloud/aws@1.0.0-rc.8": "patches/@distilled.cloud__aws@1.0.0-rc.8.patch",
+    "@distilled.cloud/cloudflare@1.0.0-rc.8": "patches/@distilled.cloud__cloudflare@1.0.0-rc.8.patch",
+    "@distilled.cloud/core@1.0.0-rc.8": "patches/@distilled.cloud__core@1.0.0-rc.8.patch",
+    "alchemy@2.0.0-beta.76": "patches/alchemy@2.0.0-beta.76.patch"
   }
 }

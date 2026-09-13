@@ -62,41 +62,76 @@
     "exports": {
       "./package.json": "./package.json",
       ".": {
-        "types": "./dist/esm/index.d.ts",
-        "import": "./dist/esm/index.js",
-        "require": "./dist/cjs/index.js"
+        "import": {
+          "types": "./dist/esm/index.d.ts",
+          "default": "./dist/esm/index.js"
+        },
+        "require": {
+          "types": "./dist/cjs/index.d.ts",
+          "default": "./dist/cjs/index.js"
+        }
       },
       "./internal/*": null,
       "./*/index": null,
       "./AtomicFileSystem": {
-        "types": "./dist/esm/AtomicFileSystem.d.ts",
-        "import": "./dist/esm/AtomicFileSystem.js",
-        "require": "./dist/cjs/AtomicFileSystem.js"
+        "import": {
+          "types": "./dist/esm/AtomicFileSystem.d.ts",
+          "default": "./dist/esm/AtomicFileSystem.js"
+        },
+        "require": {
+          "types": "./dist/cjs/AtomicFileSystem.d.ts",
+          "default": "./dist/cjs/AtomicFileSystem.js"
+        }
       },
       "./HostLiveness": {
-        "types": "./dist/esm/HostLiveness.d.ts",
-        "import": "./dist/esm/HostLiveness.js",
-        "require": "./dist/cjs/HostLiveness.js"
+        "import": {
+          "types": "./dist/esm/HostLiveness.d.ts",
+          "default": "./dist/esm/HostLiveness.js"
+        },
+        "require": {
+          "types": "./dist/cjs/HostLiveness.d.ts",
+          "default": "./dist/cjs/HostLiveness.js"
+        }
       },
       "./NodeHost": {
-        "types": "./dist/esm/NodeHost.d.ts",
-        "import": "./dist/esm/NodeHost.js",
-        "require": "./dist/cjs/NodeHost.js"
+        "import": {
+          "types": "./dist/esm/NodeHost.d.ts",
+          "default": "./dist/esm/NodeHost.js"
+        },
+        "require": {
+          "types": "./dist/cjs/NodeHost.d.ts",
+          "default": "./dist/cjs/NodeHost.js"
+        }
       },
       "./ProcessReaper": {
-        "types": "./dist/esm/ProcessReaper.d.ts",
-        "import": "./dist/esm/ProcessReaper.js",
-        "require": "./dist/cjs/ProcessReaper.js"
+        "import": {
+          "types": "./dist/esm/ProcessReaper.d.ts",
+          "default": "./dist/esm/ProcessReaper.js"
+        },
+        "require": {
+          "types": "./dist/cjs/ProcessReaper.d.ts",
+          "default": "./dist/cjs/ProcessReaper.js"
+        }
       },
       "./index": {
-        "types": "./dist/esm/index.d.ts",
-        "import": "./dist/esm/index.js",
-        "require": "./dist/cjs/index.js"
+        "import": {
+          "types": "./dist/esm/index.d.ts",
+          "default": "./dist/esm/index.js"
+        },
+        "require": {
+          "types": "./dist/cjs/index.d.ts",
+          "default": "./dist/cjs/index.js"
+        }
       },
       "./ScopedProcess": {
-        "types": "./dist/esm/ScopedProcess.d.ts",
-        "import": "./dist/esm/ScopedProcess.js",
-        "require": "./dist/cjs/ScopedProcess.js"
+        "import": {
+          "types": "./dist/esm/ScopedProcess.d.ts",
+          "default": "./dist/esm/ScopedProcess.js"
+        },
+        "require": {
+          "types": "./dist/cjs/ScopedProcess.d.ts",
+          "default": "./dist/cjs/ScopedProcess.js"
+        }
       }
     }
   },
@@ -114,20 +149,20 @@
     "@smthrs/kernel": "1.0.0-rc.0"
   },
   "peerDependencies": {
-    "@effect/platform-node": "4.0.0-rc.112",
-    "effect": "4.0.0-rc.112"
+    "@effect/platform-node": "4.0.0-rc.115",
+    "effect": "4.0.0-rc.115"
   },
   "devDependencies": {
     "@effect/language-service": "0.87.2",
-    "@effect/platform-node": "4.0.0-rc.112",
-    "@effect/platform-node-shared": "4.0.0-rc.112",
-    "@effect/vitest": "4.0.0-rc.112",
+    "@effect/platform-node": "4.0.0-rc.115",
+    "@effect/platform-node-shared": "4.0.0-rc.115",
+    "@effect/vitest": "4.0.0-rc.115",
     "@eslint/js": "9.39.5",
     "@smthrs/journal": "1.0.0-rc.0",
     "@types/node": "26.4.1",
-    "@vitest/coverage-v8": "4.1.9",
+    "@vitest/coverage-v8": "5.0.0",
     "dprint": "0.57.1",
-    "effect": "4.0.0-rc.112",
+    "effect": "4.0.0-rc.115",
     "esbuild": "0.28.2",
     "eslint": "9.39.5",
     "eslint-import-resolver-typescript": "4.4.5",
@@ -137,6 +172,6 @@
     "madge": "8.0.0",
     "typescript": "5.9.3",
     "typescript-eslint": "8.69.0",
-    "vitest": "4.1.9"
+    "vitest": "5.0.0"
   }
 }

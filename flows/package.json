@@ -7,8 +7,8 @@
     "test": "node --experimental-strip-types --test test/*.test.ts"
   },
   "dependencies": {
-    "@effect/platform-bun": "4.0.0-rc.112",
-    "@effect/platform-node": "4.0.0-rc.112",
+    "@effect/platform-bun": "4.0.0-rc.115",
+    "@effect/platform-node": "4.0.0-rc.115",
     "@smthrs/agent": "workspace:*",
     "@smthrs/capability": "workspace:*",
     "@smthrs/cli": "workspace:*",
@@ -24,7 +24,7 @@
     "@smthrs/registry": "workspace:*",
     "@smthrs/run-store": "workspace:*",
     "@smthrs/targets": "workspace:*",
-    "effect": "4.0.0-rc.112",
+    "effect": "4.0.0-rc.115",
     "playwright": "1.62.1"
   },
   "devDependencies": {

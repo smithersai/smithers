@@ -21,7 +21,7 @@ export default defineConfig({
       // Per-process report directory so concurrent vitest runs do not destroy
       // each other's coverage scratch state.
       reportsDirectory: join(tmpdir(), `flows-migrate-coverage-${process.pid}`),
-      include: ["src/**"].map((pattern) => join(import.meta.dirname, pattern)),
+      include: ["src/**"],
       // `src/flow/bin.ts` is the one statement `NodeRuntime.runMain(main)` and
       // stays in the denominator uncovered: a test can only reach it by
       // spawning a process, which `test/flow/Bin.test.ts` does against the

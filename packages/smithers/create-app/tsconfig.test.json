@@ -6,7 +6,11 @@
     "declaration": false,
     "declarationMap": false,
     "composite": false,
-    "resolveJsonModule": true
+    "resolveJsonModule": true,
+    "paths": {
+      "@smthrs/create-app/app": ["./src/app.ts"],
+      "@smthrs/create-app/ui": ["./src/ui.ts"]
+    }
   },
   "include": ["src/**/*", "test/**/*"]
 }

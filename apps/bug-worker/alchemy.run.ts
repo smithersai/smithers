@@ -42,9 +42,9 @@ export const workerProps = {
   env: {
     BUGS: bugs,
     REPO_COMPLETIONS: Cloudflare.DurableObject("RepoCompletion"),
-    ...(process.env.RESEND_API_KEY ? { RESEND_API_KEY: Config.redacted("RESEND_API_KEY") } : {}),
+    ...(process.env.RESEND_API_KEY ? { RESEND_API_KEY: Config.Redacted("RESEND_API_KEY") } : {}),
     ...(process.env.NOTIFICATION_FROM ? { NOTIFICATION_FROM: process.env.NOTIFICATION_FROM } : {}),
-    ...(process.env.GITHUB_FORK_TOKEN ? { GITHUB_FORK_TOKEN: Config.redacted("GITHUB_FORK_TOKEN") } : {}),
+    ...(process.env.GITHUB_FORK_TOKEN ? { GITHUB_FORK_TOKEN: Config.Redacted("GITHUB_FORK_TOKEN") } : {}),
     BUG_ADMIN_TOKEN: adminToken,
     PUBLIC_BASE_URL: process.env.BUG_PUBLIC_BASE_URL?.trim() || "https://bug.smithers.sh",
   },

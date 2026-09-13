@@ -76,111 +76,216 @@
     "exports": {
       "./package.json": "./package.json",
       ".": {
-        "types": "./dist/esm/index.d.ts",
-        "import": "./dist/esm/index.js",
-        "require": "./dist/cjs/index.js"
+        "import": {
+          "types": "./dist/esm/index.d.ts",
+          "default": "./dist/esm/index.js"
+        },
+        "require": {
+          "types": "./dist/cjs/index.d.ts",
+          "default": "./dist/cjs/index.js"
+        }
       },
       "./internal/*": null,
       "./*/index": null,
       "./BranchCommands": {
-        "types": "./dist/esm/BranchCommands.d.ts",
-        "import": "./dist/esm/BranchCommands.js",
-        "require": "./dist/cjs/BranchCommands.js"
+        "import": {
+          "types": "./dist/esm/BranchCommands.d.ts",
+          "default": "./dist/esm/BranchCommands.js"
+        },
+        "require": {
+          "types": "./dist/cjs/BranchCommands.d.ts",
+          "default": "./dist/cjs/BranchCommands.js"
+        }
       },
       "./BranchIds": {
-        "types": "./dist/esm/BranchIds.d.ts",
-        "import": "./dist/esm/BranchIds.js",
-        "require": "./dist/cjs/BranchIds.js"
+        "import": {
+          "types": "./dist/esm/BranchIds.d.ts",
+          "default": "./dist/esm/BranchIds.js"
+        },
+        "require": {
+          "types": "./dist/cjs/BranchIds.d.ts",
+          "default": "./dist/cjs/BranchIds.js"
+        }
       },
       "./BranchPresence": {
-        "types": "./dist/esm/BranchPresence.d.ts",
-        "import": "./dist/esm/BranchPresence.js",
-        "require": "./dist/cjs/BranchPresence.js"
+        "import": {
+          "types": "./dist/esm/BranchPresence.d.ts",
+          "default": "./dist/esm/BranchPresence.js"
+        },
+        "require": {
+          "types": "./dist/cjs/BranchPresence.d.ts",
+          "default": "./dist/cjs/BranchPresence.js"
+        }
       },
       "./BranchProjection": {
-        "types": "./dist/esm/BranchProjection.d.ts",
-        "import": "./dist/esm/BranchProjection.js",
-        "require": "./dist/cjs/BranchProjection.js"
+        "import": {
+          "types": "./dist/esm/BranchProjection.d.ts",
+          "default": "./dist/esm/BranchProjection.js"
+        },
+        "require": {
+          "types": "./dist/cjs/BranchProjection.d.ts",
+          "default": "./dist/cjs/BranchProjection.js"
+        }
       },
       "./BranchProtocol": {
-        "types": "./dist/esm/BranchProtocol.d.ts",
-        "import": "./dist/esm/BranchProtocol.js",
-        "require": "./dist/cjs/BranchProtocol.js"
+        "import": {
+          "types": "./dist/esm/BranchProtocol.d.ts",
+          "default": "./dist/esm/BranchProtocol.js"
+        },
+        "require": {
+          "types": "./dist/cjs/BranchProtocol.d.ts",
+          "default": "./dist/cjs/BranchProtocol.js"
+        }
       },
       "./BranchRpcs": {
-        "types": "./dist/esm/BranchRpcs.d.ts",
-        "import": "./dist/esm/BranchRpcs.js",
-        "require": "./dist/cjs/BranchRpcs.js"
+        "import": {
+          "types": "./dist/esm/BranchRpcs.d.ts",
+          "default": "./dist/esm/BranchRpcs.js"
+        },
+        "require": {
+          "types": "./dist/cjs/BranchRpcs.d.ts",
+          "default": "./dist/cjs/BranchRpcs.js"
+        }
       },
       "./BranchServer": {
-        "types": "./dist/esm/BranchServer.d.ts",
-        "import": "./dist/esm/BranchServer.js",
-        "require": "./dist/cjs/BranchServer.js"
+        "import": {
+          "types": "./dist/esm/BranchServer.d.ts",
+          "default": "./dist/esm/BranchServer.js"
+        },
+        "require": {
+          "types": "./dist/cjs/BranchServer.d.ts",
+          "default": "./dist/cjs/BranchServer.js"
+        }
       },
       "./BranchShare": {
-        "types": "./dist/esm/BranchShare.d.ts",
-        "import": "./dist/esm/BranchShare.js",
-        "require": "./dist/cjs/BranchShare.js"
+        "import": {
+          "types": "./dist/esm/BranchShare.d.ts",
+          "default": "./dist/esm/BranchShare.js"
+        },
+        "require": {
+          "types": "./dist/cjs/BranchShare.d.ts",
+          "default": "./dist/cjs/BranchShare.js"
+        }
       },
       "./RunCatalog": {
-        "types": "./dist/esm/RunCatalog.d.ts",
-        "import": "./dist/esm/RunCatalog.js",
-        "require": "./dist/cjs/RunCatalog.js"
+        "import": {
+          "types": "./dist/esm/RunCatalog.d.ts",
+          "default": "./dist/esm/RunCatalog.js"
+        },
+        "require": {
+          "types": "./dist/cjs/RunCatalog.d.ts",
+          "default": "./dist/cjs/RunCatalog.js"
+        }
       },
       "./SyncAuth": {
-        "types": "./dist/esm/SyncAuth.d.ts",
-        "import": "./dist/esm/SyncAuth.js",
-        "require": "./dist/cjs/SyncAuth.js"
+        "import": {
+          "types": "./dist/esm/SyncAuth.d.ts",
+          "default": "./dist/esm/SyncAuth.js"
+        },
+        "require": {
+          "types": "./dist/cjs/SyncAuth.d.ts",
+          "default": "./dist/cjs/SyncAuth.js"
+        }
       },
       "./SyncClient": {
-        "types": "./dist/esm/SyncClient.d.ts",
-        "import": "./dist/esm/SyncClient.js",
-        "require": "./dist/cjs/SyncClient.js"
+        "import": {
+          "types": "./dist/esm/SyncClient.d.ts",
+          "default": "./dist/esm/SyncClient.js"
+        },
+        "require": {
+          "types": "./dist/cjs/SyncClient.d.ts",
+          "default": "./dist/cjs/SyncClient.js"
+        }
       },
       "./SyncError": {
-        "types": "./dist/esm/SyncError.d.ts",
-        "import": "./dist/esm/SyncError.js",
-        "require": "./dist/cjs/SyncError.js"
+        "import": {
+          "types": "./dist/esm/SyncError.d.ts",
+          "default": "./dist/esm/SyncError.js"
+        },
+        "require": {
+          "types": "./dist/cjs/SyncError.d.ts",
+          "default": "./dist/cjs/SyncError.js"
+        }
       },
       "./SyncPrincipal": {
-        "types": "./dist/esm/SyncPrincipal.d.ts",
-        "import": "./dist/esm/SyncPrincipal.js",
-        "require": "./dist/cjs/SyncPrincipal.js"
+        "import": {
+          "types": "./dist/esm/SyncPrincipal.d.ts",
+          "default": "./dist/esm/SyncPrincipal.js"
+        },
+        "require": {
+          "types": "./dist/cjs/SyncPrincipal.d.ts",
+          "default": "./dist/cjs/SyncPrincipal.js"
+        }
       },
       "./SyncProtocol": {
-        "types": "./dist/esm/SyncProtocol.d.ts",
-        "import": "./dist/esm/SyncProtocol.js",
-        "require": "./dist/cjs/SyncProtocol.js"
+        "import": {
+          "types": "./dist/esm/SyncProtocol.d.ts",
+          "default": "./dist/esm/SyncProtocol.js"
+        },
+        "require": {
+          "types": "./dist/cjs/SyncProtocol.d.ts",
+          "default": "./dist/cjs/SyncProtocol.js"
+        }
       },
       "./SyncRpcs": {
-        "types": "./dist/esm/SyncRpcs.d.ts",
-        "import": "./dist/esm/SyncRpcs.js",
-        "require": "./dist/cjs/SyncRpcs.js"
+        "import": {
+          "types": "./dist/esm/SyncRpcs.d.ts",
+          "default": "./dist/esm/SyncRpcs.js"
+        },
+        "require": {
+          "types": "./dist/cjs/SyncRpcs.d.ts",
+          "default": "./dist/cjs/SyncRpcs.js"
+        }
       },
       "./SyncServer": {
-        "types": "./dist/esm/SyncServer.d.ts",
-        "import": "./dist/esm/SyncServer.js",
-        "require": "./dist/cjs/SyncServer.js"
+        "import": {
+          "types": "./dist/esm/SyncServer.d.ts",
+          "default": "./dist/esm/SyncServer.js"
+        },
+        "require": {
+          "types": "./dist/cjs/SyncServer.d.ts",
+          "default": "./dist/cjs/SyncServer.js"
+        }
       },
       "./WorkspaceShare": {
-        "types": "./dist/esm/WorkspaceShare.d.ts",
-        "import": "./dist/esm/WorkspaceShare.js",
-        "require": "./dist/cjs/WorkspaceShare.js"
+        "import": {
+          "types": "./dist/esm/WorkspaceShare.d.ts",
+          "default": "./dist/esm/WorkspaceShare.js"
+        },
+        "require": {
+          "types": "./dist/cjs/WorkspaceShare.d.ts",
+          "default": "./dist/cjs/WorkspaceShare.js"
+        }
       },
       "./index": {
-        "types": "./dist/esm/index.d.ts",
-        "import": "./dist/esm/index.js",
-        "require": "./dist/cjs/index.js"
+        "import": {
+          "types": "./dist/esm/index.d.ts",
+          "default": "./dist/esm/index.js"
+        },
+        "require": {
+          "types": "./dist/cjs/index.d.ts",
+          "default": "./dist/cjs/index.js"
+        }
       },
       "./test/TestSocket": {
-        "types": "./dist/esm/test/TestSocket.d.ts",
-        "import": "./dist/esm/test/TestSocket.js",
-        "require": "./dist/cjs/test/TestSocket.js"
+        "import": {
+          "types": "./dist/esm/test/TestSocket.d.ts",
+          "default": "./dist/esm/test/TestSocket.js"
+        },
+        "require": {
+          "types": "./dist/cjs/test/TestSocket.d.ts",
+          "default": "./dist/cjs/test/TestSocket.js"
+        }
       },
       "./test/TestSync": {
-        "types": "./dist/esm/test/TestSync.d.ts",
-        "import": "./dist/esm/test/TestSync.js",
-        "require": "./dist/cjs/test/TestSync.js"
+        "import": {
+          "types": "./dist/esm/test/TestSync.d.ts",
+          "default": "./dist/esm/test/TestSync.js"
+        },
+        "require": {
+          "types": "./dist/cjs/test/TestSync.d.ts",
+          "default": "./dist/cjs/test/TestSync.js"
+        }
       }
     }
   },
@@ -198,15 +303,15 @@
   },
   "devDependencies": {
     "@effect/language-service": "0.87.2",
-    "@effect/platform-node": "4.0.0-rc.112",
-    "@effect/vitest": "4.0.0-rc.112",
+    "@effect/platform-node": "4.0.0-rc.115",
+    "@effect/vitest": "4.0.0-rc.115",
     "@eslint/js": "9.39.5",
     "@smthrs/database": "1.0.0-rc.0",
     "@smthrs/engine-store": "1.0.0-rc.0",
     "@types/node": "26.4.1",
-    "@vitest/coverage-v8": "4.1.9",
+    "@vitest/coverage-v8": "5.0.0",
     "dprint": "0.57.1",
-    "effect": "4.0.0-rc.112",
+    "effect": "4.0.0-rc.115",
     "esbuild": "0.28.2",
     "eslint": "9.39.5",
     "eslint-import-resolver-typescript": "4.4.5",
@@ -216,10 +321,11 @@
     "madge": "8.0.0",
     "typescript": "5.9.3",
     "typescript-eslint": "8.69.0",
-    "vitest": "4.1.9",
-    "@smthrs/time-travel": "1.0.0-rc.0"
+    "vitest": "5.0.0",
+    "@smthrs/time-travel": "1.0.0-rc.0",
+    "fast-check": "4.9.0"
   },
   "peerDependencies": {
-    "effect": "4.0.0-rc.112"
+    "effect": "4.0.0-rc.115"
   }
 }

@@ -87,196 +87,386 @@
     "exports": {
       "./package.json": "./package.json",
       ".": {
-        "types": "./dist/esm/index.d.ts",
-        "import": "./dist/esm/index.js",
-        "require": "./dist/cjs/index.js"
+        "import": {
+          "types": "./dist/esm/index.d.ts",
+          "default": "./dist/esm/index.js"
+        },
+        "require": {
+          "types": "./dist/cjs/index.d.ts",
+          "default": "./dist/cjs/index.js"
+        }
       },
       "./internal/*": null,
       "./*/index": null,
       "./Environment": {
-        "types": "./dist/esm/Environment.d.ts",
-        "import": "./dist/esm/Environment.js",
-        "require": "./dist/cjs/Environment.js"
+        "import": {
+          "types": "./dist/esm/Environment.d.ts",
+          "default": "./dist/esm/Environment.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Environment.d.ts",
+          "default": "./dist/cjs/Environment.js"
+        }
       },
       "./core": {
-        "types": "./dist/esm/core.d.ts",
-        "import": "./dist/esm/core.js",
-        "require": "./dist/cjs/core.js"
+        "import": {
+          "types": "./dist/esm/core.d.ts",
+          "default": "./dist/esm/core.js"
+        },
+        "require": {
+          "types": "./dist/cjs/core.d.ts",
+          "default": "./dist/cjs/core.js"
+        }
       },
       "./core/ActionFailure": {
-        "types": "./dist/esm/core/ActionFailure.d.ts",
-        "import": "./dist/esm/core/ActionFailure.js",
-        "require": "./dist/cjs/core/ActionFailure.js"
+        "import": {
+          "types": "./dist/esm/core/ActionFailure.d.ts",
+          "default": "./dist/esm/core/ActionFailure.js"
+        },
+        "require": {
+          "types": "./dist/cjs/core/ActionFailure.d.ts",
+          "default": "./dist/cjs/core/ActionFailure.js"
+        }
       },
       "./core/AuthorizationUrl": {
-        "types": "./dist/esm/core/AuthorizationUrl.d.ts",
-        "import": "./dist/esm/core/AuthorizationUrl.js",
-        "require": "./dist/cjs/core/AuthorizationUrl.js"
+        "import": {
+          "types": "./dist/esm/core/AuthorizationUrl.d.ts",
+          "default": "./dist/esm/core/AuthorizationUrl.js"
+        },
+        "require": {
+          "types": "./dist/cjs/core/AuthorizationUrl.d.ts",
+          "default": "./dist/cjs/core/AuthorizationUrl.js"
+        }
       },
       "./core/Channel": {
-        "types": "./dist/esm/core/Channel.d.ts",
-        "import": "./dist/esm/core/Channel.js",
-        "require": "./dist/cjs/core/Channel.js"
+        "import": {
+          "types": "./dist/esm/core/Channel.d.ts",
+          "default": "./dist/esm/core/Channel.js"
+        },
+        "require": {
+          "types": "./dist/cjs/core/Channel.d.ts",
+          "default": "./dist/cjs/core/Channel.js"
+        }
       },
       "./core/CursorStore": {
-        "types": "./dist/esm/core/CursorStore.d.ts",
-        "import": "./dist/esm/core/CursorStore.js",
-        "require": "./dist/cjs/core/CursorStore.js"
+        "import": {
+          "types": "./dist/esm/core/CursorStore.d.ts",
+          "default": "./dist/esm/core/CursorStore.js"
+        },
+        "require": {
+          "types": "./dist/cjs/core/CursorStore.d.ts",
+          "default": "./dist/cjs/core/CursorStore.js"
+        }
       },
       "./core/ExternalEvent": {
-        "types": "./dist/esm/core/ExternalEvent.d.ts",
-        "import": "./dist/esm/core/ExternalEvent.js",
-        "require": "./dist/cjs/core/ExternalEvent.js"
+        "import": {
+          "types": "./dist/esm/core/ExternalEvent.d.ts",
+          "default": "./dist/esm/core/ExternalEvent.js"
+        },
+        "require": {
+          "types": "./dist/cjs/core/ExternalEvent.d.ts",
+          "default": "./dist/cjs/core/ExternalEvent.js"
+        }
       },
       "./core/IntegrationError": {
-        "types": "./dist/esm/core/IntegrationError.d.ts",
-        "import": "./dist/esm/core/IntegrationError.js",
-        "require": "./dist/cjs/core/IntegrationError.js"
+        "import": {
+          "types": "./dist/esm/core/IntegrationError.d.ts",
+          "default": "./dist/esm/core/IntegrationError.js"
+        },
+        "require": {
+          "types": "./dist/cjs/core/IntegrationError.d.ts",
+          "default": "./dist/cjs/core/IntegrationError.js"
+        }
       },
       "./core/JsonPath": {
-        "types": "./dist/esm/core/JsonPath.d.ts",
-        "import": "./dist/esm/core/JsonPath.js",
-        "require": "./dist/cjs/core/JsonPath.js"
+        "import": {
+          "types": "./dist/esm/core/JsonPath.d.ts",
+          "default": "./dist/esm/core/JsonPath.js"
+        },
+        "require": {
+          "types": "./dist/cjs/core/JsonPath.d.ts",
+          "default": "./dist/cjs/core/JsonPath.js"
+        }
       },
       "./core/Pkce": {
-        "types": "./dist/esm/core/Pkce.d.ts",
-        "import": "./dist/esm/core/Pkce.js",
-        "require": "./dist/cjs/core/Pkce.js"
+        "import": {
+          "types": "./dist/esm/core/Pkce.d.ts",
+          "default": "./dist/esm/core/Pkce.js"
+        },
+        "require": {
+          "types": "./dist/cjs/core/Pkce.d.ts",
+          "default": "./dist/cjs/core/Pkce.js"
+        }
       },
       "./core/SignalName": {
-        "types": "./dist/esm/core/SignalName.d.ts",
-        "import": "./dist/esm/core/SignalName.js",
-        "require": "./dist/cjs/core/SignalName.js"
+        "import": {
+          "types": "./dist/esm/core/SignalName.d.ts",
+          "default": "./dist/esm/core/SignalName.js"
+        },
+        "require": {
+          "types": "./dist/cjs/core/SignalName.d.ts",
+          "default": "./dist/cjs/core/SignalName.js"
+        }
       },
       "./core/Signature": {
-        "types": "./dist/esm/core/Signature.d.ts",
-        "import": "./dist/esm/core/Signature.js",
-        "require": "./dist/cjs/core/Signature.js"
+        "import": {
+          "types": "./dist/esm/core/Signature.d.ts",
+          "default": "./dist/esm/core/Signature.js"
+        },
+        "require": {
+          "types": "./dist/cjs/core/Signature.d.ts",
+          "default": "./dist/cjs/core/Signature.js"
+        }
       },
       "./github": {
-        "types": "./dist/esm/github.d.ts",
-        "import": "./dist/esm/github.js",
-        "require": "./dist/cjs/github.js"
+        "import": {
+          "types": "./dist/esm/github.d.ts",
+          "default": "./dist/esm/github.js"
+        },
+        "require": {
+          "types": "./dist/cjs/github.d.ts",
+          "default": "./dist/cjs/github.js"
+        }
       },
       "./github/Actions": {
-        "types": "./dist/esm/github/Actions.d.ts",
-        "import": "./dist/esm/github/Actions.js",
-        "require": "./dist/cjs/github/Actions.js"
+        "import": {
+          "types": "./dist/esm/github/Actions.d.ts",
+          "default": "./dist/esm/github/Actions.js"
+        },
+        "require": {
+          "types": "./dist/cjs/github/Actions.d.ts",
+          "default": "./dist/cjs/github/Actions.js"
+        }
       },
       "./github/Config": {
-        "types": "./dist/esm/github/Config.d.ts",
-        "import": "./dist/esm/github/Config.js",
-        "require": "./dist/cjs/github/Config.js"
+        "import": {
+          "types": "./dist/esm/github/Config.d.ts",
+          "default": "./dist/esm/github/Config.js"
+        },
+        "require": {
+          "types": "./dist/cjs/github/Config.d.ts",
+          "default": "./dist/cjs/github/Config.js"
+        }
       },
       "./github/GitHubClient": {
-        "types": "./dist/esm/github/GitHubClient.d.ts",
-        "import": "./dist/esm/github/GitHubClient.js",
-        "require": "./dist/cjs/github/GitHubClient.js"
+        "import": {
+          "types": "./dist/esm/github/GitHubClient.d.ts",
+          "default": "./dist/esm/github/GitHubClient.js"
+        },
+        "require": {
+          "types": "./dist/cjs/github/GitHubClient.d.ts",
+          "default": "./dist/cjs/github/GitHubClient.js"
+        }
       },
       "./github/ListenerRegistry": {
-        "types": "./dist/esm/github/ListenerRegistry.d.ts",
-        "import": "./dist/esm/github/ListenerRegistry.js",
-        "require": "./dist/cjs/github/ListenerRegistry.js"
+        "import": {
+          "types": "./dist/esm/github/ListenerRegistry.d.ts",
+          "default": "./dist/esm/github/ListenerRegistry.js"
+        },
+        "require": {
+          "types": "./dist/cjs/github/ListenerRegistry.d.ts",
+          "default": "./dist/cjs/github/ListenerRegistry.js"
+        }
       },
       "./github/Payload": {
-        "types": "./dist/esm/github/Payload.d.ts",
-        "import": "./dist/esm/github/Payload.js",
-        "require": "./dist/cjs/github/Payload.js"
+        "import": {
+          "types": "./dist/esm/github/Payload.d.ts",
+          "default": "./dist/esm/github/Payload.js"
+        },
+        "require": {
+          "types": "./dist/cjs/github/Payload.d.ts",
+          "default": "./dist/cjs/github/Payload.js"
+        }
       },
       "./github/Repository": {
-        "types": "./dist/esm/github/Repository.d.ts",
-        "import": "./dist/esm/github/Repository.js",
-        "require": "./dist/cjs/github/Repository.js"
+        "import": {
+          "types": "./dist/esm/github/Repository.d.ts",
+          "default": "./dist/esm/github/Repository.js"
+        },
+        "require": {
+          "types": "./dist/cjs/github/Repository.d.ts",
+          "default": "./dist/cjs/github/Repository.js"
+        }
       },
       "./github/Webhook": {
-        "types": "./dist/esm/github/Webhook.d.ts",
-        "import": "./dist/esm/github/Webhook.js",
-        "require": "./dist/cjs/github/Webhook.js"
+        "import": {
+          "types": "./dist/esm/github/Webhook.d.ts",
+          "default": "./dist/esm/github/Webhook.js"
+        },
+        "require": {
+          "types": "./dist/cjs/github/Webhook.d.ts",
+          "default": "./dist/cjs/github/Webhook.js"
+        }
       },
       "./index": {
-        "types": "./dist/esm/index.d.ts",
-        "import": "./dist/esm/index.js",
-        "require": "./dist/cjs/index.js"
+        "import": {
+          "types": "./dist/esm/index.d.ts",
+          "default": "./dist/esm/index.js"
+        },
+        "require": {
+          "types": "./dist/cjs/index.d.ts",
+          "default": "./dist/cjs/index.js"
+        }
       },
       "./linear": {
-        "types": "./dist/esm/linear.d.ts",
-        "import": "./dist/esm/linear.js",
-        "require": "./dist/cjs/linear.js"
+        "import": {
+          "types": "./dist/esm/linear.d.ts",
+          "default": "./dist/esm/linear.js"
+        },
+        "require": {
+          "types": "./dist/cjs/linear.d.ts",
+          "default": "./dist/cjs/linear.js"
+        }
       },
       "./linear/Actions": {
-        "types": "./dist/esm/linear/Actions.d.ts",
-        "import": "./dist/esm/linear/Actions.js",
-        "require": "./dist/cjs/linear/Actions.js"
+        "import": {
+          "types": "./dist/esm/linear/Actions.d.ts",
+          "default": "./dist/esm/linear/Actions.js"
+        },
+        "require": {
+          "types": "./dist/cjs/linear/Actions.d.ts",
+          "default": "./dist/cjs/linear/Actions.js"
+        }
       },
       "./linear/Config": {
-        "types": "./dist/esm/linear/Config.d.ts",
-        "import": "./dist/esm/linear/Config.js",
-        "require": "./dist/cjs/linear/Config.js"
+        "import": {
+          "types": "./dist/esm/linear/Config.d.ts",
+          "default": "./dist/esm/linear/Config.js"
+        },
+        "require": {
+          "types": "./dist/cjs/linear/Config.d.ts",
+          "default": "./dist/cjs/linear/Config.js"
+        }
       },
       "./linear/LinearClient": {
-        "types": "./dist/esm/linear/LinearClient.d.ts",
-        "import": "./dist/esm/linear/LinearClient.js",
-        "require": "./dist/cjs/linear/LinearClient.js"
+        "import": {
+          "types": "./dist/esm/linear/LinearClient.d.ts",
+          "default": "./dist/esm/linear/LinearClient.js"
+        },
+        "require": {
+          "types": "./dist/cjs/linear/LinearClient.d.ts",
+          "default": "./dist/cjs/linear/LinearClient.js"
+        }
       },
       "./linear/Payload": {
-        "types": "./dist/esm/linear/Payload.d.ts",
-        "import": "./dist/esm/linear/Payload.js",
-        "require": "./dist/cjs/linear/Payload.js"
+        "import": {
+          "types": "./dist/esm/linear/Payload.d.ts",
+          "default": "./dist/esm/linear/Payload.js"
+        },
+        "require": {
+          "types": "./dist/cjs/linear/Payload.d.ts",
+          "default": "./dist/cjs/linear/Payload.js"
+        }
       },
       "./linear/Webhook": {
-        "types": "./dist/esm/linear/Webhook.d.ts",
-        "import": "./dist/esm/linear/Webhook.js",
-        "require": "./dist/cjs/linear/Webhook.js"
+        "import": {
+          "types": "./dist/esm/linear/Webhook.d.ts",
+          "default": "./dist/esm/linear/Webhook.js"
+        },
+        "require": {
+          "types": "./dist/cjs/linear/Webhook.d.ts",
+          "default": "./dist/cjs/linear/Webhook.js"
+        }
       },
       "./telegram": {
-        "types": "./dist/esm/telegram.d.ts",
-        "import": "./dist/esm/telegram.js",
-        "require": "./dist/cjs/telegram.js"
+        "import": {
+          "types": "./dist/esm/telegram.d.ts",
+          "default": "./dist/esm/telegram.js"
+        },
+        "require": {
+          "types": "./dist/cjs/telegram.d.ts",
+          "default": "./dist/cjs/telegram.js"
+        }
       },
       "./telegram/Actions": {
-        "types": "./dist/esm/telegram/Actions.d.ts",
-        "import": "./dist/esm/telegram/Actions.js",
-        "require": "./dist/cjs/telegram/Actions.js"
+        "import": {
+          "types": "./dist/esm/telegram/Actions.d.ts",
+          "default": "./dist/esm/telegram/Actions.js"
+        },
+        "require": {
+          "types": "./dist/cjs/telegram/Actions.d.ts",
+          "default": "./dist/cjs/telegram/Actions.js"
+        }
       },
       "./telegram/Approval": {
-        "types": "./dist/esm/telegram/Approval.d.ts",
-        "import": "./dist/esm/telegram/Approval.js",
-        "require": "./dist/cjs/telegram/Approval.js"
+        "import": {
+          "types": "./dist/esm/telegram/Approval.d.ts",
+          "default": "./dist/esm/telegram/Approval.js"
+        },
+        "require": {
+          "types": "./dist/cjs/telegram/Approval.d.ts",
+          "default": "./dist/cjs/telegram/Approval.js"
+        }
       },
       "./telegram/Chunk": {
-        "types": "./dist/esm/telegram/Chunk.d.ts",
-        "import": "./dist/esm/telegram/Chunk.js",
-        "require": "./dist/cjs/telegram/Chunk.js"
+        "import": {
+          "types": "./dist/esm/telegram/Chunk.d.ts",
+          "default": "./dist/esm/telegram/Chunk.js"
+        },
+        "require": {
+          "types": "./dist/cjs/telegram/Chunk.d.ts",
+          "default": "./dist/cjs/telegram/Chunk.js"
+        }
       },
       "./telegram/Config": {
-        "types": "./dist/esm/telegram/Config.d.ts",
-        "import": "./dist/esm/telegram/Config.js",
-        "require": "./dist/cjs/telegram/Config.js"
+        "import": {
+          "types": "./dist/esm/telegram/Config.d.ts",
+          "default": "./dist/esm/telegram/Config.js"
+        },
+        "require": {
+          "types": "./dist/cjs/telegram/Config.d.ts",
+          "default": "./dist/cjs/telegram/Config.js"
+        }
       },
       "./telegram/InitData": {
-        "types": "./dist/esm/telegram/InitData.d.ts",
-        "import": "./dist/esm/telegram/InitData.js",
-        "require": "./dist/cjs/telegram/InitData.js"
+        "import": {
+          "types": "./dist/esm/telegram/InitData.d.ts",
+          "default": "./dist/esm/telegram/InitData.js"
+        },
+        "require": {
+          "types": "./dist/cjs/telegram/InitData.d.ts",
+          "default": "./dist/cjs/telegram/InitData.js"
+        }
       },
       "./telegram/Markdown": {
-        "types": "./dist/esm/telegram/Markdown.d.ts",
-        "import": "./dist/esm/telegram/Markdown.js",
-        "require": "./dist/cjs/telegram/Markdown.js"
+        "import": {
+          "types": "./dist/esm/telegram/Markdown.d.ts",
+          "default": "./dist/esm/telegram/Markdown.js"
+        },
+        "require": {
+          "types": "./dist/cjs/telegram/Markdown.d.ts",
+          "default": "./dist/cjs/telegram/Markdown.js"
+        }
       },
       "./telegram/Payload": {
-        "types": "./dist/esm/telegram/Payload.d.ts",
-        "import": "./dist/esm/telegram/Payload.js",
-        "require": "./dist/cjs/telegram/Payload.js"
+        "import": {
+          "types": "./dist/esm/telegram/Payload.d.ts",
+          "default": "./dist/esm/telegram/Payload.js"
+        },
+        "require": {
+          "types": "./dist/cjs/telegram/Payload.d.ts",
+          "default": "./dist/cjs/telegram/Payload.js"
+        }
       },
       "./telegram/Source": {
-        "types": "./dist/esm/telegram/Source.d.ts",
-        "import": "./dist/esm/telegram/Source.js",
-        "require": "./dist/cjs/telegram/Source.js"
+        "import": {
+          "types": "./dist/esm/telegram/Source.d.ts",
+          "default": "./dist/esm/telegram/Source.js"
+        },
+        "require": {
+          "types": "./dist/cjs/telegram/Source.d.ts",
+          "default": "./dist/cjs/telegram/Source.js"
+        }
       },
       "./telegram/TelegramClient": {
-        "types": "./dist/esm/telegram/TelegramClient.d.ts",
-        "import": "./dist/esm/telegram/TelegramClient.js",
-        "require": "./dist/cjs/telegram/TelegramClient.js"
+        "import": {
+          "types": "./dist/esm/telegram/TelegramClient.d.ts",
+          "default": "./dist/esm/telegram/TelegramClient.js"
+        },
+        "require": {
+          "types": "./dist/cjs/telegram/TelegramClient.d.ts",
+          "default": "./dist/cjs/telegram/TelegramClient.js"
+        }
       },
       "./core/migrations/0001_integration_cursors": null
     }
@@ -310,18 +500,18 @@
     "@smthrs/canonical": "1.0.0-rc.0"
   },
   "peerDependencies": {
-    "effect": "4.0.0-rc.112"
+    "effect": "4.0.0-rc.115"
   },
   "devDependencies": {
     "@effect/language-service": "0.87.2",
-    "@effect/platform-node": "4.0.0-rc.112",
-    "@effect/vitest": "4.0.0-rc.112",
+    "@effect/platform-node": "4.0.0-rc.115",
+    "@effect/vitest": "4.0.0-rc.115",
     "@eslint/js": "9.39.5",
     "@smthrs/engine": "1.0.0-rc.0",
     "@types/node": "26.4.1",
-    "@vitest/coverage-v8": "4.1.9",
+    "@vitest/coverage-v8": "5.0.0",
     "dprint": "0.57.1",
-    "effect": "4.0.0-rc.112",
+    "effect": "4.0.0-rc.115",
     "esbuild": "0.28.2",
     "eslint": "9.39.5",
     "eslint-import-resolver-typescript": "4.4.5",
@@ -331,6 +521,6 @@
     "madge": "8.0.0",
     "typescript": "5.9.3",
     "typescript-eslint": "8.69.0",
-    "vitest": "4.1.9"
+    "vitest": "5.0.0"
   }
 }

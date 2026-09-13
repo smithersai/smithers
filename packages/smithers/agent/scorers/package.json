@@ -67,62 +67,117 @@
     "exports": {
       "./package.json": "./package.json",
       ".": {
-        "types": "./dist/esm/index.d.ts",
-        "import": "./dist/esm/index.js",
-        "require": "./dist/cjs/index.js"
+        "import": {
+          "types": "./dist/esm/index.d.ts",
+          "default": "./dist/esm/index.js"
+        },
+        "require": {
+          "types": "./dist/cjs/index.d.ts",
+          "default": "./dist/cjs/index.js"
+        }
       },
       "./internal/*": null,
       "./migrations/*": null,
       "./*/index": null,
       "./Binding": {
-        "types": "./dist/esm/Binding.d.ts",
-        "import": "./dist/esm/Binding.js",
-        "require": "./dist/cjs/Binding.js"
+        "import": {
+          "types": "./dist/esm/Binding.d.ts",
+          "default": "./dist/esm/Binding.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Binding.d.ts",
+          "default": "./dist/cjs/Binding.js"
+        }
       },
       "./Runner": {
-        "types": "./dist/esm/Runner.d.ts",
-        "import": "./dist/esm/Runner.js",
-        "require": "./dist/cjs/Runner.js"
+        "import": {
+          "types": "./dist/esm/Runner.d.ts",
+          "default": "./dist/esm/Runner.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Runner.d.ts",
+          "default": "./dist/cjs/Runner.js"
+        }
       },
       "./RunnerLive": {
-        "types": "./dist/esm/RunnerLive.d.ts",
-        "import": "./dist/esm/RunnerLive.js",
-        "require": "./dist/cjs/RunnerLive.js"
+        "import": {
+          "types": "./dist/esm/RunnerLive.d.ts",
+          "default": "./dist/esm/RunnerLive.js"
+        },
+        "require": {
+          "types": "./dist/cjs/RunnerLive.d.ts",
+          "default": "./dist/cjs/RunnerLive.js"
+        }
       },
       "./Sampling": {
-        "types": "./dist/esm/Sampling.d.ts",
-        "import": "./dist/esm/Sampling.js",
-        "require": "./dist/cjs/Sampling.js"
+        "import": {
+          "types": "./dist/esm/Sampling.d.ts",
+          "default": "./dist/esm/Sampling.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Sampling.d.ts",
+          "default": "./dist/cjs/Sampling.js"
+        }
       },
       "./ScoreGate": {
-        "types": "./dist/esm/ScoreGate.d.ts",
-        "import": "./dist/esm/ScoreGate.js",
-        "require": "./dist/cjs/ScoreGate.js"
+        "import": {
+          "types": "./dist/esm/ScoreGate.d.ts",
+          "default": "./dist/esm/ScoreGate.js"
+        },
+        "require": {
+          "types": "./dist/cjs/ScoreGate.d.ts",
+          "default": "./dist/cjs/ScoreGate.js"
+        }
       },
       "./ScoreStore": {
-        "types": "./dist/esm/ScoreStore.d.ts",
-        "import": "./dist/esm/ScoreStore.js",
-        "require": "./dist/cjs/ScoreStore.js"
+        "import": {
+          "types": "./dist/esm/ScoreStore.d.ts",
+          "default": "./dist/esm/ScoreStore.js"
+        },
+        "require": {
+          "types": "./dist/cjs/ScoreStore.d.ts",
+          "default": "./dist/cjs/ScoreStore.js"
+        }
       },
       "./Scorer": {
-        "types": "./dist/esm/Scorer.d.ts",
-        "import": "./dist/esm/Scorer.js",
-        "require": "./dist/cjs/Scorer.js"
+        "import": {
+          "types": "./dist/esm/Scorer.d.ts",
+          "default": "./dist/esm/Scorer.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Scorer.d.ts",
+          "default": "./dist/cjs/Scorer.js"
+        }
       },
       "./ScorerError": {
-        "types": "./dist/esm/ScorerError.d.ts",
-        "import": "./dist/esm/ScorerError.js",
-        "require": "./dist/cjs/ScorerError.js"
+        "import": {
+          "types": "./dist/esm/ScorerError.d.ts",
+          "default": "./dist/esm/ScorerError.js"
+        },
+        "require": {
+          "types": "./dist/cjs/ScorerError.d.ts",
+          "default": "./dist/cjs/ScorerError.js"
+        }
       },
       "./SqlScoreStore": {
-        "types": "./dist/esm/SqlScoreStore.d.ts",
-        "import": "./dist/esm/SqlScoreStore.js",
-        "require": "./dist/cjs/SqlScoreStore.js"
+        "import": {
+          "types": "./dist/esm/SqlScoreStore.d.ts",
+          "default": "./dist/esm/SqlScoreStore.js"
+        },
+        "require": {
+          "types": "./dist/cjs/SqlScoreStore.d.ts",
+          "default": "./dist/cjs/SqlScoreStore.js"
+        }
       },
       "./index": {
-        "types": "./dist/esm/index.d.ts",
-        "import": "./dist/esm/index.js",
-        "require": "./dist/cjs/index.js"
+        "import": {
+          "types": "./dist/esm/index.d.ts",
+          "default": "./dist/esm/index.js"
+        },
+        "require": {
+          "types": "./dist/cjs/index.d.ts",
+          "default": "./dist/cjs/index.js"
+        }
       }
     }
   },
@@ -141,16 +196,16 @@
     "@smthrs/journal": "1.0.0-rc.0"
   },
   "peerDependencies": {
-    "effect": "4.0.0-rc.112"
+    "effect": "4.0.0-rc.115"
   },
   "devDependencies": {
     "@effect/language-service": "0.87.2",
-    "@effect/vitest": "4.0.0-rc.112",
+    "@effect/vitest": "4.0.0-rc.115",
     "@eslint/js": "9.39.5",
     "@types/node": "26.4.1",
-    "@vitest/coverage-v8": "4.1.9",
+    "@vitest/coverage-v8": "5.0.0",
     "dprint": "0.57.1",
-    "effect": "4.0.0-rc.112",
+    "effect": "4.0.0-rc.115",
     "esbuild": "0.28.2",
     "eslint": "9.39.5",
     "eslint-import-resolver-typescript": "4.4.5",
@@ -160,6 +215,6 @@
     "madge": "8.0.0",
     "typescript": "5.9.3",
     "typescript-eslint": "8.69.0",
-    "vitest": "4.1.9"
+    "vitest": "5.0.0"
   }
 }

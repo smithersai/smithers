@@ -183,7 +183,11 @@ export const BuildAndCheckTypeScriptPackage = (options: Options): PackageTargets
   // same sources as CommonJS in a second pass.
   const lib = TsBuild({
     ...(options.packageManager === undefined ? {} : { packageManager: options.packageManager }),
-    srcs: [sources],
+    srcs: [
+      sources,
+      Input.file("//packages/repo-targets/scripts/build-library.mjs"),
+      Input.file("//packages/smithers/scripts/compile-commonjs.mjs")
+    ],
     entries: [entry],
     deps,
     tsconfig,
@@ -194,7 +198,7 @@ export const BuildAndCheckTypeScriptPackage = (options: Options): PackageTargets
   })
   const check = Typecheck({
     ...(options.packageManager === undefined ? {} : { packageManager: options.packageManager }),
-    srcs: [sources, testSources],
+    srcs: [sources, testSources, Input.glob("//packages/repo-targets/test-utils/effect-property.*")],
     deps: [lib, ...deps],
     tsconfig: testTsconfig,
     buildMode: false,
@@ -205,7 +209,7 @@ export const BuildAndCheckTypeScriptPackage = (options: Options): PackageTargets
     ...(options.packageManager === undefined ? {} : { packageManager: options.packageManager }),
     ...(options.testTimeoutMs === undefined ? {} : { timeoutMs: options.testTimeoutMs }),
     tests: [tests],
-    sources: [sources, ...(options.testData ?? []).map((pattern) => Input.glob(pattern))],
+    sources: [sources, Input.glob("//packages/repo-targets/test-utils/effect-property.*"), ...(options.testData ?? []).map((pattern) => Input.glob(pattern))],
     deps: [lib, ...deps],
     config: vitestConfig,
     environment: "node",

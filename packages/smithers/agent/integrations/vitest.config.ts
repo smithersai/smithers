@@ -16,7 +16,7 @@ export default defineConfig({
       // Per-process report directory so concurrent vitest runs do not destroy
       // each other's coverage scratch state (issues #115/#121).
       reportsDirectory: join(tmpdir(), `flows-integrations-coverage-${process.pid}`),
-      include: ["src/**"].map((pattern) => join(import.meta.dirname, pattern)),
+      include: ["src/**"],
       // Ratcheted to exactly what the default gate reaches. Raise these when a
       // case closes; never lower them. The explicit shortfall below is limited
       // to host/runtime boundaries the real suite cannot manufacture safely.

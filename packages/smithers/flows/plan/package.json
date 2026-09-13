@@ -68,71 +68,136 @@
     "exports": {
       "./package.json": "./package.json",
       ".": {
-        "types": "./dist/esm/index.d.ts",
-        "import": "./dist/esm/index.js",
-        "require": "./dist/cjs/index.js"
+        "import": {
+          "types": "./dist/esm/index.d.ts",
+          "default": "./dist/esm/index.js"
+        },
+        "require": {
+          "types": "./dist/cjs/index.d.ts",
+          "default": "./dist/cjs/index.js"
+        }
       },
       "./GraphBuildError": {
-        "types": "./dist/esm/GraphBuildError.d.ts",
-        "import": "./dist/esm/GraphBuildError.js",
-        "require": "./dist/cjs/GraphBuildError.js"
+        "import": {
+          "types": "./dist/esm/GraphBuildError.d.ts",
+          "default": "./dist/esm/GraphBuildError.js"
+        },
+        "require": {
+          "types": "./dist/cjs/GraphBuildError.d.ts",
+          "default": "./dist/cjs/GraphBuildError.js"
+        }
       },
       "./Node": {
-        "types": "./dist/esm/Node.d.ts",
-        "import": "./dist/esm/Node.js",
-        "require": "./dist/cjs/Node.js"
+        "import": {
+          "types": "./dist/esm/Node.d.ts",
+          "default": "./dist/esm/Node.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Node.d.ts",
+          "default": "./dist/cjs/Node.js"
+        }
       },
       "./Planned": {
-        "types": "./dist/esm/Planned.d.ts",
-        "import": "./dist/esm/Planned.js",
-        "require": "./dist/cjs/Planned.js"
+        "import": {
+          "types": "./dist/esm/Planned.d.ts",
+          "default": "./dist/esm/Planned.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Planned.d.ts",
+          "default": "./dist/cjs/Planned.js"
+        }
       },
       "./internal/*": null,
       "./*/index": null,
       "./FileSet": {
-        "types": "./dist/esm/FileSet.d.ts",
-        "import": "./dist/esm/FileSet.js",
-        "require": "./dist/cjs/FileSet.js"
+        "import": {
+          "types": "./dist/esm/FileSet.d.ts",
+          "default": "./dist/esm/FileSet.js"
+        },
+        "require": {
+          "types": "./dist/cjs/FileSet.d.ts",
+          "default": "./dist/cjs/FileSet.js"
+        }
       },
       "./KeyMaterial": {
-        "types": "./dist/esm/KeyMaterial.d.ts",
-        "import": "./dist/esm/KeyMaterial.js",
-        "require": "./dist/cjs/KeyMaterial.js"
+        "import": {
+          "types": "./dist/esm/KeyMaterial.d.ts",
+          "default": "./dist/esm/KeyMaterial.js"
+        },
+        "require": {
+          "types": "./dist/cjs/KeyMaterial.d.ts",
+          "default": "./dist/cjs/KeyMaterial.js"
+        }
       },
       "./Migrations": {
-        "types": "./dist/esm/Migrations.d.ts",
-        "import": "./dist/esm/Migrations.js",
-        "require": "./dist/cjs/Migrations.js"
+        "import": {
+          "types": "./dist/esm/Migrations.d.ts",
+          "default": "./dist/esm/Migrations.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Migrations.d.ts",
+          "default": "./dist/cjs/Migrations.js"
+        }
       },
       "./Plan": {
-        "types": "./dist/esm/Plan.d.ts",
-        "import": "./dist/esm/Plan.js",
-        "require": "./dist/cjs/Plan.js"
+        "import": {
+          "types": "./dist/esm/Plan.d.ts",
+          "default": "./dist/esm/Plan.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Plan.d.ts",
+          "default": "./dist/cjs/Plan.js"
+        }
       },
       "./PlanDiff": {
-        "types": "./dist/esm/PlanDiff.d.ts",
-        "import": "./dist/esm/PlanDiff.js",
-        "require": "./dist/cjs/PlanDiff.js"
+        "import": {
+          "types": "./dist/esm/PlanDiff.d.ts",
+          "default": "./dist/esm/PlanDiff.js"
+        },
+        "require": {
+          "types": "./dist/cjs/PlanDiff.d.ts",
+          "default": "./dist/cjs/PlanDiff.js"
+        }
       },
       "./PlanStore": {
-        "types": "./dist/esm/PlanStore.d.ts",
-        "import": "./dist/esm/PlanStore.js",
-        "require": "./dist/cjs/PlanStore.js"
+        "import": {
+          "types": "./dist/esm/PlanStore.d.ts",
+          "default": "./dist/esm/PlanStore.js"
+        },
+        "require": {
+          "types": "./dist/cjs/PlanStore.d.ts",
+          "default": "./dist/cjs/PlanStore.js"
+        }
       },
       "./StepKey": {
-        "types": "./dist/esm/StepKey.d.ts",
-        "import": "./dist/esm/StepKey.js",
-        "require": "./dist/cjs/StepKey.js"
+        "import": {
+          "types": "./dist/esm/StepKey.d.ts",
+          "default": "./dist/esm/StepKey.js"
+        },
+        "require": {
+          "types": "./dist/cjs/StepKey.d.ts",
+          "default": "./dist/cjs/StepKey.js"
+        }
       },
       "./Scheduling": {
-        "types": "./dist/esm/Scheduling.d.ts",
-        "import": "./dist/esm/Scheduling.js",
-        "require": "./dist/cjs/Scheduling.js"
+        "import": {
+          "types": "./dist/esm/Scheduling.d.ts",
+          "default": "./dist/esm/Scheduling.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Scheduling.d.ts",
+          "default": "./dist/cjs/Scheduling.js"
+        }
       },
       "./index": {
-        "types": "./dist/esm/index.d.ts",
-        "import": "./dist/esm/index.js",
-        "require": "./dist/cjs/index.js"
+        "import": {
+          "types": "./dist/esm/index.d.ts",
+          "default": "./dist/esm/index.js"
+        },
+        "require": {
+          "types": "./dist/cjs/index.d.ts",
+          "default": "./dist/cjs/index.js"
+        }
       }
     }
   },
@@ -154,13 +219,13 @@
   },
   "devDependencies": {
     "@effect/language-service": "0.87.2",
-    "@effect/platform-node": "4.0.0-rc.112",
-    "@effect/vitest": "4.0.0-rc.112",
+    "@effect/platform-node": "4.0.0-rc.115",
+    "@effect/vitest": "4.0.0-rc.115",
     "@eslint/js": "9.39.5",
     "@types/node": "26.4.1",
-    "@vitest/coverage-v8": "4.1.9",
+    "@vitest/coverage-v8": "5.0.0",
     "dprint": "0.57.1",
-    "effect": "4.0.0-rc.112",
+    "effect": "4.0.0-rc.115",
     "esbuild": "0.28.2",
     "eslint": "9.39.5",
     "eslint-import-resolver-typescript": "4.4.5",
@@ -170,9 +235,10 @@
     "madge": "8.0.0",
     "typescript": "5.9.3",
     "typescript-eslint": "8.69.0",
-    "vitest": "4.1.9"
+    "vitest": "5.0.0",
+    "fast-check": "4.9.0"
   },
   "peerDependencies": {
-    "effect": "4.0.0-rc.112"
+    "effect": "4.0.0-rc.115"
   }
 }

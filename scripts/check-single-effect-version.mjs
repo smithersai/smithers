@@ -10,7 +10,7 @@ import { workspacePackages, isMain, repoRoot } from "./workspace-packages.mjs"
 import { readWorkspaceManifests } from "./pack-release.mjs"
 
 // Update the family atomically with manifests and both package-manager locks.
-export const EXPECTED_EFFECT_VERSION = "4.0.0-rc.112"
+export const EXPECTED_EFFECT_VERSION = "4.0.0-rc.115"
 const family = new Set(["effect", "@effect/opentelemetry", "@effect/platform-bun",
   "@effect/platform-node", "@effect/platform-node-shared", "@effect/sql-sqlite-node", "@effect/vitest"])
 const sections = ["dependencies", "devDependencies", "peerDependencies", "optionalDependencies"]

@@ -16,12 +16,13 @@
   },
   "dependencies": {
     "@smthrs/targets": "workspace:*",
-    "effect": "4.0.0-rc.112"
+    "effect": "4.0.0-rc.115"
   },
   "devDependencies": {
     "typescript": "5.9.3",
-    "vitest": "4.1.9",
+    "vitest": "5.0.0",
     "@smthrs/plan": "workspace:*",
-    "@vitest/coverage-v8": "4.1.9"
+    "@vitest/coverage-v8": "5.0.0",
+    "fast-check": "4.9.0"
   }
 }

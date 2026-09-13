@@ -18,8 +18,8 @@
   },
   "devDependencies": {
     "@astrojs/check": "^0.9.10",
-    "@effect/platform-node": "4.0.0-rc.112",
-    "@effect/platform-node-shared": "4.0.0-rc.112",
+    "@effect/platform-node": "4.0.0-rc.115",
+    "@effect/platform-node-shared": "4.0.0-rc.115",
     "@smthrs/agent": "workspace:*",
     "@smthrs/capability": "workspace:*",
     "@smthrs/control": "workspace:*",
@@ -46,7 +46,7 @@
     "@smthrs/time-travel": "workspace:*",
     "@types/react": "^19.2.18",
     "alchemy": "2.0.0-beta.76",
-    "effect": "4.0.0-rc.112",
+    "effect": "4.0.0-rc.115",
     "typescript": "~5.9.3"
   },
   "dependencies": {

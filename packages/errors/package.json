@@ -44,26 +44,46 @@
     "exports": {
       "./package.json": "./package.json",
       ".": {
-        "types": "./dist/esm/index.d.ts",
-        "import": "./dist/esm/index.js",
-        "require": "./dist/cjs/index.js"
+        "import": {
+          "types": "./dist/esm/index.d.ts",
+          "default": "./dist/esm/index.js"
+        },
+        "require": {
+          "types": "./dist/cjs/index.d.ts",
+          "default": "./dist/cjs/index.js"
+        }
       },
       "./internal/*": null,
       "./*/index": null,
       "./ErrorCode": {
-        "types": "./dist/esm/ErrorCode.d.ts",
-        "import": "./dist/esm/ErrorCode.js",
-        "require": "./dist/cjs/ErrorCode.js"
+        "import": {
+          "types": "./dist/esm/ErrorCode.d.ts",
+          "default": "./dist/esm/ErrorCode.js"
+        },
+        "require": {
+          "types": "./dist/cjs/ErrorCode.d.ts",
+          "default": "./dist/cjs/ErrorCode.js"
+        }
       },
       "./SmithersError": {
-        "types": "./dist/esm/SmithersError.d.ts",
-        "import": "./dist/esm/SmithersError.js",
-        "require": "./dist/cjs/SmithersError.js"
+        "import": {
+          "types": "./dist/esm/SmithersError.d.ts",
+          "default": "./dist/esm/SmithersError.js"
+        },
+        "require": {
+          "types": "./dist/cjs/SmithersError.d.ts",
+          "default": "./dist/cjs/SmithersError.js"
+        }
       },
       "./index": {
-        "types": "./dist/esm/index.d.ts",
-        "import": "./dist/esm/index.js",
-        "require": "./dist/cjs/index.js"
+        "import": {
+          "types": "./dist/esm/index.d.ts",
+          "default": "./dist/esm/index.js"
+        },
+        "require": {
+          "types": "./dist/cjs/index.d.ts",
+          "default": "./dist/cjs/index.js"
+        }
       }
     }
   },
@@ -91,7 +111,7 @@
     "@effect/language-service": "0.87.2",
     "@eslint/js": "9.39.5",
     "@types/node": "26.4.1",
-    "@vitest/coverage-v8": "4.1.9",
+    "@vitest/coverage-v8": "5.0.0",
     "dprint": "0.57.1",
     "esbuild": "0.28.2",
     "eslint": "9.39.5",
@@ -102,6 +122,6 @@
     "madge": "8.0.0",
     "typescript": "5.9.3",
     "typescript-eslint": "8.69.0",
-    "vitest": "4.1.9"
+    "vitest": "5.0.0"
   }
 }

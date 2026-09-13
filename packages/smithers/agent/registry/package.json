@@ -65,56 +65,106 @@
     "exports": {
       "./package.json": "./package.json",
       ".": {
-        "types": "./dist/esm/index.d.ts",
-        "import": "./dist/esm/index.js",
-        "require": "./dist/cjs/index.js"
+        "import": {
+          "types": "./dist/esm/index.d.ts",
+          "default": "./dist/esm/index.js"
+        },
+        "require": {
+          "types": "./dist/cjs/index.d.ts",
+          "default": "./dist/cjs/index.js"
+        }
       },
       "./internal/*": null,
       "./*/index": null,
       "./Descriptor": {
-        "types": "./dist/esm/Descriptor.d.ts",
-        "import": "./dist/esm/Descriptor.js",
-        "require": "./dist/cjs/Descriptor.js"
+        "import": {
+          "types": "./dist/esm/Descriptor.d.ts",
+          "default": "./dist/esm/Descriptor.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Descriptor.d.ts",
+          "default": "./dist/cjs/Descriptor.js"
+        }
       },
       "./Disclosure": {
-        "types": "./dist/esm/Disclosure.d.ts",
-        "import": "./dist/esm/Disclosure.js",
-        "require": "./dist/cjs/Disclosure.js"
+        "import": {
+          "types": "./dist/esm/Disclosure.d.ts",
+          "default": "./dist/esm/Disclosure.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Disclosure.d.ts",
+          "default": "./dist/cjs/Disclosure.js"
+        }
       },
       "./Discovery": {
-        "types": "./dist/esm/Discovery.d.ts",
-        "import": "./dist/esm/Discovery.js",
-        "require": "./dist/cjs/Discovery.js"
+        "import": {
+          "types": "./dist/esm/Discovery.d.ts",
+          "default": "./dist/esm/Discovery.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Discovery.d.ts",
+          "default": "./dist/cjs/Discovery.js"
+        }
       },
       "./Executable": {
-        "types": "./dist/esm/Executable.d.ts",
-        "import": "./dist/esm/Executable.js",
-        "require": "./dist/cjs/Executable.js"
+        "import": {
+          "types": "./dist/esm/Executable.d.ts",
+          "default": "./dist/esm/Executable.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Executable.d.ts",
+          "default": "./dist/cjs/Executable.js"
+        }
       },
       "./MarkdownFlow": {
-        "types": "./dist/esm/MarkdownFlow.d.ts",
-        "import": "./dist/esm/MarkdownFlow.js",
-        "require": "./dist/cjs/MarkdownFlow.js"
+        "import": {
+          "types": "./dist/esm/MarkdownFlow.d.ts",
+          "default": "./dist/esm/MarkdownFlow.js"
+        },
+        "require": {
+          "types": "./dist/cjs/MarkdownFlow.d.ts",
+          "default": "./dist/cjs/MarkdownFlow.js"
+        }
       },
       "./Pack": {
-        "types": "./dist/esm/Pack.d.ts",
-        "import": "./dist/esm/Pack.js",
-        "require": "./dist/cjs/Pack.js"
+        "import": {
+          "types": "./dist/esm/Pack.d.ts",
+          "default": "./dist/esm/Pack.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Pack.d.ts",
+          "default": "./dist/cjs/Pack.js"
+        }
       },
       "./Registry": {
-        "types": "./dist/esm/Registry.d.ts",
-        "import": "./dist/esm/Registry.js",
-        "require": "./dist/cjs/Registry.js"
+        "import": {
+          "types": "./dist/esm/Registry.d.ts",
+          "default": "./dist/esm/Registry.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Registry.d.ts",
+          "default": "./dist/cjs/Registry.js"
+        }
       },
       "./RegistryError": {
-        "types": "./dist/esm/RegistryError.d.ts",
-        "import": "./dist/esm/RegistryError.js",
-        "require": "./dist/cjs/RegistryError.js"
+        "import": {
+          "types": "./dist/esm/RegistryError.d.ts",
+          "default": "./dist/esm/RegistryError.js"
+        },
+        "require": {
+          "types": "./dist/cjs/RegistryError.d.ts",
+          "default": "./dist/cjs/RegistryError.js"
+        }
       },
       "./index": {
-        "types": "./dist/esm/index.d.ts",
-        "import": "./dist/esm/index.js",
-        "require": "./dist/cjs/index.js"
+        "import": {
+          "types": "./dist/esm/index.d.ts",
+          "default": "./dist/esm/index.js"
+        },
+        "require": {
+          "types": "./dist/cjs/index.d.ts",
+          "default": "./dist/cjs/index.js"
+        }
       }
     }
   },
@@ -135,8 +185,8 @@
   },
   "devDependencies": {
     "@effect/language-service": "0.87.2",
-    "@effect/platform-node": "4.0.0-rc.112",
-    "@effect/vitest": "4.0.0-rc.112",
+    "@effect/platform-node": "4.0.0-rc.115",
+    "@effect/vitest": "4.0.0-rc.115",
     "@eslint/js": "9.39.5",
     "@smthrs/artifacts": "1.0.0-rc.0",
     "@smthrs/engine-store": "1.0.0-rc.0",
@@ -144,9 +194,9 @@
     "@smthrs/kernel": "1.0.0-rc.0",
     "@smthrs/run-store": "1.0.0-rc.0",
     "@types/node": "26.4.1",
-    "@vitest/coverage-v8": "4.1.9",
+    "@vitest/coverage-v8": "5.0.0",
     "dprint": "0.57.1",
-    "effect": "4.0.0-rc.112",
+    "effect": "4.0.0-rc.115",
     "esbuild": "0.28.2",
     "eslint": "9.39.5",
     "eslint-import-resolver-typescript": "4.4.5",
@@ -156,9 +206,9 @@
     "madge": "8.0.0",
     "typescript": "5.9.3",
     "typescript-eslint": "8.69.0",
-    "vitest": "4.1.9"
+    "vitest": "5.0.0"
   },
   "peerDependencies": {
-    "effect": "4.0.0-rc.112"
+    "effect": "4.0.0-rc.115"
   }
 }

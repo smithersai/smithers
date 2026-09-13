@@ -62,36 +62,66 @@
     "exports": {
       "./package.json": "./package.json",
       ".": {
-        "types": "./dist/esm/index.d.ts",
-        "import": "./dist/esm/index.js",
-        "require": "./dist/cjs/index.js"
+        "import": {
+          "types": "./dist/esm/index.d.ts",
+          "default": "./dist/esm/index.js"
+        },
+        "require": {
+          "types": "./dist/cjs/index.d.ts",
+          "default": "./dist/cjs/index.js"
+        }
       },
       "./internal/*": null,
       "./*/index": null,
       "./Diagnostics": {
-        "types": "./dist/esm/Diagnostics.d.ts",
-        "import": "./dist/esm/Diagnostics.js",
-        "require": "./dist/cjs/Diagnostics.js"
+        "import": {
+          "types": "./dist/esm/Diagnostics.d.ts",
+          "default": "./dist/esm/Diagnostics.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Diagnostics.d.ts",
+          "default": "./dist/cjs/Diagnostics.js"
+        }
       },
       "./McpClient": {
-        "types": "./dist/esm/McpClient.d.ts",
-        "import": "./dist/esm/McpClient.js",
-        "require": "./dist/cjs/McpClient.js"
+        "import": {
+          "types": "./dist/esm/McpClient.d.ts",
+          "default": "./dist/esm/McpClient.js"
+        },
+        "require": {
+          "types": "./dist/cjs/McpClient.d.ts",
+          "default": "./dist/cjs/McpClient.js"
+        }
       },
       "./McpError": {
-        "types": "./dist/esm/McpError.d.ts",
-        "import": "./dist/esm/McpError.js",
-        "require": "./dist/cjs/McpError.js"
+        "import": {
+          "types": "./dist/esm/McpError.d.ts",
+          "default": "./dist/esm/McpError.js"
+        },
+        "require": {
+          "types": "./dist/cjs/McpError.d.ts",
+          "default": "./dist/cjs/McpError.js"
+        }
       },
       "./McpFlows": {
-        "types": "./dist/esm/McpFlows.d.ts",
-        "import": "./dist/esm/McpFlows.js",
-        "require": "./dist/cjs/McpFlows.js"
+        "import": {
+          "types": "./dist/esm/McpFlows.d.ts",
+          "default": "./dist/esm/McpFlows.js"
+        },
+        "require": {
+          "types": "./dist/cjs/McpFlows.d.ts",
+          "default": "./dist/cjs/McpFlows.js"
+        }
       },
       "./index": {
-        "types": "./dist/esm/index.d.ts",
-        "import": "./dist/esm/index.js",
-        "require": "./dist/cjs/index.js"
+        "import": {
+          "types": "./dist/esm/index.d.ts",
+          "default": "./dist/esm/index.js"
+        },
+        "require": {
+          "types": "./dist/cjs/index.d.ts",
+          "default": "./dist/cjs/index.js"
+        }
       }
     }
   },
@@ -114,15 +144,15 @@
   },
   "devDependencies": {
     "@effect/language-service": "0.87.2",
-    "@effect/platform-node": "4.0.0-rc.112",
-    "@effect/vitest": "4.0.0-rc.112",
+    "@effect/platform-node": "4.0.0-rc.115",
+    "@effect/vitest": "4.0.0-rc.115",
     "@eslint/js": "9.39.5",
     "@smthrs/model": "1.0.0-rc.0",
     "@smthrs/registry": "1.0.0-rc.0",
     "@types/node": "26.4.1",
-    "@vitest/coverage-v8": "4.1.9",
+    "@vitest/coverage-v8": "5.0.0",
     "dprint": "0.57.1",
-    "effect": "4.0.0-rc.112",
+    "effect": "4.0.0-rc.115",
     "esbuild": "0.28.2",
     "eslint": "9.39.5",
     "eslint-import-resolver-typescript": "4.4.5",
@@ -132,9 +162,9 @@
     "madge": "8.0.0",
     "typescript": "5.9.3",
     "typescript-eslint": "8.69.0",
-    "vitest": "4.1.9"
+    "vitest": "5.0.0"
   },
   "peerDependencies": {
-    "effect": "4.0.0-rc.112"
+    "effect": "4.0.0-rc.115"
   }
 }

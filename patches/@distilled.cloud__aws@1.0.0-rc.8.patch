@@ -1,0 +1,50 @@
+diff --git a/src/endpoint.ts b/src/endpoint.ts
+--- a/src/endpoint.ts
++++ b/src/endpoint.ts
+@@ -15,7 +15,7 @@
+  * Lambda containers). Resolves `undefined` when unset, so the SDK's
+  * default endpoint resolver runs.
+  */
+-export const fromEnvironment = Config.string("AWS_ENDPOINT_URL").pipe(
++export const fromEnvironment = Config.String("AWS_ENDPOINT_URL").pipe(
+   Config.option,
+   Effect.map(Option.getOrUndefined),
+ );
+diff --git a/src/region.ts b/src/region.ts
+--- a/src/region.ts
++++ b/src/region.ts
+@@ -29,8 +29,8 @@
+  * (rather than dying) so a provider can turn it into a typed
+  * `MissingRegion` alongside its other credential-resolution failures.
+  */
+-export const fromEnvironment = Config.string("AWS_REGION").pipe(
+-  Config.orElse(() => Config.string("AWS_DEFAULT_REGION")),
++export const fromEnvironment = Config.String("AWS_REGION").pipe(
++  Config.orElse(() => Config.String("AWS_DEFAULT_REGION")),
+   Effect.map((region) => region as RegionName),
+ );
+ 
+diff --git a/lib/region.js b/lib/region.js
+--- a/lib/region.js
++++ b/lib/region.js
+@@ -25,7 +25,7 @@
+  * (rather than dying) so a provider can turn it into a typed
+  * `MissingRegion` alongside its other credential-resolution failures.
+  */
+-export const fromEnvironment = Config.string("AWS_REGION").pipe(Config.orElse(() => Config.string("AWS_DEFAULT_REGION")), Effect.map((region) => region));
++export const fromEnvironment = Config.String("AWS_REGION").pipe(Config.orElse(() => Config.String("AWS_DEFAULT_REGION")), Effect.map((region) => region));
+ /** Override the region with whatever the environment names. */
+ export const fromEnv = () => Layer.succeed(Region, fromEnvironment.pipe(Effect.orDie));
+ /** Override the region for a scope, e.g. `Region.of("us-west-2")`. */
+diff --git a/lib/endpoint.js b/lib/endpoint.js
+--- a/lib/endpoint.js
++++ b/lib/endpoint.js
+@@ -11,7 +11,7 @@
+  * Lambda containers). Resolves `undefined` when unset, so the SDK's
+  * default endpoint resolver runs.
+  */
+-export const fromEnvironment = Config.string("AWS_ENDPOINT_URL").pipe(Config.option, Effect.map(Option.getOrUndefined));
++export const fromEnvironment = Config.String("AWS_ENDPOINT_URL").pipe(Config.option, Effect.map(Option.getOrUndefined));
+ /** Override the endpoint with whatever the environment names, if anything. */
+ export const fromEnv = () => Layer.succeed(Endpoint, fromEnvironment.pipe(Effect.orDie));
+ /** Override the endpoint for a scope, e.g. `Endpoint.of("http://localhost:4566")`. */
