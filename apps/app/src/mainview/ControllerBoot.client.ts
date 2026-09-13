@@ -9,6 +9,7 @@ import { createRuntime, loadBootstrap, unavailableAgent, unavailableRepositories
 import { createAppController } from "./state/AppController"
 import type { AppController } from "./state/AppController"
 import { createAppStore } from "./state/AppStore"
+import { canPaintTutorialBeforeIdentity, loadControllerBootInputs } from "./ControllerBootMemo"
 
 const promiseEffect = <A>(label: string, run: () => Promise<A>) =>
   Effect.tryPromise({
@@ -29,6 +30,7 @@ const promiseEffect = <A>(label: string, run: () => Promise<A>) =>
 export interface ControllerBootOptions {
   /** Keep the address bar on the entry URL (runtime/FrameHistory.ts `keepUrl`). */
   readonly keepUrl?: boolean
+  readonly mode?: "onboarding" | "repo"
 }
 
 const bootProgram = (options: ControllerBootOptions = {}) =>
@@ -41,14 +43,14 @@ const bootProgram = (options: ControllerBootOptions = {}) =>
     // GitHub App setup-URL returns ride on it, and by the end of boot it is gone.
     const entrySearch = yield* Effect.sync(() => window.location.search)
     const http = yield* Effect.sync(() => createAppFetch())
-    const bootstrap = yield* promiseEffect("load runtime bootstrap", () => loadBootstrap(http))
+    const { bootstrap, store } = yield* promiseEffect("prepare runtime and persisted state", () =>
+      loadControllerBootInputs(() => loadBootstrap(http), () => createAppStore()))
     const runtime = yield* Effect.sync(() => createRuntime({
       bootstrap,
       http,
       nativeRepositories,
       ...(nativeShellAvailable ? { nativeOpenExternal } : {})
     }))
-    const store = yield* promiseEffect("create app store", () => createAppStore())
     const agent = yield* Effect.sync(() => createAgentSeat(runtime.backend.agent ?? unavailableAgent()))
     const controller = yield* Effect.sync(() =>
       createAppController(
@@ -73,7 +75,15 @@ const bootProgram = (options: ControllerBootOptions = {}) =>
         allowlisted: false,
         admin: false
       }))
-    } else if (bootstrap.host === "local") {
+    } else if (bootstrap.host === "local" || canPaintTutorialBeforeIdentity({
+      mode: options.mode,
+      step: store.session().guide?.step,
+      finished: store.session().guide?.finished,
+      hasTranscript: store.collections.cards.size > 0 || store.collections.messages.size > 0,
+      identityState: store.collections.identitySessions.get("identity")?.state,
+      identityLogin: store.collections.identitySessions.get("identity")?.login,
+      accountOwnerLogin: store.collections.identitySessions.get("identity")?.accountOwnerLogin,
+    })) {
       /*
        * The local host never gates on sign-in (LOCAL-APP.md), and this read
        * rides the remote identity seam through the local proxy — a slow or
@@ -81,6 +91,9 @@ const bootProgram = (options: ControllerBootOptions = {}) =>
        * as the upstream took. It runs beside the other inventory loads, never
        * on the paint path: identity "unknown" is a first-class state the app
        * already renders, and the answer lands in the store whenever it comes.
+       * A fresh anonymous tutorial is likewise public practice content: its
+       * real controls need not wait on identity. Retained content/account
+       * ownership and progressed tutorials keep the cloud identity barrier.
        */
       yield* Effect.sync(() => void controller.loadSession())
     } else {

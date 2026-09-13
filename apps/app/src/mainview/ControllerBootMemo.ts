@@ -13,3 +13,29 @@ export const createControllerBoot = (
   let boot: Promise<AppController> | undefined
   return (): Promise<AppController> => (boot ??= load())
 }
+
+/** Independent reads start together; a failed bootstrap cannot leak an opened store. */
+export const loadControllerBootInputs = async <Bootstrap, Store extends { dispose?: () => void | Promise<void> }>(
+  loadBootstrap: () => Promise<Bootstrap>,
+  createStore: () => Promise<Store>,
+): Promise<{ bootstrap: Bootstrap; store: Store }> => {
+  const [bootstrap, store] = await Promise.allSettled([loadBootstrap(), createStore()])
+  if (bootstrap.status === "rejected") {
+    if (store.status === "fulfilled") await store.value.dispose?.()
+    throw bootstrap.reason
+  }
+  if (store.status === "rejected") throw store.reason
+  return { bootstrap: bootstrap.value, store: store.value }
+}
+
+/** Only an empty anonymous practice entry may paint before cloud identity answers. */
+export const canPaintTutorialBeforeIdentity = (entry: {
+  mode?: "onboarding" | "repo"
+  step?: number
+  finished?: boolean
+  hasTranscript: boolean
+  identityState?: string
+  identityLogin?: string | null
+  accountOwnerLogin?: string | null
+}): boolean => entry.mode === "onboarding" && entry.step === 1 && !entry.finished &&
+  !entry.hasTranscript && entry.identityState !== "signed-in" && entry.identityLogin == null && entry.accountOwnerLogin == null

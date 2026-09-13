@@ -1,5 +1,5 @@
 import { AppRoot } from "./AppRoot"
-import { mountApp } from "./AppMount"
+import { mountApp, prepareApp } from "./AppMount"
 import { pathRepo } from "./RepoLink"
 import { browserStartupWatchdog } from "./StartupWatchdog"
 import { createAppFetch } from "./runtime/LocalSession"
@@ -31,4 +31,4 @@ function AppIsland() {
  * only `default`, so a named export would not survive into the chunk the
  * home page imports.
  */
-export default Object.assign(AppIsland, { mountApp })
+export default Object.assign(AppIsland, { mountApp, prepareApp })

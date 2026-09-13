@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { readFile } from "node:fs/promises"
-import { createControllerBoot } from "./ControllerBootMemo"
+import { canPaintTutorialBeforeIdentity, createControllerBoot, loadControllerBootInputs } from "./ControllerBootMemo"
 import type { AppController } from "./state/AppController"
 
 /*
@@ -44,6 +44,45 @@ describe("createControllerBoot", () => {
     expect(boot()).toBe(first)
     expect(loads).toBe(1)
     await expect(first).rejects.toThrow("boot failed")
+  })
+})
+
+describe("controller readiness", () => {
+  test("bootstrap and persisted state load concurrently, and both are required", async () => {
+    const started: string[] = []
+    let finishBootstrap!: (value: string) => void
+    let finishStore!: (value: { dispose: () => void }) => void
+    let ready = false
+    const store = { dispose: () => {} }
+    const boot = loadControllerBootInputs(
+      () => { started.push("bootstrap"); return new Promise<string>(resolve => { finishBootstrap = resolve }) },
+      () => { started.push("store"); return new Promise<typeof store>(resolve => { finishStore = resolve }) },
+    )
+    void boot.then(() => { ready = true })
+    expect(started).toEqual(["bootstrap", "store"])
+    finishBootstrap("cloud")
+    await Promise.resolve()
+    expect(ready).toBe(false)
+    finishStore(store)
+    expect(await boot).toEqual({ bootstrap: "cloud", store })
+  })
+
+  test("failed runtime discovery closes the concurrently opened store", async () => {
+    let closed = 0
+    await expect(loadControllerBootInputs(
+      async () => { throw new Error("runtime offline") },
+      async () => ({ dispose: async () => { closed++ } }),
+    )).rejects.toThrow("runtime offline")
+    expect(closed).toBe(1)
+  })
+
+  test("only fresh empty public practice skips the identity paint barrier", () => {
+    const fresh = { mode: "onboarding" as const, step: 1, hasTranscript: false, identityState: "unknown", accountOwnerLogin: null }
+    expect(canPaintTutorialBeforeIdentity(fresh)).toBe(true)
+    for (const changed of [
+      { mode: "repo" as const }, { mode: undefined }, { step: 5 }, { finished: true },
+      { hasTranscript: true }, { identityState: "signed-in" }, { accountOwnerLogin: "retained-owner" }, { identityLogin: "legacy-owner" },
+    ]) expect(canPaintTutorialBeforeIdentity({ ...fresh, ...changed })).toBe(false)
   })
 })
 
