@@ -26,7 +26,14 @@ export const handleTutorialProviderProxy = (request: Request) => Effect.gen(func
     const value = request.headers.get(name)
     if (value !== null) headers.set(name, value)
   }
-  const upstream = tutorialProviderDestinations[destination as keyof typeof tutorialProviderDestinations]
+  // Subscription endpoints reject Worker egress. Keep the Worker as the
+  // authenticated ingress, with our existing backend making the final hop.
+  const subscription = destination === "chatgpt" || destination === "refresh"
+  if (subscription && !config.tutorialServiceUrl) return json(503, "The subscription relay is not configured.")
+  const upstream = subscription
+    ? `${config.tutorialServiceUrl!.replace(/\/$/, "")}/provider/${destination}`
+    : tutorialProviderDestinations[destination as keyof typeof tutorialProviderDestinations]
+  if (subscription) headers.set(TUTORIAL_PROXY_TOKEN_HEADER, Redacted.value(config.tutorialServiceToken))
   const response = yield* fetchWithDeadline("Tutorial provider", upstream, { method: "POST", headers, body, redirect: "manual", signal: request.signal }, 120_000)
     .pipe(Effect.catch(() => Effect.succeed(json(502, "The tutorial provider could not be reached."))))
   // Never follow a redirect with a subscription credential or return a new

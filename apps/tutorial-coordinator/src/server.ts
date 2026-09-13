@@ -8,6 +8,7 @@ import { Coordinator } from "./coordinator"
 import { modelSettings } from "./model"
 import { prepareSubscription } from "./subscription"
 import { proxySettings } from "./proxy"
+import { providerRelay } from "./providerRelay"
 
 const directory=process.env.TUTORIAL_DATA_DIR??"/data"
 const settings=modelSettings(process.env)
@@ -23,6 +24,7 @@ createServer(async(request,response)=>{
   const send=(status:number,value:unknown)=>{response.writeHead(status,{"content-type":"application/json","cache-control":"no-store"});response.end(JSON.stringify(value))}
   const path=new URL(request.url??"/","http://internal").pathname.replace(/^\/__tutorial(?=\/)/,"")
   if(path==="/health"&&request.method==="GET"){send(200,{status:"ok"});return}
+  if(path.startsWith("/provider/")){await providerRelay(request,response,token,path);return}
   const authorization=Buffer.from(request.headers.authorization??""),expected=Buffer.from(`Bearer ${token}`)
   if(authorization.length!==expected.length||!timingSafeEqual(authorization,expected)){send(401,{message:"Service authentication required"});return}
   const match=/^\/sessions\/([0-9a-f-]{36})\/(?:run\/([a-zA-Z0-9_-]{1,128})|([a-z]+))$/.exec(path)

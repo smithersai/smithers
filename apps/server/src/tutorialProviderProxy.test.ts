@@ -18,7 +18,7 @@ describe("private Cloudflare tutorial provider proxy", () => {
   })
   it("authenticates before forwarding and refuses arbitrary destinations, query strings, methods, and oversized bodies", async () => {
     let calls = 0
-    const services = Layer.mergeAll(testConfigLayer({ tutorialServiceToken: Redacted.make("private-token") }), transportLayer(async () => { calls++; return Response.json({}) }))
+    const services = Layer.mergeAll(testConfigLayer({ tutorialServiceToken: Redacted.make("private-token"), tutorialServiceUrl: "https://api.jjhub.tech/__tutorial" }), transportLayer(async () => { calls++; return Response.json({}) }))
     const run = (path: string, init?: RequestInit) => Effect.runPromise(handleTutorialProviderProxy(new Request(`https://smithers.sh/api/tutorial/provider/${path}`, init)).pipe(Effect.provide(services)))
     expect((await run("chatgpt", { method: "POST" })).status).toBe(401)
     const headers = { "x-smithers-proxy-token": "private-token" }
@@ -31,13 +31,14 @@ describe("private Cloudflare tutorial provider proxy", () => {
 
   it("forwards all configured provider and refresh requests only to fixed destinations with selected headers", async () => {
     for (const [route, target] of Object.entries(tutorialProviderDestinations)) {
-      const services = Layer.mergeAll(testConfigLayer({ tutorialServiceToken: Redacted.make("private-token") }), transportLayer(async (input, init) => {
-        expect(String(input)).toBe(target)
+      const services = Layer.mergeAll(testConfigLayer({ tutorialServiceToken: Redacted.make("private-token"), tutorialServiceUrl: "https://api.jjhub.tech/__tutorial" }), transportLayer(async (input, init) => {
+        const subscription = route === "chatgpt" || route === "refresh"
+        expect(String(input)).toBe(subscription ? `https://api.jjhub.tech/__tutorial/provider/${route}` : target)
         expect(init?.redirect).toBe("manual")
         const headers = new Headers(init?.headers)
         expect(headers.get("authorization")).toBe("Bearer provider-credential")
         expect(headers.get("chatgpt-account-id")).toBe("account")
-        expect(headers.has("x-smithers-proxy-token")).toBe(false)
+        expect(headers.get("x-smithers-proxy-token")).toBe(subscription ? "private-token" : null)
         expect(headers.has("cookie")).toBe(false)
         expect(headers.has("x-forwarded-host")).toBe(false)
         expect(new TextDecoder().decode(init?.body as Uint8Array)).toBe('{"model":"gpt-5.6-luna"}')
@@ -58,7 +59,7 @@ describe("private Cloudflare tutorial provider proxy", () => {
     let streamController!: ReadableStreamDefaultController<Uint8Array>
     const stream = new ReadableStream<Uint8Array>({ start(controller) { streamController = controller; controller.enqueue(new TextEncoder().encode("data: first\n\n")) } })
     let redirect = false
-    const services = Layer.mergeAll(testConfigLayer({ tutorialServiceToken: Redacted.make("private-token") }), transportLayer(async () => redirect ? new Response(null, { status: 307, headers: { location: "https://evil.invalid" } }) : new Response(stream, { headers: { "content-type": "text/event-stream" } })))
+    const services = Layer.mergeAll(testConfigLayer({ tutorialServiceToken: Redacted.make("private-token"), tutorialServiceUrl: "https://api.jjhub.tech/__tutorial" }), transportLayer(async () => redirect ? new Response(null, { status: 307, headers: { location: "https://evil.invalid" } }) : new Response(stream, { headers: { "content-type": "text/event-stream" } })))
     const run = () => Effect.runPromise(handleTutorialProviderProxy(new Request("https://smithers.sh/api/tutorial/provider/chatgpt", { method: "POST", headers: { "x-smithers-proxy-token": "private-token" }, body: "{}" })).pipe(Effect.provide(services)))
     const response = await run()
     const reader = response.body!.getReader()

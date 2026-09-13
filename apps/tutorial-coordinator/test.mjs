@@ -5,7 +5,7 @@ import { join } from 'node:path'
 import { execFileSync } from 'node:child_process'
 const directory=await mkdtemp(join(tmpdir(),'tutorial-tests-'))
 try {
- for (const name of ['model','agent','retry','coordinator']) {
+ for (const name of ['providerRelay','model','agent','retry','coordinator']) {
   const output=join(directory,`${name}.mjs`)
   await bundle(new URL(`./src/${name}.smoke.ts`,import.meta.url).pathname,output)
   execFileSync(process.execPath,[output],{stdio:'inherit',timeout:60_000})
