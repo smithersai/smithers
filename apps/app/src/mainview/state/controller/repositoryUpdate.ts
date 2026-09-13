@@ -61,7 +61,7 @@ export function createRepositoryUpdate(ctx: SeamContext) {
       // Refreshing does not erase notices the user has yet to read.
       for (const row of processed.rows) if (row.announcedVersion === row.version && row.readVersion !== row.version) visible.set(row.id, row)
       const items = [...visible.values()].map(row => ({ id: row.id, version: row.version, kind: row.kind, number: row.number, title: row.title, state: row.state, tags: row.tags, read: row.readVersion === row.version }))
-      const card: UpdateCard = { id, kind: "repo-update", title: `Repository update · ${repo.replace("practice:smithersai/", "")}`,
+      const card: UpdateCard = { id, kind: "repo-update", title: "Activity",
         status: "active", createdAt: existing?.createdAt ?? at, ordinal: existing?.ordinal ?? ctx.nextOrdinal(),
         payload: { repo, scope, checkedAt: at, summary, items, problems, branch: snapshot.branch,
           openIssues: snapshot.issues.available ? snapshot.issues.events.filter(row => row.state === "open").length : null,

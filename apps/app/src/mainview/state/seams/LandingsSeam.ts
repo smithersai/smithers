@@ -1,3 +1,4 @@
+import { readRepositoryDetail } from "../RepositoryReadReceipts"
 import { practiceViewLanding, tutorialRepositoryRead, type RepositoryForm } from "./tutorial2-issues_prs"
 import { publishRepoView, repoPaneCard } from "../EmbeddedHistory"
 import { isPracticeRepo } from "../practice/PracticeRepository"
@@ -451,10 +452,10 @@ export const createLandingsSeam = (ctx: SeamContext, renderRepositoryForm?: Repo
     }),
 
     viewLanding: async (number, repoArg) => {
-      if (isPracticeRepo(repoArg)) return practiceViewLanding(ctx, number)
+      if (isPracticeRepo(repoArg)) return readRepositoryDetail(ctx, repoArg!, "pr", number, () => practiceViewLanding(ctx, number))
       const target = resolveTargetRepo(ctx.store, repoArg)
       if ("error" in target) return target.error
-      return surfaceLanding(target.repo, number)
+      return readRepositoryDetail(ctx, target.repo, "pr", number, () => surfaceLanding(target.repo, number))
     },
 
     createLanding: async (title, repoArg, fromBookmark) => {

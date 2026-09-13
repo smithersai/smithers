@@ -1,13 +1,17 @@
 import { expect, test } from "bun:test"
 import { createAppStore } from "../AppStore"
 import { memoryStorage } from "../TestFixtures"
+import { createIssuesSeam } from "../seams/IssuesSeam"
+import { createLandingsSeam } from "../seams/LandingsSeam"
+import { readRepositoryDetail } from "../RepositoryReadReceipts"
+import { initialGuide } from "../AppState"
 import { createRepositoryUpdate } from "./repositoryUpdate"
 import type { SeamContext } from "../seams/SeamContext"
 import { PRACTICE_REPO } from "../practice/PracticeRepository"
 async function setup(storage = memoryStorage(), http: SeamContext["http"] = async () => { throw new Error("offline") }) {
   const store = await createAppStore({ kind: "localStorage", storage })
   const ctx: SeamContext = { store, dispatch: store.dispatch, actor: () => "user", nextOrdinal: () => 1, baseUrl: "", http }
-  return { store, actions: createRepositoryUpdate(ctx), storage }
+  return { store, ctx, actions: createRepositoryUpdate(ctx), storage }
 }
 test("repository update receipts survive reload; refresh preserves unread items and read is version-specific", async () => {
   const { store, actions, storage } = await setup()
@@ -57,4 +61,87 @@ test("background reads persist observations without announcing or displaying the
   expect(overview?.kind === "repo-update" && overview.payload.items).toHaveLength(3)
   await restored.actions.updateRepo(PRACTICE_REPO)
   expect([...restored.store.collections.cards.values()]).toEqual([overview])
+})
+
+
+test("successful issue and PR navigation marks their exact versions read, including Back and reload", async () => {
+  const { store, ctx, actions, storage } = await setup()
+  await actions.showRepoOverview(PRACTICE_REPO)
+  const overview = [...store.collections.cards.values()][0]!
+  await createIssuesSeam(ctx).viewIssue(3, PRACTICE_REPO)
+  const issue = [...store.collections.repositoryNotifications.values()].find(row => row.kind === "issue" && row.number === 3)!
+  expect(issue.readVersion).toBe(issue.version)
+  await store.dispatch({ type: "card.history.moved", actor: "user", id: overview.id, delta: -1 }).isPersisted.promise
+  const returned = store.collections.cards.get(overview.id)
+  expect(returned?.kind === "repo-update" && returned.payload.items.find(item => item.number === 3)?.read).toBe(true)
+  expect(returned?.kind === "repo-update" && returned.payload.items.find(item => item.number === 2)?.read).toBe(false)
+  await createLandingsSeam(ctx).viewLanding(4, PRACTICE_REPO)
+  const pr = [...store.collections.repositoryNotifications.values()].find(row => row.kind === "pr" && row.number === 4)!
+  expect(pr.readVersion).toBe(pr.version)
+  const restored = await setup(storage)
+  await restored.store.dispatch({ type: "card.history.moved", actor: "user", id: overview.id, delta: -1 }).isPersisted.promise
+  const persisted = restored.store.collections.cards.get(overview.id)
+  expect(persisted?.kind === "repo-update" && persisted.payload.items.find(item => item.number === 4)?.read).toBe(true)
+})
+
+const issueResponse = (updatedAt: string) => ({ number: 3, title: "Hello bug", state: "open", updated_at: updatedAt, body: "details", user: { login: "tester" } })
+
+test("failed detail reads do not consume a matching repository notification", async () => {
+  const { store, ctx, actions } = await setup(memoryStorage(), async url => {
+    if (url.includes("/issues?state=open")) return Response.json([issueResponse("2026-09-13T00:00:00Z")])
+    if (url.endsWith("/issues/3")) return Response.json({ message: "Unavailable" }, { status: 503 })
+    return Response.json([])
+  })
+  await actions.showRepoOverview("org/repo")
+  expect(await createIssuesSeam(ctx).viewIssue(3, "org/repo")).toBe("Unavailable")
+  const row = [...store.collections.repositoryNotifications.values()][0]!
+  expect(row.readVersion).toBeUndefined()
+  expect([...store.collections.cards.values()][0]?.kind).toBe("repo-update")
+})
+
+test("a new notification version arriving during a slow detail read remains unread", async () => {
+  let updatedAt = "2026-09-13T00:00:00Z"
+  let finish: (value: Response) => void = () => {}
+  const response = new Promise<Response>(resolve => { finish = resolve })
+  const { store, ctx, actions } = await setup(memoryStorage(), async url => {
+    if (url.includes("/issues?state=open")) return Response.json([issueResponse(updatedAt)])
+    if (url.endsWith("/issues/3")) return response
+    return Response.json([])
+  })
+  await actions.showRepoOverview("org/repo")
+  const detail = createIssuesSeam(ctx).viewIssue(3, "org/repo")
+  updatedAt = "2026-09-13T01:00:00Z"
+  await actions.showRepoOverview("org/repo")
+  finish(Response.json(issueResponse("2026-09-13T00:00:00Z")))
+  await detail
+  const row = [...store.collections.repositoryNotifications.values()][0]!
+  expect(row.updatedAt).toBe(updatedAt)
+  expect(row.readVersion).not.toBe(row.version)
+  const overview = [...store.collections.cardHistories.values()][0]!.entries.find(card => card.kind === "repo-update")
+  expect(overview?.kind === "repo-update" && overview.payload.items[0]?.read).toBe(false)
+})
+
+test("a changed account/playthrough cannot receive a late read receipt", async () => {
+  const { ctx, store, actions } = await setup()
+  await actions.showRepoOverview(PRACTICE_REPO)
+  await readRepositoryDetail(ctx, PRACTICE_REPO, "issue", 3, async () => {
+    await store.dispatch({ type: "guide.changed", actor: "user", guide: { ...initialGuide(), playthrough: 1 } }).isPersisted.promise
+    return { value: "Loaded before the restart" }
+  })
+  expect([...store.collections.repositoryNotifications.values()].every(row => row.readVersion === undefined)).toBe(true)
+})
+
+test("read receipts stay isolated by repository, account, and source", async () => {
+  const { ctx, store, actions } = await setup(memoryStorage(), async url =>
+    Response.json(url.includes("/issues?state=open") || url.includes("github-repos/") ? [issueResponse("2026-09-13T00:00:00Z")] : []))
+  await actions.showRepoOverview("org/repo")
+  await actions.showRepoOverview("else/repo")
+  await readRepositoryDetail(ctx, "org/repo", "issue", 3, async () => ({ value: "Loaded Smithers detail" }))
+  const rows = [...store.collections.repositoryNotifications.values()]
+  expect(rows.filter(row => row.readVersion === row.version).map(row => [row.repo, row.source])).toEqual([["org/repo", "smithers"]])
+  await readRepositoryDetail(ctx, "else/repo", "issue", 3, async () => {
+    await store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-in", login: "another-user", allowlisted: true, admin: false, scopesPlain: null }).isPersisted.promise
+    return { value: "Loaded before account change" }
+  })
+  expect([...store.collections.repositoryNotifications.values()].filter(row => row.repo === "else/repo").every(row => row.readVersion === undefined)).toBe(true)
 })

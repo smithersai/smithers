@@ -3,8 +3,7 @@
  * frame controls, and the body from the kind's family renderer.
  *
  * Every card body lives in a family file under ./cards and registers itself in
- * cards/CardRenderers.tsx; this file never names a card kind except to stamp
- * the run id on a flow-run card's shell.
+ * cards/CardRenderers.tsx; this file never names a card kind except for narrow presentation adaptations in the shared shell.
  */
 import { Button, StatusPill } from "@smthrs/ui"
 import { ArrowLeft, ArrowRight, GitFork, Maximize2, Minimize2, PanelTop } from "lucide-react"
@@ -92,6 +91,7 @@ export const CardView = memo(function CardView({
    * the shell whose onKeyDown owns Escape. Each act hands focus to the
    * button that took its place, so Escape (and the Tab ring) keep working.
    */
+  const title = card.kind === "repo-update" ? "Activity" : card.title
   const maximizeRef = useRef<HTMLButtonElement>(null)
   const minimizeRef = useRef<HTMLButtonElement>(null)
   const maximizeThenFocus = (): void => {
@@ -120,21 +120,21 @@ export const CardView = memo(function CardView({
         data-maximized={maximized}
         data-run-id={card.kind === "run-trace" ? card.payload.runId : undefined}
         data-testid={`card-${card.id}`}
-        aria-label={card.title}
+        aria-label={title}
       >
         <header className="smithers-card-header">
-          {card.navigation && <nav className="card-local-history" aria-label="Frame history">
+          {card.navigation && card.navigation.length > 1 && <nav className="card-local-history" aria-label="Frame history">
             <button type="button" data-flow="card.history.back" aria-label="Back in frame" disabled={card.navigation.index === 0}
               onClick={() => onRunCommand("card.history.back", card.id)}><ArrowLeft size={16} /></button>
             <button type="button" data-flow="card.history.forward" aria-label="Forward in frame" disabled={card.navigation.index + 1 === card.navigation.length}
               onClick={() => onRunCommand("card.history.forward", card.id)}><ArrowRight size={16} /></button>
           </nav>}
-          <span className="smithers-card-title">{card.title}</span>
+          <span className="smithers-card-title">{title}</span>
           {/* A family that has no status word for a card (a picker awaiting its human) renders no pill: "" is not a status. */}
           {pillStatus(card) === "" ? null : <StatusPill status={pillStatus(card)} />}
-          <span className="smithers-card-meta" data-testid={`card-kind-${card.kind}`}>
+          {card.kind !== "repo-update" && <span className="smithers-card-meta" data-testid={`card-kind-${card.kind}`}>
             {clockLabel(card.createdAt)}
-          </span>
+          </span>}
           {maximized ?
             (
               <>

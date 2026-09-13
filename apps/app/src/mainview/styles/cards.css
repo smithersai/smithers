@@ -2590,15 +2590,21 @@
 .repo-update { text-align: left; overflow: hidden; }
 .repo-update-toolbar .ghc-count { color: var(--text); }
 .repo-update-summary { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 4px 16px; color: var(--text); }
-.repo-update-checked { color: var(--text-faint); font-variant-numeric: tabular-nums; }
 .repo-update-problem { display: flex; align-items: center; gap: 6px; color: var(--warning, #9a6700); }
 .repo-update-static { cursor: default; }
 .repo-update-static:hover { background: transparent; }
 .repo-update-static:hover .ghc-row-title-text { color: var(--text); }
-.repo-update-item[data-read="true"] .ghc-row-title-text { font-weight: 500; color: var(--text-muted); }
+.repo-update-item[data-read="true"] .ghc-row-title-text { font-weight: 400; color: var(--text-muted); }
 .repo-update-unread { display: block; width: 8px; height: 8px; margin-top: 6px; border-radius: 50%; background: var(--brand); box-shadow: 0 0 0 3px color-mix(in srgb, var(--brand) 18%, transparent); }
 .repo-update-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px; padding: 10px 14px; border-top: 1px solid var(--border-strong); background: var(--ghc-head-bg); border-radius: 0 0 8px 8px; }
-.repo-update-actions .repo-update-unread-count { margin-right: auto; color: var(--text-muted); font-size: var(--fs-small); }
+.smithers-card[data-kind="repo-update"] .smithers-card-title { margin-right: auto; }
+.repo-update-item[data-read="false"] .ghc-row-btn { background: color-mix(in srgb, var(--brand) 5%, transparent); }
+.repo-update-item[data-read="false"] .ghc-row-title-text { font-weight: 650; }
+.repo-update-details { margin-right: auto; color: var(--text-muted); font-size: var(--fs-small); }
+.repo-update-details > summary { cursor: pointer; width: fit-content; border-radius: 3px; }
+.repo-update-details > summary:focus-visible { outline: 2px solid var(--brand); outline-offset: 4px; }
+.repo-update-details dl { display: flex; flex-wrap: wrap; gap: 4px 8px; margin: 8px 0 0; }
+.repo-update-details dd { margin: 0; font-variant-numeric: tabular-nums; }
 .repo-update-actions svg { margin-right: 4px; }
 .repo-update-items > li:last-child > .ghc-row-btn { border-radius: 0; }
 

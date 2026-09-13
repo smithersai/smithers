@@ -6,10 +6,10 @@
  * issue and PR lists so the tutorial reads as one product.
  */
 import { Button } from "@smthrs/ui"
-import { AlertTriangle, RefreshCw } from "lucide-react"
+import { AlertTriangle, Bell, RefreshCw } from "lucide-react"
 import type { Card } from "../state/AppState"
 import type { CardFamily } from "./CardFamily"
-import { settledPill } from "./CardFamily"
+import { flowArgs } from "../flows/FlowArgs"
 import { issueDisplay, LabelPill, prDisplay, repoLabel, StateIcon } from "./GithubParts"
 import { Octicon } from "./Octicon"
 
@@ -24,12 +24,11 @@ const labelsOf = (item: UpdateItem): ReadonlyArray<string> =>
 const displayOf = (item: UpdateItem) =>
   item.kind === "pr" ? prDisplay(item.state) : issueDisplay(item.state === "closed" ? "closed" : "open")
 
-const timeLabel = (at: number | string): string =>
-  new Date(at).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })
+const timeLabel = (at: number): string => new Date(at).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" })
 
 export const repositoryUpdateCardFamily: CardFamily<"repo-update"> = {
   "repo-update": {
-    pill: settledPill,
+    pill: () => "",
     render: (card, actions) => {
       const { repo, items, problems, openIssues, openPrs, branch, checkedAt, summary } = card.payload
       const unread = items.filter(item => !item.read).length
@@ -42,7 +41,6 @@ export const repositoryUpdateCardFamily: CardFamily<"repo-update"> = {
         </div>
         <p className="ghc-note repo-update-summary">
           <span>{summary}</span>
-          <span className="repo-update-checked">Checked {timeLabel(checkedAt)}</span>
         </p>
         {problems.length > 0 && <p className="ghc-note repo-update-problem" role="status">
           <AlertTriangle size={14} aria-hidden="true" /> Partial update: {problems.join(" ")} Counts cover the activity received.
@@ -54,10 +52,10 @@ export const repositoryUpdateCardFamily: CardFamily<"repo-update"> = {
               const display = displayOf(item)
               const viewFlow = item.kind === "pr" ? "prs.view" : item.kind === "issue" ? "issues.view" : undefined
               const meta = <span className="ghc-row-meta">
-                {item.number ? `#${item.number} · ` : ""}{KIND_LABEL[item.kind]} · {item.state}
+                {item.number ? `#${item.number} · ` : ""}{KIND_LABEL[item.kind]}
               </span>
               const body = <>
-                <StateIcon display={display} />
+                {item.kind === "notification" ? <Bell size={16} aria-label="Notification" /> : <StateIcon display={display} />}
                 <span className="ghc-row-main">
                   <span className="ghc-row-title">
                     <span className="ghc-row-title-text">{item.title}</span>
@@ -67,16 +65,19 @@ export const repositoryUpdateCardFamily: CardFamily<"repo-update"> = {
                 </span>
                 {!item.read && <span className="ghc-row-side"><span className="repo-update-unread" title="Unread"><span className="ghc-visually-hidden">Unread</span></span></span>}
               </>
-              return <li key={item.id} className="ghc-row repo-update-item" data-read={item.read} data-kind={item.kind}>
+              return <li key={item.id} className="ghc-row repo-update-item" data-read={item.read} data-kind={item.kind} data-state={item.state}>
                 {viewFlow !== undefined && item.number !== undefined ?
                   <button type="button" className="ghc-row-btn" data-flow={viewFlow}
-                    onClick={() => actions.onRunCommand(viewFlow, `${item.number} ${repo}`)}>{body}</button> :
+                    onClick={() => actions.onRunCommand(viewFlow, flowArgs(viewFlow, { number: item.number!, repo }))}>{body}</button> :
                   <span className="ghc-row-btn repo-update-static">{body}</span>}
               </li>
             })}
           </ul>}
         <div className="repo-update-actions">
-          <span className="repo-update-unread-count">{unread === 0 ? "All read" : unread === 1 ? "1 unread" : `${unread} unread`}</span>
+          <details className="repo-update-details">
+            <summary aria-label="Activity details">Details</summary>
+            <dl><dt>Checked</dt><dd><time dateTime={new Date(checkedAt).toISOString()}>{timeLabel(checkedAt)}</time></dd></dl>
+          </details>
           <Button size="sm" variant="outline" data-flow="repo.overview" onClick={() => actions.onRunCommand("repo.overview", repo)}>
             <RefreshCw size={14} aria-hidden="true" /> Refresh
           </Button>

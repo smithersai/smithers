@@ -2115,6 +2115,14 @@ const initializeAppStore = async (resolved: ResolvedPersistence): Promise<AppSto
           for (const card of collections.cards.values()) if (card.kind === "repo-update") {
             collections.cards.update(card.id, draft => { if (draft.kind === "repo-update") draft.payload.items = draft.payload.items.map(item => receipts.get(item.id) === item.version ? { ...item, read: true } : item) })
           }
+          // Back/Forward revisits the same content with current read receipts.
+          for (const history of collections.cardHistories.values()) {
+            if (!history.entries.some(card => card.kind === "repo-update" && card.payload.items.some(item => receipts.get(item.id) === item.version))) continue
+            const entries = history.entries.map(card => card.kind === "repo-update" ? {
+              ...card, payload: { ...card.payload, items: card.payload.items.map(item => receipts.get(item.id) === item.version ? { ...item, read: true } : item) }
+            } : card)
+            collections.cardHistories.update(history.id, draft => { draft.entries = entries })
+          }
           break
         }
         case "notification.tagged": {

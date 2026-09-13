@@ -1,3 +1,4 @@
+import { readRepositoryDetail } from "../RepositoryReadReceipts"
 import { publishIssueView, publishRepoView } from "../EmbeddedHistory"
 import { isPracticeRepo } from "../practice/PracticeRepository"
 import { mutatePracticeIssue, finishIssueLesson, practiceViewIssue, tutorialRepositoryRead, type RepositoryForm } from "./tutorial2-issues_prs"
@@ -393,11 +394,11 @@ export const createIssuesSeam = (ctx: SeamContext, renderRepositoryForm?: Reposi
     }),
 
     viewIssue: async (number, explicitRepo) => {
-      if (isPracticeRepo(explicitRepo)) return practiceViewIssue(ctx, number)
+      if (isPracticeRepo(explicitRepo)) return readRepositoryDetail(ctx, explicitRepo!, "issue", number, () => practiceViewIssue(ctx, number))
       const target = resolveTargetRepo(ctx.store, explicitRepo)
       if ("error" in target) return target.error
       const playthrough = ctx.store.session().guide?.playthrough
-      const shown = await showIssue(target.repo, number)
+      const shown = await readRepositoryDetail(ctx, target.repo, "issue", number, () => showIssue(target.repo, number))
       if (typeof shown !== "string") await finishIssueLesson(ctx, playthrough)
       return shown
     },
