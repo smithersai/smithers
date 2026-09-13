@@ -46,6 +46,7 @@ const server = await attachLocalDaemon({
   allowManualRepositoryPaths: headless,
   build: await daemonBuild(entrypoint)
 }, { entrypoint })
+console.log(`SMITHERS_LOCAL_ORIGIN=${server.origin}`)
 
 let mainWindow: NativeBrowserWindow | undefined
 let bridge: ReturnType<typeof startPackagedE2EBridge>

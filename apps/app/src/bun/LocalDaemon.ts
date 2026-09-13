@@ -74,6 +74,7 @@ export const startLocalDaemon = async (configuration: DaemonConfiguration) => {
           !timingSafeEqual(Buffer.from(auth), Buffer.from(expected))) return new Response(null, { status: 403 })
         const path = new URL(request.url).pathname
         if (path === "/health" && request.method === "GET") {
+          if (stopping !== undefined) return new Response(null, { status: 503 })
           return Response.json({ instance, protocol: DAEMON_PROTOCOL, origin: host!.origin })
         }
         if (request.method !== "POST" || request.headers.get("content-type") !== "application/json") {

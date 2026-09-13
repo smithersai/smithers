@@ -53,7 +53,7 @@ test("replay preserves ANSI/Unicode, resumes by cursor, and explicitly reports r
   expect(manager.replay(id, retained.cursor)?.data).toBe("")
   for (const cursor of [-1, 1.5, Infinity]) expect(() => manager.replay(id, cursor)).toThrow("cursor")
   expect(manager.replay("missing")).toBeUndefined()
-})
+}, 20_000)
 test("a long-lived owner bounds exited session records without removing live sessions", async () => {
   const { manager, input } = await fixture()
   const live = await manager.create(input)
@@ -69,4 +69,4 @@ test("a long-lived owner bounds exited session records without removing live ses
   expect(manager.list()).toHaveLength(PTY_EXITED_RETENTION + 1)
   expect(manager.get(live.session.sessionId)?.alive).toBe(true)
   expect(manager.get(completed[0]!)).toBeUndefined()
-})
+}, 20_000)

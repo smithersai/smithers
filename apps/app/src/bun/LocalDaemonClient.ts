@@ -23,6 +23,7 @@ const probe = async (stateDir: string): Promise<DaemonDescriptor | undefined> =>
     if (await isDaemonUnavailable(error, descriptor)) return undefined
     throw new Error("The Smithers session owner is not responding; its sessions were left running.", { cause: error })
   }
+  if (response.status === 503) throw new Error("The Smithers session owner is shutting down or failed to stop; its state has been preserved.")
   if (!response.ok) throw new Error("The Smithers session owner refused authentication.")
   const health = await response.json() as { instance?: unknown; protocol?: unknown }
   if (health.instance !== descriptor.instance || health.protocol !== descriptor.protocol) {

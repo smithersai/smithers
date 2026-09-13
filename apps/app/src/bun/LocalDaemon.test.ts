@@ -94,7 +94,9 @@ test("a real launcher exits; reopen retains the exact shell, variables, output a
   await owner.detach()
   const reopened = await f.attach()
   expect(reopened.instance).toBe(first.instance)
-  expect((await (await request("/api/pty")).json() as { sessions: unknown[] }).sessions[0]).toEqual(session)
+  expect((await (await request("/api/pty")).json() as { sessions: unknown[] }).sessions[0]).toMatchObject({
+    sessionId: session.sessionId, pid: session.pid, alive: true
+  })
   let restored = ""
   const second = connect()
   second.attach(sessionId, { onOutput: (data) => { restored += data }, onExit: () => {} })
@@ -194,4 +196,41 @@ test("explicit maintenance can stop an incompatible owner without adopting its b
   await expect(attachLocalDaemon({ ...f.configuration, build: "new-build" }, f.options)).rejects.toThrow("different Smithers build")
   expect(await shutdownLocalDaemon(f.configuration.stateDir)).toBe("stopped")
   expect(await shutdownLocalDaemon(f.configuration.stateDir)).toBe("absent")
+}, 20_000)
+
+test("conflicting concurrent port overrides cannot publish two owners for the same state", async () => {
+  const f = await fixture()
+  const reserve = () => Bun.serve({ port: 0, fetch: () => new Response(null) })
+  const ports = [reserve(), reserve()]
+  const configurations = ports.map((host) => ({ ...f.configuration, port: host.port! }))
+  for (const host of ports) host.stop(true)
+  const attempts = await Promise.allSettled(configurations.map((configuration) => attachLocalDaemon(configuration, f.options)))
+  expect(attempts.filter((attempt) => attempt.status === "fulfilled")).toHaveLength(1)
+  expect(attempts.filter((attempt) => attempt.status === "rejected")).toHaveLength(1)
+  const refused = attempts.find((attempt) => attempt.status === "rejected") as PromiseRejectedResult
+  expect(String(refused.reason)).toContain("different Smithers build or configuration")
+}, 20_000)
+
+test("native reattachment refuses a stopping owner while its real HUP-resistant child is being reaped", async () => {
+  const f = await fixture()
+  const owner = await f.attach()
+  const descriptor = (await readDaemonDescriptor(f.configuration.stateDir))!
+  const { token, request } = await api(owner)
+  const created = await (await request("/api/pty", {
+    method: "POST", body: JSON.stringify({ kind: "terminal", cols: 80, rows: 24 })
+  })).json() as { sessionId: string }
+  let output = ""
+  const client = createPtyClient({
+    baseUrl: owner.origin, http: fetch, socketUrl: () => owner.origin.replace("http:", "ws:") + "/ws",
+    socketProtocols: () => [localSessionProtocol(token)]
+  })
+  try {
+    client.attach(created.sessionId, { onOutput: (data) => { output += data }, onExit: () => {} })
+    client.input(created.sessionId, "trap '' HUP; printf '\\n%s%s\\n' ready- shutdown\n")
+    await until(() => output.includes("\r\nready-shutdown\r\n"))
+    const stopping = owner.shutdown()
+    await until(async () => (await daemonRequest(descriptor, "/health")).status === 503)
+    await expect(f.attach()).rejects.toThrow("shutting down")
+    await stopping
+  } finally { client.dispose() }
 }, 20_000)

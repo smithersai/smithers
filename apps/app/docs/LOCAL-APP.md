@@ -36,6 +36,10 @@ bundle in both packaged and development launches. It does not load Electrobun.
 Reopening attaches to the existing owner, retaining its origin and session
 capability. Concurrent first launches converge on one saved origin and owner.
 There is no PID-based reattachment and no automatic command restart.
+One kernel `flock` lease per state directory prevents concurrent owners even
+with conflicting port overrides. Its private file is never unlinked, and the
+kernel releases the lease on a crash. The host uses Bun FFI against macOS's
+libSystem or Linux's glibc; there is no tmux or auxiliary daemon dependency.
 
 The native launcher defaults to hybrid unless explicitly set to offline. The
 packaged app serves its built SPA from `127.0.0.1` on a port chosen at first
