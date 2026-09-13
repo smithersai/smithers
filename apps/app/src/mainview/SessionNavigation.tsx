@@ -7,6 +7,8 @@ import { ChromeBar } from "./tabs/ChromeBar"
 const Mark = () => <pre aria-hidden="true">{WORDMARK.map((line, i) => <span key={i} style={{ "--row": i } as CSSProperties}>{line}{"\n"}</span>)}</pre>
 export const SessionNavigationFallback = () => <header className="session-navigation"><div className="guide-wordmark" aria-label="Smithers"><Mark /></div></header>
 
+/** Command-D (Control-D elsewhere) toggles dictation; every action has a key, and the browser lets a page own this one. */
+export const dictationShortcut = (event: KeyboardEvent): boolean => !event.repeat && !event.isComposing && (event.metaKey === true || event.ctrlKey === true) && !event.altKey && !event.shiftKey && event.key.toLowerCase() === "d"
 export const sidebarShortcut = (event: KeyboardEvent): boolean => !event.repeat && !event.isComposing && !event.metaKey && !event.ctrlKey && !event.altKey && !event.shiftKey && event.key.toLowerCase() === "w" && !(event.target as Element | null)?.closest?.('input,textarea,select,[contenteditable]:not([contenteditable="false"])')
 
 /** One global logo and navigation surface, including during the tutorial. */
@@ -24,6 +26,11 @@ export function SessionNavigation() {
           controller.runCommand("palette.open", event.shiftKey ? controller.store.session().paletteLastQuery ?? "" : undefined)
           requestAnimationFrame(() => node.ownerDocument.querySelector<HTMLTextAreaElement>('.app-shell [data-testid="composer-input"]')?.focus())
         }
+        return
+      }
+      if (dictationShortcut(event)) {
+        event.preventDefault(); event.stopImmediatePropagation()
+        controller.runCommand("chat.dictate")
         return
       }
       if (!sidebarShortcut(event)) return

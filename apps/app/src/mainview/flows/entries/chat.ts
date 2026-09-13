@@ -79,7 +79,7 @@ export const chatFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> => 
   }),
   flow({
     name: "chat.dictate",
-    summary: "Start or stop dictation into the chat draft",
+    summary: "Start or stop dictation into the chat draft (⌘D)",
     userOnly: true,
     userOnlyReason: "microphone capture is the human's explicit gesture",
     input: NoPayload,

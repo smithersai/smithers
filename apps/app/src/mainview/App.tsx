@@ -737,8 +737,8 @@ function App() {
           controller.runCommand("palette.open")
           requestAnimationFrame(() => composerWrapRef.current?.querySelector("textarea")?.focus())
         }}><Command size={14} aria-hidden="true" /><span>Chat</span><kbd>⌘ K</kbd></button>
-        <button type="button" data-flow="chat.dictate" aria-pressed={session.dictating === true} onClick={() => controller.runCommand("chat.dictate")}>
-          <Mic size={14} aria-hidden="true" /><span>{session.dictating ? "Stop dictation" : "Dictation"}</span>
+        <button type="button" data-flow="chat.dictate" aria-pressed={session.dictating === true} aria-keyshortcuts="Meta+D Control+D" onClick={() => controller.runCommand("chat.dictate")}>
+          <Mic size={14} aria-hidden="true" /><span>{session.dictating ? "Stop dictation" : "Dictation"}</span><kbd>⌘ D</kbd>
         </button>
       </footer>}
       </div>

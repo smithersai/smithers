@@ -2524,15 +2524,21 @@
 .card-local-history button:disabled { opacity: .35; cursor: default; }
 .card-local-history button:not(:disabled):hover { background: var(--hover); }
 
-.repo-update { display: grid; gap: 16px; padding: 16px; }
-.repo-update p { margin: 0; }
-.repo-update-counts { display: flex; flex-wrap: wrap; gap: 24px; margin: 0; }
-.repo-update-counts dt, .repo-update-kind, .repo-update-tags, .repo-update-note { font-size: var(--fs-small); color: var(--text-muted); }
-.repo-update-counts dd { margin: 4px 0 0; font-size: var(--fs-md); font-weight: 600; }
-.repo-update-items { padding: 0; margin: 0; list-style: none; display: grid; gap: 12px; }
-.repo-update-items li { display: grid; gap: 3px; }
-.repo-update-actions { display: flex; flex-wrap: wrap; gap: 16px; }
-.repo-update-actions button { padding: 6px 10px; border: 1px solid var(--border); border-radius: 8px; font-size: var(--fs-small); }
+/* Repository update: a ghc-box digest, left-aligned even inside the centered tutorial lesson. */
+.repo-update { text-align: left; overflow: hidden; }
+.repo-update-toolbar .ghc-count { color: var(--text); }
+.repo-update-summary { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 4px 16px; color: var(--text); }
+.repo-update-checked { color: var(--text-faint); font-variant-numeric: tabular-nums; }
+.repo-update-problem { display: flex; align-items: center; gap: 6px; color: var(--warning, #9a6700); }
+.repo-update-static { cursor: default; }
+.repo-update-static:hover { background: transparent; }
+.repo-update-static:hover .ghc-row-title-text { color: var(--text); }
+.repo-update-item[data-read="true"] .ghc-row-title-text { font-weight: 500; color: var(--text-muted); }
+.repo-update-unread { display: block; width: 8px; height: 8px; margin-top: 6px; border-radius: 50%; background: var(--brand); box-shadow: 0 0 0 3px color-mix(in srgb, var(--brand) 18%, transparent); }
+.repo-update-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px; padding: 10px 14px; border-top: 1px solid var(--border-strong); background: var(--ghc-head-bg); border-radius: 0 0 8px 8px; }
+.repo-update-actions .repo-update-unread-count { margin-right: auto; color: var(--text-muted); font-size: var(--fs-small); }
+.repo-update-actions svg { margin-right: 4px; }
+.repo-update-items > li:last-child > .ghc-row-btn { border-radius: 0; }
 
 .live-tutorial-run { text-align: left; display: grid; gap: 20px; font-size: var(--fs-body); line-height: 1.6; }
 .live-tutorial-run p { margin: 0; }
