@@ -1,0 +1,108 @@
+# Agent and flow health
+
+The app shows execution state, semantic activity, health, attention, and the
+freshness of the observation together. A live terminal process can have unknown
+activity. Silence and terminal output are not evidence that an agent is idle,
+working, or waiting for input.
+
+The workflow Control service owns run state and approval decisions. The local
+daemon owns terminal lifecycle. Health checks observe those subjects and cannot
+declare them completed, approve a request, or resume them.
+
+## Configure a TypeScript host
+
+`@smthrs/control/Health` exports the shared Effect API. Register a checker and
+bind its ID to a flow ID in `Application.Config.health`, or to a role/harness ID
+in the local server's `LocalServerOptions.health`. A plain terminal uses the
+binding key `terminal`. Callbacks execute in the host that owns the subject;
+remote clients do not execute the gateway's checks locally.
+
+```ts
+import * as Health from "@smthrs/control/Health"
+import { Effect, Schema } from "effect"
+
+const Settings = Schema.Struct({ worker: Schema.String })
+
+// The application's worker supplies this Effect from its actual protocol or
+// durable state. No terminal-text heuristic or timer determines the answer.
+declare const readWorkerActivity: (
+  worker: string
+) => Effect.Effect<Health.ProbeReport, unknown>
+
+const checker: Health.HealthChecker<typeof Settings.Type> = {
+  id: "worker.activity",
+  configSchema: Settings,
+  probe: (_subject, config) => readWorkerActivity(config.worker)
+}
+
+const health: Health.HealthConfig = {
+  checkers: [checker],
+  bindings: {
+    "my-flow-or-agent-role": {
+      checkerId: "worker.activity",
+      config: { worker: "build-worker" },
+      policy: { intervalMs: 2_000, timeoutMs: 1_000, ttlMs: 8_000 }
+    }
+  },
+  limits: { maxSubjects: 64, maxConcurrentProbes: 4 }
+}
+```
+
+The report contains `activity: "working" | "idle" | "needs-input" | "unknown"`
+and an optional closed reason code. For example, a worker's real human-input
+request can return `{ activity: "needs-input", reason: "awaiting-reply" }`.
+`idle` alone does not mean the user owes input. Reasons such as `unreachable`
+can mark an observation unhealthy. Run health also uses the runtime's durable
+progress and failure evidence.
+
+Checks may use Effect services; provide their requirements before registration.
+The host validates configuration and reports, controls deadlines, bounds
+concurrency, and backs off failed probes. Unknown checker IDs use the lifecycle
+fallback, which reports unknown activity. Invalid configured policies or config
+fail host startup with a safe configuration error.
+
+This is trusted host TypeScript, at the same trust level as the application.
+The read-only callback context is not a sandbox. Effect interruption cannot
+forcibly interrupt arbitrary synchronous JavaScript. The browser never submits
+functions and the app does not automatically evaluate repository configuration.
+The packaged native app uses its compiled host configuration; this API is not
+a browser preference for executing arbitrary TypeScript.
+
+## Local session evidence
+
+Session checks receive process liveness, exit code, and an opaque monotonic
+output cursor. They receive neither the PID nor terminal output by default.
+A binding can explicitly opt into `exposeOutput: true` for an adapter that
+understands a particular harness protocol; the host supplies at most 4 KiB of
+plain-text tail. The adapter remains responsible for interpreting that protocol
+correctly. Terminal contents and arbitrary exceptions never enter status DTOs.
+
+The daemon stamps owner incarnation, observation time, expiry, and evidence
+cursor. It discards a report if the process changes lifecycle while its check
+is running. Observations commit to `local-health.sqlite` using the existing
+Smithers SQL journal before they reach HTTP list snapshots or `pty.status`
+WebSocket frames. Every 256 local observations the journal checkpoints the
+latest observation and compacts the earlier heartbeat history. A fresh daemon
+does not use old observations to revive a missing process.
+
+## Display and diagnostics
+
+Agent cards, run cards, and process tabs use the same status presentation.
+Expired observations lose semantic activity even while the app is disconnected.
+Known approval, timer, event, and quota waits retain their authoritative meaning.
+An unknown process exit outcome is not displayed as successful completion.
+
+Flow evidence is recorded as `control.status.observed` and appears through the
+existing authenticated run-summary projection. Local observations use that same
+event type and schema. `smithers.health.probes` counts outcomes and
+`smithers.health.probe_duration_ms` measures probe latency; probe spans are named
+`smithers.health.probe`. Fields contain bounded states and reason codes, not
+terminal contents, credentials, or raw checker errors.
+
+Health attention does not imply notification delivery. Existing Alerts policies
+can consume the evidence with a configured real sink. Native/APNs delivery still
+needs the forwarding, inbox/outbox, provider, and device-registration work in the
+[Plue approval and notification audit](../../../../plue/docs/research/agent-approvals-notifications-audit.md).
+
+The [Fable design](../../../docs/design/agent-flow-health.md) records the
+architecture and reviewed implementation constraints.

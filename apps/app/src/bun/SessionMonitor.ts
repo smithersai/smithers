@@ -34,6 +34,7 @@ export const createSessionMonitor = async (options: SessionMonitorOptions) => {
   const sessions = new Map<string, ObservedSession>()
   let journal: Promise<LocalHealthJournal> | undefined
   let closed = false
+  let stopping: Promise<void> | undefined
   const getJournal = () => journal ??= openLocalHealthJournal(options.stateDir).catch((error) => {
     journal = undefined
     throw error
@@ -133,11 +134,9 @@ export const createSessionMonitor = async (options: SessionMonitorOptions) => {
     publish(session.sessionId)
   })
 
-  const loop = Effect.gen(function*() {
+  const probeLoop = Effect.gen(function*() {
     while (!closed) {
       const inventory = options.manager.list()
-      const ids = new Set(inventory.map((session) => session.sessionId))
-      for (const id of sessions.keys()) if (!ids.has(id)) sessions.delete(id)
       // Rotate admission so a large inventory cannot starve later sessions.
       const admitted = inventory
         .sort((a, b) => (sessions.get(a.sessionId)?.nextCheck ?? 0) - (sessions.get(b.sessionId)?.nextCheck ?? 0))
@@ -151,16 +150,29 @@ export const createSessionMonitor = async (options: SessionMonitorOptions) => {
       yield* Effect.sleep(100)
     }
   })
-  const fiber = Effect.runFork(loop)
+  // Expiry and lifecycle are cheap projections of authoritative inventory;
+  // neither may wait for probe admission, a slow checker, or a durable append.
+  // This loop also releases removed subjects while a probe batch is blocked.
+  const publicationLoop = Effect.gen(function*() {
+    while (!closed) {
+      const inventory = options.manager.list()
+      const ids = new Set(inventory.map((session) => session.sessionId))
+      for (const id of sessions.keys()) if (!ids.has(id)) sessions.delete(id)
+      for (const session of inventory) publish(session.sessionId)
+      yield* Effect.sleep(100)
+    }
+  })
+  // One owner fiber scopes both loops, so cached stop interrupts and awaits
+  // every checker/finalizer before closing the durable writer.
+  const fiber = Effect.runFork(Effect.all([probeLoop, publicationLoop], { concurrency: 2, discard: true }))
   return {
     status,
     list: () => options.manager.list().map((session) => ({ ...session, status: status(session.sessionId) })),
-    stop: async () => {
-      if (closed) return
+    stop: () => stopping ??= (async () => {
       closed = true
       await Effect.runPromise(Fiber.interrupt(fiber))
       if (journal !== undefined) await (await journal).close()
-    }
+    })()
   }
 }
 

@@ -5,6 +5,19 @@ import { detectHarnessesWith } from "../src/bun/Harnesses"
 import { createPtyManager } from "../src/bun/Pty"
 import { startLocalServer } from "../src/bun/server"
 import type { LocalServerOptions } from "../src/bun/server"
+import { Effect } from "effect"
+import type { HealthConfig } from "@smthrs/control/Health"
+
+/** Opt-in semantic fixture: only an explicit control-delimited shell record is evidence of activity. */
+const fixtureHealth: HealthConfig = {
+  checkers: [{ id: "fixture.semantic", probe: (context) => {
+    const marker = [...(context.session?.outputTail ?? "").matchAll(/\x1eSMITHERS_TEST_HEALTH:(working|idle|needs-input)\x1f/g)].at(-1)?.[1]
+    const activity = marker === "working" || marker === "idle" || marker === "needs-input" ? marker : "unknown"
+    return Effect.succeed({ activity, reason: activity === "needs-input" ? "awaiting-reply" : "ok" })
+  } }],
+  bindings: { terminal: { checkerId: "fixture.semantic", exposeOutput: true,
+    policy: { intervalMs: 100, timeoutMs: 50, ttlMs: 2_000 } } }
+}
 
 /** Test-only composition. A stubbed model is not permission to inspect host credentials. */
 export const browserTestOptions = (
@@ -25,6 +38,7 @@ export const browserTestOptions = (
     identityUpstream: null,
     stateDir: join(root, "state"),
     allowManualRepositoryPaths: true,
+    ...(env.SMITHERS_E2E_HEALTH === "1" ? { health: fixtureHealth } : {}),
     ...(hostHarnesses ? {} : {
       home: root,
       harnesses: () =>

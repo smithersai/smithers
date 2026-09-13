@@ -100,3 +100,28 @@ test("a shell that exits on its own shows the exit line; closing the tab then as
     .toBe(0)
   openedSessionIds.delete(sessionId)
 })
+
+test("health: a real shell's explicit semantic markers reach the persisted terminal status through the Effect monitor", async ({ page, request }) => {
+  test.skip(process.env.SMITHERS_E2E_HEALTH !== "1", "Opt in to the test host's explicit semantic fixture")
+  await page.goto("/")
+  const sessionId = await openTerminal(page)
+  const terminal = page.getByTestId(`terminal-${sessionId}`)
+  const details = page.getByTestId(`tab-${sessionId}`).getByTestId("status-details")
+  await expect(details).toHaveText("Running · Activity unknown", { timeout: 10_000 })
+  for (const [activity, label] of [["working", "Working"], ["idle", "Idle"], ["needs-input", "Needs input"]]) {
+    await terminal.click()
+    // Typed backslash escapes do not match the fixture: printf must execute and emit the record.
+    await page.keyboard.type(`printf '\\036SMITHERS_TEST_HEALTH:${activity}\\037\\n'`)
+    await page.keyboard.press("Enter")
+    await expect(details).toHaveText(`Running · ${label}`, { timeout: 10_000 })
+  }
+  const snapshot = await localApiGet(page, request, "/api/pty")
+  const body = await snapshot.json()
+  expect(body.sessions.find((session: { sessionId: string }) => session.sessionId === sessionId).status)
+    .toMatchObject({ subjectId: `session:${sessionId}`, activity: "needs-input", attention: "needs-input",
+      provenance: { checkerId: "fixture.semantic" } })
+  await terminal.click()
+  await page.keyboard.type("exit 7")
+  await page.keyboard.press("Enter")
+  await expect(details).toHaveText("Exited · Failed", { timeout: 10_000 })
+})

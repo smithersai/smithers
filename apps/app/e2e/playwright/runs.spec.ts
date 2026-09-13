@@ -5,6 +5,7 @@ import { join } from "node:path"
 import { CODING_PLAN } from "../../src/mainview/cards/fixtures/CodingPlan"
 import { blockedCodingJournal, codingDecision, earlyCodingJournal } from "../../src/mainview/cards/fixtures/CodingJournal"
 import { installCloudFixture } from "./cloudFixture.ts"
+import type { StatusRollup } from "@smthrs/rpc/Health"
 
 /*
  * Lane runs T1 (docs/workbench-lanes/runs.md "Exit"): launch a fixture flow,
@@ -50,6 +51,7 @@ const json = (body: unknown, status = 200) => ({
 /** Install the server double: signed in as the scoped-down user, one loaded repo, one gateway that accepts everything. */
 const serve = async (page: Page, journal: ReadonlyArray<Record<string, unknown>> = [], options: {
   readonly completedRequest?: boolean
+  readonly health?: () => StatusRollup
 } = {}): Promise<{ rpc: Array<RpcCall> }> => {
   const rpc: Array<RpcCall> = []
   let planned: { flowId: string; input: unknown } | undefined
@@ -103,7 +105,8 @@ const serve = async (page: Page, journal: ReadonlyArray<Record<string, unknown>>
           case "workspace-runs":
             return rows("workspace-runs", [{ ...summaryRow("running"), steeringPending }])
           case "run-summary":
-            return rows("run-summary", [{ ...summaryRow(options.completedRequest && selector.runId !== "vibe-e2e" ? "completed" : "running"),
+            return rows("run-summary", [{ ...summaryRow(options.health?.().state ?? (options.completedRequest && selector.runId !== "vibe-e2e" ? "completed" : "running")),
+              ...(options.health === undefined ? {} : { statusRollup: options.health() }),
               ...(options.completedRequest ? { runId: selector.runId ?? RUN_ID, flowId: selector.runId === "vibe-e2e" ? "coding/vibe" : "coding/request" } : {}), steeringPending }])
           case "approvals":
             return rows("approvals", [])
@@ -580,4 +583,36 @@ test("T1: original source retention opens its native receipt by keyboard before 
   await expect(card).toHaveCSS("transform", "none")
   await expect(page.locator(".session-shell > .guide-wordmark")).toHaveCSS("top", "33px")
   await page.screenshot({ path: "/tmp/smithers-coding-vibe-retention-ui.png", fullPage: true })
+})
+
+test("health: gateway observations distinguish working, idle and input, then expire offline without changing execution", async ({ page }) => {
+  const now = Date.now()
+  let status: StatusRollup = { subjectId: `run:${RUN_ID}`, state: "running", activity: "working", health: "healthy", attention: "none",
+    freshness: "fresh", updatedAt: now, provenance: { checkerId: "fixture.semantic", monitorId: "host", observedAt: now,
+      expiresAt: now + 120_000, evidenceSeq: 1, incarnation: "opaque-owner", version: 1 } }
+  const { rpc } = await serve(page, [], { health: () => status })
+  await page.clock.install({ time: new Date(now) })
+  await page.goto("/")
+  await finishGuide(page)
+  await send(page, `/flow.run review-pr ${REPO}`)
+  const card = page.getByTestId(`card-flow-run-${RUN_ID}`)
+  const details = card.getByTestId("status-details")
+  await expect(details).toHaveText("Running · Working")
+  status = { ...status, activity: "idle", provenance: { ...status.provenance!, version: 2 } }
+  await expect(details).toHaveText("Running · Idle", { timeout: 10_000 })
+  status = { ...status, activity: "needs-input", attention: "needs-input", provenance: { ...status.provenance!, version: 3 } }
+  await expect(details).toHaveText("Running · Needs input", { timeout: 10_000 })
+  const steer = card.getByTestId(`flow-run-steer-input-${RUN_ID}`)
+  await steer.fill("Continue with the smaller change")
+  await steer.press("Tab")
+  await expect(card.getByRole("button", { name: "Steer" })).toBeFocused()
+  await page.keyboard.press("Enter")
+  await expect.poll(() => rpc.some((call) => call.procedure === "Steer")).toBe(true)
+  await page.route("**/api/workflow/rpc", (route) => route.abort())
+  await page.clock.fastForward(120_001)
+  await expect(details).toHaveText("Running · Stale")
+  await expect(details).toHaveAttribute("data-health", "unknown")
+  await expect(card).not.toContainText("Completed.")
+  expect(rpc.some((call) => /Health|Status/.test(call.procedure))).toBe(false)
+  expect(rpc.some((call) => call.procedure === "Approval.Submit" || call.procedure === "Resume")).toBe(false)
 })

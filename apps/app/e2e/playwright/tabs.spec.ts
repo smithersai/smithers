@@ -375,3 +375,39 @@ test("a maximized card offers Open in tab; closing the tab keeps the card", asyn
   await expect(page.getByTestId("workspace-heading")).toHaveAttribute("data-active", "true")
   await expect(transcript.getByTestId("card-theme-picker")).toBeVisible()
 })
+
+test("health: a launched agent and its terminal share semantic status, expire offline and preserve unknown exit", async ({ page }) => {
+  const server = await serve(page)
+  const now = Date.now()
+  await page.clock.install({ time: new Date(now) })
+  await page.goto("/")
+  await page.getByTestId("tab-add").click()
+  const creating = page.waitForRequest(isPtyCreate)
+  await page.getByTestId("tab-add-harness-claude").click()
+  await creating
+  await expect(page.getByTestId(`terminal-${SESSION_ID}`)).toBeVisible()
+  await expect.poll(() => server.sockets.length).toBeGreaterThan(0)
+  const status = { subjectId: `session:${SESSION_ID}`, state: "running", activity: "working", health: "healthy", attention: "none",
+    freshness: "fresh", updatedAt: now, provenance: { checkerId: "fixture.semantic", monitorId: "host", observedAt: now,
+      expiresAt: now + 120_000, evidenceSeq: 1, incarnation: "opaque-owner", version: 1 } }
+  for (const socket of server.sockets) socket.send(JSON.stringify({ type: "pty.status", sessionId: SESSION_ID, status }))
+  const tab = page.getByTestId(`tab-${SESSION_ID}`)
+  await expect(tab.getByTestId("status-details")).toHaveText("Running · Working")
+  await page.getByTestId("workspace-name").click()
+  const card = page.locator(".smithers-card[data-kind=agent]")
+  await expect(card.getByTestId("status-details")).toHaveText("Running · Working")
+  // Existing keyboard flow remains the way to return to the agent.
+  const open = page.getByTestId(`agent-open-tab-${SESSION_ID}`)
+  await open.focus()
+  await page.keyboard.press("Enter")
+  await expect(tab).toHaveAttribute("data-active", "true")
+  await page.clock.fastForward(120_001)
+  await expect(tab.getByTestId("status-details")).toHaveText("Running · Stale")
+  await page.getByTestId("workspace-name").click()
+  await expect(card.getByTestId("status-details")).toHaveText("Running · Stale")
+  for (const socket of server.sockets) socket.send(JSON.stringify({ type: "pty.exit", sessionId: SESSION_ID, code: null }))
+  await expect(tab.getByTestId("status-details")).toHaveText("Exited · Outcome unknown")
+  await expect(card.getByTestId("status-details")).toHaveText("Exited · Outcome unknown")
+  expect(server.created).toHaveLength(1)
+  expect(server.deleted).toHaveLength(0)
+})

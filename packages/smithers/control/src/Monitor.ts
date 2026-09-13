@@ -18,11 +18,11 @@
  */
 import { Journal, JournalEvent } from "@smthrs/journal"
 import { Duration, Effect, Stream } from "effect"
-import * as SubjectHealth from "./Health.ts"
 import { Control } from "./Control.ts"
 import type { ControlError } from "./ControlError.ts"
 import { PersistenceError } from "./ControlError.ts"
 import type { ControlEvent, Receipt, RunId, RunSummary, WatchFilter } from "./ControlSchema.ts"
+import * as SubjectHealth from "./Health.ts"
 
 /**
  * The journal event type the engine records when an action attempt starts.
@@ -438,7 +438,13 @@ export const run = (
     const attempts: AttemptState = { open: 0, failed: false }
     let sequence = -1
     for (let beat = 0; beat < maxChecks; beat += 1) {
-      if (beat > 0 && intervalMs > 0) yield* Effect.sleep(Duration.millis(options.healthCheck === undefined ? intervalMs : SubjectHealth.nextDelay(options.healthCheck.policy, consecutiveProbeFailures)))
+      if (beat > 0 && intervalMs > 0) {
+        yield* Effect.sleep(Duration.millis(
+          options.healthCheck === undefined
+            ? intervalMs
+            : SubjectHealth.nextDelay(options.healthCheck.policy, consecutiveProbeFailures)
+        ))
+      }
       const summary = yield* summaryOf(options.runId)
       const newEvents: Array<ControlEvent> = []
       const sinceCursor = Math.max(0, sequence)
@@ -451,6 +457,7 @@ export const run = (
               : { afterCursor: event.cursor }
             if (isBookkeepingEvent(event.kind)) return
             newEvents.push(event)
+            if (newEvents.length > 256) newEvents.shift()
             sequence = event.sequence
             foldAttempt(attempts, event)
           })
@@ -469,7 +476,11 @@ export const run = (
         const subjectId = `run:${options.runId}`
         const incarnation = SubjectHealth.runIncarnation(summary)
         const probe = SubjectHealth.evaluate(check, {
-          subjectId, state: summary.status, summary, events: newEvents, sinceCursor
+          subjectId,
+          state: summary.status,
+          summary,
+          events: newEvents,
+          sinceCursor
         }, { monitorId, incarnation, evidenceSeq: Math.max(0, sequence) })
         let observation = yield* (options.withProbePermit?.(probe) ?? probe)
         const current = yield* summaryOf(options.runId)
@@ -478,11 +489,23 @@ export const run = (
         }
         consecutiveProbeFailures = observation.outcome === "ok" ? 0 : consecutiveProbeFailures + 1
         const semanticProgress = observation.outcome === "ok" && observation.report?.activity === "working"
-        const baseHealth = classifyState({ summary, beatsWithoutProgress, stallBeats, roundBound: options.roundBound, semanticProgress }, attempts)
+        const baseHealth = classifyState({
+          summary,
+          beatsWithoutProgress,
+          stallBeats,
+          roundBound: options.roundBound,
+          semanticProgress
+        }, attempts)
         observation = { ...observation, baseHealth }
         const status = SubjectHealth.rollup({
-          subjectId, state: summary.status, incarnation, waitingReason: summary.waitingReason,
-          baseHealth, latest: { observation, sequence: 0 }, now: observation.observedAt, updatedAt: summary.updatedAt
+          subjectId,
+          state: summary.status,
+          incarnation,
+          waitingReason: summary.waitingReason,
+          baseHealth,
+          latest: { observation, sequence: 0 },
+          now: observation.observedAt,
+          updatedAt: summary.updatedAt
         })
         const changed = lastPublished === undefined || lastPublished.incarnation !== observation.incarnation ||
           lastPublished.outcome !== observation.outcome || lastPublished.baseHealth !== observation.baseHealth ||
@@ -491,8 +514,13 @@ export const run = (
         // Renew before expiry, but do not fill the journal with identical per-probe records.
         if (changed || observation.observedAt >= lastPublished!.observedAt + check.policy.ttlMs / 2) {
           yield* emit(SubjectHealth.statusObservedEventType, {
-            ...observation, status: summary.status, health: status.health, activity: status.activity,
-            attention: status.attention, freshness: status.freshness, waitingReason: summary.waitingReason ?? ""
+            ...observation,
+            status: summary.status,
+            health: status.health,
+            activity: status.activity,
+            attention: status.attention,
+            freshness: status.freshness,
+            waitingReason: summary.waitingReason ?? ""
           }, "health observation")
           lastPublished = observation
         }
@@ -547,8 +575,12 @@ export const run = (
           if (receipt._tag === "Terminal") break
         }
       }
-      if (options.retainBeats !== undefined && beats.length > options.retainBeats) beats.splice(0, beats.length - options.retainBeats)
-      if (terminal(summary)) break
+      if (options.retainBeats !== undefined && beats.length > options.retainBeats) {
+        beats.splice(0, beats.length - options.retainBeats)
+      }
+      if (terminal(summary)) {
+        break
+      }
     }
     return {
       runId: options.runId,
@@ -562,4 +594,4 @@ export const run = (
  */
 export const isBookkeepingEvent = (kind: string): boolean =>
   kind.startsWith("control.monitor.") || kind.startsWith("control.status.") ||
-  kind.startsWith("flows.alerts.") || kind.startsWith("flows.notifications.")
+  kind.startsWith("flows.alerts.") || kind.startsWith("flows.notifications.") || kind.startsWith("flows.notification.")

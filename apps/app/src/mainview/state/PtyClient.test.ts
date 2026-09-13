@@ -7,6 +7,7 @@ interface Harness {
   readonly seen: Array<Record<string, unknown>>
   readonly acknowledge: (sessionId: string) => void
   readonly output: (sessionId: string, data: string) => void
+  readonly frame: (value: unknown) => void
   readonly stop: () => void
 }
 
@@ -37,6 +38,7 @@ const serve = (): Harness => {
     output: (sessionId, data) => {
       for (const socket of open) socket.send(JSON.stringify({ type: "pty.output", sessionId, data }))
     },
+    frame: (value) => { for (const socket of open) socket.send(JSON.stringify(value)) },
     stop: () => server.stop(true)
   }
   harnesses.push(harness)
@@ -53,6 +55,33 @@ const until = async (predicate: () => boolean, timeoutMs = 4000): Promise<void> 
 
 afterEach(() => {
   for (const harness of harnesses.splice(0)) harness.stop()
+})
+
+test("status shares the terminal subscription, is ordered, validates subject identity, and seeds a late view", async () => {
+  const server = serve()
+  const observed: unknown[] = [], first: unknown[] = [], second: unknown[] = []
+  const client = createPtyClient({ baseUrl: "http://127.0.0.1", http: fetch, socketUrl: () => server.url,
+    onStatus: (sessionId, status) => observed.push({ sessionId, status }) })
+  const detach = client.attach("pty-1", { onOutput: () => {}, onExit: () => {}, onStatus: (status) => first.push(status) })
+  await until(() => server.seen.some((frame) => frame.type === "subscribe"))
+  const status = { subjectId: "session:pty-1", state: "running", activity: "idle", health: "healthy", attention: "none", freshness: "fresh", updatedAt: 10,
+    provenance: { checkerId: "semantic", monitorId: "monitor", incarnation: "owner", evidenceSeq: 3, version: 5, observedAt: 10, expiresAt: 100 } }
+  server.frame({ type: "pty.status", sessionId: "pty-1", status })
+  await until(() => observed.length === 1)
+  const detachLate = client.attach("pty-1", { onOutput: () => {}, onExit: () => {}, onStatus: (value) => second.push(value) })
+  expect(first).toEqual([status])
+  expect(second).toEqual([status])
+  expect(observed).toHaveLength(1)
+  server.frame({ type: "pty.status", sessionId: "pty-1", status: { ...status, subjectId: "other" } })
+  server.frame({ type: "pty.status", sessionId: "pty-1", status: { ...status, activity: "made-up" } })
+  server.frame({ type: "pty.status", sessionId: "pty-1", status: { ...status, provenance: { ...status.provenance, version: 4 } } })
+  server.frame({ type: "pty.status", sessionId: "pty-1", status: { ...status, activity: "needs-input", attention: "needs-input",
+    provenance: { ...status.provenance, version: 6 } } })
+  await until(() => observed.length === 2)
+  expect(first).toHaveLength(2)
+  expect(second).toHaveLength(2)
+  expect(server.seen.filter((frame) => frame.type === "subscribe")).toHaveLength(1)
+  detachLate(); detach(); client.dispose()
 })
 
 test("terminal input waits for the topic acknowledgement, then output reaches every attachment", async () => {
