@@ -12,6 +12,7 @@
  * @since 0.1.0
  */
 import * as Digest from "@smthrs/core/Digest"
+import * as ByteSize from "effect/ByteSize"
 import * as Context from "effect/Context"
 import * as Effect from "effect/Effect"
 import * as FileSystem from "effect/FileSystem"
@@ -480,7 +481,7 @@ export const make = (fs: FileSystem.FileSystem, path: Path.Path): Discovery =>
                     "Path-named sources cannot contain a root-level entry"
                   )
                 )
-              } else if (selectedInfo.size > FileSystem.Size(entrySizeLimit)) {
+              } else if (selectedInfo.size > ByteSize.bytes(entrySizeLimit)) {
                 warnings.push(
                   warning("entry_too_large", location, oversizedEntry(location, selectedInfo.size))
                 )

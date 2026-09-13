@@ -464,6 +464,11 @@ describe("ModuleMetadata", () => {
       "the effects conflict policy is not a known literal",
       "effects: { reads: [], writes: [], onConflict: \"whenever\" }",
       "Effects mode and conflict policy must be string literals; using conservative effects"
+    ],
+    [
+      "both policies are invalid and produce only one warning",
+      "effects: { reads: [], writes: [], mode: loose, onConflict: unknownPolicy }",
+      "Effects mode and conflict policy must be string literals; using conservative effects"
     ]
   ])("falls back to conservative effects when %s", (_label, member, message) => {
     const metadata = ModuleMetadata.parse([

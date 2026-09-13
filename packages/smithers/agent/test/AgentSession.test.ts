@@ -341,7 +341,8 @@ const stack = (options: StackOptions) => {
   ).pipe(Layer.provide([NodeFileSystem.layer, NodeCrypto.layer, jj]))
   return ControlLive.layer.pipe(
     Layer.provideMerge(engine),
-    Layer.provideMerge(Layer.mergeAll(runtime, journal, notifications, registry))
+    Layer.provideMerge(Layer.mergeAll(runtime, journal, notifications, registry)),
+    Layer.provide(Action.layerImplementations)
   )
 }
 
@@ -1228,83 +1229,96 @@ describe("AgentSession", () => {
     expect(result).toBe("accepted")
   })
 
-  it("runs a registered module on the durable engine with approved input and no model seat", async () => {
-    const seen: Array<unknown> = []
-    const Read = Action.make("test/ModuleRead", {
-      payload: { input: Schema.Json },
-      success: Schema.Json,
-      error: Schema.Never
-    })
-    const flow = Flow.make("agents/module", {
-      payload: Executable.Payload,
-      success: Schema.Unknown,
-      error: Schema.Unknown,
-      body: ({ input }) => Read.call({ input: input ?? null }).pipe(Node.map((value) => ({ value })))
-    })
-    const catalog: Executable.Catalog = {
-      executables: [{
-        descriptor: moduleDescriptor,
-        delegate: "test/Module",
-        lowered: { cache: undefined, placement: undefined, priority: undefined },
-        invocation: (input) => ({
-          flow: moduleDescriptor.name,
-          input,
-          prompt: "",
-          model: null,
-          placement: null,
-          placementOptions: null,
-          capabilities: [],
-          flows: ["test/Module"]
-        }),
-        flow,
-        layer: Interpreter.layer(flow)
-      }],
-      refused: []
-    }
-    const registration = Layer.merge(
-      Interpreter.layer(flow),
-      Read.toLayer(({ input }) =>
-        Effect.gen(function*() {
-          seen.push(input)
-          return input
-        })
-      )
-    ).pipe(Layer.provideMerge(Action.layerImplementations))
-    const result = await Effect.runPromise(
-      Effect.gen(function*() {
-        const gate = yield* Deferred.make<void>()
-        return yield* Effect.gen(function*() {
-          const control = yield* Control.Control
-          const runtime = yield* ControlRuntime.ControlRuntime
-          const card = yield* control.plan({ flowId: "agents/module", input: { plan: { changes: ["native"] } } })
-          yield* control.approve(card.approval)
-          const receipt = yield* control.run({
-            _tag: "Plan",
-            planId: card.planId,
-            digest: card.digest,
-            envelope: card.envelope,
-            idempotencyKey: "run:native-module"
+  it.each(["test/Module", "test/OutsideEnvelope"])(
+    "checks a registered module's approved delegation to %s",
+    async (delegate) => {
+      const seen: Array<unknown> = []
+      const Read = Action.make("test/ModuleRead", {
+        payload: { input: Schema.Json },
+        success: Schema.Json,
+        error: Schema.Never
+      })
+      const flow = Flow.make("agents/module", {
+        payload: Executable.Payload,
+        success: Schema.Unknown,
+        error: Schema.Unknown,
+        body: ({ input }) => Read.call({ input: input ?? null }).pipe(Node.map((value) => ({ value })))
+      })
+      const catalog: Executable.Catalog = {
+        executables: [{
+          descriptor: moduleDescriptor,
+          delegate,
+          lowered: { cache: undefined, placement: undefined, priority: undefined },
+          invocation: (input) => ({
+            flow: moduleDescriptor.name,
+            input,
+            prompt: "",
+            model: null,
+            placement: null,
+            placementOptions: null,
+            capabilities: [],
+            flows: ["test/Module"]
+          }),
+          flow,
+          layer: Interpreter.layer(flow)
+        }],
+        refused: []
+      }
+      const registration = Layer.merge(
+        Interpreter.layer(flow),
+        Read.toLayer(({ input }) =>
+          Effect.gen(function*() {
+            seen.push(input)
+            return input
           })
-          if (receipt._tag !== "Accepted" || receipt.runId === undefined) return yield* Effect.die("expected admission")
-          const terminal = (): Effect.Effect<ControlSchema.RunStatus, unknown> =>
-            Effect.gen(function*() {
-              const run = yield* runtime.getRun(receipt.runId!)
-              if (run.status === "completed" || run.status === "failed") return run.status
-              yield* Effect.sleep("10 millis")
-              return yield* terminal()
+        )
+      )
+      const result = await Effect.runPromise(
+        Effect.gen(function*() {
+          const gate = yield* Deferred.make<void>()
+          return yield* Effect.gen(function*() {
+            const control = yield* Control.Control
+            const runtime = yield* ControlRuntime.ControlRuntime
+            const card = yield* control.plan({ flowId: "agents/module", input: { plan: { changes: ["native"] } } })
+            yield* control.approve(card.approval)
+            const receipt = yield* control.run({
+              _tag: "Plan",
+              planId: card.planId,
+              digest: card.digest,
+              envelope: card.envelope,
+              idempotencyKey: "run:native-module"
             })
-          return yield* terminal().pipe(Effect.timeout("20 seconds"))
-        }).pipe(Effect.provide(stack({
-          gate,
-          notes: [],
-          resolve: () => Effect.die("a module must not resolve a model seat"),
-          modules: { catalog, layer: registration }
-        })))
-      }).pipe(Effect.scoped)
-    )
-    expect(result).toBe("completed")
-    expect(seen).toEqual([{ plan: { changes: ["native"] } }])
-  }, 30_000)
+            if (receipt._tag !== "Accepted" || receipt.runId === undefined) {
+              return yield* Effect.die("expected admission")
+            }
+            const terminal = (): Effect.Effect<ControlSchema.RunStatus, unknown> =>
+              Effect.gen(function*() {
+                const run = yield* runtime.getRun(receipt.runId!)
+                if (run.status === "completed" || run.status === "failed") return run.status
+                yield* Effect.sleep("10 millis")
+                return yield* terminal()
+              })
+            return yield* terminal().pipe(Effect.timeout("20 seconds"))
+          }).pipe(Effect.provide(stack({
+            gate,
+            notes: [],
+            resolve: () => Effect.die("a module must not resolve a model seat"),
+            modules: { catalog, layer: registration }
+          })))
+        }).pipe(
+          Effect.scoped,
+          Effect.catch((error) => {
+            if (delegate === "test/Module") return Effect.fail(error)
+            expect(error).toMatchObject({ message: expect.stringContaining("outside the approved flow envelope") })
+            return Effect.succeed("refused")
+          })
+        )
+      )
+      expect(result).toBe(delegate === "test/Module" ? "completed" : "refused")
+      expect(seen).toEqual(delegate === "test/Module" ? [{ plan: { changes: ["native"] } }] : [])
+    },
+    30_000
+  )
 
   it("journals a bounded cause when the model fails, for an empty and an absent input", async () => {
     const results = await Effect.runPromise(

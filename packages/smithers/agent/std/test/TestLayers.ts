@@ -4,6 +4,7 @@ import type * as Path from "@smthrs/kernel/Path"
 import * as Workspace from "@smthrs/kernel/Workspace"
 import * as TestHost from "@smthrs/testing/TestHost"
 import { Effect, Option, type PlatformError } from "effect"
+import * as ByteSize from "effect/ByteSize"
 import * as FileSystem from "effect/FileSystem"
 import * as Layer from "effect/Layer"
 import { dirname } from "node:path"
@@ -85,7 +86,7 @@ export const fileInfo = (options?: {
     uid: Option.none(),
     gid: Option.none(),
     rdev: Option.none(),
-    size: FileSystem.Size(options?.size ?? 0),
+    size: ByteSize.bytes(options?.size ?? 0),
     blksize: Option.none(),
     blocks: Option.none()
   }

@@ -1,6 +1,7 @@
 import { PersistenceError } from "@smthrs/control/ControlError"
 import { FireSummary, TriggerSummary } from "@smthrs/control/ControlSchema"
 import * as Port from "@smthrs/control/DispatchReader"
+import { Option, Result } from "effect"
 import * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
 import { TestClock } from "effect/testing"
@@ -8,6 +9,7 @@ import { describe, expect, it } from "vitest"
 import * as DispatchReader from "../src/DispatchReader.ts"
 import * as TestTriggers from "../src/test/TestTriggers.ts"
 import type { Trigger } from "../src/Trigger.ts"
+import { TriggerError } from "../src/TriggerError.ts"
 import * as TriggerStore from "../src/TriggerStore.ts"
 
 const hour = 60 * 60 * 1_000
@@ -185,6 +187,21 @@ describe("DispatchReader", () => {
     expect(errors[0]).toBeInstanceOf(PersistenceError)
     expect(errors[0]).toMatchObject({ operation: "triggers", message: "lastHeartbeat is unavailable" })
     expect(errors[1]).toMatchObject({ operation: "fires", message: "history is unavailable" })
+  })
+
+  it("refuses an undecodable listing row with a persistence failure", async () => {
+    const invalid = new TriggerError({ code: "invalid_trigger", message: "corrupt trigger broken" })
+    const error = await Effect.runPromise(
+      Effect.gen(function*() {
+        const reader = yield* DispatchReader.make
+        return yield* Effect.flip(reader.list(triggers))
+      }).pipe(Effect.provide(TriggerStore.layerNoop({
+        lastHeartbeat: () => Effect.succeed(Option.none()),
+        list: () => Effect.succeed([{ triggerId: "broken", trigger: Result.fail(invalid) }])
+      })))
+    )
+    expect(error).toBeInstanceOf(PersistenceError)
+    expect(error).toMatchObject({ operation: "triggers", message: "corrupt trigger broken" })
   })
 
   it("provides the control plane's port as a layer over the store", async () => {

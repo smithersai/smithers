@@ -153,10 +153,10 @@ describe("FlowBinding.make", () => {
     })
 
     expect(binding.descriptor.input).toStrictEqual(
-      new Descriptor.SchemaRefInline({ document: Schema.toJsonSchemaDocument(Echo) })
+      new Descriptor.SchemaRefInline({ document: Schema.toJsonSchemaDocument(Echo, { onExcessProperty: "error" }) })
     )
     expect(binding.descriptor.output).toStrictEqual(
-      new Descriptor.SchemaRefInline({ document: Schema.toJsonSchemaDocument(Echoed) })
+      new Descriptor.SchemaRefInline({ document: Schema.toJsonSchemaDocument(Echoed, { onExcessProperty: "error" }) })
     )
   })
 
@@ -182,7 +182,7 @@ describe("FlowBinding.make", () => {
     expect(outputOnly.descriptor.output).toStrictEqual(new Descriptor.SchemaRefInline({ document: outputDocument }))
     // The unspecified half is still projected from the declaration.
     expect(outputOnly.descriptor.input).toStrictEqual(
-      new Descriptor.SchemaRefInline({ document: Schema.toJsonSchemaDocument(Echo) })
+      new Descriptor.SchemaRefInline({ document: Schema.toJsonSchemaDocument(Echo, { onExcessProperty: "error" }) })
     )
     expect(both.descriptor.input).toStrictEqual(new Descriptor.SchemaRefInline({ document: inputDocument }))
     expect(both.descriptor.output).toStrictEqual(new Descriptor.SchemaRefInline({ document: outputDocument }))

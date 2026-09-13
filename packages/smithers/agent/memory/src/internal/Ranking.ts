@@ -4,7 +4,10 @@
  * @since 0.1.0
  */
 
-/** Cosine similarity between two embedding vectors; 0 for empty, mismatched, or zero vectors. */
+/** Cosine similarity between two embedding vectors; 0 for empty, mismatched, or zero vectors.
+ * @since 1.0.0
+ * @private
+ */
 export const cosine = (left: ArrayLike<number>, right: ArrayLike<number>): number => {
   if (left.length !== right.length || left.length === 0) return 0
   let dot = 0
@@ -20,6 +23,9 @@ export const cosine = (left: ArrayLike<number>, right: ArrayLike<number>): numbe
   return leftMagnitude === 0 || rightMagnitude === 0 ? 0 : dot / Math.sqrt(leftMagnitude * rightMagnitude)
 }
 
-/** The exponential recency weight: 1 at `updatedAtMs`, halving every `halfLifeMs`. */
+/** The exponential recency weight: 1 at `updatedAtMs`, halving every `halfLifeMs`.
+ * @since 1.0.0
+ * @private
+ */
 export const recency = (updatedAtMs: number, nowMs: number, halfLifeMs: number): number =>
   2 ** (-Math.max(0, nowMs - updatedAtMs) / halfLifeMs)

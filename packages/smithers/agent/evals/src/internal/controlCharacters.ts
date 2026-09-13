@@ -35,4 +35,6 @@ export const controlCharacter = (value: string): string | undefined => {
  * @private
  */
 export const flattenControlCharacters = (value: string): string =>
+  // The control bytes are intentional: this is the log-injection sanitizer.
+  // eslint-disable-next-line no-control-regex
   controlCharacter(value) === undefined ? value : value.replace(/[\u0000-\u001F\u007F]/gu, " ")

@@ -212,7 +212,7 @@ export const make: Effect.Effect<
         `
       const existingFire = fireSnapshot(existing[0])
       const activeFire = fireSnapshot(active[0])
-      const decision = ClaimDecision.decide({
+      const decision = ClaimDecision.decideFenced({
         fire,
         claimedAt,
         reservationId: reservationId(fire.triggerId, fire.occurrence, globalThis.crypto.randomUUID()),
@@ -227,7 +227,6 @@ export const make: Effect.Effect<
           ...(activeFire === undefined ? {} : { activeFire })
         }
       })
-      if (decision._tag === "Refused") return yield* Effect.fail(decision.error)
       for (const write of decision.writes) {
         switch (write._tag) {
           case "SetOutcome": {

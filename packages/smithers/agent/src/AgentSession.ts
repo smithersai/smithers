@@ -1982,17 +1982,11 @@ export const make = (
       )
     )
 
-    /**
-     * Whether the control plane has already settled this run.
-     *
-     * A control database that cannot be read answers "no": a composition with
-     * no evidence must drive the run rather than abandon it.
-     */
-    const settledAlready = (runId: string): Effect.Effect<boolean> =>
+    /** Reads once per round; missing control evidence must not abandon a live run. */
+    const controlRunBeforeRound = (runId: string) =>
       runtime.getRun(runId).pipe(
-        Effect.map((run) => run.status === "completed" || run.status === "failed" || run.status === "cancelled"),
         Effect.catchCause((cause) =>
-          recoverCause(cause, "The control run settlement could not be read", false, { runId })
+          recoverCause(cause, "The control run settlement could not be read", undefined, { runId })
         )
       )
 
@@ -2016,7 +2010,22 @@ export const make = (
         // result instead, which is the one write the row is missing, so the
         // next `gc` can collect it. The control row is the run's outcome of
         // record and is not rewritten.
-        if (yield* settledAlready(payload.runId)) return []
+        const controlRun = yield* controlRunBeforeRound(payload.runId)
+        if (controlRun !== undefined && ["completed", "failed", "cancelled"].includes(controlRun.status)) return []
+        // The engine follows a discarded execution through later rounds in
+        // the registration scope. Such a round can start before the control
+        // resume bridge runs; its previous park released the control fence.
+        // Only the hosting session may reclaim that record before executing.
+        if (controlRun !== undefined && parks(controlRun.status)) {
+          const pending = (yield* runtime.pendingResumes).find((entry) => entry.runId === payload.runId)
+          if (!(yield* hostsPark(payload.runId, { _tag: "delegated", requestedAtMs: pending?.requestedAtMs }))) {
+            yield* FlowRuntime.annotateWaiting({
+              reason: controlRun.status === "waiting-approval" ? "approval" : "event"
+            })
+            return yield* Flow.suspend(instance)
+          }
+          yield* runtime.resume(payload.runId)
+        }
         const fiber = yield* Effect.forkChild(
           body(payload, instance).pipe(
             Effect.onExit((exit) =>

@@ -691,6 +691,11 @@ describe("Runner", () => {
     )
     expect(hangingTarget._tag).toBe("Failure")
 
+    const selfInterrupted = await Effect.runPromiseExit(
+      Runner.run(suite, runOptions).pipe(Effect.provide(executorFor(() => Effect.interrupt)))
+    )
+    expect(selfInterrupted._tag).toBe("Failure")
+
     const scored = await suiteOf("interrupt-scorer", [binding])
     const hangingBatch = await Effect.runPromiseExit(
       Runner.run(scored, { ...runOptions, scorer: { runBatch: () => Effect.never } }).pipe(

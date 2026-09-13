@@ -24,13 +24,13 @@ describe("evals runtime grading contract", () => {
         reasons: [
           "mean_below_threshold: threshold 0.5, actual 0.49",
           "min_below_threshold: threshold 0.5, actual 0.49",
-          "case_below_threshold: threshold 0.5, actual 0.49"
+          "case_below_threshold: case 'first', threshold 0.5, actual 0.49"
         ],
         inconclusive: []
       }, {
         exitCode: 1,
         summary:
-          "failed: mean_below_threshold: threshold 0.5, actual 0.49; min_below_threshold: threshold 0.5, actual 0.49; case_below_threshold: threshold 0.5, actual 0.49"
+          "failed: mean_below_threshold: threshold 0.5, actual 0.49; min_below_threshold: threshold 0.5, actual 0.49; case_below_threshold: case 'first', threshold 0.5, actual 0.49"
       }],
       [0.5, { _tag: "Passed", inconclusive: [] }, { exitCode: 0, summary: "passed" }],
       [0.51, { _tag: "Passed", inconclusive: [] }, { exitCode: 0, summary: "passed" }]

@@ -271,7 +271,9 @@ export const compact = <E, R>(
           rendered: render(oldMessages)
         })
         const summaryId = options.makeSummaryId?.(threadId, oldMessages) ??
-          `summary-${Digest.digest(Digest.canonical({ threadId, messageIds: oldMessages.map((message) => message.id) }))}`
+          `summary-${
+            Digest.digest(Digest.canonical({ threadId, messageIds: oldMessages.map((message) => message.id) }))
+          }`
         deletedMessages += yield* store.compactMessages({
           threadId,
           summary: {

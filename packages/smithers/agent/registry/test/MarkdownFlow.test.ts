@@ -457,6 +457,11 @@ describe("MarkdownFlow", () => {
       "Frontmatter effects.mode must be hermetic or expected; using expected"
     ],
     [
+      "mode is not a string",
+      "effects:\n  reads: []\n  writes: []\n  mode: [parallel]",
+      "Frontmatter effects.mode must be hermetic or expected; using expected"
+    ],
+    [
       "the conflict policy is unknown",
       "effects:\n  reads: []\n  writes: []\n  onConflict: whenever",
       "Frontmatter effects.onConflict must be serialize, lane, or fail; using serialize"

@@ -22,13 +22,22 @@ describe("MemorySnapshotRecorder", () => {
     const recorder = MemorySnapshotRecorder.layer.pipe(Layer.provide(EngineLike.layer(engine)))
     let reads = 0
     let memory = "memory before the crash"
-    const store = MemoryStore.MemoryStore.of({
-      listNotes: () =>
+    const store = MemoryStore.makeNoop({
+      searchRows: () =>
         Effect.sync(() => {
           reads += 1
-          return [{ namespace: "bank", text: memory }]
+          return [{
+            id: "note",
+            kind: "note",
+            bank: "bank",
+            namespace: { kind: "global", id: "bank" },
+            key: "note",
+            text: memory,
+            tags: [],
+            updatedAtMs: 0
+          }]
         })
-    } as unknown as MemoryStore.Service)
+    })
     const input = { lineageId: "run-1", iteration: 7, banks: ["bank"], query: "q" }
     const read = (source: Source.Source) =>
       Effect.runPromise(

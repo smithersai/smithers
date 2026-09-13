@@ -234,6 +234,9 @@ describe("Report", () => {
         }
       ]
     })
+    const projected = Report.data(full)
+    expect(projected.nondeterminism).toHaveLength(1)
+    expect(projected.run.observations[projected.nondeterminism[0]!.actual]).toBe(full.nondeterminism[0]!.actual)
     expect(Report.markdown(full)).toBe(
       [
         "# Evaluation report: s",

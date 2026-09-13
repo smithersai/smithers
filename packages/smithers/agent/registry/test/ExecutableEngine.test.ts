@@ -215,6 +215,24 @@ const execute = (
   )
 
 describe("a discovered flow runs on the durable engine", () => {
+  for (const name of ["greet", "tuned"]) {
+    it.effect(`supports a custom delegate without explicit codecs through ${name}`, () =>
+      Effect.gen(function*() {
+        const descriptor = yield* descriptorNamed(name)
+        const delegate: Executable.Delegate = {
+          _tag: "test/echo",
+          call: (payload) => Node.succeed({ echoed: payload.input }),
+          execute: (payload) => Effect.succeed({ echoed: payload.input })
+        }
+        const executable = yield* Executable.fromDescriptor(descriptor, { delegates: [delegate] }).pipe(
+          Effect.provide(platform)
+        )
+        const filename = join(workspace(`custom-${name}`), "engine.db")
+        const result = yield* execute(executable, filename, `custom-${name}`, `custom-${name}`, { value: 42 })
+        expect(result.result).toEqual({ echoed: { value: 42 } })
+      }))
+  }
+
   for (const name of ["greet", "tuned", "cacheable"]) {
     it.effect(`persists and replays transforming results and typed failures through ${name}`, () =>
       Effect.gen(function*() {

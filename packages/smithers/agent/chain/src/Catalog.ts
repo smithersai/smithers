@@ -7,9 +7,9 @@
  *
  * @since 0.1.0
  */
-import type * as CallKey from "./CallKey.ts"
 import * as Digest from "@smthrs/core/Digest"
 import { Clock, Context, type Effect, Layer, Random, Schema } from "effect"
+import type * as CallKey from "./CallKey.ts"
 
 /**
  * A call that reached its entry and failed there. The chain journals it as

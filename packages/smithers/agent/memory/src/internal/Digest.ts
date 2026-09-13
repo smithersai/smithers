@@ -1,3 +1,4 @@
+/// <reference lib="es2024.string" />
 /**
  * Total SHA-256 digests over JavaScript strings.
  *

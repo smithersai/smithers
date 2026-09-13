@@ -25,10 +25,13 @@ export class CallResult extends Schema.Class<CallResult>("flows/harness/Cell/Cal
   code: Schema.optional(CallFailureCode)
 }) {}
 
-// The material carries the HarnessError code set on main, which gained
-// `incompatible_journal` with journal format 2. This is the key main's
-// StepKeyGolden pins for the same call.
+// Historical rc.112 material remains pinned independently. Effect rc.115
+// omits the default Union mode in SchemaRepresentation, changing sealed keys.
+// Current main also folds boundary and declaration digests into the preimage;
+// the rc.115 fixture pins that complete representation independently.
 export const key = "key1_8ab2962732794ee8d8b3bf550657b41d475fd082ec9c8c7073b1d24a8d77d4b9"
+
+export const effect115Key = "key1_a889e8b3453778007938b385090ec68cf8af50a2b26626874f88db14f852faef"
 
 // Independent JSON oracle. This fixture contains only JSON values, no schema
 // classes, undefined, non-finite numbers or other normalization cases.

@@ -87,7 +87,7 @@ const invalid = (sampling: Sampling, cause: unknown): ScorerError =>
     cause
   })
 
-const decodeSampling = Schema.decodeUnknownEffect(Sampling)
+const decodeSampling = Schema.decodeUnknownSync(Sampling)
 
 /**
  * Decides a ratio sample from stable target, scorer, and seed material.
@@ -100,8 +100,7 @@ export const decide = (
   targetStepKey: string,
   scorerKey: string
 ): Effect.Effect<boolean, ScorerError> =>
-  decodeSampling(sampling).pipe(
-    Effect.mapError((cause) => invalid(sampling, cause)),
+  Effect.try({ try: () => decodeSampling(sampling), catch: (cause) => invalid(sampling, cause) }).pipe(
     Effect.map((value) =>
       value === "all"
         ? true

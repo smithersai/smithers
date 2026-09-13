@@ -77,7 +77,9 @@ describe("documentation", () => {
     for (const page of ["../docs/api.md", "../docs/guides/run-a-suite.md", "../docs/concepts/determinism.md"]) {
       const text = read(page).replace(/\s+/g, " ")
       expect(text, page).not.toMatch(/stamps every observation with them/)
-      expect(text, page).not.toMatch(/two runs (?:of the same suite )?over the same inputs produce (?:byte-)?identical/i)
+      expect(text, page).not.toMatch(
+        /two runs (?:of the same suite )?over the same inputs produce (?:byte-)?identical/i
+      )
     }
     const determinism = read("../docs/concepts/determinism.md").replace(/\s+/g, " ")
     expect(determinism).not.toContain("controls every input that could vary")
@@ -88,7 +90,9 @@ describe("documentation", () => {
 
   it("states that a declared case expected wins over binding groundTruth", () => {
     for (const page of ["../src/Suite.ts", "../docs/api.md", "../docs/guides/author-a-suite.md"]) {
-      expect(read(page).replace(/\s*\*?\s+/g, " "), page).toMatch(/only an absent (?:one|`expected`) defers to the binding/)
+      expect(read(page).replace(/\s*\*?\s+/g, " "), page).toMatch(
+        /only an absent (?:one|`expected`) defers to the binding/
+      )
     }
   })
 

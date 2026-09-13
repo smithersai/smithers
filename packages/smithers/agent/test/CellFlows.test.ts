@@ -53,6 +53,7 @@ import {
   Sink,
   Stream
 } from "effect"
+import * as ByteSize from "effect/ByteSize"
 import type * as Crypto from "effect/Crypto"
 import { ExitCode, makeHandle, ProcessId } from "effect/unstable/process/ChildProcessSpawner"
 import { describe, expect, it } from "vitest"
@@ -218,7 +219,7 @@ const fileInfo = (size: number): FileSystem.File.Info => ({
   uid: Option.none(),
   gid: Option.none(),
   rdev: Option.none(),
-  size: FileSystem.Size(size),
+  size: ByteSize.bytes(size),
   blksize: Option.none(),
   blocks: Option.none()
 })

@@ -178,7 +178,9 @@ describe("shared effects projection", () => {
   // Markdown discovery refuses a capability list it cannot read (see
   // MarkdownFlow.test.ts), so only the module body has effects to project.
   it("projects a module capability list discovery cannot read as the widest effects", () => {
-    expect(moduleEffects(["  capabilities,", "  effects: { reads: [], writes: [], mode: \"hermetic\", tier: \"sealed\" }"]))
+    expect(
+      moduleEffects(["  capabilities,", "  effects: { reads: [], writes: [], mode: \"hermetic\", tier: \"sealed\" }"])
+    )
       .toEqual(Authority.conservativeEffects)
   })
 })

@@ -17,10 +17,12 @@ import { join } from "node:path"
 import { DatabaseSync } from "node:sqlite"
 import { expect, it } from "vitest"
 import * as FlowEngineLike from "../src/FlowEngineLike.ts"
-import materialV1 from "./fixtures/cell-call-material-v1.json" with { type: "json" }
+import materialV1 from "./fixtures/cell-call-material-effect-rc115.json" with { type: "json" }
 import * as V1 from "./fixtures/CellCallV1.ts"
 import * as Safety from "./Safety.ts"
 
+// This proves wire-declaration compatibility within rc.115. The archived
+// rc.112 material has a different key and requires finishing or archiving runs.
 const flow = Flow.make("agent/test/cell-call-v1-reopen", {
   payload: {},
   success: Schema.Json,
@@ -29,7 +31,7 @@ const flow = Flow.make("agent/test/cell-call-v1-reopen", {
 })
 const proceed = DurableDeferred.make("agent/test/cell-call-v1-proceed", { success: Schema.Void })
 
-it("resumes a historical sealed result from reopened SQLite without dispatching it again", async () => {
+it("resumes a prior wire declaration from reopened SQLite under the same Effect lock", async () => {
   const directory = mkdtempSync(join(tmpdir(), "smithers-m1-cell-key-"))
   const filename = join(directory, "engine.sqlite")
   const dispatched: Array<string> = []
@@ -49,7 +51,7 @@ it("resumes a historical sealed result from reopened SQLite without dispatching 
               error: HarnessError,
               tier: "sealed",
               idempotencyKey: materialV1.input.idempotencyKey,
-              metadata: materialV1.boundary,
+              metadata: { boundaryMode: "hard", readSet: [], writeSet: [] },
               execute: Effect.map(Action.CurrentInvocationKey, (key) => {
                 dispatched.push(key!)
                 return new V1.CallResult({ outcome: "success", value: result })
@@ -117,7 +119,7 @@ it("resumes a historical sealed result from reopened SQLite without dispatching 
       return yield* (yield* RunStore.RunStore).get("persisted-v1")
     }).pipe(Effect.provide(host(true)), Effect.scoped, Effect.runPromise)
     expect(first.status).toBe("suspended")
-    expect(dispatched).toEqual([V1.key])
+    expect(dispatched).toEqual([V1.effect115Key])
 
     // Read with an independent connection after the writer and its pool close.
     const database = new DatabaseSync(filename)
@@ -129,7 +131,7 @@ it("resumes a historical sealed result from reopened SQLite without dispatching 
           .all("persisted-v1")
       ).toEqual([{
         // AttemptStore indexes SHA-256 of the complete key, including key1_.
-        step_key_digest: "a7619ad62a3e7302a8aaa628289efc17cb4d06fa49304f1d1b72bd8125d48346",
+        step_key_digest: "421c9915fbaced34780a3a08b053c6f36520e9313f0036ddf4cba9b06e412492",
         state: "succeeded"
       }])
     } finally {
@@ -148,7 +150,7 @@ it("resumes a historical sealed result from reopened SQLite without dispatching 
     }).pipe(Effect.provide(host(false)), Effect.scoped, Effect.runPromise)
     expect(resumed).toEqual(result)
     expect(entered).toBeGreaterThanOrEqual(2)
-    expect(dispatched).toEqual([V1.key])
+    expect(dispatched).toEqual([V1.effect115Key])
   } finally {
     rmSync(directory, { recursive: true, force: true })
   }

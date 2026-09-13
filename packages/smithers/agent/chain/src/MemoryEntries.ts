@@ -51,9 +51,9 @@ export const contractDigest = (contract: Contract): string =>
   Digest.digest(Digest.canonical({
     description: contract.description,
     effects: { ...contract.effects },
-    input: Schema.toJsonSchemaDocument(contract.input),
+    input: Schema.toJsonSchemaDocument(contract.input, { onExcessProperty: "error" }),
     name: contract.name,
-    output: Schema.toJsonSchemaDocument(contract.output)
+    output: Schema.toJsonSchemaDocument(contract.output, { onExcessProperty: "error" })
   }))
 
 const entryOf = <A>(
@@ -139,7 +139,7 @@ export const make: Effect.Effect<
         name: Flows.recallName,
         output: Flows.RecallOutput
       },
-      (input: Flows.RecallInputType) => Flows.runRecall(input).pipe(Effect.provideService(Recall.Recall, recall)),
+      (input: Recall.Input) => Flows.runRecall(input).pipe(Effect.provideService(Recall.Recall, recall)),
       decodeRecall
     )
   ]

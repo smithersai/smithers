@@ -125,12 +125,12 @@ const parkedRun = (runId: string, name: string) =>
 const statusOf = (runId: string): Effect.Effect<string, unknown, RunStore.RunStore> =>
   Effect.map(Effect.flatMap(RunStore.RunStore, (store) => store.get(runId)), (row) => row.status)
 
-/** Polls the run row until it leaves `suspended`, or gives up and reports it. */
+/** Waits through resumed execution until the run settles, with a bounded poll. */
 const settled = (runId: string, attempts = 2_000): Effect.Effect<string, unknown, RunStore.RunStore> =>
   Effect.gen(function*() {
     const store = yield* RunStore.RunStore
     const row = yield* store.get(runId)
-    if (row.status !== "suspended" || attempts <= 0) return row.status
+    if (!["pending", "running", "suspended"].includes(row.status) || attempts <= 0) return row.status
     yield* Effect.yieldNow
     return yield* settled(runId, attempts - 1)
   })

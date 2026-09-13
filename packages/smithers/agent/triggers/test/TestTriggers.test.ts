@@ -23,6 +23,16 @@ const run = <A, E>(effect: Effect.Effect<A, E, TriggerStore.TriggerStore>) =>
 storeConformance("TestTriggers", TestTriggers.layer)
 
 describe("TestTriggers", () => {
+  it("rejects malformed declarations before mutating its state", async () => {
+    const result = await run(Effect.gen(function*() {
+      const store = yield* TriggerStore.TriggerStore
+      const error = yield* Effect.flip(store.register({ ...trigger, input: undefined } as never))
+      return { error, listed: yield* store.list() }
+    }))
+    expect(result.error.code).toBe("invalid_trigger")
+    expect(result.listed).toEqual([])
+  })
+
   it("keeps one record per active trigger instead of parallel maps", () => {
     // The run id, its occurrence and the lease timestamp used to live in three
     // maps every claim, expiry, launch and clear path had to update together.

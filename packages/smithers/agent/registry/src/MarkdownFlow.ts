@@ -274,7 +274,7 @@ const deriveCapabilities = (
       code: "invalid_capabilities",
       path,
       message: `Frontmatter capabilities must be a string array, got ${
-        JSON.stringify(value) ?? String(value)
+        JSON.stringify(value)
       }; the flow is not discovered`
     })
     return undefined

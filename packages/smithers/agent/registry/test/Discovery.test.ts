@@ -264,8 +264,7 @@ describe("Discovery", () => {
       expect(result.warnings).toEqual([expect.objectContaining({
         code: "symlink_cycle",
         path: loop,
-        message:
-          `Directory "${loop}" resolves to already visited directory "${ancestor}"; skipping recursive traversal`
+        message: `Directory "${loop}" resolves to already visited directory "${ancestor}"; skipping recursive traversal`
       })])
     })
   })

@@ -338,6 +338,20 @@ describe("trace", () => {
         new AgentEvent.CellSettled({ eventType: "flows.harness.cell-settled.v1", cell: cell.digest, outcome }),
         { eventType: "control.agent.cell-settled", payload: { outcome } }
       ],
+      ...[
+        new Cell.Raised({ name: "TypeError", message: "cell threw" }),
+        new Cell.Rejected({ code: "compile_failed", message: "invalid cell" })
+      ].map((failure) =>
+        [
+          `cell-${failure._tag}`,
+          new AgentEvent.CellSettled({
+            eventType: "flows.harness.cell-settled.v1",
+            cell: cell.digest,
+            outcome: failure
+          }),
+          { eventType: "control.agent.cell-settled", payload: { outcome: failure } }
+        ] as const
+      ),
       [
         "checkpoint-minted",
         // The store's own name for the tree travels with the id, because the

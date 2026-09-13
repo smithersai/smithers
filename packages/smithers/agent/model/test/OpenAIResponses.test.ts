@@ -396,6 +396,42 @@ describe("OpenAIResponses", () => {
     ])
   })
 
+  it("matches final tool output by item id and skips unrelated output entries", () => {
+    const events = replayData([
+      JSON.stringify({
+        type: "response.output_item.added",
+        item: { id: "fc_1", type: "function_call", call_id: "call_1", name: "write" }
+      }),
+      JSON.stringify({
+        type: "response.completed",
+        response: {
+          id: "r",
+          output: [
+            null,
+            { type: "message" },
+            { type: "function_call", arguments: "{}" },
+            { type: "function_call", id: "fc_1", arguments: "{}" }
+          ]
+        }
+      })
+    ], true)
+    expect(events).toContainEqual({ type: "tool-call-end", id: "call_1", arguments: "{}" })
+    expect(events.at(-1)).toMatchObject({ type: "settle", stopReason: "tool-calls" })
+  })
+
+  it("refuses a completed response that leaves multiple function calls unfinished", () => {
+    const opened = [1, 2].map((id) =>
+      JSON.stringify({
+        type: "response.output_item.added",
+        item: { id: `fc_${id}`, type: "function_call", call_id: `call_${id}`, name: "write" }
+      })
+    )
+    expect(replayDataError([...opened, JSON.stringify({ type: "response.completed" })])).toMatchObject({
+      code: "invalid_provider_output",
+      message: "OpenAI Responses completed with 2 unfinished function calls"
+    })
+  })
+
   it("fails response.completed while a function call's arguments are still partial", () => {
     // Before this check the route settled `tool-calls` and the halt hook then
     // emitted `{"path":` verbatim into a message that was never aborted.

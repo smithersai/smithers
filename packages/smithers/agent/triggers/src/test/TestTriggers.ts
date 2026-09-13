@@ -63,7 +63,7 @@ interface Stored extends Omit<Registered, "input"> {
 
 const registered = (stored: Stored): Registered => ({ ...stored, input: JSON.parse(stored.input) })
 
-const byId = (left: Stored, right: Stored): number => left.id < right.id ? -1 : left.id > right.id ? 1 : 0
+const byId = (left: Stored, right: Stored): number => left.id < right.id ? -1 : 1
 
 /**
  * The run or reservation a trigger holds: the `active_run_id` and
@@ -174,8 +174,9 @@ const applyClaim = (
     switch (write._tag) {
       case "SetOutcome": {
         const target = key(fire.triggerId, write.occurrence)
-        const outcome = fires.get(target)
-        if (!write.whileOpen || outcome === null || outcome === "buffered") fires.set(target, write.outcome)
+        // The decision and application are one Ref.modify operation. An
+        // active reservation's fire cannot settle between these two steps.
+        fires.set(target, write.outcome)
         break
       }
       case "SetRunId": {
@@ -183,7 +184,8 @@ const applyClaim = (
         break
       }
       case "ReleaseReservation": {
-        if (active.get(fire.triggerId)?.runId !== write.expected) break
+        // The decision and its writes share this Ref.modify snapshot; the
+        // expected reservation cannot change between them.
         if (write.activeRunId === undefined) active.delete(fire.triggerId)
         else active.set(fire.triggerId, { runId: write.activeRunId })
         if (write.pending === undefined) pending.delete(fire.triggerId)

@@ -35,6 +35,7 @@ import { ModelError } from "@smthrs/model/ModelError"
 import { NotificationQueue } from "@smthrs/notifications"
 import { Node } from "@smthrs/plan"
 import * as Descriptor from "@smthrs/registry/Descriptor"
+import * as Executable from "@smthrs/registry/Executable"
 import * as Registry from "@smthrs/registry/Registry"
 import { RegistryError } from "@smthrs/registry/RegistryError"
 import { Ownership, RunStore } from "@smthrs/run-store"
@@ -295,6 +296,7 @@ interface ScenarioOptions {
   readonly runtime?: Partial<RuntimeStub> | undefined
   readonly journal?: Partial<Journal.Service> | undefined
   readonly registry?: Partial<Registry.Registry> | undefined
+  readonly catalog?: Executable.Catalog | undefined
   readonly engine?: ((service: EngineService) => EngineService) | undefined
 }
 
@@ -341,6 +343,7 @@ const withExecutor = <A>(
         seatLayer,
         runtimeLayer(record, options.runtime),
         registryLayer(options.registry),
+        options.catalog === undefined ? Layer.empty : Layer.succeed(Executable.Catalog, options.catalog),
         journalLayer(record, options.journal),
         NotificationQueue.layerNoop(),
         engineLayer(options.engine),
@@ -648,17 +651,36 @@ describe("the executor's registry seam", () => {
     expect(causeOf(record)).toContain("changed or has no approved executable identity")
   })
 
-  it("fails the run when the flow's body becomes a module between the launch and the body", async () => {
+  it.each([false, true])("fails a body changed to a module with a catalog refusal: %s", async (withRefusal) => {
     const record = recorder()
     let loads = 0
     const result = await launched(record, {
-      registry: { loadBody: () => Effect.sync(() => (loads++ === 0 ? promptBody : moduleBody)) }
+      registry: { loadBody: () => Effect.sync(() => (loads++ === 0 ? promptBody : moduleBody)) },
+      catalog: withRefusal ?
+        {
+          executables: [],
+          refused: [
+            new Executable.ExecutableError({
+              code: "missing_delegate",
+              flow: flowId,
+              available: [],
+              message: "The module delegate was not registered"
+            })
+          ]
+        } :
+        undefined
     })
 
     expect(result.acceptance).toBe("accepted")
     expect(result.status).toBe("failed")
-    expect(causeOf(record)).toContain("has a module body; only prompt flows run on the agent")
-    expect(causeOf(record)).toContain("HarnessError")
+    // Admission is checked again before execution; changed executable
+    // identities are refused before a harness is constructed.
+    expect(causeOf(record)).toContain(
+      withRefusal
+        ? "The module delegate was not registered"
+        : "has no registered executable matching its approved identity"
+    )
+    expect(causeOf(record)).toContain("LaunchFailed")
     expect(causeOf(record)).not.toContain("SeatUnresolved")
   })
 
@@ -717,6 +739,52 @@ describe("the executor's registry seam", () => {
 })
 
 describe("the executor's driver admission fence", () => {
+  for (const status of ["waiting-approval", "parked"] as const) {
+    it(`parks a background round held by another host (${status})`, async () => {
+      const record = recorder()
+      let registration: {
+        readonly flow: Flow.Any
+        readonly execute: (
+          payload: { readonly runId: string; readonly planId: string },
+          executionId: string
+        ) => Effect.Effect<unknown, unknown, FlowRuntime.FlowInstance>
+      } | undefined
+      let bodies = 0
+      await withExecutor(record, {
+        runtime: { getRun: () => Effect.succeed({ ...launchInput.run, status, parkedBy: "foreign-host-fence" }) },
+        agent: Agent.makeNoop({
+          run: () => {
+            bodies++
+            return completed
+          }
+        }),
+        engine: (engine) => ({
+          ...engine,
+          register: (flow, execute) =>
+            Effect.gen(function*() {
+              registration = { flow, execute } as typeof registration
+              yield* engine.register(flow, execute)
+            })
+        })
+      }, () =>
+        Effect.gen(function*() {
+          if (registration === undefined) return yield* Effect.die("agent flow was not registered")
+          const instance = FlowEngine.makeInstance(registration.flow, runId)
+          const child = yield* registration.execute({ runId, planId }, runId).pipe(
+            Effect.provideService(FlowRuntime.FlowInstance, instance),
+            Effect.ensuring(Scope.close(instance.scope, Exit.void)),
+            Effect.forkChild
+          )
+          const exit = yield* Fiber.await(child)
+          expect(Exit.isFailure(exit)).toBe(true)
+          expect(instance.suspended).toBe(true)
+          expect(instance.waiting?.reason).toBe(status === "waiting-approval" ? "approval" : "event")
+          expect(bodies).toBe(0)
+          expect(record.statuses).toEqual([])
+        }))
+    })
+  }
+
   it("keeps the newer body cancellable when an older overlapping driver finishes", async () => {
     const record = recorder()
     const firstStarted = Deferred.makeUnsafe<void>()

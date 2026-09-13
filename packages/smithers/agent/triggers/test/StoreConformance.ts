@@ -120,6 +120,54 @@ export const storeConformance = <LayerError>(
       expect(state.refused).toMatchObject({ code: "invalid_options", path: "olderThan" })
     })
 
+    it("retains pending and active history while pruning unreferenced terminal records", async () => {
+      await run(Effect.gen(function*() {
+        const store = yield* TriggerStore.TriggerStore
+        const registered = yield* store.register({ ...declaration, overlap: "skip" })
+        const fire = { triggerId: declaration.id, expectedRevision: registered.revision }
+        const launch = (occurrence: number) =>
+          Effect.gen(function*() {
+            yield* store.claimFire({ ...fire, occurrence })
+            yield* store.recordResult({
+              ...fire,
+              occurrence,
+              outcome: "launched",
+              runId: "shared-run",
+              reservationId: (yield* store.inspect(declaration.id)).activeRunId!
+            })
+          })
+        yield* launch(1)
+        yield* store.recordResult({ ...fire, occurrence: 1, outcome: "completed", runId: "shared-run" })
+        yield* launch(2)
+        for (const occurrence of [3, 4, 6]) yield* store.claimFire({ ...fire, occurrence })
+        yield* store.setPending({ triggerId: declaration.id, occurrence: 4 })
+        expect(yield* store.pruneFires({ olderThan: 5 })).toBe(1)
+        expect((yield* store.history()).items.map((row) => row.occurrence)).toEqual([6, 4, 2, 1])
+        yield* store.recordResult({ ...fire, occurrence: 2, outcome: "completed", runId: "shared-run" })
+        expect(yield* store.pruneFires({ olderThan: 2 })).toBe(1)
+        expect((yield* store.history({ runId: "shared-run" })).items.map((row) => row.occurrence)).toEqual([2])
+        expect(yield* store.pruneFires({ olderThan: 5 })).toBe(1)
+        expect((yield* store.history()).items.map((row) => row.occurrence)).toEqual([6, 4])
+      }))
+    })
+
+    it("reclaims a legacy reservation that points at a missing occurrence", async () => {
+      await run(Effect.gen(function*() {
+        const store = yield* TriggerStore.TriggerStore
+        const registered = yield* store.register(declaration)
+        const fire = { triggerId: declaration.id, expectedRevision: registered.revision }
+        yield* store.claimFire({ ...fire, occurrence: 1 })
+        yield* store.recordResult({
+          ...fire,
+          occurrence: 1,
+          outcome: "launched",
+          runId: TriggerStore.reservationId(declaration.id, 9),
+          reservationId: (yield* store.inspect(declaration.id)).activeRunId!
+        })
+        expect(yield* store.claimFire({ ...fire, occurrence: 9 })).toMatchObject({ claimed: true, action: "fire" })
+      }))
+    })
+
     it("uses exact revision and enabled claim fences", async () => {
       const refusals = await run(
         Effect.gen(function*() {
@@ -159,6 +207,43 @@ export const storeConformance = <LayerError>(
       )
       expect(result.registered.input).toEqual(declaration.input)
       expect(result.stored).toMatchObject({ _tag: "Some", value: { input: declaration.input } })
+    })
+
+    it("refuses input that has no JSON representation before it reaches the column", async () => {
+      const stringify = JSON.stringify
+      JSON.stringify = (() => undefined) as unknown as typeof JSON.stringify
+      let error
+      try {
+        error = await Effect.runPromise(
+          Effect.gen(function*() {
+            const store = yield* TriggerStore.TriggerStore
+            return yield* Effect.flip(store.register(declaration))
+          }).pipe(Effect.provide(layer))
+        )
+      } finally {
+        JSON.stringify = stringify
+      }
+      expect(error).toMatchObject({ code: "invalid_trigger", path: "input" })
+    })
+
+    it("reports input it cannot serialize as a store failure rather than a defect", async () => {
+      let reads = 0
+      const input = Object.defineProperty({}, "value", {
+        enumerable: true,
+        get: () => {
+          reads++
+          if (reads === 1) return 1
+          throw new Error("getter failed")
+        }
+      })
+      const error = await Effect.runPromise(
+        Effect.gen(function*() {
+          const store = yield* TriggerStore.TriggerStore
+          return yield* Effect.flip(store.register({ ...declaration, input: input as never }))
+        }).pipe(Effect.provide(layer))
+      )
+      expect(error.code).toBe("store")
+      expect(error.message).toBe("trigger input is not JSON-serializable")
     })
 
     it("snapshots registration input before the returned Effect runs", async () => {

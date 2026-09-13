@@ -97,84 +97,100 @@ describe("Chain", () => {
   })
 
   it.each(["success", "refusal", "journal-failure"])(
-    "signals a settling entry and awaits its durable receipt before interruption returns (%s)", async (outcome) => {
-    let entered!: () => void
-    const entryStarted = new Promise<void>((resolve) => { entered = resolve })
-    let receiptStarted!: () => void
-    const receipt = new Promise<void>((resolve) => { receiptStarted = resolve })
-    let release!: () => void
-    const persistence = new Promise<void>((resolve) => { release = resolve })
-    const events: Array<Event.Event> = []
-    let calls = 0
-    let aborted = false
-    let key: Catalog.CallSlot["key"]
-    const entry: Catalog.Entry = {
-      name: "write",
-      description: "controlled write",
-      settleOnInterrupt: true,
-      handler: (_, slot) => Effect.promise(async () => {
-        calls++
-        key = slot?.key
-        entered()
-        await new Promise<void>((resolve) => slot!.signal!.addEventListener("abort", () => {
-          aborted = true
-          resolve()
-        }, { once: true }))
-        return { written: true }
-      }).pipe(Effect.flatMap((value) => outcome === "refusal"
-        ? Effect.fail(new Catalog.CallError({ name: "write", message: "cancelled" }))
-        : Effect.succeed(value)))
-    }
-    const journal = Journal.make({
-      read: Effect.sync(() => [...events]),
-      append: (event) => Effect.tryPromise({
-        try: async () => {
-          if ((event._tag === "CallSettled" && event.name === "write") || event._tag === "GateRejected") {
-            receiptStarted()
-            await persistence
-            if (outcome === "journal-failure") throw new Error("receipt failed")
-          }
-          events.push(event)
-        },
-        catch: () => new Journal.JournalError({ message: "receipt failed" })
+    "signals a settling entry and awaits its durable receipt before interruption returns (%s)",
+    async (outcome) => {
+      let entered!: () => void
+      const entryStarted = new Promise<void>((resolve) => {
+        entered = resolve
       })
-    })
-    const layers = Layer.mergeAll(
-      Layer.succeed(Journal.Journal)(journal),
-      Author.layerMock([flow(`await ctx.call("write", {})`, `return done("ok")`)]),
-      ScriptRunner.layerInProcess,
-      Catalog.layer([entry])
-    )
-    const program = Chain.run({ goal: "write once" }).pipe(Effect.provide(layers))
-    const fiber = Effect.runFork(program)
-    try {
-      await entryStarted
-      let stopped = false
-      const stopping = Effect.runPromise(Fiber.interrupt(fiber)).then(() => { stopped = true })
-      await receipt
-      expect(aborted).toBe(true)
-      expect(stopped).toBe(false)
-      expect(events.some((event) => event._tag === "CallSettled" && event.name === "write")).toBe(false)
-      release()
-      await stopping
-      const settled = events.find((event) => event._tag === "CallSettled" && event.name === "write")
-      if (outcome === "success") {
-        expect(settled).toMatchObject({ key, result: { written: true } })
-        expect(await Effect.runPromise(program)).toEqual({ _tag: "Done", value: "ok" })
-      } else if (outcome === "refusal") {
-        expect(events.some((event) => event._tag === "GateRejected")).toBe(true)
-      } else {
-        const exit = await Effect.runPromise(Fiber.await(fiber))
-        expect(exit._tag).toBe("Failure")
-        expect(String(exit)).toContain("receipt failed")
-        expect(settled).toBeUndefined()
+      let receiptStarted!: () => void
+      const receipt = new Promise<void>((resolve) => {
+        receiptStarted = resolve
+      })
+      let release!: () => void
+      const persistence = new Promise<void>((resolve) => {
+        release = resolve
+      })
+      const events: Array<Event.Event> = []
+      let calls = 0
+      let aborted = false
+      let key: Catalog.CallSlot["key"]
+      const entry: Catalog.Entry = {
+        name: "write",
+        description: "controlled write",
+        settleOnInterrupt: true,
+        handler: (_, slot) =>
+          Effect.promise(async () => {
+            calls++
+            key = slot?.key
+            entered()
+            await new Promise<void>((resolve) =>
+              slot!.signal!.addEventListener("abort", () => {
+                aborted = true
+                resolve()
+              }, { once: true })
+            )
+            return { written: true }
+          }).pipe(Effect.flatMap((value) =>
+            outcome === "refusal"
+              ? Effect.fail(new Catalog.CallError({ name: "write", message: "cancelled" }))
+              : Effect.succeed(value)
+          ))
       }
-      expect(calls).toBe(1)
-    } finally {
-      release()
-      await Effect.runPromise(Fiber.interrupt(fiber))
+      const journal = Journal.make({
+        read: Effect.sync(() => [...events]),
+        append: (event) =>
+          Effect.tryPromise({
+            try: async () => {
+              if ((event._tag === "CallSettled" && event.name === "write") || event._tag === "GateRejected") {
+                receiptStarted()
+                await persistence
+                if (outcome === "journal-failure") throw new Error("receipt failed")
+              }
+              events.push(event)
+            },
+            catch: () => new Journal.JournalError({ message: "receipt failed" })
+          })
+      })
+      const layers = Layer.mergeAll(
+        Layer.succeed(Journal.Journal)(journal),
+        Author.layerMock([flow(`await ctx.call("write", {})`, `return done("ok")`)]),
+        ScriptRunner.layerInProcess,
+        Catalog.layer([entry])
+      )
+      const program = Chain.run({ goal: "write once" }).pipe(Effect.provide(layers))
+      const fiber = Effect.runFork(program)
+      try {
+        await entryStarted
+        let stopped = false
+        const stopping = Effect.runPromise(Fiber.interrupt(fiber)).then(() => {
+          stopped = true
+        })
+        await receipt
+        expect(aborted).toBe(true)
+        expect(stopped).toBe(false)
+        expect(events.some((event) => event._tag === "CallSettled" && event.name === "write")).toBe(false)
+        release()
+        await stopping
+        const settled = events.find((event) => event._tag === "CallSettled" && event.name === "write")
+        if (outcome === "success") {
+          expect(settled).toMatchObject({ key, result: { written: true } })
+          expect(await Effect.runPromise(program)).toEqual({ _tag: "Done", value: "ok" })
+        } else if (outcome === "refusal") {
+          expect(events.some((event) => event._tag === "GateRejected")).toBe(true)
+        } else {
+          const exit = await Effect.runPromise(Fiber.await(fiber))
+          expect(exit._tag).toBe("Failure")
+          expect(String(exit)).toContain("receipt failed")
+          expect(settled).toBeUndefined()
+        }
+        expect(calls).toBe(1)
+      } finally {
+        release()
+        await Effect.runPromise(Fiber.interrupt(fiber))
+      }
     }
-  })
+  )
 
   it("runs a two-link chain to done with the golden journal", async () => {
     const { edit, events, grep, outcome } = await goldenRun()

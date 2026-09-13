@@ -2039,6 +2039,57 @@ describe("RequestExecutor", () => {
     expect(freshCalls).toBe(4)
   })
 
+  it("does not let a stale success reset its replacement's failure count", async () => {
+    let rebuilds = 0
+    let staleCalls = 0
+    let freshCalls = 0
+    await Effect.runPromise(Effect.scoped(
+      Effect.gen(function*() {
+        const release = yield* Deferred.make<void>()
+        const poisoned = HttpClient.make((attempted) => {
+          staleCalls++
+          return staleCalls === 1
+            ? Deferred.await(release).pipe(Effect.as(response(attempted, { status: 200, body: "{}" })))
+            : Effect.fail(transportError(attempted))
+        })
+        const fresh = HttpClient.make((attempted) => {
+          freshCalls++
+          return freshCalls === 1
+            ? Effect.succeed(response(attempted, { status: 200, body: "{}" }))
+            : Effect.fail(transportError(attempted))
+        })
+        const healthy = HttpClient.make((attempted) => Effect.succeed(response(attempted, { status: 200, body: "{}" })))
+        const executor = yield* RequestExecutor.makeWith({
+          client: poisoned,
+          rebuild: Effect.sync(() => {
+            rebuilds++
+            return rebuilds === 1 ? fresh : healthy
+          })
+        })
+        const hung = yield* execute(executor, request()).pipe(Effect.forkChild)
+        yield* settle
+        const exhaust = () =>
+          Effect.gen(function*() {
+            const running = yield* execute(executor, request()).pipe(Effect.flip, Effect.forkChild)
+            yield* Effect.yieldNow
+            yield* TestClock.adjust(120_000)
+            expect(expectModelError(yield* Fiber.join(running)).code).toBe("transport")
+          })
+        yield* exhaust()
+        expect((yield* execute(executor, request())).status).toBe(200)
+        expect(rebuilds).toBe(1)
+        yield* exhaust()
+        yield* Deferred.succeed(release, undefined)
+        expect((yield* Fiber.join(hung)).status).toBe(200)
+        expect((yield* execute(executor, request())).status).toBe(200)
+        expect(rebuilds).toBe(2)
+      }).pipe(
+        Effect.provide(TestClock.layer()),
+        Effect.provideService(HttpClient.TracerDisabledWhen, () => true)
+      )
+    ))
+  })
+
   it("lets a waiting caller finish the rebuild its holder abandoned", async () => {
     // Interrupting the caller that holds the replacement releases it. The
     // count is still at the bound, so the caller waiting behind it builds the

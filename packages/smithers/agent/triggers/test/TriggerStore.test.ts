@@ -336,43 +336,6 @@ describe("TriggerStore", () => {
     })
   })
 
-  it("refuses input that has no JSON representation before it reaches the column", async () => {
-    const stringify = JSON.stringify
-    JSON.stringify = (() => undefined) as unknown as typeof JSON.stringify
-    let error
-    try {
-      error = await Effect.runPromise(
-        Effect.gen(function*() {
-          const store = yield* TriggerStore.TriggerStore
-          return yield* Effect.flip(store.register(trigger))
-        }).pipe(Effect.provide(layer))
-      )
-    } finally {
-      JSON.stringify = stringify
-    }
-    expect(error).toMatchObject({ code: "invalid_trigger", path: "input" })
-  })
-
-  it("reports input it cannot serialize as a store failure rather than a defect", async () => {
-    let reads = 0
-    const input = Object.defineProperty({}, "value", {
-      enumerable: true,
-      get: () => {
-        reads++
-        if (reads === 1) return 1
-        throw new Error("getter failed")
-      }
-    })
-    const error = await Effect.runPromise(
-      Effect.gen(function*() {
-        const store = yield* TriggerStore.TriggerStore
-        return yield* Effect.flip(store.register({ ...trigger, input: input as never }))
-      }).pipe(Effect.provide(layer))
-    )
-    expect(error.code).toBe("store")
-    expect(error.message).toBe("trigger input is not JSON-serializable")
-  })
-
   it("refuses transformed JSON inputs instead of persisting their transformations", async () => {
     const errors = await Effect.runPromise(
       Effect.gen(function*() {

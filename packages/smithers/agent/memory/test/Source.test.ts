@@ -621,5 +621,4 @@ describe("Source", () => {
     })
     expect(declared.text).toBe("")
   })
-
 })

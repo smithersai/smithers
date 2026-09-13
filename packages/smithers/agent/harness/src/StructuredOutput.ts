@@ -180,7 +180,7 @@ export const maxIssues = 5
  * @slop
  */
 export const jsonSchema = (schema: Schema.Top): unknown => {
-  const document = Schema.toJsonSchemaDocument(schema)
+  const document = Schema.toJsonSchemaDocument(schema, { onExcessProperty: "error" })
   return Object.keys(document.definitions).length > 0
     ? { ...document.schema, $defs: document.definitions }
     : document.schema

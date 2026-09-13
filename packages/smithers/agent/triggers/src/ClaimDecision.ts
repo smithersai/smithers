@@ -110,7 +110,9 @@ export interface Input {
   readonly claimedAt: number
 }
 
-const decided = (claim: Claim, writes: ReadonlyArray<Write>): Decision => ({ _tag: "Decided", claim, writes })
+type AdmittedDecision = Extract<Decision, { readonly _tag: "Decided" }>
+
+const decided = (claim: Claim, writes: ReadonlyArray<Write>): AdmittedDecision => ({ _tag: "Decided", claim, writes })
 
 /**
  * What a reader finds behind a trigger's active owner: nothing, a live owner,
@@ -200,9 +202,19 @@ export const refuse = (
  * @category decision
  * @since 1.0.0-rc.0
  */
-export const decide = ({ claimedAt, fire, reservationId, snapshot }: Input): Decision => {
-  const refusal = refuse(snapshot, fire)
-  if (refusal !== undefined) return { _tag: "Refused", error: refusal }
+export const decide = (input: Input): Decision => {
+  const refusal = refuse(input.snapshot, input.fire)
+  return refusal === undefined ? decideFenced(input) : { _tag: "Refused", error: refusal }
+}
+
+/**
+ * Decides over a snapshot already admitted by {@link refuse} in the same
+ * transaction. This avoids checking the same immutable revision twice.
+ * @category decision
+ * @since 1.0.0-rc.0
+ * @private
+ */
+export const decideFenced = ({ claimedAt, fire, reservationId, snapshot }: Input): AdmittedDecision => {
   let activeRunId = snapshot.activeRunId
   let pending = snapshot.pending
   // A reservation with no claim timestamp predates the lease column. Nothing

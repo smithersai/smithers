@@ -944,6 +944,89 @@ describe("Scheduler revision fencing", () => {
     expect(runner.starts).toHaveLength(1)
   })
 
+  it("reports a non-revision claim failure without retrying or dispatching", async () => {
+    const runner = runnerFixture()
+    let claims = 0
+    let reads = 0
+    await tick({
+      ...fenced(Option.some(registered(2)), []),
+      get: () => {
+        reads++
+        return Effect.succeed(Option.some(registered(2)))
+      },
+      claimFire: () => {
+        claims++
+        return Effect.fail(new TriggerError({ code: "store", message: "claim unavailable" }))
+      }
+    }, runner)
+    expect(claims).toBe(1)
+    expect(reads).toBe(0)
+    expect(runner.starts).toHaveLength(0)
+  })
+
+  for (const current of [undefined, 1, 2]) {
+    it(`refreshes a buffered claim against revision ${current ?? "deleted"}`, async () => {
+      const claims: Array<number> = []
+      const runner = runnerFixture()
+      const first = { ...registered(1), lastFiredAt: hour }
+      await tick({
+        ...fenced(
+          current === undefined ? Option.none() : Option.some({ ...registered(current), lastFiredAt: hour }),
+          []
+        ),
+        list: () => Effect.succeed([TriggerStore.listed(first, { pendingAt: 1 })]),
+        claimPending: (fire) => {
+          claims.push(fire.expectedRevision)
+          return fire.expectedRevision === 2
+            ? Effect.succeed(Option.none())
+            : Effect.fail(new TriggerError({ code: "revision_mismatch", message: "buffer edited" }))
+        }
+      }, runner)
+      expect(claims).toEqual(current === 2 ? [1, 2] : [1])
+      expect(runner.starts).toHaveLength(0)
+    })
+  }
+
+  it("stops after a second revision mismatch and keeps earlier dispatch progress", async () => {
+    const claims: Array<number> = []
+    const runner = runnerFixture()
+    let reads = 0
+    await tick({
+      ...fenced(Option.some(registered(2)), []),
+      list: () =>
+        Effect.succeed([
+          TriggerStore.listed({
+            ...registered(1),
+            lastFiredAt: hour - 180_000,
+            cron: "* * * * *",
+            catchUp: "all",
+            maxCatchUp: 3
+          })
+        ]),
+      get: () => {
+        reads++
+        return Effect.succeed(
+          Option.some({
+            ...registered(2),
+            lastFiredAt: hour - 180_000,
+            cron: "* * * * *",
+            catchUp: "all",
+            maxCatchUp: 3
+          })
+        )
+      },
+      claimFire: (fire) => {
+        claims.push(fire.expectedRevision)
+        return claims.length === 1
+          ? Effect.succeed({ claimed: false })
+          : Effect.fail(new TriggerError({ code: "revision_mismatch", message: "edited again" }))
+      }
+    }, runner)
+    expect(claims).toEqual([1, 1, 2])
+    expect(reads).toBe(1)
+    expect(runner.starts).toHaveLength(0)
+  })
+
   it("gives up when the refreshed declaration is the one it already had", async () => {
     const claims: Array<number> = []
     const runner = runnerFixture()

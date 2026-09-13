@@ -520,7 +520,7 @@ describe("SchemaBridge", () => {
     const ServiceSchema = Schema.String.pipe(
       Schema.decodeTo(
         Schema.String,
-        SchemaTransformation.transformOrFail({
+        SchemaTransformation.transformEffect({
           decode: (value) => Effect.map(Prefix, (prefix) => `${prefix}${value}`),
           encode: (value) => Effect.map(Prefix, (prefix) => value.slice(prefix.length))
         })

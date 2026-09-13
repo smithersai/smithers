@@ -71,7 +71,7 @@ const configurationSchema = Schema.Unknown.pipe(
       typeof value === "object" && value !== null && admittedConfigs.has(value)
     ),
     {
-      decode: SchemaGetter.transformOrFail((value) =>
+      decode: SchemaGetter.transformEffect((value) =>
         Effect.try({
           try: () => snapshotRecord(value),
           catch: (cause) => {

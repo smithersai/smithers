@@ -1304,7 +1304,7 @@ export const make = (
                 outsideTransaction = false
                 yield* journal.value.whenCommitted(Effect.sync(() => {
                   outsideTransaction = true
-                })).pipe(Effect.mapError((cause) => unavailable("record", runId, String(cause), cause)))
+                }))
               }
               // A transaction already owns its writer. Waiting for admission
               // could invert that lock against another record waiting to write.
@@ -1313,14 +1313,16 @@ export const make = (
               // Keep admission behind a live write, but allow a queued paid
               // record to be cancelled before it gets the permit.
               return yield* run.admission.withPermits(1)(write)
-            }).pipe(Effect.onError(() => Effect.gen(function*() {
-              if (entered) return
-              const pending = run.pending.get(stepKey) ??
-                unavailable("record", runId, "a paid model step could not enter usage accounting")
-              // Cancellation must retain the known cost as well as its key.
-              // This synchronous transition also detects conflicting retries.
-              yield* account(run, runId, stepKey, spent, pending).pipe(Effect.ignore)
-            })))
+            }).pipe(Effect.onError(() =>
+              Effect.gen(function*() {
+                if (entered) return
+                const pending = run.pending.get(stepKey) ??
+                  unavailable("record", runId, "a paid model step could not enter usage accounting")
+                // Cancellation must retain the known cost as well as its key.
+                // This synchronous transition also detects conflicting retries.
+                yield* account(run, runId, stepKey, spent, pending).pipe(Effect.ignore)
+              })
+            ))
           }), stepKey),
       usage: withRecovered((run) => Effect.map(Ref.get(run.state), summarize)),
       usageOf: (runId) =>

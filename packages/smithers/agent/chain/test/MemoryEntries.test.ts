@@ -193,7 +193,7 @@ describe("MemoryEntries", () => {
             Layer.succeed(
               (await import("@smthrs/memory/Recall")).Recall
             )(
-              (await import("@smthrs/memory/Recall")).make({
+              (await import("@smthrs/memory/Recall")).Recall.of({
                 recall: () => Effect.fail("snap" as never)
               })
             )
@@ -223,7 +223,7 @@ describe("MemoryEntries", () => {
             Layer.succeed(
               (await import("@smthrs/memory/Recall")).Recall
             )(
-              (await import("@smthrs/memory/Recall")).make({
+              (await import("@smthrs/memory/Recall")).Recall.of({
                 recall: () => Effect.succeed({ rows: "not the contract" } as never)
               })
             )

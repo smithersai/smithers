@@ -1,4 +1,5 @@
 import { Effect, FileSystem, Option, PlatformError } from "effect"
+import * as ByteSize from "effect/ByteSize"
 
 /**
  * A virtual host tree. Discovery reads directories, inspects entries, and
@@ -33,7 +34,7 @@ const info = (type: FileSystem.File.Type, size: number): FileSystem.File.Info =>
   uid: Option.none(),
   gid: Option.none(),
   rdev: Option.none(),
-  size: FileSystem.Size(size),
+  size: ByteSize.bytes(size),
   blksize: Option.none(),
   blocks: Option.none()
 })

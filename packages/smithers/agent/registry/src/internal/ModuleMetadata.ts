@@ -74,9 +74,9 @@ const skipBlockComment = (source: string, start: number): number => {
 const skipTrivia = (source: string, start: number): number => {
   let index = start
   while (index < source.length) {
-    const character = source[index]
+    const character = source[index]!
     const next = source[index + 1]
-    if (character === "\uFEFF" || /\s/.test(character ?? "")) {
+    if (character === "\uFEFF" || /\s/.test(character)) {
       index++
       continue
     }
@@ -160,7 +160,7 @@ const nextToken = (source: string, start: number, previous: Token | undefined): 
     return undefined
   }
 
-  const character = source[index] ?? ""
+  const character = source[index]!
   if (/[A-Za-z_$]/.test(character)) {
     let end = index + 1
     while (/[A-Za-z0-9_$]/.test(source[end] ?? "")) {

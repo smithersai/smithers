@@ -151,7 +151,7 @@ const withoutRejectedNulls = (input: unknown, keys: ReadonlySet<PropertyKey>): u
  */
 const document = (schema: SchemaTypes.Top): Schema.Json | undefined => {
   try {
-    return JSON.parse(JSON.stringify(Schema.toJsonSchemaDocument(schema))) as Schema.Json
+    return JSON.parse(JSON.stringify(Schema.toJsonSchemaDocument(schema, { onExcessProperty: "error" }))) as Schema.Json
   } catch {
     return undefined
   }

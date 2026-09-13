@@ -190,15 +190,14 @@ describe("the sealed model step key", () => {
       }
     }))
 
-    // The prior unreleased literal was stale: isolated a49b68ef7d HEAD sources
-    // and the release fixes produce byte-identical canonical key material with
-    // the pinned Effect rc.112. Only this fixture was corrected; no runtime
-    // schema changed. Investigate and document any future move. The material
-    // includes the prepared wire request (route, protocol, method, url,
-    // public headers, canonical body bytes), the harness's declared key
-    // material, and — because this port declares `capabilities` — the cache
-    // environment carrying the composition token.
-    expect(observed.host).toBe("key1_b5b3584a4ab3f2df73c684edccbb962e95e5497a4c33ac14d7f6601a4b3b043f")
+    // This candidate upgrades Effect rc.112 to rc.115. Upstream refinement
+    // implementations participate in schema fingerprints, so these sealed
+    // activity keys change too (see core's SchemaUpgradeIdentity fixture and
+    // RELEASE_SUPPORT.md). Old runs must finish with their original lockfile.
+    // The key still includes the prepared request, harness declaration, and
+    // cache environment's composition token.
+    expect(observed.host).not.toBe("key1_b5b3584a4ab3f2df73c684edccbb962e95e5497a4c33ac14d7f6601a4b3b043f")
+    expect(observed.host).toBe("key1_a577eb74c0f86b94bec571cfe4ee22fc88b149a371652057677c28fb49effebe")
     // Sealed means content-addressed: the same declaration through a second
     // port of the same composition is one recorded answer, not two calls.
     expect(observed.again).toBe(observed.host)
@@ -218,8 +217,8 @@ describe("the sealed cell-call key", () => {
     // token `flows/agent/composition/v1:<digest of the layer set>`, so a rename
     // of that prefix, or a change to how the layer set is digested, moves this
     // string while leaving the sealed model key above untouched.
-    // The failure schema now includes incompatible_journal for harness format 2.
-    expect(observed.host).toBe("key1_8ab2962732794ee8d8b3bf550657b41d475fd082ec9c8c7073b1d24a8d77d4b9")
+    expect(observed.host).not.toBe("key1_8ab2962732794ee8d8b3bf550657b41d475fd082ec9c8c7073b1d24a8d77d4b9")
+    expect(observed.host).toBe("key1_a889e8b3453778007938b385090ec68cf8af50a2b26626874f88db14f852faef")
     // The composition really is in the key: the same call resolved under a
     // different layer set is a different boundary, not a cache hit.
     expect(observed.other).not.toBe(observed.host)

@@ -156,7 +156,7 @@ export const make = <E = never>(options: MakeOptions<E>): Scorer<E> => {
   return Object.assign(flow, { scorerKey, score })
 }
 
-const decodeResult = Schema.decodeUnknownEffect(Result)
+const decodeResult = Schema.decodeUnknownSync(Result)
 
 const receivedScore = (value: unknown): string => {
   try {
@@ -179,12 +179,12 @@ const receivedScore = (value: unknown): string => {
  * @since 0.1.0
  */
 export const validate = (value: unknown): Effect.Effect<Result, ScorerError> =>
-  decodeResult(value).pipe(
-    Effect.mapError((cause) =>
+  Effect.try({
+    try: () => decodeResult(value),
+    catch: (cause) =>
       new ScorerError({
         code: "invalid_score",
         message: `A scorer result must carry a finite score in [0, 1]${receivedScore(value)}`,
         cause
       })
-    )
-  )
+  })
