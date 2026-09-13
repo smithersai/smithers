@@ -1730,6 +1730,12 @@ export const createAppController = (
   }
   ctx.commands = commands
 
+  // Enter the useful first lesson through the same durable flow as replay.
+  // The start receipt makes the background repository read once per playthrough.
+  if (store.session().guide?.step === 1 && !store.session().guide?.finished && (store.session().guide?.completed?.length ?? 0) === 0) {
+    void commands.run("onboarding.act", "start").then(outcome => surfaceCommandFailure("onboarding.act", outcome))
+  }
+
   liveTutorial.resume()
   subscribeToAgent()
   // Material transitions regenerate the next-step pills through the `recommend` flow.

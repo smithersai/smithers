@@ -212,9 +212,9 @@ export const createTurnController = (
         ? {}
         : {
           onboarding: {
-            step: current.guide.step,
-            stepCount: GUIDE_LESSONS.length,
-            transcript: GUIDE_LESSONS.slice(0, current.guide.step + 1)
+            step: Math.max(0, current.guide.step - 1),
+            stepCount: GUIDE_LAST_STEP,
+            transcript: GUIDE_LESSONS.slice(1, current.guide.step + 1)
           }
         }),
       connectors: snapshot.connectors.map((connector) => ({

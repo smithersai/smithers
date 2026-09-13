@@ -3,20 +3,16 @@ import { expect, test } from "@playwright/test"
 test.use({ contextOptions: { reducedMotion: "reduce" } })
 
 for (const width of [1280, 390]) {
-  test(`welcome waits for Start tutorial without a redundant greeting at ${width}px`, async ({ page }) => {
+  test(`entry opens practice without a second start at ${width}px`, async ({ page }) => {
     await page.setViewportSize({ width, height: 844 })
     await page.clock.install()
     await page.goto("/")
-    await expect(page.getByRole("button", { name: "Start tutorial" })).toBeVisible()
+    await expect(page.getByRole("button", { name: "Start tutorial" })).toHaveCount(0)
+    await expect(page.getByRole("button", { name: "Show issues" })).toBeVisible()
+    await expect(page.getByRole("note", { name: "Help" })).toBeVisible()
     await page.clock.fastForward(10_000)
-    await expect(page.locator(".guide-shell")).toHaveAttribute("data-stage", "0")
-    await expect(page.locator(".guide-message, .guide-dialogue, .guide-speaker")).toHaveCount(0)
-    await expect(page.locator(".guide-actions button")).toHaveCount(1)
-    await expect(page.locator(".guide-goal, .guide-navigation, .guide-practice-badge")).toHaveCount(0)
-    await page.screenshot({ path: `/tmp/smithers-welcome-${width}.png` })
-    await page.getByRole("button", { name: "Start tutorial" }).focus()
-    await page.keyboard.press("Enter")
     await expect(page.locator(".guide-shell")).toHaveAttribute("data-stage", "1")
+    await expect(page.locator(".guide-back:not(.guide-skip), [data-testid=card-practice-repo]")).toHaveCount(0)
     await page.clock.runFor(1000)
     await expect(page.locator(".guide-message, .guide-dialogue, .guide-speaker")).toHaveCount(0)
     const goal = await page.getByRole("region", { name: "Goal", exact: true }).boundingBox()
@@ -42,7 +38,6 @@ test("dictation opens chat, appends recognized speech, and Escape releases the m
     }
   })
   await page.goto("/")
-  await page.getByRole("button", { name: "Start tutorial" }).click()
   await page.getByRole("button", { name: "Dictation", exact: true }).click()
   const input = page.getByTestId("composer-input")
   await expect(input).toBeVisible()

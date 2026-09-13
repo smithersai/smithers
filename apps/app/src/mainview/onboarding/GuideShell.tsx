@@ -222,7 +222,7 @@ export function GuideShell({ children, clock = guideClock }: { children: ReactNo
       if (key === 'c') return action(() => runCommandGuide('dark'))
       if (key === 'n') return action(() => runCommandGuide('notify'))
       if (key === 'arrowright') return action(() => runCommandGuide(guideForwardAction(stage)))
-      if (key === GUIDE_KEYS.back && stage > 0) return action(() => runCommandGuide('back'))
+      if (key === GUIDE_KEYS.back && stage > 1) return action(() => runCommandGuide('back'))
       if (key === 'e' && stage === GUIDE_LAST_STEP) return action(() => controller.runCommand('tut.more'))
     },
   }
@@ -299,12 +299,12 @@ export function GuideShell({ children, clock = guideClock }: { children: ReactNo
         </span>
       </header>
       <main className="guide-main">
-        <section className="guide-lesson" aria-label={`Lesson ${stage + 1}`}>
+        <section className="guide-lesson" aria-label={`Lesson ${stage}`}>
           {stage > 0 && stage < GUIDE_LAST_STEP && (
             <nav className="guide-navigation" aria-label="Lesson navigation">
-              <GuideButton className="guide-back" disabled={stage === 0} shortcut={GUIDE_KEYS.back} data-flow="onboarding.act" onClick={() => runCommandGuide("back")}>
+              {stage > 1 && <GuideButton className="guide-back" shortcut={GUIDE_KEYS.back} data-flow="onboarding.act" onClick={() => runCommandGuide("back")}>
                 Back
-              </GuideButton>
+              </GuideButton>}
               {lesson?.kind === "do" && lesson.practice === true && (
                 <GuideButton className="guide-back guide-skip" shortcut="q" data-flow="onboarding.act"
                   onClick={() => runCommandGuide("skip-practice")}>
@@ -497,9 +497,9 @@ export function GuideShell({ children, clock = guideClock }: { children: ReactNo
             })}
           </span>
         )}
-        <div className="guide-progress" aria-label={`Lesson ${stage + 1} of ${GUIDE_STAGES.length}`}>
-          {Array.from({ length: GUIDE_STAGES.length }, (_, i) => (
-            <span key={i} data-passed={i <= stage} />
+        <div className="guide-progress" aria-label={`Lesson ${stage} of ${GUIDE_LAST_STEP}`}>
+          {Array.from({ length: GUIDE_LAST_STEP }, (_, i) => (
+            <span key={i} data-passed={i + 1 <= stage} />
           ))}
         </div>
         {stage >= 1 && (

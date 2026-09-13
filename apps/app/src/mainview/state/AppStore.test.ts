@@ -620,7 +620,7 @@ test("app.reset durably clears all collections and fences late writes before reb
   }
   const reopened = await createAppStore({ kind: "localStorage", storage })
   expect(reopened.session().draft).toBe("")
-  expect(reopened.session().guide).toBeUndefined()
+  expect(reopened.session().guide).toMatchObject({ step: 1, completed: [] })
   expect(reopened.collections.messages.size).toBe(0)
   expect(reopened.collections.tabs.size).toBe(1)
   expect(reopened.collections.worldDocuments.size).toBeGreaterThan(0)

@@ -2,9 +2,9 @@ import type { Card, GuideState } from "../state/AppState"
 import { PRACTICE_REPO } from "../state/practice/PracticeRepository"
 import { GUIDE_LAST_STEP, GUIDE_STAGES } from "./lessons"
 
-/** Repair the greeting cursor from durable tutorial evidence, never replay an action. */
+/** Recover an entry cursor from durable tutorial evidence, never replay an action. */
 function resumeCursor(guide: GuideState, cards: Iterable<Card>, hasMessages = false): GuideState {
-  if (guide.finished || guide.step !== 0) return guide
+  if (guide.finished || guide.step > 1 || (guide.step === 1 && (guide.completed?.length ?? 0) > 0)) return guide
   const completed = new Set(guide.completed ?? [])
   let history = completed.size > 0 || (hasMessages && (guide.playthrough ?? 0) === 0)
   let latest = 0
@@ -21,7 +21,7 @@ function resumeCursor(guide: GuideState, cards: Iterable<Card>, hasMessages = fa
       : card.kind === "run-trace" && card.payload.kind === "change-plan" ? "plan.ready" : undefined
     if (signal !== undefined) completed.add(signal)
   }
-  if (!history) return guide
+  if (!history) return guide.step === 0 ? { ...guide, step: 1 } : guide
   completed.add("tutorial.started")
   GUIDE_STAGES.forEach((stage, index) => {
     if (stage.kind === "do" && completed.has(stage.completion)) latest = Math.max(latest, index)

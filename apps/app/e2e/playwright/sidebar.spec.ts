@@ -38,7 +38,6 @@ for (const viewport of [{ width: 1365, height: 900 }, { width: 390, height: 844 
   await expect(logo).toHaveAttribute("aria-expanded", "false")
   await input.fill("")
   await page.keyboard.press("Escape")
-  await page.getByRole("button", { name: "Start tutorial" }).click()
   await expect(page.locator(".guide-shell")).toHaveAttribute("data-stage", "1")
   await page.keyboard.press("q")
   await expect(page.locator(".guide-shell")).toHaveAttribute("data-stage", "10")

@@ -22,8 +22,8 @@ const forward = (guide: GuideState, step: number): number => {
   return next
 }
 const backward = (guide: GuideState, step: number): number => {
-  let previous = Math.max(0, step)
-  while (previous > 0 && unreachable(guide, previous)) previous -= 1
+  let previous = Math.max(1, step)
+  while (previous > 1 && unreachable(guide, previous)) previous -= 1
   return previous
 }
 
@@ -31,7 +31,7 @@ const backward = (guide: GuideState, step: number): number => {
 export function createGuideController(ctx: ControllerContext, onStart?: () => Promise<unknown>) {
   /* The optional capability reel owns its own reducer cases (onboarding/reelController.ts). */
   const reelAct = createReelController(ctx)
-  const guideAct = async (action: string, value = ""): Promise<string | void> => {
+  const applyGuideAction = async (action: string, value = ""): Promise<string | void> => {
     /*
      * Restore the demonstration's borrowed resources (theme, composer, its
      * example wait) before ordinary navigation or replay reads the guide.
@@ -45,7 +45,7 @@ export function createGuideController(ctx: ControllerContext, onStart?: () => Pr
     const guide: GuideState = migrateGuideV3(ctx.store.session().guide ?? initialGuide())
     switch (action) {
       case "start":
-        if (guide.step !== 0) return
+        if (guide.finished || guide.step > 1 || (guide.step === 1 && (guide.completed?.length ?? 0) > 0)) return
         guide.completed = [...new Set([...(guide.completed ?? []), "tutorial.started"])]
         guide.autoPaused = false
         guide.step = 1
@@ -127,7 +127,7 @@ export function createGuideController(ctx: ControllerContext, onStart?: () => Pr
       case "restart": {
         const playthrough = (guide.playthrough ?? 0) + 1
         for (const field of ["finished", "acceptedPracticeTitle", "responseId", "demoRun", "said", "declined", "repo", "pick", "notice"] as const) delete guide[field]
-        Object.assign(guide, initialGuide(), { playthrough })
+        Object.assign(guide, initialGuide(), { playthrough, completed: ["tutorial.started"] })
         break
       }
       case "open":
@@ -187,9 +187,15 @@ export function createGuideController(ctx: ControllerContext, onStart?: () => Pr
         return `Unknown onboarding action: ${action}`
     }
     await ctx.store.dispatch({ type: "guide.changed", actor: action === "advance" ? "system" : ctx.commandActor, guide }).isPersisted.promise
-    if (action === "start") {
+    if (action === "start" || action === "restart") {
       await onStart?.()
     }
+  }
+  // Boot and explicit entry share the same pending initialization and hidden read.
+  let starting: Promise<string | void> | undefined
+  const guideAct = (action: string, value = ""): Promise<string | void> => {
+    if (action !== "start") return applyGuideAction(action, value)
+    return starting ??= applyGuideAction(action, value).finally(() => { starting = undefined })
   }
   return { guideAct }
 }

@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import type { AppBootstrap } from "@smthrs/rpc/AppBootstrap"
-import { RECOMMENDATION_ID } from "./AppState"
+import { initialGuide, RECOMMENDATION_ID } from "./AppState"
 import type { Repo } from "./AppState"
 import { scopedControllers } from "./ControllerTestScope"
 import type { AppServices } from "./AppController"
@@ -84,8 +84,10 @@ const recorder = (answers: Array<() => Response> = []) => {
 
 const answer = (id: string, commands: ReadonlyArray<string>) => () => json(200, { id, commands, model: "gpt-oss-120b" })
 
-const boot = async (services: AppServices = {}, repositories = unavailableRepositories) => {
+const boot = async (services: AppServices = {}, repositories = unavailableRepositories, freshTutorial = false) => {
   const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
+  // Most tests isolate a later material event from the first-entry background read.
+  if (!freshTutorial) await store.dispatch({ type: "guide.changed", actor: "user", guide: { ...initialGuide(), completed: ["tutorial.started"] } }).isPersisted.promise
   const controller = createAppController(store, repositories, silentAgent, {
     bootstrap: cloudBootstrap,
     recommender: { enabled: true, debounceMs: 0 },
@@ -350,8 +352,7 @@ describe("recommend: the flow", () => {
 
 test("a background repository check regenerates suggestions using hidden observations", async () => {
   const worker = recorder([answer("repo-check", ["issues.list"])])
-  const { store, controller } = await boot({ fetchImpl: worker.fetchImpl })
-  await controller.guideAct("start")
+  const { store } = await boot({ fetchImpl: worker.fetchImpl }, unavailableRepositories, true)
   await settle(12)
   const request = worker.recommends().at(-1)?.body
   expect(request).toBeDefined()

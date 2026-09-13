@@ -74,10 +74,7 @@ const boot = async (page: Page, baseURL: string | undefined): Promise<TutorialHo
   await expect(shell(page)).toHaveAttribute("data-theme", "light")
   const now = await page.evaluate(() => Date.now())
   await page.clock.pauseAt(new Date(now + 1000))
-  if (await stageOf(page) === 0) {
-    await page.getByRole("button", { name: "Start tutorial" }).click()
-    await advanceTo(page, 1)
-  }
+  await expect(shell(page)).toHaveAttribute("data-stage", "1")
   return host
 }
 /** A reload under the paused clock (the OAuth and install hops): pump until the shell is back. */

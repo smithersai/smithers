@@ -3,19 +3,20 @@ import { GUIDE_RESERVED_KEYS, GUIDE_STAGES, lessonMessage } from "./lessons"
 // The explicit extension: on a case-insensitive filesystem "./reel" can resolve to Reel.tsx.
 import { REEL_BUTTON } from "./reel.ts"
 
-test("every lesson letter is unique, single, lowercase, and clear of the shell's reserved keys", () => {
-  const keys: Array<string> = []
+test("each lesson's shortcuts are unique, single, lowercase, and clear of the shell's reserved keys", () => {
   for (const lesson of GUIDE_STAGES) {
-    if (lesson.kind !== "do") continue
-    for (const action of [...lesson.actions, ...(lesson.secondary === undefined ? [] : [lesson.secondary])]) {
+    const keys: Array<string> = []
+    const actions = lesson.kind === "do"
+      ? [...lesson.actions, ...(lesson.secondary === undefined ? [] : [lesson.secondary])]
+      : lesson.optionalAction === undefined ? [] : [lesson.optionalAction]
+    for (const action of actions) {
       if (action.key === "⌘K") continue // the ⌘K lesson teaches the chord itself
       expect(action.key).toMatch(/^[a-z]$/)
       keys.push(action.key)
     }
+    expect(new Set(keys).size).toBe(keys.length)
+    for (const reserved of GUIDE_RESERVED_KEYS) expect(keys).not.toContain(reserved)
   }
-  keys.push(REEL_BUTTON.key)
-  expect(new Set(keys).size).toBe(keys.length)
-  for (const reserved of GUIDE_RESERVED_KEYS) expect(keys).not.toContain(reserved)
   expect(REEL_BUTTON.key).toBe("e")
 })
 

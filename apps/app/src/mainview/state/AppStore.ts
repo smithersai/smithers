@@ -850,7 +850,9 @@ const seed = async (collections: StoredCollections, persistence: CollectionPersi
     const currentGuide = collections.sessions.get(SESSION_ID)?.guide ?? initialGuide()
     {
       const resumed = resumeTutorial(currentGuide, collections.cards.values(), collections.messages.size > 0)
-      if (resumed !== currentGuide) collections.sessions.update(SESSION_ID, draft => { draft.guide = resumed })
+      if (resumed !== currentGuide || collections.sessions.get(SESSION_ID)?.guide === undefined) {
+        collections.sessions.update(SESSION_ID, draft => { draft.guide = resumed })
+      }
     }
     // Wave 14 §1: nothing seeds the transcript. Signed out, the auth message is
     // the whole conversation; signed in, the transcript opens clean and the

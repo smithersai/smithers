@@ -693,7 +693,7 @@ export const GuideSchema = z.object({
   sound: z.boolean()
 })
 export type GuideState = z.infer<typeof GuideSchema>
-export const initialGuide = (): GuideState => ({ version: 3, sequence: "practice-v4", step: 0, completed: [], autoPaused: false, conversationOpen: false,
+export const initialGuide = (): GuideState => ({ version: 3, sequence: "practice-v4", step: 1, completed: [], autoPaused: false, conversationOpen: false,
   library: false, librarian: false, heard: "", project: "", prototypeTitle: "A little room for big ideas", revised: false, sound: false })
 
 export const SessionSchema = z.object({

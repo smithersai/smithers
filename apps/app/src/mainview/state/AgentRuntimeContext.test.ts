@@ -320,21 +320,21 @@ describe("per-turn runtime context", () => {
     const requests: StartAgentTurnRequest[] = []
     const controller = createAppController(store, unavailableRepositories, recordingAgent(requests))
 
-    // No guide at all (a session that never entered the tutorial): no block.
+    // Direct entry already has the first practice lesson in its durable context.
     controller.send("hi")
     await settled()
-    expect(requests[0]?.context?.onboarding).toBeUndefined()
+    expect(requests[0]?.context?.onboarding?.step).toBe(0)
 
     await store.dispatch({ type: "guide.changed", actor: "user", guide: { ...initialGuide(), step: 7 } }).isPersisted.promise
     controller.send("what is this?")
     await settled()
     const onboarding = requests[1]?.context?.onboarding
-    expect(onboarding?.step).toBe(7)
-    expect(onboarding?.stepCount).toBe(GUIDE_LESSONS.length)
-    expect(onboarding?.transcript).toEqual(GUIDE_LESSONS.slice(0, 8))
-    expect(onboarding?.transcript[7]).toBe(GUIDE_LESSONS[7])
+    expect(onboarding?.step).toBe(6)
+    expect(onboarding?.stepCount).toBe(GUIDE_LAST_STEP)
+    expect(onboarding?.transcript).toEqual(GUIDE_LESSONS.slice(1, 8))
+    expect(onboarding?.transcript[6]).toBe(GUIDE_LESSONS[7])
     const rendered = renderAgentRuntimeContext(requests[1]?.context as AgentRuntimeContext)
-    expect(rendered).toContain(`the user is on lesson 8 of ${GUIDE_LESSONS.length}`)
+    expect(rendered).toContain(`the user is on lesson 7 of ${GUIDE_LAST_STEP}`)
     expect(rendered).toContain("onboarding.act finish")
 
     await store.dispatch({ type: "guide.changed", actor: "user", guide: { ...initialGuide(), step: GUIDE_LAST_STEP } }).isPersisted.promise
@@ -345,11 +345,13 @@ describe("per-turn runtime context", () => {
 })
 
 
-test("tutorial repository observations reach the agent as hidden structured context", async () => {
+test("direct tutorial entry and replay initialize hidden repository context without a start gate", async () => {
   const store = await webStore()
   const requests: StartAgentTurnRequest[] = []
   const controller = createAppController(store, unavailableRepositories, recordingAgent(requests))
-  await controller.guideAct("start")
+  await settled()
+  expect(store.session().guide).toMatchObject({ step: 1, completed: ["tutorial.started"] })
+  expect(store.collections.cards.size).toBe(0)
   controller.send("What issues are available?")
   await settled()
   const context = requests[0]?.context
@@ -360,5 +362,6 @@ test("tutorial repository observations reach the agent as hidden structured cont
   await controller.guideAct("restart")
   controller.send("What does this new tutorial know?")
   await settled()
-  expect(requests[1]?.context?.repositoryUpdate).toBeUndefined()
+  expect(store.session().guide).toMatchObject({ step: 1, playthrough: 1, completed: ["tutorial.started"] })
+  expect(requests[1]?.context?.repositoryUpdate).toMatchObject({ repo: "practice:smithersai/hello-server", openIssues: 2, openPrs: 1 })
 })

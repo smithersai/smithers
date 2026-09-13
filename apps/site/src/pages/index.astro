@@ -267,14 +267,14 @@ const githubHref = "https://github.com/smithersai/smithers"
     --home-accent: #3a756b;
     --home-accent-hover: #2f6158;
     --home-accent-ink: #ffffff;
-    --home-key-bg: rgb(255 255 255 / 18%);
+    --home-key-bg: #f7f6f1;
   }
   @media (prefers-color-scheme: dark) {
     :global(:root) {
       --home-accent: #9bd5c6;
       --home-accent-hover: #b4e2d6;
       --home-accent-ink: #011627;
-      --home-key-bg: rgb(1 22 39 / 12%);
+      --home-key-bg: #14312b;
     }
   }
 
@@ -326,7 +326,7 @@ const githubHref = "https://github.com/smithersai/smithers"
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    gap: 0.9rem;
+    gap: 1.25rem;
     min-width: 220px;
     min-height: 56px;
     padding: 0.95rem 2.1rem;
@@ -368,16 +368,23 @@ const githubHref = "https://github.com/smithersai/smithers"
   }
   /* The app's key chip (.guide-primary .guide-button-key), tinted for the filled button. */
   .start-key {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
     flex-shrink: 0;
+    min-width: 32px;
+    min-height: 32px;
+    box-sizing: border-box;
     font-family: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-    font-size: 0.8rem;
-    font-weight: 500;
-    line-height: 1.4;
-    padding: 2px 7px;
-    border-radius: 4px;
+    font-size: 1rem;
+    font-weight: 600;
+    line-height: 1.2;
+    padding: 3px 8px;
+    border: 1px solid color-mix(in srgb, var(--home-accent) 35%, var(--home-key-bg));
+    border-radius: 5px;
     background: var(--home-key-bg);
-    color: inherit;
-    box-shadow: inset 0 1px 0 rgb(255 255 255 / 14%), 0 1px 0 rgb(var(--shadow-rgb) / 14%);
+    color: var(--home-accent);
+    box-shadow: inset 0 1px 0 rgb(255 255 255 / 14%), 0 2px 0 rgb(var(--shadow-rgb) / 25%);
     transition: transform 100ms var(--ease), box-shadow 100ms var(--ease);
   }
   .start:active .start-key,

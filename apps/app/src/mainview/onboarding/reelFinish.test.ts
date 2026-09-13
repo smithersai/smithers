@@ -19,7 +19,7 @@ test("Finish persists across reload and only explicit restart clears it", async 
   const resumed = createGuideController({ store: reloaded, commandActor: "user" } as unknown as ControllerContext)
   await resumed.guideAct("restart")
   expect(reloaded.session().guide?.finished).not.toBe(true)
-  expect(reloaded.session().guide?.step).toBe(0)
+  expect(reloaded.session().guide?.step).toBe(1)
   await reloaded.dispose?.()
 })
 

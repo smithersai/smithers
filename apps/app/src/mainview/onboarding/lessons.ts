@@ -45,10 +45,10 @@ export type GuideLesson = {
 }
 
 export const GUIDE_STAGES: readonly GuideLesson[] = [
-  /* The tutorial waits for the explicit Start tutorial action. */
+  /* Retired entry slot: preserve persisted lesson indices without rendering a gate. */
   /* 0 */ { kind: "do", message: "", completion: "tutorial.started", skippable: false,
-    instruction: "Starts the tutorial.",
-    actions: [{ label: "Start tutorial", key: "t", flow: "onboarding.act", args: "start" }] },
+    instruction: "",
+    actions: [] },
   /* 1 */ { kind: "do", practice: true, message: "", completion: "issues.opened", skippable: false,
     help: { actionKey: "i", content: "Start with the practice repository’s issues. Click Show issues or press i." },
     instruction: "Lists the practice repository's open issues.",

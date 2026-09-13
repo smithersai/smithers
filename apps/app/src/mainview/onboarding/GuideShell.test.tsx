@@ -89,9 +89,9 @@ const settle = async () => {
 }
 
 test("every beat has keyboard navigation, one pill shape, and no numbered instruction rows", async () => {
-  for (let step = 0; step <= GUIDE_LAST_STEP; step++) {
+  for (let step = 1; step <= GUIDE_LAST_STEP; step++) {
     const host = await mountGuide(step, still, { repo: "acme/api" })
-    if (step > 0 && step < GUIDE_LAST_STEP) {
+    if (step > 1 && step < GUIDE_LAST_STEP) {
       const back = host.querySelector('[aria-keyshortcuts="b"]')
       expect(back).not.toBeNull()
       expect(text(back)).toBe("Back b")
@@ -211,45 +211,45 @@ test("Skip practice lands on the bridge and marks the goal skipped", async () =>
 
 test("overlapping tutorial shortcuts highlight together and only the final release dispatches", async () => {
   const calls: Array<[string, string?]> = []
-  const host = await mountGuide(0, still, {}, c => {
+  const host = await mountGuide(1, still, {}, c => {
     spyOn(c, "runCommand").mockImplementation((name, args) => { calls.push([name, args]); return true })
   })
-  const tutorial = host.querySelector<HTMLElement>('[aria-keyshortcuts="t"]')!
+  const tutorial = host.querySelector<HTMLElement>('[aria-keyshortcuts="i"]')!
   const sound = host.querySelector<HTMLElement>('[aria-keyshortcuts="s"]')!
   const key = (type: string, key: string, repeat = false) => document.dispatchEvent(new KeyboardEvent(type, { key, bubbles: true, cancelable: true, repeat }))
-  key('keydown', 't')
+  key('keydown', 'i')
   key('keydown', 's')
-  key('keydown', 't', true)
+  key('keydown', 'i', true)
   expect(tutorial.hasAttribute('data-pressed')).toBe(true)
   expect(sound.hasAttribute('data-pressed')).toBe(true)
   expect(calls).toEqual([])
-  key('keyup', 't')
+  key('keyup', 'i')
   expect(tutorial.hasAttribute('data-pressed')).toBe(false)
   expect(sound.hasAttribute('data-pressed')).toBe(true)
   expect(calls).toEqual([])
   key('keyup', 's')
   expect(sound.hasAttribute('data-pressed')).toBe(false)
   expect(calls).toEqual([['onboarding.act', 'sound']])
-  key('keydown', 't')
+  key('keydown', 'i')
   expect(calls).toHaveLength(1)
-  key('keyup', 't')
-  expect(calls).toEqual([['onboarding.act', 'sound'], ['onboarding.act', 'start']])
+  key('keyup', 'i')
+  expect(calls).toEqual([['onboarding.act', 'sound'], ['issues.list', 'open practice:smithersai/hello-server']])
 })
 
 test("held input survives an incidental tutorial state render", async () => {
   let controller!: ReturnType<typeof createAppController>
   const calls: Array<[string, string?]> = []
-  const host = await mountGuide(0, still, {}, c => {
+  const host = await mountGuide(1, still, {}, c => {
     controller = c
     spyOn(c, 'runCommand').mockImplementation((name, args) => { calls.push([name, args]); return true })
   })
-  document.dispatchEvent(new KeyboardEvent('keydown', { key: 't', bubbles: true, cancelable: true }))
+  document.dispatchEvent(new KeyboardEvent('keydown', { key: 'i', bubbles: true, cancelable: true }))
   await controller.guideAct('pause')
   await settle()
-  expect(host.querySelector('[aria-keyshortcuts="t"]')!.hasAttribute('data-pressed')).toBe(true)
+  expect(host.querySelector('[aria-keyshortcuts="i"]')!.hasAttribute('data-pressed')).toBe(true)
   expect(calls).toEqual([])
-  document.dispatchEvent(new KeyboardEvent('keyup', { key: 't', bubbles: true, cancelable: true }))
-  expect(calls).toEqual([['onboarding.act', 'start']])
+  document.dispatchEvent(new KeyboardEvent('keyup', { key: 'i', bubbles: true, cancelable: true }))
+  expect(calls).toEqual([['issues.list', 'open practice:smithersai/hello-server']])
 })
 
 test("first practice help describes the suggested action without emitting a notification", async () => {
@@ -289,16 +289,18 @@ test("lesson keys cannot collide with Back, Dictation, or Sound", () => {
   expect(GUIDE_STAGES.flatMap(lesson => lesson.kind === 'do' ? lesson.actions : []).find(action => action.flow === 'wiki.create')?.key).toBe('k')
 })
 
-test("Show issues, Back, Chat, Sound, and Dictation share a keycap control", async () => {
+test("Show issues, Chat, Sound, and Dictation share a keycap control; Back starts at the next lesson", async () => {
   const host = await mountGuide(1, still)
-  for (const shortcut of ['i', 'b', 'Meta+K Control+K', 's', 'v']) {
+  for (const shortcut of ['i', 'Meta+K Control+K', 's', 'v']) {
     const button = host.querySelector<HTMLButtonElement>(`button[aria-keyshortcuts="${shortcut}"]`)!
     expect(button).not.toBeNull()
     expect(button.classList.contains('guide-button')).toBe(true)
     expect(button.querySelector(':scope > .guide-button-content')).not.toBeNull()
     expect(button.querySelector(':scope > .guide-button-key')).not.toBeNull()
   }
-  expect(text(host.querySelector('[aria-keyshortcuts="b"]'))).toBe('Back b')
+  expect(host.querySelector('[aria-keyshortcuts="b"]')).toBeNull()
+  const next = await mountGuide(2, still)
+  expect(text(next.querySelector('[aria-keyshortcuts="b"]'))).toBe('Back b')
 })
 
 test("Back and Dictation compete on release; Wiki uses its own key", async () => {

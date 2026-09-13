@@ -27,16 +27,16 @@ test("old recorded commit history stays visible while live tutorial resumes at r
   await second.dispose?.()
 })
 
-test("only a new tutorial waits at Start; reloading an explicit replay preserves its new playthrough", async () => {
+test("new tutorials and legacy entry cursors open practice; replay ignores old artifacts", async () => {
   const storage = host()
   const first = await createAppStore({ kind: "localStorage", storage })
-  expect((first.session().guide ?? initialGuide()).step).toBe(0)
+  expect((first.session().guide ?? initialGuide()).step).toBe(1)
   await first.dispatch({ type: "guide.changed", actor: "user", guide: { ...initialGuide(), step: 0, playthrough: 1 } }).isPersisted.promise
   await first.dispatch({ type: "card.upsert", actor: "system", card: {
     id: "old-practice-commits", kind: "commit-pick", title: "Old commits", status: "active", createdAt: 1, ordinal: 1, payload: practicePicker()
   } }).isPersisted.promise
   await first.dispose?.()
   const second = await createAppStore({ kind: "localStorage", storage })
-  expect(second.session().guide).toMatchObject({ step: 0, playthrough: 1, completed: [] })
+  expect(second.session().guide).toMatchObject({ step: 1, playthrough: 1, completed: [] })
   await second.dispose?.()
 })
