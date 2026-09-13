@@ -1,6 +1,6 @@
 
-/* E, not W: W is Create Wiki in the lessons (onboarding SCRIPT v4). */
-export const REEL_BUTTON = { label: "What else can you do?", command: "tut.more", key: "E" } as const
+/* e, not w: w is Create Wiki in the lessons (onboarding SCRIPT v4). */
+export const REEL_BUTTON = { label: "What else can you do?", command: "tut.more", key: "e" } as const
 
 export const REEL_STAGES = [
   { id: "theme", kind: "say", message: "I can change the theme, and put it back when I'm done.", demo: "theme" },

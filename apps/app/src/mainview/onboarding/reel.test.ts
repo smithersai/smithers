@@ -1,5 +1,9 @@
 import { expect, test } from "bun:test"
-import { REEL_STAGES, dispatchReelDemo, scheduleReel } from "./reel.ts"
+import { REEL_BUTTON, REEL_STAGES, dispatchReelDemo, scheduleReel } from "./reel.ts"
+
+test("the reel button's single-letter key is lowercase", () => {
+  expect(REEL_BUTTON.key).toMatch(/^[a-z]$/)
+})
 
 test("every capability keeps its copy and demo", () => {
   expect(REEL_STAGES.map(s => s.demo)).toEqual(["theme", "notify", "sound", "profile", "wait", "create-flow", "composer", "prototype", "revision", "plan", "review"])

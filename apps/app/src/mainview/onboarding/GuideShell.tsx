@@ -337,7 +337,7 @@ export function GuideShell({ children, clock = guideClock }: { children: ReactNo
               {lesson?.kind === "do" && lesson.practice === true && (
                 <button className="guide-back guide-skip" type="button" aria-keyshortcuts="q" data-flow="onboarding.act"
                   onClick={() => runCommandGuide("skip-practice")}>
-                  Skip tutorial {keyHint("Q")}
+                  Skip tutorial {keyHint("q")}
                 </button>
               )}
               {showNext && (
@@ -513,7 +513,7 @@ export function GuideShell({ children, clock = guideClock }: { children: ReactNo
         >
           {guide.sound ? <Volume2 size={15} /> : <VolumeX size={15} />}
           <span>Sound {guide.sound ? "on" : "off"}</span>
-          {keyHint("S")}
+          {keyHint("s")}
         </button>
         {/* Background runs stay in the chrome after the tutorial ends (SCRIPT v4 beat 12): the footer is the chrome the terminal keeps. */}
         {librarianRuns.length > 0 && stage >= GUIDE_BRIDGE && (

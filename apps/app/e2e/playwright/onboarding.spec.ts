@@ -117,7 +117,7 @@ test("the login pill (beat 10) carries L and L dispatches the GitHub sign-in rou
   await expect(login).toBeVisible()
   await expect(login).toHaveAttribute("data-flow", "auth.sign-in")
   await expect(login).toHaveAttribute("aria-keyshortcuts", "l")
-  await expect(login.locator("kbd")).toHaveText("L")
+  await expect(login.locator("kbd")).toHaveText("l")
   const request = page.waitForRequest(request => new URL(request.url()).pathname === "/api/auth/github/start")
   await page.keyboard.press("l")
   await request
