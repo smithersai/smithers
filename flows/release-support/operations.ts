@@ -353,6 +353,7 @@ export const operations = ({ root, run = commandRunner(root), tweet = postTweet,
   const build = async (evidence: Evidence, signal?: AbortSignal): Promise<Evidence> => {
     await assertHead(evidence.sourceSha, signal)
     await run(process.execPath, ["scripts/build-release.mjs"], signal ? { signal } : {})
+    await run(process.execPath, ["scripts/check-api-baseline.mjs"], signal ? { signal } : {})
     return evidence
   }
 
