@@ -32,7 +32,7 @@ Requests persist an idempotency key before submission. Reload reconnects to the 
 
 Issue list → issue detail and diff → file replace the current embedded frame, with persisted Back/Forward history. Pull requests open their own chat cards. Issue actions expose comment, close, repro, POC, implementation, existing flows, and Add flow through the shared flow registry.
 
-Starting the tutorial runs `repo.update`. Repository notifications are scoped by identity and repository, deduplicated by source and version, and track processing, announcement, read versions, and tags separately. Source failures appear as partial updates. Marking one update read cannot consume a newer notification version.
+Starting the tutorial runs `repo.update` and shows the example-repository tip in the notification stack. The tip retains its accent styling, can be dismissed, and disappears automatically after 15 seconds. Repository notifications are scoped by identity and repository, deduplicated by source and version, and track processing, announcement, read versions, and tags separately. Source failures appear as partial updates. Marking one update read cannot consume a newer notification version.
 
 The greeting has one Start tutorial action. Suggested actions follow the transcript content. Body typography is 16px and the chat column is wider. Chat and Dictation are separate footer controls. Command-K opens the composer; sending an accepted message closes it. Dictation fills a draft for review and submission. The sidebar starts closed on every launch; the Smithers logo or W toggles it, while text fields retain ordinary typing.
 

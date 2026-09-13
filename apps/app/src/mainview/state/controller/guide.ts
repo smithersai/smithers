@@ -187,7 +187,15 @@ export function createGuideController(ctx: ControllerContext, onStart?: () => Pr
         return `Unknown onboarding action: ${action}`
     }
     await ctx.store.dispatch({ type: "guide.changed", actor: action === "advance" ? "system" : ctx.commandActor, guide }).isPersisted.promise
-    if (action === "start") await onStart?.()
+    if (action === "start") {
+      const lesson = GUIDE_STAGES[guide.step]
+      if (lesson?.kind === "do" && lesson.tip) {
+        const key = `guide-tip-${crypto.randomUUID()}`
+        ctx.store.dispatch({ type: "toast.shown", actor: "system", key, title: "Tip" })
+        ctx.resolveToast(key, { status: "ok", detail: lesson.tip, autoDismissMs: 15_000 })
+      }
+      await onStart?.()
+    }
   }
   return { guideAct }
 }

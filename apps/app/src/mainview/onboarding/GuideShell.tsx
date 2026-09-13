@@ -368,9 +368,6 @@ export function GuideShell({ children, clock = guideClock }: { children: ReactNo
               </ol>
             </section>
           )}
-          {lesson?.kind === "do" && lesson.tip && <aside className="guide-tip" aria-label="Tip">
-            <strong>Tip</strong><p>{lesson.tip}</p>
-          </aside>}
           <div
             className="guide-transcript"
             role="log"
@@ -555,8 +552,8 @@ export function GuideShell({ children, clock = guideClock }: { children: ReactNo
       {toasts.length > 0 && (
         <aside className="guide-toasts" aria-label="Notifications">
           {[...toasts].sort((a, b) => b.createdAt - a.createdAt).map((toast) => (
-            <div className="guide-toast" key={toast.id} data-toast-status={toast.status} role={toast.status === "failed" ? "alert" : "status"}>
-              {toast.status === "running" ? <Spinner size="sm" aria-label="Working" /> : toast.status === "ok" ? <Check size={17} aria-hidden="true" /> : <X size={17} aria-hidden="true" />}
+            <div className={`guide-toast${toast.key.startsWith("guide-tip-") ? " guide-tip" : ""}`} key={toast.id} data-toast-status={toast.status} role={toast.status === "failed" ? "alert" : "status"}>
+              {!toast.key.startsWith("guide-tip-") && (toast.status === "running" ? <Spinner size="sm" aria-label="Working" /> : toast.status === "ok" ? <Check size={17} aria-hidden="true" /> : <X size={17} aria-hidden="true" />)}
               <div>
                 <strong>{toast.title}</strong>
                 {toast.detail && <p>{toast.detail}</p>}

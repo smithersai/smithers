@@ -1490,8 +1490,8 @@
 .guide-composer-layer:has(.guide-dictation-stop) { flex-direction: column; }
 .guide-dictation-stop { display: flex; align-items: center; gap: 8px; padding: 8px 12px !important; color: var(--g-accent) !important; }
 
-.guide-tip { text-align: left; padding: 16px 20px; border-left: 4px solid var(--g-accent); border-radius: 8px; background: color-mix(in srgb, var(--g-accent) 8%, var(--g-panel)); margin: 8px 0 24px; }
+.guide-tip { text-align: left; padding: 16px 20px; border-left: 4px solid var(--g-accent); border-radius: 8px; background: color-mix(in srgb, var(--g-accent) 8%, var(--g-panel)); }
 .guide-tip strong { display: block; margin-bottom: 6px; color: var(--g-accent); }
-.guide-tip p { font-size: var(--fs-body); line-height: 1.6; }
+.guide-tip p { font-size: var(--fs-body); line-height: 1.6; color: var(--g-ink); }
 
 .guide-transcript > [data-tutorial-cards] { min-width: 0; }

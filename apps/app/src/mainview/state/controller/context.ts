@@ -106,7 +106,7 @@ export interface ControllerContext {
   /** Resolve a toast; an ok outcome dismisses itself (failures.ts resolveToast). */
   resolveToast: (
     key: string,
-    outcome: { readonly status: "ok" | "failed"; readonly title?: string; readonly detail: string }
+    outcome: { readonly status: "ok" | "failed"; readonly title?: string; readonly detail: string; readonly autoDismissMs?: number }
   ) => void
 }
 

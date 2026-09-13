@@ -32,7 +32,7 @@ export interface FailureController {
    */
   readonly resolveToast: (
     key: string,
-    outcome: { readonly status: "ok" | "failed"; readonly title?: string; readonly detail: string }
+    outcome: { readonly status: "ok" | "failed"; readonly title?: string; readonly detail: string; readonly autoDismissMs?: number }
   ) => void
   readonly dismissToast: (id: string) => void
   readonly surfaceCommandFailure: (name: string, outcome: CommandOutcome) => void
@@ -65,7 +65,7 @@ export const createFailureController = (ctx: ControllerContext): FailureControll
       const current = ctx.store.collections.toasts.get(id)
       if (current === undefined || current.status !== "ok" || current.updatedAt !== resolvedAt) return
       ctx.store.dispatch({ type: "toast.dismissed", actor: "system", id })
-    }, ctx.toastAutoDismissMs)
+    }, outcome.autoDismissMs ?? ctx.toastAutoDismissMs)
     ctx.unref(dismiss)
   }
   /*
