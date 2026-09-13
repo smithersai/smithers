@@ -79,7 +79,7 @@
 }
 
 .app-shell .smithers-transcript .sui-chat-messages {
-	width: min(100%, 760px);
+	width: min(100%, var(--chat-max-width));
 	padding: 42px 24px 24px;
 	gap: 8px;
 }
@@ -91,7 +91,7 @@
 .app-shell .smithers-chat-message .sui-chat-bubble,
 .app-shell .sui-chat-message[data-role="assistant"] .sui-chat-bubble-pending {
 	position: relative;
-	max-width: min(78%, 580px);
+	max-width: min(78%, 720px);
 	padding: 7px 10px 6px;
 	border-radius: 12px;
 	background: var(--bubble-incoming);
@@ -276,7 +276,7 @@
 .composer-wrap {
 	position: relative;
 	z-index: 25;
-	width: min(100%, 760px);
+	width: min(100%, var(--chat-max-width));
 	margin: 0 auto;
 	padding: 10px 24px 18px;
 	background: linear-gradient(to top, var(--bg) 60%, transparent);

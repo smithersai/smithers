@@ -132,7 +132,7 @@
   animation: none;
 }
 .guide-main {
-  max-width: 760px;
+  max-width: var(--chat-max-width);
   margin: 0 auto;
   padding: 8px 35px 12px;
 }
@@ -725,7 +725,7 @@
   transition-delay: 0s;
 }
 .guide-composer-clip {
-  width: min(720px, 100%);
+  width: min(var(--chat-max-width), 100%);
   min-height: 0;
   max-height: 100%;
   display: flex;
