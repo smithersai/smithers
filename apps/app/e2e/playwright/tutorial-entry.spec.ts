@@ -8,6 +8,11 @@ test("the homepage's new-tab destination opens the tutorial directly", async ({ 
   await expect(page.getByRole("note", { name: "Help" })).toBeVisible()
   await expect(page.getByRole("button", { name: "Start tutorial", exact: true })).toHaveCount(0)
   await expect(page.locator(".guide-shell")).toHaveAttribute("data-stage", "1")
+  await page.keyboard.press("i")
+  await expect(page.getByRole("button", { name: "Read issue #3", exact: true })).toBeVisible()
+  await page.reload()
+  await expect(page.getByRole("button", { name: "Read issue #3", exact: true })).toBeVisible()
+  expect(new URL(page.url()).searchParams.has("tutorial")).toBe(true)
 })
 
 for (const width of [1280, 390]) {

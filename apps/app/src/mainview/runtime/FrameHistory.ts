@@ -35,7 +35,7 @@ export const parseFramePath = (pathname: string): FrameLocation | undefined => {
 }
 
 interface BrowserHistoryHost {
-  readonly location: { readonly pathname: string }
+  readonly location: { readonly pathname: string; readonly search?: string }
   readonly history: {
     readonly state: unknown
     pushState: (data: unknown, unused: string, url?: string | URL | null) => void
@@ -83,7 +83,9 @@ export const createBrowserFrameHistory = (
   host: BrowserHistoryHost,
   options: BrowserFrameHistoryOptions = {}
 ): FrameHistoryPort => {
-  const pinned = pathRepo(host.location.pathname) !== null || options.keepUrl === true ? host.location.pathname : undefined
+  // Tutorial entry is explicit even on a repository URL; retain it on reload.
+  const tutorial = new URLSearchParams(host.location.search).has("tutorial") ? "?tutorial" : ""
+  const pinned = pathRepo(host.location.pathname) !== null || options.keepUrl === true ? host.location.pathname + tutorial : undefined
   const current = (): FrameLocation | undefined =>
     pinned === undefined ? parseFramePath(host.location.pathname) : stateLocation(host.history.state)
   const url = (location: FrameLocation): string => pinned ?? framePath(location)

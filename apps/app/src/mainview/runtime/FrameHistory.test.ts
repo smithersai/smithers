@@ -33,7 +33,10 @@ const browser = (pathname: string) => {
     for (const listener of listeners) listener()
   }
   const host = {
-    location: { get pathname() { return entries[index]!.pathname } },
+    location: {
+      get pathname() { return new URL(entries[index]!.pathname, "https://smithers.sh").pathname },
+      get search() { return new URL(entries[index]!.pathname, "https://smithers.sh").search }
+    },
     history: {
       get state() { return entries[index]!.state },
       pushState: (state: unknown, _unused: string, url?: string | URL | null) => {
@@ -57,6 +60,19 @@ const root: FrameLocation = { workspaceId: "workspace-default", branchId: "branc
 const card: FrameLocation = { workspaceId: "workspace-default", branchId: "branch-main", frameId: "frame-card:branch-main:card-1" }
 
 describe("browser frame history", () => {
+  test("tutorial entry survives frame navigation and a fresh history adapter", () => {
+    const { host, entries } = browser("/smithersai/smithers/?tutorial")
+    const history = createBrowserFrameHistory(host)
+    history.replace(root)
+    history.push(card)
+    expect(entries()).toEqual(["/smithersai/smithers/?tutorial", "/smithersai/smithers/?tutorial"])
+    const restored = createBrowserFrameHistory(host)
+    restored.replace(card)
+    expect(host.location.search).toBe("?tutorial")
+    restored.back()
+    expect(restored.current()).toEqual(root)
+  })
+
   test("booted from /owner/name, push and replace leave the pathname untouched and back/forward still report frames", () => {
     const { host, entries } = browser("/smithersai/smithers")
     const history = createBrowserFrameHistory(host)

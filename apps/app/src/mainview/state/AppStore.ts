@@ -1885,7 +1885,7 @@ const initializeAppStore = async (resolved: ResolvedPersistence): Promise<AppSto
           collections.sessions.update(SESSION_ID, (draft) => {
             draft.guide = transition.guide
             if (draft.maximizedCardId !== null && removedCards.has(draft.maximizedCardId)) draft.maximizedCardId = null
-            if (removedFrames.includes(draft.activeFrameId)) draft.activeFrameId = rootFrameId(activeBranchId)
+            if (draft.activeFrameId !== undefined && removedFrames.includes(draft.activeFrameId)) draft.activeFrameId = rootFrameId(activeBranchId)
           })
           break
         }

@@ -106,6 +106,7 @@ test("replay clears only this conversation's practice presentation and fresh act
   await controller.commands.run("issues.view", `3 ${PRACTICE_REPO}`)
   expect(store.session().guide?.completed).toContain("issue.opened")
   const previous = store.collections.cards.get("practice-issues")!
+  if (previous.kind !== "issue") throw new Error("Expected the completed practice issue presentation")
   expect(store.collections.cardHistories.has(previous.id)).toBe(true)
   const otherRepo = { ...previous, id: "other-repo", payload: { ...previous.payload, repo: "acme/real" } }
   const otherConversation = { ...previous, id: "other-conversation-practice", tabId: "chat:other" }
