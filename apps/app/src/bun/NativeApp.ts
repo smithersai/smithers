@@ -5,15 +5,18 @@
  * and this process; RPC carries just the two native doors (the folder dialog
  * and the system browser). Neither privileged operation has an HTTP fallback.
  */
-import { homedir } from "node:os"
-import { join } from "node:path"
-import Electrobun, { BrowserView, BrowserWindow, BuildConfig, Screen, Utils } from "electrobun/main"
+import type { BrowserWindow as NativeBrowserWindow } from "electrobun/main"
 import type { SmithersNativeRPC } from "@smthrs/rpc/NativeRPC"
 import { encodeRgbaPng, startPackagedE2EBridge } from "./PackagedE2EBridge"
 import { createNativeShutdown } from "./NativeShutdown"
 import { defaultDistDir } from "./server"
 import { attachLocalDaemon } from "./LocalDaemonClient"
 import { daemonBuild } from "./LocalDaemonProtocol"
+import { nativeStateDirectory } from "./NativeState"
+
+// This must stay dynamic: Bun hoists external static imports even from lazy
+// local modules. A daemon must never dlopen/initialize Electrobun's native SDK.
+const { default: Electrobun, BrowserView, BrowserWindow, BuildConfig, Screen, Utils } = await import("electrobun/main")
 
 const headless = Bun.env.SMITHERS_LOCAL_HEADLESS === "1"
 const port = Bun.env.SMITHERS_LOCAL_PORT === undefined ? undefined : Number(Bun.env.SMITHERS_LOCAL_PORT)
@@ -31,9 +34,7 @@ const openExternal = async (url: string): Promise<boolean> => {
 }
 
 /** Application state that outlives a launch: macOS Application Support, else XDG data. */
-const stateDir = process.platform === "darwin"
-  ? join(homedir(), "Library", "Application Support", "Smithers")
-  : join(Bun.env.XDG_DATA_HOME ?? join(homedir(), ".local", "share"), "smithers")
+const stateDir = nativeStateDirectory()
 
 const entrypoint = process.argv[1]!
 const server = await attachLocalDaemon({
@@ -46,7 +47,7 @@ const server = await attachLocalDaemon({
   build: await daemonBuild(entrypoint)
 }, { entrypoint })
 
-let mainWindow: BrowserWindow | undefined
+let mainWindow: NativeBrowserWindow | undefined
 let bridge: ReturnType<typeof startPackagedE2EBridge>
 const queuedRepositorySelections: Array<{ readonly path: string | null }> = []
 const shutdown = createNativeShutdown({

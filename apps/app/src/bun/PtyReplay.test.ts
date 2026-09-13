@@ -30,7 +30,7 @@ test("replay preserves ANSI/Unicode, resumes by cursor, and explicitly reports r
   if (created.status !== "ok") throw new Error(created.message)
   const id = created.session.sessionId
   manager.write(id, "stty -echo; printf '\\033[31mfirst-😀\\033[0m\\n'\n")
-  await until(() => manager.read(id)?.output.includes("first-😀") === true)
+  await until(() => manager.replay(id)?.data.includes("\x1b[31mfirst-😀\x1b[0m") === true)
   const first = manager.replay(id)!
   expect(first.data).toContain("\x1b[31mfirst-😀\x1b[0m")
   expect(first.truncated).toBe(false)

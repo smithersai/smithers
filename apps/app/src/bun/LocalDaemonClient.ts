@@ -56,7 +56,7 @@ export const attachLocalDaemon = async (
     }
   }
   if (descriptor.protocol !== DAEMON_PROTOCOL || !sameConfiguration(descriptor.configuration, configuration)) {
-    throw new Error("A different Smithers build or configuration owns the running sessions. Close those sessions and explicitly shut down that owner before switching builds; they have been left running.")
+    throw new Error("A different Smithers build or configuration owns the running sessions. They have been left running. To explicitly stop them, run pnpm --filter smithers-app local:stop in the checkout, or launch the packaged app with SMITHERS_LOCAL_DAEMON_ACTION=stop; then reopen Smithers.")
   }
   const owner = descriptor
   let detached = false

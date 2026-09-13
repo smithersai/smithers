@@ -106,3 +106,55 @@ test("detaching before acknowledgement discards queued terminal input", async ()
   expect(server.seen.some((frame) => frame.type === "pty.input")).toBe(false)
   client.dispose()
 })
+
+test("reconnect requests only missing output, reports a retention gap and never replays disconnected input", async () => {
+  const frames: Record<string, unknown>[] = []
+  let socket: Bun.ServerWebSocket<unknown> | undefined
+  let connections = 0
+  const server = Bun.serve({
+    port: 0,
+    fetch: (request, host) => host.upgrade(request) ? undefined : new Response(null, { status: 404 }),
+    websocket: {
+      open: (opened) => { socket = opened; connections++ },
+      message: (opened, raw) => {
+        const frame = JSON.parse(String(raw)) as Record<string, unknown>
+        frames.push(frame)
+        if (frame.type === "subscribe") {
+          const replay = connections === 1
+            ? { data: "first", start: 0, cursor: 5, truncated: false }
+            : { data: "last", start: 12, cursor: 16, truncated: true }
+          opened.send(JSON.stringify({ type: "pty.replay", sessionId: "continuity", ...replay, alive: true, code: null }))
+          opened.send(JSON.stringify({ type: "subscribed", topic: "pty:continuity" }))
+        }
+      }
+    }
+  })
+  const client = createPtyClient({ http: fetch, baseUrl: "", socketUrl: () => `ws://127.0.0.1:${server.port}`, reconnectMs: 80 })
+  let output = ""
+  const exits: (number | null)[] = []
+  try {
+    client.attach("continuity", { onOutput: (data) => { output += data }, onExit: (code) => exits.push(code) })
+    await until(() => output === "first")
+    socket!.close()
+    await Bun.sleep(20)
+    client.input("continuity", "must-never-replay\n")
+    await until(() => connections === 2 && output.endsWith("last"))
+    expect(frames.filter((frame) => frame.type === "subscribe").map((frame) => frame.cursor)).toEqual([0, 5])
+    expect(output).toBe("first\r\n[Earlier terminal output is no longer retained.]\r\nlast")
+    expect(frames.some((frame) => frame.type === "pty.input")).toBe(false)
+    socket!.send(JSON.stringify({ type: "pty.output", sessionId: "continuity", data: "last", start: 12, cursor: 16 }))
+    socket!.send(JSON.stringify({ type: "pty.exit", sessionId: "continuity", code: 7 }))
+    socket!.send(JSON.stringify({ type: "pty.exit", sessionId: "continuity", code: 7 }))
+    await until(() => exits.length === 1)
+    expect(output.endsWith("lastlast")).toBe(false)
+    expect(exits).toEqual([7])
+    let attached = ""
+    const attachedExits: (number | null)[] = []
+    client.attach("continuity", { onOutput: (data) => { attached += data }, onExit: (code) => attachedExits.push(code) })
+    expect(attached).toBe(output)
+    expect(attachedExits).toEqual([7])
+  } finally {
+    client.dispose()
+    server.stop(true)
+  }
+})

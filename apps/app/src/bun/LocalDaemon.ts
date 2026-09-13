@@ -4,6 +4,7 @@ import { mkdtemp, readFile, rename, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { z } from "zod"
+import * as Redaction from "@smthrs/journal/Redaction"
 import { startWithPersistentOrigin } from "./NativeOrigin"
 import { startLocalServer } from "./server"
 import {
@@ -12,11 +13,12 @@ import {
 } from "./LocalDaemonProtocol"
 
 /** Bounded diagnostics contain lifecycle facts, never control secrets or terminal output. */
+const redact = Redaction.make()
 const daemonLogger = (directory: string) => (line: string): void => {
   try {
     const path = join(directory, "daemon.log")
     if (existsSync(path) && statSync(path).size > 2 * 1024 * 1024) renameSync(path, `${path}.previous`)
-    appendFileSync(path, `${new Date().toISOString()} ${line}\n`, { mode: 0o600 })
+    appendFileSync(path, `${new Date().toISOString()} ${String(redact(line)).slice(0, 16_384)}\n`, { mode: 0o600 })
   } catch { /* Diagnostics do not own a process. */ }
 }
 
@@ -80,7 +82,7 @@ export const startLocalDaemon = async (configuration: DaemonConfiguration) => {
         }
         if (path === "/shutdown") {
           try { await stop() } catch (error) {
-            log(`daemon ${instance}: shutdown failed: ${String(error)}`)
+            log(`daemon ${instance}: shutdown failed (${error instanceof Error ? error.name : "unknown"}); state retained`)
             return new Response(null, { status: 500 })
           }
           // Drain the successful reply before closing the private listener.
@@ -102,7 +104,7 @@ export const startLocalDaemon = async (configuration: DaemonConfiguration) => {
       stop: async () => { await stop(); await retire() }
     }
   } catch (error) {
-    log(`daemon ${instance}: startup failed: ${String(error)}`)
+    log(`daemon ${instance}: startup failed (${error instanceof Error ? error.name : "unknown"}); state retained`)
     await host?.stop()
     await control?.stop(true)
     await rm(socketDirectory, { recursive: true, force: true })

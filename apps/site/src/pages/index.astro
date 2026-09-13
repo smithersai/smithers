@@ -297,24 +297,24 @@ const githubHref = "https://github.com/smithersai/smithers"
   .wordmark-row { display: block; }
   @media (prefers-reduced-motion: no-preference) {
     .wordmark-row {
-      --scan-edge: 0 100% 0 0;
-      --scan-offset: -0.6em;
+      --scan-edge: 0 8% 0 0;
+      --scan-offset: -0.12em;
       color: transparent;
       background-image: linear-gradient(105deg,
         var(--home-accent) 42%,
-        color-mix(in srgb, var(--home-accent), white 42%) 49%,
+        color-mix(in srgb, var(--home-accent), white 12%) 49%,
         var(--home-accent) 56%);
       background-size: 300% 100%;
       background-position: 0 0;
       background-clip: text;
       -webkit-background-clip: text;
       animation:
-        wordmark-scan 580ms cubic-bezier(0.16, 1, 0.3, 1) calc(60ms + var(--row) * 38ms) backwards,
-        wordmark-sweep 620ms cubic-bezier(0.4, 0, 0.2, 1) 700ms backwards;
+        wordmark-scan 420ms cubic-bezier(0.16, 1, 0.3, 1) calc(40ms + var(--row) * 20ms) backwards,
+        wordmark-sweep 480ms cubic-bezier(0.4, 0, 0.2, 1) 360ms backwards;
     }
     .wordmark-row:nth-child(even) {
-      --scan-edge: 0 0 0 100%;
-      --scan-offset: 0.6em;
+      --scan-edge: 0 0 0 8%;
+      --scan-offset: 0.12em;
     }
     .wordmark.settled .wordmark-row { animation: none; }
   }

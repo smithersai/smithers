@@ -28,6 +28,15 @@ Cloud requests. `hybrid` enables the configured chat and identity upstreams.
 `SMITHERS_CHAT_STUB=1` supplies a deterministic in-process agent for tests and
 also disables the identity proxy.
 
+The native launcher attaches to a detached Bun session owner, then opens the
+window. Quitting the app, closing the window or reloading the renderer detaches;
+the same local server, repository authority, live terminals, agent CLIs and
+target processes keep running. The owner uses the app's bundled Bun and main
+bundle in both packaged and development launches. It does not load Electrobun.
+Reopening attaches to the existing owner, retaining its origin and session
+capability. Concurrent first launches converge on one saved origin and owner.
+There is no PID-based reattachment and no automatic command restart.
+
 The native launcher defaults to hybrid unless explicitly set to offline. The
 packaged app serves its built SPA from `127.0.0.1` on a port chosen at first
 launch and saved as `local-origin-port` in its application-support directory.
@@ -40,7 +49,8 @@ is ready.
 
 ## Local-origin security
 
-Each server launch creates a fresh 256-bit token. The token is placed in the
+Each session-owner launch creates a fresh 256-bit token. Renderer and native
+relaunches reuse the running owner. The token is placed in the
 served document's `smithers-local-session` meta tag. The client sends it in
 the `x-smithers-local-session` header and in the WebSocket subprotocol.
 
@@ -57,6 +67,25 @@ The native RPC surface has exactly two privileged operations:
   system browser.
 
 Neither operation has an HTTP fallback in the packaged app.
+
+The picker sends its selection to the owner through a private Unix socket.
+Its separate random capability and generation descriptor live in a 0700
+`local-daemon` directory (descriptor 0600); the socket is 0600 inside its own
+0700 directory. Links, shared state permissions, foreign ownership, invalid
+authentication and browser Origin requests fail closed. The renderer never
+receives this capability. An unresponsive owner is left running. A different
+bundle/configuration or protocol refuses attachment instead of terminating
+sessions or silently serving a different build.
+
+To explicitly stop the owner and all its processes before changing builds,
+run `pnpm --filter smithers-app local:stop` from the checkout. For an installed
+macOS app, run
+`SMITHERS_LOCAL_DAEMON_ACTION=stop /Applications/Smithers.app/Contents/MacOS/launcher`.
+This maintenance command uses the private control channel and works even when
+the new build cannot attach. Then reopen the app. Normal Quit does not invoke
+it. Daemon lifecycle and ordinary host diagnostics go to
+`local-daemon/daemon.log`, redacted, capped at about 2 MiB plus one rotated file;
+PTY output and native control secrets are never logged there.
 
 The identity proxy re-scopes the seam's session cookie to the local origin
 before the WebView sees it: `Domain` goes because the cookie belongs to this
@@ -183,6 +212,16 @@ stays open so Close session retries; exited tabs retry through close directly.
 Closing a cloud workspace terminal still detaches without deleting its session.
 
 PTY scrollback retains at most 64 KiB of raw UTF-8 output per session.
+At most 25 exited records retain output; live sessions are never evicted.
+Process tabs survive boot, reconcile with the owner's session inventory, and
+recover creates whose response was lost before the renderer persisted a tab.
+A missing session is shown as unavailable and never restarted. Fresh viewers
+replay retained raw output; reconnecting viewers subscribe with their last
+absolute UTF-16 output cursor. Subscription, replay and acknowledgement are
+ordered before live delivery. Gaps caused by retention are explicit in the
+terminal. Input is never replayed after a socket disconnect; the user must
+intentionally type again. Replay preserves terminal escape sequences but does
+not reconstruct a full screen whose setup has fallen outside the retained tail.
 `GET /api/pty/:id/output?tail=<bytes>` strips ANSI escapes and returns a suffix
 within the requested non-negative safe-integer byte limit. It drops a partial
 code point at the cut, so a result can be shorter than the requested limit;
@@ -199,7 +238,7 @@ a surviving group rejects shutdown.
 Descendants that leave the process group are outside this signal boundary.
 Shutdown closes target admission before waiting and cancels armed pending runs.
 The cancel response and route shutdown wait for terminal history appends;
-server shutdown awaits the route shutdown before the native launcher exits.
+explicit owner shutdown awaits the route shutdown. Native Quit only detaches.
 
 Target run requests reserve an inert run and write its initial journal record
 before enabling attachment or the one-second auto-start timer. If journal
@@ -656,10 +695,13 @@ It covers the stable renderer, bridge security, native repository picker and
 authorization, repository failure recovery, real target execution, chat and
 repository persistence, card tabs, and a real PTY/WebSocket lifecycle.
 
-`PackagedApp.quit()` drains only the detached process group recorded at launch,
+`PackagedApp.quit()` drains only the native process group recorded at launch,
 including descendants remaining after the launcher exits. It never discovers
 cleanup targets by executable path, so another instance of the same bundle
-keeps running. Bridge deadlines cover headers, the complete response body,
+keeps running. The independent session owner survives quit/relaunch; final
+fixture cleanup explicitly stops it via its private capability before removing
+the isolated home. The native PTY scenario checks PID continuity, replay into
+the reopened emulator, new input, and explicit close. Bridge deadlines cover headers, the complete response body,
 and decoding, including error responses and screenshots.
 
 `PackagedApp.eval(script)` sends potentially mutating scripts once. A failed

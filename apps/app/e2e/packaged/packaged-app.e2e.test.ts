@@ -577,7 +577,7 @@ describe.skipIf(!enabled)("the packaged production Electrobun app", () => {
         30_000
       )
       const created = await rendererApi<{
-        sessions: Array<{ sessionId: string; kind: string; cwd: string; alive: boolean }>
+        sessions: Array<{ sessionId: string; kind: string; cwd: string; alive: boolean; pid: number }>
       }>(app, "/api/pty")
       expect(created.status).toBe(200)
       expect(created.body.sessions).toEqual([
@@ -598,6 +598,20 @@ describe.skipIf(!enabled)("the packaged production Electrobun app", () => {
       expect(probe.executed(output)).toBe(true)
       const rows = await app.waitFor<string>(terminalRows(sessionId), probe.executed, 30_000)
       expect(probe.executed(rows)).toBe(true)
+
+      const beforeQuit = await app.state()
+      await app.relaunch()
+      expect((await app.state()).app.origin).toBe(beforeQuit.app.origin)
+      expect((await app.state()).app.pid).not.toBe(beforeQuit.app.pid)
+      const restored = await rendererApi<{ sessions: Array<{ sessionId: string; pid: number; alive: boolean }> }>(app, "/api/pty")
+      expect(restored.body.sessions).toContainEqual(expect.objectContaining({
+        sessionId, pid: created.body.sessions[0]!.pid, alive: true
+      }))
+      expect(probe.executed(await app.waitFor<string>(terminalRows(sessionId), probe.executed, 30_000))).toBe(true)
+      const resumed = terminalExecutionProbe(crypto.randomUUID().replaceAll("-", "").slice(0, 16))
+      await typeInTerminal(app, sessionId, resumed.command)
+      await submitTerminal(app, sessionId)
+      expect(resumed.executed(await app.waitFor<string>(terminalRows(sessionId), resumed.executed, 30_000))).toBe(true)
 
       await clickTestId(app, `tab-close-${sessionId}`)
       expect(await app.waitFor<boolean>(`document.querySelector('[role="dialog"]') !== null`)).toBe(true)

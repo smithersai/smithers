@@ -59,30 +59,43 @@ test("a real launcher exits; reopen retains the exact shell, variables, output a
   await writeFile(launcher, `
     import { attachLocalDaemon } from ${JSON.stringify(join(import.meta.dir, "LocalDaemonClient.ts"))};
     const owner = await attachLocalDaemon(${JSON.stringify(f.configuration)}, ${JSON.stringify(f.options)});
-    console.log(JSON.stringify({ origin: owner.origin, instance: owner.instance }));
+    import { createPtyClient } from ${JSON.stringify(join(import.meta.dir, "../mainview/state/PtyClient.ts"))};
+    const html = await (await fetch(owner.origin)).text();
+    const token = /name="smithers-local-session" content="([^"]+)"/.exec(html)[1];
+    const headers = { "x-smithers-local-session": token, "content-type": "application/json" };
+    const created = await (await fetch(owner.origin + "/api/pty", {
+      method: "POST", headers, body: JSON.stringify({ kind: "terminal", cols: 80, rows: 24 })
+    })).json();
+    const session = (await (await fetch(owner.origin + "/api/pty", { headers })).json()).sessions[0];
+    let output = "";
+    const transport = createPtyClient({ baseUrl: owner.origin, http: fetch,
+      socketUrl: () => owner.origin.replace("http:", "ws:") + "/ws", socketProtocols: () => ["smithers.local." + token] });
+    transport.attach(created.sessionId, { onOutput: (data) => { output += data }, onExit: () => {} });
+    transport.input(created.sessionId, ${JSON.stringify("stty -echo; SMITHERS_CONTINUITY=retained; printf '\\ninitial:%s:%s\\n' \"$$\" \"$SMITHERS_CONTINUITY\"\n")});
+    const deadline = Date.now() + 5000;
+    while (!output.includes("initial:" + session.pid + ":retained")) {
+      if (Date.now() > deadline) throw new Error("launcher terminal did not execute");
+      await Bun.sleep(10);
+    }
+    transport.dispose();
+    console.log(JSON.stringify({ origin: owner.origin, instance: owner.instance, session }));
     await owner.detach();
   `)
   const child = Bun.spawn([process.execPath, launcher], { stdout: "pipe", stderr: "pipe" })
   expect(await child.exited).toBe(0)
-  const first = JSON.parse(await new Response(child.stdout).text()) as { origin: string; instance: string }
+  const first = JSON.parse(await new Response(child.stdout).text()) as {
+    origin: string; instance: string; session: { sessionId: string; pid: number }
+  }
   const owner = await f.attach()
   expect(owner.origin).toBe(first.origin)
   expect(owner.instance).toBe(first.instance)
   const { token, request } = await api(owner)
-  const response = await request("/api/pty", { method: "POST", body: JSON.stringify({ kind: "terminal", cols: 80, rows: 24 }) })
-  expect(response.status).toBe(201)
-  const { sessionId } = await response.json() as { sessionId: string }
-  const session = (await (await request("/api/pty")).json() as { sessions: { sessionId: string; pid: number }[] }).sessions[0]!
-  let output = ""
+  const session = first.session
+  const sessionId = session.sessionId
   const connect = () => createPtyClient({
     baseUrl: owner.origin, http: (url, init) => fetch(url, { ...init, headers: { ...init?.headers, [LOCAL_SESSION_HEADER]: token } }),
     socketUrl: () => owner.origin.replace("http:", "ws:") + "/ws", socketProtocols: () => [localSessionProtocol(token)]
   })
-  const client = connect()
-  client.attach(sessionId, { onOutput: (data) => { output += data }, onExit: () => {} })
-  client.input(sessionId, "stty -echo; SMITHERS_CONTINUITY=retained; printf '\\ninitial:%s:%s\\n' \"$$\" \"$SMITHERS_CONTINUITY\"\n")
-  await until(() => output.includes(`initial:${session.pid}:retained`))
-  client.dispose()
   await owner.detach()
   const reopened = await f.attach()
   expect(reopened.instance).toBe(first.instance)
@@ -140,4 +153,17 @@ test("explicit shutdown reaps sessions; the new owner keeps the origin without r
   expect(next.instance).not.toBe(owner.instance)
   const restarted = await api(next)
   expect((await (await restarted.request("/api/pty")).json() as { sessions: unknown[] }).sessions).toEqual([])
+}, 20_000)
+
+test("the bundled main entry runs the daemon without importing the native SDK", async () => {
+  const f = await fixture()
+  const outdir = join(f.root, "bundle")
+  const build = await Bun.build({
+    entrypoints: [f.options.entrypoint], target: "bun", format: "esm", outdir,
+    external: ["electrobun/main"], splitting: false
+  })
+  expect(build.success).toBe(true)
+  const owner = await attachLocalDaemon(f.configuration, { ...f.options, entrypoint: join(outdir, "index.js") })
+  owners.push(owner)
+  expect((await (await api(owner)).request("/api/pty")).status).toBe(200)
 }, 20_000)
