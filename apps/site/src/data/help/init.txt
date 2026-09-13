@@ -7,6 +7,7 @@ Arguments:
 
 Options:
   --root <string>  Directory to initialize; defaults to cwd
+  --global         Removed; initialize a workspace instead
 
 Custom Global Options:
   --audience <auto|human|agent>  Presentation audience; auto detects agent harnesses, CI, and terminals (default: auto)

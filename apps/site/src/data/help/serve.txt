@@ -1,6 +1,7 @@
 smthrs serve — Host the control gateway and durable trigger scheduler
 
 Usage: smthrs serve [options]
+Aliases: gateway
 
 Options:
   --root <string>        Project directory; defaults to the nearest Smithers project

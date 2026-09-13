@@ -27,6 +27,7 @@ Commands:
   install       Plan and execute the install Flow under the toolchain the workspace declares
   integrations  Inspect configured provider adapters and reconcile declared GitHub webhooks
   lint          Execute the lint targets selected by a pattern
+  mcp           Register the Smithers MCP server with an agent
   memory        Durable facts, notes, recall, and conversation history
   migrate       Inventory, plan, or apply the 0.x-to-1.x source migration
   owners        Resolve owners, reasons, and the agent policy for paths, or for the paths a diff touches

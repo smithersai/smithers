@@ -1,8 +1,27 @@
-smthrs mcp add — Register as MCP server
+mcp add — Register with Claude Code or Codex; omit --agent to configure both
 
-Usage: smthrs mcp add [options]
+Usage: mcp add [options]
 
 Options:
-  --agent <string>        Target a specific agent (e.g. claude-code, cursor)
-  --command, -c <string>  Override the command agents will run (e.g. "pnpm my-cli --mcp")
-  --no-global             Install to project instead of globally
+  --root <string>        Project directory; defaults to the nearest Smithers project
+  --remote <string>      Remote control plane URL; defaults to SMITHERS_REMOTE
+  --credential <string>  Remote credential; defaults to SMITHERS_API_KEY
+  --mcp-config <string>  Path to the configured MCP servers
+  --quiet                Suppress progress messages
+  --agent <string>
+
+Custom Global Options:
+  --audience <auto|human|agent>   (default: auto)
+  --silent
+  --ui <auto|tty|stream|plain>    (default: auto)
+
+Global Options:
+  --filter-output <keys>              Filter output by key paths (e.g. foo,bar.baz,a[0,3])
+  --format <toon|json|yaml|md|jsonl>  Output format
+  --full-output                       Show full output envelope
+  --help                              Show help
+  --llms, --llms-full                 Print LLM-readable manifest
+  --schema                            Show JSON Schema for command
+  --token-count                       Print token count of output (instead of output)
+  --token-limit <n>                   Limit output to n tokens
+  --token-offset <n>                  Skip first n tokens of output

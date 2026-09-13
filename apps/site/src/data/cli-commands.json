@@ -147,7 +147,7 @@
               "type": "boolean"
             },
             "scope": {
-              "default": "once",
+              "default": "run",
               "type": "string",
               "enum": [
                 "once",
@@ -1716,8 +1716,16 @@
             "root": {
               "description": "Directory to initialize; defaults to cwd",
               "type": "string"
+            },
+            "global": {
+              "default": false,
+              "description": "Removed; initialize a workspace instead",
+              "type": "boolean"
             }
           },
+          "required": [
+            "global"
+          ],
           "additionalProperties": false
         }
       }
@@ -1947,6 +1955,45 @@
             "includeExclusive",
             "cache",
             "fix"
+          ],
+          "additionalProperties": false
+        }
+      }
+    },
+    {
+      "name": "mcp add",
+      "description": "Register with Claude Code or Codex; omit --agent to configure both",
+      "schema": {
+        "options": {
+          "type": "object",
+          "properties": {
+            "root": {
+              "description": "Project directory; defaults to the nearest Smithers project",
+              "type": "string"
+            },
+            "remote": {
+              "description": "Remote control plane URL; defaults to SMITHERS_REMOTE",
+              "type": "string"
+            },
+            "credential": {
+              "description": "Remote credential; defaults to SMITHERS_API_KEY",
+              "type": "string"
+            },
+            "mcpConfig": {
+              "description": "Path to the configured MCP servers",
+              "type": "string"
+            },
+            "quiet": {
+              "default": false,
+              "description": "Suppress progress messages",
+              "type": "boolean"
+            },
+            "agent": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "quiet"
           ],
           "additionalProperties": false
         }

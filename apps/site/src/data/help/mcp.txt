@@ -1,10 +1,19 @@
-smthrs mcp — Register as MCP server
+mcp@1.0.0-rc.0 — Register the Smithers MCP server with an agent
 
-Usage: smthrs mcp <command>
+Usage: mcp <command>
 
 Commands:
-  add     Register as MCP server
-  doctor  Validate MCP server startup and tool listing
+  add  Register with Claude Code or Codex; omit --agent to configure both
+
+Integrations:
+  completions  Generate shell completion script
+  mcp          Register as MCP server (add, doctor)
+  skills       Sync skill files to agents (add, list)
+
+Custom Global Options:
+  --audience <auto|human|agent>   (default: auto)
+  --silent
+  --ui <auto|tty|stream|plain>    (default: auto)
 
 Global Options:
   --filter-output <keys>              Filter output by key paths (e.g. foo,bar.baz,a[0,3])
@@ -12,7 +21,10 @@ Global Options:
   --full-output                       Show full output envelope
   --help                              Show help
   --llms, --llms-full                 Print LLM-readable manifest
+  --mcp                               Start as MCP stdio server
   --schema                            Show JSON Schema for command
   --token-count                       Print token count of output (instead of output)
   --token-limit <n>                   Limit output to n tokens
   --token-offset <n>                  Skip first n tokens of output
+  --update                            Update to latest version
+  --version                           Show version

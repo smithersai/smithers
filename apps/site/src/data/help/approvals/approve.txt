@@ -11,7 +11,7 @@ Options:
   --credential <string>          Remote credential; defaults to SMITHERS_API_KEY
   --mcp-config <string>          Path to the configured MCP servers
   --quiet                        Suppress progress messages
-  --scope <once|run|remembered>   (default: once)
+  --scope <once|run|remembered>   (default: run)
 
 Custom Global Options:
   --audience <auto|human|agent>  Presentation audience; auto detects agent harnesses, CI, and terminals (default: auto)
