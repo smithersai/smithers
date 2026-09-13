@@ -58,15 +58,15 @@ const githubHref = "https://github.com/smithersai/smithers"
   const reduced = matchMedia("(prefers-reduced-motion: reduce)")
   const TRANSITION_STYLE_ID = "smithers-enter-app"
   const MARK_NAME = "smithers-wordmark"
-  /* SessionShell's mark (apps/app/src/mainview/onboarding/guide.css .guide-wordmark). */
+  /* The mark in SessionNavigation's header (apps/app/src/mainview/SessionNavigation.tsx; guide.css .guide-wordmark). */
   const APP_MARK = { left: 12, top: 12, fontSize: 2.75 }
   const TRANSITION_CSS = `
     @media (prefers-reduced-motion: no-preference) {
-      ::view-transition-group(${MARK_NAME}) { animation-duration: 700ms; animation-timing-function: cubic-bezier(0.65, 0, 0.35, 1); }
-      ::view-transition-old(${MARK_NAME}) { animation: smithers-mark-out 700ms linear both; }
-      ::view-transition-new(${MARK_NAME}) { animation: smithers-mark-in 700ms linear both; }
-      ::view-transition-old(root) { animation: smithers-home-out 280ms cubic-bezier(0.4, 0, 1, 1) both; }
-      ::view-transition-new(root) { animation: smithers-app-in 460ms cubic-bezier(0.22, 0.61, 0.21, 1) 240ms both; }
+      ::view-transition-group(${MARK_NAME}) { animation-duration: 380ms; animation-timing-function: cubic-bezier(0.2, 0, 0, 1); }
+      ::view-transition-old(${MARK_NAME}) { animation: smithers-mark-out 380ms linear both; }
+      ::view-transition-new(${MARK_NAME}) { animation: smithers-mark-in 380ms linear both; }
+      ::view-transition-old(root) { animation: smithers-home-out 180ms cubic-bezier(0.4, 0, 1, 1) both; }
+      ::view-transition-new(root) { animation: smithers-app-in 300ms cubic-bezier(0.22, 0.61, 0.21, 1) 120ms both; }
     }
     @keyframes smithers-mark-out { 0%, 80% { opacity: 1; } 100% { opacity: 0; } }
     @keyframes smithers-mark-in { 0%, 80% { opacity: 0; } 100% { opacity: 1; } }
@@ -164,8 +164,7 @@ const githubHref = "https://github.com/smithersai/smithers"
       const root = document.createElement("div")
       root.id = "root"
       document.body.append(root)
-      mount.mountApp(root, { mode: "onboarding", keepUrl: true })
-      return root.querySelector<HTMLElement>(".session-shell > .guide-wordmark")
+      return mount.mountApp(root, { mode: "onboarding", keepUrl: true }).mark
     }
 
     /* Without same-document view transitions: fly the mark by hand, then swap. */
@@ -174,16 +173,16 @@ const githubHref = "https://github.com/smithersai/smithers"
       if (pre === null) return
       const rect = pre.getBoundingClientRect()
       const scale = APP_MARK.fontSize / parseFloat(getComputedStyle(pre).fontSize)
-      const easing = "cubic-bezier(0.65, 0, 0.35, 1)"
+      const easing = "cubic-bezier(0.2, 0, 0, 1)"
       for (const el of document.querySelectorAll<HTMLElement>(".home .sub, .home .actions, .github")) {
-        el.animate([{ opacity: 1 }, { opacity: 0, transform: "translateY(-10px)" }], { duration: 260, easing, fill: "forwards" })
+        el.animate([{ opacity: 1 }, { opacity: 0, transform: "translateY(-10px)" }], { duration: 180, easing, fill: "forwards" })
       }
       await pre.animate(
         [
           { transformOrigin: "0 0", transform: "none" },
           { transformOrigin: "0 0", transform: `translate(${APP_MARK.left - rect.left}px, ${APP_MARK.top - rect.top}px) scale(${scale})` }
         ],
-        { duration: 600, easing, fill: "forwards" }
+        { duration: 380, easing, fill: "forwards" }
       ).finished
     }
 

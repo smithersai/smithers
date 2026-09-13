@@ -22,7 +22,18 @@ export interface MountAppOptions {
 
 export interface MountedApp {
   readonly unmount: () => void
+  /** The app's single entrance wordmark inside `container`, read right after the synchronous render. */
+  readonly mark: HTMLElement | null
 }
+
+/*
+ * The app owns the lookup of its own mark so a caller (the home page's view
+ * transition) never guesses the app's DOM: since the "one global logo"
+ * refactor the mark lives in SessionNavigation's header
+ * (.session-shell > .session-navigation > .guide-wordmark).
+ */
+export const appWordmark = (container: HTMLElement): HTMLElement | null =>
+  container.querySelector<HTMLElement>(".session-shell > .session-navigation > .guide-wordmark")
 
 /**
  * The appearance the app paints with: the stored theme and palette, else the
@@ -56,5 +67,5 @@ export function mountApp(container: HTMLElement, options: MountAppOptions): Moun
   const watchdog = browserStartupWatchdog({ clientErrors: createClientErrorReporter({ fetchImpl: createAppFetch() }) })
   const root = createRoot(container)
   flushSync(() => root.render(<AppRoot mode={options.mode} watchdog={watchdog} />))
-  return { unmount: () => root.unmount() }
+  return { unmount: () => root.unmount(), mark: appWordmark(container) }
 }
