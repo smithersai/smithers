@@ -51,7 +51,7 @@ export interface TurnControllerDependencies {
     card: Extract<Card, { kind: "approval" }>,
     decision: "approved" | "denied"
   ) => Promise<void>
-  /** A decision clicked on the workspace approvals inbox (lane runs §5), addressed `inboxCardId:requestId`. */
+  /** A decision clicked on the workspace approvals inbox, bound to its run and request. */
   readonly forwardInboxApprovalDecision: (
     cardId: string,
     requestId: string,
@@ -986,8 +986,8 @@ export const createTurnController = (
       return
     }
     /*
-     * An approvals-inbox row addresses its decision `inboxCardId:requestId`
-     * (lane runs §5): the gate's own approval card may never have landed in
+     * Legacy inbox actions used `inboxCardId:requestId`; they resolve only
+     * when that request ID belongs to exactly one row: the gate's own approval card may never have landed in
      * this transcript, so the row forwards through the inbox card, which
      * carries the submit-ready envelope the gateway published.
      */

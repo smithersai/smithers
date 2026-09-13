@@ -96,6 +96,8 @@ export interface PtyOutput {
 
 /** How much raw output a session keeps for `read`; older bytes fall off the front. */
 export const PTY_SCROLLBACK_BYTES = 64 * 1024
+/** Detached owners are long-lived; exited output must be bounded in aggregate too. */
+export const PTY_EXITED_RETENTION = 25
 
 /*
  * Escape sequences an emulator would consume: CSI (`ESC [ ... final`), OSC
@@ -278,6 +280,7 @@ export const createPtyManager = (options: PtyManagerOptions): PtyManager => {
   const children = new Map<string, LiveSession>()
   const retiring = new Map<string, LiveSession>()
   const preparing = new Set<PendingCreate>()
+  const exitedOrder: string[] = []
   let disposed = false
   let disposal: Promise<void> | undefined
   const closedResult = (): PtyCreateResult => ({ status: "error", code: "manager_closed", message: "The terminal manager is closed." })
@@ -395,6 +398,13 @@ export const createPtyManager = (options: PtyManagerOptions): PtyManager => {
       // The list (and tab.read) name the exit code too, not only the one-shot exit frame.
       if (current !== undefined) current.record = { ...current.record, alive: false, exitCode }
       publish(topic(sessionId), { type: "pty.exit", sessionId, code: exitCode })
+      if (current !== undefined) {
+        exitedOrder.push(sessionId)
+        while (exitedOrder.length > PTY_EXITED_RETENTION) {
+          const expired = exitedOrder.shift()!
+          if (sessions.get(expired)?.record.alive === false) sessions.delete(expired)
+        }
+      }
       log(`pty ${sessionId}: exited ${String(code)}`)
       try {
         proc.terminal?.close()

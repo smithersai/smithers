@@ -10,7 +10,7 @@ import { ApprovalsInboxCardBody, RunListCardBody } from "./RunsCards"
 /*
  * Lane runs — the cards themselves, per phase and waiting reason: the run
  * inbox's count line, chips and stop-all; the approvals inbox's row
- * decisions addressed `inboxCardId:requestId`; and the run card's lifecycle
+ * decisions addressed by inbox, run and request; and the run card's lifecycle
  * acts (Stop on every live phase, Resume on a named wait, Run again when
  * settled), its steer row, and its transcript and events facets.
  */

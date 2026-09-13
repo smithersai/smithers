@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto"
 import { lstat, mkdir, readFile } from "node:fs/promises"
-import { join } from "node:path"
+import { dirname, join } from "node:path"
+import { createConnection } from "node:net"
 import { z } from "zod"
 
 export const DAEMON_PROTOCOL = 1
@@ -58,8 +59,9 @@ export const sameConfiguration = (a: DaemonConfiguration, b: DaemonConfiguration
   JSON.stringify(DaemonConfigurationSchema.parse(a)) === JSON.stringify(DaemonConfigurationSchema.parse(b))
 
 /** Native-only Unix transport. Its capability is never the renderer's token. */
-export const daemonRequest = async (descriptor: DaemonDescriptor, path: string, body?: unknown): Promise<Response> =>
-  fetch(`http://localhost${path}`, {
+export const daemonRequest = async (descriptor: DaemonDescriptor, path: string, body?: unknown): Promise<Response> => {
+  await assertPrivate(dirname(descriptor.socket), true)
+  return fetch(`http://localhost${path}`, {
     unix: descriptor.socket,
     method: body === undefined ? "GET" : "POST",
     headers: { authorization: `Bearer ${descriptor.token}`, "content-type": "application/json" },
@@ -67,3 +69,17 @@ export const daemonRequest = async (descriptor: DaemonDescriptor, path: string, 
     signal: AbortSignal.timeout(path === "/shutdown" ? 15_000 : 3000),
     redirect: "error"
   })
+}
+
+/** Bun collapses Unix connection errors; ask the OS before declaring an owner absent. */
+export const isDaemonUnavailable = async (error: unknown, descriptor: DaemonDescriptor): Promise<boolean> => {
+  if (hasCode(error, "ENOENT") || hasCode(error, "ECONNREFUSED")) return true
+  if (!hasCode(error, "FailedToOpenSocket")) return false
+  return new Promise((resolve) => {
+    const socket = createConnection(descriptor.socket)
+    socket.setTimeout(1000)
+    socket.once("connect", () => { socket.destroy(); resolve(false) })
+    socket.once("timeout", () => { socket.destroy(); resolve(false) })
+    socket.once("error", (cause) => resolve(hasCode(cause, "ENOENT") || hasCode(cause, "ECONNREFUSED")))
+  })
+}

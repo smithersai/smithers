@@ -32,6 +32,15 @@ const STATUS_CLASS_COLORS: Readonly<Record<StatusClass, string>> = {
 };
 
 const STATUS_CLASS_BY_STATUS = {
+  // Health observations share the same vocabulary on agent and flow surfaces.
+  // These are observations, never terminal execution states.
+  healthy: "ok",
+  degraded: "warn",
+  unknown: "muted",
+  "awaiting-human": "warn",
+  "wedged-node": "bad",
+  "runaway-loop": "bad",
+  failing: "bad",
   fixed: "ok",
   /*
    * The rc.0 run vocabulary (`@smthrs/control` `RunStatus`): accepted,
@@ -176,6 +185,13 @@ export function formatStatus(status: string | undefined): string {
   const normalized = normalizeStatus(status);
   if (!normalized) return "Unknown";
   const labels = table<string>({
+    healthy: "Healthy",
+    degraded: "Degraded",
+    unknown: "Unknown",
+    "awaiting-human": "Needs attention",
+    "wedged-node": "Node stalled",
+    "runaway-loop": "Runaway loop",
+    failing: "Failing",
     ok: "Complete",
     success: "Complete",
     complete: "Complete",

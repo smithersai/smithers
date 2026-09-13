@@ -17,9 +17,9 @@ const until = async (check: () => boolean | Promise<boolean>) => {
   }
 }
 afterEach(async () => {
-  for (const owner of owners.splice(0)) {
+  for (const owner of new Map(owners.splice(0).map((owner) => [owner.instance, owner])).values()) {
     try { await owner.shutdown() } catch (error) {
-      if (!(error && typeof error === "object" && "code" in error && ["ECONNREFUSED", "ENOENT"].includes(String(error.code)))) throw error
+      if (!(error && typeof error === "object" && "code" in error && ["ECONNREFUSED", "ENOENT", "FailedToOpenSocket"].includes(String(error.code)))) throw error
     }
   }
   for (const root of roots.splice(0)) await rm(root, { recursive: true, force: true })
@@ -120,8 +120,8 @@ test("private native control rejects renderer credentials, browser Origin and ma
   expect((await privateFetch({ authorization: `Bearer ${token}` })).status).toBe(403)
   expect((await privateFetch({ authorization: `Bearer ${descriptor.token}`, origin: owner.origin })).status).toBe(403)
   expect((await daemonRequest(descriptor, "/authorize-repository", { path: f.root, access: "write" })).status).toBe(400)
-  expect((await request("/authorize-repository", { method: "POST", body: "{}" })).status).toBe(404)
-  expect((await request("/shutdown", { method: "POST", body: "{}" })).status).toBe(404)
+  expect((await request("/authorize-repository", { method: "POST", body: "{}" })).status).toBe(405)
+  expect((await request("/shutdown", { method: "POST", body: "{}" })).status).toBe(405)
   await chmod(descriptorPath(f.configuration.stateDir), 0o644)
   await expect(f.attach()).rejects.toThrow("must be private")
   await chmod(descriptorPath(f.configuration.stateDir), 0o600)

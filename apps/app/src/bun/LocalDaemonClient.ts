@@ -1,7 +1,7 @@
 import { spawn } from "node:child_process"
 import type { RepositoryAuthority } from "./RepositoryAuthority"
 import {
-  DAEMON_PROTOCOL, daemonRequest, hasCode, prepareDaemonDirectory, readDaemonDescriptor,
+  DAEMON_PROTOCOL, daemonRequest, isDaemonUnavailable, prepareDaemonDirectory, readDaemonDescriptor,
   sameConfiguration, type DaemonConfiguration, type DaemonDescriptor
 } from "./LocalDaemonProtocol"
 
@@ -20,7 +20,7 @@ const probe = async (stateDir: string): Promise<DaemonDescriptor | undefined> =>
   let response: Response
   try { response = await daemonRequest(descriptor, "/health") } catch (error) {
     // No stored PID is signalled. An unresponsive live owner is never replaced.
-    if (hasCode(error, "ECONNREFUSED") || hasCode(error, "ENOENT")) return undefined
+    if (await isDaemonUnavailable(error, descriptor)) return undefined
     throw new Error("The Smithers session owner is not responding; its sessions were left running.", { cause: error })
   }
   if (!response.ok) throw new Error("The Smithers session owner refused authentication.")

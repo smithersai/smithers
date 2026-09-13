@@ -7,7 +7,7 @@
  * two. The approvals inbox (approvals.list) carries each pending gate with
  * the submit-ready envelope the gateway published; a decision dispatches the
  * same approval.approve / approval.deny flows a per-run approval card uses,
- * addressed `inboxCardId:requestId`.
+ * addressed by the inbox card, run and request together.
  */
 import { Button, Confirmation, ConfirmationAccepted, ConfirmationAction, ConfirmationActions, ConfirmationRejected, ConfirmationRequest } from "@smthrs/ui"
 import type { Card } from "../state/AppState"

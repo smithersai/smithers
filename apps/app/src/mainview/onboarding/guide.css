@@ -291,6 +291,7 @@
   /* The transcript's -10px bottom margin leaves a 12px visual gap. */
   margin-top: 22px;
 }
+.guide-actions[data-help-sequence] { padding-top: 100px; }
 .guide-primary {
   border: 1px solid var(--g-line);
   background: var(--g-panel);

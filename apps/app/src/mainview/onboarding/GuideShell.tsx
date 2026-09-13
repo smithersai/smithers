@@ -425,7 +425,7 @@ export function GuideShell({ children, clock = guideClock }: { children: ReactNo
               </div>
             )}
           </div>
-          <div className="guide-actions">
+          <div className="guide-actions" data-help-sequence={lesson?.kind === "do" && lesson.help?.introduction !== undefined || undefined}>
             {lesson?.kind === "do" && lesson.actions.map(action => {
               const guidedAction = lesson.help?.actionKey === action.key
               const helpOpen = guidedAction && showTutorialHelp && !chatHelpOpen
@@ -444,6 +444,7 @@ export function GuideShell({ children, clock = guideClock }: { children: ReactNo
               )
               return guidedAction ? (
                 <HelpBubble key={action.flow} id={`guide-help-${stage}`} open={helpOpen}
+                  placement={lesson.help?.introduction ? "above" : "flow"}
                   content={guidanceContent} onDismiss={() => setDismissedHelp(helpKey)}>
                   {button}
                 </HelpBubble>
