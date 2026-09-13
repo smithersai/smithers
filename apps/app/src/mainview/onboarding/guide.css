@@ -6,6 +6,12 @@
   --g-panel: rgba(255, 255, 252, 0.73);
   --g-ink: #243b3b;
   --g-muted: #74817c;
+  /* Quiet text that still clears WCAG AA: --g-muted is 3.75:1 on --g-bg in
+     light, this derived value is 5.01:1 light / 8.60:1 dark. Both themes
+     re-resolve the mix against their own --g-muted and --g-ink. */
+  --g-muted-strong: color-mix(in srgb, var(--g-muted) 72%, var(--g-ink));
+  /* Text painted on a --g-accent fill: the page tone (4.93:1 light, 10.32:1 dark). */
+  --g-on-accent: var(--g-bg);
   --g-line: rgba(53, 85, 74, 0.14);
   --g-accent: #3a756b;
   --g-gold: #b69660;
@@ -40,10 +46,12 @@
   cursor: pointer;
   color: inherit;
 }
+/* One ring geometry everywhere: 2px width, 2px offset (Linear, Raycast and
+   Superhuman all converge on this pair; the colour is the guide's accent). */
 .guide-shell button:focus-visible,
 .guide-shell input:focus-visible {
   outline: 2px solid var(--g-accent);
-  outline-offset: 5px;
+  outline-offset: 2px;
 }
 .guide-shell h1,
 .guide-shell h2,
@@ -145,7 +153,7 @@
   font-size: var(--fs-caption);
   letter-spacing: 0.16em;
   color: var(--g-muted);
-  margin-bottom: 39px;
+  margin-bottom: calc(var(--sp-5) * 2);
   animation: none;
 }
 .guide-chapter-line {
@@ -175,11 +183,13 @@
 .guide-shell[data-step="0"] .guide-lesson {
   animation-delay: 0s;
 }
-.guide-eyebrow {
+/* Scoped under .guide-shell so the margin beats `.guide-shell p { margin: 0 }`
+   without !important. */
+.guide-shell .guide-eyebrow {
   font-size: var(--fs-caption);
   color: var(--g-muted);
   letter-spacing: 0.04em;
-  margin-bottom: 12px !important;
+  margin-bottom: var(--sp-3);
 }
 .guide-lesson h1 {
   font-family: Georgia, "Times New Roman", serif;
@@ -187,16 +197,16 @@
   line-height: 1.15;
   font-weight: 400;
   letter-spacing: -0.045em;
-  margin-bottom: 29px;
+  margin-bottom: var(--sp-7);
 }
 .guide-dialogue {
   position: relative;
   border: 1px solid var(--g-line);
-  border-radius: 14px;
+  border-radius: var(--r-4);
   background: var(--g-panel);
-  padding: 25px 30px 28px;
+  padding: var(--sp-6) var(--sp-8) var(--sp-7);
   text-align: left;
-  box-shadow: 0 9px 26px #283f3406;
+  box-shadow: var(--shadow-1);
   backdrop-filter: blur(18px);
 }
 .smithers-control {
@@ -225,12 +235,12 @@
 .guide-speaker {
   display: flex;
   align-items: center;
-  gap: 7px;
-  font-family: "IBM Plex Mono", monospace;
+  gap: var(--sp-2);
+  font-family: var(--font-mono);
   font-size: var(--fs-caption);
   letter-spacing: 0.15em;
   color: var(--g-accent);
-  margin-bottom: 13px;
+  margin-bottom: var(--sp-3);
 }
 .guide-speaker > span,
 .guide-status-dot {
@@ -257,58 +267,30 @@
   display: flex;
   align-items: center;
   justify-content: flex-start;
-  gap: 16px;
-  margin-bottom: 8px;
+  gap: var(--sp-4);
+  margin-bottom: var(--sp-2);
   position: sticky;
   /* Directly under the pinned title strip: the row never moves, ever. The
      negative margin lets its background meet the strip, so no card shows
      through between them, while the buttons keep their resting position. */
   top: var(--g-strip);
-  margin-top: -8px;
-  padding: 8px 0;
+  margin-top: calc(-1 * var(--sp-2));
+  padding: var(--sp-2) 0;
   z-index: 4;
   background: var(--g-bg);
-}
-.guide-navigation .guide-back {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  border: 1px solid var(--g-line);
-  border-radius: 999px;
-  padding: 6px 12px;
-  background: var(--g-panel);
-  box-shadow: 0 4px 9px #1e393019;
-  transition:
-    transform 0.18s,
-    box-shadow 0.18s;
 }
 .guide-actions {
   display: flex;
   flex-wrap: wrap;
   align-items: flex-end;
   justify-content: center;
-  gap: 18px 28px;
+  gap: var(--sp-5) var(--sp-7);
   /* The transcript's -10px bottom margin leaves a 12px visual gap. */
-  margin-top: 22px;
+  margin-top: var(--sp-6);
 }
 .guide-actions[data-help-sequence] { padding-top: 100px; }
-.guide-primary {
-  border: 1px solid var(--g-line);
-  background: var(--g-panel);
-  color: var(--g-ink) !important;
-  border-radius: 999px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 20px;
-  padding: 6px 12px;
-  font-size: var(--fs-body) !important;
-  min-height: 44px;
-  box-shadow: 0 4px 9px #1e393019;
-  transition:
-    transform 0.18s,
-    box-shadow 0.18s;
-}
+/* Sizing for the lesson's primary actions lives with the shared control
+   system at the end of this file (.guide-button.guide-primary). */
 .guide-button-key {
   display: inline-flex;
   align-items: center;
@@ -318,7 +300,7 @@
   min-height: 24px;
   box-sizing: border-box;
   white-space: nowrap;
-  font-family: "IBM Plex Mono", monospace;
+  font-family: var(--font-mono);
   font-size: var(--fs-caption);
   font-weight: 500;
   line-height: 1.2;
@@ -331,66 +313,61 @@
   transition: background-color 120ms ease, box-shadow 120ms ease, transform 120ms ease;
 }
 
-.guide-primary:hover,
-.guide-navigation .guide-back:hover:not(:disabled) {
-  transform: translateY(-2px);
-  box-shadow: 0 8px 18px #1e393028;
-}
-.guide-primary:active,
-.guide-navigation .guide-back:active:not(:disabled) {
-  transform: translateY(0);
-}
-.guide-back,
+/*
+ * Quiet text action, used by cards outside the guide chrome, so it reads the
+ * app tokens (--text-muted clears AA in every palette, per Contrast.test).
+ */
 .guide-text-button {
   border: 0;
   background: none;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 6px;
-  font-size: var(--fs-small) !important;
-  color: var(--g-muted) !important;
-  padding: 5px;
-}
-.guide-text-button {
-  color: var(--g-accent) !important;
+  gap: var(--sp-2);
   padding: 0;
+  font-size: var(--fs-small);
+  color: var(--text-muted);
+}
+.guide-text-button:hover {
+  color: var(--brand);
+  text-decoration: underline;
+  text-underline-offset: 3px;
 }
 .guide-footer {
   position: absolute;
   left: 0;
   right: 0;
   bottom: 0;
-  min-height: 65px;
+  min-height: calc(var(--sp-8) * 2);
   display: flex;
   align-items: center;
-  padding: 12px 40px;
-  gap: 24px;
+  padding: var(--sp-3) calc(var(--sp-5) * 2);
+  gap: var(--sp-6);
 }
 .guide-footer button {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--sp-2);
   background: none;
   border: 0;
-  padding: 8px 0;
+  padding: var(--sp-2) 0;
   font-size: var(--fs-caption);
-  color: var(--g-muted);
+  color: var(--g-muted-strong);
 }
 .guide-progress {
   display: flex;
-  gap: 5px;
+  gap: var(--sp-2);
   margin: auto;
   position: absolute;
   left: 50%;
   transform: translateX(-50%);
 }
 .guide-progress span {
-  width: 5px;
-  height: 5px;
+  width: var(--sp-1);
+  height: var(--sp-1);
   border-radius: 50%;
   background: var(--g-line);
-  transition: background 0.4s;
+  transition: background var(--dur-slow) var(--ease-current);
 }
 .guide-progress span[data-passed="true"] {
   background: var(--g-gold);
@@ -406,19 +383,19 @@
   .guide-chat-controls { gap: 12px; flex-wrap: wrap; }
 }
 .guide-form {
-  margin-top: 15px;
+  margin-top: var(--sp-4);
   background: var(--g-panel);
   border: 1px solid var(--g-line);
-  border-radius: 12px;
-  padding: 24px;
+  border-radius: var(--r-3);
+  padding: var(--sp-6);
   text-align: left;
   display: grid;
-  gap: 18px;
+  gap: var(--sp-5);
 }
 .guide-form label,
 .guide-edit-label {
   display: grid;
-  gap: 9px;
+  gap: var(--sp-2);
   font-size: var(--fs-caption);
   color: var(--g-muted);
 }
@@ -426,16 +403,16 @@
 .guide-edit-label input {
   width: 100%;
   box-sizing: border-box;
-  padding: 12px;
+  padding: var(--sp-3);
   border: 1px solid var(--g-line);
-  border-radius: 7px;
+  border-radius: var(--r-sm);
   background: var(--g-bg);
   color: var(--g-ink);
   font-size: var(--fs-small);
 }
-.guide-form > p,
-.guide-practice-note {
-  font-size: var(--fs-caption) !important;
+.guide-shell .guide-form > p,
+.guide-shell .guide-practice-note {
+  font-size: var(--fs-caption);
   line-height: 1.6;
   color: var(--g-muted);
 }
@@ -444,17 +421,17 @@
   padding: 0;
   list-style: none;
   display: grid;
-  gap: 10px;
+  gap: var(--sp-2);
   text-align: left;
 }
 .guide-steps li {
   display: flex;
   align-items: center;
   gap: 14px;
-  padding: 14px 18px;
+  padding: var(--sp-4) var(--sp-5);
   background: var(--g-panel);
   border: 1px solid var(--g-line);
-  border-radius: 10px;
+  border-radius: var(--r-2);
   font-size: var(--fs-small);
   color: var(--g-ink);
 }
@@ -494,13 +471,13 @@
 .guide-sidebar nav button {
   display: flex;
   flex-wrap: wrap;
-  gap: 10px;
+  gap: var(--sp-2);
   align-items: center;
   background: none;
   border: 0;
   text-align: left;
-  padding: 12px 9px;
-  border-radius: 7px;
+  padding: var(--sp-3) var(--sp-2);
+  border-radius: var(--r-sm);
   font-size: var(--fs-small);
 }
 .guide-sidebar nav button:hover {
@@ -528,10 +505,10 @@
 .guide-background-flows > div {
   display: flex;
   align-items: center;
-  gap: 17px;
-  padding: 22px;
+  gap: var(--sp-4);
+  padding: var(--sp-6);
   border: 1px solid var(--g-line);
-  border-radius: 10px;
+  border-radius: var(--r-2);
   background: var(--g-panel);
 }
 .guide-background-flows strong {
@@ -548,7 +525,7 @@
 .guide-history {
   margin-top: 20px;
   border: 1px solid var(--g-line);
-  border-radius: 12px;
+  border-radius: var(--r-3);
   background: var(--g-panel);
   overflow: hidden;
   text-align: left;
@@ -556,7 +533,7 @@
 .guide-artifact-bar {
   display: flex;
   justify-content: space-between;
-  padding: 13px 17px;
+  padding: var(--sp-3) var(--sp-4);
   border-bottom: 1px solid var(--g-line);
   font-family: "IBM Plex Mono", monospace;
   font-size: var(--fs-caption);
@@ -569,7 +546,7 @@
   margin-right: 8px;
 }
 .guide-board {
-  padding: 30px;
+  padding: var(--sp-8);
   background: linear-gradient(160deg, #f0eddc, #e6ebda);
   color: #3b4837;
 }
@@ -591,13 +568,13 @@
 .guide-board-cards {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
-  gap: 10px;
+  gap: var(--sp-2);
 }
 .guide-board-cards article {
   padding: 17px 13px;
   background: #fffdf0aa;
   border: 1px solid #a6b29238;
-  border-radius: 6px;
+  border-radius: var(--r-sm);
   animation: guide-rise 0.6s both;
   animation-delay: calc(var(--card) * 120ms);
 }
@@ -617,12 +594,12 @@
   color: #78836e;
 }
 .guide-edit-label {
-  padding: 18px;
+  padding: var(--sp-5);
 }
 .guide-history-row {
   display: flex;
   gap: 20px;
-  padding: 17px 24px;
+  padding: var(--sp-4) var(--sp-6);
   border-bottom: 1px solid var(--g-line);
   align-items: center;
 }
@@ -641,20 +618,20 @@
   color: var(--g-muted);
   overflow-wrap: anywhere;
 }
-.guide-artifact-foot {
-  padding: 16px 24px;
-  font-size: var(--fs-caption) !important;
+.guide-shell .guide-artifact-foot {
+  padding: var(--sp-4) var(--sp-6);
+  font-size: var(--fs-caption);
   line-height: 1.7;
   color: var(--g-muted);
 }
 .guide-pr {
   display: flex;
-  gap: 20px;
+  gap: var(--sp-5);
   text-align: left;
-  margin-top: 20px;
-  padding: 25px;
+  margin-top: var(--sp-5);
+  padding: var(--sp-6);
   border: 1px solid var(--g-line);
-  border-radius: 12px;
+  border-radius: var(--r-3);
   background: var(--g-panel);
 }
 .guide-pr > svg {
@@ -691,19 +668,11 @@
   display: flex;
   flex-wrap: wrap;
   justify-content: center;
-  gap: 12px;
-  margin-top: 27px;
+  gap: var(--sp-3);
+  margin-top: var(--sp-7);
 }
-.guide-secondary {
-  display: inline-flex;
-  align-items: center;
-  gap: 15px;
-  padding: 12px 18px;
-  border: 1px solid var(--g-line);
-  border-radius: 8px;
-  background: var(--g-panel);
-  font-size: var(--fs-small) !important;
-}
+/* The quiet secondary action is defined with the other control variants at
+   the end of this file. */
 .guide-start-actions p {
   font-size: var(--fs-caption);
   line-height: 1.8;
@@ -728,7 +697,7 @@
   backdrop-filter: blur(3px);
   visibility: hidden;
   opacity: 0;
-  transition: opacity 180ms ease, visibility 0s 180ms;
+  transition: opacity var(--dur) var(--ease-current), visibility 0s var(--dur);
 }
 .guide-shell[data-conversation-open="true"] .guide-composer-dock {
   visibility: visible;
@@ -750,9 +719,9 @@
   border: 1px solid var(--g-line);
   border-radius: 16px;
   background: var(--g-bg);
-  box-shadow: 0 24px 80px #102a3340, 0 2px 8px #102a3326;
+  box-shadow: var(--shadow-3);
   transform: translateY(-14px) scale(.985);
-  transition: transform 220ms cubic-bezier(.2, .7, .2, 1);
+  transition: transform var(--dur-slow) var(--ease-current);
 }
 .guide-shell[data-conversation-open="true"] .guide-composer-layer {
   transform: translateY(0) scale(1);
@@ -784,7 +753,7 @@
   gap: 4px;
   padding: 10px 10px 6px;
   border-color: transparent;
-  border-radius: 10px;
+  border-radius: var(--r-2);
   background: transparent;
   /* The kit blurs whatever page is behind the card; the zones share one surface. */
   backdrop-filter: none;
@@ -806,7 +775,7 @@
 .guide-sidebar { z-index: 25; }
 .guide-sidebar .composer-menu-list { top: calc(100% + 4px); bottom: auto; left: 0; }
 .guide-sidebar .composer-connect-label { max-width: 150px; }
-.guide-sidebar .composer-connect { margin-bottom: 18px; }
+.guide-sidebar .composer-connect { margin-bottom: var(--sp-5); }
 .guide-sidebar nav { display: grid; }
 /*
  * Results scroll below the input, which stays visible at the top of the card.
@@ -830,12 +799,12 @@
   box-shadow: none;
 }
 .guide-summoned {
-  padding: 30px 36px;
+  padding: var(--sp-8) 36px;
   background: var(--g-panel);
   backdrop-filter: blur(18px);
   border: 1px solid var(--g-line);
-  border-radius: 14px;
-  box-shadow: 0 18px 60px #102a3322;
+  border-radius: var(--r-4);
+  box-shadow: var(--shadow-3);
 }
 .guide-summoned p {
   font-size: var(--fs-body);
@@ -843,7 +812,7 @@
   margin-bottom: 20px;
 }
 .guide-summoned .guide-primary {
-  margin-top: 16px;
+  margin-top: var(--sp-4);
 }
 /*
  * The app is the default full-screen UI: mounted live under the guide chrome,
@@ -885,9 +854,9 @@
   background: var(--g-panel);
   backdrop-filter: blur(18px);
   border: 1px solid var(--g-line);
-  border-radius: 14px;
-  padding: 24px 28px;
-  box-shadow: 0 18px 60px #102a3322;
+  border-radius: var(--r-4);
+  padding: var(--sp-6) var(--sp-7);
+  box-shadow: var(--shadow-3);
 }
 .guide-shell[data-step="14"] .guide-main {
   pointer-events: none;
@@ -903,24 +872,24 @@
 .guide-toasts {
   position: fixed;
   bottom: 76px;
-  right: 26px;
+  right: var(--sp-6);
   width: min(360px, calc(100vw - 40px));
   z-index: 90;
   display: grid;
-  gap: 10px;
+  gap: var(--sp-2);
   max-height: calc(100dvh - 100px);
   overflow-y: auto;
 }
 .guide-toast {
   display: flex;
   align-items: flex-start;
-  gap: 10px;
+  gap: var(--sp-2);
   border: 1px solid var(--g-line);
-  border-radius: 12px;
-  padding: 14px 16px;
+  border-radius: var(--r-3);
+  padding: var(--sp-4);
   background: var(--g-bg);
   backdrop-filter: blur(20px);
-  box-shadow: 0 12px 40px #223f3214;
+  box-shadow: var(--shadow-2);
   animation: guide-rise 0.35s both;
 }
 .guide-toast > svg {
@@ -1094,7 +1063,7 @@
     gap: 6px;
   }
   .guide-board-cards article {
-    padding: 12px 9px;
+    padding: var(--sp-3) var(--sp-2);
   }
   .guide-composer-dock {
     padding: 12px;
@@ -1140,8 +1109,7 @@
   .guide-wordmark {
     opacity: 1;
   }
-  .guide-primary:hover,
-  .guide-navigation .guide-back:hover:not(:disabled) {
+  .guide-primary:hover {
     transform: none;
   }
 }
@@ -1201,13 +1169,13 @@
 /* Tabbing to the invitation reveals it immediately, including its focus ring. */
 .guide-shell[data-step="0"] .guide-actions:has(:focus-visible) { animation: none; }
 
-.guide-review-diff { display: grid; gap: 6px; margin: 20px 0; padding: 16px; border: 1px solid var(--g-line); border-radius: 8px; overflow-wrap: anywhere; }
+.guide-review-diff { display: grid; gap: var(--sp-2); margin: var(--sp-5) 0; padding: var(--sp-4); border: 1px solid var(--g-line); border-radius: var(--r-sm); overflow-wrap: anywhere; }
 .guide-review-diff span { font-size: var(--fs-caption); color: var(--g-muted); }
 .guide-review-diff del,.guide-review-diff ins { font-size: var(--fs-small); }
 .guide-review-diff ins { text-decoration: none; color: var(--g-accent); }
 .guide-review-diff span:nth-of-type(2) { margin-top: 10px; }
 .guide-review-explanation { line-height: 1.8; }
-.guide-pr .guide-text-button { margin-bottom: 18px; }
+.guide-pr .guide-text-button { margin-bottom: var(--sp-5); }
 .guide-pr small { display: block; }
 .guide-review-accepted { flex-basis: 100%; display: flex; align-items: center; justify-content: center; gap: 8px; overflow-wrap: anywhere; }
 
@@ -1243,7 +1211,7 @@
  */
 .guide-message { display: grid; grid-template-rows: 1fr; }
 .guide-message > .guide-dialogue { min-height: 0; }
-.guide-message[data-enter="true"] { animation: guide-message-open .45s cubic-bezier(.2, .7, .2, 1) both; }
+.guide-message[data-enter="true"] { animation: guide-message-open .45s var(--ease-current) both; }
 .guide-message[data-enter="true"] > .guide-dialogue { overflow: hidden; animation: guide-message-in .35s .08s ease both; }
 @keyframes guide-message-open { from { grid-template-rows: 0fr; } to { grid-template-rows: 1fr; } }
 @keyframes guide-message-in { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
@@ -1269,7 +1237,7 @@
   padding: 8px 10px;
   gap: 8px;
   border: 1px solid var(--g-line);
-  border-radius: 8px;
+  border-radius: var(--r-sm);
   background: var(--g-panel);
   color: var(--g-ink);
   font-size: var(--fs-small);
@@ -1295,7 +1263,7 @@
   max-height: 46vh;
   overflow: auto;
   border: 1px solid var(--g-line);
-  border-radius: 12px;
+  border-radius: var(--r-3);
   background: var(--g-panel);
 }
 .guide-library .plugin-gallery {
@@ -1391,13 +1359,13 @@
   max-width: calc(100% - 48px);
   display: inline-flex;
   align-items: center;
-  gap: 10px;
+  gap: var(--sp-2);
   padding: 10px 18px;
   background: var(--g-panel);
   backdrop-filter: blur(18px);
   color: inherit;
   font: inherit;
-  box-shadow: 0 12px 40px #102a3322;
+  box-shadow: var(--shadow-2);
 }
 /* Centred over the workspace, clear of the footer and of any settling toast. */
 .guide-app > [data-reel-stage] {
@@ -1406,12 +1374,12 @@
   display: flex;
   flex-direction: column;
   gap: 12px;
-  padding: 22px 26px;
+  padding: var(--sp-6) var(--sp-7);
   background: var(--g-panel);
   backdrop-filter: blur(18px);
   border: 1px solid var(--g-line);
-  border-radius: 14px;
-  box-shadow: 0 18px 60px #102a3322;
+  border-radius: var(--r-4);
+  box-shadow: var(--shadow-3);
 }
 .guide-app > [data-reel-stage] .guide-message p {
   margin: 0;
@@ -1426,7 +1394,7 @@
 .guide-app > [data-reel-stage] pre {
   margin: 12px 0 0;
   padding: 10px 12px;
-  border-radius: 10px;
+  border-radius: var(--r-2);
   background: var(--g-line);
   overflow-x: auto;
 }
@@ -1434,54 +1402,51 @@
   align-self: flex-start;
 }
 
-/* ---- Onboarding script v4 (onboarding/lessons.ts) ---- */
+/* ---- Onboarding script v4 (onboarding/lessons.ts) ----
+   Colour reads the guide and app tokens only — no fallback hex from outside
+   palettes (the old #1a7f37/#6b4fd8/#b42318 defaults belonged to other products). */
 .guide-goal {
-  margin: 0 0 .75rem; padding: .7rem .9rem; border: 1px solid var(--border, rgba(0,0,0,.12)); border-radius: 12px;
-  background: var(--surface, rgba(255,255,255,.7)); animation: guide-goal-in .18s ease-out both;
+  margin: 0 0 var(--sp-3); padding: var(--sp-3) var(--sp-4); border: 1px solid var(--g-line); border-radius: var(--r-3);
+  background: var(--g-panel); animation: guide-goal-in .18s ease-out both;
 }
-.guide-goal[data-goal-state="complete"] { border-color: var(--success, #1a7f37); }
+.guide-goal[data-goal-state="complete"] { border-color: var(--success); }
 .guide-goal-checkpoints { display: flex; flex-wrap: wrap; gap: .4rem .9rem; margin: 0; padding: 0; list-style: none; }
 .guide-goal-checkpoints li { display: inline-flex; align-items: center; gap: .35rem; opacity: .7; }
 .guide-goal-checkpoints li[data-done="true"] { opacity: 1; font-weight: 600; }
 .guide-goal-mark {
-  display: inline-grid; place-items: center; width: 1.05rem; height: 1.05rem; border-radius: 999px;
+  display: inline-grid; place-items: center; width: 1.05rem; height: 1.05rem; border-radius: var(--r-full);
   border: 1.5px solid currentColor;
 }
-.guide-goal-checkpoints li[data-done="true"] .guide-goal-mark { color: #fff; background: var(--success, #1a7f37); border-color: var(--success, #1a7f37); }
+.guide-goal-checkpoints li[data-done="true"] .guide-goal-mark { color: #fff; background: var(--success); border-color: var(--success); }
 @keyframes guide-goal-in { from { opacity: 0; transform: translateY(-6px); } }
 .guide-followup { display: flex; align-items: center; gap: .4rem; margin-top: .35rem; }
-.guide-followup .guide-step-done { color: var(--success, #1a7f37); flex: none; }
-.guide-notice { margin-top: .35rem; color: var(--danger, #b42318); }
+.guide-followup .guide-step-done { color: var(--success); flex: none; }
+.guide-notice { margin-top: .35rem; color: var(--danger); }
 .guide-primary-label { display: inline-flex; flex-direction: column; align-items: flex-start; }
 .guide-primary-subtitle { font-size: var(--fs-small); opacity: .75; font-weight: 400; }
-.guide-secondary {
-  border: 0; background: transparent; color: inherit; opacity: .75; cursor: pointer; padding: .4rem .6rem;
-  display: inline-flex; align-items: center; gap: .4rem;
-}
-.guide-secondary:hover { opacity: 1; text-decoration: underline; }
 .guide-run-chips { display: inline-flex; gap: .4rem; margin-inline-start: .75rem; flex-wrap: wrap; }
-.guide-run-chip { padding: .1rem .5rem; border-radius: 999px; font-size: var(--fs-small); background: color-mix(in srgb, currentColor 8%, transparent); }
+.guide-run-chip { padding: .1rem .5rem; border-radius: var(--r-full); font-size: var(--fs-small); background: color-mix(in srgb, currentColor 8%, transparent); }
 .guide-footer [data-pulse="true"] { animation: guide-pulse 1.4s ease-in-out infinite; }
-@keyframes guide-pulse { 50% { box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent, #6b4fd8) 30%, transparent); } }
+@keyframes guide-pulse { 50% { box-shadow: 0 0 0 4px color-mix(in srgb, var(--g-accent) 30%, transparent); } }
 
-.world-card-label { padding: 0 .4rem; border-radius: 999px; font-size: var(--fs-small); background: color-mix(in srgb, currentColor 9%, transparent); }
-.world-card-row[data-good-first="true"] { border-radius: 8px; box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent, #6b4fd8) 35%, transparent); animation: guide-glow 1.6s ease-in-out 2; }
-@keyframes guide-glow { 50% { box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent, #6b4fd8) 20%, transparent); } }
+.world-card-label { padding: 0 .4rem; border-radius: var(--r-full); font-size: var(--fs-small); background: color-mix(in srgb, currentColor 9%, transparent); }
+.world-card-row[data-good-first="true"] { border-radius: var(--r-sm); box-shadow: 0 0 0 2px color-mix(in srgb, var(--g-accent) 35%, transparent); animation: guide-glow 1.6s ease-in-out 2; }
+@keyframes guide-glow { 50% { box-shadow: 0 0 0 4px color-mix(in srgb, var(--g-accent) 20%, transparent); } }
 
-.coding-plan-tag { font-size: var(--fs-small); padding: 0 .4rem; border-radius: 999px; background: color-mix(in srgb, currentColor 9%, transparent); }
+.coding-plan-tag { font-size: var(--fs-small); padding: 0 .4rem; border-radius: var(--r-full); background: color-mix(in srgb, currentColor 9%, transparent); }
 
 .commit-pick-head, .change-stack-header { margin: 0 0 .4rem; font-weight: 600; }
 .commit-pick-rows, .change-stack-rows { margin: 0; padding: 0; list-style: none; display: grid; gap: .3rem; }
 .commit-pick-row label, .change-stack-row {
-  display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; padding: .35rem .5rem; border-radius: 8px;
-  border: 1px solid var(--border, rgba(0,0,0,.1));
+  display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; padding: .35rem .5rem; border-radius: var(--r-sm);
+  border: 1px solid var(--g-line);
 }
 .commit-pick-row[data-picked="false"] label { opacity: .55; text-decoration: line-through; }
 .commit-pick-hint { font-size: var(--fs-small); opacity: .75; font-style: italic; }
 .commit-pick-stat, .change-stack-stat { font-variant-numeric: tabular-nums; opacity: .75; }
 .commit-pick-open { margin-top: .5rem; }
 .change-stack-row { animation: change-stack-drop .45s ease-out both; animation-delay: var(--stack-delay, 0ms); }
-.change-stack-rebased { font-size: var(--fs-small); padding: 0 .45rem; border-radius: 999px; color: var(--accent, #6b4fd8); background: color-mix(in srgb, var(--accent, #6b4fd8) 12%, transparent); }
+.change-stack-rebased { font-size: var(--fs-small); padding: 0 .45rem; border-radius: var(--r-full); color: var(--g-accent); background: color-mix(in srgb, var(--g-accent) 12%, transparent); }
 .change-stack-target { margin: .3rem 0 0; opacity: .8; }
 .change-stack-target code::before { content: "◆ "; }
 @keyframes change-stack-drop { from { opacity: 0; transform: translateY(-14px); } }
@@ -1490,7 +1455,6 @@
 }
 
 .guide-composer-layer:has(.guide-dictation-stop) { flex-direction: column; }
-.guide-dictation-stop { display: flex; align-items: center; gap: 8px; padding: 8px 12px !important; color: var(--g-accent) !important; }
 
 
 .guide-transcript > [data-tutorial-cards] { min-width: 0; }
@@ -1520,11 +1484,11 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 12px;
+  gap: var(--sp-3);
   min-height: 38px;
-  padding: 6px 12px;
+  padding: var(--sp-2) var(--sp-3);
   border: 1px solid var(--g-line);
-  border-radius: 999px;
+  border-radius: var(--r-full);
   background: var(--g-panel);
   color: var(--g-ink);
   box-shadow: 0 2px 4px color-mix(in srgb, var(--g-ink) 7%, transparent);
@@ -1535,12 +1499,12 @@
 .guide-button-content {
   display: inline-flex;
   align-items: center;
-  gap: 7px;
+  gap: var(--sp-2);
 }
 .guide-button.guide-primary {
-  min-height: 44px;
-  gap: 20px;
-  padding: 8px 14px;
+  min-height: var(--ctl-h-lg);
+  gap: var(--sp-5);
+  padding: var(--sp-2) var(--sp-4);
   font-weight: 500;
 }
 .guide-button > .guide-button-key { margin-inline-start: auto; }
@@ -1554,7 +1518,7 @@
 }
 .guide-shell .guide-button:focus-visible {
   outline: 2px solid var(--g-accent);
-  outline-offset: 3px;
+  outline-offset: 2px;
 }
 .guide-shell .guide-button[data-pressed] {
   border-color: var(--g-accent);
@@ -1571,4 +1535,85 @@
   .guide-shell .guide-button:hover:not(:disabled),
   .guide-shell .guide-button[data-pressed],
   .guide-shell .guide-button[data-pressed] .guide-button-key { transform: none; }
+}
+
+/*
+ * The variant tier over the shared control. Back keeps the default quiet
+ * pill; the variants below carry every semantics that differs from it:
+ *
+ *   .guide-next       — the one accent action on a beat (filled, --g-on-accent
+ *                       text at 4.93:1 light / 10.32:1 dark).
+ *   .guide-skip       — the escape hatch: a ghost, quieter than the pill,
+ *                       never louder than the action it abandons.
+ *   .guide-secondary  — the lesson's quiet alternative: a text action that
+ *                       underlines on hover, not a second pill.
+ *   .guide-dictation-stop — accent text over the composer, no pill chrome.
+ *
+ * Declared after the .guide-button system so equal-specificity states
+ * (:hover:not(:disabled), [data-pressed]) resolve here by source order.
+ */
+.guide-shell .guide-next {
+  background: var(--g-accent);
+  border-color: transparent;
+  color: var(--g-on-accent);
+}
+.guide-shell .guide-next .guide-button-key {
+  background: color-mix(in srgb, var(--g-bg) 92%, transparent);
+  border-color: transparent;
+  color: var(--g-ink);
+  box-shadow: 0 1px 0 color-mix(in srgb, var(--g-ink) 24%, transparent);
+}
+.guide-shell .guide-next:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--g-accent) 90%, white);
+  border-color: transparent;
+}
+.guide-shell .guide-next[data-pressed] {
+  background: color-mix(in srgb, var(--g-accent) 84%, black);
+  border-color: transparent;
+}
+.guide-shell .guide-skip {
+  background: transparent;
+  border-color: transparent;
+  box-shadow: none;
+  color: var(--g-muted-strong);
+}
+.guide-shell .guide-skip:hover:not(:disabled) {
+  background: var(--g-panel);
+  border-color: transparent;
+  box-shadow: none;
+  color: var(--g-ink);
+  transform: none;
+}
+.guide-shell .guide-skip[data-pressed] {
+  background: var(--g-panel);
+  border-color: transparent;
+  color: var(--g-ink);
+}
+.guide-shell .guide-secondary {
+  min-height: auto;
+  padding: var(--sp-2) var(--sp-3);
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  color: var(--g-muted-strong);
+  font-size: var(--fs-small);
+}
+.guide-shell .guide-secondary:hover:not(:disabled) {
+  background: transparent;
+  border-color: transparent;
+  box-shadow: none;
+  color: var(--g-ink);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  transform: none;
+}
+.guide-shell .guide-dictation-stop {
+  gap: var(--sp-2);
+  padding: var(--sp-2) var(--sp-3);
+  color: var(--g-accent);
+}
+
+/* Key hints answer a physical keyboard; touch and small screens have none. */
+@media (hover: none), (max-width: 640px) {
+  .guide-shell .guide-button-key { display: none; }
 }

@@ -53,8 +53,8 @@ export function LiveTutorialRunBody({ card, onRunCommand }: { card: Extract<Card
       })}
     </ol>}
     {failure && <p className="live-tutorial-error" role="alert">{failure}</p>}
-    {expired && <button type="button" className="guide-back" data-flow="onboarding.act" onClick={() => onRunCommand("onboarding.act", "restart")}>Start new tutorial</button>}
-    {!expired && (failure || run?.phase === "failed") && <button type="button" className="guide-back" data-flow="tutorial.live.retry"
+    {expired && <button type="button" className="guide-text-button" data-flow="onboarding.act" onClick={() => onRunCommand("onboarding.act", "restart")}>Start new tutorial</button>}
+    {!expired && (failure || run?.phase === "failed") && <button type="button" className="guide-text-button" data-flow="tutorial.live.retry"
       onClick={() => onRunCommand("tutorial.live.retry", card.id)}>{run?.phase === "failed" ? "Retry" : "Reconnect"}</button>}
     {run?.operation === "implement" && run.phase === "completed" && !failure && <button type="button" className="guide-primary" data-flow="files.implementation-diff"
       onClick={() => onRunCommand("files.implementation-diff")}>View diff</button>}

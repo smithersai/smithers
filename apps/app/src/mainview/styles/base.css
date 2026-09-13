@@ -110,7 +110,7 @@ textarea {
 /* The session shell already follows the guide theme; keep its header on the same surface. */
 .session-navigation { position: absolute; inset: 0 0 auto; height: 44px; z-index: 60; background: inherit; }
 .session-navigation .guide-wordmark { border: 0; padding: 0; background: transparent; cursor: pointer; }
-.session-navigation .guide-wordmark:focus-visible { outline: 2px solid var(--g-accent); outline-offset: 5px; }
+.session-navigation .guide-wordmark:focus-visible { outline: 2px solid var(--g-accent); outline-offset: 2px; }
 .session-sidebar { position: absolute; top: 44px; bottom: 0; left: 0; width: 240px; z-index: 55; display: flex; }
 .session-sidebar .chrome-bar { width: 100%; }
 .session-shell:has(.session-sidebar) { padding-left: 240px; }

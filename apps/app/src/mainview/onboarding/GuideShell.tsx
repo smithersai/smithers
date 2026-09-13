@@ -315,18 +315,18 @@ export function GuideShell({ children, clock = guideClock }: { children: ReactNo
         <section className="guide-lesson" aria-label={`Lesson ${stage}`}>
           {stage > 0 && stage < GUIDE_LAST_STEP && (
             <nav className="guide-navigation" aria-label="Lesson navigation">
-              {stage > 1 && <GuideButton className="guide-back" shortcut={GUIDE_KEYS.back} data-flow="onboarding.act" onClick={() => runCommandGuide("back")}>
+              {stage > 1 && <GuideButton shortcut={GUIDE_KEYS.back} data-flow="onboarding.act" onClick={() => runCommandGuide("back")}>
                 Back
               </GuideButton>}
               {lesson?.kind === "do" && lesson.practice === true && (
-                <GuideButton className="guide-back guide-skip" shortcut="q" data-flow="onboarding.act"
+                <GuideButton className="guide-skip" shortcut="q" data-flow="onboarding.act"
                   onClick={() => runCommandGuide("skip-practice")}>
                   Skip tutorial
                 </GuideButton>
               )}
               {showNext && (
                 <GuideButton
-                  className="guide-back"
+                  className="guide-next"
                   shortcut="ArrowRight"
                   data-flow="onboarding.act"
                   onClick={() => runCommandGuide("next")}
