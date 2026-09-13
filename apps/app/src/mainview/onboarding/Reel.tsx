@@ -15,7 +15,7 @@ export function Reel({ index, epoch = 0, demo, dispatch, playSound = playReelChi
     if (!node || !stage) return
     node.focus()
     dispatchReelDemo(stage.demo, dispatch, playSound)
-    return scheduleReel({ target: node.ownerDocument,
+    return scheduleReel({ target: node.ownerDocument, root: node,
       advance: () => dispatch("reel-next", `${epoch}:${index}`), exit: () => dispatch("reel-exit") })
   }, [stage, index, epoch, dispatch, playSound])
   if (!stage) return null
@@ -32,7 +32,7 @@ export function Reel({ index, epoch = 0, demo, dispatch, playSound = playReelChi
       </div>}
     </article>
     <button className="guide-primary" data-flow="onboarding.act" aria-keyshortcuts="ArrowRight" onClick={() => dispatch("reel-next", `${epoch}:${index}`)}>{index === REEL_STAGES.length - 1 ? "Finish" : "Next"} <kbd className="guide-button-key">→</kbd></button>
-    <button className="guide-primary" data-flow="onboarding.act" onClick={() => dispatch("reel-exit")}>Back <kbd className="guide-button-key">Esc</kbd></button>
+    <button className="guide-primary" data-flow="onboarding.act" aria-keyshortcuts="Escape ArrowLeft" onClick={() => dispatch("reel-exit")}>Back <kbd className="guide-button-key">Esc</kbd></button>
   </section>
 }
 
@@ -47,13 +47,7 @@ export function ReelShell({ clock = guideClock }: { clock?: GuideClock }) {
   const launchRef = useCallback((node: HTMLButtonElement | null) => {
     if (!node) return
     if (guide?.reelSeen) node.focus()
-    const keydown = (event: KeyboardEvent) => {
-      if (event.isComposing || event.repeat || event.metaKey || event.ctrlKey || event.altKey || event.shiftKey || event.key.toLowerCase() !== REEL_BUTTON.key.toLowerCase()) return
-      if ((event.target as Element | null)?.closest?.('input,textarea,select,[contenteditable="true"]')) return
-      event.preventDefault(); controller.runCommand(REEL_BUTTON.command)
-    }
-    node.ownerDocument.addEventListener("keydown", keydown)
-    return () => node.ownerDocument.removeEventListener("keydown", keydown)
+
   }, [controller, guide?.reelSeen])
   if (guide?.step !== GUIDE_LAST_STEP) return null
   if (guide.reelIndex !== undefined) return <Reel index={guide.reelIndex} epoch={guide.reelEpoch} demo={guide.reelDemo} dispatch={dispatch} clock={clock} />

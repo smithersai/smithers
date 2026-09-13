@@ -1494,3 +1494,21 @@
 .guide-tip p { font-size: var(--fs-body); line-height: 1.6; color: var(--g-ink); }
 
 .guide-transcript > [data-tutorial-cards] { min-width: 0; }
+
+/* All held inputs stay visible until release; keyboard and pointer share this state. */
+.guide-shell button[data-pressed],
+.guide-shell a[data-pressed] {
+  transform: translateY(1px) scale(.985);
+  box-shadow: inset 0 2px 4px #1e39302b;
+  outline: 2px solid var(--g-accent);
+  outline-offset: 2px;
+}
+.guide-shell [data-pressed] .guide-button-key {
+  opacity: 1;
+  background: color-mix(in srgb, var(--g-accent) 22%, transparent);
+  transform: translateY(1px);
+}
+@media (prefers-reduced-motion: reduce) {
+  .guide-shell button[data-pressed], .guide-shell a[data-pressed],
+  .guide-shell [data-pressed] .guide-button-key { transform: none; }
+}

@@ -21,6 +21,8 @@ for (const key of ["Escape", "ArrowLeft", "ArrowRight", "x", null]) test(`reel w
   const stop = scheduleReel({ target, advance: () => advanced++, exit: () => exited++ })
   expect(advanced).toBe(0)
   if (key) for (let repeat = 0; repeat < 2; repeat++) target.dispatchEvent(Object.assign(new Event("keydown", { cancelable: true }), { key }))
+  expect(advanced).toBe(0)
+  if (key) target.dispatchEvent(Object.assign(new Event("keyup", { cancelable: true }), { key }))
   expect(advanced).toBe(key === "ArrowRight" ? 1 : 0)
   expect(exited).toBe(key === "Escape" || key === "ArrowLeft" ? 1 : 0)
   stop()

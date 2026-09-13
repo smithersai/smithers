@@ -126,12 +126,12 @@ test("every beat has keyboard navigation, one pill shape, and no numbered instru
 
 test("a real persisted completion shows the check and the follow-up line before advancing", async () => {
   let controller!: ReturnType<typeof createAppController>
-  const host = await mountGuide(3, still, {}, c => { controller = c })
-  await controller.guideAct("signal", "prs.opened")
+  const host = await mountGuide(6, still, {}, c => { controller = c })
+  await controller.guideAct("signal", "commits.made")
   await settle()
-  expect(host.querySelector('[data-message-step="3"] [aria-label="Done"]')).not.toBeNull()
-  expect(text(host.querySelector('[data-message-step="3"] [data-followup]'))).toBe("Mira's on logging, not greetings. It's ours.")
-  expect(controller.store.session().guide?.step).toBe(3)
+  expect(host.querySelector('[data-message-step="6"] [aria-label="Done"]')).not.toBeNull()
+  expect(text(host.querySelector('[data-message-step="6"] [data-followup]'))).toBe("The implementation is ready to review.")
+  expect(controller.store.session().guide?.step).toBe(6)
 })
 
 test("lesson shortcuts share the button dispatch and preserve keyboard guards", async () => {
@@ -143,6 +143,7 @@ test("lesson shortcuts share the button dispatch and preserve keyboard guards", 
   })
   const press = (init: KeyboardEventInit = {}, target: EventTarget = document) => {
     target.dispatchEvent(new KeyboardEvent("keydown", { key: "l", bubbles: true, ...init }))
+    target.dispatchEvent(new KeyboardEvent("keyup", { key: "l", bubbles: true, ...init }))
   }
   for (const init of [{ repeat: true }, { ctrlKey: true }, { metaKey: true }, { altKey: true }, { shiftKey: true }, { isComposing: true }]) press(init)
   const input = document.createElement("input")
@@ -173,6 +174,7 @@ test("every pill click and its letter dispatch the same flow and arguments", asy
       calls.length = 0
       host.querySelector<HTMLButtonElement>(`.guide-actions [data-flow="${action.flow}"]${action === lesson.secondary ? "[data-secondary]" : ".guide-primary"}`)!.click()
       document.dispatchEvent(new KeyboardEvent("keydown", { key: action.key.toLowerCase(), bubbles: true }))
+      document.dispatchEvent(new KeyboardEvent("keyup", { key: action.key.toLowerCase(), bubbles: true }))
       const args = action.args?.replaceAll("{repo}", "acme/api")
       const expected: [string, string?] = args === undefined ? [action.flow] : [action.flow, args]
       expect(calls).toEqual([expected, expected])
@@ -203,4 +205,48 @@ test("Skip practice lands on the bridge and marks the goal skipped", async () =>
   expect(controller.store.session().guide?.step).toBe(GUIDE_BRIDGE)
   expect(host.querySelector(".guide-goal")?.getAttribute("data-goal-state")).toBe("skipped")
   expect(text(host.querySelector(".guide-goal"))).toContain("Skipped")
+})
+
+
+test("overlapping tutorial shortcuts highlight together and only the final release dispatches", async () => {
+  const calls: Array<[string, string?]> = []
+  const host = await mountGuide(0, still, {}, c => {
+    spyOn(c, "runCommand").mockImplementation((name, args) => { calls.push([name, args]); return true })
+  })
+  const tutorial = host.querySelector<HTMLElement>('[aria-keyshortcuts="t"]')!
+  const sound = host.querySelector<HTMLElement>('[aria-keyshortcuts="s"]')!
+  const key = (type: string, key: string, repeat = false) => document.dispatchEvent(new KeyboardEvent(type, { key, bubbles: true, cancelable: true, repeat }))
+  key('keydown', 't')
+  key('keydown', 's')
+  key('keydown', 't', true)
+  expect(tutorial.hasAttribute('data-pressed')).toBe(true)
+  expect(sound.hasAttribute('data-pressed')).toBe(true)
+  expect(calls).toEqual([])
+  key('keyup', 't')
+  expect(tutorial.hasAttribute('data-pressed')).toBe(false)
+  expect(sound.hasAttribute('data-pressed')).toBe(true)
+  expect(calls).toEqual([])
+  key('keyup', 's')
+  expect(sound.hasAttribute('data-pressed')).toBe(false)
+  expect(calls).toEqual([['onboarding.act', 'sound']])
+  key('keydown', 't')
+  expect(calls).toHaveLength(1)
+  key('keyup', 't')
+  expect(calls).toEqual([['onboarding.act', 'sound'], ['onboarding.act', 'start']])
+})
+
+test("held input survives an incidental tutorial state render", async () => {
+  let controller!: ReturnType<typeof createAppController>
+  const calls: Array<[string, string?]> = []
+  const host = await mountGuide(0, still, {}, c => {
+    controller = c
+    spyOn(c, 'runCommand').mockImplementation((name, args) => { calls.push([name, args]); return true })
+  })
+  document.dispatchEvent(new KeyboardEvent('keydown', { key: 't', bubbles: true, cancelable: true }))
+  await controller.guideAct('pause')
+  await settle()
+  expect(host.querySelector('[aria-keyshortcuts="t"]')!.hasAttribute('data-pressed')).toBe(true)
+  expect(calls).toEqual([])
+  document.dispatchEvent(new KeyboardEvent('keyup', { key: 't', bubbles: true, cancelable: true }))
+  expect(calls).toEqual([['onboarding.act', 'start']])
 })

@@ -40,12 +40,13 @@ const githubHref = "https://github.com/smithersai/smithers"
 </Base>
 
 <script>
+  import { bindPressActions } from "../../../app/src/mainview/runtime/PressActions"
   import { hasSavedApp } from "../lib/appHistory"
   /*
    * The app arrives in this document. After `load` and an idle moment the
    * page reads the prerendered app page (Start Here's href) for the app's
    * island chunk and stylesheets, imports the chunk, and Start Here appears.
-   * Nothing of the app is in this page's module graph: Astro would link
+   * AppMount stays out of this page's module graph: Astro would link
    * every stylesheet the graph reaches into this page's head, render-blocking.
    * Start Here, or S, mounts the app in onboarding mode inside a view
    * transition: the hero wordmark glides onto the app's top-left mark, the
@@ -156,7 +157,7 @@ const githubHref = "https://github.com/smithersai/smithers"
 
     /** Swap the home page for the app; answers the app's entrance mark. */
     const swap = (mount: AppMount): HTMLElement | null => {
-      removeEventListener("keydown", onKey)
+      stopPress()
       hold.disconnect()
       for (const sheet of homeSheets) sheet.media = "not all"
       for (const sheet of appSheets) sheet.removeAttribute("media")
@@ -233,19 +234,14 @@ const githubHref = "https://github.com/smithersai/smithers"
       event.preventDefault()
       void enter()
     })
-    // The app's key convention (apps/app/src/mainview/onboarding/GuideShell.tsx):
-    // one bare letter per action, ignored with modifiers or inside text entry.
-    const onKey = (event: KeyboardEvent): void => {
-      if (entering) return
-      if (event.metaKey || event.ctrlKey || event.altKey || event.shiftKey || event.repeat || event.defaultPrevented) return
-      if (event.key.toLowerCase() !== "s") return
-      const target = event.target instanceof Element ? event.target : null
-      if (target?.closest('input, textarea, select, [contenteditable]:not([contenteditable="false"])')) return
-      event.preventDefault()
-      start.focus({ preventScroll: true })
-      void enter()
-    }
-    addEventListener("keydown", onKey)
+    const stopPress = bindPressActions({
+      root: start,
+      enabled: () => !entering,
+      resolveShortcut: (event) => {
+        if (event.metaKey || event.ctrlKey || event.altKey || event.shiftKey || event.key.toLowerCase() !== "s") return
+        return { element: start, activate: () => { start.focus({ preventScroll: true }); void enter() } }
+      },
+    })
 
     /*
      * GitHub sign-in (the tutorial's first step) returns to this page with
@@ -355,6 +351,7 @@ const githubHref = "https://github.com/smithersai/smithers"
     }
   }
   .start:active,
+  .start[data-pressed],
   .start.pending {
     background: var(--home-accent-hover);
     transform: translateY(1px) scale(0.985);
@@ -385,6 +382,7 @@ const githubHref = "https://github.com/smithersai/smithers"
     transition: transform 100ms var(--ease), box-shadow 100ms var(--ease);
   }
   .start:active .start-key,
+  .start[data-pressed] .start-key,
   .start.pending .start-key {
     transform: translateY(1px);
     box-shadow: inset 0 1px 2px rgb(var(--shadow-rgb) / 16%);
@@ -405,7 +403,8 @@ const githubHref = "https://github.com/smithersai/smithers"
     /* Release transform after the entrance so hover and press can take over. */
     animation: start-in 0.45s var(--ease) backwards;
   }
-  .start.ready.pending {
+  .start.ready.pending,
+  .start.ready[data-pressed] {
     animation: none;
   }
   /* Returning from sign-in: the app replaces the page at once, so the page never shows. */
@@ -424,7 +423,8 @@ const githubHref = "https://github.com/smithersai/smithers"
   @media (prefers-reduced-motion: reduce) {
     .start.ready { animation-name: start-fade; animation-duration: 0.2s; }
     .start, .start-key, .github { transition: none; }
-    .start:hover, .start:active, .start.pending,
-    .start:active .start-key, .start.pending .start-key { transform: none; }
+    .start:hover, .start:active, .start[data-pressed], .start.pending,
+    .start:active .start-key,
+    .start[data-pressed] .start-key, .start.pending .start-key { transform: none; }
   }
 </style>

@@ -43,8 +43,8 @@ export type GuideLesson = {
 }
 
 export const GUIDE_STAGES: readonly GuideLesson[] = [
-  /* The greeting waits for the explicit Start tutorial action. */
-  /* 0 */ { kind: "do", message: "I'm Smithers, I help your team manage your repository.", completion: "tutorial.started", skippable: false,
+  /* The tutorial waits for the explicit Start tutorial action. */
+  /* 0 */ { kind: "do", message: "", completion: "tutorial.started", skippable: false,
     instruction: "Starts the tutorial.",
     actions: [{ label: "Start tutorial", key: "t", flow: "onboarding.act", args: "start" }] },
   /* 1 */ { kind: "do", practice: true, message: "", tip: "We are in an example repo to show how you use Smithers. At all times Smithers will suggest next actions to you which you can select via hitting the key on the button.", completion: "issues.opened", skippable: false,

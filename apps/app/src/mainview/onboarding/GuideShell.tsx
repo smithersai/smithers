@@ -7,7 +7,7 @@ import { guideClock, readPause, scheduleGuideAdvance, type GuideClock } from "./
 import { ReelShell } from "./Reel.tsx"
 import { guideForwardAction } from "./navigation"
 import { useLiveQuery } from "@tanstack/react-db"
-import { useRef, useState, type ReactNode, type CSSProperties } from "react"
+import { useCallback, useRef, useState, type ReactNode, type CSSProperties } from "react"
 import { Check, Command, Mic, Volume2, VolumeX, X } from "lucide-react"
 import { useController } from "../ControllerContext"
 import { initialGuide, conversationTabIdOf, inConversation, type Card } from "../state/AppState"
@@ -17,6 +17,7 @@ import { cardActions } from "../cards/CardActions"
 import { PRACTICE_CARD, PRACTICE_NAME, PRACTICE_REPO, PRACTICE_RUN_ID } from "../state/practice/PracticeRepository"
 import "./guide.css"
 
+import { bindPressActions, type PressAction } from "../runtime/PressActions"
 import { GuideComposerHost } from "./GuideComposerHost"
 import { InTutorial, tutorialTranscript } from "./transcriptScope"
 
@@ -183,6 +184,49 @@ export function GuideShell({ children, clock = guideClock }: { children: ReactNo
     if (asked?.kind !== "do" || !done(step)) return undefined
     return guide.said?.[asked.completion] ?? asked.success
   }
+  const inputHandlers = useRef<{ resolve: (event: KeyboardEvent) => PressAction | undefined; enabled: () => boolean }>(null!)
+  inputHandlers.current = {
+    enabled: () => !guide.finished && guide.reelIndex === undefined,
+    resolve: (event) => {
+      const key = event.key.toLowerCase()
+      const action = (activate: () => void, shortcut = key): PressAction => ({
+        element: Array.from(document.querySelectorAll<HTMLElement>('.guide-shell [aria-keyshortcuts]'))
+          .find(button => !button.closest('[inert], [aria-hidden="true"]') && button.getAttribute('aria-keyshortcuts')?.toLowerCase().split(' ').includes(shortcut)),
+        activate,
+      })
+      if ((event.metaKey || event.ctrlKey) && !event.altKey && !event.shiftKey && key === 'k') {
+        return action(() => guide.conversationOpen ? runCommandClose() : runCommandOpen(), event.metaKey ? 'meta+k' : 'control+k')
+      }
+      if (event.metaKey || event.ctrlKey || event.altKey || event.shiftKey) return
+      if (key === 'escape' && guide.conversationOpen) return action(runCommandClose)
+      if (guide.conversationOpen || session.paletteOpen) return
+      const lessonAction = lesson?.kind === 'do'
+        ? [...lesson.actions, ...(lesson.secondary === undefined ? [] : [lesson.secondary])].find(candidate => candidate.key.toLowerCase() === key)
+        : undefined
+      if (lessonAction) return action(() => runLessonAction(lessonAction))
+      if (lesson?.kind === 'do' && lesson.practice === true && key === 'q') return action(() => runCommandGuide('skip-practice'))
+      if (/^[1-9]$/.test(key) && lesson?.kind === 'do' && lesson.completion === 'change.opened' && picker?.kind === 'commit-pick') {
+        return action(() => controller.runCommand('change.pick', key))
+      }
+      if ((key === 'arrowdown' || key === 'arrowup') && runCard?.kind === 'run-trace' && runCard.payload.selection !== undefined) {
+        return action(() => { moveTrace(key === 'arrowdown' ? 1 : -1) })
+      }
+      if (key === 's') return action(runCommandSound)
+      if (key === 'c') return action(() => runCommandGuide('dark'))
+      if (key === 'n') return action(() => runCommandGuide('notify'))
+      if (key === 'arrowright') return action(() => runCommandGuide(guideForwardAction(stage)))
+      if (key === 'arrowleft' && stage > 0) return action(() => runCommandGuide('back'))
+      if (key === 'e' && stage === GUIDE_LAST_STEP) return action(() => controller.runCommand('tut.more'))
+    },
+  }
+  // Ref ownership survives incidental renders (for example the auto-advance pause on keydown).
+  const bindInputs = useCallback((node: HTMLDivElement | null) => {
+    if (!node?.parentElement) return
+    return bindPressActions({ root: node.parentElement,
+      resolveShortcut: event => inputHandlers.current.resolve(event),
+      enabled: () => inputHandlers.current.enabled(),
+    })
+  }, [stage, guide.playthrough, guide.reelIndex])
   if (guide.finished) return <>{children}</>
   return (
     <GuideComposerHost.Provider value={composerHost}>
@@ -201,80 +245,6 @@ export function GuideShell({ children, clock = guideClock }: { children: ReactNo
       ref={(node) => {
         if (!node) return
         if (document.activeElement === document.body) node.focus()
-        // The composer is portaled and focus can fall back to the document.
-        // Shell dismissal must work even when the key has no React ancestor.
-        const onKeyDown = (event: globalThis.KeyboardEvent) => {
-          /* A playing reel owns Escape and Back; the tutorial must not navigate underneath it. */
-          if (guide.reelIndex !== undefined) return
-          if (event.isComposing) return
-          if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
-            event.preventDefault()
-            event.stopPropagation()
-            if (!event.repeat) guide.conversationOpen ? runCommandClose() : runCommandOpen()
-          } else if (event.key === "Escape" && !event.metaKey && !event.ctrlKey && !event.altKey && !event.shiftKey && guide.conversationOpen) {
-            /* Escape closes only the palette or the composer, never a beat. */
-            event.preventDefault()
-            event.stopPropagation()
-            runCommandClose()
-            return
-          }
-          if (
-            !guide.conversationOpen &&
-            !session.paletteOpen &&
-            !event.metaKey &&
-            !event.ctrlKey &&
-            !event.altKey &&
-            !event.shiftKey
-          ) {
-            const target = event.target instanceof Element ? event.target : null
-            // Text editing retains arrows; Enter is always native, never guide navigation.
-            if (target?.closest('input:not([type="checkbox"]), textarea, select, [contenteditable]:not([contenteditable="false"])')) return
-            const key = event.key.toLowerCase()
-            const action = lesson?.kind === "do"
-              ? [...lesson.actions, ...(lesson.secondary === undefined ? [] : [lesson.secondary])].find(candidate => candidate.key.toLowerCase() === key)
-              : undefined
-            if (action) {
-              event.preventDefault()
-              if (!event.repeat) runLessonAction(action)
-              return
-            }
-            if (lesson?.kind === "do" && lesson.practice === true && key === "q") {
-              event.preventDefault()
-              if (!event.repeat) runCommandGuide("skip-practice")
-              return
-            }
-            /* Digits toggle the picker's rows, and only while the picker is the lesson. */
-            if (/^[1-9]$/.test(key) && lesson?.kind === "do" && lesson.completion === "change.opened" && picker?.kind === "commit-pick") {
-              event.preventDefault()
-              if (!event.repeat) controller.runCommand("change.pick", key)
-              return
-            }
-            if ((event.key === "ArrowDown" || event.key === "ArrowUp") && moveTrace(event.key === "ArrowDown" ? 1 : -1)) {
-              event.preventDefault()
-              return
-            }
-            if (key === "s") {
-              event.preventDefault()
-              if (!event.repeat) runCommandSound()
-              return
-            }
-            if (key === "c") {
-              event.preventDefault()
-              if (!event.repeat) runCommandGuide("dark")
-            } else if (key === "n") {
-              event.preventDefault()
-              if (!event.repeat) runCommandGuide("notify")
-            } else if (event.key === "ArrowRight") {
-              event.preventDefault()
-              if (event.repeat) return
-              runCommandGuide(guideForwardAction(stage))
-            } else if (event.key === "ArrowLeft" && stage > 0) {
-              event.preventDefault()
-              if (!event.repeat) runCommandGuide("back")
-            }
-          }
-        }
-        document.addEventListener("keydown", onKeyDown, true)
         /*
          * The tutorial presses Next for the reader. A say-beat advances after
          * a read pause and ANY input cancels it (the reader is doing
@@ -296,11 +266,10 @@ export function GuideShell({ children, clock = guideClock }: { children: ReactNo
         })
         return () => {
           stopAdvance()
-          document.removeEventListener("keydown", onKeyDown, true)
         }
       }}
     >
-      <div className="guide-content">
+      <div className="guide-content" ref={bindInputs}>
       {/*
         * The workspace is behind the tutorial chrome (guide.css): while a lesson
         * is running it is not reachable, so it leaves the a11y tree and the tab

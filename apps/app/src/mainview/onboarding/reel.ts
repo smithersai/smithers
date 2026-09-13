@@ -1,3 +1,4 @@
+import { bindPressActions, createPressActions, type PressAction } from "../runtime/PressActions"
 
 /* e, not w: w is Create Wiki in the lessons (onboarding SCRIPT v4). */
 export const REEL_BUTTON = { label: "What else can you do?", command: "tut.more", key: "e" } as const
@@ -26,22 +27,38 @@ export function dispatchReelDemo(demo: ReelDemo, dispatch: ReelDispatch, playSou
 }
 
 /** Each example waits for Next. Escape exits; arrows never interfere with text input. */
-export function scheduleReel({ target, advance, exit }: {
-  target: EventTarget; advance: () => void; exit: () => void
+export function scheduleReel({ target, root, advance, exit }: {
+  target: EventTarget; root?: HTMLElement; advance: () => void; exit: () => void
 }) {
   let pending = true
-  const keydown = (raw: Event) => {
-    const event = raw as KeyboardEvent
-    if (!pending || event.repeat || event.isComposing || event.metaKey || event.ctrlKey || event.altKey || event.shiftKey) return
+  const resolve = (event: KeyboardEvent): PressAction | undefined => {
+    if (!pending || event.isComposing || event.metaKey || event.ctrlKey || event.altKey || event.shiftKey) return
     if (!["Escape", "ArrowLeft", "ArrowRight"].includes(event.key)) return
     if (event.key !== "Escape" && (event.target as Element | null)?.closest?.('input,textarea,select,[contenteditable="true"]')) return
-    event.preventDefault(); event.stopImmediatePropagation()
-    pending = false
-    if (event.key === "ArrowRight") advance()
-    else exit()
+    const forward = event.key === 'ArrowRight'
+    return { element: root?.querySelector<HTMLElement>(`[aria-keyshortcuts="${forward ? 'ArrowRight' : 'Escape ArrowLeft'}"]`) ?? undefined,
+      activate: () => { if (!pending) return; pending = false; forward ? advance() : exit() } }
   }
+  if (root) {
+    const stop = bindPressActions({ root, resolveShortcut: resolve })
+    return () => { pending = false; stop() }
+  }
+  const held = createPressActions()
+  const keydown = (raw: Event) => {
+    const event = raw as KeyboardEvent, action = resolve(event)
+    if (!action) return
+    event.preventDefault(); event.stopImmediatePropagation()
+    if (!event.repeat) held.down(event.code || event.key, action)
+  }
+  const keyup = (raw: Event) => {
+    const event = raw as KeyboardEvent
+    if (held.up(event.code || event.key)) { event.preventDefault(); event.stopImmediatePropagation() }
+  }
+  const cancel = () => held.cancel()
   target.addEventListener("keydown", keydown, true)
-  return () => { pending = false; target.removeEventListener("keydown", keydown, true) }
+  target.addEventListener("keyup", keyup, true)
+  target.addEventListener("blur", cancel)
+  return () => { pending = false; held.cancel(); target.removeEventListener("keydown", keydown, true); target.removeEventListener("keyup", keyup, true); target.removeEventListener("blur", cancel) }
 }
 
 /** Original three-note interval; the optional reel click is the audio opt-in. */

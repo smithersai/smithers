@@ -3,14 +3,14 @@ import { expect, test } from "@playwright/test"
 test.use({ contextOptions: { reducedMotion: "reduce" } })
 
 for (const width of [1280, 390]) {
-  test(`welcome waits for Start tutorial and actions follow chat at ${width}px`, async ({ page }) => {
+  test(`welcome waits for Start tutorial without a redundant greeting at ${width}px`, async ({ page }) => {
     await page.setViewportSize({ width, height: 844 })
     await page.clock.install()
     await page.goto("/")
     await expect(page.getByRole("button", { name: "Start tutorial" })).toBeVisible()
     await page.clock.fastForward(10_000)
     await expect(page.locator(".guide-shell")).toHaveAttribute("data-stage", "0")
-    await expect(page.locator(".guide-dialogue > p")).toHaveText("I'm Smithers, I help your team manage your repository.")
+    await expect(page.locator(".guide-message, .guide-dialogue, .guide-speaker")).toHaveCount(0)
     await expect(page.locator(".guide-actions button")).toHaveCount(1)
     await expect(page.locator(".guide-goal, .guide-navigation, .guide-practice-badge")).toHaveCount(0)
     await page.screenshot({ path: `/tmp/smithers-welcome-${width}.png` })
@@ -18,12 +18,12 @@ for (const width of [1280, 390]) {
     await page.keyboard.press("Enter")
     await expect(page.locator(".guide-shell")).toHaveAttribute("data-stage", "1")
     await page.clock.runFor(1000)
-    const last = await page.locator('.guide-dialogue[data-message-step="1"]').boundingBox()
+    await expect(page.locator(".guide-message, .guide-dialogue, .guide-speaker")).toHaveCount(0)
+    const goal = await page.getByRole("region", { name: "Goal", exact: true }).boundingBox()
     const action = await page.getByRole("button", { name: "Show issues" }).boundingBox()
-    expect(last).not.toBeNull()
+    expect(goal).not.toBeNull()
     expect(action).not.toBeNull()
-    expect(action!.y - (last!.y + last!.height)).toBeGreaterThanOrEqual(0)
-    expect(action!.y - (last!.y + last!.height)).toBeLessThan(50)
+    expect(action!.y - (goal!.y + goal!.height)).toBeGreaterThanOrEqual(0)
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
     await expect(page.getByRole("button", { name: "Chat", exact: true })).toBeVisible()
     await expect(page.getByRole("button", { name: "Dictation", exact: true })).toBeVisible()
