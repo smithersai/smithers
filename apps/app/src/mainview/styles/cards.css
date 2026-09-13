@@ -458,7 +458,7 @@
 	margin: 0;
 	/* A completed card remains readable while it is the active review surface. */
 	opacity: 1;
-	background: var(--card, #fffefa);
+	background: var(--card);
 }
 /*
  * Ask 8: the maximized card scrolls, and Restore lives in its header — so the
@@ -470,7 +470,7 @@
 	z-index: 1;
 	margin: calc(-1 * var(--sp-2)) calc(-1 * var(--sp-3)) var(--sp-2);
 	padding: var(--sp-2) var(--sp-3) var(--sp-2);
-	background: var(--card, #fffefa);
+	background: var(--card);
 }
 
 /* A frame may expand, but the conversation remains the app: its composer is
@@ -528,7 +528,7 @@
 	display: inline-flex;
 	width: 1.75rem;
 	justify-content: center;
-	color: var(--muted-foreground, #6b6457);
+	color: var(--muted-foreground);
 }
 .connect-store-text {
 	display: flex;
@@ -537,7 +537,7 @@
 	flex: 1;
 }
 .connect-store-text > span {
-	color: var(--muted-foreground, #6b6457);
+	color: var(--muted-foreground);
 	font-size: var(--fs-small);
 	overflow: hidden;
 	text-overflow: ellipsis;
@@ -559,11 +559,11 @@
 	gap: 0.5rem;
 }
 .world-card-path {
-	color: var(--muted-foreground, #6b6457);
+	color: var(--muted-foreground);
 	font-size: var(--fs-small);
 }
 .world-card-empty {
-	color: var(--muted-foreground, #6b6457);
+	color: var(--muted-foreground);
 }
 
 /* The history card (factory mock 13): epics stack their header row, note and
@@ -607,7 +607,7 @@
 	display: contents;
 }
 .history-note dt {
-	color: var(--muted-foreground, #6b6457);
+	color: var(--muted-foreground);
 }
 .history-note dd {
 	margin: 0;
@@ -708,7 +708,7 @@
 	gap: 0.375rem;
 	margin: 0;
 	font-size: var(--fs-small);
-	color: var(--muted-foreground, #6b6457);
+	color: var(--muted-foreground);
 	word-break: break-all;
 }
 .browser-card-frame {
@@ -774,12 +774,12 @@
 .repo-card-git,
 .repo-card-detection,
 .targets-card-type {
-	color: var(--muted-foreground, #6b6457);
+	color: var(--muted-foreground);
 }
 .targets-card-summary {
 	display: block;
 	font-size: var(--fs-small);
-	color: var(--muted-foreground, #6b6457);
+	color: var(--muted-foreground);
 	word-break: break-word;
 }
 .targets-card-warnings {
@@ -832,7 +832,7 @@
 }
 .targets-count {
 	font-size: var(--fs-small);
-	color: var(--muted-foreground, #6b6457);
+	color: var(--muted-foreground);
 	white-space: nowrap;
 }
 .targets-chips {
@@ -884,7 +884,7 @@
 	border: 0;
 	border-radius: 6px;
 	background: transparent;
-	color: var(--muted-foreground, #6b6457);
+	color: var(--muted-foreground);
 	cursor: pointer;
 }
 .targets-star[aria-pressed="true"] {
@@ -898,7 +898,7 @@
 .targets-group-chevron {
 	display: inline-block;
 	width: 0.875rem;
-	color: var(--muted-foreground, #6b6457);
+	color: var(--muted-foreground);
 }
 .targets-card-label [data-badge="members"] {
 	margin-left: 0.375rem;
@@ -965,7 +965,7 @@
 	font-weight: 600;
 	text-transform: uppercase;
 	letter-spacing: 0.04em;
-	color: var(--muted-foreground, #6b6457);
+	color: var(--muted-foreground);
 	background: var(--surface, #fff);
 	padding: 0.375rem 0.5rem;
 	border-bottom: 1px solid var(--border, #e4ddcf);
@@ -1006,13 +1006,13 @@
 }
 .targets-table-workspace,
 .targets-table-cache {
-	color: var(--muted-foreground, #6b6457);
+	color: var(--muted-foreground);
 	white-space: nowrap;
 }
 .targets-table-never,
 .targets-table-when {
 	font-size: var(--fs-small);
-	color: var(--muted-foreground, #6b6457);
+	color: var(--muted-foreground);
 	white-space: nowrap;
 }
 .targets-table-lastrun {
@@ -1026,7 +1026,7 @@
 }
 .targets-table-empty {
 	text-align: center;
-	color: var(--muted-foreground, #6b6457);
+	color: var(--muted-foreground);
 	padding: 1rem;
 }
 .targets-drawer {
@@ -1055,7 +1055,7 @@
 	font-weight: 600;
 	text-transform: uppercase;
 	letter-spacing: 0.04em;
-	color: var(--muted-foreground, #6b6457);
+	color: var(--muted-foreground);
 }
 .targets-drawer-run-list {
 	list-style: none;
@@ -1087,7 +1087,7 @@
 .target-run-elapsed {
 	font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
 	font-size: var(--fs-small);
-	color: var(--muted-foreground, #6b6457);
+	color: var(--muted-foreground);
 }
 .target-run-kpis {
 	display: grid;
@@ -1129,7 +1129,7 @@
 .target-run-raw > summary {
 	cursor: pointer;
 	font-size: var(--fs-small);
-	color: var(--muted-foreground, #6b6457);
+	color: var(--muted-foreground);
 }
 .target-run-raw .target-run-output {
 	margin-top: 0.375rem;
@@ -1192,7 +1192,7 @@
 	display: flex;
 	flex-direction: column;
 	gap: 0.125rem;
-	color: var(--muted-foreground, #6b6457);
+	color: var(--muted-foreground);
 	font-size: var(--fs-small);
 }
 .workflow-list {
@@ -1215,7 +1215,7 @@
 	min-width: 0;
 }
 .workflow-list-text > span {
-	color: var(--muted-foreground, #6b6457);
+	color: var(--muted-foreground);
 	font-size: var(--fs-small);
 	overflow: hidden;
 	text-overflow: ellipsis;
@@ -1293,7 +1293,7 @@
 .queue-note {
 	flex: 1 1 auto;
 	min-width: 0;
-	color: var(--muted-foreground, #6b6457);
+	color: var(--muted-foreground);
 	overflow: hidden;
 	text-overflow: ellipsis;
 	white-space: nowrap;
@@ -1301,7 +1301,7 @@
 /* The date sits against the act, so the row reads login … date [Approve]. */
 .queue-at {
 	margin-left: auto;
-	color: var(--muted-foreground, #6b6457);
+	color: var(--muted-foreground);
 	font-size: var(--fs-small);
 	white-space: nowrap;
 }
@@ -1421,11 +1421,11 @@
 	display: flex;
 	align-items: center;
 	gap: 0.25rem;
-	color: var(--muted-foreground, #6b6457);
+	color: var(--muted-foreground);
 	white-space: nowrap;
 }
 .graph-card-counts {
-	color: var(--muted-foreground, #6b6457);
+	color: var(--muted-foreground);
 	white-space: nowrap;
 }
 .graph-card-legend {
@@ -1436,7 +1436,7 @@
 	margin: 0;
 	padding: 0;
 	font-size: var(--fs-small);
-	color: var(--muted-foreground, #6b6457);
+	color: var(--muted-foreground);
 }
 .graph-card-legend li {
 	display: flex;
@@ -1516,7 +1516,7 @@
 }
 .graph-node-duration {
 	font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
-	color: var(--muted-foreground, #6b6457);
+	color: var(--muted-foreground);
 }
 /* Node color by rule family (data-rule-family) and run status (data-run-status). */
 .graph-node[data-rule-family="Shell"] {
@@ -1532,7 +1532,7 @@
 	border-left: 3px solid var(--warning, #826601);
 }
 .graph-node[data-rule-family="Github"] {
-	border-left: 3px solid var(--muted-foreground, #6b6457);
+	border-left: 3px solid var(--muted-foreground);
 }
 .graph-node[data-private="true"] {
 	opacity: 0.45;
@@ -1602,7 +1602,7 @@
 .graph-drawer-fact-name {
 	flex-shrink: 0;
 	width: 4.5rem;
-	color: var(--muted-foreground, #6b6457);
+	color: var(--muted-foreground);
 	font-size: var(--fs-small);
 }
 .graph-drawer-fact-value {
@@ -1703,7 +1703,7 @@
 .run-timeline-row[data-status="pending"] .run-timeline-bar,
 .run-timeline-row[data-status="skipped"] .run-timeline-bar,
 .run-timeline-row[data-status="cancelled"] .run-timeline-bar {
-	background: var(--muted-foreground, #6b6457);
+	background: var(--muted-foreground);
 }
 .run-timeline-bar[data-zero-width="true"] {
 	width: 2px !important;
@@ -1714,14 +1714,14 @@
 	flex-shrink: 0;
 	text-align: right;
 	font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
-	color: var(--muted-foreground, #6b6457);
+	color: var(--muted-foreground);
 }
 .run-timeline-scrubber {
 	display: flex;
 	align-items: center;
 	gap: 0.5rem;
 	font-size: var(--fs-small);
-	color: var(--muted-foreground, #6b6457);
+	color: var(--muted-foreground);
 }
 .run-timeline-scrubber input {
 	flex: 1;
@@ -1746,7 +1746,7 @@
 .run-history-table th {
 	text-align: left;
 	font-size: var(--fs-small);
-	color: var(--muted-foreground, #6b6457);
+	color: var(--muted-foreground);
 	font-weight: 600;
 	padding: 0.25rem 0.5rem 0.25rem 0;
 }
@@ -1779,7 +1779,7 @@
 .affected-card-reason {
 	flex: 1;
 	min-width: 0;
-	color: var(--muted-foreground, #6b6457);
+	color: var(--muted-foreground);
 	font-size: var(--fs-small);
 }
 /* The CI matrix card. */
@@ -1804,7 +1804,7 @@
 .ci-matrix-jobs th {
 	text-align: left;
 	font-size: var(--fs-small);
-	color: var(--muted-foreground, #6b6457);
+	color: var(--muted-foreground);
 	font-weight: 600;
 	padding: 0.25rem 0.5rem 0.25rem 0;
 }
@@ -1819,7 +1819,7 @@
 .ci-matrix-yaml summary {
 	cursor: pointer;
 	font-size: var(--fs-small);
-	color: var(--muted-foreground, #6b6457);
+	color: var(--muted-foreground);
 }
 .ci-matrix-yaml pre {
 	margin: 0.25rem 0 0;
@@ -1853,7 +1853,7 @@
 }
 .flow-form-row > span:first-child {
 	flex: 0 0 6rem;
-	color: var(--muted-foreground, #6b6457);
+	color: var(--muted-foreground);
 	font-size: var(--fs-small);
 }
 .flow-form-row[data-required="true"] > span:first-child::after {
@@ -1883,7 +1883,7 @@
 .code-diagnostics-count,
 .code-intel-note {
 	margin: 0;
-	color: var(--muted-foreground, #6b6457);
+	color: var(--muted-foreground);
 	font-size: var(--fs-small);
 }
 .code-diagnostics-count[data-errors]:not([data-errors="0"]) {
@@ -1917,10 +1917,10 @@
 }
 .code-diagnostic[data-severity="information"],
 .code-diagnostic[data-severity="hint"] {
-	color: var(--muted-foreground, #6b6457);
+	color: var(--muted-foreground);
 }
 .code-diagnostic-origin {
-	color: var(--muted-foreground, #6b6457);
+	color: var(--muted-foreground);
 }
 .code-hover {
 	margin: 0.25rem 0.75rem 0.375rem 0;
@@ -1941,7 +1941,7 @@
 .code-hover-hint {
 	display: block;
 	margin-top: 0.25rem;
-	color: var(--muted-foreground, #6b6457);
+	color: var(--muted-foreground);
 	font-family: var(--font-mono);
 	font-size: var(--fs-caption);
 }
@@ -1950,7 +1950,7 @@
 .secrets-scope {
 	margin: 0;
 	font-size: var(--fs-small);
-	color: var(--muted-foreground, #6b6457);
+	color: var(--muted-foreground);
 }
 /* The home pane (cards/HomeCards.tsx): one section per declared block; the benchmark rides the secrets table rules. */
 .repo-home {
@@ -1962,7 +1962,7 @@
 	margin: 0 0 0.25rem;
 	font-size: var(--fs-small);
 	font-weight: 600;
-	color: var(--muted-foreground, #6b6457);
+	color: var(--muted-foreground);
 }
 .repo-home-block p {
 	margin: 0;
@@ -1983,7 +1983,7 @@
 .repo-home-table th {
 	text-align: left;
 	font-size: var(--fs-small);
-	color: var(--muted-foreground, #6b6457);
+	color: var(--muted-foreground);
 	font-weight: 600;
 	padding: 0.25rem 0.5rem 0.25rem 0;
 }
@@ -2004,7 +2004,7 @@
 	margin: 0 0 0.375rem;
 	font-size: var(--fs-small);
 	font-weight: 600;
-	color: var(--muted-foreground, #6b6457);
+	color: var(--muted-foreground);
 }
 
 /*
