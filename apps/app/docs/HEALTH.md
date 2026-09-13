@@ -82,15 +82,32 @@ cursor. It discards a report if the process changes lifecycle while its check
 is running. Observations commit to `local-health.sqlite` using the existing
 Smithers SQL journal before they reach HTTP list snapshots or `pty.status`
 WebSocket frames. Every 256 local observations the journal checkpoints the
-latest observation and compacts the earlier heartbeat history. A fresh daemon
+latest observation and compacts the earlier heartbeat payloads. The shared
+journal retains deduplication tombstones, so total disk usage still grows; this
+is not a hard disk quota or a deletion policy for old sessions. A fresh daemon
 does not use old observations to revive a missing process.
 
 ## Display and diagnostics
 
-Agent cards, run cards, and process tabs use the same status presentation.
+Agent cards, run cards, run-list rows, and process tabs use the same status presentation.
 Expired observations lose semantic activity even while the app is disconnected.
 Known approval, timer, event, and quota waits retain their authoritative meaning.
 An unknown process exit outcome is not displayed as successful completion.
+
+The existing run-summary pump and PTY topic carry the additive status DTO; there
+is no extra status RPC or network poll. One controller-owned expiry deadline
+updates the persisted projections, including hidden tabs, through system
+transitions in the existing client journal. Canonical subjects are `run:<runId>`
+and `session:<sessionId>`; the client rejects a status for another subject or a
+different authoritative lifecycle. Activity labels distinguish Working, Idle,
+Needs input, Activity unknown, and Stale. The existing Open, Steer, and approval
+flows remain the keyboard-accessible actions; a health observation cannot invoke
+them. Process-tab labels expose the same status as an accessible description.
+
+The browser regression lane can opt into `SMITHERS_E2E_HEALTH=1`, which installs
+a test-host-only Effect checker for explicit shell records. The real-terminal
+test exercises semantic working/idle/input observations and a nonzero exit
+through the actual daemon, journal, authenticated socket, dispatcher and UI.
 
 Flow evidence is recorded as `control.status.observed` and appears through the
 existing authenticated run-summary projection. Local observations use that same

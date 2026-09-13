@@ -1,5 +1,6 @@
 import { expect, test } from "@playwright/test"
 import type { Page, Request, WebSocketRoute } from "@playwright/test"
+import { prepareHealthPage } from "./healthFixture"
 
 /*
  * Lane L2 (docs/LOCAL-APP.md "Tabs", "Cards"): the strip, the `+` menu, the
@@ -381,6 +382,7 @@ test("health: a launched agent and its terminal share semantic status, expire of
   const now = Date.now()
   await page.clock.install({ time: new Date(now) })
   await page.goto("/")
+  await prepareHealthPage(page, true)
   await page.getByTestId("tab-add").click()
   const creating = page.waitForRequest(isPtyCreate)
   await page.getByTestId("tab-add-harness-claude").click()

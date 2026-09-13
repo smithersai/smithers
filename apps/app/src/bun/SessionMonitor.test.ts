@@ -119,6 +119,12 @@ test("owner lifecycle change discards an in-flight report and persists the diagn
   try {
     const rows = await ledger.entries("session:0")
     expect(rows.entries.some((entry) => (entry.payload as { outcome?: string }).outcome === "discarded")).toBe(true)
+    const discarded = rows.entries.find((entry) => (entry.payload as { outcome?: string }).outcome === "discarded")!
+    expect(discarded.payload).toMatchObject({
+      status: "exited", activity: "unknown", health: "failing", attention: "unhealthy", freshness: "stale"
+    })
+    expect(discarded.payload).not.toHaveProperty("provenance")
+    expect(discarded.payload).not.toHaveProperty("version")
   } finally { await ledger.close(); await rm(directory, { recursive: true, force: true }) }
 })
 
@@ -187,7 +193,7 @@ test("expiry, lifecycle and removed-session pruning continue while probe admissi
     // A first SQLite open may consume a tiny TTL; wait for a committed fresh
     // reading rather than treating a probe invocation as durable publication.
     await until(() => f.frames.some((frame) => frame.activity === "working"), 8000)
-    const working = f.frames.findLast((frame) => frame.activity === "working")!
+    const working = [...f.frames].reverse().find((frame) => frame.activity === "working")!
     const original = f.sessions.get("0")!
     f.sessions.set("1", { ...original, sessionId: "1", harnessId: "codex", pid: 101 })
     await until(() => blocked)
@@ -196,7 +202,7 @@ test("expiry, lifecycle and removed-session pruning continue while probe admissi
     expect(finalized).toBe(false)
     f.sessions.set("0", { ...original, alive: false, exitCode: 7 })
     await until(() => f.frames.some((frame) => frame.subjectId === "session:0" && frame.state === "exited"))
-    expect(f.frames.findLast((frame) => frame.subjectId === "session:0")).toMatchObject({ state: "exited", health: "failing" })
+    expect([...f.frames].reverse().find((frame) => frame.subjectId === "session:0")).toMatchObject({ state: "exited", health: "failing" })
 
     // Reusing an id is a fixture-only way to observe pruning: the blocked
     // probe cannot run another inventory scan or refresh the removed row.
@@ -211,4 +217,33 @@ test("expiry, lifecycle and removed-session pruning continue while probe admissi
   const stoppedFrames = f.frames.length
   await Bun.sleep(150)
   expect(f.frames).toHaveLength(stoppedFrames)
+}, 20_000)
+
+test("unchanged successes and failures coalesce without advancing uncommitted provenance, then renew", async () => {
+  for (const initial of ["idle", "error"] as const) {
+    const f = fixture()
+    let mode: "idle" | "error" | "needs-input" = initial
+    let probes = 0
+    const monitor = await createSessionMonitor({ ...f, configuration: config(() => {
+      probes += 1
+      return mode === "error" ? Effect.fail("private error") : Effect.succeed({ activity: mode })
+    }, { intervalMs: 10, timeoutMs: 10, ttlMs: 2000,
+      backoff: { initialMs: 10, maxMs: 10, factor: 1 } }) })
+    try {
+      await until(() => monitor.status("0")?.provenance !== undefined)
+      const committed = monitor.status("0")!.provenance!
+      const startedProbes = probes
+      await until(() => probes >= startedProbes + 2)
+      expect(monitor.status("0")?.provenance).toEqual(committed)
+      // Coalesced failed attempts still drive backoff, but neither successful
+      // nor failed attempts pretend to have a newly committed journal stamp.
+      await until(() => monitor.status("0")!.provenance!.version > committed.version)
+      const renewed = monitor.status("0")!.provenance!
+      expect(renewed.observedAt).toBeGreaterThanOrEqual(committed.observedAt + 1000)
+      expect(probes).toBeGreaterThan(3)
+      mode = "needs-input"
+      await until(() => monitor.status("0")?.activity === "needs-input")
+      expect(monitor.status("0")!.provenance!.version).toBeGreaterThan(renewed.version)
+    } finally { await monitor.stop() }
+  }
 }, 20_000)

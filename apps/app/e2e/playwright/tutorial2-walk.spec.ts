@@ -212,7 +212,7 @@ test("the whole tutorial walks every beat, keyboard first, through asynchronous 
   await page.keyboard.press("1")
   await until(page, picker.locator('[data-pick-row="1"][data-picked="false"]'), "row 1 unchecks")
   await shoot(page, 9)
-  await doBeat(page, 9, "m")
+  await doBeat(page, 9, "g")
   const change = card(page, "change")
   await expect(card(page, "commit-pick")).toHaveCount(0)
   await expect(change).toContainText("2 commits selected for review")
@@ -221,11 +221,11 @@ test("the whole tutorial walks every beat, keyboard first, through asynchronous 
 
   expect(host.external()).toEqual([])
 
-  // Beat 10: the bridge. The practice cards step aside; Log in · L, Not now · X.
+  // Beat 10: the bridge. The practice cards step aside; Log in · A, Not now · X.
   await expectBeat(page, 10)
   await expect(page.locator("[data-tutorial-cards] [data-practice]")).toHaveCount(0)
   await shoot(page, 10)
-  await page.keyboard.press("l")
+  await page.keyboard.press("a")
   await rebooted(page)
   await until(page, followup(page, 10), "login is checked")
   await expect(followup(page, 10)).toContainText(`Signed in as @${TUTORIAL_LOGIN}.`)
@@ -249,29 +249,29 @@ test("the whole tutorial walks every beat, keyboard first, through asynchronous 
   expect(host.verifyCalls).toBeGreaterThanOrEqual(1)
   expect(new URL(page.url()).search).toBe("")
 
-  // Beat 12: Create Wiki · W, Create Mythical history · H — two launches, two chips, no run card opened.
+  // Beat 12: Create Wiki · U, Create Mythical history · Y — two launches, two chips, no run card opened.
   await expectBeat(page, 12, { repo: INSTALLED_REPO })
   await expect(page.locator(".guide-primary-subtitle")).toHaveText("On its own branch. Your branches stay untouched.")
-  await page.keyboard.press("k")
+  await page.keyboard.press("u")
   await until(page, page.locator('[data-run-chip="wiki"]'), "the Wiki run chip")
-  await page.keyboard.press("h")
+  await page.keyboard.press("y")
   await until(page, page.locator('[data-run-chip="history"]'), "the history run chip")
   await until(page, followup(page, 12), "both runs launched")
   await expect(followup(page, 12)).toContainText("Both are running. I'll tell you when they're done.")
   expect(launchedFlows(host)).toEqual([`librarian/wiki ${INSTALLED_REPO}`, `librarian/history ${INSTALLED_REPO}`])
   await shoot(page, 12)
 
-  // Beat 13: ⌘K opens the palette with Ask Smithers first; Escape closes it.
+  // Beat 13: C opens the palette with Ask Smithers first; Escape closes it.
   await expectBeat(page, 13, { repo: INSTALLED_REPO })
   await expect(page.locator('.guide-footer [data-pulse="true"]')).toBeVisible()
-  await page.keyboard.press("ControlOrMeta+k")
+  await page.keyboard.press("c")
   const palette = page.getByTestId("palette")
   await until(page, palette, "the palette opens")
   await expect(palette.getByRole("option").first()).toHaveText(/Ask Smithers/)
   await shoot(page, 13)
   await page.keyboard.press("Escape")
   await gone(page, palette, "Escape closes the palette")
-  await expect(followup(page, 13)).toContainText("Type a message here, or choose Dictation to speak. Escape closes Chat.")
+  await expect(followup(page, 13)).toContainText("Type a message here. Choose Dictation from Mode before opening Chat to speak. Escape closes Chat.")
 
   // Beat 14: terminal, on acme/api, with the run chips still in the chrome and the reel on E.
   await expectBeat(page, 14, { repo: INSTALLED_REPO })
@@ -298,7 +298,7 @@ test.describe("beat 9: four commit selections are sent to the live Change operat
       await toPicker(page)
       for (const key of row.toggle) await page.keyboard.press(key)
       await until(page, card(page, "commit-pick").locator(`section.commit-pick[data-picked="${row.pick.join(" ")}"]`), "the pick is set")
-      await page.keyboard.press("m")
+      await page.keyboard.press("g")
       const change = card(page, "change")
       await until(page, change, "the stack view")
       await expect(change).toContainText(`${row.size} commits selected for review`)
@@ -316,7 +316,7 @@ test.describe("beat 9: four commit selections are sent to the live Change operat
     await expect(pickRow(2)).toHaveAttribute("data-picked", "false")
     await page.keyboard.press("1")
     await until(page, pickRow(1).and(page.locator('[data-picked="false"]')), "row 1 unchecks")
-    await page.keyboard.press("m")
+    await page.keyboard.press("g")
     await until(page, card(page, "change"), "the stack view")
     await until(page, followup(page, 9), "the Change is recorded")
     await page.keyboard.press("b")
@@ -357,7 +357,7 @@ test.describe("escape hatches", () => {
     await atStage(page, 10)
     await page.keyboard.press("x")
     await atStage(page, 13)
-    await page.keyboard.press("ControlOrMeta+k")
+    await page.keyboard.press("c")
     await until(page, page.getByTestId("palette"), "the palette opens")
     await page.keyboard.press("Escape")
     await expectBeat(page, 14, { declined: ["login"] })
@@ -370,14 +370,14 @@ test.describe("escape hatches", () => {
     await atStage(page, 1)
     await page.keyboard.press("q")
     await atStage(page, 10)
-    await page.keyboard.press("l")
+    await page.keyboard.press("a")
     await rebooted(page)
     await until(page, followup(page, 10), "login is checked")
     await expect(followup(page, 10)).toContainText(`Signed in as @${TUTORIAL_LOGIN}.`)
     await atStage(page, 11)
     await page.keyboard.press("z")
     await atStage(page, 13)
-    await page.keyboard.press("ControlOrMeta+k")
+    await page.keyboard.press("c")
     await until(page, page.getByTestId("palette"), "the palette opens")
     await page.keyboard.press("Escape")
     await expectBeat(page, 14, { declined: ["install"] })
@@ -425,15 +425,15 @@ test("@live beats 10–12 cross the real login, install check and background lau
       await page.keyboard.press("q")
       await atStage(page, 10)
     }
-    await page.keyboard.press("l")
+    await page.keyboard.press("a")
     await expect(followup(page, 10)).toContainText("Signed in as @", { timeout: 120_000 })
     await atStage(page, 11)
     await page.keyboard.press("a")
     await expect(followup(page, 11).or(page.locator("[data-notice]"))).toBeVisible({ timeout: 120_000 })
     if (await followup(page, 11).count() === 1) {
       await atStage(page, 12)
-      await page.keyboard.press("k")
-      await page.keyboard.press("h")
+      await page.keyboard.press("u")
+      await page.keyboard.press("y")
       await expect(page.locator("[data-run-chip]").or(page.locator("[data-tutorial-cards] .smithers-card")).first()).toBeVisible({ timeout: 120_000 })
     }
   } finally {

@@ -14,7 +14,9 @@ const refusedSubjects = Metric.counter("smithers.health.capacity_refusals")
  * @since 1.0.0
  * @private
  */
-export const watch = (registry: Health.Registry): Effect.Effect<never, never, Control.Control | Journal.Journal | Scope.Scope> =>
+export const watch = (
+  registry: Health.Registry
+): Effect.Effect<never, never, Control.Control | Journal.Journal | Scope.Scope> =>
   Effect.gen(function*() {
     const control = yield* Control.Control
     const gate = yield* Semaphore.make(registry.limits.maxConcurrentProbes)
@@ -43,9 +45,15 @@ export const watch = (registry: Health.Registry): Effect.Effect<never, never, Co
             // A health check never authorizes lifecycle changes.
             autoHeal: []
           }).pipe(
-            Effect.catchCause((cause) => Cause.hasInterruptsOnly(cause) ? Effect.interrupt :
-              Effect.logWarning("Health observation stopped; its last reading will expire", { operation: "health-monitor", runId: run.runId })
-                .pipe(Effect.as({ runId: run.runId, beats: [], health: "unknown" as const }))),
+            Effect.catchCause((cause) =>
+              Cause.hasInterruptsOnly(cause) ?
+                Effect.interrupt :
+                Effect.logWarning("Health observation stopped; its last reading will expire", {
+                  operation: "health-monitor",
+                  runId: run.runId
+                })
+                  .pipe(Effect.as({ runId: run.runId, beats: [], health: "unknown" as const }))
+            ),
             Effect.forkScoped
           )
           active.set(run.runId, fiber)
@@ -54,8 +62,13 @@ export const watch = (registry: Health.Registry): Effect.Effect<never, never, Co
       }
       yield* Metric.update(activeSubjects, active.size)
       return admitted
-    }).pipe(Effect.catchCause((cause) => Cause.hasInterruptsOnly(cause) ? Effect.interrupt :
-      Effect.logWarning("Health subject discovery failed; retrying", { operation: "health-discovery" }).pipe(Effect.as(0))))
+    }).pipe(Effect.catchCause((cause) =>
+      Cause.hasInterruptsOnly(cause) ?
+        Effect.interrupt :
+        Effect.logWarning("Health subject discovery failed; retrying", { operation: "health-discovery" }).pipe(
+          Effect.as(0)
+        )
+    ))
     while (true) {
       yield* scan
       yield* Effect.sleep(5_000)
@@ -66,7 +79,8 @@ export const watch = (registry: Health.Registry): Effect.Effect<never, never, Co
  * @since 1.0.0
  * @private
  */
-export const start = (config?: Health.HealthConfig) => Effect.gen(function*() {
-  const registry = yield* Effect.sync(() => Health.makeRegistry(config, "run"))
-  yield* Effect.forkScoped(watch(registry))
-})
+export const start = (config?: Health.HealthConfig) =>
+  Effect.gen(function*() {
+    const registry = yield* Effect.sync(() => Health.makeRegistry(config, "run"))
+    yield* Effect.forkScoped(watch(registry))
+  })

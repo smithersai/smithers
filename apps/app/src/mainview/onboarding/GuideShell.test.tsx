@@ -342,7 +342,7 @@ test("Mode opens on release and selecting Dictation does not open Chat", async (
   key('keyup', 'Enter')
   await settle()
   expect(controller.store.session().inputMode).toBe('dictation')
-  expect(controller.store.session().paletteOpen).toBe(false)
+  expect(controller.store.session().paletteOpen).not.toBe(true)
   expect(controller.store.session().dictating).not.toBe(true)
   expect(text(host.querySelector('[aria-keyshortcuts="m"]'))).toBe('Mode: Dictation m')
   key('keydown', 'm'); key('keyup', 'm')

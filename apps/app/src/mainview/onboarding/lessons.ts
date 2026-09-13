@@ -110,8 +110,8 @@ export const GUIDE_LAST_STEP = GUIDE_STAGES.length - 1
 export const GUIDE_PRACTICE_END = 9
 /** Where "Skip practice" and a finished practice land: the bridge. */
 export const GUIDE_BRIDGE = 10
-/** Keys the shell owns: sound, dark, notify, and Skip practice. */
-export const GUIDE_RESERVED_KEYS = ["s", "c", "n", "q"] as const
+/** Global controls and Vim navigation cannot be assigned to lesson actions. */
+export const GUIDE_RESERVED_KEYS = ["s", "c", "m", "h", "j", "k", "l", "b", "w", "n", "q"] as const
 
 type GuideContext = { readonly repo?: string; readonly declined?: ReadonlyArray<string> }
 /** `{repo}` becomes the user's repository; the terminal line follows the escape hatch taken. */

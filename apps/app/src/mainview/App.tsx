@@ -15,7 +15,7 @@ import {
   SuggestionGroup
 } from "@smthrs/ui"
 import { useLiveQuery } from "@tanstack/react-db"
-import { CheckCircle2, Command, Copy, HelpCircle, Mic, RotateCcw, Sparkles } from "lucide-react"
+import { CheckCircle2, Copy, HelpCircle, RotateCcw, Sparkles } from "lucide-react"
 import { useMemo, useContext, useRef, useState } from "react"
 import type { PointerEvent as ReactPointerEvent } from "react"
 import { createPortal } from "react-dom"
@@ -127,6 +127,7 @@ function App() {
       addMenuOpen: session.addMenuOpen,
       paletteOpen: session.paletteOpen,
       dictating: session.dictating,
+      inputMode: session.inputMode,
       paletteLastQuery: session.paletteLastQuery,
       resetConfirmOpen: session.resetConfirmOpen,
       verbose: session.verbose,

@@ -10,7 +10,7 @@ test("each lesson's shortcuts are unique, single, lowercase, and clear of the sh
       ? [...lesson.actions, ...(lesson.secondary === undefined ? [] : [lesson.secondary])]
       : lesson.optionalAction === undefined ? [] : [lesson.optionalAction]
     for (const action of actions) {
-      if (action.key === "⌘K") continue // the ⌘K lesson teaches the chord itself
+      if (action.key === "c" && "flow" in action && action.flow === "chat.open") continue // the Chat lesson teaches the global control itself
       expect(action.key).toMatch(/^[a-z]$/)
       keys.push(action.key)
     }

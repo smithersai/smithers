@@ -1157,9 +1157,10 @@ export const createAppController = (
     actor: () => ctx.commandActor,
     cancelDictation,
     startDictation: dictation.toggle,
-    openChat: async () => { await guideAct("open"); openPalette() },
+    openChat: async () => { openPalette(); await guideAct("open") },
   })
   const closePalette = (lastQuery?: string): void => {
+    cancelDictation()
     if (store.session().paletteOpen !== true) return
     store.dispatch({ type: "palette.toggled", actor: "user", open: false, ...(lastQuery === undefined ? {} : { lastQuery }) })
   }

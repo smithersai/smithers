@@ -7,7 +7,7 @@ import { defineConfig, devices } from "@playwright/test"
  * port with the chat stub on. SMITHERS_CHAT_STUB=0 hits the real endpoint
  * and enables chat.real.spec.ts.
  */
-const PORT = 47311
+const PORT = Number(process.env.SMITHERS_E2E_PORT ?? "47311")
 const BASE_URL = `http://127.0.0.1:${PORT}`
 const CHAT_STUB = process.env.SMITHERS_CHAT_STUB === "0" ? "0" : "1"
 

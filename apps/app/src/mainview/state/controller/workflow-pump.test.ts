@@ -3,6 +3,7 @@ import type { Card } from "../AppState"
 import type { ControllerContext } from "./context"
 import { createGatewaySeam } from "./gateway"
 import { createWorkflowPumpController } from "./workflow-pump"
+import type { StatusRollup } from "@smthrs/rpc/Health"
 
 const event = (sequence: number) => ({ kind: "control.signal.delivered", sequence, occurredAt: sequence, payload: {} })
 const summary = {
@@ -13,7 +14,7 @@ const summary = {
 const cursor = (projection: string, value: number, offset = 0) => ({
   selector: { _tag: projection, runId: "run-1" }, projection, runId: "run-1", value, offset
 })
-type Cycle = { events: ReturnType<typeof event>[]; revision?: number; journalFailure?: boolean; summaryFailure?: boolean; status?: string }
+type Cycle = { events: ReturnType<typeof event>[]; revision?: number; journalFailure?: boolean; summaryFailure?: boolean; status?: string; statusRollup?: StatusRollup }
 const poll = async (cycles: Cycle[], options: {
   initialEvents?: ReturnType<typeof event>[]
   inspectAt?: number
@@ -39,7 +40,7 @@ const poll = async (cycles: Cycle[], options: {
         if (projection === "run-events") journalRequests.push(payload.after)
         return Response.json({ ok: false, error: { message: "offline" } })
       }
-      let rows: unknown[] = [{ ...summary, status: cycle.status ?? "running" }]
+      let rows: unknown[] = [{ ...summary, status: cycle.status ?? "running", statusRollup: cycle.statusRollup }]
       if (projection === "run-events") {
         journalRequests.push(payload.after)
         let offset = 0
@@ -168,4 +169,20 @@ test("an empty journal does not hide its first sequence-zero event at the same c
   expect(result.journalRequests).toEqual([undefined, undefined])
   expect(result.rowsRequested).toBe(1)
   expect(result.card.payload.events).toEqual(events)
+})
+
+test("run health uses the existing summary projection, expires old working and refuses another run or lifecycle", async () => {
+  const now = Date.now()
+  const statusRollup: StatusRollup = { subjectId: "run:run-1", state: "running", activity: "working", health: "healthy",
+    freshness: "fresh", attention: "none", updatedAt: now,
+    provenance: { checkerId: "test", monitorId: "host", observedAt: now - 100, expiresAt: now - 1,
+      evidenceSeq: 1, incarnation: "owner", version: 2 } }
+  const expired = await poll([{ events: [], revision: 1, statusRollup }])
+  expect(expired.card.payload.statusRollup).toMatchObject({ freshness: "stale", activity: "unknown", health: "unknown" })
+  expect(expired.card.payload.phase).toBe("running")
+  expect((await poll([{ events: [], statusRollup: { ...statusRollup, subjectId: "run:other" } }])).card.payload.statusRollup).toBeUndefined()
+  expect((await poll([{ events: [], statusRollup: { ...statusRollup, state: "completed" } }])).card.payload.statusRollup).toBeUndefined()
+  const terminal = await poll([{ events: [], status: "failed", statusRollup: { ...statusRollup, state: "failed", health: "failing" } }])
+  expect(terminal.card.payload.statusRollup?.health).toBe("failing")
+  expect(terminal.card.payload.phase).toBe("failed")
 })

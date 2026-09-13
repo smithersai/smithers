@@ -19,8 +19,9 @@ export const openLocalHealthJournal = async (stateDir?: string) => {
     capacity: 128,
     overflow: "reject",
     maxEntryBytes: 8_192,
-    // Sessions can live for weeks. Retain the current observation as a
-    // checkpoint instead of growing one heartbeat history without a bound.
+    // Sessions can live for weeks. Bound retained observation payloads with a
+    // checkpoint. The shared journal retains deduplication tombstones; this
+    // is payload compaction, not a promise of constant total disk usage.
     compaction: {
       entryThreshold: 256,
       capture: (runId, upTo) => Effect.suspend(() => service!.entries({

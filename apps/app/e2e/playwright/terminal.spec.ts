@@ -1,6 +1,7 @@
 import { expect, test } from "@playwright/test"
 import type { Page, Response } from "@playwright/test"
 import { localApiDelete, localApiGet } from "./localApi"
+import { prepareHealthPage } from "./healthFixture"
 
 /*
  * Lane L4 (docs/LOCAL-APP.md "Tabs", `/api/pty*`, the `pty:<id>` topics)
@@ -104,6 +105,7 @@ test("a shell that exits on its own shows the exit line; closing the tab then as
 test("health: a real shell's explicit semantic markers reach the persisted terminal status through the Effect monitor", async ({ page, request }) => {
   test.skip(process.env.SMITHERS_E2E_HEALTH !== "1", "Opt in to the test host's explicit semantic fixture")
   await page.goto("/")
+  await prepareHealthPage(page, true)
   const sessionId = await openTerminal(page)
   const terminal = page.getByTestId(`terminal-${sessionId}`)
   const details = page.getByTestId(`tab-${sessionId}`).getByTestId("status-details")
@@ -120,6 +122,7 @@ test("health: a real shell's explicit semantic markers reach the persisted termi
   expect(body.sessions.find((session: { sessionId: string }) => session.sessionId === sessionId).status)
     .toMatchObject({ subjectId: `session:${sessionId}`, activity: "needs-input", attention: "needs-input",
       provenance: { checkerId: "fixture.semantic" } })
+  await page.screenshot({ path: "/tmp/smithers-health-ui.png" })
   await terminal.click()
   await page.keyboard.type("exit 7")
   await page.keyboard.press("Enter")

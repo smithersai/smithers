@@ -6,6 +6,7 @@ import { CODING_PLAN } from "../../src/mainview/cards/fixtures/CodingPlan"
 import { blockedCodingJournal, codingDecision, earlyCodingJournal } from "../../src/mainview/cards/fixtures/CodingJournal"
 import { installCloudFixture } from "./cloudFixture.ts"
 import type { StatusRollup } from "@smthrs/rpc/Health"
+import { prepareHealthPage, sendHealthCommand } from "./healthFixture"
 
 /*
  * Lane runs T1 (docs/workbench-lanes/runs.md "Exit"): launch a fixture flow,
@@ -593,8 +594,8 @@ test("health: gateway observations distinguish working, idle and input, then exp
   const { rpc } = await serve(page, [], { health: () => status })
   await page.clock.install({ time: new Date(now) })
   await page.goto("/")
-  await finishGuide(page)
-  await send(page, `/flow.run review-pr ${REPO}`)
+  await prepareHealthPage(page)
+  await sendHealthCommand(page, `/flow.run review-pr ${REPO}`)
   const card = page.getByTestId(`card-flow-run-${RUN_ID}`)
   const details = card.getByTestId("status-details")
   await expect(details).toHaveText("Running · Working")

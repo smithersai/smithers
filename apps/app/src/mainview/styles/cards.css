@@ -4,7 +4,7 @@
 
 .smithers-card {
 	width: 100%;
-	padding: 10px 12px 12px;
+	padding: var(--sp-2) var(--sp-3) var(--sp-3);
 	align-self: stretch;
 	border: 1px solid var(--border);
 	border-radius: var(--r-3);
@@ -128,7 +128,7 @@
 .slash-menu-body {
 	display: flex;
 	min-height: 0;
-	padding: 5px 6px;
+	padding: var(--sp-1) var(--sp-2);
 	flex: 1;
 	flex-direction: column;
 	gap: 1px;
@@ -137,7 +137,7 @@
 
 .slash-menu-item {
 	display: flex;
-	padding: 6px 10px;
+	padding: var(--sp-2) var(--sp-3);
 	align-items: baseline;
 	gap: 10px;
 	border: 0;
@@ -203,7 +203,7 @@
 }
 
 .palette-chip {
-	padding: 1px 8px;
+	padding: 1px var(--sp-2);
 	border-radius: var(--r-full);
 	background: var(--brand-soft);
 	color: var(--brand);
@@ -217,7 +217,7 @@
 
 .palette-foot {
 	display: flex;
-	padding: 7px 12px;
+	padding: var(--sp-2) var(--sp-3);
 	flex-shrink: 0;
 	align-items: center;
 	gap: 14px;
@@ -252,7 +252,7 @@
 }
 
 .palette-group {
-	padding: 8px 10px 3px;
+	padding: var(--sp-2) var(--sp-3) var(--sp-1);
 	color: var(--text-faint);
 	font-family: var(--font-mono);
 	font-size: var(--fs-caption);
@@ -285,7 +285,7 @@
 
 .palette-refusal,
 .palette-help-row {
-	padding: 6px 10px;
+	padding: var(--sp-2) var(--sp-3);
 	color: var(--text-muted);
 	font-size: var(--fs-small);
 }
@@ -468,8 +468,8 @@
 	position: sticky;
 	top: 0;
 	z-index: 1;
-	margin: -10px -12px 6px;
-	padding: 10px 12px 6px;
+	margin: calc(-1 * var(--sp-2)) calc(-1 * var(--sp-3)) var(--sp-2);
+	padding: var(--sp-2) var(--sp-3) var(--sp-2);
 	background: var(--card, #fffefa);
 }
 
@@ -2594,13 +2594,13 @@
 .repo-update { text-align: left; overflow: hidden; }
 .repo-update-toolbar .ghc-count { color: var(--text); }
 .repo-update-summary { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 4px 16px; color: var(--text); }
-.repo-update-problem { display: flex; align-items: center; gap: 6px; color: var(--warning, #9a6700); }
+.repo-update-problem { display: flex; align-items: center; gap: 6px; color: var(--warning); }
 .repo-update-static { cursor: default; }
 .repo-update-static:hover { background: transparent; }
 .repo-update-static:hover .ghc-row-title-text { color: var(--text); }
 .repo-update-item[data-read="true"] .ghc-row-title-text { font-weight: 400; color: var(--text-muted); }
 .repo-update-unread { display: block; width: 8px; height: 8px; margin-top: 6px; border-radius: 50%; background: var(--brand); box-shadow: 0 0 0 3px color-mix(in srgb, var(--brand) 18%, transparent); }
-.repo-update-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px; padding: 10px 14px; border-top: 1px solid var(--border-strong); background: var(--ghc-head-bg); border-radius: 0 0 8px 8px; }
+.repo-update-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px; padding: var(--sp-2) var(--sp-4); border-top: 1px solid var(--border-strong); background: var(--ghc-head-bg); border-radius: 0 0 var(--r-sm) var(--r-sm); }
 .smithers-card[data-kind="repo-update"] .smithers-card-title { margin-right: auto; }
 .repo-update-item[data-read="false"] .ghc-row-btn { background: color-mix(in srgb, var(--brand) 5%, transparent); }
 .repo-update-item[data-read="false"] .ghc-row-title-text { font-weight: 650; }

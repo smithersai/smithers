@@ -2643,6 +2643,14 @@ const initializeAppStore = async (resolved: ResolvedPersistence): Promise<AppSto
             })
           }
           for (const card of collections.cards.values()) {
+            if (card.kind === "run-list") {
+              const runs = card.payload.runs.map((run) => run.statusRollup === undefined ? run :
+                { ...run, statusRollup: expireStatus(run.statusRollup, transition.now) })
+              if (runs.some((run, index) => run.statusRollup !== card.payload.runs[index]?.statusRollup)) collections.cards.update(card.id, (draft) => {
+                if (draft.kind === "run-list") draft.payload.runs = runs
+              })
+              continue
+            }
             if ((card.kind !== "agent" && card.kind !== "run-trace") || card.payload.statusRollup === undefined) continue
             const status = expireStatus(card.payload.statusRollup, transition.now)
             if (status !== card.payload.statusRollup) collections.cards.update(card.id, (draft) => {

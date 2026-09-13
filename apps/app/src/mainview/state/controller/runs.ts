@@ -186,6 +186,7 @@ export const createRunsController = (
           runId: row.runId,
           flowId: row.flowId,
           status: row.status,
+          ...(row.statusRollup?.subjectId === `run:${row.runId}` && row.statusRollup.state === row.status ? { statusRollup: row.statusRollup } : {}),
           ...(waitingWord(row) === undefined ? {} : { waiting: waitingWord(row) }),
           createdAt: row.createdAt,
           turns: row.turns,

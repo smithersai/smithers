@@ -116,21 +116,50 @@ export const createSessionMonitor = async (options: SessionMonitorOptions) => {
     if (current === undefined || stateOf(current) !== context.state || closed) {
       observation = { ...observation, outcome: "discarded", report: undefined, reason: "owner-changed" }
     }
-    const recorded = yield* Effect.tryPromise(async () => {
+    const previous = state.latest?.observation
+    const changed = previous === undefined || previous.incarnation !== observation.incarnation ||
+      previous.state !== observation.state || previous.checkerId !== observation.checkerId ||
+      previous.outcome !== observation.outcome || previous.reason !== observation.reason ||
+      JSON.stringify(previous.report) !== JSON.stringify(observation.report)
+    // Keep the last committed stamp while an unchanged reading is coalesced.
+    // Probe metrics still count every attempt; renewal occurs before expiry.
+    const shouldRecord = changed || observation.outcome === "discarded" ||
+      observation.observedAt >= previous!.observedAt + check.policy.ttlMs / 2
+    const recorded = shouldRecord ? yield* Effect.tryPromise(async () => {
       const ledger = await getJournal()
-      return ledger.append(context.subjectId, monitorId, Health.statusObservedEventType, { ...observation })
+      // Existing alert detectors consume these bounded projection fields.
+      // The temporary sequence participates only in this pure fold; no
+      // uncommitted provenance or version is persisted/published as fact.
+      const projection = Health.rollup({
+        subjectId: context.subjectId,
+        state: stateOf(current ?? session),
+        incarnation: state.incarnation,
+        exitCode: current?.exitCode ?? session.exitCode ?? null,
+        latest: { observation, sequence: 0 },
+        now: observation.observedAt,
+        updatedAt: state.updatedAt
+      })
+      return ledger.append(context.subjectId, monitorId, Health.statusObservedEventType, {
+        ...observation,
+        status: projection.state,
+        activity: projection.activity,
+        health: projection.health,
+        attention: projection.attention,
+        freshness: projection.freshness
+      })
     }).pipe(Effect.catch(() => {
       options.log?.("health observation persistence failed")
       return Effect.succeed(undefined)
-    }))
+    })) : undefined
     if (recorded !== undefined && current !== undefined && !closed) {
       state.latest = { observation, sequence: recorded }
       state.updatedAt = observation.observedAt
     }
     state.sinceCursor = evidenceSeq
-    state.failures = observation.outcome === "ok" && recorded !== undefined ? 0 : state.failures + 1
+    const accepted = !shouldRecord || recorded !== undefined
+    state.failures = observation.outcome === "ok" && accepted ? 0 : state.failures + 1
     const delay = Health.nextDelay(check.policy, state.failures)
-    state.nextCheck = current?.alive === false && recorded !== undefined ? Number.POSITIVE_INFINITY : Date.now() + delay
+    state.nextCheck = current?.alive === false && accepted ? Number.POSITIVE_INFINITY : Date.now() + delay
     publish(session.sessionId)
   })
 

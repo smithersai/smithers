@@ -69,6 +69,9 @@ test("one controller deadline expires hidden tabs and cards durably while offlin
   createHealthStatusController({ store, onDispose: (fn) => { finalizers.push(fn) }, unref: () => {} })
   const now = Date.now()
   const fresh = reading({ updatedAt: now, provenance: { ...reading().provenance!, observedAt: now, expiresAt: now + 100 } })
+  await store.dispatch({ type: "card.upsert", actor: "system", card: { id: "runs", kind: "run-list", title: "Runs", status: "active", createdAt: now, ordinal: 2,
+    payload: { repo: "o/r", runs: [{ runId: "run-1", flowId: "test", status: "running", createdAt: now, turns: 0, calls: 0,
+      statusRollup: { ...fresh, subjectId: "run:run-1" } }] } } }).isPersisted.promise
   await store.dispatch({ type: "pty.status.observed", actor: "system", sessionId: "pty-1", status: fresh }).isPersisted.promise
   const agent = () => { const card = store.collections.cards.get("agent"); if (card?.kind !== "agent") throw new Error("agent missing"); return card }
   expect(agent().payload.statusRollup?.activity).toBe("working")
@@ -79,6 +82,8 @@ test("one controller deadline expires hidden tabs and cards durably while offlin
   expect(agent().payload.statusRollup).toMatchObject({ state: "running", freshness: "stale", activity: "unknown", health: "unknown" })
   const tab = store.collections.tabs.get("pty-1")
   expect(tab?.kind === "harness" && tab.statusRollup?.freshness).toBe("stale")
+  const runList = store.collections.cards.get("runs")
+  expect(runList?.kind === "run-list" && runList.payload.runs[0]?.statusRollup?.freshness).toBe("stale")
   expect([...store.collections.transitions.values()].filter((entry) => entry.type === "status.expired")).toHaveLength(1)
   for (const finalize of finalizers) await finalize()
   await store.dispose?.()

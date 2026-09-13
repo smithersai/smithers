@@ -220,6 +220,7 @@ export function GuideShell({ children, clock = guideClock }: { children: ReactNo
         const root = document.querySelector<HTMLElement>(guide.conversationOpen ? '.guide-composer-layer' : '.guide-shell')
         return root ? vimFocusAction(root, key) : undefined
       }
+      if (key === 'w') return action(() => controller.runCommand('sidebar.toggle'))
       if (guide.conversationOpen || session.paletteOpen) return
       const lessonAction = lesson?.kind === 'do'
         ? [...lesson.actions, ...(lesson.secondary === undefined ? [] : [lesson.secondary])].find(candidate => candidate.key.toLowerCase() === key)
@@ -232,7 +233,6 @@ export function GuideShell({ children, clock = guideClock }: { children: ReactNo
       if ((key === 'arrowdown' || key === 'arrowup') && runCard?.kind === 'run-trace' && runCard.payload.selection !== undefined) {
         return action(() => { moveTrace(key === 'arrowdown' ? 1 : -1) })
       }
-      if (key === 'w') return action(() => controller.runCommand('sidebar.toggle'))
       if (key === GUIDE_KEYS.sound) return action(runCommandSound)
       if (key === 'n') return action(() => runCommandGuide('notify'))
       if (key === 'arrowright') return action(() => runCommandGuide(guideForwardAction(stage)))

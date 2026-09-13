@@ -16,7 +16,7 @@ export function createInputModeController(store: AppStore, effects: {
     },
     async openChat() {
       await effects.openChat()
-      if (store.session().inputMode === 'dictation' && !store.session().dictating) return effects.startDictation()
+      if (store.session().paletteOpen === true && store.session().inputMode === 'dictation' && !store.session().dictating) return effects.startDictation()
     },
   }
 }

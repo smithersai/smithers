@@ -1096,6 +1096,7 @@ const CurrentCardSchema = z.discriminatedUnion("kind", [
           flowId: z.string(),
           status: z.string(),
           waiting: z.string().optional(),
+          statusRollup: StatusRollupSchema.optional(),
           createdAt: z.number(),
           turns: z.number().int().nonnegative(),
           calls: z.number().int().nonnegative()

@@ -10,6 +10,7 @@
  * addressed by the inbox card, run and request together.
  */
 import { Button, Confirmation, ConfirmationAccepted, ConfirmationAction, ConfirmationActions, ConfirmationRejected, ConfirmationRequest } from "@smthrs/ui"
+import { StatusDetails } from "../StatusDetails"
 import type { Card } from "../state/AppState"
 import { approvalActionId, approvalRowKey } from "../state/ApprovalReference"
 import { timeLabel as clockLabel } from "../Timestamps"
@@ -88,7 +89,8 @@ export const RunListCardBody = ({
                 <span className="world-card-path">{run.runId}</span>
                 <span className="world-card-title">{run.flowId}</span>
                 <span className="world-card-path">
-                  {run.waiting === undefined ? run.status : waitingWords(run.waiting)}
+                  {run.statusRollup === undefined ? run.waiting === undefined ? run.status : waitingWords(run.waiting) :
+                    <StatusDetails status={run.statusRollup} fallback={run.status} />}
                 </span>
                 <span className="world-card-path">
                   {run.turns} {run.turns === 1 ? "turn" : "turns"} · {run.calls} {run.calls === 1 ? "call" : "calls"}

@@ -64,7 +64,7 @@ test("real PTY lifecycle and durable Effect health reach authenticated list and 
 
     socket.send(JSON.stringify({ type: "pty.input", sessionId, data: "exit 7\n" }))
     await until(() => statuses.some((status) => status.state === "exited"))
-    expect(statuses.findLast((status) => status.state === "exited")).toMatchObject({ activity: "unknown", health: "failing" })
+    expect([...statuses].reverse().find((status) => status.state === "exited")).toMatchObject({ activity: "unknown", health: "failing" })
     expect((await request(`/api/pty/${sessionId}`, { method: "DELETE" })).status).toBe(200)
   } finally {
     socket?.close()

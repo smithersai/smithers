@@ -509,6 +509,7 @@ export const run = (
         })
         const changed = lastPublished === undefined || lastPublished.incarnation !== observation.incarnation ||
           lastPublished.outcome !== observation.outcome || lastPublished.baseHealth !== observation.baseHealth ||
+          lastPublished.evidenceSeq !== observation.evidenceSeq ||
           JSON.stringify(lastPublished.report) !== JSON.stringify(observation.report) ||
           lastPublished.reason !== observation.reason
         // Renew before expiry, but do not fill the journal with identical per-probe records.
@@ -590,7 +591,8 @@ export const run = (
   })
 
 /** Observer and notification bookkeeping is never execution progress.
- * @category predicates @since 1.0.0
+ * @category predicates
+ * @since 1.0.0
  */
 export const isBookkeepingEvent = (kind: string): boolean =>
   kind.startsWith("control.monitor.") || kind.startsWith("control.status.") ||

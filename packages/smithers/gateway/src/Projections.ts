@@ -196,7 +196,13 @@ interface EventBuffer {
   readonly lastPosition: CursorPosition
 }
 
-const emptyEventBuffer = (compactHealth = false): EventBuffer => ({ compactHealth, seen: false, events: [], encodedBytes: 2, lastPosition: { value: 0, offset: 0 } })
+const emptyEventBuffer = (compactHealth = false): EventBuffer => ({
+  compactHealth,
+  seen: false,
+  events: [],
+  encodedBytes: 2,
+  lastPosition: { value: 0, offset: 0 }
+})
 
 const textEncoder = new TextEncoder()
 
@@ -238,9 +244,12 @@ const appendEvent = (
       const decoded = Schema.decodeUnknownOption(Health.HealthObservation)(event.payload)
       if (decoded._tag === "None" || decoded.value.outcome === "discarded") keep = false
       else {
-        const same = state.events.findIndex((old) => old.kind === Health.statusObservedEventType &&
+        const same = state.events.findIndex((old) =>
+          old.kind === Health.statusObservedEventType &&
           typeof old.payload === "object" && old.payload !== null && !Array.isArray(old.payload) &&
-          old.payload["incarnation"] === decoded.value.incarnation)
+          "incarnation" in old.payload &&
+          (old.payload as { readonly incarnation?: unknown }).incarnation === decoded.value.incarnation
+        )
         if (same >= 0) {
           const previous = state.events[same]!
           const prior = previous.payload as { readonly evidenceSeq: number }
@@ -256,7 +265,8 @@ const appendEvent = (
       }
     } else if (state.compactHealth && event.kind === "control.monitor.beat") keep = false
     const count = state.events.length + (keep ? 1 : 0)
-    const encodedBytes = Math.max(2, state.encodedBytes - removedBytes) + (keep ? bytes + (state.events.length === 0 ? 0 : 1) : 0)
+    const encodedBytes = Math.max(2, state.encodedBytes - removedBytes) +
+      (keep ? bytes + (state.events.length === 0 ? 0 : 1) : 0)
     if (count > maxEventsPerRun) {
       return Effect.fail(resourceLimit(`Run event history exceeds ${maxEventsPerRun} events`))
     }
@@ -725,7 +735,9 @@ const makeService = (control: ControlService, heartbeatMillis: number, now: () =
                   offset: state.observed?.value === event.sequence ? state.observed.offset + 1 : 0
                 }
                 const nextState: RunFollowState = { ...state, observed: position }
-                if (seedEvents.length > 0 && comparePosition(position, from) <= 0) {
+                if (
+                  (seedEvents.length > 0 || from.value > 0 || from.offset > 0) && comparePosition(position, from) <= 0
+                ) {
                   return Effect.succeed([nextState, [] as ReadonlyArray<RunDelta>] as const)
                 }
                 const turnsBefore = state.turns
@@ -1035,19 +1047,25 @@ const makeService = (control: ControlService, heartbeatMillis: number, now: () =
           positionedEvents(source.events).some((candidate) => comparePosition(candidate.position, position) === 0)
         // A valid issued health cursor may have been superseded in the bounded fold.
         // Verify it against the durable stream rather than accepting arbitrary positions.
-        const issued = retained ? Effect.succeed(true) : source.compactHealth ? control.watch({
-          runId: scope, follow: false,
-          ...(position.value === 0 ? {} : { afterSequence: position.value - 1 })
-        }).pipe(
-          Stream.takeWhile((event) => event.sequence <= position.value),
-          Stream.take(maxEventsPerRun + 1),
-          Stream.runCollect,
-          Effect.map((events) => events.length <= maxEventsPerRun && events[position.offset]?.sequence === position.value),
-          Effect.mapError((cause) => unavailable("Checking the projection cursor failed", cause))
-        ) : Effect.succeed(false)
-        return Effect.flatMap(issued, (valid) => valid
-          ? Effect.succeed(runDeltaFrames(selector, source, position))
-          : Effect.fail(malformed(`Cursor ${after.value}:${after.offset} was not issued by run ${scope}`)))
+        const issued = retained ? Effect.succeed(true) : source.compactHealth ?
+          control.watch({
+            runId: scope,
+            follow: false,
+            ...(position.value === 0 ? {} : { afterSequence: position.value - 1 })
+          }).pipe(
+            Stream.takeWhile((event) => event.sequence <= position.value),
+            Stream.take(maxEventsPerRun + 1),
+            Stream.runCollect,
+            Effect.map((events) =>
+              events.length <= maxEventsPerRun && events[position.offset]?.sequence === position.value
+            ),
+            Effect.mapError((cause) => unavailable("Checking the projection cursor failed", cause))
+          ) :
+          Effect.succeed(false)
+        return Effect.flatMap(issued, (valid) =>
+          valid
+            ? Effect.succeed(runDeltaFrames(selector, source, position))
+            : Effect.fail(malformed(`Cursor ${after.value}:${after.offset} was not issued by run ${scope}`)))
       })
       : Effect.fail(scope)
   }
@@ -1090,7 +1108,15 @@ export const make = (
   Effect.suspend(() => {
     const refusal = settingRefusal("The gateway keepalive cadence", options.heartbeatMillis)
     return refusal === undefined
-      ? Effect.clockWith((clock) => Effect.succeed(makeService(control, options.heartbeatMillis ?? heartbeatIntervalMillis, () => clock.currentTimeMillisUnsafe())))
+      ? Effect.clockWith((clock) =>
+        Effect.succeed(
+          makeService(
+            control,
+            options.heartbeatMillis ?? heartbeatIntervalMillis,
+            () => clock.currentTimeMillisUnsafe()
+          )
+        )
+      )
       : Effect.fail(refusal)
   })
 

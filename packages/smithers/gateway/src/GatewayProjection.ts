@@ -538,7 +538,8 @@ const line = (kind: string, payload: Record<string, unknown>): string => {
 
 /** Fold health from the same authoritative summary and committed event buffer as the run card.
  * Invalid observations and foreign incarnations cannot color the current owner.
- * @category projections @since 1.0.0
+ * @category projections
+ * @since 1.0.0
  */
 export const statusRollup = (
   run: ControlSchema.RunSummary,
@@ -557,8 +558,15 @@ export const statusRollup = (
   }
   const latest = Health.latestObservation(candidates, `run:${run.runId}`, incarnation)
   return Health.rollup({
-    subjectId: `run:${run.runId}`, state: run.status, incarnation, waitingReason: run.waitingReason,
-    baseHealth: latest?.observation.baseHealth ?? Monitor.classify({ summary: run, events, beatsWithoutProgress: 0, stallBeats: 3 }),
-    latest, now, evidenceSeq, updatedAt: run.updatedAt
+    subjectId: `run:${run.runId}`,
+    state: run.status,
+    incarnation,
+    waitingReason: run.waitingReason,
+    baseHealth: latest?.observation.baseHealth ??
+      Monitor.classify({ summary: run, events, beatsWithoutProgress: 0, stallBeats: 3 }),
+    latest,
+    now,
+    evidenceSeq,
+    updatedAt: run.updatedAt
   })
 }

@@ -242,7 +242,6 @@ export interface HealthBinding {
  */
 export interface HealthConfig {
   // A heterogeneous registry erases C only after each binding is decoded by its own schema.
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   readonly checkers?: ReadonlyArray<HealthChecker<any>> | undefined
   readonly bindings?: Readonly<Record<string, HealthBinding>> | undefined
   readonly limits?: { readonly maxSubjects?: number; readonly maxConcurrentProbes?: number } | undefined
@@ -252,7 +251,6 @@ export interface HealthConfig {
  * @since 1.0.0
  */
 export interface ResolvedCheck {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   readonly checker: HealthChecker<any>
   readonly config: unknown
   readonly policy: CheckPolicy

@@ -182,5 +182,9 @@ export * as SqlControlRuntime from "./SqlControlRuntime.ts"
  */
 export * as Migrations from "./Migrations.ts"
 
-/** Observational health contracts. @since 1.0.0 */
+/**
+ * Observational health contracts.
+ * @category health
+ * @since 1.0.0
+ */
 export * as Health from "./Health.ts"
