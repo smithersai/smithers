@@ -137,4 +137,20 @@ describe("the slash menu is a tree", () => {
     expect(view.controller.store.session().guide).toMatchObject({ step: 1, playthrough: before + 1 })
     expect(view.controller.store.session().recentCommands?.[0]).toBe("tut")
   })
+
+  for (const finalDraft of ["/tut", "/tut "]) test(`typing ${JSON.stringify(finalDraft)} and Enter before the next render uses the current input`, async () => {
+    const view = await mount()
+    await view.act(() => view.controller.changeDraft("/tu"))
+    expect(rows(view.host)[0]).toBe("tutorial/")
+    const before = view.controller.store.session().guide?.playthrough ?? 0
+    await view.act(() => {
+      const input = textarea(view.host)!
+      input.value = finalDraft
+      view.controller.changeDraft(input.value)
+      input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }))
+    })
+    expect(view.controller.store.session().draft).toBe("")
+    expect(view.controller.store.session().guide?.playthrough).toBe(before + 1)
+    expect(view.controller.store.session().recentCommands?.[0]).toBe("tut")
+  })
 })

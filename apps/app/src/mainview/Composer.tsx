@@ -991,10 +991,10 @@ export function Composer({
     ? slashQuery.slice(0, -1)
     : undefined
 
-  const runSlashCommand = (name: string): void => {
+  const runSlashCommand = (name: string, sourceDraft = draft): void => {
     setSlashMenu({ draft: "", index: 0, dismissed: false })
     controller.changeDraft("")
-    controller.closePalette(draft)
+    controller.closePalette(sourceDraft)
     controller.runCommand(name)
   }
 
@@ -1005,12 +1005,13 @@ export function Composer({
   }
 
   /** A palette decision (SearchPalette.paletteKey) performed through the controller. */
-  const perform = (decision: PaletteDecision): boolean => {
+  const perform = (decision: PaletteDecision, sourceDraft = draft): boolean => {
+    const sourceKey = sourceDraft === draft ? overlayKey : `${sourceDraft}\u0000${controller.store.session().paletteActionsRef ?? ""}`
     switch (decision.kind) {
       case "none":
         return false
       case "move":
-        setSlashMenu({ draft: overlayKey, index: decision.index, dismissed: false })
+        setSlashMenu({ draft: sourceKey, index: decision.index, dismissed: false })
         return true
       case "open-namespace":
         openNamespace(decision.id)
@@ -1020,21 +1021,21 @@ export function Composer({
         controller.changeDraft("/")
         return true
       case "run-flow":
-        runSlashCommand(decision.name)
+        runSlashCommand(decision.name, sourceDraft)
         return true
       case "run-action": {
         // Enter opens the item; the draft was its query, so it clears as the slash menu's does, and the overlay closes remembering it.
         setSlashMenu({ draft: "", index: 0, dismissed: false })
         controller.notePaletteItemOpened(decision.item)
         controller.changeDraft("")
-        controller.closePalette(draft)
+        controller.closePalette(sourceDraft)
         controller.runCommand(decision.action.flow, decision.action.args)
         return true
       }
       case "run-mode-flow":
         setSlashMenu({ draft: "", index: 0, dismissed: false })
         controller.changeDraft("")
-        controller.closePalette(draft)
+        controller.closePalette(sourceDraft)
         if (decision.rest === "") controller.runCommand(decision.flow)
         else controller.runCommand(decision.flow, decision.rest)
         return true
@@ -1048,8 +1049,8 @@ export function Composer({
         return true
       case "close":
         // Esc from the top closes and leaves the draft (§3): the draft is untouched, the menu hides until it changes.
-        setSlashMenu({ draft: overlayKey, index: slashHighlighted, dismissed: true })
-        controller.closePalette(draft)
+        setSlashMenu({ draft: sourceKey, index: sourceDraft === draft ? slashHighlighted : 0, dismissed: true })
+        controller.closePalette(sourceDraft)
         return true
     }
   }
@@ -1079,23 +1080,34 @@ export function Composer({
   }
 
   const onComposerKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>): void => {
+    if (event.nativeEvent.isComposing) return
     if (event.key === "Escape" && typing) {
       event.preventDefault()
       controller.runCommand("chat.stop")
       return
     }
-    if (!slashOpen || answer === undefined || rows === undefined) return
+    // Input can arrive before the live-query render catches up. Keyboard
+    // decisions must use the text under the caret, never the previous menu.
+    const inputDraft = event.currentTarget.value
+    const changed = inputDraft !== draft
+    const inputQuery = inputDraft.startsWith("/") && !inputDraft.slice(1).includes(" ") ? inputDraft.slice(1).toLowerCase() : undefined
+    const inputSlashRows = changed ? (inputQuery === undefined ? [] : controller.slashTree(inputQuery)) : slashRows
+    const inputSession = controller.store.session()
+    const inputWanted = changed ? inputSession.paletteOpen || (inputQuery !== undefined && inputSlashRows.length > 0) : slashOpen
+    const inputAnswer = changed ? (inputWanted ? controller.searchPalette(inputDraft) : undefined) : answer
+    const inputRows = changed ? (inputAnswer === undefined ? undefined : paletteRows(inputAnswer, inputSlashRows, inputSession.paletteActionsRef ?? null, true)) : rows
+    if (!inputWanted || inputAnswer === undefined || inputRows === undefined) return
     const performed = perform(
       paletteKey({
         key: event.key,
         meta: event.metaKey || event.ctrlKey,
         shift: event.shiftKey,
-        draft,
-        answer,
-        rows,
-        highlighted: slashHighlighted,
-        slashBranch
-      })
+        draft: inputDraft,
+        answer: inputAnswer,
+        rows: inputRows,
+        highlighted: changed ? 0 : slashHighlighted,
+        slashBranch: changed ? (inputQuery !== undefined && /^[a-z0-9_-]+\.$/.test(inputQuery) ? inputQuery.slice(0, -1) : undefined) : slashBranch
+      }), inputDraft
     )
     if (performed) {
       event.preventDefault()
@@ -1109,8 +1121,8 @@ export function Composer({
      * overlay closes behind it. In every other mode Enter belongs to the
      * overlay while it is open and never falls through to the send.
      */
-    if (answer.parsed.mode === "flows") {
-      controller.closePalette(draft)
+    if (inputAnswer.parsed.mode === "flows") {
+      controller.closePalette(inputDraft)
       return
     }
     event.preventDefault()
@@ -1139,8 +1151,9 @@ export function Composer({
         className="smithers-composer"
         value={draft}
         onValueChange={controller.changeDraft}
-        onSubmit={(text) => {
-          controller.runCommand("chat.send", text)
+        onSubmit={() => {
+          // The input transition is synchronous; its React projection can lag.
+          controller.runCommand("chat.send", controller.store.session().draft.trim())
         }}
         onStop={() => controller.runCommand("chat.stop")}
         placeholder={placeholder}
