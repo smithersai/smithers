@@ -106,23 +106,38 @@
 	font-size: var(--fs-small);
 }
 
-/* Slash command menu: anchored directly above the composer. */
+/*
+ * Slash command menu: anchored directly above the composer. One surface in
+ * three zones (the palette art Linear and Raycast made standard): a context
+ * head that only appears with real context, the scrolling rows, and the key
+ * legend as a pinned footer. The zones share the card; hairlines divide them.
+ */
 
 .slash-menu {
 	display: flex;
 	margin-bottom: 6px;
-	padding: 4px;
+	padding: 0;
 	flex-direction: column;
-	gap: 1px;
 	border: 1px solid var(--border-strong);
 	border-radius: var(--r-3);
 	background: var(--surface-glass-strong);
 	box-shadow: var(--shadow-2);
+	overflow: hidden;
+}
+
+.slash-menu-body {
+	display: flex;
+	min-height: 0;
+	padding: 5px 6px;
+	flex: 1;
+	flex-direction: column;
+	gap: 1px;
+	overflow-y: auto;
 }
 
 .slash-menu-item {
 	display: flex;
-	padding: 6px 9px;
+	padding: 6px 10px;
 	align-items: baseline;
 	gap: 10px;
 	border: 0;
@@ -136,7 +151,7 @@
 }
 
 .slash-menu-item[data-highlighted="true"] {
-	background: var(--brand-soft-strong);
+	background: var(--brand-soft);
 }
 
 .slash-menu-item:focus-visible {
@@ -171,24 +186,28 @@
 /*
  * The search palette (Search and Command Palette Spec 2026-09-07 §3, §9):
  * the same overlay as the slash menu, anchored above the composer at its
- * width, with the query and the key legend on its head line, group labels
- * between the rows, and the mode chip beside the field.
+ * width. The head prints only real context — the actions panel's item or the
+ * mode a prefix chose — as a soft pill; a bare ⌘K has no head at all, and
+ * the key legend lives in the footer, under the rows, as kbd chips.
  */
 .palette-head {
 	display: flex;
-	padding: 4px 9px 6px;
+	padding: 8px 12px;
+	flex-shrink: 0;
 	align-items: baseline;
 	gap: 10px;
+	border-bottom: 1px solid var(--border);
 	color: var(--text-muted);
 	font-family: var(--font-mono);
 	font-size: var(--fs-caption);
 }
 
 .palette-chip {
-	padding: 1px 6px;
-	border: 1px solid var(--border-strong);
-	border-radius: var(--r-sm);
-	color: var(--text);
+	padding: 1px 8px;
+	border-radius: var(--r-full);
+	background: var(--brand-soft);
+	color: var(--brand);
+	font-weight: 600;
 }
 
 .palette-query {
@@ -196,17 +215,60 @@
 	font-weight: 600;
 }
 
-.palette-legend {
+.palette-foot {
+	display: flex;
+	padding: 7px 12px;
+	flex-shrink: 0;
+	align-items: center;
+	gap: 14px;
+	border-top: 1px solid var(--border);
+	color: var(--text-faint);
+	font-size: var(--fs-caption);
+}
+
+.palette-foot kbd {
+	padding: 0 5px;
+	border: 1px solid var(--border-strong);
+	border-radius: 4px;
+	color: var(--text-muted);
+	font-family: var(--font-mono);
+	font-size: var(--fs-caption);
+	line-height: 1.7;
+}
+
+.palette-hint {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	white-space: nowrap;
+}
+
+.palette-hint-end {
 	margin-left: auto;
 }
 
 .palette-group {
-	padding: 6px 9px 2px;
-	color: var(--text-muted);
+	padding: 8px 10px 3px;
+	color: var(--text-faint);
 	font-family: var(--font-mono);
 	font-size: var(--fs-caption);
 	text-transform: uppercase;
-	letter-spacing: 0.04em;
+	letter-spacing: 0.05em;
+}
+
+/* "Ask Smithers": the AI row (Notion/Linear art) — a sparkle and a title, not a command name. */
+.palette-ask-row {
+	align-items: center;
+}
+
+.palette-ask-icon {
+	display: inline-flex;
+	color: var(--brand);
+}
+
+.palette-ask-title {
+	color: var(--text);
+	font-weight: 600;
 }
 
 .slash-menu-item[data-gold="true"] .slash-menu-name {
@@ -219,7 +281,7 @@
 
 .palette-refusal,
 .palette-help-row {
-	padding: 6px 9px;
+	padding: 6px 10px;
 	color: var(--text-muted);
 	font-size: var(--fs-small);
 }

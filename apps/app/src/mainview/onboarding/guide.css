@@ -755,7 +755,12 @@
 .guide-composer-host {
   display: contents;
 }
-/* The palette card owns the border and shadow; the input inside sits flat. */
+/*
+ * The palette card owns the border and shadow; the input inside sits flat and
+ * spans the card's full width (the kit caps a composer at 720px and centers
+ * it, which read as a box floating inside the card). Send matches the app
+ * composer's: the circular confluence button, not the kit's rounded square.
+ */
 .guide-composer-layer .composer-wrap {
   display: flex;
   flex-direction: column;
@@ -769,17 +774,40 @@
   flex-shrink: 0;
 }
 .guide-composer-layer .smithers-composer {
+  width: 100%;
+  margin: 0;
+  gap: 4px;
+  padding: 10px 10px 6px;
   border-color: transparent;
   border-radius: 10px;
   background: transparent;
+  /* The kit blurs whatever page is behind the card; the zones share one surface. */
+  backdrop-filter: none;
   box-shadow: none;
+}
+/* The overlay's card is the frame; the kit's focused-input box inside it is a box in a box. */
+.guide-composer-layer .smithers-composer:focus-within {
+  border-color: transparent;
+  box-shadow: none;
+}
+.guide-composer-layer .sui-chat-composer-input {
+  font-size: var(--fs-md);
+}
+.guide-composer-layer .sui-chat-composer-send {
+  border-radius: 50%;
+  background: var(--confluence);
+  color: var(--ink-900);
 }
 .guide-sidebar { z-index: 25; }
 .guide-sidebar .composer-menu-list { top: calc(100% + 4px); bottom: auto; left: 0; }
 .guide-sidebar .composer-connect-label { max-width: 150px; }
 .guide-sidebar .composer-connect { margin-bottom: 18px; }
 .guide-sidebar nav { display: grid; }
-/* Results scroll below the input, which stays visible at the top of the card. */
+/*
+ * Results scroll below the input, which stays visible at the top of the card.
+ * The list is one surface with the input, not a second box: it bleeds to the
+ * card's edges (the card's radius clips it), divided by a single hairline.
+ */
 .guide-composer-layer .composer-wrap > .slash-menu {
   order: 1;
   min-height: 0;
@@ -788,10 +816,12 @@
   bottom: auto;
   right: auto;
   left: auto;
-  margin-top: 4px;
+  margin: 6px -8px -8px;
   max-height: none;
+  border: 0;
   border-top: 1px solid var(--g-line);
-  border-radius: 0 0 10px 10px;
+  border-radius: 0;
+  background: transparent;
   box-shadow: none;
 }
 .guide-summoned {

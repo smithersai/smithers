@@ -15,6 +15,7 @@
  */
 import type { SearchAction, SearchItem } from "@smthrs/rpc/Cards"
 import type { CatalogItem } from "./flows/Commands"
+import { Sparkles } from "lucide-react"
 import { Fragment } from "react"
 import type { SlashRow } from "./flows/registry"
 import { actionForKey, prefixRow } from "./flows/SearchQuery"
@@ -37,9 +38,6 @@ export interface PaletteRows {
   /** The item whose actions panel is showing, when it is among the current rows. */
   readonly actionsFor?: SearchItem
 }
-
-/** The legend the mock prints on the head line (§9). */
-export const PALETTE_LEGEND = "↑↓ move · → actions · ?"
 
 /** A slash row the overlay lists as a choice: a note is a caption, not a row. */
 export type SlashLeafRow = Exclude<SlashRow<CatalogItem>, { readonly kind: "note" }>
@@ -179,100 +177,118 @@ export interface PaletteOverlayProps {
 
 const roleWord = (role: SearchAction["role"]): string => (role === "open" ? "Enter" : role === "primary" ? "Cmd+Enter" : "")
 
-/** The overlay: the head line, then the rows with their group labels, a refusal, or the prefix list. */
+/*
+ * The overlay, one surface in three zones (§3, §9): a head that appears only
+ * with real context — the actions panel's item or the mode a prefix chose —
+ * the scrolling rows, and the key legend as a footer (Linear's palette art):
+ * the draft sits in the composer right beside the overlay, so a bare ⌘K
+ * prints no banner and never echoes "(none)".
+ */
 export function PaletteOverlay({ answer, rows, highlighted, slashBranch, onHighlight, onChoose }: PaletteOverlayProps) {
   const { parsed } = answer
   const chip = parsed.mode === "flows" ? "/" : prefixRow(parsed.mode).label
   const groupAt = new Map(rows.groups.map((group) => [group.start, group.label]))
+  const showHead = rows.actionsFor !== undefined || (parsed.mode !== "all" && parsed.mode !== "flows")
   return (
     <div className="slash-menu" role="listbox" aria-label="Search palette" data-branch={slashBranch} data-mode={parsed.mode} data-testid="palette">
-      <div className="palette-head">
-        <span className="palette-chip" data-testid="palette-chip">{rows.actionsFor === undefined ? chip : "actions"}</span>
-        <span className="palette-query">{rows.actionsFor?.title ?? parsed.query}</span>
-        <span className="palette-legend">{PALETTE_LEGEND}</span>
+      {showHead ? (
+        <div className="palette-head">
+          <span className="palette-chip" data-testid="palette-chip">{rows.actionsFor === undefined ? chip : "actions"}</span>
+          <span className="palette-query">{rows.actionsFor?.title ?? parsed.query}</span>
+        </div>
+      ) : null}
+      <div className="slash-menu-body">
+        {answer.refusal === undefined ? null : <p className="palette-refusal" data-testid="palette-refusal">{answer.refusal}</p>}
+        {rows.rows.map((row, index) => {
+          const label = groupAt.get(index)
+          const highlightedRow = index === highlighted
+          const common = {
+            type: "button" as const,
+            role: "option",
+            "aria-selected": highlightedRow,
+            "data-highlighted": highlightedRow ? "true" : "false",
+            onMouseEnter: () => onHighlight(index)
+          }
+          const heading = label === undefined ? null : <div className="palette-group" key={`group:${label}:${index}`}>{label}</div>
+          if (row.kind === "slash" && row.row.kind === "namespace") {
+            const { namespace, count } = row.row
+            return (
+              <Fragment key={`ns:${namespace.id}`}>
+                {heading}
+                <button {...common} data-namespace={namespace.id} className="slash-menu-item slash-menu-namespace" onClick={() => onChoose(row)}>
+                  <span className="slash-menu-name">/{namespace.id} ›</span>
+                  <span className="slash-menu-description">
+                    {namespace.label}
+                    {namespace.summary === "" ? "" : ` — ${namespace.summary}`}
+                  </span>
+                  <span className="slash-menu-count">{count}</span>
+                </button>
+              </Fragment>
+            )
+          }
+          if (row.kind === "slash" && row.row.kind === "flow") {
+            const { flow, recommended } = row.row
+            return (
+              <Fragment key={flow.name}>
+                {heading}
+                <button {...common} data-gold={recommended} data-flow={flow.name} className="slash-menu-item" onClick={() => onChoose(row)}>
+                  <span className="slash-menu-name">/{flow.name}</span>
+                  <span className="slash-menu-description">{flow.summary}</span>
+                </button>
+              </Fragment>
+            )
+          }
+          // Unreachable (a leaf row is a namespace or a flow); it narrows `row` for the branches below.
+          if (row.kind === "slash") return null
+          if (row.kind === "ask") {
+            return (
+              <button {...common} key="ask" data-ask="" className="slash-menu-item palette-ask-row" onClick={() => onChoose(row)}>
+                <span className="palette-ask-icon" aria-hidden="true"><Sparkles size={13} /></span>
+                <span className="palette-ask-title">Ask Smithers</span>
+                <span className="slash-menu-description">Type a question or a task, then press Enter</span>
+              </button>
+            )
+          }
+          if (row.kind === "help") {
+            const { prefix, label: shown, searches, available } = row.row
+            return (
+              <button {...common} key={`help:${shown}`} data-prefix={prefix} data-available={available} className="slash-menu-item palette-help-row" onClick={() => onChoose(row)}>
+                <span className="slash-menu-name">{shown}</span>
+                <span className="slash-menu-description">{available ? searches : "sign in"}</span>
+              </button>
+            )
+          }
+          if (row.kind === "action") {
+            const { action } = row
+            return (
+              <button {...common} key={`action:${action.flow}:${action.args ?? ""}`} data-flow={action.flow} data-role={action.role} className="slash-menu-item" onClick={() => onChoose(row)}>
+                <span className="slash-menu-name">/{action.flow}</span>
+                <span className="slash-menu-description">{action.label}</span>
+                <span className="slash-menu-count">{roleWord(action.role)}</span>
+              </button>
+            )
+          }
+          const { item, recommended } = row
+          const primary = actionForKey(item, "primary")
+          return (
+            <div key={`item:${item.kind}:${item.ref}`} className="palette-item-wrap">
+              {heading}
+              <button {...common} data-kind={item.kind} data-ref={item.ref} data-gold={recommended} className="slash-menu-item" onClick={() => onChoose(row)}>
+                <span className="slash-menu-name">{item.kind === "flow" ? `/${item.title}` : item.title}</span>
+                {item.subtitle === undefined ? null : <span className="slash-menu-description">{item.subtitle}</span>}
+                {primary === undefined ? null : <span className="slash-menu-count">Cmd+Enter</span>}
+              </button>
+            </div>
+          )
+        })}
       </div>
-      {answer.refusal === undefined ? null : <p className="palette-refusal" data-testid="palette-refusal">{answer.refusal}</p>}
-      {rows.rows.map((row, index) => {
-        const label = groupAt.get(index)
-        const highlightedRow = index === highlighted
-        const common = {
-          type: "button" as const,
-          role: "option",
-          "aria-selected": highlightedRow,
-          "data-highlighted": highlightedRow ? "true" : "false",
-          onMouseEnter: () => onHighlight(index)
-        }
-        const heading = label === undefined ? null : <div className="palette-group" key={`group:${label}:${index}`}>{label}</div>
-        if (row.kind === "slash" && row.row.kind === "namespace") {
-          const { namespace, count } = row.row
-          return (
-            <Fragment key={`ns:${namespace.id}`}>
-              {heading}
-              <button {...common} data-namespace={namespace.id} className="slash-menu-item slash-menu-namespace" onClick={() => onChoose(row)}>
-                <span className="slash-menu-name">/{namespace.id} ›</span>
-                <span className="slash-menu-description">
-                  {namespace.label}
-                  {namespace.summary === "" ? "" : ` — ${namespace.summary}`}
-                </span>
-                <span className="slash-menu-count">{count}</span>
-              </button>
-            </Fragment>
-          )
-        }
-        if (row.kind === "slash" && row.row.kind === "flow") {
-          const { flow, recommended } = row.row
-          return (
-            <Fragment key={flow.name}>
-              {heading}
-              <button {...common} data-gold={recommended} data-flow={flow.name} className="slash-menu-item" onClick={() => onChoose(row)}>
-                <span className="slash-menu-name">/{flow.name}</span>
-                <span className="slash-menu-description">{flow.summary}</span>
-              </button>
-            </Fragment>
-          )
-        }
-        // Unreachable (a leaf row is a namespace or a flow); it narrows `row` for the branches below.
-        if (row.kind === "slash") return null
-        if (row.kind === "ask") {
-          return (
-            <button {...common} key="ask" data-ask="" className="slash-menu-item palette-ask-row" onClick={() => onChoose(row)}>
-              <span className="slash-menu-name">Ask Smithers</span>
-              <span className="slash-menu-description">Type a question or a task, then press Enter</span>
-            </button>
-          )
-        }
-        if (row.kind === "help") {
-          const { prefix, label: shown, searches, available } = row.row
-          return (
-            <button {...common} key={`help:${shown}`} data-prefix={prefix} data-available={available} className="slash-menu-item palette-help-row" onClick={() => onChoose(row)}>
-              <span className="slash-menu-name">{shown}</span>
-              <span className="slash-menu-description">{available ? searches : "sign in"}</span>
-            </button>
-          )
-        }
-        if (row.kind === "action") {
-          const { action } = row
-          return (
-            <button {...common} key={`action:${action.flow}:${action.args ?? ""}`} data-flow={action.flow} data-role={action.role} className="slash-menu-item" onClick={() => onChoose(row)}>
-              <span className="slash-menu-name">/{action.flow}</span>
-              <span className="slash-menu-description">{action.label}</span>
-              <span className="slash-menu-count">{roleWord(action.role)}</span>
-            </button>
-          )
-        }
-        const { item, recommended } = row
-        const primary = actionForKey(item, "primary")
-        return (
-          <div key={`item:${item.kind}:${item.ref}`} className="palette-item-wrap">
-            {heading}
-            <button {...common} data-kind={item.kind} data-ref={item.ref} data-gold={recommended} className="slash-menu-item" onClick={() => onChoose(row)}>
-              <span className="slash-menu-name">{item.kind === "flow" ? `/${item.title}` : item.title}</span>
-              {item.subtitle === undefined ? null : <span className="slash-menu-description">{item.subtitle}</span>}
-              {primary === undefined ? null : <span className="slash-menu-count">Cmd+Enter</span>}
-            </button>
-          </div>
-        )
-      })}
+      <div className="palette-foot" aria-hidden="true">
+        <span className="palette-hint"><kbd>↑↓</kbd>Navigate</span>
+        <span className="palette-hint"><kbd>↵</kbd>Select</span>
+        <span className="palette-hint"><kbd>→</kbd>Actions</span>
+        <span className="palette-hint palette-hint-end"><kbd>?</kbd>Prefixes</span>
+        <span className="palette-hint"><kbd>esc</kbd>Close</span>
+      </div>
     </div>
   )
 }
