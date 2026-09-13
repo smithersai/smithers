@@ -17,7 +17,8 @@
  * @since 0.1.0
  */
 import { Journal, JournalEvent } from "@smthrs/journal"
-import { Duration, Effect, Schema, Stream } from "effect"
+import { Duration, Effect, Stream } from "effect"
+import * as SubjectHealth from "./Health.ts"
 import { Control } from "./Control.ts"
 import type { ControlError } from "./ControlError.ts"
 import { PersistenceError } from "./ControlError.ts"
@@ -76,15 +77,7 @@ export const healedEventType = "control.monitor.healed"
  * @category models
  * @since 0.1.0
  */
-export const Health = Schema.Literals([
-  "healthy",
-  "stalled",
-  "wedged-node",
-  "runaway-loop",
-  "awaiting-human",
-  "failing",
-  "unknown"
-])
+export const Health = SubjectHealth.HealthState
 
 /**
  * What a run looks like to a monitor.
@@ -117,6 +110,8 @@ export interface Observation {
    * being a runaway. A run past it is looping without converging.
    */
   readonly roundBound?: number | undefined
+  /** Fresh, explicitly reported semantic work; never inferred from bytes or monitor events. */
+  readonly semanticProgress?: boolean | undefined
 }
 
 /** How many rounds a trampoline may take before a monitor calls it runaway. */
@@ -185,10 +180,11 @@ const classifyState = (observation: Omit<Observation, "events">, attempts: Attem
   if (summary.status === "parked" && (summary.waitingReason === "approval" || summary.waitingReason === undefined)) {
     return "awaiting-human"
   }
+  if (SubjectHealth.waitReason(summary.status, summary.waitingReason) !== undefined) return "healthy"
   const bound = observation.roundBound ?? defaultRoundBound
   if (summary.roundOrdinal !== undefined && summary.roundOrdinal >= bound) return "runaway-loop"
   if (attempts.failed) return "failing"
-  if (observation.beatsWithoutProgress >= observation.stallBeats) {
+  if (!observation.semanticProgress && observation.beatsWithoutProgress >= observation.stallBeats) {
     return attempts.open > 0 ? "wedged-node" : "stalled"
   }
   return "healthy"
@@ -271,6 +267,12 @@ export interface Report {
  */
 export interface Options {
   readonly runId: RunId
+  /** Optional configured observational checker; checker results never authorize a remedy. */
+  readonly healthCheck?: SubjectHealth.ResolvedCheck | undefined
+  /** Shared host admission limit around probes. */
+  readonly withProbePermit?: (<A>(effect: Effect.Effect<A>) => Effect.Effect<A>) | undefined
+  /** Bounded retained beat history for long-lived host monitoring. */
+  readonly retainBeats?: number | undefined
   /**
    * Who is watching. Defaults to `default`.
    *
@@ -349,7 +351,8 @@ export const run = (
   Effect.gen(function*() {
     const control = yield* Control
     const journal = yield* Journal.Journal
-    const intervalMs = options.intervalMs ?? 1_000
+    const intervalMs = options.intervalMs ?? options.healthCheck?.policy.intervalMs ?? 1_000
+    let consecutiveProbeFailures = 0
     const maxChecks = options.maxChecks ?? 10
     const stallBeats = options.stallBeats ?? 3
     const autoHeal = options.autoHeal ?? []
@@ -432,8 +435,10 @@ export const run = (
     const attempts: AttemptState = { open: 0, failed: false }
     let sequence = -1
     for (let beat = 0; beat < maxChecks; beat += 1) {
-      if (beat > 0 && intervalMs > 0) yield* Effect.sleep(Duration.millis(intervalMs))
+      if (beat > 0 && intervalMs > 0) yield* Effect.sleep(Duration.millis(options.healthCheck === undefined ? intervalMs : SubjectHealth.nextDelay(options.healthCheck.policy, consecutiveProbeFailures)))
       const summary = yield* summaryOf(options.runId)
+      const newEvents: Array<ControlEvent> = []
+      const sinceCursor = Math.max(0, sequence)
       yield* control.watch({ runId: options.runId, follow: false, ...checkpoint }).pipe(
         Stream.runForEach((event) =>
           Effect.sync(() => {
@@ -441,7 +446,8 @@ export const run = (
             checkpoint = event.cursor === undefined
               ? { afterSequence: event.sequence }
               : { afterCursor: event.cursor }
-            if (event.kind === beatEventType || event.kind === healedEventType) return
+            if (isBookkeepingEvent(event.kind)) return
+            newEvents.push(event)
             sequence = event.sequence
             foldAttempt(attempts, event)
           })
@@ -455,6 +461,32 @@ export const run = (
         stallBeats,
         ...(options.roundBound === undefined ? {} : { roundBound: options.roundBound })
       }, attempts)
+      if (options.healthCheck !== undefined && summary !== undefined) {
+        const check = options.healthCheck
+        const subjectId = `run:${options.runId}`
+        const incarnation = SubjectHealth.runIncarnation(summary)
+        const probe = SubjectHealth.evaluate(check, {
+          subjectId, state: summary.status, summary, events: newEvents, sinceCursor
+        }, { monitorId, incarnation, evidenceSeq: Math.max(0, sequence) })
+        let observation = yield* (options.withProbePermit?.(probe) ?? probe)
+        const current = yield* summaryOf(options.runId)
+        if (current === undefined || SubjectHealth.runIncarnation(current) !== incarnation) {
+          observation = { ...observation, outcome: "discarded", report: undefined, reason: "owner-changed" }
+        }
+        consecutiveProbeFailures = observation.outcome === "ok" ? 0 : consecutiveProbeFailures + 1
+        const semanticProgress = observation.outcome === "ok" && observation.report?.activity === "working"
+        const baseHealth = classifyState({ summary, beatsWithoutProgress, stallBeats, roundBound: options.roundBound, semanticProgress }, attempts)
+        observation = { ...observation, baseHealth }
+        const status = SubjectHealth.rollup({
+          subjectId, state: summary.status, incarnation, waitingReason: summary.waitingReason,
+          baseHealth, latest: { observation, sequence: 0 }, now: observation.observedAt, updatedAt: summary.updatedAt
+        })
+        yield* emit(SubjectHealth.statusObservedEventType, {
+          ...observation, status: summary.status, health: status.health, activity: status.activity,
+          attention: status.attention, freshness: status.freshness, waitingReason: summary.waitingReason ?? ""
+        }, "health observation")
+      }
+      // Checker output is observational and never participates in remedy authorization.
       const remedy = autoHeal.includes(health) ? remedyFor(health) : "none"
       const observed: Beat = { beat, health, sequence }
       yield* record(observed, remedy)
@@ -504,6 +536,7 @@ export const run = (
           if (receipt._tag === "Terminal") break
         }
       }
+      if (options.retainBeats !== undefined && beats.length > options.retainBeats) beats.splice(0, beats.length - options.retainBeats)
       if (terminal(summary)) break
     }
     return {
@@ -512,3 +545,10 @@ export const run = (
       health: beats[beats.length - 1]?.health ?? "unknown"
     }
   })
+
+/** Observer and notification bookkeeping is never execution progress.
+ * @category predicates @since 1.0.0
+ */
+export const isBookkeepingEvent = (kind: string): boolean =>
+  kind.startsWith("control.monitor.") || kind.startsWith("control.status.") ||
+  kind.startsWith("flows.alerts.") || kind.startsWith("flows.notifications.")

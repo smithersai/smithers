@@ -1,6 +1,7 @@
 /** Observational health contracts shared by durable runs and native sessions.
  * @since 1.0.0
  */
+import * as Sha256 from "@smthrs/crypto/Sha256"
 import { Cause, Effect, Metric, Schema } from "effect"
 import type { ControlEvent, RunSummary } from "./ControlSchema.ts"
 
@@ -18,10 +19,16 @@ export const HealthState = Schema.Literals([
 export type HealthState = typeof HealthState.Type
 /** Only explicit semantic checks establish activity. @category schemas @since 1.0.0 */
 export const Activity = Schema.Literals(["working", "idle", "needs-input", "unknown"])
+/** Semantic activity. @category models @since 1.0.0 */
+export type Activity = typeof Activity.Type
 /** Attention never confers permission to act. @category schemas @since 1.0.0 */
 export const Attention = Schema.Literals(["none", "awaiting-approval", "needs-input", "unhealthy"])
+/** Human attention. @category models @since 1.0.0 */
+export type Attention = typeof Attention.Type
 /** Whether a successful reading still describes this subject. @category schemas @since 1.0.0 */
 export const Freshness = Schema.Literals(["fresh", "stale", "unobserved"])
+/** Reading freshness. @category models @since 1.0.0 */
+export type Freshness = typeof Freshness.Type
 /** Public reasons; arbitrary exception text and terminal bytes never cross this boundary. @category schemas @since 1.0.0 */
 export const ReasonCode = Schema.Literals([
   "ok", "no-progress", "awaiting-reply", "prompt-detected", "quota-wait", "timer-wait", "event-wait",
@@ -46,6 +53,7 @@ export const HealthObservation = Schema.Struct({
   observedAt: Counter,
   expiresAt: Counter,
   durationMs: Counter,
+  baseHealth: Schema.optional(HealthState),
   outcome: Schema.Literals(["ok", "timeout", "error", "interrupted", "discarded"]),
   report: Schema.optional(ProbeReport),
   reason: Schema.optional(ReasonCode)
@@ -81,6 +89,13 @@ export const StatusRollup = Schema.Struct({
 export type StatusRollup = typeof StatusRollup.Type
 /** Durable event type for observational health. @category constants @since 1.0.0 */
 export const statusObservedEventType = "control.status.observed"
+/** Opaque identity of the authoritative run ownership and lifecycle point being observed.
+ * Equality is meaningful; lexical or numeric ordering is not.
+ * @category getters @since 1.0.0
+ */
+export const runIncarnation = (run: RunSummary): string => Sha256.digestSync(JSON.stringify([
+  run.runId, run.createdAt, run.updatedAt, run.ownerId ?? null, run.parkedBy ?? null, run.status, run.waitingReason ?? null
+]))
 
 /** Read-only evidence, deliberately excluding mutation ports and terminal text by default.
  * Checkers are trusted host TypeScript, not a sandbox: captured ambient authority remains their author's responsibility.

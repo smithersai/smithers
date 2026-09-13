@@ -161,3 +161,37 @@ test("the bundled main entry runs the daemon without importing the native SDK", 
   const owner = await attachLocalDaemon(f.configuration, { ...f.options, entrypoint: join(outdir, "index.js") })
   expect((await (await api(owner)).request("/api/pty")).status).toBe(200)
 }, 20_000)
+
+test("a crashed owner releases its kernel lease; stale control state cannot restart the old command", async () => {
+  const f = await fixture()
+  const child = Bun.spawn([process.execPath, f.options.entrypoint], {
+    env: { ...f.options.env, SMITHERS_LOCAL_DAEMON: "1", SMITHERS_DAEMON_CONFIGURATION: JSON.stringify(f.configuration) },
+    stdout: "ignore", stderr: "ignore"
+  })
+  let descriptor: Awaited<ReturnType<typeof readDaemonDescriptor>>
+  try {
+    await until(async () => (descriptor = await readDaemonDescriptor(f.configuration.stateDir)) !== undefined)
+    const first = await f.attach()
+    const { request } = await api(first)
+    await request("/api/pty", { method: "POST", body: JSON.stringify({ kind: "terminal", cols: 80, rows: 24 }) })
+    child.kill("SIGKILL")
+    await child.exited
+    const next = await f.attach()
+    expect(next.instance).not.toBe(first.instance)
+    expect(next.origin).toBe(first.origin)
+    const nextApi = await api(next)
+    expect((await (await nextApi.request("/api/pty")).json() as { sessions: unknown[] }).sessions).toEqual([])
+  } finally {
+    child.kill("SIGKILL")
+    await child.exited
+    if (descriptor !== undefined) await rm(dirname(descriptor.socket), { recursive: true, force: true })
+  }
+}, 20_000)
+
+test("explicit maintenance can stop an incompatible owner without adopting its build", async () => {
+  const f = await fixture()
+  await f.attach()
+  await expect(attachLocalDaemon({ ...f.configuration, build: "new-build" }, f.options)).rejects.toThrow("different Smithers build")
+  expect(await shutdownLocalDaemon(f.configuration.stateDir)).toBe("stopped")
+  expect(await shutdownLocalDaemon(f.configuration.stateDir)).toBe("absent")
+}, 20_000)
