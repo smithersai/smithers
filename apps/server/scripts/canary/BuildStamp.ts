@@ -213,6 +213,9 @@ export const htmlAgreementVerdict = (
  * often has neither a receipt nor a git checkout. An absent input is reported
  * as a skipped check by the caller, never as a pass.
  */
+export const shaMatches = (served: string, expected: string): boolean =>
+  expected.length >= 7 && served.startsWith(expected)
+
 export const buildShaVerdict = (
   stamp: BuildStamp,
   expectedSha: string | undefined,
@@ -227,7 +230,8 @@ export const buildShaVerdict = (
         `the served HTML claims ${metaSha} but ${BUILD_STAMP_PATH} claims ${stamp.gitSha}: the HTML and the assets are from different builds`
     }
   }
-  if (expectedSha !== undefined && expectedSha !== stamp.gitSha) {
+  // `--sha` is typed by hand, so an abbreviated sha (7+ hex) matches as a prefix.
+  if (expectedSha !== undefined && !shaMatches(stamp.gitSha, expectedSha)) {
     return {
       ok: false,
       detail: `the deployment serves ${stamp.gitSha}, the receipt claims ${expectedSha}${

@@ -141,6 +141,13 @@ describe("buildShaVerdict", () => {
     expect(verdict.detail).toContain("2026-08-18T00:00:00.000Z")
   })
 
+  /* 2026-09-13: a hand-typed short sha reported a green deploy as red. */
+  test("an abbreviated expected sha matches as a prefix, a six-char one does not", () => {
+    expect(buildShaVerdict(stampOf(FRESH), FRESH.slice(0, 12), null, undefined, 0).ok).toBe(true)
+    expect(buildShaVerdict(stampOf(FRESH), FRESH.slice(0, 6), null, undefined, 0).ok).toBe(false)
+    expect(buildShaVerdict(stampOf(STALE), FRESH.slice(0, 12), null, undefined, 0).ok).toBe(false)
+  })
+
   /* The live defect this row exists to catch. */
   test("a stale deployment fails, naming both shas and the distance", () => {
     const verdict = buildShaVerdict(stampOf(STALE), FRESH, STALE, 13, 0)
