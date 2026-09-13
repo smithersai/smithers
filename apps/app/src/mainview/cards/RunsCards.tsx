@@ -11,6 +11,7 @@
  */
 import { Button, Confirmation, ConfirmationAccepted, ConfirmationAction, ConfirmationActions, ConfirmationRejected, ConfirmationRequest } from "@smthrs/ui"
 import type { Card } from "../state/AppState"
+import { approvalActionId, approvalRowKey } from "../state/ApprovalReference"
 import { timeLabel as clockLabel } from "../Timestamps"
 import type { CardFamily, RunCommand } from "./CardFamily"
 import { settledPill } from "./CardFamily"
@@ -143,7 +144,7 @@ export const ApprovalsInboxCardBody = ({
       </p>
       {approvals.map((approval) => {
         // The row id the decision flows take: the inbox card plus the gate it names.
-        const rowId = `${card.id}:${approval.requestId}`
+        const rowId = approvalActionId(card.id, approval)
         const state = approval.decisionError !== undefined
           ? "failed-submission"
           : approval.decision ?? "requested"
@@ -153,7 +154,7 @@ export const ApprovalsInboxCardBody = ({
           ? undefined
           : `${approval.decision === "denied" ? "Denied" : "Approved"} — ${clockLabel(approval.decidedAt)}`
         return (
-          <Confirmation key={approval.requestId} state={state}>
+          <Confirmation key={approvalRowKey(approval)} state={state}>
             <ConfirmationRequest>
               <div className="sui-approval-summary">{approval.title}</div>
               <ul className="sui-approval-actions-list">

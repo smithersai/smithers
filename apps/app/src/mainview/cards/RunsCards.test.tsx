@@ -1,3 +1,4 @@
+import { approvalActionId } from "../state/ApprovalReference"
 import { GlobalRegistrator } from "@happy-dom/global-registrator"
 import { afterAll, describe, expect, test } from "bun:test"
 import { flushSync } from "react-dom"
@@ -166,7 +167,7 @@ describe("the approvals inbox card", () => {
       button.textContent?.toLowerCase().includes("approve")
     )
     click(approve!)
-    expect(decisions[0]).toEqual({ id: `approvals-inbox-${REPO}:req-1`, decision: "approved" })
+    expect(decisions[0]).toEqual({ id: approvalActionId(`approvals-inbox-${REPO}`, { runId: "run-a", requestId: "req-1" }), decision: "approved" })
   })
 
   test("a decided row freezes; a refused one names the error", () => {

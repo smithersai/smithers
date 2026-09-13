@@ -23,6 +23,8 @@ import { traceFromJournal } from "../../cards/RunTrace"
 import { codingPlanOf } from "../../cards/CodingPlan"
 import type { CommandResult } from "../../flows/Flows"
 import type { Card } from "../AppState"
+import { sameApproval } from "../ApprovalReference"
+import { reconcileRunApprovals } from "./approval-reconciliation"
 import type { ControllerContext } from "./context"
 import type { RunSummaryRow } from "./gateway"
 import type { WorkflowController } from "./workflows"
@@ -575,6 +577,7 @@ export const createRunsController = (
     if (provisioned !== true) return provisioned
     const inbox = await gateway.approvalsInbox(repo, binding)
     if (inbox.status !== "ok") return inbox.message
+    for (const runId of new Set(inbox.value.map((row) => row.runId))) reconcileRunApprovals(store, { repo, runId, ...binding }, inbox.value)
     const pending = inbox.value.filter((row) => row.status === "pending")
     const cardId = `approvals-inbox-${repo}${binding.workspaceId === undefined ? "" : `-${binding.workspaceId}`}`
     const existing = store.collections.cards.get(cardId)
@@ -591,7 +594,7 @@ export const createRunsController = (
         approvals: pending.map((row) => {
           // A row's recorded decision survives a refresh: the freeze is the
           // server's answer, not something a re-list may thaw.
-          const before = prior.find((entry) => entry.requestId === row.requestId)
+          const before = prior.find((entry) => sameApproval(entry, row))
           return {
             runId: row.runId,
             requestId: row.requestId,
@@ -625,6 +628,11 @@ export const createRunsController = (
     if ("error" in target) return target.error
     const repo = target.repo
     const binding = { workspaceId: target.workspaceId }
+    const provisioned = await workflows.provisionWorkspace(repo, binding)
+    if (provisioned !== true) return provisioned
+    const approvals = await gateway.approvals(repo, runId, binding)
+    if (approvals.status !== "ok") return approvals.message
+    reconcileRunApprovals(store, target, approvals.value)
     const alreadyOpen = [...store.collections.cards.values()].filter(
       (card) =>
         store.approvalRequest(card.id) !== undefined && card.kind === "approval" && card.payload.runId === runId &&
@@ -637,10 +645,6 @@ export const createRunsController = (
         } already open for run ${runId}.`
       }
     }
-    const provisioned = await workflows.provisionWorkspace(repo, binding)
-    if (provisioned !== true) return provisioned
-    const approvals = await gateway.approvals(repo, runId, binding)
-    if (approvals.status !== "ok") return approvals.message
     const pending = approvals.value.filter((row) => row.status === "pending")
     if (pending.length === 0) return `Run ${runId} has no approvals pending.`
     for (const approval of pending) {

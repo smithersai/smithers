@@ -9,6 +9,7 @@ import { parseSubmit } from "../../flows/registry"
 import { boundToolResult, boundTurnRequest } from "../AgentTurnPolicy"
 import { CardPatchSchema, CardSchema, MAIN_TAB_ID } from "../AppState"
 import type { Card } from "../AppState"
+import { parseApprovalActionId } from "../ApprovalReference"
 import { isRuntimeOwnedCard } from "../isRuntimeOwnedCard"
 import { roleMenuEntries } from "../../AgentRoleMenu"
 import { GUIDE_LAST_STEP, GUIDE_LESSONS } from "../../onboarding/lessons"
@@ -54,7 +55,8 @@ export interface TurnControllerDependencies {
   readonly forwardInboxApprovalDecision: (
     cardId: string,
     requestId: string,
-    decision: "approved" | "denied"
+    decision: "approved" | "denied",
+    runId?: string
   ) => Promise<void>
 }
 
@@ -978,6 +980,11 @@ export const createTurnController = (
   }
 
   const decideApproval = (id: string, decision: "approved" | "denied"): void => {
+    const rowTarget = parseApprovalActionId(id)
+    if (rowTarget !== undefined) {
+      void forwardInboxApprovalDecision(rowTarget.cardId, rowTarget.requestId, decision, rowTarget.runId)
+      return
+    }
     /*
      * An approvals-inbox row addresses its decision `inboxCardId:requestId`
      * (lane runs §5): the gate's own approval card may never have landed in

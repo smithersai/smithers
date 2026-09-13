@@ -362,7 +362,7 @@ describe("approval round trip", () => {
       ...backend({
         "/api/workflow/rpc": async (request) => {
           posted = await request.json()
-          return json(200, { ok: true, payload: { decision: { _tag: "Accepted" }, resume: { _tag: "Accepted" } } })
+          return json(200, { ok: true, payload: { decision: { _tag: "Accepted", receiptId: "approval-receipt" }, resume: { _tag: "Accepted" } } })
         }
       })
     })
@@ -393,7 +393,7 @@ describe("approval round trip", () => {
     const store = await webStore()
     const controller = createAppController(store, unavailableRepositories, silentAgent, {
       ...backend({
-        "/api/workflow/rpc": json(200, { ok: true, payload: { decision: { _tag: "Accepted" } } })
+        "/api/workflow/rpc": json(200, { ok: true, payload: { decision: { _tag: "Accepted", receiptId: "approval-receipt" } } })
       })
     })
     approvalCard(store)
@@ -413,7 +413,7 @@ describe("approval round trip", () => {
         if (!url.includes("/api/workflow/rpc")) return json(404, {})
         attempts += 1
         if (attempts === 1) return json(502, { status: "error", message: "gateway unreachable" })
-        return json(200, { ok: true, payload: { decision: { _tag: "Accepted" } } })
+        return json(200, { ok: true, payload: { decision: { _tag: "Accepted", receiptId: "approval-receipt" } } })
       }
     })
     approvalCard(store)
@@ -430,6 +430,71 @@ describe("approval round trip", () => {
     card = cardOf(store, "approval-1", "approval")
     expect(card.status).toBe("acted")
     expect(card.payload.decision).toBe("approved")
+  })
+
+  for (const [name, receipt] of [
+    ["conflicting idempotency key", { _tag: "Conflict", message: "That key names another decision" }],
+    ["terminal without a recorded decision", { _tag: "Terminal", runId: "run_01", status: "completed" }],
+    ["receipt for a different run", { _tag: "Accepted", receiptId: "a", runId: "other-run" }],
+    ["malformed accepted receipt", { _tag: "Accepted" }],
+    ["an unrelated success receipt", { _tag: "Parked", runId: "run_01" }],
+  ] as const) {
+    test(`${name} cannot freeze an approval as decided`, async () => {
+      const store = await webStore()
+      const controller = createAppController(store, unavailableRepositories, silentAgent, backend({
+        "/api/workflow/rpc": async (request) => {
+          const body = await request.json() as { procedure: string }
+          return json(200, { ok: true, payload: body.procedure === "Approval.Submit" ? { decision: receipt } : { rows: [] } })
+        }
+      }))
+      approvalCard(store)
+      controller.decideApproval("approval-1", "approved")
+      await settled()
+      const card = cardOf(store, "approval-1", "approval")
+      expect(card.status).toBe("error")
+      expect(card.payload.decision).toBeUndefined()
+      expect(card.payload.pending).toBe(false)
+      expect([...store.collections.transitions.values()].some((event) => event.type === "card.approval.decision.failed" && event.actor === "system")).toBe(true)
+    })
+  }
+
+  test("a terminal receipt reconciles the actual opposite decision made by another client", async () => {
+    const store = await webStore()
+    const trusted = approvalCard(store) as Extract<Card, { kind: "approval" }>
+    const controller = createAppController(store, unavailableRepositories, silentAgent, backend({
+      "/api/workflow/rpc": async (request) => {
+        const body = await request.json() as { procedure: string }
+        return json(200, { ok: true, payload: body.procedure === "Approval.Submit"
+          ? { decision: { _tag: "Terminal", runId: "run_01", status: "completed" } }
+          : { rows: [{ runId: "run_01", requestId: "approve", title: "Deploy it?", request: {},
+            payload: { ...trusted.payload.approval, target: { ...trusted.payload.approval!.target as object,
+              envelope: { capabilities: [], flows: [], budget: {} } } }, requestedAt: 1, status: "denied" }] } })
+      }
+    }))
+    controller.decideApproval("approval-1", "approved")
+    await settled()
+    const card = cardOf(store, "approval-1", "approval")
+    expect(card.status).toBe("acted")
+    expect(card.payload.decision).toBe("denied")
+    expect(card.payload.decidedAt).toBeUndefined()
+    expect([...store.collections.transitions.values()].filter((event) => event.type === "card.approval.observed").map((event) => event.actor)).toEqual(["system"])
+  })
+
+  test("an idempotent receipt settles the same human decision without another resume request", async () => {
+    const store = await webStore()
+    const calls: string[] = []
+    const controller = createAppController(store, unavailableRepositories, silentAgent, backend({
+      "/api/workflow/rpc": async (request) => {
+        const body = await request.json() as { procedure: string }
+        calls.push(body.procedure)
+        return json(200, { ok: true, payload: { decision: { _tag: "AlreadyApplied", receiptId: "a", runId: "run_01" } } })
+      }
+    }))
+    approvalCard(store)
+    controller.decideApproval("approval-1", "denied")
+    await settled()
+    expect(cardOf(store, "approval-1", "approval").payload.decision).toBe("denied")
+    expect(calls).toEqual(["Approval.Submit"])
   })
 
   test("a card with no run identity cannot be fake-decided", async () => {

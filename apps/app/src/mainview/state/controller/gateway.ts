@@ -16,6 +16,7 @@
 import { ControlEvent, type SteerMessage } from "@smthrs/control/ControlSchema"
 import { ApprovalRow, NodeOutputRow, RunSummaryRow, TranscriptRow } from "@smthrs/gateway/GatewayProjection"
 import { ProjectionCursor } from "@smthrs/gateway/GatewaySchema"
+import { SubmitApprovalOutput } from "@smthrs/gateway/GatewayRpcs"
 import { WORKFLOW_RPC_PATH } from "@smthrs/rpc/AgentApiRoutes"
 import { Option, Schema } from "effect"
 
@@ -270,12 +271,26 @@ export const createGatewaySeam = (transport: GatewayTransport) => {
      * the run it unblocked: there is no second resume for a lost answer to
      * strand.
      */
-    submitApproval: (
+    submitApproval: async (
       repo: string,
       approval: ApprovalRow["payload"],
       decision: "approve" | "deny",
       binding?: GatewayWorkspaceBinding
-    ): Promise<GatewayResult<unknown>> => call(repo, "Approval.Submit", { ...approval, decision }, binding),
+    ): Promise<GatewayResult<SubmitApprovalOutput>> => {
+      const result = await call(repo, "Approval.Submit", { ...approval, decision }, binding)
+      if (result.status !== "ok") return result
+      const decoded = Schema.decodeUnknownOption(SubmitApprovalOutput)(result.value)
+      if (Option.isNone(decoded)) return { status: "error", code: "invalid_approval_receipt", message: "The workspace returned an unreadable approval receipt. Check this approval before trying again." }
+      const receipt = decoded.value.decision
+      if ("runId" in receipt && receipt.runId !== undefined && approval.target._tag === "Node" && receipt.runId !== approval.target.runId) {
+        return { status: "error", code: "invalid_approval_receipt", message: "The workspace returned a receipt for a different run. This approval was not confirmed." }
+      }
+      if (receipt._tag === "Conflict") return { status: "error", code: "approval_conflict", message: receipt.message }
+      if (receipt._tag !== "Accepted" && receipt._tag !== "AlreadyApplied" && receipt._tag !== "Terminal") {
+        return { status: "error", code: "invalid_approval_receipt", message: "The workspace did not confirm this approval decision. Check the run before trying again." }
+      }
+      return { status: "ok", value: decoded.value }
+    },
 
     /** What one node produced. */
     nodeOutput: async (

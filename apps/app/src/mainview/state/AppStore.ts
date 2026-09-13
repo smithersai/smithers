@@ -1,5 +1,6 @@
 import { RepositoryContextSchema } from "./RepositoryContext"
 import { RepositoryNotificationSchema } from "./RepositoryNotifications"
+import { sameApproval } from "./ApprovalReference"
 import { migrateGuideV3 } from "./controller/guide"
 import { resumeTutorial } from "../onboarding/resume"
 import { PRACTICE_REPO } from "./practice/PracticeRepository"
@@ -2258,7 +2259,7 @@ const initializeAppStore = async (resolved: ResolvedPersistence): Promise<AppSto
             // change which request a row or its wording refers to.
             patch = { status: patch.status, payload: { ...trusted.payload,
               approvals: trusted.payload.approvals.map((row) => {
-                const update = updates.find((entry) => entry.requestId === row.requestId)
+                const update = updates.find((entry) => sameApproval(entry, row))
                 return { ...row, decision: update?.decision, decidedAt: update?.decidedAt,
                   pending: update?.pending, decisionError: update?.decisionError }
               }) } }
@@ -2301,6 +2302,24 @@ const initializeAppStore = async (resolved: ResolvedPersistence): Promise<AppSto
               draft.payload.pending = false
               draft.payload.error = transition.message
             }
+          })
+          break
+        }
+
+        case "card.approval.observed": {
+          const trusted = approvalRequest(transition.id)
+          const card = collections.cards.get(transition.id)
+          if (transition.actor !== "system" || trusted?.kind !== "approval" || card?.kind !== "approval" || trusted.payload.chain === true) return
+          const target = trusted.payload.approval?.target as { _tag?: unknown; runId?: unknown; requestId?: unknown; digest?: unknown } | undefined
+          if (target?._tag !== "Node" || target.runId !== transition.runId || target.requestId !== transition.requestId ||
+            target.digest !== transition.digest || trusted.payload.runId !== transition.runId || trusted.payload.requestId !== transition.requestId) return
+          collections.cards.update(transition.id, (draft) => {
+            if (draft.kind !== "approval") return
+            draft.status = "acted"
+            draft.payload.decision = transition.decision
+            draft.payload.decidedAt = undefined
+            draft.payload.pending = false
+            draft.payload.error = undefined
           })
           break
         }
@@ -3191,6 +3210,21 @@ const initializeAppStore = async (resolved: ResolvedPersistence): Promise<AppSto
     return transaction
   }
 
+  // A lost controller cannot finish an in-flight submission. Preserve the
+  // reviewed request and uncertain outcome; projection reads or an idempotent
+  // retry will establish whether the decision reached its authority.
+  for (const card of collections.cards.values()) {
+    if (card.kind === "approval" && card.payload.pending === true && card.status !== "acted") {
+      await dispatch({ type: "card.approval.decision.failed", actor: "system", id: card.id,
+        message: "The decision was interrupted. Its outcome is unknown; check the run or retry the same decision." }).isPersisted.promise
+    } else if (card.kind === "approvals-inbox" && card.payload.approvals.some((row) => row.pending === true)) {
+      await dispatch({ type: "card.updated", actor: "system", id: card.id, patch: { payload: { ...card.payload,
+        approvals: card.payload.approvals.map((row) => row.pending === true ? { ...row, pending: undefined,
+          decisionError: "The decision was interrupted. Its outcome is unknown; check the run or retry the same decision." } : row)
+      } } }).isPersisted.promise
+    }
+  }
+
   const interruptedGuide = collections.sessions.get(SESSION_ID)?.guide
   if (interruptedGuide?.demoRun?.status === "running") {
     await dispatch({ type: "guide.changed", actor: "system", guide: {
@@ -3248,17 +3282,16 @@ const initializeAppStore = async (resolved: ResolvedPersistence): Promise<AppSto
   }
 
   /*
-   * Boot reconciliation for the tabs: a terminal or harness tab names a PTY
-   * session of the server that is gone with the last launch, and a card tab
-   * whose card was cleared has nothing to show. Both close, through the
-   * dispatcher, so the strip never opens onto a dead process. The selected
+   * Process tabs retain the daemon session identity across renderer and native
+   * restarts. Their transport replays output or explicitly reports a missing
+   * session, never restarts a command. A card tab whose card was cleared
+   * closes through the dispatcher. The selected
    * tab falls back to main when it no longer exists, and neither the `+`
    * menu nor a pending close question survives a restart (a question is
    * not state).
    */
   for (const tab of orderedTabs(collections)) {
-    const stale = tab.kind === "terminal" || tab.kind === "harness" ||
-      (tab.kind === "card" && collections.cards.get(tab.cardId) === undefined)
+    const stale = tab.kind === "card" && collections.cards.get(tab.cardId) === undefined
     if (stale) await dispatch({ type: "tab.closed", actor: "system", id: tab.id }).isPersisted.promise
   }
   if (collections.tabs.get(collections.sessions.get(SESSION_ID)?.activeTabId ?? MAIN_TAB_ID) === undefined) {

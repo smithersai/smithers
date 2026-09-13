@@ -4,6 +4,7 @@ import type { Card } from "../AppState"
 import type { ControllerContext } from "./context"
 import type { ApprovalRow, RunStatus, RunSummaryRow } from "./gateway"
 import { engineProjectionPending } from "../../cards/EngineTrace"
+import { reconcileRunApprovals } from "./approval-reconciliation"
 
 export interface WorkflowPumpController {
   readonly pumpWorkflowRun: (cardId: string) => Promise<void>
@@ -111,6 +112,7 @@ export const createWorkflowPumpController = (
 
   /** The approval cards a run is waiting on, bound to the existing round trip. */
   const upsertRunApprovals = (runId: string, repo: string, workspaceId: string | undefined, rows: ReadonlyArray<ApprovalRow>): number => {
+    reconcileRunApprovals(store, { repo, runId, workspaceId }, rows)
     let found = 0
     for (const approval of rows) {
       if (approval.runId !== runId || approval.status !== "pending") continue
@@ -247,7 +249,7 @@ export const createWorkflowPumpController = (
         const newSteps = words === undefined || card.payload.steps.includes(words) ? [] : [words]
 
         if (row.status === "waiting-approval" || row.waitingReason === "approval") approvalPending = true
-        if (approvalPending) {
+        if (approvalPending || runAwaitsApproval(card.payload)) {
           const approvals = await gateway.approvals(repo, runId, binding)
           if (pump.stopped || ctx.runPumps.get(cardId) !== pump) return
           // Keep asking until the gate is actually in hand: a parked run can
@@ -464,6 +466,21 @@ export const createWorkflowPumpController = (
   /** Boot reconciliation: a live run card's pump resumes. */
   const resumeWorkflowRuns = (): void => {
     for (const card of liveRunCards()) void pumpWorkflowRun(card.id)
+    // Inbox-only and already-settled runs may have no live pump. A previous
+    // client could have committed the decision before its answer was lost.
+    const scopes: RunScope[] = []
+    for (const card of store.collections.cards.values()) {
+      const runIds = card.kind === "approval" && card.payload.chain !== true && card.payload.decision === undefined && card.payload.runId !== undefined
+        ? [card.payload.runId]
+        : card.kind === "approvals-inbox" ? card.payload.approvals.filter((row) => row.decision === undefined).map((row) => row.runId) : []
+      for (const runId of runIds) {
+        const scope = runScopeFromCard(store, card, runId)
+        if (scope !== undefined && !scopes.some((prior) => sameRunScope(prior, scope))) scopes.push(scope)
+      }
+    }
+    for (const scope of scopes) void gateway.approvals(scope.repo, scope.runId, { workspaceId: scope.workspaceId }).then((result) => {
+      if (result.status === "ok") reconcileRunApprovals(store, scope, result.value)
+    })
   }
   ctx.resumeWorkflowRuns = resumeWorkflowRuns
 

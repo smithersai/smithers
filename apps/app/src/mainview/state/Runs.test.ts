@@ -1,3 +1,4 @@
+import { approvalActionId } from "./ApprovalReference"
 /*
  * Lane runs — the run lifecycle beyond launch, through the real controller
  * against a relay double speaking the wire's own shapes.
@@ -677,6 +678,31 @@ describe("the approvals inbox — list, open, and the row decision", () => {
     const card = inboxCard(store)
     expect(card?.payload.approvals[0]?.decision).toBe("approved")
     expect(card?.payload.approvals[0]?.decisionError).toBeUndefined()
+  })
+
+  test("two runs with the same request ID have independent actions, pending state and refresh receipts", async () => {
+    const store = await webStore()
+    const first = approvalRow("run-a", "deploy:gate", "Deploy A?")
+    const second = approvalRow("run-b", "deploy:gate", "Deploy B?")
+    const double = relay({ approvals: [first, second] })
+    const controller = createAppController(store, unavailableRepositories, silentAgent, double.services)
+    await signIn(store)
+    await controller.commands.run("approvals.list")
+    const id = inboxCard(store)!.id
+    // Legacy addresses must fail closed when more than one run owns the name.
+    controller.decideApproval(`${id}:deploy:gate`, "approved")
+    await settle(4)
+    expect(double.state.submitted).toHaveLength(0)
+    await controller.commands.run("approval.deny", approvalActionId(id, second))
+    await settle(4)
+    expect(double.state.submitted).toEqual([{ approval: second.payload, decision: "deny" }])
+    expect(inboxCard(store)!.payload.approvals.map((row) => row.decision)).toEqual([undefined, "denied"])
+    await controller.commands.run("approvals.list")
+    expect(inboxCard(store)!.payload.approvals.map((row) => row.decision)).toEqual([undefined, "denied"])
+    await controller.commands.run("approval.approve", approvalActionId(id, first))
+    await settle(4)
+    expect(double.state.submitted[1]).toEqual({ approval: first.payload, decision: "approve" })
+    expect(inboxCard(store)!.payload.approvals.map((row) => row.decision)).toEqual(["approved", "denied"])
   })
 
   test("a refused decision lands on the row as the error, never a fake freeze", async () => {

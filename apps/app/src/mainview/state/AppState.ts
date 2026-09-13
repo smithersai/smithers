@@ -1424,6 +1424,15 @@ export type AppTransition =
     decidedAt: number
   }
   | {
+    type: "card.approval.observed"
+    actor: "system"
+    id: string
+    runId: string
+    requestId: string
+    digest: string
+    decision: "approved" | "denied"
+  }
+  | {
     type: "identity.session.loaded"
     actor: "system"
     state: "signed-out" | "signed-in" | "unavailable"

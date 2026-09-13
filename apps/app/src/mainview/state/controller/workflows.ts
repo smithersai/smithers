@@ -1,5 +1,7 @@
 import { WORKFLOW_PROVISION_PATH } from "@smthrs/rpc/AgentApiRoutes"
 import type { Card } from "../AppState"
+import { sameApproval } from "../ApprovalReference"
+import { reconcileRunApprovals } from "./approval-reconciliation"
 import type { ControllerContext } from "./context"
 import { isFlowNotFound, type GatewayWorkspaceBinding } from "./gateway"
 import { runCardIdFor, runScopeFromCard } from "../RunReference"
@@ -62,7 +64,8 @@ export interface WorkflowController {
   readonly forwardInboxApprovalDecision: (
     cardId: string,
     requestId: string,
-    decision: "approved" | "denied"
+    decision: "approved" | "denied",
+    runId?: string
   ) => Promise<void>
 }
 
@@ -542,12 +545,18 @@ export const createWorkflowController = (
       decision === "approved" ? "approve" : "deny",
       binding
     )
-    if (submitted.status !== "ok") {
+    if (submitted.status !== "ok" || submitted.value.decision._tag === "Terminal") {
+      if (trusted.payload.runId !== undefined) {
+        const observed = await gateway.approvals(repo, trusted.payload.runId, binding)
+        if (observed.status === "ok") reconcileRunApprovals(store, { repo, runId: trusted.payload.runId, ...binding }, observed.value)
+      }
+      const current = store.collections.cards.get(card.id)
+      if (current?.kind === "approval" && current.payload.decision !== undefined) return
       store.dispatch({
         type: "card.approval.decision.failed",
         actor: "system",
         id: card.id,
-        message: submitted.message
+        message: submitted.status === "error" ? submitted.message : "This run has finished. The workspace has not confirmed a decision for this approval."
       })
       return
     }
@@ -572,14 +581,18 @@ export const createWorkflowController = (
   const forwardInboxApprovalDecision = async (
     cardId: string,
     requestId: string,
-    decision: "approved" | "denied"
+    decision: "approved" | "denied",
+    runId?: string
   ): Promise<void> => {
     const card = store.collections.cards.get(cardId)
     if (card === undefined || card.kind !== "approvals-inbox") return
     const trusted = store.approvalRequest(cardId)
     if (trusted?.kind !== "approvals-inbox") return
-    const row = trusted.payload.approvals.find((entry) => entry.requestId === requestId)
-    const displayed = card.payload.approvals.find((entry) => entry.requestId === requestId)
+    // Old action IDs omitted the run. They remain valid only when unambiguous.
+    const matches = trusted.payload.approvals.filter((entry) => entry.requestId === requestId && (runId === undefined || entry.runId === runId))
+    if (matches.length !== 1) return
+    const row = matches[0]!
+    const displayed = card.payload.approvals.find((entry) => sameApproval(entry, row))
     if (row === undefined || displayed === undefined || displayed.decision !== undefined || displayed.pending === true) return
     store.dispatch({
       type: "card.updated",
@@ -588,7 +601,7 @@ export const createWorkflowController = (
       patch: {
         payload: {
           ...card.payload,
-          approvals: card.payload.approvals.map((entry) => entry.requestId === requestId ? { ...entry, pending: true } : entry)
+          approvals: card.payload.approvals.map((entry) => sameApproval(entry, row) ? { ...entry, pending: true } : entry)
         }
       }
     })
@@ -600,20 +613,26 @@ export const createWorkflowController = (
       decision === "approved" ? "approve" : "deny",
       binding
     )
+    if (submitted.status !== "ok" || submitted.value.decision._tag === "Terminal") {
+      const observed = await gateway.approvals(trusted.payload.repo, row.runId, binding)
+      if (observed.status === "ok") reconcileRunApprovals(store, { repo: trusted.payload.repo, runId: row.runId, ...binding }, observed.value)
+    }
     const latest = store.collections.cards.get(cardId)
     if (latest === undefined || latest.kind !== "approvals-inbox") return
-    // The decision time is when the server took it, never the gate's requestedAt.
+    if (latest.payload.approvals.find((entry) => sameApproval(entry, row))?.decision !== undefined) return
+    const applied = submitted.status === "ok" && submitted.value.decision._tag !== "Terminal"
+    // The local receipt time; projection observations never invent server timestamps.
     const decidedAt = Date.now()
     const approvals = latest.payload.approvals.map((entry) =>
-      entry.requestId === requestId
-        ? submitted.status === "ok"
+      sameApproval(entry, row)
+        ? applied
           ? { ...entry, decision, decidedAt, decisionError: undefined, pending: undefined }
-          : { ...entry, decisionError: submitted.message, pending: undefined }
+          : { ...entry, decisionError: submitted.status === "error" ? submitted.message : "This run has finished. The workspace has not confirmed a decision for this approval.", pending: undefined }
         : entry
     )
     store.dispatch({
       type: "card.updated",
-      actor: submitted.status === "ok" ? "user" : "system",
+      actor: applied ? "user" : "system",
       id: cardId,
       patch: {
         payload: { ...latest.payload, approvals },
