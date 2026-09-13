@@ -38,6 +38,7 @@ test("all agent demos persist through guide.changed; real theme, notification, c
   }
   expect(h.session.guide.reelIndex).toBeUndefined()
   expect(h.session.guide.step).toBe(14)
+  expect(h.session.guide.finished).toBe(true)
   expect(h.events.filter(e => e.type === "guide.changed").every(e => e.actor === "smithers")).toBe(true)
   h.dispose()
 })
@@ -57,5 +58,17 @@ test("serialized instant advance cannot overwrite a pending theme restore", asyn
   await Promise.all([h.act("reel-demo", "theme"), h.act("reel-next", "1:0"), h.act("reel-exit", "")])
   expect(h.session.theme).toBe("light")
   expect(h.session.guide.reelIndex).toBeUndefined()
+  h.dispose()
+})
+
+test("finishing the wait demo does not advance or dismiss its example", async () => {
+  const h = setup()
+  await h.act("reel-start", "")
+  for (let index = 0; index < 4; index++) await h.act("reel-next", `1:${index}`)
+  await h.act("reel-demo", "wait")
+  h.tick()
+  expect(h.session.guide.demoRun?.status).toBe("succeeded")
+  expect(h.session.guide.reelIndex).toBe(4)
+  expect(h.session.guide.finished).not.toBe(true)
   h.dispose()
 })

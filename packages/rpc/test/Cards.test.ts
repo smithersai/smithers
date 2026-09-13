@@ -449,6 +449,11 @@ type KindFixtures = {
 }
 
 const FIXTURES: Record<Card["kind"], KindFixtures> = {
+  "repo-update": {
+    minimal: { repo: "org/repo", scope: "github:alice", checkedAt: 1, summary: "Up to date", openIssues: null, openPrs: null, problems: [], items: [] },
+    full: { repo: "org/repo", scope: "github:alice", checkedAt: 2, summary: "One issue update", branch: "main", openIssues: 1, openPrs: 0, problems: ["Notifications unavailable"],
+      items: [{ id: "notice-1", version: "v1", kind: "issue", number: 3, title: "Fix greeting", state: "open", tags: ["bug"], read: false }] }
+  },
   plan: {
     minimal: { items: [] },
     full: { items: [{ id: "p1", title: "Read the route", status: "done" }] }
@@ -591,7 +596,9 @@ const FIXTURES: Record<Card["kind"], KindFixtures> = {
       repo: "smithersai/smithers",
       workspaceId: gatewayWorkspaceId,
       gatewayBindingVersion: 1,
-      workflows: [{ key: "review", description: null }]
+      workflows: [{ key: "issue.repro", description: "Research an issue", prompt: "Read and reproduce the issue." }],
+      issueContext: { number: 3, title: "Fix greeting" },
+      research: "Reproduced the missing-name case."
     }
   },
   "trigger-list": {

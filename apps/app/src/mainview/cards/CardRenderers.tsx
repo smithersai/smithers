@@ -1,3 +1,4 @@
+import { repositoryUpdateCardFamily } from "./RepositoryUpdateCard"
 /*
  * The card renderer map: every card kind, from the family that owns it.
  *
@@ -83,6 +84,7 @@ export const CARD_FAMILIES: ReadonlyArray<CardFamily<never>> = [
   landingCardFamily,
   changeCardFamily,
   notificationsCardFamily,
+  repositoryUpdateCardFamily,
   envCardFamily,
   secretsCardFamily,
   accountCardFamily,
@@ -130,6 +132,7 @@ export const CARD_RENDERERS: CardFamily<Card["kind"]> = {
   ...commitPickCardFamily,
   ...commitCardFamily,
   ...notificationsCardFamily,
+  ...repositoryUpdateCardFamily,
   ...envCardFamily,
   ...secretsCardFamily,
   ...accountCardFamily,

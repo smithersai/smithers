@@ -644,6 +644,7 @@ export const DEFAULT_PALETTE: Palette = "night-owl"
 export const isPalette = (value: string): value is Palette => (PALETTES as ReadonlyArray<string>).includes(value)
 
 export const GuideSchema = z.object({
+  finished: z.boolean().optional(),
   sequence: z.enum(["repository-v3", "practice-v4"]).optional(),
   /*
    * Onboarding SCRIPT v4 (onboarding/lessons.ts). All optional so a guide
@@ -696,6 +697,7 @@ export const initialGuide = (): GuideState => ({ version: 3, sequence: "practice
   library: false, librarian: false, heard: "", project: "", prototypeTitle: "A little room for big ideas", revised: false, sound: false })
 
 export const SessionSchema = z.object({
+  sidebarOpen: z.boolean().optional(),
   guide: GuideSchema.optional(),
   id: z.literal("main"),
   draft: z.string(),
@@ -1082,7 +1084,17 @@ export const BillingAccountSchema = z.object({
 })
 export type BillingAccount = z.infer<typeof BillingAccountSchema>
 
+export const PracticeIssueSchema = z.object({ id: z.string(), card: CardSchema })
+
+export const CardHistorySchema = z.object({ id: z.string(), index: z.number().int().nonnegative(), entries: z.array(CardSchema) })
+
 export type AppTransition =
+  | { type: "practice.issue.updated"; actor: Actor; id: string; card: Extract<Card, { kind: "issue" }> }
+  | { type: "repo.update.published"; actor: Actor; card: Extract<Card, { kind: "repo-update" }>; notifications: import("./RepositoryNotifications").RepositoryNotification[] }
+  | { type: "notifications.read"; actor: Actor; receipts: Array<{ id: string; version: string }> }
+  | { type: "notification.tagged"; actor: Actor; id: string; tag: string }
+  | { type: "card.navigated"; actor: Actor; card: Card }
+  | { type: "card.history.moved"; actor: Actor; id: string; delta: -1 | 1 }
   | { type: "dictation.changed"; actor: Actor; listening: boolean }
   | { type: "composer.changed"; actor: Actor; draft: string }
   | { type: "message.submitted"; actor: "user" | "smithers"; turnId: string; text: string }
@@ -1153,6 +1165,7 @@ export type AppTransition =
   | { type: "guide.changed"; actor: Actor; guide: GuideState }
   | { type: "theme.changed"; actor: "user" | "system"; theme: Session["theme"] }
   /* The color theme (/theme) — the axis orthogonal to light/dark. */
+  | { type: "sidebar.toggled"; actor: "user" | "smithers"; open: boolean }
   | { type: "palette.changed"; actor: "user"; palette: Palette }
   | {
     /* Maximize/minimize an embedded card — a presentation transition, user-only. */

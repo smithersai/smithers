@@ -1113,6 +1113,7 @@ export const DiffCardBody = ({
               <li key={file.path} className="world-card-row">
                 <FileDiff size={14} aria-hidden="true" />
                 <span className="world-card-title">{file.path}</span>
+                {!file.isBinary && file.changeType !== "deleted" && payload.pin.commitId !== null ? <Button variant="ghost" size="sm" data-flow="files.open-diff" onClick={() => onRunCommand("files.open-diff", flowArgs("files.open-diff", { cardId: card.id, path: file.path }))}>Open file</Button> : null}
                 <span className="world-card-path">
                   {file.changeType} · +{file.additions} −{file.deletions}
                   {file.conflicted === true ? " · conflicted" : ""}

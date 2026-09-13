@@ -123,14 +123,17 @@ export const CardView = memo(function CardView({
         aria-label={card.title}
       >
         <header className="smithers-card-header">
+          {card.navigation && <nav className="card-local-history" aria-label="Frame history">
+            <button type="button" data-flow="card.history.back" aria-label="Back in frame" disabled={card.navigation.index === 0}
+              onClick={() => onRunCommand("card.history.back", card.id)}><ArrowLeft size={16} /></button>
+            <button type="button" data-flow="card.history.forward" aria-label="Forward in frame" disabled={card.navigation.index + 1 === card.navigation.length}
+              onClick={() => onRunCommand("card.history.forward", card.id)}><ArrowRight size={16} /></button>
+          </nav>}
           <span className="smithers-card-title">{card.title}</span>
-          {/* The bundled practice repository's cards say so (onboarding SCRIPT v4). */}
-          {typeof (card.payload as { repo?: unknown }).repo === "string" && ((card.payload as { repo: string }).repo).startsWith("practice:") ?
-            <span className="smithers-card-practice" data-practice="">Practice</span> :
-            null}
-          <StatusPill status={pillStatus(card)} />
+          {/* A family that has no status word for a card (a picker awaiting its human) renders no pill: "" is not a status. */}
+          {pillStatus(card) === "" ? null : <StatusPill status={pillStatus(card)} />}
           <span className="smithers-card-meta" data-testid={`card-kind-${card.kind}`}>
-            {card.kind} · {clockLabel(card.createdAt)}
+            {clockLabel(card.createdAt)}
           </span>
           {maximized ?
             (

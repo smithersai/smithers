@@ -1,5 +1,5 @@
 import { Schema } from "effect"
-import { flow, NoPayload } from "./Declare"
+import { flow, CardTarget, NoPayload } from "./Declare"
 import type { CommandActions } from "./Declare"
 import type { FlowEntry } from "../registry"
 
@@ -11,6 +11,8 @@ export const guideFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> =>
   flow({ name: "debug.reset", summary: "Clear this app’s local data, sign out, and restart as a new user", input: NoPayload,
     confirm: "clear all local Smithers app data and restart onboarding",
     handler: () => actions.debugReset() }),
+  flow({ name: "tutorial.live.inspect", hidden: true, summary: "Inspect a live tutorial step", args: "<cardId> <eventId>", input: Schema.Struct({ cardId: Schema.String, eventId: Schema.String }), handler: ({ cardId, eventId }) => actions.inspectLiveTutorial(cardId, eventId) }),
+  flow({ name: "tutorial.live.retry", summary: "Reconnect or retry a live tutorial run", args: "<cardId>", input: CardTarget, handler: ({ cardId }) => actions.retryLiveTutorial(cardId) }),
   flow({
     name: "onboarding.act",
     summary: "Guide the onboarding lesson, open or close the conversation, update the optional profile, or end the tutorial (action finish)",

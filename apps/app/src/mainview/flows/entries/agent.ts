@@ -158,6 +158,6 @@ export const tutorialChangeFlows = (actions: import("../../state/controller/tuto
   flow({
     name: "agent.change.start",
     summary: "Start the reviewed change plan", args: "<cardId>",
-    input: Schema.Struct({ cardId: Schema.String }), confirm: "execute the planned change and create one commit",
+    input: Schema.Struct({ cardId: Schema.String }), confirm: "execute the reviewed plan and create its commits",
     handler: ({ cardId }) => actions.startTutorialChange(cardId) })
 ]

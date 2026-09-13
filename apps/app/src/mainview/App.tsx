@@ -13,7 +13,7 @@ import {
   SuggestionGroup
 } from "@smthrs/ui"
 import { useLiveQuery } from "@tanstack/react-db"
-import { CheckCircle2, Copy, HelpCircle, RotateCcw, Sparkles } from "lucide-react"
+import { CheckCircle2, Command, Copy, HelpCircle, Mic, RotateCcw, Sparkles } from "lucide-react"
 import { useMemo, useContext, useRef, useState } from "react"
 import type { PointerEvent as ReactPointerEvent } from "react"
 import { createPortal } from "react-dom"
@@ -32,7 +32,6 @@ import { scrubToolEcho } from "./state/MessageScrub"
 import { conversationTabIdOf, inConversation, MAIN_TAB_ID } from "./state/AppState"
 import { catalogRepositoryOf } from "./state/RepoContext"
 import { ConfirmDialog } from "./SurfaceChrome"
-import { ChromeBar } from "./tabs/ChromeBar"
 import { TabBodies } from "./tabs/TabBodies"
 import { timeLabel } from "./Timestamps"
 import { ToastStack } from "./ToastStack"
@@ -125,6 +124,7 @@ function App() {
       tabMenuOpen: session.tabMenuOpen,
       addMenuOpen: session.addMenuOpen,
       paletteOpen: session.paletteOpen,
+      dictating: session.dictating,
       paletteLastQuery: session.paletteLastQuery,
       resetConfirmOpen: session.resetConfirmOpen,
       verbose: session.verbose,
@@ -150,7 +150,7 @@ function App() {
   /*
    * The guide's composer host: inside the guide shell the composer is hidden
    * by default and Command-K summons ONLY it into the transparent overlay;
-   * outside the guide (undefined) the composer stays docked as before.
+   * outside the guide (undefined) the palette state controls the composer.
    */
   const composerHost = useContext(GuideComposerHost)
   /* The connect trigger has the same shell-level Escape exit as surfaces. */
@@ -370,13 +370,13 @@ function App() {
   })
 
   /*
-   * The composer's one home. Docked in the chat column when the app stands
+   * The composer's one home. Summoned in the chat column when the app stands
    * alone; hidden while the guide owns the window (the UI is full-screen
    * without a composer by default); summoned through a portal into the
    * guide's transparent Command-K overlay, where it is the only thing shown.
    */
   const composerWrap = (
-    <div className="composer-wrap" ref={composerWrapRef} hidden={composerHost === null}>
+    <div className="composer-wrap" ref={composerWrapRef} hidden={composerHost === null || (composerHost === undefined && session.paletteOpen !== true)}>
       <Composer
         minimal
         typing={typing}
@@ -486,7 +486,7 @@ function App() {
       <SmithersUiStyles />
 
       {/* The chrome bar: the tab strip upper-left, the repo chip and chrome actions right. */}
-      <ChromeBar />
+
 
       <div className="app-main">
 
@@ -732,6 +732,15 @@ function App() {
 
       {/* Terminal, harness, and card tabs; hidden while inactive, never unmounted. */}
       <TabBodies />
+      {composerHost === undefined && <footer className="app-chat-controls" aria-label="Chat controls">
+        <button type="button" data-flow="palette.open" aria-keyshortcuts="Meta+K Control+K" onClick={() => {
+          controller.runCommand("palette.open")
+          requestAnimationFrame(() => composerWrapRef.current?.querySelector("textarea")?.focus())
+        }}><Command size={14} aria-hidden="true" /><span>Chat</span><kbd>⌘ K</kbd></button>
+        <button type="button" data-flow="chat.dictate" aria-pressed={session.dictating === true} onClick={() => controller.runCommand("chat.dictate")}>
+          <Mic size={14} aria-hidden="true" /><span>{session.dictating ? "Stop dictation" : "Dictation"}</span>
+        </button>
+      </footer>}
       </div>
 
       {
@@ -776,7 +785,7 @@ function App() {
 
 /*
  * The bare app is the default export: the DOM suites mount it directly, and
- * inside it the composer keeps its docked home. The product mount is the
+ * inside it the composer opens on demand. The product mount is the
  * guide-wrapped shell (AppIsland takes GuidedApp), where the UI stands
  * full-screen and Command-K summons the composer.
  */

@@ -28,7 +28,8 @@ for (const kind of ["issues", "prs"] as const) {
     const result = kind === "issues" ? await createIssuesSeam(ctx).listIssues("open") : await createLandingsSeam(ctx).listLandings()
     expect(typeof result).toBe("object")
     expect(store.collections.cards.get(`${kind}-will/repo`)).toBeDefined()
-    expect(store.session().guide?.completed).toContain(signal)
+    if (kind === "issues") expect(store.session().guide?.completed).toContain(signal)
+    else expect(store.session().guide?.completed).not.toContain(signal)
   })
   test(`${kind}: auth refusal never completes`, async () => {
     const { ctx, store } = await setup(async () => json({ message: "Sign in" }, 401), false, true, step)
@@ -42,7 +43,8 @@ for (const kind of ["issues", "prs"] as const) {
     const result = kind === "issues" ? await createIssuesSeam(ctx).listIssues("open") : await createLandingsSeam(ctx).listLandings()
     expect(calls).toBe(0)
     expect(result).toEqual({ value: expect.stringContaining("local-only") })
-    expect(store.session().guide?.completed).toContain(signal)
+    if (kind === "issues") expect(store.session().guide?.completed).toContain(signal)
+    else expect(store.session().guide?.completed).not.toContain(signal)
   })
   test(`${kind}: the practice repository answers from its bundle, signed out, with no request`, async () => {
     let calls = 0
@@ -54,7 +56,8 @@ for (const kind of ["issues", "prs"] as const) {
     const card = store.collections.cards.get(kind === "issues" ? PRACTICE_CARD.issues : PRACTICE_CARD.prs)
     if (card?.kind === "issue-list") expect(card.payload.issues.map(issue => issue.number)).toEqual([3, 2])
     if (card?.kind === "pr-list") expect(card.payload.landings[0]?.files).toEqual(["src/server.ts"])
-    expect(store.session().guide?.completed).toContain(signal)
+    if (kind === "issues") expect(store.session().guide?.completed).toContain(signal)
+    else expect(store.session().guide?.completed).not.toContain(signal)
   })
 }
 

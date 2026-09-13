@@ -1,5 +1,6 @@
 import { lazy, StrictMode, Suspense } from "react"
 import { controllerBootPromise, ControllerProvider } from "./ControllerProvider"
+import { SessionNavigation, SessionNavigationFallback } from "./SessionNavigation"
 import { SessionShell } from "./SessionShell"
 import { MountedSignal, StartupErrorBoundary } from "./StartupBoundary"
 import type { StartupWatchdog } from "./StartupWatchdog"
@@ -41,7 +42,7 @@ export function AppRoot({
   return (
     <StrictMode>
       <StartupErrorBoundary onError={watchdog.handleRenderFailure}>
-        <SessionShell>
+        <SessionShell navigation={<Suspense fallback={<SessionNavigationFallback />}><ControllerProvider boot={controllerBootPromise()}><SessionNavigation /></ControllerProvider></Suspense>}>
           <Suspense fallback={null}>
             <ControllerProvider boot={controllerBootPromise()}>
               <MountedSignal onMounted={watchdog.markMounted} />

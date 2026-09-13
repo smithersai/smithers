@@ -1,3 +1,5 @@
+import { handleLiveTutorial } from "./liveTutorial"
+import { handleGitHubAppInstall, INSTALLATIONS_PATH } from "./githubAppInstall"
 import * as Effect from "effect/Effect"
 import * as Option from "effect/Option"
 import * as Redacted from "effect/Redacted"
@@ -281,6 +283,7 @@ export const handleRequest = (request: Request): Effect.Effect<Response, never, 
     if (isApiRoute(url.pathname) && isCrossOriginRequest(request, url)) {
       return json(403, { status: "error", message: "This API only answers requests from its own origin." })
     }
+    if (url.pathname.startsWith("/api/tutorial/live/")) return yield* handleLiveTutorial(request)
     // The command recommender (src/recommend.ts): open to a visitor as well
     // as a login, under its own ceilings. A login is the bucket when the
     // session validates; anything else, including identity being down, is
@@ -292,6 +295,12 @@ export const handleRequest = (request: Request): Effect.Effect<Response, never, 
       const validation = request.headers.has("cookie") ? yield* validateSession(request) : undefined
       const login = validation?.status === "valid" ? validation.identity.login : undefined
       return yield* handleRecommend(request, login, ISOLATION_HEADERS)
+    }
+    if (url.pathname === INSTALLATIONS_PATH || url.pathname.startsWith(`${INSTALLATIONS_PATH}/`)) {
+      if (request.method !== "GET") return methodNotAllowed()
+      const id = url.pathname === INSTALLATIONS_PATH ? undefined : url.pathname.slice(INSTALLATIONS_PATH.length + 1)
+      if (id !== undefined && !/^[1-9]\d*$/.test(id)) return json(400, { message: "Invalid installation id." })
+      return yield* handleGitHubAppInstall(request, id)
     }
     if (url.pathname === APP_BOOTSTRAP_PATH) {
       if (request.method !== "GET") return methodNotAllowed()

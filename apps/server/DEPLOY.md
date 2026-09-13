@@ -112,6 +112,15 @@ state, so a new entry here lands in the same commit as the test change.
   the live tag (`v4`, unchanged). Rollback of any version = `wrangler rollback
   <prior version id>`.
 
+Anonymous tutorial cutover (2026-09-12): add the kept secret
+`TUTORIAL_SERVICE_TOKEN` and kept optional setting `TUTORIAL_SERVICE_URL` for
+the isolated live coordinator at `https://api.jjhub.tech/__tutorial`. The
+Worker name, domains, routes, five Durable Objects, and migrations remain
+unchanged. Set these through secret stdin after a real-provider coordinator
+canary succeeds. Rollback uses the preceding Worker version and removes the
+dedicated `/__tutorial` ingress path only if retiring the live service; no
+existing backend paths or state are migrated.
+
 ## The preflight (read before every deploy)
 
 `wrangler deploy` uploads the Durable Object bindings and migrations

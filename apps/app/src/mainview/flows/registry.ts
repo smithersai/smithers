@@ -415,6 +415,7 @@ export const NAMESPACES: ReadonlyArray<Namespace> = [
   runs.namespace,
   approvals.namespace,
   issues.namespace,
+  { id: "issue", label: "Issue flows", summary: "Research, reproduce, and implement an issue" },
   prs.namespace,
   linear.namespace,
   github.namespace,

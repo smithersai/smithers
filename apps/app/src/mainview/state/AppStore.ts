@@ -1,4 +1,6 @@
+import { RepositoryNotificationSchema } from "./RepositoryNotifications"
 import { migrateGuideV3 } from "./controller/guide"
+import { resumeTutorial } from "../onboarding/resume"
 import type { StandardSchemaV1 } from "@standard-schema/spec"
 import { openBrowserWASQLiteOPFSDatabase } from "@tanstack/browser-db-sqlite-persistence"
 import { localOnlyCollectionOptions } from "@tanstack/db"
@@ -30,10 +32,13 @@ import { archiveNotice, conversationNotes } from "./ConversationArchive"
 import { createWorkspaceViews, projectWorkspaceCard, snapshotCard } from "./WorkspaceViews"
 import { framePath } from "../runtime/FrameHistory"
 import {
+  initialGuide,
   AgentRoleSchema,
   BillingAccountSchema,
   BranchSchema,
   CardSchema,
+  CardHistorySchema,
+  PracticeIssueSchema,
   CardPatchSchema,
   cardFrameId,
   ChainEventRecordSchema,
@@ -690,6 +695,9 @@ const COLLECTION_DEFINITIONS = {
   connectorOperations: persistedCollection("app-connector-operations", ConnectorOperationSchema, byId),
   worldDocuments: persistedCollection("world-documents", WorldDocumentSchema, byId),
   cards: persistedCollection("app-cards", CardSchema, byId),
+  practiceIssues: persistedCollection("app-practice-issues", PracticeIssueSchema, byId),
+  repositoryNotifications: persistedCollection("app-repository-notifications", RepositoryNotificationSchema, byId),
+  cardHistories: persistedCollection("app-card-histories", CardHistorySchema, byId),
   approvalRequests: persistedCollection("app-approval-requests", CardSchema, byId),
   transitions: persistedCollection("app-transitions", TransitionRecordSchema, byId),
   identitySessions: persistedCollection("app-identity-sessions", IdentitySessionSchema, byId),
@@ -835,6 +843,12 @@ const seed = async (collections: StoredCollections, persistence: CollectionPersi
       if (persistedGuide !== undefined && (persistedGuide.version < 3 || persistedGuide.sequence !== "practice-v4")) {
         collections.sessions.update(SESSION_ID, draft => { draft.guide = migrateGuideV3(persistedGuide) })
       }
+    }
+    if (collections.sessions.get(SESSION_ID)?.sidebarOpen === true) collections.sessions.update(SESSION_ID, draft => { draft.sidebarOpen = false })
+    const currentGuide = collections.sessions.get(SESSION_ID)?.guide ?? initialGuide()
+    {
+      const resumed = resumeTutorial(currentGuide, collections.cards.values(), collections.messages.size > 0)
+      if (resumed !== currentGuide) collections.sessions.update(SESSION_ID, draft => { draft.guide = resumed })
     }
     // Wave 14 §1: nothing seeds the transcript. Signed out, the auth message is
     // the whole conversation; signed in, the transcript opens clean and the
@@ -1341,6 +1355,7 @@ const initializeAppStore = async (resolved: ResolvedPersistence): Promise<AppSto
           collections.sessions.update(SESSION_ID, (draft) => {
             draft.draft = ""
             draft.phase = "responding"
+            if (draft.guide) draft.guide.conversationOpen = false
             // The turn belongs to the conversation it was asked in, whatever tab is active later.
             draft.turnTabId = conversationTabId ?? null
             draft.turnId = transition.turnId
@@ -1758,6 +1773,10 @@ const initializeAppStore = async (resolved: ResolvedPersistence): Promise<AppSto
             draft.addMenuOpen = transition.open
           })
           break
+        case "sidebar.toggled":
+          collections.sessions.update(SESSION_ID, draft => { draft.sidebarOpen = transition.open })
+          break
+
         case "palette.toggled":
           collections.sessions.update(SESSION_ID, (draft) => {
             draft.paletteOpen = transition.open
@@ -2042,7 +2061,76 @@ const initializeAppStore = async (resolved: ResolvedPersistence): Promise<AppSto
           })
           break
 
+        case "practice.issue.updated": {
+          const row = { id: transition.id, card: transition.card }
+          if (collections.practiceIssues.has(row.id)) collections.practiceIssues.update(row.id, draft => { Object.assign(draft, row) })
+          else collections.practiceIssues.insert(row)
+          break
+        }
+        case "card.navigated": {
+          const currentCard = collections.cards.get(transition.card.id)
+          if (!currentCard || isApprovalRequest(currentCard) || isApprovalRequest(transition.card) || approvalRequest(currentCard.id)) return
+          const history = collections.cardHistories.get(currentCard.id)
+          const snapshot = { ...currentCard, navigation: undefined }
+          const entries = history ? [...history.entries.slice(0, history.index), snapshot] : [snapshot]
+          entries.push({ ...transition.card, navigation: undefined, id: currentCard.id, ordinal: currentCard.ordinal, createdAt: currentCard.createdAt, tabId: currentCard.tabId })
+          // Forward history belongs to the old path; a new navigation forks it.
+          const bounded = entries.slice(-50)
+          const index = bounded.length - 1
+          const row = { id: currentCard.id, index, entries: bounded }
+          if (history) collections.cardHistories.update(row.id, draft => { Object.assign(draft, row) })
+          else collections.cardHistories.insert(row)
+          collections.cards.update(row.id, draft => { Object.assign(draft, bounded[index], { navigation: { index, length: bounded.length } }) })
+          for (const frame of collections.frames.values()) {
+            if (frame.cardId !== row.id || frame.snapshot !== undefined || frame.branchId !== activeBranchId) continue
+            collections.frames.update(frame.id, draft => { draft.stateRevision = revision; draft.updatedAt = createdAt; draft.revision = revision })
+          }
+          break
+        }
+        case "card.history.moved": {
+          const history = collections.cardHistories.get(transition.id)
+          const card = collections.cards.get(transition.id)
+          if (!history || !card || isApprovalRequest(card) || approvalRequest(card.id)) return
+          const index = history.index + transition.delta
+          if (index < 0 || index >= history.entries.length) return
+          if (isApprovalRequest(history.entries[index])) return
+          const entries = [...history.entries]
+          entries[history.index] = { ...card, navigation: undefined }
+          collections.cardHistories.update(transition.id, draft => { draft.index = index; draft.entries = entries })
+          collections.cards.update(transition.id, draft => { Object.assign(draft, entries[index], { navigation: { index, length: entries.length } }) })
+          for (const frame of collections.frames.values()) {
+            if (frame.cardId !== transition.id || frame.snapshot !== undefined || frame.branchId !== activeBranchId) continue
+            collections.frames.update(frame.id, draft => { draft.stateRevision = revision; draft.updatedAt = createdAt; draft.revision = revision })
+          }
+          break
+        }
+        case "notifications.read": {
+          const receipts = new Map(transition.receipts.map(row => [row.id, row.version]))
+          for (const [id, version] of receipts) {
+            const row = collections.repositoryNotifications.get(id)
+            if (row?.version === version) collections.repositoryNotifications.update(id, draft => { draft.readVersion = version })
+          }
+          for (const card of collections.cards.values()) if (card.kind === "repo-update") {
+            collections.cards.update(card.id, draft => { if (draft.kind === "repo-update") draft.payload.items = draft.payload.items.map(item => receipts.get(item.id) === item.version ? { ...item, read: true } : item) })
+          }
+          break
+        }
+        case "notification.tagged": {
+          const row = collections.repositoryNotifications.get(transition.id)
+          if (!row) return
+          const tags = [...new Set([...row.tags, transition.tag])]
+          collections.repositoryNotifications.update(row.id, draft => { draft.tags = tags })
+          for (const card of collections.cards.values()) if (card.kind === "repo-update") collections.cards.update(card.id, draft => {
+            if (draft.kind === "repo-update") draft.payload.items = draft.payload.items.map(item => item.id === row.id ? { ...item, tags } : item)
+          })
+          break
+        }
+        case "repo.update.published":
         case "card.upsert": {
+          if (transition.type === "repo.update.published") for (const row of transition.notifications) {
+            if (collections.repositoryNotifications.has(row.id)) collections.repositoryNotifications.update(row.id, draft => { Object.assign(draft, row) })
+            else collections.repositoryNotifications.insert(row)
+          }
           const existing = collections.cards.get(transition.card.id)
           const trusted = approvalRequest(transition.card.id)
           const incoming = transition.card
@@ -2361,6 +2449,7 @@ const initializeAppStore = async (resolved: ResolvedPersistence): Promise<AppSto
           }
           collections.sessions.update(SESSION_ID, (draft) => {
             draft.draft = ""
+            if (draft.guide) draft.guide.conversationOpen = false
           })
           break
         }

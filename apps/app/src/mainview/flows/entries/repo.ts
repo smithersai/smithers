@@ -29,7 +29,11 @@ export const repoStarterFlows = (actions: CommandActions): ReadonlyArray<FlowEnt
     runtime: ["cloud"],
     args: "[owner/repo]",
     input: RepoTarget,
-    handler: ({ repo }) => actions.welcomeRepo(repo)
+    handler: async ({ repo }) => {
+      const welcome = await actions.welcomeRepo(repo)
+      if (typeof welcome === "string") return welcome
+      return actions.updateRepo(repo)
+    }
   }),
   flow({
     name: "repo.maintain",
@@ -77,6 +81,8 @@ export const repoStarterFlows = (actions: CommandActions): ReadonlyArray<FlowEnt
 
 /** The sidebar repository flows: select, unpin, tree. */
 export const repoFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> => [
+  flow({ name: "repo.update", summary: "Check new issues, PR updates and repository status", args: "[owner/repo]", input: RepoTarget,
+    handler: ({ repo }) => actions.updateRepo(repo) }),
   /* The sidebar's pinned repositories (docs/LOCAL-APP.md "Tabs"). */
   flow({
     name: "repo.select",

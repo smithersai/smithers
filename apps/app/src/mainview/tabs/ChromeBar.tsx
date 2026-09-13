@@ -72,7 +72,7 @@ export function ChromeBar() {
   const activeTabId = session?.activeTabId ?? MAIN_TAB_ID
   const dark = session?.theme === "dark"
   const menuOpen = session?.tabMenuOpen === true
-  const workspaceName = session?.workspaceName ?? DEFAULT_WORKSPACE_NAME
+  const workspaceName = session?.workspaceName && session.workspaceName !== DEFAULT_WORKSPACE_NAME ? session.workspaceName : "Chat"
   const renameOpen = session?.workspaceRenameOpen === true
   const available = harnessRows.filter((harness) => harness.status !== "unavailable")
   const unavailable = harnessRows.filter((harness) => harness.status === "unavailable")

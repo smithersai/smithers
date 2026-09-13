@@ -1,3 +1,5 @@
+import { createLiveTutorialController } from "./controller/liveTutorial"
+import { createRepositoryUpdate } from "./controller/repositoryUpdate"
 import { createDictation } from "./controller/dictation"
 import { lessonCompletion } from "../onboarding/completion"
 import { createGuideController } from "./controller/guide"
@@ -49,6 +51,7 @@ import { createTabsController } from "./controller/tabs"
 import { createAgentsController } from "./controller/agents"
 import { createFormsController } from "./controller/forms"
 import { createLibrarianRunsController, type LibrarianRunsController } from "./controller/librarianRuns"
+import { createIssueFlowsController, type IssueFlowsController } from "./controller/issueFlows"
 import { createTutorialChangeController, type TutorialChangeController } from "./controller/tutorialChange"
 import { createTutorialRepositoryController, type TutorialRepositoryActions } from "./controller/tutorialRepository"
 import type { FormsController } from "./controller/forms"
@@ -75,13 +78,14 @@ import { createBillingSeam } from "./seams/BillingSeam"
 import type { BillingSeam } from "./seams/BillingSeam"
 import { createBookmarksSeam } from "./seams/BookmarksSeam"
 import { createCommitsSeam } from "./seams/CommitsSeam"
-import { practiceCommitsSource } from "./practice/PracticeRepository"
+import { isPracticeRepo, practiceCommitsSource } from "./practice/PracticeRepository"
 import type { CommitsSeam } from "./seams/CommitsSeam"
 import type { BookmarksSeam } from "./seams/BookmarksSeam"
 import { createCloudSeam } from "./seams/CloudSeam"
 import type { CloudSeam } from "./seams/CloudSeam"
 import { createEnvironmentSeam } from "./seams/EnvironmentSeam"
 import type { EnvironmentSeam } from "./seams/EnvironmentSeam"
+import { createDiffFilesSeam } from "./seams/DiffFilesSeam"
 import { createFilesSeam } from "./seams/FilesSeam"
 import { createFactorySeam } from "./seams/FactorySeam"
 import type { FactorySeam } from "./seams/FactorySeam"
@@ -121,7 +125,7 @@ import type { SeamContext } from "./seams/SeamContext"
 import { createStorageRecoveryController } from "./controller/storage-recovery"
 import type { StorageRecoveryAction, StorageRecoveryHost } from "./StorageRecoveryAction"
 
-export interface AppController extends TutorialChangeController {
+export interface AppController extends TutorialChangeController, IssueFlowsController {
   /* Tutorial stage 6: the two Librarian generators and their monitored runs. */
   readonly createWiki: LibrarianRunsController["createWiki"]
   readonly bootstrapHistory: LibrarianRunsController["bootstrapHistory"]
@@ -199,6 +203,8 @@ export interface AppController extends TutorialChangeController {
   readonly jumpToHeading: (line: string) => string | void
   readonly decideApproval: (id: string, decision: "approved" | "denied") => void
   readonly retryLastTurn: () => string | void
+  readonly inspectLiveTutorial: (cardId: string, eventId: string) => Promise<string | void>
+  readonly retryLiveTutorial: (cardId: string) => Promise<string | { value: string }>
   readonly guideAct: (action: string, value?: string) => Promise<string | void>
   readonly toggleTheme: () => void
   /** Wear a color theme (/theme) — the axis orthogonal to light/dark. */
@@ -334,8 +340,13 @@ export interface AppController extends TutorialChangeController {
    */
   readonly searchPalette: (text: string) => PaletteAnswer
   readonly search: SearchSeam["search"]
+  readonly updateRepo: (repo?: string) => Promise<string | { value: string }>
+  readonly markUpdateRead: (cardId: string) => Promise<string | void>
+  readonly tagNotification: (id: string, tag: string) => Promise<string | void>
+  readonly moveCardHistory: (id: string, delta: -1 | 1) => void
   readonly toggleDictation: () => Promise<string | void>
   readonly cancelDictation: () => void
+  readonly toggleSidebar: () => Promise<void>
   readonly openPalette: (prefix?: string) => void
   readonly closePalette: (lastQuery?: string) => void
   readonly togglePaletteActions: (ref: string) => void
@@ -480,6 +491,8 @@ export interface AppController extends TutorialChangeController {
   readonly listCommits: CommitsSeam["listCommits"]
   readonly readCommit: CommitsSeam["readCommit"]
   readonly listFiles: FilesSeam["listFiles"]
+  readonly showPracticeDiff: () => Promise<string | { value: string }>
+  readonly openDiffFile: ReturnType<typeof createDiffFilesSeam>["openDiffFile"]
   readonly readFile: FilesSeam["readFile"]
   /* Code intelligence (docs/code-intel/PLAN.md §4): the three code.* reads against the local language server (seams/CodeIntelSeam.ts). */
   readonly codeHover: CodeIntelSeam["hover"]
@@ -698,7 +711,7 @@ export const createAppController = (
   const restoredGuide = store.session().guide
   if (restoredGuide?.conversationOpen) store.dispatch({ type: "guide.changed", actor: "system", guide: { ...restoredGuide, conversationOpen: false } })
   const actors = createActorBindings(ctx.onDispose)
-  const { guideAct } = actors.pair(ctx, createGuideController)
+  const { guideAct } = actors.pair(ctx, context => createGuideController(context, () => context.commands.run("repo.update", "practice:smithersai/hello-server")))
   if (store.dispose !== undefined) ctx.onDispose(store.dispose)
   const { baseUrl, http } = ctx
   const features: Required<AppFeatures> = {
@@ -748,6 +761,7 @@ export const createAppController = (
     }
   }))
   const billingSeam = actors.pair(seamCtx, (context) => createBillingSeam(context))
+  const repositoryUpdate = actors.pair(seamCtx, createRepositoryUpdate)
   const notificationsSeam = actors.pair(seamCtx, (context) => createNotificationsSeam(context))
   const environmentSeam = actors.pair(seamCtx, (context) => createEnvironmentSeam(context))
   const secretsSeam = actors.pair(seamCtx, (context) => createSecretsSeam(context))
@@ -771,6 +785,7 @@ export const createAppController = (
   const bookmarksSeam = actors.pair(seamCtx, (context) => createBookmarksSeam(context))
   /* The practice repository answers the commits views from its bundle (state/practice). */
   const commitsSeam = actors.pair(seamCtx, (context) => createCommitsSeam(context, { practice: practiceCommitsSource }))
+  const diffFilesSeam = actors.pair(seamCtx, createDiffFilesSeam)
   const filesSeam = actors.pair(seamCtx, (context) => createFilesSeam(context))
   const repoTreeSeam = actors.pair(seamCtx, (context) => createRepoTreeSeam(context))
   /*
@@ -1000,7 +1015,24 @@ export const createAppController = (
   } = createWorkflowPumpController(ctx, store.nextOrdinal)
 
   const workflowController: WorkflowController = actors.pair(ctx, (context) => createWorkflowController(context, store.nextOrdinal, pumpWorkflowRun))
-  const tutorialChange = actors.pair(ctx, (context, select) => createTutorialChangeController(context, select(workflowController), store.nextOrdinal, select(renderFlowForm)))
+  const liveTutorial = actors.pair(ctx, context => createLiveTutorialController(context, store.nextOrdinal))
+  const tutorialChange = actors.pair(ctx, (context, select) => {
+    const original = createTutorialChangeController(context, select(workflowController), store.nextOrdinal, select(renderFlowForm))
+    const live = select(liveTutorial)
+    return { ...original,
+      suggestTutorialChange: (repo?: string, feature?: string) => isPracticeRepo(repo) ? live.plan() : original.suggestTutorialChange(repo, feature),
+      startTutorialChange: (cardId: string) => {
+        const card = store.collections.cards.get(cardId)
+        return card?.kind === "run-trace" && isPracticeRepo(card.payload.repo) ? live.implement(cardId) : original.startTutorialChange(cardId)
+      },
+      openChange: (repo: string, commits: readonly string[]) => isPracticeRepo(repo) ? live.createChange(commits) : original.openChange(repo, commits),
+    }
+  })
+  const issueFlows = actors.pair(seamCtx, (context, select) => {
+    const original = createIssueFlowsController(context, select(workflowController))
+    return { ...original, runIssueFlow: (name: "repro" | "poc", number: number, repo?: string) =>
+      isPracticeRepo(repo) ? number !== 3 ? Promise.resolve("Open issue #3 to run the example tutorial.") : name === "poc" ? select(liveTutorial).poc() : select(liveTutorial).research() : original.runIssueFlow(name, number, repo) }
+  })
   ctx.finishTutorialChange = tutorialChange.finishTutorialChange
   /* A change run that settled while the app was closed still owes its receipt check. */
   for (const card of store.collections.cards.values()) {
@@ -1100,7 +1132,7 @@ export const createAppController = (
   const toggleDictation = async (): Promise<string | void> => {
     if (!store.session().dictating) {
       await guideAct("open")
-      closePalette()
+      openPalette()
     }
     return dictation.toggle()
   }
@@ -1348,6 +1380,7 @@ export const createAppController = (
    * embedded cards and record via:"agent", never user chrome.
    */
   const commandActions: CommandActions = {
+    toggleSidebar: async () => { await ctx.store.dispatch({ type: "sidebar.toggled", actor: ctx.commandActor, open: !ctx.store.session().sidebarOpen }).isPersisted.promise },
     promptStorageRecovery,
     exportStorageRecovery,
     bootstrap: services.bootstrap,
@@ -1394,6 +1427,9 @@ export const createAppController = (
     clearConversation,
     openBrowser,
     ...tutorialChange,
+    ...issueFlows,
+    retryLiveTutorial: liveTutorial.retry,
+    inspectLiveTutorial: liveTutorial.inspect,
     createWorkflow,
     listWorkspaceWorkflows,
     listTriggers,
@@ -1485,6 +1521,7 @@ export const createAppController = (
     openTargetSource: targetGraph.openSource,
     toggleDevtools,
     toggleSurfacesMenu,
+    moveCardHistory: (id, delta) => { store.dispatch({ type: "card.history.moved", actor: ctx.commandActor, id, delta }) },
     toggleDictation,
     cancelDictation,
     searchPalette: searchSeam.palette,
@@ -1554,6 +1591,7 @@ export const createAppController = (
     reviewLanding: landingsSeam.reviewLanding,
     startCheckout: billingSeam.startCheckout,
     openBillingPortal: billingSeam.openBillingPortal,
+    ...repositoryUpdate,
     listNotifications: notificationsSeam.listNotifications,
     markNotificationsRead: notificationsSeam.markNotificationsRead,
     viewEnvironment: environmentSeam.viewEnvironment,
@@ -1569,6 +1607,8 @@ export const createAppController = (
     listCommits: commitsSeam.listCommits,
     readCommit: commitsSeam.readCommit,
     listFiles: filesSeam.listFiles,
+    ...diffFilesSeam,
+    showPracticeDiff: liveTutorial.showDiff,
     readFile: filesSeam.readFile,
     codeHover,
     codeDefinition,
@@ -1689,6 +1729,7 @@ export const createAppController = (
   }
   ctx.commands = commands
 
+  liveTutorial.resume()
   subscribeToAgent()
   // Material transitions regenerate the next-step pills through the `recommend` flow.
   recommender.subscribe()

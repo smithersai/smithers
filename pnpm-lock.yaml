@@ -1604,6 +1604,48 @@ importers:
         specifier: ^4.129.0
         version: 4.129.0(@cloudflare/workers-types@5.20260903.1)
 
+  apps/tutorial-coordinator:
+    dependencies:
+      '@effect/platform-node':
+        specifier: 4.0.0-rc.115
+        version: 4.0.0-rc.115(effect@4.0.0-rc.115)(redis@6.2.1(@opentelemetry/api@1.9.1))
+      '@smthrs/agent':
+        specifier: workspace:*
+        version: link:../../packages/smithers/agent
+      '@smthrs/engine':
+        specifier: workspace:*
+        version: link:../../packages/smithers/flows/engine
+      '@smthrs/engine-store':
+        specifier: workspace:*
+        version: link:../../packages/smithers/flows/engine-store
+      '@smthrs/flow':
+        specifier: workspace:*
+        version: link:../../packages/smithers/flows/flow
+      '@smthrs/flows':
+        specifier: workspace:*
+        version: link:../../packages/smithers/flows
+      '@smthrs/kernel':
+        specifier: workspace:*
+        version: link:../../packages/smithers/flows/kernel
+      '@smthrs/model':
+        specifier: workspace:*
+        version: link:../../packages/smithers/agent/model
+      '@smthrs/registry':
+        specifier: workspace:*
+        version: link:../../packages/smithers/agent/registry
+      '@smthrs/rpc':
+        specifier: workspace:*
+        version: link:../../packages/rpc
+      '@smthrs/run-store':
+        specifier: workspace:*
+        version: link:../../packages/smithers/flows/run-store
+      effect:
+        specifier: 4.0.0-rc.115
+        version: 4.0.0-rc.115
+      zod:
+        specifier: 4.5.4
+        version: 4.5.4
+
   evals/agent:
     dependencies:
       '@smthrs/agent':
@@ -14166,10 +14208,6 @@ packages:
     resolution: {integrity: sha512-IDxfleLmmbSskfWSUATiN1nfn2rDuvnMOqb5CWR92iIfojA0Ud+ulOAAEQ57LPr9rWmsreUyf5lwyao+7GNNVw==}
     engines: {node: '>=20.18.1'}
 
-  undici@8.10.1:
-    resolution: {integrity: sha512-YQ3WlbqjYMmNpdvDH64jAgLjxuAR9+649calDWhbshYaeQGO2bR4nI94ORJmwI3J9YhoKQnpyGOK+0zlWS5N5Q==}
-    engines: {node: '>=22.19.0'}
-
   undici@8.10.2:
     resolution: {integrity: sha512-/y4/bH9YNU5hi9NIrpOuvGXFcxrj3CMrV+/AYpowAYTpHn8gX/XPFjNy766FPoYY0miQhdW977JFWKGNhBdwyQ==}
     engines: {node: '>=22.19.0'}
@@ -24268,8 +24306,6 @@ snapshots:
 
   undici@7.29.0: {}
 
-  undici@8.10.1: {}
-
   undici@8.10.2: {}
 
   unenv@2.0.0-rc.24:
@@ -24290,7 +24326,7 @@ snapshots:
     dependencies:
       css-tree: 3.2.1
       ohash: 2.0.12
-      undici: 8.10.1
+      undici: 8.10.2
 
   unist-util-find-after@5.0.0:
     dependencies:

@@ -13,3 +13,15 @@ for (const [name, entries] of [["issues", issuesFlows], ["prs", prsFlows]] as co
   expect(payloadFor(name, "will/repo", entry.metadata.grammar)).toEqual({ payload: name === "issues" ? { filter: "open", repo: "will/repo" } : { repo: "will/repo" } })
 })
 })
+
+test("issue flows expose slash, button and agent doors; Add flow preserves context through its form", () => {
+  const entries = issuesFlows({} as CommandActions)
+  for (const name of ["issue.flows", "issue.repro", "issue.poc", "issue.implement", "issue.add-flow"]) {
+    const entry = entries.find(row => row.declaredName === name)!
+    expect(entry).toBeDefined()
+    expect(entry.binding.descriptor.modelInvocable).toBe(true)
+  }
+  const add = entries.find(row => row.declaredName === "issue.add-flow")!
+  const payload = { number: 3, repo: "practice:smithersai/hello-server", description: "Research errors\nwithout losing the issue context" }
+  expect(payloadFor("issue.add-flow", add.metadata.form?.args?.(payload))).toEqual({payload})
+})

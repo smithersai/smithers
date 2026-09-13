@@ -14,3 +14,34 @@ test("review shows actual plan and keyboard-native start door before any commit 
   expect(html).toContain('type="button"')
   expect(html).not.toContain('aria-label="Resulting commit"')
 })
+
+test("a started plan shows the run it became and a door to it, never a stale Start; a stopped start keeps the door and says why", () => {
+  const started = { ...card, status: "acted" as const, payload: { ...card.payload, input: { ...card.payload.input, started: { runId: "run-9", cardId: "flow-run-run-9" } } } }
+  const html = renderToStaticMarkup(<CodingPlanBody card={started} onRunCommand={() => {}} />)
+  expect(html).not.toContain('data-flow="agent.change.start"')
+  expect(html).toContain("Started as run")
+  expect(html).toContain("run-9")
+  expect(html).toContain('data-flow="card.maximize"')
+  expect(html).toContain("Expand run")
+  const sent: Array<{ name: string; args?: string }> = []
+  const stopped = { ...card, payload: { ...card.payload, error: "HEAD moved; request a new plan." } }
+  const withError = renderToStaticMarkup(<CodingPlanBody card={stopped} onRunCommand={(name, args) => sent.push({ name, args })} />)
+  expect(withError).toContain('role="alert"')
+  expect(withError).toContain("HEAD moved; request a new plan.")
+  expect(withError).toContain('data-flow="agent.change.start"')
+  /* The plan card never repeats itself as a predicted-changes outline. */
+  expect(html).not.toContain('aria-label="Predicted Changes"')
+  expect(withError).not.toContain('aria-label="Predicted Changes"')
+})
+
+test("the run card folds the executed plan away and keeps the receipt strip outside the fold", () => {
+  const sha = "e".repeat(40)
+  const run = { ...card, id: "flow-run-run-9", payload: { ...card.payload, kind: "change", runId: "run-9",
+    input: { ...card.payload.input, tutorialReceipt: { runId: "run-9", repo: "o/r", base: CODING_PLAN.base.commitId, parent: CODING_PLAN.base.commitId, sha, subject: "Store repository memory", files: ["src/memory.ts"] } } } }
+  const html = renderToStaticMarkup(<CodingPlanBody card={run} onRunCommand={() => {}} />)
+  expect(html).toContain('class="coding-plan-fold"')
+  expect(html).toContain('aria-label="Planned commits"')
+  expect(html).not.toContain('data-flow="agent.change.start"')
+  expect(html).toContain('aria-label="Resulting commit"')
+  expect(html.indexOf("</details>")).toBeLessThan(html.indexOf('aria-label="Resulting commit"'))
+})

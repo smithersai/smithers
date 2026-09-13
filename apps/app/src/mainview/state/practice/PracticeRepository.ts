@@ -30,9 +30,6 @@ export const PRACTICE_RUN_ID = journal.runId
 /** True for the practice key: the one repository every host can read without an account. */
 export const isPracticeRepo = (repo: string | null | undefined): boolean => repo === PRACTICE_REPO
 
-/** True when a flow's raw arguments name the practice key as a token. */
-export const namesPractice = (args: string | null | undefined): boolean =>
-  (args ?? "").trim().split(/\s+/).includes(PRACTICE_REPO)
 
 type CardOf<K extends Card["kind"]> = Extract<Card, { kind: K }>
 
@@ -59,6 +56,19 @@ export const PRACTICE_CARD = {
   run: `flow-run-${journal.runId}`,
   commits: "practice-commits",
 } as const
+
+/**
+ * True when a flow's raw arguments name the practice repository: its key as a
+ * token, its recorded run id, or `sourceCard=` one of its bundled cards. A
+ * run card's own buttons pass the run id and the source card, never the key,
+ * so the run's reads (runs.logs, runs.steps, runs.trace.*) must recognise the
+ * practice run the same way the key is recognised.
+ */
+export const namesPractice = (args: string | null | undefined): boolean =>
+  (args ?? "").trim().split(/\s+/).some((token) =>
+    token === PRACTICE_REPO || token === PRACTICE_RUN_ID || token === `sourceCard=${PRACTICE_CARD.run}` ||
+    token === `sourceCard=${PRACTICE_CARD.plan}` || token === `sourceCard=${PRACTICE_CARD.commits}` ||
+    ["research", "poc", "change"].some(operation => token === `sourceCard=live-tutorial-${operation}`))
 
 export const practiceSnapshot = snapshot
 export const practiceCommits = commits.commits
@@ -232,6 +242,30 @@ export const practiceChange = (stack: PracticeStack): CardOf<"change">["payload"
 /** The trace node beat 7 opens: the turn that edits src/hello.ts. */
 export const PRACTICE_EDIT_FRAME = journal.editFrame
 
+/*
+ * The practice run's transcript (`runs.logs`): one row per recorded journal
+ * event, the way the gateway's transcript projection phrases a hosted run's.
+ * Read from the bundle, never the network: the practice run has no gateway.
+ */
+export const practiceTranscript = (): NonNullable<CardOf<"run-trace">["payload"]["transcriptRows"]> => {
+  let turn = 0
+  return (journal.events as ReadonlyArray<Record<string, unknown>>).map((event) => {
+    const kind = String(event.kind ?? "")
+    const payload = (typeof event.payload === "object" && event.payload !== null ? event.payload : {}) as Record<string, unknown>
+    if (kind === "control.agent.turn-opened") turn += 1
+    const word = (value: unknown): string => typeof value === "string" ? value : value === undefined ? "" : JSON.stringify(value)
+    const text = kind === "control.agent.turn-opened" ? `Turn ${turn} opened.`
+      : kind === "control.agent.model-settled" ? word(payload.text)
+      : kind === "control.agent.cell-produced" ? word(payload.text)
+      : kind === "control.agent.cell-call-started" ? `${word(payload.flowName)} ${word(payload.input)}`.trim()
+      : kind === "control.agent.cell-call-settled" ? `${word(payload.flowName)} → ${word(payload.outcome)}${payload.message !== undefined ? `: ${word(payload.message)}` : payload.value !== undefined ? `: ${word(payload.value)}` : ""}`
+      : kind === "control.agent.cell-settled" ? `Cell ${word(payload.outcome)}.`
+      : kind === "control.agent.resolved" ? word(payload.text)
+      : word(payload)
+    return { sequence: Number(event.sequence ?? 0), turn, at: Number(event.occurredAt ?? 0), kind: kind.replace(/^control\./, ""), text }
+  })
+}
+
 type CommitDetail = (typeof commits.details)[keyof typeof commits.details]
 const details = commits.details as Record<string, CommitDetail | undefined>
 const branches = commits.branches as Record<string, ReadonlyArray<string> | undefined>
@@ -267,4 +301,34 @@ export const practiceCommitsSource: PracticeCommits = {
       files: detail.files,
     }
   },
+}
+
+/** Reconstruct the recorded implementation from its patches, never from guessed source. */
+export const practiceImplementation = () => {
+  const files: CardOf<"diff">["payload"]["files"] = []
+  const contents: Record<string, string> = { ...snapshot.files }
+  for (const commit of commits.commits) {
+    const detail = details[commit.commitId]!
+    for (const file of detail.files) {
+      files.push(file)
+      const original = (contents[file.path] ?? "").split("\n")
+      const result: string[] = []
+      let cursor = 0
+      for (const line of file.patch.split("\n")) {
+        const hunk = /^@@ -(\d+)(?:,\d+)? \+\d+(?:,\d+)? @@/.exec(line)
+        if (hunk) {
+          const start = Math.max(0, Number(hunk[1]) - 1)
+          result.push(...original.slice(cursor, start)); cursor = start
+        } else if (line.startsWith(" ") || line.startsWith("-")) {
+          if (original[cursor] !== line.slice(1)) throw new Error(`Recorded patch does not match ${file.path}`)
+          if (line.startsWith(" ")) result.push(original[cursor]!)
+          cursor++
+        } else if (line.startsWith("+")) result.push(line.slice(1))
+      }
+      result.push(...original.slice(cursor))
+      contents[file.path] = result.join("\n")
+    }
+  }
+  const top = commits.commits[commits.commits.length - 1]!
+  return { files, contents, commitId: top.commitId, changeId: top.changeId, base: commits.base.commitId }
 }

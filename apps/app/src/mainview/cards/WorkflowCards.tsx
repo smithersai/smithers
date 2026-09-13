@@ -5,6 +5,7 @@
  * exported because the Flows pane and the runs tests mount them directly: one
  * list with two mounts, never a second implementation of the same listing.
  */
+import { LiveTutorialRunBody } from "./LiveTutorialRunBody"
 import { runSourceCommand } from "../flows/RunCommand"
 import { Button, Markdown } from "@smthrs/ui"
 import { useState } from "react"
@@ -14,28 +15,17 @@ import { timeLabel as clockLabel } from "../Timestamps"
 import { rovingKeyDown } from "../RovingKeyDown"
 import type { CardFamily, RunCommand } from "./CardFamily"
 import { defaultPill, settledPill } from "./CardFamily"
-import { RunTraceBody } from "./RunTraceCard"
+import { RunTraceBody, TERMINAL_RUN_PHASES } from "./RunTraceCard"
 import { flowArgs } from "../flows/FlowArgs"
 
 /*
- * Wave 11 — the embedded run card: live status from the relay event stream,
- * node progress in words, the result leading once the run settles. Stream
- * loss is routine and stated honestly ("reconnecting"), never a silent stall.
+ * Wave 11 — the embedded run card. RunTraceBody carries the run's outcome,
+ * result, plan, progress and turns (RunTraceCard.tsx); this shell adds what
+ * is about the card's relationship to the live run: why it is not moving, the
+ * secondary facets (transcript, raw events), the observation errors, and the
+ * lifecycle acts (stop, resume, run again, steer). Stream loss is routine and
+ * stated honestly ("reconnecting"), never a silent stall.
  */
-const WORKFLOW_RUN_PHASE_WORDS: Readonly<Record<string, string>> = {
-  launching: "Starting the run…",
-  running: "Running on your workspace.",
-  "waiting-approval": "Waiting for your approval below.",
-  reconnecting: "Reconnecting to the workspace — the run continues; this card catches up on its own.",
-  /* Wave 12 §3 — the bounded stance: honest, not silent, and not still polling. */
-  quiet: "This run has gone quiet — no progress from your workspace for a long time, so I stopped checking.",
-  stopped: "I stopped watching this run. It may still be running on your workspace.",
-  completed: "Finished.",
-  failed: "Failed.",
-  cancelled: "Cancelled.",
-  "no-capacity": "No workspace capacity right now."
-}
-
 export const WorkflowRunCardBody = ({
   card,
   onStopRun,
@@ -52,12 +42,13 @@ export const WorkflowRunCardBody = ({
   readonly workflowCatalogs?: ReadonlyArray<Extract<Card, { kind: "workflow-list" }>>
 }) => {
   const onRunCommand = runSourceCommand(card.id, sendRunCommand)
-  const { phase, steps, result, error, observationError, runId, kind } = card.payload
+  if (card.payload.input?.liveTutorial) return <LiveTutorialRunBody card={card} onRunCommand={sendRunCommand} />
+  const { phase, error, observationError, runId, kind } = card.payload
   const facet = card.payload.facet ?? "steps"
+  /* A tutorial plan card is the plan alone: no facets, no lifecycle acts, no steer. */
+  const planOnly = kind === "change-plan"
   return (
     <div className="flow-run-card" data-run-kind={kind}>
-      {result !== null ? <Markdown className="smithers-card-markdown" content={result} /> : null}
-      <p className="smithers-card-note">{WORKFLOW_RUN_PHASE_WORDS[phase] ?? phase}</p>
       {/* Lane runs: why a live run is not moving, in the control plane's word. */}
       {card.payload.waiting !== undefined ?
         (
@@ -71,77 +62,43 @@ export const WorkflowRunCardBody = ({
       {card.payload.steeringPending === true ?
         <p className="smithers-card-note">steering pending · delivered at the next turn</p> :
         null}
-      {/* The run as a trace (spec 06): the card's body for every run kind. Its chips and rows dispatch runs.trace.*. */}
+      {/* The run as a trace (spec 06): the card's body for every run kind. Its rows dispatch runs.trace.*. */}
       <RunTraceBody card={card} onRunCommand={onRunCommand} workflowCatalogs={workflowCatalogs} />
-      {/*
-       * The secondary tabs (lane runs): the steps tail by default, the
-       * transcript on demand (runs.logs), the raw journal only where verbose
-       * is on (runs.events). Each tab is a registered flow, never local state.
-       */}
-      <div className="flow-run-actions" role="tablist" aria-label="Run views">
-        <Button
-          size="sm"
-          variant={facet === "steps" ? "default" : "outline"}
-          data-flow="runs.steps"
-          data-testid={`flow-run-facet-steps-${runId}`}
-          onClick={() => onRunCommand("runs.steps", runId)}
-        >
-          Steps
-        </Button>
-        <Button
-          size="sm"
-          variant={facet === "transcript" ? "default" : "outline"}
-          data-flow="runs.logs"
-          data-testid={`flow-run-facet-transcript-${runId}`}
-          onClick={() => onRunCommand("runs.logs", runId)}
-        >
-          Transcript
-        </Button>
-        {debugVerbose ?
-          (
-            <Button
-              size="sm"
-              variant={facet === "events" ? "default" : "outline"}
-              data-flow="runs.events"
-              data-testid={`flow-run-facet-events-${runId}`}
-              onClick={() => onRunCommand("runs.events", runId)}
-            >
-              Events
-            </Button>
-          ) :
-          null}
-      </div>
       {facet === "transcript" ?
         card.payload.transcriptRows === undefined || card.payload.transcriptRows.length === 0 ?
           <p className="smithers-card-note">The transcript is empty so far.</p> :
           (
-            <ul className="flow-run-steps" data-testid={`flow-run-transcript-${runId}`}>
+            <ol className="flow-run-transcript" aria-label="Transcript" data-testid={`flow-run-transcript-${runId}`}>
               {card.payload.transcriptRows.map((row) => (
                 <li key={row.sequence}>
-                  {row.turn !== undefined ? `turn ${row.turn} · ` : ""}{row.at !== undefined ? `${clockLabel(row.at)} · ` : ""}{row.kind !== undefined ? `${row.kind} · ` : ""}{row.text}
+                  <span className="flow-run-transcript-meta">
+                    {row.turn !== undefined ? `turn ${row.turn}` : ""}{row.at !== undefined ? ` · ${clockLabel(row.at)}` : ""}{row.kind !== undefined ? ` · ${row.kind}` : ""}
+                  </span>
+                  <span className="flow-run-transcript-text">{row.text}</span>
                 </li>
               ))}
-            </ul>
+            </ol>
           ) :
         null}
       {facet === "events" && debugVerbose ?
         card.payload.events === undefined || card.payload.events.length === 0 ?
           <p className="smithers-card-note">No events recorded yet.</p> :
           (
-            <ul className="flow-run-steps" data-testid={`flow-run-events-${runId}`}>
+            <ul className="flow-run-steps flow-run-events" data-testid={`flow-run-events-${runId}`}>
               {card.payload.events.map((event, index) => (
-                <li key={index}>{JSON.stringify(event)}</li>
+                <li key={index}><code>{JSON.stringify(event)}</code></li>
               ))}
             </ul>
           ) :
         null}
-      {facet === "steps" && steps.length > 0 ?
+      {(phase === "completed" || phase === "failed" || phase === "cancelled" || phase === "no-capacity") && error !== undefined && !planOnly ?
         (
-          <ul className="flow-run-steps">
-            {steps.map((step, index) => <li key={`${index}-${step}`}>{step}</li>)}
-          </ul>
+          <p className="sui-approval-error" role="alert">
+            {error}
+          </p>
         ) :
         null}
+      {observationError !== undefined ? <p className="sui-approval-error" role="alert">{observationError}</p> : null}
       {/* §3: the two acts a quiet run offers — both registered commands. */}
       {phase === "quiet" ?
         (
@@ -160,69 +117,107 @@ export const WorkflowRunCardBody = ({
           </div>
         ) :
         null}
-      {(phase === "completed" || phase === "failed" || phase === "cancelled" || phase === "no-capacity") && error !== undefined ?
-        (
-          <p className="sui-approval-error" role="alert">
-            {error}
-          </p>
-        ) :
-        null}
-      {observationError !== undefined ? <p className="sui-approval-error" role="alert">{observationError}</p> : null}
-      {TERMINAL_RUN_PHASES.has(phase) && (error !== undefined || observationError !== undefined || card.payload.events?.some((event) => event.kind === "control.engine.projection-gap")) ? (
+      {TERMINAL_RUN_PHASES.has(phase) && (error !== undefined || observationError !== undefined || card.payload.events?.some((event) => event.kind === "control.engine.projection-gap")) && !planOnly ? (
         <Button size="sm" data-flow="flow.run.retry" onClick={() => onRetryRun(card.id)}>
           Check again
         </Button>
       ) : null}
       {/*
-       * Lane runs — the lifecycle acts. Stop is available on every
-       * non-terminal phase (the flow confirms); Resume answers a wait the
-       * control plane named (anything but an approval, which the approval
-       * card below answers); Run again relaunches a settled run with the
-       * same input and refuses honestly when this client never recorded one.
+       * One row of acts. The facets (lane runs): the trace by default, the
+       * transcript on demand (runs.logs), the raw journal only where verbose
+       * is on (runs.events); each tab is a registered flow, never local
+       * state. Then the lifecycle acts: Stop on every non-terminal phase (the
+       * flow confirms); Resume for a wait the control plane named (anything
+       * but an approval, which the approval card answers); Run again for a
+       * settled run, with the same input, refusing honestly when this client
+       * never recorded one.
        */}
-      {LIVE_RUN_PHASES.has(phase) ?
-        (
-          <div className="flow-run-actions">
-            {card.payload.waiting !== undefined && card.payload.waiting !== "approval" ?
+      {planOnly ? null : (
+        <div className="flow-run-actions flow-run-footer">
+          <div className="flow-run-tabs" role="tablist" aria-label="Run views">
+            <Button
+              size="sm"
+              variant={facet === "steps" ? "default" : "outline"}
+              role="tab"
+              aria-selected={facet === "steps"}
+              data-flow="runs.steps"
+              data-testid={`flow-run-facet-steps-${runId}`}
+              onClick={() => onRunCommand("runs.steps", runId)}
+            >
+              Trace
+            </Button>
+            <Button
+              size="sm"
+              variant={facet === "transcript" ? "default" : "outline"}
+              role="tab"
+              aria-selected={facet === "transcript"}
+              data-flow="runs.logs"
+              data-testid={`flow-run-facet-transcript-${runId}`}
+              onClick={() => onRunCommand("runs.logs", runId)}
+            >
+              Transcript
+            </Button>
+            {debugVerbose ?
               (
                 <Button
                   size="sm"
-                  variant="outline"
-                  data-flow="runs.resume"
-                  data-testid={`flow-run-resume-${runId}`}
-                  onClick={() => onRunCommand("runs.resume", runId)}
+                  variant={facet === "events" ? "default" : "outline"}
+                  role="tab"
+                  aria-selected={facet === "events"}
+                  data-flow="runs.events"
+                  data-testid={`flow-run-facet-events-${runId}`}
+                  onClick={() => onRunCommand("runs.events", runId)}
                 >
-                  Resume
+                  Events
                 </Button>
               ) :
               null}
-            <Button
-              size="sm"
-              variant="outline"
-              data-flow="flow.run.stop"
-              data-testid={`flow-run-stop-${runId}`}
-              onClick={() => onStopRun(card.id)}
-            >
-              Stop
-            </Button>
           </div>
-        ) :
-        null}
-      {TERMINAL_RUN_PHASES.has(phase) ?
-        (
-          <div className="flow-run-actions">
-            <Button
-              size="sm"
-              variant="outline"
-              data-flow="runs.rerun"
-              data-testid={`flow-run-rerun-${runId}`}
-              onClick={() => onRunCommand("runs.rerun", runId)}
-            >
-              Run again
-            </Button>
-          </div>
-        ) :
-        null}
+          {LIVE_RUN_PHASES.has(phase) ?
+            (
+              <div className="flow-run-lifecycle">
+                {card.payload.waiting !== undefined && card.payload.waiting !== "approval" ?
+                  (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      data-flow="runs.resume"
+                      data-testid={`flow-run-resume-${runId}`}
+                      onClick={() => onRunCommand("runs.resume", runId)}
+                    >
+                      Resume
+                    </Button>
+                  ) :
+                  null}
+                <Button
+                  size="sm"
+                  variant="outline"
+                  data-flow="flow.run.stop"
+                  data-testid={`flow-run-stop-${runId}`}
+                  onClick={() => onStopRun(card.id)}
+                >
+                  Stop
+                </Button>
+              </div>
+            ) :
+            null}
+          {TERMINAL_RUN_PHASES.has(phase) ?
+            (
+              <div className="flow-run-lifecycle">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  data-flow="runs.rerun"
+                  data-testid={`flow-run-rerun-${runId}`}
+                  onClick={() => onRunCommand("runs.rerun", runId)}
+                >
+                  Run again
+                </Button>
+              </div>
+            ) :
+            null}
+        </div>
+      )}
       {/* Spec 06 §3: a prototype is never steered; its header has no Steer, so its card has no steer row. */}
       {LIVE_RUN_PHASES.has(phase) && kind !== "prototype" ? <RunSteerRow runId={runId} onRunCommand={onRunCommand} /> : null}
     </div>
@@ -231,9 +226,8 @@ export const WorkflowRunCardBody = ({
 
 /** The phases a run can still be steered, resumed, or stopped in. */
 const LIVE_RUN_PHASES: ReadonlySet<string> = new Set(["launching", "running", "waiting-approval", "reconnecting"])
-/** The phases a Run again answers. */
-// "stopped" is the phase a REFUSED cancel leaves (workflow-pump stopWatchingRun): the run may still be live, so it is not terminal.
-const TERMINAL_RUN_PHASES: ReadonlySet<string> = new Set(["completed", "failed", "cancelled", "no-capacity"])
+// "stopped" is the phase a REFUSED cancel leaves (workflow-pump stopWatchingRun): the run may still be live, so it is not terminal;
+// TERMINAL_RUN_PHASES (RunTraceCard.tsx) is the set a Run again answers.
 
 /** The thinking levels a steer may name — the wire's own vocabulary (@smthrs/notifications). */
 const THINKING_LEVELS = ["none", "minimal", "low", "medium", "high", "xhigh"] as const
@@ -421,29 +415,28 @@ export const WorkflowListCardBody = ({
   readonly onRunCommand: RunCommand
 }) => {
   const onRunCommand = runSourceCommand(card.id, sendRunCommand)
-  const { workflows } = card.payload
-  if (workflows.length === 0) {
-    return <p className="smithers-card-note">No flows on this workspace yet. Ask for one and I'll create it.</p>
-  }
+  const { workflows, issueContext, research, repo } = card.payload
   return (
-    <ul className="workflow-list">
-      {workflows.map((workflow) => (
-        <li key={workflow.key} className="workflow-list-row">
-          <span className="workflow-list-text">
-            <strong>{workflow.key}</strong>
-            {workflow.description !== null ? <span>{workflow.description}</span> : null}
-          </span>
-          <Button
-            size="sm"
-            variant="outline"
-            data-flow="flow.run"
-            onClick={() => onRunCommand("flow.run", flowArgs("flow.run", { name: workflow.key }))}
-          >
-            Run
-          </Button>
-        </li>
-      ))}
-    </ul>
+    <div>
+      {issueContext ? <p className="smithers-card-note">Issue #{issueContext.number} · {issueContext.title}</p> : null}
+      {workflows.length === 0 ? <p className="smithers-card-note">No flows on this workspace yet.</p> : null}
+      <ul className="workflow-list">
+        {workflows.map((workflow) => (
+          <li key={workflow.key} className="workflow-list-row">
+            <div className="workflow-list-text">
+              <strong>{workflow.key.replace(/^issue\//, "issue.")}</strong>
+              {workflow.description !== null ? <span>{workflow.description}</span> : null}
+              {workflow.prompt ? <Markdown className="smithers-card-markdown" content={workflow.prompt} /> : null}
+            </div>
+            {issueContext && (workflow.key === "issue.repro" || workflow.key === "issue/repro") ?
+              <Button size="sm" variant="outline" data-flow="issue.repro" onClick={() => sendRunCommand("issue.repro", flowArgs("issue.repro", { number: issueContext.number, repo }))}>Run repro</Button> :
+              <Button size="sm" variant="outline" data-flow="flow.run" onClick={() => onRunCommand("flow.run", flowArgs("flow.run", { name: workflow.key, input: issueContext ? { args: JSON.stringify({ issue: issueContext }) } : undefined }))}>Run</Button>}
+          </li>
+        ))}
+      </ul>
+      {research ? <Markdown className="smithers-card-markdown" content={research} /> : null}
+      {issueContext ? <Button size="sm" variant="outline" data-flow="issue.add-flow" onClick={() => sendRunCommand("issue.add-flow", flowArgs("issue.add-flow", { number: issueContext.number, repo }))}>Add flow</Button> : null}
+    </div>
   )
 }
 
@@ -460,6 +453,8 @@ export const workflowCardFamily: CardFamily<"run-trace" | "workflow-repo" | "wor
       />
     ),
     pill: (card) => {
+      /* A tutorial plan card wears the plan's state, not a run phase: pending until started, done once it is. */
+      if (card.payload.kind === "change-plan") return card.status === "acted" ? "done" : "pending"
       if (card.payload.phase === "completed") return "done"
       if (
         card.payload.phase === "failed" || card.payload.phase === "cancelled" || card.payload.phase === "no-capacity"

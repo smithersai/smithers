@@ -20,15 +20,15 @@ const storageOf = (data: Map<string, string>) => ({
 const boot = async (data: Map<string, string>) =>
   createAppStore({ kind: "localStorage", storage: storageOf(data) })
 
-for (const version of [1, 2, 3] as const) test(`legacy v${version} restarts at the greeting and finished stays finished`, async () => {
+for (const version of [1, 2, 3] as const) test(`legacy v${version} keeps completion history and finished stays finished`, async () => {
   for (const step of [0, 1, 5, version === 1 ? 15 : 14]) {
     const data = new Map<string, string>()
     const guide = { ...initialGuide(), version, sequence: undefined, step, completed: ["theme"], heard: "A friend" }
     data.set("smithers-mvp.app-sessions", JSON.stringify({ "s:main": { versionKey: "legacy", data: { ...initialSession("light"), draft: "keep me", guide } } }))
     const first = await boot(data)
-    // Script v4: the practice repository needs no account, so an unfinished reader starts over at the greeting.
-    const expected = step >= 14 ? 14 : 0
-    expect(first.session().guide).toMatchObject({ version: 3, sequence: "practice-v4", step: expected, completed: [], heard: "A friend" })
+    // Old scripts retain completion history and resume past the first-time greeting.
+    const expected = step >= (version === 1 ? 15 : 14) ? 14 : 1
+    expect(first.session().guide).toMatchObject({ version: 3, sequence: "practice-v4", step: expected, completed: ["theme", "tutorial.started"], heard: "A friend" })
     expect(first.session().draft).toBe("keep me")
     await first.dispose?.()
     const second = await boot(data)
@@ -37,14 +37,14 @@ for (const version of [1, 2, 3] as const) test(`legacy v${version} restarts at t
   }
 })
 
-test("a repository-v3 guide (the 10-lesson tutorial) restarts at the greeting; finished stays finished", async () => {
-  for (const [step, expected] of [[3, 0], [8, 0], [9, 14]] as const) {
+test("a repository-v3 guide (the 10-lesson tutorial) resumes by completion signal; finished stays finished", async () => {
+  for (const [step, expected] of [[3, 1], [8, 1], [9, 14]] as const) {
     const data = new Map<string, string>()
     const guide = { ...initialGuide(), sequence: "repository-v3" as const, step, completed: ["issues.opened"], declined: ["login"] as Array<"login"> }
     data.set("smithers-mvp.app-sessions", JSON.stringify({ "s:main": { versionKey: "legacy", data: { ...initialSession("light"), guide } } }))
     const store = await boot(data)
-    expect(store.session().guide).toMatchObject({ sequence: "practice-v4", step: expected, completed: [] })
-    expect(store.session().guide?.declined).toBeUndefined()
+    expect(store.session().guide).toMatchObject({ sequence: "practice-v4", step: expected, completed: ["issues.opened", "tutorial.started"] })
+    expect(store.session().guide?.declined).toEqual(["login"])
     await store.dispose?.()
   }
 })

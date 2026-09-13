@@ -188,6 +188,7 @@ export function GuideShell({ children, clock = guideClock }: { children: ReactNo
   const repoChip = stillPractice
     ? <span className="guide-repo-chip" data-practice="">{PRACTICE_NAME}</span>
     : <span className="guide-repo-chip" data-your-repo="">{guide.repo ?? "Your repository"}</span>
+  if (guide.finished) return <>{children}</>
   return (
     <GuideComposerHost.Provider value={composerHost}>
     <div
@@ -367,6 +368,9 @@ export function GuideShell({ children, clock = guideClock }: { children: ReactNo
               </ol>
             </section>
           )}
+          {lesson?.kind === "do" && lesson.tip && <aside className="guide-tip" aria-label="Tip">
+            <strong>Tip</strong><p>{lesson.tip}</p>
+          </aside>}
           <div
             className="guide-transcript"
             role="log"
@@ -378,11 +382,16 @@ export function GuideShell({ children, clock = guideClock }: { children: ReactNo
               transcriptRef.current = node
               if (node && lastScrolledStep.current !== stage) {
                 lastScrolledStep.current = stage
-                requestAnimationFrame(() => { node.scrollTo({ top: node.scrollHeight }) })
+                requestAnimationFrame(() => {
+                  const latest = node.querySelector("[data-tutorial-cards]")?.lastElementChild
+                  if (latest) latest.scrollIntoView({ block: "nearest", behavior: "instant" })
+                  else node.scrollTo({ top: node.scrollHeight })
+                })
               }
             }}
           >
             {GUIDE_STAGES.slice(0, stage + 1).map((asked, messageStep) => {
+              if (asked.message === "") return null
               const message = lessonMessage(messageStep, guide)
               const line = lineOf(messageStep)
               const words = (text: string, from = 0) => text.split(" ").map((word, index, all) => {

@@ -15,6 +15,9 @@ export const namespace: Namespace = { id: "files", label: "Files", summary: "Rea
 
 /** `files.list` and `files.read`. */
 export const filesFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> => [
+  flow({ name: "files.implementation-diff", summary: "View the tutorial implementation diff", input: NoPayload, handler: () => actions.showPracticeDiff() }),
+  flow({ name: "files.open-diff", summary: "Read a file at the diff revision in its frame", args: "<cardId> <path>",
+    input: Schema.Struct({ cardId: Schema.String, path: Schema.String }), handler: ({ cardId, path }) => actions.openDiffFile(cardId, path) }),
   flow({
     /*
      * Files flows parse the PATH as the first token, always — a lone `src/x`

@@ -33,6 +33,8 @@ export interface ServerEnvVars {
   readonly BILLING_ADMIN_TOKEN?: string
   readonly BILLING_CHECKOUT_ENABLED?: string
   readonly SMITHERS_CLOUD_API_BASE_URL?: string
+  readonly TUTORIAL_SERVICE_URL?: string
+  readonly TUTORIAL_SERVICE_TOKEN?: string
   readonly ANONYMOUS_TURN_SALT?: string
   readonly CEREBRAS_API_KEY?: string
   readonly CEREBRAS_MODEL?: string
@@ -66,6 +68,8 @@ export interface ServerConfigShape {
   readonly billingAdminToken: Redacted.Redacted<string> | undefined
   readonly billingCheckoutEnabled: boolean
   readonly cloudApiBaseUrl: string
+  readonly tutorialServiceUrl: string | undefined
+  readonly tutorialServiceToken: Redacted.Redacted<string> | undefined
   readonly anonymousTurnSalt: Redacted.Redacted<string> | undefined
   readonly cerebrasApiKey: Redacted.Redacted<string> | undefined
   readonly cerebrasModel: string | undefined
@@ -120,6 +124,8 @@ export const configFrom = (env: ServerEnvVars): ServerConfigShape => ({
   billingAdminToken: secret(env.BILLING_ADMIN_TOKEN),
   billingCheckoutEnabled: text(env.BILLING_CHECKOUT_ENABLED) === "1",
   cloudApiBaseUrl: text(env.SMITHERS_CLOUD_API_BASE_URL) ?? DEFAULT_CLOUD_API_BASE_URL,
+  tutorialServiceUrl: text(env.TUTORIAL_SERVICE_URL),
+  tutorialServiceToken: secret(env.TUTORIAL_SERVICE_TOKEN),
   anonymousTurnSalt: exactSecret(env.ANONYMOUS_TURN_SALT),
   cerebrasApiKey: secret(env.CEREBRAS_API_KEY),
   cerebrasModel: text(env.CEREBRAS_MODEL),

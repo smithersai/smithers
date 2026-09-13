@@ -1,3 +1,4 @@
+import { ChromeBar } from "./ChromeBar"
 import { GlobalRegistrator } from "@happy-dom/global-registrator"
 import type { StorageApi } from "@tanstack/db"
 import { afterAll, afterEach, describe, expect, spyOn, test } from "bun:test"
@@ -121,6 +122,7 @@ const mount = (controller: AppControllerType): { host: HTMLElement; act: (change
   flushSync(() =>
     root.render(
       <ControllerTestProvider controller={controller}>
+        <ChromeBar />
         <App />
       </ControllerTestProvider>
     )
@@ -252,7 +254,7 @@ describe("the + menu", () => {
     const heading = host.querySelector<HTMLElement>("[data-testid=workspace-heading]")
     expect(heading?.parentElement?.getAttribute("data-testid")).toBe("tab-strip")
     expect(heading?.previousElementSibling).toBeNull()
-    expect(host.querySelector("[data-testid=workspace-name]")?.textContent).toBe("Workspace")
+    expect(host.querySelector("[data-testid=workspace-name]")?.textContent).toBe("Chat")
     const tabs = [...host.querySelectorAll<HTMLElement>(".tab")]
     expect(tabs.map((tab) => tab.getAttribute("data-kind"))).toEqual(["terminal"])
     expect(tabs[0]?.querySelector("[data-testid=tab-close-t1]")).not.toBeNull()
@@ -402,13 +404,13 @@ describe("the sidebar's Repos section", () => {
     expect(store.session().activeRepoKey).toBe("local:/Users/will/smithers")
     expect(smithers?.dataset.active).toBe("true")
     expect(force?.dataset.active).toBe("false")
-    expect(host.querySelector("[data-testid=composer-repo-trigger]")?.textContent).toContain("smithers")
-    // Unpinning the active row forgets it; its tab falls under "No repository" and the other row takes over.
+    // The minimal composer has no duplicate repository selector; the sidebar owns selection.
+    // Unpinning the active row clears selection; its tab falls under "No repository".
     await act(() => smithers?.querySelector<HTMLButtonElement>('[data-flow="repo.unpin"]')?.click())
     expect(host.querySelector("[data-testid=repo-local\\:\\/Users\\/will\\/smithers]")).toBeNull()
     expect(store.collections.pinnedRepos.get("local:/Users/will/smithers")).toBeUndefined()
     expect(host.querySelector("[data-testid=repo-none] [data-testid=tab-t1]")).not.toBeNull()
-    expect(host.querySelector("[data-testid=composer-repo-trigger]")?.textContent).toContain("force")
+    expect(store.session().activeRepoKey).toBeNull()
   })
 
   test("ArrowDown walks tabs across repo groups, selecting each one reached", async () => {
@@ -923,7 +925,7 @@ describe("the workspace heading", () => {
     const heading = host.querySelector<HTMLElement>("[data-testid=workspace-heading]")
     expect(heading?.dataset.active).toBe("false")
     const name = host.querySelector<HTMLButtonElement>("[data-testid=workspace-name]")
-    expect(name?.textContent).toBe("Workspace")
+    expect(name?.textContent).toBe("Chat")
     expect(name?.getAttribute("data-flow")).toBe("tab.select")
     expect(name?.getAttribute("role")).toBe("tab")
     await act(() => name?.click())

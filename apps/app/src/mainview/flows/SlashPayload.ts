@@ -60,8 +60,10 @@ const repoOnly = (name: string, args: string | undefined): Parsed => {
 }
 
 /** A positive issue or pull-request number beside its optional repo. */
-const numbered = (args: string | undefined, reason: string, known?: KnownRepositories): Parsed => {
-  const { rest, repo } = splitTrailingRepo(args, known)
+const numbered = (args: string | undefined, reason: string, _known?: KnownRepositories): Parsed => {
+  // A numeric target has no free-text or file-path tail: an explicit owner/repo
+  // is unambiguous even before the repository catalog has loaded.
+  const { rest, repo } = splitTrailingRepo(args)
   const number = Number(rest)
   if (!Number.isInteger(number) || number <= 0) return no(reason)
   return ok(repo === undefined ? { number } : { number, repo })
@@ -333,6 +335,14 @@ const GRAMMAR: Readonly<Record<string, Grammar>> = {
       return ok({ ...target, input: value })
     } catch { return no("Flow input is not valid JSON. Fix the JSON object before running it.") }
   },
+  "card.history.back": (args) => required("cardId", args, "Choose a frame to go back"),
+  "card.history.forward": (args) => required("cardId", args, "Choose a frame to go forward"),
+  "notifications.read-update": (args) => required("cardId", args, "Choose an update to mark read"),
+  "notifications.tag": (args) => {
+    const [id, ...rest] = tokensOf(args)
+    return ok({ ...(id ? { id } : {}), ...(rest.length ? { tag: rest.join(" ") } : {}) })
+  },
+  "repo.update": (args) => repoOnly("repo.update", args),
   "card.maximize": (args) => required("cardId", args, "card.maximize needs the card id"),
   "card.dismiss": (args) => required("cardId", args, "card.dismiss needs the card id"),
   // The clipboard text is taken verbatim: trimming would silently rewrite what
@@ -404,6 +414,11 @@ const GRAMMAR: Readonly<Record<string, Grammar>> = {
     }
     return ok(repo === undefined ? { filter } : { filter, repo })
   },
+  "issue.flows": (args, known) => numbered(args, "An issue number is required", known),
+  "issue.repro": (args, known) => numbered(args, "An issue number is required", known),
+  "issue.poc": (args, known) => numbered(args, "An issue number is required", known),
+  "issue.implement": (args, known) => numbered(args, "An issue number is required", known),
+  "issue.add-flow": (args) => { try { return ok(JSON.parse(trimmed(args))) } catch { return no("Describe the flow to add") } },
   "issues.view": (args, known) => numbered(args, "issues.view needs an issue number", known),
   "issues.create": (args, known) => {
     const { rest, repo } = splitTrailingRepo(args, known)
@@ -510,6 +525,8 @@ const GRAMMAR: Readonly<Record<string, Grammar>> = {
   "search.secrets": (args) => required("query", args, "search.secrets needs a query"),
   "search.people": (args) => required("query", args, "search.people needs a query"),
   "tut.more": () => NONE,
+  "tutorial.live.inspect": (args) => { const [cardId, eventId] = tokensOf(args); return ok({ ...(cardId ? { cardId } : {}), ...(eventId ? { eventId } : {}) }) },
+  "tutorial.live.retry": (args) => required("cardId", args, "Choose a live tutorial run"),
   "onboarding.act": (args) => {
     const [action = "next", ...rest] = trimmed(args).split(" ")
     const raw = rest.join(" ")
@@ -812,6 +829,12 @@ const GRAMMAR: Readonly<Record<string, Grammar>> = {
    * Only a TRAILING numeric suffix comes off the token, so a repository path
    * with a colon of its own keeps working; the parser stays first-token-is-path.
    */
+  "files.open-diff": (args) => {
+    try { return ok(JSON.parse(args ?? "")) } catch {
+      const [cardId, ...path] = (args ?? "").trim().split(/\s+/)
+      return cardId && path.length ? ok({ cardId, path: path.join(" ") }) : no("Select a diff and file")
+    }
+  },
   "files.read": (args) => {
     const parsed = parseFileArgs(args)
     if ("error" in parsed) return parsed

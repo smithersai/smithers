@@ -28,7 +28,7 @@ const backward = (guide: GuideState, step: number): number => {
 }
 
 /** Durable, replayable onboarding. Practice artifacts never enter repository/run tables. */
-export function createGuideController(ctx: ControllerContext) {
+export function createGuideController(ctx: ControllerContext, onStart?: () => Promise<unknown>) {
   /* The optional capability reel owns its own reducer cases (onboarding/reelController.ts). */
   const reelAct = createReelController(ctx)
   const guideAct = async (action: string, value = ""): Promise<string | void> => {
@@ -38,7 +38,7 @@ export function createGuideController(ctx: ControllerContext) {
      */
     if (["back", "finish", "restart"].includes(action) && ctx.store.session().guide?.reelIndex !== undefined) {
       await reelAct("reel-exit", "")
-      if (action !== "restart") return
+      if (action === "back") return
     }
     /* Reducer cases: reel-start, reel-next <epoch:index>, reel-demo <demo>, reel-exit. */
     if (await reelAct(action, value)) return
@@ -87,6 +87,12 @@ export function createGuideController(ctx: ControllerContext) {
          */
         const shown = ctx.store.collections.cards.get(PRACTICE_CARD.commits)
         if (stage?.kind === "do" && stage.completion === "change.opened" && (guide.completed?.includes("change.opened") || shown?.kind === "change")) {
+          const history = ctx.store.collections.cardHistories.get(PRACTICE_CARD.commits)
+          if (shown?.kind === "change" && history?.entries[history.index - 1]?.kind === "commit-pick") {
+            await ctx.store.dispatch({ type: "card.history.moved", actor: ctx.commandActor, id: shown.id, delta: -1 }).isPersisted.promise
+            guide.completed = (guide.completed ?? []).filter(signal => signal !== "change.opened")
+            break
+          }
           const card = shown
           await ctx.store.dispatch({ type: "card.upsert", actor: ctx.commandActor, card: {
             id: PRACTICE_CARD.commits, kind: "commit-pick", title: `Commits on ${PRACTICE_BRANCH}`, status: "active",
@@ -120,7 +126,7 @@ export function createGuideController(ctx: ControllerContext) {
       }
       case "restart": {
         const playthrough = (guide.playthrough ?? 0) + 1
-        for (const field of ["acceptedPracticeTitle", "responseId", "demoRun", "said", "declined", "repo", "pick", "notice"] as const) delete guide[field]
+        for (const field of ["finished", "acceptedPracticeTitle", "responseId", "demoRun", "said", "declined", "repo", "pick", "notice"] as const) delete guide[field]
         Object.assign(guide, initialGuide(), { playthrough })
         break
       }
@@ -173,6 +179,7 @@ export function createGuideController(ctx: ControllerContext) {
         break
       }
       case "finish":
+        guide.finished = true
         guide.step = GUIDE_LAST_STEP
         guide.conversationOpen = false
         break
@@ -180,22 +187,22 @@ export function createGuideController(ctx: ControllerContext) {
         return `Unknown onboarding action: ${action}`
     }
     await ctx.store.dispatch({ type: "guide.changed", actor: action === "advance" ? "system" : ctx.commandActor, guide }).isPersisted.promise
+    if (action === "start") await onStart?.()
   }
   return { guideAct }
 }
 
-/**
- * Bring any older guide row onto script v4 (sequence `practice-v4`). An
- * unfinished reader restarts at the greeting — the practice repository needs
- * no account, so there is nothing to resume. A finished reader stays in the
- * workspace. Drafts, sound and the reel's state survive. (The name stays for
- * AppStore's seed, which calls it on every hydrated guide.)
- */
+/** Map old lessons by their durable completion signals; an update never erases progress. */
 export function migrateGuideV3(guide: GuideState): GuideState {
   if (guide.sequence === "practice-v4") return { ...guide }
   const finished = guide.sequence === "repository-v3" ? guide.step >= 9 : guide.step >= (guide.version === 1 ? 15 : 14)
-  const { said: _said, declined: _declined, repo: _repo, pick: _pick, notice: _notice, ...kept } = guide
-  return { ...kept, version: 3, sequence: "practice-v4",
-    step: finished ? GUIDE_LAST_STEP : 0,
-    completed: [], autoPaused: false, conversationOpen: false }
+  const completed = [...(guide.completed ?? [])]
+  const started = guide.step > 0 || completed.length > 0
+  if (started && !completed.includes("tutorial.started")) completed.push("tutorial.started")
+  let step = started ? 1 : 0
+  GUIDE_STAGES.forEach((stage, index) => {
+    if (stage.kind === "do" && completed.includes(stage.completion)) step = Math.max(step, index)
+  })
+  return { ...guide, version: 3, sequence: "practice-v4", completed,
+    step: finished ? GUIDE_LAST_STEP : step, autoPaused: started || guide.autoPaused }
 }

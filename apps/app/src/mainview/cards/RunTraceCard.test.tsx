@@ -210,7 +210,7 @@ describe("the run card as a trace", () => {
     expect(host.querySelector("[data-testid='flow-run-stop-run-1']")).not.toBeNull()
     expect(host.querySelector(".flow-run-card")?.getAttribute("data-run-kind")).toBe("prototype")
     // The secondary tabs stay; there is no Trace tab because the trace is the body.
-    expect([...host.querySelectorAll("[role='tablist'] button")].map((tab) => tab.textContent)).toEqual(["Steps", "Transcript"])
+    expect([...host.querySelectorAll("[role='tablist'] button")].map((tab) => tab.textContent)).toEqual(["Trace", "Transcript"])
   })
 
   test("every other run is the same trace with the shared filters and the steer row while live; an implement run needs no banner", () => {
@@ -278,7 +278,7 @@ describe("the run card as a trace", () => {
 
     const selectedCell = renderTrace({ kind: "prototype", events: JOURNAL, selection: "cell-2" })
     const cellPane = selectedCell.host.querySelector("[data-testid='run-trace-pane-run-1']")
-    expect(cellPane?.textContent).toContain("Cell")
+    expect(cellPane?.textContent).toContain("Script")
     expect(cellPane?.textContent).toContain("await ctx.call(\"target.run\"")
     expect(cellPane?.textContent).toContain("Printed")
     expect(cellPane?.textContent).toContain("svg dies at 500 nodes")
@@ -336,11 +336,76 @@ describe("the run card as a trace", () => {
     expect(nodes).toHaveLength(1)
     expect(nodes[0]?.getAttribute("data-status")).toBe("launching")
     expect(host.querySelectorAll("[data-trace-bar]")).toHaveLength(0)
-    expect(host.querySelector("[data-testid='run-trace-empty-run-1']")?.textContent).toContain("No journal yet. The run is launching")
+    expect(host.querySelector("[data-testid='run-trace-empty-run-1']")?.textContent).toBe("No spans yet.")
     expect(host.querySelector("[data-testid='run-trace-clock-run-1']")?.textContent).toBe("no journal yet")
   })
 })
 
+
+describe("the run card reads as outcome, then turns", () => {
+  const COMPLETED = [
+    stamp(1, "control.agent.turn-opened", {}, 1000),
+    stamp(2, "control.agent.model-settled", { text: "Write the test first, so the bug shows up as a failure." }, 1400),
+    stamp(3, "control.agent.cell-produced", { language: "ts", text: "await ctx.call(\"edit\", { path: \"src/hello.test.ts\" })" }, 1500),
+    stamp(4, "control.agent.cell-call-started", { flowName: "edit", input: { path: "src/hello.test.ts" } }, 1600),
+    stamp(5, "control.agent.cell-call-settled", { flowName: "edit", outcome: "success", value: "src/hello.test.ts +4" }, 1900),
+    stamp(6, "control.agent.cell-call-started", { flowName: "test", input: { target: "npm test" } }, 2000),
+    stamp(7, "control.agent.cell-call-settled", { flowName: "test", outcome: "failure", message: "✖ greets the world when no name is given" }, 3600),
+    stamp(8, "control.agent.cell-settled", { outcome: "success" }, 3700),
+    stamp(9, "control.agent.turn-opened", {}, 4400),
+    stamp(10, "control.agent.model-settled", { text: "Edit src/hello.ts: default a missing name to \"world\"." }, 4800),
+    stamp(11, "control.agent.cell-call-started", { flowName: "edit", input: { path: "src/hello.ts" } }, 4900),
+    stamp(12, "control.agent.cell-call-settled", { flowName: "edit", outcome: "success", value: "src/hello.ts −1 +1" }, 5200),
+    stamp(13, "control.agent.resolved", { text: "2 commits on fix" }, 6000)
+  ]
+  test("a completed run whose reproduction test failed on purpose reads Finished; the failure stays on that call", () => {
+    const { host } = renderRun({ phase: "completed", result: "2 commits on fix", steps: ["Writing the test…", "2 commits on fix"], events: COMPLETED, traceView: undefined })
+    const outcome = host.querySelector("[data-testid='run-outcome-run-1']")!
+    expect(outcome.textContent).toContain("Finished.")
+    expect(outcome.textContent).toContain("2 turns · 3 calls · 5.0s")
+    expect(outcome.textContent).not.toContain("failed")
+    expect(outcome.querySelector(".run-outcome-dot")?.getAttribute("data-status")).toBe("completed")
+    expect(host.textContent).toContain("2 commits on fix")
+    // The turn rows: the model's sentence and the flows it called; the failed call is marked on the call alone.
+    const rows = [...host.querySelectorAll(".run-turn")]
+    expect(rows).toHaveLength(2)
+    expect(rows[0]?.querySelector(".run-turn-text")?.textContent).toBe("Write the test first, so the bug shows up as a failure.")
+    expect([...rows[0]!.querySelectorAll(".run-turn-call")].map((call) => `${call.textContent}:${call.getAttribute("data-status")}`)).toEqual(["edit:completed", "test:failed"])
+    expect(rows[0]?.getAttribute("data-status")).toBeNull()
+    // Nothing is dumped twice: the result once, the progress folded once it settled, no filter chips, no empty-journal copy.
+    expect(host.querySelectorAll(".run-result")).toHaveLength(1)
+    expect(host.querySelector(".run-progress-fold [data-run-steps]")?.textContent).toContain("Writing the test…")
+    expect(host.querySelectorAll("[data-run-steps]")).toHaveLength(1)
+    expect(host.querySelectorAll("[data-filter]")).toHaveLength(0)
+    expect(host.querySelector("[data-testid='run-trace-empty-run-1']")).toBeNull()
+    expect(host.querySelector("[aria-label='Call tree']")).toBeNull()
+    expect([...host.querySelectorAll("[role='tablist'] button")].map((tab) => tab.textContent)).toEqual(["Trace", "Transcript"])
+  })
+  test("a turn expands in place: its script, its calls and the selected span's facts sit under its row", () => {
+    const { host } = renderRun({ phase: "completed", events: COMPLETED, traceView: undefined, selection: "call-2", liveTail: false })
+    const rows = [...host.querySelectorAll("[data-turn]")]
+    expect(rows.map((row) => row.getAttribute("aria-expanded"))).toEqual(["true", "false"])
+    const open = host.querySelector("[data-turn-open='true']")!
+    expect(open.querySelector("[aria-label='Recorded turn source']")?.textContent).toContain("src/hello.test.ts")
+    expect([...open.querySelectorAll("[data-trace-span]")].map((node) => node.getAttribute("data-trace-span"))).toEqual(["frame-1", "model-2", "cell-3", "call-1", "call-2"])
+    expect(open.querySelector("[data-testid='run-trace-pane-run-1']")?.getAttribute("data-span")).toBe("call-2")
+    expect(open.querySelector("[role='alert']")?.textContent).toContain("✖ greets the world")
+    expect(host.querySelector("[aria-label='Waterfall']")).toBeNull()
+    expect(host.querySelector("[data-turn='1']")?.getAttribute("aria-controls")).toBe(open.querySelector(".run-turn-detail")?.id)
+  })
+  test("a live run shows its progress open and the phase words; a tutorial plan card shows neither outcome nor turns", () => {
+    const live = renderRun({ phase: "running", steps: ["Writing the test…"], events: COMPLETED.slice(0, 4), traceView: undefined })
+    expect(live.host.querySelector("[data-testid='run-outcome-run-1']")?.textContent).toContain("Running on your workspace.")
+    expect(live.host.querySelector(".run-progress-fold")).toBeNull()
+    expect(live.host.querySelector("[data-run-steps]")?.textContent).toContain("Writing the test…")
+    const plan = renderRun({ kind: "change-plan", phase: "completed", input: { plan: { ...CODING_PLAN, changes: [CODING_PLAN.changes[0]!] } }, traceView: undefined })
+    expect(plan.host.querySelector("[data-testid='run-outcome-run-1']")).toBeNull()
+    expect(plan.host.querySelector("[data-testid='run-trace-empty-run-1']")).toBeNull()
+    expect(plan.host.querySelector("[role='tablist']")).toBeNull()
+    expect(plan.host.querySelector("[data-testid='flow-run-rerun-run-1']")).toBeNull()
+    expect(plan.host.querySelector("[data-flow='agent.change.start']")).not.toBeNull()
+  })
+})
 
 describe("predicted coding Changes in the same run card", () => {
   test("review feedback explains an intentional failed child and opens its existing debugger span", () => {
@@ -407,7 +472,8 @@ describe("predicted coding Changes in the same run card", () => {
     expect(details.textContent).toContain("wiki-revision-42")
     expect(details.textContent).not.toContain("passed")
     expect(details.textContent).not.toContain("vibed")
-    expect(selected.host.querySelector("[aria-label='Turn explanations']")?.children).toHaveLength(0)
+    // No journal, no turn list: the plan is the card's content until the run records a turn.
+    expect(selected.host.querySelector("[aria-label='Turn explanations']")).toBeNull()
   })
   test("missing or invalid input cannot fabricate a coding plan", () => {
     expect(renderTrace({ workflow: "coding" }).host.querySelector("[aria-label='Coding plan']")).toBeNull()

@@ -1,4 +1,3 @@
-import { guideClock, type GuideClock } from "./advance"
 
 /* E, not W: W is Create Wiki in the lessons (onboarding SCRIPT v4). */
 export const REEL_BUTTON = { label: "What else can you do?", command: "tut.more", key: "E" } as const
@@ -19,7 +18,6 @@ export const REEL_STAGES = [
 export type ReelDemo = typeof REEL_STAGES[number]["demo"]
 export type ReelState = { reelSeen?: boolean; reelIndex?: number; reelEpoch?: number; reelDemo?: string; reelTheme?: "light" | "dark" }
 export type ReelDispatch = (action: string, value?: string) => void
-export const reelPause = (copy: string, reduced = false) => reduced ? 0 : Math.min(2000, 400 + 20 * copy.trim().split(/\s+/).filter(Boolean).length)
 
 /** The mounted card invokes the same controller door as slash/agent callers. */
 export function dispatchReelDemo(demo: ReelDemo, dispatch: ReelDispatch, playSound: () => void = () => {}) {
@@ -27,22 +25,23 @@ export function dispatchReelDemo(demo: ReelDemo, dispatch: ReelDispatch, playSou
   if (demo === "sound") playSound()
 }
 
-/** No input is required. Escape/Back cancel even when the composer owns focus. */
-export function scheduleReel({ target, copy, advance, exit, clock = guideClock, reduced = false }: {
-  target: EventTarget; copy: string; advance: () => void; exit: () => void; clock?: GuideClock; reduced?: boolean
+/** Each example waits for Next. Escape exits; arrows never interfere with text input. */
+export function scheduleReel({ target, advance, exit }: {
+  target: EventTarget; advance: () => void; exit: () => void
 }) {
   let pending = true
-  const handle = clock.setTimeout(() => { if (pending) { pending = false; advance() } }, reelPause(copy, reduced))
   const keydown = (raw: Event) => {
     const event = raw as KeyboardEvent
-    if (event.isComposing || event.metaKey || event.ctrlKey || event.altKey || event.shiftKey) return
-    if (event.key !== "Escape" && event.key !== "ArrowLeft") return
-    if (event.key === "ArrowLeft" && (event.target as Element | null)?.closest?.('input,textarea,select,[contenteditable="true"]')) return
+    if (!pending || event.repeat || event.isComposing || event.metaKey || event.ctrlKey || event.altKey || event.shiftKey) return
+    if (!["Escape", "ArrowLeft", "ArrowRight"].includes(event.key)) return
+    if (event.key !== "Escape" && (event.target as Element | null)?.closest?.('input,textarea,select,[contenteditable="true"]')) return
     event.preventDefault(); event.stopImmediatePropagation()
-    pending = false; clock.clearTimeout(handle); exit()
+    pending = false
+    if (event.key === "ArrowRight") advance()
+    else exit()
   }
   target.addEventListener("keydown", keydown, true)
-  return () => { pending = false; clock.clearTimeout(handle); target.removeEventListener("keydown", keydown, true) }
+  return () => { pending = false; target.removeEventListener("keydown", keydown, true) }
 }
 
 /** Original three-note interval; the optional reel click is the audio opt-in. */

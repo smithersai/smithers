@@ -1,0 +1,24 @@
+{
+  "name": "smithers-tutorial-coordinator",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node test.mjs",
+    "build": "node build.mjs"
+  },
+  "dependencies": {
+    "@effect/platform-node": "4.0.0-rc.115",
+    "@smthrs/agent": "workspace:*",
+    "@smthrs/engine": "workspace:*",
+    "@smthrs/engine-store": "workspace:*",
+    "@smthrs/flow": "workspace:*",
+    "@smthrs/flows": "workspace:*",
+    "@smthrs/kernel": "workspace:*",
+    "@smthrs/model": "workspace:*",
+    "@smthrs/registry": "workspace:*",
+    "@smthrs/rpc": "workspace:*",
+    "@smthrs/run-store": "workspace:*",
+    "effect": "4.0.0-rc.115",
+    "zod": "4.5.4"
+  }
+}

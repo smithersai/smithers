@@ -16,6 +16,8 @@
  * summary does not record, so runs.list says that instead of silently
  * dropping the filter.
  */
+import { LiveTutorialRunSchema } from "@smthrs/rpc/LiveTutorial"
+import { liveTutorialTranscript } from "../LiveTutorialTranscript"
 import type { TraceFilter, TraceView } from "../../cards/RunTrace"
 import { traceFromJournal } from "../../cards/RunTrace"
 import { codingPlanOf } from "../../cards/CodingPlan"
@@ -28,6 +30,7 @@ import { approvalCardIdFor, cardContainsRun, runCardInScope, runScopeFromCard, s
 import { completeGuide } from "../../onboarding/completion"
 import { canCompleteTutorialTrace, tutorialTraceScopeFor, type TutorialTraceScope } from "./tutorial2-turn_trace"
 import { activeRepositoryId, gatewayBindingFor, gatewayRunContextFor } from "../RepoContext"
+import { isPracticeRepo, practiceTranscript } from "../practice/PracticeRepository"
 
 export interface RunsController {
   readonly listRuns: (args: {
@@ -337,12 +340,24 @@ export const createRunsController = (
    * of where the transcript stood when asked.
    */
   const showRunLogs = async (runId: string, follow?: boolean, sourceCard?: string): Promise<CommandResult> => {
-    const guard = workflows.workflowIdentityGuard()
-    if (guard !== undefined) return guard
     const target = resolveRun(runId, sourceCard)
     if ("error" in target) return target.error
     const card = runCardFor(target)
     if (card === undefined) return `Open the run first (runs.open ${runId}) — the transcript lives on its card.`
+    if (card.payload.input?.liveTutorial) {
+      const snapshot=LiveTutorialRunSchema.safeParse(card.payload.input.liveTutorialSnapshot)
+      if(snapshot.success&&snapshot.data.runId!==runId)return "The saved live tutorial snapshot belongs to another run."
+      const following=follow===true?card.payload.follow!==true:false
+      patchRunCard(target,{facet:"transcript",follow:following,transcriptRows:snapshot.success?liveTutorialTranscript(snapshot.data):[]})
+      return {value:following?`following run=${runId}`:`transcript run=${runId}`}
+    }
+    // The practice run (onboarding SCRIPT v4 §4) has no gateway: its transcript is the bundled journal, and it never follows.
+    if (isPracticeRepo(card.payload.repo) && card.payload.input?.practice === true) {
+      patchRunCard(target, { facet: "transcript", follow: false, transcriptRows: practiceTranscript() })
+      return { value: `transcript run=${runId}` }
+    }
+    const guard = workflows.workflowIdentityGuard()
+    if (guard !== undefined) return guard
     const following = follow === true ? card.payload.follow !== true : false
     const transcript = await gateway.transcript(target.repo, runId, { workspaceId: target.workspaceId })
     if (transcript.status !== "ok") return transcript.message

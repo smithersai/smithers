@@ -1,3 +1,4 @@
+import { publishIssueView } from "../EmbeddedHistory"
 import { lessonCompletion } from "../../onboarding/completion"
 import { isPracticeRepo, PRACTICE_CARD, PRACTICE_NAME, practiceIssue, practiceIssueList, practicePr, practicePrList } from "../practice/PracticeRepository"
 import { activeRepositoryId, resolveOpenRepo, resolveTargetRepo } from "../RepoContext"
@@ -10,7 +11,7 @@ export type RepositoryForm = FormsController["renderFlowForm"]
 const signalOf = (kind: "issues" | "prs") => kind === "issues" ? "issues.opened" : "prs.opened"
 
 /** Complete the current lesson when it waits on `signal`; a later lesson or another playthrough is untouched. */
-const finishLesson = async (ctx: SeamContext, signal: string, playthrough: number | undefined): Promise<void> => {
+export const finishLesson = async (ctx: SeamContext, signal: string, playthrough: number | undefined): Promise<void> => {
   const guide = ctx.store.session().guide
   if (guide === undefined || guide.playthrough !== playthrough) return
   const next = lessonCompletion(guide, signal)
@@ -23,7 +24,12 @@ const practiceRead = async (ctx: SeamContext, kind: "issues" | "prs", filter: "o
   const actor = ctx.actor()
   const common = { status: "active" as const, createdAt: Date.now(), ordinal: ctx.nextOrdinal() }
   if (kind === "issues") {
-    const payload = practiceIssueList(filter)
+    const baseline = practiceIssueList("all")
+    const all = baseline.issues.map(issue => {
+      const saved = savedPracticeIssue(ctx, issue.number)
+      return saved ? { ...issue, state: saved.state, comments: saved.comments.length } : issue
+    })
+    const payload = { ...baseline, filter, issues: all.filter(issue => filter === "all" || issue.state === filter) }
     await ctx.dispatch({ type: "card.upsert", actor, card: { ...common, id: PRACTICE_CARD.issues, kind: "issue-list", title: `Issues · ${PRACTICE_NAME}`, payload } }).isPersisted.promise
     await finishLesson(ctx, signalOf(kind), playthrough)
     return readResult(payload.issues.map(issue => `#${issue.number} ${issue.title} [${(issue.labels ?? []).join(", ")}]`).join("\n"))
@@ -34,15 +40,29 @@ const practiceRead = async (ctx: SeamContext, kind: "issues" | "prs", filter: "o
   return readResult(payload.landings.map(pr => `#${pr.number} ${pr.title} by ${pr.author} (touches ${(pr.files ?? []).join(", ")})`).join("\n"))
 }
 
+
+export const savedPracticeIssue = (ctx: SeamContext, number: number) => {
+  const saved = ctx.store.collections.practiceIssues.get(`${ctx.store.session().guide?.playthrough ?? 0}:${number}`)
+  return saved?.card.kind === "issue" ? saved.card.payload : undefined
+}
+
+export const mutatePracticeIssue = async (ctx: SeamContext, number: number, edit: (payload: NonNullable<ReturnType<typeof practiceIssue>>) => NonNullable<ReturnType<typeof practiceIssue>>): Promise<string | void> => {
+  const payload = savedPracticeIssue(ctx, number) ?? practiceIssue(number)
+  if (!payload) return `No issue #${number} in ${PRACTICE_NAME}.`
+  const card = { id: PRACTICE_CARD.issue(number), kind: "issue" as const, title: `#${number} ${payload.title}`, status: "active" as const, createdAt: Date.now(), ordinal: ctx.nextOrdinal(), payload: edit(payload) }
+  await ctx.dispatch({ type: "practice.issue.updated", actor: ctx.actor(), id: `${ctx.store.session().guide?.playthrough ?? 0}:${number}`, card }).isPersisted.promise
+  await publishIssueView(ctx, card)
+}
+
 /** issues.view on the practice repository: the bundled issue, then the lesson's `issue.opened`. */
 export async function practiceViewIssue(ctx: SeamContext, number: number): Promise<string | { readonly value: string }> {
-  const payload = practiceIssue(number)
+  const payload = savedPracticeIssue(ctx, number) ?? practiceIssue(number)
   if (payload === undefined) return `No issue #${number} in ${PRACTICE_NAME}.`
   const playthrough = ctx.store.session().guide?.playthrough
-  await ctx.dispatch({ type: "card.upsert", actor: ctx.actor(), card: {
+  await publishIssueView(ctx, {
     id: PRACTICE_CARD.issue(number), kind: "issue", title: `#${number} ${payload.title}`, status: "active",
     createdAt: Date.now(), ordinal: ctx.nextOrdinal(), payload
-  } }).isPersisted.promise
+  })
   await finishLesson(ctx, "issue.opened", playthrough)
   return readResult(`#${number} ${payload.title}\n${payload.issueBody}`)
 }

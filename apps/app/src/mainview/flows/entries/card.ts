@@ -12,6 +12,10 @@ export const namespace: Namespace = { id: "card", label: "Cards", summary: "Maxi
 
 /** The `card` flows registered as one aggregator block. */
 export const cardFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> => [
+  flow({ name: "card.history.back", summary: "Go back inside an embedded frame", args: "<cardId>", input: CardTarget,
+    handler: ({ cardId }) => actions.moveCardHistory(cardId, -1) }),
+  flow({ name: "card.history.forward", summary: "Go forward inside an embedded frame", args: "<cardId>", input: CardTarget,
+    handler: ({ cardId }) => actions.moveCardHistory(cardId, 1) }),
   flow({
     /* Maximize is the user's explicit act alone (THE EMBED LAW). */
     name: "card.maximize",

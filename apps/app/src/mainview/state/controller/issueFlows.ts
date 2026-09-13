@@ -1,0 +1,85 @@
+import type { Card } from "../AppState"
+import type { SeamContext } from "../seams/SeamContext"
+import { readResult } from "../seams/SeamContext"
+import { resolveTargetRepo } from "../RepoContext"
+import { isPracticeRepo, PRACTICE_REPO, practiceIssue } from "../practice/PracticeRepository"
+import { lessonCompletion } from "../../onboarding/completion"
+import type { WorkflowController } from "./workflows"
+import reproDefinition from "../../../../../../flows/issue/repro/flow.mdx?raw"
+
+export interface IssueFlowsController {
+  readonly inspectIssueFlows: (number: number, repo?: string) => Promise<string | { readonly value: string }>
+  readonly runIssueFlow: (name: "repro" | "poc", number: number, repo?: string) => Promise<string | void | { readonly value: string }>
+}
+const prompt = reproDefinition.replace(/^---[\s\S]*?---\s*/, "").trim()
+const research = `### Reproduction evidence\n\nThe recorded example reports two cases: a missing name returns **Hello, null!**, and an empty name returns **Hello, !**. Both should return **Hello, world!**.\n\n- **Source:** \`src/hello.ts:2\` interpolates the name directly.\n- **Tests:** the existing greeting test covers Ada; missing and empty names need coverage.\n- **Related work:** PR #4 adds request logging in \`src/server.ts\`; it does not fix the greeting.\n\nThis is the bundled tutorial evidence, not a fresh test run. Implement the fallback for both missing and empty names and test both cases.`
+
+export const createIssueFlowsController = (ctx: SeamContext, flows: Pick<WorkflowController, "listWorkspaceWorkflows" | "runWorkflow">): IssueFlowsController => {
+  const cards = (): Array<Card> => [...ctx.store.collections.cards.values()]
+  const target = (number: number, explicit?: string) => {
+    const resolved = isPracticeRepo(explicit) ? { repo: PRACTICE_REPO } : resolveTargetRepo(ctx.store, explicit)
+    if ("error" in resolved) return resolved
+    const issue = cards().find((card): card is Extract<Card, { kind: "issue" }> => card.kind === "issue" && card.payload.repo === resolved.repo && card.payload.number === number)
+    const payload = issue?.payload ?? (isPracticeRepo(resolved.repo) ? practiceIssue(number) : undefined)
+    return payload === undefined ? { error: `Open issue #${number} before choosing its flows.` } : { repo: resolved.repo, payload }
+  }
+  const finish = async (signal: string, playthrough: number | undefined) => {
+    const guide = ctx.store.session().guide
+    if (!guide || guide.playthrough !== playthrough) return
+    const next = lessonCompletion(guide, signal)
+    if (next) await ctx.dispatch({ type: "guide.changed", actor: ctx.actor(), guide: next }).isPersisted.promise
+  }
+  const inspectIssueFlows: IssueFlowsController["inspectIssueFlows"] = async (number, explicit) => {
+    const selected = target(number, explicit)
+    if ("error" in selected) return selected.error
+    const { repo, payload } = selected
+    const playthrough = ctx.store.session().guide?.playthrough
+    const scope = JSON.stringify([ctx.store.session().activeRepoKey, ctx.store.session().activeWorkspaceId, ctx.store.collections.identitySessions.get("identity")?.login, playthrough])
+    let catalog: Extract<Card, { kind: "workflow-list" }>
+    if (isPracticeRepo(repo)) {
+      const id = `practice-issue-flows-${number}`
+      const prior = ctx.store.collections.cards.get(id)
+      catalog = { id, kind: "workflow-list", title: `Issue #${number} · Flows`, status: "active", createdAt: prior?.createdAt ?? Date.now(), ordinal: prior?.ordinal ?? ctx.nextOrdinal(),
+        payload: { repo, ...(prior?.kind === "workflow-list" && prior.payload.research ? { research: prior.payload.research } : {}), issueContext: { number, title: payload.title }, workflows: [{ key: "issue.repro", description: "Research and reproduce before implementation", prompt }] } }
+    } else {
+      const result = await flows.listWorkspaceWorkflows(repo)
+      if (typeof result === "string") return result
+      if (scope !== JSON.stringify([ctx.store.session().activeRepoKey, ctx.store.session().activeWorkspaceId, ctx.store.collections.identitySessions.get("identity")?.login, ctx.store.session().guide?.playthrough])) return "The repository changed while loading its issue flows. Open the issue again."
+      const source = cards().filter((card): card is Extract<Card, {kind:"workflow-list"}> => card.kind === "workflow-list" && card.payload.repo === repo).sort((a,b) => b.ordinal-a.ordinal)[0]
+      if (!source) return "The workspace did not return its flow catalog."
+      catalog = { ...source, title: `Issue #${number} · Flows`, payload: { ...source.payload, issueContext: { number, title: payload.title }, workflows: source.payload.workflows.filter(flow => /^issue[./]/.test(flow.key)) } }
+    }
+    await ctx.dispatch({ type: "card.upsert", actor: ctx.actor(), card: catalog }).isPersisted.promise
+    await finish("issue.flows.opened", playthrough)
+    return readResult(catalog.payload.workflows.map(flow => `${flow.key}: ${flow.description ?? ""}${flow.prompt ? `\n${flow.prompt}` : ""}`).join("\n") || "No issue flows are installed on this workspace.")
+  }
+  return {
+    inspectIssueFlows,
+    runIssueFlow: async (name, number, explicit) => {
+      const selected = target(number, explicit)
+      if ("error" in selected) return selected.error
+      const { repo, payload } = selected
+      if (!isPracticeRepo(repo)) {
+        const result = await inspectIssueFlows(number, repo)
+        if (typeof result === "string") return result
+        const catalog = cards().find((card): card is Extract<Card, {kind:"workflow-list"}> => card.kind === "workflow-list" && card.payload.repo === repo && card.payload.issueContext?.number === number)
+        const installed = catalog?.payload.workflows.find(flow => flow.key === `issue.${name}` || flow.key === `issue/${name}`)
+        if (!installed) return `The issue.${name} flow is not installed on this workspace. Add it from the issue's Flows view.`
+        return flows.runWorkflow(installed.key, repo, { args: JSON.stringify({ issue: payload }) }, catalog?.id)
+      }
+      if (number !== 3) return "The bundled repro demonstrates issue #3. Open that issue to continue the tutorial."
+      const result = name === "repro" ? research : `### Proof of concept
+
+The example fix defaults both missing and empty names with \`name || "world"\` in src/hello.ts. Add regression cases for both inputs and retain the named greeting case.
+
+This is a bundled demonstration, not a fresh agent run. Choose Implement to review the plan and apply the recorded fix.`
+      const playthrough = ctx.store.session().guide?.playthrough
+      await inspectIssueFlows(number, repo)
+      const card = ctx.store.collections.cards.get(`practice-issue-flows-${number}`)
+      if (card?.kind !== "workflow-list") return "Open the issue's flows and try again."
+      await ctx.dispatch({ type: "card.upsert", actor: ctx.actor(), card: { ...card, payload: { ...card.payload, research: result } } }).isPersisted.promise
+      if (name === "repro") await finish("issue.researched", playthrough)
+      return readResult(result)
+    }
+  }
+}

@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test"
 import { createAppStore } from "../AppStore"
 import { initialGuide } from "../AppState"
-import { createGitHubSeam, INSTALL_VERIFY_PATH } from "./GitHubSeam"
+import { createGitHubSeam, GITHUB_APP_INSTALL_URL, INSTALL_VERIFY_PATH } from "./GitHubSeam"
 import type { SeamContext } from "./SeamContext"
 
 /*
@@ -22,7 +22,7 @@ const setup = async (answer: () => Response, step = INSTALL_STEP) => {
     store, baseUrl: "", dispatch: store.dispatch, actor: () => "user", nextOrdinal: () => 1,
     http: async (input: RequestInfo | URL) => { requested.push(String(input)); return answer() }
   } as unknown as SeamContext
-  return { store, requested, seam: createGitHubSeam(ctx) }
+  return { store, requested, ctx, seam: createGitHubSeam(ctx) }
 }
 const settle = async () => { for (let i = 0; i < 20; i++) await new Promise(resolve => setTimeout(resolve, 0)) }
 
@@ -85,5 +85,39 @@ test("with the settle subscription wired, a verified return completes the lesson
   expect(guide?.repo).toBe("acme/api")
   expect(loaded).toBeLessThan(4)
   for (const subscription of subscriptions) subscription.unsubscribe()
+  await store.dispose?.()
+})
+
+
+test("the registered install page opens only after durable state has settled", async () => {
+  const { store, ctx } = await setup(() => Response.json({ repos: [] }))
+  await store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-in", login: "ada", allowlisted: true, admin: false, scopesPlain: null }).isPersisted.promise
+  const events: string[] = []
+  const wrapped = { ...ctx, store: { ...store, settled: async () => { await store.settled?.(); events.push("persisted") } } }
+  const seam = createGitHubSeam(wrapped, { openExternal: async url => { events.push(url); return true } })
+  await seam.openInstall()
+  expect(events).toEqual(["persisted", `${GITHUB_APP_INSTALL_URL}?state=onboarding%3A0`])
+  expect(GITHUB_APP_INSTALL_URL).toBe("https://github.com/apps/smitherspreviewrelease/installations/new")
+  await store.dispose?.()
+})
+
+test("a callback from an earlier playthrough never verifies or adopts a repository", async () => {
+  const { store, seam, requested } = await setup(() => Response.json({ repos: [{ fullName: "acme/api" }] }))
+  seam.handleInstallReturn("?installation_id=42&setup_action=install&state=onboarding%3A99")
+  await settle()
+  expect(requested).toEqual([])
+  expect(store.session().guide?.completed).not.toContain("github.app.installed")
+  expect(store.session().guide?.notice).toContain("earlier tutorial")
+  await store.dispose?.()
+})
+
+test("returning with no imported repositories verifies a newly installed source repository", async () => {
+  const { store, seam, requested } = await setup(() => Response.json({ repos: [{ fullName: "ada/new-repo", pushedAt: "2026-09-12T00:00:00Z" }] }))
+  await store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-in", login: "ada", allowlisted: true, admin: false, scopesPlain: null }).isPersisted.promise
+  expect(store.collections.repositories.size).toBe(0)
+  await seam.settleInstallLesson()
+  expect(requested).toEqual([INSTALL_VERIFY_PATH])
+  expect(store.session().guide?.completed).toContain("github.app.installed")
+  expect(store.session().guide?.repo).toBe("ada/new-repo")
   await store.dispose?.()
 })

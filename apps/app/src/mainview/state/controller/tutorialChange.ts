@@ -25,6 +25,11 @@ export interface TutorialChangeController {
 }
 
 type RunCard = Extract<Card, { kind: "run-trace" }>
+/** What an already-started plan answers: the run it became and where that run stands, never a refusal. */
+const startedPlanState = (card: RunCard): string => {
+  const started = card.payload.input?.started as { runId?: string } | undefined
+  return started?.runId === undefined ? "This plan was already started." : `This plan was already started as run ${started.runId}; its card shows the run.`
+}
 const reducedMotion = (): boolean => globalThis.matchMedia?.("(prefers-reduced-motion: reduce)").matches === true
 /** The replay's first journal time: step and event times are offsets from it. */
 const journalStart = (practiceJournal.events[0]?.occurredAt as number | undefined) ?? 0
@@ -67,7 +72,8 @@ export const createTutorialChangeController = (ctx: ControllerContext, flows: Wo
   /** Beat 6: replay the recorded run over about ten seconds (at once with reduced motion), then the commit list. */
   const startPractice = async (card: RunCard): Promise<string | { readonly value: string }> => {
     const playthrough = ctx.store.session().guide?.playthrough ?? 0
-    await ctx.store.dispatch({ type: "card.updated", actor: ctx.commandActor, id: card.id, patch: { status: "acted" } }).isPersisted.promise
+    await ctx.store.dispatch({ type: "card.updated", actor: ctx.commandActor, id: card.id,
+      patch: { status: "acted", payload: { ...card.payload, input: { ...card.payload.input, started: { runId: PRACTICE_RUN_ID, cardId: PRACTICE_CARD.run } } } } }).isPersisted.promise
     const plan = card.payload.input?.plan
     const events = practiceJournal.events as Array<Record<string, unknown>>
     const offset = (record: Record<string, unknown>) => (record.occurredAt as number) - journalStart
@@ -141,7 +147,8 @@ export const createTutorialChangeController = (ctx: ControllerContext, flows: Wo
   }
   const startTutorialChange: TutorialChangeController["startTutorialChange"] = async cardId => {
     const card = ctx.store.collections.cards.get(cardId)
-    if (card?.kind !== "run-trace" || card.payload.kind !== "change-plan" || card.status !== "active") return "This plan is no longer available to start."
+    if (card?.kind !== "run-trace" || card.payload.kind !== "change-plan") return "This plan is no longer available to start."
+    if (card.status !== "active") return { value: startedPlanState(card) }
     // The practice repository needs no account: its run is a recorded replay (SCRIPT v4 §4).
     if (card.payload.input?.practice === true && isPracticeRepo(card.payload.repo)) {
       try { return await startPractice(card) } catch (error) { return error instanceof Error ? error.message : String(error) }
@@ -154,14 +161,30 @@ export const createTutorialChangeController = (ctx: ControllerContext, flows: Wo
       const session = ctx.store.session()
       if (!scope || scope.repoKey !== session.activeRepoKey || scope.playthrough !== (session.guide?.playthrough ?? 0) || scope.accountEpoch !== ctx.accountEpoch || scope.accountLogin !== ctx.store.collections.identitySessions.get("identity")?.login) return "The repository or tutorial changed; request a new plan."
       // Consume before awaiting the seam: concurrent activation cannot execute twice.
-      await ctx.store.dispatch({ type: "card.updated", actor: ctx.commandActor, id: cardId, patch: { status: "acted" } }).isPersisted.promise
-      await post("preflight", { repo: card.payload.repo, plan })
-      const provisioned = await flows.provisionWorkspace(card.payload.repo)
-      if (provisioned !== true) throw new Error(provisioned)
-      const launched = await flows.launchWorkflow({ repo: card.payload.repo, workflow: "tutorial-change", title: plan.changes[0]!.title,
-        kind: "change", input: { ...card.payload.input, plan } })
-      if ("message" in launched) throw new Error(launched.message)
-      return { value: `Started change run ${launched.runId}.` }
+      const { error: _stale, ...payload } = card.payload
+      await ctx.store.dispatch({ type: "card.upsert", actor: ctx.commandActor, card: { ...card, status: "acted", payload } }).isPersisted.promise
+      try {
+        await post("preflight", { repo: card.payload.repo, plan })
+        const provisioned = await flows.provisionWorkspace(card.payload.repo)
+        if (provisioned !== true) throw new Error(provisioned)
+        const launched = await flows.launchWorkflow({ repo: card.payload.repo, workflow: "tutorial-change", title: plan.changes[0]!.title,
+          kind: "change", input: { ...card.payload.input, plan } })
+        if ("message" in launched) throw new Error(launched.message)
+        const runCard = [...ctx.store.collections.cards.values()].find(candidate =>
+          candidate.kind === "run-trace" && candidate.payload.runId === launched.runId && candidate.payload.repo === card.payload.repo)
+        const current = ctx.store.collections.cards.get(cardId)
+        if (current?.kind === "run-trace") await ctx.store.dispatch({ type: "card.updated", actor: "system", id: cardId, patch: { payload: {
+          ...current.payload, input: { ...current.payload.input, started: { runId: launched.runId, ...(runCard === undefined ? {} : { cardId: runCard.id }) } } } } }).isPersisted.promise
+        return { value: `Started change run ${launched.runId}.` }
+      } catch (error) {
+        // Nothing launched: the plan keeps its door, and the card says why the start stopped.
+        const message = error instanceof Error ? error.message : String(error)
+        const current = ctx.store.collections.cards.get(cardId)
+        if (current?.kind === "run-trace" && current.payload.input?.started === undefined) {
+          await ctx.store.dispatch({ type: "card.updated", actor: "system", id: cardId, patch: { status: "active", payload: { ...current.payload, error: message } } }).isPersisted.promise
+        }
+        throw error
+      }
     } catch (error) { return error instanceof Error ? error.message : String(error) }
   }
   const finishTutorialChange: TutorialChangeController["finishTutorialChange"] = async cardId => {

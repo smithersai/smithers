@@ -4,8 +4,8 @@
  * at 1280x800 in the light theme with reduced motion and a fake clock, and
  * writes one screenshot per beat to apps/app/tutorial2-shots/.
  *
- * Beats 0–9 run on the bundled practice repository and must make ZERO
- * requests off this machine: the walk records every request and asserts it.
+ * Beats 0–9 call the anonymous live API through deterministic test doubles.
+ * No test requests leave this machine; every operation is recorded and checked.
  * No lesson signal is injected: every check comes from the real producer.
  * Beats 10–12 cross the boundary doubles in tutorial-stubs.ts.
  *
@@ -18,7 +18,6 @@ import { join } from "node:path"
 import { GUIDE_STAGES, lessonMessage, lessonText } from "../../src/mainview/onboarding/lessons"
 import { REEL_BUTTON } from "../../src/mainview/onboarding/reel"
 import commitsFixture from "../../src/mainview/state/practice/hello-server/commits.json"
-import stack23 from "../../src/mainview/state/practice/hello-server/stacks/2-3.json"
 import { INSTALLED_REPO, launchedFlows, stubTutorialHost, TUTORIAL_LOGIN, type TutorialHost } from "./tutorial-stubs"
 
 /* Playwright loads specs as CommonJS, so the output directory resolves from __dirname. */
@@ -74,7 +73,7 @@ const boot = async (page: Page, baseURL: string | undefined): Promise<TutorialHo
   await shell(page).waitFor()
   await expect(shell(page)).toHaveAttribute("data-theme", "light")
   const now = await page.evaluate(() => Date.now())
-  await page.clock.pauseAt(new Date(now + 5))
+  await page.clock.pauseAt(new Date(now + 1000))
   if (await stageOf(page) === 0) {
     await page.getByRole("button", { name: "Start tutorial" }).click()
     await advanceTo(page, 1)
@@ -87,7 +86,8 @@ const rebooted = (page: Page) => pumpUntil(page, "the app is back after the hop"
 /** The line equals the table's copy, and each pill shows its label and its key chip. */
 const expectBeat = async (page: Page, step: number, guide: { repo?: string; declined?: Array<string> } = {}) => {
   await atStage(page, step)
-  await expect(line(page, step)).toHaveText(lessonMessage(step, guide))
+  if (lessonMessage(step, guide) === "") await expect(line(page, step)).toHaveCount(0)
+  else await expect(line(page, step)).toHaveText(lessonMessage(step, guide))
   const lesson = GUIDE_STAGES[step]!
   if (lesson.kind !== "do") return
   for (const action of lesson.actions) {
@@ -106,6 +106,7 @@ const expectBeat = async (page: Page, step: number, guide: { repo?: string; decl
 /** A do-beat by its key: the real producer's check and follow-up line land; the 0.9 s hold has not fired yet. */
 const doBeat = async (page: Page, step: number, key: string) => {
   await page.keyboard.press(key)
+  if (GUIDE_STAGES[step]?.message === "") { await atStage(page, step + 1); return }
   await until(page, followup(page, step).locator(".guide-step-done"), `beat ${step} is checked`)
   const lesson = GUIDE_STAGES[step]!
   if (lesson.kind === "do" && lesson.success !== undefined) await expect(followup(page, step)).toContainText(lesson.success)
@@ -115,15 +116,15 @@ const goalMark = (page: Page, goal: string): Locator => page.locator(`.guide-goa
 
 /** Keyboard through the practice beats to the picker (beat 8). */
 const toPicker = async (page: Page) => {
-  for (const [step, key] of [[1, "i"], [2, "r"], [3, "p"], [4, "o"], [5, "f"], [6, "g"], [7, "t"]] as const) {
+  for (const [step, key] of [[1, "i"], [2, "r"], [3, "e"], [4, "r"], [5, "f"], [6, "g"], [7, "d"], [8, "o"]] as const) {
     await atStage(page, step)
     await doBeat(page, step, key)
   }
-  await atStage(page, 8)
+  await atStage(page, 9)
   await expect(card(page, "commit-pick")).toBeVisible()
 }
 
-test("the whole tutorial walks every beat, keyboard first, offline through beat 9", async ({ page, baseURL }) => {
+test("the whole tutorial walks every beat, keyboard first, through asynchronous live API doubles", async ({ page, baseURL }) => {
   const host = await boot(page, baseURL)
 
   // Beat 0: both greeting lines and the goal card with four empty checkpoints; it advances with no input.
@@ -144,7 +145,7 @@ test("the whole tutorial walks every beat, keyboard first, offline through beat 
   await expect(issues.locator("[data-issue]").first()).toHaveAttribute("data-issue", "3")
   await expect(issues.locator('[data-issue="3"]')).toHaveAttribute("data-good-first", "true")
   await expect(issues.locator('[data-issue="3"] [data-label="good first issue"]')).toBeVisible()
-  await expect(issues.locator("[data-practice]")).toHaveText("Practice")
+  await expect(issues.locator("[data-practice]")).toHaveCount(0)
 
   // Beat 2: Read issue #3 · R — the body shows the bug; the Issue checkpoint fills.
   await expectBeat(page, 2)
@@ -154,44 +155,42 @@ test("the whole tutorial walks every beat, keyboard first, offline through beat 
   await expect(goalMark(page, "issue")).toHaveAttribute("data-done", "true")
   await shoot(page, 2)
 
-  // Beat 3: Show pull requests · P — Mira's logging PR touches server.ts, not hello.ts.
+  // Issue navigation keeps the list's frame; the official flow view shows the actual repro prompt.
+  await expect(card(page, "issue-list")).toHaveCount(0)
+  await expect(card(page, "issue")).toHaveCount(1)
+  await expect(card(page, "issue").getByRole("button", { name: "Back in frame" })).toBeEnabled()
   await expectBeat(page, 3)
-  await doBeat(page, 3, "p")
-  // The GitHub-style row (cards/LandingCards.tsx): title, number, author and the branch it comes from.
-  await expect(card(page, "pr-list")).toContainText("Add request logging")
-  await expect(card(page, "pr-list")).toContainText("#4")
-  await expect(card(page, "pr-list")).toContainText("Mira Chen")
-  await expect(card(page, "pr-list")).toContainText("mira/request-logging")
-  await expect(card(page, "pr-list").locator("[data-landing-files]")).toContainText("src/server.ts")
+  await doBeat(page, 3, "e")
+  const flowView = card(page, "workflow-list")
+  await expect(flowView).toContainText("issue.repro")
+  await expect(flowView).toContainText("Do not implement the fix")
   await shoot(page, 3)
 
-  // Beat 4: Open hello.ts · O — the file card is anchored on line 2.
   await expectBeat(page, 4)
-  await doBeat(page, 4, "o")
-  const file = card(page, "file")
-  await expect(file).toContainText("src/hello.ts")
-  await expect(file.locator('[data-line="2"]')).toBeVisible()
-  await expect(file).toContainText("`Hello, ${name}!`")
+  await doBeat(page, 4, "r")
+  await expect(card(page, "run-trace")).toContainText("Relevant source: src/hello.ts")
+  expect(host.live.find(call => call.operation === "research")).toBeDefined()
   await shoot(page, 4)
 
-  // Beat 5: Plan the fix · F — three commits in order, tagged optional / required / recommended.
+  // Beat 5: Plan the fix · F — three commits in order, returned by the live planning operation.
   await expectBeat(page, 5)
   await doBeat(page, 5, "f")
   const plan = page.locator('[data-tutorial-cards] [data-testid="card-practice-plan"]')
-  await expect(plan.locator("[data-planned-commit]")).toHaveCount(3)
-  await expect(plan.locator("[data-planned-commit]")).toHaveText([/Document the \/hello default in README.*optional/, /Default greet\(\) name to "world".*required/, /Test \/hello without a name.*recommended/])
-  await expect(plan.locator('[data-plan-check="npm-test"]')).toContainText("npm test")
+  await expect(plan).toContainText("Document the /hello default in README")
+  await expect(plan).toContainText('Default greet() name to "world"')
+  await expect(plan).toContainText("Test /hello without a name")
   await expect(goalMark(page, "plan")).toHaveAttribute("data-done", "true")
   await shoot(page, 5)
 
-  // Beat 6: Go ahead · G — the recorded run: red before green, three commits whose ids equal commits.json.
+  // Beat 6: Go ahead · G — the asynchronous implementation returns three fixture-derived commits.
   await expectBeat(page, 6)
   await doBeat(page, 6, "g")
   const run = page.locator('[data-tutorial-cards] [data-testid="card-flow-run-practice-fix-hello-3"]')
-  await expect(run.locator("[data-run-steps]")).toContainText("3 commits on smithers/fix-hello-3")
-  const steps = await run.locator("[data-run-steps] li").allTextContents()
-  expect(steps.indexOf("Fails on the old code: Hello, null! (expected)")).toBeLessThan(steps.indexOf("2 tests pass"))
-  expect(steps.indexOf("Fails on the old code: Hello, null! (expected)")).toBeGreaterThanOrEqual(0)
+  await expect(run).toContainText("3 commits on smithers/fix-hello-3")
+  expect(host.live.find(call => call.operation === "implement")?.body.planId).toBe("fixture-live-plan")
+  await expect(plan.getByRole("button", { name: "Start implementation", exact: true })).toHaveCount(0)
+  await expect(plan).toContainText("Implementation started")
+  expect(host.livePolls.length).toBeGreaterThanOrEqual(6)
   const picker = card(page, "commit-pick")
   await expect(picker.locator("[data-commit-id]")).toHaveCount(3)
   expect(await picker.locator("[data-commit-id]").evaluateAll(nodes => nodes.map(node => node.getAttribute("data-commit-id"))))
@@ -199,48 +198,31 @@ test("the whole tutorial walks every beat, keyboard first, offline through beat 
   await expect(goalMark(page, "commits")).toHaveAttribute("data-done", "true")
   await shoot(page, 6)
 
-  // Beat 7: Open the trace · T — the src/hello.ts edit turn: its source and its calls; ↓ moves the selection.
+  // Review the diff, then open the file inside that frame.
   await expectBeat(page, 7)
-  await doBeat(page, 7, "t")
-  const selectedTurn = run.locator('.run-turn[aria-pressed="true"]')
-  await expect(selectedTurn).toContainText("Edit src/hello.ts")
-  await expect(run.getByRole("region", { name: "Recorded turn source" })).toContainText(`name || "world"`)
-  await expect(run.locator('[data-trace-span][data-kind="call"]').first()).toBeVisible()
+  await doBeat(page, 7, "d")
+  const diff = card(page, "diff")
+  await expect(diff).toContainText("src/hello.ts")
   await shoot(page, 7)
-  await page.keyboard.press("ArrowDown")
-  await until(page, run.locator('.run-turn[aria-pressed="true"]', { hasText: "Document the default in the README." }), "the down arrow selects the next turn")
-  await page.keyboard.press("ArrowUp")
-  await until(page, run.locator('.run-turn[aria-pressed="true"]', { hasText: "Edit src/hello.ts" }), "the up arrow selects the edit turn")
-
-  // Beat 8: uncheck the README commit with 1; 2 is locked; Make the Change · M turns the picker into the stack.
   await expectBeat(page, 8)
+  await doBeat(page, 8, "o")
+  await expect(card(page, "diff")).toHaveCount(0)
+  await expect(card(page, "file")).toContainText('name || "world"')
+  await expect(card(page, "file").getByRole("button", { name: "Back in frame" })).toBeEnabled()
+  await shoot(page, 8)
+
+  // Beat 9: uncheck the README commit with 1; Make the Change sends the selected actual commits.
+  await expectBeat(page, 9)
   await page.keyboard.press("1")
   await until(page, picker.locator('[data-pick-row="1"][data-picked="false"]'), "row 1 unchecks")
-  await page.keyboard.press("2")
-  await tick(page)
-  await expect(picker.locator('[data-pick-row="2"]')).toHaveAttribute("data-picked", "true")
-  await shoot(page, 8)
-  await doBeat(page, 8, "m")
+  await shoot(page, 9)
+  await doBeat(page, 9, "m")
   const change = card(page, "change")
   await expect(card(page, "commit-pick")).toHaveCount(0)
-  await expect(change.getByTestId("change-stack-header")).toHaveText("Change #1 · stack of 2 · target main · checks ✓ · Practice")
-  await expect(change.locator(".change-stack")).toHaveAttribute("data-stack-size", "2")
-  await expect(change.locator(".change-stack")).toHaveAttribute("data-target", "main")
-  await expect(change.locator('[data-stack-row="1"] .change-stack-message')).toHaveText(`Default greet() name to "world"`)
-  await expect(change.locator('[data-stack-row="2"] .change-stack-message')).toHaveText("Test /hello without a name")
-  await expect(change).not.toContainText("Document the /hello default in README")
-  for (const [position, row] of stack23.rows.entries()) {
-    const chip = change.locator(`[data-stack-row="${position + 1}"] .change-stack-rebased`)
-    await expect(chip).toHaveAttribute("data-from", row.rebased.from)
-    await expect(chip).toHaveAttribute("data-to", row.rebased.to)
-    await expect(change.locator(`[data-stack-row="${position + 1}"]`)).toHaveAttribute("data-change-id", row.changeId)
-  }
-  await expect(followup(page, 8)).toContainText("Rebased 2 commits onto main. Change #1 is ready for review.")
+  await expect(change).toContainText("2 commits selected for review")
+  expect(host.live.find(call => call.operation === "change")?.body.commitIds).toEqual(commitsFixture.commits.slice(1).map(commit => commit.commitId))
   await expect(page.locator(".guide-goal")).toHaveAttribute("data-goal-state", "complete")
 
-  // Beat 9: the loop, named; the goal card is complete. Nothing has left the machine since beat 0.
-  await expectBeat(page, 9)
-  await shoot(page, 9)
   expect(host.external()).toEqual([])
 
   // Beat 10: the bridge. The practice chip gives way to "Your repository"; Log in · L, Not now · X.
@@ -257,18 +239,27 @@ test("the whole tutorial walks every beat, keyboard first, offline through beat 
   // Beat 11: Install the GitHub App · A — GitHub's page, then the setup-URL return, verified on the server.
   await expectBeat(page, 11)
   await shoot(page, 11)
+  const beforeInstallUrl = page.url()
+  const popupReady = page.context().waitForEvent("page")
   await page.keyboard.press("a")
-  await rebooted(page)
+  await pumpUntil(page, "GitHub install page opens", async () => host.installed)
+  const installPage = await popupReady
+  await installPage.waitForLoadState("domcontentloaded")
+  expect(installPage.url()).toContain("github.com/apps/smitherspreviewrelease/installations/new")
+  await installPage.close()
+  await page.bringToFront()
+  await page.evaluate(() => window.dispatchEvent(new Event("focus")))
+  expect(page.url()).toBe(beforeInstallUrl)
   await until(page, followup(page, 11), "the install is verified")
   await expect(followup(page, 11)).toContainText(`I can see ${INSTALLED_REPO}.`)
-  expect(host.verifyCalls).toBe(1)
+  expect(host.verifyCalls).toBeGreaterThanOrEqual(1)
   await expect(page.locator(".guide-repo-chip[data-your-repo]")).toHaveText(INSTALLED_REPO)
   expect(new URL(page.url()).search).toBe("")
 
   // Beat 12: Create Wiki · W, Create Mythical history · H — two launches, two chips, no run card opened.
   await expectBeat(page, 12, { repo: INSTALLED_REPO })
   await expect(page.locator(".guide-primary-subtitle")).toHaveText("On its own branch. Your branches stay untouched.")
-  await page.keyboard.press("w")
+  await page.keyboard.press("b")
   await until(page, page.locator('[data-run-chip="wiki"]'), "the Wiki run chip")
   await page.keyboard.press("h")
   await until(page, page.locator('[data-run-chip="history"]'), "the history run chip")
@@ -287,7 +278,7 @@ test("the whole tutorial walks every beat, keyboard first, offline through beat 
   await shoot(page, 13)
   await page.keyboard.press("Escape")
   await gone(page, palette, "Escape closes the palette")
-  await expect(followup(page, 13)).toContainText("That's me. Esc closes it.")
+  await expect(followup(page, 13)).toContainText("Type a message here, or choose Dictation to speak. Escape closes Chat.")
 
   // Beat 14: terminal, on acme/api, with the run chips still in the chrome and the reel on E.
   await expectBeat(page, 14, { repo: INSTALLED_REPO })
@@ -301,7 +292,7 @@ test("the whole tutorial walks every beat, keyboard first, offline through beat 
   await shoot(page, 14)
 })
 
-test.describe("beat 8: all four picks keep the fix and precompute the stack", () => {
+test.describe("beat 9: four commit selections are sent to the live Change operation", () => {
   const cases = [
     { pick: [2, 3], toggle: ["1"], size: 2, rebased: 2, line: "Rebased 2 commits onto main. Change #1 is ready for review." },
     { pick: [1, 2, 3], toggle: [], size: 3, rebased: 0, line: "Already in order. Change #1 is a stack of 3." },
@@ -309,7 +300,7 @@ test.describe("beat 8: all four picks keep the fix and precompute the stack", ()
     { pick: [2], toggle: ["1", "3"], size: 1, rebased: 1, line: "Rebased 1 commit onto main. Change #1 is ready for review." },
   ] as const
   for (const row of cases) {
-    test(`{${row.pick.join(", ")}}: stack of ${row.size}, ${row.rebased} rebased`, async ({ page, baseURL }) => {
+    test(`{${row.pick.join(", ")}}: ${row.size} commits sent to live Change`, async ({ page, baseURL }) => {
       const host = await boot(page, baseURL)
       await toPicker(page)
       for (const key of row.toggle) await page.keyboard.press(key)
@@ -317,36 +308,38 @@ test.describe("beat 8: all four picks keep the fix and precompute the stack", ()
       await page.keyboard.press("m")
       const change = card(page, "change")
       await until(page, change, "the stack view")
-      await expect(change.locator(".change-stack")).toHaveAttribute("data-stack-size", String(row.size))
-      const messages = await change.locator(".change-stack-row").evaluateAll(nodes =>
-        nodes.map(node => [Number(node.getAttribute("data-stack-row")), node.querySelector(".change-stack-message")?.textContent ?? ""] as const)
-          .sort((a, b) => a[0] - b[0]).map(([, message]) => message))
-      expect(messages).toEqual(row.pick.map(index => commitsFixture.commits[index - 1]!.message))
-      await expect(change.locator(".change-stack-rebased")).toHaveCount(row.rebased)
-      await expect(followup(page, 8)).toContainText(row.line)
+      await expect(change).toContainText(`${row.size} commits selected for review`)
+      expect(host.live.find(call => call.operation === "change")?.body.commitIds).toEqual(row.pick.map(index => commitsFixture.commits[index - 1]!.commitId))
       expect(host.external()).toEqual([])
     })
   }
 
-  test("the locked fix stays in, and Back from the stack view restores the picker with the previous pick", async ({ page, baseURL }) => {
+  test("live implementation commits can be selected individually and Back restores the previous pick", async ({ page, baseURL }) => {
     await boot(page, baseURL)
     await toPicker(page)
     await page.keyboard.press("2")
     await tick(page)
     const pickRow = (index: number) => card(page, "commit-pick").locator(`[data-pick-row="${index}"]`)
-    await expect(pickRow(2)).toHaveAttribute("data-picked", "true")
+    await expect(pickRow(2)).toHaveAttribute("data-picked", "false")
     await page.keyboard.press("1")
     await until(page, pickRow(1).and(page.locator('[data-picked="false"]')), "row 1 unchecks")
     await page.keyboard.press("m")
     await until(page, card(page, "change"), "the stack view")
-    await until(page, followup(page, 8), "the Change is recorded")
+    await until(page, followup(page, 9), "the Change is recorded")
     await page.keyboard.press("ArrowLeft")
     await until(page, card(page, "commit-pick"), "Back restores the picker")
-    await expect(shell(page)).toHaveAttribute("data-stage", "8")
+    await expect(shell(page)).toHaveAttribute("data-stage", "9")
     await expect(pickRow(1)).toHaveAttribute("data-picked", "false")
-    await expect(pickRow(2)).toHaveAttribute("data-picked", "true")
+    await expect(pickRow(2)).toHaveAttribute("data-picked", "false")
     await expect(pickRow(3)).toHaveAttribute("data-picked", "true")
-    await expect(followup(page, 8)).toHaveCount(0)
+    await expect(followup(page, 9)).toHaveCount(0)
+    await page.reload()
+    await rebooted(page)
+    await atStage(page, 9)
+    await until(page, card(page, "commit-pick"), "the restored picker finishes hydrating")
+    await expect(pickRow(1)).toHaveAttribute("data-picked", "false")
+    await expect(pickRow(2)).toHaveAttribute("data-picked", "false")
+    await expect(pickRow(3)).toHaveAttribute("data-picked", "true")
   })
 })
 
@@ -401,19 +394,20 @@ test.describe("escape hatches", () => {
 
 test("every practice pill, clicked, calls the same flow as its key", async ({ page, baseURL }) => {
   const host = await boot(page, baseURL)
-  for (const step of [1, 2, 3, 4, 5, 6, 7]) {
+  for (const step of [1, 2, 3, 4, 5, 6, 7, 8]) {
     await atStage(page, step)
     const lesson = GUIDE_STAGES[step]!
     if (lesson.kind !== "do") throw new Error(`beat ${step} asks for no action`)
     await page.locator(`.guide-actions button.guide-primary[data-flow="${lesson.actions[0]!.flow}"]`).click()
-    await until(page, followup(page, step).locator(".guide-step-done"), `beat ${step} is checked`)
+    if (lesson.message === "") await atStage(page, step + 1)
+    else await until(page, followup(page, step).locator(".guide-step-done"), `beat ${step} is checked`)
   }
-  await atStage(page, 8)
+  await atStage(page, 9)
   await card(page, "commit-pick").locator('[data-pick-row="1"] input').click()
   await until(page, card(page, "commit-pick").locator('[data-pick-row="1"][data-picked="false"]'), "the checkbox unchecks row 1")
   await page.locator('.guide-actions button.guide-primary[data-flow="change.open"]').click()
   await until(page, card(page, "change"), "the stack view")
-  await expect(card(page, "change").locator(".change-stack")).toHaveAttribute("data-stack-size", "2")
+  await expect(card(page, "change")).toContainText("2 commits selected for review")
   expect(host.external()).toEqual([])
 })
 
@@ -446,11 +440,46 @@ test("@live beats 10–12 cross the real login, install check and background lau
     await expect(followup(page, 11).or(page.locator("[data-notice]"))).toBeVisible({ timeout: 120_000 })
     if (await followup(page, 11).count() === 1) {
       await atStage(page, 12)
-      await page.keyboard.press("w")
+      await page.keyboard.press("b")
       await page.keyboard.press("h")
       await expect(page.locator("[data-run-chip]").or(page.locator("[data-tutorial-cards] .smithers-card")).first()).toBeVisible({ timeout: 120_000 })
     }
   } finally {
     await context.close()
   }
+})
+
+
+test("live plan and implementation remain readable on a phone", async ({ page, baseURL }) => {
+  await page.setViewportSize({ width: 390, height: 844 })
+  const host = await boot(page, baseURL)
+  for (const [step, key] of [[1, "i"], [2, "r"], [3, "e"], [4, "r"], [5, "f"]] as const) {
+    await atStage(page, step)
+    await doBeat(page, step, key)
+  }
+  const research = page.locator('[data-tutorial-cards] [data-testid="card-live-tutorial-research"]')
+  await research.getByRole("tab", { name: "Transcript", exact: true }).click()
+  await until(page, research.locator(".flow-run-transcript"), "signed-out research transcript opens")
+  await expect(research).toContainText("research complete")
+  await research.getByRole("tab", { name: "Trace", exact: true }).click()
+  await until(page, research.locator(".live-tutorial-events"), "research trace returns")
+  const plan = page.locator('[data-tutorial-cards] [data-testid="card-practice-plan"]')
+  await plan.scrollIntoViewIfNeeded()
+  await page.screenshot({ path: "/tmp/smithers-live-plan-mobile.png" })
+  expect((await plan.boundingBox())!.width).toBeLessThanOrEqual(390)
+  expect(await plan.evaluate(node => getComputedStyle(node.querySelector(".live-tutorial-run")!).textAlign)).toBe("left")
+  expect(await plan.evaluate(node => getComputedStyle(node.querySelector(".live-tutorial-plan ol")!).listStyleType)).toBe("decimal")
+  await atStage(page, 6)
+  await doBeat(page, 6, "g")
+  const run = page.locator('[data-tutorial-cards] [data-testid="card-flow-run-practice-fix-hello-3"]')
+  await run.scrollIntoViewIfNeeded()
+  await page.screenshot({ path: "/tmp/smithers-live-result-mobile.png" })
+  await expect(run).toContainText("Tests passed")
+  await run.getByRole("tab", { name: "Transcript", exact: true }).click()
+  await until(page, run.locator('.flow-run-transcript'), "the live transcript is visible")
+  await expect(run.locator(".flow-run-transcript")).toContainText("implement complete")
+  await run.getByRole("tab", { name: "Trace", exact: true }).click()
+  await until(page, run.locator('.live-tutorial-events'), "the live trace is visible again")
+  expect(host.rpc).toHaveLength(0)
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
 })

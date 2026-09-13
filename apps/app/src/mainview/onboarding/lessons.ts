@@ -1,5 +1,5 @@
 import { REEL_BUTTON } from "./reel.ts"
-import { PRACTICE_CARD, PRACTICE_EDIT_FRAME, PRACTICE_REPO, PRACTICE_RUN_ID } from "../state/practice/PracticeRepository.ts"
+import { PRACTICE_CARD, PRACTICE_REPO } from "../state/practice/PracticeRepository.ts"
 
 /*
  * Onboarding tutorial, script v4 (~/Desktop/smithers-tutorial/SCRIPT.md).
@@ -25,7 +25,7 @@ export type GuideLesson = {
   /** The terminal line after an escape hatch: login declined, or install declined. */
   variants?: { readonly login: string; readonly install: string }
 } | {
-  kind: "do"; message: string; completion: string
+  kind: "do"; message: string; tip?: string; completion: string
   /** Screen-reader description of the pill (aria-describedby); never rendered as numbered steps. */
   instruction: string
   actions: readonly GuideAction[]
@@ -37,7 +37,7 @@ export type GuideLesson = {
   success?: string
   /** Auto-skipped after the matching escape hatch. */
   requires?: "signed-in" | "installed"
-  /** A practice beat: offline, bundled, and "Skip practice" (Q) is offered. */
+  /** An example-repository beat; Skip tutorial (Q) is offered. */
   practice?: true
   skippable: false
 }
@@ -47,31 +47,33 @@ export const GUIDE_STAGES: readonly GuideLesson[] = [
   /* 0 */ { kind: "do", message: "I'm Smithers, I help your team manage your repository.", completion: "tutorial.started", skippable: false,
     instruction: "Starts the tutorial.",
     actions: [{ label: "Start tutorial", key: "T", flow: "onboarding.act", args: "start" }] },
-  /* 1 */ { kind: "do", practice: true, message: "Someone on the team filed a bug. Let's look at the issues.", completion: "issues.opened", skippable: false,
+  /* 1 */ { kind: "do", practice: true, message: "", tip: "We are in an example repo to show how you use Smithers. At all times Smithers will suggest next actions to you which you can select via hitting the key on the button.", completion: "issues.opened", skippable: false,
     instruction: "Lists the practice repository's open issues.",
     actions: [{ label: "Show issues", key: "I", flow: "issues.list", args: `open ${PRACTICE_REPO}` }] },
-  /* 2 */ { kind: "do", practice: true, goal: "issue", message: "Number 3 looks small. Let's read it.", completion: "issue.opened", skippable: false,
+  /* 2 */ { kind: "do", practice: true, goal: "issue", message: "", completion: "issue.opened", skippable: false,
     instruction: "Opens issue #3 with its body.",
     actions: [{ label: "Read issue #3", key: "R", flow: "issues.view", args: `3 ${PRACTICE_REPO}` }] },
-  /* 3 */ { kind: "do", practice: true, message: "Before we start, let's check nobody's already fixing it.", completion: "prs.opened", skippable: false,
-    instruction: "Lists the practice repository's pull requests.", success: "Mira's on logging, not greetings. It's ours.",
-    actions: [{ label: "Show pull requests", key: "P", flow: "prs.list", args: PRACTICE_REPO }] },
-  /* 4 */ { kind: "do", practice: true, message: "The greeting lives in src/hello.ts. Take a look.", completion: "file.opened", skippable: false,
-    instruction: "Opens src/hello.ts at line 2.", success: "Line 2. With no name, it prints null.",
-    actions: [{ label: "Open hello.ts", key: "O", flow: "files.read", args: `src/hello.ts:2 ${PRACTICE_REPO}` }] },
-  /* 5 */ { kind: "do", practice: true, goal: "plan", message: "I plan before I touch code. Want a plan for the fix?", completion: "plan.ready", skippable: false,
-    instruction: "Smithers plans three commits for the fix.",
-    actions: [{ label: "Plan the fix", key: "F", flow: "agent.change", args: `${PRACTICE_REPO} --feature Fix #3` }] },
-  /* 6 */ { kind: "do", practice: true, goal: "commits", message: "Three small commits. Should I go ahead?", completion: "commits.made", skippable: false,
-    instruction: "Smithers makes the three commits while you watch.", success: "Done. Every commit passes on its own.",
-    actions: [{ label: "Go ahead", key: "G", flow: "agent.change.start", args: PRACTICE_CARD.plan }] },
-  /* 7 */ { kind: "do", practice: true, message: "Every turn I take leaves a trace. Open it and check my work.", completion: "trace.opened", skippable: false,
-    instruction: "Opens the turn that edited src/hello.ts. Up and down arrows move between turns.",
-    actions: [{ label: "Open the trace", key: "T", flow: "runs.trace.select", args: `${PRACTICE_RUN_ID} ${PRACTICE_EDIT_FRAME}` }] },
-  /* 8 */ { kind: "do", practice: true, goal: "change", message: "A Change is what reviewers see: the commits you pick, stacked in order. I'd leave out the README note so this one is only about the bug.", completion: "change.opened", skippable: false,
-    instruction: "Opens a Change with the checked commits. Keys 1 to 3 toggle rows.",
+  /* 3 */ { kind: "do", practice: true, message: "Issue flows handle repeatable tasks. Let's inspect repro before running it.", completion: "issue.flows.opened", skippable: false,
+    instruction: "Opens the issue's existing flows and the repro prompt.",
+    actions: [{ label: "View issue flows", key: "E", flow: "issue.flows", args: `3 ${PRACTICE_REPO}` }] },
+  /* 4 */ { kind: "do", practice: true, message: "Research first: reproduce the report and check the relevant source, tests, and pull requests.", completion: "issue.researched", skippable: false,
+    instruction: "Runs the example issue's repro flow and shows its research.",
+    actions: [{ label: "Run repro", key: "R", flow: "issue.repro", args: `3 ${PRACTICE_REPO}` }] },
+  /* 5 */ { kind: "do", practice: true, goal: "plan", message: "Implement starts with a plan. Review it before the agent changes code.", completion: "plan.ready", skippable: false,
+    instruction: "Asks the agent to implement issue #3, beginning with a plan for review.",
+    actions: [{ label: "Implement fix", key: "F", flow: "issue.implement", args: `3 ${PRACTICE_REPO}` }] },
+  /* 6 */ { kind: "do", practice: true, goal: "commits", message: "Review the plan, then approve the implementation.", completion: "commits.made", skippable: false,
+    instruction: "Approves the plan and asks the agent to make the commits.", success: "The implementation is ready to review.",
+    actions: [{ label: "Approve implementation", key: "G", flow: "agent.change.start", args: PRACTICE_CARD.plan }] },
+  /* 7 */ { kind: "do", practice: true, message: "Review the implementation diff.", completion: "diff.opened", skippable: false,
+    instruction: "Shows the changes recorded by the implementing agent.",
+    actions: [{ label: "View diff", key: "D", flow: "files.implementation-diff" }] },
+  /* 8 */ { kind: "do", practice: true, message: "Open the changed file from the diff to read it in context.", completion: "diff.file.opened", skippable: false,
+    instruction: "Opens the fixed src/hello.ts inside the diff frame. Back returns to the diff.",
+    actions: [{ label: "Open hello.ts", key: "O", flow: "files.open-diff", args: JSON.stringify({ cardId: "practice-implementation-diff", path: "src/hello.ts" }) }] },
+  /* 9 */ { kind: "do", practice: true, goal: "change", message: "A Change is what reviewers see. Choose the commits you want to include, then create the Change.", completion: "change.opened", skippable: false,
+    instruction: "Opens a Change with the checked commits. Number keys toggle the matching rows.",
     actions: [{ label: "Make the Change", key: "M", flow: "change.open", args: "{picked}" }] },
-  /* 9 */ { kind: "say", message: "That's the whole loop: issue, plan, commits, Change. Nicely done." },
   /* 10 */ { kind: "do", message: "That was practice. Everything you just did works on your own code. First, log in to GitHub.", completion: "identity.signed-in", skippable: false,
     instruction: "Signs in with GitHub. Nothing is shared before you approve it on GitHub.",
     actions: [{ label: "Log in to GitHub", key: "L", flow: "auth.sign-in" }],
@@ -82,10 +84,10 @@ export const GUIDE_STAGES: readonly GuideLesson[] = [
     secondary: { label: "Later", key: "Z", flow: "onboarding.act", args: "decline install" } },
   /* 12 */ { kind: "do", requires: "installed", message: "I can study {repo} in the background. Start a Wiki that explains the code, and a Mythical history of how it got here.", completion: "librarian.runs.launched", skippable: false,
     instruction: "Starts both background flows on your repository.", success: "Both are running. I'll tell you when they're done.",
-    actions: [{ label: "Create Wiki for {repo}", key: "W", flow: "wiki.create", args: "{repo}" },
+    actions: [{ label: "Create Wiki for {repo}", key: "B", flow: "wiki.create", args: "{repo}" },
       { label: "Create Mythical history", key: "H", flow: "history.bootstrap", args: "{repo}", subtitle: "On its own branch. Your branches stay untouched." }] },
-  /* 13 */ { kind: "do", message: "Last thing: press ⌘K anytime to ask me or run anything.", completion: "palette.opened", skippable: false,
-    instruction: "Opens the command palette. Escape closes it.", success: "That's me. Esc closes it.",
+  /* 13 */ { kind: "do", message: "If you ever need to just chat with me rather than using the fast controls or UI to interact you can always hit command k. From there you can type any message.\n\nYou can also choose Dictation in the bottom bar to speak your message. Review the text, then send it.", completion: "palette.opened", skippable: false,
+    instruction: "Opens Chat. Escape closes it.", success: "Type a message here, or choose Dictation to speak. Escape closes Chat.",
     actions: [{ label: "Press", key: "⌘K", flow: "palette.open" }] },
   /* 14 */ { kind: "say", terminal: true, optionalAction: REEL_BUTTON,
     message: "You're set. Your Wiki and history will land soon. When you're ready, pick one of {repo}'s issues and we'll make a real Change.",

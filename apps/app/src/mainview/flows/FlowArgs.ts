@@ -17,6 +17,14 @@
 
 /** The typed input of every flow a card raises with structured values. */
 export interface FlowInput {
+  readonly "tutorial.live.inspect": { readonly cardId: string; readonly eventId: string }
+  readonly "files.open-diff": { readonly cardId: string; readonly path: string }
+  readonly "issue.flows": { readonly number: number; readonly repo?: string }
+  readonly "issue.repro": { readonly number: number; readonly repo?: string }
+  readonly "issue.poc": { readonly number: number; readonly repo?: string }
+  readonly "issue.implement": { readonly number: number; readonly repo?: string }
+  readonly "issue.add-flow": { readonly number: number; readonly repo?: string; readonly description?: string }
+
   /** Source-qualified launch uses the existing plan/approval/run path. */
   readonly "flow.run": {
     readonly name: string
@@ -92,6 +100,13 @@ const line = (...parts: ReadonlyArray<string | undefined>): string =>
  * of the line.
  */
 const ENCODERS: { readonly [N in FlowWithInput]: (payload: Payload) => string } = {
+  "tutorial.live.inspect": (payload) => line(token(payload, "cardId"), token(payload, "eventId")),
+  "files.open-diff": (payload) => JSON.stringify(payload),
+  "issue.flows": (payload) => line(token(payload, "number"), token(payload, "repo")),
+  "issue.repro": (payload) => line(token(payload, "number"), token(payload, "repo")),
+  "issue.poc": (payload) => line(token(payload, "number"), token(payload, "repo")),
+  "issue.implement": (payload) => line(token(payload, "number"), token(payload, "repo")),
+  "issue.add-flow": (payload) => JSON.stringify(payload),
   "flow.run": (payload) => line(keyed(payload, "sourceCard"), token(payload, "name"), token(payload, "repo"),
     payload.input === undefined ? undefined : JSON.stringify(payload.input)),
   "change.diff": (payload) => line(token(payload, "changeId"), token(payload, "from"), token(payload, "to"), token(payload, "path")),

@@ -152,7 +152,7 @@ const startRelay = (gatewayUrl: string): Promise<{ url: string; close: () => voi
 
 const program = Effect.gen(function*() {
   const gateway = yield* HttpServer.HttpServer
-  if (gateway.address._tag !== "TcpAddress") throw new Error("no gateway address")
+  if (gateway.address._tag !== "InetAddressV4" && gateway.address._tag !== "InetAddressV6") throw new Error("no gateway address")
   const gatewayUrl = `http://127.0.0.1:${gateway.address.port}`
   const relay = yield* Effect.promise(() => startRelay(gatewayUrl))
   yield* Effect.addFinalizer(() => Effect.sync(relay.close))

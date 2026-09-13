@@ -142,9 +142,10 @@ export const runsFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> => 
     handler: ({ runId, toolNames, sourceCard }) => actions.steerRunTools(runId, toolNames, sourceCard)
   }),
   flow({
+    /* The practice run's transcript is its bundled journal; every other run's is the gateway's projection. */
     name: "runs.logs",
     summary: "Show a run's transcript on its card (--follow keeps it live)",
-    runtime: ["cloud"],
+    runtimeAny: ["cloud", "practice"],
     args: "[sourceCard=id] <runId> [--follow]",
     requires: ["signed-in"],
     input: Schema.Struct({
@@ -158,7 +159,7 @@ export const runsFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> => 
     name: "runs.steps",
     summary: "Show a run's steps on its card",
     form: { fields: { runId: { label: "Run", kind: "text" } } },
-    runtime: ["cloud"],
+    runtimeAny: ["cloud", "practice"],
     args: "[sourceCard=id] <runId>",
     input: Schema.Struct({ sourceCard: Schema.optional(Schema.String), runId: Schema.String }),
     handler: ({ runId, sourceCard }) => actions.showRunSteps(runId, sourceCard)
@@ -169,12 +170,13 @@ export const runsFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> => 
    * the click, the keyboard and the slash door all dispatch through the
    * registry, and the state they change lives in the card payload (§5), never
    * in the component. These reads are available to the agent in the same
-   * embedded card; they never maximize a surface.
+   * embedded card; they never maximize a surface. Each reads the journal
+   * already on the card, so the bundled practice run answers them too.
    */
   flow({
     name: "runs.trace.filter",
     summary: "Filter a run's trace: all, running, failed, model, flow, forks or messages",
-    runtime: ["cloud"],
+    runtimeAny: ["cloud", "practice"],
     hidden: true,
     args: "[sourceCard=id] <runId> <all|running|failed|model|flow|forks|messages>",
     input: Schema.Struct({
@@ -196,7 +198,7 @@ export const runsFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> => 
   flow({
     name: "runs.coding.select",
     summary: "Inspect or collapse a predicted Change in a coding run",
-    runtime: ["cloud"],
+    runtimeAny: ["cloud", "practice"],
     hidden: true,
     args: "[sourceCard=id] <runId> <changeId>",
     input: Schema.Struct({ sourceCard: Schema.optional(Schema.String), runId: Schema.String, changeId: Schema.String }),
@@ -205,7 +207,7 @@ export const runsFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> => 
   flow({
     name: "runs.trace.view",
     summary: "Show a run's turn explanations or full execution timeline in its embedded card",
-    runtime: ["cloud"],
+    runtimeAny: ["cloud", "practice"],
     hidden: true,
     args: "[sourceCard=id] <runId> <turns|timeline>",
     input: Schema.Struct({ sourceCard: Schema.optional(Schema.String), runId: Schema.String, view: Schema.Literals(["turns", "timeline"]) }),
@@ -214,7 +216,7 @@ export const runsFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> => 
   flow({
     name: "runs.trace.live",
     summary: "Return a run's trace to its latest recorded turn",
-    runtime: ["cloud"],
+    runtimeAny: ["cloud", "practice"],
     hidden: true,
     args: "[sourceCard=id] <runId>",
     input: Schema.Struct({ sourceCard: Schema.optional(Schema.String), runId: Schema.String }),

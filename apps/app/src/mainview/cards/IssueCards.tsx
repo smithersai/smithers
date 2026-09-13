@@ -9,6 +9,7 @@
  * issues.link-linear. Every interactive element carries data-flow with its
  * registered command name.
  */
+import { flowArgs } from "../flows/FlowArgs"
 import { Button, Markdown } from "@smthrs/ui"
 import { useState } from "react"
 import type { Card } from "../state/AppState"
@@ -211,6 +212,13 @@ export const IssueCardBody = ({
           </span>
         </div>
       </header>
+      <nav className="ghc-actions" aria-label="Issue actions">
+        <Button size="sm" variant="outline" data-flow="issue.flows" onClick={() => onRunCommand("issue.flows", flowArgs("issue.flows", { number, repo }))}>Issue flows</Button>
+        <Button size="sm" variant="outline" data-flow="issue.repro" onClick={() => onRunCommand("issue.repro", flowArgs("issue.repro", { number, repo }))}>Research / repro</Button>
+        <Button size="sm" variant="outline" data-flow="issue.poc" onClick={() => onRunCommand("issue.poc", flowArgs("issue.poc", { number, repo }))}>Proof of concept</Button>
+        <Button size="sm" data-flow="issue.implement" onClick={() => onRunCommand("issue.implement", flowArgs("issue.implement", { number, repo }))}>Implement</Button>
+        <Button size="sm" variant="outline" data-flow="issue.add-flow" onClick={() => onRunCommand("issue.add-flow", flowArgs("issue.add-flow", { number, repo }))}>Add flow</Button>
+      </nav>
       <div className="ghc-detail-grid">
         <div className="ghc-detail-main">
           <CommentBox author={author} avatarUrl={extra.authorAvatar} createdAt={extra.createdAt} verb="opened this issue">

@@ -1,5 +1,6 @@
+import { publishIssueView } from "../EmbeddedHistory"
 import { isPracticeRepo } from "../practice/PracticeRepository"
-import { finishIssueLesson, practiceViewIssue, tutorialRepositoryRead, type RepositoryForm } from "./tutorial2-issues_prs"
+import { mutatePracticeIssue, finishIssueLesson, practiceViewIssue, tutorialRepositoryRead, type RepositoryForm } from "./tutorial2-issues_prs"
 /*
  * The issues seam: /api/repos/{owner}/{repo}/issues* through the product
  * Worker's platform proxy. List and detail render as cards ("issue-list",
@@ -317,7 +318,7 @@ export const createIssuesSeam = (ctx: SeamContext, renderRepositoryForm?: Reposi
     if (payload === null) {
       return `The backend answered issue #${number} in ${repo} with an unreadable payload`
     }
-    await upsert({
+    await publishIssueView(ctx, {
       id: `issue-${repo}-${number}`,
       kind: "issue",
       title: `Issue #${number} · ${repo}`,
@@ -433,6 +434,7 @@ export const createIssuesSeam = (ctx: SeamContext, renderRepositoryForm?: Reposi
     },
 
     setIssueState: async (number, state, explicitRepo) => {
+      if (isPracticeRepo(explicitRepo)) return mutatePracticeIssue(ctx, number, payload => ({ ...payload, state }))
       const target = resolveTargetRepo(ctx.store, explicitRepo)
       if ("error" in target) return target.error
       const { repo } = target
@@ -461,6 +463,8 @@ export const createIssuesSeam = (ctx: SeamContext, renderRepositoryForm?: Reposi
     },
 
     commentOnIssue: async (number, text, explicitRepo) => {
+      if (text.trim() === "") return "Write a comment before posting it."
+      if (isPracticeRepo(explicitRepo)) return mutatePracticeIssue(ctx, number, payload => ({ ...payload, comments: [...payload.comments, { author: ctx.store.collections.identitySessions.get("identity")?.login ?? "You", commentBody: text.trim(), createdAt: new Date().toISOString() }] }))
       const target = resolveTargetRepo(ctx.store, explicitRepo)
       if ("error" in target) return target.error
       const { repo } = target

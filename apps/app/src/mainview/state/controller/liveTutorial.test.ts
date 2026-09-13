@@ -1,0 +1,138 @@
+import { expect, test } from "bun:test"
+import { createAppStore } from "../AppStore"
+import { initialGuide } from "../AppState"
+import { memoryStorage } from "../TestFixtures"
+import type { ControllerContext } from "./context"
+import { createLiveTutorialController, liveSnapshotOf } from "./liveTutorial"
+import { PRACTICE_CARD } from "../practice/PracticeRepository"
+import { createDiffFilesSeam, PRACTICE_DIFF_CARD } from "../seams/DiffFilesSeam"
+import { createGuideController } from "./guide"
+import type { LiveTutorialRun } from "@smthrs/rpc/LiveTutorial"
+const base = "a".repeat(40), sha = "b".repeat(40)
+const plan = { id: "live-plan-id", title: "Fix the missing greeting", summary: "Handle absent and empty names", baseCommitId: base, steps: ["Reproduce both cases", "Implement fallback", "Run the tests"], files: ["src/hello.ts"] }
+const complete = (operation: LiveTutorialRun["operation"]): LiveTutorialRun => ({ sessionId: "session", runId: `run-${operation}`, operation, phase: "completed", createdAt: 1, updatedAt: 2, result: "Actual agent result", events: [{ id: "step-1", label: "Inspect source", status: "completed", startedAt: 1, finishedAt: 2, detail: "Source read" }],
+  ...(operation === "plan" ? { plan } : {}),
+  ...(operation === "implement" ? { plan, baseCommitId: base, branch: "fix/live", commits: [{ commitId: sha, parentCommitId: base, message: "Default missing greetings", files: ["src/hello.ts"], additions: 1, deletions: 1 }],
+    diff: [{ path: "src/hello.ts", changeType: "modified", additions: 1, deletions: 1, isBinary: false, patch: "@@ -1 +1 @@\n-old\n+new" }], files: { "src/hello.ts": 'export const greet = (name) => `Hello, ${name || "world"}!`' }, tests: { command: "node --test", exitCode: 0, output: "3 tests pass" } } : {}),
+  ...(operation === "change" ? { change: { id: "live-change", title: "Fix greetings", summary: "Handle missing names", baseCommitId: base, commitIds: [sha] } } : {}) })
+async function setup(answer: (operation: LiveTutorialRun["operation"], body: Record<string, unknown>) => Promise<LiveTutorialRun> = async op => complete(op)) {
+  const storage = memoryStorage()
+  const store = await createAppStore({ kind: "localStorage", storage })
+  const calls: Array<{ operation: string; body: Record<string, unknown> }> = []
+  const dispose: Array<() => void> = []
+  const ctx = { store, commandActor: "user", baseUrl: "", onDispose: (fn: () => void) => { dispose.push(fn) }, boundedFetch: async (url: string, init: RequestInit) => {
+    const operation = url.split("/").at(-1)! as LiveTutorialRun["operation"]
+    const body = JSON.parse(String(init.body))
+    calls.push({ operation, body })
+    return Response.json(await answer(operation, body), { status: 202 })
+  }, errorMessageOf: async () => "Unavailable" } as unknown as ControllerContext
+  const live = createLiveTutorialController(ctx, store.nextOrdinal)
+  const step = async (step: number) => { await store.dispatch({ type: "guide.changed", actor: "user", guide: { ...(store.session().guide ?? initialGuide()), step } }).isPersisted.promise }
+  return { store, storage, calls, ctx, live, step, dispose: () => dispose.forEach(fn => fn()) }
+}
+test("anonymous live plan→implementation uses real results once, and diff/file/Change preserve those revisions", async () => {
+  const t = await setup()
+  await t.step(5)
+  expect(await t.live.plan()).toEqual({ value: "Live plan completed." })
+  expect(t.store.session().guide?.completed).toContain("plan.ready")
+  expect(t.store.collections.identitySessions.get("identity")?.state).not.toBe("signed-in")
+  await t.step(6)
+  await t.live.implement(PRACTICE_CARD.plan)
+  await t.live.implement(PRACTICE_CARD.plan)
+  expect(t.calls.filter(call => call.operation === "implement")).toHaveLength(1)
+  expect(t.calls.find(call => call.operation === "implement")?.body.planId).toBe(plan.id)
+  const picker = t.store.collections.cards.get(PRACTICE_CARD.commits)
+  expect(picker?.kind === "commit-pick" && picker.payload.rows[0]?.commitId).toBe(sha)
+  expect(t.store.session().guide?.completed).toContain("commits.made")
+  await t.step(7)
+  await t.live.showDiff()
+  await t.step(8)
+  const files = createDiffFilesSeam({ store: t.store, dispatch: t.store.dispatch, actor: () => "user", nextOrdinal: t.store.nextOrdinal, baseUrl: "", http: async () => { throw Error("must use actual saved run files") } })
+  await files.openDiffFile(PRACTICE_DIFF_CARD, "src/hello.ts")
+  const file = t.store.collections.cards.get(PRACTICE_DIFF_CARD)
+  expect(file?.kind === "file" && file.payload.readAt?.commitId).toBe(sha)
+  expect(file?.kind === "file" && file.payload.content).toContain('name || "world"')
+  await t.step(9)
+  await t.live.createChange([sha])
+  expect(t.store.collections.cards.get(PRACTICE_CARD.commits)?.kind).toBe("change")
+  await createGuideController(t.ctx).guideAct("back")
+  const restored = t.store.collections.cards.get(PRACTICE_CARD.commits)
+  expect(restored?.kind === "commit-pick" && restored.payload.rows[0]?.commitId).toBe(sha)
+  t.dispose()
+})
+test("failed tests never complete implementation or invent commits", async () => {
+  const t = await setup(async operation => operation === "implement" ? { ...complete(operation), tests: { command: "node --test", exitCode: 1, output: "missing name failed" } } : complete(operation))
+  await t.step(5); await t.live.plan(); await t.step(6)
+  expect(typeof await t.live.implement(PRACTICE_CARD.plan)).toBe("string")
+  expect(t.store.session().guide?.completed).not.toContain("commits.made")
+  expect(t.store.collections.cards.has(PRACTICE_CARD.commits)).toBe(false)
+  t.dispose()
+})
+test("a response from an earlier playthrough cannot complete a restarted tutorial", async () => {
+  let release!: () => void
+  const gate = new Promise<void>(resolve => { release = resolve })
+  const t = await setup(async operation => { await gate; return complete(operation) })
+  await t.step(5)
+  const request = t.live.plan()
+  await t.store.settled?.()
+  await t.store.dispatch({ type: "guide.changed", actor: "user", guide: { ...initialGuide(), playthrough: 2 } }).isPersisted.promise
+  release(); await request
+  expect(t.store.session().guide?.completed).not.toContain("plan.ready")
+  expect(liveSnapshotOf(t.store.collections.cards.get(PRACTICE_CARD.plan))).toBeUndefined()
+  t.dispose()
+})
+
+test("reload reconnects a lost response with its persisted request key", async () => {
+  const t = await setup(async () => { throw Error("Connection lost after the server accepted the run") })
+  await t.step(5)
+  await t.live.plan()
+  const requestKey = t.calls[0]!.body.idempotencyKey
+  t.dispose()
+  const restored = await createAppStore({ kind: "localStorage", storage: t.storage })
+  let reconnectKey: unknown
+  const ctx = { ...t.ctx, store: restored, boundedFetch: async (_url: string, init: RequestInit) => {
+    reconnectKey = JSON.parse(String(init.body)).idempotencyKey
+    return Response.json(complete("plan"))
+  } } as ControllerContext
+  const live = createLiveTutorialController(ctx, restored.nextOrdinal)
+  live.resume()
+  for (let attempt = 0; attempt < 30; attempt++) {
+    if (restored.session().guide?.completed?.includes("plan.ready")) break
+    await new Promise(resolve => setTimeout(resolve, 10))
+  }
+  expect(reconnectKey).toBe(requestKey)
+  expect(restored.session().guide?.completed).toContain("plan.ready")
+  t.dispose()
+})
+
+test("reload reconciles a saved completed snapshot before its guide and artifact effects persisted", async () => {
+  const t = await setup()
+  await t.step(5); await t.live.plan(); await t.step(6); await t.live.implement(PRACTICE_CARD.plan)
+  await t.store.dispatch({ type: "guide.changed", actor: "user", guide: { ...t.store.session().guide!, step: 6, completed: t.store.session().guide!.completed!.filter(signal => signal !== "commits.made") } }).isPersisted.promise
+  const interrupted = t.store.collections.cards.get(PRACTICE_CARD.run)!
+  if (interrupted.kind !== "run-trace") throw Error("expected implementation run")
+  await t.store.dispatch({ type: "card.upsert", actor: "system", card: { ...interrupted, payload: { ...interrupted.payload, input: { ...interrupted.payload.input, liveTutorialAppliedRun: undefined } } } }).isPersisted.promise
+  const beforeCalls=t.calls.length
+  t.live.resume()
+  for(let i=0;i<30&&!t.store.session().guide?.completed?.includes("commits.made");i++)await new Promise(resolve=>setTimeout(resolve,10))
+  expect(t.store.session().guide?.completed).toContain("commits.made")
+  expect(t.calls.length).toBe(beforeCalls)
+  await t.step(9);await t.live.createChange([sha])
+  t.live.resume()
+  await new Promise(resolve=>setTimeout(resolve,30))
+  expect(t.store.collections.cards.get(PRACTICE_CARD.commits)?.kind).toBe("change")
+  await createGuideController(t.ctx).guideAct("back")
+  t.live.resume()
+  await new Promise(resolve => setTimeout(resolve, 30))
+  expect(t.store.collections.cards.get(PRACTICE_CARD.commits)?.kind).toBe("commit-pick")
+  expect(t.store.session().guide?.completed).not.toContain("change.opened")
+  const hydrated = await createAppStore({ kind: "localStorage", storage: t.storage })
+  createLiveTutorialController({ ...t.ctx, store: hydrated }, hydrated.nextOrdinal).resume()
+  await new Promise(resolve => setTimeout(resolve, 30))
+  expect(hydrated.collections.cards.get(PRACTICE_CARD.commits)?.kind).toBe("commit-pick")
+  expect(hydrated.session().guide?.completed).not.toContain("change.opened")
+  await t.live.createChange([sha])
+  expect(t.store.collections.cards.get(PRACTICE_CARD.commits)?.kind).toBe("change")
+  expect(t.calls.length).toBe(beforeCalls + 1)
+  t.dispose()
+})

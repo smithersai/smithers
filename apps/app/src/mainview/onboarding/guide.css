@@ -1179,6 +1179,7 @@
 /* One stable transcript; only the newly appended message enters. */
 .guide-transcript {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 16px;
   /*
    * Size to the messages rather than filling the remaining window. The
@@ -1400,11 +1401,6 @@
 
 /* ---- Onboarding script v4 (onboarding/lessons.ts) ---- */
 .guide-repo-chip { display: inline-flex; align-items: center; gap: .4rem; font-weight: 600; }
-.smithers-card-practice {
-  display: inline-block; padding: .05rem .45rem; border-radius: 999px; font-size: var(--fs-small); font-weight: 600;
-  letter-spacing: .02em; color: var(--accent, #6b4fd8); background: color-mix(in srgb, var(--accent, #6b4fd8) 12%, transparent);
-}
-.smithers-card-practice { margin-inline-start: .5rem; }
 .guide-goal {
   margin: 0 0 .75rem; padding: .7rem .9rem; border: 1px solid var(--border, rgba(0,0,0,.12)); border-radius: 12px;
   background: var(--surface, rgba(255,255,255,.7)); animation: guide-goal-in .35s ease-out both;
@@ -1463,3 +1459,9 @@
 
 .guide-composer-layer:has(.guide-dictation-stop) { flex-direction: column; }
 .guide-dictation-stop { display: flex; align-items: center; gap: 8px; padding: 8px 12px !important; color: var(--g-accent) !important; }
+
+.guide-tip { text-align: left; padding: 16px 20px; border-left: 4px solid var(--g-accent); border-radius: 8px; background: color-mix(in srgb, var(--g-accent) 8%, var(--g-panel)); margin: 8px 0 24px; }
+.guide-tip strong { display: block; margin-bottom: 6px; color: var(--g-accent); }
+.guide-tip p { font-size: var(--fs-body); line-height: 1.6; }
+
+.guide-transcript > [data-tutorial-cards] { min-width: 0; }

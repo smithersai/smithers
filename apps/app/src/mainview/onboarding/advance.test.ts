@@ -4,8 +4,8 @@ import { readPause, scheduleGuideAdvance, type GuideClock } from "./advance"
 
 test("every stage declares its kind and every action its completion signal", () => {
   expect(GUIDE_STAGES.map(stage => stage.kind === "do" ? stage.completion : "say")).toEqual([
-    "say", "issues.opened", "issue.opened", "prs.opened", "file.opened", "plan.ready", "commits.made",
-    "trace.opened", "change.opened", "say", "identity.signed-in", "github.app.installed",
+    "tutorial.started", "issues.opened", "issue.opened", "issue.flows.opened", "issue.researched", "plan.ready", "commits.made",
+    "diff.opened", "diff.file.opened", "change.opened", "identity.signed-in", "github.app.installed",
     "librarian.runs.launched", "palette.opened", "say",
   ])
   expect(GUIDE_STAGES).toHaveLength(GUIDE_LESSONS.length)

@@ -267,11 +267,12 @@ describe("launch-law parity: every affordance is a command", () => {
       "../cards/HistoryCard.tsx": 2,
       "../cards/RunTimelineCard.tsx": 1,
       /*
-       * The run trace: filters, presentation, live return, turn rows,
-       * breadcrumbs, tree rows, timeline bars and the recorded child link.
-       * Every button enters onRunCommand and persists in the same card.
+       * The run trace: the live return, the two presentation switches (Turns
+       * and Timeline), the filters, the turn rows, the engine rows, the
+       * breadcrumbs, the tree rows, the timeline bars and the recorded child
+       * link. Every button enters onRunCommand and persists in the same card.
        */
-      "../cards/RunTraceCard.tsx": 9,
+      "../cards/RunTraceCard.tsx": 10,
       /*
        * Lane runs: the run inbox's Open per row, its All/status filter chips,
        * and the Stop-all footer (all through onRunCommand), plus the
@@ -313,7 +314,15 @@ describe("launch-law parity: every affordance is a command", () => {
        * onRunCommand with data-flow set.
        */
       "../cards/ChangeCards.tsx": 21,
-      "../cards/CodingPlanCard.tsx": 3, // runs.coding.select, runs.trace.select, and the tutorial plan's Start (agent.change.start)
+      /*
+       * The plan inside a run card: Inspect review feedback and Inspect failed
+       * execution (runs.trace.select), Vibe this change (flow.run), Check
+       * available flows (flow.list), the predicted Change rows
+       * (runs.coding.select), the tutorial plan's Start (agent.change.start)
+       * and, once started, Open the run (card.maximize) — all through
+       * onRunCommand with data-flow set.
+       */
+      "../cards/CodingPlanCard.tsx": 7,
       "../cards/CodingPocCard.tsx": 2, // Native execution inspection and existing steering form.
       "../cards/CommitPickCard.tsx": 1, // change.open (the checkboxes are change.pick inputs, counted as fields)
       /* The commits cards: a row's and a parent's commits.read, and the sha chip's chat.copy-message — all through onRunCommand. */

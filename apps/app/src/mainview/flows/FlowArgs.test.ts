@@ -134,3 +134,9 @@ test("source-qualified flow input preserves arbitrary JSON", () => {
     `sourceCard=source-card coding/vibe ${JSON.stringify(input)}`, { name: "coding/vibe", sourceCard: "source-card", input })
   expect(payloadFor("flow.list", "sourceCard=source-card")).toEqual({ payload: { sourceCard: "source-card" } })
 })
+
+
+test("opening a diff file preserves a frame id and a path containing spaces", () => {
+  const input = { cardId: "diff-frame", path: "src/my file.ts" }
+  expect(payloadFor("files.open-diff", flowArgs("files.open-diff", input))).toEqual({ payload: input })
+})

@@ -183,6 +183,7 @@ export const FORM_OPTION_PROVIDERS = [
 ] as const
 
 const cardBaseShape = {
+  navigation: z.object({ index: z.number().int().nonnegative(), length: z.number().int().positive() }).optional(),
   id: z.string(),
   title: z.string(),
   body: z.string().optional(),
@@ -636,6 +637,12 @@ const CommitSummarySchema = z.object({
  * @category schemas
  */
 const CurrentCardSchema = z.discriminatedUnion("kind", [
+  z.object({ ...cardBaseShape, kind: z.literal("repo-update"), payload: z.object({
+    repo: z.string(), scope: z.string(), checkedAt: z.number(), summary: z.string(), branch: z.string().optional(),
+    openIssues: z.number().int().nonnegative().nullable(), openPrs: z.number().int().nonnegative().nullable(), problems: z.array(z.string()),
+    items: z.array(z.object({ id: z.string(), version: z.string(), kind: z.enum(["issue", "pr", "notification"]), number: z.number().int().optional(),
+      title: z.string(), state: z.string(), tags: z.array(z.string()), read: z.boolean() }))
+  }) }),
   /* The tutorial's ranked repository chooser and its local-creation receipt. */
   z.object({
     ...cardBaseShape,
@@ -984,8 +991,10 @@ const CurrentCardSchema = z.discriminatedUnion("kind", [
       workspaceId: GatewayWorkspaceIdSchema.optional(),
       /** Version 1 distinguishes a recorded legacy gateway from missing provenance. */
       gatewayBindingVersion: z.literal(1).optional(),
+      issueContext: z.object({ number: z.number(), title: z.string() }).optional(),
+      research: z.string().optional(),
       workflows: z.array(
-        z.object({ key: z.string(), description: z.string().nullable() })
+        z.object({ key: z.string(), description: z.string().nullable(), prompt: z.string().optional() })
       )
     })
   }),

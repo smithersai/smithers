@@ -27,6 +27,7 @@ import { createElement } from "react"
 import { flushSync } from "react-dom"
 import { createRoot } from "react-dom/client"
 import { PLATFORM_PROXY_RULES } from "smithers-server/index"
+import { INSTALLATIONS_PATH } from "smithers-server/githubAppInstall"
 import { RuntimeCapabilitySchema } from "@smthrs/rpc/AppBootstrap"
 import type { AppBootstrap, RuntimeCapability } from "@smthrs/rpc/AppBootstrap"
 import { cloudCapabilities, localCapabilities } from "@smthrs/rpc/HostCapabilities"
@@ -288,6 +289,7 @@ const SEAM_FILES: ReadonlyArray<string> = readdirSync(fileURLToPath(new URL("../
   .map((file) => file.slice(0, -".ts".length))
 
 const proxied = (path: string, method?: string): boolean =>
+  ((method === undefined || method === "GET") && (path === INSTALLATIONS_PATH || path.startsWith(`${INSTALLATIONS_PATH}/`))) ||
   PLATFORM_PROXY_RULES.some((rule) =>
     (method === undefined || rule.methods.includes(method)) &&
     (rule.prefix !== undefined ? path.startsWith(rule.prefix) : rule.exact !== undefined && path === rule.exact)
@@ -305,13 +307,7 @@ const proxied = (path: string, method?: string): boolean =>
  * repository WRITER `POST /api/repos/{o}/{r}/github/reconcile`, a path the
  * Worker already proxies, so `/github.reconcile` works on the web.
  */
-const KNOWN_UNPROXIED: ReadonlyArray<{ readonly path: string; readonly flows: ReadonlyArray<string>; readonly why: string }> = [
-  {
-    path: "/api/user/github-app/installations",
-    flows: ["github.app", "github.app.open", "github.mirror-sync", "github.mirror.retry-ref", "github.reconcile"],
-    why: "the onboarding install beat's setup-URL verification (GitHubSeam.INSTALL_VERIFY_PATH); the route belongs in apps/server and is not deployed yet, so the lesson says so honestly (TUTORIAL2_INTEGRATION.md)"
-  }
-]
+const KNOWN_UNPROXIED: ReadonlyArray<{ readonly path: string; readonly flows: ReadonlyArray<string>; readonly why: string }> = []
 
 describe("host parity — the web and native catalogs against the servers' own capability tables", () => {
   const registries = (async () => ({
