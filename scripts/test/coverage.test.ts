@@ -152,7 +152,7 @@ describe("coverage conformance", () => {
       source: readFileSync(join(packagesDir, "smithers/build/infra/vitest.config.ts"), "utf8")
     }]
   ) {
-    it(`${entry.name} anchors every coverage glob to its config directory`, () => {
+    it(`${entry.name} uses relative coverage globs for Vitest 5`, () => {
       const { source } = entry
 
       const coverage = block(source, "coverage") ?? ""
@@ -163,9 +163,12 @@ describe("coverage conformance", () => {
       ]
       assert.ok(globs.length > 0)
       for (const glob of globs) {
-        // Vitest's contains matcher sees absolute filenames. A relative glob
-        // can match a checkout ancestor and silently empty the denominator.
-        assert.notEqual(glob[1], undefined, glob[0])
+        // Vitest 5 matches paths relative to the project root. Absolute
+        // patterns silently measure no files and pass every threshold.
+        assert.equal(glob[1], undefined, glob[0])
+        for (const [, pattern] of glob[0].matchAll(/"([^"]+)"/g)) {
+          assert.ok(!pattern!.startsWith("/") && !/^[A-Za-z]:/.test(pattern!))
+        }
       }
     })
   }
@@ -200,6 +203,7 @@ describe("coverage conformance", () => {
         : /\benabled:\s*true/
     )
     assert.match(coverage!, /\bprovider:\s*"v8"/)
+    assert.doesNotMatch(coverage!, /\b(?:include|exclude):\s*\[[^\]]*\]\s*\.map\(/)
     const included = [...(/\binclude\s*:\s*\[([^\]]*)\]/.exec(coverage ?? "")?.[1] ?? "")
       .matchAll(/"([^"]+)"/g)].map((match) => match[1]!)
     assert.equal(included.some((entry) => entry === "src/**" || entry === "src/**/*.ts"), true)
@@ -248,6 +252,7 @@ describe("coverage conformance", () => {
     for (
       const mutated of [
         coverage.replace("\"src/**\"", "\"src/One.ts\""),
+        coverage.replace("[\"src/**\"]", "[\"src/**\"].map((pattern) => join(import.meta.dirname, pattern))"),
         coverage.replace("[\"src/**\"]", "[\"src/**\", \"!src/Hidden.ts\"]"),
         coverage.replace("enabled: true", "enabled: false"),
         coverage.replace("provider: \"v8\"", "provider: \"istanbul\""),
@@ -487,12 +492,12 @@ describe("coverage conformance", () => {
       // Canonical capture rejects accessor properties before recursively
       // freezing the captured object graph, so the descriptor walk only sees
       // data properties in both identity implementations.
-      // Graph's four guards defend invariants established by the same build:
+      // Graph's guards defend invariants established by the same build:
       // every node has key material, recorded dependency targets exist, and
       // reachability suppresses duplicate dependencies before conflict edges
       // are added. They remain hard failures if a future pass breaks those
       // invariants.
-      "smithers/flows/core/src/Graph.ts": 4,
+      "smithers/flows/core/src/Graph.ts": 3,
       "smithers/flows/core/src/internal/node.ts": 1,
       // The YAML parser always attaches a position to parser issues and a
       // mapping always converts to a non-null object. Both guards keep the

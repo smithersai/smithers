@@ -1,7 +1,7 @@
 import assert from "node:assert/strict"
 import { readFileSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
-import { join } from "node:path"
+import { basename, join } from "node:path"
 import { test } from "node:test"
 import { planned, resolveInventory, root, runnerFor, targetInvocation } from "../ci-inventory.mjs"
 import { openPackageIndex } from "@smthrs/build-cli/Cli"
@@ -79,7 +79,8 @@ test("required CI resolves package, app, script, evaluation and fault suites to 
   }
   const native = selected("//crates/flows-jj:cargoTest", "rust")
   assert.equal(native.length, 1)
-  assert.deepEqual(native[0].runner, ["cargo", "test", "--workspace", "--locked"])
+  assert.equal(basename(native[0].runner[0]), "cargo")
+  assert.deepEqual(native[0].runner.slice(1), ["test", "--workspace", "--locked"])
   assert.equal(native[0].cwd, ".")
   assert.ok(native[0].inputs.some((input) => input.path === "//Cargo.lock"))
   for (const row of inventory.rows) {
@@ -103,7 +104,7 @@ test("required CI resolves package, app, script, evaluation and fault suites to 
     // while the general NodeTest/Vitest runners always execute fresh work.
     if (["NodeTest", "Vitest"].includes(row.rule)) assert.equal(row.cacheable, false, `${row.label}: review all effective inputs before enabling result reuse`)
   }
-  for (const app of ["server", "ui", "review", "bug-worker", "status-site"]) {
+  for (const app of ["server", "app", "review", "bug-worker", "status-site"]) {
     assert.match(readFileSync(join(root, `apps/${app}/PACKAGE.ts`), "utf8"), /Coverage policy: assertion-only/)
   }
 })

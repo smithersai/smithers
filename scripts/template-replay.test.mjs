@@ -16,7 +16,7 @@ test("the template smoke scaffolds then executes its generated replay, and propa
     const consumer = join(root, "consumer")
     mkdirSync(join(template, "flows/chat"), { recursive: true })
     mkdirSync(join(consumer, "node_modules/.bin"), { recursive: true })
-    const dependencies = { vitest: "4.1.9", "@smthrs/create-app": "1.0.0" }
+    const dependencies = { vitest: "5.0.0", "@smthrs/create-app": "1.0.0" }
     writeFileSync(join(template, "package.json"), JSON.stringify({ name: "__APP_NAME__", private: true,
       type: "module", devDependencies: dependencies }))
     const config = readFileSync(join(repoRoot, "packages/smithers/create-app/template/default/vitest.config.ts"), "utf8")

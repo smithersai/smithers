@@ -3,7 +3,7 @@
  *
  * The fixture is a real git repository carrying the shapes a cut touches: a
  * `pnpm-workspace.yaml`, two members that depend on each other by exact
- * version, the three sources that repeat the release version as a literal, a
+ * version, the sources that repeat the release version as a literal, a
  * `CHANGELOG.md`, and a `v*` tag with commits after it. The scripts under test
  * resolve their repository root from their own location, so the fixture holds
  * copies of them and a run inside it cannot reach this checkout.
@@ -62,7 +62,7 @@ const seed = () => {
     json({
       name: "fixture",
       private: true,
-      packageManager: "pnpm@11.21.0",
+      packageManager: "pnpm@11.25.0",
       workspaces: ["packages/*"],
       repository: { type: "git", url: "git+https://github.com/smithersai/smithers.git" }
     })
@@ -70,13 +70,13 @@ const seed = () => {
   write(
     root,
     "packages/smithers/package.json",
-    json({ name: "@smthrs/cli", version: "0.1.0", dependencies: { "@smthrs/kernel": "0.1.0", effect: "4.0.0-rc.112" } })
+    json({ name: "@smthrs/cli", version: "0.1.0", dependencies: { "@smthrs/kernel": "0.1.0", effect: "4.0.0-rc.115" } })
   )
   write(root, "packages/kernel/package.json", json({ name: "@smthrs/kernel", version: "0.1.0" }))
   write(root, "packages/private/package.json", json({ name: "@smthrs/tooling", private: true, version: "0.0.0" }))
   for (const path of versionedTemplates) {
     write(root, path, json({ name: "__APP_NAME__", private: true, version: "0.0.0",
-      dependencies: { "@smthrs/kernel": "0.1.0", effect: "4.0.0-rc.112" },
+      dependencies: { "@smthrs/kernel": "0.1.0", effect: "4.0.0-rc.115" },
       devDependencies: { "@smthrs/cli": "workspace:*" } }))
   }
   write(root, versionedSources[0].path, "export const defaultServiceVersion = \"0.1.0\"\n")
@@ -86,6 +86,7 @@ const seed = () => {
     versionedSources[2].path,
     "export const tool = { name: \"@smthrs/migrate\", version: \"0.1.0\" } as const\n"
   )
+  write(root, versionedSources[3].path, 'export const clientInfo = { name: "smithers", version: "0.1.0" }\n')
   write(root, "CHANGELOG.md", "# smthrs\n\nPreamble.\n\n## 0.1.0 (2020-01-01)\n\nThe first release.\n")
   execFileSync("pnpm", ["install", "--lockfile-only", "--ignore-scripts"], { cwd: root, stdio: "ignore" })
   execFileSync("bun", ["install", "--lockfile-only", "--ignore-scripts"], { cwd: root, stdio: "ignore" })
@@ -164,12 +165,12 @@ test("a cut bumps every manifest, retargets internal ranges, and writes the sect
 
     assert.equal(manifest(root, "packages/smithers/package.json").version, "0.2.0")
     assert.equal(manifest(root, "packages/smithers/package.json").dependencies["@smthrs/kernel"], "0.2.0")
-    assert.equal(manifest(root, "packages/smithers/package.json").dependencies.effect, "4.0.0-rc.112")
+    assert.equal(manifest(root, "packages/smithers/package.json").dependencies.effect, "4.0.0-rc.115")
     assert.equal(manifest(root, "packages/kernel/package.json").version, "0.2.0")
     assert.equal(manifest(root, "packages/private/package.json").version, "0.0.0", "a private manifest is not bumped")
     for (const path of versionedTemplates) {
       assert.deepEqual(manifest(root, path), { name: "__APP_NAME__", private: true, version: "0.0.0",
-        dependencies: { "@smthrs/kernel": "0.2.0", effect: "4.0.0-rc.112" },
+        dependencies: { "@smthrs/kernel": "0.2.0", effect: "4.0.0-rc.115" },
         devDependencies: { "@smthrs/cli": "0.2.0" } })
     }
     assert.match(readFileSync(join(root, versionedSources[0].path), "utf8"), /"0\.2\.0"/)

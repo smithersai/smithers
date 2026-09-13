@@ -12,8 +12,21 @@ const current = new Map(
   libraryPackages().filter((entry) => !entry.manifest.private).map((entry) => [entry.name, entry])
 )
 const denied = (name) => baseline.removed.filter((entry) => entry.name === name).map((entry) => entry.subpath)
+// The reviewed runtime targets stay fixed; each declaration now follows its
+// runtime branch so Node16 CommonJS consumers do not resolve an ESM declaration.
+const moduleDeclarations = (value) => {
+  if (value === null || typeof value !== "object") return value
+  if (["types", "import", "require"].every((key) => typeof value[key] === "string")) {
+    return {
+      import: { types: value.types, default: value.import },
+      require: { types: value.types.replace("/dist/esm/", "/dist/cjs/"), default: value.require }
+    }
+  }
+  return Object.fromEntries(Object.entries(value).map(([key, entry]) => [key, moduleDeclarations(entry)]))
+}
+const reviewed = (value, mode) => mode === "published" ? moduleDeclarations(value) : value
 const additions = (name, mode) => Object.fromEntries(
-  baseline.added.filter((entry) => entry.name === name).map((entry) => [entry.subpath, entry[mode]])
+  baseline.added.filter((entry) => entry.name === name).map((entry) => [entry.subpath, reviewed(entry[mode], mode)])
 )
 
 describe("explicit public entrypoints", () => {
@@ -35,14 +48,14 @@ describe("explicit public entrypoints", () => {
       assert.ok(manifest, previous.name)
       const removed = denied(previous.name)
       for (const [label, map] of [["development", manifest.exports], ["published", manifest.publishConfig.exports]]) {
-        assert.deepEqual(map, { ...explicitMap(previous[label], previous.subpaths, removed), ...additions(previous.name, label) }, `${previous.name} ${label}`)
+        assert.deepEqual(map, { ...explicitMap(reviewed(previous[label], label), previous.subpaths, removed), ...additions(previous.name, label) }, `${previous.name} ${label}`)
         for (const subpath of previous.subpaths) {
           if (removed.includes(subpath)) {
             assert.equal(exportTarget(map, subpath), null)
           } else {
             assert.deepEqual(
               exportTarget(map, subpath),
-              exportTarget(previous[label], subpath),
+              exportTarget(reviewed(previous[label], label), subpath),
               `${previous.name}${subpath} ${label}`
             )
           }
@@ -55,13 +68,13 @@ describe("explicit public entrypoints", () => {
 
   it("admits only explicitly reviewed additions without rewriting the original surface", () => {
     assert.deepEqual(baseline.added.map(({ name, subpath }) => `${name}${subpath.slice(1)}`).sort(), [
-      "@smthrs/canonical/BoundedJson", "@smthrs/canonical/Record", "@smthrs/control/ApprovalAuthority", "@smthrs/control/DispatchReader", "@smthrs/engine-store/ExecutionSnapshot", "@smthrs/engine-store/PlanInputStore", "@smthrs/engine-store/PlanMergeStore", "@smthrs/engine-store/RunChangeFeed", "@smthrs/journal/EngineEvent", "@smthrs/journal/JournalGeneration", "@smthrs/kernel/ChildProcessEnvironment", "@smthrs/memory/Migrations", "@smthrs/plan/Scheduling", "@smthrs/platform-node/ScopedProcess", "@smthrs/scorers/ScoreGate", "@smthrs/triggers/DispatchReader"
+      "@smthrs/build-cli/TargetIndex", "@smthrs/canonical/BoundedJson", "@smthrs/canonical/Record", "@smthrs/control/ApprovalAuthority", "@smthrs/control/DispatchReader", "@smthrs/database/bun/BunDatabase", "@smthrs/engine-store/EventTypes", "@smthrs/engine-store/ExecutionSnapshot", "@smthrs/engine-store/PlanInputStore", "@smthrs/engine-store/PlanMergeStore", "@smthrs/engine-store/RunChangeFeed", "@smthrs/flows/BunRuntime", "@smthrs/flows/Runtime", "@smthrs/gateway/bun/BunGateway", "@smthrs/journal/EngineEvent", "@smthrs/journal/JournalGeneration", "@smthrs/kernel/ChildProcessEnvironment", "@smthrs/memory/Migrations", "@smthrs/model/ModelCatalog", "@smthrs/plan/Scheduling", "@smthrs/platform-node/ScopedProcess", "@smthrs/scorers/ScoreGate", "@smthrs/std/Relocate", "@smthrs/triggers/DispatchReader"
     ])
     for (const entry of baseline.added) {
       const manifest = current.get(entry.name).manifest
       assert.ok(entry.reason.length > 0)
       assert.deepEqual(exportTarget(manifest.exports, entry.subpath), entry.development)
-      assert.deepEqual(exportTarget(manifest.publishConfig.exports, entry.subpath), entry.published)
+      assert.deepEqual(exportTarget(manifest.publishConfig.exports, entry.subpath), moduleDeclarations(entry.published))
       assert.ok(sourceSubpaths(join(repoRoot, current.get(entry.name).dir)).includes(entry.subpath))
       const original = baseline.packages.find(({ name }) => name === entry.name)
       assert.ok(!original.subpaths.includes(entry.subpath), "an addition must not rewrite a prior entry")

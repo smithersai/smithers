@@ -33,7 +33,7 @@ exists, so bundling establishes no durable-engine support. The
 the status of each runtime, platform and storage combination.
 
 The substrate is a release candidate: every release-1 engine manifest pins
-`effect` to exactly `4.0.0-rc.112`. An upstream defect against that pin is not
+`effect` to exactly `4.0.0-rc.115`. An upstream defect against that pin is not
 fixed by a patch range. `scripts/check-single-effect-version.mjs` enforces the
 one pin across the workspace, and a candidate that moves it records the move as
 a breaking change in [CHANGELOG.md](../CHANGELOG.md).
@@ -142,6 +142,7 @@ only.
 
 | Package | Test | Form |
 | --- | --- | --- |
+| `smithers/flows/platform-bun` | `executes the declared Bun lane in a Bun worker` | `it.skipIf(process.env.SMITHERS_PLATFORM_BUN_LANE === "1")` |
 | `smithers/agent/harness` | `workerd smoke` | `describe.skipIf(FLOWS_WORKERD_SMOKE !== "1")` |
 | `smithers/create-app` | `layerTevm against a mainnet fork` | `it.skip` in `template/aomi` |
 | `smithers/agent/integrations` | `GitHub live contract (GITHUB_TOKEN)` | `describe.skipIf(GITHUB_TOKEN === undefined)` |
@@ -404,3 +405,9 @@ Prefer fixing the defect. If a pin is genuinely the right call:
 
 `node --test scripts/check-test-pins.test.mjs` enforces step 3. Steps 1 and 2
 are review conventions; nothing checks them.
+
+**`platform-bun` — nested runner guard.** The ordinary Node suite starts the
+declared Bun test runner and asserts that its selected test runs inside Bun.
+`SMITHERS_PLATFORM_BUN_LANE=1` prevents that child from starting another child;
+the verification still runs in the default Node suite. This is a recursion
+guard, not an unexecuted compatibility case.

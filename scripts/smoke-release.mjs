@@ -104,7 +104,7 @@ try {
       dependencies: {
         ...releaseDependencies,
         typescript: "7.0.2",
-        vitest: "4.1.9"
+        vitest: "5.0.0"
       }
     }, null, 2)}\n`
   )
@@ -281,22 +281,23 @@ try {
       ""
     ].join("\n")
   )
-  await run(
-    "node",
-    [
-      "node_modules/typescript/bin/tsc",
-      "--noEmit",
-      "--module",
-      "NodeNext",
-      "--moduleResolution",
-      "NodeNext",
-      "--target",
-      "ES2022",
-      "--skipLibCheck",
-      "smoke.mts"
-    ],
-    smokeRoot
-  )
+  await writeFile(join(smokeRoot, "smoke.cts"), [
+    'import Flows = require("@smthrs/flows")',
+    'import Errors = require("@smthrs/errors")',
+    'import Contract = require("@smthrs/kernel/test/contract")',
+    "const publicApi: typeof Flows = Flows",
+    "void publicApi",
+    "void Errors.SmithersError",
+    "void Contract.runHostContract",
+    ""
+  ].join("\n"))
+  for (const module of ["Node16", "NodeNext"]) {
+    await run("node", [
+      "node_modules/typescript/bin/tsc", "--noEmit",
+      "--module", module, "--moduleResolution", module,
+      "--target", "ES2022", "--skipLibCheck", "smoke.mts", "smoke.cts"
+    ], smokeRoot)
+  }
   // All-peers imports alone can conceal an unrelated adapter forced into a
   // library's default install. Certify independent profiles on both managers
   // against these same candidate bytes before issuing the success receipt.

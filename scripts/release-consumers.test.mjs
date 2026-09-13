@@ -70,8 +70,9 @@ test("consumer and packed template requests resolve against a stable-only candid
     for (const name of ["database", "create-app"]) {
       const directory = join(root, name)
       mkdirSync(join(directory, "package/template/default"), { recursive: true })
-      writeFileSync(join(directory, "package/package.json"), JSON.stringify({ name: "@smthrs/" + name, version,
-        dependencies: { effect: "4.0.0-rc.112" } }))
+      writeFileSync(join(directory, "package/package.json"), JSON.stringify({ name: "@smthrs/" + name, version, type: "module", main: "index.js",
+        dependencies: { effect: EXPECTED_EFFECT_VERSION } }))
+      writeFileSync(join(directory, "package/index.js"), "export const installed = true\n")
       writeFileSync(join(directory, "package/template/default/package.json"), JSON.stringify({
         private: true, dependencies: { "@smthrs/database": version }, devDependencies: { "@smthrs/create-app": version }
       }))
@@ -80,9 +81,17 @@ test("consumer and packed template requests resolve against a stable-only candid
       entries.push({ name: "@smthrs/" + name, version, filename })
     }
     mkdirSync(join(root, "effect/package"), { recursive: true })
-    writeFileSync(join(root, "effect/package/package.json"), JSON.stringify({ name: "effect", version: "4.0.0-rc.112" }))
+    writeFileSync(join(root, "effect/package/package.json"), JSON.stringify({ name: "effect", version: EXPECTED_EFFECT_VERSION, type: "module",
+      exports: { "./package.json": "./package.json", "./*": "./*.js" } }))
+    // Minimal local modules let the real copied adapter probe check identity
+    // and the installed-consumer boundary without downloading Effect.
+    for (const module of ["Effect", "Layer", "Schema"]) {
+      writeFileSync(join(root, "effect/package", module + ".js"), module === "Schema"
+        ? "export const String = {}; export const decodeUnknownSync = () => {}\n"
+        : "export {}\n")
+    }
     execFileSync("tar", ["-czf", join(root, "effect.tgz"), "-C", join(root, "effect"), "package"])
-    registry = await releaseRegistry(root, [...entries, { name: "effect", version: "4.0.0-rc.112", filename: "effect.tgz" }])
+    registry = await releaseRegistry(root, [...entries, { name: "effect", version: EXPECTED_EFFECT_VERSION, filename: "effect.tgz" }])
     // All package bytes, including the minimal Effect identity fixture, come
     // from loopback. No existing publication or external install is needed.
     process.env.npm_config_registry = registry.url
@@ -98,7 +107,7 @@ test("consumer and packed template requests resolve against a stable-only candid
       }
     }
     for (const manager of ["npm", "pnpm"]) {
-      const installed = await runConsumerProfile(profiles[0], manager, registry.url)
+      const installed = await runConsumerProfile(profiles[0], manager, registry.url, { runtime: true })
       assert.equal(installed.effectCopies.length, 1)
     }
     writeFileSync(join(root, "create-app/package/template/default/package.json"), JSON.stringify({

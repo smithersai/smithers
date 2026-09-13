@@ -176,6 +176,94 @@
         "require": "./dist/cjs/ChildProcessEnvironment.js"
       },
       "reason": "Retains main's declared child-process environment policy."
+    },
+    {
+      "name": "@smthrs/std",
+      "subpath": "./Relocate",
+      "development": "./src/Relocate.ts",
+      "published": {
+        "types": "./dist/esm/Relocate.d.ts",
+        "import": "./dist/esm/Relocate.js",
+        "require": "./dist/cjs/Relocate.js"
+      },
+      "reason": "Checkpoint input relocation for the supported read and shell flows, including explicit refusal of writes, absolute paths and parent traversal. Covered by Relocate.test.ts against the owning flow input schemas."
+    },
+    {
+      "name": "@smthrs/build-cli",
+      "subpath": "./TargetIndex",
+      "development": "./src/TargetIndex.ts",
+      "published": {
+        "types": "./dist/esm/TargetIndex.d.ts",
+        "import": "./dist/esm/TargetIndex.js",
+        "require": "./dist/cjs/TargetIndex.js"
+      },
+      "reason": "Declaration-derived target listing and text rendering used by the index command; keeps planning, host state and cache digests out of the committed metadata contract."
+    },
+    {
+      "name": "@smthrs/flows",
+      "subpath": "./Runtime",
+      "development": "./src/Runtime.ts",
+      "published": {
+        "types": "./dist/esm/Runtime.d.ts",
+        "import": "./dist/esm/Runtime.js",
+        "require": "./dist/cjs/Runtime.js"
+      },
+      "reason": "Shared durable runtime with injected host and SQL services; NodeRuntime and BunRuntime preserve the same native API over it."
+    },
+    {
+      "name": "@smthrs/flows",
+      "subpath": "./BunRuntime",
+      "development": "./src/BunRuntime.ts",
+      "published": {
+        "types": "./dist/esm/BunRuntime.d.ts",
+        "import": "./dist/esm/BunRuntime.js",
+        "require": "./dist/cjs/BunRuntime.js"
+      },
+      "reason": "Bun lifecycle and database composition over the shared runtime; imported only through its explicit Bun entrypoint."
+    },
+    {
+      "name": "@smthrs/database",
+      "subpath": "./bun/BunDatabase",
+      "development": "./src/bun/BunDatabase.ts",
+      "published": {
+        "types": "./dist/esm/bun/BunDatabase.d.ts",
+        "import": "./dist/esm/bun/BunDatabase.js",
+        "require": "./dist/cjs/bun/BunDatabase.js"
+      },
+      "reason": "Explicit Bun SQLite entrypoint that shares migration and write contracts while keeping bun:sqlite outside the Node root import."
+    },
+    {
+      "name": "@smthrs/model",
+      "subpath": "./ModelCatalog",
+      "development": "./src/ModelCatalog.ts",
+      "published": {
+        "types": "./dist/esm/ModelCatalog.d.ts",
+        "import": "./dist/esm/ModelCatalog.js",
+        "require": "./dist/cjs/ModelCatalog.js"
+      },
+      "reason": "Provider-neutral context window lookup already exposed by the development manifest and root barrel; publication must expose the same public module to installed consumers."
+    },
+    {
+      "name": "@smthrs/engine-store",
+      "subpath": "./EventTypes",
+      "development": "./src/EventTypes.ts",
+      "published": {
+        "types": "./dist/esm/EventTypes.d.ts",
+        "import": "./dist/esm/EventTypes.js",
+        "require": "./dist/cjs/EventTypes.js"
+      },
+      "reason": "Shared persisted journal event names already exposed by current main; replay consumers use this stable identity vocabulary."
+    },
+    {
+      "name": "@smthrs/gateway",
+      "subpath": "./bun/BunGateway",
+      "development": "./src/bun/BunGateway.ts",
+      "published": {
+        "types": "./dist/esm/bun/BunGateway.d.ts",
+        "import": "./dist/esm/bun/BunGateway.js",
+        "require": "./dist/cjs/bun/BunGateway.js"
+      },
+      "reason": "Bun adapter already exposed by current main for the authenticated gateway; it preserves the same protocol and policy as the Node host."
     }
   ],
   "removed": [

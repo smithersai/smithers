@@ -217,17 +217,30 @@ describe("the workspace package contract", () => {
     }
   })
 
-  it("uses no package-manager dependency overrides", () => {
+  it("keeps overrides out of published packages and limits workspace overrides to the Effect train", () => {
     const rootManifest = JSON.parse(readFileSync(join(root, "package.json"), "utf8"))
-    for (const [where, manifest] of [["package.json", rootManifest], ...manifests.map((entry) => [entry.path, entry.manifest])]) {
+    for (const [where, manifest] of manifests.map((entry) => [entry.path, entry.manifest])) {
       assert.equal(manifest.overrides, undefined, `${where} must not use npm overrides`)
       assert.equal(manifest.pnpm?.overrides, undefined, `${where} must not use pnpm overrides`)
     }
-    assert.doesNotMatch(
-      readFileSync(join(root, "pnpm-workspace.yaml"), "utf8"),
-      /^overrides\s*:/m,
-      "pnpm-workspace.yaml must not use dependency overrides"
-    )
+    const expected = Object.fromEntries([
+      "effect", "@effect/opentelemetry", "@effect/platform-bun", "@effect/platform-node",
+      "@effect/platform-node-shared", "@effect/sql-d1", "@effect/sql-sqlite-bun",
+      "@effect/sql-sqlite-do", "@effect/sql-sqlite-node", "@effect/vitest"
+    ].map((name) => [name, effectVersion]))
+    assert.deepEqual(rootManifest.overrides, expected)
+    assert.equal(rootManifest.pnpm?.overrides, undefined)
+    // Workspace locking also covers private tooling. Consumer certification
+    // installs the unchanged tarballs without these overrides.
+    const planner = readFileSync(join(root, "pnpm-workspace.yaml"), "utf8")
+    const block = planner.match(/^overrides:\n((?:[ \t]+.*\n|\n)*)/m)?.[1]
+    assert.ok(block, "pnpm must use the same exact Effect family as npm and Bun")
+    const actual = Object.fromEntries(block.trim().split("\n").map((line) => {
+      const match = line.trim().match(/^['"]?([^'"\s]+)['"]?: ['"]?([^'"\s]+)['"]?$/)
+      assert.ok(match, `unexpected override: ${line}`)
+      return [match[1], match[2]]
+    }))
+    assert.deepEqual(actual, expected)
   })
 
   it("keeps Effect as an exact peer of every library", () => {
@@ -294,9 +307,9 @@ describe("the workspace package contract", () => {
     assert.ok(kernel, "@smthrs/kernel must be publishable")
 
     assert.equal(kernel.manifest.dependencies?.["@smthrs/platform-browser"], undefined)
-    assert.equal(kernel.manifest.devDependencies?.["@smthrs/platform-browser"], releaseVersion)
-    assert.equal(kernel.manifest.peerDependencies?.["@smthrs/platform-browser"], releaseVersion)
-    assert.equal(kernel.manifest.peerDependenciesMeta?.["@smthrs/platform-browser"]?.optional, true)
+    assert.equal(kernel.manifest.devDependencies?.["@smthrs/platform-browser"], undefined)
+    assert.equal(kernel.manifest.peerDependencies?.["@smthrs/platform-browser"], undefined)
+    assert.equal(kernel.manifest.peerDependenciesMeta?.["@smthrs/platform-browser"], undefined)
   })
 
   it("requires the Bun platform peer imported by the root entry point", () => {

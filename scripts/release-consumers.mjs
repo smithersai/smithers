@@ -29,6 +29,7 @@ export const candidateVersion = (entries) => {
 // Temporary projects must select the same pnpm toolchain as the repository.
 // Otherwise a different pnpm on a Node-version PATH can change command support.
 export const releasePackageManager = JSON.parse(readFileSync(resolve(import.meta.dirname, "../package.json"), "utf8")).packageManager
+const installedConsumerDirectory = resolve(import.meta.dirname, "fixtures/installed-consumer")
 const runners = ["vitest", "@effect/vitest", "@smthrs/testing"]
 const nodeRuntime = ["@smthrs/platform-node", "@effect/platform-node", "@effect/platform-node-shared"]
 const nodeAdapters = [...nodeRuntime, "@effect/sql-sqlite-node"]
@@ -68,8 +69,10 @@ export const adapterProfiles = (entries) => {
     {
       name: "cli-default",
       dependencies: { "@smthrs/cli": firstParty, effect },
-      required: ["@effect/platform-node", "@effect/sql-sqlite-node"],
-      absent: [...runners, ...browserAdapters, ...telemetryAdapters],
+      // The executable selects its native host on Node or Bun; libraries keep
+      // their host peers optional, but this command installs both adapters.
+      required: ["@effect/platform-node", "@effect/sql-sqlite-node", "@effect/platform-bun"],
+      absent: [...runners, ...browserAdapters.filter((name) => name !== "@effect/platform-bun"), ...telemetryAdapters],
       imports: ["@smthrs/cli"]
     },
     {
@@ -102,7 +105,7 @@ export const adapterProfiles = (entries) => {
     {
       name: "create-app-testing",
       dependencies: { "@smthrs/create-app": firstParty, "@smthrs/testing": firstParty,
-        "@effect/platform-node": effect, vitest: "4.1.9", effect },
+        "@effect/platform-node": effect, vitest: "5.0.0", effect },
       absent: ["@effect/platform-bun", "@smthrs/platform-bun", "@effect/sql-sqlite-node", ...telemetryAdapters],
       imports: [],
       vitest: true
@@ -285,8 +288,8 @@ export const runConsumerProfile = async (profile, manager, registryUrl, { runtim
           : "for (const name of " + JSON.stringify(profile.imports) + ") require(name)"
         await successful(process.execPath, [...(mode === "esm" ? ["--input-type=module"] : []), "--eval", source], consumer)
       }
-      const fixture = resolve(import.meta.dirname, "installed-consumer/dependency-adapters.mjs")
-      await writeFile(join(consumer, "consumer-boundary.mjs"), await readFile(resolve(import.meta.dirname, "installed-consumer/consumer-boundary.mjs")))
+      const fixture = join(installedConsumerDirectory, "dependency-adapters.mjs")
+      await writeFile(join(consumer, "consumer-boundary.mjs"), await readFile(join(installedConsumerDirectory, "consumer-boundary.mjs")))
       await writeFile(join(consumer, "dependency-adapters.mjs"), await readFile(fixture))
       await successful(process.execPath, ["dependency-adapters.mjs", profile.name], consumer)
       if (profile.name === "browser") {
@@ -296,7 +299,7 @@ export const runConsumerProfile = async (profile, manager, registryUrl, { runtim
       }
       if (profile.name === "bun") await successful("bun", ["dependency-adapters.mjs", profile.name], consumer)
       if (profile.vitest) {
-        await writeFile(join(consumer, "adapter.test.mjs"), await readFile(resolve(import.meta.dirname, "installed-consumer/dependency-testing.mjs")))
+        await writeFile(join(consumer, "adapter.test.mjs"), await readFile(join(installedConsumerDirectory, "dependency-testing.mjs")))
         await successful(join(consumer, "node_modules/.bin/vitest"), ["run", "adapter.test.mjs", "--maxWorkers=1"], consumer)
       }
       if (profile.scaffold) await runTemplateReplay(consumer, profile)

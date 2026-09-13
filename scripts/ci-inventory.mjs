@@ -9,7 +9,7 @@ import * as Cargo from "@smthrs/targets/Cargo"
 import * as NodeBinary from "@smthrs/targets/NodeBinary"
 import * as NodeTest from "@smthrs/targets/NodeTest"
 import * as PackageManager from "@smthrs/targets/PackageManager"
-import * as Target from "@smthrs/targets/Target"
+import * as PackageExec from "@smthrs/build-cli/PackageExec"
 import { isMain, repoRoot } from "./workspace-packages.mjs"
 
 export const root = repoRoot
@@ -67,7 +67,6 @@ export function runnerFor(metadata, workspace, verb) {
 export async function resolveInventory() {
   const workflow = parseWorkflow(readFileSync(resolve(root, ".github/workflows/ci.yml"), "utf8"))
   const index = await openPackageIndex({ workspace: root })
-  const targets = new Map(index.targets().map((row) => [row.label, Target.metadata(row.target)]))
   const selections = new Map()
   const selectionErrors = []
   const rows = []
@@ -84,7 +83,20 @@ export async function resolveInventory() {
         console.error(`Resolving CI selection: ${identity}`)
         try {
           const plan = planned(verb, pattern)
-          selections.set(identity, { roots: plan.roots, targets: plan.targets })
+          // The CLI's package report deliberately omits declaration attrs.
+          // Re-plan locally to resolve the effective metadata of every node,
+          // including anonymous dependencies absent from the public catalog.
+          const native = plan.targets.some((target) => target.attrs === undefined)
+            ? await PackageExec.plan({ index, verb, pattern, cacheDirectory: index.workspace.cache.directory })
+            : undefined
+          const targets = plan.targets.map((target) => {
+            if (target.attrs !== undefined) return target
+            const node = native.nodes.get(target.label)
+            if (node === undefined || node.rule !== target.rule || node.keyPreview !== target.key)
+              throw new Error(`CLI plan disagrees with package metadata: ${target.label}`)
+            return { ...node, ...target }
+          })
+          selections.set(identity, { roots: plan.roots, targets })
         } catch (error) {
           // Retain the other real selections for diagnosis; neither this CLI
           // nor the repo-contract test can pass with an unresolved command.
@@ -102,14 +114,15 @@ export async function resolveInventory() {
         runtimes.push(`Rust ${channel}`)
       }
       for (const selected of plan.targets) {
-        const metadata = targets.get(selected.label)
-        if (!metadata) throw new Error(`Selected target is absent from the discovered catalog: ${selected.label}`)
+        const metadata = selected
+        if (metadata === undefined || typeof metadata.target !== "string" || !Array.isArray(metadata.kinds) || metadata.attrs == null)
+          throw new Error(`Selected target has no runner metadata: ${selected.label}`)
         const attrs = metadata.attrs
         for (const platform of platforms) rows.push({
           job: jobId, step: step.name, trigger: Object.keys(workflow.on), verb, pattern,
           platform: platform.os, required: ![true, "true"].includes(platform.advisory), runtimes,
           label: selected.label, selectedRoot: plan.roots.includes(selected.label),
-          kind: metadata.kinds, rule: metadata.target, runner: runnerFor(metadata, index.workspace, verb),
+          kind: metadata.kinds, rule: metadata.target, runner: selected.argv ?? runnerFor(metadata, index.workspace, verb),
           cwd: metadata.target.startsWith("Cargo.") ? "." : attrs.cwd ?? (selected.label.slice(2).split(":")[0] || "."),
           config: attrs.config ?? attrs.tsconfig ?? null,
           inputs: selected.declaredInputs?.map((input) => input.declaration) ??

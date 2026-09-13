@@ -11,7 +11,7 @@ test("loopback registry serves packed metadata and verified bytes, and nothing e
   const root = await mkdtemp(join(tmpdir(), "smithers-registry-test-"))
   let registry
   try {
-    const manifest = { name: "@smthrs/example", version: "1.0.0-rc.0", dependencies: { effect: "4.0.0-rc.112" } }
+    const manifest = { name: "@smthrs/example", version: "1.0.0-rc.0", dependencies: { effect: "4.0.0-rc.115" } }
     await mkdir(join(root, "package"))
     await writeFile(join(root, "package/package.json"), JSON.stringify(manifest))
     execFileSync("tar", ["-czf", join(root, "example.tgz"), "-C", root, "package"])

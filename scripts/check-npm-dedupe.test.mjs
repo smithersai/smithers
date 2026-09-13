@@ -56,9 +56,9 @@ it("requires exactly one physical Effect copy at the zero, one, and two-copy bou
           ? join(root, "node_modules/effect")
           : join(root, "node_modules/parent/node_modules/effect")
         await mkdir(directory, { recursive: true })
-        await writeFile(join(directory, "package.json"), JSON.stringify({ name: "effect", version: "4.0.0-rc.112" }))
+        await writeFile(join(directory, "package.json"), JSON.stringify({ name: "effect", version: "4.0.0-rc.115" }))
       }
-      const profile = { name: "boundary-" + count, dependencies: { effect: "4.0.0-rc.112" } }
+      const profile = { name: "boundary-" + count, dependencies: { effect: "4.0.0-rc.115" } }
       if (count === 1) assert.equal(assertConsumerTree(root, profile).effectCopies.length, 1)
       else assert.throws(() => assertConsumerTree(root, profile), /expected exactly one physical Effect copy/)
     } finally {

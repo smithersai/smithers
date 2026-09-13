@@ -26,6 +26,7 @@ const release = parseWorkflow(
 const installDriver = (root) => {
   mkdirSync(join(root, "scripts"))
   cpSync(join(repoRoot, "scripts/release-rehearsal.mjs"), join(root, "scripts/release-rehearsal.mjs"))
+  cpSync(join(repoRoot, "scripts/workspace-packages.mjs"), join(root, "scripts/workspace-packages.mjs"))
   symlinkSync(join(repoRoot, "node_modules"), join(root, "node_modules"))
 }
 
@@ -234,6 +235,7 @@ test("only the re-run guard, candidate preparation and publication select a path
   assert.deepEqual(conditional, [
     "Refuse a re-run attempt",
     "Build all workspaces from clean artifacts",
+    "Review declaration API drift",
     "Pack and smoke-test release artifacts",
     "Install the supported Node 24 floor",
     "Install certified npm for Node 24",

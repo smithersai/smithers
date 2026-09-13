@@ -124,7 +124,9 @@ const containment = async (kind, recovery) => {
       mkdirSync(join(root, "flows", name), { recursive: true })
       writeFileSync(join(root, "flows", name, "flow.mdx"), [
         "---", `name: ${name}`, "description: Installed containment exercise.",
-        "model: openai:gpt-4o-mini", "---", "Perform the recorded exercise."
+        "model: openai:gpt-4o-mini",
+        name === "busy" && kind === "shell" ? 'capabilities: ["proc:spawn:*"]' : "capabilities: []",
+        "---", "Perform the recorded exercise."
       ].join("\n"))
     }
     const script = [

@@ -10,13 +10,13 @@
  */
 import { execFileSync } from "node:child_process"
 import assert from "node:assert/strict"
-import { chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
+import { chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { dirname, delimiter, join } from "node:path"
 import { describe, it } from "node:test"
 
 import { parseWorkflow } from "../release-rehearsal.mjs"
-import { repoRoot as root } from "../workspace-packages.mjs"
+import { libraryPackages, repoRoot as root } from "../workspace-packages.mjs"
 
 const readManifest = (path) => JSON.parse(readFileSync(path, "utf8"))
 
@@ -27,7 +27,7 @@ describe("required PR selection", () => {
   const runs = (job) => workflow.jobs[job].steps.flatMap((step) => step.run ? [step.run] : [])
   it("keeps server CI required while selecting the UI tiers once in their earlier Ubuntu job", () => {
     const main = runs("test").join("\n")
-    assert.doesNotMatch(main, /\/\/apps\/ui:(?:check|unitTests)/)
+    assert.doesNotMatch(main, /\/\/apps\/app:(?:check|unitTests)/)
     assert.match(main, /(?:smthrs|smithers-build) ci '\/\/apps\/server\/\.\.\.'/)
     assert.notEqual(workflow.jobs.test["continue-on-error"], true)
     const ui = workflow.jobs["apps-e2e"]
@@ -51,7 +51,7 @@ describe("required PR selection", () => {
     assert.ok(runs("apps-e2e").some((run) => run.includes("'bubblewrap'")))
   })
   it("the browser job selects the target that executes actual Playwright", () => {
-    assert.match(runs("apps-e2e").join("\n"), /(?:smthrs|smithers-build) test '\/\/apps\/ui:browserE2e'/)
+    assert.match(runs("apps-e2e").join("\n"), /(?:smthrs|smithers-build) test '\/\/apps\/app:browserE2e'/)
     assert.notEqual(workflow.jobs["apps-e2e"]["continue-on-error"], true)
     const declaration = readFileSync(join(root, "apps/app/PACKAGE.ts"), "utf8")
     assert.match(declaration, /browserE2e = Smithers\.NodeTest/)
@@ -72,7 +72,7 @@ it("the selected browser executable installs its matching browser then runs Play
     assert.throws(() => execFileSync(process.execPath, [join(root, "apps/app/scripts/run-pr-e2e.mjs")], {
       cwd: join(root, "apps/app"), env: { ...process.env, PATH: `${temporary}:${process.env.PATH}`, BROWSER_TEST_CALLS: calls }, stdio: "pipe"
     }), (error) => error.status === 23)
-    assert.deepEqual(readFileSync(calls, "utf8").trim().split("\n"), ["exec playwright install --with-deps chromium", "exec playwright test"])
+    assert.deepEqual(readFileSync(calls, "utf8").trim().split("\n"), ["exec playwright install --with-deps chromium", "run test:e2e:auth", "exec playwright test"])
   } finally { rmSync(temporary, { recursive: true, force: true }) }
 })
 
@@ -85,6 +85,7 @@ it("UI typecheck skips TypeScript when strict devkit preparation fails in a clea
     return destination
   }
   try {
+    symlinkSync(join(root, "node_modules"), join(temporary, "node_modules"), "dir")
     write("package.json", JSON.stringify({
       name: "ui-devkit-refusal", private: true, type: "module", packageManager: rootManifest.packageManager
     }))
@@ -105,6 +106,16 @@ export const Workspace = S.Workspace("ui-devkit-refusal", {
     for (const path of ["PACKAGE.ts", "scripts/ensure-devkit.mjs", "package.json", "tsconfig.json", "electrobun.config.ts", "hutch.config.ts"]) {
       const destination = write(`apps/app/${path}`, "")
       copyFileSync(join(root, "apps/app", path), destination)
+    }
+    // The app declaration imports package targets. Project their real declarations
+    // as well, so this fixture reaches the SDK prerequisite after graph discovery.
+    for (const path of libraryPackages().map((entry) => `${entry.dir}/PACKAGE.ts`).filter((path) => existsSync(join(root, path)))) {
+      const destination = write(path, "")
+      copyFileSync(join(root, path), destination)
+    }
+    for (const path of ["PACKAGE.ts", "apps/site/src/data/project.json"]) {
+      const destination = write(path, "")
+      copyFileSync(join(root, path), destination)
     }
     // These are declared inputs of the unreachable compiler, not test doubles
     // for its output. Only preparation is allowed to execute in this schedule.
@@ -134,10 +145,11 @@ else { writeFileSync(${JSON.stringify(tscMarker)}, JSON.stringify(process.argv.s
     assert.ok(failure, "failed preparation must fail the selected build")
     const output = `${failure.stdout ?? ""}\n${failure.stderr ?? ""}`
     assert.equal(failure.status, 1, output)
+    assert.ok(existsSync(join(temporary, "apps/app/preparer-called.json")), output)
     assert.deepEqual(readManifest(join(temporary, "apps/app/preparer-called.json")), { args: ["prepare"], noUpdate: "1" })
     assert.match(output, /electrobun prepare exited 23/)
-    assert.match(output, /\/\/apps\/ui:devkit  failed/)
-    assert.match(output, /\/\/apps\/ui:check  skipped/)
+    assert.match(output, /\/\/apps\/app:devkit  failed/)
+    assert.match(output, /\/\/apps\/app:check  skipped/)
     assert.equal(existsSync(tscMarker), false, "the real scheduler must not launch TypeScript after preparation fails")
     assert.equal(existsSync(join(temporary, "apps/app/.hutch")), false)
   } finally { rmSync(temporary, { recursive: true, force: true }) }

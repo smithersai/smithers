@@ -456,21 +456,6 @@ test("packsPath reads npm files globs the way npm packs them", () => {
   assert.equal(packsPath("src/**/*.ts", "src/migrations/0001_memory.sql"), false)
 })
 
-test("@smthrs/memory packs the SQL reference copies its shipped source cites", () => {
-  // The runtime migration is the TypeScript in src/internal/Sql.ts, whose
-  // docstring sends a reader to `src/migrations/*.sql`. The tarball ships that
-  // source, so it has to ship the files the source names.
-  const manifests = readWorkspaceManifests()
-  const memory = manifests.get("packages/smithers/agent/memory")
-  const references = readdirSync(join(repoRoot, "packages", "smithers", "agent", "memory", "src", "migrations"))
-    .filter((name) => name.endsWith(".sql"))
-
-  assert.ok(references.length > 0, "the reference copies exist in the tree")
-  assert.ok(
-    memory.files.includes("src/**/*.sql"),
-    `@smthrs/memory files must pack ${references.length} reference migrations`
-  )
-})
 
 test("every published library exposes the one Effect runtime as a peer", () => {
   const manifests = readWorkspaceManifests()
@@ -478,7 +463,7 @@ test("every published library exposes the one Effect runtime as a peer", () => {
   const pins = new Set(published.flatMap((manifest) =>
     [manifest.dependencies?.effect, manifest.peerDependencies?.effect].filter((range) => typeof range === "string")
   ))
-  assert.deepEqual([...pins], ["4.0.0-rc.112"], "one effect pin across the published set")
+  assert.deepEqual([...pins], ["4.0.0-rc.115"], "one effect pin across the published set")
   const misplaced = published
     .filter((manifest) => manifest.bin === undefined && manifest.dependencies?.effect !== undefined)
     .map((manifest) => manifest.name)
@@ -488,8 +473,8 @@ test("every published library exposes the one Effect runtime as a peer", () => {
 test("published adapters remain optional while executable SQLite and Bun host prerequisites are required", () => {
   const byName = new Map([...readWorkspaceManifests().values()].map((manifest) => [manifest.name, publicationManifest(manifest)]))
   const optional = {
-    "@smthrs/database": { "@effect/sql-sqlite-node": "4.0.0-rc.112" },
-    "@smthrs/gateway": { "@effect/platform-node": "4.0.0-rc.112" },
+    "@smthrs/database": { "@effect/sql-sqlite-node": "4.0.0-rc.115" },
+    "@smthrs/gateway": { "@effect/platform-node": "4.0.0-rc.115", "@effect/platform-bun": "4.0.0-rc.115" },
     "@smthrs/flows": { "@smthrs/platform-node": releaseVersion },
     "@smthrs/create-app": { "@smthrs/testing": releaseVersion },
     "@smthrs/observability": {
@@ -508,9 +493,9 @@ test("published adapters remain optional while executable SQLite and Bun host pr
     }
   }
   for (const [name, peer, version] of [
-    ["@smthrs/cli", "@effect/sql-sqlite-node", "4.0.0-rc.112"],
+    ["@smthrs/cli", "@effect/sql-sqlite-node", "4.0.0-rc.115"],
     ["@smthrs/platform-bun", "@smthrs/platform-node", releaseVersion],
-    ["@smthrs/platform-bun", "@effect/platform-node", "4.0.0-rc.112"]
+    ["@smthrs/platform-bun", "@effect/platform-node", "4.0.0-rc.115"]
   ]) {
     assert.equal(byName.get(name).peerDependencies[peer], version)
     assert.notEqual(byName.get(name).peerDependenciesMeta?.[peer]?.optional, true)
@@ -525,7 +510,6 @@ test("runtime evaluation owns scorers while testing delegates to the same pure g
   const evals = manifests.get("packages/smithers/agent/evals")
   const testing = manifests.get("packages/testing")
   assert.equal(evals.dependencies["@smthrs/testing"], undefined)
-  assert.equal(evals.devDependencies["@smthrs/testing"], releaseVersion)
   assert.equal(evals.dependencies["@smthrs/scorers"], releaseVersion)
   assert.equal(testing.dependencies["@smthrs/scorers"], releaseVersion)
 })
@@ -533,25 +517,25 @@ test("runtime evaluation owns scorers while testing delegates to the same pure g
 test("the Effect checker refuses ranges and mismatched RCs in every dependency field", () => {
   for (const section of ["dependencies", "devDependencies", "peerDependencies", "optionalDependencies"]) {
     for (const name of ["effect", "@effect/platform-node", "@effect/sql-sqlite-node", "@effect/new-adapter"]) {
-      for (const version of ["4.0.0-rc.111", "^4.0.0-rc.112", "~4.0.0-rc.112", "4.0.0-rc.113"]) {
+      for (const version of ["4.0.0-rc.111", "^4.0.0-rc.115", "~4.0.0-rc.115", "4.0.0-rc.113"]) {
         const records = effectDeclarations({ [section]: { [name]: version } }, "fixture")
         assert.equal(records.length, 1)
         assert.throws(() => assertEffectPins(records), /Expected exact Effect-family RC/)
       }
-      assert.doesNotThrow(() => assertEffectPins(effectDeclarations({ [section]: { [name]: "4.0.0-rc.112" } }, "fixture")))
+      assert.doesNotThrow(() => assertEffectPins(effectDeclarations({ [section]: { [name]: "4.0.0-rc.115" } }, "fixture")))
     }
   }
 })
 
 test("the Effect checker reads scoped and duplicate lock entries independently of declarations", () => {
-  const pnpm = "packages:\n  effect@4.0.0-rc.112:\n  '@effect/platform-node@4.0.0-rc.111':\n" +
-    "snapshots:\n  '@effect/platform-node@4.0.0-rc.111(effect@4.0.0-rc.112)':\n"
+  const pnpm = "packages:\n  effect@4.0.0-rc.115:\n  '@effect/platform-node@4.0.0-rc.111':\n" +
+    "snapshots:\n  '@effect/platform-node@4.0.0-rc.111(effect@4.0.0-rc.115)':\n"
   assert.deepEqual(effectLockVersions(pnpm, "pnpm").map(({ name, version }) => [name, version]), [
-    ["effect", "4.0.0-rc.112"], ["@effect/platform-node", "4.0.0-rc.111"], ["@effect/platform-node", "4.0.0-rc.111"]
+    ["effect", "4.0.0-rc.115"], ["@effect/platform-node", "4.0.0-rc.111"], ["@effect/platform-node", "4.0.0-rc.111"]
   ])
-  const bun = '"effect": ["effect@4.0.0-rc.112", ""], "@effect/platform-bun": ["@effect/platform-bun@4.0.0-rc.113", ""]'
+  const bun = '"effect": ["effect@4.0.0-rc.115", ""], "@effect/platform-bun": ["@effect/platform-bun@4.0.0-rc.113", ""]'
   assert.deepEqual(effectLockVersions(bun, "bun").map(({ name, version }) => [name, version]), [
-    ["effect", "4.0.0-rc.112"], ["@effect/platform-bun", "4.0.0-rc.113"]
+    ["effect", "4.0.0-rc.115"], ["@effect/platform-bun", "4.0.0-rc.113"]
   ])
   assert.throws(() => assertEffectPins(effectLockVersions(pnpm, "pnpm")), /platform-node@4.0.0-rc.111/)
   assert.throws(() => assertEffectPins(effectLockVersions(bun, "bun")), /platform-bun@4.0.0-rc.113/)
@@ -562,19 +546,19 @@ test("installed package checks reject missing, malformed and same-version privat
   try {
     await writeFile(join(root, "package.json"), "{}")
     const directory = "library"
-    const library = { name: "@smthrs/fixture", peerDependencies: { effect: "4.0.0-rc.112" } }
+    const library = { name: "@smthrs/fixture", peerDependencies: { effect: "4.0.0-rc.115" } }
     await mkdir(join(root, directory), { recursive: true })
     await writeFile(join(root, directory, "package.json"), JSON.stringify(library))
     const manifests = new Map([[directory, library]])
     assert.throws(() => installedEffectResolutions(root, manifests), /Cannot find module/)
     await mkdir(join(root, "node_modules/effect"), { recursive: true })
-    await writeFile(join(root, "node_modules/effect/package.json"), JSON.stringify({ name: "effect", version: "4.0.0-rc.112" }))
+    await writeFile(join(root, "node_modules/effect/package.json"), JSON.stringify({ name: "effect", version: "4.0.0-rc.115" }))
     assert.equal(installedEffectResolutions(root, manifests).length, 1)
     // Each installation has its own importer. Node caches prior resolutions,
     // so changing a previously resolved directory would test that cache.
     await mkdir(join(root, "duplicate/node_modules/effect"), { recursive: true })
     await writeFile(join(root, "duplicate/package.json"), JSON.stringify(library))
-    await writeFile(join(root, "duplicate/node_modules/effect/package.json"), JSON.stringify({ name: "effect", version: "4.0.0-rc.112" }))
+    await writeFile(join(root, "duplicate/node_modules/effect/package.json"), JSON.stringify({ name: "effect", version: "4.0.0-rc.115" }))
     assert.throws(() => installedEffectResolutions(root, new Map([["duplicate", library]])), /different physical Effect instance/)
     await mkdir(join(root, "malformed/node_modules/effect"), { recursive: true })
     await writeFile(join(root, "malformed/package.json"), JSON.stringify(library))

@@ -22,7 +22,7 @@ function fixture(modules = "node_modules") {
   symlinkSync(join(root, "node_modules"), join(scratch, "node_modules"), "dir")
   if (directory !== scratch) symlinkSync(join(root, modules), join(directory, "node_modules"), "dir")
   scratchRoots.set(directory, scratch)
-  write(directory, "package.json", '{"type":"module"}\n')
+  write(directory, "package.json", JSON.stringify({ type: "module", packageManager: "pnpm@11.25.0" }) + "\n")
   // Reuse the installed tools without pnpm 11's implicit dependency install.
   write(directory, "pnpm-workspace.yaml", "verifyDepsBeforeRun: false\n")
   write(directory, ".gitignore", ".flows/\nnode_modules/\n")
@@ -92,6 +92,9 @@ test("coverage failure reaches Vitest and the real target runner despite passing
 test("browser assertion failure travels through the PR entrypoint, Playwright and NodeTest", () => {
   const directory = fixture("apps/app/node_modules")
   try {
+    // The PR entrypoint runs its auth tier before Playwright; keep this
+    // sentinel focused on propagation of a real browser assertion failure.
+    write(directory, "package.json", JSON.stringify({ type: "module", packageManager: "pnpm@11.25.0", scripts: { "test:e2e:auth": "node -e 'process.exit(0)'" } }) + "\n")
     declaration(directory, 'S.NodeTest({ runner: S.entrypoint(S.file("scripts/run-pr-e2e.mjs")), srcs: [S.glob("tests/**"), S.file("playwright.config.ts")], deps: [] })')
     write(directory, "scripts/run-pr-e2e.mjs", readFileSync(join(root, "apps/app/scripts/run-pr-e2e.mjs")))
     write(directory, "playwright.config.ts", 'export default { testDir: "tests", workers: 1, retries: 0, reporter: [["list"], ["json", { outputFile: "browser-results.json" }]], use: { headless: true } }\n')

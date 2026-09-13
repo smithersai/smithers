@@ -9,11 +9,11 @@ const example = {
   version: "0.1.0",
   dependencies: {
     "@smthrs/kernel": "0.1.0",
-    effect: "4.0.0-rc.112"
+    effect: "4.0.0-rc.115"
   },
   devDependencies: {
     "@smthrs/kernel": "workspace:*",
-    vitest: "4.1.9"
+    vitest: "5.0.0"
   }
 }
 
@@ -23,11 +23,11 @@ test("retarget moves the version and the exact workspace ranges together", () =>
     version: "0.1.0-next.0",
     dependencies: {
       "@smthrs/kernel": "0.1.0-next.0",
-      effect: "4.0.0-rc.112"
+      effect: "4.0.0-rc.115"
     },
     devDependencies: {
       "@smthrs/kernel": "0.1.0-next.0",
-      vitest: "4.1.9"
+      vitest: "5.0.0"
     }
   })
   assert.equal(example.version, "0.1.0")

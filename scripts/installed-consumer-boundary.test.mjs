@@ -54,7 +54,15 @@ test("the boundary gate checks a standalone consumer manifest without exempting 
     write(join(root, "package.json"), JSON.stringify({ name: "fixture-root", private: true, devDependencies: { typescript: "7.0.2" } }))
     write(join(root, "pnpm-workspace.yaml"), "packages:\n  - packages/*\n")
     for (const file of ["check-dependency-boundaries.mjs", "workspace-packages.mjs"]) {
-      write(join(root, "scripts", file), readFileSync(join(repoRoot, "scripts", file)))
+      let source = readFileSync(join(repoRoot, "scripts", file), "utf8")
+      if (file === "check-dependency-boundaries.mjs") {
+        // This synthetic repository has none of the real repository's legacy
+        // reach-throughs. Retain the gate, with an empty fixture-specific list.
+        const entries = /const knownReachThroughs = new Set\(\[[\s\S]*?\]\)/
+        assert.match(source, entries)
+        source = source.replace(entries, "const knownReachThroughs = new Set([])")
+      }
+      write(join(root, "scripts", file), source)
     }
     symlinkSync(join(repoRoot, "node_modules"), join(root, "node_modules"), "dir")
     write(join(root, "scripts/consumer/package.json"), JSON.stringify({ name: "consumer-fixture", private: true,
@@ -62,7 +70,8 @@ test("the boundary gate checks a standalone consumer manifest without exempting 
     write(join(root, "scripts/consumer/probe.mjs"), 'import "@smthrs/example"')
     const run = () => spawnSync(process.execPath, [join(root, "scripts/check-dependency-boundaries.mjs")],
       { encoding: "utf8", timeout: 30_000 })
-    assert.equal(run().status, 0)
+    const valid = run()
+    assert.equal(valid.status, 0, valid.stderr)
     write(join(root, "scripts/consumer/probe.mjs"), 'import "@smthrs/undeclared"')
     const undeclared = run()
     assert.equal(undeclared.status, 1)

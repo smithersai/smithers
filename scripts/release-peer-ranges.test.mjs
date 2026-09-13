@@ -4,20 +4,20 @@ import { peerRangesOf } from "./release-peer-ranges.mjs"
 
 test("release consumers satisfy all peer contracts, including union ranges", () => {
   const peers = peerRangesOf([
-    { peerDependencies: { vitest: "^4.1.9 || ^5.0.0", effect: "4.0.0-rc.112", "@smthrs/flow": "workspace:*" } },
-    { peerDependencies: { vitest: "4.1.9", effect: "4.0.0-rc.112" } },
+    { peerDependencies: { vitest: "^4.1.9 || ^5.0.0", effect: "4.0.0-rc.115", "@smthrs/flow": "workspace:*" } },
+    { peerDependencies: { vitest: "4.1.9", effect: "4.0.0-rc.115" } },
     {}
   ])
   assert.equal(peers.get("vitest"), "^4.1.9 4.1.9 || ^5.0.0 4.1.9")
-  assert.equal(peers.get("effect"), "4.0.0-rc.112")
+  assert.equal(peers.get("effect"), "4.0.0-rc.115")
   assert.equal(peers.has("@smthrs/flow"), false)
 })
 
 test("minimal consumers select only required peers and explicitly requested optional adapters", () => {
-  const manifests = [{ peerDependencies: { effect: "4.0.0-rc.112", node: "1", browser: "2" },
+  const manifests = [{ peerDependencies: { effect: "4.0.0-rc.115", node: "1", browser: "2" },
     peerDependenciesMeta: { node: { optional: true }, browser: { optional: true } } }]
-  assert.deepEqual([...peerRangesOf(manifests, { optionalPeers: [] })], [["effect", "4.0.0-rc.112"]])
-  assert.deepEqual([...peerRangesOf(manifests, { optionalPeers: ["node"] })], [["effect", "4.0.0-rc.112"], ["node", "1"]])
+  assert.deepEqual([...peerRangesOf(manifests, { optionalPeers: [] })], [["effect", "4.0.0-rc.115"]])
+  assert.deepEqual([...peerRangesOf(manifests, { optionalPeers: ["node"] })], [["effect", "4.0.0-rc.115"], ["node", "1"]])
   assert.equal(peerRangesOf(manifests).get("browser"), "2")
 })
 
@@ -53,10 +53,10 @@ test("an explicitly installed first-party facade selects its optional peer contr
 
 test("peer selection preserves single-use manifest iterators", () => {
   const manifests = new Map([
-    ["library", { peerDependencies: { effect: "4.0.0-rc.112", sqlite: "1" },
+    ["library", { peerDependencies: { effect: "4.0.0-rc.115", sqlite: "1" },
       peerDependenciesMeta: { sqlite: { optional: true } } }],
     ["cli", { dependencies: { sqlite: "1" } }]
   ])
   assert.deepEqual([...peerRangesOf(manifests.values(), { optionalPeers: [] })],
-    [["effect", "4.0.0-rc.112"], ["sqlite", "1"]])
+    [["effect", "4.0.0-rc.115"], ["sqlite", "1"]])
 })
