@@ -17,7 +17,7 @@ back what each step decided.
 - A package with the dependencies installed:
 
 ```bash
-pnpm add @smthrs/notifications@next @smthrs/journal@next effect@4.0.0-rc.112 @effect/sql-sqlite-node@4.0.0-rc.112
+pnpm add @smthrs/notifications@next @smthrs/journal@next effect@4.0.0-rc.115 @effect/sql-sqlite-node@4.0.0-rc.115
 ```
 
 ## Write the notifications

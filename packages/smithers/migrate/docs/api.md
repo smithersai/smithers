@@ -474,7 +474,7 @@ below is `Mapping.rows` rendered, so it cannot fall behind the code.
 | `openSmithersBackend`                    | none                                                                                         | none                                                                            | unsafe    |
 | `openSmithersStore`                      | none                                                                                         | none                                                                            | unsafe    |
 | `outputs.<key>`                          | `The planned value in scope`                                                                 | `@smthrs/plan/Node`                                                             | automatic |
-| `package.json`                           | `@smthrs/* at 1.0.0-rc.0 and effect at 4.0.0-rc.112`                                         | none                                                                            | automatic |
+| `package.json`                           | `@smthrs/* at 1.0.0-rc.0 and effect at 4.0.0-rc.115`                                         | none                                                                            | automatic |
 | `parseNamespace`                         | `@smthrs/memory`                                                                             | `@smthrs/memory`                                                                | guided    |
 | `partitionDelegationV2AuthorFuel`        | none                                                                                         | none                                                                            | unsafe    |
 | `prometheusContentType`                  | `The kernel's telemetry and the OTLP layer`                                                  | `@smthrs/kernel, @smthrs/observability`                                         | guided    |
@@ -659,7 +659,7 @@ refuses to `apply` a plan built over one (`scan` and `plan` still report it).
   a project already on the release candidate is not reported as old. Companion
   packages (`react`, `ai`, `@ai-sdk/*`, `zod`, `effect`, `xstate`) are recorded.
   Every `effect` declaration in every manifest is kept in `effectDeclarations`
-  with its file and field, and each one that is not exactly `4.0.0-rc.112`
+  with its file and field, and each one that is not exactly `4.0.0-rc.115`
   raises `effect-pin-conflict` naming it: a range, a later prerelease, and two
   manifests that disagree are each a version this release was not built
   against. `Detect.resolvedEffectVersions(lock)` reads what a pnpm, bun, npm,
@@ -1465,7 +1465,7 @@ drives its implementation.
 | `withoutComments`                                       | `(text: string) => string`                                                                                    | JSONC without its comments, for parsing.                                                                              |
 | `pinFor`                                                | `(name: string) => string \| undefined`                                                                       | The version this release pins a package to.                                                                           |
 | `dependencyFields`                                      | `["dependencies", "devDependencies", "peerDependencies", "optionalDependencies", "overrides", "resolutions"]` | The six fields a postcondition checks.                                                                                |
-| `effectVersion`                                         | `"4.0.0-rc.112"`                                                                                              | The `effect` version this release was built against.                                                                  |
+| `effectVersion`                                         | `"4.0.0-rc.115"`                                                                                              | The `effect` version this release was built against.                                                                  |
 | `smithersVersion`                                       | `"1.0.0-rc.0"`                                                                                                | The `@smthrs/*` version it adds.                                                                                      |
 | `ManifestRewrite`, `ScriptRewrite`, `UnsupportedScript` | `interface` or `Schema.Struct`                                                                                | The rewrite inputs and what could not be rewritten.                                                                   |
 

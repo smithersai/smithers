@@ -1,12 +1,41 @@
 ---
 title: "Troubleshooting"
-description: "The errors a 0.x project hits when smthrs@1.0.0-rc.0 is installed, including the ones that never print the notice: subpath resolution failures, a jsxImportSource pragma, a missing command, and an install that silently stays on 0.x."
+description: "The errors a 0.x project hits when smthrs@1.0.0-rc.0 is installed, including the ones that never print the notice: a static named import rejected while linking, subpath resolution failures, a jsxImportSource pragma, a missing command, and an install that silently stays on 0.x."
 editUrl: "https://github.com/smithersai/smithers/edit/main/packages/smthrs-deprecation/docs/troubleshooting.md"
 ---
 
 Most projects never see the notice first. Something else fails earlier, and
 this page is how to recognize those failures as the same thing. Every fix ends
 at the same place: the [1.0 migration guide](https://smithers.sh/docs/migration/1.0/).
+
+## `does not provide an export named` on `import { ... } from "smthrs"`
+
+**Symptom.** A 0.x source file imports a name from the root specifier, Node
+rejects the import with a SyntaxError, and the notice is nowhere in the
+output:
+
+```text
+SyntaxError: The requested module 'smthrs' does not provide an export named 'Workflow'
+```
+
+`import smthrs from "smthrs"` fails the same way, naming `'default'`.
+
+**Cause.** The module declares no exports, and the notice is thrown while the
+module body evaluates. Node links a static import before it evaluates
+anything: each imported name is checked against the module's export table, and
+a name that is not there is rejected on the spot. That rejection comes first,
+so the body that throws the notice never runs. Only an import that reaches
+evaluation prints the notice: a bare `import "smthrs"`, a namespace import, a
+dynamic `import()`, or a CommonJS `require`. Declaring the 0.x names would
+avoid the SyntaxError only by letting a 0.x project type-check against values
+the runtime can never hand back, which is the drift
+[the notice exists to prevent](/notice/).
+
+**Fix.** Read it as the notice. Smithers 1.0 ships as `@smthrs/*` packages:
+install `@smthrs/flows@next` for authoring and the engine and
+`@smthrs/cli@next` for the `smthrs` command, then run `smthrs migrate` in the
+project to rewrite the import. The full procedure is the
+[1.0 migration guide](https://smithers.sh/docs/migration/1.0/).
 
 ## ERR_PACKAGE_PATH_NOT_EXPORTED on a `smthrs/...` subpath
 
@@ -17,7 +46,8 @@ text anywhere in the message:
 Error [ERR_PACKAGE_PATH_NOT_EXPORTED]: Package subpath './jsx-runtime' is not defined by "exports" in .../node_modules/smthrs/package.json
 ```
 
-**Cause.** Only the root specifier `smthrs` throws the notice. The package
+**Cause.** Only the root specifier `smthrs` reaches this package's module, and
+only an import that evaluates it throws the notice. The package
 exports `.` and nothing else, so `smthrs/jsx-runtime`,
 `smthrs/jsx-dev-runtime`, `smthrs/ui`, `smthrs/gateway-react`, and every other
 0.x subpath fail at resolution, before any module of this package evaluates.

@@ -49,7 +49,7 @@ The required declarations are:
   set never replays another run's records.
 - `capabilityEnvelope`: the `Capability.CapabilityPattern` list of
   [`@smthrs/capability`](https://capability.smithers.sh/reference/api/) that bounds this run. A flow
-  declaring a capability the envelope does not allow settles as a catchable
+  declaring a capability the envelope does not allow settles as a resolved
   `capability_refused` failure instead of dispatching.
 - `placement`: where this run is placed, as `client`, `local`, `sandbox`, or
   `remote` from [`@smthrs/registry`](https://registry.smithers.sh/reference/api/), folded into the model
@@ -136,7 +136,7 @@ answering `Option.none()` instead, for tests and partial hosts. The members:
 | `call`     | `(call: Cell.Call) => Effect<Cell.CallResult, HarnessError>`                  | Runs one flow call from inside a cell as a keyed, journaled activity at the tier the flow declares, keyed by `call.identity` so a settled boundary replays instead of re-running. A flow failure settles as a `failure` result; a permission requirement, an abort, or an engine failure travels in the error channel. |
 | `record`   | `<A>(boundary: RecordBoundary<A>) => Effect<A, HarnessError>`                 | Journals one nondeterministic controller read under the key `(name, identity)` together, and serves the recorded value to any re-execution of the same frame. Keying on `identity` alone serves one frame's opening measurement as its closing one.                                                                    |
 | `observe`  | `Effect<Option<Observation>, HarnessError>`                                   | Measures the workspace as it stands. `Option.none()` is the honest answer for a host with nothing to measure, and the controller falls back to declared writes.                                                                                                                                                        |
-| `capture`  | `(request: CaptureRequest) => Effect<Option<Snapshot>, HarnessError>`         | Pins the workspace under the caller's id. `Option.none()` answers a host with no store, and the cell gets a catchable `checkpoint_unavailable`.                                                                                                                                                                        |
+| `capture`  | `(request: CaptureRequest) => Effect<Option<Snapshot>, HarnessError>`         | Pins the workspace under the caller's id. `Option.none()` answers a host with no store, and the cell gets a resolved `checkpoint_unavailable`.                                                                                                                                                                         |
 | `suspend`  | `(reason: SuspendReason) => Effect<never, HarnessError>`                      | Parks the current engine frame durably.                                                                                                                                                                                                                                                                                |
 | `splice`   | `(batch: Plan.Batch) => Stream<Plan.SpliceEvent, HarnessError>`               | Turns a batch of child plans into running children and streams their progress back. The harness translates and never schedules.                                                                                                                                                                                        |
 
@@ -167,6 +167,12 @@ ends on `TurnClosed` with its outcome, beside `Resolved`, `Suspended`, or
 `Aborted`. `AgentEvent.eventType` maps every tag to its journal event type.
 The full list is in the [`AgentEvent` reference](/reference/api/#agentevent).
 
+`SufficiencyObserved` pairs a remembered failure with a later passing check of
+the same flow, with identical or broader inputs, after a workspace mutation.
+Passing readings must be stable. A live check in a frame that also edits is
+ambiguous even when the cell checks after editing; run the passing check in a
+later frame to establish the ordering.
+
 ## Next steps
 
 - For the engine port's full contract, see
@@ -174,3 +180,12 @@ The full list is in the [`AgentEvent` reference](/reference/api/#agentevent).
 - For the steering queue's drain semantics, see
   [`Steering`](/reference/api/#steering).
 - For the assembled production host, see [`@smthrs/agent`](https://agent.smithers.sh/reference/api/).
+
+## Refresh the catalog between frames
+
+Pass `refreshFlows` to `CellTurn.run` as an Effect returning the visible,
+model-invocable descriptors. The controller records its result through
+`EngineLike.record` at every frame boundary, including the first. It replaces
+its previous teaching and passes the same snapshot to call admission and the
+realm's `ctx.flows`. Replay uses the recorded descriptors without reading the
+live registry. Omit `refreshFlows` to keep the supplied `flows` array fixed.

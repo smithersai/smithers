@@ -45,7 +45,7 @@ surfaces much later as a cache that never hits.
 ## Install
 
 ```bash
-pnpm add @smthrs/keys@next effect@4.0.0-rc.112
+pnpm add @smthrs/keys@next effect@4.0.0-rc.115
 ```
 
 The current version is `1.0.0-rc.0` and publishes on the `next` dist-tag, which

@@ -17,8 +17,10 @@ inconclusive ones: a baseline records what was measured, and an inconclusive
 observation measured nothing.
 
 ```ts
-const baseline = yield * Baseline.fromRun(run)
-yield * Effect.promise(() => writeFile("baseline.json", Baseline.write(baseline)))
+Effect.gen(function*() {
+  const baseline = yield* Baseline.fromRun(run)
+  yield* Effect.promise(() => writeFile("baseline.json", Baseline.write(baseline)))
+})
 ```
 
 `Baseline.write` serializes canonical JSON: object keys sorted recursively,
@@ -31,15 +33,17 @@ case failed, because a baseline recorded over a failed case ratifies the absence
 of a measurement:
 
 ```ts
-const failures = run.cases.filter((result) => result.error !== undefined)
-if (failures.length > 0) {
-  return yield * Effect.fail(
-    new EvalError.EvalError({
-      code: "executor",
-      message: `Refusing to record a baseline: ${failures.length} case(s) did not finish`
-    })
-  )
-}
+Effect.gen(function*() {
+  const failures = run.cases.filter((result) => result.error !== undefined)
+  if (failures.length > 0) {
+    return yield* Effect.fail(
+      new EvalError.EvalError({
+        code: "executor",
+        message: `Refusing to record a baseline: ${failures.length} case(s) did not finish`
+      })
+    )
+  }
+})
 ```
 
 Re-record the baseline only when a score moved for a reason you can name. The
@@ -80,9 +84,9 @@ an in-memory value. Both rebuild every record from the validated fields, so
 nothing a caller happened to attach to an object travels into a committed
 artifact, and the returned array is frozen. Validation fails with
 `invalid_baseline`, carrying the record index and field name in `path`, for a
-wrong version, a non-array `records`, a record that is not an object, a
-non-string identity field, or a score that is not finite in [0, 1]. A negative
-zero score is normalized to 0.
+wrong version, a non-array `records`, a record that is not an object, an
+identity field that is not a string or holds a control character, or a score
+that is not finite in [0, 1]. A negative zero score is normalized to 0.
 
 Ownership is checked at comparison time: `Regression.compare` refuses a
 baseline whose artifact or any record names a suite other than the run's,

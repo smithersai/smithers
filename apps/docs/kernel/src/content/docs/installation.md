@@ -35,7 +35,7 @@ The package requires Node.js 22.19.0 or later and ships as ESM, CommonJS, and
 TypeScript declarations. Its Smithers dependencies install with it:
 [`@smthrs/capability`](https://capability.smithers.sh/reference/api/), [`@smthrs/jj`](https://jj.smithers.sh/reference/api/), and
 [`@smthrs/journal`](https://journal.smithers.sh/reference/api/). The host supplies the exact
-`effect@4.0.0-rc.112` peer so the library never installs a second runtime.
+`effect@4.0.0-rc.115` peer so the library never installs a second runtime.
 
 The root entry point carries no Node built-ins. A package test bundles the
 whole root dependency graph for the browser and asserts that no
@@ -90,7 +90,7 @@ in the consuming workspace package:
 ```
 
 `test/contract` registers Vitest cases, so importing it requires the declared
-peers, `@effect/vitest@4.0.0-rc.112` and `vitest@4.1.9`. Both are optional: a
+peers, `@effect/vitest@4.0.0-rc.115` and `vitest@5.0.0`. Both are optional: a
 consumer that imports only the kernel or `test/TestGrantStore` needs neither.
 See [Testing](/testing/) for what each one covers.
 

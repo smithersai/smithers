@@ -1,5 +1,7 @@
 # @smthrs/triggers
 
+Release candidate scope, host requirements and compatibility review are defined in the [library support policy](https://github.com/smithersai/smithers/blob/main/RELEASE_SUPPORT.md).
+
 **Documentation:** https://triggers.smithers.sh
 
 Durable cron triggers and verified inbound channels for flows. A trigger is a
@@ -23,7 +25,7 @@ cd smithers
 pnpm install
 ```
 
-It needs Node.js 22.19.0 or later and `effect` 4.0.0-rc.112. The full
+It needs Node.js 22.19.0 or later and `effect` 4.0.0-rc.115. The full
 requirements, the import forms, and the layers a running host adds are on
 the [installation page](https://triggers.smithers.sh/installation/).
 

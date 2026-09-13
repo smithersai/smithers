@@ -104,10 +104,16 @@ and are renamed into place. Every deduplicated `put` verifies the existing blob
 and rewrites an unreadable or mismatched address atomically, then freshens the
 blob's modification time so a retention sweep reads it as recently referenced.
 
+`findMissing` deduplicates and validates the full input before filesystem
+probes, then checks at most 16 addresses concurrently. Missing digests retain
+first-request order; a failed probe fails the batch as `unavailable`.
+
 | `FileSystemOptions` field | Default            | Meaning                                                                                                                                                                                                                     |
 | ------------------------- | ------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `directory`               | `defaultDirectory` | Where blobs are stored. Workspace-relative, so a workspace can be moved or copied whole. An `ArtifactSweep` over the same store must name the same directory.                                                               |
-| `durability`              | `"required"`       | `required` syncs the blob and its fanout directory and propagates any refusal. `best-effort` is the explicit weaker capability for a host that cannot open file handles for syncing.                                        |
+| `fileMode`                | `0o600`            | Creation mode for new payload files, restricted by the host umask. Existing blobs are unchanged.                                                                                                                            |
+| `directoryMode`           | `0o700`            | Creation mode for objects and fanout directories, restricted by the host umask. Lock directories remain `0700`.                                                                                                             |
+| `durability`              | `"required"`       | `required` syncs the blob, fanout directory, objects directory, and its ancestors and propagates any refusal. `best-effort` tolerates sync refusals. Both modes require exclusive writable handles and symlink inspection.  |
 | `coordination`            | `"required"`       | `required` combines an in-process semaphore with heartbeat-backed lock files shared by every cooperating process. `process` keeps only the semaphore, giving up cross-process exclusion between writers and sweep deletion. |
 
 `defaultDirectory` is `.flows/objects`. It is exported because the store and
@@ -116,11 +122,12 @@ literal is exactly how they would drift apart.
 
 `required` bounds the writer-versus-sweeper race rather than eliminating it. A
 lock is heartbeated every 10 seconds, reclaimed once it is 60 seconds stale, and
-acquisition gives up after 2 minutes. Reclaiming a stale lock measures the file
-and then removes it in a separate step, so once some holder has gone stale, two
-processes reclaiming at the same moment can both proceed. The fences that do not
-depend on this lock still stand in that case:
-`ArtifactSweep.RemoveOptions.ifUnmodifiedSinceMs` and the backup lease. Build a
+acquisition gives up after 2 minutes. Contenders that find the same stale lock
+race for a claim file named after its owner, so the lock is moved at most once
+and a fresh replacement is never displaced. A holder whose host stalls past 60
+seconds is still reaped while running. Neither
+`ArtifactSweep.RemoveOptions.ifUnmodifiedSinceMs` nor the backup lease protects
+against that, because both depend on the same lock. Build a
 store and its sweep with the same directory and coordination mode; no runtime
 check can detect a mismatch. See
 [Coordination between processes](https://artifacts.smithers.sh/concepts/coordination/).
@@ -242,12 +249,13 @@ declare const layer: <EL, RL, ER, RR>(
 ) => Layer<ArtifactStore.ArtifactStore, EL | ER | ArtifactStoreError, RL | RR>
 ```
 
-| `Options` field  | Default                         | Meaning                                                                                                                              |
-| ---------------- | ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
-| `local`          | required                        | The fast, machine-local tier, as a `Service`. Every read tries this one first.                                                       |
-| `remote`         | required                        | The shared tier, as a `Service`. Consulted only on a local miss or corruption.                                                       |
-| `uploadTimeout`  | 60 seconds                      | How long a `put` waits for its opportunistic upload before abandoning it. An abandoned upload is dropped exactly like a refused one. |
-| `downloadPolicy` | the remote tier's, else `"all"` | Overrides the shared tier's declared policy for this composition.                                                                    |
+| `Options` field    | Default                         | Meaning                                                                                                                              |
+| ------------------ | ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| `local`            | required                        | The fast, machine-local tier, as a `Service`. Every read tries this one first.                                                       |
+| `remote`           | required                        | The shared tier, as a `Service`. Consulted only on a local miss or corruption.                                                       |
+| `uploadTimeout`    | 60 seconds                      | How long a `put` waits for its opportunistic upload before abandoning it. An abandoned upload is dropped exactly like a refused one. |
+| `writeBackTimeout` | 60 seconds                      | How long a `get` waits for opportunistic local write-back before interrupting it and returning the verified remote bytes.            |
+| `downloadPolicy`   | the remote tier's, else `"all"` | Overrides the shared tier's declared policy for this composition.                                                                    |
 
 `LayerOptions` is the same shape with `local` and `remote` as `Effect`s. Both
 tiers are supplied as effects rather than layers because they inhabit the same
@@ -255,12 +263,18 @@ tag: composing two `Layer<ArtifactStore>` would shadow one with the other. Pair
 `Effect.map(FileSystem.FileSystem, (fs) => ArtifactStore.makeFileSystem(fs))`
 with `RemoteArtifacts.make`.
 
+Both timeout options must be finite, positive durations. Invalid values fail
+construction with `ArtifactStoreError` code `invalid_configuration`.
+
 **Reads.** The local tier answers first. A hit returns. `ArtifactMissing` and
 `ArtifactCorruption` both fall through to the shared tier, and they are kept
 apart because only corruption earns a write-back that `minimal` would otherwise
 skip. A local `ArtifactStoreError` fails the read rather than falling through:
 a host that refused has not answered the question, and paying for the network
 instead would hide a broken local tier behind a working shared one.
+Local write-back after a remote read is opportunistic. A typed failure or
+`writeBackTimeout` expiry returns the verified remote bytes. Timeout interrupts
+the write-back and waits for its interruption cleanup before returning.
 
 **Writes.** `put` publishes locally first and returns the local digest. The
 remote upload is opportunistic, deduplicated in flight by digest, and bounded by
@@ -309,6 +323,10 @@ modification time is measurable. It skips temp files, lock files, foreign
 paths, nested paths, directories sitting at blob addresses, and entries that
 disappear during the scan. A directory that was never created is an empty
 inventory, not a failure.
+
+Candidate metadata reads run with concurrency 16 and retain directory-listing
+order. Each candidate keeps its path checks; a failed metadata read skips only
+that candidate.
 
 `remove` returns `false` for three outcomes a caller cannot tell apart, all of
 which mean nothing was reclaimed and retrying later is safe: the blob was

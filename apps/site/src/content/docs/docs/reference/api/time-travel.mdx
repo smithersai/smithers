@@ -31,15 +31,18 @@ const program = Effect.gen(function*() {
 | `@smthrs/time-travel/SqlTimeTravelStore` | [src/SqlTimeTravelStore.ts](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/time-travel/src/SqlTimeTravelStore.ts) | SQLite dialect only. Any SQLite-speaking `SqlClient` runs it.                        |
 
 The barrel exports `TimeTravel` and `ReadOnlyTimeTravel` flat, and
-the other modules as namespaces. Every module under `src/` is also published at
+the other modules as namespaces. It re-exports the rest of the `TimeTravel`
+module with them: the types `Position`, `Projection`, `Service`, `Options`,
+`ReplayOptions`, `ForkOptions`, `RewindOptions`, `RateLimitDecision`,
+`ForkResult` and `RewindResult`, and the constants `defaultMaxHistoryEntries` and
+`forkWorkspaceName`. Every module under `src/` is also published at
 `@smthrs/time-travel/<Module>` by the package `exports` map, which is where the
-members of the `TimeTravel` module other than the service class itself live:
-`Position`, `Projection`, `Service`, `Options`, `defaultMaxHistoryEntries`,
-`make`, and `makeWith` are reached through
+remaining members of the `TimeTravel` module live: `make` and `makeWith` are
+reached through
 `import * as TimeTravel from "@smthrs/time-travel/TimeTravel"`.
 
 `@smthrs/time-travel/internal/*` is mapped to `null`: `Replay`, `Fork`,
-`Rewind`, `Retry`, `Recovery`, `Compensation`, `SnapshotProjector`,
+`Rewind`, `Recovery`, `Compensation`, `SnapshotProjector`,
 `HistoryLimit`, and `EffectHandlerRegistry` are machinery a caller never names.
 
 ## TimeTravel
@@ -63,6 +66,7 @@ renaming it invalidates recorded runs.
 | `make`                     | `Effect<Service, TimeTravelError, Requirements \| Scope>`                                                                |
 | `makeWith`                 | `(options?: Options) => Effect<Service, TimeTravelError, Requirements \| Scope>`                                         |
 | `defaultMaxHistoryEntries` | `number`. 100,000.                                                                                                       |
+| `forkWorkspaceName`        | `(childRunId: string) => string`. The jj workspace name a fork derives from the child run id it mints.                   |
 
 `Requirements` is `TimeTravelStore | Journal | RunStore | CacheStore | Jj`.
 Building the layer is scoped: the scope owns every fork workspace the service
@@ -115,10 +119,33 @@ interface Service {
 
 How the service is composed.
 
-| Field               | Type                      | Meaning                                                                                                                                                                                                         |
-| ------------------- | ------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `isAlive`           | `Ownership.LivenessCheck` | Whether the owner recorded on a run is still working, asked before startup recovery takes an interrupted rewind's run over. Defaults to `Ownership.leaseLiveness()` from [`@smthrs/run-store`](/docs/reference/api/run-store/). |
-| `maxHistoryEntries` | `number`                  | The most journal entries one replay, fork, or rewind may read. Defaults to `defaultMaxHistoryEntries`. Refused `invalid` at build unless it is a positive integer.                                              |
+| Field               | Type                                                    | Meaning                                                                                                                                                                                                         |
+| ------------------- | ------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `isAlive`           | `Ownership.LivenessCheck`                               | Whether the owner recorded on a run is still working, asked before startup recovery takes an interrupted rewind's run over. Defaults to `Ownership.leaseLiveness()` from [`@smthrs/run-store`](/docs/reference/api/run-store/). |
+| `maxHistoryEntries` | `number`                                                | The most journal entries one replay, fork, or rewind may read. Defaults to `defaultMaxHistoryEntries`. Refused `invalid` at build unless it is a positive integer.                                              |
+| `rateLimit`         | `(input) => Effect<RateLimitDecision, TimeTravelError>` | Whether one more rewind may start. Defaults to no limiter: every rewind is allowed. See [Rate limiting rewinds](#rate-limiting-rewinds).                                                                        |
+
+### Rate limiting rewinds
+
+```ts
+type RateLimitDecision = {
+  readonly allowed: boolean
+  readonly detail?: unknown
+}
+
+const layer = TimeTravel.layerWith({
+  rateLimit: ({ frame, nowMs, runId }) => Effect.succeed({ allowed: true })
+})
+```
+
+The limiter is asked once per rewind, under the ownership claim and before the
+audit row is written, so its decision is durable whichever way it goes. A
+decision that is not `allowed` fails the rewind `rate_limited` before anything
+is compensated, archived, or truncated. The audit row records `detail` when the
+decision carries one, and `{ allowed, checkedAtMs }` when it does not, where
+`checkedAtMs` is the `nowMs` the limiter was asked on. A limiter that fails
+rather than decides fails the rewind with its own `TimeTravelError`, abandons
+the claim, and writes no audit row at all.
 
 ### ReplayOptions, ForkOptions, RewindOptions
 
@@ -126,11 +153,13 @@ How the service is composed.
 interface ReplayOptions {
   readonly pageSize?: number | undefined
   readonly maxHistoryEntries?: number | undefined
+  readonly engineEvents?: EngineEvent.Consumer | undefined
 }
 
 interface ForkOptions {
   readonly workspaceRoot?: string | undefined
   readonly retainWorkspace?: boolean | undefined
+  readonly pageSize?: number | undefined
   readonly maxHistoryEntries?: number | undefined
 }
 
@@ -142,14 +171,29 @@ interface RewindOptions {
 ```
 
 `pageSize` is a throughput knob only and never changes a derived answer; it
-defaults to 100. `maxHistoryEntries` overrides `Options.maxHistoryEntries` for
-one call. `workspaceRoot` defaults to `.flows/forks` and only moves which lane
-the derived workspace name lands in. `detachedChildren` defaults to `"block"`.
+defaults to 100. In all three options types it must be a safe integer from 1
+through `Journal.maxEntriesLimit` (10,000). Any other value is refused with
+`invalid` before reading the journal. `maxHistoryEntries` overrides
+`Options.maxHistoryEntries` for one call. `workspaceRoot` defaults to `.flows/forks` and only moves which lane
+the derived workspace name lands in. `retainWorkspace` keeps the child lane
+registered after the service scope closes. `detachedChildren` defaults to
+`"block"`.
+
+`engineEvents` is the `EngineEvent.Consumer` from `@smthrs/journal` that a
+versioned engine record is decoded against: its `runId` and `lineageId` must
+equal the position's, and its source allowlist decides which emitters the fold
+accepts. A fold that reaches a `flows.engine.v*` entry without a matching
+consumer fails `invalid` and derives nothing. `inspect` takes no options, so a
+run whose journal carries those records is readable only through `replay`.
 
 ### ForkResult and RewindResult
 
 ```ts
-type ForkResult = TimeTravelStore.Fork
+type ForkResult = {
+  readonly runId: string
+  readonly edge: LineageEdge
+  readonly warnings: ReadonlyArray<string>
+}
 
 type RewindResult = {
   readonly auditId: string
@@ -174,7 +218,7 @@ a `Position`: a run id plus a `Frame`.
 | Operation                                | What it does                                                                                                                                                                                                                                                                                                                                                    |
 | ---------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `replay(position, projection, options?)` | Folds the committed journal prefix up to the frame through a pure projection. It has no dispatcher, so a replay can never re-execute a model call or a child flow, and that is what separates it from an engine resume. The fold streams and stops reading at the frame.                                                                                        |
-| `inspect(position, projection)`          | The same fold as `replay`, under the service defaults. It exists for the caller that never tunes a read.                                                                                                                                                                                                                                                        |
+| `inspect(position, projection)`          | The same fold as `replay`, under the service defaults. It exists for the caller that never tunes a read, and takes no options, so versioned engine history needs `replay` and its `engineEvents`.                                                                                                                                                               |
 | `fork(position, options?)`               | Mints and reserves a child run id, provisions the child's Jujutsu workspace pinned at the frame's recorded pointer, then copies the journal prefix, the frame's anchors, and only the attempts that prefix can explain, and records the lineage edge. The parent is never mutated, and the fork refuses `live_parent` while the parent or any ancestor is live. |
 | `rewind(position, options?)`             | The fenced, audited suffix-removal protocol. The ownership claim and the audit id are minted inside.                                                                                                                                                                                                                                                            |
 
@@ -206,7 +250,9 @@ holds.
 8. Restore the Jujutsu workspace to the frame's pointer.
 9. Persist the cancellation plan and claim every child it names.
 10. Archive and truncate the suffix atomically, fenced on the parent owner and
-    every non-terminal attached child's exact owner.
+    every non-terminal attached child's exact owner. The same transaction
+    advances the journal generation, so older sync cursors fail
+    `lineage_changed`.
 11. Cancel the claimed children, recording each on the audit as it lands.
 12. Suspend the run with the state derived at the frame and close the audit.
 
@@ -222,14 +268,20 @@ by the next recovery pass rather than silently dropped.
 
 ## Recovery
 
+Recovery recognizes child ownership from the persisted rewind or recovery child
+nonce. It reclaims expired child leases with fresh liveness evidence and the
+run store's snapshot CAS. Claims interrupted before activation are cleared with
+`recoverClaim`. Before the archive commits, activated children are released into
+`suspended`; after commit, the planned children are cancelled. Live leases or
+lost CAS races keep the audit open for retry.
+
 Recovery is not an operation. Building `TimeTravel.layer` finishes or rolls back
 every interrupted rewind audit before the service accepts work, so a crashed
 rewind never needs a call the caller has to remember.
 
-The one audit it cannot resolve is one whose run a live process still holds.
-That one is declined: the audit keeps its `in_progress` status, stays in
-`pendingAudits`, and nothing is written, so a later build finishes it. Recording
-it `failed` would close it terminally and drop it from `pendingAudits` forever.
+An audit whose parent or planned child a live process still holds is declined.
+It keeps its `in_progress` status and remains in `pendingAudits` for a later
+build to retry unresolved work.
 
 `Options.isAlive` is an [`Ownership.LivenessCheck`](/docs/reference/api/run-store/) and decides
 what "still live" means. It defaults to `Ownership.leaseLiveness()`, the same
@@ -311,40 +363,45 @@ moment the code under test reaches a third.
 | `AuditPatch`    | `{ status?, rateLimit?, detail? }`. The only keys an open audit row may be advanced through.                   |
 | `Receipt`       | `{ id, auditId, effectId, receipt }`. Proof one side effect was compensated.                                   |
 | `ArchiveResult` | `{ archived: number; orphaned: LineageEdge[] }`.                                                               |
-| `Fork`          | `{ runId, edge, warnings }`. A fork's outcome.                                                                 |
+| `Fork`          | `{ runId, edge }`. The row `createFork` commits; a fork's warnings ride `ForkResult`.                          |
 | `ForkIntent`    | `{ childRunId, parentRunId, parentSeq, reservedAtMs }`. A minted fork id whose fork has not committed.         |
 
 Three helpers travel with them:
 
 ```ts
-const auditPatchKeys: ReadonlyArray<string>
+const auditPatchKeys: ReadonlyArray<keyof AuditPatch>
 const validateAuditPatch: (patch: AuditPatch) => Effect<AuditPatch, TimeTravelError>
 const forkFrameMessage: (parentRunId: string, frame: Frame) => string
 ```
 
 `validateAuditPatch` refuses a patch carrying a key `AuditPatch` does not admit,
-because the offending caller is an untyped one. `forkFrameMessage` is the one
-refusal message both stores raise for a fork whose frame addresses no record,
-so a caller that branches on it gets the same answer from either.
+because the offending caller is an untyped one. An invalid status reports
+`invalid audit patch: status <json> is not one of in_progress|completed|failed`.
+The message omits the patch's detail and handler receipts.
+`forkFrameMessage` is the one refusal message both stores raise for a fork whose
+frame addresses no record, so a caller that branches on it gets the same answer
+from either.
 
 ### Service
 
-| Method                                                            | What it does                                                                                                                                                                                                                                          |
-| ----------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `snapshotAt(runId, frame)`                                        | The anchor recorded at a frame, or `undefined`.                                                                                                                                                                                                       |
-| `recordSnapshot(snapshot)`                                        | Records one anchor. Written by the snapshot projector, never by a caller.                                                                                                                                                                             |
-| `stateAt(runId, frame)`                                           | The run state **at** a frame as encoded JSON, derived by replaying the run-decision records, not read off the run row's latest state.                                                                                                                 |
-| `attemptsAt(runId, frame)`                                        | The attempts that had been admitted at a frame, derived the same way.                                                                                                                                                                                 |
-| `descendants(runId, frame)`                                       | The lineage edges hanging off this run at or after a frame, split into attached and detached.                                                                                                                                                         |
-| `writeAudit(audit)`                                               | Opens the audit trail for a rewind, before anything is compensated or truncated.                                                                                                                                                                      |
-| `updateAudit(id, patch)`                                          | Advances an open audit row. Any key outside `AuditPatch` is refused `invalid`.                                                                                                                                                                        |
-| `pendingAudits()`                                                 | Every audit row still `in_progress`. Recovery drains this on layer build.                                                                                                                                                                             |
-| `archiveAndTruncate(runId, frame, receipts, owner, childOwners?)` | Truncates a run back to a frame, archiving rather than deleting, removing deferred completions and clock deadlines named by archived records, and persisting the receipts. Fenced on the caller's ownership and on every non-terminal attached child. |
-| `archivedAt(runId, seq)`                                          | Whether the archive holds a record at that coordinate. Recovery's commit-point evidence.                                                                                                                                                              |
-| `nextForkId(parentRunId, frame)`                                  | Mints and durably reserves the run id the next fork off that frame will carry, without creating a run.                                                                                                                                                |
-| `abandonForkIntents(staleBeforeMs)`                               | Every reservation older than `staleBeforeMs` whose fork never committed, handed back exactly once.                                                                                                                                                    |
-| `createFork(parentRunId, frame, childRunId?)`                     | Branches a new run off a frame, copying the journal prefix and the attempts that existed there, and recording the `fork` edge. The parent is untouched.                                                                                               |
-| `recordReceipt(receipt)`                                          | Persists one compensation receipt against its audit row, before the journal range that effect belongs to is truncated.                                                                                                                                |
+| Method                                                            | What it does                                                                                                                                                                                                                                                                                   |
+| ----------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `snapshotAt(runId, frame)`                                        | The anchor recorded at a frame, or `undefined`.                                                                                                                                                                                                                                                |
+| `recordSnapshot(snapshot)`                                        | Records one anchor. Written by the snapshot projector, never by a caller.                                                                                                                                                                                                                      |
+| `recordSnapshots(snapshots)`                                      | Records a batch of anchors in one write. The projector hands it one journal page's anchors at a time, so a page costs one transaction on the SQL store.                                                                                                                                        |
+| `latestSnapshots(runId)`                                          | The last anchor recorded on each lineage of a run, the projector's resume point. Empty for a run with no anchors.                                                                                                                                                                              |
+| `stateAt(runId, frame)`                                           | The run state **at** a frame as encoded JSON, derived by replaying the run-decision records, not read off the run row's latest state.                                                                                                                                                          |
+| `attemptsAt(runId, frame)`                                        | The attempts that had been admitted at a frame, derived the same way.                                                                                                                                                                                                                          |
+| `descendants(runId, frame)`                                       | The lineage edges hanging off this run at or after a frame, split into attached and detached.                                                                                                                                                                                                  |
+| `writeAudit(audit)`                                               | Opens the audit trail for a rewind, before anything is compensated or truncated.                                                                                                                                                                                                               |
+| `updateAudit(id, patch)`                                          | Advances an open audit row. Any key outside `AuditPatch` is refused `invalid`.                                                                                                                                                                                                                 |
+| `pendingAudits()`                                                 | Every audit row still `in_progress`. Recovery drains this on layer build.                                                                                                                                                                                                                      |
+| `archiveAndTruncate(runId, frame, receipts, owner, childOwners?)` | Refuses malformed frames with `invalid`. Truncates a run back to a frame, archiving rather than deleting, removing deferred completions and clock deadlines named by archived records, and persisting the receipts. Fenced on the caller's ownership and on every non-terminal attached child. |
+| `archivedAt(runId, seq)`                                          | Whether the archive holds a record at that coordinate. Recovery's commit-point evidence.                                                                                                                                                                                                       |
+| `nextForkId(parentRunId, frame)`                                  | Mints and durably reserves the run id the next fork off that frame will carry, without creating a run.                                                                                                                                                                                         |
+| `abandonForkIntents(staleBeforeMs)`                               | Every reservation older than `staleBeforeMs` whose fork never committed, handed back exactly once.                                                                                                                                                                                             |
+| `createFork(parentRunId, frame, childRunId?)`                     | Branches a new run off a frame, copying the journal prefix and the attempts that existed there, and recording the `fork` edge. The parent is untouched.                                                                                                                                        |
+| `recordReceipt(receipt)`                                          | Persists one compensation receipt against its audit row, before the journal range that effect belongs to is truncated.                                                                                                                                                                         |
 
 Every method fails as `TimeTravelError`.
 
@@ -372,13 +429,16 @@ The durable store, SQLite dialect only.
 
 ```ts
 const migrate: Effect<void, unknown, SqlClient>
-const make: Effect<TimeTravelStore.Service, never, DurableWriter | SqlClient>
-const layer: Layer<TimeTravelStore.TimeTravelStore, never, DurableWriter | SqlClient>
+const make: Effect<TimeTravelStore.Service, TimeTravelError, DurableWriter | SqlClient>
+const layer: Layer<TimeTravelStore.TimeTravelStore, TimeTravelError, DurableWriter | SqlClient>
 ```
 
-Building `make` runs `migrate` first, so a fresh database is usable without a
-separate setup step. Writes go through `DurableWriter` rather than straight to
-`SqlClient`.
+Building `make` applies pending time-travel migration rungs over a database
+the journal and run-store ladders have already migrated. Missing
+`flows_journal_events` or `flows_runs` fails with a `TimeTravelError` naming
+the table. Migration failures also use this typed channel and retain their
+cause. Use `Migrations.run` for the complete durable schema on a fresh
+database. Writes go through `DurableWriter`.
 
 ## EffectBoundary
 
@@ -449,7 +509,11 @@ as `blocking`.
 
 ## Migrations
 
-The same schema as a rung on the shared migration ladder.
+The schema as fixed rungs on the shared migration ladder. Store construction
+uses this same ladder and skips recorded rungs. Published IDs remain stable:
+`5001_initial`, `5002_archive_generation`, `5003_lineage_probes`, and
+`5004_plan_digest`. The last rung also accepts databases where an older
+store build already added `plan_digest` outside the ledger.
 
 | Export  | Signature                                                                                            |
 | ------- | ---------------------------------------------------------------------------------------------------- |
@@ -459,33 +523,34 @@ The same schema as a rung on the shared migration ladder.
 | `layer` | A layer that installs the complete schema before exposing the database.                              |
 
 The block is above `@smthrs/plan`'s `4000`, which is what keeps the set runnable
-on a database the engine ladder already migrated. The lineage index this set
-adds is over the journal's own table, and it ships here because a migrator
-refuses any migration whose id sits below the mark the database already applied.
+on a database the engine ladder already migrated. The journal owns
+`flows_journal_events`; this set owns the lineage indexes on that table.
 
 ## Failure behaviour
 
 Every operation fails as a `TimeTravelError` discriminated by a closed `code`,
 so a caller's branch stays exhaustive.
 
-| Code                  | Raised by              | Means                                                                                                                                                                                         |
-| --------------------- | ---------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `busy`                | `rewind`, recovery     | Another owner holds the run, the journal tail moved under the claim, or this operation lost its claim before it could finish. Retryable.                                                      |
-| `live_parent`         | `fork`                 | The parent run, or an ancestor of it, is running, claimed, or owned, so it has no settled prefix to copy.                                                                                     |
-| `live_child`          | `rewind`               | A descendant the truncation would cut history out from under is still executing, and the policy is `"block"`.                                                                                 |
-| `not_found`           | all verbs              | The run, the frame, or the audit does not address anything: a coordinate past the journal tail, a lineage this run is not on, or a run row that is gone.                                      |
-| `invalid`             | all verbs              | A caller-supplied option is malformed, or a durable payload does not decode. Refused before the operation touches anything.                                                                   |
-| `already_crossed`     | `EffectBoundary.guard` | The effect already recorded a durable `intended` boundary, so executing it a second time was refused.                                                                                         |
-| `rate_limited`        | `rewind`               | The supplied rate limiter rejected the attempt. The audit row records the decision.                                                                                                           |
-| `compensation_failed` | `rewind`, recovery     | A rollback handler or the workspace restore failed, so the rewind stopped rather than leave the world half reverted.                                                                          |
-| `irreversible`        | `rewind`               | An effect in the truncated range cannot be undone at all: no handler, or a sealed result whose cache entry is gone.                                                                           |
-| `fence_lost`          | `rewind`               | The caller's ownership of the run was superseded before a mutation committed, so the mutation was refused rather than written behind the live owner.                                          |
-| `limit_exceeded`      | all verbs              | The operation would read more journal entries than `maxHistoryEntries` allows: the prefix a replay folds, or the suffix a fork or rewind assesses. A rewind refuses before it claims the run. |
-| `unknown`             | all verbs              | The store, the journal, or an unmapped host failure. The original cause is attached.                                                                                                          |
+| Code                  | Raised by              | Means                                                                                                                                                                                                                              |
+| --------------------- | ---------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `busy`                | `rewind`, recovery     | Another owner holds the run, the journal tail moved under the claim, or this operation lost its claim before it could finish. Retryable.                                                                                           |
+| `live_parent`         | `fork`                 | The parent run, or an ancestor of it, is running, claimed, or owned, so it has no settled prefix to copy.                                                                                                                          |
+| `live_child`          | `rewind`               | A descendant the truncation would cut history out from under is still executing, and the policy is `"block"`.                                                                                                                      |
+| `not_found`           | all verbs              | The run, the frame, or the audit does not address anything: a coordinate past the journal tail, a lineage this run is not on, or a run row that is gone.                                                                           |
+| `invalid`             | all verbs              | A caller-supplied option is malformed, or a durable payload does not decode. Refused before the operation touches anything.                                                                                                        |
+| `already_crossed`     | `EffectBoundary.guard` | The effect already recorded a durable `intended` boundary, so executing it a second time was refused.                                                                                                                              |
+| `rate_limited`        | `rewind`               | The `Options.rateLimit` limiter the service was built with rejected the attempt. The audit row records the decision.                                                                                                               |
+| `compensation_failed` | `rewind`, recovery     | A rollback handler or the workspace restore failed, so the rewind stopped rather than leave the world half reverted.                                                                                                               |
+| `irreversible`        | `rewind`               | An effect in the truncated range cannot be undone at all: no handler, or a sealed result whose cache entry is gone.                                                                                                                |
+| `fence_lost`          | `rewind`               | The caller's ownership of the run was superseded before a mutation committed, so the mutation was refused rather than written behind the live owner.                                                                               |
+| `limit_exceeded`      | all verbs              | The operation would read more journal entries than `maxHistoryEntries` allows: the prefix a replay folds, the unanchored entries a fork or rewind refreshes, or the suffix it assesses. A rewind refuses before it claims the run. |
+| `unknown`             | all verbs              | The store, the journal, or an unmapped host failure. The original cause is attached.                                                                                                                                               |
 
 An error's `cause` is encoded with the error, so the package never attaches a
 whole effect record or a whole parse issue to one: a blocking assessment travels
-as its identity and classification, never as the effect's `input` or `output`.
+as its identity, classification, and reason, never as the effect's `input`,
+`output`, or residue. Replay scope refusals carry only `runId`, `seq`, `eventId`,
+`eventType`, and the expected run and lineage, without journal payload or metadata.
 
 ## Limits
 
@@ -504,6 +569,14 @@ as its identity and classification, never as the effect's `input` or `output`.
   frame, so it retains nothing below it; a fork or rewind retains only the
   effect-boundary records of the suffix it assesses. Validation still scans a
   run's journal to its tail to find the frame, without retaining it.
+- The anchor refresh a fork or rewind runs before it reads anchors resumes from
+  the last anchor per lineage in `flows_time_travel_snapshots` and stops at the
+  frame, so it reads only the entries above the run's anchored high-water mark
+  and at or below the frame, counted against the same `maxHistoryEntries`. It
+  writes each page's anchors in one store write, so a run whose anchors are
+  current reads one page and writes nothing. A fork of a live parent is refused
+  before the refresh runs. A rewind revalidates the tail under its claim from
+  one page at the expected tail, never a second scan of the journal.
 - `Projection.reduce` receives store entries by reference. Treat them as
   read-only: mutating one rewrites the evidence the fold is reading.
 - The memory store is a behavioural peer of the SQL store for the answers both
@@ -528,10 +601,11 @@ dependency arrow stays one way.
 `SqlTimeTravelStore.migrate` creates `flows_time_travel_snapshots`,
 `flows_time_travel_edges`, `flows_time_travel_audits`,
 `flows_time_travel_receipts`, `flows_time_travel_archive`, and
-`flows_time_travel_fork_intents`, and indexes `meta_json.lineageId` on the
-journal's own `flows_journal_events` so a lineage-filtered read is not a full
-run scan. `Migrations` publishes the same DDL as a rung on the shared ladder at
-id block `5000`, for a composition that owns migration itself.
+`flows_time_travel_fork_intents`. It also initializes `flows_journal_generations`,
+the journal generation counters bumped on truncation, and indexes
+`meta_json.lineageId` on the journal's own `flows_journal_events` so a
+lineage-filtered read is not a full run scan. `Migrations` publishes the fixed
+rungs at id block `5000`; store construction applies the same recorded set.
 
 With no `CompensationHandlers` provided, a crossed record that is not sealed
 resolves to no handler, classifies as `blocking`, and the rewind fails

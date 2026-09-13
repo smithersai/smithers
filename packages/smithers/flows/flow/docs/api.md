@@ -303,7 +303,7 @@ A `RetryPolicy` is a plain value, so the next retry delay is derived from a pers
 | `annotateWaiting`       | declares how the flow is about to wait, so a durable driver parks the run under that reason and token                                                                                                       |
 | `WaitingAnnotation`     | `{ reason, wakeAt?, token? }`                                                                                                                                                                               |
 | `FlowCycleDetected`     | executing a flow would close a cycle in the persisted parent chain                                                                                                                                          |
-| `FlowExecutionNotFound` | `poll` was given an execution id the runtime does not hold; `resume` has no error channel and ignores an unknown id                                                                                        |
+| `FlowExecutionNotFound` | `poll` was given an execution id the runtime does not hold; `resume` has no error channel and ignores an unknown id                                                                                         |
 | `CancelRequestFailed`   | a durable runtime could not record a cancellation, with `cancel_request_failed` for a storage failure and `unsafe_interrupt_unsupported` for `interruptUnsafe`, which the durable engine does not implement |
 
 A completion wakes a parked run through `FlowRuntime.resume`.

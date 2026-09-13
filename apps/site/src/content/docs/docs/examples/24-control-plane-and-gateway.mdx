@@ -12,7 +12,7 @@ Plan, approve, launch, and watch a flow through a loopback control server.
 
 Unary calls use HTTP RPC; the watch stream uses WebSocket RPC. The catalog comes from the example project's flow declarations, and its executor connects an approved plan to the registered durable implementation.
 
-Control state and execution state use separate databases while the journal supplies the event stream. The server binds an ephemeral loopback port without authentication. A host listening beyond loopback needs an authenticator and client credentials.
+Control state and execution state use separate databases while the journal supplies the event stream. Both transports authenticate with a fresh session bearer credential. Exact Host and Origin checks protect the loopback listener; binding to loopback alone does not authenticate callers.
 
 ## Run the test
 
@@ -56,9 +56,12 @@ import type * as FileSystem from "effect/FileSystem"
 import * as Layer from "effect/Layer"
 import type * as Path from "effect/Path"
 import * as Schema from "effect/Schema"
+import type * as Scope from "effect/Scope"
 import * as Stream from "effect/Stream"
-import { HttpRouter, HttpServer } from "effect/unstable/http"
+import { HttpRouter, HttpServer, HttpServerRequest, HttpServerResponse } from "effect/unstable/http"
 import { RpcSerialization } from "effect/unstable/rpc"
+import { Socket } from "effect/unstable/socket"
+import { randomBytes } from "node:crypto"
 import { mkdirSync } from "node:fs"
 import { createServer } from "node:http"
 import { dirname, join } from "node:path"
@@ -94,7 +97,7 @@ const platform = Layer.mergeAll(NodeFileSystem.layer, NodePath.layer)
  * The registry the control plane lists flows from and the engine registers
  * them from: `<projectRoot>/flows/**`, scanned, with bodies still unread.
  */
-const registry = Executable.layerProject({ root: projectRoot }).pipe(Layer.provide(platform), Layer.orDie)
+const registry = Registry.layerProject({ root: projectRoot }).pipe(Layer.provide(platform), Layer.orDie)
 
 /** How a discovered descriptor is turned into something the engine can drive. */
 const bridge: Executable.Options = { delegates: [Ship] }
@@ -125,6 +128,43 @@ const addressOf = (server: HttpServer.HttpServer["Service"]): string => {
   if (address._tag !== "TcpAddress") throw new Error("expected a TCP control server")
   return `http://127.0.0.1:${address.port}`
 }
+
+/** Starts a launch behind the receipt latch in the executor's lifetime. */
+export const startLaunch = <A, E, R>(scope: Scope.Scope, effect: Effect.Effect<A, E, R>) =>
+  Effect.gen(function*() {
+    const start = yield* Deferred.make<void>()
+    // forkIn registers interrupt-and-await cleanup before returning the fiber.
+    const fiber = yield* Effect.forkIn(Deferred.await(start).pipe(Effect.andThen(effect)), scope)
+    return { start, fiber }
+  })
+
+/** Mounts both control RPC transports on an ephemeral loopback server. */
+export const serve = (credential: string) => HttpRouter.serve(
+  ControlServer.layerHttp.pipe(
+    Layer.provide(ControlRpcs.layerBearerAuth({ token: credential, principal: { id: "local", kind: "operator" } })),
+    Layer.provide(HttpRouter.middleware(Effect.gen(function*() {
+      const server = yield* HttpServer.HttpServer
+      const origin = addressOf(server)
+      const host = new URL(origin).host
+      return (handler) => Effect.gen(function*() {
+        const request = yield* HttpServerRequest.HttpServerRequest
+        // Check before routing, including before the WebSocket upgrade. Native
+        // clients may omit Origin; browser origins must match this exact server.
+        if (request.headers.host !== host ||
+          (request.headers.origin !== undefined && request.headers.origin !== origin)) {
+          return HttpServerResponse.empty({ status: 403 })
+        }
+        return yield* handler
+      })
+    })).layer),
+    Layer.provide(RpcSerialization.layerNdjson)
+  ),
+  { disableListenLog: true, disableLogger: true }
+).pipe(
+  Layer.provideMerge(
+    NodeHttpServer.layer(createServer, { host: "127.0.0.1", port: 0 })
+  )
+)
 
 /** What one remote session observed. */
 export interface Summary {
@@ -228,6 +268,7 @@ export const main = (root: string): Effect.Effect<Summary> =>
      */
     const executorLayer = Layer.effect(ControlExecutor.ControlExecutor)(
       Effect.gen(function*() {
+        const scope = yield* Effect.scope
         const plane = yield* ControlRuntime.ControlRuntime
         const services = yield* Effect.context<
           | FlowRuntime.FlowRuntime
@@ -251,11 +292,12 @@ export const main = (root: string): Effect.Effect<Summary> =>
             Effect.gen(function*() {
               launched.push(plan.card.flowId)
               const executable = yield* Executable.fromRegistry(plan.card.flowId, bridge)
-              const start = yield* Deferred.make<void>()
-              const fiber = Effect.runForkWith(services)(
-                Deferred.await(start).pipe(
-                  Effect.andThen(launch(executable, plan.decodedInput as Schema.Json, run.runId)),
-                  Effect.andThen(mirror(run.runId))
+              const { start, fiber } = yield* startLaunch(
+                scope,
+                launch(executable, plan.decodedInput as Schema.Json, run.runId).pipe(
+                  Effect.andThen(mirror(run.runId)),
+                  // Do not inherit the RPC's transaction or request scope.
+                  Effect.setContext(services)
                 )
               )
               driving.push({ runId: run.runId, start, fiber })
@@ -289,29 +331,26 @@ export const main = (root: string): Effect.Effect<Summary> =>
     return yield* Effect.scoped(
       Effect.gen(function*() {
         // The server: the same `Control` service, mounted as RPC.
-        const served = HttpRouter.serve(
-          ControlServer.layerHttp.pipe(
-            // Trusted loopback callers act as the local operator. Authentication
-            // alone does not delegate approval authority to a test identity.
-            Layer.provide(ControlRpcs.layerNoopAuth({ id: "local", kind: "operator", stampedAt: 0 })),
-            Layer.provide(RpcSerialization.layerNdjson)
-          ),
-          { disableListenLog: true, disableLogger: true }
-        ).pipe(
-          Layer.provideMerge(
-            NodeHttpServer.layer(createServer, { host: "127.0.0.1", port: 0 })
-          )
-        )
+        const credential = yield* Effect.sync(() => randomBytes(32).toString("hex"))
+        const served = serve(credential)
 
         return yield* Effect.gen(function*() {
           const server = yield* HttpServer.HttpServer
           const url = addressOf(server)
 
           // The client: the same `Control` interface, over two transports.
-          const client = ControlClient.layer({ url: `${url}/rpc` }).pipe(
+          const client = ControlClient.layer({ url: `${url}/rpc`, credential }).pipe(
             Layer.provide([
               NodeHttpClient.layerUndici,
-              NodeSocket.layerWebSocket(`ws://127.0.0.1:${new URL(url).port}/rpc/ws`),
+              // This Node client can put the credential on the upgrade request.
+              // Browser WebSocket constructors cannot set Authorization headers.
+              Socket.layerWebSocket(`ws://127.0.0.1:${new URL(url).port}/rpc/ws`).pipe(
+                Layer.provide(Layer.succeed(Socket.WebSocketConstructor)(
+                  (url, protocols) => new NodeSocket.NodeWS.WebSocket(url, protocols, {
+                    headers: { authorization: `Bearer ${credential}` }
+                  }) as unknown as globalThis.WebSocket
+                ))
+              ),
               RpcSerialization.layerNdjson
             ])
           )

@@ -21,16 +21,16 @@ They live in `@smthrs/run-store/Heartbeat` and are re-exported from
 | `heartbeatInterval`       | 1 second   | How often the supervision loop pulses.                                                    |
 | `heartbeatStaleAfter`     | 30 seconds | How old a persisted heartbeat must be before a peer may steal the run.                    |
 | `heartbeatSkewAllowance`  | 10 seconds | How far the owner's wall clock may lag a peer's before the lease reasoning stops holding. |
-| `heartbeatWriteTolerance` | 19 seconds | How long an owner may keep working through failing heartbeat writes.                      |
+| `heartbeatWriteTolerance` | 19 seconds | How long an owner may keep working through failing or stalled heartbeat writes.           |
 
 The last one is derived, not chosen:
 `heartbeatStaleAfter - heartbeatSkewAllowance - heartbeatInterval`. A peer may
 steal the run the instant the persisted heartbeat is `heartbeatStaleAfter` old.
 The peer's clock may already read `heartbeatSkewAllowance` later than the
-owner's, and the owner only re-evaluates its budget once per
-`heartbeatInterval`, so an owner that tolerated write failures for the full
-staleness window would still be running side effects when the steal was
-admitted. Subtracting both makes the owner interrupt itself first.
+owner's, so an owner that tolerated write failures for the full staleness
+window would still be running side effects when the steal was admitted.
+Subtracting the skew allowance and an extra pulse interval makes the owner
+interrupt itself first.
 
 They live in a leaf module because `Ownership` imports `RunStore` and
 `RunStore` needs the staleness cutoff for its own predicates. Neither could own
@@ -65,7 +65,15 @@ distinguishes two failures on purpose:
 - **A failed write** is not evidence of anything. The persisted heartbeat is
   still on the row and no peer may steal the run until it is
   `heartbeatStaleAfter` old, so transient database errors are tolerated for
-  `heartbeatWriteTolerance`. Every successful pulse re-arms the window.
+  `heartbeatWriteTolerance`.
+
+An independent deadline interrupts the pulse loop and its pending write when
+that budget expires, including when a write never returns. A successful pulse
+re-arms the deadline from the timestamp supplied to the store, not the time the
+write completes. The deadline reads the current clock after each wait; delayed
+successes and failures cannot extend the lease beyond that persisted timestamp's
+budget. Until the first successful pulse, the budget starts when supervision
+begins.
 
 ## Heartbeats only move forward
 

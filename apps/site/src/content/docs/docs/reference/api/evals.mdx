@@ -86,15 +86,19 @@ Four rules decide what a comparison reports, and none of them are obvious:
 - **`Observation.scorer` is a digest, not a name.** It is the scorer key, derived
   from the scorer's own `{ id, version, config }`, and it is what a baseline
   matches on. `Observation.scorerName` carries the readable name beside it, and a
-  Markdown report prints `name (first 8 of the key)`.
+  Markdown report prints `name (first 8 of the key)`, or the bare key for a
+  scorer declared without a name. Report cells, gate summaries, and runner
+  diagnostics all use that one label.
 - **A binding matches its target by reference identity.** `binding.appliesTo` has
   to be the same flow value the execution reports as its `target`; a structurally
   equal copy grades nothing.
-- **A baseline belongs to one suite.** Validation requires the artifact's
-  top-level `suite` field and a `suite` on every record, so ownership is recorded
-  even when the baseline has no records. Comparison refuses an artifact or any
-  record that names a suite other than the run's: a mismatch fails with
-  `invalid_baseline` rather than reporting a clean pass.
+- **A baseline belongs to one suite.** Validated baselines and newly written
+  artifacts require a top-level `suite`, even with no records. Every record
+  requires its own `suite`. `Baseline.load` accepts a suite-less version-1
+  artifact only when its nonempty records all name the same suite, then sets
+  the top-level `suite` to that value. Empty or ambiguous legacy artifacts fail
+  with `invalid_baseline` at `suite`. Comparison refuses an artifact or any
+  record that names a suite other than the run's with `invalid_baseline`.
 
 ## Failure codes
 
@@ -141,11 +145,21 @@ not finite and inside [0, 1] becomes an inconclusive observation naming the
 scorer and the offending value; the run's own timestamp, not the adapter's, is
 what reaches the observation.
 
+Both adapter methods retain their receiver and receive the suite's concurrency.
+Scorer callbacks execute inside their job effects. A callback that throws
+synchronously or a batch that fails produces inconclusive observations; failure
+text is bounded and safe to convert. Interruption still cancels the run.
+`layerNoop` returns identity-correlated inconclusive results, including when
+cases share a step key and scorer, without invoking scorer callbacks.
+
 ## Determinism and limits
 
-- `Runner.run` takes `runId` and `at` from the caller and stamps every
-  observation with them, so two runs over the same inputs produce identical
-  observations and identical `Report.json` bytes.
+- `Runner.run` takes `runId` and `at` from the caller. `runId` identifies the
+  `RunResult` and joins every score job's identity; `at` stamps every
+  observation. Given identical executor results, scorer results, metadata, and
+  options, two runs produce identical observations and identical `Report.json`
+  bytes. Executor and scorer effects run afresh each time, so clocks, models,
+  randomness, and external state inside them are the caller's to control.
 - When the `Suite.make` effect runs, it snapshots its options, copies case and
   binding data with `structuredClone`, and freezes the arrays it returns. The
   suite cannot change after it is validated.
@@ -156,8 +170,15 @@ what reaches the observation.
   (`[circular]`, `[depth exceeded]`, `[NaN]`, `[function]`), so the serializer is
   total. Nothing is redacted: a suite whose cases carry secrets must not print
   the report where the log is readable.
-- `Report.markdown` escapes, flattens, and caps every cell at 240 characters,
-  including the heading.
+- The encoder is bounded in total, not only per branch. A value referenced
+  twice is expanded twice, which a shared acyclic graph turns into exponential
+  work well below the depth ceiling, so traversal stops after 2000000 values or
+  33554432 output code units and every remaining value becomes
+  `[budget exceeded]`. The budget is spent in traversal order, which the key
+  sort fixes, so one value always truncates at the same place.
+- `Report.markdown` neutralizes inline GFM and raw HTML in every cell and the
+  suite heading value. It caps each value at 240 escaped UTF-16 code units,
+  plus an ellipsis when truncated, without splitting escapes or code points.
 
 ## Module reference
 
@@ -190,8 +211,9 @@ eight codes in the failure table.
 Fixed suite declarations and their JSON Lines fixture format.
 
 - `Case`: `{ name, input, expected? }`. `input` is handed to the executor and
-  `expected` is offered to a bound scorer as ground truth when the binding
-  declares none of its own. Both are snapshots taken by `make`.
+  `expected` is offered to a bound scorer as ground truth. A declared
+  `expected`, including `null`, wins over the binding's `groundTruth`; only an
+  absent one defers to the binding. Both are snapshots taken by `make`.
 - `Binding`: a scorer binding accepted from [@smthrs/scorers](/docs/reference/api/scorers/).
   The binding's `appliesTo` flow is matched against an execution's `target` by
   reference identity.
@@ -223,7 +245,10 @@ Loads the `{ name, input, expected? }` JSON Lines fixture format.
 skipped, a leading byte-order mark is stripped, and both LF and CRLF terminate
 a line. A malformed line fails with `invalid_suite` carrying the 1-based line
 number in both the message and the path; a fixture larger than
-`limits.fixtureLength` is rejected before any of it is parsed.
+`limits.fixtureLength` is rejected before any of it is parsed. All ceilings
+are inclusive. After 10000 cases, the next non-blank line fails before parsing
+or decoding with `invalid_suite` at `cases` and the message
+`Suite must contain at most 10000 cases, got 10001`; later lines are not decoded.
 
 ### CaseExecutor
 
@@ -234,20 +259,16 @@ says what to run; this service says how.
   value the case actually executed, matched against each binding's `appliesTo`
   by reference identity, so it has to be the declared flow itself rather than
   a copy of it.
-- `CaseInput`: the `Case` the executor receives.
-- `Run`: `(suiteCase: CaseInput) => Effect.Effect<Execution, EvalError>`.
+- `Run`: `(suiteCase: Suite.Case) => Effect.Effect<Execution, EvalError>`.
 - `Service`: `{ run: Run }`.
-- `Implementation`: `{ run }` or `{ execute }`. The union accepts exactly one
-  of them, so an object supplying both is a type error instead of a service
-  whose two halves can disagree.
 - `CaseExecutor`: the `Context.Service` tag, `flows/evals/CaseExecutor`.
 
 ```ts
-const make = (implementation: Implementation | Run): Service
+const make = (run: Run): Service
 ```
 
-Builds an executor from a callback, or from an object naming it `run` or
-`execute`. Throws a `TypeError` when neither is a function: an executor that
+Builds an executor from its one callback. Throws a `TypeError` when `run` is
+not a function: an executor that
 silently degraded would turn one wiring mistake into a whole suite of cases
 failing with `executor`, which reads as a broken target rather than a missing
 one.
@@ -347,8 +368,9 @@ const make = (
 Validates an in-memory baseline. Every known field is read once, records are
 rebuilt from the validated values, and the array is frozen. Fails with
 `invalid_baseline` carrying the record index and field name in `path` for a
-wrong version, a non-array `records`, a record that is not an object, a
-non-string identity field, or a score that is not finite in [0, 1].
+wrong version, a non-array `records`, a record that is not an object, an
+identity field that is not a string or holds a control character (U+0000
+through U+001F, or U+007F), or a score that is not finite in [0, 1].
 
 ```ts
 const write = (baseline: Baseline): string
@@ -357,8 +379,12 @@ const load = (text: string): Effect.Effect<Baseline, EvalError>
 
 `write` serializes a baseline with recursively sorted keys and stable numbers,
 records ordered by an injective encoding of `(suite, case, scorer, stepKey)`,
-ending with a newline. `load` parses and validates canonical baseline JSON,
-failing with `invalid_baseline`.
+ending with a newline and always including the top-level `suite`. `load`
+parses and validates baseline JSON, failing with `invalid_baseline`. For a
+version-1 artifact without a top-level `suite`, it derives ownership only when
+all records name the same suite. Empty or ambiguous legacy artifacts fail at
+`path: "suite"` with an explicit reason. A present non-string `suite` is invalid.
+Writing the loaded baseline retains its scores and adds the inferred `suite`.
 
 ### Regression
 
@@ -376,7 +402,9 @@ Step-key-aware comparison of a run against a baseline.
   record the run never reproduced, `"baseline"` for a score no baseline record
   accounts for.
 - `Report`: `{ suite, baseline, run, regressions, nondeterminism, missing,
-  samples, inconclusive }`, the complete comparison.
+  samples, inconclusive }`, the complete comparison. `samples` and
+  `inconclusive` are in-memory views filtered out of `run.observations` by
+  `kind`; `Report.json` recomputes rather than serializes them.
 
 ```ts
 const compare = (
@@ -399,24 +427,61 @@ other than the one the run reports.
 Canonical JSON and Markdown renderings of a comparison.
 
 ```ts
+const version: 1
+interface Data {
+  readonly reportVersion: 1
+  readonly suite: string
+  readonly baseline: Baseline.Baseline
+  readonly run: { runId, suite, cases: ReadonlyArray<Case>, observations: ReadonlyArray<Runner.Observation> }
+  readonly regressions: ReadonlyArray<Omit<Regression.Regression, "actual"> & { actual: number }>
+  readonly nondeterminism: ReadonlyArray<Omit<Regression.Nondeterminism, "actual"> & { actual: number }>
+  readonly missing: ReadonlyArray<Regression.MissingObservation>
+}
+const data = (report: Regression.Report): Data
 const json = (report: Regression.Report): string
 const markdown = (report: Regression.Report): string
 ```
 
-`json` serializes a regression report as stable, sorted-key JSON. The report
-embeds each case's raw `execution.output`, which comes from an arbitrary
-target flow, so the encoding is total rather than trusting: keys are sorted by
-code unit, embedded strings are capped, and anything JSON cannot express
-becomes a named marker instead of a `RangeError` or a silent `null`. Two
-identical runs therefore produce byte-identical JSON. Nothing redacts the
-embedded output.
+`Data` is the serialized wire shape and `version` is the format version
+stamped on it as `reportVersion`. It versions the comparison independently of
+the nested `Baseline.version`: the wire shape can change without the committed
+baseline artifact changing.
+
+`run.observations` is the observation table. Every observation the report
+mentions appears in it exactly once and everything else refers to one by
+index: `run.cases[i].observations` is a list of indexes, and a regression or
+nondeterminism entry's `actual` is a single index. `samples` and
+`inconclusive` are absent, because both are filters of `run.observations` by
+`kind` and a reader recomputes them. An in-memory `Regression.Report` holds
+the same observation in up to four of those places, so encoding it directly
+repeated every `reason` and every `meta` that many times.
+
+`data` projects a comparison into that shape. Observations are pooled by
+identity, not by value, so two distinct objects that happen to be equal stay
+two rows. The table starts as `run.observations` and grows to hold any
+observation reached only through a case or a comparison entry, so a hand-built
+report whose case lists are not flattened still serializes every reference.
+
+`json` serializes a regression report as stable, sorted-key `Data` JSON. The
+report embeds each case's raw `execution.output`, which comes from an
+arbitrary target flow, so the encoding is total rather than trusting: keys are
+sorted by code unit, embedded strings are capped, total traversal is bounded,
+and anything JSON cannot express becomes a named marker instead of a
+`RangeError` or a silent `null`. Two identical runs therefore produce
+byte-identical JSON. Nothing redacts the embedded output.
 
 `markdown` renders the report an operator reads in a CI log. Every count in
 the summary that is not zero has a section naming its rows: the regressions
 and the nondeterminism a gate reads as red, and the case failures, missing
-observations, and inconclusive observations that leave a gate undecided. Cell
-text is escaped, stripped of control characters, and capped, so a suite, case,
-or scorer name cannot inject Markdown into a rendered report.
+observations, and inconclusive observations that leave a gate undecided.
+Every cell and the suite heading value replace C0 controls (U+0000 through
+U+001F) and DEL (U+007F) with spaces. Backslashes, pipes, backticks, asterisks,
+underscores, brackets, angle brackets, exclamation marks, hashes, tildes,
+ampersands, dots, colons, and at signs are backslash-escaped. This preserves
+literal text instead of interpreting table delimiters, inline GFM formatting,
+links, images, raw HTML, entities, or URL/email autolinks. Each value is capped
+at 240 escaped UTF-16 code units, followed by an ellipsis when truncated;
+escapes and Unicode code points remain whole.
 
 ### Gate
 
@@ -447,63 +512,67 @@ const ciGrade = (verdict: Verdict): { readonly exitCode: 0 | 1 | 5; readonly sum
 Maps a gate verdict to the shared CI convention: a finding is exit code 1, an
 undecidable run is exit code 5, and a clean pass is exit code 0. A pass that
 carries unresolved observations exits 5 as well: the gates it met were met
-over fewer observations than the suite declared.
+over fewer observations than the suite declared. The summary is one log line:
+every C0 control and DEL in it is replaced with a space, so a step key or a
+target failure that reached a verdict reason cannot print its own line or a
+terminal escape.
 
 ## Export index
 
-| Export                          | Category      | Summary                                                                             |
-| ------------------------------- | ------------- | ----------------------------------------------------------------------------------- |
-| `EvalError.EvalErrorCode`       | models        | Stable evaluation failure codes.                                                    |
-| `EvalError.EvalError`           | errors        | A typed failure raised while loading or executing an evaluation.                    |
-| `Suite.Binding`                 | models        | A scorer binding accepted from `@smthrs/scorers`.                                   |
-| `Suite.Case`                    | models        | One immutable fixed-suite case.                                                     |
-| `Suite.MakeOptions`             | models        | Options for constructing a suite.                                                   |
-| `Suite.Suite`                   | models        | A validated, named collection of fixed cases and scorer bindings.                   |
-| `Suite.limits`                  | models        | The declared ceilings a suite is validated against.                                 |
-| `Suite.make`                    | constructors  | Builds and validates a fixed suite.                                                 |
-| `Suite.JsonLinesOptions`        | models        | Options used when decoding JSON Lines.                                              |
-| `Suite.fromJsonLines`           | constructors  | Loads the `{ name, input, expected? }` JSON Lines fixture format.                   |
-| `CaseExecutor.Execution`        | models        | The result of executing one target-flow case.                                       |
-| `CaseExecutor.CaseInput`        | models        | Input accepted by a case executor.                                                  |
-| `CaseExecutor.Run`              | models        | The one callback a case executor is.                                                |
-| `CaseExecutor.Service`          | services      | Runtime shape for an injectable target-flow executor.                               |
-| `CaseExecutor.Implementation`   | models        | Implementation accepted by `make`.                                                  |
-| `CaseExecutor.CaseExecutor`     | services      | Injectable execution boundary for a target flow.                                    |
-| `CaseExecutor.make`             | constructors  | Builds an executor from a callback, or from an object naming it `run` or `execute`. |
-| `CaseExecutor.makeNoop`         | constructors  | Builds an executor that fails every case with a typed executor error.               |
-| `CaseExecutor.layerNoop`        | layers        | Provides the unavailable executor.                                                  |
-| `Runner.Observation`            | models        | One score observation emitted by a suite run.                                       |
-| `Runner.ScoreRequest`           | models        | A request sent to the scorers batch runner.                                         |
-| `Runner.ScoreJob`               | models        | A blocking scorer job, matching the `Runner` module of `@smthrs/scorers`.           |
-| `Runner.ScoreBatchRunner`       | services      | Structural adapter for `@smthrs/scorers`' blocking batch runner.                    |
-| `Runner.ScoreObservation`       | models        | A score result aligned with a `ScoreRequest`.                                       |
-| `Runner.BatchResult`            | models        | A batch result tagged with the identity of the job that produced it.                |
-| `Runner.CaseResult`             | models        | Per-case result retained by the deterministic runner.                               |
-| `Runner.RunResult`              | models        | Stable result of a suite run.                                                       |
-| `Runner.RunOptions`             | models        | Options for a deterministic suite run.                                              |
-| `Runner.Runner`                 | services      | Injectable batch-runner service used when a caller wants a reusable adapter.        |
-| `Runner.makeInline`             | constructors  | Builds the in-process batch runner a run scores with by default.                    |
-| `Runner.layerInline`            | layers        | Provides the in-process batch runner built by `makeInline`.                         |
-| `Runner.run`                    | constructors  | Runs a fixed suite with bounded execution and declaration-order results.            |
-| `Runner.layerNoop`              | layers        | Provides a batch runner that is never available.                                    |
-| `Baseline.version`              | models        | Current committed baseline artifact version.                                        |
-| `Baseline.BaselineRecord`       | models        | One successful score retained by a baseline.                                        |
-| `Baseline.Baseline`             | models        | Canonical committed evaluation baseline.                                            |
-| `Baseline.fromRun`              | constructors  | Builds and validates a baseline from a run's successful observations.               |
-| `Baseline.make`                 | constructors  | Validates an in-memory baseline.                                                    |
-| `Baseline.write`                | serialization | Serializes a baseline with recursively sorted keys and stable numbers.              |
-| `Baseline.load`                 | serialization | Loads and validates canonical baseline JSON.                                        |
-| `Regression.Tolerances`         | models        | Tolerances used for score comparisons.                                              |
-| `Regression.Regression`         | models        | A score drop at a changed step key.                                                 |
-| `Regression.Nondeterminism`     | models        | A changed score at the same step key, indicating nondeterminism.                    |
-| `Regression.MissingObservation` | models        | An observation present on only one side of a comparison.                            |
-| `Regression.Report`             | models        | Complete regression comparison.                                                     |
-| `Regression.compare`            | constructors  | Compares a run to a baseline, preserving missing and inconclusive observations.     |
-| `Report.json`                   | serialization | Serializes a regression report as stable, sorted-key JSON.                          |
-| `Report.markdown`               | rendering     | Renders a concise stable Markdown regression report.                                |
-| `Gate.Options`                  | models        | Thresholds accepted by a CI score gate.                                             |
-| `Gate.check`                    | constructors  | Checks thresholds through `@smthrs/scorers`' shared ScoreGate arithmetic.           |
-| `Gate.ciGrade`                  | grading       | Maps a gate verdict to the shared CI convention.                                    |
+| Export                          | Category      | Summary                                                                         |
+| ------------------------------- | ------------- | ------------------------------------------------------------------------------- |
+| `EvalError.EvalErrorCode`       | models        | Stable evaluation failure codes.                                                |
+| `EvalError.EvalError`           | errors        | A typed failure raised while loading or executing an evaluation.                |
+| `Suite.Binding`                 | models        | A scorer binding accepted from `@smthrs/scorers`.                               |
+| `Suite.Case`                    | models        | One immutable fixed-suite case.                                                 |
+| `Suite.MakeOptions`             | models        | Options for constructing a suite.                                               |
+| `Suite.Suite`                   | models        | A validated, named collection of fixed cases and scorer bindings.               |
+| `Suite.limits`                  | models        | The declared ceilings a suite is validated against.                             |
+| `Suite.make`                    | constructors  | Builds and validates a fixed suite.                                             |
+| `Suite.JsonLinesOptions`        | models        | Options used when decoding JSON Lines.                                          |
+| `Suite.fromJsonLines`           | constructors  | Loads the `{ name, input, expected? }` JSON Lines fixture format.               |
+| `CaseExecutor.Execution`        | models        | The result of executing one target-flow case.                                   |
+| `CaseExecutor.Run`              | models        | The one callback a case executor is.                                            |
+| `CaseExecutor.Service`          | services      | Runtime shape for an injectable target-flow executor.                           |
+| `CaseExecutor.CaseExecutor`     | services      | Injectable execution boundary for a target flow.                                |
+| `CaseExecutor.make`             | constructors  | Builds an executor from its one callback.                                       |
+| `CaseExecutor.makeNoop`         | constructors  | Builds an executor that fails every case with a typed executor error.           |
+| `CaseExecutor.layerNoop`        | layers        | Provides the unavailable executor.                                              |
+| `Runner.Observation`            | models        | One score observation emitted by a suite run.                                   |
+| `Runner.ScoreRequest`           | models        | A request sent to the scorers batch runner.                                     |
+| `Runner.ScoreJob`               | models        | A blocking scorer job, matching the `Runner` module of `@smthrs/scorers`.       |
+| `Runner.ScoreBatchRunner`       | services      | Structural adapter for `@smthrs/scorers`' blocking batch runner.                |
+| `Runner.ScoreObservation`       | models        | A score result aligned with a `ScoreRequest`.                                   |
+| `Runner.BatchResult`            | models        | A batch result tagged with the identity of the job that produced it.            |
+| `Runner.CaseResult`             | models        | Per-case result retained by the deterministic runner.                           |
+| `Runner.RunResult`              | models        | Stable result of a suite run.                                                   |
+| `Runner.RunOptions`             | models        | Options for a deterministic suite run.                                          |
+| `Runner.Runner`                 | services      | Injectable batch-runner service used when a caller wants a reusable adapter.    |
+| `Runner.makeInline`             | constructors  | Builds the in-process batch runner a run scores with by default.                |
+| `Runner.layerInline`            | layers        | Provides the in-process batch runner built by `makeInline`.                     |
+| `Runner.run`                    | constructors  | Runs a fixed suite with bounded execution and declaration-order results.        |
+| `Runner.layerNoop`              | layers        | Provides a batch runner that is never available.                                |
+| `Baseline.version`              | models        | Current committed baseline artifact version.                                    |
+| `Baseline.BaselineRecord`       | models        | One successful score retained by a baseline.                                    |
+| `Baseline.Baseline`             | models        | Canonical committed evaluation baseline.                                        |
+| `Baseline.fromRun`              | constructors  | Builds and validates a baseline from a run's successful observations.           |
+| `Baseline.make`                 | constructors  | Validates an in-memory baseline.                                                |
+| `Baseline.write`                | serialization | Serializes a baseline with recursively sorted keys and stable numbers.          |
+| `Baseline.load`                 | serialization | Loads and validates canonical baseline JSON.                                    |
+| `Regression.Tolerances`         | models        | Tolerances used for score comparisons.                                          |
+| `Regression.Regression`         | models        | A score drop at a changed step key.                                             |
+| `Regression.Nondeterminism`     | models        | A changed score at the same step key, indicating nondeterminism.                |
+| `Regression.MissingObservation` | models        | An observation present on only one side of a comparison.                        |
+| `Regression.Report`             | models        | Complete regression comparison.                                                 |
+| `Regression.compare`            | constructors  | Compares a run to a baseline, preserving missing and inconclusive observations. |
+| `Report.version`                | serialization | Current serialized report format version.                                       |
+| `Report.Data`                   | serialization | The serialized shape of a regression report.                                    |
+| `Report.data`                   | serialization | Projects a comparison into its serialized form.                                 |
+| `Report.json`                   | serialization | Serializes a regression report as stable, sorted-key JSON.                      |
+| `Report.markdown`               | rendering     | Renders a concise stable Markdown regression report.                            |
+| `Gate.Options`                  | models        | Thresholds accepted by a CI score gate.                                         |
+| `Gate.check`                    | constructors  | Checks thresholds through `@smthrs/scorers`' shared ScoreGate arithmetic.       |
+| `Gate.ciGrade`                  | grading       | Maps a gate verdict to the shared CI convention.                                |
 
 ## A worked suite
 

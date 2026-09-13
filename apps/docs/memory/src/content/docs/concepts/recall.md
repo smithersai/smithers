@@ -22,7 +22,7 @@ Three bindings ship in the box:
 
 `RecallKeyword` normalizes both query and row text to NFKC before matching. SQLite full text search does not, so the two bindings can disagree on compatibility-equivalent characters. `RecallFts` quotes each query term independently, so user input can never become an FTS5 operator, and it propagates the store's `fts_not_enabled` error when the namespace kind has not opted in.
 
-`RecallSemantic` answers only rows that hold a current vector under the requested model: foreign-model vectors are skipped, a stale projection whose content digest no longer matches the row is skipped, and a stored vector under the requested model with the wrong dimension fails with `vector_model_mismatch`. The authoritative store writes no vectors itself; projection is opt-in through `RecallSemantic.decorateStore`, which adds an after-commit projection to fact and note writes that retries once and logs failures without changing the write result.
+`RecallSemantic` answers only rows that hold a current vector under the requested model: foreign-model vectors are skipped, a stale projection whose content digest no longer matches the row is skipped, and a stored vector under the requested model with the wrong dimension fails with `vector_model_mismatch`. The authoritative store writes no vectors itself; projection is opt-in through `RecallSemantic.decorateStore`, which adds an after-commit projection to fact and note writes that retries once, gives up after `projectionTimeout` (default 5 seconds), and logs failures without changing the write result. Each vector names its record by `recordKind` and `recordId`, and the SQL upsert keeps the newest row by `updatedAtMs`, so a late projection from another process never replaces a newer one.
 
 Semantic recall searches the entire selected bank's eligible projection, regardless of record age. `budget` limits retained results (3, 8, or 20), not the candidate domain. Recency changes the score; it does not exclude an older match through a recent-row window.
 
@@ -46,4 +46,4 @@ A `limit` on `listFacts`, `listNotes`, `listMessages`, `searchRows`, or `searchF
 
 ## Score ties
 
-Bindings break score ties by newest update first, then ascending key. Semantic recall also orders equal keys by bank, independent of the request's bank order. The order is deterministic, so a replayed recall over unchanged memory returns the same rows in the same order.
+Every binding sorts with `Recall.compareResults`: score ties break by newest update first, then ascending key, then ascending bank, independent of the request's bank order. The order is deterministic, so a replayed recall over unchanged memory returns the same rows in the same order.

@@ -100,7 +100,9 @@ absence: the digest of a malformed journal is a sparse digest, never a throw.
 That purity is what makes a delta trustworthy. A subscription recomputes the
 selector's rows from accumulated events rather than patching them, and
 recomputation is only safe because the same events always fold to the same
-rows. See [Subscriptions and cursors](/concepts/subscriptions/).
+rows. The two append-only projections, `run-events` and `transcript`, send
+only what one event added instead. See
+[Subscriptions and cursors](/concepts/subscriptions/).
 
 ## What a projection costs
 
@@ -120,5 +122,8 @@ retaining the rest of a hostile or corrupt stream.
 
 The approvals inbox is the one workspace projection that filters before it
 counts: it asks the control plane for runs whose status is `waiting-approval`,
-and a run with no pending gate does not consume the allowance. An inbox cannot
-be exhausted by completed histories.
+and admits only runs still in that status with at least one pending gate after
+reconciling their journals. Snapshot admission and live refresh use the same
+predicate: cancellation removes a run even when its gate remains pending.
+A run with no pending gate does not consume the source allowance. An inbox
+cannot be exhausted by completed histories.

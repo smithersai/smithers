@@ -402,25 +402,25 @@ stopped and reconciling the workspace. Lock waits are interruptible.
 
 ### Models
 
-| Export                     | Shape                                                                                                              |
-| -------------------------- | ------------------------------------------------------------------------------------------------------------------ |
-| `Resource`                 | `{ kind, id }`. This implementation records `kind: "file"`.                                                        |
-| `InputObservation`         | `{ resource, digest }`                                                                                             |
-| `OutputObservation`        | `{ resource, operation: "write" \| "remove", digest }`                                                             |
-| `Provenance`               | `{ baseRevision, inputs, outputs }`                                                                                |
-| `FileChange`               | `{ path, beforeDigest, afterDigest, after? }`. `beforeDigest` is a materialization precondition, not a hint.       |
-| `QueuedEffect`             | `{ protocol, idempotencyKey, payload }`                                                                            |
-| `WorkflowResult<Output>`   | `{ output, files, provenance, effects }`                                                                           |
-| `Execution<Output, Error>` | `{ descriptor, cacheKey?, workflow }`                                                                              |
-| `DeclarationViolation`     | `{ kind: "undeclared-read" \| "undeclared-write", resource }`                                                      |
-| `CacheOutcome`             | `disabled`, `miss`, or `hit`. A run-local memo, not the cross-run cache.                                           |
-| `Accepted<Output>`         | `{ _tag: "Accepted", result, cache, violations }`                                                                  |
-| `Invalidated`              | `{ _tag: "Invalidated", provenance, violations }`. No accessor for the candidate output, files, or queued effects. |
-| `ExecutionResult<Output>`  | `Accepted<Output> \| Invalidated`                                                                                  |
-| `Host`                     | `{ snapshot, baseline, retain, commit, root }`                                                                     |
-| `MemorySandbox`            | `{ service, files }`, where `files` observes host state, changed only by `materialize`                             |
-| `HostFile`                 | `{ path, content }`                                                                                                |
-| `InitialFiles`             | `Readonly<Record<string, string \| Uint8Array>>`                                                                   |
+| Export                     | Shape                                                                                                                                                                                                                                          |
+| -------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Resource`                 | `{ kind, id }`. This implementation records `kind: "file"`.                                                                                                                                                                                    |
+| `InputObservation`         | `{ resource, digest }`                                                                                                                                                                                                                         |
+| `OutputObservation`        | `{ resource, operation: "write" \| "remove", digest }`                                                                                                                                                                                         |
+| `Provenance`               | `{ baseRevision, inputs, outputs }`                                                                                                                                                                                                            |
+| `FileChange`               | `{ path, beforeDigest, afterDigest, after? }`. `beforeDigest` is a materialization precondition, not a hint.                                                                                                                                   |
+| `QueuedEffect`             | `{ protocol, idempotencyKey, payload }`                                                                                                                                                                                                        |
+| `WorkflowResult<Output>`   | `{ output, files, provenance, effects }`                                                                                                                                                                                                       |
+| `Execution<Output, Error>` | `{ descriptor, cacheKey?, workflow }`                                                                                                                                                                                                          |
+| `DeclarationViolation`     | `{ kind: "undeclared-read" \| "undeclared-write", resource }`                                                                                                                                                                                  |
+| `CacheOutcome`             | `disabled`, `miss`, or `hit`. A run-local memo, not the cross-run cache.                                                                                                                                                                       |
+| `Accepted<Output>`         | `{ _tag: "Accepted", result, cache, violations }`                                                                                                                                                                                              |
+| `Invalidated`              | `{ _tag: "Invalidated", provenance, violations }`. No accessor for the candidate output, files, or queued effects.                                                                                                                             |
+| `ExecutionResult<Output>`  | `Accepted<Output> \| Invalidated`                                                                                                                                                                                                              |
+| `Host`                     | `{ snapshot, baseline, retain, commit, root }`                                                                                                                                                                                                 |
+| `MemorySandbox`            | `{ service, files }`, where `files` observes host state, changed only by `materialize`                                                                                                                                                         |
+| `HostFile`                 | `{ path, content }`                                                                                                                                                                                                                            |
+| `InitialFiles`             | `Readonly<Record<string, string \| Uint8Array>>`                                                                                                                                                                                               |
 | `FileSystemOptions`        | `{ maxInlineBytes?, reservedPaths? }`. `maxInlineBytes` defaults to 1 MiB, matching `StepBoundary`'s evidence bound. `reservedPaths` lists root-relative engine state paths copy-back refuses, beyond `.smithers-workspace-lock` and `.flows`. |
 
 ### Errors

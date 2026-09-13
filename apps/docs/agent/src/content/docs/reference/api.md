@@ -184,6 +184,10 @@ them separately; `AgentSession` executes markdown prompt flows.
 
 ### AgentSession.Options
 
+`abandonedParkAfter?: Duration.Duration` sets how long a foreign host's resume
+delegation must stand before adoption. The default is
+`Ownership.heartbeatStaleAfter` (30 seconds); adoption starts at the cutoff.
+
 | Field             | Type                                                                      | What it decides                                                                                                                                     |
 | ----------------- | ------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `limits`          | `Sandbox.Limits`                                                          | The explicit sandbox budget every cell runs under. Required; never unlimited.                                                                       |
@@ -237,7 +241,9 @@ The journal projection of one agent event: `model-settled` becomes
 the token-by-token prefix of `model-settled` and journaling them would multiply
 a run's event count by its token count. Free-text and value fields larger than
 `maxTracedBytes` are replaced with a deterministic truncation marker carrying
-the field's byte count and digest.
+the field's byte count and digest. This includes completion `output` nested in
+`cell-settled.outcome.transition` and `transition-applied.transition`; the
+containing outcome and transition retain their tags.
 
 ### AgentSession.traceIdentity
 
@@ -1315,13 +1321,25 @@ holds, and is not restricted.
 | `pollInterval` | `Duration.Input`          | How long `await` waits before re-reading an unsettled child, and how long `spawn` waits between checks for the child's run row. Defaults to 250 ms.              |
 | `startTimeout` | `Duration.Input`          | How long `spawn` waits for the child's run row before reporting the child never started. Defaults to 30 seconds.                                                 |
 
+`spawn` owns its startup fiber until the row is confirmed. Timeout, store
+failure, and cancellation interrupt and join it before returning failure.
+
+`legacyChildIds?: boolean` selects the old `${parentExecutionId}/child/${label}`
+format for replaying existing children only. It refuses to create missing legacy
+rows. Configure it only for parents persisted before the new format; use the
+default for new parents. `await` and `send` accept both formats. Existing legacy
+ambiguities are retained; no rows are automatically renamed.
+
 ### EngineChildren.childExecutionId
 
 ```ts
 const childExecutionId: (parentExecutionId: string, label: string) => string
 ```
 
-The execution id a labelled child runs under, `${parentExecutionId}/child/${label}`.
+The execution id a labelled child runs under:
+`child-v2:<parent length>:<parent><label length>:<label>`. Lengths count JavaScript
+UTF-16 code units. Both components are delimited, including labels containing
+`/child/`. Treat the returned id as opaque.
 Derived rather than minted, so a parent that is re-driven spawns the same child
 rather than a second one.
 
@@ -1436,9 +1454,10 @@ Promotion as two ordinary flows:
   into, so a host that keeps no history reports an empty script.
 - `flows/write-flow` takes the three files that come back and writes them
   through a `FlowStore`. When a `Registry` is in context it is refreshed
-  afterwards, which is what makes the saved flow appear in `ctx.flows` on the
-  next frame rather than the next run. The id is validated before the store is
-  asked, so a bad id is never misread as "nowhere to save".
+  afterwards. Pass that same registry to `Agent.run`: a successful refresh
+  makes the saved model-invocable flow visible and callable next frame. Each
+  frame journals its descriptor snapshot for replay. The id is validated before
+  the store is asked, so a bad id is never misread as "nowhere to save".
 
 ### PromoteFlows.Options
 
@@ -1498,11 +1517,24 @@ const makeFileSystem: (fs: FileSystem.FileSystem, path: Path.Path, root: string)
 const layerFileSystem: (root: string) => Layer.Layer<FlowStore, never, FileSystem.FileSystem | Path.Path>
 ```
 
-A store over a directory on the host filesystem. Every path is checked before
-the first byte is written, so a rejected file cannot leave a half-saved flow on
-disk. A path that reaches its file through a symbolic link is refused with
-`FlowStoreError { code: "invalid_path" }` rather than followed, so a link
-already in the checkout cannot redirect a save outside the root.
+A store over a directory on the host filesystem. Before creating directories,
+it validates every path with the injected `Path` service. Absolute paths,
+paths that resolve outside the root (including Windows backslash traversal),
+root directory targets, and overlapping file paths are refused. Symbolic links
+below the root are refused with `FlowStoreError { code: "invalid_path" }`.
+
+Writes to the same resolved root are serialized within this process, including
+across store instances and saves of the same flow.
+Each save stages all new files and copies of existing files in a temporary
+directory inside the root. Each target is then replaced by an atomic rename.
+A publication failure restores replaced files and removes newly published
+files. Staging is cleaned on failure or interruption; interruption during
+publication waits for the full set to be installed or restored. If rollback
+also fails, the error reports the directory where recovery files are retained.
+
+Individual renames are atomic. External readers can observe the file set
+between renames. This does not provide crash recovery or coordinate writers
+in other processes.
 `PromoteFlows` writes `<root>/flows/<id>/{flow.ts,flow.e2e.ts,fixtures/<id>.json}`.
 
 ### FlowStore.makeMemory, FlowStore.layerMemory

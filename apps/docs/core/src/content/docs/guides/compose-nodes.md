@@ -32,7 +32,9 @@ const rethrown = Node.fail(new Rejected({ reason: "no reviewer" }))
 ```
 
 The error enters key material, so two failures carrying different data are two
-declarations. Both constructors retain the value you pass by reference and read
+declarations. Error reflection includes `_tag`, own data fields, and nested
+`cause` values; it excludes `stack`. Accessors are described without being
+called, and unsupported field values are refused. Both constructors retain the value you pass by reference and read
 it when `Graph.build` runs.
 
 ## Independent work

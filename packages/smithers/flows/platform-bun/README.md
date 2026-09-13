@@ -1,8 +1,10 @@
 # @smthrs/platform-bun
 
+Release candidate scope, host requirements and compatibility review are defined in the [library support policy](https://github.com/smithersai/smithers/blob/main/RELEASE_SUPPORT.md).
+
 This package declares `effect`, `@effect/platform-node`,
 `@effect/platform-node-shared`, and `@effect/platform-bun` as exact
-`4.0.0-rc.112` peer dependencies. Keep the application on that version so
+`4.0.0-rc.115` peer dependencies. Keep the application on that version so
 all Smithers packages share one Effect runtime.
 
 **Documentation:** https://platform-bun.smithers.sh
@@ -22,7 +24,7 @@ package is that object for a process running on Bun.
 ## Install
 
 ```sh
-npm install @smthrs/platform-bun@1.0.0-rc.0 @smthrs/platform-node@1.0.0-rc.0 @effect/platform-node@4.0.0-rc.112 @effect/platform-bun@4.0.0-rc.112 effect@4.0.0-rc.112
+npm install @smthrs/platform-bun@1.0.0-rc.0 @smthrs/platform-node@1.0.0-rc.0 @effect/platform-node@4.0.0-rc.115 @effect/platform-bun@4.0.0-rc.115 effect@4.0.0-rc.115
 ```
 
 Version 1.0.0-rc.0 is not on npm yet. Until it is published, take the package

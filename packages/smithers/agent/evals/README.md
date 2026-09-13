@@ -1,5 +1,7 @@
 # @smthrs/evals
 
+Release candidate scope, host requirements and compatibility review are defined in the [library support policy](https://github.com/smithersai/smithers/blob/main/RELEASE_SUPPORT.md).
+
 **Documentation:** https://evals.smithers.sh
 
 Fixed-suite evaluation for flows: it connects target execution and scorer runners

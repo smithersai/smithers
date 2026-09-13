@@ -58,15 +58,21 @@ polls current state does not want three replays of a stale poll.
 trigger fires the most recent missed boundary and forgets the rest. This is the
 right answer for most report and sync schedules.
 
-**Choose `all` when each boundary is a distinct unit of work.** A per-hour
-billing rollup owes every hour it missed, in order. The scheduler dispatches
-them oldest first.
+**Choose `all` to enumerate missed occurrences, oldest first, subject to overlap.**
+Dispatch waits for launch acknowledgement, not completion. While a run remains
+active, `skip` drops later occurrences and `buffer-one` coalesces them to the
+newest. Enumeration does not guarantee that every occurrence executes.
 
-Then set `maxCatchUp`, which is the bound on that replay.
+A search refresh can tolerate coalescing because each run rebuilds current
+state. Set `maxCatchUp` to bound how many occurrences are enumerated:
 
 ```ts
-const hourlyRollup = { overlap: "buffer-one", catchUp: "all", maxCatchUp: 24 }
+const searchRefresh = { overlap: "buffer-one", catchUp: "all", maxCatchUp: 24 }
 ```
+
+For every-boundary work such as per-hour billing, use a durable queue or a flow
+that processes its own complete interval backlog from a durable cursor. No
+overlap policy turns `all` into a lossless queue.
 
 `maxCatchUp` defaults to 0, and 0 means no occurrence may be caught up at all.
 That is consistent with the `none` default, and it is a trap under `one` or
@@ -80,23 +86,28 @@ occurrence search returns.
 
 ## What a breached bound does
 
-The backlog beyond the bound is abandoned, loudly: the scheduler logs a warning
-annotated with the trigger id and fires the current occurrence anyway. A trigger
-that returns from a week of downtime resumes on the next boundary rather than
-wedging. Size `maxCatchUp` for the longest outage you are willing to replay, not
-for the longest outage you can imagine.
+The scheduler logs a warning annotated with the trigger id and abandons the
+backlog when catch-up exceeds its bound. On the first poll of a trigger in a
+process, including after restart, it drops the entire owed list, including the
+current occurrence, records the current in-process watermark, and waits for a
+later boundary. On subsequent polls, it drops the missed backlog but still
+dispatches the current occurrence subject to overlap.
+
+Size `maxCatchUp` for the longest outage you are willing to enumerate. It is
+not a limit on how many runs finish.
 
 ## The nine combinations
 
-Every pair is legal. Two are worth calling out:
+Every pair is legal. Under `all`:
 
 - `supersede` with `all` fires each owed occurrence and cancels the one before
   it, so the practical effect is that the newest occurrence survives and the
-  older ones are recorded as `superseded`. If you want the backlog to actually
-  run, pair `all` with `skip` or `buffer-one`.
+  older ones are recorded as `superseded`.
 - `skip` with `all` records every owed occurrence as `skipped` while a run is in
   flight, which advances the cursor without doing the work. That is the correct
   reading of "skip", but check that it is what you meant.
+- `buffer-one` with `all` keeps only the newest pending occurrence while a run
+  is in flight. Intermediate occurrences coalesce even below `maxCatchUp`.
 
 ## Next
 

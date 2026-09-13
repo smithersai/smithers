@@ -70,7 +70,9 @@ const seats = SeatResolver.layer({
   resolve: (id) =>
     apiKeyFor(id) === undefined
       ? Effect.fail(new Seat.SeatUnresolved({ seat: id, message: `No API key is configured for ${id}` }))
-      : Effect.succeed(Seat.make({ id, modelId: modelIdFor(id), model: modelFor(id), route, contextWindowTokens: 200_000 }))
+      : Effect.succeed(
+        Seat.make({ id, modelId: modelIdFor(id), model: modelFor(id), route, contextWindowTokens: 200_000 })
+      )
 })
 ```
 

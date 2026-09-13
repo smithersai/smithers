@@ -51,6 +51,12 @@ each other's writes. The supported driver is
 statement implementation, which does not exist yet. Providing an arbitrary
 Effect `SqlClient`, such as PostgreSQL, does not translate this package's SQL.
 
+Store writes nested inside `DurableWriter.write` join it as savepoints. A
+transient database conflict retries the entire outer transaction. Persistence
+errors retain a payload-free `DatabaseError` in their cause chain so redaction
+does not remove that retry classification. SQL text and bound values are not
+included.
+
 ## Compose the migration set, do not run it twice
 
 `Migrations.layer` installs this package's tables and nothing else. A host that

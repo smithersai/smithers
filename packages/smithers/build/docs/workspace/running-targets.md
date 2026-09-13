@@ -24,17 +24,17 @@ For every flag, output field, and exit code, see
 Each target declares its `kinds`. A verb selects matching roots and always adds
 their dependencies, regardless of the dependencies' own kinds.
 
-| Verb      | Root selection                          | Executes             |
-| --------- | --------------------------------------- | -------------------- |
-| `build`   | kind includes `build`                   | Yes, unless `--plan` |
-| `test`    | kind includes `test`                    | Yes, unless `--plan` |
-| `lint`    | kind includes `lint`                    | Yes, unless `--plan` |
-| `docs`    | kind includes `docs`                    | Yes, unless `--plan` |
-| `run`     | kind includes `run`                     | Yes, unless `--plan` |
-| `ci`      | lint, build, test, and docs plans, merged     | Yes, unless `--plan` |
-| `install` | the `Install` flow, not a label pattern | Yes                  |
-| `query`   | every target the expression matches     | No                   |
-| `graph`   | every target the pattern matches        | No                   |
+| Verb      | Root selection                            | Executes             |
+| --------- | ----------------------------------------- | -------------------- |
+| `build`   | kind includes `build`                     | Yes, unless `--plan` |
+| `test`    | kind includes `test`                      | Yes, unless `--plan` |
+| `lint`    | kind includes `lint`                      | Yes, unless `--plan` |
+| `docs`    | kind includes `docs`                      | Yes, unless `--plan` |
+| `run`     | kind includes `run`                       | Yes, unless `--plan` |
+| `ci`      | lint, build, test, and docs plans, merged | Yes, unless `--plan` |
+| `install` | the `Install` flow, not a label pattern   | Yes                  |
+| `query`   | every target the expression matches       | No                   |
+| `graph`   | every target the pattern matches          | No                   |
 
 An exact label that does not participate in the requested verb fails with
 `target selected by <pattern> does not support the <verb> verb`. A recursive
@@ -65,23 +65,23 @@ under other verbs. Both default the resolved `dryRun` attribute to `true`,
 which appends `--dry-run`. With `dryRun: false`, execution can publish to the
 registry. `--plan` remains non-executing.
 
-| Target                                                         | Root verb       | Executes today                                            |
-| -------------------------------------------------------------- | --------------- | --------------------------------------------------------- |
-| `TsBuild`, `DtsBuild`, `Typecheck`, `ToolBuild`, `TypedocDocs` | `build`         | Yes                                                       |
-| `Vitest`, `VitestCoverage`                                     | `test`          | Yes                                                       |
-| `EsLint`, `BiomeCheck`, `DepsLint`, `PackageLint`              | `lint`          | Yes                                                       |
-| `LlmLint`                                                      | `review`        | Yes; skips where the engine CLI is absent                 |
-| `SortPackageJson`                                              | `build`, `lint` | Yes                                                       |
-| `PackageJsonCheck`                                             | `lint`          | Yes                                                       |
-| `PackageJsonWrite`, `PackageJsonRefresh`                       | `run`           | Yes; mutates the source manifest                          |
-| `GithubCiGen`                                                  | `build`, `lint` | Yes; CI selects its checking form                         |
-| `DocsParity`                                                   | `docs`          | Yes                                                       |
-| `NewPackage`                                                   | `run`           | Yes; requires `--name` and creates a package              |
-| `PnpmWorkspace`                                                | `run`           | Yes                                                       |
-| `Clean`, `Dev`, `VitestWatch`                                  | `run`           | Yes; the watch processes hold their execution slot        |
-| `Changesets.Version` | `run`, `lint` | Yes; `run` writes, `lint` checks in a scratch copy |
-| `Changesets.Publish` | `run` | Refuses at the outward-action gate; publication is not implemented |
-| `NpmPublish`, `JsrPublish`                                     | `run`           | Yes; `--dry-run` by default, real publication with `dryRun: false`       |
+| Target                                                         | Root verb       | Executes today                                                     |
+| -------------------------------------------------------------- | --------------- | ------------------------------------------------------------------ |
+| `TsBuild`, `DtsBuild`, `Typecheck`, `ToolBuild`, `TypedocDocs` | `build`         | Yes                                                                |
+| `Vitest`, `VitestCoverage`                                     | `test`          | Yes                                                                |
+| `EsLint`, `BiomeCheck`, `DepsLint`, `PackageLint`              | `lint`          | Yes                                                                |
+| `LlmLint`                                                      | `review`        | Yes; skips where the engine CLI is absent                          |
+| `SortPackageJson`                                              | `build`, `lint` | Yes                                                                |
+| `PackageJsonCheck`                                             | `lint`          | Yes                                                                |
+| `PackageJsonWrite`, `PackageJsonRefresh`                       | `run`           | Yes; mutates the source manifest                                   |
+| `GithubCiGen`                                                  | `build`, `lint` | Yes; CI selects its checking form                                  |
+| `DocsParity`                                                   | `docs`          | Yes                                                                |
+| `NewPackage`                                                   | `run`           | Yes; requires `--name` and creates a package                       |
+| `PnpmWorkspace`                                                | `run`           | Yes                                                                |
+| `Clean`, `Dev`, `VitestWatch`                                  | `run`           | Yes; the watch processes hold their execution slot                 |
+| `Changesets.Version`                                           | `run`, `lint`   | Yes; `run` writes, `lint` checks in a scratch copy                 |
+| `Changesets.Publish`                                           | `run`           | Refuses at the outward-action gate; publication is not implemented |
+| `NpmPublish`, `JsrPublish`                                     | `run`           | Yes; `--dry-run` by default, real publication with `dryRun: false` |
 
 An `LlmLint` target now runs through `LlmReviewLive`; it is no longer a
 plan-only declaration. It is the only target under the `review` verb, and it is

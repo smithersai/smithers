@@ -19,7 +19,7 @@ release candidate publishes under the `next` tag, and this installs the
 journal, the database it writes through, and the `effect` version it pins:
 
 ```bash
-pnpm add @smthrs/journal@next @smthrs/database@next effect@4.0.0-rc.112 @effect/sql-sqlite-node@4.0.0-rc.112
+pnpm add @smthrs/journal@next @smthrs/database@next effect@4.0.0-rc.115 @effect/sql-sqlite-node@4.0.0-rc.115
 ```
 
 `effect` is a peer dependency at exactly that version. Two copies of `effect`

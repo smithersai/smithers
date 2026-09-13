@@ -8,7 +8,7 @@ sidebar:
 ## Install the package
 
 ```bash
-pnpm add -D @smthrs/testing@next effect@4.0.0-rc.112
+pnpm add -D @smthrs/testing@next effect@4.0.0-rc.115
 ```
 
 The Smithers 1.0 release candidates publish under the `next` dist tag, so the
@@ -18,7 +18,7 @@ is, build the package from a clone of
 [the repository](https://github.com/smithersai/smithers).
 
 [`effect`](https://effect.website) is a required peer dependency at exactly
-`4.0.0-rc.112`. Two copies of `effect` in one program are two sets of service
+`4.0.0-rc.115`. Two copies of `effect` in one program are two sets of service
 tags, so the version is pinned rather than ranged.
 
 The package requires Node.js 22.19.0 or later and ships as both ESM and
@@ -39,7 +39,7 @@ in production.
 `effect` is:
 
 ```bash
-pnpm add -D vitest@4.1.9 @effect/vitest@4.0.0-rc.112
+pnpm add -D vitest@5.0.0 @effect/vitest@4.0.0-rc.115
 ```
 
 Every other module works under any runner, because an assertion is an ordinary

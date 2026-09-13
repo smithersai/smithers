@@ -44,7 +44,7 @@ the details that decide whether a model gets its next step right:
 ## Install
 
 ```bash
-pnpm add @smthrs/std@next @effect/platform-node@4.0.0-rc.112 effect@4.0.0-rc.112
+pnpm add @smthrs/std@next @effect/platform-node@4.0.0-rc.115 effect@4.0.0-rc.115
 ```
 
 The package publishes release candidates to the `next` dist-tag. The handlers

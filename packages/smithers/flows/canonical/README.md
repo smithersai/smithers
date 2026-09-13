@@ -1,7 +1,9 @@
 **Documentation:** https://canonical.smithers.sh
 
+Release candidate scope, host requirements and compatibility review are defined in the [library support policy](https://github.com/smithersai/smithers/blob/main/RELEASE_SUPPORT.md).
+
 This package declares `effect` as an exact
-`4.0.0-rc.112` peer dependency. Keep the application on that version so
+`4.0.0-rc.115` peer dependency. Keep the application on that version so
 all Smithers packages share one Effect runtime.
 
 <!-- Deep reviewed and polished by a human. -->
@@ -15,7 +17,7 @@ RFC 8785 canonical JSON for TypeScript, as a plain function and as an Effect `Sc
 ## Install
 
 ```bash
-pnpm add @smthrs/canonical@next effect@4.0.0-rc.112
+pnpm add @smthrs/canonical@next effect@4.0.0-rc.115
 ```
 
 `effect` is a peer dependency at that exact version, and the package publishes on the `next` dist-tag while 1.0 is a release candidate. Node.js 22.19.0 or later. Ships as ESM and CommonJS with TypeScript declarations.

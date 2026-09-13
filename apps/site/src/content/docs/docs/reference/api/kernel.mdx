@@ -8,7 +8,7 @@ editUrl: "https://github.com/smithersai/smithers/edit/main/packages/smithers/flo
 
 > **Source:** [implementation](https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/kernel/src) · [reference source](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/kernel/docs/api.md) · [package docs](https://kernel.smithers.sh)
 
-> **Related APIs:** [`@smthrs/capability`](/docs/reference/api/capability/) · [`@smthrs/jj`](/docs/reference/api/jj/) · [`@smthrs/journal`](/docs/reference/api/journal/)
+> **Related APIs:** [`@smthrs/capability`](/docs/reference/api/capability/) · [`@smthrs/crypto`](/docs/reference/api/crypto/) · [`@smthrs/jj`](/docs/reference/api/jj/) · [`@smthrs/journal`](/docs/reference/api/journal/)
 
 The root entry point re-exports every module as a namespace, and each module is
 also importable from `@smthrs/kernel/<Module>`:
@@ -175,8 +175,14 @@ fails `permission_required` on an unattended store and parks the fiber on an
 attended one. `meta` is display metadata for an attended surface and is
 snapshotted, never interpreted.
 
-`list` is a frozen snapshot. `reply` and `grantEnvelope` are uninterruptible
-and serialized against `check`.
+`list` is a frozen snapshot whose `meta` values are the frozen snapshots taken
+at check time. `reply` and `grantEnvelope` persist their decision before
+activating it. The journal write never holds the store's mutation permit: a
+slow or dead journal stalls only the admission that issued it, and a write
+exceeding `maximumPersistMillis` fails with `journal_failed`, leaving the
+request parked for a retry. A concurrent reply to a request whose decision is
+mid-write fails fast with `request_not_found`; a concurrent identical envelope
+admission adopts the in-flight outcome.
 
 ### GrantStore.PendingRequest
 
@@ -221,10 +227,14 @@ A bulk approval. `scope` defaults to `"run"`.
 interface MakeOptions {
   readonly attended?: boolean | undefined
   readonly rules?: ReadonlyArray<Rule> | ReadonlyArray<ReadonlyArray<Rule>> | undefined
-  readonly runRules?: ReadonlyArray<Rule | {
-    readonly rule: Rule
-    readonly ceiling: ReadonlyArray<ReadonlyArray<CapabilityPattern>>
-  }> | undefined
+  readonly runRules?:
+    | ReadonlyArray<
+      Rule | {
+        readonly rule: Rule
+        readonly ceiling: ReadonlyArray<ReadonlyArray<CapabilityPattern>>
+      }
+    >
+    | undefined
   readonly envelope?: EnvelopeGrantOptions | undefined
   readonly envelopeSignatures?: ReadonlyArray<string> | undefined
   readonly runId?: string | undefined
@@ -245,7 +255,9 @@ type Persist = (event: GrantEvent) => Effect.Effect<void, GrantStoreError>
 ```
 
 A hook that durably records a decision **before** it becomes active. A
-persistence failure leaves the decision inactive.
+persistence failure leaves the decision inactive. One write may take at most
+`maximumPersistMillis`; a write that never returns is interrupted at the
+deadline and reported as `journal_failed`.
 
 ### GrantStore.make and GrantStore.layer
 
@@ -333,12 +345,15 @@ const maximumMetadataDepth = 16
 const maximumMetadataMembers = 1_024
 const maximumMetadataBytes = 65_536
 const maximumEventBytes = 262_144
+const maximumPersistMillis = 30_000
 const maximumIdentityLength = 4_096
 const maximumCapabilityResourceLength: number // Capability.maxResourceLength
 ```
 
 Every bound failure uses `invalid_resolution` and occurs before state or
-journal authority changes.
+journal authority changes. `maximumPersistMillis` instead bounds time: a
+journal write that exceeds it fails the admission with `journal_failed`
+without activating the decision.
 
 ## GrantEvent
 
@@ -595,27 +610,50 @@ The sentinel an implicit temporary directory is named with. An implicit
 is outside the workspace root by construction, so granting an ordinary
 workspace write does not grant system temporary-directory access.
 
-### FileSystem.AtomicFileSystemTypeId, AtomicRequest, AtomicFileSystem, AtomicHostFileSystem
+### FileSystem.AtomicFileSystemTypeId, AtomicRoot, AtomicRequest, AtomicResults, AtomicResult, AtomicHandlers, AtomicFileSystem, AtomicHostFileSystem
 
 ```ts
 const AtomicFileSystemTypeId: unique symbol
 
-interface AtomicRequest {
-  readonly operation: string
+interface AtomicRoot {
   readonly boundaryRoot?: string | undefined
   readonly logicalRoot?: string | undefined
-  readonly path?: string | undefined
-  readonly from?: string | undefined
-  readonly to?: string | undefined
-  readonly pattern?: string | undefined
-  readonly root?: string | undefined
-  readonly data?: string | undefined
-  readonly encoding?: string | undefined
-  readonly options?: object | undefined
+  readonly rootIdentity?: string | undefined
+}
+
+type AtomicRequest =
+  | (AtomicRoot & { readonly operation: "exists"; readonly path: string })
+  | (AtomicRoot & {
+    readonly operation: "glob"
+    readonly pattern: string
+    readonly root: string
+    readonly options?: { readonly exclude?: ReadonlyArray<string> | undefined } | undefined
+  })
+  | (AtomicRoot & { readonly operation: "rename"; readonly from: string; readonly to: string })
+  | (AtomicRoot & { readonly operation: "batch"; readonly requests: ReadonlyArray<BatchRequest> })
+// ...one member per operation: makeDirectory, readDirectory, readFile,
+// readFileString, readLink, realPath, remove, stat, writeFile, writeFileString
+
+interface AtomicResults {
+  readonly exists: boolean
+  readonly glob: Array<string>
+  readonly readFile: Uint8Array
+  readonly stat: FileSystem.File.Info
+  readonly rename: void
+  readonly batch: BatchResponse
+  // ...one entry per operation
+}
+
+type AtomicResult<R extends AtomicRequest> = AtomicResults[R["operation"]]
+
+type AtomicHandlers = {
+  readonly [K in keyof AtomicResults]: (
+    request: Extract<AtomicRequest, { readonly operation: K }>
+  ) => Effect.Effect<AtomicResults[K], PlatformError>
 }
 
 interface AtomicFileSystem {
-  readonly execute: <A>(request: AtomicRequest) => Effect.Effect<A, PlatformError>
+  readonly execute: <R extends AtomicRequest>(request: R) => Effect.Effect<AtomicResult<R>, PlatformError>
   readonly isolated?: FileSystem.FileSystem | undefined
 }
 
@@ -629,6 +667,13 @@ plain path-based filesystem cannot provide confinement, because an attacker can
 replace any checked component before the delegate resolves it. `isolated` is
 the escape hatch for a filesystem already confined by an enforceable boundary,
 used for methods not expressible as one descriptor-relative request.
+
+A request is discriminated by `operation` and carries exactly the operands that
+operation needs, and `execute` answers the result that operation names rather
+than a type its caller picked. The wire shape is unchanged: every member is the
+same flat JSON object, so a journaled or serialized request still decodes. An
+executor that dispatches in process can be written as an `AtomicHandlers`
+record, which does not compile while an operation is unimplemented.
 
 ### FileSystem.withAtomicFileSystem
 
@@ -738,12 +783,12 @@ command that cannot be snapshotted fails with an `InvalidData` `PlatformError`.
 
 Least-authority construction for a child process's replacement environment.
 
-| Export                  | Type                                             | Meaning                                                                                         |
-| ----------------------- | ------------------------------------------------ | ----------------------------------------------------------------------------------------------- |
-| `inheritedNames`        | `ReadonlyArray<string>`                          | `PATH`, `HOME`, `USER`, `LANG`, `TERM`, `TMPDIR`, and `SHELL`; `LC_*` is admitted by prefix.    |
-| `credentialNamePattern` | `RegExp`                                         | The credential-name rule shared with `@smthrs/model/Auth`.                                      |
-| `isCredentialName`      | `(name: string) => boolean`                      | Tests one name against that rule.                                                               |
-| `make`                  | `(ambient, declared?) => Record<string, string>` | Selects bootstrap names, withholds sensitive ambient names, and overlays explicit declarations. |
+| Export                  | Type                                             | Meaning                                                                                                                                            |
+| ----------------------- | ------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `inheritedNames`        | `ReadonlyArray<string>`                          | `PATH`, `HOME`, `USER`, `LANG`, `TERM`, `TMPDIR`, and `SHELL`; `LC_*` is admitted by prefix.                                                       |
+| `credentialNamePattern` | `RegExp`                                         | The credential-name rule shared with `@smthrs/model/Auth`, including complete or separator-delimited `token`, `key`, `key_id`, and `pat` suffixes. |
+| `isCredentialName`      | `(name: string) => boolean`                      | Tests one name against that rule.                                                                                                                  |
+| `make`                  | `(ambient, declared?) => Record<string, string>` | Selects bootstrap names, withholds sensitive ambient names, and overlays explicit declarations.                                                    |
 
 `make` returns a null-prototype record suitable for `CommandOptions.env` with
 `extendEnv: false`. An explicitly declared name is applied last, even when it

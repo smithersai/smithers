@@ -36,11 +36,17 @@ A supersession request contradicts what is already stored: a note id reused with
 
 ### `idempotency_conflict`
 
-A retry reused an id with different immutable creation data. Three operations raise it: `createThread` with an existing id and different namespace, title, or metadata; `appendMessage` with an existing message id and a different `role`, `text`, or `at` (the `path` names the first field that differs); and `compactMessages` with a summary id that already exists. An exact retry with identical data always succeeds as a no-op, so the fix is to make the retried write byte-identical or choose a new id.
+`createThread` rejects an existing id with different namespace, title, or metadata. `appendMessage` rejects an existing message id with different `role`, `text`, or `at`; `path` names the first differing field. These two operations accept identical retries as no-ops.
+
+`compactMessages` rejects an existing summary id even when the summary and source snapshot are identical. After a lost response, use `listMessages` to confirm that the exact summary (`threadId`, `id`, `role`, `text`, and `at`) exists and every source id is absent. Check all pages. Treat this as evidence of a committed compaction only if the summary id was unique to that operation and no other writer has reset or edited that history. The conflict alone does not prove success. Otherwise, read the current history and summarize it again with a fresh summary id.
+
+### `compaction_conflict`
+
+A `compactMessages` source row disappeared or its `role`, `text`, or `at` changed since it was read. Pass the full summarized rows as `sourceMessages`, not just their ids. The store captures the input and verifies every row inside the replacement transaction, before inserting the summary or deleting sources. A conflict leaves the current history untouched. Read and summarize the current history again; do not retry the stale summary. Appended messages outside the source snapshot are preserved.
 
 ### `embedding_unavailable`
 
-The embedding provider failed or answered an invalid batch: a count that differs from the input count, zero or non-uniform dimensions, or a non-finite component. `Embedding.layerNoop` raises it for every call with the message "no embedding provider is configured".
+The embedding provider failed or answered an invalid batch: a count that differs from the input count, zero or non-uniform dimensions, or a non-finite component. `Embedding.makeNoop` and `Embedding.layerNoop` raise it for every non-empty request with the message "no embedding provider is configured"; an empty batch returns `{ embeddings: [] }`.
 
 ### `vector_model_mismatch`
 
@@ -73,4 +79,6 @@ Three causes cover nearly every case:
 
 ## The opening snapshot is empty
 
-`Source` degrades to empty text instead of failing: a fetch that exceeds two seconds or fails with a typed error yields `""` and a debug log. A `maxBytes` smaller than the fence itself also yields empty text. Check the debug log for `memory source degraded` before suspecting the store.
+`Source` degrades to empty text instead of failing: a fetch that exceeds two seconds or fails with a typed error yields `""` and a warning log. Check `memory source degraded` for elapsed milliseconds, requested bank counts, and each primer bank's candidate limit and observed row count (`null` means unfinished). Counts describe the bounded read, not the bank's total size.
+
+With `SnapshotRecorder`, a degraded fetch is not recorded and a later read retries. Without a recorder, the same source keeps its process-local empty snapshot. A `maxBytes` smaller than the fence itself also yields empty text without a degradation warning. Primer reads use a bounded newest-first candidate window; facts can occupy candidate slots but only notes render as primers. See [opening memory](/guides/agent-opening-context/) for truncation order.

@@ -67,33 +67,46 @@ const stubJj = Layer.succeed(
 `make` brands the implementation as the service, so a new backend is checked
 where it is written rather than where it is provided.
 
-## Do not feature-detect by property
+## Non-mutating capability checks
 
 `"revert" in jj` is true for `makeNoop`, for `BrowserJj.make`, and for
 `BrowserJj.layerUnsupported` alike, because every shipped layer defines both
-optional members. Code that needs to know whether a host can revert calls the
-method and reads the code:
+optional members. Property presence does not establish support. Use host
+configuration or non-mutating capability metadata maintained by the host to
+decide whether to show an undo affordance in advance. The `Jj` interface has no
+support-query method.
+
+## Handle a requested revert
+
+Run a revert only after the user requests undo. On Node and Bun it inserts an
+inverse change before the working copy, so it must never serve as a support
+probe. Handle `not_installed` around that requested operation:
 
 ```ts
 import { isJjError, Jj } from "@smthrs/jj"
 import * as Effect from "effect/Effect"
 
-const canRevert = (changeId: string) =>
+// Run this effect only in response to the user's undo request.
+const revertRequestedChange = (changeId: string) =>
   Effect.gen(function*() {
     const jj = yield* Jj
-    return yield* jj.revert!(changeId).pipe(
-      Effect.as(true),
+    if (jj.revert === undefined) {
+      return yield* Effect.logInfo("Undo is unavailable on this host")
+    }
+    return yield* jj.revert(changeId).pipe(
       Effect.catch((failure) =>
         isJjError(failure) && failure.code === "not_installed"
-          ? Effect.succeed(false)
+          ? Effect.logInfo("Undo is unavailable on this host")
           : Effect.fail(failure)
       )
     )
   })
 ```
 
-Test both arms with `layerNoop({})`, which reports `not_installed`, and with a
-stub that succeeds.
+The effect returns the revert result on success and `undefined` when undo is
+unavailable. Other failures propagate. Test the unsupported path with
+`layerNoop({})`, the successful path with a revert stub, and propagation with a
+stub that fails with another error.
 
 ## When a test needs a real jj
 

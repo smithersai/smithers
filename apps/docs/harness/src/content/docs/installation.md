@@ -26,7 +26,7 @@ it:
 
 - Node.js 22.19+ (Node 22) or 24.11+ for the Node runtime, matching the package's
   `engines` field.
-- [`effect`](https://effect.website) 4.0.0-rc.112, as an exact peer
+- [`effect`](https://effect.website) 4.0.0-rc.115, as an exact peer
   dependency. Pin the same version in the consuming project, so the service
   tags and schemas this package exports are the same class instances the
   project constructs.

@@ -12,7 +12,7 @@ Run a scripted agent with filesystem tools inside a bounded QuickJS cell loop.
 
 The cell reaches tools through registered flows. The host supplies a capability envelope, the sandbox limits cell evaluation, and durable call boundaries record tool outcomes for replay.
 
-The standard filesystem flows operate on a scratch directory through the supplied host service. The scripted seat makes the test deterministic and requires no API key.
+Only read/write flows are exposed, with capabilities scoped to the scratch root and a host service that resolves relative paths there and rejects absolute paths, traversal and links. The host must exclusively own the tree during the run; this is not an OS boundary against concurrent host mutations. The scripted seat makes the test deterministic and requires no API key.
 
 ## Run the test
 
@@ -28,7 +28,7 @@ Vitest reports the assertions that passed, failed, or were skipped. Examples tha
 
 ## Related reference
 
-[`@smthrs/agent`](/docs/reference/api/agent/) · [`@smthrs/capability`](/docs/reference/api/capability/) · [`@smthrs/flow`](/docs/reference/api/flow/) · [`@smthrs/journal`](/docs/reference/api/journal/) · [`@smthrs/model`](/docs/reference/api/model/) · [`@smthrs/registry`](/docs/reference/api/registry/)
+[`@smthrs/agent`](/docs/reference/api/agent/) · [`@smthrs/capability`](/docs/reference/api/capability/) · [`@smthrs/flow`](/docs/reference/api/flow/) · [`@smthrs/harness`](/docs/reference/api/harness/) · [`@smthrs/journal`](/docs/reference/api/journal/) · [`@smthrs/model`](/docs/reference/api/model/) · [`@smthrs/registry`](/docs/reference/api/registry/) · [`@smthrs/std`](/docs/reference/api/std/)
 
 ## Source
 
@@ -41,23 +41,26 @@ import * as Budget from "@smthrs/agent/Budget"
 import * as QuotaPolicy from "@smthrs/agent/QuotaPolicy"
 import * as Seat from "@smthrs/agent/Seat"
 import * as SeatResolver from "@smthrs/agent/SeatResolver"
-import * as StandardFlows from "@smthrs/agent/StandardFlows"
 import * as Capability from "@smthrs/capability/Capability"
 import { Action, Flow, Interpreter } from "@smthrs/flow"
+import * as FlowBinding from "@smthrs/harness/FlowBinding"
 import { Journal, type JournalEvent } from "@smthrs/journal"
 import * as Model from "@smthrs/model/Model"
 import * as ModelEvent from "@smthrs/model/ModelEvent"
 import type * as Route from "@smthrs/model/Route"
 import * as Registry from "@smthrs/registry/Registry"
+import * as Read from "@smthrs/std/Read"
+import * as Write from "@smthrs/std/Write"
+import * as Context from "effect/Context"
 import * as Effect from "effect/Effect"
-import type * as FileSystem from "effect/FileSystem"
+import * as FileSystem from "effect/FileSystem"
 import * as Layer from "effect/Layer"
 import * as Option from "effect/Option"
 import * as Path from "effect/Path"
+import * as PlatformError from "effect/PlatformError"
 import * as Schema from "effect/Schema"
 import * as Stream from "effect/Stream"
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs"
-import { join } from "node:path"
+import { lstatSync, mkdirSync } from "node:fs"
 import { durableEngine } from "./durable-layer.ts"
 
 /** What the step must answer with. Nothing downstream parses model text. */
@@ -153,23 +156,120 @@ export interface Summary {
 }
 
 /**
+ * A relative-path filesystem with only the operations needed by read/write.
+ * Missing methods retain the inert defaults; no raw host method is spread in.
+ * The host owns this scratch tree exclusively while the run is active.
+ */
+const confinedFileSystem = (root: string) => Effect.gen(function*() {
+  const host = yield* FileSystem.FileSystem
+  const path = yield* Path.Path
+  const canonicalRoot = yield* host.realPath(root)
+  if (/[?*]/.test(canonicalRoot)) {
+    return yield* Effect.fail(new PlatformError.PlatformError(new PlatformError.BadArgument({
+      module: "FileSystem",
+      method: "root",
+      description: "Scratch roots must not contain capability glob characters"
+    })))
+  }
+  const resolve = (requested: string) => Effect.try({
+    try: () => {
+      if (path.isAbsolute(requested) || requested.split(/[/\\]/).includes("..") || requested.includes("\0")) {
+        throw new Error("Paths must be relative to the scratch root without traversal")
+      }
+      const destination = path.resolve(canonicalRoot, requested)
+      const relative = path.relative(canonicalRoot, destination)
+      if (relative === ".." || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) {
+        throw new Error("Path leaves the scratch root")
+      }
+      // Inspect every component, including dangling links and parents of files
+      // that do not exist yet. Refusing all symlinks also prevents write's
+      // atomic replacement helper from following a link outside the root.
+      let current = canonicalRoot
+      for (const part of ["", ...relative.split(path.sep)]) {
+        current = path.join(current, part)
+        const info = lstatSync(current, { throwIfNoEntry: false })
+        if (info?.isSymbolicLink() || (info?.isFile() && info.nlink > 1)) {
+          throw new Error("Linked files are not available in the scratch filesystem")
+        }
+      }
+      return destination
+    },
+    catch: (cause) => new PlatformError.PlatformError(
+      new PlatformError.BadArgument({
+        module: "FileSystem",
+        method: "resolve",
+        cause,
+        description: "Path must stay in the scratch root without traversal or links"
+      })
+    )
+  })
+  const scoped = FileSystem.makeNoop({
+    stat: (name) => resolve(name).pipe(Effect.flatMap(host.stat)),
+    exists: (name) => resolve(name).pipe(Effect.flatMap(host.exists)),
+    readFile: (name) => resolve(name).pipe(Effect.flatMap(host.readFile)),
+    makeDirectory: (name, options) => resolve(name).pipe(Effect.flatMap((file) => host.makeDirectory(file, options))),
+    // Preserve.writeFileString uses this result for its temporary sibling, so
+    // keep it in the service's relative namespace too.
+    realPath: (name) => resolve(name).pipe(Effect.map((file) => path.relative(canonicalRoot, file))),
+    writeFileString: (name, content, options) =>
+      resolve(name).pipe(Effect.flatMap((file) => host.writeFileString(file, content, options))),
+    chmod: (name, mode) => resolve(name).pipe(Effect.flatMap((file) => host.chmod(file, mode))),
+    chown: (name, uid, gid) => resolve(name).pipe(Effect.flatMap((file) => host.chown(file, uid, gid))),
+    remove: (name, options) => resolve(name).pipe(Effect.flatMap((file) => host.remove(file, options))),
+    rename: (from, to) => Effect.gen(function*() {
+      const source = yield* resolve(from)
+      const target = yield* resolve(to)
+      yield* host.rename(source, target)
+    })
+  })
+  return { services: Context.make(FileSystem.FileSystem, scoped).pipe(Context.add(Path.Path, path)), canonicalRoot }
+})
+
+/**
  * Runs the step against a real directory.
  *
  * @param filename the SQLite file the durable engine runs on
- * @param root a directory the run may read and write
+ * @param root the only directory the tools may read and write, exclusively owned by the host
+ * @param model an optional model for exercising other cells; defaults to the offline script
  */
-export const main = (filename: string, root: string): Effect.Effect<Summary> =>
+export const main = (filename: string, root: string, model?: Model.Model): Effect.Effect<Summary> =>
   Effect.gen(function*() {
-    const source = join(root, "notes.md")
-    const target = join(root, "line-count.txt")
-    yield* Effect.sync(() => {
-      mkdirSync(root, { recursive: true })
-      writeFileSync(source, "alpha\nbeta\ngamma")
-    })
-
-    // The host's filesystem, handed to the bindings as a context. A browser host
-    // supplies a different one and the cell sees no difference.
-    const services = yield* Effect.context<FileSystem.FileSystem | Path.Path>()
+    const source = "notes.md"
+    const target = "line-count.txt"
+    yield* Effect.sync(() => mkdirSync(root, { recursive: true }))
+    const { services, canonicalRoot } = yield* confinedFileSystem(root)
+    const scratch = Context.get(services, FileSystem.FileSystem)
+    yield* scratch.writeFileString(source, "alpha\nbeta\ngamma")
+    const resource = `${canonicalRoot}/**`
+    const capabilities = ["fs:read", "fs:write"] as const
+    // The standard declarations cover the entire host filesystem. Narrow both
+    // declarations to match the confined service and expose just these tools.
+    const files = FlowBinding.source("examples/scratch-files", [
+      FlowBinding.provide(FlowBinding.make({
+        flow: {
+          name: Read.name,
+          description: Read.description,
+          input: Read.Input,
+          output: Read.Output,
+          capabilities: [`fs:read:${resource}`],
+          effects: { ...Read.effects, reads: [resource] }
+        },
+        handler: Read.run,
+        publicError: (error) => error.message
+      }), services),
+      FlowBinding.provide(FlowBinding.make({
+        flow: {
+          name: Write.name,
+          description: Write.description,
+          input: Write.Input,
+          output: Write.Output,
+          capabilities: [`fs:write:${resource}`],
+          effects: { ...Write.effects, writes: [resource] }
+        },
+        handler: Write.run,
+        publicError: (error) => error.message
+      }), services)
+    ])
     const asked: Array<string> = []
 
     const host = AgentAction.layerHost({
@@ -181,13 +281,11 @@ export const main = (filename: string, root: string): Effect.Effect<Summary> =>
         visible: () => Effect.succeed([]),
         getOption: () => Effect.succeed(Option.none())
       }),
-      flows: [StandardFlows.filesystem(services)],
+      flows: [files],
       // The explicit sandbox budget every cell in this composition runs under.
       limits: { calls: 8 },
-      // The standard flows declare real capabilities, so the run needs a real
-      // envelope. An empty one refuses every declared capability by contract,
-      // which is the safe default rather than an oversight.
-      capabilityEnvelope: [new Capability.CapabilityPattern({ action: "*", resource: "*" })],
+      // Capability admission and host path enforcement are both required.
+      capabilityEnvelope: capabilities.map((action) => new Capability.CapabilityPattern({ action, resource })),
       maxFrames: 3
     })
 
@@ -196,7 +294,8 @@ export const main = (filename: string, root: string): Effect.Effect<Summary> =>
         Effect.succeed(
           Seat.make({
             id,
-            model: scripted(asked),
+            modelId: id,
+            model: model ?? scripted(asked),
             route: { prepare: () => Effect.succeed(prepared) },
             contextWindowTokens: 200_000
           })
@@ -228,7 +327,7 @@ export const main = (filename: string, root: string): Effect.Effect<Summary> =>
 
     return {
       tally: observed.tally,
-      written: readFileSync(target, "utf8"),
+      written: new TextDecoder().decode(yield* scratch.readFile(target)),
       asked,
       eventTypes: observed.eventTypes
     } satisfies Summary

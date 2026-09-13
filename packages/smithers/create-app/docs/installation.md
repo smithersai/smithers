@@ -65,7 +65,7 @@ cd ledger
 pnpm install
 ```
 
-The install brings the app's own stack with it: React 19, Vite 8, Vitest 4.1.9,
+The install brings the app's own stack with it: React 19, Vite 8, Vitest 5.0.0,
 wrangler, and the Cloudflare Vite plugin. It also installs this package's
 executable, `smithers-routes`, which the app's `pnpm routes` script runs.
 
@@ -117,20 +117,20 @@ exported.
 Each peer is needed only by the subpath that uses it, so an app that skips a
 subpath skips its peer:
 
-| Peer                    | Range                | Needed by                                                |
-| ----------------------- | -------------------- | -------------------------------------------------------- |
-| `@effect/platform-node` | `4.0.0-rc.112`       | `./testing`                                              |
-| `@smthrs/testing`       | `1.0.0-rc.0`         | `./testing`                                              |
-| `react`                 | `^19.2.8`            | `./ui`, and any page or layout                           |
-| `vite`                  | `^8.2.2`             | `./vite`                                                 |
-| `vitest`                | `^4.1.9 \|\| ^5.0.0` | `./testing`                                              |
-| `tsx`                   | `^4.23.13`           | `loadManifest` in `./vite`, which evaluates `PACKAGE.ts` |
+| Peer                    | Range          | Needed by                                                |
+| ----------------------- | -------------- | -------------------------------------------------------- |
+| `@effect/platform-node` | `4.0.0-rc.115` | `./testing`                                              |
+| `@smthrs/testing`       | `1.0.0-rc.0`   | `./testing`                                              |
+| `react`                 | `^19.2.8`      | `./ui`, and any page or layout                           |
+| `vite`                  | `^8.2.2`       | `./vite`                                                 |
+| `vitest`                | `^5.0.0`       | `./testing`                                              |
+| `tsx`                   | `^4.23.13`     | `loadManifest` in `./vite`, which evaluates `PACKAGE.ts` |
 
 The default library install has no test runner or testing facade. To use
 `@smthrs/create-app/testing`, install its prerequisites explicitly:
 
 ```bash
-pnpm add -D @smthrs/testing@1.0.0-rc.0 @effect/platform-node@4.0.0-rc.112 vitest@4.1.9
+pnpm add -D @smthrs/testing@1.0.0-rc.0 @effect/platform-node@4.0.0-rc.115 vitest@5.0.0
 ```
 
 `@smthrs/testing` supplies its grading facade through `@smthrs/scorers`.

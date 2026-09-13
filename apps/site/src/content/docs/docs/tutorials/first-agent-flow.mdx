@@ -95,7 +95,7 @@ A markdown flow hands the whole task to one agent. A module flow declares each s
 Install the libraries:
 
 ```bash
-pnpm add @smthrs/agent@next @smthrs/flow@next @smthrs/engine@next @smthrs/capability@next @smthrs/model@next @smthrs/registry@next @smthrs/platform-node@next @smthrs/jj@next effect@4.0.0-rc.112 @effect/platform-node@4.0.0-rc.112
+pnpm add @smthrs/agent@next @smthrs/flow@next @smthrs/engine@next @smthrs/capability@next @smthrs/model@next @smthrs/registry@next @smthrs/platform-node@next @smthrs/jj@next effect@4.0.0-rc.115 @effect/platform-node@4.0.0-rc.115
 ```
 
 This part also needs Jujutsu (`jj`) on your PATH. Initialize a separate repository for the files the tools will edit:
@@ -258,6 +258,7 @@ const program = Effect.gen(function*() {
       Effect.succeed(
         Seat.make({
           id,
+          modelId: Seat.modelIdOf(id),
           model: scripted,
           route: { prepare: () => Effect.succeed(prepared) },
           contextWindowTokens: 200_000

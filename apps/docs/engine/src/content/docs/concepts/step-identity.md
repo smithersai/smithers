@@ -47,6 +47,16 @@ Three more things fold into both forms when present:
   not. That is the difference between a row shared across runs and a row
   pinned to this one.
 
+The declaration and boundary enter the outer key as `key1_`-prefixed SHA-256
+digests of their canonical documents. Declaration digests are memoized by the
+success/error AST pair. Boundary digests are reused only while the validated
+metadata document is unchanged.
+
+This compact encoding intentionally changes persisted string-key bytes, and
+object-key bytes when a boundary is present, following the earlier intentional
+schema-folding break (issue #120). Existing rows under the previous encoding
+miss and the action executes again. Boundary-free object keys are unchanged.
+
 ## The invocation key: everything else
 
 Any other action, sealed without a declared key, compensable, or irreversible,

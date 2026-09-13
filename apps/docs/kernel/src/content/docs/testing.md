@@ -79,7 +79,7 @@ multi-leg pipelines. The Node, Bun, browser, test, and deliberately
 unsupported bundles all run it.
 
 It registers Vitest cases, so it requires the declared peers
-(`@effect/vitest@4.0.0-rc.112` and `vitest@4.1.9`) and Node process and
+(`@effect/vitest@4.0.0-rc.115` and `vitest@5.0.0`) and Node process and
 temporary-directory fixtures. See
 [Adapt a new host platform](/guides/adapt-a-new-host-platform/) for how to
 declare your bundle's capabilities to it.

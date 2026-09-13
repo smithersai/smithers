@@ -21,10 +21,11 @@ person cannot afford to start over when the process dies. Recovering by hand
 means writing your own checkpoint table, your own idempotency keys, and your own
 "did this already run" branch around every call.
 
-A flow gets that from the shape of the declaration instead. Because the body is
-pure and builds the plan before anything runs, the same payload always produces
-the same nodes with the same keys. An engine records each step as it settles, so
-a re-run under the same execution id reads the recorded result rather than
+A pure flow body builds the plan before anything runs. With complete callback
+captures and stable admission, unchanged source, captures, declarations, and
+payload reproduce the same plan keys across processes. An engine records each
+step as it settles, so a re-run under the same execution id reads the recorded
+result rather than
 repeating the work, on this process and on the next one. The same property is
 what lets the engine retry a step, cache it, park a run on a timer or a human
 answer for a week, and put one step on another machine, none of which the flow's
@@ -37,7 +38,7 @@ restarted. Skip it when a plain `Effect` retry loop covers the whole problem.
 ## Install
 
 ```bash
-pnpm add @smthrs/flow@next @smthrs/engine@next effect@4.0.0-rc.112 @effect/platform-node@4.0.0-rc.112
+pnpm add @smthrs/plan@next @smthrs/flow@next @smthrs/engine@next effect@4.0.0-rc.115 @effect/platform-node@4.0.0-rc.115
 ```
 
 Node.js 22.19.0 or later. The Smithers 1.0 release candidates publish under the
@@ -53,6 +54,7 @@ the flow on the in-memory engine:
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
 import { FlowEngine } from "@smthrs/engine"
 import { Action, Flow, Interpreter } from "@smthrs/flow"
+import { Node } from "@smthrs/plan"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
 import * as Schema from "effect/Schema"
@@ -67,15 +69,17 @@ const Summarize = Action.make("digest/Summarize", {
 const Digest = Flow.make("digest/Digest", {
   payload: { url: Schema.String },
   success: Schema.String,
-  body: (payload) => Summarize.call(payload)
+  body: Node.capture(
+    { action: Summarize.name, implementationVersion: "digest/v1" },
+    (payload) => Summarize.call(payload)
+  )
 })
 
 /** The code arrives separately, filed against the tag by `toLayer`. */
-const layer = Layer.mergeAll(
-  Summarize.toLayer(({ url }) => Effect.succeed(`A summary of ${url}.`)),
-  Interpreter.layer(Digest)
+const layer = Interpreter.layerWithImplementations(
+  Digest,
+  Summarize.toLayer(({ url }) => Effect.succeed(`A summary of ${url}.`))
 ).pipe(
-  Layer.provideMerge(Action.layerImplementations),
   Layer.provideMerge(FlowEngine.layerMemory),
   Layer.provideMerge(NodeCrypto.layer)
 )
@@ -87,6 +91,14 @@ const main = Digest.execute(
 
 console.log(await Effect.runPromise(main))
 ```
+
+`Node.capture` declares every semantic value outside the callback source,
+including a version for imported behavior. JavaScript cannot verify that the
+record is complete. `Interpreter.layerWithImplementations` defaults to stable
+callback admission and refuses uncaptured callbacks before dispatch. The
+lower-level `Graph.build` and `Interpreter.layer` default to `process-local`,
+which makes no cross-process callback identity guarantee. Changed source,
+captures, or implementation versions require a newly planned run.
 
 Run it and the implementation runs once. Run the same execution id again and it
 does not: the engine finds the execution that already settled and answers with

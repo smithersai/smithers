@@ -57,17 +57,39 @@ These arrive as `Migrator.MigrationError` of kind `BadState` from `loader`,
 
 ### `Migration <id>_<name> would be skipped: the database has already applied migration id <highWater>`
 
-**Cause:** `Migrator` runs only ids strictly above the highest applied id. Your
-migration's global id sits at or below that mark and is not itself recorded, so
-running the pass would create nothing and report success.
+```text
+Migration 1_alpha_initial would be skipped: the database has already applied migration id 1001, and this is not a forward append in a declared, installed package block. Compose each installed package's recorded migrations when appending to its block; introduce new packages above 1001.
+```
 
-**Fix:** on a fresh database, compose every package's set from its first
-migration, which is what `@smthrs/engine-store`'s `Migrations.sets` does. On an
-existing database, give the new migration a global id above the mark, which
-means a new namespaced set whose offset is a multiple of `idBlock` above every
-block already applied. Read the mark with
-`SELECT MAX(migration_id) FROM flows_migrations;`. See
-[Add a migration](/guides/add-a-migration/).
+**Cause:** the pending migration is a historical hole in an installed block
+or belongs to a new block below the global cursor.
+
+**Fix:** distinguish the package's block cursor from the global cursor:
+
+- An installed package may append an id greater than every applied id in its
+  own block, even below the global cursor. Retain its recorded migration
+  identities in the declaration.
+- Missing matching history is an ownership rejection, described below.
+  Restore the installed package's recorded declarations before appending.
+- A historical hole cannot be filled behind the block's applied cursor.
+  Put new migration work after that cursor; preserve recorded identities.
+- A genuinely new package needs an unused block above every installed block.
+  On a fresh database, compose every package's set from its first migration.
+
+Inspect `SELECT migration_id, name FROM flows_migrations ORDER BY migration_id;`
+to identify the installed blocks and their cursors. See the
+[forward-append rule](/guides/add-a-migration/#3-append-within-the-packages-existing-block).
+
+### `Migration <id>_<name> cannot append to installed block <offset> without declaring a matching recorded migration`
+
+**Cause:** the composition has pending work in an installed block but declares
+none of that block's recorded migration identities. The check applies above
+and below the global cursor, including when the namespace is unchanged.
+
+**Fix:** restore the owning package's recorded declarations, with the same ids
+and names, alongside its append. A foreign namespace must reserve a new block.
+Changing a recorded name instead fails with
+`Migration <id> was recorded as <recordedName>, but this package declares <declaredName>`.
 
 ### `Duplicate migration namespace: <namespace>`
 
@@ -169,11 +191,10 @@ propagate to the outermost `write`.
 
 ### An application error is retried unexpectedly
 
-It is not. A typed failure must carry an Effect `SqlError` in its cause chain
-to qualify. If you are seeing replays, the effect inside `write` is genuinely
-failing with a database error. The exception is a raw rollback defect the
-driver throws before a `SqlError` exists, which is matched on the defect
-channel alone.
+It is not. A failure must carry an Effect `SqlError` in its cause chain to
+qualify, on the defect channel as much as the typed one. If you are seeing
+replays, the effect inside `write` is genuinely failing with a database error.
+An `Effect.die` whose message merely quotes lock text is never replayed.
 
 ### `unsupported` from a write that should have worked
 

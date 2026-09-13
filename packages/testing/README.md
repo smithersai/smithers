@@ -1,7 +1,9 @@
 # @smthrs/testing
 
+Release candidate scope, host requirements and compatibility review are defined in the [library support policy](https://github.com/smithersai/smithers/blob/main/RELEASE_SUPPORT.md).
+
 This package declares `effect` as an exact
-`4.0.0-rc.112` peer dependency. Keep the application on that version so
+`4.0.0-rc.115` peer dependency. Keep the application on that version so
 all Smithers packages share one Effect runtime.
 
 **Documentation:** https://testing.smithers.sh
@@ -20,14 +22,14 @@ constructor identity, tags, fields, and existing test imports are preserved.
 ## Install
 
 ```sh
-npm install --save-dev @smthrs/testing@next effect@4.0.0-rc.112
+npm install --save-dev @smthrs/testing@next effect@4.0.0-rc.115
 ```
 
 The 1.0 release candidates publish under the `next` tag, and the first one is
 not on npm yet: until it is, build from a clone of
 [the repository](https://github.com/smithersai/smithers).
 
-`effect` is a required peer at exactly `4.0.0-rc.112`. `vitest` and
+`effect` is a required peer at exactly `4.0.0-rc.115`. `vitest` and
 `@effect/vitest` are optional peers, needed only by the `Vitest` adapter.
 Everything else runs under any runner, because an assertion is an ordinary
 `Effect` and a conformance case is a plain value. Node.js 22.19.0 or later is

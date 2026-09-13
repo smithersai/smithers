@@ -1,7 +1,9 @@
 # `@smthrs/plugin`
 
+Release candidate scope, host requirements and compatibility review are defined in the [library support policy](https://github.com/smithersai/smithers/blob/main/RELEASE_SUPPORT.md).
+
 This package declares `effect` as an exact
-`4.0.0-rc.112` peer dependency. Keep the application on that version so
+`4.0.0-rc.115` peer dependency. Keep the application on that version so
 all Smithers packages share one Effect runtime.
 
 **Documentation:** https://plugin.smithers.sh
@@ -11,7 +13,7 @@ hooks that are ordinary Effects, ordering that follows Vite's rules exactly, and
 a resolution boundary that copies every value a caller hands it.
 
 ```bash
-pnpm add @smthrs/plugin@next effect@4.0.0-rc.112
+pnpm add @smthrs/plugin@next effect@4.0.0-rc.115
 ```
 
 ```ts

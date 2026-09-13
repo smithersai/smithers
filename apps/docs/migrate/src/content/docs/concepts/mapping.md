@@ -60,6 +60,10 @@ The class belongs to the occurrence, not only to the construct.
 - `<Parallel>` is `automatic`.
 - `<Parallel maxConcurrency>` is `guided`.
 - `<Task hijack>` is `unsafe`.
+- `<Approval allowedUsers>` or `<Approval allowedScopes>` is `guided`, including
+  when both restrictions are present. The decorator has no equivalent fields.
+  The operator must supply an approval flow that preserves the original user
+  and scope restrictions; no automatic snippet is emitted.
 - `<Loop maxIterations={Infinity}>` is `guided`, with the reason attached:
   bounded recursion needs a bound, and the migration has to choose one.
 

@@ -1,7 +1,9 @@
 # @smthrs/sync
 
+Release candidate scope, host requirements and compatibility review are defined in the [library support policy](https://github.com/smithersai/smithers/blob/main/RELEASE_SUPPORT.md).
+
 This package declares `effect` as an exact
-`4.0.0-rc.112` peer dependency. Keep the application on that version so
+`4.0.0-rc.115` peer dependency. Keep the application on that version so
 all Smithers packages share one Effect runtime.
 
 **Documentation:** https://smithers-sync.smithers.sh
@@ -22,7 +24,7 @@ commands to a branch's journal run after verifying a write-scoped
 publish under the `next` tag rather than `latest`, so install it by tag:
 
 ```sh
-pnpm add @smthrs/sync@next @smthrs/journal@next effect@4.0.0-rc.112
+pnpm add @smthrs/sync@next @smthrs/journal@next effect@4.0.0-rc.115
 ```
 
 `effect` is a peer dependency at exactly that version. Two copies of `effect`

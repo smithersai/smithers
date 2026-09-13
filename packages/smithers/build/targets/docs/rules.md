@@ -13,6 +13,13 @@ work through the shared `Exec` action, so a Flow runtime alone can run it. A
 dispatched natively by [`@smthrs/build-cli`](https://github.com/smithersai/smithers/tree/main/packages/smithers/build/build-cli), so running one
 under a bare Flow runtime fails loudly instead of doing nothing.
 
+**Unsupported in this release candidate:** `Npm.Publish`, `Changesets.Publish`,
+`Github.Release`, `Github.Pages`, `Git.Pr`, and `Github.Pr` validate their
+preconditions but refuse execution even when those checks pass. `Npm.Downstream`
+also refuses because the isolated remote checkout runner is not implemented.
+Their declarations remain available for planning; they are not working release
+or pull-request operations. Use an implemented publication tool or CI job.
+
 | Rule                     | Module            | Verbs              | Cacheable | Declares outputs | Route            |
 | ------------------------ | ----------------- | ------------------ | --------- | ---------------- | ---------------- |
 | `Agent.Diff`             | AgentTarget       | run                | no        | no               | flow body        |
@@ -33,7 +40,7 @@ under a bare Flow runtime fails loudly instead of doing nothing.
 | `Cargo.Fmt`              | Cargo             | lint               | no        | no               | package executor |
 | `Cargo.Nextest`          | Cargo             | test               | no        | no               | package executor |
 | `Cargo.Test`             | Cargo             | test               | no        | no               | package executor |
-| `Changesets.Publish`     | ChangesetsTarget  | run                | no        | no               | package executor |
+| `Changesets.Publish`     | ChangesetsTarget  | run                | no        | no               | unsupported      |
 | `Changesets.Version`     | ChangesetsTarget  | run, lint          | by attrs  | no               | package executor |
 | `Clean`                  | Compose           | run                | no        | no               | package executor |
 | `Copy`                   | NodeArtifact      | build              | yes       | no               | package executor |
@@ -59,14 +66,14 @@ under a bare Flow runtime fails loudly instead of doing nothing.
 | `Foundry.Test`           | Foundry           | test               | yes       | no               | flow body        |
 | `Generate`               | Compose           | run, lint          | no        | no               | flow body        |
 | `Git.Commit`             | GitTarget         | run                | no        | no               | package executor |
-| `Git.Pr`                 | GitTarget         | run                | no        | no               | package executor |
+| `Git.Pr`                 | GitTarget         | run                | no        | no               | unsupported      |
 | `Git.Submodule`          | GitTarget         | build              | yes       | no               | package executor |
 | `Git.Submodules`         | GitTarget         | build              | yes       | no               | package executor |
 | `Github.Ci`              | GithubTarget      | run, lint          | no        | no               | package executor |
 | `Github.CiGen`           | GithubTarget      | run, lint          | no        | no               | package executor |
-| `Github.Pages`           | GithubTarget      | run                | no        | no               | package executor |
-| `Github.Pr`              | GithubTarget      | run                | no        | no               | package executor |
-| `Github.Release`         | GithubTarget      | run                | no        | no               | package executor |
+| `Github.Pages`           | GithubTarget      | run                | no        | no               | unsupported      |
+| `Github.Pr`              | GithubTarget      | run                | no        | no               | unsupported      |
+| `Github.Release`         | GithubTarget      | run                | no        | no               | unsupported      |
 | `Github.Setup`           | GithubTarget      | run, lint          | no        | no               | package executor |
 | `Github.Workflow`        | GithubTarget      | run, lint          | no        | no               | package executor |
 | `GithubCiGen`            | GithubCiGen       | build, lint        | by attrs  | no               | flow body        |
@@ -89,9 +96,9 @@ under a bare Flow runtime fails loudly instead of doing nothing.
 | `NewPackage`             | NewPackage        | run                | no        | no               | flow body        |
 | `NodeBinary`             | NodeBinary        | build              | no        | no               | flow body        |
 | `NodeTest`               | NodeTest          | test               | no        | no               | flow body        |
-| `Npm.Downstream`         | NpmTarget         | test               | yes       | no               | package executor |
+| `Npm.Downstream`         | NpmTarget         | test               | yes       | no               | unsupported      |
 | `Npm.Pack`               | NpmTarget         | build              | yes       | no               | package executor |
-| `Npm.Publish`            | NpmTarget         | run                | no        | no               | package executor |
+| `Npm.Publish`            | NpmTarget         | run                | no        | no               | unsupported      |
 | `Npm.Published`          | NpmTarget         | build              | yes       | no               | package executor |
 | `NpmPublish`             | NpmPublish        | run                | no        | no               | flow body        |
 | `Overlay`                | NodeArtifact      | build              | yes       | no               | package executor |

@@ -48,7 +48,7 @@ and in a browser. A composition that executes a flow adds the durable engine
 and the authoring packages, plus a platform crypto service:
 
 ```bash
-pnpm add @smthrs/engine@next @smthrs/flow@next @smthrs/model@next @smthrs/registry@next @effect/platform-node@4.0.0-rc.112
+pnpm add @smthrs/engine@next @smthrs/flow@next @smthrs/model@next @smthrs/registry@next @effect/platform-node@4.0.0-rc.115
 ```
 
 - [`@smthrs/engine`](/api/engine) provides the durable engine a run executes

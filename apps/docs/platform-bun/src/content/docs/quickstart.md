@@ -17,10 +17,16 @@ appear in, and disappear from, the process ledger.
 - A CPython 3 interpreter at `/usr/bin/python3`. Confirm it with
   `/usr/bin/python3 --version`. See [Installation](/installation/) if yours
   lives elsewhere.
+- [Jujutsu](https://jj-vcs.github.io) at jj 0.39.0 or later on `PATH`. Confirm
+  it with `jj --version`. Neither program below touches `Jj`, but every
+  complete bundle probes jj while the layer is built and fails with `JjError`
+  before the program body runs when it is missing. See
+  [Installation](/installation/) for `SMITHERS_JJ_PATH` and for composing
+  service layers without jj.
 - A package with the dependencies installed:
 
 ```bash
-pnpm add @smthrs/platform-bun@next @effect/platform-bun@4.0.0-rc.112 @smthrs/kernel@next effect@4.0.0-rc.112
+pnpm add @smthrs/platform-bun@next @effect/platform-bun@4.0.0-rc.115 @smthrs/kernel@next effect@4.0.0-rc.115
 ```
 
 ## Run a file operation and a command
@@ -63,7 +69,8 @@ bun run quickstart.ts
 ```
 
 `BunHost.layer` provided all five slots; the program used two of them. The
-other three were built and never asked for.
+other three were built and never asked for, and building `Jj` is where the
+jj version probe ran.
 
 ## Turn containment on
 

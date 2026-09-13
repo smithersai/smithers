@@ -93,7 +93,7 @@ behavioral contract every host bundle must satisfy. It registers Vitest cases,
 so install the peers first:
 
 ```bash
-pnpm add -D @effect/vitest@4.0.0-rc.112 vitest@4.1.9
+pnpm add -D @effect/vitest@4.0.0-rc.115 vitest@5.0.0
 ```
 
 Then declare, per slot, whether your bundle supports the capability and what it

@@ -21,12 +21,12 @@ resolves two copies of `effect` splits its context and a provided layer stops
 satisfying a requirement. Install the release this package is tested against:
 
 ```bash
-pnpm add @smthrs/observability@next effect@4.0.0-rc.112
+pnpm add @smthrs/observability@next effect@4.0.0-rc.115
 ```
 
 `Otlp` is written entirely against `effect`, including its HTTP client and its
 `effect/unstable/observability/Otlp` exporters. The required peers
-`@effect/opentelemetry@4.0.0-rc.112` and `@opentelemetry/api@1.9.1`, plus
+`@effect/opentelemetry@4.0.0-rc.115` and `@opentelemetry/api@1.9.1`, plus
 the logs and metrics dependencies, support
 the root `Otel` and `Resource` modules. They install with ordinary peer-aware
 package managers. The default install includes no HTTP exporters or trace SDK.

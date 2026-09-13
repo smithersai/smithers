@@ -25,7 +25,15 @@ const checked = PlanAssertions.expectKeyGoldens(actual, golden).pipe(
 Codes are grouped by the family that raises them, and each family exports its
 own schema: `TestingError.PlanAssertionCode`,
 `TestingError.JournalAssertionCode`, and `TestingError.ScoreGateCode`.
-`TestingError.Code` is those three plus every standalone code, as one union.
+`TestingError.Code` combines those three families, every standalone testing
+code, and the upstream `FlowCycleDetected` and `CancelRequestFailed` code
+schemas. It accepts every `EngineSubjectError` code, including
+`flow_cycle_detected`, `cancel_request_failed`, and
+`unsafe_interrupt_unsupported`.
+
+Approval timeouts and loop limits have no concrete subject or behavioral pin.
+`TaskTimeoutError`, `RalphMaxReachedError`, and their reserved codes have been
+removed. Add capability-specific failures when those behaviors are implemented.
 
 Every literal is `snake_case`, without exception, so a consumer never has to
 remember which family spells its codes differently.
@@ -52,7 +60,9 @@ package:
 
 - The fixture encoder raises `FixtureEncodingError` with the `path` of the
   offending value and the `reason` it broke, rather than letting `JSON.stringify`
-  throw a bare `TypeError`.
+  throw a bare `TypeError`. Tool parameter accessors and sparse array holes
+  fail with `unsupported-type` without invoking getters. Snapshotting preserves
+  accessors for this validation rather than reading or dropping them.
 - Every polling loop is bounded, so exhaustion is a typed failure rather than a
   hang. `FlowEngineLike` gives a runtime 1000 scheduler passes to publish a
   result whose body has already exited, then fails typed. Conformance pins wait

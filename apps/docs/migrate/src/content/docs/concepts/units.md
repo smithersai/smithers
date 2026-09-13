@@ -63,6 +63,20 @@ Smithers 1.0 raises `already-migrated` and gets no unit at all: running the
 tool twice has to be safe, and a second run must recognize its own output
 rather than hand it back to the model and write the result to a second path.
 
+## Dotenv integration sources
+
+A `.env*` file with a `SMITHERS_*` name can belong to an integration unit.
+Its source block in `UnitBrief`, the model prompt, and the replayable capture
+contains only sorted, unique `SMITHERS_*` assignment names with `[REDACTED]`
+values. Unrelated keys, all values, and comments are omitted. This applies to
+nested dotenv files, initial captures, repair captures, and checkpoint fallbacks.
+The block's line numbers refer to the inventory, not the original file.
+
+The agent leaves dotenv files unchanged and reports required environment
+migrations as unresolved for the operator. Redaction markers are never
+replacement values. Original bytes remain in the local checkpoint for
+verification and restoration.
+
 ## How shared files are assigned
 
 A component, a library module, or an MDX prompt often belongs to more than one

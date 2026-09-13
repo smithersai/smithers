@@ -1,5 +1,7 @@
 # @smthrs/platform-node
 
+Release candidate scope, host requirements and compatibility review are defined in the [library support policy](https://github.com/smithersai/smithers/blob/main/RELEASE_SUPPORT.md).
+
 **Documentation:** https://platform-node.smithers.sh
 
 The Node.js Host bundle for Smithers. One layer, `NodeHost.layer`, provides the
@@ -88,7 +90,7 @@ handle's `kill` for signal delivery; cleanup failure retains the ledger record.
 `ScopedProcess` supplies this lifetime policy for transient commands without a
 durable ledger, and exposes the separate native `Handle.targetPid` for diagnostics.
 
-Complete host bundles require jj 0.39.0 or newer. Construction probes the binary outside the host process ledger and can fail with `JjError` (`not_installed` or `unsupported_version`). Repository commands use the selected process runner.
+Complete host bundles require jj 0.39.0 or newer. Construction probes the binary through its selected runner; a contained host records and retires this probe in its process ledger and can fail with `JjError` (`not_installed` or `unsupported_version`). Repository commands use the selected process runner.
 
 ## Modules
 
@@ -151,3 +153,5 @@ For a different runtime, the sibling bundles are
 The host exports `implementationIds` for its five service slots. Its rooted
 factories reject invalid roots before constructing a layer, using the host's
 own error with code `invalid_repository_root`.
+
+The atomic filesystem supports descriptor-based `chmod` and `chown` on regular files so replacements can preserve permissions and ownership. Symlinks, hard-linked files, directories, and special files are refused by this boundary.

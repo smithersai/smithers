@@ -14,8 +14,8 @@ repository. Deleting it is an operator decision, taken explicitly.
 
 ## Run a pass
 
-`Retention.retain` deletes every aged terminal run and its dependents in one
-transaction:
+`Retention.retain` deletes up to `limit` aged terminal runs and their dependents
+in one transaction:
 
 ```ts
 import { Retention } from "@smthrs/engine-store"
@@ -39,9 +39,13 @@ const collect = Effect.gen(function*() {
 one. Zero collects every terminal run; a negative value is read as zero.
 
 `limit` bounds one pass and defaults to `Retention.defaultLimit`, which is 1000.
-Retention is idempotent, so a workspace with more aged runs than the bound
-converges over repeated passes rather than holding one long write transaction
-open. A negative value is read as zero, so a pass under a mistyped bound deletes
+Retention is idempotent. For a fixed, finite, acyclic lineage and a positive
+integer limit, each successful non-dry pass removes at least one collectable
+run while any remain. This includes continuation chains longer
+than the bound. Selection prioritizes deeper continuation children before
+parents, then age and run id; the report lists selected runs oldest first.
+Parents pinned by children excluded by age or live lineage do not consume the
+bound. Protected runs remain until eligible. Zero or a negative limit deletes
 nothing.
 
 `dryRun` computes and reports the pass without deleting anything. Under a dry

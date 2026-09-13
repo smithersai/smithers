@@ -20,7 +20,7 @@ in a run's past.
 - A package with the dependencies installed:
 
 ```bash
-pnpm add @smthrs/time-travel@next @smthrs/engine@next @smthrs/engine-store@next @smthrs/flows@next @smthrs/flow@next @smthrs/journal@next @smthrs/kernel@next @smthrs/run-store@next @effect/platform-node@4.0.0-rc.112 effect@4.0.0-rc.112 @effect/sql-sqlite-node@4.0.0-rc.112
+pnpm add @smthrs/time-travel@next @smthrs/engine@next @smthrs/engine-store@next @smthrs/flows@next @smthrs/flow@next @smthrs/journal@next @smthrs/kernel@next @smthrs/run-store@next @effect/platform-node@4.0.0-rc.115 effect@4.0.0-rc.115 @effect/sql-sqlite-node@4.0.0-rc.115
 ```
 
 ## Declare a run worth replaying

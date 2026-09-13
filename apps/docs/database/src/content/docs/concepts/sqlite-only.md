@@ -16,21 +16,22 @@ says out loud which names it is ignoring.
 `NodeDatabase.layer` runs a guard before it creates a connection, and raises
 `UnsupportedDatabase` as a defect in each of these cases:
 
-| Code                        | Refused when                                                         | Message                                                                              |
-| --------------------------- | -------------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
-| `unsupported_runtime`       | `process.versions.bun` is set                                        | `1.0.0-rc.0 runs the durable engine on Node.js >=22.19.0 only`                       |
-| `unsupported_database_file` | the file has at least one table and no `flows_migrations` table      | `<path> is not a Smithers 1.0 database (1.0.0-rc.0 does not load a 0.x smithers.db)` |
-| `database_locked`           | a peer held the file for the whole open ladder, so it was never read | `<path> could not be inspected because another process holds it`                     |
+| Code                        | Refused when                                                         | Message                                                                                   |
+| --------------------------- | -------------------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
+| `unsupported_runtime`       | `process.versions.bun` is set                                        | `Use @smthrs/database/bun/BunDatabase under Bun; NodeDatabase requires Node.js >=22.19.0` |
+| `unsupported_database_file` | the file has at least one table and no `flows_migrations` table      | `<path> is not a Smithers 1.0 database (1.0.0-rc.0 does not load a 0.x smithers.db)`      |
+| `database_locked`           | a peer held the file for the whole open ladder, so it was never read | `<path> could not be inspected because another process holds it`                          |
 
 A refusal is a defect rather than a typed failure on purpose. `layer` is a leaf
 client layer whose error channel every durable package composes against as
 `never`, and neither refusal is recoverable at run time: both are operator
-mistakes fixed by pointing the runtime somewhere else or by running Node.js.
+mistakes fixed by selecting the matching native driver or another database file.
 The value carried by the defect is still typed and matchable with
 `isUnsupportedDatabase`.
 
-The runtime check runs first, so a Bun process is told it is the wrong runtime
-rather than told something about the file it named.
+The Node adapter checks runtime selection first and directs Bun callers to
+BunDatabase. The shared durable engine runs on either native adapter; both use
+the same file guard and retry policy.
 
 ### What the file check actually reads
 

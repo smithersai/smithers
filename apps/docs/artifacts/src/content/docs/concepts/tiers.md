@@ -53,7 +53,9 @@ answer; a refusal is not.
 
 The write-back is opportunistic in the same way the upload is. The bytes are
 already in hand, so a full disk, a read-only mount, or a refused sync costs the
-next read a round trip rather than failing this one.
+next read a round trip rather than failing this one. `writeBackTimeout` bounds
+the write-back, defaulting to 60 seconds. At expiry the write-back is interrupted;
+the read returns the verified remote bytes after interruption cleanup finishes.
 
 ## What a combined write does
 

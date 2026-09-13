@@ -23,6 +23,12 @@ copied aside, and each path is recorded with whether it existed and what its
 bytes digested to. Targets are recorded as well as sources, because a target
 you already had at a path a unit writes is your data too.
 
+Backup paths must stay inside the project and contain no symlink components.
+Report and backup directories use mode `0700`; new backup files use `0600`,
+including post-checkpoint copies preserved during rollback. Files are written
+through exclusive temporary files and renamed into place. Original file modes
+are recorded separately for restoration.
+
 **A digest of the whole tree.** Everything except `.git`, `.jj`,
 `node_modules`, the report directory, `.smithers-migrate/`, `.flows/`, and the
 0.x run-state roots. The fixed `.smithers-migrate/` exclusion preserves the

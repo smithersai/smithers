@@ -280,8 +280,9 @@ carries the `method` and one of ten codes; the table is in
 snapshot references artifact digests the capture could not take, which almost
 always means `objectsDirectory` was omitted for a composition that has a
 filesystem artifact tier. `schema_mismatch` means the restored file's applied
-migrations are not a prefix of the manifest's, so the file under fencing is not
-the one the manifest describes.
+migrations omit or rename a historical entry recorded in the manifest. Forward
+additions within installed lower blocks are compatible; check historical IDs
+and names before fencing again.
 
 ## The composition does not compile
 

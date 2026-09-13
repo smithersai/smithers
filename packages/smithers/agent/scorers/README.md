@@ -1,5 +1,7 @@
 # @smthrs/scorers
 
+Release candidate scope, host requirements and compatibility review are defined in the [library support policy](https://github.com/smithersai/smithers/blob/main/RELEASE_SUPPORT.md).
+
 **Documentation:** https://scorers.smithers.sh
 
 Flow-native scoring for Smithers. Declare a scorer with a durable identity,
@@ -22,7 +24,7 @@ runner. Runtime evaluation code imports scorers directly.
 Install the current release candidate with `pnpm add @smthrs/scorers@next`.
 
 It needs Node.js 22.19.0 or later and
-[`effect`](https://effect.website) 4.0.0-rc.112, plus
+[`effect`](https://effect.website) 4.0.0-rc.115, plus
 [`@smthrs/database`](https://database.smithers.sh) when you persist
 observations.
 

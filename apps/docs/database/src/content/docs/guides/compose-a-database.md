@@ -73,6 +73,14 @@ const databaseLayer = (filename: string) =>
   )
 ```
 
+New plain-path databases are created with mode `0o600`, masked by the process
+umask. WAL and SHM sidecars inherit the main file's mode. Set `mode: 0o640`
+when group-readable state is required. Existing files keep their permissions;
+`file:` URIs, temporary databases and read-only opens are left to SQLite.
+
+The default `busyTimeout` is `0`: the open ladder and `DurableWriter` wait
+between attempts through Effect, keeping the event loop available to peers.
+
 ## Tune the connection
 
 `NodeDatabaseOptions.sqlite` forwards to `@effect/sql-sqlite-node`'s client
@@ -84,13 +92,14 @@ import * as Duration from "effect/Duration"
 
 NodeDatabase.layer({
   filename: "flows.sqlite",
-  sqlite: { busyTimeout: Duration.seconds(5) }
+  busyTimeout: Duration.millis(5)
 })
 ```
 
-`busyTimeout` is the one setting with a second effect worth knowing: it also
-paces a contended open, because SQLite's WAL mode change consults the busy
-handler. A long timeout makes each failed open attempt slow. See
+`busyTimeout` overrides `sqlite.busyTimeout`; the nested setting remains
+supported when the top-level setting is absent. A nonzero timeout blocks the
+Node event loop during contention, including WAL conversion at open. Keep it
+short and tune the cooperative retry bounds for longer waits. See
 [why rc.0 is SQLite only](/concepts/sqlite-only/).
 
 ## Tune the write retries
@@ -140,3 +149,11 @@ const notices = UnsupportedBackend.ignoredNames(process.env).map(UnsupportedBack
 ```
 
 Print them. Do not change the exit code: this is a notice, not a refusal.
+
+## Select the native runtime at the boundary
+
+On Bun, provide `BunDatabase.layer` from `@smthrs/database/bun/BunDatabase`
+in place of the Node driver. Both expose the same Effect SqlClient and use the
+same schema guard and bounded startup retries. The `DurableWriter` and migration
+layers above them remain identical. Flow and product services receive those
+services through Effect; they do not construct a second database for their state.

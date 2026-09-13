@@ -70,14 +70,20 @@ between retries and become permanently undeliverable.
 ## Coalescing collapses a chatty producer
 
 Only a `system-event` coalesces, and only when it declares a `coalescingKey`.
-While an event with that key is still pending, admitting another one under the
-same key replaces the payload and answers `coalesced`. Ten updates about one
-condition are one pending notification carrying the latest of them.
+A key is scoped to one `targetLineageId`. While an event with that key is
+pending for that lineage, admitting another one under the same key replaces it
+and answers `coalesced`. Ten updates about one condition are one pending
+notification carrying the latest of them, and two branches reporting the same
+condition under the same ordinary key are two pending notifications, because a
+key names a condition and only the address names a reader.
 
-The replacement keeps the first admission's sequence, so replay order stays
-stable: the notification holds the place in the queue that the first report
-earned it. `Notification.coalesceKey` returns `null` for everything else, which
-is what stops two separate human follow-ups from silently becoming one.
+The replacement substitutes the whole notification, id and provenance included,
+so what a boundary delivers is the latest report rather than the first report's
+envelope around a newer payload. It keeps the first admission's sequence, so
+replay order stays stable: the notification holds the place in the queue that
+the first report earned it. `Notification.coalesceKey` returns `null` for
+everything else, which is what stops two separate human follow-ups from silently
+becoming one.
 
 ## The queue is bounded
 
@@ -128,7 +134,8 @@ over an immutable `State`. `NotificationQueue` is those functions plus
 durability, and `applyAdmission` and `applyPromoted` are the replay half, which
 applies a committed decision rather than recomputing it.
 
-That split is why the promotion rules can be tested directly, and why a
-deployment that raised the capacity can derive its own projection instead of
-reading one that assumes the default. See
+That split is why the promotion rules can be tested directly, and why the
+capacity bound belongs to `admit` alone. `applyAdmission` retains what a record
+admitted without consulting it, so a deployment that raised the capacity replays
+in full through `Projection.derive`. See
 [the journal records](/concepts/journal-records/).

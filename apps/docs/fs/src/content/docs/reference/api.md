@@ -46,25 +46,35 @@ this projection. Two routes claiming one command name fail with
 
 ### `CommandSurface`
 
-The runtime projection `Command.make` returns. The surface and every value it
-returns are frozen.
+The runtime projection `Command.make` returns. The surface, listed commands,
+parsed invocations, and admitted JSON values are frozen.
 
 | Member    | Signature                                                                                                             | Behavior                                                                               |
 | --------- | --------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
 | `list`    | `() => ReadonlyArray<ListedCommand>`                                                                                  | Lists executable model-visible routes in stable segment order without loading them.    |
 | `parse`   | `(commandString: string) => Effect<ParsedCommand, FsError>`                                                           | Loads the selected module and schema-decodes an agent command string without invoking. |
 | `execute` | `(commandString: string) => Effect<unknown, FsError, FlowInvoker.FlowInvoker>`                                        | Parses, invokes through `FlowInvoker`, and output-encodes an agent command string.     |
-| `call`    | `<N extends Route.Name>(name: N, input: Route.Input<N>) => Effect<Route.Output<N>, FsError, FlowInvoker.FlowInvoker>` | Loads and invokes an exact named route using snapshotted input.                        |
+| `call`    | `<N extends Route.Name>(name: N, input: Route.Input<N>) => Effect<Route.Output<N>, FsError, FlowInvoker.FlowInvoker>` | Validates decoded input and output for an exact named route.                           |
 
 `parse` and `execute` accept a listed name with slashes or with spaces:
 `"nested/visible --number 42"` and `"nested visible --number 42"` resolve the
 same route. Resolution takes the longest command prefix and leaves the
 remainder for arguments.
 
-`call` snapshots its input to inert JSON before any module-loading await, so
-mutating the caller's object afterwards cannot change an in-flight
-invocation. A name that does not match exactly, extra path segments
-included, fails with `unknown_command`.
+`call` accepts `Schema.Type` input and returns `Schema.Type` output. It
+validates both against the decoded side of the loaded schemas without
+running their encoding transformations. With `Schema.NumberFromString`,
+`call` accepts and returns numbers; `execute` parses encoded string input
+and returns the encoded string output. Incur also encodes its output.
+
+`call` snapshots input admitted by the bounded JSON boundary before any
+module-loading await. These snapshots and admitted JSON results are frozen.
+Other decoded values, including `Date` instances, retain their native types
+and are passed by reference; callers must avoid mutating them during an
+invocation. They remain subject to the loaded schema's decoded validation.
+A name that does not match exactly, extra path segments included, fails with
+`unknown_command`. Invalid decoded input or output fails with `decode_failed`;
+transport output encoding failures from `execute` use `encode_failed`.
 
 Errors produced by the surface itself: `resource_limit`, `parse_failed`,
 `unknown_command`, `load_failed`, `unsupported_schema`, `decode_failed`, and
@@ -261,11 +271,11 @@ the run loop, permissions, and durability, so it supplies this service.
 
 One materialized invocation. Projections pass it frozen.
 
-| Field   | Type       | Description                                      |
-| ------- | ---------- | ------------------------------------------------ |
-| `name`  | `string`   | The resolved route name.                         |
-| `flow`  | `Flow.Any` | The loaded flow, from [@smthrs/core](https://core.smithers.sh/reference/api/). |
-| `input` | `unknown`  | The schema-decoded, frozen input.                |
+| Field   | Type       | Description                                                     |
+| ------- | ---------- | --------------------------------------------------------------- |
+| `name`  | `string`   | The resolved route name.                                        |
+| `flow`  | `Flow.Any` | The loaded flow, from [@smthrs/core](https://core.smithers.sh/reference/api/).                |
+| `input` | `unknown`  | The decoded input; see `CommandSurface` for snapshot semantics. |
 
 ### `Service`
 
@@ -492,7 +502,9 @@ type Output<N extends Name> = N extends keyof Manifest ? Manifest[N] extends { r
 ```
 
 `Name` narrows to generated manifest keys when a manifest is available, and
-`Input` and `Output` narrow a named route's decoded types the same way.
+`Input` and `Output` narrow a named route's decoded types (`Schema.Type`)
+the same way. They describe `CommandSurface.call`, not the encoded transport
+values (`Schema.Encoded`) used by `execute` and Incur.
 Without a generated manifest, names stay `string` and values stay `unknown`,
 so development discovery can proceed.
 

@@ -38,17 +38,17 @@ composition time, because `actionExecute` runs on the engine's own fiber, which
 does not carry the store's layer context. Anything a dispatch needs has to be
 captured when the store is built and re-provided onto that fiber.
 
-| Optional service   | Absent                                                              | Present                                                                                    |
-| ------------------ | ------------------------------------------------------------------- | ------------------------------------------------------------------------------------------ |
-| `WorkspaceSandbox` | The body runs against the host directly; results stay run-local.    | The body runs isolated, so evidence can claim the whole tree and results become shareable. |
-| `EffectDispatcher` | The engine journals what a transaction queued and sends nothing.    | Queued effects are dispatched after copy-back, deduplicated by idempotency key.            |
-| `StepSandbox`      | No per-step isolated workspace is acquired.                         | Each step opens its own scoped workspace.                                                  |
-| `WakeBus`          | The composition builds a private bus.                               | Your own wake sources share one bus with the engine.                                       |
-| `ArtifactSync`     | `makeLocal()`: publish is a no-op, hydrate reports nothing arrived. | Referenced blobs reach a shared tier before their cache entry does.                        |
-| `CacheSync`        | `makeLocal()`: a recorded entry is already everywhere it will be.   | Durable local entries are published to a shared step-result tier.                          |
-| `Inconsistency` | Conflicts are journaled and fail the dispatch (the strict default); provide `layerTolerant(owner)` to continue past them. | Cache conflicts and corrupt evidence are journaled. `layerStrict(owner)` fails; `layerTolerant(owner)` continues. |
-| `Reconciliation`   | Deviations and conflicts have no reader.                            | `layerDefault` answers them deterministically.                                             |
-| `Selection`        | Everything is admitted.                                             | Sinks may be deferred to a guess-free pass.                                                |
+| Optional service   | Absent                                                                                                                    | Present                                                                                                           |
+| ------------------ | ------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| `WorkspaceSandbox` | The body runs against the host directly; results stay run-local.                                                          | The body runs isolated, so evidence can claim the whole tree and results become shareable.                        |
+| `EffectDispatcher` | The engine journals what a transaction queued and sends nothing.                                                          | Queued effects are dispatched after copy-back, deduplicated by idempotency key.                                   |
+| `StepSandbox`      | No per-step isolated workspace is acquired.                                                                               | Each step opens its own scoped workspace.                                                                         |
+| `WakeBus`          | The composition builds a private bus.                                                                                     | Your own wake sources share one bus with the engine.                                                              |
+| `ArtifactSync`     | `makeLocal()`: publish is a no-op, hydrate reports nothing arrived.                                                       | Referenced blobs reach a shared tier before their cache entry does.                                               |
+| `CacheSync`        | `makeLocal()`: a recorded entry is already everywhere it will be.                                                         | Durable local entries are published to a shared step-result tier.                                                 |
+| `Inconsistency`    | Conflicts are journaled and fail the dispatch (the strict default); provide `layerTolerant(owner)` to continue past them. | Cache conflicts and corrupt evidence are journaled. `layerStrict(owner)` fails; `layerTolerant(owner)` continues. |
+| `Reconciliation`   | Deviations and conflicts have no reader.                                                                                  | `layerDefault` answers them deterministically.                                                                    |
+| `Selection`        | Everything is admitted.                                                                                                   | Sinks may be deferred to a guess-free pass.                                                                       |
 
 ## Set the options
 

@@ -8,7 +8,7 @@ order: 10
 Install the package with its exact `effect` peer:
 
 ```bash
-pnpm add @smthrs/flow@next effect@4.0.0-rc.112
+pnpm add @smthrs/flow@next effect@4.0.0-rc.115
 ```
 
 ## Entry points
@@ -228,20 +228,20 @@ The implementation table, scoped to the composition that builds it. Filing an im
 
 Creates either a named action declaration or an inline executable action, selected by whether the first argument is a string. The declared form is pure data whose implementation attaches later through `Declared.toLayer`. The inline form carries its `execute` effect directly.
 
-| Option                 | Forms            | Meaning                                                                                                   |
-| ---------------------- | ---------------- | --------------------------------------------------------------------------------------------------------- |
-| `payload`              | declared         | Payload fields or struct schema, validated on every dispatch.                                             |
-| `name`, `execute`      | inline           | The step name and the effect it runs.                                                                     |
-| `implementationVersion` | declared        | Non-empty version string; `toLayer` must pass the same value.                                             |
-| `success`, `error`     | both             | Result schemas. Default `Schema.Void` and `Schema.Never`.                                                 |
-| `tier`                 | both             | Durability tier. Default `"sealed"`.                                                                      |
-| `idempotencyKey`       | both             | Caller identity. The declared form may compute it from the decoded payload.                              |
-| `nondeterministic`     | both             | Marks a result that replay must read from the record rather than recompute.                               |
-| `retryPolicy`          | both             | The `RetryPolicy` the engine reads at dispatch.                                                           |
-| `interruptRetryPolicy` | both             | The `Schedule` spent on `Action.InfraInterrupt` failures.                                                 |
-| `fileBoundary`         | both             | Typed file boundary. The declared form may compute it from the decoded payload.                           |
-| `metadata`             | inline           | Free-form metadata; a historical boundary declaration is still read from it.                              |
-| `annotations`          | both             | Context annotations carried by the action.                                                                |
+| Option                  | Forms    | Meaning                                                                         |
+| ----------------------- | -------- | ------------------------------------------------------------------------------- |
+| `payload`               | declared | Payload fields or struct schema, validated on every dispatch.                   |
+| `name`, `execute`       | inline   | The step name and the effect it runs.                                           |
+| `implementationVersion` | declared | Non-empty version string; `toLayer` must pass the same value.                   |
+| `success`, `error`      | both     | Result schemas. Default `Schema.Void` and `Schema.Never`.                       |
+| `tier`                  | both     | Durability tier. Default `"sealed"`.                                            |
+| `idempotencyKey`        | both     | Caller identity. The declared form may compute it from the decoded payload.     |
+| `nondeterministic`      | both     | Marks a result that replay must read from the record rather than recompute.     |
+| `retryPolicy`           | both     | The `RetryPolicy` the engine reads at dispatch.                                 |
+| `interruptRetryPolicy`  | both     | The `Schedule` spent on `Action.InfraInterrupt` failures.                       |
+| `fileBoundary`          | both     | Typed file boundary. The declared form may compute it from the decoded payload. |
+| `metadata`              | inline   | Free-form metadata; a historical boundary declaration is still read from it.    |
+| `annotations`           | both     | Context annotations carried by the action.                                      |
 
 `Declared.toLayer(handler, { implementationVersion?, override? })` registers the implementation. Without `override: true`, a second, different implementation of the tag dies with `Action.DuplicateImplementation`.
 
@@ -1470,8 +1470,8 @@ Every failure the package defines is a `Schema.TaggedError` carrying a stable `c
 | `@smthrs/flow/HumanAnswerInvalid`                      | An answer is outside the durable JSON boundary, or the attempt it addresses is not open.                             | `code`, `message`                                                       |
 | `@smthrs/flow/InterpreterError`                        | The interpreter refuses a graph it cannot drive.                                                                     | `code`, `flow`, `node`, `message`                                       |
 | `@smthrs/flow/PollExhausted`                           | A poll uses its last attempt without a satisfied check, under `onTimeout: "fail"`.                                   | `code`, `poll`, `attempts`, `message`                                   |
-| `@smthrs/flow/RetryPolicyExpired`                      | A historical retry sequence crossed the policy's `expirationMs` wall-clock bound.                                   | `code`, `actionName`, `attempt`, `expirationMs`, `lastError`            |
-| `@smthrs/flow/RetryAttemptsExhausted`                  | A historical retry sequence exhausted the policy's `maxAttempts` bound.                                             | `code`, `actionName`, `attempt`, `maxAttempts`, `lastError`             |
+| `@smthrs/flow/RetryPolicyExpired`                      | A historical retry sequence crossed the policy's `expirationMs` wall-clock bound.                                    | `code`, `actionName`, `attempt`, `expirationMs`, `lastError`            |
+| `@smthrs/flow/RetryAttemptsExhausted`                  | A historical retry sequence exhausted the policy's `maxAttempts` bound.                                              | `code`, `actionName`, `attempt`, `maxAttempts`, `lastError`             |
 | `@smthrs/flow/SleepRequestInvalid`                     | A sleep payload names no deadline, two deadlines, or a value that is not a length of time.                           | `code`, `message`                                                       |
 | `@smthrs/flow/WaitForRequestInvalid`                   | A wait payload names no target, two targets, a token that does not parse, or a token addressed to another execution. | `code`, `message`                                                       |
 

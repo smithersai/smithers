@@ -23,8 +23,14 @@ must produce byte-identical key material. The schema is what makes that
 promise enforceable rather than conventional.
 
 `GenerationParams` follows the same discipline in the small: every field is
-optional, and an omitted field means the provider's default, so a request
-never smuggles in an unstated knob.
+optional, and an omitted field leaves the provider's default in place, so a
+request never smuggles in an unstated knob. The Anthropic Messages lowering is
+the one exception, because that API requires a budget: an omitted `maxTokens`
+is sent as `max_tokens: 4096`. Dropping a knob is a separate rule from
+defaulting one. A protocol with no wire field for a stated knob leaves it out
+of the body, so `topK`, `stopSequences`, and `thinkingBudget` are absent from
+both OpenAI bodies, and the ChatGPT backend refuses a stated `maxTokens` in
+`Route.prepare` rather than sending the request without it.
 
 ## Four pieces, four reasons to change
 
@@ -97,6 +103,10 @@ partition, which is the property a durable executor needs from every input
 to a sealed step. A lazy tool may never add prompt text for the same reason:
 changing the prompt prefix would change the step key of every request that
 declares it.
+
+Anthropic activation keeps tool references and the original output together
+inside `tool_result.content`. Activation never promotes tool output to user
+text. Results without new references retain their string content.
 
 For the mechanics of the stream these sealed calls produce, see
 [Streaming](/concepts/streaming/). For the full interface list, see the

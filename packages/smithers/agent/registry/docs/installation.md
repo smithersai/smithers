@@ -8,7 +8,7 @@ sidebar:
 ## Install the package
 
 ```bash
-pnpm add @smthrs/registry@next effect@4.0.0-rc.112
+pnpm add @smthrs/registry@next effect@4.0.0-rc.115
 ```
 
 Smithers is at `1.0.0-rc.0` and has not reached npm yet. When it does, the
@@ -16,7 +16,7 @@ release candidate publishes under the `next` tag, which is what the command
 above installs.
 
 [`effect`](https://effect.website) is a peer dependency pinned at
-`4.0.0-rc.112`. Declare it yourself at that version: your own code imports
+`4.0.0-rc.115`. Declare it yourself at that version: your own code imports
 `effect/Effect` and `effect/Layer` directly, and two copies of `effect` in one
 program are two sets of service tags. Everything else installs with the
 package: the `yaml` parser frontmatter is read with, and the `@smthrs/*`
@@ -52,7 +52,7 @@ The package itself has no platform bindings. `Discovery` is written against
 directory means providing an implementation of both:
 
 ```bash
-pnpm add @effect/platform-node@4.0.0-rc.112
+pnpm add @effect/platform-node@4.0.0-rc.115
 ```
 
 ```ts

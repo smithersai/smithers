@@ -8,7 +8,7 @@ sidebar:
 ## Install the package
 
 ```bash
-pnpm add @smthrs/core@next effect@4.0.0-rc.112
+pnpm add @smthrs/core@next effect@4.0.0-rc.115
 ```
 
 The package requires Node.js 22.19.0 or later and ships as both ESM and
@@ -16,7 +16,7 @@ CommonJS with TypeScript declarations. It has no platform bindings: it reads no
 file, opens no socket, and starts no process, so the same build runs in Node,
 in Bun, in a browser, and in a Cloudflare Worker.
 
-The package requires `effect@4.0.0-rc.112` as an exact peer dependency. Keep
+The package requires `effect@4.0.0-rc.115` as an exact peer dependency. Keep
 the application on that version so all Smithers packages share one Effect
 runtime. [`effect`](https://effect.website) supplies `Schema`, `Context`,
 `Result`, and `Data`, which appear in this package's public types. Import it

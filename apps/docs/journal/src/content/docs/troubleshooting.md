@@ -71,14 +71,15 @@ entry to compare against. That changes where you see the failure, not whether
 it happens. See
 [Producer identity and idempotency](/concepts/idempotency/).
 
-## sequence_conflict
+## Sequence exhaustion
 
-**What happened.** A queued lossy entry's canonical sequence was committed by
-another writer before the batch reached disk.
+**What happened.** `invalid_event` reports an exhausted canonical sequence
+range. A queued admission can encounter this at `flush` if another writer
+reaches the limit before the batch commits.
 
-**What to change.** Nothing in the caller, usually: this is a second writer on
-the same run and the same database. If you did not expect one, look for a
-second process or a second layer instance holding the same file.
+**What to change.** Start a new run. Ordinary overlapping writers do not cause
+sequence conflicts: the queued writer advances an overtaken reservation above
+the committed tail. See [Commit ordering](/concepts/two-channels/#commit-ordering).
 
 ## queue_overflow
 

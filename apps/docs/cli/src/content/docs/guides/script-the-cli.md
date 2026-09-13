@@ -31,6 +31,10 @@ Add `--quiet` when banners or progress on stderr are unwanted. It never
 suppresses the stdout document, so `smthrs --json --quiet ps` remains valid
 input to a JSON parser.
 
+Presentation flags can appear before or after a transition alias. `--silent`,
+`--verbose`, and `--audience human` preserve the retained fork workspace for
+`resume <run-id>` and `run <run-id> --resume`.
+
 ## Branch on the status
 
 ```bash
@@ -58,36 +62,46 @@ See [Local and remote control planes](/concepts/local-and-remote/).
 
 Exit 3 happens two ways, and the receipt tells them apart.
 
-A `Parked` receipt means the plan itself carries no grant. Approve the same
-payload you submitted, and `approve` launches it:
+A `Parked` receipt means the Plan carries no grant. Approve the same payload
+you submitted to record the grant, then submit it with `flow execute` to launch
+the run. Reuse the payload's `idempotencyKey` for both commands. Plan approval
+alone returns no `runId` and starts no execution:
 
 ```bash
-receipt="$(smthrs --json run "$approval")"
+status=0
+receipt="$(smthrs flow execute "$approval" --json)" || status=$?
+if [ "$status" -ne 0 ] && [ "$status" -ne 3 ]; then
+  exit "$status"
+fi
 if [ "$(printf '%s' "$receipt" | jq -r '._tag')" = "Parked" ]; then
-  smthrs --json approve "$approval" --scope run
+  smthrs approvals approve "$approval" --scope run --json
+  receipt="$(smthrs flow execute "$approval" --json)"
 fi
 ```
 
 An `Accepted` receipt with exit 3 means the run started and then parked on an
-in-run ask. The run journals a `control.approval.requested` event whose
-`payload` member is the exact argument for `smthrs approve`:
+in-run Node approval. The run journals a `control.approval.requested` event
+whose `payload.question` describes the ask and whose `payload.payload` is the
+exact argument for `smthrs approvals approve`. Approving that Node resumes
+the existing run; it needs no new `flow execute` submission:
 
 ```bash
 run_id="$(printf '%s' "$receipt" | jq -r '.runId')"
 ask="$(smthrs --json logs "$run_id" \
-  | jq -c 'map(select(.kind == "control.approval.requested")) | last | .payload')"
-smthrs --json approve "$ask" --scope once
-smthrs --json run --resume "$run_id"
+  | jq -c 'map(select(.kind == "control.approval.requested")) | last | .payload.payload')"
+smthrs --json approvals approve "$ask" --scope once
 ```
 
 `--scope` decides how far the grant reaches: `once` answers this ask alone,
-`run` covers the whole run, and `remembered` covers every later run. The CLI
-defaults to `run`, matching what `smthrs up` grants itself. The MCP
-`resolve_approval` tool defaults to `once` instead, because an argument a
-client never sent must not widen what it may do.
+`run` covers the whole run, and `remembered` covers every later run. Both
+`smthrs approvals approve` and its `smthrs approve` compatibility spelling
+default to `run`, matching what `smthrs up` grants itself. The compatibility
+MCP `resolve_approval` tool defaults to `once`. Pass the scope explicitly in scripts.
 
-`smthrs status <run-id>` prints both commands on its `Unblock` line when a run
-is parked, already quoted for a shell.
+`smthrs status <run-id>` prints the approval command and a resume command on
+its `Unblock` line, already quoted for a shell. Use `smthrs runs resume
+<run-id>` to retry taking up a run if its approval was recorded without an
+executor available to resume it.
 
 ## Retry safely
 
@@ -120,9 +134,9 @@ Follow mode streams one line per event as it lands, and applies the per-event
 <run-id>`) retains at most 50,000 events and 16 MiB and fails with a typed
 resource-limit error rather than truncating.
 
-Attached `run`, `up`, `approve`, and `deny` already wait for settlement when
-this process owns the executor, so a script that runs a flow to completion
-needs no polling at all.
+Attached `run` and `up` wait for settlement when this process owns the
+executor. `approve` and `deny` wait when deciding an in-run Node approval;
+a Plan decision has no run to wait for.
 
 ## In CI
 
@@ -134,9 +148,11 @@ needs no polling at all.
 - Run `smthrs doctor` as a first step. It runs nothing, exits 1 on a blocking
   problem, and its `--json` report is one object with a `root` and a `checks`
   array.
-- Use `smthrs down` in an always-run step to cancel everything a failed job
-  left non-terminal, and `smthrs gc --older-than <duration>` to bound how much
-  the databases keep.
+- Use `smthrs runs cancel-all --root "$project_root" --json` in an always-run
+  step, with `project_root` set to the job's project directory. It reads every
+  page and cancels every nonterminal run through one control connection. The
+  legacy `down` alias uses the same cancellation operation. Use
+  `smthrs gc --older-than <duration>` to bound how much the databases keep.
 
 ## See also
 

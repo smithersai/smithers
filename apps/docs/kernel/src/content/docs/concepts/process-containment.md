@@ -65,6 +65,11 @@ whose owner pid is not this incarnation's. `ProcessLedger.layerMemory` keeps
 only the current incarnation's bookkeeping, with no journal and nothing
 inherited.
 
+Live tracking and replay identify each process by `(pid, startedAtMs)`.
+`startedAtMs` comes from the Effect clock when the spawn is recorded. A delayed
+exit, reap, or skip retires only that identity, preserving a newer record for
+the same pid. Callers pass the original record to retirement operations.
+
 ## A failed write is reported, never swallowed
 
 `record`, `release`, `reaped`, and `skipped` all carry the journal's failure to

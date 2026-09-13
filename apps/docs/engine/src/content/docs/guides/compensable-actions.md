@@ -38,8 +38,8 @@ const boundary = Layer.succeed(FlowEngine.SnapshotBoundary)(
 ```
 
 The handle is typed `unknown` at the boundary because the engine never
-interprets it. It stores what `snapshot` returned, keyed by the step key, and
-hands the same value back.
+interprets it. It keeps the earliest handle for each step key and hands that value back
+on retries.
 
 Every member receives `SnapshotBoundaryOptions`: the flow, the execution id,
 the step key, the attempt number, and the action's declared metadata. Key and
@@ -55,7 +55,7 @@ produces exactly this sequence:
 snapshot:1
 execute:1
 diff:snap:1
-restore:snap:2
+restore:snap:1->attempt:2
 snapshot:2
 execute:2
 diff:snap:2
@@ -63,15 +63,38 @@ diff:snap:2
 
 Reading it in order:
 
-1. Before each attempt, `snapshot` runs and the handle is stored under the step
-   key.
+1. Before each executing attempt, `snapshot` runs. The earliest handle for the
+   step key remains the retry restore point.
 2. The attempt runs.
 3. `diff` runs after the attempt settles, on every path, including failure.
-4. Before a retry, `restore` runs with the handle from the previous attempt, so
-   attempt 2 starts from the world attempt 1 started from.
+4. Before a retry, `restore` runs with the earliest handle, so every retry
+   starts from the world the first attempt started from.
 
-`restore` runs only when a stored handle for that key exists, so the first
+`restore` runs only when a stored handle for that key exists. A new first
 attempt is never preceded by one.
+
+## Across a process restart
+
+A durable driver opts in by implementing `Encoded.actionSnapshot({ key })`.
+It returns the earliest persisted pre-attempt handle as `Option.some(handle)`,
+or `Option.none()` when none survives. The driver must evaluate the supplied
+`ActionExecuteOptions.snapshot` effect only after ruling out journal replay
+and joining another dispatch, and persist its returned handle with the attempt
+before executing the action. Keep the first handle until the retry sequence
+ends, including when an attempt is interrupted before recording an outcome.
+The host must keep that handle usable across restarts.
+
+With this contract, a restarted retry restores the original pre-attempt world.
+A journal hit invokes none of `restore`, `snapshot`, or `diff`. An unfinished
+attempt that executes again restores its persisted handle before taking a new
+snapshot, even if its attempt number is still 1. `diff` describes only the
+attempt that actually executed.
+
+Without `actionSnapshot`, handles remain in the execution's in-process map.
+Restore does not survive a restart, and replay still invokes snapshot and diff.
+`layerMemory` and the current `@smthrs/engine-store` adapter use this fallback;
+a boundary implementation alone does not make the handle durable. If stored
+handles are pruned, the engine cannot recover the original world.
 
 ## The refusal
 

@@ -138,7 +138,7 @@ each stream is quoted, cut at 4 KiB and marked when it was cut.
 | `result_unreadable` | The guest exited 0 but wrote no result, or wrote something that is not the protocol's JSON.                           | Usually the runtime ran something other than the bundle. Check the `runtime` command line and the quoted stdout.                                                                                       |
 | `result_invalid`    | The guest's `output` does not decode through the flow's success schema.                                               | The host's declaration has drifted from the one the guest bundled: same tag, different success schema. Rebuild against one declaration.                                                                |
 | `result_overflow`   | The result JSON is larger than `limits.resultBytes` (5 MiB by default).                                               | Return less, or raise the bound. The message quotes both numbers.                                                                                                                                      |
-| `diff_overflow`     | The diff exceeds `limits.files` or `limits.diffBytes`.                                                                | Narrow what the child writes, or raise the bound. The message quotes the measured count or byte total and the limit.                                                                                   |
+| `diff_overflow`     | The diff exceeds `limits.files` or `limits.diffBytes`.                                                                | Narrow what the child writes, or raise the bound. The message quotes the limit; a byte refusal also quotes the measured total.                                                                         |
 | `deadline_exceeded` | The whole session outlived `options.timeout`, ten minutes by default.                                                 | Raise the timeout or shorten the child. The machine is released either way.                                                                                                                            |
 
 ## A file the child edited is missing from the diff
@@ -162,13 +162,15 @@ executions appear to share a workspace.
 **Cause.** A session key is an exclusive claim. Two live executions with one key
 share a machine, and the first to finish tears it down under the other.
 
-**Fix.** Derive the key from the parent execution id, which is unique per
-execution and stable across a resume:
+**Fix.** Derive the key from both the parent `executionId` and the action's
+`callId`. The engine preserves `callId` across retries and resume and assigns
+distinct identities to parallel calls, even with identical payloads. The parent
+id alone gives every call in one execution the same machine:
 
 ```ts
-SandboxedFlow.toLayer(RunChild, Child, ({ executionId }) => ({
+SandboxedFlow.toLayer(RunChild, Child, ({ executionId, callId }) => ({
   provider,
-  session: `child:${executionId}`,
+  session: `child:${executionId}:${callId}`,
   entry
 }))
 ```

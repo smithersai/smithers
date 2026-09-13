@@ -23,7 +23,7 @@ run anything you do not trust.
 - A package with the dependencies installed:
 
 ```bash
-pnpm add @smthrs/sandbox@next @smthrs/platform-node@next @smthrs/kernel@next effect@4.0.0-rc.112
+pnpm add @smthrs/sandbox@next @smthrs/platform-node@next @smthrs/kernel@next effect@4.0.0-rc.115
 ```
 
 ## Write the body

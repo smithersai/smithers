@@ -87,14 +87,11 @@ migration again repairs it.
 So the loader refuses:
 
 ```text
-Migration 1_alpha_initial would be skipped: the database has already applied
-migration id 1001, and the migrator only runs ids above the highest applied
-one. Compose every package's migration set from the first migration onwards,
-and give a new migration an id above 1001.
+Migration 1_alpha_initial would be skipped: the database has already applied migration id 1001, and this is not a forward append in a declared, installed package block. Compose each installed package's recorded migrations when appending to its block; introduce new packages above 1001.
 ```
 
-This is the constraint that shapes how you add a migration to an existing
-database. See [Add a migration](/guides/add-a-migration/).
+Installed blocks can accept migrations below the global cursor under the
+[forward-append rule](/guides/add-a-migration/#3-append-within-the-packages-existing-block).
 
 ## Global id zero
 

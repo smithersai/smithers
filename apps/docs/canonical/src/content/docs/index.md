@@ -37,7 +37,7 @@ answer must not depend on how the value was built.
 ## Install
 
 ```bash
-pnpm add @smthrs/canonical@next effect@4.0.0-rc.112
+pnpm add @smthrs/canonical@next effect@4.0.0-rc.115
 ```
 
 `effect` is a peer dependency at exactly that version, and the package
@@ -69,8 +69,12 @@ canonicalize({ tags: new Set(["release"]) })
 // throws CanonicalError: canonical_unsupported_value: Set at $.tags
 ```
 
-Neither the code nor the path contains the rejected value, so both are safe to
-log even when what you hashed was key material.
+Report only the stable `code` by default. Paths contain caller-supplied member
+names, which may be tokens, emails, or other sensitive data. Treat every path
+segment, `message`, and `cause` text as untrusted before logging or sending them
+over RPC. Schema decoding with `reportInput: false` suppresses Schema input
+rendering only; it does not redact these diagnostics. See
+[Limit diagnostic disclosure](/guides/use-the-schema/#limit-diagnostic-disclosure).
 
 ## Use it as an Effect schema
 

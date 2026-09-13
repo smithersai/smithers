@@ -21,7 +21,7 @@ in a run's past.
 - A package with the dependencies installed:
 
 ```bash
-pnpm add @smthrs/time-travel@next @smthrs/engine@next @smthrs/engine-store@next @smthrs/flows@next @smthrs/flow@next @smthrs/journal@next @smthrs/kernel@next @smthrs/run-store@next @effect/platform-node@4.0.0-rc.112 effect@4.0.0-rc.112 @effect/sql-sqlite-node@4.0.0-rc.112
+pnpm add @smthrs/time-travel@next @smthrs/engine@next @smthrs/engine-store@next @smthrs/flows@next @smthrs/flow@next @smthrs/journal@next @smthrs/kernel@next @smthrs/run-store@next @effect/platform-node@4.0.0-rc.115 effect@4.0.0-rc.115 @effect/sql-sqlite-node@4.0.0-rc.115
 ```
 
 ## Declare a run worth replaying
@@ -125,9 +125,10 @@ const layer = (filename: string) =>
   )
 ```
 
-`SqlTimeTravelStore.layer` migrates its own tables while it is built, so a
-fresh database needs no setup step. A composition that owns migration itself
-runs `Migrations.run` instead; see
+`SqlTimeTravelStore.layer` applies its own migration ladder while it is built.
+The database must already have the journal and run-store ladders applied;
+missing prerequisite tables fail with a typed `TimeTravelError`. Run
+`Migrations.run` to install the complete durable schema on a fresh database; see
 [Provide a store](/guides/provide-a-store/).
 
 ## Execute the run, then replay it

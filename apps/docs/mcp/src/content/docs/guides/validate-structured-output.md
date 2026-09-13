@@ -27,7 +27,11 @@ The validator is dependency-free and supports exactly five keywords:
 | `enum`       | The value must equal one of the declared values, compared by JSON value rather than by reference.                            |
 
 Validation recurses through `properties` and `items`, so a schema three levels
-deep is checked three levels deep.
+deep is checked three levels deep. Enum membership is indexed once from the
+frozen catalog, including composite JSON values. Index construction and result
+validation yield between bounded work slices so host timers and Effect
+interruption can run during large checks. The request timeout still covers the
+transport request. An outer Effect timeout can also interrupt result validation.
 
 ## What is ignored
 

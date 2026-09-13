@@ -21,7 +21,7 @@ Fork copies a run's history up to one frame so the copy can diverge from its par
 - The libraries, installed in that directory:
 
 ```bash
-pnpm add @smthrs/flow@next @smthrs/engine@next @smthrs/engine-store@next @smthrs/journal@next @smthrs/time-travel@next @smthrs/flows@next @smthrs/kernel@next @smthrs/run-store@next @smthrs/plan@next @smthrs/platform-node@next effect@4.0.0-rc.112 @effect/platform-node@4.0.0-rc.112 @effect/sql-sqlite-node@4.0.0-rc.112
+pnpm add @smthrs/flow@next @smthrs/engine@next @smthrs/engine-store@next @smthrs/journal@next @smthrs/time-travel@next @smthrs/flows@next @smthrs/kernel@next @smthrs/run-store@next @smthrs/plan@next @smthrs/platform-node@next effect@4.0.0-rc.115 @effect/platform-node@4.0.0-rc.115 @effect/sql-sqlite-node@4.0.0-rc.115
 ```
 
 You need no provider key: every step here is a plain action, and no model is called.
@@ -283,9 +283,12 @@ import { NodeRuntime } from "@effect/platform-node"
 import { FlowEngine } from "@smthrs/engine"
 import { Action, DurableDeferred, Flow, Interpreter } from "@smthrs/flow"
 import { Journal, type JournalEvent } from "@smthrs/journal"
+import { RunStore } from "@smthrs/run-store"
 import { SqlTimeTravelStore, TimeTravel } from "@smthrs/time-travel"
 import * as Effect from "effect/Effect"
+import * as Fiber from "effect/Fiber"
 import * as Layer from "effect/Layer"
+import * as Option from "effect/Option"
 import * as Schema from "effect/Schema"
 import * as SqlClient from "effect/unstable/sql/SqlClient"
 import { durableEngine } from "./engine.ts"
@@ -332,8 +335,17 @@ const layer = Layer.mergeAll(Post.toLayer(post), Interpreter.layer(Books)).pipe(
 )
 
 const program = Effect.gen(function*() {
-  // Drive the run until it parks at the deferred.
-  yield* Books.execute({}, { executionId: "ledger-1", discard: true })
+  // Wait for the durable park, then stop this caller's automatic follow loop.
+  const running = yield* Books.execute({}, { executionId: "ledger-1" }).pipe(Effect.forkChild)
+  const runs = yield* RunStore.RunStore
+  yield* Effect.gen(function*() {
+    while (true) {
+      const row = yield* runs.get("ledger-1").pipe(Effect.option)
+      if (Option.isSome(row) && row.value.status === "suspended") return
+      yield* Effect.sleep("10 millis")
+    }
+  }).pipe(Effect.timeout("10 seconds"))
+  yield* Fiber.interrupt(running)
 
   const journal = yield* Journal.Journal
   yield* journal.flush

@@ -83,11 +83,9 @@ diagnostic metadata cannot override it.
 
 Unsupported engine versions, such as `flows.engine.v3.*`, fail before folding.
 
-Fixtures exercise attempt lifecycle, execution lifecycle, deferred completion
-and clock scheduling through real SQLite journal rows. Current unversioned
-history retains its metadata lineage convention. Its attempt enumeration now
-refuses malformed started markers in both SQL and memory stores rather than
-silently producing an incomplete healthy list.
+Unversioned history keeps its metadata lineage convention. Attempt
+enumeration over it refuses a malformed started marker in both the SQL and
+memory stores rather than returning an incomplete list.
 
 The versioned constructors are additive. Engine recovery, fork copying and
 anchor projection still use the current authoritative stores and current
@@ -100,7 +98,8 @@ records. See the journal's [authority contract](https://journal.smithers.sh/conc
 A fold with no bound lets a long or hostile run decide how much memory a verb
 takes. `maxHistoryEntries` caps the entries any one operation reads, and an
 operation that would cross the cap stops with `limit_exceeded` before it
-materializes anything past it.
+materializes anything past it. The anchor refresh a fork or rewind runs first
+counts against the same cap.
 
 The default is 100,000 entries, published as `defaultMaxHistoryEntries` from
 `@smthrs/time-travel/TimeTravel`. The
@@ -140,9 +139,12 @@ thing that knows them, but it must not write this package's tables: time travel
 already depends on the engine's store, so an engine writing these rows would
 close a dependency cycle. A projector is the seam that keeps the arrow one way.
 It reads the journal, which both packages may depend on, and folds the engine's
-snapshot records into anchors. It holds no durable state of its own, so
-replaying the same entries reproduces the same anchors and running it twice is
-a no-op.
+snapshot records into anchors. It holds no durable state of its own beyond the
+anchors it writes, so replaying the same entries reproduces the same anchors.
+The anchor table is also its cursor: a refresh reads the last anchor per
+lineage, folds only the entries above the highest one and at or below the
+frame, and writes each page's anchors in one store write, so running it twice
+over an unchanged run is a no-op in the store, not merely in the result.
 
 Anchors are keyed by lineage, not by run. A record that carries a pointer
 forward means "the same pointer as my lineage's previous anchor", never "the

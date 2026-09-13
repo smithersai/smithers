@@ -39,8 +39,8 @@ const runner = TestRunner.layer({
 
 `cwd` and `root` differ exactly when the runner runs in a container: the
 container sees the repository at `cwd`, the host sees it at `root`, and a
-baseline worktree created at `<root>/.flows-test-base` is visible to the runner
-at `<cwd>/.flows-test-base`, because it is one directory under two names.
+baseline worktree created at `<root>/.flows-test-base/run-<lease>` is visible to the runner
+at `<cwd>/.flows-test-base/run-<lease>`, because it is one directory under two names.
 
 A host with no runner binds `TestRunner.layerNoop`. The flow then fails with
 `provider_unavailable` and tells the caller to use `bash` with the command the
@@ -65,7 +65,7 @@ The result is a reading, not a log:
 
 | Field                               | Meaning                                                                    |
 | ----------------------------------- | -------------------------------------------------------------------------- |
-| `command`                           | The invocation that ran, quotable as the evidence it is.                   |
+| `command`                           | The logical invocation, without container transport arguments.             |
 | `exitCode`                          | The runner's exit code.                                                    |
 | `passed`                            | Tests reported passing. Zero when `parsed` is false.                       |
 | `failed`                            | Ids of the tests reported failing or erroring.                             |
@@ -76,6 +76,13 @@ The result is a reading, not a log:
 
 When `parsed` is false, `tail` is all there is, and base attribution is omitted
 rather than guessed at.
+
+Unittest skips and expected failures, and TAP skips and TODO failures, do not
+count as passing or failing tests. A successful TAP TODO counts as passing.
+Unittest unexpected successes count as failures; attribution requires their
+reported ids. Python 3.10 class-only headers and Python 3.11+ full test ids are
+both supported. Missing failure ids or unknown unittest summary fields leave
+`parsed` false.
 
 ## Attribute a failure to your own edit
 
@@ -102,8 +109,9 @@ The baseline commit is resolved from the runner's `baseRef`, then from
 `baseRef` that does not resolve is an error rather than a fallback, because a
 baseline against the wrong tree answers the attribution question wrong.
 
-The worktree is a detached checkout at `<root>/.flows-test-base`, which is
-`TestRun.scratchDirectory`. Inside the repository is the only place that works:
+The worktree is a detached checkout at `<root>/.flows-test-base/run-<lease>`, under
+`TestRun.scratchDirectory`. Each call gets a unique lease. Existing checkouts
+are left alone; a `SIGKILL` can leave one behind. Inside the repository is the only place that works:
 a runner reaching the repository through a container mount sees a scratch
 checkout anywhere else on the host as a path that does not exist. It is removed
 when the call ends, however it ends, and the repository format keys that the

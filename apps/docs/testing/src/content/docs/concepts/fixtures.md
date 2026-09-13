@@ -13,6 +13,41 @@ there was one.
 
 Because a fixture is executable state, the rules around it are strict.
 
+## File persistence and recovery
+
+`FixtureStore.makeFile(path)` reads the JSON fixture and recovers completed
+records from `path.journal`. Each `append` asynchronously writes one numbered
+call followed by a newline to that journal. It does not rewrite earlier calls
+or the JSON fixture. `load` returns the store's immutable in-memory snapshot.
+
+Call the file store's `flush()` after recording to materialize the committable
+JSON. `FixtureStore.layerFile(path)` flushes automatically when its scope closes,
+including on test failure. Direct callers can use
+`Effect.acquireRelease(FixtureStore.makeFile(path), (store) => store.flush())`.
+A flush writes a unique temporary file beside the target and renames it over
+the target only when complete. The JSON path always contains the previous or
+next complete fixture. Commit the JSON file, not the journal or temporary files.
+
+A fixture path permits one active writer. The first append acquires the
+`path.lock` directory until `flush` releases it. Concurrent appends through one
+store are serialized. Competing stores or processes fail with a defect naming
+the path instead of overwriting calls. Construction also takes this lock while
+reading, so open another store after the current writer flushes. An idle store
+refreshes from disk before its next recording session; `load` alone does not
+refresh changes from other stores. Do not address the same fixture through
+symlink aliases.
+
+After a killed process, confirm that no writer remains, remove `path.lock`,
+and reopen the store. Complete journal lines are recovered; an unfinished last
+line is discarded. Numbered records prevent duplication if the process died
+after publishing JSON but before deleting the journal. Flush the recovered
+store to publish those calls. Abandoned `path.*.tmp` files can then be removed.
+These guarantees cover process interruption, not power loss: writes do not
+issue `fsync`. Never edit or delete the JSON or journal while a writer is active.
+
+Read, parse, and schema failures are defects whose messages name the failing
+file and whose `cause` retains the underlying error.
+
 ## Identity is the canonical encoding, not a hash
 
 `Fixture.canonicalRequestDigest` sorts object keys recursively, retains array
@@ -35,6 +70,15 @@ The memo is keyed by object identity. `FixtureStore` replaces the whole fixture
 on every append rather than mutating it, so a recorded call is visible to the
 next lookup. A caller that instead mutates a fixture's `calls` in place would
 read a stale index.
+
+That replacement is why the index alone was not enough while a run was still
+recording. Every append published a fixture the memo had never seen, and the
+rebuild re-encoded every call already recorded, so recording a hundred-turn
+agent charged the whole transcript to every turn. Each recorded request is
+therefore also memoized on its own identity, and that memo outlives the append.
+It applies only to a frozen request, which is what a store's copy of a recorded
+call is and what a fixture the caller still owns is not: an unfrozen request is
+re-encoded, because nothing stops the caller rewriting it between two lookups.
 
 Strings are compared by code unit throughout, never by locale, and
 `canonicalRequestDigest` rejects a value nested more than 128 levels deep
@@ -65,10 +109,13 @@ use.
 
 ## Two calls are never recorded
 
-**An interrupted call, or one that died.** A truncated stream has no `settle`
-event and would replay as an aborted turn, poisoning any cache built from the
-same fixture. The recorder flushes on a settled stream and on a provider
-failure, and stays silent otherwise.
+**An interrupted call, one that died, or one the consumer abandoned.** A
+truncated stream has no `settle` event and would replay as an aborted turn,
+poisoning any cache built from the same fixture. The recorder flushes only when
+the consumer pulled the stream to its end, or when the provider failed, and
+stays silent otherwise. A consumer that stops early, such as `Stream.runHead` or
+`Stream.take`, closes the stream's scope with a success but leaves the exchange
+unfinished, so nothing is recorded.
 
 **A call the kernel refused.** `PermissionRequired`, `PermissionDenied`, and
 `GrantStoreError` are decisions made before the provider saw the request, so

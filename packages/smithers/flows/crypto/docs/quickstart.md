@@ -17,7 +17,7 @@ stored under.
 - A package with the dependencies installed:
 
 ```bash
-pnpm add @smthrs/crypto@next @effect/platform-node@4.0.0-rc.112
+pnpm add @smthrs/crypto@next @effect/platform-node@4.0.0-rc.115
 ```
 
 ## Hash bytes and store them under the digest

@@ -37,7 +37,9 @@ The service tag. `yield* DurableWriter.DurableWriter` resolves the writer.
 
 ```ts
 interface Service {
-  readonly write: <A, E, R>(effect: Effect.Effect<A, E, R>) => Effect.Effect<A, E | DatabaseError, R>
+  readonly write: <A, E, R>(
+    effect: Effect.Effect<A, E, R>
+  ) => Effect.Effect<A, Exclude<E, SqlError.SqlError> | DatabaseError, R>
 }
 ```
 
@@ -403,14 +405,18 @@ configure.
 ```ts
 interface NodeDatabaseOptions {
   readonly filename: string
+  readonly mode?: number | undefined
+  readonly busyTimeout?: Duration.Input | undefined
   readonly sqlite?: Omit<SqliteClient.SqliteClientConfig, "filename"> | undefined
 }
 ```
 
-| Field      | Meaning                                                                                                                                          |
-| ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `filename` | The SQLite database filename. A `file:` URI is accepted, and `:memory:` opens a private in-memory database. The parent directory is not created. |
-| `sqlite`   | Additional driver configuration. WAL remains enabled unless explicitly disabled.                                                                 |
+| Field         | Meaning                                                                                                                                                                                                                                       |
+| ------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `filename`    | The SQLite database filename. A `file:` URI is accepted, and `:memory:` opens a private in-memory database. The parent directory is not created.                                                                                              |
+| `mode`        | Creation permissions for a new plain-path database, masked by the process umask. Defaults to `0o600`; WAL and SHM sidecars inherit the main file's mode. Existing files, `file:` URIs, temporary databases and read-only opens are unchanged. |
+| `busyTimeout` | Synchronous SQLite lock wait. Defaults to `0` so open and durable-write retries wait cooperatively. Overrides `sqlite.busyTimeout` when supplied.                                                                                             |
+| `sqlite`      | Additional driver configuration. WAL remains enabled unless explicitly disabled. An explicit `sqlite.busyTimeout` is honored when `busyTimeout` is absent.                                                                                    |
 
 ### UnsupportedDatabaseCode
 
@@ -435,11 +441,11 @@ class UnsupportedDatabase extends Schema.TaggedError<UnsupportedDatabase>()(
 A refusal to open a durable database in 1.0.0-rc.0, raised as a defect rather
 than a typed failure because neither refusal is recoverable at run time.
 
-| Code                        | Refused when                                                    | Message                                                                              |
-| --------------------------- | --------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
-| `unsupported_runtime`       | `process.versions.bun` is set                                   | `1.0.0-rc.0 runs the durable engine on Node.js >=22.19.0 only`                       |
-| `unsupported_database_file` | the file has at least one table and no `flows_migrations` table | `<path> is not a Smithers 1.0 database (1.0.0-rc.0 does not load a 0.x smithers.db)` |
-| `database_locked`           | a peer held the file for the whole open ladder                  | `<path> could not be inspected because another process holds it`                     |
+| Code                        | Refused when                                                    | Message                                                                                   |
+| --------------------------- | --------------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
+| `unsupported_runtime`       | `process.versions.bun` is set                                   | `Use @smthrs/database/bun/BunDatabase under Bun; NodeDatabase requires Node.js >=22.19.0` |
+| `unsupported_database_file` | the file has at least one table and no `flows_migrations` table | `<path> is not a Smithers 1.0 database (1.0.0-rc.0 does not load a 0.x smithers.db)`      |
+| `database_locked`           | a peer held the file for the whole open ladder                  | `<path> could not be inspected because another process holds it`                          |
 
 ### isUnsupportedDatabase
 
@@ -449,6 +455,17 @@ const isUnsupportedDatabase: (input: unknown) => input is UnsupportedDatabase
 
 Narrows an unknown defect to this driver's refusal. Use it in
 `Effect.catchDefect` and re-raise anything else unchanged.
+
+## BunDatabase
+
+Bun only. `import * as BunDatabase from "@smthrs/database/bun/BunDatabase"`.
+
+`layer(options: BunDatabaseOptions): Layer.Layer<SqlClient.SqlClient>` provides
+`@effect/sql-sqlite-bun` with the same schema guard, bounded open retries and
+failed-commit recovery as NodeDatabase. Options contain `filename` and optional
+`sqlite` settings from that Bun driver. Install its matching optional peer;
+consumers using only Node do not need it. Both subpaths re-export the same
+`UnsupportedDatabase` constructor and refinement.
 
 ## TestDatabase
 

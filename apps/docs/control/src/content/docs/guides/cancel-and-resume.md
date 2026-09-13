@@ -104,9 +104,13 @@ the `accepted` a claim writes is being held by a live process, so there is
 nothing to restart and pretending otherwise would hide the peer.
 
 A run the _engine_ created, a child, a fork, or a later trampoline round, keeps
-its own driver. The plane records the delegation and journals
-`control.run.resume` rather than claiming the row, because claiming it would
-overwrite the engine's continuation state and leave the run suspended forever.
+its own driver. Both public resume spellings use `scope: "launched"` and journal
+`control.run.resume`; they leave engine-created rows unclaimed to preserve
+the continuation state. The caller or a journal subscriber must drive the
+execution, even when the plane claims a control-launched run. Explicit resume
+does not call `requestResume` or `ControlExecutor.resumeRun` and creates no
+`pendingResumes` entry. Node-approval decisions use that durable delegation
+mechanism. An `Accepted` receipt does not establish that execution started.
 
 ## What the CLI does
 

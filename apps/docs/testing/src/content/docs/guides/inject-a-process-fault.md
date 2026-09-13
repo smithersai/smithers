@@ -29,6 +29,9 @@ the operating system has reaped the pid. A pid that was already dead is an
 fault, and it was not. A suite that "killed" a corpse would report green over a
 fault it never caused.
 
+The pid must be a positive integer. Missing, zero, negative, fractional, and
+non-finite pids reject with `killProcess: invalid pid` before any signal is sent.
+
 ## Wait for the state you are asserting on
 
 A fault landing is asynchronous. `waitFor` polls a predicate until it holds, or
@@ -67,7 +70,10 @@ only answer that means "gone", while `EPERM` means the process exists and
 belongs to somebody else.
 
 `killGroup(pgid)` tears down a whole process group and never throws, because it
-is teardown for what a test deliberately orphaned.
+is teardown for what a test deliberately orphaned. Pass a positive integer
+group id; the helper negates it internally to address the group. Invalid group
+ids are a no-op. `isAlive` and `isGroupAlive` return `false` for invalid identifiers
+without signalling.
 
 ## Skew the wall clock
 
@@ -82,9 +88,17 @@ clock.advance(30_000)
 clock.restore()
 ```
 
-`skewClock` patches `Date.now` and a bare `new Date()` **for this process
-only**. A child process does not inherit it, which is why a child runner takes
-an explicit skew instead. `restore` is idempotent.
+`skewClock` patches `Date.now`, `Date()`, and a bare `new Date()` **for this
+process only**. `Date()` returns the skewed instant as a string. Explicit Date
+constructor arguments, the prototype, and static parsing helpers are preserved.
+A child process does not inherit the skew, so a child runner takes an explicit
+skew instead.
+
+Each skew is relative to the real clock, and the latest installation controls
+the global clock. Restoring any live handle reinstalls the Date constructor and
+`Date.now` captured at module load, including when handles are restored out of
+order. `restore` is idempotent and does not resume an earlier skew. Use
+`try`/`finally` to restore the clock when an assertion fails.
 
 ## Where a fault suite has to live
 

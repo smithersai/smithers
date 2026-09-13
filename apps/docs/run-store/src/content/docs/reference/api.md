@@ -83,7 +83,10 @@ const latestRound: (runId: string) => Effect<RunRow, RunStoreError>
 Resolve trampoline membership from any existing round. `lineage` returns all
 rounds in ordinal order, or an empty array for an unknown ID. `latestRound`
 returns the highest ordinal using the lineage index, or `not_found_row`.
-Pre-lineage roots with null lineage columns are included as round zero.
+Pre-lineage roots with null lineage columns are included as round zero. A run
+whose own ID equals the lineage ID joins only when its lineage columns are
+null or it explicitly names that lineage, so a same-named run in an
+independent lineage is excluded.
 Fork ancestry in `parentRunId` does not join otherwise independent lineages.
 These are individual snapshot reads; compose several reads with the owning
 database transaction when they must describe one coherent state.
@@ -95,11 +98,17 @@ const requestCancelLineage: (runId: string, nowMs: number) => Effect<RequestCanc
 ```
 
 Records cancellation for every nonterminal round of the named logical run in
-one write transaction. A completed predecessor does not hide its live handoff
-successor. Existing request times and completed-round history are unchanged.
-`CancelRequested` takes precedence if any round gets a new request;
-otherwise a previous request yields `AlreadyRequested`. With every round
-settled, `Terminal` describes the latest round. An unknown ID yields `NotFound`.
+one write transaction: one guarded UPDATE over the lineage members, and on a
+miss one read of their status and request columns. Cost follows the number of
+rounds and never their state payloads, so a long settled history adds nothing.
+A completed predecessor does not hide its live handoff successor. Existing
+request times and completed-round history are unchanged.
+Outcome precedence: `CancelRequested` if any round gets a new request;
+otherwise `AlreadyRequested` with the latest live round's earlier request;
+otherwise, with every round settled, `Terminal` with the latest round's status;
+`NotFound` when no round exists. A live round without a request that the
+UPDATE did not reach fails with `persistence_failed`, since the writer
+serializes the transaction and no peer can clear the column mid-call.
 This method does not traverse child ownership edges or interrupt local fibers;
 the engine coordinates those operations.
 
@@ -111,7 +120,9 @@ const requestCancel: (runId: string, nowMs: number) => Effect<RequestCancelOutco
 
 Records unfenced cancellation intent for exactly one round that a later guarded transition observes.
 Any observer may call it, and it is first-writer-wins, so a repeat reports the
-original time. A settled run records nothing. `nowMs` is request data rather than
+original time. A settled run records nothing. The call is one guarded UPDATE
+and, on a miss, one read of the status and request columns; it never retries,
+because the durable writer serializes the whole call. `nowMs` is request data rather than
 a lease predicate, so it is checked as a non-negative safe integer and not bound
 by the skew allowance.
 
@@ -281,9 +292,12 @@ interface RunSnapshot {
 }
 ```
 
-The exact triple every claim guards. `running` requires both an owner and a
-heartbeat; every other status requires neither. Extra properties are refused as
-invalid input.
+The triple every claim guards. `running` requires both an owner and a
+heartbeat; every other status requires neither. Admission is structural: the
+store reads only these three fields as own enumerable data properties and
+copies them, so a `RunRow` from `get` passes directly as `expected`. Other own
+data fields are ignored. A non-plain prototype, an enumerable accessor on any
+key, or a missing or inherited required field is refused as invalid input.
 
 #### RunRow
 
@@ -432,6 +446,13 @@ const get: (id: AttemptId) => Effect<Option<Attempt>, AttemptStoreError>
 
 The one unfenced operation. Absent optional columns come back as absent keys
 rather than nulls, and every value is re-validated on the way out.
+
+Every `AttemptId` parameter (`get`, `patch`) is admitted structurally: the store
+reads only `runId`, `stepKeyDigest`, and `attempt` as own enumerable data
+properties and ignores other own data fields, so an `Attempt` from `put` or
+`get` passes directly as the id. A non-plain prototype, an enumerable accessor
+on any key, or a missing or inherited id field is refused with
+`invalid_attempt`.
 
 #### heartbeat
 
@@ -697,8 +718,10 @@ const heartbeatLoop: (runId: string, owner: OwnerId) => Effect<never, never, Run
 Pulses every `heartbeatInterval` on the injected `Clock` and interrupts itself
 when the fence is gone, so race it against the owned work with
 `Effect.raceFirst`. A heartbeat outcome other than `Updated` is durable evidence
-and interrupts immediately; a failed heartbeat write is tolerated for
-`heartbeatWriteTolerance`, and every successful pulse re-arms that window.
+and interrupts immediately. An independent deadline bounds failing or stalled
+writes by `heartbeatWriteTolerance` and interrupts the pending write at expiry.
+Successful pulses re-arm that deadline from the timestamp supplied to the store,
+not their completion time.
 
 ### The heartbeat constants
 

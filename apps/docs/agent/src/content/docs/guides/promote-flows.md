@@ -35,8 +35,17 @@ const run = agent.run({
 - `flows/write-flow` takes the three files that come back (the flow, its
   end-to-end test, and the fixture that test replays) and writes them through a
   `FlowStore`. When a `Registry` is in context it is refreshed afterwards,
-  which is what makes the saved flow appear in `ctx.flows` on the next frame
-  rather than the next run.
+  and a successful refresh makes the saved model-invocable flow appear in
+  `ctx.flows` on the next frame. Supply the same registry to `Agent.run` and
+  the promotion binding's context. Refresh is best effort; a failed refresh
+  leaves the files saved and discovery waits for a later successful refresh.
+
+`Agent.run` reads the visible catalog at each frame boundary and journals the
+descriptor snapshot. The model prompt, `ctx.flows`, and call admission use that
+snapshot for the whole frame. Existing frames replay their recorded catalogs;
+new frames read the current registry. Call resolution checks the declaration
+digest before executing, so a registry entry changed during a cell is refused
+until the next frame reads it.
 
 The rules and the skeleton are the host's too: `PromoteFlows.source(services, { bestPractices, template })`
 replaces both for a host whose flows are laid out differently.
@@ -63,7 +72,16 @@ before any path is built from it: lowercase letters, digits, and hyphens,
 starting with a letter (`/^[a-z][a-z0-9-]*$/`). A `../escape` is refused as a
 bad id, not caught as a surprising write outside the root, and the filesystem
 store checks every file path before the first byte is written, so a rejected
-file cannot leave a half-saved flow on disk. `flows/write-flow` validates the
-id again before it asks the store, so a noop store answers a bad id with
-"invalid id" rather than "nowhere to save" and sends the model to fix the right
+file cannot leave a half-saved flow on disk. It uses the injected `Path`
+semantics for confinement, including Windows separators. Saves to the same
+resolved root are serialized within the process, including across store
+instances. All new files and backups are staged inside the root before
+publication; a failed publication restores the previous files. Staging
+is cleaned on interruption, or publication finishes before interruption takes
+effect. If rollback also fails, the error identifies retained recovery files.
+External readers can see individual renames in progress; this is not crash
+recovery or coordination between processes.
+
+`flows/write-flow` validates the id again before it asks the store, so a noop
+store answers a bad id with "invalid id" rather than "nowhere to save" and sends the model to fix the right
 thing.

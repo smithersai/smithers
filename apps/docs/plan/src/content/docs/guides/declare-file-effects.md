@@ -1,6 +1,6 @@
 ---
 title: "Declare the files a node touches"
-description: "Write a node's read, write, and removal sets with FileSet: patterns, globs, tree artifacts, filegroups, and the forms a workspace-relative path may not take."
+description: "Write a node's read, write, and removal sets with FileSet: literal paths, globs, tree artifacts, filegroups, and the forms a workspace-relative path may not take."
 sidebar:
   order: 6
 editUrl: "https://github.com/smithersai/smithers/edit/main/packages/smithers/flows/plan/docs/guides/declare-file-effects.md"
@@ -14,7 +14,7 @@ conflicts comes from what you declare here.
 import * as Plan from "@smthrs/plan/Plan"
 
 const effects: Plan.NodeEffects = {
-  reads: ["src/**/*.ts"],
+  reads: [{ _tag: "Glob", include: ["src/**/*.ts"] }],
   writes: ["dist/bundle.js"],
   removes: ["dist/stale.js"],
   boundaryMode: "hard"
@@ -23,12 +23,16 @@ const effects: Plan.NodeEffects = {
 
 ## The four declaration forms
 
-| Form           | Written as                                      | Where it is valid |
-| -------------- | ----------------------------------------------- | ----------------- |
-| `Pattern`      | A workspace-relative string, with `*` and `**`. | reads and writes  |
-| `Glob`         | `{_tag: "Glob", include, exclude?}`             | reads and writes  |
-| `TreeArtifact` | `{_tag: "TreeArtifact", path}`                  | writes only       |
-| `Filegroup`    | `{_tag: "Filegroup", name, entries}`            | reads and writes  |
+| Form           | Written as                                | Where it is valid          |
+| -------------- | ----------------------------------------- | -------------------------- |
+| `Pattern`      | A workspace-relative literal path string. | reads, writes, and removes |
+| `Glob`         | `{_tag: "Glob", include, exclude?}`       | reads and writes           |
+| `TreeArtifact` | `{_tag: "TreeArtifact", path}`            | writes only                |
+| `Filegroup`    | `{_tag: "Filegroup", name, entries}`      | reads and writes           |
+
+Bare string entries are literal paths at both overlap analysis and execution,
+even when they contain `*` or `**`. Use `Glob.include` and `Glob.exclude` for
+wildcard matching in read and write declarations.
 
 ```ts
 import * as FileSet from "@smthrs/plan/FileSet"
@@ -104,8 +108,10 @@ inside a path segment is literal text on a POSIX filesystem.
 | `overlaps(left, right)`         | Whether two entries might share a path.           |
 | `isGlob`, `isTreeArtifact`      | Which variant an entry is.                        |
 
-`**` matches path segments; `*` matches within one segment and never crosses a
-separator. A trailing `**` matches the rest of the path.
+In `Glob.include`, `Glob.exclude`, and the `matchesPattern` helper, `**` matches
+path segments; `*` matches within one segment and never crosses a separator. A
+trailing `**` matches the rest of the path. Calling `matchesPattern` directly does
+not change how a bare string declaration is interpreted.
 
 `overlaps` is conservative by design: `true` may over-serialize, and `false`
 proves that no path can belong to both declarations. Two globs always overlap,
@@ -117,7 +123,7 @@ A removal mutates the world exactly as a write does, so both plan passes fold
 `writes` and `removes` together. Declaring one path as both fails compilation
 with `invalid_effects`, because the declaration contradicts itself.
 
-`removes` accepts patterns only, not globs or tree artifacts.
+`removes` accepts literal path strings only, not globs or tree artifacts.
 
 ## Boundary mode
 

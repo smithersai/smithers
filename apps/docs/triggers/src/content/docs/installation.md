@@ -25,7 +25,7 @@ The installed manifest resolves to the synchronized RC:
 ## Requirements
 
 - Node.js 22.19.0 or later.
-- [`effect`](https://effect.website) 4.0.0-rc.112, which supplies the `Effect`,
+- [`effect`](https://effect.website) 4.0.0-rc.115, which supplies the `Effect`,
   `Schema`, `Clock`, and SQL client types this package's signatures use.
 - [`@smthrs/control`](https://control.smithers.sh/reference/api/), the authoritative launch boundary. The
   scheduler's Control-backed runner and every channel dispatch go through it.

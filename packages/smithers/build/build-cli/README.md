@@ -1,5 +1,7 @@
 # smithers-build CLI
 
+Release candidate scope, host requirements and compatibility review are defined in the [library support policy](https://github.com/smithersai/smithers/blob/main/RELEASE_SUPPORT.md).
+
 **Documentation:** https://build-cli.smithers.sh
 
 `smithers-build` executes target graphs. A verb selects a set of targets by

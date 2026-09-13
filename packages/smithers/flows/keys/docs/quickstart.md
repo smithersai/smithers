@@ -16,7 +16,7 @@ input, persisted the key, and validated it on the way back in.
 - A package with the dependencies installed:
 
 ```bash
-pnpm add @smthrs/keys@next @effect/platform-node@4.0.0-rc.112 effect@4.0.0-rc.112
+pnpm add @smthrs/keys@next @effect/platform-node@4.0.0-rc.115 effect@4.0.0-rc.115
 ```
 
 ## Derive a key for one unit of work

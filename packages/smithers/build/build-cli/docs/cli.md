@@ -37,7 +37,7 @@ in the workspace declaration, then `.flows`. See
 
 | Option                   | Alias | Type       | Default          | Meaning                                                           |
 | ------------------------ | ----- | ---------- | ---------------- | ----------------------------------------------------------------- |
-| `--plan`                 |       | boolean    | `false`          | Print the plan and skip target bodies.                         |
+| `--plan`                 |       | boolean    | `false`          | Print the plan and skip target bodies.                            |
 | `--verbose`              |       | boolean    | `false`          | Show plain progress for agents and pipe consumers.                |
 | `--jobs`                 | `-j`  | integer 1+ | host parallelism | Maximum concurrent targets.                                       |
 | `--include-exclusive`    |       | boolean    | `false`          | Include exclusive targets in wildcard `ci` and `test` selections. |

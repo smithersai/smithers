@@ -55,11 +55,29 @@ belongs to is truncated. The ordering is what lets recovery tell an effect that
 was already rolled back from one that never was, so a resumed rewind never
 compensates the same effect twice.
 
+The receipt is stored exactly as `revert` returned it, without the redaction
+pass `@smthrs/journal` applies to journal payloads: recovery decodes it and
+hands it back to `rollback` byte for byte, and a placeholder there would roll
+back the wrong thing. A receipt must never carry a credential. Keep tokens and
+connection strings in the handler's closure and return only the identifier
+`rollback` needs, such as a refund id or a retraction handle.
+
 **`rollback(effect, receipt)`** undoes a compensation this handler performed,
 from the receipt `revert` returned. A rewind that fails after compensating
 replays these in reverse order. It is required even when the answer is "nothing
 to undo", because a silent default would make a handler that forgot to write
 one indistinguishable from one that deliberately has nothing to do.
+
+`revert` and `rollback` must be bounded and honor interruption. Bound network
+requests and cleanup in the adapter; do not mask an indefinite wait. Time travel
+applies `TimeTravel.Options.compensationTimeout` to each handler call and jj
+snapshot or restore, including rollback. The default is three minutes. A timeout
+fails with `compensation_failed` and retains the timeout in its cause. Startup
+recovery runs in a child fiber and is awaited with the same deadline.
+
+Before restoring a workspace, rewind snapshots its current state and durably
+records both current and target pointers. Startup recovery restores the recorded
+current pointer whether the process died before or after the target restore.
 
 ## How a handler is matched to evidence
 

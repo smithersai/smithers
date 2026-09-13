@@ -1,5 +1,7 @@
 # @smthrs/integrations
 
+Release candidate scope, host requirements and compatibility review are defined in the [library support policy](https://github.com/smithersai/smithers/blob/main/RELEASE_SUPPORT.md).
+
 **Documentation:** https://integrations.smithers.sh
 
 GitHub, Linear, and Telegram adapters over the Smithers control plane.
@@ -129,9 +131,9 @@ same client is the intended way to reach an endpoint these three do not cover.
 | -------------------------------------------- | -------------------------------------------- |
 | `SMITHERS_GITHUB_TOKEN`, then `GITHUB_TOKEN` | `GitHub.GitHubClient`, `ListenerRegistry`    |
 | `SMITHERS_GITHUB_API_BASE_URL`               | GitHub Enterprise or a fixture server        |
-| `SMITHERS_GITHUB_WEBHOOK_SECRET`             | `GitHub.Config.resolve`                             |
+| `SMITHERS_GITHUB_WEBHOOK_SECRET`             | `GitHub.Config.resolve`                      |
 | `SMITHERS_LINEAR_API_KEY`                    | `Linear.LinearClient`                        |
-| `SMITHERS_LINEAR_WEBHOOK_SECRET`             | `Linear.Config.resolve`                             |
+| `SMITHERS_LINEAR_WEBHOOK_SECRET`             | `Linear.Config.resolve`                      |
 | `SMITHERS_LINEAR_API_BASE_URL`               | A fixture server                             |
 | `SMITHERS_TELEGRAM_BOT_TOKEN`                | `Telegram.TelegramClient`, `Telegram.Source` |
 

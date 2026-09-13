@@ -17,7 +17,7 @@ without an external binary and without an API key.
 - A package with the dependencies installed:
 
 ```bash
-pnpm add @smthrs/std@next @effect/platform-node@4.0.0-rc.112 effect@4.0.0-rc.112
+pnpm add @smthrs/std@next @effect/platform-node@4.0.0-rc.115 effect@4.0.0-rc.115
 ```
 
 ## Make a tree to search

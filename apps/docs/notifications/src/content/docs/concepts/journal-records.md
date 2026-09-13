@@ -42,15 +42,36 @@ writer could have produced.
 ## Folding is incremental
 
 A layer folds each run once and then pages only the entries committed since its
-last read. It keeps the folded result for the 64 most recently read runs, and a
-run evicted from that set is folded again from the beginning on its next call.
-Reading a run's history therefore costs what has been journaled since the
-previous call, not the run's whole journal.
+last read. It keeps at most 64 folds at a time, and a run evicted from that set
+is folded again from the beginning on its next call. Reading a run's history
+therefore costs what has been journaled since the previous call, not the run's
+whole journal.
+
+Eviction sacrifices the newest fold no later read has come back for, never the
+fold an ordered sweep is about to want. Dropping the least recently folded run
+instead drops the run the next read wants, so a supervisor polling 65 or more
+runs in order would replay every journal from sequence zero on every pass. A
+sweep of any width instead refolds a fixed handful of runs and pages the tail
+of the rest. When every retained fold has been read a second time the oldest is
+evicted and the reuse marks are cleared, so no fold holds a slot on one ancient
+read forever.
+
+A fold retains the run's pending state, the sequence it stopped at, and the
+identities it has seen: a notification id with the fingerprint and sequence of
+its admission, and a drain identity with the sequence of its record. It retains
+no admitted payload and no drain record, so a run's memory does not grow with
+the notifications it has already drained, and a queue of any capacity costs the
+same per event however long the run has been running. The two paths that must
+report an already committed notification, a replayed drain and the content
+comparison for a legacy admission with no fingerprint, read the record back at
+its sequence.
 
 Eviction is always safe, and so is an interleaved fold: a fold reads the cached
 value, pages what has been committed since, and writes a fresh, self-consistent
 pair back, so the worst case is one extra page on the next call. No fold can
-report a state the journal does not hold.
+report a state the journal does not hold: a fold taken inside a transaction is
+published through `Journal.whenCommitted`, so a rollback leaves behind neither
+the condition it observed nor the cursor it stopped at.
 
 ## Foreign entries are not errors
 
@@ -90,11 +111,12 @@ tail, so the stream does not end on its own. That is what a projection is for:
 a live view that stays correct as entries arrive. Bound it with `Stream.take`
 when you want a snapshot, or fork it into a scope when you want a follower.
 
-`Projection.derive` starts at `NotificationState.empty(NotificationState.defaultCapacity)`,
-which is the bound `NotificationQueue.layer` enforces. A deployment that raised
-the bound with `NotificationQueue.layerWith` builds its own projection over
-`NotificationState` instead, because this one would report a shorter queue than
-the run actually holds.
+`Projection.derive` starts at `NotificationState.empty(NotificationState.defaultCapacity)`.
+That bound is the initial state's, not the run's: replay applies committed
+decisions rather than re-deciding, so a deployment that raised the bound with
+`NotificationQueue.layerWith` sees every admission it wrote replayed, past 128.
+No journal record carries the layer's bound, so the projected `capacity` stays
+at the default and `items` is the field to read.
 
 For the live answer rather than a replay, use `NotificationQueue.pending`; see
 [Report what a run is waiting on](/guides/report-pending-notifications/).

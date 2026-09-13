@@ -8,8 +8,8 @@ editUrl: "https://github.com/smithersai/smithers/edit/main/packages/smthrs-depre
 the JSX authoring API, the renderer, and fourteen `@smthrs/*` packages behind
 a single dependency. Smithers 1.0 removed that architecture. The name keeps
 its place on the registry, and what it publishes at `1.0.0-rc.0` is a
-migration notice rather than code. The module declares no exports, and
-importing it throws:
+migration notice rather than code. The module declares no exports. An
+import that reaches it throws:
 
 ```text
 smthrs 1.0 is a migration notice, not a runtime.
@@ -17,6 +17,13 @@ Smithers 1.0 ships as @smthrs/* packages. Install @smthrs/flows (authoring and e
 and @smthrs/cli (the `smthrs` command), then run `smthrs migrate` in a 0.x project.
 Migration guide: https://smithers.sh/migration/1.0
 ```
+
+That is what a bare `import "smthrs"`, a namespace import, a dynamic
+`import()`, and a `require` print. A static named or default import, the way
+0.x code is written, never reaches the module body: Node rejects
+`import { Workflow } from "smthrs"` while it links the module graph, with a
+`does not provide an export named` SyntaxError and no notice.
+[Troubleshooting](/troubleshooting/) covers that error.
 
 ## Why a package that only throws
 
@@ -26,9 +33,10 @@ for Smithers, found the shortest name, and installed it.
 
 Throwing is the point. Smithers 1.0 shares no source-compatible API with 0.x,
 so a package that resolved to an empty module would fail later and somewhere
-else, as an undefined value with no explanation attached. The error arrives at
-the import that caused it and carries the four lines that say where the code
-went.
+else, as an undefined value with no explanation attached. An import that
+evaluates the module gets the error at the import that caused it, carrying the
+four lines that say where the code went. A static named import fails at the
+same statement, one step earlier, with the missing-export error instead.
 
 `npm install smthrs` does not reach the notice. `smthrs@0.35.0` holds the
 `latest` dist-tag until Smithers 1.0.0 is final, so an unattended install
@@ -115,6 +123,7 @@ you need:
 - [What replaced the 0.x umbrella](/replacements/) maps every construct the
   facade exported to the 1.0 package and concept to rewrite it against.
 - [Troubleshooting](/troubleshooting/) covers the failures that never print
-  the notice, including the subpath error most 0.x projects hit first.
+  the notice: the missing-export error on a static named import, and the
+  subpath error most 0.x projects hit first.
 - The [1.0 migration guide](https://smithers.sh/docs/migration/1.0/) is the full procedure and the
   complete removal list.

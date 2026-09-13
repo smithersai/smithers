@@ -11,7 +11,7 @@ puts the failure in an Effect error channel instead, as a `SchemaError` whose
 message carries the same code and path. Use the schema when the surrounding
 code is Effect, and the function when it is not.
 
-Every example here is Effect 4. The package declares `effect@4.0.0-rc.112` as a
+Every example here is Effect 4. The package declares `effect@4.0.0-rc.115` as a
 peer dependency, and modules such as `effect/SchemaGetter` and
 `effect/SchemaIssue` exist only in that line. See
 [Installation](/installation/).
@@ -94,7 +94,7 @@ Canonicalized values can contain secrets, including in member names. Treat
 every path segment, `message`, and original `cause` text as caller-controlled
 and potentially sensitive.
 
-**Input retention is opt-in.** In `effect@4.0.0-rc.112` a schema issue keeps
+**Input retention is opt-in.** In `effect@4.0.0-rc.115` a schema issue keeps
 the rejected value only when the decode is given `reportInput: true`, and this
 package adds no parse options of its own. Writing `reportInput: false` changes
 nothing on a bare decode; write it to hold that policy against an option a
@@ -169,7 +169,7 @@ import * as SchemaIssue from "effect/SchemaIssue"
 
 const Fingerprint = Schema.Unknown.pipe(
   Schema.decodeTo(Schema.String, {
-    decode: SchemaGetter.transformOrFail((value) =>
+    decode: SchemaGetter.transformEffect((value) =>
       fingerprint(value).pipe(
         Effect.mapError((error) => new SchemaIssue.InvalidValue({ message: `[${error.code}] ${error.path}` }))
       )

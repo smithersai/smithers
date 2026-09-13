@@ -1,7 +1,9 @@
 # @smthrs/memory
 
+Release candidate scope, host requirements and compatibility review are defined in the [library support policy](https://github.com/smithersai/smithers/blob/main/RELEASE_SUPPORT.md).
+
 This package declares `effect` as an exact
-`4.0.0-rc.112` peer dependency. Keep the application on that version so
+`4.0.0-rc.115` peer dependency. Keep the application on that version so
 all Smithers packages share one Effect runtime.
 
 **Documentation:** https://memory.smithers.sh
@@ -29,7 +31,7 @@ cd smithers
 pnpm install
 ```
 
-It needs Node.js 22.19.0 or later and `effect` 4.0.0-rc.112 as a peer. The full
+It needs Node.js 22.19.0 or later and `effect` 4.0.0-rc.115 as a peer. The full
 requirements, and the two packages a file-backed store adds, are on the
 [installation page](https://memory.smithers.sh/installation/).
 

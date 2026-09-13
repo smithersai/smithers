@@ -22,7 +22,7 @@ CommonJS with TypeScript declarations. It has one runtime dependency,
 `Permission.isPermissionError` validates payloads with.
 
 [`effect`](https://effect.website) is a peer dependency pinned at
-`effect@4.0.0-rc.112`. It supplies the `Schema`, `Option`, and `PlatformError`
+`effect@4.0.0-rc.115`. It supplies the `Schema`, `Option`, and `PlatformError`
 types on the exported surface. Install exactly that version: two copies of
 `effect` in one program are two sets of service tags.
 

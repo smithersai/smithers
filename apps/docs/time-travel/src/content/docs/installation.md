@@ -63,9 +63,9 @@ import * as SqlTimeTravelStore from "@smthrs/time-travel/SqlTimeTravelStore"
 
 Two subpath forms are not public: `@smthrs/time-travel/internal/*` and
 `@smthrs/time-travel/*/index`. Both are mapped to `null` in the package's
-export map, because `Replay`, `Fork`, `Rewind`, `Retry`, `Recovery`,
-`Compensation`, `SnapshotProjector`, `HistoryLimit`, and
-`EffectHandlerRegistry` are machinery a caller never names.
+export map, because `Replay`, `Fork`, `Rewind`, `Recovery`, `Compensation`,
+`SnapshotProjector`, `HistoryLimit`, and `EffectHandlerRegistry` are machinery
+a caller never names.
 `@smthrs/time-travel/package.json` is exported.
 
 The root entry point is a browser contract: it bundles with no `node:` built-in,
@@ -92,7 +92,7 @@ Time travel reads a journal the engine wrote, so a composition that produces
 history adds the engine and the storage under it:
 
 ```bash
-pnpm add @smthrs/engine@next @smthrs/engine-store@next @smthrs/flow@next @smthrs/database@next @effect/platform-node@4.0.0-rc.112 effect@4.0.0-rc.112 @effect/sql-sqlite-node@4.0.0-rc.112
+pnpm add @smthrs/engine@next @smthrs/engine-store@next @smthrs/flow@next @smthrs/database@next @effect/platform-node@4.0.0-rc.115 effect@4.0.0-rc.115 @effect/sql-sqlite-node@4.0.0-rc.115
 ```
 
 - [`@smthrs/engine`](https://engine.smithers.sh/reference/api/) is the durable engine a run executes on, and

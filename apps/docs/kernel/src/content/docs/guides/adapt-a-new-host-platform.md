@@ -65,9 +65,12 @@ const guardedRoot = KernelFileSystem.withAtomicFileSystem(myFileSystem, {
 })
 ```
 
-The executor receives an `AtomicRequest` naming the operation, the boundary and
-logical roots, and the operands. Run it relative to a pinned root handle,
-rejecting symlinks as you traverse.
+The executor receives an `AtomicRequest`: one member per operation, naming the
+boundary and logical roots and exactly the operands that operation needs. Run
+it relative to a pinned root handle, rejecting symlinks as you traverse, and
+answer the result the operation names (`AtomicResult`). An executor that runs
+in process can be a typed `AtomicHandlers` record, which will not compile until
+every operation is implemented.
 
 **An isolated volume attests instead:**
 
@@ -91,7 +94,7 @@ behavioral contract every host bundle must satisfy. It registers Vitest cases,
 so install the peers first:
 
 ```bash
-pnpm add -D @effect/vitest@4.0.0-rc.112 vitest@4.1.9
+pnpm add -D @effect/vitest@4.0.0-rc.115 vitest@5.0.0
 ```
 
 Then declare, per slot, whether your bundle supports the capability and what it

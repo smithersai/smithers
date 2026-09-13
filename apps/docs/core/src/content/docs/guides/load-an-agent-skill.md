@@ -129,12 +129,17 @@ description the specification accepts is accepted here too.
 
 Every loader failure is a `Result.fail` carrying a `MarkdownError` with a
 stable code and a message. No message echoes the offending value, so a bad
-frontmatter field cannot smuggle text into your logs.
+frontmatter field cannot smuggle text into your logs. Both `parseSkill` and
+`lowerSkill` return `skill_invalid_frontmatter` for YAML parsing or conversion
+failures, including unresolved aliases, forward aliases, and exceeded alias
+expansion limits. Conversion exceptions use a fixed message without source
+text or the raw exception message. YAML's alias expansion protection stays
+enabled.
 
 | Code                          | Cause                                                       |
 | ----------------------------- | ----------------------------------------------------------- |
 | `skill_missing_frontmatter`   | The document has no leading frontmatter block.              |
-| `skill_invalid_frontmatter`   | The frontmatter is not parseable failsafe YAML.             |
+| `skill_invalid_frontmatter`   | The frontmatter cannot be parsed or converted from YAML.    |
 | `skill_missing_name`          | `name` is absent or blank.                                  |
 | `skill_invalid_name`          | `name` breaks the grammar or exceeds 64 characters.         |
 | `skill_missing_description`   | `description` is absent or blank.                           |

@@ -14,15 +14,19 @@ has to guess whether two pieces of work can run at once.
 import * as Plan from "@smthrs/plan/Plan"
 
 const effects: Plan.NodeEffects = {
-  reads: ["src/**/*.ts"],
+  reads: [{ _tag: "Glob", include: ["src/**/*.ts"] }],
   writes: ["dist/bundle.js"],
   removes: ["dist/stale.js"],
   boundaryMode: "hard"
 }
 ```
 
-Paths only. Measuring a path is run-time work, so a digest here would break the
-no-I/O law that makes a plan reproducible.
+Bare string entries are literal paths at both overlap analysis and execution,
+even when they contain `*` or `**`. Wildcards belong in `Glob.include` and
+`Glob.exclude`.
+
+Measuring a path is run-time work, so a digest here would break the no-I/O law
+that makes a plan reproducible.
 
 ## What a node produces
 
@@ -74,7 +78,8 @@ that wrong execution as a legitimate one.
 
 The second pass closes that. A reader whose read set overlaps a producer's
 produced set gains an ordering edge to the producer, unless the graph already
-orders it there.
+orders it there or an explicit `Ref`/`Pending` dependency path selects a read
+before that writer.
 
 Like a `serialize` edge, the edge enters `dependsOn` and never key material. The
 reader computes the same result either way, and its content dependence is
@@ -82,20 +87,25 @@ already keyed by the hermetic boundary digests measured at dispatch.
 
 ## When an edge would close a cycle
 
-If the graph already orders the writer _after_ the reader, through a declared
-dependency or a serialize edge, no edge set satisfies both requirements. Adding
-the reader-first edge closes a cycle; leaving it out lets the reader measure
-pre-producer bytes. The plan is refused with `cycle`, and the message names the
-reader, the overlapping paths, the producer, and the dependency chain that
-contradicts it:
+An explicit `Ref`/`Pending` dependency path that orders the writer after the
+reader is accepted, including a transitive path. It selects earlier bytes: the
+initial source or an earlier producer's output. The pass preserves that order
+instead of adding a reverse edge.
+
+If only inferred producer or `serialize` edges order the writer after the
+reader, there is no explicit selection of earlier bytes. Adding the required
+reader-after-writer edge closes a cycle, so the plan is refused with `cycle`.
+The message names the reader, the overlapping paths, the producer, and the
+contradictory dependency chain. For example, if the chain contains inferred
+edges and no declared-only path selects the earlier read:
 
 ```text
 Plan cycle: node lint reads dist/bundle.js, which node bundle produces, so lint must
 follow bundle, but bundle already depends on lint through bundle -> report -> lint
 ```
 
-Reachability decides this rather than plan order, because plan order only
-justifies edges that point backwards, and a writer-first edge points either way.
+Reachability through declared `Ref`/`Pending` edges establishes explicit
+sequencing. Declaration order alone does not select earlier bytes.
 
 ## Overlap is conservative
 

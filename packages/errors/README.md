@@ -1,5 +1,7 @@
 # @smthrs/errors
 
+Release candidate scope, host requirements and compatibility review are defined in the [library support policy](https://github.com/smithersai/smithers/blob/main/RELEASE_SUPPORT.md).
+
 **Documentation:** https://errors.smithers.sh
 
 `SmithersError` and the five error codes the Smithers integration adapters

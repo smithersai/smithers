@@ -63,9 +63,15 @@ same five slots from browser primitives.
 
 ## Where the parity stops
 
-Node-hosted conformance exercises the shared modules, but it is not an
-actual-Bun process test. Verify process streams, cancellation, and cleanup on
-the runtime and operating system you deploy. The contained handle's POSIX
+The package's `test` target runs conformance under Node with V8 coverage.
+The `bunTest` target imports Vitest's JavaScript entry under Bun and asserts
+`process.versions.bun` inside every worker. Both lanes exercise redirects,
+process containment, and filesystem helpers. Node coverage reports use private
+`0700` directories under the package's gitignored `coverage/` directory and are
+removed when the runner exits. Bun coverage is disabled.
+
+Verify process streams, cancellation, and cleanup on the runtime and operating
+system you deploy. The contained handle's POSIX
 `pid` identifies its supervisor; target status and supported cleanup boundaries
 are described in [Contain and reap child processes](/guides/contain-child-processes/).
 

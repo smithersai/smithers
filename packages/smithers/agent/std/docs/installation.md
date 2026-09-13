@@ -65,7 +65,7 @@ through Effect's context, so a composition adds a platform package that provides
 them:
 
 ```bash
-pnpm add @effect/platform-node@4.0.0-rc.112
+pnpm add @effect/platform-node@4.0.0-rc.115
 ```
 
 `NodeServices.layer` from `@effect/platform-node` provides `FileSystem`, `Path`,

@@ -31,7 +31,7 @@ same answer twice.
 ## Install
 
 ```bash
-pnpm add -D @smthrs/testing@next effect@4.0.0-rc.112
+pnpm add -D @smthrs/testing@next effect@4.0.0-rc.115
 ```
 
 The 1.0 release candidates publish under the `next` tag, and the first one is

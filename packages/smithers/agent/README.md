@@ -1,7 +1,9 @@
 # @smthrs/agent
 
+Release candidate scope, host requirements and compatibility review are defined in the [library support policy](https://github.com/smithersai/smithers/blob/main/RELEASE_SUPPORT.md).
+
 This package declares `effect` as an exact
-`4.0.0-rc.112` peer dependency. Keep the application on that version so
+`4.0.0-rc.115` peer dependency. Keep the application on that version so
 all Smithers packages share one Effect runtime.
 
 **Documentation:** https://agent.smithers.sh
@@ -333,7 +335,8 @@ const layer = Layer.mergeAll(
   Layer.provideMerge(Layer.mergeAll(
     AgentAction.layerHost({ registry, limits: { calls: 8 }, capabilityEnvelope: [], maxFrames: 4 }),
     SeatResolver.layer({
-      resolve: (id) => Effect.succeed(Seat.make({ id, modelId: "test-model", model, route, contextWindowTokens: 200_000 }))
+      resolve: (id) =>
+        Effect.succeed(Seat.make({ id, modelId: "test-model", model, route, contextWindowTokens: 200_000 }))
     }),
     Agent.layer
   )),

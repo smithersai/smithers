@@ -47,10 +47,11 @@ own `visible()`), and `Options.entries` appends host extras. Precedence when
 names collide: registry projection, then host extras, then the system
 entries, later wins, so `sys/now` and `sys/random` can never be shadowed.
 
-Each projected entry pins `RegistryCatalog.declarationDigest`, the canonical
-digest of the descriptor's full declaration (name, description, capabilities,
-effects, placement, model, flows, schema references, and body reference), so
-redeclaring a flow on any of those axes changes what every call key pins. A
+Each projected entry pins `RegistryCatalog.declarationDigest`, re-exported
+from `@smthrs/registry`, which owns `FlowDescriptor`. It is the canonical
+digest of the descriptor's full declaration: every top-level field except
+`provenance.pack`, with `capabilities` sorted. Redeclaring a flow on any of
+those axes changes what every call key pins. A
 markdown call also re-checks the digest at call time: a refreshed registry
 carrying a different declaration under the same name fails the call with a
 `CallError` telling you to rebuild the catalog, so the journaled entry digest

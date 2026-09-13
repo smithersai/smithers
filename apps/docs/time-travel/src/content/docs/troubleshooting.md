@@ -51,7 +51,10 @@ An attached child always blocks. A detached child blocks under the default
 
 **What to change.** Let the child finish, or pass
 `detachedChildren: "cancel"` if the child is detached and you accept the
-cancellation. There is no option that cancels an attached child, because
+cancellation. This applies to idle (`pending` or `suspended`) children and
+running children whose owner lease has expired. A live owner still refuses
+with `live_child`; `Options.isAlive` may veto cancellation after lease expiry.
+There is no option that cancels an attached child, because
 truncating history the child still depends on is not a policy choice. See
 [Rewind a run to a frame](/guides/rewind-a-run/).
 
@@ -132,11 +135,13 @@ outcome instead of re-running the action.
 
 ## rate_limited
 
-**What happened.** The rate limiter supplied to the rewind rejected the
-attempt. The decision is recorded on the audit row.
+**What happened.** The rate limiter supplied as `Options.rateLimit` rejected
+the attempt. The decision is recorded on the audit row.
 
-**What to change.** Back off and retry, or raise the limit. Nothing durable was
-compensated or truncated.
+**What to change.** Back off and retry, or raise the limit in the
+`TimeTravel.layerWith({ rateLimit })` the composition builds the service with.
+Nothing durable was compensated or truncated. A build that supplies no limiter
+never raises this code.
 
 ## limit_exceeded
 

@@ -49,6 +49,11 @@ wrapped a savepoint failure in its own domain error still keeps the outermost
 transaction replaying, as long as that domain error preserves `cause`. This is
 what makes a state projection and its journal entry retryable as one unit.
 
+Stores that redact driver diagnostics may replace the original database cause
+with `new DatabaseError({ code })` in the domain error's `cause` chain. Preserve
+the code returned by `fromSqlError` or the writer. This tagged, payload-free
+classification retains retry provenance without SQL text or bound values.
+
 ## Process-local state follows the outer commit
 
 Do not update a cache or notify subscribers from a transaction body. Even
@@ -101,11 +106,13 @@ Three properties of the classifier are load bearing:
 - **I/O outranks a busy cause beneath it.** The write did reach the disk, so an
   I/O failure is never replayed even when a lock error hides in its cause
   chain.
-- **Provenance is required.** A typed failure must carry an Effect `SqlError`
-  somewhere in its cause chain to qualify as retryable, so an application error
-  whose message happens to quote database text is not replayed. The one
-  exception is a raw rollback defect the driver throws before a `SqlError`
-  exists, which is matched on the defect channel alone.
+- **Provenance is required.** A failure must carry an Effect `SqlError` or a
+  tagged `DatabaseError` somewhere in its cause chain to qualify as retryable, so an application error
+  whose message happens to quote database text is not replayed. Defects are
+  held to the same rule. The defect channel is read at all because a
+  transaction whose `BEGIN` or `ROLLBACK` fails reaches the caller through
+  Effect's own `Effect.orDie`, which dies carrying the `SqlError` that step
+  failed with.
 
 A cause that carries several reasons is scanned in full rather than by first
 match, because a write that raced two effects produces exactly that shape.

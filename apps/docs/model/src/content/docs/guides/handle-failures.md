@@ -66,8 +66,9 @@ The twelve codes and their retryability are tabulated in the
 - `quota_exceeded`: never retryable, because waiting does not add credit.
   Park until the account is funded; `retryAfterMillis`,
   `resetAtEpochMillis`, and `resetSource` carry the wake instant when the
-  provider stated one. An HTTP 402, a provider code in the quota vocabulary,
-  and Anthropic's "credit balance is too low" all arrive here.
+  provider stated one. A bare HTTP 402 on Anthropic, Responses, or Chat
+  Completions routes arrives here, even without a recognized error body.
+  Quota codes and Anthropic's "credit balance is too low" also arrive here.
 - `context_overflow`: the request did not fit the window. Compact or
   truncate the transcript, then issue a new request.
 - `call_timeout`: your own wall-clock budget expired and the caller
@@ -119,7 +120,10 @@ failures does not immediately rebuild or grant another retry. Before the
 next attempt, the executor runs `rebuildPool`, uses its returned client,
 and resets the counter. With the default two retries, that next attempt
 can be in a later call. Any HTTP response clears the transport-failure
-counter.
+counter. Calls that reach the bound together share one rebuild: the first
+runs `rebuildPool` and the rest wait for its client. A failure reported by a
+client the executor has already replaced does not count against the
+replacement.
 
 ## Read the detail fields
 

@@ -26,8 +26,8 @@ pnpm add -D \
   @smthrs/journal@1.0.0-rc.0 \
   @smthrs/notifications@1.0.0-rc.0 \
   @smthrs/registry@1.0.0-rc.0 \
-  effect@4.0.0-rc.112 \
-  @effect/sql-sqlite-node@4.0.0-rc.112
+  effect@4.0.0-rc.115 \
+  @effect/sql-sqlite-node@4.0.0-rc.115
 ```
 
 ```ts

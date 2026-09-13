@@ -74,7 +74,13 @@ other cooperating commits. A semaphore is shared by workspace root in the
 process. An exclusively created `.smithers-workspace-lock` directory under the
 root coordinates separate processes, including callers using symlink aliases
 of the same root. This path is reserved: bundles cannot materialize it or its
-children. Filesystem hosts must support exclusive non-recursive directory
+children. The `.flows` engine state directory is reserved the same way, so no
+write set, `**` glob, or `expected` boundary mode lets a step body replace the
+engine database, its `-wal` and `-shm` siblings, or artifact objects kept
+there. Add other state paths under the root with the `reservedPaths` option.
+A write, removal, or symlink alias that targets a reserved path or lies
+beneath one fails `materialize` with `host_unavailable` before any file
+changes. Filesystem hosts must support exclusive non-recursive directory
 creation and removal. Writers that ignore the advisory lock are not serialized.
 
 The undo journal exists only in memory. A process crash can leave partial file
@@ -125,8 +131,15 @@ violation check, and the provenance cannot drift between them.
 A body that reaches the host through a service the transaction does not seed is
 outside the transaction. Denying that ambient access is the VM and
 `SandboxProvider` story in [`@smthrs/sandbox`](https://sandbox.smithers.sh/reference/api/). The transaction's
-`FileSystem` surface is also deliberately partial, and a settled bundle is
-applied without a human diff-review gate, which is a known limitation.
+`FileSystem` surface is deliberately partial. `readDirectory` lists immediate
+children and accepts `""`, `"."`, and the absolute workspace root as the root.
+`exists` recognizes the root, files, and directories implied by visible file
+paths. The root exists even when the transaction is empty; empty subdirectories
+are not retained, and `makeDirectory` is a no-op. File reads, writes, and removals
+require a non-root path. Paths containing `..` are refused. Directory probes
+trace the visible files that establish their results for declaration checks.
+A settled bundle is applied without a human diff-review gate, which is a known
+limitation.
 
 ## StepSandbox is the scope-safe front door
 

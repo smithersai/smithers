@@ -16,7 +16,7 @@ volume.
 - The package and the two backends:
 
 ```bash
-pnpm add @smthrs/platform-browser@next effect@4.0.0-rc.112 @zenfs/core @zenfs/dom just-bash
+pnpm add @smthrs/platform-browser@next effect@4.0.0-rc.115 @zenfs/core @zenfs/dom just-bash
 ```
 
 [Installation](./installation.md) has the details behind that command.

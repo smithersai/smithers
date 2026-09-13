@@ -66,11 +66,11 @@ implementation of a slot, not a fixed policy.
 
 The signal-error rows describe valid same-host pids:
 
-| Input                                         | `HostLiveness.isAlive` | `Ownership.sameHostPidProbe` |
-| --------------------------------------------- | --------------------- | --------------------------- |
-| signal error `ESRCH`                           | dead                  | dead                        |
-| signal error `EPERM`, `EINVAL`, or unknown error | alive                 | alive                       |
-| owner on a different `hostId`                  | alive                 | defer to expired lease      |
+| Input                                            | `HostLiveness.isAlive` | `Ownership.sameHostPidProbe` |
+| ------------------------------------------------ | ---------------------- | ---------------------------- |
+| signal error `ESRCH`                             | dead                   | dead                         |
+| signal error `EPERM`, `EINVAL`, or unknown error | alive                  | alive                        |
+| owner on a different `hostId`                    | alive                  | defer to expired lease       |
 
 `sameHostPidProbe` returns `false` for a foreign host without probing its pid.
 The engine consults it after lease expiry, and the store verifies the expired

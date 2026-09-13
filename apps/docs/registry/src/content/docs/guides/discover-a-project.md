@@ -62,30 +62,24 @@ silently. Two ordinary sources sharing a name resolve first-found and report a
 
 ## Decide what a missing root means
 
-A source root that does not exist fails the scan with
-`DiscoveryError { code: "root_missing" }`, and the registry layer fails with it.
-That is usually the wrong outcome for a project's own `flows/` directory,
-because a project that has not created one yet simply has no flows. Catch that
-one code, and let every other discovery failure stay a startup defect:
+A required source root that does not exist fails with
+`DiscoveryError { code: "root_missing" }`. For a project's optional `flows/`
+directory, use the project constructor:
 
 ```ts
-import * as Effect from "effect/Effect"
-
-const registry = Registry.layer({ sources }).pipe(
-  Layer.provide([discovery, platform]),
-  Layer.catch((error) =>
-    error.code === "root_missing"
-      ? Registry.layerFromDescriptors([]).pipe(Layer.provide(platform))
-      : Layer.effect(Registry.Registry)(Effect.die(error))
-  )
+const registry = Registry.layerProject({ root: process.cwd() }).pipe(
+  Layer.provide(platform)
 )
 ```
 
-This is what the Smithers CLI does. `Executable.layerProject` makes the same
-decision a different way, by asking whether the directory is there before
-scanning, which keeps "this project has no flows" from swallowing a pack that
-declares a directory it does not ship. See
-[Run a discovered flow](/guides/run-a-discovered-flow/).
+`Registry.layerProject` keeps the project source configured even when `flows/`
+is absent. Every `refresh()` checks it again, so creating the first flow or
+removing and recreating the directory works in the same session. It provides
+`Discovery` internally. Access failures and non-directory roots still fail.
+
+For custom source lists, set `optionalRoot: true` only on roots whose absence
+means an empty scan. Declared pack roots remain required; a missing pack
+directory fails with `invalid_pack`. See [Load workflow packs](/guides/load-packs/).
 
 ## Read the catalog
 
@@ -103,6 +97,8 @@ The service has eight members, and only two of them touch the filesystem:
 | `warnings()`                | Every discovery and collision diagnostic.                 |
 
 ```ts
+import * as Effect from "effect/Effect"
+
 const report = Effect.gen(function*() {
   const catalog = yield* Registry.Registry
   const entries = yield* catalog.list()
@@ -111,8 +107,15 @@ const report = Effect.gen(function*() {
 })
 ```
 
-Every read observes one complete snapshot, so a `list` and the `get` after it
-never disagree.
+Reads are atomic per operation: each observes one complete snapshot. A
+successful `refresh` between calls can change the catalog. In the example,
+`entries` and `warnings` may therefore describe different scans. A `get` after
+`list` can return a different descriptor or fail with `not_found`.
+
+Retain the returned descriptors when you need the values from that catalog.
+They do not pin later registry calls or filesystem contents. Cross-call
+consistency would require adding an explicit snapshot handle to the API; none
+is currently exposed.
 
 ## Refresh after an edit
 
@@ -137,6 +140,7 @@ const runAfterEdit = Effect.gen(function*() {
 
 | Constructor                                          | Use it when                                                                          |
 | ---------------------------------------------------- | ------------------------------------------------------------------------------------ |
+| `Registry.layerProject({ root, packs? })`            | The host discovers an optional project `flows/` directory and installed packs.       |
 | `Registry.layer(config)`                             | The host scans real directories.                                                     |
 | `Registry.layerFromPacks(packs, { runtimeVersion })` | The catalog is a set of installed packs. See [Load workflow packs](/guides/load-packs/). |
 | `Registry.layerFromDescriptors(entries, warnings?)`  | The host already holds descriptors and still wants lazy body loading.                |

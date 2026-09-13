@@ -154,7 +154,7 @@ export const main = (): Effect.Effect<Summary, ReleaseError> =>
       quarantined,
       fixedAt: fixed.level,
       deploy: trace,
-      outcome: "compensated" in outcome ? "compensated" : "released",
+      outcome: outcome._tag === "Compensated" ? "compensated" : "released",
       lockHeld
     }
   })

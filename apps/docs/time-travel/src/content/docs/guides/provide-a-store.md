@@ -33,9 +33,12 @@ rather than straight to the client, so a rewind's audit row, its receipts, and
 its truncation land under the same durability discipline as the engine's own
 journal writes.
 
-Building the layer runs `SqlTimeTravelStore.migrate` first, so a fresh database
-is usable with no separate setup step. It creates six tables and the index
-under them:
+Building the layer applies pending time-travel migration rungs over a database
+the journal and run-store ladders have already migrated. Missing
+`flows_journal_events` or `flows_runs` fails with a typed `TimeTravelError`
+naming the table. Use `Migrations.run` below for a fresh database. The ladder
+creates six time-travel tables and initializes the shared journal generations
+table:
 
 | Table                            | What it holds                                                      |
 | -------------------------------- | ------------------------------------------------------------------ |
@@ -45,9 +48,14 @@ under them:
 | `flows_time_travel_receipts`     | Proof that a side effect was compensated.                          |
 | `flows_time_travel_archive`      | The records a truncation moved aside rather than deleted.          |
 | `flows_time_travel_fork_intents` | A minted fork id, reserved before its workspace is provisioned.    |
+| `flows_journal_generations`      | Journal generation counters, bumped on every truncation.           |
 
 It also indexes `meta_json.lineageId` on the journal's own
 `flows_journal_events`, so a lineage-filtered read is not a full run scan.
+Two partial indexes on `(run_id, seq)` select child-spawn boundaries and
+handoff decisions. Descendant and archive queries probe these indexes for
+each reachable parent run. Migration `5003` adds them to existing databases;
+building `SqlTimeTravelStore` applies that same recorded rung.
 
 **The store is SQLite dialect only.** Its DDL uses `typeof()` and `json_valid`
 CHECK constraints, and its reads use `json_extract` with `$` paths. Any
@@ -58,9 +66,9 @@ require a redesign. Archive writes use strict `INSERT` keyed by
 
 ## Run the migrations on the shared ladder
 
-A composition that already runs a migrator should not let the store create its
-own tables on the side. `Migrations` publishes the same schema as a rung on the
-shared ladder, recorded in `flows_migrations` like every other package's:
+`Migrations` publishes fixed schema rungs on the shared ladder, recorded in
+`flows_migrations`. Building the store applies the same set and skips completed
+rungs. A composition can install the complete schema first:
 
 ```ts
 import { Migrations } from "@smthrs/time-travel"
@@ -74,12 +82,11 @@ is the complete durable schema for an engine with time travel: everything
 `Migrations.run` applies them in order, and `Migrations.layer` installs them
 before exposing the database.
 
-The block number is not arbitrary. Migration ids are spaced by 1,000, and a
-migrator runs from a single high-water mark: it refuses any migration whose id
-sits below the mark the database already applied rather than skipping it
-silently. This set therefore ships above every set an engine composition
-already applies, which is what lets it add an index to a table the journal
-owns. The table stays the journal's; only the index does not.
+Migration ids are spaced by 1,000. This set ships above the engine's existing
+sets and preserves its published rungs: `5001_initial`,
+`5002_archive_generation`, `5003_lineage_probes`, and `5004_plan_digest`.
+The plan-digest rung accepts columns installed by older store builds outside
+the ledger. Future schema changes require new rungs.
 
 ## The in-memory store
 
@@ -116,8 +123,10 @@ const layer = Layer.succeed(TimeTravelStore.TimeTravelStore)(TimeTravelStore.mak
 
 Hold a new backend to the same answers the two shipped ones give. The reads
 reconstruct a frame's past, the audit trio makes an in-flight rewind
-recoverable, and `archiveAndTruncate`, `createFork`, and `recordReceipt` change
-the lineage tree. Two behaviours are easy to get wrong and are worth stating:
+recoverable, and `archiveAndTruncate` and `createFork` change the lineage tree.
+`recordReceipt` writes one compensation receipt against an open audit row and
+touches no lineage. Two behaviours are easy to get wrong and are worth
+stating:
 
 - `archiveAndTruncate` is **fenced**. It re-checks the run's recorded owner and
   every non-terminal attached child's exact owner inside the same transaction,

@@ -91,12 +91,51 @@ change what the flow re-reads on resume, which corrupts the run rather than
 protecting it: a field named `token` in executable state is state, and a run
 that resumes without it is broken.
 
-Credential hygiene belongs at two other places instead. A value that must never
-be persisted at all is a `Redacted` field in the caller's own state schema, so
-it never reaches the store. A value that must not be published is handled on
-the journal-event and export surfaces, which is where the observability
-boundary lives.
+`Schema.Redacted` hides inspection but allows schema JSON encoding by default.
+`Schema.encodeSync(Schema.toCodecJson(schema))` unwraps a default `Redacted`
+field, and the store persists the resulting credential bytes. Refuse JSON
+encoding explicitly for values that must never be persisted:
+
+```ts
+const RuntimeState = Schema.Struct({
+  apiKey: Schema.Redacted(Schema.String, { disallowJsonEncode: true })
+})
+```
+
+This rejects serialization; it does not omit the field. For resumable state,
+use a persistence schema that excludes credentials and stores a secret
+reference instead:
+
+```ts
+const PersistedState = Schema.Struct({
+  secretRef: Schema.String,
+  pageToken: Schema.String
+})
+```
+
+Resolve `secretRef` from a secret provider on resume. Persist only the
+reference and flow data, never the resolved credential. Values that must not
+be published are handled on the journal-event and export surfaces, which is
+where the observability boundary lives.
+
+### The run file is a secret store
+
+Two columns keep run values verbatim because resume re-reads them byte for
+byte:
+
+- `flows_runs.state_json` holds the run's payload and result.
+- `flows_attempts.outcome_json` holds each action's encoded result, which an
+  action replays instead of executing again.
+
+A credential in a payload, or spliced into an action's success value, is
+stored in cleartext in the run's SQLite file (`.flows/*.db`). Handle that file
+as a secret store: restrict its permissions, keep it out of commits, bug
+reports, and artifacts, and delete it when the run is no longer needed. The
+journal table is redacted on the write path; the fault suite's case 22 scans
+every table and fails on a credential in any other column.
 
 The stores hold that line in their own diagnostics as well. Failure causes
 reach logs, spans, and telemetry, so they carry field names, lengths, and
-validity flags, and never the value that failed.
+validity flags, and never the rejected payload. Malformed timestamp causes
+contain only the field name and a fixed validation complaint. Clock-skew
+diagnostics include timestamp readings only after numeric validation.

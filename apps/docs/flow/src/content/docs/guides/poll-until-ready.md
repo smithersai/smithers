@@ -19,6 +19,7 @@ the wait between attempts is a durable timer that survives a process restart.
 
 ```ts
 import { Action, Interpreter, Poll, Sleep } from "@smthrs/flow"
+import { Node } from "@smthrs/plan"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
 import * as Schema from "effect/Schema"
@@ -35,21 +36,36 @@ export const Deployment = Poll.make("deploy/Wait", {
   backoff: "exponential",
   maxAttempts: 8,
   onTimeout: "fail",
-  check: ({ attempt, id }) => Status.call({ attempt, id })
+  check: Node.capture(
+    { action: Status.name, implementationVersion: "deploy/status-check/v1" },
+    ({ attempt, id }) => Status.call({ attempt, id })
+  )
 })
 
-export const layer = Layer.mergeAll(
-  Status.toLayer(({ attempt, id }) =>
-    Effect.map(readDeployment(id), (live) => ({
-      satisfied: live,
-      output: `attempt-${attempt}`
-    }))
-  ),
-  Poll.layer,
-  Sleep.layer,
-  Interpreter.layer(Deployment)
-).pipe(Layer.provideMerge(Action.layerImplementations))
+export const layer = Interpreter.layerWithImplementations(
+  Deployment,
+  Layer.mergeAll(
+    Status.toLayer(({ attempt, id }) =>
+      Effect.map(readDeployment(id), (live) => ({
+        satisfied: live,
+        output: `attempt-${attempt}`
+      }))
+    ),
+    Poll.layer,
+    Sleep.layer
+  )
+)
 ```
+
+`check` must be capture-stable under the default policy of
+`Interpreter.layerWithImplementations`. Use `Node.capture` with every semantic
+capture and a version for imported behavior. Capture any mappers, predicates,
+or planned continuations inside the check as well. JavaScript cannot verify
+closure completeness. `Poll.make` captures its generated body and predicate
+using the schedule and `Node.functionIdentity(check)`. An uncaptured check keeps
+the poll process-local and stable admission refuses it. Explicit
+`callbackIdentity: "process-local"` allows experimentation without a
+cross-process callback identity guarantee.
 
 `Sleep.layer` is not optional. The wait between attempts is an ordinary
 `system/sleep` node, so a composition without it has a plan node no

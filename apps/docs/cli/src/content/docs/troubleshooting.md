@@ -137,11 +137,19 @@ receipt and a run that parked afterwards.
 carries no grant. An `Accepted` receipt with exit 3 means the run started and
 then parked on an in-run ask.
 
-**Fix.** For the first, approve the same payload you submitted. For the second,
-read the `control.approval.requested` event's `payload` member and approve
-that, then `smthrs run --resume <run-id>`. `smthrs status <run-id>` prints both
-commands, already quoted. See
-[Script the CLI](/guides/script-the-cli/).
+**Fix.** A Plan approval records the grant without launching a run. Approve
+and then execute the same payload you submitted:
+
+```bash
+smthrs approvals approve "$approval" --scope run --json
+smthrs flow execute "$approval" --json
+```
+
+For an in-run Node approval, read the `control.approval.requested` event's
+`payload` member and approve that payload. This resumes the existing run;
+do not submit a new plan. If no executor took up the approved run, retry with
+`smthrs runs resume <run-id>`. `smthrs status <run-id>` prints the approval and
+resume commands, already quoted. See [Script the CLI](/guides/script-the-cli/).
 
 ### A command against `--remote` prints the receipt and returns immediately
 
@@ -181,9 +189,16 @@ composition does not have.
 silent past `SMITHERS_DETACHED_ADMISSION_TIMEOUT_MS` (30000 by default) and
 then past four times that window.
 
-**Fix.** Read `.flows/logs/pending-<nonce>.log`, which is where the child's
-output lands until the run id is known. Raise the timeout for a slow first
-start, when the engine database still has to be created and migrated.
+**Fix.** Read the file named by `Log:` in the failure report. The CLI retains
+`.flows/logs/pending-<nonce>.log` after a failed launch and includes the last
+32 KiB in the report. Remove the file manually when it is no longer needed.
+Raise the timeout for a slow first start, when the engine database still has
+to be created and migrated.
+
+Interrupting the admission wait waits for child cleanup before the CLI exits.
+On POSIX, cleanup targets its process group; on Windows, it targets the child
+handle. The pending log is retained. After admission succeeds, the child owns
+the run and outlives the launcher.
 
 ## The output is not what you expected
 
@@ -253,11 +268,15 @@ runner you typed.
 **Symptom.** `smthrs mcp add` exits 1 and prints manual instructions.
 
 **Cause.** Every target failed. The usual reasons are an `mcpServers` member
-that is not an object, an unreadable configuration file, or a stale lock file
-beside it.
+that is not an object, an unreadable configuration file, or a lock file beside
+it that another Smithers process still holds.
 
 **Fix.** The printed reason names the file. Fix it and run the command again;
 `addMcp` writes through a temp file and a rename, so nothing was half-written.
+A lock records the process that took it. One left behind by a process that has
+since died is reclaimed on the next run. One that is still held is reported
+with its owner's pid and its own path, so it can be deleted by hand once that
+process is gone.
 
 ## See also
 

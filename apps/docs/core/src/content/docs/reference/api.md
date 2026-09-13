@@ -472,6 +472,22 @@ nonce. Capture data must be finite, inert, plain data; anything else raises a
 compared structurally, so aliasing is not identity. Capture composes: capturing
 an already-captured function nests the two capture sets.
 
+### Node.functionIdentity
+
+```ts
+const functionIdentity: (operation: unknown) => {
+  readonly _tag: "FunctionIdentity"
+  readonly algorithm: "sha256-source-ephemeral/v4" | "sha256-source-captures/v4"
+  readonly digest: string
+}
+```
+
+Returns the same identity recorded by node combinators. Captured operations
+use their original source and all nested capture sets. Uncaptured operations
+receive process-local, per-function entropy. Non-functions throw a `TypeError`.
+`@smthrs/plan/Node` shares this implementation and recognizes the same captured
+wrappers.
+
 ### Node.within
 
 ```ts
@@ -604,7 +620,7 @@ interface LayerRequest {
 ### Graph.Graph
 
 ```ts
-type Graph
+interface Graph
 ```
 
 An immutable, observation-only flow graph. `build` deep-freezes everything it
@@ -612,8 +628,9 @@ constructs, so the getters hand back the graph's own values rather than copies.
 Read a graph through [`nodes`](#graphnodes), [`edges`](#graphedges),
 [`effects`](#grapheffects), [`placements`](#graphplacements),
 [`conflicts`](#graphconflicts), [`diagnostics`](#graphdiagnostics), and
-[`keyMaterial`](#graphkeymaterial); the storage fields behind those getters are
-not part of the published shape.
+[`keyMaterial`](#graphkeymaterial). The type is opaque and names no storage
+field, so a getter is the only way to read a graph and no write to a frozen
+node can typecheck.
 
 ### Graph.nodes
 
@@ -681,7 +698,10 @@ type EdgeReason = "value" | "continuation" | "conflict" | "lane-merge"
 
 `value` is a structural dependency, `continuation` is a statically planned
 `andThen` or `catch` arm, `conflict` is an ordering edge the write-conflict
-pass added, and `lane-merge` joins two laned writers to their merge node.
+pass added, and `lane-merge` orders laned writers, their merges, and consumers.
+Continuation prerequisites reach the executable entries inside `All`, `Map`,
+`FlowCall`, `AndThen`, and `Catch`. Recovery entries retain a conditional
+prerequisite on the protected node, represented by a `Pending` key input.
 
 ### Graph.effects
 
@@ -740,7 +760,9 @@ interface Conflict {
 
 `strategy` is the stricter of the two declarations' `onConflict` values: `fail`
 beats `lane`, and `lane` beats `serialize`. `mergeNodeId` is set only for a
-`lane` conflict.
+`lane` conflict. Merges sharing a writer run in conflict order. Consumer
+dependencies exclude serialization edges and prerequisites of either writer.
+The completed graph is checked for dependency cycles.
 
 ### Graph.diagnostics
 
@@ -761,7 +783,7 @@ class GraphBuildError extends Schema.TaggedError<GraphBuildError>()("flows/core/
 }) {}
 ```
 
-`GraphBuildErrorCode` is the literal schema of twelve codes:
+`GraphBuildErrorCode` is the literal schema of thirteen codes:
 
 | Code                       | Meaning                                                                 |
 | -------------------------- | ----------------------------------------------------------------------- |
@@ -771,6 +793,7 @@ class GraphBuildError extends Schema.TaggedError<GraphBuildError>()("flows/core/
 | `write_conflict`           | Two work nodes overlap under `onConflict: "fail"`. `nodes` names both.  |
 | `capability_outside_grant` | A called flow declares a capability the grant excludes. Advisory.       |
 | `duplicate_node_id`        | Two nodes claim one structural id.                                      |
+| `dependency_cycle`         | Dependencies cannot be ordered. `nodeId` names a node in the cycle.     |
 | `missing_key_material`     | A node reached `keyMaterial` without any.                               |
 | `invalid_node`             | A malformed node AST. Thrown, not recorded.                             |
 | `plan_too_deep`            | Nesting past `maximumGraphDepth`. Thrown.                               |
@@ -779,7 +802,7 @@ class GraphBuildError extends Schema.TaggedError<GraphBuildError>()("flows/core/
 | `payload_too_large`        | Members past `maximumPayloadMembers` inside one plan value. Thrown.     |
 
 `nodeId` is populated for the three effect codes, `missing_key_material`,
-`duplicate_node_id`, `capability_outside_grant`, `invalid_node`, and the four
+`duplicate_node_id`, `dependency_cycle`, `capability_outside_grant`, `invalid_node`, and the four
 limit codes. For `plan_too_large` it names the node whose admission crossed the
 limit. `nodes` is populated for `write_conflict`. `paths` carries the offending
 value path for `payload_too_large`.
@@ -802,7 +825,9 @@ const keyMaterial: (graph: Graph) => Result.Result<ReadonlyArray<KeyMaterial.Ent
 
 Returns node-associated, digest-free key material in topological dependency
 order, or fails with the first fatal diagnostic the graph carries, unchanged.
-The graph-local node id is outside the material `@smthrs/plan` hashes.
+A cyclic graph fails with `dependency_cycle`, including a graph supplied
+directly by a caller. The graph-local node id is outside the material
+`@smthrs/plan` hashes.
 
 ### Graph limits
 

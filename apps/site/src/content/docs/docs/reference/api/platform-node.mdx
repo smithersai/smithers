@@ -253,6 +253,12 @@ unable to redirect the operation, and it is why the bundle returns
 `PermissionDenied` for an out-of-root path, a hard link, a symlink, or a special
 file rather than performing raw effects.
 
+An aliased workspace root and its canonical `realPath` spelling address the
+same pinned descriptor. Paths returned by `realPath` can therefore be used for
+subsequent reads, writes, and atomic sibling replacement. Capability resources
+remain rooted at the logical workspace name; child symlinks, sibling paths,
+and replacement of the pinned root retain the same refusal checks.
+
 | Constant or constructor               | What it is                                                            |
 | ------------------------------------- | --------------------------------------------------------------------- |
 | `AtomicFileSystem.layer`              | the adapter with every default                                        |
@@ -285,7 +291,9 @@ excludes everything below it, and nothing under an excluded directory is listed,
 counted against the entry ceiling, or charged against the response ceiling. An
 exclusion that names the root stops before the walk begins. An absolute exclude
 is rewritten against the glob root so it applies to the same names the selecting
-pattern does. A trailing `**` spans zero segments, so it also names its own
+pattern does. The selecting pattern prunes the walk too: a directory is entered
+only when a remaining segment or an open `**` can still name something below it,
+and only selected names are charged against the response ceiling. A trailing `**` spans zero segments, so it also names its own
 anchor: a directory always, and a non-directory only when every segment before it
 is literal, which is the shortcut the native globber takes when it can address
 the path directly rather than read a directory. `top.txt/**` names the file;
@@ -368,6 +376,11 @@ guards are questions put to `ps`: this process's own group, and when the
 recorded pid started. Either can go unanswered on a host with no usable one, and
 an unanswered guard refuses, because a guard that did not run is not a guard
 that passed. No evidence never authorizes a `SIGKILL`.
+
+`reap` returns one `Reaped` per inherited record. The two outcomes are a union
+discriminated by `killed`: a killed entry carries no reason, and a kept entry
+always carries the `Refusal` that produced it, so one check on `killed` is what
+makes `refusal` readable.
 
 A refusal also decides whether the record is retired. Retiring says in the
 journal that nothing was signalled and stops every later incarnation

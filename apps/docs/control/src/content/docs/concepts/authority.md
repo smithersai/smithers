@@ -49,8 +49,13 @@ composition with no executor is not broken; it is a plane that starts nothing:
 - `cancel` still writes its attribution and still interrupts a fiber this
   process is driving, but nothing reaches an engine row in another database.
 - `signal` still records the fact, and no wait point is completed by this call.
-- `resume` still records the durable delegation, and the host that owns the
-  execution takes it up on its next poll.
+- `resume` and `run` with a Resume input join or claim control-launched runs
+  and journal `control.run.resume`. A caller or journal subscriber must drive
+  the execution. Explicit resume does not call `requestResume` or offer work
+  through `ControlExecutor.resumeRun`; polling `pendingResumes` cannot take
+  up this intent.
+- A node-approval decision records a durable `requestResume` delegation.
+  Without an executor, it remains available for the owning host's next poll.
 
 That is the shape a monitor, a dashboard, or a read-only operator tool has, and
 it is what [`examples/src/38-monitor-and-alert.ts`](https://github.com/smithersai/smithers/blob/main/examples/src/38-monitor-and-alert.ts)

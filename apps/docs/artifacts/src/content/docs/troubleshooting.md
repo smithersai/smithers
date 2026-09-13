@@ -104,9 +104,11 @@ non-obvious fixes:
   lock, or the workspace-global backup-lease gate, and is still heartbeating.
   Find it, or drop the store to `coordination: "process"` if cross-process
   exclusion is not something this host needs.
-- A refusal to open a file handle for syncing on a host that cannot do it,
-  such as a browser filesystem, means the composition should declare
-  `durability: "best-effort"` rather than `required`.
+- A sync refusal can use `durability: "best-effort"` when weaker durability is
+  acceptable. Both modes still require exclusive writable handles and symlink
+  inspection. If the host lacks either, use a memory or remote tier until the
+  host supplies them. A detected symlink or directory replacement also fails
+  as `unavailable`; audit the store before retrying.
 
 `the shared upload was interrupted before it settled` is a special case: it is
 the typed answer given to callers waiting on an in-flight combined upload that
@@ -144,8 +146,10 @@ services cap one body at 16 MiB, and no `chunkBytes` setting works around that,
 because they refuse ranged `PUT` with `400`.
 
 Raise a deadline only after checking that the tier is actually slow rather than
-unreachable. A combined composition already treats a remote failure as
-something it can live with.
+unreachable. `CombinedArtifacts.get` propagates a remote `ArtifactStoreError`,
+including download timeouts. `CombinedArtifacts.put` ignores failed opportunistic
+uploads. `ArtifactSync.hydrate` separately converts remote failure into replay
+rejection.
 
 ## An upload succeeded here but a second machine cannot read it
 

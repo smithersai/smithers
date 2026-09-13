@@ -58,8 +58,13 @@ import { hasSmithersErrorShape, SmithersError } from "@smthrs/errors/SmithersErr
 `@smthrs/errors/*/index` are not: both resolve to `null` in the exports map, so
 a deep import fails at resolution rather than compiling against a private path.
 
-The published build ships ESM at `dist/esm` and CommonJS at `dist/cjs`, so a
-`require` and an `import` both resolve to the same class.
+The published build ships ESM at `dist/esm` and CommonJS at `dist/cjs`. The
+entry points expose the same API but have distinct constructor identities.
+Mixed ESM/CommonJS loading is a module-copy boundary, even with one installed
+package version: an error created through `require` fails the `isSmithersError`
+check from `import`, and vice versa. Use `hasSmithersErrorShape` across this
+boundary. See
+[Detect an error across module copies](/guides/detect-an-error-across-module-copies/).
 
 ## Choose this package or a tagged error
 

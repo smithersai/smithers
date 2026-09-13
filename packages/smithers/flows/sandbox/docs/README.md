@@ -51,7 +51,7 @@ The 1.0 release candidate has not reached npm yet. When it does it publishes
 under the `next` dist tag:
 
 ```bash
-pnpm add @smthrs/sandbox@next @smthrs/platform-node@next @smthrs/kernel@next effect@4.0.0-rc.112
+pnpm add @smthrs/sandbox@next @smthrs/platform-node@next @smthrs/kernel@next effect@4.0.0-rc.115
 ```
 
 Node.js 22.19.0 or later. `@smthrs/platform-node` supplies the contained host

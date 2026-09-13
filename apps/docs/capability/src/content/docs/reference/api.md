@@ -22,7 +22,7 @@ Every export is a value, a schema, or a pure function. Enforcement, the
 `GrantStore`, the decorating layers, and the journal live in
 [`@smthrs/kernel`](https://kernel.smithers.sh/reference/api/). This package's one runtime dependency is
 [`@smthrs/canonical`](https://canonical.smithers.sh/reference/api/), which itself depends only on the shared
-`effect@4.0.0-rc.112` peer. Both the kernel and [`@smthrs/jj`](https://jj.smithers.sh/reference/api/) can
+`effect@4.0.0-rc.115` peer. Both the kernel and [`@smthrs/jj`](https://jj.smithers.sh/reference/api/) can
 therefore depend on it without a cycle, and a protected service names
 permission failures in its own interface.
 
@@ -173,6 +173,18 @@ Capability.parsePattern("fs:read")
 // Option.none()
 ```
 
+### Capability.isLiteralResource
+
+```ts
+const isLiteralResource: (resource: string) => boolean
+```
+
+Reports whether the grammar reads a resource as literal text, so it selects
+that resource and nothing else. Returns `false` for any resource carrying `*`
+or `?`. Ask here instead of scanning for those two characters: this predicate
+is where the set of metacharacters is defined, so a caller cannot fall behind
+the grammar.
+
 ### Capability.patternFromCapability
 
 ```ts
@@ -216,6 +228,26 @@ namespace family covering `right`. A resource is subsumed when the two are
 equal, `left` is `**`, or `left` ends in `/**` and `right` starts with that
 prefix and a separator. A single `*` proves only the identical resource, so an
 envelope entry that must prove coverage of any other resource is written `**`.
+
+### Capability.mayOverlap
+
+```ts
+const mayOverlap: (left: CapabilityPattern, right: CapabilityPattern) => boolean
+```
+
+Conservatively determines whether the two patterns can select a common
+capability. Returns `false` only when disjointness is provable: actions no
+capability satisfies at once, two literal resources that differ, or literal
+prefixes that disagree over their shared span. Every relationship the syntactic
+checks cannot settle answers `true`, and the question is symmetric in its
+arguments.
+
+The unprovable case answers the opposite way from
+[`subsumes`](#capabilitysubsumes), which is the point. Ask `subsumes` before
+widening a grant, where an unprovable answer must not grant. Ask `mayOverlap`
+before dropping a restriction, where an unprovable answer must keep the
+restriction. Reading "cannot prove coverage" as "does not apply" is how a
+`deny` rule falls through to a later `allow`.
 
 ### Capability.withinMatchBudget
 
@@ -500,9 +532,9 @@ its own property must be data, but its contents are not inspected.
 
 ```ts
 type PermissionErrorPayload =
-  | { readonly _tag: "@smthrs/capability/PermissionRequired"; /* request data */ }
-  | { readonly _tag: "@smthrs/capability/PermissionDenied"; /* denial data */ }
-  | { readonly _tag: "@smthrs/capability/GrantStoreError"; /* store data */ }
+  | { readonly _tag: "@smthrs/capability/PermissionRequired" /* request data */ }
+  | { readonly _tag: "@smthrs/capability/PermissionDenied" /* denial data */ }
+  | { readonly _tag: "@smthrs/capability/GrantStoreError" /* store data */ }
 ```
 
 The fields of the corresponding error schemas, with structural

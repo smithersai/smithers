@@ -60,15 +60,16 @@ waiting.
 
 Both answer the same question from the same records:
 
-|            | `NotificationQueue.pending`                   | `Projection.derive`                                   |
-| ---------- | --------------------------------------------- | ----------------------------------------------------- |
-| Shape      | One `Effect` per call.                        | A `Stream` that replays and then follows.             |
-| Needs      | The queue service.                            | A journal, and nothing else.                          |
-| Capacity   | Whatever the layer was built at.              | Always `NotificationState.defaultCapacity`.           |
-| Use it for | An answer now: a listing, an RPC, a decision. | A live view that must stay correct as entries arrive. |
+|            | `NotificationQueue.pending`                   | `Projection.derive`                                               |
+| ---------- | --------------------------------------------- | ----------------------------------------------------------------- |
+| Shape      | One `Effect` per call.                        | A `Stream` that replays and then follows.                         |
+| Needs      | The queue service.                            | A journal, and nothing else.                                      |
+| Capacity   | Whatever the layer was built at.              | Reports `NotificationState.defaultCapacity`, and replays past it. |
+| Use it for | An answer now: a listing, an RPC, a decision. | A live view that must stay correct as entries arrive.             |
 
-Use `pending` for a request. Use the projection for a feed, and only when the
-composition runs at the default capacity; see
+Use `pending` for a request. Use the projection for a feed: it replays what
+every admission record committed, so it stays correct at a raised bound even
+though the `capacity` it reports is the default. See
 [the journal records](/concepts/journal-records/).
 
 ## Look at a pending notification

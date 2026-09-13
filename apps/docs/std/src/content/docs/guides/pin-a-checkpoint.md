@@ -62,8 +62,9 @@ A `Materialized` carries four paths, because one directory can have two names:
 | `guestRoot` | The workspace as a container names it.                |
 
 `Checkpoints.baseId` is `"base"`, the tree the run opened on. It is not minted:
-the store resolves it to `baseRef`, then to `TestRunner.captureBase`, then to
-`HEAD`, which is the precedence `test` already uses for the same question.
+the store uses `baseRef` when one is declared. A declared ref that
+does not resolve is `not_found`. Otherwise it tries `TestRunner.captureBase`
+and then `HEAD`, matching `test`.
 
 ## What the git binding does, and does not do
 
@@ -91,7 +92,9 @@ spans worktrees.
 
 Untracked files are not in the recorded tree, which matches how a patch is
 captured. Materialization is a detached worktree at
-`<root>/.flows-checkpoints/<id>`, which is `Checkpoints.scratchDirectory`.
+`<root>/.flows-checkpoints/<id>-<lease>`, under `Checkpoints.scratchDirectory`.
+Each call gets a unique lease, so overlapping calls never remove each other's
+checkout. Existing checkouts are left alone; a `SIGKILL` can leave one behind.
 Inside the workspace is the only placement that works, for the same reason the
 `test` baseline is placed there: a container sees the workspace through a mount,
 and a scratch checkout anywhere else on the host is not visible to it.
@@ -105,7 +108,7 @@ checkpoint. It is a closed table, not a per-flow hook:
 const relocation = Checkpoints.relocate("read", { path: "src/widen.ts" }, tree)
 
 if (relocation._tag === "Relocated") {
-  // relocation.input now reads .flows-checkpoints/<id>/src/widen.ts
+  // relocation.input now reads .flows-checkpoints/<id>-<lease>/src/widen.ts
 }
 ```
 

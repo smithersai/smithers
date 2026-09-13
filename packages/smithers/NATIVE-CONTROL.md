@@ -24,7 +24,6 @@ Compensable standard file tools use this existing snapshot contract. The coding 
 
 ## Keep authority in the existing runtime
 
-
 Module handlers intentionally account approved root usage in the native execution journal. This is separate from control lifecycle events. Authority refusal runs around registered execution, outside the action retry ladder, and becomes an honest terminal result. The shared root allowance map lives in the host scope and has no arbitrary capacity limit that could defect on a valid root. Detached module children are unsupported: module work must stay under the approved live root and its shared budget lifetime.
 
 Model-backed native actions receive the existing AgentAction.Host, assembled from the same guarded sources, registry and cell limits as AgentSession. This adds an existing service to the ModuleRegistration dependency union; it does not introduce a second model or tool host.

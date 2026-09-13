@@ -39,7 +39,7 @@ pnpm install
 ## Requirements
 
 - Node.js 22.19.0 or later, from the package's `engines` field.
-- `effect` 4.0.0-rc.112, declared as a peer dependency. Routes, streams, and
+- `effect` 4.0.0-rc.115, declared as a peer dependency. Routes, streams, and
   layers are all `Effect` values, so your package installs `effect` itself.
 - `@smthrs/capability` and `@smthrs/kernel` come along as dependencies of this
   package. You do not import them to make a call.

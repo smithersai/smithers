@@ -8,14 +8,16 @@ editUrl: "https://github.com/smithersai/smithers/edit/main/packages/smithers/flo
 
 > **Source:** [implementation](https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/src) · [reference source](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/docs/api.md) · [package docs](https://flows.smithers.sh)
 
-> **Related APIs:** [`@smthrs/artifacts`](/docs/reference/api/artifacts/) · [`@smthrs/canonical`](/docs/reference/api/canonical/) · [`@smthrs/capability`](/docs/reference/api/capability/) · [`@smthrs/crypto`](/docs/reference/api/crypto/) · [`@smthrs/database`](/docs/reference/api/database/) · [`@smthrs/engine`](/docs/reference/api/engine/) · [`@smthrs/engine-store`](/docs/reference/api/engine-store/) · [`@smthrs/flow`](/docs/reference/api/flow/) · [`@smthrs/jj`](/docs/reference/api/jj/) · [`@smthrs/journal`](/docs/reference/api/journal/) · [`@smthrs/kernel`](/docs/reference/api/kernel/) · [`@smthrs/keys`](/docs/reference/api/keys/) · [`@smthrs/observability`](/docs/reference/api/observability/) · [`@smthrs/plan`](/docs/reference/api/plan/) · [`@smthrs/platform-node`](/docs/reference/api/platform-node/) · [`@smthrs/run-store`](/docs/reference/api/run-store/) · [`@smthrs/sandbox`](/docs/reference/api/sandbox/) · [`@smthrs/step-cache`](/docs/reference/api/step-cache/) · [`@smthrs/sync`](/docs/reference/api/sync/) · [`@smthrs/time-travel`](/docs/reference/api/time-travel/)
+> **Related APIs:** [`@smthrs/artifacts`](/docs/reference/api/artifacts/) · [`@smthrs/canonical`](/docs/reference/api/canonical/) · [`@smthrs/capability`](/docs/reference/api/capability/) · [`@smthrs/crypto`](/docs/reference/api/crypto/) · [`@smthrs/database`](/docs/reference/api/database/) · [`@smthrs/engine`](/docs/reference/api/engine/) · [`@smthrs/engine-store`](/docs/reference/api/engine-store/) · [`@smthrs/flow`](/docs/reference/api/flow/) · [`@smthrs/jj`](/docs/reference/api/jj/) · [`@smthrs/journal`](/docs/reference/api/journal/) · [`@smthrs/kernel`](/docs/reference/api/kernel/) · [`@smthrs/keys`](/docs/reference/api/keys/) · [`@smthrs/observability`](/docs/reference/api/observability/) · [`@smthrs/plan`](/docs/reference/api/plan/) · [`@smthrs/platform-bun`](/docs/reference/api/platform-bun/) · [`@smthrs/platform-node`](/docs/reference/api/platform-node/) · [`@smthrs/run-store`](/docs/reference/api/run-store/) · [`@smthrs/sandbox`](/docs/reference/api/sandbox/) · [`@smthrs/step-cache`](/docs/reference/api/step-cache/) · [`@smthrs/sync`](/docs/reference/api/sync/) · [`@smthrs/time-travel`](/docs/reference/api/time-travel/)
 
 `@smthrs/flows` has three public entry points.
 
 | Entry point                   | Contents                                                                           |
 | ----------------------------- | ---------------------------------------------------------------------------------- |
 | `@smthrs/flows`               | The barrel: nineteen engine packages re-exported, plus `namespaces`. Browser-safe. |
-| `@smthrs/flows/NodeRuntime`   | The durable runtime compositions for Node and local SQLite. Node-only.             |
+| `@smthrs/flows/Runtime`       | Shared engine/storage composition over injected Effect SQL and host services.      |
+| `@smthrs/flows/NodeRuntime`   | Native Node composition, preserving the existing API.                              |
+| `@smthrs/flows/BunRuntime`    | Native Bun composition using the Bun SQL adapter.                                  |
 | `@smthrs/flows/SandboxedFlow` | Running a child flow's own code inside a provisioned machine. Node-only.           |
 
 ```ts
@@ -309,19 +311,6 @@ What it adds over `layer`:
 A program that needs a different host, a different policy, or no signals at all
 composes `layer` itself; nothing here is reachable only through this function.
 
-### `CompositionRootsAreComplete`
-
-```ts
-type CompositionRootsAreComplete
-```
-
-A compile-time assertion type that pins each composition root to its documented
-host boundary: `make` requires `Crypto | FileSystem | Jj | Scope`, `layer`
-requires `Crypto | FileSystem | Jj`, and `layerHost` requires nothing. It has no
-runtime value. It records the boundary each root promises, and a change to one
-of those boundaries stops compiling instead of reaching you as a missing service
-at run time.
-
 ## SandboxedFlow
 
 ```ts
@@ -338,7 +327,7 @@ It is Node-only: it bundles with esbuild and it starts a guest runtime.
 const run = Effect.gen(function*() {
   const result = yield* SandboxedFlow.execute(Child, { n: 31 }, {
     provider,
-    session: `child:${executionId}`,
+    session: "child-1",
     entry: new URL("./child.ts", import.meta.url),
     runtime: "node",
     collectDiff: true
@@ -426,6 +415,19 @@ const defaultLimits: ResolvedLimits
 | `diffBytes`   | 100 MiB | The total bytes collected across the diff.        |
 | `files`       | 1,000   | The number of created or resized files collected. |
 
+Limits are inclusive and count bytes, not characters. `resultBytes` includes
+the complete UTF-8 JSON envelope. Metadata can reject oversized files before
+transfer; reads stop at the byte budget plus one. Actual bytes, including any
+growth after stat, count toward `diffBytes` before each entry is appended.
+Native filesystem streams receive `bytesToRead`; other providers use guest
+`head -c`, which the image must supply. Zero permits no result bytes, no diff
+bytes (empty files are allowed), or no changed files, respectively.
+
+Guest stdout and stderr are drained concurrently with fixed-size diagnostic
+tails retaining at most 4 KiB each, plus a truncation marker. Redaction runs during collection; when a credential
+continues beyond a retained segment, the rest of that line is omitted. An
+overlong unfinished quoted credential suppresses the rest of that stream.
+
 ### `ExecuteOptions`
 
 | Field         | Type               | Default         | Meaning                                                                                                                                                                                                                        |
@@ -436,7 +438,7 @@ const defaultLimits: ResolvedLimits
 | `runtime`     | `string`           | `"node"`        | The guest executable that runs the bundle: `"node"`, `"bun"`, or an executable path. Each path is quoted as one shell word. Use a wrapper script for flags.                                                                    |
 | `collectDiff` | `boolean`          | `false`         | Whether to collect the files the guest created or resized.                                                                                                                                                                     |
 | `limits`      | `Limits`           | `defaultLimits` | Bounds on the result and the diff.                                                                                                                                                                                             |
-| `timeout`     | `Duration.Input`   | 10 minutes      | The wall-clock budget for the whole session, acquisition through result readback. Measured on the platform timer, so it fires under a frozen test clock too.                                                                   |
+| `timeout`     | `Duration.Input`   | 10 minutes      | The wall-clock budget for the whole session, acquisition through result readback. Uses platform timers, including chunked timers for long finite budgets. `Duration.infinity` disables the deadline.                           |
 
 ### `DiffEntry`, `Diff`, and `Result`
 
@@ -509,16 +511,22 @@ type SandboxedAction<Tag, Payload, Success> = Action.Declared<
   typeof SandboxedFlowError
 >
 
-const action: <Tag, Payload, Success, Error, Requires>(
+function action<Tag, Payload, Success, Error, Requires, const Name extends string>(
   flow: Flow.Flow<Tag, Payload, Success, Error, Requires>,
-  options?: { readonly name?: string | undefined }
-) => SandboxedAction<string, Payload, Success>
+  options: { readonly name: Name }
+): SandboxedAction<Name, Payload, Success>
+function action<Tag, Payload, Success, Error, Requires, const Name extends string = never>(
+  flow: Flow.Flow<Tag, Payload, Success, Error, Requires>,
+  options?: { readonly name?: Name | undefined }
+): SandboxedAction<Name | `${Tag}/sandboxed`, Payload, Success>
 ```
 
 Declares the durable action a parent flow calls to run `flow` in a sandbox. Its
 payload schema is the flow's, its success schema is `resultSchema` over the
 flow's, and its error schema is `SandboxedFlowError`. The tag is
-`<flow tag>/sandboxed` unless `options.name` says otherwise.
+`<flow tag>/sandboxed` unless `options.name` says otherwise. Both forms preserve
+the literal name, so providing one declaration's implementation cannot satisfy
+a differently named declaration. An optional name retains both possible tags.
 
 From the parent's point of view the whole sandboxed execution is one action: the
 engine journals one attempt, applies one retry policy, and replays one recorded
@@ -530,12 +538,16 @@ result.
 interface ExecuteContext<Payload> {
   readonly payload: Payload
   readonly executionId: string
+  readonly callId: string
 }
 ```
 
-What `toLayer` hands an options function: the decoded payload of the call and
-the parent execution's id, which is the natural material for a session key that
-is exclusive per execution and stable across a resume.
+What `toLayer` hands an options function: the decoded payload, the parent
+execution's id, and the engine's invocation key as `callId`. Combine `executionId`
+and `callId` for a session key exclusive to this call, including parallel calls
+with identical payloads. `callId` is preserved across retries and resume.
+A runtime that supplies no `Action.CurrentInvocationKey` is refused as a defect
+before acquiring a session.
 
 ### `toLayer`
 
@@ -551,9 +563,9 @@ Implements an `action` declaration with `execute`. `options` is either the
 placement itself or a function of the call's `ExecuteContext`:
 
 ```ts
-SandboxedFlow.toLayer(RunChild, Child, ({ executionId }) => ({
+SandboxedFlow.toLayer(RunChild, Child, ({ executionId, callId }) => ({
   provider,
-  session: `child:${executionId}`,
+  session: `child:${executionId}:${callId}`,
   entry: new URL("./child.ts", import.meta.url)
 }))
 ```

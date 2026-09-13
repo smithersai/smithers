@@ -69,12 +69,16 @@ changed it would be a data migration, and the changelog would say so.
 
 ## Choosing a seed
 
-The seed is the only deliberate re-roll. Two bindings with the same ratio and
-the same seed grade the same subset of steps, which is what you want when two
-scorers should see identical samples. Change the seed and the subset moves.
+The same subset is guaranteed only when target, ratio, seed, and `scorerKey`
+all match. Different scorer keys can produce different subsets even with the
+same ratio and seed. For paired scorer comparisons, use one host-owned
+selection reused for both scorers, or sample everything with `"all"`. When
+the host selects a subset, use `"all"` for both scorers on those selected steps
+so their individual sampling policies do not filter it again.
+
+Change the seed to re-roll a fixed target and scorer's sampling decisions.
 Pin a seed per campaign, such as a month or a release name, rather than
-generating one per process: a fresh seed each run is exactly the
-nondeterminism this design removes.
+generating one per process: a fresh seed each run introduces nondeterminism.
 
 Sampling is advisory as far as this package is concerned. Nothing here calls
 `decide` on your behalf; [`@smthrs/evals`](https://evals.smithers.sh/reference/api/) does, once per candidate

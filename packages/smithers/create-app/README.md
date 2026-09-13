@@ -1,5 +1,7 @@
 # @smthrs/create-app
 
+Release candidate scope, host requirements and compatibility review are defined in the [library support policy](https://github.com/smithersai/smithers/blob/main/RELEASE_SUPPORT.md).
+
 **Documentation:** https://create-app.smithers.sh
 
 Build a web app around Smithers flows. You declare the app once, in a
@@ -131,7 +133,7 @@ install includes no test runner. Add the testing facade, Node adapter, and
 runner before importing this subpath:
 
 ```sh
-pnpm add -D @smthrs/testing@1.0.0-rc.0 @effect/platform-node@4.0.0-rc.112 vitest@4.1.9
+pnpm add -D @smthrs/testing@1.0.0-rc.0 @effect/platform-node@4.0.0-rc.115 vitest@5.0.0
 ```
 
 ```ts

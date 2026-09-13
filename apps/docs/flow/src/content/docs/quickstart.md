@@ -19,7 +19,7 @@ A runnable copy of this program is published in the Smithers examples,
 - A package with the dependencies installed:
 
 ```bash
-pnpm add @smthrs/flow@next @smthrs/engine@next effect@4.0.0-rc.112 @effect/platform-node@4.0.0-rc.112
+pnpm add @smthrs/plan@next @smthrs/flow@next @smthrs/engine@next effect@4.0.0-rc.115 @effect/platform-node@4.0.0-rc.115
 ```
 
 ## Declare the action and the flow
@@ -29,6 +29,7 @@ schemas and a stable name, no code.
 
 ```ts
 import { Action, Flow } from "@smthrs/flow"
+import { Node } from "@smthrs/plan"
 import * as Schema from "effect/Schema"
 
 export const Greet = Action.make("examples/Greet", {
@@ -39,7 +40,10 @@ export const Greet = Action.make("examples/Greet", {
 export const Greeting = Flow.make("examples/Greeting", {
   payload: { name: Schema.String },
   success: Schema.String,
-  body: (payload) => Greet.call(payload)
+  body: Node.capture(
+    { action: Greet.name, implementationVersion: "greeting/v1" },
+    (payload) => Greet.call(payload)
+  )
 })
 ```
 
@@ -49,32 +53,37 @@ now says in its own type that it names an implementation it does not carry.
 
 ## Attach the implementation and compose the layers
 
-`toLayer` is where the code lives. `Interpreter.layer` registers the flow and
-installs the handler that walks its body:
+`Node.capture` declares every semantic value outside the callback source. Here
+it names the action and versions the imported behavior. Change that version when
+that behavior changes. JavaScript cannot verify capture completeness.
+
+`toLayer` is where the code lives. `Interpreter.layerWithImplementations`
+registers the flow and its implementations with stable callback admission. It
+refuses uncaptured callbacks before dispatch. The lower-level `Graph.build` and
+`Interpreter.layer` default to `process-local`, which makes no cross-process
+callback identity guarantee.
+
+Compose the layers:
 
 ```ts
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
 import { FlowEngine } from "@smthrs/engine"
-import { Action, Interpreter } from "@smthrs/flow"
+import { Interpreter } from "@smthrs/flow"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
 
-const GreetingLayer = Layer.mergeAll(
-  Greet.toLayer(({ name }) => Effect.succeed(`Hello, ${name}.`)),
-  Interpreter.layer(Greeting)
+const GreetingLayer = Interpreter.layerWithImplementations(
+  Greeting,
+  Greet.toLayer(({ name }) => Effect.succeed(`Hello, ${name}.`))
 ).pipe(
-  Layer.provideMerge(Action.layerImplementations),
   Layer.provideMerge(FlowEngine.layerMemory),
   Layer.provideMerge(NodeCrypto.layer)
 )
 ```
 
-Three details in that pipe matter, and each one is a rule rather than a
-preference:
+`layerWithImplementations` supplies the action registry while building the
+implementation layers. The remaining providers supply the runtime and digest:
 
-- `Action.layerImplementations` goes **under** the implementation layers, with
-  `Layer.provideMerge`. Filing an implementation in the table is a build-time
-  effect, so the table has to exist while the layers above it are built.
 - `FlowEngine.layerMemory` supplies the `FlowRuntime` port. Swap it for the
   durable engine from [`@smthrs/engine-store`](https://engine-store.smithers.sh/reference/api/) and nothing
   above changes.
@@ -137,9 +146,10 @@ joined.
 `Greeting.execute` asked the runtime for an execution under
 `greeting-ada-1`. The interpreter built the graph of the body, walked it, and
 dispatched `examples/Greet` through the engine, which recorded the attempt and
-its result. Because the body is pure and the graph is built before anything runs,
-the same payload always produces the same nodes with the same keys, on this
-process and on the next one.
+its result. With a pure body, complete captures, and stable callback admission,
+unchanged source, captures, declarations, and payload reproduce the same plan
+keys across processes. Changed source, captures, or implementation versions
+require a newly planned run.
 
 ## Next steps
 

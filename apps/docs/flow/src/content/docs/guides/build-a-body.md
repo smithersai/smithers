@@ -125,10 +125,10 @@ export const Gate = Flow.make("release/Gate", {
 })
 ```
 
-Without an `error` schema the whole typed error channel is handled and the
-resulting node cannot fail typed at all. The failure arm is built once at plan
-time against a planned error placeholder, so `failure.reason` is a reference,
-like every other planned field.
+Without an `error` schema the whole domain error channel is handled and the
+resulting node has no declared error type. Interpreter refusals still propagate.
+The failure arm is built once at plan time against a planned error placeholder,
+so `failure.reason` is a reference, like every other planned field.
 
 ## Compute, and order
 

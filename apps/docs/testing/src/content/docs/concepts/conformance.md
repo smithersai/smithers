@@ -51,11 +51,12 @@ accident:
 
 ```ts
 import type { HostSuite } from "@smthrs/testing"
+import * as ChildProcess from "effect/unstable/process/ChildProcess"
 
 const profile: HostSuite.HostProfile = {
   fileSystem: { supported: true },
   path: { supported: true },
-  shell: { supported: true },
+  shell: { supported: true, interruptCommand: ChildProcess.make("host-suite-pending") },
   jj: { supported: false, code: "not_installed" },
   httpTransport: { supported: false, code: "TransportError" },
   clock: { supported: true },
@@ -69,7 +70,7 @@ code, and a wrong code is reported through the typed `expectedCode` and
 requires an explicit probe request when it is supported, so the shared suite
 never invents a live network call.
 
-Two details keep the suite honest about the things a layer type cannot express:
+Three details keep the suite honest about the things a layer type cannot express:
 
 - **Clock and randomness are `Context.Reference`s** with ambient defaults, so
   they cannot appear in a bundle's output type. The suite enforces them
@@ -77,11 +78,18 @@ Two details keep the suite honest about the things a layer type cannot express:
   that supplies neither fails loudly rather than silently using the Effect
   defaults.
 - **The suite owns the scratch file it writes** and removes only what it
-  created. It refuses a scratch path that already exists. With no path
-  declared it builds a unique absolute path under `/tmp` from the bundle's own
+  created. The write uses exclusive creation (`flag: "wx"`), which atomically
+  refuses an existing path, including a dangling symlink. A collision reports
+  `FileSystem/scratchPath` without removal. With no path declared it builds a
+  randomized absolute path under `/tmp` from the bundle's own
   `Path` and `Random`, because a relative name would resolve against the
   caller's working directory and a fixed one would make two suites in a single
   directory race on one file.
+- **Cleanup acquires a Host process handle.** A supported shell declares an
+  `interruptCommand` that stays running until cancelled. The suite checks
+  `isRunning` before interrupting its scoped consumer, then checks it is false
+  after interruption completes. A shell declared unsupported is checked for
+  its refusal code; that outcome does not certify resource cleanup.
 
 ## What conformance does not cover
 

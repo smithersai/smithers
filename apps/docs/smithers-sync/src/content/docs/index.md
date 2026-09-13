@@ -21,7 +21,7 @@ rather than `latest`. The examples here import `@smthrs/journal` and `effect`
 directly, so install all three:
 
 ```bash
-pnpm add @smthrs/sync@next @smthrs/journal@next effect@4.0.0-rc.112
+pnpm add @smthrs/sync@next @smthrs/journal@next effect@4.0.0-rc.115
 ```
 
 ## What it solves

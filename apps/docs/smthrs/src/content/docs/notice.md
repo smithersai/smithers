@@ -65,6 +65,13 @@ A dynamic `import()` rejects with the error rather than throwing at the call
 site, because the throw happens while the module evaluates. A `require` of the
 CommonJS entry throws where you called it. Both carry the same four lines.
 
+A static named or default import never reaches the throw. Node rejects
+`import { Workflow } from "smthrs"` while it links the module graph, before any
+module evaluates, with a `does not provide an export named` SyntaxError that
+carries no notice. Nothing in this package can run during linking, so that
+error is documented rather than avoided; see
+[Troubleshooting](/troubleshooting/).
+
 ## Only `smthrs@next` reaches the notice
 
 `smthrs@0.35.0` keeps the `latest` dist-tag until Smithers 1.0.0 is final, so

@@ -26,14 +26,18 @@ release candidate publishes under the `next` dist-tag rather than `latest`, so
 - One copy of `effect` in the resolved tree. A second copy makes a `Layer`
   built against one fail to satisfy a requirement declared against the other.
 
-`effect` is a required peer pinned to `4.0.0-rc.112`.
+`effect` is a required peer pinned to `4.0.0-rc.115`.
 `@effect/platform-node` is an optional peer at the same exact version, needed
 by `node/NodeGateway`. The root and protocol subpaths do not install the Node
 adapter. A Node gateway host selects it explicitly:
 
 ```bash
-pnpm add effect@4.0.0-rc.112 @effect/platform-node@4.0.0-rc.112
+pnpm add effect@4.0.0-rc.115 @effect/platform-node@4.0.0-rc.115
 ```
+
+For Bun, add the optional `@effect/platform-bun@4.0.0-rc.115` peer and import
+`@smthrs/gateway/bun/BunGateway`. The root and protocol subpaths need neither
+native adapter.
 
 Two packages install with it as ordinary dependencies:
 [`@smthrs/control`](/api/control) and [`@smthrs/sync`](/api/smithers-sync).

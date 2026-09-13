@@ -19,7 +19,7 @@ change at the end.
   dependencies installed:
 
 ```bash
-pnpm add @smthrs/observability@next effect@4.0.0-rc.112
+pnpm add @smthrs/observability@next effect@4.0.0-rc.115
 ```
 
 ## Start a collector stand-in

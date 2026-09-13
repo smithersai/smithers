@@ -45,20 +45,32 @@ outside `[0, 1]`.
 
 `ScoreGate.suite` runs each case through a caller-supplied runner, collects
 every sample, applies the declared gates over the samples that exist, and
-grades the whole run:
+grades the whole run. This runnable CI example uses an exact-match scorer;
+replace the runner with your case execution and scoring logic:
 
 ```ts
 import { ScoreGate } from "@smthrs/testing"
 import * as Effect from "effect/Effect"
 
-const report = ScoreGate.suite({
+const report = await Effect.runPromise(ScoreGate.suite({
   cases: [
-    { name: "summarize", input: { doc: "a.md" }, minScore: 0.7 },
-    { name: "extract", input: { doc: "b.md" } }
+    { name: "greeting", input: { actual: "hello", expected: "hello" }, minScore: 0.7 },
+    { name: "answer", input: { actual: "42", expected: "42" } }
   ],
   gates: { mean: 0.8, min: 0.5 },
-  run: (suiteCase) => scoreOneCase(suiteCase.input)
-})
+  run: (suiteCase) =>
+    Effect.succeed([{
+      case: suiteCase.name,
+      stepKey: `${suiteCase.name}-key`,
+      scorer: "exact-match",
+      kind: "score" as const,
+      value: suiteCase.input.actual === suiteCase.input.expected ? 1 : 0
+    }])
+}))
+
+const { exitCode, summary } = ScoreGate.ciGrade(report)
+console.log(summary)
+process.exitCode = exitCode
 ```
 
 Every sample the runner returns is rebound to the case that was actually run.
@@ -71,9 +83,9 @@ it no longer cancels the gates the finished cases can still be judged by.
 
 ## Grade it for CI
 
-```ts
-const { exitCode, summary } = ScoreGate.ciGrade(report)
-```
+`ScoreGate.suite` returns an Effect. Run it with `Effect.runPromise`, as above,
+or yield it inside `Effect.gen` before passing the completed report to
+`ScoreGate.ciGrade`.
 
 | Result                                              | Exit code |
 | --------------------------------------------------- | --------- |

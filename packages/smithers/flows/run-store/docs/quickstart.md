@@ -18,7 +18,7 @@ normal run, and read back the row a restart would have found.
 - The package installed:
 
 ```bash
-pnpm add @smthrs/run-store@next effect@4.0.0-rc.112 @effect/sql-sqlite-node@4.0.0-rc.112
+pnpm add @smthrs/run-store@next effect@4.0.0-rc.115 @effect/sql-sqlite-node@4.0.0-rc.115
 ```
 
 ## Name the owner

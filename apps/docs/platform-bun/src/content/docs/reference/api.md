@@ -16,10 +16,10 @@ const program = Effect.gen(function*() {
 }).pipe(Effect.provide(BunHost.layer))
 ```
 
-`@effect/platform-bun` is a required peer at exactly `4.0.0-rc.112` because
+`@effect/platform-bun` is a required peer at exactly `4.0.0-rc.115` because
 this barrel and `BunHost` import it at module load. It is installed alongside
 the package by package managers that resolve required peers. The Effect Node
-platform packages and `effect` are also exact peers at `4.0.0-rc.112`.
+platform packages and `effect` are also exact peers at `4.0.0-rc.115`.
 
 :::warning
 This entry point is Node-only in the browser-bundle sense: it falls back to the
@@ -29,10 +29,13 @@ a browser; a page composes
 [`@smthrs/platform-browser`](https://platform-browser.smithers.sh/reference/api/) instead.
 :::
 
-The complete host bundles require jj 0.39.0 or newer. Each bundle builds its jj
-layer with one version probe; construction can fail with `JjError`, including
-`not_installed` or `unsupported_version`. The contained bundles route that probe
-through their process spawner and retire its ledger entry when it exits.
+The complete host bundles require jj 0.39.0 or newer. Each bundle checks its jj
+executable before exposing repository operations. Construction can fail with
+`JjError`, including `not_installed` or `unsupported_version`. The contained
+bundles route that probe
+through their process spawner and retire its ledger entry when it exits. Probe
+results are cached per resolved absolute executable path and runner; contained
+spawners share a result only within the same spawner instance.
 
 ## Entry points
 
@@ -51,8 +54,8 @@ Supported runtimes are Bun >=1.4.0 and Node.js >=22.19.0.
 
 ## BunHost
 
-The complete closed Host bundle. Four layers, one error, three types, one
-identity record, and four re-exports.
+The complete closed Host bundle: layers, construction errors, models,
+implementation identities, and platform module re-exports.
 
 ### Layers
 
@@ -175,15 +178,18 @@ changing one invalidates no cached step.
 
 ### Re-exports
 
-`BunHost` re-exports four modules so a program that should reach only part of
+`BunHost` re-exports these modules so a program that should reach only part of
 the host has one place to take it from:
 
-| Export                   | What it is                                                                      |
-| ------------------------ | ------------------------------------------------------------------------------- |
-| `AtomicFileSystem`       | `@smthrs/platform-node/AtomicFileSystem`, the filesystem implementation itself. |
-| `BunChildProcessSpawner` | `@effect/platform-bun/BunChildProcessSpawner`.                                  |
-| `BunFileSystem`          | This package's `BunFileSystem` module.                                          |
-| `BunHttpClient`          | `@effect/platform-bun/BunHttpClient`.                                           |
+| Export                   | What it is                                                                                                                                                                |
+| ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `AtomicFileSystem`       | `@smthrs/platform-node/AtomicFileSystem`, the filesystem implementation itself.                                                                                           |
+| `BunChildProcessSpawner` | `@effect/platform-bun/BunChildProcessSpawner`.                                                                                                                            |
+| `BunCrypto`              | `@effect/platform-bun/BunCrypto`, the [Effect Crypto service](https://github.com/Effect-TS/effect/blob/main/packages/platform/bun/src/BunCrypto.ts) layer.                |
+| `BunFileSystem`          | This package's `BunFileSystem` module.                                                                                                                                    |
+| `BunHttpClient`          | `@effect/platform-bun/BunHttpClient`.                                                                                                                                     |
+| `HostLiveness`           | `@smthrs/platform-node/HostLiveness`, the [host liveness probe](https://platform-node.smithers.sh/reference/api/#liveness-and-reaping).                                                                 |
+| `ProcessReaper`          | `@smthrs/platform-node/ProcessReaper`, the [contained spawner](https://platform-node.smithers.sh/reference/api/#processreaperlayerspawner) and [orphan sweep](https://platform-node.smithers.sh/reference/api/#liveness-and-reaping). |
 
 `AtomicFileSystem` is in the set for the same reason `NodeHost` re-exports it:
 it owns the only configuration escape hatch the filesystem slot has, and a Bun

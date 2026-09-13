@@ -51,7 +51,9 @@ alongside the verdict, never instead of it. Three consequences follow:
 
 `ScoreGate.combine` reduces several gate verdicts plus the faults observed
 outside them into one verdict, with findings taking precedence over
-undecidability.
+undecidability. Without gates, inconclusive observations still reach `combine`
+and grade the suite `Inconclusive`, even when other samples contain scores.
+They remain unresolved faults and CI exits 5.
 
 ## The gate is over a fixed sample array
 
@@ -88,6 +90,7 @@ not an argument spread.
 | `Passed` with unresolved faults | 5         | The gates were met over fewer observations than the suite declared. |
 
 `ScoreGate.ciGrade` is the same mapping over a whole `SuiteReport`, with a
-summary line that counts the cases and samples behind a clean pass.
+summary line that counts the cases and `kind: "score"` samples behind a clean
+pass. Inconclusive observations do not count as scored evidence.
 
 [Gate a scored suite](/guides/gate-a-scored-suite/) runs one end to end.

@@ -23,11 +23,18 @@ import * as Layer from "effect/Layer"
 const store = TestTriggers.layer
 ```
 
-It is not a kinder set of rules. It returns the same refusal codes in the same
-order as the SQL store, holds the same 5-minute reservation lease from
-`TriggerStore.reservationLeaseMs`, and follows the same watermark rules, so a
-test that passes against this one is testing the protocol rather than the
-implementation.
+It is not a kinder set of rules. Both stores apply one shared claim decision, so
+they return the same refusal codes in the same order, hold the same 5-minute
+reservation lease from `TriggerStore.reservationLeaseMs`, reclaim an expired
+reservation the same way, and follow the same watermark rules. Registration
+validates the declaration and serializes its input at the call boundary in both,
+`list` and `listEnabled` order by id in both, and every reading is an
+independent value that cannot be mutated back into stored state.
+
+Two things it cannot stand in for. It holds one process's state behind a `Ref`,
+so it never reports a `store` failure from a write and never shows contention
+between connections. It applies no migrations and keeps no rows, so a test about
+a schema or a column shape has nothing to read.
 
 Use `SqlTriggerStore.layer` over an in-memory SQLite database when the thing
 under test is a SQL behavior, such as migration application or a row shape.
@@ -122,13 +129,14 @@ that went all the way.
 
 `TriggerStore.layerNoop` fails every method with `store` and a message naming
 the method. Use it when a composition needs the service in its type but must
-never touch it, and override the one method a test expects to be reached:
+never touch it, and override the one method a test expects to be reached. A
+scheduler tick polls `list`, so that is the override a tick needs:
 
 ```ts
 import * as TriggerStore from "@smthrs/triggers/TriggerStore"
 import * as Effect from "effect/Effect"
 
-const absent = TriggerStore.layerNoop({ listEnabled: () => Effect.succeed([]) })
+const absent = TriggerStore.layerNoop({ list: () => Effect.succeed([]) })
 ```
 
 `Scheduler.layerNoop` is the matching inert scheduler, and

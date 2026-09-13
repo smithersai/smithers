@@ -16,6 +16,7 @@ flow is a workflow, and a run is a persisted flow execution.
 | `build/test/lint/docs/review/ci/run <pattern>` | Execute selected target kinds; `ci` combines build, test, lint, and docs. |
 | `target <label>` or `//package:target` | Execute one exact target using its declared kind. |
 | `targets [pattern]` | Discover available targets and summaries. |
+| `index [pattern]` | List selected declarations with their rule, inputs, outputs, dependencies, and source file. |
 | `show target <label>`, `show workspace`, `info` | Inspect target inputs, outputs, dependencies, and workspace configuration. |
 | `query <expression>`, `graph [pattern]`, `owners <paths...>` | Query the graph, render dependencies, and resolve ownership. |
 | `affected <verb> [pattern]` | Select changed work and dependents; `--list` previews the selection. |

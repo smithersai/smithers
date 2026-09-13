@@ -62,7 +62,10 @@ so declaring one is an explicit decision to make its value readable by the
 command. Undeclared provider keys and tokens are withheld.
 
 Containerised commands receive the `env` entries through the container
-transport; their remaining environment belongs to the container image.
+transport; their remaining environment belongs to the container image. The
+Docker and Podman transport passes `-e KEY` and supplies each value through the
+host child environment. Timeout errors show the logical command without
+container transport arguments.
 
 ## Route it into a container
 

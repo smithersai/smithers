@@ -39,8 +39,8 @@ byte-identical rows, which is what makes a golden assertion possible.
 ## Substitute a store that records what it was handed
 
 When the subject is the code that builds jobs rather than the store,
-`ScoreStore.make` takes a service value directly, so a test can capture every
-write:
+`ScoreStore.ScoreStore.of` takes a service value directly, so a test can
+capture every write:
 
 ```ts
 import { ScoreStore } from "@smthrs/scorers"
@@ -48,7 +48,7 @@ import { Effect } from "effect"
 
 const seen: Array<{ readonly identity: string; readonly observation: ScoreStore.Observation }> = []
 
-const recording = ScoreStore.make({
+const recording = ScoreStore.ScoreStore.of({
   record: () => Effect.void,
   recordOnce: (identity, observation) =>
     Effect.sync(() => {

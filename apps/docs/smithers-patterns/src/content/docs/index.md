@@ -70,17 +70,18 @@ const result = await Effect.runPromise(
   })
 )
 
-if (typeof result === "string") {
-  console.log(result)
+if (result._tag === "Approved") {
+  console.log(result.output)
 } else {
   console.log(`Three rounds and still not approved: ${result.review.note}`)
 }
 ```
 
 The bound is the point. A review loop that never gives up is a run that never
-ends, so `run` returns the approved value or an explicit
-`{ output, review, approved: false, exhausted: true }`, and the caller decides
-what an unapproved draft is worth. `ReviewLoop.accepted` reads the same four
+ends, so `run` returns an explicit `{ _tag: "Approved", output }` or
+`{ _tag: "Exhausted", output, review }`, and the caller decides what an
+unapproved draft is worth. The draft is nested under `output` on both arms, so
+a produced value can never be mistaken for the outcome that carries it. `ReviewLoop.accepted` reads the same four
 acceptance shapes every pattern in the package accepts: `true`, `"approved"`,
 `{ approved: true }`, and `{ accepted: true }`.
 

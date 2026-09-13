@@ -32,10 +32,10 @@ or one you add, and depends on it with a workspace specifier:
 
 `@effect/platform-node` and `effect` are peer
 dependencies, so your project pins their versions rather than inheriting a
-second copy. `@smthrs/platform-node` declares `4.0.0-rc.112` for both:
+second copy. `@smthrs/platform-node` declares `4.0.0-rc.115` for both:
 
 ```bash
-pnpm add @effect/platform-node@4.0.0-rc.112 effect@4.0.0-rc.112
+pnpm add @effect/platform-node@4.0.0-rc.115 effect@4.0.0-rc.115
 ```
 
 The Effect Node adapter owns its `@effect/platform-node-shared` implementation

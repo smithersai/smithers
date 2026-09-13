@@ -36,7 +36,7 @@ them usable in a browser and in a test with no temporary directory.
 The Node implementations live in `@effect/platform-node`:
 
 ```bash
-pnpm add @effect/platform-node@4.0.0-rc.112
+pnpm add @effect/platform-node@4.0.0-rc.115
 ```
 
 ```ts

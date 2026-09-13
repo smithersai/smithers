@@ -31,7 +31,7 @@ module. Node host and SQLite adapters are optional and are selected below.
 - Node.js 22.19.0 or later with local SQLite, which is what `package.json`
   declares in `engines`. That is what durable execution needs, and it is also
   what runs a `.ts` file directly, with no build step.
-- [`effect`](https://effect.website) 4.0.0-rc.112, as an exact peer dependency.
+- [`effect`](https://effect.website) 4.0.0-rc.115, as an exact peer dependency.
   This is an Effect library throughout: a flow's payload and result are Effect
   schemas, an action's implementation is an `Effect`, and a host is a `Layer`.
   Pin the same version in the consuming project, so the service tags and
@@ -48,7 +48,7 @@ packages are namespaces:
 import { Action, Engine, Flow, Interpreter, Journal, Kernel } from "@smthrs/flows"
 ```
 
-The two modules this package owns are subpaths, and they are Node-only:
+Native compositions are explicit subpaths. The runtime core consumes injected services:
 
 ```ts
 import * as NodeRuntime from "@smthrs/flows/NodeRuntime"
@@ -79,7 +79,7 @@ There is one platform package per runtime:
 For `@smthrs/flows/NodeRuntime`, select the Node host and SQLite driver:
 
 ```bash
-pnpm add @smthrs/platform-node@1.0.0-rc.0 @effect/platform-node@4.0.0-rc.112 @effect/sql-sqlite-node@4.0.0-rc.112
+pnpm add @smthrs/platform-node@1.0.0-rc.0 @effect/platform-node@4.0.0-rc.115 @effect/sql-sqlite-node@4.0.0-rc.115
 ```
 
 Compose a host yourself and you declare the platform package you compose
@@ -105,7 +105,7 @@ declare flows, read a plan, and decode a journal event in a browser.
 
 Durable execution is a different claim: it needs Node.js 22.19.0 or later and
 local SQLite. A browser or edge runtime is not a supported durable host even
-when you supply another SQL client. Both Node-only modules are subpaths
+when you supply another SQL client. Native modules are subpaths
 precisely so importing the root never opens `node:sqlite`.
 
 ## When to depend on individual packages instead
@@ -122,3 +122,10 @@ one dependency saves you nineteen.
 
 Stand a durable runtime up and run a flow on it in the
 [Quickstart](/quickstart/).
+
+## Bun durable execution
+
+Install `@smthrs/platform-bun@1.0.0-rc.0`, `@effect/platform-bun@4.0.0-rc.115`
+and `@effect/sql-sqlite-bun@4.0.0-rc.115`, then import
+`@smthrs/flows/BunRuntime`. Its `layerHost`, `layer`, `make` and `storage`
+compositions share the engine with Node. See [runtime portability](/concepts/runtime-portability/).

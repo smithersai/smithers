@@ -8,7 +8,7 @@ sidebar:
 ## Install the package and its peers
 
 ```bash
-pnpm add @smthrs/platform-bun@1.0.0-rc.0 @smthrs/platform-node@1.0.0-rc.0 @effect/platform-node@4.0.0-rc.112 @effect/platform-node-shared@4.0.0-rc.112 @effect/platform-bun@4.0.0-rc.112 effect@4.0.0-rc.112
+pnpm add @smthrs/platform-bun@1.0.0-rc.0 @smthrs/platform-node@1.0.0-rc.0 @effect/platform-node@4.0.0-rc.115 @effect/platform-node-shared@4.0.0-rc.115 @effect/platform-bun@4.0.0-rc.115 effect@4.0.0-rc.115
 ```
 
 Version 1.0.0-rc.0 is not on npm yet. Until it is published, take the package
@@ -19,10 +19,10 @@ The manifest declares five required peers, none optional:
 
 | Peer                           | Version        | Why                                                        |
 | ------------------------------ | -------------- | ---------------------------------------------------------- |
-| `effect`                       | `4.0.0-rc.112` | The runtime every service tag belongs to.                  |
-| `@effect/platform-bun`         | `4.0.0-rc.112` | Imported at module load by the root entry and `BunHost`.   |
-| `@effect/platform-node`        | `4.0.0-rc.112` | The Node adapters the bundle falls back to off Bun.        |
-| `@effect/platform-node-shared` | `4.0.0-rc.112` | The shared adapter implementation both Effect bundles use. |
+| `effect`                       | `4.0.0-rc.115` | The runtime every service tag belongs to.                  |
+| `@effect/platform-bun`         | `4.0.0-rc.115` | Imported at module load by the root entry and `BunHost`.   |
+| `@effect/platform-node`        | `4.0.0-rc.115` | The Node adapters the bundle falls back to off Bun.        |
+| `@effect/platform-node-shared` | `4.0.0-rc.115` | The shared adapter implementation both Effect bundles use. |
 | `@smthrs/platform-node`        | `1.0.0-rc.0`   | The atomic filesystem slot and the containment machinery.  |
 
 Package managers that resolve required peers install all five automatically;

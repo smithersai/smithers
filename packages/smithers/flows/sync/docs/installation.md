@@ -11,7 +11,7 @@ sidebar:
 publish under the `next` tag rather than `latest`, so install it by tag:
 
 ```bash
-pnpm add @smthrs/sync@next effect@4.0.0-rc.112
+pnpm add @smthrs/sync@next effect@4.0.0-rc.115
 ```
 
 ## Requirements
@@ -52,7 +52,7 @@ Node-only import. `@smthrs/sync/test/TestSocket` is an in-memory socket pair
 and runs anywhere. Install the optional SQLite driver when using `TestSync`:
 
 ```bash
-pnpm add @effect/sql-sqlite-node@4.0.0-rc.112
+pnpm add @effect/sql-sqlite-node@4.0.0-rc.115
 ```
 
 `@smthrs/sync/internal/*` is not exported. A path under it fails to resolve.
@@ -64,7 +64,7 @@ A follower needs a transport. `SyncClient.layer` derives its RPC client from
 serialization:
 
 ```bash
-pnpm add @effect/platform-node@4.0.0-rc.112
+pnpm add @effect/platform-node@4.0.0-rc.115
 ```
 
 A browser follower needs no extra package: the WebSocket protocol and the JSON

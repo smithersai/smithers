@@ -8,7 +8,7 @@ export default defineDocsSite({
   starlight,
   slug: "std",
   title: "@smthrs/std",
-  description: "The flows standard tool library: filesystem, search, and shell flows",
+  description: "The flows standard tool library: filesystem, search, HTTP, web-search, shell, and language-server flows",
   sourceDir: "packages/smithers/agent/std",
   contentDir: fileURLToPath(new URL("./src/content/docs", import.meta.url))
 })

@@ -8,8 +8,8 @@ creates no tables and imports neither `node:sqlite` nor `bun:sqlite`.
 The internal composition is:
 
 ```ts
-const routing = yield* WorkspaceRouting.make({ root, engine: engineSql, control: controlSql })
-const allowed = yield* routing.canExecute(executionRoot, runId)
+const routing = yield * WorkspaceRouting.make({ root, engine: engineSql, control: controlSql })
+const allowed = yield * routing.canExecute(executionRoot, runId)
 ```
 
 `workspaceFor(runId)` resolves the nearest explicit history-workspace route.

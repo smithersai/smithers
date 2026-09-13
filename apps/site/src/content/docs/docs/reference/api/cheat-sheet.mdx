@@ -346,6 +346,10 @@ const nightly = S.Cron({
 
 ## TypeScript, testing, linting, and documentation
 
+`VitestCoverage` returns the shared `{ outputs }` manifest for its captured report
+directory. `CoverageReport` aliases the `ToolBuild.Outputs` schema. Coverage and
+watch runs default to a 1,200,000 ms timeout; set `timeoutMs` to override it.
+
 ```ts
 import { Smithers as S } from "@smthrs/targets"
 
@@ -443,6 +447,7 @@ const coverage = S.VitestCoverage({
   config: S.file("vitest.config.ts"),
   provider: "v8",
   reportsDirectory: "coverage",
+  timeoutMs: 1_200_000,
   thresholds: {
     branches: 90,
     functions: 90,
@@ -455,7 +460,8 @@ const watch = S.VitestWatch({
   sources: [sources],
   deps: [lib],
   config: S.file("vitest.config.ts"),
-  environment: "node"
+  environment: "node",
+  timeoutMs: 1_200_000
 })
 
 const biome = S.BiomeCheck({
@@ -556,6 +562,17 @@ const sizeBudgets = S.Size.Budgets({
   data: [lib]
 })
 ```
+
+`TsBuild.distributionLayout` owns the output directories and publish entry paths.
+The `tsc` and `program` tools use format subdirectories under `outDir`.
+Dual builds use declarations beside ESM; CJS-only builds use declarations beside CJS.
+`PackageJson.publishFields` derives entry points from this layout during declaration expansion.
+The tsup tool declares one flat output tree and does not request declarations, so it cannot serve as a `PackageJson` publish entry.
+
+`PackageJson` expands generated-prose source globs within the declaring package, excluding nested packages.
+The generation digest includes the source path listing, so adding or removing a source changes it; editing source bytes does not.
+`PackageJsonCheck` always checks, even when declared with `mode: "write"` or `mode: "refresh"`.
+It never writes the manifest or calls a model. Use `PackageJsonWrite` for those modes.
 
 ## Shell, tools, Node, and bundling
 
@@ -973,6 +990,7 @@ const commit = S.Git.Commit({
   message: S.Agents.codex,
   changes: ["src/**", "test/**"]
 })
+// Unsupported in this RC: declaration only; execution refuses.
 const gitPr = S.Git.Pr({
   gates: [tests],
   secrets: [githubToken],
@@ -1039,18 +1057,21 @@ const compactCi = S.Github.Ci({
   },
   changes: [".github/workflows/**"]
 })
+// Unsupported in this RC: declaration only; execution refuses.
 const githubPr = S.Github.Pr({
   gates: [tests],
   secrets: [githubToken],
   sandbox: { network: true },
   approval: "required"
 })
+// Unsupported in this RC: declaration only; execution refuses.
 const pages = S.Github.Pages({
   site: build,
   secrets: [githubToken],
   sandbox: { network: true },
   approval: "required"
 })
+// Unsupported in this RC: declaration only; execution refuses.
 const release = S.Github.Release({
   manifest: S.file("package.json"),
   notes: S.Agents.codex,
@@ -1070,6 +1091,7 @@ const npmPack = S.Npm.Pack({
   manifest: S.file("package.json"),
   data: [build]
 })
+// Unsupported in this RC: declaration only; execution refuses.
 const npmPublish = S.Npm.Publish({
   pack: npmPack,
   gates: [tests],
@@ -1080,6 +1102,7 @@ const npmPublish = S.Npm.Publish({
   approval: "required"
 })
 const publishedPackage = S.Npm.Published({ manifest: S.file("package.json") })
+// Unsupported in this RC: declaration only; execution refuses.
 const downstream = S.Npm.Downstream({
   repository: "https://github.com/acme/widget-consumer.git",
   overrides: { "@acme/widget": npmPack },
@@ -1102,6 +1125,7 @@ const jsrPublish = S.JsrPublish({
   sources: [sources],
   deps: [build, directNpmPublish],
   package: "@acme/widget",
+  cliVersion: "0.13.4",
   allowDirty: false,
   dryRun: true
 })
@@ -1122,6 +1146,7 @@ const changesetsVersion = S.Changesets.Version({
     "pnpm-lock.yaml"
   ]
 })
+// Unsupported in this RC: declaration only; execution refuses.
 const changesetsPublish = S.Changesets.Publish({
   config: S.file(".changeset/config.json"),
   pack: npmPack,
@@ -1135,6 +1160,8 @@ const changesetsPublish = S.Changesets.Publish({
 ## CI toolchains and workflow generation
 
 `CiToolchain.Node` accepts an optional `npmRelease` pin. The generated job installs that npm version after setting up Node; omitting it keeps Node's bundled npm. The release tarball rehearsal requires npm 11.16.0, so its toolchain declares that pin explicitly.
+
+`cachePackageStore` defaults to `true`. Node setup restores the pnpm store when the workspace declares pnpm. For Bun workspaces, Node setup omits the package-store cache because `actions/setup-node` does not cache Bun. Set `cachePackageStore: false` to disable package-store caching.
 
 ```ts
 import { Smithers as S } from "@smthrs/targets"

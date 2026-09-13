@@ -69,8 +69,8 @@ if it ended in `:**`.
   next author routes around. For the author seat itself, the error
   propagates typed: routing around a denied model seat by authoring again
   would burn tokens on a chain that cannot author.
-- `ask`: the seam fails with `approval_required` and the run parks in place
-  WITHOUT a `LinkEnded`. Resuming re-executes the link from its settled
+- `ask`: the seam fails with `approval_required` and the run returns
+  `ApprovalWait` without a `LinkEnded`. Resuming re-executes the link from its settled
   prefix and re-asks the seam under whatever grant now exists.
 - Seam unreachable: `authorize_unavailable` always propagates to the
   caller, for catalog calls and the model seat alike.

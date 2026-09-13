@@ -17,7 +17,7 @@ they allocate for you.
 | `Otlp.layer`            | Effect's three OTLP exporters. You provide the `HttpClient`                | You need a specific HTTP client, such as Undici on Node.                          |
 | `NodeOtel.layerOtel`    | The Node OpenTelemetry SDK: three OTLP/HTTP exporters and their processors | Node code that must run through the OpenTelemetry SDK.                            |
 | `BrowserOtel.layerOtel` | The web OpenTelemetry SDK around processors and readers you construct      | Browser code that must run through the OpenTelemetry SDK.                         |
-| `Otel.layerOtel`        | Nothing. It bridges providers and readers you already hold                 | The application, or a vendor package, already built an SDK.                       |
+| `Otel.layerOtel`        | Effect bridges; optional caller factories build providers                  | The application controls SDK provider construction.                               |
 
 Each has an explicit do-nothing counterpart: `Otlp.layerNoop` and
 `Otel.layerNoop` both provide nothing and export nothing, so wiring code
@@ -54,10 +54,18 @@ carries no host module.
 
 ## `Resource` sits under all of them
 
-Every builder decodes the same `Resource.Configuration` and attaches the same
-attributes, so `service.name`, `service.version`, and your extra attributes mean
-the same thing whichever wiring you chose. `Resource.layer` provides that
-resource on its own, for a composition that assembles the rest itself.
+Every builder decodes the same `Resource.Configuration`. `Otlp`, `NodeOtel`,
+and `BrowserOtel` attach its attributes to all enabled signals. `Otel.layerOtel`
+passes that validated resource to provider factories and the metric producer;
+factories must use it when constructing tracer and logger providers.
+
+Already-created providers retain their own resources. For those providers,
+`Otel.layerOtel`'s resource option sets only the metric resource and tracer
+instrumentation scope. Construct them with the intended resource before
+injection to give all three signals the same service identity.
+
+`Resource.layer` provides the resource on its own, for a composition that
+assembles the rest itself.
 
 `Otlp` is the one builder with defaults: `Otlp.defaultServiceName` is `flows`
 and `Otlp.defaultServiceVersion` is this package's release version. Name your

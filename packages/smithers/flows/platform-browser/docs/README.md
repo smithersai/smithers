@@ -35,7 +35,7 @@ that resolves it.
 ## Install
 
 ```bash
-pnpm add @smthrs/platform-browser@next effect@4.0.0-rc.112 @zenfs/core @zenfs/dom just-bash
+pnpm add @smthrs/platform-browser@next effect@4.0.0-rc.115 @zenfs/core @zenfs/dom just-bash
 ```
 
 The 1.0 release candidates publish under the `next` dist tag, and the first one

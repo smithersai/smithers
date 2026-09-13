@@ -36,7 +36,7 @@ answer must not depend on how the value was built.
 ## Install
 
 ```bash
-pnpm add @smthrs/canonical@next effect@4.0.0-rc.112
+pnpm add @smthrs/canonical@next effect@4.0.0-rc.115
 ```
 
 `effect` is a peer dependency at exactly that version, and the package

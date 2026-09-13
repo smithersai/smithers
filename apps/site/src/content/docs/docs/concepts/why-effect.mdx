@@ -52,7 +52,7 @@ Because behavior is context, a test provides a different context: the same flow 
 
 ## The pinned version and what it buys
 
-Effect is pinned to exactly `4.0.0-rc.112`, and a project must resolve one Effect instance. Separate Effect instances are unsupported because their schema internals are not interoperable. The pin keeps packages on a compatible runtime; applications must still preserve their own payload and codec contracts when changing code.
+Effect is pinned to exactly `4.0.0-rc.115`, and a project must resolve one Effect instance. Separate Effect instances are unsupported because their schema internals are not interoperable. The pin keeps packages on a compatible runtime; applications must still preserve their own payload and codec contracts when changing code.
 
 On top of the pin, the engine uses three Effect guarantees everywhere. Typed errors: a step's failure channel is declared and checked, so quarantine and retry decisions branch on structure. Testable layers: any credentialed or environmental piece is swapped at composition time. Structured concurrency: a run is a scope, cancellation interrupts work when its driver observes the request, and only an interrupt explicitly marked as infrastructure consumes an infrastructure retry policy.
 

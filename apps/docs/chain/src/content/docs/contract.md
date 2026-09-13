@@ -42,7 +42,23 @@ A **resume** replays the settled prefix of the current link by ordinal, with
 zero effects, and then runs live. A settled result is served only under the
 same entry declaration it was produced under; a redeclared entry re-keys its
 calls and the resumed chain refuses loudly with `replay_divergence` rather
-than serving a stale result.
+than serving a stale result. Payload divergence includes bounded excerpts
+around the first differing canonical JSON code unit. Harness author
+payload errors also name `Options.context`, which must remain stable when
+resuming a settled author call; it is not pinned separately in `ChainStarted`.
+
+## Catalog descriptions
+
+`Prompt.assemble` places a fixed instruction before the catalog declaring
+entry descriptions untrusted repository data. Each description is a
+JSON-quoted string labelled `untrusted repository description`. Embedded
+instructions cannot override the user's goal or authorize actions. The
+harness-owned `author` description remains trusted.
+
+Descriptions are collapsed to one line, stripped of backticks, and bounded
+to 200 characters before JSON encoding. Quotes, backslashes, and control
+characters are escaped after truncation, preserving the data delimiter.
+Runtime catalog and capability checks still govern every call.
 
 ## The gates
 
@@ -54,14 +70,16 @@ than serving a stale result.
 | 4. Authorization | `Authorize.authorize` | A call whose declared capabilities the host's policy denies, or parks pending approval. |
 
 A rejected call becomes a journaled `GateRejected` observation the next
-author reads, not a crash. Three exceptions are deliberate. A denied model
+author reads, not a crash. Four exceptions are deliberate. A denied model
 seat propagates typed, because routing around a denial by authoring again
 would burn tokens on a chain that cannot author. A required approval parks
 the run in place WITHOUT a `LinkEnded`, so resuming re-executes the link from
 its settled prefix and re-asks the seam under whatever grant now exists. And
 a call rejected by gate 2's per-link budget parks the chain with a `quota`
 reason instead of authoring again: the observation is journaled, but the link
-is out of fuel, so there is no next author to read it.
+is out of fuel, so there is no next author to read it. A harness-built author
+payload refused by the JSON boundary also journals `fuel` and parks with
+`quota`: another author attempt cannot shrink caller-supplied context.
 
 ## Failures
 
@@ -79,7 +97,7 @@ optional `cause` for the subsystem's own stable code.
 | `Authorize.AuthorizeError`   | `denied`, `approval_required`, `authorize_unavailable`        | Gate 4's verdict. `denied` and `approval_required` are absorbed for catalog calls; `authorize_unavailable` always propagates.                                                                          |
 | `Steering.SteeringError`     | `steering_unavailable`                                        | The steering channel is mounted but broken.                                                                                                                                                            |
 | `ScriptRunner.ScriptFailure` | `compile`, `runtime`, `invalid_outcome`, `runner_unavailable` | Absorbed into a `script_failed` observation. It never reaches `Chain.run`'s error channel, but `QuickJsRunner.layer()` carries it: loading the WebAssembly module can fail while the layers are built. |
-| `Catalog.CallError`          | host-supplied `cause`                                         | Absorbed into a `call_failed` observation, unless `cause` is `approval_required`, which parks.                                                                                                         |
+| `Catalog.CallError`          | host-supplied `cause`                                         | Absorbed into a `call_failed` observation, unless `cause` is `approval_required`, which returns `ApprovalWait`. An internal child-run failure wrapper re-raises the original typed error.              |
 
 `Chain.run`'s error channel therefore carries a `ChainError`, a
 `JournalError`, an `AuthorError`, a `SteeringError`, or an `AuthorizeError`,
@@ -93,17 +111,41 @@ Building the layers is separate: `QuickJsRunner.layer()` carries a
 (a browser CSP blocking it, say) fails with `runner_unavailable` while the
 runtime is constructed, before any run starts.
 
+## Execution
+
+Chain provides exactly-once replay of journaled settled calls and
+at-least-once handler execution. A matching settled call replays its recorded
+result without running its handler. If a handler succeeds but a crash or
+append failure prevents `CallSettled` from being recorded, resume can execute
+the handler again. Handlers must be idempotent or, for non-repeatable effects,
+use an external durable idempotency key derived from the stable call identity
+(`chain`, `link`, `ordinal` in `Catalog.CallSlot`).
+
+The journal binding must durably persist settlement before acknowledging
+`Journal.append` for replay to survive process loss. Handler execution and
+the settlement append are separate operations.
+
 ## Concurrency
 
 `Journal.append` takes an `expectedPosition` so an append is a
-compare-and-swap. `Chain.run` cannot track the journal's length, because a
-sub-chain legitimately appends to the same journal under its own id while
-the parent frame is suspended inside the spawning handler. What a run tracks
-instead is the number of events in ITS OWN chain scope: a second writer on
-that scope fails the run with `journal_conflict`, and a child writing its
-own scope does not. Effect execution remains at-least-once: a losing writer
-may dispatch one handler before it discovers the conflict, but each `(link,
-ordinal)` slot settles exactly once and each link ends exactly once.
+compare-and-swap. `Chain.run` reads the journal once, at start, and then
+tracks the position it last observed; it never re-reads before an append.
+It cannot simply trust that position, because a sub-chain legitimately
+appends to the same journal under its own id while the parent frame is
+suspended inside the spawning handler. An append at a stale position
+conflicts, and one fresh read decides what moved. When only foreign scopes
+grew, the run retries at the position the journal now reports. When ITS OWN
+scope grew, a second writer holds the scope and the run fails with
+`journal_conflict`. A binding that refuses the very position its read
+reports is surfaced as its own conflict, never retried. Effect execution
+remains at-least-once: a losing writer may dispatch one handler before it
+discovers the conflict, but each `(link, ordinal)` slot settles exactly once
+and each link ends exactly once.
+
+The cost of a run is therefore one full read plus one append per event, plus
+one read per sub-chain return. Only this scope's events are held in memory;
+a journal shared with hundreds of thousands of foreign-scope events costs a
+run one filter at start, not one per append.
 
 ## Resource limits
 
@@ -117,8 +159,8 @@ Every default a caller silently inherits:
 | QuickJS realm memory                    | 64 MiB, floored at 256 KiB            | `QuickJsRunner.defaultLimits.memoryBytes`, `memoryFloor` |
 | QuickJS in-realm stack                  | 256 KiB, capped at 256 KiB            | `QuickJsRunner.defaultLimits.stackBytes`, `stackCeiling` |
 | QuickJS interrupt polls                 | 10000                                 | `QuickJsRunner.defaultLimits.steps`                      |
-| JSON boundary depth                     | 128                                   | `ScriptRunner.maxJsonDepth`                              |
-| JSON boundary size budget               | 8 MiB in nodes plus string code units | `ScriptRunner.maxJsonSize`                               |
+| JSON boundary depth                     | 128                                   | `JsonBoundary.maxJsonDepth`                              |
+| JSON boundary size budget               | 8 MiB in nodes plus string code units | `JsonBoundary.maxJsonSize`                               |
 | Catalog entry name in the prompt        | 64 characters                         | `Prompt.maxEntryName`                                    |
 | Catalog entry description in the prompt | 200 characters                        | `Prompt.maxEntryDescription`                             |
 
@@ -128,9 +170,20 @@ recursion exhausts the host WebAssembly stack rather than QuickJS's own:
 realm is left holding live GC objects, and disposing it aborts the module.
 At 256 KiB QuickJS raises its own catchable `stack overflow` instead.
 
+New observation messages are capped at 8192 UTF-16 code units, including a
+`[truncated]` marker when shortened. The harness recovery context retains
+observation lines in journal order up to 32768 code units in total, including
+a truncation marker. This projection also bounds observations from older
+journals without rewriting those events. Goal and `Options.context` are not
+silently truncated; an oversized harness payload parks with `quota`.
+
+Recorded rejections and settled calls replay before the live call budget is
+applied. For live calls, the fuel gate runs before inspecting the payload,
+so JSON refusal cannot bypass `maxCallsPerLink`.
+
 ## The JSON boundary
 
-`ScriptRunner.jsonBoundary` is the one gate every value crosses: call
+`JsonBoundary.jsonBoundary` is the one gate every value crosses: call
 payloads, handler results, and script outcomes. Only `null`, finite numbers,
 strings, booleans, and acyclic plain objects and arrays cross, and what
 crosses is a structural COPY.
@@ -189,10 +242,10 @@ redundant.
 
 The sealed realm deletes `Date` and `Math.random`. Time and randomness are
 ordinary journaled calls: `sys/now` and `sys/random`, the two entries in
-`Catalog.system`. `Catalog.withSystem`, `RegistryCatalog.make`, and
-`SubChains.make` all place the system entries LAST, and `Catalog.make`
-indexes last-wins, so nothing a host passes can shadow them with an
-unjournaled clock or generator. Replay determinism rests on that ordering.
+`Catalog.system`. Every catalog composition appends them through
+`Catalog.withSystem`, which places them LAST, and `Catalog.make` indexes
+last-wins, so nothing a host passes can shadow them with an unjournaled
+clock or generator. Replay determinism rests on that ordering.
 
 ## Isolation
 

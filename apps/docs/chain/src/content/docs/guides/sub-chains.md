@@ -58,8 +58,8 @@ const script = [
 The child id derives from the spawning call slot: `parent-chain/link.ordinal`
 (`1.0` for the root chain's link 1, ordinal 0). The child's events are scoped
 by that id, so parent and child share one journal without sharing one scope.
-Children run unattended: the chain core never drains steering under a child
-scope.
+Children run unattended: their explicit child role disables steering.
+Named roots still drain their mounted steering service.
 
 ## Budgets, depth, and the contract digest
 
@@ -77,24 +77,26 @@ individually by the same seam.
 
 ## What the child's terminal becomes
 
-- A child's `done` and its non-approval parks settle as data on the parent
-  call: the parent script reads the outcome and decides.
-- A child waiting on approval must not settle as data. It bubbles as a
+- A child's `done` and every terminal `park(...)`, including
+  `park("approval")`, settle as data on the parent call. The parent script
+  reads the outcome and decides.
+- An unsettled `ApprovalWait` from a child must not settle as data. It bubbles as a
   `CallError` whose `cause` is `approval_required`, parking the parent in
   place; a later grant resumes the child through the same slot.
 - A failing child RUN (journal integrity, seat outage, seam outage) is never
-  journaled as a rejection: it dies as a defect so the parent fails
-  un-settled, and fixing the cause and resuming re-enters the child at its
-  settled prefix. Only the child's terminal is data.
+  journaled as a rejection. Its original typed error reaches the parent
+  caller with its `_tag`, `code`, and `cause` intact. The spawning call stays
+  unsettled; fixing the cause and resuming re-enters the child at its settled
+  prefix. Only the child's terminal is data.
 
 ## Configuration rules
-
-Two configuration mistakes are defects, not typed errors:
 
 - Host entries may not shadow the reserved names (`agent`, `author`,
   `sys/now`, `sys/random`): the catalog dies at construction.
 - Root chain ids must not contain `/` or look like `<digits>.<digits>`: the
-  derived child id grammar owns those shapes.
+  derived child id grammar owns those shapes. `Chain.run` refuses them with
+  `ChainError` code `invalid_journal` before reading or writing the journal.
+  The empty root id and names such as `root-a` are valid.
 
 For the journal scopes children write under, see
 [The journal](/concepts/journal/). For the authorization rules, see

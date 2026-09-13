@@ -137,6 +137,13 @@ exported as `GrantStore.maximumRules`, alongside
 changes. Check against the exported constants rather than hardcoding the
 numbers.
 
+Decorator resources use UTF-16 code units: 4,096 is valid; 4,097 fails with
+`GrantStoreError` code `invalid_resolution` before the grant check or guarded
+host operation. Filesystem and process decorators project this error into
+`PlatformError`; HTTP projects it into `HttpClientError`. The structured error
+is retained as the cause. Jujutsu returns the typed `GrantStoreError` directly.
+Filesystem canonicalization can read metadata before rejecting a resource.
+
 ## Related
 
 - [How a grant decision is made](/concepts/grant-decisions/): the order

@@ -16,7 +16,7 @@ A declared `output` schema is rendered into the step's system teaching as JSON S
 Use the project from [Build your first agent flow](/docs/tutorials/first-agent-flow/), with its library install, and a supported Node.js version (`^22.19.0 || >=24.11.0`). Add the durable engine dependencies:
 
 ```bash
-pnpm add @smthrs/plan@next @smthrs/engine-store@next @smthrs/flows@next @smthrs/kernel@next @smthrs/run-store@next @effect/sql-sqlite-node@4.0.0-rc.112
+pnpm add @smthrs/plan@next @smthrs/engine-store@next @smthrs/flows@next @smthrs/kernel@next @smthrs/run-store@next @effect/sql-sqlite-node@4.0.0-rc.115
 ```
 
 ## 1. Declare the research step's output schema
@@ -120,6 +120,7 @@ export const seats = SeatResolver.layer({
     Effect.succeed(
       Seat.make({
         id,
+        modelId: Seat.modelIdOf(id),
         model: scripted,
         route: { prepare: () => Effect.succeed(prepared) },
         contextWindowTokens: 200_000

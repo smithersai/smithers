@@ -58,7 +58,12 @@ run in another process.
 
 ## Beat over the control plane
 
-`Monitor.run` requires `Control` and `Journal`, and nothing else:
+`Monitor.run` requires `Control` and `Journal`, and nothing else. Its first
+beat reads a finite snapshot. Later beats pass the last `event.cursor` as
+`afterCursor` and fold only new events into an open-attempt count and the last
+attempt outcome. Monitor beat and heal records advance the cursor but do not
+count as progress. Providers that omit cursor metadata use `afterSequence`
+after each completed snapshot. The loop retains no historical event array:
 
 ```ts
 const report = yield * Monitor.run({

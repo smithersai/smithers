@@ -33,12 +33,20 @@ lines. The result is:
 out of a numbered read carries the numbers with it, so every `edit` built from
 one misses. Line numbers are facts about the page, so they are page fields.
 
+Source lines split on `\n`. A trailing `\r` is part of the line, including in
+CRLF files. Pages omit the final `\n` and retain every `\r`. For example,
+`"one\r\ntwo\r\n"` reads as `"one\r\ntwo\r"`. Copy that text unchanged into
+`oldString` or `expect`. Replacement text is also literal: retain the `\r`
+bytes in `newString` to keep CRLF endings, including the last line of a range.
+A line-range edit leaves the final `\n` outside the replaced span.
+
 A page cut by the byte budget ends on a whole line rather than handing back a
 fragment that looks like an anchor and is not one. A line longer than 2,000
 characters is clipped, and the notice says so by name, because a clipped line
 cannot be an anchor either.
 
-Reading an empty file returns an empty page. Only an `offset` past the end is
+Reading an empty file returns an empty page with `startLine: 1`, `endLine: 0`,
+and `totalLines: 0`. Only an `offset` past the end is
 `offset_out_of_range`. A directory is `is_directory`; a file holding a NUL byte
 or invalid UTF-8 is `binary_file`.
 
@@ -141,6 +149,18 @@ const written = Write.run({ path: "/workspace/notes.md", content: "# Notes\n" })
 It preserves the file's mode, and it refuses to write over a directory with
 `command_failed`. Prefer `edit` for a targeted change: a whole-file write of a
 file you only partly know is how an unrelated region disappears.
+
+`write`, `edit`, and `apply_patch` updates stage replacement bytes in a unique
+sibling file, preserve existing permission bits and ownership, then rename it
+over the destination. A failure before rename leaves the original bytes intact.
+Existing symlinks continue to target the same file. Hard links to the old inode
+keep its old contents. The host must support exclusive creation and atomic
+rename; unsupported operations fail without falling back to truncation.
+
+Temporary files are removed on failure and Effect interruption. Process death
+can leave an unused temporary file. This is per-file atomicity, not a transaction
+across a whole patch or a promise of persistence after power loss. No `fsync` is
+performed. Timestamps and extended metadata such as ACLs are not copied.
 
 ## Apply a patch instead
 

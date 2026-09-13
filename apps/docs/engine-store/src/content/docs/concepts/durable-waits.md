@@ -74,9 +74,13 @@ the ordinary claim, steal, and activate path:
    on every tick.
 
 Registration does its own recovery: `pendingClocks(scope)` re-arms outstanding
-timers and `completedDeferreds(flowName)` replays completions. Both exclude rows
+timers and `completedDeferreds(flowName)` recovers unconsumed completions. Both exclude rows
 whose run has settled, so a restart arms timers for runs that can still make
-progress and for no others.
+progress and for no others. Before serving a persisted deferred result, the
+engine marks it consumed. Later registration sweeps leave that completion out,
+so a run parked on a subsequent approval, timer, or deferred stays parked. The
+original result remains available for replay. Migration 0008 starts existing
+completions as unconsumed, allowing recovery after an upgrade.
 
 One corrupt row costs its own row and nothing else. Every list read
 (`dueClocks`, `pendingClocks`, `completedDeferreds`, `waitingRuns`,

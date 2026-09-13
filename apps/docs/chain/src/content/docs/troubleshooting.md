@@ -10,6 +10,11 @@ Everything below names the stable `code` to branch on; hosts branch on codes,
 never on prose. A script that fails, a handler that fails, and a value that
 will not serialize are journaled observations instead, listed at the end.
 
+A failing child run propagates its original typed error through the parent
+run. For example, a child's `author_unavailable` with cause `rate_limited`
+is catchable and retryable by the host. The spawning call stays unsettled;
+fix the cause and resume to re-enter the child's settled prefix.
+
 ## ChainError
 
 | Code                | Cause                                                                                                                                                                                                       | Fix                                                                                                            |
@@ -17,7 +22,9 @@ will not serialize are journaled observations instead, listed at the end.
 | `replay_divergence` | The resumed run's goal or envelope differs from the journaled `ChainStarted`.                                                                                                                               | Run with the same goal and envelope, or start a new chain scope.                                               |
 | `replay_divergence` | A replayed call differs from the journaled one in link, script digest, entry name, or payload.                                                                                                              | Restore the script text and payloads the journal settled; editing one character of a script re-keys its calls. |
 | `replay_divergence` | An entry's current declaration digest differs from the journaled one (a renamed, re-described, or re-capabilitied entry; a redeclared registry flow; a memory-contract upgrade; changed sub-chain budgets). | Restore the declaration the calls settled under, or start a new scope.                                         |
+| `replay_divergence` | `Options.context` changed on resume, changing a settled harness author payload. The error includes bounded journaled and live excerpts.                                                                     | Restore the original context lines, or start a new chain scope.                                                |
 | `invalid_journal`   | A link settled an author call whose result is not a script.                                                                                                                                                 | The journal is not a valid chain history; inspect the settled payload.                                         |
+| `invalid_journal`   | The root chain id contains `/` or matches `<digits>.<digits>`.                                                                                                                                              | Use the empty root id or a name such as `root-a`; derived child scopes are reserved.                           |
 
 ## JournalError
 
@@ -35,11 +42,11 @@ will not serialize are journaled observations instead, listed at the end.
 
 ## AuthorizeError
 
-| Code                    | Cause                                                                                            | Fix                                                                                  |
-| ----------------------- | ------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------ |
-| `denied`                | Gate 4 denied the model seat itself (catalog-call denials are journaled observations instead).   | Cover `model:call:author` (`Chain.authorCapability`) in the ruleset.                 |
-| `approval_required`     | A claim matched no `allow` rule, so the seam asks. The run parks in place without a `LinkEnded`. | Grant the claim and run again; resume re-asks the seam under the new grant.          |
-| `authorize_unavailable` | The seam is mounted but unreachable. Always propagates.                                          | Mount a working seam, or `Authorize.layerAllowAll` when enforcement lives elsewhere. |
+| Code                    | Cause                                                                                                    | Fix                                                                                  |
+| ----------------------- | -------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
+| `denied`                | Gate 4 denied the model seat itself (catalog-call denials are journaled observations instead).           | Cover `model:call:author` (`Chain.authorCapability`) in the ruleset.                 |
+| `approval_required`     | A claim matched no `allow` rule, so the seam asks. The run returns `ApprovalWait` without a `LinkEnded`. | Grant the claim and run again; resume re-asks the seam under the new grant.          |
+| `authorize_unavailable` | The seam is mounted but unreachable. Always propagates.                                                  | Mount a working seam, or `Authorize.layerAllowAll` when enforcement lives elsewhere. |
 
 ## SteeringError
 
@@ -65,6 +72,12 @@ observation and then parks, because the link is out of fuel and there is no
 next author to read it. A quota park is terminal and journaled as a
 `LinkEnded`; raising the budget does not replay it.
 
+A harness-built author payload refused by the JSON boundary also journals
+`fuel` and parks with `quota`. Reduce the goal or `Options.context` size and
+start a new scope. Repeated authoring cannot repair this payload. Individual
+observation messages are capped at 8192 code units and their combined
+recovery context at 32768; shortened text includes `[truncated]`.
+
 ## Construction defects
 
 These are host configuration mistakes. They die at layer construction, not in
@@ -82,9 +95,6 @@ the typed error channel:
   and journals written under one digest refuse to resume against the other.
   Bind them in exactly one place. See
   [Project the registry and bind memory](/guides/registry-and-memory/).
-- A failing child RUN inside a sub-chain (journal integrity, seat outage,
-  seam outage) dies as a defect so the parent fails un-settled. Fix the
-  cause and resume: the child re-enters at its settled prefix.
 
 ## Observations, not failures
 
@@ -98,8 +108,11 @@ them; they never reach the run's error channel:
   serialize.
 - `script_failed`: the script failed to compile (`compile`), threw at
   runtime (`runtime`), returned a non-outcome or non-JSON value
-  (`invalid_outcome`), or awaited a promise outside `ctx.call`, which never
-  settles.
+  (`invalid_outcome`), or stalled on a promise that no runnable jobs and no
+  queued `ctx.call` can settle (`runtime`; local promise composition over
+  calls is fine). A `runtime` message starting with `host:` came from the
+  QuickJS runner itself, not the script; the runner logs the defect and its
+  cause at `Warning` level.
 
 For the taxonomy in full, see [The chain contract](/contract/). For the
 classes and fields, see the [API reference](/reference/api/).

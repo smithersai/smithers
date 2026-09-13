@@ -31,12 +31,11 @@ When a write presents a fence the row has moved past, the plane answers
 | `parked`, `waiting-approval`          | `suspended`      | Released             |
 | `cancelled`, `completed`, `failed`    | same             | Released, terminal   |
 
-`accepted` is what a claim writes, and nothing rewrites it until the run
-settles: only `Control.run` promotes a run to `running`, and only when its own
-executor took the launch. A run restarted by `Control.resume` or by an approval
-therefore spends its whole second life at `accepted`. Both statuses mean a live
-process holds the row, which is why a lost claim against either one is a real
-peer and not a bookkeeping detail.
+A claim writes `accepted`. `Control.run` promotes it to `running` when its
+executor takes the launch; an explicit resume leaves it `accepted` until the
+driver writes another status. An `ownerId` distinguishes an owned `accepted`
+run from a released pending launch. Losing a claim to an owned `accepted` or
+`running` row means a live peer holds it.
 
 The authoritative `RunSummary` is written into the row's `state_json` by the
 same fenced `UPDATE` that moves the status, so a projection can never be read
@@ -69,20 +68,31 @@ park, and several behaviors turn on that:
 
 ## Claim scope: launched, or any
 
-`ControlRuntime.resume` takes a scope, and the two callers choose differently.
+`ControlRuntime.resume` joins a non-terminal run whose fence this process
+still holds, including an `accepted` run. A join preserves the original fence.
+An `accepted` run released by `releasePending` is claimable under a new fence.
 
-`scope: "launched"` restricts the claim to runs this plane launched, which the
-runtime reads from its own `control_runs` table. Every steer wake and every
-approval-driven restart passes it, because claiming a run another driver
-created would strand the row under this plane's fence, where that driver's own
-resume path no longer recognizes it. An engine-created child, a fork, or a
-later trampoline round has its own driver.
+`scope: "launched"` restricts claims to runs recorded in `control_runs`, the
+shared index of control-launched runs. Both `Control.resume` and `Control.run`
+with a Resume input, plus every steer wake, pass this scope. An engine-created
+child, fork, or later trampoline round keeps its own continuation and driver.
 
-An explicit `Control.resume` omits the scope. An operator or a monitor acting
-on a run nobody is driving may claim any suspended run, which is the whole
-point of the verb.
+`scope: "any"`, also the runtime default, is a trusted low-level runtime
+capability for hosts that can drive the claimed execution. It is not the
+public Control resume contract.
 
-## A resume is a delegation before it is a claim
+## Explicit resume records a journal intent
+
+Both public resume spellings journal `control.run.resume`. A suspended run
+outside the launch index remains unclaimed; the receipt is `Accepted` after
+the journal intent is recorded. A live peer's owned run fails with `ClaimLost`.
+A caller or journal subscriber must drive the execution, including after a
+successful claim. An `Accepted` receipt does not establish that work started.
+
+Explicit resume does not call `requestResume` or `ControlExecutor.resumeRun`.
+It creates no `pendingResumes` entry for host polling.
+
+## Node approval records a durable resume delegation
 
 A decision on an in-run approval restarts the run server-side, and the process
 that decides is usually not the process hosting the execution: an operator's

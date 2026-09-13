@@ -36,7 +36,7 @@ For a real deployment, the journal is the SQLite one, over a database and a
 migration run:
 
 ```bash
-pnpm add @smthrs/database@next effect@4.0.0-rc.112 @effect/sql-sqlite-node@4.0.0-rc.112
+pnpm add @smthrs/database@next effect@4.0.0-rc.115 @effect/sql-sqlite-node@4.0.0-rc.115
 ```
 
 ```ts

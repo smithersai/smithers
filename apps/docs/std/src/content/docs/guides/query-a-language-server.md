@@ -30,6 +30,9 @@ const server = NodeLanguageServer.layer({
 The layer sends `initialize` with `cwd` as the root URI and then `initialized`,
 so the service is ready when it resolves. `timeoutMs` defaults to 30 seconds and
 bounds every request as well as every write to the server's standard input.
+The child inherits only `PATH`, `HOME`, `USER`, `LANG`, `LC_*`, `TERM`, `TMPDIR`,
+and `SHELL`, with credential-shaped names withheld. Declare other names through
+`environment`; explicit values override the allowlist.
 
 A host with no server binds `LanguageServer.layerNoop`, and every operation
 fails with `unsupported`.
@@ -95,7 +98,14 @@ limit:
 
 Every queued write uses the request timeout, so a server that stops reading
 produces a typed `timeout` rather than an unbounded queue or a new hang. Process
-exit or a closed stdout fails every pending request.
+exit or a closed stdout fails every pending request after at most 100 ms for
+stderr to finish draining.
+
+Request errors include the protocol `method`. A server refusal keeps its numeric
+code, message, and optional data in `StdError.rpcError`; the response frame limit
+bounds that data. The main error message also includes the server message.
+`StdError.stderr`, when present, contains the latest stderr tail, captured from
+at most 64 KiB. Initialization failures and exits retain this diagnostic context.
 
 ## Bring your own server
 

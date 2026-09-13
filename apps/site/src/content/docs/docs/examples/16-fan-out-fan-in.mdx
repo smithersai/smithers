@@ -39,7 +39,7 @@ import { Action, Flow, type FlowRuntime, Graph, Interpreter } from "@smthrs/flow
 import { Journal, type JournalEvent } from "@smthrs/journal"
 import { Node } from "@smthrs/plan"
 import type * as Planned from "@smthrs/plan/Planned"
-import { Executable } from "@smthrs/registry"
+import { Executable, Registry } from "@smthrs/registry"
 import type * as Crypto from "effect/Crypto"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
@@ -228,7 +228,7 @@ const bridge: Executable.Options = {
 const platform = Layer.mergeAll(NodeFileSystem.layer, NodePath.layer)
 
 /** `<projectRoot>/flows/**`, scanned, with bodies still unread. */
-const registry = Executable.layerProject({ root: projectRoot }).pipe(Layer.provide(platform), Layer.orDie)
+const registry = Registry.layerProject({ root: projectRoot }).pipe(Layer.provide(platform), Layer.orDie)
 
 /**
  * Starts the bridged flow.

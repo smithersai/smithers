@@ -36,8 +36,7 @@ scans of the same tree report them in the same order.
 
 ## The flow produced no entry at all
 
-Four codes mean a file contributed nothing. Everything else leaves an entry
-behind, possibly a different one than the author expected.
+These codes mean a file or directory contributed nothing:
 
 | Code                  | What happened                                                                                                                                                                                                              | What to change                                                                                                         |
 | --------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
@@ -45,6 +44,7 @@ behind, possibly a different one than the author expected.
 | `root_level_entry`    | An entry file sits directly in the root of a path-named source, so there are no directory segments to name it.                                                                                                             | Move it into a subdirectory: `flows/review/flow.mdx`, not `flows/flow.mdx`.                                            |
 | `entry_too_large`     | The file is past `Discovery.entrySizeLimit`, 4 MiB. The message reports the byte count.                                                                                                                                    | Check for a build artifact or generated file under the source root.                                                    |
 | `unreadable`          | A directory or file could not be read or inspected. `cause` carries the host error.                                                                                                                                        | Fix the permission or the broken link.                                                                                 |
+| `outside_root`        | A directory or selected entry file resolves outside `Source.confinementRoot`, which packs set to their root. The target is skipped before reading its contents.                                                            | Move the target inside the pack and update the symlink.                                                                |
 
 Two more stop the walk rather than one entry:
 
@@ -55,15 +55,20 @@ Two more stop the walk rather than one entry:
 
 ## The flow appeared under the wrong name
 
-| Code                      | What happened                                                                                                                                            |
-| ------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `name_field_ignored`      | The source is path-named, so a `name` key in the file has no effect. The directory path below the root is the name.                                      |
-| `missing_name`            | A frontmatter-named source has no `name` key. The directory name was used.                                                                               |
-| `invalid_name`            | The `name` is not 1 to 64 lowercase ASCII letters, numbers, and single hyphens with no edge hyphens. The directory name was used.                        |
-| `directory_name_mismatch` | The `name` is valid but is not the directory's name. The declared name was used.                                                                         |
-| `duplicate_name`          | Two sources, or two directories, produced the same name. The message names the file that kept it. Order your sources so the winner is the one you meant. |
-| `shadowed`                | Two packs define the same name. The `local` pack wins whatever order the host listed them in. See [Load workflow packs](/guides/load-packs/).                |
-| `multiple_entry_files`    | One directory holds more than one of `flow.ts`, `flow.mdx`, and `SKILL.md`. The message names the one used.                                              |
+| Code                      | What happened                                                                                                                                                    |
+| ------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `name_field_ignored`      | The source is path-named, so a `name` key in the file has no effect. The directory path below the root is the name.                                              |
+| `missing_name`            | A frontmatter-named source has no `name` key. The directory name was used.                                                                                       |
+| `invalid_name`            | A blank or non-string `name` uses the directory name. A nonempty string is trimmed and retained, even when it violates the naming grammar or 64-character limit. |
+| `directory_name_mismatch` | The retained `name` differs from the directory's name, whether valid or invalid. The retained name was used.                                                     |
+| `duplicate_name`          | Two sources, or two directories, produced the same name. The message names the file that kept it. Order your sources so the winner is the one you meant.         |
+| `shadowed`                | Two packs define the same name. The `local` pack wins whatever order the host listed them in. See [Load workflow packs](/guides/load-packs/).                        |
+| `multiple_entry_files`    | One directory holds more than one of `flow.ts`, `flow.mdx`, and `SKILL.md`. The message names the one used.                                                      |
+
+See [Sources and naming](/concepts/sources/#two-ways-a-flow-gets-its-name)
+for the grammar. Use the descriptor's `name` for lookup. For example, `name: Review--PR` in
+`review/SKILL.md` is retained as `Review--PR` with `invalid_name` and
+`directory_name_mismatch`; it does not register a fallback alias `review`.
 
 ## The flow appeared with authority it did not declare
 
@@ -71,13 +76,13 @@ These are the codes that explain a flow showing up as `tier: "irreversible"`
 with wildcard reads and writes. [Declared authority](/concepts/authority/)
 explains why each fallback is the conservative one.
 
-| Code                          | What happened                                                                                                                                                                                                         |
-| ----------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `unprojectable_authority`     | A markdown flow declared no `capabilities`, or it names collaborator `flows` whose authority discovery cannot read. The wildcard was used.                                                                            |
-| `invalid_capabilities`        | A markdown `capabilities` value is not a string array. A space-separated string is accepted with this warning; anything else falls back to the wildcard.                                                              |
-| `invalid_effect_declaration`  | `effects` is not an object, or `effects.reads`, `effects.writes`, `effects.mode`, or `effects.onConflict` is not a value the schema allows. The conservative reading was used.                                        |
-| `invalid_effect_tier`         | A declared `effects.tier` under-classifies the authority the capabilities imply, or is not one of the three tiers. The conservative tier was used.                                                                    |
-| `unsupported_module_metadata` | A module declaration could not be read statically: a non-literal `capabilities` or `effects`, an object spread, a computed property, an unreadable default export, or an invalid `placement`. The message says which. |
+| Code                          | What happened                                                                                                                                                                                 |
+| ----------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `unprojectable_authority`     | A markdown flow declared no `capabilities`, or it names collaborator `flows` whose authority discovery cannot read. The wildcard was used.                                                    |
+| `invalid_capabilities`        | A markdown `capabilities` value is not a string array. A space-separated string is accepted with this warning; anything else falls back to the wildcard.                                      |
+| `invalid_effect_declaration`  | `effects` is not an object, or `effects.reads`, `effects.writes`, `effects.mode`, or `effects.onConflict` is not a value the schema allows. The conservative reading was used.                |
+| `invalid_effect_tier`         | A declared `effects.tier` under-classifies the authority the capabilities imply, or is not one of the three tiers. The conservative tier was used.                                            |
+| `unsupported_module_metadata` | A module declaration could not be read statically: a non-literal `capabilities` or `effects`, an object spread, a computed property, or an unreadable default export. The message says which. |
 
 ## The declaration had a key discovery did not use
 
@@ -86,6 +91,7 @@ explains why each fallback is the conservative one.
 | `unknown_frontmatter_key`  | A frontmatter key outside the accepted set. Check it against the [flow.mdx reference](https://smithers.sh/docs/reference/flow-mdx/); a typo is the usual cause.                                                  |
 | `invalid_allowed_tools`    | `flows` or `allowed-tools` is neither a string array nor a space-separated string. It was ignored, so the flow now delegates to the agent.                                                    |
 | `invalid_model_invocation` | `disable-model-invocation` is not a boolean or the strings `"true"` or `"false"`. It was ignored, so the flow stays model-invocable.                                                          |
+| `invalid_placement`        | `placement` is not `client`, `local`, `sandbox`, or `remote`. It was ignored, so the flow is discovered unplaced and the host chooses where it runs.                                          |
 | `invalid_budget`           | `budget` is not an object, a ceiling is not a positive safe integer, or the object holds a key that is not `tokens` or `milliseconds`. The unreadable part was dropped rather than tightened. |
 | `invalid_license`          | `license` is not a string.                                                                                                                                                                    |
 | `invalid_compatibility`    | `compatibility` is not a string of at most 500 characters.                                                                                                                                    |

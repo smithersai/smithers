@@ -17,7 +17,7 @@ author against: `Flow`, `Action`, `DurableDeferred`, `DurableClock`, and
 resolve.
 
 `effect` is the peer everything is built on. This release pins
-`effect@4.0.0-rc.112`; install the same version, because two copies of `effect`
+`effect@4.0.0-rc.115`; install the same version, because two copies of `effect`
 in one process split the service context and a flow authored against one
 instance is not runnable by an engine holding the other.
 
@@ -42,7 +42,7 @@ browser program provides its own; a Node program provides
 `@effect/platform-node`:
 
 ```bash
-pnpm add @effect/platform-node@4.0.0-rc.112
+pnpm add @effect/platform-node@4.0.0-rc.115
 ```
 
 `@effect/platform-node` supplies the runtime `Crypto` service used by every

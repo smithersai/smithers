@@ -15,7 +15,7 @@ This quickstart writes one fact, recalls it, and then moves the store from an in
   used by the in-memory example:
 
 ```bash
-pnpm add @smthrs/memory@next effect@4.0.0-rc.112 @effect/sql-sqlite-node@4.0.0-rc.112
+pnpm add @smthrs/memory@next effect@4.0.0-rc.115 @effect/sql-sqlite-node@4.0.0-rc.115
 ```
 
 ## 1. Write and recall over an in-memory database
@@ -69,7 +69,7 @@ The bank name `global-notes` resolves to the namespace `{ kind: "global", id: "n
 The in-memory layer forgets everything when the process exits. Swap it for a SQLite file by replacing the layer, and nothing else. Declare the database package and its Node adapters before replacing the layer:
 
 ```bash
-pnpm add @smthrs/database@next @effect/platform-node@4.0.0-rc.112 effect@4.0.0-rc.112 @effect/sql-sqlite-node@4.0.0-rc.112
+pnpm add @smthrs/database@next @effect/platform-node@4.0.0-rc.115 effect@4.0.0-rc.115 @effect/sql-sqlite-node@4.0.0-rc.115
 ```
 
 ```ts

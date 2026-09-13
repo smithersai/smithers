@@ -20,7 +20,7 @@ defines the plugins and runs the host. There are no services to provide.
 - A TypeScript project with the package installed:
 
 ```bash
-pnpm add @smthrs/plugin@next effect@4.0.0-rc.112
+pnpm add @smthrs/plugin@next effect@4.0.0-rc.115
 ```
 
 ## Declare the host's hook catalog

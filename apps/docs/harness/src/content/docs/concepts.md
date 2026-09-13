@@ -41,6 +41,23 @@ settlements, journaled records, workspace measurement, checkpoints, and
 suspension. The package is the translation between the four; scheduling,
 persistence, transport, and model execution stay behind the ports.
 
+A frame lookup writes an empty attempt marker when no terminal record exists.
+Evaluation then runs outside the record activity, and its result is written
+to the next slot. Replay skips existing empty markers before reconstructing
+the terminal frame. An attempt that parks or is interrupted leaves a marker
+and can resume its calls without an enclosing frame activity.
+
+A whole-frame timeout records the last dispatched and last delivered bridge
+ordinals with the frame outcome. Replay reads that record before evaluating
+the cell, reconstructs the settled prefix, and interrupts the bridge at the
+recorded cutoff. Calls and checkpoints beyond that cutoff cannot run, and
+JavaScript awaiting the interrupted bridge receives the same teardown as the
+original attempt. Settled calls in this prefix use their recorded results,
+including per-call timeouts. A limit rejection without a recorded frontier
+still decodes for inspection, but replay fails with `incompatible_journal`
+before evaluating it. A binding must return the frontier to resume such a
+frame safely.
+
 ## Repl realm
 
 A run holds **one** realm for its whole life. The realm is the run's memory:
@@ -106,8 +123,9 @@ Enforced by the `QuickJSSandbox` realm prelude and the `Cell` contract.
 ## Flow registry
 
 A cell may call only what the registry disclosed to it, and it must call the
-declaration it was shown. `Cell.declarationDigest` hashes the complete material
-declaration, `Cell.CallIdentity` folds that digest into every call's identity,
+declaration it was shown. `Cell.declarationDigest` is `@smthrs/registry`'s
+`Descriptor.declarationDigest`, the one declaration identity for
+`FlowDescriptor`; it hashes the complete material declaration, `Cell.CallIdentity` folds that digest into every call's identity,
 and `CellCalls.make` re-derives it at the boundary: an entry that moved between
 the frame that showed the catalog and the boundary that runs the call is refused
 with `declaration_changed` rather than dispatched to a body the model never saw.
@@ -131,6 +149,9 @@ stable span is byte-identical for the life of a run.
 Compaction summaries are rendered as user messages, including summaries read
 from older journal records. This keeps every compacted request anchored by a
 leading user turn on providers that reject assistant-first conversations.
+The settlement records the retained suffix's message count so transcript
+projection replaces only the summarized prefix. Repeated compactions apply in
+journal order. Legacy settlements without a count replace all earlier messages.
 
 Enforced by `ContextWindow`, `Tokens`, and `Compaction`.
 

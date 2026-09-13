@@ -589,7 +589,6 @@ are concatenated within each base; base groups are rendered in sorted base
 order. Both session expansion and plan-time diff digests use bounded batches
 because `git diff` does not accept stdin pathspec files.
 
-
 ## AgentFake
 
 The deterministic replacement for a real agent CLI. From

@@ -43,7 +43,7 @@ Host completion and release finalizers can extend cancellation latency.
 ## Install
 
 ```bash
-pnpm add @smthrs/artifacts@next @effect/platform-node@4.0.0-rc.112
+pnpm add @smthrs/artifacts@next @effect/platform-node@4.0.0-rc.115
 ```
 
 `@effect/platform-node` supplies the Node.js implementations of the services

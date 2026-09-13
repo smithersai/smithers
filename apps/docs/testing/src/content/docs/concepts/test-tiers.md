@@ -15,8 +15,8 @@ Three tiers exist, and they differ only in what they provide.
 
 ## The unit tier
 
-`TestLayers.unit(engine)` bundles a deterministic Host from
-[`@smthrs/kernel`](https://kernel.smithers.sh/reference/api/), an in-memory Journal from
+`TestLayers.unit(engine)` bundles the deterministic Host from
+`@smthrs/testing/TestHost`, an in-memory Journal from
 [`@smthrs/journal`](https://journal.smithers.sh/reference/api/), the engine subject under test, and the
 **real** permission kernel:
 
@@ -27,7 +27,8 @@ const layer = TestLayers.unit(EngineSubject.layerNoop())
 ```
 
 The kernel is real on purpose. A permission decision a test stubs out is a
-decision the test no longer covers, so `GrantStore` runs here exactly as it
+decision the test no longer covers, so `GrantStore` from
+[`@smthrs/kernel`](https://kernel.smithers.sh/reference/api/) runs here exactly as it
 runs in production, with one difference: it is built unattended, so a sealing
 violation fails typed instead of parking on an approval nobody will answer.
 
@@ -98,9 +99,12 @@ is converted to fiber interruption at the edge, and the signal never crosses
 into Effect code.
 
 `Vitest.testEffect(layer)` builds a **fresh** environment from the supplied
-layer for every case and runs each body in its own `Scope`, so no state is
-shared between tests and no test can depend on registration order. The variants
-differ only in the clock:
+layer for every case and runs each body in its own `Scope`. Allocate mutable
+services during layer acquisition with `Layer.sync` or `Layer.effect`;
+objects captured by `Layer.succeed` remain shared. `TestHost` creates a fresh
+filesystem and restarts its seeded PRNG on each build, so reusing its exported
+bundle does not carry files or random draws between tests. The variants differ
+only in the clock:
 
 - `.effect` and its alias `.scoped` add a `TestClock`, so a body controls
   virtual time. The conformance race and interrupt pins require this.

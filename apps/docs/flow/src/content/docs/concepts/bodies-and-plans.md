@@ -68,16 +68,28 @@ or identity, never the result. Decide on real values with `Node.branch`.
 A body is written in [`@smthrs/plan`](https://plan.smithers.sh/reference/api/)'s `Node` combinators, and each
 one has a job:
 
-| Combinator                                | What it is for                                                                                                    |
-| ----------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
-| `Node.succeed(value)`                     | A constant, for a body that settles without a step.                                                               |
-| `Node.all({ ... })`                       | Independent children, settled concurrently, keyed by name. Width is fixed here, at plan time.                     |
-| `Node.map(node, f)`                       | Computation on a step result. The function is digested, not run; it executes later on the real value.             |
-| `Node.andThen(node, next)`                | A success barrier: no part of the next subtree starts until the first node succeeds.                              |
-| `Node.bindPlanned(node, build)`           | Builds data dependencies from a placeholder. Independent descendants may run concurrently with the producer.      |
-| `Node.branch(node, { if, then, else })`   | A decision. Both arms are built once at plan time and both are stored.                                            |
-| `Node.catch(node, { onFailure, error? })` | Recovery. The failure arm is topology too, and a schema narrows which failures it handles.                        |
-| `Node.priority(node, n)`                  | Scheduling order for ready work. It never enters key material, so raising it cannot invalidate a recorded result. |
+| Combinator                                | What it is for                                                                                                             |
+| ----------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| `Node.succeed(value)`                     | A constant, for a body that settles without a step.                                                                        |
+| `Node.all({ ... })`                       | Independent children, settled concurrently, keyed by name. Width is fixed here, at plan time.                              |
+| `Node.map(node, f)`                       | Computation on a step result. The function is digested, not run; it executes later on the real value.                      |
+| `Node.andThen(node, next)`                | A success barrier: no part of the next subtree starts until the first node succeeds. Bound long chains as described below. |
+| `Node.bindPlanned(node, build)`           | Builds data dependencies from a placeholder. Independent descendants may run concurrently with the producer.               |
+| `Node.branch(node, { if, then, else })`   | A decision. Both arms are built once at plan time and both are stored.                                                     |
+| `Node.catch(node, { onFailure, error? })` | Recovery. The failure arm is topology too, and a schema narrows which failures it handles.                                 |
+| `Node.priority(node, n)`                  | Scheduling order for ready work. It never enters key material, so raising it cannot invalidate a recorded result.          |
+
+Nested explicit `andThen` subtrees carry only their nearest success barrier.
+That prerequisite already depends on the outer barriers, so ordering remains
+transitive and a right-nested chain has linear continuation edges and `Pending`
+inputs.
+
+Structural node IDs retain the `.andThen` and `.then` path segments because
+these addresses participate in durable dispatch identity. Each ID grows with
+nesting depth, and total ID bytes in a sequential chain grow quadratically,
+including fluent left-nested chains. Plans repeat IDs in inputs and dependency
+lists. Split long chains into bounded [trampoline rounds](/concepts/trampoline-rounds/)
+or `.child()` flow boundaries; shorter barrier lists do not bound ID bytes.
 
 A `map` that decides what happens next is a `branch` written wrongly. Both a
 branch's arms and a catch's failure arm contribute their requirements to the

@@ -214,16 +214,19 @@ earlier than the condition it describes.
 **Fix.** Correct the rule. Failing at composition time is deliberate: the
 alternative is mis-paging at 3am.
 
-## The projection reports fewer pending than the queue holds
+## The projection reports a capacity the run was not built at
 
-**Symptom.** `Projection.derive` and `NotificationQueue.pending` disagree.
+**Symptom.** A composition built with `NotificationQueue.layerWith({ capacity:
+512 })` projects a state whose `capacity` is 128.
 
-**Cause.** The projection reads at `NotificationState.defaultCapacity`. A
-composition built with `NotificationQueue.layerWith({ capacity })` above the
-default holds more than the projection will replay.
+**Cause.** `Projection.derive` starts at
+`NotificationState.empty(NotificationState.defaultCapacity)`, and no journal
+record carries the bound the layer was built at, so replay has nothing to
+restore it from.
 
-**Fix.** Derive your own projection over `NotificationState` at the same
-capacity, or use `NotificationQueue.pending` for the live answer. See
+**Fix.** Read `items` rather than `capacity`. Replay never re-decides: an
+admitted record is retained whatever the projected bound says, so the projection
+reports every pending notification a raised-capacity run holds. See
 [the journal records](/concepts/journal-records/).
 
 ## Mutating a notification after admitting it changes nothing

@@ -9,7 +9,7 @@ editUrl: "https://github.com/smithersai/smithers/edit/main/packages/testing/docs
 ## Install the package
 
 ```bash
-pnpm add -D @smthrs/testing@next effect@4.0.0-rc.112
+pnpm add -D @smthrs/testing@next effect@4.0.0-rc.115
 ```
 
 The Smithers 1.0 release candidates publish under the `next` dist tag, so the
@@ -19,7 +19,7 @@ is, build the package from a clone of
 [the repository](https://github.com/smithersai/smithers).
 
 [`effect`](https://effect.website) is a required peer dependency at exactly
-`4.0.0-rc.112`. Two copies of `effect` in one program are two sets of service
+`4.0.0-rc.115`. Two copies of `effect` in one program are two sets of service
 tags, so the version is pinned rather than ranged.
 
 The package requires Node.js 22.19.0 or later and ships as both ESM and
@@ -40,7 +40,7 @@ in production.
 `effect` is:
 
 ```bash
-pnpm add -D vitest@4.1.9 @effect/vitest@4.0.0-rc.112
+pnpm add -D vitest@5.0.0 @effect/vitest@4.0.0-rc.115
 ```
 
 Every other module works under any runner, because an assertion is an ordinary
@@ -65,11 +65,23 @@ import * as TestLayers from "@smthrs/testing/TestLayers"
 ## Three modules stay off the root barrel
 
 `TestHost` is the deterministic host bundle: an in-memory filesystem, scripted
-interpreter, `TestClock`, and seeded PRNG. Import it explicitly:
+interpreter, `TestClock`, and seeded PRNG. Each layer build starts with a fresh
+filesystem and restarts the PRNG from its seed, even when tests reuse the
+exported `TestHost.TestHost` layer. Import it explicitly:
 
 ```ts
 import * as TestHost from "@smthrs/testing/TestHost"
 ```
+
+The scripted interpreter only runs commands declared as own properties of the
+command table. An unlisted command returns exit code `127` and
+`command not found: <command>\n` on stderr, including names such as `constructor`
+and `__proto__`.
+
+The memory filesystem rejects non-recursive `mkdir` with `ENOENT` when the
+parent is missing. Non-recursive `rm` rejects a non-empty directory with
+`ENOTEMPTY`, including when `force` is set, and preserves its entries. Use
+`recursive: true` to create missing parents or remove a directory tree.
 
 `Vitest` is ESM only and absent from the barrel on purpose. `vitest` refuses to
 load through `require()`, so a barrel that re-exported it would break

@@ -79,8 +79,12 @@ const compiled = Plan.compile({
    inferred orderings still fail with `cycle`.
 6. Derives the plan digest over the whole result.
 
-The nodes come back in topological order, deep-frozen, at generation 0, with
-`baseDigest` equal to `digest`.
+The nodes come back in topological order of material dependencies, deep-frozen,
+at generation 0, with `baseDigest` equal to `digest`. Inferred edges extend
+`dependsOn` without reordering the array. For example, a reader declared before
+an independent writer stays first in `plan.nodes`, even when its `dependsOn`
+contains that writer. Schedule nodes from the complete `dependsOn` graph;
+iterating the array alone can run a reader before its producer.
 
 ## The one service it needs
 

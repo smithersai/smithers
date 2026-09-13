@@ -86,6 +86,12 @@ const owed = Effect.gen(function*() {
 })
 ```
 
+These are occurrences to dispatch subject to overlap, not a guarantee that
+every run completes. Dispatch waits for launch acknowledgement, not completion.
+With a run active, `skip` drops subsequent occurrences and `buffer-one` keeps
+only the newest pending occurrence. For every-boundary work, use a durable
+queue or a flow that processes its own interval backlog.
+
 Three rules are worth knowing before you pick a value.
 
 **A trigger that has never fired owes nothing.** `CatchUp.occurrences` answers
@@ -108,12 +114,12 @@ written.
 
 ## What a breached bound does to a tick
 
-A bound the declaration cannot honor is a statement about how much history to
-replay. It is not a reason to stop scheduling. When catch-up exceeds its bound,
-the scheduler logs a warning annotated with the trigger id, abandons the
-backlog, and still fires the current occurrence. A trigger that comes back from
-a week of downtime under `all` and `maxCatchUp: 3` resumes on the next boundary
-instead of wedging.
+The scheduler logs a warning annotated with the trigger id and abandons the
+backlog when catch-up exceeds its bound. On the first poll of a trigger in a
+process, including after restart, it drops the entire owed list, including the
+current occurrence, records the current in-process watermark, and waits for a
+later boundary. On subsequent polls, it drops the missed backlog but still
+dispatches the current occurrence subject to overlap.
 
 ## Choosing
 

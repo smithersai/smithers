@@ -8,7 +8,7 @@ Every categorized member reachable through the root namespaces, in source
 order. Signatures, bounds, and the reasoning behind each rule are on the
 [API reference](/reference/api/).
 
-10 namespaces, 62 documented members.
+10 namespaces, 60 documented members.
 
 | Export                               | Kind      | Category     | Summary                                                                                       |
 | ------------------------------------ | --------- | ------------ | --------------------------------------------------------------------------------------------- |
@@ -41,7 +41,6 @@ order. Signatures, bounds, and the reasoning behind each rule are on the
 | `ScoreStore.Page`                    | interface | models       | Page bounds for `Service.observations`.                                                       |
 | `ScoreStore.Service`                 | interface | services     | Durable score store implementation.                                                           |
 | `ScoreStore.ScoreStore`              | class     | services     | Context service for durable scorer observations.                                              |
-| `ScoreStore.make`                    | const     | constructors | Constructs a score store.                                                                     |
 | `ScoreStore.makeNoop`                | const     | constructors | Constructs an inoperative score store.                                                        |
 | `ScoreStore.layerNoop`               | const     | layers       | Provides the inoperative score store.                                                         |
 | `ScoreStore.validate`                | const     | validation   | Decodes an observation against `Observation` before it is persisted.                          |
@@ -53,7 +52,6 @@ order. Signatures, bounds, and the reasoning behind each rule are on the
 | `Runner.Outcome`                     | interface | models       | One batch result tagged with the job it came from and what the store did with it.             |
 | `Runner.Service`                     | interface | services     | Runtime scorer runner implementation.                                                         |
 | `Runner.Runner`                      | class     | services     | Context service for live and batch scorer execution.                                          |
-| `Runner.make`                        | const     | constructors | Constructs a scorer runner.                                                                   |
 | `Runner.makeNoop`                    | const     | constructors | Constructs an inoperative scorer runner.                                                      |
 | `Runner.layerNoop`                   | const     | layers       | Provides the inoperative scorer runner.                                                       |
 | `Runner.jobIdentity`                 | const     | constructors | Builds a `Job.identity` from its components.                                                  |

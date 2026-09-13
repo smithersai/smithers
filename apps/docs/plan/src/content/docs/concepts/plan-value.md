@@ -20,7 +20,7 @@ plan.flow //      "example/Review"
 plan.generation // 0
 plan.baseDigest // the digest a human approved
 plan.digest //    the digest as of this generation
-plan.nodes //     every node, in topological order, each with its key
+plan.nodes //     every keyed node, in material-dependency order
 ```
 
 Everything else in this package either produces that value, persists it,
@@ -65,6 +65,10 @@ reconciliation happens by re-keying _future_ steps, never by rewriting history.
 
 ## Nodes
 
+Within each generation, `plan.nodes` follows the topological order of material dependencies.
+Inferred reader-after-writer edges can point to later array entries. Schedule
+nodes from the complete `dependsOn` graph.
+
 Each entry of `plan.nodes` is a `PlanNode`:
 
 | Field        | What it holds                                                                  |
@@ -74,7 +78,7 @@ Each entry of `plan.nodes` is a `PlanNode`:
 | `key`        | The computed step key, in the same `key1_` format the engine dispatches under. |
 | `material`   | The declaration the key was derived from.                                      |
 | `effects`    | The reads, writes, removals, and boundary mode this node declares.             |
-| `dependsOn`  | The edge set.                                                                  |
+| `dependsOn`  | The scheduling edge set, including dependencies on later array entries.        |
 | `conflicts`  | One annotation per overlapping writer no dependency path already orders.       |
 | `strategy`   | This declaration's preferred plan-time verdict for an overlap.                 |
 | `runtime`    | This declaration's preferred response when a predicted overlap actually bites. |
@@ -131,6 +135,14 @@ A material accessor, or a prototype with no JSON representation, is refused as
 reference. A `Planned` placeholder is left intact so canonical serialization
 still refuses it.
 
+## Payloads are plaintext
+
+Material is identity: the body and inputs of a node are hashed into its step
+key and written verbatim as plaintext into `node_json` and the approval card an
+operator reads. This package never redacts them, and redacting after hashing
+would break `Plan.verify`. Keep credentials out of payloads. A secret belongs in
+a layer, a capability, or the environment, resolved at dispatch.
+
 ## Where a plan comes from
 
 `Plan.compile` takes `NodeDraft` values. Flow authors do not write those by
@@ -143,11 +155,15 @@ type in the middle, and it is the whole contract between the two packages.
 ## Bounds
 
 One compiled plan holds at most `Plan.maximumPlanNodes` nodes, which is 10,000.
-The ceiling exists because the conflict and reader-after-writer passes compare
-node pairs: a plan whose write sets barely overlap costs about `n²`
-comparisons, and one whose writers overlap densely costs more, because each
-overlapping pair adds an on-demand reachability walk. A plan above the ceiling
-is refused with `graph_too_large` before any pair is compared.
+A plan above the ceiling is refused with `graph_too_large` before effect
+analysis. Analysis also refuses more than 250,000 candidate pairs or 10,000,000
+work units, including overlap comparisons, bitset merges and graph traversal.
+This budget applies across all generations replayed by `verify`. Split plans
+that exceed either budget across flow boundaries.
+
+Reachability is cached in bitsets and updated when ordering edges are inferred.
+Analysis yields periodically so cancellation and other fibers can run. Imported
+plans reuse one effect expansion map and candidate index across generations.
 
 Compilation itself walks with explicit stacks and never recurses per edge, so
 depth is a data structure rather than native stack frames.

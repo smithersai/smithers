@@ -1,7 +1,9 @@
 # @smthrs/platform-browser
 
+Release candidate scope, host requirements and compatibility review are defined in the [library support policy](https://github.com/smithersai/smithers/blob/main/RELEASE_SUPPORT.md).
+
 This package declares `effect` as an exact
-`4.0.0-rc.112` peer dependency. Keep the application on that version so
+`4.0.0-rc.115` peer dependency. Keep the application on that version so
 all Smithers packages share one Effect runtime.
 
 **Documentation:** https://platform-browser.smithers.sh
@@ -22,13 +24,13 @@ no vendor code this package picked for you.
 ## Install
 
 ```sh
-npm install @smthrs/platform-browser@next effect@4.0.0-rc.112
+npm install @smthrs/platform-browser@next effect@4.0.0-rc.115
 ```
 
 Version 1.0.0-rc.0 is not on npm yet. Until it is published, take the package
 from https://github.com/smithersai/smithers.
 
-`effect` is a peer dependency pinned at exactly `4.0.0-rc.112`. The services
+`effect` is a peer dependency pinned at exactly `4.0.0-rc.115`. The services
 these adapters implement live in Effect 4, so Effect 3 does not satisfy it, and
 two copies of `effect` in one program are two sets of service tags.
 

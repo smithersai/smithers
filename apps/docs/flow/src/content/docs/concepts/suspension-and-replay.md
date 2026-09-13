@@ -94,20 +94,27 @@ const Hardened = Review
   any error rather than fail, so an operator can fix the cause and resume.
 
 `Flow.intoResult` is what turns a handler effect into a `Result` under those two
-annotations, and it closes the flow scope when the execution completes.
+annotations, and it closes the round's flow scope on completion or handoff.
 
 ## Scope and cleanup
 
-The flow scope is closed only when the execution **fully** completes, not when a
-round ends. That is what lets a resource acquired before a park still be there
-after it.
+Each round has its own flow scope. Suspension keeps that scope open for a
+re-drive of the same instance. Terminal completion closes it with the round's
+success or failure exit. Handoff closes it with a success exit; the next round
+has a fresh scope.
+
+A handoff completes the round successfully and discards its `withRollback` registrations.
+A later round's failure cannot invoke an earlier round's rollback. The engine
+does not provide lineage-scoped compensation. Compensation across rounds
+requires an explicit durable design, not an in-memory scope finalizer. Open
+scopes and their resources do not survive process death.
 
 - `Flow.scope` is the scope itself.
 - `Flow.provideScope(effect)` runs an effect against it.
 - `Flow.addFinalizer(f)` registers an exit finalizer, preserving the services
   available where it was registered.
 - `Flow.withRollback(effect, rollback)` registers how to undo a successful effect
-  if the enclosing flow later exits unsuccessfully. See
+  if the current round later exits unsuccessfully. See
   [Cancel a run and undo its effects](/guides/cancel-and-roll-back/).
 
 ## Related pages

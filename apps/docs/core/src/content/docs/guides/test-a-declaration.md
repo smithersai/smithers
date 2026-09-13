@@ -36,6 +36,8 @@ console.log(TestRuntime.evaluate(plan))
 
 `evaluate` returns a `Result`. A node that fails produces the typed failure,
 and a malformed or unresolved declaration produces an `EvaluationError`.
+Thrown callbacks and resolvers also produce an `EvaluationError`. `Node.catch`
+handles typed node and resolver failures; evaluator errors bypass recovery arms.
 
 ## Supply the leaves the evaluator cannot invent
 

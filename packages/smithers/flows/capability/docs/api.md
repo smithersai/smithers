@@ -21,7 +21,7 @@ Every export is a value, a schema, or a pure function. Enforcement, the
 `GrantStore`, the decorating layers, and the journal live in
 [`@smthrs/kernel`](/api/kernel). This package's one runtime dependency is
 [`@smthrs/canonical`](/api/canonical), which itself depends only on the shared
-`effect@4.0.0-rc.112` peer. Both the kernel and [`@smthrs/jj`](/api/jj) can
+`effect@4.0.0-rc.115` peer. Both the kernel and [`@smthrs/jj`](/api/jj) can
 therefore depend on it without a cycle, and a protected service names
 permission failures in its own interface.
 
@@ -531,9 +531,9 @@ its own property must be data, but its contents are not inspected.
 
 ```ts
 type PermissionErrorPayload =
-  | { readonly _tag: "@smthrs/capability/PermissionRequired"; /* request data */ }
-  | { readonly _tag: "@smthrs/capability/PermissionDenied"; /* denial data */ }
-  | { readonly _tag: "@smthrs/capability/GrantStoreError"; /* store data */ }
+  | { readonly _tag: "@smthrs/capability/PermissionRequired" /* request data */ }
+  | { readonly _tag: "@smthrs/capability/PermissionDenied" /* denial data */ }
+  | { readonly _tag: "@smthrs/capability/GrantStoreError" /* store data */ }
 ```
 
 The fields of the corresponding error schemas, with structural

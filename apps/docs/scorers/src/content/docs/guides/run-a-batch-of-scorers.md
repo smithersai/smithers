@@ -110,15 +110,19 @@ value.
 ## What failure does
 
 One rule governs both entry points: a scorer failure becomes an inconclusive
-observation and never fails the target or the batch. Fiber interruption still
-propagates, because an interrupted run produced no result.
+observation and never fails the target or the batch. Batch interruption
+propagates, because an interrupted run produced no result. A queued job's
+interruption or defect stays local to that job; workers continue processing
+submissions. Closing the layer scope interrupts running jobs.
 
 - A scorer that fails is recorded with `code` taken from its `ScorerError`, or
   `inconclusive` for any other cause, and a `reason` naming the cause,
   truncated to `ScoreStore.maxReasonBytes`.
 - A scorer that returns an out-of-contract result is recorded with code
   `invalid_score`.
-- A store failure is logged as a warning and reported as `recorded: "failed"`.
+- A store failure is logged with the structured error and `identity`,
+  `targetStepKey`, and `scorerKey` annotations. Batch outcomes report
+  `recorded: "failed"`.
   It does not fail the batch, so a `runBatch` result alone cannot tell you a
   write was lost. Use `runBatchCorrelated` when that matters.
 

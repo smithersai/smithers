@@ -55,7 +55,10 @@ CommonJS with TypeScript declarations.
 Syntax scanning uses TypeScript 7's version-pinned `unstable` API. It parses
 the supplied text in a closed virtual project, without reading the project's
 configuration or dependencies, checking types, emitting files, or executing
-source. Each compiler session is closed before its tree is returned. Keep
+source. One scan shares a compiler session and caches syntax trees by path and
+content across its passes. The session and cache are released when the scan
+ends, including on failure or interruption. An isolated parse closes its own
+session before returning the tree. Keep
 npm's platform-specific optional dependencies enabled so the native compiler
 executable is installed. The classic compiler used to validate test fixtures
 is a development dependency, not part of the published runtime.

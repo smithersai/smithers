@@ -57,14 +57,14 @@ them with `FlowBinding.provide(binding, context)` before composing.
 
 Inside `run`, every failure lands where the cell contract says it must:
 
-- Input the schema rejects settles as a catchable `invalid_input` failure
+- Input the schema rejects settles as a resolved `invalid_input` failure
   without running the handler. For struct inputs, a failed decode retries once
   with `null` omitted only from declared optional fields that reject it on the
   encoded side. Schema-valid nulls remain present; the full schema validates
   the retry. If it still fails, the original rejection is reported.
   The encoded input must be a struct-like object; unions of structs and
   records get no null-omission retry.
-- An ordinary handler failure settles as a catchable `flow_failed` with the
+- An ordinary handler failure settles as a resolved `flow_failed` with the
   opaque message `Flow <name> failed.` No raw error message, object, or cause
   enters the call result or its journal record.
 - Output the output schema rejects, or that is not serializable, settles as
@@ -72,7 +72,7 @@ Inside `run`, every failure lands where the cell contract says it must:
 - Existing `HarnessError` values pass through the error channel unchanged,
   preserving their code and identity.
 - `PermissionRequired` and `PermissionDenied` become `HarnessError` values
-  with code `suspended`, so a cell cannot catch its own permission park.
+  with code `suspended`, so a cell cannot ignore its own permission park.
   Interruptions are never caught.
 
 A binding can opt safe details into the public failure using
@@ -154,8 +154,9 @@ in this order:
    dispatches to the host's `Implementation` for the name, or settles
    `unimplemented`.
 
-Every refusal is a `failure` `Cell.CallResult` the cell catches; nothing here
-throws a refusal across the boundary.
+Every refusal is a `failure` `Cell.CallResult` that resolves in the cell as
+`{ ok: false, error }`. Inspect `.ok === false` and `.error.code` to recover;
+ordinary refusals do not throw.
 
 ## Next steps
 

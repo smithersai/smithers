@@ -143,6 +143,22 @@ A getter that throws under serialization usually means the object is a live
 view of something (a request, a connection, a lazily loaded record) rather than
 data. Digest a plain snapshot of the fields you care about instead.
 
+## canonical_malformed
+
+```text
+canonical_malformed: Unexpected token } in JSON at position 1
+```
+
+**Cause.** Encoding through the `Canonical` schema was handed a string that
+does not parse as JSON. This only happens on the unknown-string path
+(`Schema.encodeUnknownSync` or `Schema.encodeUnknownEffect`): a value carrying
+the `Canonical` brand was minted by decoding and always parses. The detail is
+the runtime's own parse message, so its wording varies by host.
+
+**Fix.** Encode the document a decode produced, not text assembled by hand. If
+the string came from storage, the stored bytes were altered after they were
+digested; treat it as corrupt rather than repairing it.
+
 ## My digest changed and the value did not
 
 The value probably did change, in one of the places `JSON.stringify` semantics
@@ -181,7 +197,7 @@ sealed model requests.
 ## The error message contains my input
 
 A schema issue retains the rejected value only when the decode is given
-`reportInput: true`. In `effect@4.0.0-rc.112` nothing retains it by default,
+`reportInput: true`. In `effect@4.0.0-rc.115` nothing retains it by default,
 and this package adds no parse options of its own, so a plain decode is not
 where your input came from. Pass `reportInput: false`, or annotate a schema you
 own with `parseOptions: { reportInput: false }`, to hold that policy against a

@@ -160,5 +160,5 @@ Four facts in that output are the package working.
   composition with a supervisor fiber and the real Control-backed runner.
 - [Choose an overlap and catch-up policy](/guides/choose-a-policy/): what
   `skip` and `one` decided here, and when to pick something else.
-- [The claim protocol](/concepts/claim-protocol/): how two hosts running
-  this same tick fire the occurrence once.
+- [The claim protocol](/concepts/claim-protocol/): how hosts coordinate
+  claims and runners deduplicate repeated launch attempts.

@@ -22,7 +22,7 @@ installation was disabled.
 built against:
 
 ```bash
-pnpm add @effect/platform-bun@4.0.0-rc.112
+pnpm add @effect/platform-bun@4.0.0-rc.115
 ```
 
 `@smthrs/platform-bun/BunFileSystem` is the one entry point that resolves

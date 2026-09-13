@@ -1,7 +1,9 @@
 # @smthrs/flow
 
+Release candidate scope, host requirements and compatibility review are defined in the [library support policy](https://github.com/smithersai/smithers/blob/main/RELEASE_SUPPORT.md).
+
 This package declares `effect` as an exact
-`4.0.0-rc.112` peer dependency. Keep the application on that version so
+`4.0.0-rc.115` peer dependency. Keep the application on that version so
 all Smithers packages share one Effect runtime.
 
 **Documentation:** https://flow.smithers.sh
@@ -38,7 +40,7 @@ none of which the flow's author arranges.
 ## Install
 
 ```sh
-pnpm add @smthrs/flow@next effect@4.0.0-rc.112
+pnpm add @smthrs/flow@next effect@4.0.0-rc.115
 ```
 
 The Smithers 1.0 release candidates publish under the `next` dist tag. Node.js
@@ -48,7 +50,7 @@ The Smithers 1.0 release candidates publish under the `next` dist tag. Node.js
 Running a flow adds an engine and a platform crypto service:
 
 ```sh
-pnpm add @smthrs/engine@next @effect/platform-node@4.0.0-rc.112
+pnpm add @smthrs/engine@next @effect/platform-node@4.0.0-rc.115
 ```
 
 ## Declare a flow and run it

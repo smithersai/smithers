@@ -9,7 +9,7 @@ editUrl: "https://github.com/smithersai/smithers/edit/main/packages/smithers/age
 ## Requirements
 
 - Node.js 22.19.0 or later, from the package's `engines` field.
-- [Effect](https://effect.website) 4.0.0-rc.112. The package depends on it
+- [Effect](https://effect.website) 4.0.0-rc.115. The package depends on it
   directly, so installing the package brings it along; every code sample on
   this site imports `Effect` and `Layer` from `effect`.
 
@@ -61,4 +61,6 @@ entries shadow reserved names. For the failure taxonomy, see
 [@smthrs/model package](https://model.smithers.sh/reference/api/). Provide the model layer UNDER the author
 layer with `Layer.provide`, not beside it in `Layer.mergeAll`: siblings in one
 `mergeAll` cannot satisfy each other. The
-[Quickstart](/quickstart/) shows the full composition.
+[Quickstart](/quickstart/#7-drive-it-with-a-model) shows the full
+composition, including the `Prompt.forCatalog` prefix a model-backed run
+must pass to `Chain.run`.

@@ -8,14 +8,14 @@ sidebar:
 ## Install the package
 
 ```bash
-pnpm add @smthrs/canonical@next effect@4.0.0-rc.112
+pnpm add @smthrs/canonical@next effect@4.0.0-rc.115
 ```
 
 While 1.0 is a release candidate the package publishes on the `next` dist-tag,
 so the `@next` suffix is part of the install command.
 
 [`effect`](https://effect.website) is a peer dependency, declared at exactly
-`4.0.0-rc.112`. Install it yourself at that version: it supplies the `Schema`
+`4.0.0-rc.115`. Install it yourself at that version: it supplies the `Schema`
 module the `Canonical` codec is built on, the examples in these pages import
 `effect/Schema` and `effect/Effect` directly, and two copies of `effect` in one
 program are two sets of service tags. Effect 3 does not satisfy that peer

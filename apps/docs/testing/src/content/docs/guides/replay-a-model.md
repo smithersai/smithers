@@ -26,7 +26,7 @@ const fixture = fileURLToPath(new URL("./fixtures/balance.json", import.meta.url
 
 const modelLayer = Layer.unwrap(
   Effect.map(
-    FixtureStore.makeFile(fixture),
+    Effect.acquireRelease(FixtureStore.makeFile(fixture), (store) => store.flush()),
     (store) => CachedModel.layer({ live: liveModel(), fixture: store })
   )
 )
@@ -61,18 +61,19 @@ are common:
 
 ## Pick a fixture store
 
-| Constructor                      | Behavior                                                                                      |
-| -------------------------------- | --------------------------------------------------------------------------------------------- |
-| `FixtureStore.makeFile(path)`    | Reads the JSON file once when the store is built, and rewrites it on every append. Node only. |
-| `FixtureStore.makeMemory(init?)` | Keeps the fixture in memory. `load` reports `None` until the first call is recorded.          |
+| Constructor                      | Behavior                                                                                  |
+| -------------------------------- | ----------------------------------------------------------------------------------------- |
+| `FixtureStore.makeFile(path)`    | Recovers the JSON and journal. Appends to the journal; `flush` publishes JSON. Node only. |
+| `FixtureStore.makeMemory(init?)` | Keeps the fixture in memory. `load` reports `None` until the first call is recorded.      |
 
 Each has a `layer` form: `FixtureStore.layerFile(path)` and
 `FixtureStore.layerMemory(init?)`.
 
-The file store rewrites on every append, so a recording run leaves a
-committable fixture behind even when a later test in the same run fails. Writes
-are serialized: concurrent model calls would otherwise each rewrite the file
-from its own snapshot and drop the calls recorded in between.
+The file store journals each append and atomically publishes JSON at `flush`.
+The scoped example above flushes even when a test fails. A path permits one
+active writer; competing stores fail instead of overwriting calls. See
+[file persistence and recovery](/concepts/fixtures/#file-persistence-and-recovery)
+for lock ownership and recovery after a killed process.
 
 Neither method has an error channel. A fixture that cannot be read or decoded
 is a broken test setup rather than an outcome the code under test can handle,

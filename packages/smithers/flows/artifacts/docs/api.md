@@ -242,13 +242,13 @@ declare const layer: <EL, RL, ER, RR>(
 ) => Layer<ArtifactStore.ArtifactStore, EL | ER | ArtifactStoreError, RL | RR>
 ```
 
-| `Options` field  | Default                         | Meaning                                                                                                                              |
-| ---------------- | ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
-| `local`          | required                        | The fast, machine-local tier, as a `Service`. Every read tries this one first.                                                       |
-| `remote`         | required                        | The shared tier, as a `Service`. Consulted only on a local miss or corruption.                                                       |
-| `uploadTimeout`  | 60 seconds                      | How long a `put` waits for its opportunistic upload before abandoning it. An abandoned upload is dropped exactly like a refused one. |
-| `writeBackTimeout` | 60 seconds                    | How long a `get` waits for opportunistic local write-back before interrupting it and returning the verified remote bytes. |
-| `downloadPolicy` | the remote tier's, else `"all"` | Overrides the shared tier's declared policy for this composition.                                                                    |
+| `Options` field    | Default                         | Meaning                                                                                                                              |
+| ------------------ | ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| `local`            | required                        | The fast, machine-local tier, as a `Service`. Every read tries this one first.                                                       |
+| `remote`           | required                        | The shared tier, as a `Service`. Consulted only on a local miss or corruption.                                                       |
+| `uploadTimeout`    | 60 seconds                      | How long a `put` waits for its opportunistic upload before abandoning it. An abandoned upload is dropped exactly like a refused one. |
+| `writeBackTimeout` | 60 seconds                      | How long a `get` waits for opportunistic local write-back before interrupting it and returning the verified remote bytes.            |
+| `downloadPolicy`   | the remote tier's, else `"all"` | Overrides the shared tier's declared policy for this composition.                                                                    |
 
 `LayerOptions` is the same shape with `local` and `remote` as `Effect`s. Both
 tiers are supplied as effects rather than layers because they inhabit the same

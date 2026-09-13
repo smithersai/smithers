@@ -139,7 +139,7 @@ const runAfterEdit = Effect.gen(function*() {
 
 | Constructor                                          | Use it when                                                                          |
 | ---------------------------------------------------- | ------------------------------------------------------------------------------------ |
-| `Registry.layerProject({ root, packs? })`             | The host discovers an optional project `flows/` directory and installed packs.       |
+| `Registry.layerProject({ root, packs? })`            | The host discovers an optional project `flows/` directory and installed packs.       |
 | `Registry.layer(config)`                             | The host scans real directories.                                                     |
 | `Registry.layerFromPacks(packs, { runtimeVersion })` | The catalog is a set of installed packs. See [Load workflow packs](./load-packs.md). |
 | `Registry.layerFromDescriptors(entries, warnings?)`  | The host already holds descriptors and still wants lazy body loading.                |

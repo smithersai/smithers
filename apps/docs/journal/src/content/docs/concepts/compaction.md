@@ -101,18 +101,53 @@ reclaim compacts the same committed prefix the live owner sees.
 
 Three properties of the hook matter when you write `capture`:
 
-- It runs after the triggering commit's allocation permit is free, so it may
-  read or emit through the journal without blocking unrelated allocation.
+- It runs after the triggering commit's allocation permit is free. Lossy
+  commits schedule one scoped maintenance fiber per compacting run, so capture
+  and compaction never occupy the queue-draining fiber. Capture may read or
+  emit through the journal while other runs continue committing.
 - It is interrupted after 30 seconds, so caller code cannot wedge journal
   admission indefinitely.
 - A failed or refused attempt, whether a live stream behind the boundary or a
   `capture` failure, is logged at warning, damped for `entryThreshold` further
-  committed entries, and never surfaced to the emit that triggered it.
+  committed entries while the run's policy counter is retained, and never
+  surfaced to the emit that triggered it.
+
+`flush` waits for queued writes and registered automatic maintenance attempts.
+The attempt is registered before its triggering batch settles, so flush cannot
+miss it. Scope closure flushes before interrupting the maintenance scope.
+Durable emits still await their own policy attempt after commit.
+
+Flush also retires per-run barriers and policy counters when there are no
+admissions, writes, queued entries, barrier waiters, live readers, or maintenance
+using the run. A later commit seeds its policy counter from durable history
+again, including after a previously damped failure. Sequence allocation floors
+remain in memory: dropped entries and rolled-back transactions can consume
+sequences that cannot be recovered from durable rows. Retirement does not
+permit those sequences to be reused.
 
 ## Retries are idempotent
 
 A `compact` whose checkpoint is already the floor returns `deleted: 0` rather
 than failing. The rows below it are already gone.
+
+## Producer identities survive compaction
+
+Compaction retains each deleted event's producer identity, event ID, original
+canonical sequence, and SHA-256 fingerprint of its encoded type, payload, and
+metadata in `flows_journal_dedup`. These records commit in the same transaction
+as event deletion and the floor advance. They contain no replay payload.
+
+An exact producer retry returns `Duplicate` with the original sequence, even
+after reopening the database. Changed content fails `idempotency_conflict`;
+`dedupe: "identity"` keeps its identity-only behavior. Queued retries cannot
+append another row or enter the checkpoint suffix. Owner fencing still applies.
+The retained identities also preserve each producer's automatic `sourceSeq`
+allocation floor when all its event rows have been compacted.
+
+Identity records have no expiry and survive later compactions. Storage therefore
+remains proportional to the number of compacted identities, while event payloads
+can be reclaimed. Migration `0004_dedup` adds this retention for subsequent
+compactions; identities deleted before the upgrade cannot be reconstructed.
 
 ## Related reading
 

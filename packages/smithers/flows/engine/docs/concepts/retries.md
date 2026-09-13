@@ -50,12 +50,12 @@ answers are possible:
 When a dispatch settles as a failure and the action declares a policy, the
 engine asks the policy for a decision:
 
-| Decision            | What the engine does |
-| ------------------- | -------------------- |
-| Retry after a delay | Sleeps the delay, increments the attempt, and dispatches again. |
+| Decision            | What the engine does                                                                              |
+| ------------------- | ------------------------------------------------------------------------------------------------- |
+| Retry after a delay | Sleeps the delay, increments the attempt, and dispatches again.                                   |
 | Attempts exhausted  | Decodes and propagates the final declared failure; annotates `retry.stopReason` as `"exhausted"`. |
-| Policy expired      | Decodes and propagates the final declared failure; annotates `retry.stopReason` as `"expired"`. |
-| Non-retryable       | Decodes and propagates the original failure; annotates `retry.stopReason` as `"nonRetryable"`. |
+| Policy expired      | Decodes and propagates the final declared failure; annotates `retry.stopReason` as `"expired"`.   |
+| Non-retryable       | Decodes and propagates the original failure; annotates `retry.stopReason` as `"nonRetryable"`.    |
 
 When retries stop, the action's declared error channel is preserved, so typed
 recovery, including a graph `Catch`, can handle the final business failure.

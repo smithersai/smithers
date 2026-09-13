@@ -114,7 +114,7 @@ The catalog holds 105 rules. They group roughly like this:
 | TypeScript and Node.js  | `Typecheck`, `TsBuild`, `DtsBuild`, `Vitest`, `NodeTest`, `EsLint`             |
 | Rust and Go             | the `Cargo` and `Go` families, plus their toolchain declarations               |
 | Containers and services | `Docker.Build`, `Docker.Bake`, `Docker.Serve`, `Shell.Serve`                   |
-| Publishing              | `Npm.Pack`, `Npm.Publish`, `JsrPublish`, `Changesets.Version`                  |
+| Publishing              | `Npm.Pack`, `JsrPublish`, `Changesets.Version` (`Npm.Publish` is unsupported)  |
 | Generated files         | `Generate`, `Tsconfig`, `FactoryProjection`, `TargetIndex`, `PackageJsonWrite` |
 | Agents and model review | `Agent.Lint`, `Agent.Diff`, `Agent.Pr`, `LlmLint`                              |
 | Composition             | `Filegroup`, `Suite`, `Alias`, `Test`, `Materialize`                           |

@@ -21,7 +21,7 @@ stream that says it again from durable evidence.
 - A package with the dependency installed:
 
 ```bash
-pnpm add @smthrs/control@next effect@4.0.0-rc.112 @effect/sql-sqlite-node@4.0.0-rc.112
+pnpm add @smthrs/control@next effect@4.0.0-rc.115 @effect/sql-sqlite-node@4.0.0-rc.115
 ```
 
 ## Declare the flow the plane may plan

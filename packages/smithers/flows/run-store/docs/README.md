@@ -46,7 +46,7 @@ Smithers is at `1.0.0-rc.0` and has not reached npm yet; when it does, the
 release candidate publishes under the `next` tag, which is what this installs:
 
 ```bash
-pnpm add @smthrs/run-store@next effect@4.0.0-rc.112 @effect/sql-sqlite-node@4.0.0-rc.112
+pnpm add @smthrs/run-store@next effect@4.0.0-rc.115 @effect/sql-sqlite-node@4.0.0-rc.115
 ```
 
 Node.js 22.19.0 or later. [Installation](./installation.md) covers the import

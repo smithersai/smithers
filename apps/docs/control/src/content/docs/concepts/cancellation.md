@@ -95,6 +95,14 @@ ancestry would take the control plane down with it.
 a cancellation cannot commit anonymously. `resume` records the same pair on its
 `control.run.resume` entry.
 
+The request, attribution, and acceptance receipt commit before the local fiber
+is interrupted. Cancellation then awaits its finalizers without holding the
+mutation semaphore or journal transaction, so cleanup can signal another run
+or use the same durable writer. A second transaction rechecks the original
+ownership fence and commits the terminal status and event together. A terminal
+outcome reached during cleanup is preserved. If cleanup loses ownership, the
+durable request remains for the owner or a later cancel attempt.
+
 Attribution is keyed on the request being newly recorded. `cancel` re-executes
 on every ask, so attributing every ask would journal one
 `control.run.cancel-requested` per ask for a single cancellation. The executor

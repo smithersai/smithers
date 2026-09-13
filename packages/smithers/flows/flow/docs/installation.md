@@ -8,7 +8,7 @@ sidebar:
 ## Install the package
 
 ```bash
-pnpm add @smthrs/flow@next effect@4.0.0-rc.112
+pnpm add @smthrs/flow@next effect@4.0.0-rc.115
 ```
 
 The Smithers 1.0 release candidates publish under the `next` dist tag, so the tag
@@ -59,7 +59,7 @@ This package declares the `FlowRuntime` port and implements none of it, so a
 composition that runs a flow adds an engine and a platform crypto service:
 
 ```bash
-pnpm add @smthrs/engine@next @effect/platform-node@4.0.0-rc.112
+pnpm add @smthrs/engine@next @effect/platform-node@4.0.0-rc.115
 ```
 
 - [`@smthrs/engine`](/api/engine) implements `FlowRuntime`. Its

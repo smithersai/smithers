@@ -21,7 +21,7 @@ redacted.
   installed. See [Installation](./installation.md) for why `effect` is pinned.
 
 ```bash
-pnpm add @smthrs/journal@next @smthrs/database@next effect@4.0.0-rc.112 @effect/sql-sqlite-node@4.0.0-rc.112
+pnpm add @smthrs/journal@next @smthrs/database@next effect@4.0.0-rc.115 @effect/sql-sqlite-node@4.0.0-rc.115
 ```
 
 ## Compose the layer

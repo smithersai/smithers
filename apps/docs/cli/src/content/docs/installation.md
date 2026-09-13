@@ -17,7 +17,7 @@ npm install --global @smthrs/cli@1.0.0-rc.0
 The package installs one executable under two names, `smthrs` and its
 `smithers` alias. Both are the same file, `bin/smithers.mjs`.
 
-The executable declares `@effect/sql-sqlite-node@4.0.0-rc.112` as a required
+The executable declares `@effect/sql-sqlite-node@4.0.0-rc.115` as a required
 peer because its default runtime opens SQLite. Modern npm and pnpm install
 that peer with the CLI, along with its required Effect Node adapter. The
 database library itself keeps SQLite optional for driver-neutral consumers.

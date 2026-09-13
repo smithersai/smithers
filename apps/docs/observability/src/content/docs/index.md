@@ -40,7 +40,7 @@ identity, so `service.name` means the same thing whichever one you pick.
 ## Install
 
 ```bash
-pnpm add @smthrs/observability@next effect@4.0.0-rc.112
+pnpm add @smthrs/observability@next effect@4.0.0-rc.115
 ```
 
 Node.js 22.19.0 or later. For the import forms and the browser rule, see

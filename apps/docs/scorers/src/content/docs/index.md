@@ -130,17 +130,18 @@ contract.
 The root entry point exports these namespaces, and each top-level module is
 also importable from `@smthrs/scorers/<Module>`:
 
-| Namespace       | What it is                                                                                          |
-| --------------- | --------------------------------------------------------------------------------------------------- |
-| `Scorer`        | The declaration: input and result schemas, the `score` implementation, and the derived `scorerKey`. |
-| `Binding`       | A scorer, a target flow, optional ground truth and context, and a sampling policy.                  |
-| `Sampling`      | The replay-stable policy vocabulary and the decision function over it.                              |
-| `ScoreStore`    | The durable observation contract: record, record once, page, aggregate.                             |
-| `SqlScoreStore` | The SQLite implementation of that contract, migrations included.                                    |
-| `Runner`        | Job identities, batch outcomes, and the conversion of a scorer failure into an observation.         |
-| `RunnerLive`    | The scoped queue and batch runner over whichever store is provided.                                 |
-| `ScorerError`   | The eight stable failure codes and the tagged error that carries them.                              |
-| `Migrations`    | The score-store schema migrations, applied by `SqlScoreStore` or on their own.                      |
+| Namespace       | What it is                                                                                            |
+| --------------- | ----------------------------------------------------------------------------------------------------- |
+| `Scorer`        | The declaration: input and result schemas, the `score` implementation, and the derived `scorerKey`.   |
+| `Binding`       | A scorer, a target flow, optional ground truth and context, and a sampling policy.                    |
+| `Sampling`      | The replay-stable policy vocabulary and the decision function over it.                                |
+| `ScoreStore`    | The durable observation contract: record, record once, page, aggregate.                               |
+| `SqlScoreStore` | The SQLite implementation of that contract, migrations included.                                      |
+| `Runner`        | Job identities, batch outcomes, and the conversion of a scorer failure into an observation.           |
+| `RunnerLive`    | The scoped queue and batch runner over whichever store is provided.                                   |
+| `ScorerError`   | The eight stable failure codes and the tagged error that carries them.                                |
+| `ScoreGate`     | Pure sample validation, threshold gates, verdict composition, CI grades, and the typed grading error. |
+| `Migrations`    | The score-store schema migrations, applied by `SqlScoreStore` or on their own.                        |
 
 Every export of every namespace, with signatures and bounds, is on the
 [API reference](/reference/api/). The one-line member index is in

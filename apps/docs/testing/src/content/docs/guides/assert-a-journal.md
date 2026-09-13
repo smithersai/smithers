@@ -101,9 +101,17 @@ with `FixtureDivergenceError`.
 Every field a `JournalEntryLike` carries is compared, `index` included. Values
 are compared through a shared canonical rendering that distinguishes two
 different `Date`s, a `Map` from a `Set`, `-0` from `0`, `NaN` from `Infinity`,
-and two instances of the same class, and that reports a cycle rather than
-recursing into it. The rendering is total, so no journal value can throw out of
-the declared error channel.
+and ordinary records from internal special-value markers. Record and array
+accessors are compared by getter/setter identity without invoking them. Cycles
+use markers; sparse array holes remain distinct from `undefined`.
+Objects at the 128-level depth limit or whose inspection throws, such as
+revoked proxies, compare by process-local reference identity.
+
+Rendering journal values does not throw. A differing value fails with
+`FixtureDivergenceError`. This comparison accepts values that fixture JSON
+cannot store: the fixture encoder rejects accessors and sparse array holes
+with `FixtureEncodingError` (`unsupported-type`). Journal entries themselves
+must still satisfy the `JournalEntryLike` data shape.
 
 CI callers must report a divergence rather than silently re-recording the
 fixture. A re-record turns a regression into a green run and deletes the

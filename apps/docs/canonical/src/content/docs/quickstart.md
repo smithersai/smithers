@@ -17,7 +17,7 @@ fails loudly on a value with no canonical form.
 - The package and its `effect` peer dependency:
 
 ```bash
-pnpm add @smthrs/canonical@next effect@4.0.0-rc.112
+pnpm add @smthrs/canonical@next effect@4.0.0-rc.115
 ```
 
 ## Canonicalize a value

@@ -77,8 +77,11 @@ yield * timeTravel.rewind(position, { detachedChildren: "cancel" })
 
 - `"block"`, the default: a live detached child refuses the rewind rather than
   being cancelled behind the operator's back.
-- `"cancel"`: the rewind cancels them, after the commit point, and lists them
-  in `cancelledChildren`.
+- `"cancel"`: the rewind cancels idle (`pending` or `suspended`) detached
+  children and running detached children whose owner lease has expired, after
+  the commit point, and lists them in `cancelledChildren`. A running child
+  whose owner is still live refuses with `live_child`. `Options.isAlive` may
+  veto cancellation even after the lease expires.
 
 An **attached** child is not covered by this option at all. It still depends on
 the history being truncated, so a live one always refuses the rewind with
@@ -122,20 +125,26 @@ in the Smithers examples on GitHub.
 
 ## Failures
 
-| Code                  | Cause                                                                                                      |
-| --------------------- | ---------------------------------------------------------------------------------------------------------- |
-| `busy`                | Another owner holds the run, the journal tail moved under the claim, or ownership was lost before the end. |
-| `live_child`          | An attached descendant is still executing, or a detached one is under the `block` policy.                  |
-| `not_found`           | The run, the frame, or the audit addresses nothing.                                                        |
-| `invalid`             | A malformed option, or a durable payload that does not decode. Refused before anything is touched.         |
-| `rate_limited`        | The supplied rate limiter rejected the attempt. The audit row records the decision.                        |
-| `irreversible`        | A crossed effect cannot be undone: no handler, or a sealed result whose cache entry is gone.               |
-| `compensation_failed` | A rollback handler or the workspace restore failed, so the rewind stopped rather than half revert.         |
-| `fence_lost`          | Ownership of the run or of an attached child was superseded before the commit, so nothing was written.     |
-| `limit_exceeded`      | The suffix is longer than the cap allows. Raised before the run is claimed.                                |
-| `unknown`             | The store, the journal, or an unmapped host failure. The cause is attached.                                |
+| Code                  | Cause                                                                                                                |
+| --------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| `busy`                | Another owner holds the run, the journal tail moved under the claim, or ownership was lost before the end.           |
+| `live_child`          | An attached descendant is still executing, or a detached child is blocked by policy or owner liveness.               |
+| `not_found`           | The run, the frame, or the audit addresses nothing.                                                                  |
+| `invalid`             | A malformed option, or a durable payload that does not decode. Refused before anything is touched.                   |
+| `rate_limited`        | The `Options.rateLimit` limiter the service was built with rejected the attempt. The audit row records the decision. |
+| `irreversible`        | A crossed effect cannot be undone: no handler, or a sealed result whose cache entry is gone.                         |
+| `compensation_failed` | A rollback handler or the workspace restore failed, so the rewind stopped rather than half revert.                   |
+| `fence_lost`          | Ownership of the run or of an attached child was superseded before the commit, so nothing was written.               |
+| `limit_exceeded`      | The suffix is longer than the cap allows. Raised before the run is claimed.                                          |
+| `unknown`             | The store, the journal, or an unmapped host failure. The cause is attached.                                          |
 
-A refusal before the commit point leaves the world as it was. See
+If a rewind fails after claiming the run but before commit, successful rollback
+restores the saved run state and releases ownership as `suspended`, including
+when the run was originally
+`pending`. Startup recovery uses the same restoration rule. The audit closes
+as `failed` after restoration succeeds. If ownership cannot be released, the
+audit stays `in_progress` for recovery; the error keeps its original code and
+attaches the restoration problem as its cause. See
 [The rewind protocol](/concepts/rewind-protocol/) for where each step sits
 relative to that point, and what a crash between them costs.
 

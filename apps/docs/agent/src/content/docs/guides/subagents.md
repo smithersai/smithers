@@ -6,17 +6,31 @@ sidebar:
 editUrl: "https://github.com/smithersai/smithers/edit/main/packages/smithers/agent/docs/guides/subagents.md"
 ---
 
-A cell delegates the way it does anything else: it finds a flow in `ctx.flows`
-and calls it. Two shapes cover the ground, and only the second needs anything
-from this package.
+A cell delegates by finding a flow in `ctx.flows` and calling it.
 
-## Attached children need nothing
+## Attached markdown children need a host runner
 
-A dynamic flow (a `Flow.make` with a `model`) or a discovered markdown flow is
-already a subagent, and `ctx.call("review", { args })` already runs it inside
-its own durable boundary: the resolver hands the markdown body to the host's
-prompt runner, and the engine port keys the whole call on the cell identity.
-That is the common case, and it needs nothing from this package.
+A discovered markdown flow is callable through `ctx.call("review", { args })`
+when the host supplies `promptRunner`. Set it on `AgentSession.Options` or
+`AgentAction.Host`; both forward it to `Agent.Options.promptRunner`.
+
+The registry renders the markdown body against `{ args: string }`. The runner
+receives `{ call, text }` and returns an
+`Effect<Cell.CallResult, HarnessError>` with no unmet service requirements.
+Close over or provide the child's seat resolver, model, registry, sandbox,
+budget and quota policy, and durable runtime when constructing the runner.
+A runner built from `Agent.run` also needs `Steering.Source` and must execute
+inside a running flow with `FlowRuntime` and `FlowInstance` in context.
+The adapters do not choose the child's seat or install these dependencies for
+it. Use the call identity for durable child execution identity and preserve the
+parent's capability restrictions.
+
+The engine port records the attached call inside its durable cell boundary.
+The runner supplies the child execution and returns its answer as a successful
+`Cell.CallResult`, or propagates a `HarnessError` when the child must fail or
+park the run. Without a runner, markdown calls return the catchable
+`unimplemented` refusal. Module-backed flows use executable bindings or host
+implementations instead.
 
 ## Detached children need the lifecycle flows
 
@@ -59,14 +73,25 @@ parent-edge table. It is spawned with the result discarded, which records
 started it instead of being cancelled with it.
 
 The child's execution id is derived, not minted:
-`${parentExecutionId}/child/${label}`, where the label defaults to the flow
-name. A parent that is re-driven, by a resume, a reclaim, or a replayed cell,
+`child-v2:<parent length>:<parent><label length>:<label>`, with lengths in
+JavaScript UTF-16 code units. The label defaults to the flow name. Both
+components are length-delimited, so a label containing `/child/` cannot alias
+a nested child. A parent that is re-driven, by a resume, a reclaim, or a replayed cell,
 spawns the same child rather than a second one, because the engine's create is
 idempotent on the execution id. The label is therefore the child's identity
 within its parent: two concurrent children of one flow need two labels.
 
+Keep returned ids opaque. `await` and `send` accept already-persisted legacy
+ids. To re-drive parents whose children used `${parentExecutionId}/child/${label}`,
+compose their port with `legacyChildIds: true`. This mode starts only existing
+rows and refuses new legacy children. Use the default port for new parents.
+Legacy rows retain their original identities, including any pre-existing label
+ambiguity; they are not automatically migrated.
+
 `spawn` answers once the child's run row exists, within `startTimeout`
-(default 30 seconds). A start that produces no row is
+(default 30 seconds). Until admission succeeds, failure, a store defect, or
+cancellation interrupts and joins the startup fiber before returning. After
+admission the child continues independently. A start that produces no row is
 `ChildError { code: "failed" }`, never `not_found`: the flow is declared, so
 the refusal is the runtime's, and a cell reading `not_found` would wrongly
 decide never to ask again.

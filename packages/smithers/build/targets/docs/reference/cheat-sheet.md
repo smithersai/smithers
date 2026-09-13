@@ -983,6 +983,7 @@ const commit = S.Git.Commit({
   message: S.Agents.codex,
   changes: ["src/**", "test/**"]
 })
+// Unsupported in this RC: declaration only; execution refuses.
 const gitPr = S.Git.Pr({
   gates: [tests],
   secrets: [githubToken],
@@ -1049,18 +1050,21 @@ const compactCi = S.Github.Ci({
   },
   changes: [".github/workflows/**"]
 })
+// Unsupported in this RC: declaration only; execution refuses.
 const githubPr = S.Github.Pr({
   gates: [tests],
   secrets: [githubToken],
   sandbox: { network: true },
   approval: "required"
 })
+// Unsupported in this RC: declaration only; execution refuses.
 const pages = S.Github.Pages({
   site: build,
   secrets: [githubToken],
   sandbox: { network: true },
   approval: "required"
 })
+// Unsupported in this RC: declaration only; execution refuses.
 const release = S.Github.Release({
   manifest: S.file("package.json"),
   notes: S.Agents.codex,
@@ -1080,6 +1084,7 @@ const npmPack = S.Npm.Pack({
   manifest: S.file("package.json"),
   data: [build]
 })
+// Unsupported in this RC: declaration only; execution refuses.
 const npmPublish = S.Npm.Publish({
   pack: npmPack,
   gates: [tests],
@@ -1090,6 +1095,7 @@ const npmPublish = S.Npm.Publish({
   approval: "required"
 })
 const publishedPackage = S.Npm.Published({ manifest: S.file("package.json") })
+// Unsupported in this RC: declaration only; execution refuses.
 const downstream = S.Npm.Downstream({
   repository: "https://github.com/acme/widget-consumer.git",
   overrides: { "@acme/widget": npmPack },
@@ -1133,6 +1139,7 @@ const changesetsVersion = S.Changesets.Version({
     "pnpm-lock.yaml"
   ]
 })
+// Unsupported in this RC: declaration only; execution refuses.
 const changesetsPublish = S.Changesets.Publish({
   config: S.file(".changeset/config.json"),
   pack: npmPack,

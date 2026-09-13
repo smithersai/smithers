@@ -123,11 +123,12 @@ and without liveness evidence.
 
 `FenceSummary` reports `clearedClaims` and `suspendedRuns`.
 
-Fencing refuses if the manifest's recorded migrations are not a prefix of the
-restored database's applied migrations. Equal means the restoring binary matches
-the backup; extended means a newer binary migrated the restored file forward on
-open. Anything else means the file under fencing is not the one the manifest
-describes, and the failure code is `schema_mismatch`.
+Fencing requires every migration recorded in the manifest to remain applied
+with the same ID and namespaced name. A missing or renamed historical entry
+fails with `schema_mismatch` before ownership is cleared. Forward additions in
+any installed block are compatible, including engine-store `3006` below an
+existing plan `4003`. The current database layer applies migrations on open;
+the manifest need not be a prefix of the globally ordered migration list.
 
 In-flight attempt rows are deliberately untouched: attempt writes are fenced on
 the run row's ownership, and the resuming engine adopts or retries them under
@@ -137,18 +138,18 @@ its own fresh owner.
 
 `DisasterRecoveryError` carries a stable `code` and the `method` that raised it:
 
-| Code                  | Meaning                                                            |
-| --------------------- | ------------------------------------------------------------------ |
-| `invalid_options`     | An option cannot be admitted safely.                               |
-| `not_empty`           | A target or backup directory exists and is not empty.              |
-| `invalid_manifest`    | The manifest is missing or does not decode.                        |
-| `missing_file`        | A file the manifest lists is absent.                               |
-| `digest_mismatch`     | The database snapshot does not hash to its recorded digest.        |
-| `artifact_corruption` | A blob does not hash to its address.                               |
-| `snapshot_incomplete` | The snapshot references artifacts the capture could not take.      |
-| `schema_mismatch`     | The restored file's migrations are not a prefix of the manifest's. |
-| `io`                  | A host read or write refused, including an oversized file.         |
-| `sql`                 | The database refused; the dialect here is SQLite.                  |
+| Code                  | Meaning                                                       |
+| --------------------- | ------------------------------------------------------------- |
+| `invalid_options`     | An option cannot be admitted safely.                          |
+| `not_empty`           | A target or backup directory exists and is not empty.         |
+| `invalid_manifest`    | The manifest is missing or does not decode.                   |
+| `missing_file`        | A file the manifest lists is absent.                          |
+| `digest_mismatch`     | The database snapshot does not hash to its recorded digest.   |
+| `artifact_corruption` | A blob does not hash to its address.                          |
+| `snapshot_incomplete` | The snapshot references artifacts the capture could not take. |
+| `schema_mismatch`     | A recorded migration is missing or has a different name.      |
+| `io`                  | A host read or write refused, including an oversized file.    |
+| `sql`                 | The database refused; the dialect here is SQLite.             |
 
 ## Related
 

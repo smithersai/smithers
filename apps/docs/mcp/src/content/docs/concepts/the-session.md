@@ -18,7 +18,8 @@ of them fails the whole effect:
 1. Spawn the command with `stdin`, `stdout`, and `stderr` piped. A spawn that
    fails is `spawn_failed`.
 2. Send `initialize`, proposing `2025-06-18` and disclosing the frozen
-   `McpClient.clientInfo` identity, `{ name: "smithers", version: "1.0.0-rc.0" }`.
+   `McpClient.clientInfo` identity: name `"smithers"` and this package's
+   version.
 3. Validate the result. The server's `protocolVersion` must be one of
    `McpClient.supportedProtocolVersions`, and its `capabilities` must declare a
    `tools` object. A server that serves no tools is refused with
@@ -70,7 +71,8 @@ Whichever arrives first wins. It closes the connection once, fails every pending
 request with that one error, and rejects all later traffic with the same error,
 so a caller never waits on a reply that can no longer come. A clean child exit
 is still a closed session: Node reports an ordinary exit by ending stdout
-successfully.
+successfully. When a healthy connection's scope closes, its terminal reason is
+recorded before I/O teardown, so cleanup does not report "stdin closed".
 
 For `spawn_failed`, `timeout`, and `connection_closed`, the message withholds
 process details. A child's stderr may contain credentials, including fragments
@@ -104,12 +106,19 @@ A malformed tagged envelope closes the connection with `protocol_error`. A
 well-formed reply for an id nobody is waiting on is dropped. The raw frame is
 never attached to the error.
 
+A valid error reply with `id: null` cannot be correlated to a request. Its code,
+message, and data go only to the private diagnostic observer as `remote-error`,
+then the reply is dropped. The connection stays open and pending requests keep
+waiting for their own replies or deadlines. A null id on a result, or a malformed
+error object with a null id, still closes the connection with `protocol_error`.
+
 ## Cancelling
 
 Every MCP tool flow is declared `irreversible`, so an abandoned in-flight
 mutation is a durability problem rather than a tidiness one. When a `tools/call`
-times out or its fiber is interrupted, the client sends exactly one
-`notifications/cancelled` for that request id.
+times out or its fiber is interrupted before dispatch, the writer skips its
+queued frame. Once handed to the writer, an abandoned request triggers one
+best-effort `notifications/cancelled` for that request id.
 
 The notification is best effort. A full outbound queue drops it rather than
 delaying the deadline it reports, because a cancellation that made a timeout

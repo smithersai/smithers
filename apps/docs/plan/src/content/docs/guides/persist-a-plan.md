@@ -105,9 +105,17 @@ export const read = Effect.gen(function*() {
 }).pipe(Effect.provide(planStore))
 ```
 
-The nodes come back in the ordinal order they were inserted in, which is the
-topological order `compile` produced. `(plan_id, ordinal)` is unique in SQL, so
-that order is a fact about the rows rather than a property of the query.
+The nodes come back in the ordinal order they were inserted in: the
+topological order of material dependencies within each generation. Inferred
+reader-after-writer edges can point to later ordinals. Schedule nodes from the
+complete `dependsOn` graph. `(plan_id, ordinal)` is unique in SQL, so recorded
+order is stable across reads.
+
+This clarification preserves existing ordinals, keys, and approval digests.
+`append` retains the recorded prefix and adds new nodes in material-dependency
+order; `verify` checks that same order without sorting inferred edges. Existing
+plans require no migration. Reordering a stored node array changes its approval
+payload and is not a compatible way to obtain an execution order.
 
 ## Append-only is enforced in SQL
 

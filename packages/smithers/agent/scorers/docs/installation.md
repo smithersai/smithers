@@ -16,7 +16,7 @@ pnpm add @smthrs/scorers@next
 ## Requirements
 
 - Node.js 22.19.0 or later.
-- [`effect`](https://effect.website) 4.0.0-rc.112, the version this package is
+- [`effect`](https://effect.website) 4.0.0-rc.115, the version this package is
   built against. Execution, validation, and persistence use `Effect`; schemas
   use `effect/Schema`. Declaration and pure grading helpers are synchronous;
   [`Scorer.make` throws on invalid declarations](./troubleshooting.md#scorermake-threw-instead-of-failing).
@@ -59,7 +59,7 @@ a blocked or unlisted subpath fails with Node's
 driver over a file. Add the database package and its optional Node driver:
 
 ```bash
-pnpm add @smthrs/database@next effect@4.0.0-rc.112 @effect/sql-sqlite-node@4.0.0-rc.112
+pnpm add @smthrs/database@next effect@4.0.0-rc.115 @effect/sql-sqlite-node@4.0.0-rc.115
 ```
 
 ```ts

@@ -8,7 +8,7 @@ sidebar:
 ## Install the package
 
 ```bash
-pnpm add @smthrs/platform-browser@next effect@4.0.0-rc.112
+pnpm add @smthrs/platform-browser@next effect@4.0.0-rc.115
 ```
 
 The Smithers 1.0 release candidates publish under the `next` dist tag, so the
@@ -16,7 +16,7 @@ tag is part of the command. The first candidate is not on npm yet; until it is,
 build the package from a clone of
 [the repository](https://github.com/smithersai/smithers).
 
-`effect` is a peer dependency declared at exactly `4.0.0-rc.112`, so install it
+`effect` is a peer dependency declared at exactly `4.0.0-rc.115`, so install it
 yourself at that version. The services these adapters implement live in Effect 4
 (`effect/FileSystem`, `effect/Path`, and `effect/unstable/process`), Effect 3
 does not satisfy the peer range, and two copies of `effect` in one program are

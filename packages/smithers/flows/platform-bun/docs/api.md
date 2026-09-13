@@ -15,10 +15,10 @@ const program = Effect.gen(function*() {
 }).pipe(Effect.provide(BunHost.layer))
 ```
 
-`@effect/platform-bun` is a required peer at exactly `4.0.0-rc.112` because
+`@effect/platform-bun` is a required peer at exactly `4.0.0-rc.115` because
 this barrel and `BunHost` import it at module load. It is installed alongside
 the package by package managers that resolve required peers. The Effect Node
-platform packages and `effect` are also exact peers at `4.0.0-rc.112`.
+platform packages and `effect` are also exact peers at `4.0.0-rc.115`.
 
 :::warning
 This entry point is Node-only in the browser-bundle sense: it falls back to the
@@ -180,14 +180,14 @@ changing one invalidates no cached step.
 `BunHost` re-exports these modules so a program that should reach only part of
 the host has one place to take it from:
 
-| Export                   | What it is                                                                      |
-| ------------------------ | ------------------------------------------------------------------------------- |
-| `AtomicFileSystem`       | `@smthrs/platform-node/AtomicFileSystem`, the filesystem implementation itself. |
-| `BunChildProcessSpawner` | `@effect/platform-bun/BunChildProcessSpawner`.                                  |
-| `BunCrypto`              | `@effect/platform-bun/BunCrypto`, the [Effect Crypto service](https://github.com/Effect-TS/effect/blob/main/packages/platform/bun/src/BunCrypto.ts) layer. |
-| `BunFileSystem`          | This package's `BunFileSystem` module.                                          |
-| `BunHttpClient`          | `@effect/platform-bun/BunHttpClient`.                                           |
-| `HostLiveness`           | `@smthrs/platform-node/HostLiveness`, the [host liveness probe](/api/platform-node#liveness-and-reaping). |
+| Export                   | What it is                                                                                                                                                                |
+| ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `AtomicFileSystem`       | `@smthrs/platform-node/AtomicFileSystem`, the filesystem implementation itself.                                                                                           |
+| `BunChildProcessSpawner` | `@effect/platform-bun/BunChildProcessSpawner`.                                                                                                                            |
+| `BunCrypto`              | `@effect/platform-bun/BunCrypto`, the [Effect Crypto service](https://github.com/Effect-TS/effect/blob/main/packages/platform/bun/src/BunCrypto.ts) layer.                |
+| `BunFileSystem`          | This package's `BunFileSystem` module.                                                                                                                                    |
+| `BunHttpClient`          | `@effect/platform-bun/BunHttpClient`.                                                                                                                                     |
+| `HostLiveness`           | `@smthrs/platform-node/HostLiveness`, the [host liveness probe](/api/platform-node#liveness-and-reaping).                                                                 |
 | `ProcessReaper`          | `@smthrs/platform-node/ProcessReaper`, the [contained spawner](/api/platform-node#processreaperlayerspawner) and [orphan sweep](/api/platform-node#liveness-and-reaping). |
 
 `AtomicFileSystem` is in the set for the same reason `NodeHost` re-exports it:

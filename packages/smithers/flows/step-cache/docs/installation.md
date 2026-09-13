@@ -32,7 +32,7 @@ specifier:
 ## Requirements
 
 - Node.js 22.19.0 or later.
-- [`effect`](https://effect.website) 4.0.0-rc.112, which supplies the `Effect`,
+- [`effect`](https://effect.website) 4.0.0-rc.115, which supplies the `Effect`,
   `Schema`, `Layer`, `Metric`, and SQL client types this package's signatures
   use.
 - [`@smthrs/canonical`](/api/canonical) for RFC 8785 JSON and

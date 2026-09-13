@@ -4,16 +4,23 @@ description: "Add @smthrs/evals to a workspace package, plus its runtime require
 editUrl: "https://github.com/smithersai/smithers/edit/main/packages/smithers/agent/evals/docs/installation.md"
 ---
 
-Install the current release candidate from the `next` dist-tag:
+The package is at 1.0.0-rc.0 and is not on the npm registry yet. It is a
+workspace package of https://github.com/smithersai/smithers, so use it from a
+package in a clone of that repository:
 
 ```bash
-pnpm add @smthrs/evals@next
+git clone https://github.com/smithersai/smithers
+cd smithers
+pnpm install
 ```
+
+Then depend on it through the workspace protocol in your package's
+`package.json` and run `pnpm install` again:
 
 ```json
 {
   "dependencies": {
-    "@smthrs/evals": "1.0.0-rc.0"
+    "@smthrs/evals": "workspace:*"
   }
 }
 ```
@@ -21,7 +28,7 @@ pnpm add @smthrs/evals@next
 ## Runtime requirements
 
 - Node.js 22.19.0 or later, from the package's `engines` field.
-- `effect` 4.0.0-rc.112. Suites, runs, baselines, and gates are all `Effect`
+- `effect` 4.0.0-rc.115. Suites, runs, baselines, and gates are all `Effect`
   values, so every program composes with the `effect` library directly.
 - `@smthrs/core` supplies `Flow` values. `@smthrs/scorers` supplies scorers,
   bindings, and the pure `@smthrs/scorers/ScoreGate` grading contract, including

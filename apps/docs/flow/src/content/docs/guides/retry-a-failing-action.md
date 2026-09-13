@@ -28,10 +28,14 @@ const policy = RetryPolicy.make({
 ```
 
 `RetryPolicy.make` checks every bound and throws a `RangeError` naming the field
-that is wrong: `initialMs` finite and not negative, `factor` finite and positive,
-`maxMs` finite and not below `initialMs`, `maxAttempts` a safe integer of at
-least one, `expirationMs` finite and positive, and `jitterRatio` finite and
-within zero and one inclusive. `jitterRatio: 0` disables jitter. The
+that is wrong: `initialMs` finite and greater than zero, `factor` finite and
+positive, `maxMs` finite and not below `initialMs`, `maxAttempts` a safe integer
+of at least one, `expirationMs` finite and positive, and `jitterRatio` finite
+and within zero and one inclusive. `initialMs: 0` is refused rather than read as
+"retry immediately": every computed delay would be zero, which `nextDelay`
+treats as exhausted, so the policy would give up on the first failure whatever
+`maxAttempts` promised. Use `initialMs: 1` for a near-immediate retry.
+`jitterRatio: 0` disables jitter. The
 `nonRetryable` array is copied and frozen, so mutating your array later cannot
 change what a parked policy means.
 
@@ -41,8 +45,9 @@ a long-lived retry with `expirationMs` when a wall-clock give-up is required.
 
 ## Attach it to the work
 
-The engine reads `action.retryPolicy` at dispatch, and the **inline** form of
-`Action.make` is where that field lives:
+The engine reads `action.retryPolicy` at dispatch. Both forms of `Action.make`
+take it; the [`Action.make` reference](/reference/flow/#actionmake) lists
+every option. The inline form:
 
 ```ts
 import { Action } from "@smthrs/flow"
@@ -60,14 +65,23 @@ const settle = Action.make({
 })
 ```
 
-A **declared** action, the kind a body names, takes no `retryPolicy` option. Give
-one retry behavior in either of two ways:
+A **declared** action, the kind a body names, takes the same option:
 
-- Dispatch an inline action carrying the policy from inside the declared action's
-  implementation. The engine records it as a durable step of its own, with its
-  own attempt sequence.
-- Wrap the work in `Action.retry`, which is `Effect.retry` with the durable
-  attempt context threaded through it.
+```ts
+const Settle = Action.make("payments/Settle", {
+  payload: { orderId: Schema.String },
+  success: Schema.String,
+  error: Schema.String,
+  retryPolicy: policy
+})
+```
+
+Two other tools cover different needs:
+
+- Dispatch an inline action from inside an implementation when a nested step
+  needs its own record and its own attempt sequence.
+- Wrap work in `Action.retry`, which is `Effect.retry` with the durable attempt
+  context threaded through it, for a retry the policy does not describe.
 
 ```ts
 const attempts = Action.retry(settle, { times: 3 })

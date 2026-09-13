@@ -48,23 +48,39 @@ arbitrarily long history cannot make an old entry reappear.
 
 ## Resume at a cursor
 
-`afterSequence` is a resumable cursor into one run's journal partition:
+Store `event.cursor` after processing each event, then pass it back unchanged
+as `afterCursor` with the same `runId`:
 
 ```ts
-const resumed = control.watch({ runId: "run-17", afterSequence: lastSeen })
+const resumed = control.watch({ runId: "run-17", afterCursor: lastSeen })
 ```
 
-It requires `runId`. Sequences are partition-local, so one scalar applied to
-every partition would skip every lower unseen sequence in every partition but
-the cursor's own:
+A cursor is `{ sequence: number; offset?: number }`. `sequence` identifies the
+source journal entry. A present `offset` is the zero-based index of the last
+consumed member of that entry's expansion. An absent offset means the entire
+entry was consumed. The last member always carries this completed-entry cursor,
+so the next watch starts after the source row without rereading it.
+
+For a promotion at sequence 12 that delivers two messages, the emitted cursors
+are `{ sequence: 12, offset: 0 }` for the source,
+`{ sequence: 12, offset: 1 }` for the first delivery, and `{ sequence: 12 }`
+for the second. Reconnecting after the source still yields both deliveries.
+This works for finite snapshots and live streams while the source row remains
+in the journal. Commit the checkpoint with your event processing to avoid
+reprocessing an event after a consumer crash.
+
+`afterSequence` remains available to skip a fully processed source entry and
+all its derived events. It cannot checkpoint progress inside an expansion.
+Do not combine it with `afterCursor`.
+
+Both cursor forms require `runId`. Sequences are partition-local:
 
 ```text
-InvalidInput: afterSequence: a watch cursor resumes one run, so it requires runId
+InvalidInput: afterCursor: a watch cursor resumes one run, so it requires runId
 ```
 
-Store `event.sequence` as you consume, and hand the last one back. Derived
-events carry the sequence of the entry they came from, so resuming at a cursor
-sees each of them exactly once too.
+Raw `Lineage` and `Steering` projections and older providers can omit `cursor`.
+`ControlLive.watch` assigns a cursor to every emitted event.
 
 ## Watch everything
 
@@ -106,7 +122,7 @@ delivery is derived rather than written.
 Every member of `ControlError` can reach a watch stream. In practice you will
 meet two:
 
-- `InvalidInput` for an unscoped cursor, as in the preceding section.
+- `InvalidInput` for an unscoped or malformed cursor, or both cursor forms together.
 - `Unavailable` with feature `watch` when the journal read fails, which is a
   storage failure rather than a missing feature.
 

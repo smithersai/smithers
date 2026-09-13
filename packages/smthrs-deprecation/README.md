@@ -1,5 +1,7 @@
 # smthrs
 
+Release candidate scope, host requirements and compatibility review are defined in the [library support policy](https://github.com/smithersai/smithers/blob/main/RELEASE_SUPPORT.md).
+
 **Documentation:** https://smthrs.smithers.sh
 
 `smthrs@1.0.0-rc.0` is a migration notice, not a runtime. An import that

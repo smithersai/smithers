@@ -53,7 +53,7 @@ executes a flow supplies the four stores, a database, an artifact store, a
 workspace root, and a platform:
 
 ```bash
-pnpm add @smthrs/journal@next @smthrs/run-store@next @smthrs/step-cache@next @smthrs/database@next @smthrs/artifacts@next @smthrs/kernel@next @effect/platform-node@4.0.0-rc.112 effect@4.0.0-rc.112 @effect/sql-sqlite-node@4.0.0-rc.112
+pnpm add @smthrs/journal@next @smthrs/run-store@next @smthrs/step-cache@next @smthrs/database@next @smthrs/artifacts@next @smthrs/kernel@next @effect/platform-node@4.0.0-rc.115 effect@4.0.0-rc.115 @effect/sql-sqlite-node@4.0.0-rc.115
 ```
 
 | Package                                 | What it supplies                                                                                                            |

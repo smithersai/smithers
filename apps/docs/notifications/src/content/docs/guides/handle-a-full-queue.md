@@ -78,9 +78,9 @@ export const roomyQueue = NotificationQueue.layerWith({ capacity: 512 })
 Raising it makes a run absorb more before it refuses, and makes an undrained run
 hold more. Two things follow from a non-default bound:
 
-- `Projection.derive` reads at the default, so it would report a shorter queue
-  than the run actually holds. Derive your own projection over
-  `NotificationState` instead. See
+- `Projection.derive` replays every admission the run committed, whatever bound
+  it was built at, but the state it projects still carries the default
+  `capacity`. Read `items`, not `capacity`. See
   [the journal records](/concepts/journal-records/).
 - A capacity that is not a finite number becomes zero, which refuses everything.
   That is deliberate: a misconfigured bound fails loudly rather than retaining an

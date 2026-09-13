@@ -139,6 +139,10 @@ laptop must canonicalize in CI.
 The failure is a `CanonicalError` with a stable `code` and a JSON-style `path`:
 `$` for the root, `.name` for an identifier-safe member, `["name"]` for any
 other member, `[0]` for an array index, and `.toJSON()` for a step into a
-`toJSON` result. Neither field contains the rejected value, so a caller can
-report both without leaking what it was asked to hash. See
-[Report a failure without leaking the value](/guides/use-the-schema/#keep-failures-free-of-the-value).
+`toJSON` result. Report only the stable `code` by default. Member names are
+caller-supplied, so every path segment must be treated as untrusted and may be
+sensitive. The `message` and original `cause` text can also contain caller data.
+`reportInput: false` suppresses Schema input rendering only, without redacting
+paths or exception text. See
+[Limit diagnostic disclosure](/guides/use-the-schema/#limit-diagnostic-disclosure)
+for allowlisting and redaction before a log or RPC boundary.

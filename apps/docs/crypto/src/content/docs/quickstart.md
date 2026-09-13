@@ -18,7 +18,7 @@ stored under.
 - A package with the dependencies installed:
 
 ```bash
-pnpm add @smthrs/crypto@next @effect/platform-node@4.0.0-rc.112
+pnpm add @smthrs/crypto@next @effect/platform-node@4.0.0-rc.115
 ```
 
 ## Hash bytes and store them under the digest
@@ -40,8 +40,9 @@ export const put = (
   bytes: Uint8Array
 ): Effect.Effect<Digest, Sha256Error, Crypto.Crypto> =>
   Effect.gen(function*() {
-    const address = yield* digest(bytes)
-    blobs.set(address, bytes)
+    const owned = Uint8Array.from(bytes)
+    const address = yield* digest(owned)
+    blobs.set(address, owned)
     return address
   })
 ```
@@ -83,7 +84,9 @@ rejection happens before the map is touched.
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
 
 const program = Effect.gen(function*() {
-  const address = yield* put(new TextEncoder().encode("the quickstart bytes"))
+  const input = new TextEncoder().encode("the quickstart bytes")
+  const address = yield* put(input)
+  input.fill(0) // Reusing the caller's buffer leaves the stored bytes intact.
   console.log(address)
   console.log(yield* get(address))
   console.log(yield* get("0".repeat(64)))
@@ -119,9 +122,10 @@ Web Crypto.
 
 ## What just happened
 
-`put` hashed a snapshot of your array, not the array itself, so a later write
-into `bytes` cannot change the address that was returned. `get` validated the
-address before using it as a key, then re-hashed the stored bytes rather than
+`put` copied your array before yielding to the hash service, hashed that copy,
+and stored the same copy after hashing succeeded. Caller writes during hashing
+or after `put` returns cannot change the stored bytes or their digest. `get`
+validated the address before using it as a key, then re-hashed the stored bytes rather than
 trusting the map. Those two habits are the whole discipline of content
 addressing: never accept a digest you have not validated, and never trust
 bytes you have not re-hashed.

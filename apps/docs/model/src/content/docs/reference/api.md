@@ -80,26 +80,26 @@ are Effect Schema classes or structs, so a request encodes to plain JSON. The
 field declaration order of `ModelRequest` is load-bearing: it is the stable
 serialization order a sealed model step keys on.
 
-| Export                 | Kind     | Behavior                                                                                                                                                                                                                                                      |
-| ---------------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `ModelRequest`         | class    | Fields: `modelId`, `system`, `messages`, `tools`, `params`, optional `toolChoice`. `ModelRequest.make(input)` accepts a plain object.                                                                                                                         |
-| `Message`              | union    | `UserMessage \| AssistantMessage \| ToolMessage`, tagged by `role`. Constructors: `Message.user(text \| part \| parts)`, `Message.assistant(content, { stopReason?, responseId?, itemIds? })`, `Message.tool(part \| parts)`.                                 |
-| `UserMessage`          | class    | `role: "user"`, `content: TextPart[]`. Text only; tool output enters through a tool message.                                                                                                                                                                  |
-| `AssistantMessage`     | class    | `role: "assistant"`, `content: AssistantContentPart[]`, `stopReason`, optional `responseId` and `itemIds` (provider item ids a continuation replays).                                                                                                         |
-| `ToolMessage`          | class    | `role: "tool"`, `content: ToolResultPart[]`: the results of the calls the previous assistant message asked for.                                                                                                                                               |
-| `TextPart`             | struct   | `{ type: "text", text }`, with `TextPart.make({ text })`.                                                                                                                                                                                                     |
-| `ThinkingPart`         | struct   | `{ type: "thinking", text, signature? }`. `signature` is the provider's attestation and must be echoed back unchanged on later requests.                                                                                                                      |
-| `ToolCallPart`         | struct   | `{ type: "tool-call", id, name, arguments }`. `arguments` stays JSON text so it survives a round trip byte for byte.                                                                                                                                          |
-| `ToolResultPart`       | struct   | `{ type: "tool-result", toolCallId, content, addedToolNames }`. `addedToolNames` names the tools the result made available; it defaults to `[]`.                                                                                                              |
-| `SystemPart`           | struct   | One text segment of the system prompt. The prompt is a list so a cache breakpoint can fall between segments.                                                                                                                                                  |
-| `ContentPart`          | union    | `TextPart \| ThinkingPart \| ToolCallPart \| ToolResultPart`, tagged by `type`.                                                                                                                                                                               |
-| `AssistantContentPart` | union    | `ContentPart` without `ToolResultPart`.                                                                                                                                                                                                                       |
-| `StopReason`           | literals | `"stop" \| "length" \| "tool-calls" \| "content-filter" \| "error" \| "aborted" \| "unknown"`. `"aborted"` is this layer's own value for an interrupted stream; no provider reports it.                                                                       |
-| `ToolDefinition`       | class    | `{ name, description, parameters, deferred?, loader? }`. `parameters` is a JSON Schema object. A lazy (`deferred`) tool is wire metadata only: it may never add prompt text, because that would change the sealed-step key of every request that declares it. |
-| `GenerationParams`     | class    | Optional `maxTokens`, `temperature`, `topP`, `topK`, `stopSequences`, `thinkingBudget`, `reasoningEffort`. An omitted field leaves the provider default in place.                                                                                             |
-| `ReasoningEffort`      | literals | `"none" \| "minimal" \| "low" \| "medium" \| "high" \| "xhigh"`. The provider-neutral vocabulary the adapters map onto their own.                                                                                                                             |
-| `ToolChoice`           | literal  | Only `"none"`. The built-in encoders express it by omitting `tools` altogether, which is what both provider APIs require.                                                                                                                                     |
-| `JsonObject`           | schema   | A plain JSON object. Decoding starts from `Schema.Json`, so class instances such as `Date` and `Map` cannot decode as empty records.                                                                                                                          |
+| Export                 | Kind     | Behavior                                                                                                                                                                                                                                                                                                                                     |
+| ---------------------- | -------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ModelRequest`         | class    | Fields: `modelId`, `system`, `messages`, `tools`, `params`, optional `toolChoice`. `ModelRequest.make(input)` accepts a plain object.                                                                                                                                                                                                        |
+| `Message`              | union    | `UserMessage \| AssistantMessage \| ToolMessage`, tagged by `role`. Constructors: `Message.user(text \| part \| parts)`, `Message.assistant(content, { stopReason?, responseId?, itemIds? })`, `Message.tool(part \| parts)`.                                                                                                                |
+| `UserMessage`          | class    | `role: "user"`, `content: TextPart[]`. Text only; tool output enters through a tool message.                                                                                                                                                                                                                                                 |
+| `AssistantMessage`     | class    | `role: "assistant"`, `content: AssistantContentPart[]`, `stopReason`, optional `responseId` and `itemIds` (provider item ids a continuation replays).                                                                                                                                                                                        |
+| `ToolMessage`          | class    | `role: "tool"`, `content: ToolResultPart[]`: the results of the calls the previous assistant message asked for.                                                                                                                                                                                                                              |
+| `TextPart`             | struct   | `{ type: "text", text }`, with `TextPart.make({ text })`.                                                                                                                                                                                                                                                                                    |
+| `ThinkingPart`         | struct   | `{ type: "thinking", text, signature? }`. `signature` is the provider's attestation and must be echoed back unchanged on later requests.                                                                                                                                                                                                     |
+| `ToolCallPart`         | struct   | `{ type: "tool-call", id, name, arguments }`. `arguments` stays JSON text so it survives a round trip byte for byte.                                                                                                                                                                                                                         |
+| `ToolResultPart`       | struct   | `{ type: "tool-result", toolCallId, content, addedToolNames }`. `addedToolNames` names the tools the result made available; it defaults to `[]`.                                                                                                                                                                                             |
+| `SystemPart`           | struct   | One text segment of the system prompt. The prompt is a list so a cache breakpoint can fall between segments.                                                                                                                                                                                                                                 |
+| `ContentPart`          | union    | `TextPart \| ThinkingPart \| ToolCallPart \| ToolResultPart`, tagged by `type`.                                                                                                                                                                                                                                                              |
+| `AssistantContentPart` | union    | `ContentPart` without `ToolResultPart`.                                                                                                                                                                                                                                                                                                      |
+| `StopReason`           | literals | `"stop" \| "length" \| "tool-calls" \| "content-filter" \| "error" \| "aborted" \| "unknown"`. `"aborted"` is this layer's own value for an interrupted stream; no provider reports it.                                                                                                                                                      |
+| `ToolDefinition`       | class    | `{ name, description, parameters, deferred?, loader? }`. `parameters` is a JSON Schema object. A lazy (`deferred`) tool is wire metadata only: it may never add prompt text, because that would change the sealed-step key of every request that declares it.                                                                                |
+| `GenerationParams`     | class    | Optional `maxTokens`, `temperature`, `topP`, `topK`, `stopSequences`, `thinkingBudget`, `reasoningEffort`. An omitted field leaves the provider default in place, except that the Anthropic Messages lowering sends `max_tokens: 4096` for an omitted `maxTokens`. A knob a protocol has no wire field for is dropped from the body instead. |
+| `ReasoningEffort`      | literals | `"none" \| "minimal" \| "low" \| "medium" \| "high" \| "xhigh"`. The provider-neutral vocabulary the adapters map onto their own.                                                                                                                                                                                                            |
+| `ToolChoice`           | literal  | Only `"none"`. The built-in encoders express it by omitting `tools` altogether, which is what both provider APIs require.                                                                                                                                                                                                                    |
+| `JsonObject`           | schema   | A plain JSON object. Decoding starts from `Schema.Json`, so class instances such as `Date` and `Map` cannot decode as empty records.                                                                                                                                                                                                         |
 
 ## `ModelEvent`
 
@@ -308,6 +308,12 @@ credential-safe diagnostics.
 | `make`                | constructor               | `Effect<RequestExecutor, never, HttpClient>` around the kernel HTTP client in context.                                                                                                                                                                 |
 | `layer`               | layer                     | `Layer<RequestExecutor, never, HttpClient>`: provides the executor, requiring the kernel HTTP client.                                                                                                                                                  |
 
+The kernel HTTP boundary returns structural permission data. The executor uses
+`@smthrs/capability`’s `decodePermissionError` to reconstruct the yieldable error
+class with its capability, request identity and suspension metadata. Callers
+receive the existing `RequestError` union; transport payload object identity is
+not preserved.
+
 The retry ladder: one call makes at most three attempts (the first plus two
 retries), starting at 500 ms, doubling, jittered, capped at 10 s per wait and
 60 s in total. Only a retryable error is retried. A `Retry-After` or
@@ -320,21 +326,39 @@ instead of holding the process.
 HTTP status classification maps 401 and 403 to `authentication`; 402 and the
 quota vocabulary to `quota_exceeded`; 429 to `rate_limited`; content-policy
 wording to `content_policy`; overflow wording to `context_overflow`; 400,
-404, 409, 413, and 422 to `invalid_request`; 5xx and the retryable 503, 504,
-and 529 to `provider_internal`; anything else to `unknown`. A protocol's
-`classifyError` runs first and wins. Reset instants are also read from the
+404, 409, 413, and 422 to `invalid_request`; 5xx to `provider_internal`;
+anything else to `unknown`. The executor and built-in protocols share these
+rules, including bare 402 responses and incorrect API key wording. Anthropic
+overrides 529 and overload errors to `rate_limited`. A protocol's
+`classifyError` code wins when it is more specific than `unknown`; otherwise
+the executor keeps the shared classification. Protocol diagnostics are retained.
+Reset instants are also read from the
 `x-ratelimit-reset-*` and `anthropic-ratelimit-*-reset` header families and
 from reset fields in a JSON error body, preferring the exhausted resource's
 window so a parked run wakes exactly once.
 
 Diagnostics are scrubbed twice. Values the package knows to be credentials
-are removed literally, in raw, URL-encoded, and JSON-escaped form. A JSON
+are removed literally, in raw, URL-encoded, JSON-escaped, and Base64 forms
+(including URL-safe Base64). A JSON
 error body is additionally walked and every value under a credential-shaped
 key is replaced at any depth. A failed response body stops being read at
 64 KiB, so nothing beyond that is held, parsed, classified, or redacted; the
 recursive walks stop at depth 12, where a redacted subtree is replaced whole;
 and the text kept on the error is capped at 16 KiB, reachable as
 `ModelError.body` with `ModelError.bodyTruncated` set when either cap bites.
+
+`Auth.credentialHeaders` designates headers added by signing, including custom
+names. `apiKeyHeader` and `bearer` set it automatically. Custom Auth values
+should list any credential headers outside the shared matcher. `Auth.withRedaction`
+adds these names and the shared matcher to `Headers.CurrentRedactedNames` while
+preserving the caller's policy. Routes apply it around signing and HTTP execution,
+so request traces redact these headers, including `chatgpt-account-id`.
+
+`RequestExecutor.errorSanitizer(request)` captures the signed request's credential
+values and active header policy. Routes retain that sanitizer through response
+consumption, including after credential refresh. HTTP 200 protocol failures have
+every free-form `ModelError` string field scrubbed and capped at 16 KiB before
+reaching callers. Error codes and numeric retry metadata retain their meaning.
 
 ## `AnthropicMessages`
 
@@ -356,7 +380,8 @@ as `invalid_request`. A non-empty request whose first lowered message is an
 assistant message also fails preparation as `invalid_request`, with path
 `messages[0].role`, before any network call. Stop reasons map `end_turn`, `stop_sequence`, and
 `pause_turn` to `"stop"`; `max_tokens` to `"length"`; `tool_use` to
-`"tool-calls"`; `refusal` to `"content-filter"`. Classification recognizes
+`"tool-calls"`; `refusal` to `"content-filter"`. `message_stop` is the
+`terminal` predicate, so the route stops pulling there. Classification recognizes
 Anthropic's HTTP 400 "credit balance is too low" wording as
 `quota_exceeded`, and `overloaded` and 529 as `rate_limited` so the agent can park durably.
 
@@ -379,7 +404,12 @@ assistant turn is omitted. Stored reasoning item ids replay as
 reasoning items on the ChatGPT protocol, where item references would fail.
 `response.completed` settles `"stop"` or `"tool-calls"`; `response.incomplete`
 settles `"content-filter"` when its reason is `content_filter` and `"length"`
-otherwise.
+otherwise. Both terminal events carry the response id and its usage counters,
+and both are the protocol's `terminal` predicate, so the route stops pulling
+there. A function call still open at `response.completed` closes from the
+final response `output` through the same strict argument validator a done
+event uses; a call the final output does not finish fails the stream as
+`invalid_provider_output` instead of settling a tool turn.
 
 ## `OpenAIChatCompletions`
 
@@ -401,7 +431,12 @@ tools, failing preparation with `invalid_request`, because providers reject
 `tools` together with `response_format`. The one exception is
 `toolChoice: "none"`: that lowering omits `tools`, so the two fields never
 meet on the wire. Finish reasons map `stop`, `length`, `tool_calls`, and
-`content_filter` onto the matching stop reasons. A purely numeric provider
+`content_filter` onto the matching stop reasons; only `stop` normalizes to
+`"tool-calls"` when a call completed, since Gemini finishes a successful tool
+turn that way, while `length` and `content_filter` after a completed call stay
+what they are. The choice-less usage chunk that `include_usage` makes the
+provider send after the finish chunk is the `terminal` predicate; `[DONE]`
+never reaches the protocol. A purely numeric provider
 code in the HTTP range stands in for a missing status, which is how a gateway
 that reports `{"error":{"code":429}}` inside an HTTP 200 stream still
 classifies as `rate_limited`.
@@ -446,6 +481,11 @@ and a partition with no immediate tools collapses to all-immediate.
 
 Pure accumulation of fragmented provider tool-call arguments.
 
+`OpenToolCall.fragments` is an immutable `Chunk<string>` in arrival order.
+Deltas share prior chunks without copying all previous fragments; completion
+and abort settlement flatten the chunks once. Earlier states remain reusable.
+Use `Chunk.toReadonlyArray(call.fragments)` when an array is needed.
+
 | Export                           | Kind        | Behavior                                                                                                                                                                                                                                                                                                                                    |
 | -------------------------------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `State`                          | interface   | `{ open: OpenToolCall[] }`: the accumulator.                                                                                                                                                                                                                                                                                                |
@@ -463,8 +503,8 @@ Pure accumulation of fragmented provider tool-call arguments.
 
 Static facts about known provider models, read from a model id alone.
 
-| Export                             | Kind     | Behavior                                                                                                                                                                                                              |
-| ---------------------------------- | -------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Export                            | Kind     | Behavior                                                                                                                                                                                                                                   |
+| --------------------------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `contextWindowTokensFor(modelId)` | resolver | The context window in tokens, matched case-insensitively against the id. A million-token row is anchored to the bare id, so a cloud-prefixed or suffixed id falls through to the conservative row. Unknown ids answer 128,000, never zero. |
 
 `@smthrs/agent` re-exports this as `SeatResolver.contextWindowTokensFor`, and

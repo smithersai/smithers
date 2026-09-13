@@ -11,8 +11,9 @@ else. Three builders exist for the cases it does not cover: existing
 OpenTelemetry instrumentation you must feed, a vendor exporter that is not
 OTLP/HTTP JSON, and a provider a framework hands you already constructed.
 
-All three attach the same validated `Resource`, so `service.name` means the
-same thing whichever one you pick.
+All three validate `Resource.Configuration`. `NodeOtel` and `BrowserOtel`
+construct providers with that resource. `Otel` supplies it to provider factories
+and metrics; already-created providers retain their own resource.
 
 ## Node: build the SDK for me
 
@@ -61,41 +62,87 @@ import * as BrowserOtel from "@smthrs/observability/BrowserOtel"
 
 const telemetry = BrowserOtel.layerOtel({
   resource: { serviceName: "console-ui" },
-  spanProcessor: new BatchSpanProcessor(
-    new OTLPTraceExporter({ url: "https://otlp.example.com/v1/traces" })
-  )
+  spanProcessor: () =>
+    new BatchSpanProcessor(
+      new OTLPTraceExporter({ url: "https://otlp.example.com/v1/traces" })
+    )
 })
 ```
 
 Every processor field is optional, and a layer with none still builds: it
-provides the resource and bridges nothing. Pass an array to install several
-processors for one signal.
+provides the resource and bridges nothing. Return an array to install several
+processors for one signal. Each field is a factory because the layer owns what
+it returns: the factory runs once at acquisition, and the web SDK shuts down
+every processor and reader when the scope closes.
 
 If all you need in a browser is OTLP delivery, use `Otlp.layerFetch` instead.
 It is smaller, needs no SDK, and is browser-safe by construction.
 
-## Bridge providers you already hold
+## Bridge providers you control
 
 `Otel.layerOtel` allocates no exporter at all. It takes an OpenTelemetry
-`TracerProvider`, `LoggerProvider`, and metric readers you already have, and
-bridges Effect's tracer, logger, and metrics onto them:
+`TracerProvider` and `LoggerProvider`, plus a factory that builds the metric
+readers, and bridges Effect's tracer, logger, and metrics onto them. Provider
+fields also accept synchronous factories. Every factory runs during layer
+acquisition, after resource validation, and the provider factories receive the
+same resource as the metric producer. Pass it to the SDK constructor to export
+all signals with the configured service identity:
 
 ```ts
+import { LoggerProvider } from "@opentelemetry/sdk-logs"
+import { PeriodicExportingMetricReader } from "@opentelemetry/sdk-metrics"
+import { BasicTracerProvider } from "@opentelemetry/sdk-trace-base"
 import * as Otel from "@smthrs/observability/Otel"
+import * as Effect from "effect/Effect"
 
+let tracerProvider: BasicTracerProvider | undefined
+let loggerProvider: LoggerProvider | undefined
 const telemetry = Otel.layerOtel({
-  resource: { serviceName: "deploy-status" },
-  tracerProvider,
-  loggerProvider,
-  metricReader,
+  resource: {
+    serviceName: "deploy-status",
+    serviceVersion: "2.4.1",
+    attributes: { region: "us-west" }
+  },
+  tracerProvider: (resource) =>
+    tracerProvider = new BasicTracerProvider({
+      resource,
+      spanProcessors: [spanProcessor]
+    }),
+  loggerProvider: (resource) =>
+    loggerProvider = new LoggerProvider({
+      resource,
+      processors: [logRecordProcessor]
+    }),
+  metricReader: () => new PeriodicExportingMetricReader({ exporter: metricExporter }),
   metricTemporality: "cumulative"
 })
+
+try {
+  await Effect.runPromise(program.pipe(Effect.provide(telemetry), Effect.scoped))
+} finally {
+  await Promise.all([tracerProvider?.shutdown(), loggerProvider?.shutdown()])
+}
 ```
 
+Ownership splits between the two kinds of field. Providers are borrowed: the
+application owns their flushing and shutdown, including providers returned by
+factories, and this layer never shuts one down. Readers are owned: the
+`metricReader` factory runs once during acquisition, and closing the scope shuts
+down every reader it returned. Build the readers inside the factory rather than
+handing over one a longer-lived composition still exports through, which that
+shutdown would disable. Construct `spanProcessor` and `logRecordProcessor` with
+your exporters and give them to the provider you build.
+
+You can still pass existing providers directly. The layer cannot change the
+resource they captured at construction. In that form, the resource option
+controls only metrics and tracer instrumentation scope, not log or span resource
+attributes. Construct both providers with the intended resource before injection,
+or use the factories above to receive the validated resource.
+
 Each of the three is optional and each is bridged only when supplied, so a
-composition with a tracer and no meter installs only the tracer bridge. An
-empty `metricReader` array is treated as no metrics at all rather than as a
-misconfigured reader.
+composition with a tracer and no meter installs only the tracer bridge. A
+`metricReader` factory that returns an empty array registers no reader at all
+rather than a misconfigured one.
 
 Two options control merge behavior: `loggerMergeWithExisting` keeps the ambient
 Effect loggers alongside the OpenTelemetry logger, and `metricTemporality`
@@ -122,3 +169,26 @@ const resource = Resource.layer({
 into OpenTelemetry attributes, for code that needs the attribute record rather
 than a layer. It reads no environment variables: every attribute is one you
 passed.
+
+## Default OTLP export limits
+
+`Otlp.layer` and `Otlp.layerFetch` share a limit of four active HTTP requests
+across logs, traces, and metrics within each layer acquisition. Each request has
+a ten-second timeout that interrupts the transport and aborts a stalled fetch.
+`shutdownTimeout` separately bounds the final scope flush.
+
+Logs and traces flush at 1,000 records or the export interval. The transport has
+no waiting queue: a batch arriving while all four slots are occupied is dropped.
+Serialized JSON payloads larger than 1 MiB are also dropped, limiting active
+request payloads to 4 MiB. This limit applies after serialization; it does not
+bound individual application records, temporary serialization allocations, or
+the application's metric registry.
+
+The Effect counter `flows/observability/otlp/dropped` increments once per batch
+discarded for saturation, payload size, or timeout. Discards are terminal and
+are not retried. Read the counter locally
+with `Metric.value(Metric.counter("flows/observability/otlp/dropped"))` during an
+outage. Its exported value becomes available when the collector recovers.
+Ordinary HTTP and network failures retain Effect's retry policy. These limits
+apply to the default `Otlp` layers; SDK processors supplied to the other builders
+retain their own export policies.

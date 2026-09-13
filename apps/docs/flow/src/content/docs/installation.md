@@ -9,7 +9,7 @@ editUrl: "https://github.com/smithersai/smithers/edit/main/packages/smithers/flo
 ## Install the package
 
 ```bash
-pnpm add @smthrs/flow@next effect@4.0.0-rc.112
+pnpm add @smthrs/flow@next effect@4.0.0-rc.115
 ```
 
 The Smithers 1.0 release candidates publish under the `next` dist tag, so the tag
@@ -24,9 +24,10 @@ copies of `effect` in one program are two sets of service tags.
 
 The package requires Node.js 22.19.0 or later. It ships as both ESM and
 CommonJS with TypeScript declarations, and it pulls in
-[`@smthrs/plan`](https://plan.smithers.sh/reference/api/), [`@smthrs/crypto`](https://crypto.smithers.sh/reference/api/), and
-[`@smthrs/keys`](https://keys.smithers.sh/reference/api/), which supply the node vocabulary a body is written
-in and the digests identity is built from.
+[`@smthrs/plan`](https://plan.smithers.sh/reference/api/), [`@smthrs/crypto`](https://crypto.smithers.sh/reference/api/),
+[`@smthrs/keys`](https://keys.smithers.sh/reference/api/), and [`@smthrs/canonical`](https://canonical.smithers.sh/reference/api/), which
+supply the node vocabulary a body is written in, the digests identity is built
+from, and the canonical JSON checks applied to values.
 
 ## Import forms
 
@@ -59,7 +60,7 @@ This package declares the `FlowRuntime` port and implements none of it, so a
 composition that runs a flow adds an engine and a platform crypto service:
 
 ```bash
-pnpm add @smthrs/engine@next @effect/platform-node@4.0.0-rc.112
+pnpm add @smthrs/engine@next @effect/platform-node@4.0.0-rc.115
 ```
 
 - [`@smthrs/engine`](https://engine.smithers.sh/reference/api/) implements `FlowRuntime`. Its

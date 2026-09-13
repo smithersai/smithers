@@ -15,7 +15,7 @@ listed below are the worked examples of everything on this page.
 When it is published, the install is:
 
 ```bash
-pnpm add @smthrs/database@1.0.0-rc.0 effect@4.0.0-rc.112
+pnpm add @smthrs/database@1.0.0-rc.0 effect@4.0.0-rc.115
 ```
 
 `effect` is a required exact peer. The SQLite adapter is an optional exact
@@ -23,7 +23,7 @@ peer, needed by `node/NodeDatabase` and `test/TestDatabase`, including the
 verification example below. Install it when selecting either subpath:
 
 ```bash
-pnpm add @effect/sql-sqlite-node@4.0.0-rc.112
+pnpm add @effect/sql-sqlite-node@4.0.0-rc.115
 ```
 
 The driver-neutral root needs no SQLite adapter. Mixing two copies
@@ -32,11 +32,11 @@ one copy cannot see a client provided from the other.
 
 ## Requirements
 
-| Requirement | Value            | Why                                                                                                                                                   |
-| ----------- | ---------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Node.js     | 22.19.0 or later | `NodeDatabase` opens the database through the built-in `node:sqlite` module.                                                                          |
-| Runtime     | Node.js, not Bun | `NodeDatabase.layer` refuses to open a durable database when `process.versions.bun` is set. See [why rc.0 is SQLite only](/concepts/sqlite-only/). |
-| Database    | SQLite           | rc.0 ships no Postgres or PGlite layer.                                                                                                               |
+| Requirement | Value            | Why                                                                                                                   |
+| ----------- | ---------------- | --------------------------------------------------------------------------------------------------------------------- |
+| Node.js     | 22.19.0 or later | `NodeDatabase` opens the database through the built-in `node:sqlite` module.                                          |
+| Bun         | 1.4.0 or later   | Select `BunDatabase` and the matching `@effect/sql-sqlite-bun` peer. NodeDatabase deliberately refuses use under Bun. |
+| Database    | SQLite           | rc.0 ships no Postgres or PGlite layer.                                                                               |
 
 ## Import subpaths
 

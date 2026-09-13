@@ -6,9 +6,10 @@ sidebar:
 editUrl: "https://github.com/smithersai/smithers/edit/main/packages/smithers/agent/triggers/docs/guides/run-the-scheduler.md"
 ---
 
-The scheduler is a poll loop. Every tick it lists the enabled triggers, works
-out what each one owes, claims what is due, and launches through a `Runner`.
-This guide composes it into a host.
+The scheduler is a poll loop. Every tick it lists every trigger, recovers the
+occurrences already running, skips the disabled ones, works out what each of
+the rest owes, claims what is due, and launches through a `Runner`. This guide
+composes it into a host.
 
 ## Compose the layers
 
@@ -52,11 +53,15 @@ every trigger in the process with nothing written down.
 Scheduler.layer({ pollInterval: "30 seconds", runPollInterval: "5 seconds" })
 ```
 
-| Option            | Default      | What it paces                                                                          |
-| ----------------- | ------------ | -------------------------------------------------------------------------------------- |
-| `pollInterval`    | `"1 minute"` | How often a tick lists triggers and evaluates due work.                                |
-| `runPollInterval` | `"1 second"` | How often a launched run's monitor asks the runner whether it is still active.         |
-| `host`            | `"local"`    | The name every tick records its heartbeat under, so a listing can say who last polled. |
+| Option            | Default        | What it paces                                                                          |
+| ----------------- | -------------- | -------------------------------------------------------------------------------------- |
+| `pollInterval`    | `"1 minute"`   | How often a tick lists triggers and evaluates due work.                                |
+| `runPollInterval` | `"1 second"`   | How often a launched run's monitor asks the runner whether it is still active.         |
+| `host`            | `"local"`      | The name every tick records its heartbeat under, so a listing can say who last polled. |
+| `concurrency`     | `4`            | How many triggers one tick processes at the same time.                                 |
+| `startTimeout`    | `"4 minutes"`  | How long one `Runner.start` may take before the launch is abandoned and left pending.  |
+| `inspectTimeout`  | `"30 seconds"` | How long one `Runner.isActive` may take before it counts as a failed inspection.       |
+| `cancelTimeout`   | `"30 seconds"` | How long one `Runner.cancel` may take before the supersede fails and is compensated.   |
 
 Both must be finite, positive Effect durations. Zero polls a CPU-tight loop and
 an infinite interval never completes, and `Duration.fromInput` accepts both, so
@@ -66,6 +71,29 @@ the scheduler refuses them itself with `invalid_options` and
 Set `pollInterval` below the tightest schedule you run. A one-minute cron under
 a five-minute poll still fires, because catch-up replays the boundaries the poll
 skipped, but only if the declaration asked for catch-up.
+
+## Bound a slow runner
+
+A tick processes up to `concurrency` triggers at once and waits for each
+launch to be acknowledged, so one launch waiting on a parked plan holds one
+slot, not the triggers listed after it. Every runner call also carries a
+deadline. A call that exceeds it is interrupted and fails with
+`runner_timeout`, and the durable state a retry needs is kept:
+
+- A start that timed out is ambiguous, because the runtime may hold the run.
+  The occurrence stays pending and the next tick retries it under the same
+  `idempotencyKey`, so a runtime that did start the run answers with the same
+  run id instead of a second run.
+- An inspection that timed out is retried like any inspection failure, and the
+  monitor detaches after three retries with the owner retained.
+- A cancellation that timed out restores the prior run as active and queues the
+  replacement.
+
+The tick still waits up to `startTimeout` for its slowest launch, and the
+supervisor sleeps `pollInterval` only after the tick returns. Boundaries that
+pass during that wait are replayed only if the declaration asked for catch-up.
+Keep `startTimeout` above the two minutes `parkedAttempts` allows when
+scheduled flows can park for approval.
 
 ## Let the control plane read the store
 

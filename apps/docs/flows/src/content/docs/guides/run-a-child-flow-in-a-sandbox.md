@@ -109,9 +109,9 @@ const SandboxedGreeting = Flow.make("app/SandboxedGreeting", {
 })
 
 const stack = Layer.mergeAll(
-  SandboxedFlow.toLayer(RunGreet, Greet, ({ executionId }) => ({
+  SandboxedFlow.toLayer(RunGreet, Greet, ({ executionId, callId }) => ({
     provider,
-    session: `greet:${executionId}`,
+    session: `greet:${executionId}:${callId}`,
     entry: new URL("./child.ts", import.meta.url)
   })),
   Interpreter.layer(SandboxedGreeting)
@@ -119,7 +119,8 @@ const stack = Layer.mergeAll(
 ```
 
 The action's tag is `app/Greet/sandboxed` unless you pass
-`{ name: "..." }` as `action`'s second argument. Its success schema is
+`{ name: "..." }` as `action`'s second argument. Both forms preserve the literal
+name in the type, so each declaration requires its own implementation. Its success schema is
 `resultSchema(Greeting)`, which is `{ output, diff }`, and its error schema is
 `SandboxedFlowError`.
 
@@ -127,14 +128,15 @@ Compose the returned layer beside `Interpreter.layer(parent)` over one
 `Action.layerImplementations`, exactly as you would any other action
 implementation.
 
-## Derive the session key from the execution
+## Derive the session key from the execution and call
 
 `toLayer`'s third argument is either the placement itself or a function of the
-call's context, which carries the decoded payload and the parent's
-`executionId`. Deriving the key from `executionId`, as above, is the recommended
-shape: the claim is exclusive per execution and stable across a resume, because
-a crash that left a machine behind is reattached by the next execution with the
-same key.
+call's context: the decoded payload, the parent's `executionId`, and `callId`.
+Derive the session key from both `executionId` and `callId`, as above. The engine
+assigns a distinct `callId` to each call, including parallel calls with identical
+payloads, and preserves it across retries and resume. A crash that left a machine
+behind is reattached by the resumed call with the same key. The parent id or
+payload alone cannot distinguish repeated calls.
 
 Because the whole sandboxed execution is one durable action, a second run of the
 parent over the same database answers from the journal and never asks the
@@ -192,3 +194,24 @@ The runtime the bundle is started with has to be on the guest's `PATH`, and
 nothing installs it. `node:22-alpine` has `node`; bare `alpine` does not, and a
 missing runtime comes back as `guest_failed` naming what it looked for. The full
 list of refusals is in [Troubleshooting](/troubleshooting/).
+
+## Failure diagnostics
+
+`result_unreadable` means a zero-exit guest left no result, wrote malformed
+protocol JSON, or returned a result for another attempt. Each execution creates
+a fresh `attempt` nonce in `request.json`; the guest echoes it in both success
+and failure envelopes. The host accepts only the current nonce and removes any
+leftover `result.json` before launch. Reattaching a session preserves workspace
+files but cannot reuse a previous attempt's result.
+
+Before writing a failed `result.json`, the guest applies the engine logger's
+shared credential key and text rules to error fields, messages, and string
+failures. The host applies the same rules to `SandboxedFlowError.message` and
+its provider causes, and redacts guest stdout/stderr before taking diagnostic
+tails. Sensitive fields such as `password` and nested `Authorization` become
+placeholders. Error details that do not match the rules remain available.
+
+These rules are best effort, not a guarantee for arbitrary secret text. They
+cover failure diagnostics, not successful output, request payloads, collected
+files, or the guest's original output streams. Keep secrets out of those
+surfaces or model them with `Schema.Redacted` where supported.

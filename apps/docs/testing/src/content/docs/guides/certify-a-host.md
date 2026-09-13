@@ -18,11 +18,12 @@ implement:
 
 ```ts
 import type { HostSuite } from "@smthrs/testing"
+import * as ChildProcess from "effect/unstable/process/ChildProcess"
 
 const profile: HostSuite.HostProfile = {
   fileSystem: { supported: true },
   path: { supported: true },
-  shell: { supported: true },
+  shell: { supported: true, interruptCommand: ChildProcess.make("host-suite-pending") },
   jj: { supported: false, code: "not_installed" },
   httpTransport: { supported: false, code: "TransportError" },
   clock: { supported: true },
@@ -45,8 +46,10 @@ import * as TestHost from "@smthrs/testing/TestHost"
 import { Effect } from "effect"
 import { describe, it } from "vitest"
 
+const bundle = TestHost.layer({ commands: { "host-suite-pending": { pending: true } } })
+
 describe("TestHost host suite", () => {
-  for (const testCase of HostSuite.hostSuite(TestHost.TestHost, profile)) {
+  for (const testCase of HostSuite.hostSuite(bundle, profile)) {
     it(testCase.name, () => Effect.runPromise(testCase.run))
   }
 })
@@ -63,8 +66,8 @@ package. Plain `vitest` is enough.
 
 ## Probe HTTP explicitly
 
-HTTP is the one supported capability that requires a target, so the shared
-suite never invents a live network call:
+A supported HTTP capability requires an explicit target, so the shared suite
+never invents a live network call:
 
 ```ts
 import * as HttpClientRequest from "effect/unstable/http/HttpClientRequest"
@@ -79,10 +82,12 @@ const httpTransport = {
 ## Where the scratch file goes
 
 The filesystem case writes a scratch file, reads it back, and removes it. The
-suite owns that file completely: it refuses a path that already exists, and it
-removes only the file it created.
+write uses exclusive creation (`flag: "wx"`): an existing path, including a
+dangling symlink or a competing creation, fails atomically with
+`FileSystem/scratchPath`. Removal is registered only after successful creation
+and runs even if the read-back assertion fails.
 
-With no `fileSystemScratchPath` declared, the suite builds a unique absolute
+With no `fileSystemScratchPath` declared, the suite builds a randomized absolute
 path under `/tmp` from the bundle's own `Path` and `Random`. Declare one when
 the bundle's platform has no `/tmp`:
 
@@ -90,10 +95,25 @@ the bundle's platform has no `/tmp`:
 const profileWithScratch = { ...profile, fileSystemScratchPath: "/var/tmp/host-suite-probe.txt" }
 ```
 
-The default is absolute and unique for two reasons. A relative name resolves
+The default is absolute and randomized for two reasons. A relative name resolves
 against the caller's working directory, so a real host bundle would write into,
 and force-delete from, your working tree. A fixed name makes two suites running
 in one directory race on one file.
+
+## Probe process cleanup
+
+A supported `shell` must supply `interruptCommand`, a command that stays
+running until cancelled. Configure the bundle to run that command. The
+TestHost example scripts it as pending; a real host can use a long-running
+child appropriate to its platform.
+
+The cleanup case acquires a handle through the bundle's `ChildProcessSpawner`,
+checks `isRunning`, interrupts the scoped consumer, and checks `isRunning` is
+false after its finalizers complete. An already-exited command fails with
+`Scope/interrupt_running`; a surviving process fails with
+`Scope/interrupt_cleanup`. The suite attempts to kill a surviving handle after
+recording the failure. A shell declared unsupported is checked for its refusal
+code and makes no cleanup claim.
 
 ## Clock and randomness are checked behaviorally
 
@@ -106,7 +126,7 @@ supplies neither fails loudly rather than silently using the Effect defaults.
 
 `HostSuite.HostSuiteError` is the typed contract violation plus the incidental
 host failures a supported capability's own probe can produce: a
-`PlatformError` from the scratch write, a `JjFailure` from a jj command, an
+`PlatformError` from a filesystem or process probe, a `JjFailure` from a jj command, an
 `HttpClientError` from the probe request.
 
 The channel names that closed union rather than widening to `unknown`, so a

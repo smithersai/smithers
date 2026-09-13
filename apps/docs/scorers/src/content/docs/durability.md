@@ -32,7 +32,10 @@ bypass them:
   inconclusive row has no value, a non-empty `reason`, and one of the eight
   `ScorerErrorCode` literals. Migration `0004_require_failure_codes` backfills
   older unclassified failures as `inconclusive` before making the code
-  mandatory.
+  mandatory. A migration's literal list is frozen once it ships, so adding a
+  literal to `ScorerErrorCode` requires a new migration that rebuilds the
+  check. The store tests write every literal through `SqlScoreStore`, so the
+  two vocabularies cannot drift unnoticed.
 - `metadata_json` is `NULL` or valid JSON.
 
 The remaining rules have no useful SQL spelling and are enforced by the store

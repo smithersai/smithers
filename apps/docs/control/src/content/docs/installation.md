@@ -74,13 +74,13 @@ runtime. Its journal uses a real in-memory SQLite database, so the
 [Quickstart](/quickstart/) adds the optional Node driver:
 
 ```bash
-pnpm add effect@4.0.0-rc.112 @effect/sql-sqlite-node@4.0.0-rc.112
+pnpm add effect@4.0.0-rc.115 @effect/sql-sqlite-node@4.0.0-rc.115
 ```
 
 ### A durable composition
 
 ```bash
-pnpm add @smthrs/database@next @smthrs/run-store@next effect@4.0.0-rc.112 @effect/sql-sqlite-node@4.0.0-rc.112
+pnpm add @smthrs/database@next @smthrs/run-store@next effect@4.0.0-rc.115 @effect/sql-sqlite-node@4.0.0-rc.115
 ```
 
 - [`@smthrs/database`](https://database.smithers.sh/reference/api/) supplies the SQL client and the
@@ -98,7 +98,7 @@ inside `effect`. A Node host adds the platform bindings and a serialization
 format:
 
 ```bash
-pnpm add @effect/platform-node@4.0.0-rc.112
+pnpm add @effect/platform-node@4.0.0-rc.115
 ```
 
 See [Serve the control plane over RPC](/guides/serve-over-rpc/).

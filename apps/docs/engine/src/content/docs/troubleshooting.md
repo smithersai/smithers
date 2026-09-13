@@ -60,6 +60,23 @@ the payload difference is unintentional, remember that payload identity is
 structural over the schema: a field added or a value changed makes a new
 identity, while a declared-opaque value is compared by reference.
 
+## One RPC request fails other pending requests
+
+**Symptom.** A handler defect also fails unrelated requests sharing one RPC
+client connection.
+
+**Cause.** `RpcServer.layer` defaults to client-wide fatal defects. A reused
+execution id with a different payload can still raise
+`ExecutionIdentityConflict` as a defect.
+
+**Fix.** Mount flow proxies with
+`RpcServer.layer(MyRpcs, { disableFatalDefects: true })` to scope handler defects
+to their requests. Execute, discard, and resume wire schemas reject empty ids,
+ids longer than 4,096 UTF-16 code units, and ill-formed UTF-16 before the engine
+runs. A trailing unpaired high surrogate is ill-formed. RPC answers these
+decode errors with a request-scoped failure, including with the default server
+options.
+
 ## Compensable action requires SnapshotBoundary
 
 **Symptom.** `Compensable action "<name>" requires SnapshotBoundary`, and the
@@ -92,13 +109,13 @@ action, which the engine restores from persisted state across restarts.
 
 ## Invalid round or budget
 
-**Symptom.** `Round lineageId must be non-empty well-formed text`,
+**Symptom.** `Round rootExecutionId must be non-empty well-formed text`,
 `Round ordinal must be a non-negative safe integer`, or
 `Round maxRounds must be a positive safe integer when supplied`.
 
 **Cause.** A trampoline identity or a round budget is malformed. In practice
-this is a `maxRounds` of 0 or a negative number, or a lineage id that came from
-somewhere other than an execution id.
+this is a `maxRounds` of 0 or a negative number, or a root execution id that
+came from somewhere other than an execution id.
 
 **Fix.** Declare `maxRounds` as a positive safe integer. Remember it counts
 rounds, so `maxRounds: 1` means no handoff at all. See
@@ -205,12 +222,12 @@ engine's own annotated log line for the unredacted context.
 These are logged, not raised. Each one means the engine kept running on a
 fallback:
 
-| Warning                                                                    | Meaning                                                                                                                                                                                    |
-| -------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `no durable retry origin for "<action>"`                                   | No attempt row survives for the step key, usually from retention pruning. The `expirationMs` budget restarts from the current clock.                                                       |
-| `unusable durable retry origin for "<action>"`                             | The store reported a non-finite time or one in the future. The budget starts now.                                                                                                          |
-| `rejected unusable durable latest attempt for "<action>"`                  | The store reported an attempt number that is not a safe integer. The caller's attempt number is used.                                                                                      |
-| `engine: could not record the linked cancellation of child execution <id>` | A parent's cancellation could not be recorded against a child. A durable store cascades cancellation over its own parent edges, so this path is the prompt delivery and not the guarantee. |
+| Warning                                                                    | Meaning                                                                                                                                                                                                                                                                                                                 |
+| -------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `no durable retry origin for "<action>"`                                   | No attempt row survives for the step key, usually from retention pruning. The `expirationMs` budget restarts from the current clock.                                                                                                                                                                                    |
+| `unusable durable retry origin for "<action>"`                             | The store reported a non-finite time or one in the future. The budget starts now.                                                                                                                                                                                                                                       |
+| `rejected unusable durable latest attempt for "<action>"`                  | The store reported an attempt number that is not a safe integer. The caller's attempt number is used.                                                                                                                                                                                                                   |
+| `engine: could not record the linked cancellation of child execution <id>` | A parent's cancellation could not be recorded against a child. Linked delivery is bounded to five seconds; a timeout logs `engine: linked cancellation timed out for child execution <id>`. A durable store cascades cancellation over its own parent edges, so this path is the prompt delivery and not the guarantee. |
 
 ## Two derived operations share a wire name
 

@@ -47,9 +47,9 @@ without pulling the components into its bundle.
 The shell layout, the pages, the pane components, and the flow summaries:
 
 ```ts
-import * as pane0 from "./app/panes/message.tsx"
 import * as layoutModule from "./app/layout.tsx"
 import * as page0 from "./app/page.tsx"
+import * as pane0 from "./app/panes/message.tsx"
 import * as flow0 from "./flows/chat/flow.ts"
 
 export const layout = layoutModule.default

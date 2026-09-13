@@ -1,7 +1,9 @@
 # @smthrs/notifications
 
+Release candidate scope, host requirements and compatibility review are defined in the [library support policy](https://github.com/smithersai/smithers/blob/main/RELEASE_SUPPORT.md).
+
 This package declares `effect` as an exact
-`4.0.0-rc.112` peer dependency. Keep the application on that version so
+`4.0.0-rc.115` peer dependency. Keep the application on that version so
 all Smithers packages share one Effect runtime.
 
 **Documentation:** https://notifications.smithers.sh
@@ -9,7 +11,7 @@ all Smithers packages share one Effect runtime.
 Durable notification queue, admission policy, and journal projection for flows. It models human and system notifications, derives queue state from journal events, and drains eligible work at harness boundaries.
 
 ```sh
-npm install @smthrs/notifications@next @smthrs/journal@next effect@4.0.0-rc.112 @effect/sql-sqlite-node@4.0.0-rc.112
+npm install @smthrs/notifications@next @smthrs/journal@next effect@4.0.0-rc.115 @effect/sql-sqlite-node@4.0.0-rc.115
 ```
 
 Node.js 22.19.0 or later. `@smthrs/journal` holds the durable records, and the
@@ -88,3 +90,5 @@ const program = Effect.gen(function*() {
 `NotificationQueue.layerNoop()` provides the same seam with every method failing as
 `notification_unavailable`, for a composition that means to serve nothing.
 `@smthrs/notifications/package.json` is also exported; `internal/*` and nested `*/index` subpaths are blocked.
+
+A replayed drain fails with `notification_unavailable` if a committed notification or its payload can no longer be read. It never reports a successful partial delivery.

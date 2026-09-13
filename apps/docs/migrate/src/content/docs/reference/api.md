@@ -475,7 +475,7 @@ below is `Mapping.rows` rendered, so it cannot fall behind the code.
 | `openSmithersBackend`                    | none                                                                                         | none                                                                            | unsafe    |
 | `openSmithersStore`                      | none                                                                                         | none                                                                            | unsafe    |
 | `outputs.<key>`                          | `The planned value in scope`                                                                 | `@smthrs/plan/Node`                                                             | automatic |
-| `package.json`                           | `@smthrs/* at 1.0.0-rc.0 and effect at 4.0.0-rc.112`                                         | none                                                                            | automatic |
+| `package.json`                           | `@smthrs/* at 1.0.0-rc.0 and effect at 4.0.0-rc.115`                                         | none                                                                            | automatic |
 | `parseNamespace`                         | `@smthrs/memory`                                                                             | `@smthrs/memory`                                                                | guided    |
 | `partitionDelegationV2AuthorFuel`        | none                                                                                         | none                                                                            | unsafe    |
 | `prometheusContentType`                  | `The kernel's telemetry and the OTLP layer`                                                  | `@smthrs/kernel, @smthrs/observability`                                         | guided    |
@@ -660,7 +660,7 @@ refuses to `apply` a plan built over one (`scan` and `plan` still report it).
   a project already on the release candidate is not reported as old. Companion
   packages (`react`, `ai`, `@ai-sdk/*`, `zod`, `effect`, `xstate`) are recorded.
   Every `effect` declaration in every manifest is kept in `effectDeclarations`
-  with its file and field, and each one that is not exactly `4.0.0-rc.112`
+  with its file and field, and each one that is not exactly `4.0.0-rc.115`
   raises `effect-pin-conflict` naming it: a range, a later prerelease, and two
   manifests that disagree are each a version this release was not built
   against. `Detect.resolvedEffectVersions(lock)` reads what a pnpm, bun, npm,
@@ -724,8 +724,10 @@ refuses to `apply` a plan built over one (`scan` and `plan` still report it).
   `packs`, asset type declarations, skills, evals, and every integration
   subpath import or `SMITHERS_*` name in a deployment manifest.
 
-`Detection.sources` carries the text of every file a scanner read, so the later
-modules parse nothing twice.
+`Detection.sources` carries the text of every file a scanner read. `Scan.scan`
+shares one native compiler session and caches syntax trees by path and content
+across detection, inventory, schema hints, mapping, and unit planning. The
+session and cache are released when the scan ends.
 
 ## RunState
 
@@ -856,6 +858,10 @@ to `effect/Schema` text: `z.object`, `z.string`, `z.number`, `z.boolean`,
 `Schema.Union`, `Schema.Record`, `Schema.Int`, `Schema.optional`,
 `Schema.NullOr`, `Schema.withDecodingDefaultKey`, `.annotate({ description })`,
 and `Schema.check(...)`.
+
+Chained `.int()` adds `Schema.check(Schema.isInt())` to the current schema.
+Numeric bounds from `.min()`, `.max()`, `.positive()`, and `.nonnegative()`
+are preserved before or after `.int()`.
 
 Printed text needs `Schema` in scope, and `Effect` too when a field has a
 default.
@@ -1163,7 +1169,15 @@ What each of those exports puts in front of the model:
 | `unitPrompt`    | `(unit, failures?) => string` | The task, with sources numbered and every later section referring to them by line.                                                                                                                                                                                                             |
 | `failureReport` | `(failures) => string`        | The failing half of a verification round, with bounded output tails.                                                                                                                                                                                                                           |
 
-Every snippet in a prompt is captured source or a scanner-derived rewrite. The prompt never carries an invented identifier and never names a model.
+Every snippet in a prompt is captured source, a scanner-derived rewrite, or a redacted dotenv inventory. The prompt never carries an invented identifier and never names a model.
+
+Dotenv (`.env*`) `SourceFile.text` contains sorted, unique `SMITHERS_*`
+assignment names with `[REDACTED]` values. Other keys, all values, and comments
+are omitted before the brief becomes the capture action's output. Initial,
+repair, and fallback captures use the same view. Its numbered lines refer to
+the inventory. The agent leaves dotenv files unchanged and reports required
+environment migrations as unresolved; the host checkpoint retains original
+bytes for checks and restoration.
 
 ## Gate
 
@@ -1293,19 +1307,21 @@ The same rules grant `proc:spawn` one command line at a time, for this project's
 
 ### What a unit is allowed to write
 
+The finish payload carries the same `RunState.roots` used to take the checkpoint. Membership checks use those exact roots, so a directory such as `.smithers/executions` never expands to include sibling configuration files.
+
 The checkpoint records two things a unit is judged against and they are not the same. `Checkpoint.digest` covers the 0.x run-state paths, which must not change at all. `Checkpoint.tree` covers everything else in the project, minus `.git`, `.jj`, `node_modules`, the report directory, the fixed `.smithers-migrate/` lock directory, `.flows/`, and those run-state roots, and is written beside the unit's backup rather than carried in the journal, because a project has thousands of files and each one would otherwise cross it once per unit.
 
 The checkpoint copies every declared source and target aside and records, per path, whether it existed and what its bytes digested to; `Checkpoint.restore` and `Checkpoint.rollback` decide from that manifest alone. A target the operator already had at the path a unit writes comes back byte for byte, a path recorded absent is the only kind a rollback removes, a path the manifest never named is refused rather than guessed at, and a backup or a restored file whose digest no longer matches fails the restore instead of overwriting the tree. Absence is the platform's typed `NotFound` and nothing else: a permission error, a disk error, or a directory where a file was declared fails the checkpoint.
 
 `Checkpoint.treeDiff` afterwards is what the unit report's `changedFiles` is built from. The agent answers with a `changedFiles` list of its own; it is advisory, is journaled so a reader can compare the two, and decides nothing. A path in the diff that is in neither the unit's sources nor its targets fails the unit: an added file is removed, and a modified or deleted one is named in the report with the checkpoint's own restore command, because the checkpoint copied the unit's declared files aside and nothing else. A lockfile at the project root is the exception, and the only one: an install rewrites it, and a migration that adds packages makes it do exactly that. The exception is an exact root path, not a name at any depth, `src/pnpm-lock.yaml` is a file no install writes, so it fails the unit like any other undeclared write, and it exempts the lockfile from the refusal, not from the record: the unit report's changed files still name it.
 
-Everything after the tree is read runs inside one restoring scope. The deterministic checks, the archive, the rewrites, and the postconditions return a failed unit through their own branches; an exception any of them raises, an unreadable file, a full disk, a refused archive, an interrupt, restores the unit's files before it propagates, because the failure escapes the flow and `WriteReport` never runs.
+Every fallible operation in `Finish`, including the initial owned-file and whole-tree comparisons, runs inside one restoring scope. An absent verification result restores the checkpoint before comparing the agent's output. The deterministic checks, the archive, the rewrites, and the postconditions return a failed unit through their own branches; an exception any of them raises, an unreadable file, a full disk, a refused archive, an interrupt, restores the unit's files before it propagates, because the failure escapes the flow and `WriteReport` never runs.
 
 What the scope puts back is read from the tree at the moment it fires, never from a set computed before it: `Checkpoint.rollback` diffs the tree against the checkpoint's manifest then, puts every recorded file back byte for byte, removes every path added since, and deletes the archive copy of anything it put back. A postcondition that fails after the archive has moved a unit's sources therefore leaves the project exactly as the checkpoint found it, and so does any step a later version adds below the archive.
 
-`Archive.run` tells two kinds of source apart. A source the migration replaced moves to `.smithers-migrate/archive/<original path>`, in two phases: every copy is written before any source is removed. A source a 1.0 project keeps, `package.json`, `tsconfig*.json`, `.gitignore`, is rewritten where it is and never moved: old packages out, `effect` pinned to the version this release ships, `smithers up <file>` scripts rewritten to `smthrs flow start <flow>` with input/detach flags translated and unsafe mappings reported rather than deleted, the JSX compiler options and old path mappings removed, `.flows/` ignored. A `dependencies` or `integration` unit archives nothing, because its files are the ones the migration edits. Tool code gets the agent's rule too: an archive whose source set reaches a run-state path fails with `run-state-blocked` rather than moving it.
+`Archive.run` tells two kinds of source apart. A source the migration replaced moves to `.smithers-migrate/archive/<original path>`, in two phases: every copy is written before any source is removed. A source a 1.0 project keeps, `package.json`, `tsconfig*.json`, `.gitignore`, is rewritten where it is and never moved: old packages out, `effect` pinned to the version this release ships, `smithers up <file>` scripts rewritten to `smthrs flow start <flow>` with input/detach flags translated and unsafe mappings reported rather than deleted, the JSX compiler options and old path mappings removed, `.flows/` ignored. The project unit also keeps Markdown documentation and command script paths recognized by detection (`.sh`, Makefile, Justfile, justfile, Procfile, bunfig.toml, `.github/workflows/*.yml` or `*.yaml`, and docker-compose YAML files), preserving their in-place transform edits. A `dependencies` or `integration` unit archives nothing, because its files are the ones the migration edits. Tool code gets the agent's rule too: an archive whose source set reaches a run-state path fails with `run-state-blocked` rather than moving it.
 
-`MigrateFlow.postconditions` asks, after the archive, whether the project is in the state this kind of unit exists to produce. The content checks read the files a unit changed, so a unit that changed nothing passes all of them and used to be recorded as migrated on that basis. There is one set per kind, and a file a check needs has to be there: a workflow unit wrote the flow it was planned for; a dependencies or project unit's manifests still exist, declare no 0.x package in any of the six dependency fields, and pin `effect`; a project unit's tsconfigs still exist and configure no JSX runtime, and its root `.gitignore` exists and covers `.flows/` (the project unit owns it, as a source when the project has one and as a target it creates when it does not); an integration unit's sources still exist and no longer import the 0.x facade.
+`MigrateFlow.postconditions` asks, after the archive, whether the project is in the state this kind of unit exists to produce. The content checks read the files a unit changed, so a unit that changed nothing passes all of them and used to be recorded as migrated on that basis. There is one set per kind, and a file a check needs has to be there: a workflow unit wrote the flow it was planned for; a dependencies or project unit's manifests still exist and pin `effect`; a project unit's manifests also declare no 0.x package in any of the six dependency fields, a check the dependencies unit is never asked for because the units that run after it still import the 0.x facade, its tsconfigs still exist and configure no JSX runtime, and its root `.gitignore` exists and covers `.flows/` (the project unit owns it, as a source when the project has one and as a target it creates when it does not); an integration unit's sources still exist and no longer import the 0.x facade.
 
 The final tree is then verified as the final tree. `Verify.run` runs again over it, install, format, every typecheck, the tests, and registry discovery, and its result is the verification the unit report records; the whole-tree confinement check and the run-state check run again after it, because the archive and the verification both ran commands, and a file the unit owns under a run-state root (`.smithers/smithers.config.ts` beside `.smithers/smithers.db`) is the unit's to archive and is left out of the run-state comparison. Only then is the unit `migrated`; any failure restores it.
 
@@ -1450,7 +1466,7 @@ drives its implementation.
 | `withoutComments`                                       | `(text: string) => string`                                                                                    | JSONC without its comments, for parsing.                                                                              |
 | `pinFor`                                                | `(name: string) => string \| undefined`                                                                       | The version this release pins a package to.                                                                           |
 | `dependencyFields`                                      | `["dependencies", "devDependencies", "peerDependencies", "optionalDependencies", "overrides", "resolutions"]` | The six fields a postcondition checks.                                                                                |
-| `effectVersion`                                         | `"4.0.0-rc.112"`                                                                                              | The `effect` version this release was built against.                                                                  |
+| `effectVersion`                                         | `"4.0.0-rc.115"`                                                                                              | The `effect` version this release was built against.                                                                  |
 | `smithersVersion`                                       | `"1.0.0-rc.0"`                                                                                                | The `@smthrs/*` version it adds.                                                                                      |
 | `ManifestRewrite`, `ScriptRewrite`, `UnsupportedScript` | `interface` or `Schema.Struct`                                                                                | The rewrite inputs and what could not be rewritten.                                                                   |
 
@@ -1500,6 +1516,13 @@ scripted composition to test a migration against.
 | `migrationRoot`                                                     | `(root: string) => Effect<MigrationRoot, MigrateError>`          | The branded absolute root every service is pinned to.                                                    |
 | `scriptedModel`, `done`                                             | `(script: Script) => Model.Model`, `(output: unknown) => string` | The test model and the cell that answers with a value.                                                   |
 | `NodeConfig`, `ScannedConfig`, `Script`, `Runtime`, `MigrationRoot` | `interface` or `type`                                            | The composition's inputs and its runtime type.                                                           |
+
+`rules` grants process commands only when the capability pattern grammar can
+represent the complete line literally. Lines containing `*` or `?` receive no
+agent process grant; deterministic verification still runs them as configured.
+Use a package script such as `npm run test` to make those commands available to
+the agent. Composition completeness assertions are compile-time tests and are
+not exported by this subpath.
 
 ### Command
 

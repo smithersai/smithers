@@ -25,13 +25,13 @@ as a workspace dependency:
 When it publishes, the install is one command:
 
 ```bash
-pnpm add @smthrs/memory@next effect@4.0.0-rc.112
+pnpm add @smthrs/memory@next effect@4.0.0-rc.115
 ```
 
 ## Requirements
 
 - Node.js 22.19.0 or later. The package's `engines` field enforces this floor.
-- [Effect](https://effect.website) 4.0.0-rc.112, exactly. It is a peer
+- [Effect](https://effect.website) 4.0.0-rc.115, exactly. It is a peer
   dependency so the application and Smithers share one Effect runtime.
 
 The package ships as ESM and CommonJS with TypeScript declarations. Its
@@ -44,14 +44,14 @@ The `TestMemory` layer uses a real in-memory SQLite database. Add its optional
 Node driver before following the quickstart:
 
 ```bash
-pnpm add @effect/sql-sqlite-node@4.0.0-rc.112
+pnpm add @effect/sql-sqlite-node@4.0.0-rc.115
 ```
 
 A store backed by a database file needs the database package and its selected
 Node adapters:
 
 ```bash
-pnpm add @smthrs/database@1.0.0-rc.0 @effect/platform-node@4.0.0-rc.112 @effect/sql-sqlite-node@4.0.0-rc.112
+pnpm add @smthrs/database@1.0.0-rc.0 @effect/platform-node@4.0.0-rc.115 @effect/sql-sqlite-node@4.0.0-rc.115
 ```
 
 - `@smthrs/database` supplies the SQLite client and the durable writer. It is

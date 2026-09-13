@@ -25,7 +25,22 @@ import * as Keys from "@smthrs/keys"
 **Cause.** The input holds something canonical serialization has no single
 representation for, so there is no one right way to turn it into bytes. A
 `bigint` is the common case: `deriveKey({ value: 1n })` fails here. Functions,
-symbols, and `undefined` members fail for the same reason.
+symbols, and `undefined` behave differently depending on their position:
+
+| Position         | Canonical behavior                                                                                 |
+| ---------------- | -------------------------------------------------------------------------------------------------- |
+| Root-level value | Rejected with `canonical_unsupported_value`, reported by `deriveKey` as `canonicalization_failed`. |
+| Object member    | Omitted; identity equals the member being absent.                                                  |
+| Array element    | Replaced with `null`.                                                                              |
+
+See the [canonical erasure table](/concepts/key-material/#distinctions-the-digest-never-sees).
+The existing `test/Key.test.ts` test
+"collapses an undefined-valued member into an absent member" pins this behavior:
+`derive({ a: 1, b: undefined })` equals `derive({ a: 1 })`.
+
+When two distinct requests share a key, check for omitted members. Before
+deriving, validate required identity fields or encode an explicit sentinel
+when the distinction must contribute to identity.
 
 **Fix.** Convert the value to a canonical type before deriving. A `bigint`
 becomes a string; a date becomes an ISO string or an epoch number. Choose the

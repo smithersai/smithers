@@ -80,7 +80,7 @@ wants Effect's platform services and nothing more.
 | You supply                                                             | What breaks without it                                                                            |
 | ---------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
 | One mount behind `bash`, `fs`, and `jj.fs`                             | Nothing raises. A command writes a file no reader sees, or jj snapshots a tree never written.     |
-| `realpath` for canonicalization                                       | `realPath` fails with `PermissionDenied`; there is no fallback.                                    |
+| `realpath` for canonicalization                                        | `realPath` fails with `PermissionDenied`; there is no fallback.                                   |
 | An `exec` whose promise settles once its `AbortSignal` fires           | The permit is never released, and every later run blocks.                                         |
 | A volume that addresses nothing outside itself, if you compose `layer` | The isolation attestation is false, and the capability kernel resolves paths it should not trust. |
 | The mount's `sync()` after writes that must survive a reload           | An acknowledged write is still only in the synchronous mirror.                                    |

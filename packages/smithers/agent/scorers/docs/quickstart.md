@@ -17,7 +17,7 @@ Node.js 22.19.0 or later, and a project that depends on `@smthrs/scorers` and
 driver. See [Installation](./installation.md).
 
 ```bash
-pnpm add @smthrs/scorers@next @smthrs/database@next effect@4.0.0-rc.112 @effect/sql-sqlite-node@4.0.0-rc.112
+pnpm add @smthrs/scorers@next @smthrs/database@next effect@4.0.0-rc.115 @effect/sql-sqlite-node@4.0.0-rc.115
 ```
 
 ## Declare the scorer

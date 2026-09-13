@@ -1,5 +1,7 @@
 # @smthrs/targets
 
+Release candidate scope, host requirements and compatibility review are defined in the [library support policy](https://github.com/smithersai/smithers/blob/main/RELEASE_SUPPORT.md).
+
 **Documentation:** https://targets.smithers.sh
 
 `@smthrs/targets` defines the pure authoring surface used by `PACKAGE.ts` files.
@@ -102,6 +104,11 @@ a content digest.
 the HTTP result cache. The endpoint must use HTTPS. `token` is a `Secret`
 declaration and defaults to `Smithers.Secret("SMITHERS_CACHE_TOKEN")`; the bearer token
 value is never a declaration field or key input.
+
+The catalog includes declaration-only APIs in this RC. `Npm.Publish`,
+`Changesets.Publish`, `Github.Release`, `Github.Pages`, `Git.Pr`, `Github.Pr`,
+and `Npm.Downstream` are unsupported by the package executor and always refuse.
+See [the catalog](./docs/rules.md) before selecting a publication target.
 
 ## Presentation
 

@@ -23,7 +23,7 @@ interface Service {
 
 `admit` appends a message from outside. `drain` takes every queued message at
 a named boundary. The boundary names the journal position the drain feeds
-(`link/ordinal`), so a durable binding can make the take exactly-once by
+(`link/ordinal` for the empty root scope, `chain/link/ordinal` for a named root), so a durable binding can make the take exactly-once by
 deduping on it. `Steering.layerMemory()` is the in-memory stand-in: `admit`
 appends, `drain` takes everything, and it ignores the boundary, accepting the
 volatile loss window that implies.
@@ -40,11 +40,14 @@ const program = Effect.gen(function*() {
 
 ## How the chain drains
 
-Only the ROOT chain drains; a sub-chain never does, so an instruction meant
+Every root chain, including a named root, drains; a sub-chain never does, so an instruction meant
 for the root is never consumed by an unattended child. The chain drains the
-queue when it issues a live author call, at the boundary `link/ordinal` of
-that call, and prepends each drained line to the author context as
-`[steering] <line>`.
+queue when it issues a live author call, at that call's scoped boundary, and
+appends each drained line to the author context as `[steering] <line>`,
+after the context the call already carries (the goal, caller lines, and
+observations on a harness call, or the `context` a script passed). A chain with the goal
+`fix TODOs` that drains `ship it today` authors with
+`["fix TODOs", "[steering] ship it today"]`.
 
 Two rules keep replay deterministic:
 

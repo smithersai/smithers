@@ -74,8 +74,8 @@ plane that wrote its own delivery record would be asserting a fact it did not
 observe.
 
 One promotion entry names a batch, so it derives one delta per message id, each
-carrying the sequence of the entry it came from. A consumer resuming at a
-cursor sees the batch exactly once.
+carrying the sequence of the entry it came from. Checkpoint `event.cursor`
+and resume with `afterCursor` to continue even between deliveries in a batch.
 
 `RunSummary.steering.pending` counts what has been admitted and not yet
 promoted. It comes from the queue rather than a column, because the queue owns

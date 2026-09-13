@@ -88,12 +88,13 @@ requirement as one type.
 
 ## Hand the registry to a Node host
 
-`Executable.layerProject({ root, packs })` is the registry a Node host
+`Registry.layerProject({ root, packs })` is the registry a Node host
 discovers a project in: `<root>/flows/**` first, then every installed pack,
 under one refreshable first-found registry.
 
 ```ts
 import * as NodeRuntime from "@smthrs/flows/NodeRuntime"
+import * as Registry from "@smthrs/registry/Registry"
 
 const host = NodeRuntime.layerHost(
   {
@@ -102,7 +103,7 @@ const host = NodeRuntime.layerHost(
     owner: { hostId: "local" }
   },
   registration,
-  Executable.layerProject({ root: process.cwd() })
+  Registry.layerProject({ root: process.cwd() })
 )
 ```
 
@@ -113,9 +114,9 @@ an empty catalog.
 
 A project with no `flows/` directory is not a failure: it has no flows yet,
 which is the state [`smthrs init`](https://smithers.sh/docs/reference/cli/init/) leaves behind.
-`layerProject` decides that by asking whether the directory is there, so the
-answer stays a statement about the project. A pack that declares a flows
-directory it does not ship is a broken installation and fails the layer as
+`layerProject` checks for that optional directory on every scan. Creating the
+first flow or removing and recreating the directory is reflected by `refresh()`.
+A pack that declares a flows directory it does not ship is a broken installation and fails the layer as
 `RegistryError { code: "invalid_pack" }` naming the pack, instead of quietly
 emptying the registry the project's own flows were in.
 
@@ -134,9 +135,13 @@ const same = Effect.gen(function*() {
 })
 ```
 
-Both fail with `ExecutableError` rather than reporting it, which is what a
-single named launch wants: an operator asking for one flow should be told why
-it will not run.
+Both fail rather than report, which is what a single named launch wants: an
+operator asking for one flow should be told why it will not run. The two halves
+fail differently. Looking the name up fails with
+`RegistryError { code: "not_found" }`, naming the method that asked, so
+`fromRegistry` on an unknown name never reaches the bridge. Lowering and
+loading a descriptor the registry did hold fails with `ExecutableError`. See
+[Troubleshooting](/troubleshooting/).
 
 ## Supply your own module loader
 

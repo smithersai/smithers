@@ -58,6 +58,14 @@ finalization, so wrap the program in `Effect.scoped`.
 
 ## Evaluate a cell
 
+Cells are global async scripts in a persistent realm. Top-level `await` is
+supported; top-level `return` is invalid. `Cell.extract` joins distinct fenced
+cell blocks in reply order into one script. The first `ctx.done` or `ctx.park`
+that records an intent seals the frame; later calls to either do nothing.
+Ordinary JavaScript continues, including code in later blocks. Later
+`ctx.call` and `ctx.checkpoint` calls resolve with a `run_completed` failure
+envelope without dispatching host work.
+
 ```ts
 const frame = yield * realm.evaluate({
   cell: Cell.source(text),
@@ -78,15 +86,18 @@ frame 7 says which cell threw. The returned `Sandbox.RealmFrame` carries:
 
 The evaluation options are `Sandbox.RealmEvaluation`:
 
-| Field     | Purpose                                                                                                        |
-| --------- | -------------------------------------------------------------------------------------------------------------- |
-| `cell`    | The `Cell.Source` to run; construct it with `Cell.source(text)`.                                               |
-| `frame`   | The controller frame number.                                                                                   |
-| `call`    | The `Sandbox.Handler` that resolves the cell's flow calls.                                                     |
+| Field     | Purpose                                                                                                                         |
+| --------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| `cell`    | The `Cell.Source` to run; construct it with `Cell.source(text)`.                                                                |
+| `frame`   | The controller frame number.                                                                                                    |
+| `call`    | The `Sandbox.Handler` that resolves the cell's flow calls.                                                                      |
 | `program` | Optional program the controller's own parse compiled from `cell`. A binding runs it verbatim instead of parsing the cell again. |
-| `mint`    | Optional `Sandbox.Minter` that settles `ctx.checkpoint()`. Absent means the run pins no trees.                 |
-| `bounded` | Set when the caller journals and bounds each settlement itself, so the loop adds no `callMs` clock of its own. |
-| `limits`  | Per-evaluation limit overrides.                                                                                |
+| `flows`   | Optional replacement for the frozen `ctx.flows` catalog before this cell runs. Omit to retain the current catalog.              |
+| `mint`    | Optional `Sandbox.Minter` that settles `ctx.checkpoint()`. Absent means the run pins no trees.                                  |
+| `bounded` | Set when the caller journals and bounds each settlement itself, so the loop adds no `callMs` clock of its own.                  |
+| `limits`  | Per-frame `Sandbox.EvaluationLimits` overrides; `memoryBytes` is set only when opening the realm.                               |
+
+References retained by earlier cells keep their old frozen catalog snapshots.
 
 ## Write the handler
 
@@ -115,6 +126,23 @@ The failure split is the contract `EngineLike.call` declares:
   engine failure, travels in the effect's error channel and tears the cell
   down.
 
+Ordinary failures do not throw. Check `.ok === false`, then `.error.code` to
+choose a recovery. Success resolves with the flow's own value, unwrapped.
+For a flow whose successful result has a `stdout` field:
+
+```ts
+let result = await ctx.call("bash", { command: "find . -name '*.ts'" })
+if (result.ok === false && result.error.code === "timeout") {
+  result = await ctx.call("bash", { command: "find src -name '*.ts'" })
+}
+console.log(result.ok === false ? result.error.code : result.stdout)
+```
+
+QuickJS closes host-call admission before running teardown jobs. Calls and
+checkpoints attempted by cleanup code are rejected without queuing another
+host operation. Teardown runs at most 1,024 promise jobs before releasing the
+frame handles, so asynchronous cleanup is not guaranteed to finish.
+
 ## Read the outcome
 
 One evaluation settles with one of three `Cell.Outcome` members:
@@ -136,8 +164,24 @@ is per frame: the host clears it as the next frame opens.
 
 ## Bound the evaluation
 
-`Sandbox.defaultLimits` fills every ceiling a caller omits, and a partial
-override cannot disable the others:
+`Sandbox.defaultLimits` fills omitted ceilings when the realm opens.
+`RealmEvaluation.limits` overrides `calls`, `steps`, `timeMs`, `totalMs`, and
+`callMs` for one frame. Omitted or `undefined` fields inherit the opening
+limits; overrides may tighten or raise them and do not change later frames.
+The merged limits are validated before the cell runs. Invalid values fail
+with `SandboxError` code `unsupported` without invoking a handler.
+`memoryBytes` belongs to `RealmOptions.limits` and stays fixed for the run.
+
+```ts
+const frame = yield * realm.evaluate({
+  cell: Cell.source(text),
+  frame: 0,
+  call: handler,
+  limits: { calls: 0 } // This frame cannot dispatch a flow call or checkpoint.
+})
+```
+
+The defaults are:
 
 | Limit         | Default | Scope                                                                                                      |
 | ------------- | ------- | ---------------------------------------------------------------------------------------------------------- |
@@ -146,7 +190,7 @@ override cannot disable the others:
 | `steps`       | 1,000   | Per frame; interrupt checks, not bytecode operations.                                                      |
 | `timeMs`      | 30,000  | Per frame; the cell's own JavaScript time, excluding time suspended in a `ctx.call` or `ctx.checkpoint()`. |
 | `totalMs`     | 900,000 | Per frame; whole-evaluation time, host calls included.                                                     |
-| `callMs`      | 120,000 | Per call; settles an overrunning call as a catchable `timeout`.                                            |
+| `callMs`      | 120,000 | Per call; settles an overrunning call as a resolved `timeout`.                                             |
 
 `steps` and `timeMs` have typed floors (`Sandbox.minimumSteps`,
 `Sandbox.minimumTimeMs`), and `memoryBytes` has `Sandbox.minimumMemoryBytes`:
@@ -192,7 +236,7 @@ line, and passes the handle as `{ at }` on a later `ctx.call` to run the call
 against the pinned tree. `ctx.base` is the always-present handle naming the
 tree the run opened on. The host settles a mint through the `Sandbox.Minter`
 it wired into the evaluation; `Sandbox.mintUnavailable` is the refusal a
-binding answers with when no minter is wired, a catchable
+binding answers with when no minter is wired, a resolved
 `checkpoint_unavailable` failure.
 
 A mint travels the same queue as a flow call and settles in issue order, so

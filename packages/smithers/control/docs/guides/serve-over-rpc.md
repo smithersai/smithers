@@ -59,11 +59,21 @@ import { Socket } from "effect/unstable/socket"
 const credential = process.env["SMITHERS_CONTROL_TOKEN"] ?? ""
 const authenticatedSocket = Socket.layerWebSocket("ws://127.0.0.1:4000/rpc/ws").pipe(
   Layer.provide(
-    Layer.succeed(Socket.WebSocketConstructor)((url, protocols) =>
-      new NodeSocket.NodeWS.WebSocket(url, protocols, {
-        headers: { Authorization: `Bearer ${credential}` }
-      }) as unknown as globalThis.WebSocket
-    )
+    Layer.succeed(Socket.WebSocketConstructor)((url, options) => {
+      const configured = options !== undefined && typeof options !== "string" && !Array.isArray(options)
+        ? options
+        : undefined
+      const protocols = configured === undefined ? options as string | Array<string> | undefined : undefined
+      const socket = new NodeSocket.NodeWS.WebSocket(url, protocols, {
+        ...configured,
+        headers: { ...configured?.headers, Authorization: `Bearer ${credential}` }
+      })
+      // Effect removes reader listeners before closing. `ws` can report a
+      // late handshake error during that close; keep Node from treating it as
+      // an unhandled event. Active Effect listeners still receive all errors.
+      socket.on("error", () => {})
+      return socket
+    })
   )
 )
 

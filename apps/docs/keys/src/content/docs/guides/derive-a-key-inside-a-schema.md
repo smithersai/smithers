@@ -62,19 +62,41 @@ const keyForBody = (body: unknown) =>
 reconstruct what produced it. Use the schema where you decode, and store the
 key as ordinary text.
 
-## The input never reaches a schema issue
+## Input reporting stops at the DerivedKey boundary
 
-`DerivedKey` pins `parseOptions: { reportInput: false }` on itself. A failure
-becomes a schema issue whose message names only the code and a fixed sentence:
+`DerivedKey` pins `parseOptions: { reportInput: false }` on itself. Its own
+`InvalidValue` issue and `Encoding` wrapper omit the input even when the caller
+requests input reporting. The failure message names only the code and a fixed
+sentence:
 
 ```text
 [canonicalization_failed] Key input could not be canonicalized
 ```
 
-That holds even when an enclosing caller asks for input reporting, which is the
-behavior you want when the value being hashed is a request body, a user-supplied value,
-or a multi-megabyte document. The annotation is on the schema, so nothing
-composed above it can turn it back on.
+The annotation applies only to the `DerivedKey` subtree. An enclosing
+`Schema.Struct` or `Schema.Array` decoded with `{ reportInput: true }` retains
+the entire enclosing input on its own `Composite` issue, including key
+material. The formatted message stays clean, but the issue tree contains that
+input.
+
+Keep `reportInput` off at the outer decoding boundary for records or arrays
+that carry key material, or strip issue inputs before retaining diagnostics.
+An annotation on that boundary overrides a caller's request for input reporting:
+
+```ts
+import { DerivedKey } from "@smthrs/keys"
+import * as Schema from "effect/Schema"
+
+const RecordWithKey = Schema.Struct({
+  id: Schema.String,
+  key: DerivedKey
+}).annotate({ parseOptions: { reportInput: false } })
+
+const decodeRecord = (input: unknown) => Schema.decodeUnknownEffect(RecordWithKey)(input, { reportInput: true })
+```
+
+If this record is later nested in another schema, keep input reporting off at
+that new outer boundary too.
 
 ## Read the typed error back out
 

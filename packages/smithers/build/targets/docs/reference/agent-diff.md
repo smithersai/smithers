@@ -42,7 +42,7 @@ The `DiffAttrs` schema declares eleven fields:
 | `secrets`   | `Array<Secret.HttpCredential>`                  | `optional`                          | Destination-bound credentials declared with `Smithers.HttpSecret`. The declaration records the variable name and audience, never a value.      |
 | `sandbox`   | `"none" \| { network?: boolean \| "loopback" }` | `optional`                          | The confinement policy for the node. Omitted, the node keeps the workspace default confinement.                                                |
 | `approval`  | `"required"`                                    | `optional`                          | Declaring it refuses the invocation before any effect, because the build system has no durable approval store.                                 |
-| `maxRounds` | `integer`                                       | `required`                          | Candidate and gate rounds, a whole number at least 1 and at most `maximumRounds`, which is 16.                                                                |
+| `maxRounds` | `integer`                                       | `required`                          | Candidate and gate rounds, a whole number at least 1 and at most `maximumRounds`, which is 16.                                                 |
 
 The declaration passes no `Target.guard`, so no attr combination is refused at construction. Three preconditions settle at plan time instead: a payload input that is missing or undeclared refuses with the field to pass as `--input`, `approval: "required"` refuses, and a gate that is an outward or Run rule refuses its consumer.
 

@@ -36,8 +36,11 @@ build.
 
 The write is a temp-file-plus-rename under a lock file, with the original
 file's mode preserved, so a crash mid-write cannot leave a half-written
-configuration. If the file already holds the exact entry, nothing is written
-and the result says `unchanged`. If every target fails, the command prints
+configuration. The lock names the process holding it, so one left by a process
+that has since died is reclaimed rather than blocking every later run. If the file already holds the exact entry, nothing is written
+and the result says `unchanged`. Add `--json` for one array of registration results,
+with `agent`, `path`, and `status` fields. Registration does not open a workspace
+database. If every target fails, the command prints
 manual instructions to stderr and exits 1.
 
 ## Serve it by hand
@@ -77,6 +80,14 @@ executable's discovery protocol. Its `Options` choose `surface` (`semantic`,
 directory entries, not another execution path. An allowlist cannot enable
 approval-bearing tools on its own.
 
+`list_flows`, `list_runs`, and `list_pending_approvals` return one Control page.
+Each accepts optional `cursor` and `limit` arguments. `limit` is 1 to 500 and
+defaults to 100. `data` stays the array of items. When more items remain, the
+envelope also carries `nextCursor`; pass it back as `cursor` to read the next
+page. An envelope without `nextCursor` is the last page. `list_flows` drops
+reserved system flows from each page, so a page can hold fewer than `limit`
+items and still have a `nextCursor`.
+
 The default semantic session exposes nine Control-backed tools plus ten
 unsupported compatibility entries. `run_workflow` and `resolve_approval` are
 excluded. A custom host can set `approvalTools: true` and a host-authenticated
@@ -94,7 +105,12 @@ server authenticates the connection; give each trust domain its own credential
 and policy rather than sharing an operator credential.
 
 Compatibility frames are bounded to 4 MiB; history results to 10,000 events and
-1 MiB. These are the `McpServer` library's bounds, not a claim about Incur's
+1 MiB. `watch_run` applies those history limits only to events after
+`afterSequence` and retains the supplied cursor when the delta is empty.
+`McpServer.serve` pauses input while replies are blocked, waits for each write
+to complete, and returns after input EOF only once all replies have completed.
+Transport errors stop the session; interruption releases its stream listeners.
+These are the `McpServer` library's bounds, not a claim about Incur's
 transport limits. `McpServer.unsupportedTools` and `unsupportedReasons` enumerate
 the retained tools that answer `unsupported`.
 

@@ -44,9 +44,11 @@ Three consequences follow directly:
 
 `Scorer.Scorer` extends `Flow.Flow` with a fixed input schema
 (`Scorer.Input`) and a fixed output schema (`Scorer.Result`), so a caller can
-read the contract off the value. Its `MakeOptions` omits `input`, `output`, and
-`body`: the schemas are owned by this module, and `score` is the single
-implementation.
+read the contract off the value. Its `MakeOptions` omits `input`, `output`,
+`body`, `model`, and `flows`: the schemas are owned by this module, and `score`
+is the single implementation. `Scorer.make` rejects `body` and the dynamic-body
+options `model` and `flows` with `ScorerError` code `invalid_declaration`, even
+when their value is `undefined`.
 
 That omission is deliberate. A scorer that could declare both a `body` and a
 `score` could declare two implementations that disagree, and nothing downstream

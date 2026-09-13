@@ -29,7 +29,9 @@ Signatures in this reference use the usual shorthand: `Effect<A, E, R>` for
 ## Control
 
 The transport-independent control vtable. Every implementation in this package
-and every client projects onto this one interface.
+and every client projects onto this one interface. Each operation includes
+`TransportError` and `Unauthorized` in its error channel for remote transport
+and authentication failures.
 
 | Export      | Kind      | Signature                                                                                                                                              |
 | ----------- | --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
@@ -40,18 +42,18 @@ and every client projects onto this one interface.
 
 ### Service
 
-| Operation | Signature                                                                                                                                                                                                   | Returns                                                                                              |
-| --------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
-| `plan`    | `(input: PlanInput) => Effect<PlanCard, FlowNotFound \| InvalidInput \| PersistenceError \| Unavailable>`                                                                                                   | The reviewable card, whether or not this call created it.                                            |
-| `run`     | `(input: RunInput) => Effect<Receipt, RunNotFound \| PlanNotFound \| PlanDenied \| PlanDigestMismatch \| EnvelopeMismatch \| ClaimLost \| InvalidInput \| LaunchFailed \| PersistenceError \| Unavailable>` | `Accepted`, `AlreadyApplied`, `Conflict`, or `Parked` for a plan; a resume answers as `resume` does. |
-| `approve` | `(input: ApprovalInput) => Effect<Receipt, PlanDigestMismatch \| EnvelopeMismatch \| AlreadyResolved \| PlanNotFound \| RunNotFound \| InvalidInput \| PersistenceError \| Unavailable \| Unauthorized>`    | `Accepted`, `AlreadyApplied`, `Conflict`, or `Terminal`.                                             |
-| `deny`    | same as `approve`                                                                                                                                                                                           | same as `approve`.                                                                                   |
-| `steer`   | `(input: SteerInput) => Effect<Receipt, RunNotFound \| InvalidInput \| PersistenceError \| Unavailable>`                                                                                                    | `Accepted`, `AlreadyApplied`, `Conflict`, or `Terminal`.                                             |
-| `signal`  | `(input: SignalInput) => Effect<Receipt, RunNotFound \| NoMatchingWait \| InvalidInput \| PersistenceError \| Unavailable>`                                                                                 | `Accepted`, `AlreadyApplied`, `Conflict`, or `Terminal`.                                             |
-| `cancel`  | `(input: RunMutationInput) => Effect<Receipt, RunNotFound \| ClaimLost \| InvalidInput \| PersistenceError \| Unavailable>`                                                                                 | `Accepted` or `Terminal`. Never replays its recorded receipt.                                        |
-| `resume`  | same as `cancel`                                                                                                                                                                                            | `Accepted`, `AlreadyApplied`, `Conflict`, or `Terminal`.                                             |
-| `list`    | `(input: ListRequest) => Effect<ListResponse, ControlError>`                                                                                                                                                | A bounded page of flows, runs, triggers, or trigger fires.                                           |
-| `watch`   | `(filter: WatchFilter) => Stream<ControlEvent, ControlError>`                                                                                                                                               | Committed journal entries, plus the deltas the plane derives.                                        |
+| Operation | Signature                                                                                                                                                                                                                                     | Returns                                                                                              |
+| --------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| `plan`    | `(input: PlanInput) => Effect<PlanCard, FlowNotFound \| InvalidInput \| PersistenceError \| Unavailable \| TransportError \| Unauthorized>`                                                                                                   | The reviewable card, whether or not this call created it.                                            |
+| `run`     | `(input: RunInput) => Effect<Receipt, RunNotFound \| PlanNotFound \| PlanDenied \| PlanDigestMismatch \| EnvelopeMismatch \| ClaimLost \| InvalidInput \| LaunchFailed \| PersistenceError \| Unavailable \| TransportError \| Unauthorized>` | `Accepted`, `AlreadyApplied`, `Conflict`, or `Parked` for a plan; a resume answers as `resume` does. |
+| `approve` | `(input: ApprovalInput) => Effect<Receipt, PlanDigestMismatch \| EnvelopeMismatch \| AlreadyResolved \| PlanNotFound \| RunNotFound \| InvalidInput \| PersistenceError \| Unavailable \| TransportError \| Unauthorized>`                    | `Accepted`, `AlreadyApplied`, `Conflict`, or `Terminal`.                                             |
+| `deny`    | same as `approve`                                                                                                                                                                                                                             | same as `approve`.                                                                                   |
+| `steer`   | `(input: SteerInput) => Effect<Receipt, NotificationError \| RunNotFound \| InvalidInput \| PersistenceError \| Unavailable \| TransportError \| Unauthorized>`                                                                               | `Accepted`, `AlreadyApplied`, `Conflict`, or `Terminal`.                                             |
+| `signal`  | `(input: SignalInput) => Effect<Receipt, RunNotFound \| NoMatchingWait \| InvalidInput \| PersistenceError \| Unavailable \| TransportError \| Unauthorized>`                                                                                 | `Accepted`, `AlreadyApplied`, `Conflict`, or `Terminal`.                                             |
+| `cancel`  | `(input: RunMutationInput) => Effect<Receipt, RunNotFound \| ClaimLost \| InvalidInput \| PersistenceError \| Unavailable \| TransportError \| Unauthorized>`                                                                                 | `Accepted` or `Terminal`. Never replays its recorded receipt.                                        |
+| `resume`  | same as `cancel`                                                                                                                                                                                                                              | `Accepted`, `AlreadyApplied`, `Conflict`, or `Terminal`.                                             |
+| `list`    | `(input: ListRequest) => Effect<ListResponse, ControlError>`                                                                                                                                                                                  | A bounded page of flows, runs, triggers, or trigger fires.                                           |
+| `watch`   | `(filter: WatchFilter) => Stream<ControlEvent, ControlError>`                                                                                                                                                                                 | Committed journal entries, plus the deltas the plane derives.                                        |
 
 There is no `pause`. An operator park is written through
 `ControlRuntime.writeStatus(runId, fence, "parked")`.
@@ -138,11 +140,12 @@ the same run.
 
 ### Signals and events
 
-| Export          | Shape                                                                                                                                                                         |
-| --------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `SignalPayload` | `{ name: string; payload: Json }`.                                                                                                                                            |
-| `WatchFilter`   | `{ runId?: RunId; afterSequence?: number; follow?: boolean }`. `afterSequence` requires `runId`. Omitting `follow` keeps the live stream; `false` requests a finite snapshot. |
-| `ControlEvent`  | `{ sequence: number; kind: string; runId?: RunId; occurredAt: number; payload: Json }`.                                                                                       |
+| Export          | Shape                                                                                                                                                                                                                       |
+| --------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `SignalPayload` | `{ name: string; payload: Json }`.                                                                                                                                                                                          |
+| `WatchCursor`   | `{ sequence: number; offset?: number }`. A present offset is the last consumed expansion index; absent means the source entry is fully consumed.                                                                            |
+| `WatchFilter`   | `{ runId?: RunId; afterSequence?: number; afterCursor?: WatchCursor; follow?: boolean }`. Either cursor requires `runId`; do not combine them. Omitting `follow` keeps the live stream; `false` requests a finite snapshot. |
+| `ControlEvent`  | `{ cursor?: WatchCursor; sequence: number; kind: string; runId?: RunId; occurredAt: number; payload: Json }`.                                                                                                               |
 
 ### Listing
 
@@ -156,6 +159,19 @@ the same run.
 | `TriggerSummary`  | `{ triggerId, flowId, input: Json, cron, timezone?, overlap: "skip" \| "buffer-one" \| "supersede", catchUp: "none" \| "one" \| "all", maxCatchUp?, enabled, revision, lastFiredAtMs?, pendingAtMs?, activeRunId?, nextOccurrencesMs: number[], schedulerLastTickMs? }`. One registered trigger. `schedulerLastTickMs` absent means no scheduler has ticked on this host. |
 | `FireOutcome`     | `"launched" \| "completed" \| "skipped" \| "buffered" \| "superseded" \| "failed"`. The same words the triggers package records in its fire ledger.                                                                                                                                                                                                                       |
 | `FireSummary`     | `{ triggerId, occurrenceAtMs, outcome: FireOutcome \| null, runId?, error?, waiting?: "approval" }`. One claimed occurrence; `outcome: null` is the window between the claim and its result.                                                                                                                                                                              |
+
+Run listings default to 100 items and accept limits from 1 through 500. Pass
+`nextCursor` back unchanged with the same filters. Run cursors contain stable
+ordering keys, not numeric offsets. Control-launched runs retain launch order;
+engine-created runs follow in creation-time and run-id order. Removing a prior
+row does not skip the next row. Listings are live, not a fixed snapshot.
+
+Paginated run filters use durable summary fields. The runtime selects at most
+`limit` rows before decoding summaries, reading their ancestry, or observing
+execution. Executor observations and pending steering counts enrich only those
+rows, so an observed status may be newer than the status used for selection.
+An exact `runId` filter keeps the direct lookup and applies the remaining
+filters to that observation.
 
 `principalId` stays on the wire and is refused by `Control.list`. Deleting the
 field would move the same overbroad answer one layer out, because struct
@@ -193,24 +209,25 @@ alias of it, so cancellation's public contract stays explicit.
 Every stable failure the plane emits. Each class carries a constant `code` a
 client may branch on.
 
-| Class                | `code`                 | Fields                                   | Meaning                                                     |
-| -------------------- | ---------------------- | ---------------------------------------- | ----------------------------------------------------------- |
-| `RunNotFound`        | `run_not_found`        | `runId`                                  | No run with this id exists.                                 |
-| `PlanNotFound`       | `plan_not_found`       | `planId`                                 | No plan with this id. Carries an operator-facing `message`. |
-| `PlanDenied`         | `plan_denied`          | `planId`                                 | The plan was denied. Carries an operator-facing `message`.  |
-| `FlowNotFound`       | `flow_not_found`       | `flowId`                                 | No flow with this id is registered.                         |
-| `PlanDigestMismatch` | `plan_digest_mismatch` | `planId`, `expected`, `actual`           | The submitted plan does not hash to the declared digest.    |
-| `EnvelopeMismatch`   | `envelope_mismatch`    | `planId`, `expected`, `actual`           | The plan's effect envelope differs from the declared one.   |
-| `ClaimLost`          | `claim_lost`           | `runId`                                  | The caller's claim lapsed or was fenced by a newer owner.   |
-| `AlreadyResolved`    | `already_resolved`     | `requestId`                              | This request was already answered.                          |
-| `InvalidInput`       | `invalid_input`        | `issue`                                  | The request missed its schema or a stated precondition.     |
-| `Unauthorized`       | `unauthorized`         | `message`                                | No usable credential for this operation.                    |
-| `Unavailable`        | `unavailable`          | `feature`, `ticket`                      | Not implemented in this deployment.                         |
-| `TransportError`     | `transport_error`      | `message`, `retryable`, `cause?`         | The request failed before a declared response arrived.      |
-| `PersistenceError`   | `persistence_failed`   | `operation`, `message`, `cause?`         | A store operation failed.                                   |
-| `LaunchFailed`       | `launch_failed`        | `runId`, `message`, `cause?`             | The executor refused or could not start the run.            |
-| `NoMatchingWait`     | `no_matching_wait`     | `runId`, `waitName`                      | A signal named a wait point the run does not have open.     |
-| `CredentialConflict` | `credential_conflict`  | `id`, `expectedVersion`, `actualVersion` | A credential write lost a compare-and-set race.             |
+| Class                | `code`                                                                      | Fields                                   | Meaning                                                                               |
+| -------------------- | --------------------------------------------------------------------------- | ---------------------------------------- | ------------------------------------------------------------------------------------- |
+| `RunNotFound`        | `run_not_found`                                                             | `runId`                                  | No run with this id exists.                                                           |
+| `PlanNotFound`       | `plan_not_found`                                                            | `planId`                                 | No plan with this id. Carries an operator-facing `message`.                           |
+| `PlanDenied`         | `plan_denied`                                                               | `planId`                                 | The plan was denied. Carries an operator-facing `message`.                            |
+| `FlowNotFound`       | `flow_not_found`                                                            | `flowId`                                 | No flow with this id is registered.                                                   |
+| `PlanDigestMismatch` | `plan_digest_mismatch`                                                      | `planId`, `expected`, `actual`           | The submitted plan does not hash to the declared digest.                              |
+| `EnvelopeMismatch`   | `envelope_mismatch`                                                         | `planId`, `expected`, `actual`           | The plan's effect envelope differs from the declared one.                             |
+| `ClaimLost`          | `claim_lost`                                                                | `runId`                                  | The caller's claim lapsed or was fenced by a newer owner.                             |
+| `AlreadyResolved`    | `already_resolved`                                                          | `requestId`                              | This request was already answered.                                                    |
+| `InvalidInput`       | `invalid_input`                                                             | `issue`                                  | The request missed its schema or a stated precondition.                               |
+| `Unauthorized`       | `unauthorized`                                                              | `message`                                | No usable credential for this operation.                                              |
+| `Unavailable`        | `unavailable`                                                               | `feature`, `ticket`                      | Not implemented in this deployment.                                                   |
+| `TransportError`     | `transport_error`                                                           | `message`, `retryable`, `cause?`         | The request failed before a declared response arrived.                                |
+| `PersistenceError`   | `persistence_failed`                                                        | `operation`, `message`, `cause?`         | A store operation failed.                                                             |
+| `LaunchFailed`       | `launch_failed`                                                             | `runId`, `message`, `cause?`             | The executor refused or could not start the run.                                      |
+| `NoMatchingWait`     | `no_matching_wait`                                                          | `runId`, `waitName`                      | A signal named a wait point the run does not have open.                               |
+| `CredentialConflict` | `credential_conflict`                                                       | `id`, `expectedVersion`, `actualVersion` | A credential write lost a compare-and-set race.                                       |
+| `NotificationError`  | `notification_closed`, `notification_full`, and existing notification codes | `message`, `notificationId?`, `path?`    | Existing notification error class, now preserved by steering locally and through RPC. |
 
 | Export               | Kind   | Meaning                                                                                                              |
 | -------------------- | ------ | -------------------------------------------------------------------------------------------------------------------- |
@@ -224,6 +241,45 @@ every renderer in the tree reads.
 `TransportError.retryable` classifies the transport phase alone. Resend a
 retryable mutation only when its idempotency key makes replay safe; a keyless
 request can have reached the server even when its response was lost.
+
+### New public steering refusal channel
+
+`Control.steer` now preserves the existing notifications package's
+`NotificationError`, including new `notification_closed` and `notification_full`
+codes. This is an extension to the public error union and the Steer RPC schema;
+it does not introduce a new error class or change successful receipts.
+Existing `notification_unavailable`, `notification_id_reused`, and
+`notification_invalid` failures also now retain this tag, replacing their former
+`PersistenceError` wrapper with operation `control.steer.notification`. Update
+callers that matched that wrapper to handle `NotificationError` directly.
+
+```ts
+import { Effect } from "effect"
+
+const outcome = yield* control.steer(input).pipe(
+  Effect.map(receipt => ({ kind: "receipt" as const, receipt })),
+  Effect.catchTag("/notifications/NotificationError", error => Effect.gen(function*() {
+    if (error.code === "notification_closed") return { kind: "start-new-request" as const }
+    if (error.code === "notification_full") return { kind: "retry-after-drain" as const }
+    return yield* Effect.fail(error)
+  }))
+)
+```
+
+A closed receiver cannot accept a new message, even if its surrounding run is
+still finishing. A full queue has retained nothing; after a boundary drains it,
+the caller can retry the same notification and idempotency key. Control records
+no accepted mutation for a capacity refusal. Duplicate accepted messages retain
+the existing `AlreadyApplied` behavior. Journal I/O failures still become
+`PersistenceError`; their diagnostic cause is retained separately from the fixed
+operator-facing message.
+
+Deploy updated clients/UI and server together. Older RPC decoders do not know
+this error variant and may report a decode or transport failure instead of the
+closed/full reason. The change is additive in the source API but is **not fully
+wire-compatible with older exhaustive error decoders**. Do not retry an unknown
+decode failure as if it proved the request was never admitted. Existing error
+codes, successful response shapes, and notification events are unchanged.
 
 ## ControlLive
 
@@ -259,16 +315,46 @@ terminal transition, and translates conflicts into typed failures.
 | Group             | Members                                                                                                                                                                                             |
 | ----------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Plans             | `plan(input: PlanInput) => Effect<PlanOutcome, FlowNotFound \| InvalidInput \| PersistenceError>`, `getPlan(planId)`, `listPlanIds`                                                                 |
-| Approvals         | `authorizeApproval(request)`, `lookupApproval(target)`, `registerApproval(nodeTarget)`, `installBulkGrant(token, envelope, scope)`, `resolveApproval(token, decision, principal, scope?)`, `grants` |
-| Runs              | `launch(planId, digest, envelope) => Effect<LaunchResult, ...>`, `getRun(runId)`, `listRuns`, `listFlows`                                                                                           |
-| Messages          | `enqueueSteer(runId, message)`, `drainSteering(runId)`, `deliverSignal(runId, signal)`, `deliveredSignals(runId)`                                                                                   |
+| Approvals         | `authorizeApproval(request)`, `lookupApproval(target)`, `registerApproval(nodeTarget)`, `resolveApproval(token, decision, principal, scope?)`, `installBulkGrant(token, envelope, scope)`, `grants` |
+| Runs              | `launch(planId, digest, envelope) => Effect<LaunchResult, ...>`, `getRun(runId)`, `queryRuns({ filters?, cursor?, limit })`, `listRuns`, `listFlows`                                                |
+| Signal history    | `deliverSignal(runId, signal)`, `deliveredSignals(runId)`                                                                                                                                           |
 | Resume delegation | `requestResume(runId) => Effect<number, ...>`, `pendingResumes`, `clearResume(runId, sequence)`                                                                                                     |
-| Ownership         | `registerFiber(runId, fiber)`, `interrupt(runId)`, `resume(runId, options?)`, `claimFence(runId)`, `releasePending(runId, fence)`, `writeStatus(runId, fence, status)`                              |
+| Ownership         | `registerFiber(runId, fiber)`, `interrupt(runId, settle?)`, `resume(runId, options?)`, `claimFence(runId)`, `releasePending(runId, fence)`, `writeStatus(runId, fence, status)`                     |
 | Identity          | `stampPrincipal(submitted?)`, `lookupMutation(key, fingerprint)`, `recordMutation(key, fingerprint, receipt)`                                                                                       |
 
-`resume` takes `{ scope?: "launched" \| "any" }`. `"launched"` restricts the
-claim to runs this plane launched, which every steer wake and every
-approval-driven restart passes. An explicit `Control.resume` omits it.
+`queryRuns` accepts `RunQuery`: optional `flowId`, `status`, `parentRunId`, and
+`lineageId` filters, an optional `RunCursor`, and a required integer `limit`
+from 1 through 500. It returns `RunPage` with `items` and optional `nextCursor`.
+`RunCursor` contains `source` (0 for control launches, 1 for engine runs),
+`sequence`, `createdAt`, and `runId`. Adapters must select the page before
+summary decoding and ancestry projection. SQL reads one extra ordering key to
+determine continuation. `listRuns` remains the full inventory for recovery and
+journal partition discovery; interactive listings use `queryRuns`.
+
+Steering uses `NotificationQueue.enqueue` and `NotificationQueue.drain`.
+`enqueueSteer` and `drainSteering` have been removed from the runtime port and
+both adapters. The legacy signal-history reader and database migrations remain;
+old steering rows are not drained or delivered by the runtime.
+
+`interrupt` must be called without mutation locks. Its optional `settle` wrapper
+runs only after the fiber's finalizers finish and wraps the fenced status
+reconciliation. `ControlLive` uses it to commit the terminal event alongside
+the status. Direct callers may omit it.
+
+`resume` takes `{ scope?: "launched" \| "any" }`. `scope: "launched"`
+restricts claims to the shared `control_runs` launch index. Both public
+spellings, `Control.resume` and `Control.run` with a Resume input, and every
+steer wake pass it. `scope: "any"`, also the default, is a trusted low-level
+runtime capability for hosts that can drive the claimed execution.
+An owned non-terminal run is joined without replacing its fence, including
+`accepted`; a run released by `releasePending` can be claimed again.
+
+Explicit resume journals `control.run.resume` and does not call `requestResume`
+or `ControlExecutor.resumeRun`. A caller or journal subscriber must drive the
+execution; polling `pendingResumes` does not take up explicit resumes.
+A suspended engine-created run stays unclaimed and receives an `Accepted`
+receipt for the journal intent. A live peer's owned run fails with `ClaimLost`.
+Node-approval decisions use the durable resume delegation instead.
 
 `registerApproval` is idempotent and returns the token with its current
 tagged decision. `Pending` parks, `Approved` opens a gate, and `Denied` fails it.
@@ -280,6 +366,13 @@ to `once`; when installing a wider grant, pass that same scope explicitly.
 `Control.approve` does this automatically. Resolution checks the owning
 `ApprovalAuthority` again and may fail with `Unauthorized`; it does not install
 a grant. `installBulkGrant` is a trusted storage port, not an authorization API.
+
+For a new decision, authenticate the principal and call `authorizeApproval`
+before target reads or receipt replay. Then call `lookupApproval`,
+`resolveApproval` exactly once with an authority recheck, `installBulkGrant` only
+on approval, and journal the decision. Commit the decision, grant, journal entry,
+receipt, and any node resume delegation atomically. Resolution must not require
+an installed grant or a flushed journal decision.
 
 Migration 6004 preserves legacy rows. Unknown old terminal decisions are
 refused with `PersistenceError`; pending rows remain pending. Preserve the old
@@ -577,8 +670,11 @@ that change the decoded command.
 | `handler`           | function  | `(channel: string, idempotencyKey: IdempotencyKey, options?: HandlerOptions) => Effect<Receipt, ...>` |
 
 The body is bounded twice: a `content-length` over the limit is refused before
-the body is read, and the measured length is checked again afterwards. Both
-refusals are `InvalidInput` naming the two byte counts and no body content.
+the body is read, and each streamed chunk is measured before it is retained.
+Reading stops at the first chunk exceeding the limit, before verification.
+Both refusals are `InvalidInput` naming the two byte counts and no body content.
+Malformed JSON returns the fixed issue `invalid webhook JSON` without parser
+messages or payload fragments.
 
 ## Credential
 

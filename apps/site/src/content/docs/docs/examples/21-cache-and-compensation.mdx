@@ -44,8 +44,19 @@ import { Jj } from "@smthrs/kernel"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
 import * as Schema from "effect/Schema"
-import { cpSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs"
-import { dirname, join } from "node:path"
+import { randomUUID } from "node:crypto"
+import {
+  cpSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  renameSync,
+  rmSync,
+  statSync,
+  writeFileSync
+} from "node:fs"
+import { dirname, join, resolve } from "node:path"
 import { stubJj } from "./durable-layer.ts"
 
 /** The failure the first attempt of the compensable step raises. */
@@ -75,34 +86,75 @@ const describe = (message: string | undefined): string => {
  * whose actions are sealed. A compensable action needs a real one: the engine
  * calls `snapshot` before each attempt and `restore` before a retry, and if
  * neither does anything then nothing is compensated. This one is the smallest
- * implementation that genuinely puts files back.
+ * implementation that genuinely puts files back. Snapshots get unique IDs
+ * across layers and are published only after copying completes. Restore stages
+ * a complete copy before swapping the workspace, retaining a backup until the
+ * swap succeeds. These synchronous operations assume one workspace writer.
  */
 export const directoryJj = (options: {
   readonly workspace: string
   readonly snapshots: string
   readonly log: { readonly snapshots: Array<string>; readonly restores: Array<string> }
 }) => {
-  let counter = 0
   const taken = new Map<string, string>()
   return Layer.succeed(
     Jj.Jj,
     Jj.make({
       snapshot: (message) =>
         Effect.sync(() => {
-          counter += 1
-          const changeId = `snapshot-${counter}`
+          const changeId = `snapshot-${randomUUID()}`
           const destination = join(options.snapshots, changeId)
-          rmSync(destination, { recursive: true, force: true })
-          cpSync(options.workspace, destination, { recursive: true })
+          mkdirSync(options.snapshots, { recursive: true })
+          const staged = mkdtempSync(join(options.snapshots, ".snapshot-"))
+          try {
+            cpSync(options.workspace, staged, { recursive: true })
+            // Never replace a published pre-image, even on an ID collision.
+            if (existsSync(destination)) throw new Error(`Snapshot already exists: ${changeId}`)
+            renameSync(staged, destination)
+          } finally {
+            rmSync(staged, { recursive: true, force: true })
+          }
           taken.set(changeId, describe(message))
           options.log.snapshots.push(describe(message))
           return { changeId: changeId as never }
         }),
       restore: (changeId) =>
         Effect.sync(() => {
-          options.log.restores.push(taken.get(changeId) ?? changeId)
-          rmSync(options.workspace, { recursive: true, force: true })
-          cpSync(join(options.snapshots, changeId), options.workspace, { recursive: true })
+          const source = join(options.snapshots, changeId)
+          if (!statSync(source).isDirectory()) throw new Error(`Snapshot is not a directory: ${changeId}`)
+          const workspace = resolve(options.workspace)
+          const temporary = mkdtempSync(join(dirname(workspace), ".restore-"))
+          const staged = join(temporary, "workspace")
+          const backup = join(temporary, "backup")
+          let keepBackup = false
+          try {
+            // Copy failures can only damage staging, never the live workspace.
+            cpSync(source, staged, { recursive: true })
+            if (existsSync(workspace)) {
+              renameSync(workspace, backup)
+              keepBackup = true
+            }
+            try {
+              renameSync(staged, workspace)
+            } catch (error) {
+              if (keepBackup) {
+                renameSync(backup, workspace)
+                keepBackup = false
+              }
+              throw error
+            }
+            keepBackup = false
+            options.log.restores.push(taken.get(changeId) ?? changeId)
+          } finally {
+            // If rollback itself fails, leave the original backup for recovery.
+            if (!keepBackup) {
+              try {
+                rmSync(temporary, { recursive: true, force: true })
+              } catch {
+                // Cleanup is best effort: the workspace is already settled.
+              }
+            }
+          }
         }),
       diff: () => Effect.succeed(""),
       workspaceAdd: () => Effect.void,

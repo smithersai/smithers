@@ -46,6 +46,34 @@ interface Service {
 `NotificationQueue` is the service tag, a `Context.Service` under the key
 `/notifications/NotificationQueue`.
 
+New admissions persist a SHA-256 fingerprint of the validated notification's
+canonical JSON before journal redaction. Identical retries return the committed
+receipt even when redaction changed the stored payload. Different content still
+fails with `notification_id_reused`, including changes to redacted fields.
+Legacy admissions without a fingerprint compare against their persisted content;
+original values removed by redaction cannot be recovered.
+
+The journal-backed layers deeply freeze decoded notifications, including nested
+payload objects and arrays, before `pending` or `drain` exposes them. Outputs
+carry the persisted, possibly redacted content. Consumer mutation cannot change
+later reads or drain receipts.
+
+`admit` and `drain` may run inside an enclosing `journal.transact` while
+standalone queue calls are pending. Both acquire the journal transaction before
+the queue permit. Shared folds are published only after the enclosing commit.
+
+The fold reads only Admitted/Promoted event types through `Journal.entries` and
+keeps the last matching canonical sequence as its cursor. Unrelated run events
+do not require decoding or advance that cursor. A compaction floor that passes
+the cursor causes a conservative `JournalError(compacted)` refusal, including
+for a warm queue. Deployments that compact active notification histories need
+a queue-aware retention or checkpoint policy; the current production
+compositions do not enable compaction.
+
+Admission refuses objects or arrays at depth 256 with `notification_invalid`
+and writes no row. The notification envelope is depth 0; its payload is
+at depth 1. Cyclic payloads receive the same typed refusal.
+
 ### AdmissionReceipt
 
 ```ts
@@ -104,7 +132,7 @@ when the boundary had already drained.
 class NotificationError extends Schema.TaggedError<NotificationError>()(
   "/notifications/NotificationError",
   {
-    code: "notification_unavailable" | "notification_id_reused" | "notification_invalid"
+    code: "notification_unavailable" | "notification_closed" | "notification_full" | "notification_id_reused" | "notification_invalid"
     message: string
     notificationId?: string
     path?: string
@@ -119,14 +147,25 @@ class NotificationError extends Schema.TaggedError<NotificationError>()(
 | `notificationId` | The notification the failure is about, when one was readable.                      |
 | `path`           | Dotted path of the offending field, for `notification_invalid`.                    |
 
-| Code                       | Means                                                                                                 |
-| -------------------------- | ----------------------------------------------------------------------------------------------------- |
-| `notification_unavailable` | The seam serves nothing, or the journal identity for a drain holds an event this queue did not write. |
-| `notification_id_reused`   | A stable id was already admitted with different content. A producer bug, not a storage failure.       |
-| `notification_invalid`     | The value is not a notification. `path` names the field that failed.                                  |
+| Code                       | Means                                                                                                                                     |
+| -------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| `notification_unavailable` | The seam serves nothing, or the journal identity for a drain holds an event this queue did not write.                                     |
+| `notification_closed`      | New public refusal code: this receiver has finished. Start a new request; retrying this message at the closed receiver cannot deliver it. |
+| `notification_full`        | New public refusal code: nothing was retained. Retry the same notification after pending work drains.                                     |
+| `notification_id_reused`   | A stable id was already admitted with different content. A producer bug, not a storage failure.                                           |
+| `notification_invalid`     | The value is not a notification. `path` names the field that failed.                                                                      |
 
 Storage failures surface as `Journal.JournalError` instead, so the two stay
 distinguishable.
+
+The queue's ordinary `admit` still returns its existing `rejected-full` receipt.
+`Control.steer` and configured receivers expose that refusal as
+`NotificationError(notification_full)` instead of acknowledging an undeliverable
+message. Configured receiver policies can also emit `notification_closed`.
+Existing notification error fields and older codes are unchanged. Consumers
+with an exhaustive code union must add both new codes. The Control RPC error
+union now carries this existing error class; update remote decoders together
+with the server so they can decode these refusals.
 
 ### Constructors and layers
 
@@ -213,7 +252,7 @@ The journal event types this package owns. Import from
 | `AdmittedEventType` | `"flows/notifications/Admitted"`. Frozen: the value is already durable in every journal this package has written to. |
 | `PromotedEventType` | `"flows/notifications/Promoted"`. Frozen for the same reason.                                                        |
 | `AdmissionDecision` | `"admitted" \| "coalesced" \| "rejected-full"`. The one declaration of the admission vocabulary.                     |
-| `Admitted`          | `{ notification: Notification; decision: AdmissionDecision }`.                                                       |
+| `Admitted`          | `{ notification: Notification; decision: AdmissionDecision; fingerprint?: string }`.                                 |
 | `Promoted`          | `{ boundary: string; targetLineageId: string; ids: ReadonlyArray<string> }`.                                         |
 | `Event`             | `Admitted \| Promoted`.                                                                                              |
 
@@ -236,11 +275,13 @@ Import from `@smthrs/notifications/Projection`.
 | -------- | --------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
 | `derive` | `Journal.Projection<NotificationState.State>` | Re-derives pending notifications from admitted and promoted journal entries. Foreign entries leave the state unchanged. |
 
-The projection starts at `NotificationState.empty(NotificationState.defaultCapacity)`,
-which is what `NotificationQueue.layer` enforces. A deployment that raised the
-bound with `NotificationQueue.layerWith` derives its own projection from
-`NotificationState`, because this one would report a shorter queue than the run
-actually holds.
+The projection starts at `NotificationState.empty(NotificationState.defaultCapacity)`.
+Capacity gates new admissions; it does not truncate replay. `applyAdmission`
+applies the decision each record committed, so a composition built with
+`NotificationQueue.layerWith` above the default replays every admission it
+wrote. The projected `capacity` stays at the default because no journal record
+carries the bound the layer was built at, so read `items` rather than
+`capacity`.
 
 ## SteerPayload
 
@@ -300,18 +341,24 @@ own `detectors` are merged over `defaultDetectors`.
 
 ### Sinks
 
-| Export                  | Signature                                                                                                                                | What it is                                                                                                                                                                                                                                              |
-| ----------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `SinkService`           | `{ deliver: (alert: Alert) => Effect.Effect<void, AlertError> }`                                                                         | Where a raised alert is sent. `deliver` MUST be idempotent on `alertId(alert)`, and MUST fail when the page did not go out.                                                                                                                             |
-| `Sink`                  | `Context.Service` under `/notifications/AlertSink`                                                                                       | The service tag.                                                                                                                                                                                                                                        |
-| `layerNoop`             | `Layer<Sink>`                                                                                                                            | Accepts every alert and sends it nowhere. The admission and the delivery record still happen.                                                                                                                                                           |
-| `defaultWebhookTimeout` | `Duration.Duration`                                                                                                                      | Ten seconds.                                                                                                                                                                                                                                            |
-| `layerWebhook`          | `(options: { url: string; headers?: Record<string, string>; timeout?: Duration.Duration }) => Layer<Sink, never, HttpClient.HttpClient>` | POSTs each alert to one webhook. The body is the alert plus its `alertId`, and the same id is sent as an `Idempotency-Key` header, set after the caller's headers. A non-2xx answer is a failure; an endpoint that never answers fails after `timeout`. |
+| Export                  | Signature                                                                                                  | What it is                                                                                                                                                                                                                                                                                                                                                                      |
+| ----------------------- | ---------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `SinkService`           | `{ deliver: (alert: Alert) => Effect.Effect<void, AlertError> }`                                           | Where a raised alert is sent. `deliver` MUST be idempotent on `alertId(alert)`, and MUST fail when the page did not go out.                                                                                                                                                                                                                                                     |
+| `Sink`                  | `Context.Service` under `/notifications/AlertSink`                                                         | The service tag.                                                                                                                                                                                                                                                                                                                                                                |
+| `layerNoop`             | `Layer<Sink>`                                                                                              | Accepts every alert and sends it nowhere. The admission and the delivery record still happen.                                                                                                                                                                                                                                                                                   |
+| `defaultWebhookTimeout` | `Duration.Duration`                                                                                        | Ten seconds.                                                                                                                                                                                                                                                                                                                                                                    |
+| `layerWebhook`          | `(options: { url: string; headers?: Record<string, string>; timeout?: Duration.Duration }) => Layer<Sink>` | POSTs each alert to one webhook using an owned Fetch client with redirects disabled and a scope per delivery. Injected `HttpClient` layers are not used. The body is the alert plus its `alertId`, and the same id is sent as an `Idempotency-Key` header, set after the caller's headers. A non-2xx answer is a failure; an endpoint that never answers fails after `timeout`. |
 
 | Export        | Shape                                                                                                           |
 | ------------- | --------------------------------------------------------------------------------------------------------------- |
-| `FailureCode` | `"sink_rejected" \| "sink_unreachable" \| "sink_timeout"`.                                                      |
+| `FailureCode` | `"sink_rejected" \| "sink_unreachable" \| "sink_timeout" \| "sink_misconfigured"`.                              |
 | `AlertError`  | Tagged `/notifications/AlertError`: `{ code: FailureCode; message: string; status?: number; reason?: string }`. |
+
+`sink_misconfigured` is the one code no alert ever carries. `layerWebhook`
+validates its `url` while the layer is built, before any alert exists, and a url
+that is not an absolute `http:` or `https:` one dies there rather than failing
+through the delivery channel: a scheme bound is what keeps a credential set in
+`headers` from being handed to something that is not HTTP.
 
 `AlertError` deliberately holds no request. A webhook request carries the
 credential the deployment handed `layerWebhook`, and an error is logged, encoded,

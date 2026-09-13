@@ -25,7 +25,9 @@ import * as Effect from "effect/Effect"
 
 const seats = SeatResolver.layer({
   resolve: (id) =>
-    Effect.succeed(Seat.make({ id, modelId: "test-model", model: scripted, route: recordedRoute, contextWindowTokens: 200_000 }))
+    Effect.succeed(
+      Seat.make({ id, modelId: "test-model", model: scripted, route: recordedRoute, contextWindowTokens: 200_000 })
+    )
 })
 ```
 

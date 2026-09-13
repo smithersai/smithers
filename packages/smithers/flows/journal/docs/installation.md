@@ -8,7 +8,7 @@ sidebar:
 ## Install the package
 
 ```bash
-pnpm add @smthrs/journal@next @smthrs/database@next effect@4.0.0-rc.112
+pnpm add @smthrs/journal@next @smthrs/database@next effect@4.0.0-rc.115
 ```
 
 Smithers is at `1.0.0-rc.0` and has not reached npm yet. When it does, the
@@ -21,7 +21,7 @@ CommonJS with TypeScript declarations. Its only runtime dependencies are
 Composing a journal layer imports from both of them by name, so install them as
 direct dependencies rather than relying on them being hoisted.
 
-`effect` is a peer dependency pinned at `4.0.0-rc.112`. Install exactly that
+`effect` is a peer dependency pinned at `4.0.0-rc.115`. Install exactly that
 version: two copies of `effect` in one program are two sets of service tags, so
 a journal layer built against one copy cannot be provided to a program holding
 the other, and the mismatch shows up as a missing service rather than as a
@@ -35,7 +35,7 @@ On Node, `NodeDatabase.layer` provides the client and `DurableWriter.layer()`
 provides the writer. This composition selects the optional Node SQLite driver:
 
 ```bash
-pnpm add @effect/sql-sqlite-node@4.0.0-rc.112
+pnpm add @effect/sql-sqlite-node@4.0.0-rc.115
 ```
 
 ```ts

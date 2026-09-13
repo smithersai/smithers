@@ -15,7 +15,9 @@ integration adapter, and `isSmithersError(error)` is `false`.
 copies of `@smthrs/errors` resolved in one process have two different
 `SmithersError` classes, so an instance from one fails the check against the
 other. A duplicated dependency, a bundled build loaded beside a source build,
-or a plugin with its own `node_modules` all produce this.
+or a plugin with its own `node_modules` all produce this. Mixed ESM/CommonJS
+loading does too: the published `import` and `require` entry points have
+distinct constructors, even with one installed package version.
 
 **Fix.** Use `hasSmithersErrorShape` at the boundary where the value arrives.
 It validates the fields instead of the prototype, and still refuses a plain
@@ -23,8 +25,10 @@ It validates the fields instead of the prototype, and still refuses a plain
 five. See
 [Detect an error across module copies](/guides/detect-an-error-across-module-copies/).
 
-If both copies are in your own dependency tree, deduplicate them as well: two
-copies also mean two frozen definition tables that can drift.
+If duplicate installations are in your own dependency tree, deduplicate them
+as well: two copies also mean two frozen definition tables that can drift.
+Deduplication does not merge the ESM and CommonJS constructors; use the
+structural check when errors cross between these entry points.
 
 ## Reading error.details throws a TypeError
 

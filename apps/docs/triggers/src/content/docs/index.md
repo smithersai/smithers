@@ -1,6 +1,6 @@
 ---
 title: "@smthrs/triggers"
-description: "Durable cron triggers and verified inbound channels for flows: a scheduler that survives restarts, a claim protocol that keeps two hosts from firing one occurrence twice, and webhook doors that carry no execution authority."
+description: "Durable cron triggers and verified inbound channels for flows: a scheduler that survives restarts, leased claims and a runner deduplication contract, and webhook doors that carry no execution authority."
 editUrl: "https://github.com/smithersai/smithers/edit/main/packages/smithers/agent/triggers/docs/README.md"
 ---
 
@@ -16,9 +16,9 @@ a signal.
 Writing a cron loop is easy. The parts that are not easy are the ones this
 package spends its code on:
 
-- **Firing once across two hosts.** Both hosts notice the 03:00 boundary. The
-  claim protocol runs inside the store's transaction, so exactly one of them
-  launches and the other learns it lost.
+- **Coordinating claims across two hosts.** Both hosts notice the 03:00 boundary.
+  The store grants a leased reservation. Recovery can retry that occurrence,
+  so preventing duplicate runs requires runner deduplication.
 - **Deciding what a boundary means when the previous run is still going.** Skip
   it, remember the newest one, or cancel the run in flight and replace it.
 - **Knowing what a trigger owes after the process was down for six hours.** Owe
@@ -29,6 +29,10 @@ package spends its code on:
   is then allowed to do: the capabilities and the budget stay the ones
   [`@smthrs/control`](https://control.smithers.sh/reference/api/) already grants that flow. A mistaken
   declaration starts the wrong flow rather than escalating a privilege.
+
+Scheduled dispatch makes at-least-once launch attempts. `RunnerService.start`
+must durably deduplicate by `idempotencyKey` and return the same run identity on
+replay, including across host restarts.
 
 Reach for a queue instead when every unit of work must survive: a trigger
 coalesces, and that is deliberate. A nightly report that ran long owes you the

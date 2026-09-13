@@ -38,10 +38,10 @@ is Effect's Node spawner re-exported; contained POSIX variants use
 ## Install
 
 ```bash
-pnpm add @smthrs/platform-bun@next @effect/platform-bun@4.0.0-rc.112
+pnpm add @smthrs/platform-bun@next @effect/platform-bun@4.0.0-rc.115
 ```
 
-`@effect/platform-bun` is a required peer at exactly `4.0.0-rc.112`. Package
+`@effect/platform-bun` is a required peer at exactly `4.0.0-rc.115`. Package
 managers install it with the other required Effect peers. The filesystem slot
 also needs a CPython 3 interpreter on the host, and every complete bundle needs
 jj 0.39.0 or later because it probes jj while the layer is built.

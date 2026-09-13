@@ -29,7 +29,7 @@ const executor = CaseExecutor.make((suiteCase) =>
 ```
 
 `CaseExecutor.make` accepts the bare callback, or an object naming the
-callback `run` or `execute`. An object carrying neither throws a `TypeError`:
+callback `run`. An object without one throws a `TypeError`:
 a wiring mistake fails loudly instead of degrading to an executor that fails
 every case.
 
@@ -70,14 +70,18 @@ interrupts the run.
 
 ## Pass run identity
 
-`Runner.run` takes `runId` and `at` from the caller and stamps every
-observation with them, so two runs over the same inputs produce identical
-observations:
+`Runner.run` takes `runId` and `at` from the caller. `runId` identifies the
+`RunResult` and joins every score job's identity; `at` stamps every
+observation. Two runs produce identical observations when their executor and
+scorer results are identical too, since the runner invokes those effects afresh
+each time:
 
 ```ts
-const run = yield * Runner.run(suite, {
-  runId: "nightly-2026-01-01",
-  at: "2026-01-01T00:00:00.000Z"
+Effect.gen(function*() {
+  const run = yield* Runner.run(suite, {
+    runId: "nightly-2026-01-01",
+    at: "2026-01-01T00:00:00.000Z"
+  })
 })
 ```
 
@@ -127,8 +131,9 @@ A run verifies all three and fails with `scorer_protocol` when one is broken.
 Before calling an order-only runner, it also refuses two jobs that share a
 step key and scorer with `ambiguous_score_job`: give each case its own step
 key, or implement `runBatchCorrelated`. The runner service in
-`@smthrs/scorers` implements the order-only contract, so its service value can
-be used directly. For that service, see the [scorers API](https://scorers.smithers.sh/reference/api/).
+`@smthrs/scorers` implements `runBatchCorrelated`, so its service value can be
+used directly and `ambiguous_score_job` never applies to it. For that service,
+see the [scorers API](https://scorers.smithers.sh/reference/api/).
 
 A returned score that is not finite and inside [0, 1] becomes an inconclusive
 observation naming the scorer and the offending value, and the run's own

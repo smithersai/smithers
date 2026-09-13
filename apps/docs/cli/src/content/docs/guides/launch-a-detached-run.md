@@ -44,8 +44,9 @@ Until the line appears, the child's output lands in
 `.flows/logs/pending-<nonce>.log`, which is renamed onto the run id once the
 run is known. The parent waits `SMITHERS_DETACHED_ADMISSION_TIMEOUT_MS`
 milliseconds, 30000 by default. A child that is silent past that window but
-still alive gets a slow-boot line on stderr and four times the window before
-the launch is reported as failed:
+still alive gets a slow-boot line on stderr. The total admission deadline is
+four times the window; after it, the parent terminates the child and reports
+failure:
 
 ```text
 smthrs: detached engine (pid 37916) is still booting after 30s; waiting up to 120s.
@@ -54,8 +55,14 @@ smthrs: detached engine (pid 37916) is still booting after 30s; waiting up to 12
 A first launch in a fresh project often crosses that line, because the engine
 database still has to be created and migrated.
 
-This is why the receipt is trustworthy: the launch returned because the run was
-persisted, not because a timer expired.
+The receipt confirms that the run was persisted. It does not report settlement.
+An attached local launch or resume prints its receipt only after settlement.
+
+Until admission succeeds, the parent owns the child. Interrupting the wait or
+encountering a launch error triggers cleanup before the CLI exits: SIGTERM,
+then SIGKILL if needed, with a bounded wait for termination. POSIX cleanup
+targets the process group; Windows cleanup targets the child handle. After
+the receipt is returned, the child outlives the launcher.
 
 ## Follow it
 
@@ -90,8 +97,11 @@ always-run cleanup step.
   remote plane will never drive.
 - **The flow id starts with `system/`.** Those ids are reserved by the control
   catalog and rc.0 ships a body for none of them.
-- **The child never reached admission.** The launch exits 1. Read the pending
-  log under `.flows/logs/` for what the child printed before it stopped.
+- **The child never reached admission.** The launch exits 1. Its failure report
+  includes `Log: <path>` and the last 32 KiB of output. Read the retained
+  `.flows/logs/pending-<nonce>.log` at that path for the full output. Interrupted
+  launches also retain the pending log. Remove failed launch logs manually when
+  they are no longer needed.
 
 ## A run nothing drives
 

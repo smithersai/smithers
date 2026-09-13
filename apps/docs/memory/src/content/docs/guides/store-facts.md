@@ -65,7 +65,7 @@ import * as Flows from "@smthrs/memory/Flows"
 import { Effect } from "effect"
 
 const remembered = Effect.gen(function*() {
-  return yield* Flows.handlers.remember({
+  return yield* Flows.runRemember({
     bank: "global-history",
     key: "release",
     text: "cut 0.1.0",
@@ -109,7 +109,7 @@ const findings = Effect.gen(function*() {
     namespace: "agent-reviewer",
     status: "any",
     includeSuperseded: true,
-    tagGroup: { tags: ["source:eval"], match: "any" }
+    tagGroups: [{ tags: ["source:eval"], match: "any" }]
   })
   return { accepted, everything }
 })

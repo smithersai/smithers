@@ -87,6 +87,12 @@ const program = source.run((events) =>
 ).pipe(Effect.provide(Core.CursorStore.layerMemory))
 ```
 
+`run` returns `Effect<void, IntegrationError | E, R | CursorStore>`.
+The default schedule polls forever with 250 milliseconds between turns.
+Pass `{ schedule }` as the second argument to change the schedule. A
+caller-supplied finite schedule ends polling normally and succeeds with
+`undefined`, discarding the schedule's result.
+
 Replace `chatId` with the chat the bot serves. `allowedChatIds` is required
 and must be non-empty; missing or empty configuration throws `invalid-config`
 before the source polls. Updates from other chats and updates whose chat the

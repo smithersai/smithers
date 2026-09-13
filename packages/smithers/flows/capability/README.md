@@ -1,5 +1,7 @@
 # @smthrs/capability
 
+Release candidate scope, host requirements and compatibility review are defined in the [library support policy](https://github.com/smithersai/smithers/blob/main/RELEASE_SUPPORT.md).
+
 **Documentation:** https://capability.smithers.sh
 
 Capability values and permission failures: the vocabulary a program uses to
@@ -14,7 +16,7 @@ the answer back to a caller.
 The package holds no state. It reads no files, opens no sockets, and enforces
 nothing. Its one runtime dependency is
 [`@smthrs/canonical`](https://canonical.smithers.sh), and
-[`effect`](https://effect.website) is a peer pinned at `effect@4.0.0-rc.112`.
+[`effect`](https://effect.website) is a peer pinned at `effect@4.0.0-rc.115`.
 It bundles for a browser unchanged. Enforcement, the grant store, the layers
 that decorate host services, and the journal live in
 [`@smthrs/kernel`](https://kernel.smithers.sh).

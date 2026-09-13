@@ -6,10 +6,9 @@ sidebar:
 editUrl: "https://github.com/smithersai/smithers/edit/main/packages/smithers/flows/flow/docs/guides/queue-work-to-a-worker.md"
 ---
 
-A `DurableQueue` moves work out of the flow that asked for it without losing the
-answer. The flow offers a payload, parks, and resumes with whatever exit the
-worker recorded. Both halves are persisted, so neither the request nor the reply
-depends on the process that made it.
+A `DurableQueue` moves work out of the flow that asked for it. The flow offers a
+payload, parks, and resumes when a worker persists a result. Requests and recorded
+results survive the process that made them.
 
 ## Declare the queue
 
@@ -25,9 +24,12 @@ export const Renders = DurableQueue.make({
 })
 ```
 
-`idempotencyKey` is required. It is what identifies one item, so two offers of
-the same page are one piece of work rather than two. `success` defaults to
-`Schema.Void` and `error` to `Schema.Never`.
+`idempotencyKey` is required. The payload key scopes an occurrence counter;
+the execution ID and occurrence ordinal also contribute to the queue item ID.
+Distinct offers of the same page create distinct items, including within one
+execution. Replaying the same occurrence derives the same ID for queue deduplication.
+Business-level deduplication across distinct offers or runs is the caller's job.
+`success` defaults to `Schema.Void` and `error` to `Schema.Never`.
 
 ## Offer work from a flow
 
@@ -38,12 +40,12 @@ const rendered = DurableQueue.process(Renders, { page: "home" })
 `process` offers the payload under the name `DurableQueue/<name>`, attaches a
 completion token, and suspends the execution until a worker records the handler's
 exit against it. The success and error channels are the queue's declared schemas,
-so the caller sees the worker's own outcome.
+so the caller sees the worker's own outcome. While suspended, the execution's
+waiting annotation has reason `event` and the item's completion token.
 
-Two things are deliberately defects rather than typed failures: a payload that
-fails the queue's schema, and the final offer failure of an exhausted retry
-schedule. Both would otherwise pollute an error channel that belongs to the
-worker.
+Invalid payloads and offer encoding failures die with `SchemaError` without
+retrying. The final offer failure of an exhausted retry schedule also becomes a
+defect. The typed error channel is reserved for the worker's declared error.
 
 `retrySchedule` bounds how a failing offer is retried. The default retries with
 exponential delays capped at one minute and never gives up, so a caller that
@@ -68,7 +70,7 @@ import * as Effect from "effect/Effect"
 export const RendersWorker = DurableQueue.worker(
   Renders,
   ({ page }) => Effect.succeed(`<html>${page}</html>`),
-  { concurrency: 4 }
+  { concurrency: 4, maxAttempts: 10 }
 )
 ```
 
@@ -79,7 +81,23 @@ it itself.
 
 The handler's exit is what the waiting flow receives. A handler that fails with
 the queue's declared error type resumes the caller with that typed failure; a
-handler that dies resumes it with a defect.
+handler that dies resumes it with a defect. An interrupt-only handler exit records
+nothing and requeues the item without consuming an attempt. Mixed failures are
+recorded with interrupt reasons removed.
+
+Handler execution is at least once: if recording its result fails, a subsequent
+take runs the handler again. Make side effects idempotent using a business key in
+the payload. `maxAttempts` is passed to the persisted queue and defaults to `10`
+on both worker constructors. Failed takes consume attempts; interrupt-only exits
+do not. A declared handler failure that is successfully recorded completes the
+item instead of retrying it.
+
+A take failure after the handler produces a recordable exit is logged at error
+level with the queue name, item ID, completion token, attempt, attempt limit, and
+whether that limit was reached. At exhaustion the store drops or quarantines the
+item according to its policy. If completion writes exhaust the attempts without
+recording a result, the caller remains suspended and requires recovery by the
+host. Raising `maxAttempts` allows more retries but does not guarantee completion.
 
 ## When to reach for it
 

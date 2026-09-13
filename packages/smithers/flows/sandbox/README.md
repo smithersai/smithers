@@ -1,7 +1,9 @@
 # @smthrs/sandbox
 
+Release candidate scope, host requirements and compatibility review are defined in the [library support policy](https://github.com/smithersai/smithers/blob/main/RELEASE_SUPPORT.md).
+
 This package declares `effect` as an exact
-`4.0.0-rc.112` peer dependency. Keep the application on that version so
+`4.0.0-rc.115` peer dependency. Keep the application on that version so
 all Smithers packages share one Effect runtime.
 
 **Documentation:** https://sandbox.smithers.sh
@@ -97,6 +99,14 @@ const host = Sandbox.layerHost(provider, { session })
 
 `ContainerSandbox` passes `--network none` when `network` is omitted. Set an
 engine network mode explicitly to opt into egress.
+
+Container images must provide Linux GNU or BusyBox utilities, including
+`stat -c`, `mktemp -d`, and `ln -T`. The native filesystem exposes real modes
+and ownership, and supports exclusive `wx` writes through a completed sibling
+file and an atomic hard link. Existing files, symlinks, directories, and FIFOs
+are never overwritten by an exclusive write. Ordinary writes support `w`
+without an explicit mode; other flags are refused. Standard write and edit
+tools use these operations to replace files while preserving their metadata.
 
 A provider that can be pinged can also be supervised. `SandboxSupervision`
 probes the open session on a cadence and retires it when the probe says it is

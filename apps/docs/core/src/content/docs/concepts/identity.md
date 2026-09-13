@@ -103,6 +103,18 @@ constructing the node and building the graph changes the recorded identity.
 This is the same rule from the other direction: what the plan holds is what the
 plan is identified by, and the plan is read once, at build.
 
+Reflection reads own property descriptors, including non-enumerable data and
+array extras, without invoking accessors. It traverses Map keys and values, Set
+values, and Chunk elements. Planned values in these members produce dependency
+references, so substituting a producer's digest changes the consumer's identity.
+The same member contract and cycle, depth, and member limits apply to reference
+discovery and reflection.
+
+Errors include their name, message, own fields, and nested causes. Tagged errors
+retain their `_tag` and payload, including Effect's stored constructor arguments.
+The `stack` property is excluded. Accessors are recorded by function identity;
+unsupported field values are refused instead of omitted.
+
 ## Composition identity is the host's answer
 
 The `layers` field is the one place identity comes from outside the

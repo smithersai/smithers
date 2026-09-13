@@ -57,9 +57,27 @@ yield * planned.contains("lint")
 yield * planned.edges([["read-pr", "lint"], ["read-pr", "test"]])
 yield * planned.keys({ "read-pr": "key1_0f3c..." })
 yield * planned.placement("lint", { tag: "sandbox", options: { profile: "lane-3" } })
-yield * planned.declaresEffects("test", ["fs:read", "proc:spawn"])
+yield * planned.declaresEffects("test", ["read:workspace/input", "write:workspace/output"])
 yield * planned.envelope({ deny: ["proc:spawn"], may: ["fs:read ./"] })
 ```
+
+The effect assertion assumes the `test` node declares these paths:
+
+```ts
+import * as Effects from "@smthrs/core/Effects"
+
+const testEffects = Effects.make({
+  reads: ["workspace/input"],
+  writes: ["workspace/output"],
+  mode: "hermetic",
+  onConflict: "serialize"
+})
+```
+
+Attach `testEffects` with `Node.withEffects`. `Plan.planOf` and `Plan.fromGraph`
+project declared paths as `read:<path>` and `write:<path>`, not kernel capability
+names such as `fs:read` or `proc:spawn`. An undeclared node has an empty effect
+list; inherited admission remains in its `envelope`.
 
 Three of those have behavior worth knowing:
 
@@ -72,7 +90,8 @@ Three of those have behavior worth knowing:
   breaks a test.
 
 `planned.node(id)` narrows the same vocabulary to one node, adding `mode`,
-`tier`, and `onConflict`.
+`tier`, and `onConflict`. These fields come from the node's own declaration
+and are absent on an undeclared node.
 
 ## Snapshot the whole plan
 

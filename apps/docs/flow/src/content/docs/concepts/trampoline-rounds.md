@@ -26,6 +26,14 @@ A round that hands off settles as `Flow.Handoff`, beside `Complete` and
 `Suspended`. Following the handoff is the engine's job: this package produces the
 settlement, and [`@smthrs/engine`](https://engine.smithers.sh/reference/api/) opens the next round.
 
+A handoff completes the round successfully and discards its `withRollback` registrations.
+It closes the current round's scope with a success exit, running its exit
+finalizers. The next round has a fresh scope, so its failure cannot roll back
+effects from earlier rounds. The engine does not provide lineage-scoped
+compensation; compensation across rounds requires an explicit durable design.
+Suspension keeps the current round's scope open instead. See
+[Scope and cleanup](/concepts/suspension-and-replay/#scope-and-cleanup).
+
 Values are passed in their author-facing form. The engine encodes a `Done` value
 with the settling flow's success schema and a `To` payload with the target flow's
 payload schema, at the settlement boundary. Callers do not pre-encode.

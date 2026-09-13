@@ -92,7 +92,9 @@ and one of five outcomes:
 | `skipped`  | A dependency prevented dispatch, or `stop-merge` stopped a dispatched attempt.    |
 | `deferred` | A selection guess postponed it. It never dispatched and wrote no cache row.       |
 
-Every settlement is journaled as `node-settled`. A `deferred` node is never
+Every settlement is journaled as `node-settled`. A `stop-merge` decision writes
+one `skipped` settlement for the stopped node. Reopening the run preserves that
+record; recovery writes it only if it was missing. A `deferred` node is never
 reported as passed, and is a debt a later guess-free pass repays.
 
 ## Why the dispatch key is not the plan key

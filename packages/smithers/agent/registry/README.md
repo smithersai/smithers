@@ -1,7 +1,9 @@
 # @smthrs/registry
 
+Release candidate scope, host requirements and compatibility review are defined in the [library support policy](https://github.com/smithersai/smithers/blob/main/RELEASE_SUPPORT.md).
+
 This package declares `effect` as an exact
-`4.0.0-rc.112` peer dependency. Keep the application on that version so
+`4.0.0-rc.115` peer dependency. Keep the application on that version so
 all Smithers packages share one Effect runtime.
 
 **Documentation:** https://registry.smithers.sh
@@ -22,7 +24,7 @@ measured during the scan.
 ## Install
 
 ```sh
-pnpm add @smthrs/registry@next effect@4.0.0-rc.112 @effect/platform-node@4.0.0-rc.112
+pnpm add @smthrs/registry@next effect@4.0.0-rc.115 @effect/platform-node@4.0.0-rc.115
 ```
 
 Smithers is at `1.0.0-rc.0` and has not reached npm yet. When it does, the

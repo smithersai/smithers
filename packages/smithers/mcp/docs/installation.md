@@ -21,7 +21,7 @@ pnpm add @smthrs/mcp@next
 ## Requirements
 
 - Node.js 22.19+ (Node 22) or 24.11+.
-- [`effect`](https://effect.website) 4.0.0-rc.112, a peer dependency and the
+- [`effect`](https://effect.website) 4.0.0-rc.115, a peer dependency and the
   version this package is built against. Connection and tool-call operations
   return an `Effect`, and every schema is an `effect/Schema`. `McpFlows.mcp`
   is synchronous and returns a `FlowBinding.Source`; `Diagnostics.layer` is a
@@ -44,7 +44,7 @@ caller's environment:
 On Node, `@effect/platform-node` provides the spawner:
 
 ```bash
-pnpm add @effect/platform-node@4.0.0-rc.112
+pnpm add @effect/platform-node@4.0.0-rc.115
 ```
 
 ```ts

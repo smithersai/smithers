@@ -51,12 +51,12 @@ answers are possible:
 When a dispatch settles as a failure and the action declares a policy, the
 engine asks the policy for a decision:
 
-| Decision            | What the engine does |
-| ------------------- | -------------------- |
-| Retry after a delay | Sleeps the delay, increments the attempt, and dispatches again. |
+| Decision            | What the engine does                                                                              |
+| ------------------- | ------------------------------------------------------------------------------------------------- |
+| Retry after a delay | Sleeps the delay, increments the attempt, and dispatches again.                                   |
 | Attempts exhausted  | Decodes and propagates the final declared failure; annotates `retry.stopReason` as `"exhausted"`. |
-| Policy expired      | Decodes and propagates the final declared failure; annotates `retry.stopReason` as `"expired"`. |
-| Non-retryable       | Decodes and propagates the original failure; annotates `retry.stopReason` as `"nonRetryable"`. |
+| Policy expired      | Decodes and propagates the final declared failure; annotates `retry.stopReason` as `"expired"`.   |
+| Non-retryable       | Decodes and propagates the original failure; annotates `retry.stopReason` as `"nonRetryable"`.    |
 
 When retries stop, the action's declared error channel is preserved, so typed
 recovery, including a graph `Catch`, can handle the final business failure.
@@ -81,9 +81,13 @@ before following a policy's retry decision.
 ## Compensable actions retry against a snapshot
 
 An action declared `tier: "compensable"` runs inside a snapshot boundary. The
-engine snapshots before each attempt, diffs after each one, and restores the
-previous snapshot before a retry, so attempt 2 starts from the world attempt 1
-started from. See
+engine snapshots before each executing attempt, diffs afterward, and restores
+the earliest snapshot before a retry. This survives a process restart only
+when the driver implements `Encoded.actionSnapshot` and persists the supplied
+`ActionExecuteOptions.snapshot` handle before executing the action. That
+contract also skips boundary work for journal replay. Without it, restoration
+is process-local; the current `layerMemory` and `@smthrs/engine-store` adapters
+use that fallback. See
 [Run a compensable action](/guides/compensable-actions/).
 
 ## What is not a retry

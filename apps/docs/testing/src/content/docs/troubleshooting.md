@@ -175,13 +175,27 @@ give the caller no signal that its arguments were ignored.
 **Symptom.** The `FileSystem round-trips` case fails with a
 `CapabilityContractError` naming `FileSystem` and `scratchPath`.
 
-**Cause.** The declared `fileSystemScratchPath` already exists. The suite
-refuses to write over a file it did not create, and removes only the file it
-did.
+**Cause.** Exclusive creation (`flag: "wx"`) found an existing scratch path.
+This includes dangling symlinks and files created concurrently. The suite
+reports `FileSystem/scratchPath` and leaves the existing path untouched.
+Removal is registered only after successful creation.
 
 **Fix.** Point the profile at a path that does not exist, or omit
-`fileSystemScratchPath` entirely and let the suite build a unique absolute path
+`fileSystemScratchPath` entirely and let the suite build a randomized absolute path
 under `/tmp` from the bundle's own `Path` and `Random`.
+
+## The host suite fails on process cleanup
+
+**Symptom.** The cleanup case reports `Scope/interrupt_running` or
+`Scope/interrupt_cleanup`.
+
+**Cause.** The declared `shell.interruptCommand` exited before interruption,
+or the Host process handle remained running after its consumer was interrupted.
+
+**Fix.** Supply a command that stays pending until cancelled and bind its
+resource lifetime to the scope passed to `ChildProcessSpawner.spawn`. The
+suite checks the real handle before and after interruption. An unsupported
+shell is checked for its refusal code and does not certify cleanup.
 
 ## The host suite fails on clock or random
 

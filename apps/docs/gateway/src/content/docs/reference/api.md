@@ -4,9 +4,10 @@ description: "Every public export of @smthrs/gateway: the assembled server and i
 editUrl: "https://github.com/smithersai/smithers/edit/main/packages/smithers/gateway/docs/api.md"
 ---
 
-The gateway declares `effect` and `@effect/platform-node` as exact
-`4.0.0-rc.112` peers; `@effect/platform-node` is optional and only
-`node/NodeGateway` imports it. Use the same Effect version in the host.
+The gateway declares `effect`, `@effect/platform-node`, and `@effect/platform-bun`
+as exact `4.0.0-rc.115` peers; `@effect/platform-node` is optional for
+`node/NodeGateway`, and `@effect/platform-bun` is optional for `bun/BunGateway`.
+Use the same Effect version in the host.
 
 The root entry point exports one namespace per module, and every local module is
 also importable from `@smthrs/gateway/<Module>`.

@@ -158,6 +158,14 @@ const route = Result.gen(function*() {
 })
 ```
 
+For a custom `Protocol.make`, `body.from` returns the decoded `Body` type of
+`body.schema`. Preparation encodes that value through the codec, then
+canonicalizes the encoded JSON into the bytes sent to the provider and used
+in sealed-step keys. Transforming codecs are supported: with
+`Schema.Struct({ limit: Schema.NumberFromString })`, return `{ limit: 8 }`
+from `body.from` to send `{"limit":"8"}`. Encoding failures become
+`invalid_request` errors with the failing member's path when available.
+
 Rules the composition enforces for you: endpoint URLs are public route
 identity, so `Endpoint.make` rejects embedded credentials, fragments, and
 credential-shaped query keys; route headers with credential-shaped names fail

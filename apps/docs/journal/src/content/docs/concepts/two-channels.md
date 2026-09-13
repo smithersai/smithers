@@ -29,7 +29,8 @@ that describes the move has committed.
 
 `emitLossy(input)` validates the event, allocates its sequences from an
 in-memory clock, and hands it to a bounded queue that one scoped writer drains
-in batches. The call returns before SQL commits.
+in batches. The call returns before SQL commits. Its `seq` is provisional until
+commit; `sourceSeq` remains the stable producer identity.
 
 `EmitReceipt` is `Accepted | Duplicate | Dropped`, and which of those you can
 see depends on the layer's `overflow` policy:
@@ -91,6 +92,27 @@ Every admitted event gets two numbers, and they answer different questions.
   and is the idempotency key. A producer may supply its own; otherwise the
   journal allocates the next one.
 
+## Commit ordering
+
+Both channels allocate canonical `seq` inside the write transaction, above the
+run's committed tail. The lossy writer uses its admission reservation as a
+minimum. If a durable commit or another journal instance overtakes that
+reservation, the queued entry moves forward when it commits. For example,
+lossy admission `0`, followed by durable commit `1`, commits the lossy entry at
+`2`. Replay and followers then deliver `1, 2`.
+
+The durable tail is therefore a committed-prefix watermark: a pending entry
+cannot later commit below it. Readers can advance to the last returned row
+without skipping later commits, including commits from independent connections.
+No persisted reservation or local pending-writer registry is needed.
+
+Use committed entries or committed duplicate receipts for paging and checkpoint
+cursors. An `Accepted` lossy receipt or a pending `Duplicate` carries the
+provisional reservation, not a durable cursor. `sourceSeq` and event identity do
+not change when the canonical sequence moves. The compaction guard still drops
+queued reservations at or below an already compacted boundary and reports the
+loss through `flush`.
+
 ## Gaps are valid
 
 A rejected or dropped admission still consumes both allocations. Allocation is
@@ -100,7 +122,7 @@ it as one.
 
 The one receipt that consumes neither allocation is a `Duplicate` the
 in-process producer index still holds. It returns the original event's
-canonical `seq`.
+`seq`, provisional while pending and canonical after commit.
 
 ## Where the durable channel is fenced
 

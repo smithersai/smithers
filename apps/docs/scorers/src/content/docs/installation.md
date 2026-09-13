@@ -17,9 +17,10 @@ pnpm add @smthrs/scorers@next
 ## Requirements
 
 - Node.js 22.19.0 or later.
-- [`effect`](https://effect.website) 4.0.0-rc.112, the version this package is
-  built against. Every public function returns an `Effect`, and every schema is
-  an `effect/Schema`.
+- [`effect`](https://effect.website) 4.0.0-rc.115, the version this package is
+  built against. Execution, validation, and persistence use `Effect`; schemas
+  use `effect/Schema`. Declaration and pure grading helpers are synchronous;
+  [`Scorer.make` throws on invalid declarations](/troubleshooting/#scorermake-threw-instead-of-failing).
 - [`@smthrs/core`](https://core.smithers.sh/reference/api/) for `Flow` and `Digest`. A scorer is a flow
   declaration, and the canonical JSON that derives a `scorerKey` comes from
   `Digest`.
@@ -35,8 +36,8 @@ The root entry point re-exports every module as a namespace:
 import { Binding, Runner, RunnerLive, Sampling, Scorer, ScoreStore, SqlScoreStore } from "@smthrs/scorers"
 ```
 
-Each top-level module is also importable from its own subpath, which is the
-form [`@smthrs/evals`](https://evals.smithers.sh/reference/api/) uses:
+Each module named in the export map is also importable from its own subpath,
+which is the form [`@smthrs/evals`](https://evals.smithers.sh/reference/api/) uses:
 
 ```ts
 import * as Sampling from "@smthrs/scorers/Sampling"
@@ -46,8 +47,9 @@ import * as Scorer from "@smthrs/scorers/Scorer"
 Three subpath families are blocked in the export map:
 `@smthrs/scorers/internal/*`,
 `@smthrs/scorers/migrations/*`, and `@smthrs/scorers/*/index`. The migration
-steps are implementation detail, so the aggregator is reachable only as the
-root `Migrations` namespace. Importing a blocked subpath fails with Node's
+steps are implementation detail, and the map lists no `Migrations` subpath, so
+the aggregator is reachable only as the root `Migrations` namespace. Importing
+a blocked or unlisted subpath fails with Node's
 `ERR_PACKAGE_PATH_NOT_EXPORTED`, under `import` and `require` alike.
 `@smthrs/scorers/package.json` is exported.
 
@@ -58,7 +60,7 @@ root `Migrations` namespace. Importing a blocked subpath fails with Node's
 driver over a file. Add the database package and its optional Node driver:
 
 ```bash
-pnpm add @smthrs/database@next effect@4.0.0-rc.112 @effect/sql-sqlite-node@4.0.0-rc.112
+pnpm add @smthrs/database@next effect@4.0.0-rc.115 @effect/sql-sqlite-node@4.0.0-rc.115
 ```
 
 ```ts
@@ -79,9 +81,25 @@ refuses to open with `unsupported_runtime`. For a test or a walkthrough,
 `:memory:` database in one layer, and the [Quickstart](/quickstart/) uses
 it.
 
-Building the store applies this package's four migrations to whatever database
-it is pointed at, so no separate migration step is required. To apply them
-without building a store, use `Migrations.layer`.
+Building the store bootstraps the shared `flows_migrations` ledger through
+`@smthrs/database/Migrations` and applies this package's four migrations in
+`flows_scorers_migrations`. The shared ledger lets `NodeDatabase.layer` reopen
+this standalone file after the store closes; no engine tables or separate
+migration step are required. `Migrations.layer` performs the same bootstrap
+and migrations without building a store.
+
+## Workspace artifacts
+
+Workspace imports resolve to `src`. Run `pnpm run build` in this package to
+regenerate ESM, CommonJS, declarations, and source maps under `dist`.
+
+Repository release packing uses `scripts/pack-release.mjs`. Before staging each
+package, it deletes `dist` and runs that package's build script. A failed or
+missing build script stops packing even when all export targets already exist.
+The release workflow also rebuilds clean artifacts before entering this gate.
+Run local packing after source changes have landed; earlier ignored artifacts
+are replaced, and a later source edit requires another build before direct
+consumption of `dist`.
 
 ## Next step
 

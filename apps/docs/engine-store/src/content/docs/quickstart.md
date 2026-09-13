@@ -17,7 +17,7 @@ the whole point of the package.
 - A package with the dependencies installed:
 
 ```bash
-pnpm add @smthrs/engine-store@next @smthrs/flow@next @smthrs/journal@next @smthrs/run-store@next @smthrs/step-cache@next @smthrs/database@next @smthrs/artifacts@next @smthrs/kernel@next @effect/platform-node@4.0.0-rc.112 effect@4.0.0-rc.112 @effect/sql-sqlite-node@4.0.0-rc.112
+pnpm add @smthrs/engine-store@next @smthrs/flow@next @smthrs/journal@next @smthrs/run-store@next @smthrs/step-cache@next @smthrs/database@next @smthrs/artifacts@next @smthrs/kernel@next @effect/platform-node@4.0.0-rc.115 effect@4.0.0-rc.115 @effect/sql-sqlite-node@4.0.0-rc.115
 ```
 
 ## Declare a sealed action and a flow
@@ -84,7 +84,7 @@ const stores = (filename: string, root: string) =>
     DurableEngineState.layer,
     OwnerIdentity.layer,
     Workspace.layer(root),
-    ArtifactStore.layerFileSystem({ directory: `${root}/objects` })
+    ArtifactStore.layerFileSystem({ directory: `${root}/.flows/objects` })
   ).pipe(Layer.provideMerge(database(filename)))
 ```
 
@@ -182,7 +182,7 @@ export const main = (filename: string, root: string): Effect.Effect<{
 Run it against a real file and print the result:
 
 ```ts
-console.log(await Effect.runPromise(main("./.quickstart/engine.db", "./.quickstart")))
+console.log(await Effect.runPromise(main("./.quickstart/.flows/engine.db", "./.quickstart")))
 ```
 
 ```text

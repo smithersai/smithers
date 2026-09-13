@@ -59,9 +59,12 @@ modification time into one digest: identity, not content, because reading every
 byte costs the whole tree twice per frame. The walk prunes derived artifacts
 (`defaultPrune` and `defaultIgnoreSuffixes`, both replaceable through options),
 skips symlinks whole, treats a vanished path as movement rather than an error,
-and reports `complete: false` when it stops at `maxPaths` (default 50,000), in
-which case the controller decides changed-ness from what the frame's calls
-declared.
+and reports `complete: false` when it stops at `maxPaths` (default 50,000) or
+cannot list a directory or stat an entry. Missing paths (`NotFound`, including
+`ENOENT`) are omitted without making the walk partial. Other listing and stat
+failures emit warning diagnostics with the failed operation, path, and cause.
+For a partial walk, the controller decides changed-ness from what the frame's
+calls declared.
 
 Two rules govern the layer:
 

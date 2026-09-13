@@ -18,6 +18,10 @@ code `invalid_declaration` rather than returning a failed `Effect`.
 **What to change.** Catch it with `try`/`catch` in a test, and fix the
 declaration in production. The message names the problem:
 
+`A scorer must not declare OPTION; use score as its only implementation` names
+a refused `body`, `model`, or `flows` option. Remove the option, even if its
+value is `undefined`, and implement scoring in `score`.
+
 | Message                                                                | Cause                                                            |
 | ---------------------------------------------------------------------- | ---------------------------------------------------------------- |
 | `A scorer id must be a string`                                         | `id` is not a string.                                            |
@@ -42,7 +46,8 @@ itself has no implementation to reach, so it raises `FlowError` with code
 
 **What to change.** Call `scorer.score(input)`, or hand the scorer to a
 [runner](/guides/run-a-batch-of-scorers/). `Scorer.MakeOptions` has no
-`body` field, so there is no way to give the flow one.
+`body`, `model`, or `flows` field. `Scorer.make` also rejects these options at
+runtime, so dynamic-body options cannot give the scorer a second implementation.
 
 ## An observation came back inconclusive with code invalid_score
 

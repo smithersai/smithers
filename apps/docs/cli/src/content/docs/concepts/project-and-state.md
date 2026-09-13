@@ -42,8 +42,17 @@ climbing into the home directory, and rc.0 reads no global state at all.
 
 The two databases are separate files with separate connections and separate
 migration ownership. `NodeControl.databasePath` and
-`NodeControl.executionDatabasePath` are the projections; nothing assembles
-`.flows` paths at a call site.
+`NodeControl.executionDatabasePath` are the database projections; other state
+paths start with `Project.stateDirectory`. Workspace routing uses the same pure
+projections through internal modules to avoid importing its NodeControl host.
+Nothing assembles `.flows` paths at a call site.
+
+Local control and operator commands share one database initialization layer.
+On POSIX systems it restricts the state directory to `0700` before opening
+SQLite, then restricts the control database and its WAL and shared-memory files
+to `0600` before exposing the store. This also applies when `credentials add` or
+a memory command creates the first state in a project, and when reopening state
+with broader permissions.
 
 Within one local invocation there is exactly one durable engine, and its SQLite
 connection is shared by the control runtime, the journal, the run store, and

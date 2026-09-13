@@ -19,7 +19,7 @@ A memory policy decides which namespace a flow tree reads and writes, whether re
 - The libraries:
 
 ```bash
-pnpm add @smthrs/agent@next @smthrs/flow@next @smthrs/engine@next @smthrs/memory@next @smthrs/harness@next @smthrs/model@next @smthrs/registry@next @smthrs/database@next @smthrs/platform-node@next @smthrs/control@next @smthrs/time-travel@next effect@4.0.0-rc.112 @effect/platform-node@4.0.0-rc.112 @effect/sql-sqlite-node@4.0.0-rc.112
+pnpm add @smthrs/agent@next @smthrs/flow@next @smthrs/engine@next @smthrs/memory@next @smthrs/harness@next @smthrs/model@next @smthrs/registry@next @smthrs/database@next @smthrs/platform-node@next @smthrs/control@next @smthrs/time-travel@next effect@4.0.0-rc.115 @effect/platform-node@4.0.0-rc.115 @effect/sql-sqlite-node@4.0.0-rc.115
 ```
 
 You need no provider key: the seat resolves to a scripted model, so the runs are deterministic. Point `SeatResolver` at a provider route and nothing above it changes.
@@ -186,6 +186,7 @@ const seats = SeatResolver.layer({
     Effect.succeed(
       Seat.make({
         id,
+        modelId: Seat.modelIdOf(id),
         model: scripted,
         route: { prepare: () => Effect.succeed(prepared) },
         contextWindowTokens: 200_000

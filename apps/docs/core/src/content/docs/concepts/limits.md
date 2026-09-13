@@ -46,6 +46,15 @@ flow call's input and a declaration body are budgeted separately, and the
 effect paths of a flow placed inside a plan value count as that value's
 members.
 
+Schema identity uses the same budget as its containing value. The walk counts
+AST records, structural child arrays, annotations, checks, transformation links,
+and the schema identity wrappers. Recursive ASTs use references to active
+ancestors; repeated non-recursive children are charged at each occurrence.
+Structural depth is checked before generating JSON Schema. The generated
+document then counts against the remaining member budget and the same depth
+limit, including its `schema` and `definitions`. Document limit failures remain
+typed build errors even when JSON Schema generation supports a fallback.
+
 `maximumPlanEffectPaths` counts a declaration where it is declared and again at
 every work node that inherits it as its effective envelope, because each such
 node is a writer the conflict pass compares. That is why the plan-wide bound is

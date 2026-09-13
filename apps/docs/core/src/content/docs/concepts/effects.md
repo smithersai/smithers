@@ -82,6 +82,12 @@ never claim more. `Effects.narrow(envelope, step)` checks the three rules and
 | `expected` may tighten to `hermetic`; `hermetic` may not loosen to `expected`. | `effect_mode_widening`.                              |
 | The tier may narrow: `irreversible`, then `compensable`, then `sealed`.        | `effect_tier_widening`.                              |
 
+For a flow call, a `Node.withEffects` annotation must narrow the caller's
+envelope. The callee's own declaration must then narrow that call envelope.
+The body inherits the resulting restriction, including reads, writes, mode
+and tier. Missing declarations inherit the preceding envelope; an annotation
+cannot hide a broader callee declaration.
+
 All three are fatal diagnostics: a graph carrying one has no key material,
 because a step that claimed more than it was granted is not a step this package
 will let a host key and cache.

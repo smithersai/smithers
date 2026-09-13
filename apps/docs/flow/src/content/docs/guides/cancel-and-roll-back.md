@@ -33,7 +33,7 @@ asked for `interruptUnsafe`, which it does not implement.
 ## Undo a successful effect
 
 `Flow.withRollback` registers how to undo an effect's successful result if the
-enclosing flow later exits unsuccessfully:
+current round later exits unsuccessfully:
 
 ```ts
 import { Flow } from "@smthrs/flow"
@@ -47,9 +47,16 @@ const reserved = Flow.withRollback(
 The three cases are worth stating exactly:
 
 - If the effect itself fails, no rollback is registered. There is nothing to undo.
-- If both the effect and the flow succeed, the rollback is discarded.
-- Otherwise the rollback receives the effect's successful value and the flow's
-  failure cause, when the flow scope closes.
+- If both the effect and the round succeed, the rollback is discarded.
+- If the effect succeeds and the round exits unsuccessfully, the rollback
+  receives the effect's successful value and the round's failure cause when
+  the scope closes.
+
+A handoff completes the round successfully and discards its `withRollback` registrations.
+Failure or cancellation in a later round cannot invoke those rollbacks. The
+engine does not provide lineage-scoped compensation; compensation across rounds
+requires an explicit durable design. These in-memory finalizers are not durable
+compensation records.
 
 This applies only to effects run directly inside the flow execution. It does
 **not** attach rollback behavior to nested actions. An action that changes the
@@ -73,9 +80,11 @@ const withCleanup = Effect.gen(function*() {
 })
 ```
 
-The flow scope is closed only when the execution **fully** completes, not when a
-round ends. A resource acquired before a park is still there after it, which is
-what `Flow.scope` and `Flow.provideScope` exist to express.
+Suspension keeps the current round's scope open for a re-drive of the same
+instance. Terminal completion closes it with the round's success or failure
+exit. Handoff closes it with a success exit and runs its finalizers; the next
+round has a fresh scope. `Flow.scope` and `Flow.provideScope` refer to this
+round's scope. Its resources and finalizers do not survive process death.
 
 ## Let the engine undo the work
 
@@ -100,5 +109,5 @@ Choosing between the three:
   tier.
 - [Run a flow as a child execution](/guides/run-a-child-flow/): how cancellation
   travels down a lineage.
-- [Suspension and replay](/concepts/suspension-and-replay/): why the scope
-  outlives a round.
+- [Suspension and replay](/concepts/suspension-and-replay/): scope lifetime
+  across suspension, completion, and handoff.

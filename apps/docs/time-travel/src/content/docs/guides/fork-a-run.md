@@ -11,12 +11,9 @@ parent untouched. Use it to explore an alternative from a point that already
 happened: retry a step under different inputs, branch a review, or drive a
 finished run forward again without losing the original.
 
-**Fork replay limitation:** copied attempt rows retain their parent digests.
-Actions whose keys include the run ID execute again in the child, including
-compensable and irreversible actions. An explicitly shared cache environment
-can reuse eligible sealed results, but copied attempts alone do not make the
-prefix replayable. Make repeated external effects idempotent before driving a
-fork.
+A fork does not make the copied prefix replayable. Read
+[Keep sealed steps from re-executing](#keep-sealed-steps-from-re-executing)
+before driving one.
 
 ## Fork the run
 
@@ -94,6 +91,13 @@ A fork with a non-empty `warnings` is a successful fork. Read the warnings and
 decide whether to drive the child; the copy already exists either way.
 
 ## Keep sealed steps from re-executing
+
+**Fork replay limitation:** copied attempt rows retain their parent digests.
+Actions whose keys include the run ID execute again in the child, including
+compensable and irreversible actions. An explicitly shared cache environment
+can reuse eligible sealed results, but copied attempts alone do not make the
+prefix replayable. Make repeated external effects idempotent before driving a
+fork.
 
 A sealed action's cache key is computed under the ambient cache environment.
 With no declaration, the engine scopes the key to the execution that produced

@@ -128,42 +128,13 @@ the only one that has to answer:
 ```ts
 import * as Jj from "@smthrs/jj"
 import * as Journal from "@smthrs/journal/Journal"
-import type * as JournalEvent from "@smthrs/journal/JournalEvent"
 import * as RunStore from "@smthrs/run-store/RunStore"
 import * as CacheStore from "@smthrs/step-cache/CacheStore"
 import { TimeTravel, TimeTravelStore } from "@smthrs/time-travel"
 import * as Layer from "effect/Layer"
+import { journalOf } from "./MemoryHarness.ts"
 
-const journal = Journal.makeNoop({
-  entries: ({ after, limit, runId }) =>
-    Effect.sync(() => {
-      const all = store.state().records
-        .filter((entry) => entry.runId === runId && entry.seq > (after ?? -1))
-        .sort((left, right) => left.seq - right.seq)
-      const selected = all.slice(0, limit)
-      return {
-        entries: selected.map((entry) => {
-          const stored = entry.payload as {
-            readonly eventType: string
-            readonly payload: unknown
-            readonly meta: unknown
-          }
-          return {
-            runId: entry.runId,
-            seq: entry.seq,
-            eventId: entry.eventId,
-            sourceId: "test",
-            sourceSeq: entry.seq,
-            emittedAtMs: entry.seq,
-            eventType: stored.eventType,
-            payload: stored.payload,
-            meta: stored.meta
-          } as JournalEvent.Entry
-        }),
-        hasMore: all.length > selected.length
-      }
-    })
-})
+const journal = journalOf(store)
 
 const layer = TimeTravel.layer.pipe(
   Layer.provideMerge(Layer.mergeAll(
@@ -175,6 +146,13 @@ const layer = TimeTravel.layer.pipe(
   ))
 )
 ```
+
+`journalOf` lives in `test/MemoryHarness.ts`, next to `row` (a `RunStore.RunRow`
+fixture whose every field is an override) and `makeRuns` (the claim, activate,
+abandon, and fenced-transition double). It reads the store on every call rather
+than once, so a suite that truncates history mid-test sees the shortened
+journal on the next page. `test/RealTimeTravelHarness.ts` is the other half of
+the pair, for the SQL and jj composition.
 
 `meta.lineageId` is what a fold filters on, so a seeded record has to carry it.
 A record without it is kept in every lineage, which is a different test than

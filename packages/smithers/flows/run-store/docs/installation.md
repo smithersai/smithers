@@ -12,7 +12,7 @@ does, the release candidate publishes under the `next` tag, which is what this
 command selects:
 
 ```bash
-pnpm add @smthrs/run-store@next effect@4.0.0-rc.112
+pnpm add @smthrs/run-store@next effect@4.0.0-rc.115
 ```
 
 The package requires Node.js 22.19.0 or later and ships as both ESM and
@@ -22,7 +22,7 @@ CommonJS with TypeScript declarations. Its dependencies install with it:
 [`@smthrs/observability`](/api/observability) for the shared throughput metric.
 
 [`effect`](https://effect.website) is a peer dependency pinned at
-`4.0.0-rc.112`, so install exactly that version. Two copies of `effect` in one
+`4.0.0-rc.115`, so install exactly that version. Two copies of `effect` in one
 program are two sets of service tags, and a store layer built against one copy
 cannot be provided to a program holding the other: the mismatch surfaces as a
 missing service rather than as a version error.
@@ -60,7 +60,7 @@ Using `NodeDatabase` or the in-memory `TestRunStore` helper selects the optional
 Node SQLite driver:
 
 ```bash
-pnpm add @effect/sql-sqlite-node@4.0.0-rc.112
+pnpm add @effect/sql-sqlite-node@4.0.0-rc.115
 ```
 
 Both `RunStore.layer` and `AttemptStore.layer` require exactly those two, and

@@ -1,7 +1,9 @@
 # `@smthrs/artifacts`
 
+Release candidate scope, host requirements and compatibility review are defined in the [library support policy](https://github.com/smithersai/smithers/blob/main/RELEASE_SUPPORT.md).
+
 This package declares `effect` as an exact
-`4.0.0-rc.112` peer dependency. Keep the application on that version so
+`4.0.0-rc.115` peer dependency. Keep the application on that version so
 all Smithers packages share one Effect runtime.
 
 **Documentation:** https://artifacts.smithers.sh
@@ -21,11 +23,17 @@ run in Node.js, in Bun, in a browser tab, and inside a sandbox.
 ## Install
 
 ```bash
-pnpm add @smthrs/artifacts@next @effect/platform-node@4.0.0-rc.112
+pnpm add @smthrs/artifacts@next @effect/platform-node@4.0.0-rc.115
 ```
 
 `@effect/platform-node` supplies the Node.js implementations of the services
-the store asks for. A browser or a test host provides different ones.
+the store asks for. The filesystem store needs exclusive writable handles,
+symlink inspection, and (by default) file and directory syncing. Compose it
+with the trusted host filesystem before applying the capability kernel to
+workflow services; `NodeRuntime.layerHost` and `BunRuntime.layerHost` do this.
+The guarded native filesystem refuses open handles and cannot back this store,
+even with `durability: "best-effort"`. Use `layerMemory` on hosts without those
+filesystem capabilities.
 
 ## Publish bytes and read them back
 

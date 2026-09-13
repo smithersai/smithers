@@ -89,11 +89,12 @@ The root entry point bundles for a browser, and so does every package root it
 re-exports. What that buys is authoring and inspection: declaring flows, reading
 a plan, decoding a journal event.
 
-Durable execution is a separate claim: it is supported only on Node.js 22.19.0
-or later with local SQLite. Supplying another SQL client does
-not make a browser or an edge runtime a supported durable host. This is exactly
-why the two Node-only modules are subpaths: importing `@smthrs/flows` never
-opens `node:sqlite`, and importing `@smthrs/flows/NodeRuntime` always does.
+Durable execution uses local SQLite through NodeRuntime or BunRuntime. The
+shared Runtime consumes injected Effect services; selecting another SQL client
+does not by itself establish browser or edge support. Native compositions live
+at separate subpaths, so importing `@smthrs/flows` never opens a native driver.
+See [runtime portability](/concepts/runtime-portability/) for the composition and
+cross-runtime restart contract.
 
 ## Extension is dependency injection, not a plugin catalog
 

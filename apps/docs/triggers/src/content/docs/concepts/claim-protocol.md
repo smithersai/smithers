@@ -1,25 +1,31 @@
 ---
 title: "The claim protocol"
-description: "How two hosts polling the same trigger fire one occurrence once: revision fencing, launch reservations and their lease, the outcomes a result records, and the two watermarks that decide what is due."
+description: "How hosts coordinate at-least-once launch attempts: revision fencing, launch reservations and their lease, the outcomes a result records, and the two watermarks that decide what is due."
 sidebar:
   order: 3
 editUrl: "https://github.com/smithersai/smithers/edit/main/packages/smithers/agent/triggers/docs/concepts/claim-protocol.md"
 ---
 
 Run two hosts against one database and both will notice the 03:00 boundary. The
-claim protocol is how exactly one of them launches it, and how the other one
-finds out.
+claim protocol coordinates their launch reservations. It does not guarantee a
+single call to the runner for that occurrence.
 
-Every rule below lives in the store, not in the scheduler. That placement is the
-design: a decision made inside the claim transaction cannot be made against a
-snapshot that has since gone stale.
+Scheduled dispatch makes at-least-once launch attempts. `RunnerService.start`
+must durably deduplicate by `idempotencyKey` and return the same run identity on
+replay, including across host restarts.
+
+Claim decisions live in the store transaction, so they read current state
+rather than a scheduler snapshot that may have gone stale. Runner deduplication
+covers accepted launches outside that transaction.
 
 ## The store is asked for candidates, not for due work
 
-`TriggerStore.listEnabled` returns the enabled triggers, and nothing more.
-Due-ness is a cron computation the scheduler performs against its own watermark,
-so there is no due-time query to keep in sync with the policy logic, and no
-index whose staleness could hide a trigger.
+`TriggerStore.list` returns every trigger, and nothing more. Due-ness is a cron
+computation the scheduler performs against its own watermark, so there is no
+due-time query to keep in sync with the policy logic, and no index whose
+staleness could hide a trigger. A tick reads every row rather than only the
+enabled ones because a trigger disabled while a run was active still has to
+recover that occurrence; the enabled check then stops its new claims.
 
 ## A claim is fenced on a revision
 
@@ -63,14 +69,19 @@ flow, and cannot supersede a run the stored declaration says to leave alone.
 
 Three refusals come out of that read, and each names one thing to do:
 
-| Failure             | Meaning                                                                              |
-| ------------------- | ------------------------------------------------------------------------------------ |
-| `unknown_trigger`   | No such row. Every method addressing one trigger reports this, except `clearActive`. |
-| `trigger_disabled`  | The row exists and `enabled` is false.                                               |
-| `revision_mismatch` | Somebody re-registered the trigger. Re-read the row and decide again.                |
+| Failure             | Meaning                                                                                                                            |
+| ------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| `unknown_trigger`   | No such row. Claim, result, pending-state and active-run methods report this; `get` answers `None` and `register` creates the row. |
+| `trigger_disabled`  | The row exists and `enabled` is false.                                                                                             |
+| `revision_mismatch` | Somebody re-registered the trigger. Re-read the row and decide again.                                                              |
 
-The scheduler answers `revision_mismatch` by refreshing once and retrying once.
-One retry is enough, because the next tick reads again anyway.
+The scheduler answers `revision_mismatch` by re-reading the row once and
+deciding again from it. The occurrences it was claiming were computed from the
+old declaration, so it does not retry them: it recomputes what is due from the
+refreshed cron, timezone, and watermark, and a trigger edited to fire at noon
+owes nothing for the hourly boundary its old cron produced. A buffered
+occurrence is store state rather than a computed decision, so its resumption is
+retried as is. One refresh is enough, because the next tick reads again anyway.
 
 ## A claim that wins hands back work, or a decision
 
@@ -101,7 +112,9 @@ caller has something to cancel.
 
 Between winning a claim and having a run id, a host holds a **reservation**: a
 placeholder written into the trigger's active-run column, spelled
-`trigger-reservation:<triggerId>:<occurrence>`.
+`trigger-reservation:<triggerId>:<attempt>:<occurrence>`. Each attempt gets a
+fresh UUID, including a retry of the same occurrence. Keep the token returned
+by the claim; the two-argument helper below constructs legacy ids.
 
 ```ts
 import * as TriggerStore from "@smthrs/triggers/TriggerStore"
@@ -122,7 +135,11 @@ in-memory store for the SQL one cannot change recovery timing.
 When the lease expires, the store reclaims the reservation and restores its
 unfinished occurrence to pending work, whether the expiry is noticed during an
 active-run read or during a later claim. That is the recovery path for a process
-that died after claiming an occurrence and before launching it. Under
+that died after claiming an occurrence. A launch may already have been accepted
+before its `launched` result is persisted. A crash or result-write failure in
+that window leaves the occurrence retryable. Lease expiry can also allow another
+attempt while an earlier runner call is still in flight. The stable idempotency
+key, not the reservation token, identifies the run across those attempts. Under
 `supersede`, the reservation also retains the predecessor run id, so recovery
 re-attaches to that run and cancels it before launching the replacement rather
 than leaving two runs alive.
@@ -140,9 +157,45 @@ than leaving two runs alive.
 | `buffered`   | The overlap policy remembered the occurrence.                         |
 | `superseded` | A newer occurrence replaced this one.                                 |
 
-A terminal result clears the active run only when it names the run that owned
-it. A late result with no run id is fenced to the run recorded for its own
-occurrence, so a straggler cannot clear a newer active run.
+A launched result must include a non-empty `runId` and the `reservationId`
+returned by its claim:
+
+```ts
+const result: TriggerStore.Result = {
+  triggerId: "nightly-report",
+  occurrence: 3_600_000,
+  outcome: "launched",
+  runId: "run-42",
+  reservationId: "trigger-reservation:nightly-report:attempt-uuid:3600000"
+}
+```
+
+The transaction checks the active token and the fire state (`null` or
+`buffered`) before changing either row. A stale token or terminal fire fails
+with `stale_owner` and leaves the ledger, cursor, and active owner unchanged.
+The scheduler logs the refusal and cancels the losing accepted run unless an
+idempotent retry has adopted it. A missing,
+empty, or whitespace-only run id fails with `invalid_options` at `runId`.
+
+A terminal result clears the active run only when it names the run recorded
+for its occurrence. Terminal callers may omit `runId` to settle that recorded
+run. Before launch, pass `reservationId` to fence a failure to the exact claim
+attempt. Repeated decisions and settlements do not rewrite a fire. A supersede
+claim settles the displaced reservation inside its claim transaction.
+
+## Buffered compensation is atomic
+
+`claimPending` consumes the pending pointer when it reserves buffered work.
+If dispatch fails, `restorePending({ triggerId, occurrence, reservationId })`
+restores the pointer and releases only that matching unfinished reservation in
+one transaction. It coalesces with newer pending work. A failed write retains
+the lease, so a process crash still leaves a recovery path. The scheduler logs
+compensation failures.
+
+If cancellation of a predecessor fails, the same operation restores the
+predecessor only while its fire is still launched and queues the replacement
+atomically. Stale compensation fails with `stale_owner` and cannot release a
+newer reservation.
 
 ## Two watermarks, and why both exist
 
@@ -162,11 +215,16 @@ failure from silently losing a boundary.
 The two are different questions. `lastFiredAt` answers "what does this trigger
 owe after downtime". The in-process watermark answers "what has this process
 already handled since it started", and a fresh process has none, which is why
-first sight of a trigger establishes one instead of firing from it.
+first sight of a trigger establishes one and computes catch-up from `lastFiredAt`
+when that durable cursor exists. A first-poll bound breach abandons the entire
+owed list, including the current occurrence; subsequent polls still dispatch
+the current occurrence subject to overlap. See [Overlap and catch-up](/concepts/policies/).
 
 ## Both stores obey this contract
 
-`SqlTriggerStore` and the in-memory `TestTriggers` store implement one contract:
-the same refusal codes, the same claim decisions, the same lease timing, the
-same watermark rules. A test that swaps one for the other is testing the
+`SqlTriggerStore` and the in-memory `TestTriggers` store apply one claim
+decision, not two implementations of one contract: the same refusal codes, the
+same fences, the same expired-reservation reclaim, the same lease timing, the
+same watermark rules. Each store reads its own snapshot and applies the writes
+that decision answers. A test that swaps one for the other is testing the
 same protocol. See [Test trigger code](/guides/testing/).

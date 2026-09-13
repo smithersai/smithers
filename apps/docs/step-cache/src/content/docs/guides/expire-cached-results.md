@@ -52,10 +52,10 @@ const nightly = Effect.gen(function*() {
 ```
 
 A row recorded exactly at the floor survives, which makes the boundary the same
-one `maxAgeMs` uses. Only `flows_step_cache` is swept. The append-only ledger
-is never touched: an old frame's projection is a function of what its event
-recorded, and deleting the evidence would change a replayed answer. What does
-reclaim ledger rows, and what never does, is in
+one `maxAgeMs` uses. By default only `flows_step_cache` is swept. The ledger
+is preserved: an old frame's projection is a function of what its event
+recorded, and deleting the evidence would change a replayed answer. The optional
+`canReclaimRecorded` reference policy for ledger collection is described in
 [the head and the ledger](/concepts/head-and-ledger/).
 
 In a two-tier composition the sweep is local only. The shared tier owns its own

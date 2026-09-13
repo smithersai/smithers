@@ -24,8 +24,9 @@ const cases = [
 ```
 
 When a case declares `expected` and the binding also declares `groundTruth`,
-the case's value wins. When neither declares one, the scorer is called without
-ground truth.
+the case's value wins. A declared `null`, `false`, `0` or `""` is a value and
+wins too; only an absent `expected` defers to the binding. When neither
+declares one, the scorer is called without ground truth.
 
 Case names must be non-empty, unique within the suite, and free of control
 characters. A control character in a name corrupts Markdown reports and CI log
@@ -107,6 +108,9 @@ a runner:
 | `cases`         | 10000   | The cases in one suite                          |
 | `fixtureLength` | 8388608 | The UTF-16 code units in one JSON Lines fixture |
 
-A fixture larger than `fixtureLength` is rejected before any of it is parsed.
+Each ceiling is inclusive. A fixture larger than `fixtureLength` is rejected
+before any of it is parsed. After 10000 cases, the next non-blank line fails
+with `invalid_suite` at `cases`, before parsing or decoding that line or any
+later lines. The message reports `got 10001`, the first excess case.
 
 Next: [run the suite](/guides/run-a-suite/).

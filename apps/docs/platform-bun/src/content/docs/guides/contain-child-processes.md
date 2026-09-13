@@ -122,7 +122,7 @@ recorded, appears in no ledger, and outlives the host that ran it.
 import { Jj } from "@smthrs/jj"
 import * as Effect from "effect/Effect"
 
-// The ledger records "jj status" while this runs, and retires it when the
+// The ledger records the jj executable while status runs, and retires it when the
 // invocation and its cleanup finish.
 const status = Effect.flatMap(Jj, (jj) => jj.status()).pipe(
   Effect.provide(host),
@@ -131,8 +131,30 @@ const status = Effect.flatMap(Jj, (jj) => jj.status()).pipe(
 ```
 
 That is the observable difference: the same call under `BunHost.layer` leaves
-the ledger empty. The initial `jj --version` probe runs outside the ledger in
-both compositions; repository operations use the selected runner.
+the ledger empty. The initial `jj --version` probe uses the selected runner
+too, so a contained host records and retires it before exposing `Jj`. Probe
+results are cached per resolved absolute executable path and runner, with a
+separate cache for each spawner instance.
+
+Every aggregate host waits up to 5000 ms for the startup probe, then interrupts
+it and awaits process cleanup. The typed `JjError` has `method: "version"`,
+`code: "unknown"`, `cause.code: "ETIMEDOUT"`, and the executable path in its
+command and message. Cleanup can add the contained spawner's shutdown grace
+period to the startup budget. Raw hosts close the probe's pipes and kill its
+direct child; they do not add a ledger entry.
+
+Override the budget per host layer through the shared Node and Bun adapter:
+
+```ts
+import * as NodeJj from "@smthrs/jj/node/NodeJj"
+
+const boundedHost = host.pipe(
+  Layer.provide(Layer.succeed(NodeJj.StartupTimeoutMs)(1_500))
+)
+```
+
+The budget is a positive, finite number of milliseconds, at most 2147483647.
+Timeout and interruption allow a later construction to retry the probe.
 
 ## What the reaper refuses to kill
 

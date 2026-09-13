@@ -134,7 +134,7 @@ const layer = Runtime.layerNode({
 | `satisfies`                                              | The comparator a declared requirement is checked with.            |
 | `RuntimeError`, `ErrorCode`                              | The tagged error and its code union.                              |
 | `Platform`, `Name`                                       | The host facts schema, and the runtime union `"node"` or `"bun"`. |
-| `probeTimeoutMs`, `maximumVersionOutputBytes`            | The default probe deadline and maximum stdout bytes.                            |
+| `probeTimeoutMs`, `maximumVersionOutputBytes`            | The default probe deadline and maximum stdout bytes.              |
 
 `Options.environment` supplies the host environment. A version probe receives
 only `PATH`, `PATHEXT`, `SYSTEMROOT`, and `WINDIR` from that record. When omitted,

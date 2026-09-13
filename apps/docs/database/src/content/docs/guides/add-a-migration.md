@@ -74,8 +74,10 @@ the same number are rejected, so `0002_a` beside `02_b` fails with
 
 A migration's global id is `idOffset + localId`. For an installed package,
 choose a local id greater than every id already applied in that package's
-block. Keep its earlier migration identities in the set. The loader checks
-recorded names against declared names before it applies anything.
+block. Keep its earlier migration identities in the set. Each installed block
+with pending work must declare at least one matching recorded migration, even
+when the append is above the global cursor. The loader also checks every
+declared recorded id for a matching name before applying pending work.
 
 The underlying Effect migrator uses one global high-water mark. Smithers
 handles forward additions in lower installed blocks inside that same database

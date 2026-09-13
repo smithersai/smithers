@@ -195,7 +195,11 @@ interface PlanNodeLike {
 
 `mode` is the node's declared effect mode (`hermetic` or `expected`), `tier` is
 its declared effect tier (`sealed`, `compensable`, or `irreversible`), and
-`onConflict` is its conflict strategy (`serialize`, `lane`, or `fail`).
+`onConflict` is its declared conflict strategy (`serialize`, `lane`, or `fail`).
+`Plan.fromGraph` and `Plan.planOf` source all three fields from the node's own
+declaration and omit them when it has none. Their `effects` entries are declared
+`read:<path>` and `write:<path>` strings, or an empty list when undeclared.
+The node's `envelope` contains effective effects, including inherited admission.
 
 ### PlanLike.PlanPlacementLike
 
@@ -262,7 +266,7 @@ as the run-local `ordinal` the engine dispatches under.
 ### Plan.make
 
 ```ts
-const make: (plan: PlanLike) => Plan
+const make: (plan: PlanLike) => PlanLike
 ```
 
 Copies a built plan into a stable presentation order: nodes sorted by id,
@@ -297,8 +301,9 @@ Renders one edge as `from -> to`.
 
 ### Plan.Plan, Plan.Node
 
-`Plan` and `Node` are `PlanLike` and `PlanNodeLike` with their
-presentation-only collections in canonical order. They are what `make` returns.
+Deprecated compatibility aliases for `PlanLike` and `PlanNodeLike`. Use the
+shapes exported by `@smthrs/testing/PlanLike`. `make` returns `PlanLike` with
+sorted presentation collections; the types do not encode ordering.
 
 ### Plan.KeysOptions, Plan.FromGraphOptions, Plan.PlanOfOptions
 
@@ -350,6 +355,10 @@ interface PlanAssertions {
 edge outside them. `declaresEffects` sorts both sides. `matchesSnapshot`
 compares `Plan.render` output and reports a line diff on a mismatch. A missing
 node id fails with `missing_node` and lists the ids the plan does have.
+Value comparisons run when the returned Effect executes. Envelope and placement
+mismatch diagnostics use the shared structural renderer: cycles and depth limits
+produce markers, and record accessors are described without invoking getters.
+These mismatches remain typed `PlanAssertionError` failures.
 
 ### PlanAssertions.NodeAssertions
 
@@ -517,9 +526,13 @@ are not the same journal.
 
 Values are compared through the shared canonical rendering, which distinguishes
 two different `Date`s, a `Map` from a `Set`, `-0` from `0`, `NaN` from
-`Infinity`, and two instances of the same class, and which reports a cycle
-rather than recursing into it. The rendering is total, so no journal value can
-throw out of the typed error channel `assertNoDivergence` declares.
+`Infinity`, and ordinary records from special-value markers. Record and array
+accessors compare by getter/setter identity without invocation. Cycles use
+markers. Sparse array holes differ from `undefined`. Objects at the 128-level
+depth limit or whose inspection throws compare by process-local reference
+identity. Value rendering does not throw; differing values fail through
+`assertNoDivergence` with `FixtureDivergenceError`. Entries must satisfy the
+`JournalEntryLike` data shape.
 
 ### Divergence.assertNoDivergence
 
@@ -864,7 +877,9 @@ interface HostProfile {
   readonly fileSystemScratchPath?: string | undefined
   readonly fileSystem: CapabilityExpectation
   readonly path: CapabilityExpectation
-  readonly shell: CapabilityExpectation
+  readonly shell:
+    | { readonly supported: true; readonly interruptCommand: ChildProcess.Command }
+    | { readonly supported: false; readonly code: string }
   readonly jj: CapabilityExpectation
   readonly httpTransport: HttpTransportExpectation
   readonly clock: CapabilityExpectation
@@ -876,11 +891,18 @@ Every closed-list capability must be declared; omission is not an admission
 mechanism.
 
 `fileSystemScratchPath` is the scratch file the round-trip probe writes, removed
-even when the assertion fails. It must not already exist: the suite refuses to
-write over a file it did not create, and removes only the file it did. When
-omitted, the suite builds a unique absolute path under `/tmp` from the bundle's
-own `Path` and `Random`. A bundle whose platform has no `/tmp` must declare a
-path of its own.
+even when the assertion fails. Exclusive creation (`flag: "wx"`) atomically
+refuses an existing path, including dangling symlinks and concurrent creations,
+with `FileSystem/scratchPath`. Removal is registered only after successful
+creation. When omitted, the suite builds a randomized absolute path under
+`/tmp` from the bundle's own `Path` and `Random`. A bundle whose platform has
+no `/tmp` must declare a path of its own.
+
+A supported `shell` supplies `interruptCommand`, which must stay running until
+cancelled. The cleanup case acquires its Host process handle, checks
+`isRunning`, interrupts its scoped consumer, and verifies that the handle is
+no longer running. An unsupported shell is checked for its refusal code and
+does not certify cleanup.
 
 ### HostSuite.CapabilityExpectation and HttpTransportExpectation
 
@@ -997,6 +1019,7 @@ interface ModelErrorLike {
     | "invalid_provider_output"
     | "unknown"
   readonly message: string
+  readonly path?: string | undefined
   readonly retryAfterMillis?: number | undefined
   readonly resetAtEpochMillis?: number | undefined
   readonly resetSource?: string | undefined
@@ -1011,6 +1034,12 @@ tag, and required in everything a replay hands back: a consumer that classifies
 a provider refusal, such as a quota park, matches on the tag, so a replayed
 refusal without one is not the failure that was recorded. `RecordedModel`
 stamps it.
+
+`path` is the key path a refusal is about, such as
+`$.thinking.budget_tokens`. It is a path only and never a value, because a
+request value may carry credentials or user content, which is what makes it
+safe for a fixture to store. `RecordingModel` records it so a replayed
+`invalid_request` names the field the provider rejected.
 
 `code` is exactly the model package's `ModelErrorCode`. The permission and
 grant-store codes belong to the kernel: they are separate typed error classes
@@ -1093,6 +1122,10 @@ The canonical JSON encoding of a request, and its replay identity. Object keys
 sort recursively, array order is retained, and non-JSON values are rejected
 with a typed `FixtureEncodingError` naming the offending path. A value nested
 more than 128 levels deep is rejected rather than overflowing the stack.
+Enumerable record accessors, array element accessors, sparse array holes, and
+failed object inspection are rejected with reason `unsupported-type`.
+Accessors are never invoked while encoding tool parameters. Own `__proto__`
+keys are preserved as data properties; non-enumerable record fields are ignored.
 
 It returns the canonical **encoding** rather than a fixed-length hash, despite
 the name. A fixture cache selects the recorded call to replay by this value, so
@@ -1115,6 +1148,11 @@ The memo is keyed by object identity. `FixtureStore` replaces the whole fixture
 on every append rather than mutating it, so a recorded call is visible to the
 next lookup; a caller that instead mutates a fixture's `calls` in place would
 read a stale index. First writer wins on a duplicate digest.
+
+A recorded request is memoized on its own identity as well, so an append does
+not force the next lookup to re-encode the calls already recorded. Only a
+frozen request is memoized: a store's own copy of a recorded call is frozen,
+and a fixture the caller still owns is re-encoded per fixture.
 
 ### Fixture.recordedRequest
 
@@ -1165,15 +1203,19 @@ exist yet.
 ### FixtureStore.makeFile and layerFile
 
 ```ts
-const makeFile: (path: string) => Effect.Effect<FixtureStore>
+const makeFile: (path: string) => Effect.Effect<
+  FixtureStore & {
+    readonly flush: () => Effect.Effect<void>
+  }
+>
 const layerFile: (path: string) => Layer.Layer<FixtureStore>
 ```
 
-A store over a JSON file. Node only. The file is read once, when the store is
-built, and every `append` rewrites it, so a recording run leaves a committable
-fixture behind even if a later test in the same run fails. Writes are
-serialized: concurrent model calls would otherwise each rewrite the file from
-their own snapshot and drop the calls recorded in between.
+A store over a JSON file and an append-only journal. Node only. `append`
+asynchronously persists only the new call. `flush` atomically publishes the
+complete JSON and releases the writer lock; `layerFile` flushes on scope close.
+The store recovers completed journal lines when reopened. Competing writers
+fail with a path-naming defect. See [file persistence and recovery](https://testing.smithers.sh/concepts/fixtures/#file-persistence-and-recovery).
 
 ## RecordingModel
 
@@ -1189,13 +1231,14 @@ const layer: (live: Model.Model, sink: Sink) => Layer.Layer<Model.Model>
 The sink cannot fail and needs no services, so wrapping a model never widens
 its stream's error channel or its requirements.
 
-The recorder flushes on a settled stream and on a provider failure, and stays
-silent otherwise. Interruption and a defect both leave a truncated exchange:
-recording one would write a stream with no `settle` event, which replays as an
-aborted turn and poisons any cache built from the same fixture. A
-`PermissionRequired`, `PermissionDenied`, or `GrantStoreError` failure is not
-recorded either, because the kernel refused the call before the provider saw
-it; the failure still reaches the caller unchanged.
+The recorder flushes only on an exhausted stream and on a provider failure, and
+stays silent otherwise. Interruption, a defect, and a consumer that stops
+pulling early all leave a truncated exchange: recording one would write a stream
+with no `settle` event, which replays as an aborted turn and poisons any cache
+built from the same fixture. A `PermissionRequired`, `PermissionDenied`, or
+`GrantStoreError` failure is not recorded either, because the kernel refused the
+call before the provider saw it; the failure still reaches the caller
+unchanged.
 
 The request is projected at stream acquisition rather than after the exchange,
 and each event is snapshotted as it is emitted, so a caller that mutates its own
@@ -1453,17 +1496,17 @@ they carry. Consumers match on codes, never on message prose. Every literal is
 const PlanAssertionCode: Schema.Literals<[...]>
 const JournalAssertionCode: Schema.Literals<[...]>
 const ScoreGateCode: Schema.Literals<[...]>
-const Code: Schema.Literals<[...]>
+const Code: Schema.Union<[...]>
 ```
 
 Each has a matching decoded type of the same name.
 
-| Union                  | Members                                                                                                                                                                                                                                                                                                                                                                                                             |
-| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `PlanAssertionCode`    | `missing_node`, `node_count_mismatch`, `key_mismatch`, `placement_mismatch`, `declared_effect_mismatch`, `envelope_mismatch`, `missing_edge`, `unexpected_edge`, `coverage_mismatch`, `snapshot_mismatch`, `key_golden_mismatch`, `purity_violation`, `input_decode_failed`                                                                                                                                         |
-| `JournalAssertionCode` | `step_not_executed`, `execution_order_mismatch`, `terminal_status_mismatch`, `effect_not_executed`, `effect_kind_mismatch`, `effect_journaled_more_than_once`, `missing_idempotency_key`, `idempotency_key_mismatch`                                                                                                                                                                                                |
-| `ScoreGateCode`        | `invalid_threshold`, `invalid_score`, `mean_below_threshold`, `min_below_threshold`, `case_below_threshold`                                                                                                                                                                                                                                                                                                         |
-| `Code`                 | The three above, plus `conformance_violation`, `unscripted_model`, `fixture_not_encodable`, `replay_harness_mismatch`, `fixture_divergence`, `exactly_once_unsupported`, `capability_contract_violation`, `conformance_skipped`, `engine_unavailable`, `execution_conflict`, `capability_operation_failed`, `transaction_commit_failed`, `rewind_failed`, `flow_hash_mismatch`, `task_timeout`, `ralph_max_reached` |
+| Union                  | Members                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| ---------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `PlanAssertionCode`    | `missing_node`, `node_count_mismatch`, `key_mismatch`, `placement_mismatch`, `declared_effect_mismatch`, `envelope_mismatch`, `missing_edge`, `unexpected_edge`, `coverage_mismatch`, `snapshot_mismatch`, `key_golden_mismatch`, `purity_violation`, `input_decode_failed`                                                                                                                                                                                                  |
+| `JournalAssertionCode` | `step_not_executed`, `execution_order_mismatch`, `terminal_status_mismatch`, `effect_not_executed`, `effect_kind_mismatch`, `effect_journaled_more_than_once`, `missing_idempotency_key`, `idempotency_key_mismatch`                                                                                                                                                                                                                                                         |
+| `ScoreGateCode`        | `invalid_threshold`, `invalid_score`, `mean_below_threshold`, `min_below_threshold`, `case_below_threshold`                                                                                                                                                                                                                                                                                                                                                                  |
+| `Code`                 | The three above, plus `conformance_violation`, `unscripted_model`, `fixture_not_encodable`, `replay_harness_mismatch`, `fixture_divergence`, `exactly_once_unsupported`, `capability_contract_violation`, `conformance_skipped`, `engine_unavailable`, `execution_conflict`, `capability_operation_failed`, `transaction_commit_failed`, `rewind_failed`, `flow_hash_mismatch`, plus upstream `flow_cycle_detected`, `cancel_request_failed`, `unsafe_interrupt_unsupported` |
 
 ### The errors
 
@@ -1489,8 +1532,6 @@ Every error is a `Schema.TaggedError`, so it carries its `_tag`, a stable
 | `TransactionCommitError`      | `transaction_commit_failed`     | `boundary` (a `TransactionBoundary`)                                                                              |
 | `RewindFailureError`          | `rewind_failed`                 | `executionId`, `frame`, `boundary` (a `RewindBoundary`)                                                           |
 | `FlowHashMismatchError`       | `flow_hash_mismatch`            | `executionId`, `expectedFlowHash`, `actualFlowHash`, `expectedImportHash`, `actualImportHash`                     |
-| `TaskTimeoutError`            | `task_timeout`                  | `requestId`, `policy` (`fail`), `requestedAtLogicalTimeMillis`, `timedOutAtLogicalTimeMillis`                     |
-| `RalphMaxReachedError`        | `ralph_max_reached`             | `loopId`, `maxIterations`                                                                                         |
 
 `UnscriptedModelError`'s fields are a bounded identity, not the request. It is
 raised as a defect, so a runner prints it in full; carrying the whole request
@@ -1512,12 +1553,10 @@ ran the original flow on the original payload would give a caller no signal
 that its arguments were ignored, on the seam that defines engine conformance.
 `expected` and `actual` are bounded renderings, never the payloads themselves.
 
-`RalphMaxReachedError` reports a bounded loop that ran its whole iteration
-budget without its exit condition ever holding. `loopId` names the loop and
-`maxIterations` is the bound it reached. A subject whose engine has no loop
-runtime never raises it; the code stays in the union so a subject that does can
-report exhaustion as a typed failure rather than as a successful final
-iteration.
+Approval timeout and loop-limit failures are not part of this contract. The
+reserved `TaskTimeoutError` and `RalphMaxReachedError` classes and their codes
+have been removed; concrete subjects and behavioral pins must precede new
+capability-specific failures.
 
 ### The boundary unions
 
@@ -1554,8 +1593,6 @@ type EngineSubjectError =
   | TransactionCommitError
   | RewindFailureError
   | FlowHashMismatchError
-  | TaskTimeoutError
-  | RalphMaxReachedError
   | FlowCycleDetected
   | CancelRequestFailed
 ```
@@ -1566,7 +1603,9 @@ raise. The conformance seam never carries an `unknown` error channel.
 `FlowCycleDetected` and `CancelRequestFailed` come from
 [`@smthrs/flow`](/docs/reference/api/flow/) and are re-declared here because they are part of
 the engine's typed `execute` and interrupt contracts: pins must be able to
-match on the cycle `path` rather than on a stringified dump.
+match on the cycle `path` rather than on a stringified dump. `Code` includes
+their upstream code schemas: `flow_cycle_detected`, `cancel_request_failed`,
+and `unsafe_interrupt_unsupported`.
 
 ## Faults
 
@@ -1587,8 +1626,10 @@ const isGroupAlive: (pgid: number) => boolean
 
 Signal 0 performs the permission and existence check without delivering
 anything. `ESRCH` is the only answer that means "gone"; `EPERM` means the
-process exists and belongs to somebody else. A negative pid addresses a whole
-process group, which is the unit host containment works in.
+process exists and belongs to somebody else. Both helpers require a positive
+integer identifier and return `false` for invalid inputs without signalling.
+`isGroupAlive` accepts a positive group id and negates it internally to address
+the whole process group, which is the unit host containment works in.
 
 ### Faults.parentPid and waitForReparent
 
@@ -1627,7 +1668,9 @@ const killProcess: (
 
 Sends `signal` (default `SIGKILL`) to a real pid and waits for it to leave. A
 pid that is already dead is an error rather than a no-op: the test that called
-this believed it was injecting a fault, and it was not.
+this believed it was injecting a fault, and it was not. A missing pid or one
+that is not a positive integer rejects with `killProcess: invalid pid` before
+sending any signal.
 
 ### Faults.killGroup
 
@@ -1636,7 +1679,8 @@ const killGroup: (pgid: number, signal?: NodeJS.Signals) => void
 ```
 
 Kills a whole process group, used to clean up what a test deliberately
-orphaned. Never throws: this is teardown.
+orphaned. Takes a positive integer group id and negates it internally. Invalid
+group ids are a no-op. Never throws: this is teardown.
 
 ### Faults.skewClock
 
@@ -1650,9 +1694,15 @@ interface SkewedClock {
 }
 ```
 
-Skews `Date.now` and a bare `new Date()` by `skewMs` for **this process only**.
-A child does not inherit it, which is why a child runner takes an explicit skew
-instead. `restore` is idempotent.
+Skews `Date.now`, `Date()`, and a bare `new Date()` by `skewMs` for **this process
+only**. `Date()` returns a string for the skewed instant. Explicit constructor
+arguments, the Date prototype, and static parsing helpers are preserved. A
+child does not inherit the skew, so a child runner takes an explicit skew instead.
+
+Each skew is relative to the real clock, and the latest installation controls
+the global clock. Restoring any live handle reinstalls the Date constructor and
+`Date.now` captured at module load, even when handles are restored out of order.
+`restore` is idempotent; it does not reinstate an earlier skew.
 
 ## Documented limits
 

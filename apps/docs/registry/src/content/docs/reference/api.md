@@ -78,6 +78,27 @@ include this identity in the approved plan. It returns `undefined` when the
 descriptor has no `body.contentDigest`: the descriptor may be displayed, but
 `AgentSession` refuses to execute a prompt without a measured, approved identity.
 
+### Descriptor.declarationDigest
+
+```ts
+const declarationDigest: (descriptor: FlowDescriptor) => string
+```
+
+Hashes one flow's complete declaration. This is the single declaration identity
+for `FlowDescriptor`: `@smthrs/chain` keys its catalog entries with it and
+`@smthrs/harness` folds it into every call identity, so one declaration is one
+number everywhere.
+
+Every top-level field is material. Within `provenance` the only deliberate
+exclusion is `pack`, which describes where discovery found the declaration
+rather than what the call depends on. `capabilities` is sorted because a set is
+what it means; every other array hashes in declaration order. Absent `Option`
+and optional fields hash as `null`.
+
+Unlike `executionDigest` this is always defined. It identifies what was
+declared, not whether the source bytes were measured, so a descriptor with no
+`body.contentDigest` still has a declaration identity to key against.
+
 ### Descriptor.SourceScan
 
 ```ts
@@ -99,6 +120,8 @@ interface Source {
   readonly root: string
   readonly naming: "path" | "frontmatter"
   readonly system?: boolean | undefined
+  readonly optionalRoot?: boolean | undefined
+  readonly confinementRoot?: string | undefined
 }
 ```
 
@@ -107,6 +130,12 @@ each descriptor's provenance. `naming` selects whether a flow's name comes from
 its directory path below `root` or from the file's own `name` field.
 `system: true` makes a name collision with this source a
 `system_collision` failure instead of a first-found resolution.
+`optionalRoot: true` returns an empty scan when `root` is absent, checked on
+every scan. It does not suppress access failures or a non-directory root.
+Sources are required by default; declared pack roots remain required.
+`confinementRoot` bounds directories and selected entry files to that root
+when the host can resolve both real paths. `Pack.sources` sets it to the pack
+root; ordinary project sources leave it unset.
 
 ### Descriptor.Provenance and Descriptor.PackRef
 
@@ -154,8 +183,9 @@ resolve against. `contentDigest` is the SHA-256 of the complete source bytes
 measured during discovery, as 64 lowercase hexadecimal characters. Every
 constructor supplies it. The field is optional only so a descriptor journaled
 by an older version, before the digest existed, still decodes. `Registry.loadBody`
-rehashes markdown source, and `Executable.fromDescriptor` verifies module source
-before importing it; a mismatch is `body_unavailable`.
+verifies source bytes before returning a prompt or module locator, and
+`Executable.fromDescriptor` verifies source before loading it. A missing digest
+or mismatch is `body_unavailable`; refresh the registry before loading it.
 
 ### Descriptor.FlowBody, FlowBodyPrompt, FlowBodyModule
 
@@ -288,15 +318,15 @@ class DiscoveryWarning {
 
 A non-fatal source-discovery diagnostic. Anything a scan can survive is
 reported this way rather than raised, and read back through
-`registry.warnings()`. The 30 codes are grouped by what they say:
+`registry.warnings()`. The 32 codes are grouped by what they say:
 
-| Group                  | Codes                                                                                                                                                                                                                                               |
-| ---------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Naming and description | `missing_description`, `invalid_description`, `missing_name`, `invalid_name`, `directory_name_mismatch`, `name_field_ignored`, `duplicate_name`, `root_level_entry`                                                                                 |
-| Declaration fields     | `unknown_frontmatter_key`, `invalid_allowed_tools`, `invalid_capabilities`, `invalid_budget`, `invalid_model_invocation`, `invalid_compatibility`, `invalid_license`, `invalid_metadata`, `unsupported_input_schema`, `unsupported_module_metadata` |
-| Authority              | `unprojectable_authority`, `invalid_effect_declaration`, `invalid_effect_tier`                                                                                                                                                                      |
-| Source shape           | `multiple_entry_files`, `frontmatter_parse_error`, `non_serializable_frontmatter`, `symlink_cycle`, `max_depth_exceeded`, `entry_too_large`, `unreadable`                                                                                           |
-| Packs                  | `unknown_pack_key`, `shadowed`                                                                                                                                                                                                                      |
+| Group                  | Codes                                                                                                                                                                                                                                                                    |
+| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Naming and description | `missing_description`, `invalid_description`, `missing_name`, `invalid_name`, `directory_name_mismatch`, `name_field_ignored`, `duplicate_name`, `root_level_entry`                                                                                                      |
+| Declaration fields     | `unknown_frontmatter_key`, `invalid_allowed_tools`, `invalid_capabilities`, `invalid_budget`, `invalid_model_invocation`, `invalid_placement`, `invalid_compatibility`, `invalid_license`, `invalid_metadata`, `unsupported_input_schema`, `unsupported_module_metadata` |
+| Authority              | `unprojectable_authority`, `invalid_effect_declaration`, `invalid_effect_tier`                                                                                                                                                                                           |
+| Source shape           | `multiple_entry_files`, `frontmatter_parse_error`, `non_serializable_frontmatter`, `symlink_cycle`, `outside_root`, `max_depth_exceeded`, `entry_too_large`, `unreadable`                                                                                                |
+| Packs                  | `unknown_pack_key`, `shadowed`                                                                                                                                                                                                                                           |
 
 Each code, with its cause and its fix, is in
 [Diagnose a flow that did not appear](/guides/diagnose-a-missing-flow/).
@@ -323,7 +353,11 @@ there is no partial scan.
 Discovery follows symbolic links wherever the host `FileSystem.stat` does. A
 visited-directory identity set, keyed on device and inode, stops cycles and
 aliases with a `symlink_cycle` warning, and a depth ceiling bounds hosts that
-cannot supply stable directory identities.
+cannot supply stable directory identities. When `confinementRoot` is set,
+discovery checks the source root, every descended directory, and every selected
+entry file before reading it. A real path outside the confinement root produces
+`outside_root` and is skipped. Both real paths must be available for this check;
+hosts that cannot answer `realPath` retain lexical manifest validation.
 
 ### Discovery.make
 
@@ -429,7 +463,7 @@ more cases than that, so a caller reports it either way.
 ### MarkdownFlow.loadBody
 
 ```ts
-const loadBody: (text: string, baseDirectory: string) => FlowBody
+const loadBody: (text: string, baseDirectory: string) => FlowBodyPrompt
 ```
 
 Removes leading frontmatter and returns a `FlowBodyPrompt`. It removes nothing
@@ -439,7 +473,7 @@ else: a body's own markdown, including any later `---` rule, is preserved.
 
 ```ts
 const renderPrompt: (
-  body: FlowBody & FlowBodyPrompt,
+  body: FlowBodyPrompt,
   input: { readonly args: string }
 ) => string
 ```
@@ -503,21 +537,27 @@ interface Registry {
 const Registry: Context.Service<Registry, Registry>
 ```
 
-| Member      | What it answers                                                                                                                                         |
-| ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `list`      | Every descriptor, in deterministic first-found order.                                                                                                   |
-| `visible`   | The descriptors whose `modelInvocable` is true.                                                                                                         |
-| `get`       | One descriptor, or `RegistryError { code: "not_found" }`.                                                                                               |
-| `getOption` | One descriptor as an `Option`. It cannot fail.                                                                                                          |
-| `loadBody`  | Returns the body locator or prompt, optionally checking the approved execution identity first. Markdown bytes are checked against the discovery digest. |
-| `runPrompt` | A markdown body rendered as a prompt. A module flow is `not_prompt_flow`.                                                                               |
-| `refresh`   | Rescans every configured source and replaces the snapshot.                                                                                              |
-| `warnings`  | Every discovery and collision diagnostic.                                                                                                               |
+| Member      | What it answers                                                                                                                                                                      |
+| ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `list`      | Every descriptor, in deterministic first-found order.                                                                                                                                |
+| `visible`   | The descriptors whose `modelInvocable` is true.                                                                                                                                      |
+| `get`       | One descriptor, or `RegistryError { code: "not_found" }`.                                                                                                                            |
+| `getOption` | One descriptor as an `Option`. It cannot fail.                                                                                                                                       |
+| `loadBody`  | Returns the body locator or prompt, optionally checking the approved execution identity first. Source bytes are checked against the discovery digest; unmeasured bodies are refused. |
+| `runPrompt` | A markdown body rendered as a prompt. A module flow is `not_prompt_flow`.                                                                                                            |
+| `refresh`   | Rescans every configured source and replaces the snapshot.                                                                                                                           |
+| `warnings`  | Every discovery and collision diagnostic.                                                                                                                                            |
 
-Reads observe one complete snapshot, so a `list` and the `get` after it never
-disagree. `refresh` replaces the snapshot only after every source succeeds, so
-a failed rescan leaves the previous complete snapshot serving reads rather than
-emptying the catalog.
+Reads are atomic per operation: each observes one complete snapshot. A
+successful `refresh` between calls can replace or remove a listed descriptor,
+so a later `get` may return a different descriptor or fail with `not_found`.
+Retain returned descriptors when you need the values from that read; they do
+not pin later registry calls or filesystem contents. Cross-call consistency
+would require adding an explicit snapshot handle to the API; none is currently
+exposed.
+
+`refresh` replaces the snapshot only after every source succeeds. A failed
+rescan leaves the previous complete snapshot serving reads.
 
 `loadBody` and `runPrompt` are the only two members that touch the filesystem.
 
@@ -574,6 +614,39 @@ A name claimed twice by ordinary sources resolves first-found with a
 `duplicate_name` warning. A name shared with a source declared `system: true`
 fails `RegistryError { code: "system_collision" }` in either direction.
 
+### Registry.ProjectOptions and Registry.layerProject
+
+```ts
+interface ProjectOptions {
+  readonly root: string
+  readonly packs?: Registry.PackConfig | undefined
+}
+
+const layerProject: (options: ProjectOptions) => Layer.Layer<
+  Registry.Registry,
+  RegistryError | DiscoveryError,
+  FileSystem.FileSystem | Path.Path
+>
+```
+
+The registry a Node host discovers a project in: `<root>/flows/**` first, then
+every installed pack, all under one first-found registry, so a project flow
+shadows a pack flow of the same name and `refresh` rescans both.
+
+Packs are scanned through the registry's own pack path, so each pack descriptor
+carries its `provenance.pack`, a name two packs both define is reported as
+`shadowed`, and every pack's `requires.smithers` is checked against
+`PackConfig.runtimeVersion`. The runtime version rides inside `PackConfig`
+rather than beside it, so a caller cannot ask for packs without saying what
+their range is checked against.
+
+A project with no `flows/` directory has no project entries. The source stays
+configured with `optionalRoot: true`, so every `refresh()` checks it again.
+Creating the first `flows/<id>/flow.mdx` or `flow.ts` makes it discoverable on
+refresh in the same session. Removing `flows/` empties the project entries on
+refresh; recreating it makes them discoverable again. Pack entries remain,
+and a missing declared pack directory fails with `invalid_pack`.
+
 ### Registry.layerFromDescriptors
 
 ```ts
@@ -614,8 +687,9 @@ flows. Precedence is the pack's `origin`, and a shadowed definition is reported
 as a `shadowed` warning naming both packs. See
 [Load workflow packs](/guides/load-packs/).
 
-The host that calls `Pack.read` must surface its manifest warnings before
-projecting that result to `Installed`, whose public shape retains none.
+A pack's manifest warnings travel with it: spread `Pack.read`'s result into an
+`Installed` and add `origin`, and `registry.warnings()` reports them beside the
+pack's scan warnings.
 
 ### Registry.makeNoop, Registry.layerNoop
 
@@ -696,15 +770,44 @@ the runtime.
 interface Options {
   readonly delegates: ReadonlyArray<Delegate>
   readonly agent?: string | undefined
-  readonly load?: ((path: string) => Effect.Effect<unknown, unknown>) | undefined
+  readonly loadTimeoutMs?: number | undefined
+  readonly load?:
+    | ((path: string, source: {
+      readonly bytes: Uint8Array
+      readonly contentDigest: string
+    }) => Effect.Effect<unknown, unknown>)
+    | undefined
 }
 ```
 
 `delegates` is the set of registered runtime flows a descriptor may delegate
 to. `agent` renames the fallback delegate for a host that calls its driver
-something other than `agent`. `load` replaces the default dynamic `import` of
-the module a descriptor points at; it receives a filesystem path, not a
-specifier.
+something other than `agent`.
+
+`load` receives the resolved filesystem path (or the original `file:` URL),
+the verified entry bytes, and their SHA-256 `contentDigest`. Custom loaders
+must evaluate those bytes and key any evaluation cache by both source path
+and digest. Reopening the original path or caching only by path violates the
+integrity and refresh contract. Existing one-argument loaders remain assignable
+but must adopt this contract to support edited modules safely.
+
+The default loader writes the verified bytes to an exclusively created,
+owner-readable sibling file whose unique name includes the digest. Each load
+gets a fresh module identity. Relative imports and package resolution retain
+the original directory; `import.meta.url` names the temporary sibling. The
+source directory must be writable. Temporary files are removed when loading
+settles or is interrupted. Imported dependencies retain the host's normal
+module cache and are outside the entry digest.
+
+`loadTimeoutMs` bounds each `catalog` entry, including custom loaders, and
+defaults to 30,000 milliseconds. Supply a positive finite number. Expiry becomes
+`ExecutableError { code: "body_unavailable" }` naming the flow, source path,
+and deadline. The catalog logs the refusal immediately and proceeds to the
+next entry. Direct `fromDescriptor` and `fromRegistry` calls have no deadline.
+Native imports cannot be cancelled: the deadline stops waiting and cleans up
+temporary files, but cannot stop initialization resources or synchronous code
+that blocks the event loop. Hosts needing termination must supply an isolated,
+interruptible loader.
 
 ### Executable.Delegate
 
@@ -867,7 +970,8 @@ Every discovered flow this host can run, and the ones it declined. A project's
 flows directory is a mixed set: some entries delegate to a flow this host
 registered, others name a delegate only another host has, and one may simply be
 broken. None of those is a reason to withhold the rest, so every refusal is
-reported in `refused` carrying its code rather than raised.
+reported in `refused` carrying its code rather than raised. Each refusal is
+logged before loading the next entry. Each entry has the `loadTimeoutMs` deadline.
 
 The service tag is provided by `layer`, so a command that lists or diagnoses
 flows reads the same refusals the registration phase acted on instead of
@@ -903,36 +1007,8 @@ with.
 
 ### Executable.ProjectOptions and Executable.layerProject
 
-```ts
-interface ProjectOptions {
-  readonly root: string
-  readonly packs?: Registry.PackConfig | undefined
-}
-
-const layerProject: (options: ProjectOptions) => Layer.Layer<
-  Registry.Registry,
-  RegistryError | DiscoveryError,
-  FileSystem.FileSystem | Path.Path
->
-```
-
-The registry a Node host discovers a project in: `<root>/flows/**` first, then
-every installed pack, all under one first-found registry, so a project flow
-shadows a pack flow of the same name and `refresh` rescans both.
-
-Packs are scanned through the registry's own pack path, so each pack descriptor
-carries its `provenance.pack`, a name two packs both define is reported as
-`shadowed`, and every pack's `requires.smithers` is checked against
-`PackConfig.runtimeVersion`. The runtime version rides inside `PackConfig`
-rather than beside it, so a caller cannot ask for packs without saying what
-their range is checked against.
-
-A project with no `flows/` directory is not a failure: it has no flows yet,
-which is the state [`smthrs init`](https://smithers.sh/docs/reference/cli/init/) leaves behind. That is decided
-by looking for the directory up front, so the answer stays a statement about
-the project. Catching the scan's `root_missing` instead would make a pack that
-declares a directory it does not ship read as "this project has no flows" and
-empty the registry the project's own flows were in.
+Deprecated compatibility aliases for `Registry.ProjectOptions` and
+`Registry.layerProject`, retained for one release candidate.
 
 ### Executable.fileSpecifier
 
@@ -1027,6 +1103,7 @@ interface Installed {
   readonly manifest: Manifest
   readonly dir: string
   readonly origin: Origin
+  readonly warnings?: ReadonlyArray<DiscoveryWarning> | undefined
 }
 
 interface Scan {
@@ -1064,8 +1141,9 @@ pack in every descriptor's provenance, so there is nothing useful to do without
 it. An unsafe `flows` or `skills` entry fails the same way, naming the entry.
 
 `warnings` holds one `unknown_pack_key` per manifest key outside `name`,
-`version`, `flows`, `skills`, and `requires`. Surface them: a misspelled
-`requires` would otherwise disable the compatibility gate in silence.
+`version`, `flows`, `skills`, and `requires`. Spread this result into an
+`Installed` and add `origin` to carry them: a misspelled `requires` would
+otherwise disable the compatibility gate in silence.
 
 ### Pack.sources
 
@@ -1077,15 +1155,21 @@ const sources: (
 ```
 
 The registry sources one pack contributes, in manifest order. Every `flows` and
-`skills` path becomes an ordinary path-named source rooted inside the pack, so
-a pack is discovered by exactly the pipeline a project directory is. `source`
+`skills` path becomes a path-named source with `confinementRoot` set to the
+pack root. Discovery uses the same pipeline as project directories. `source`
 carries `pack:<name>`, which is what a warning about a pack file reads back.
 
 Lexical containment is always enforced. When both real paths are available,
 real-path containment also refuses symlink escapes; hosts that cannot answer
 `realPath`, and sources not created yet, use the lexical verdict. The defense
 is repeated here because callers may construct an `Installed` value without
-decoding a manifest first.
+decoding a manifest first. Discovery repeats the real-path check for the
+source root, every descended directory, and every selected entry file. Nested
+directory and entry-file symlink escapes produce `outside_root` and contribute
+no descriptor for body loading or executable catalog import. Links to other
+locations inside the pack remain eligible. This is a discovery-time check,
+not a sandbox for module imports or protection against concurrent filesystem
+changes.
 
 ### Pack.checkCompatible, Pack.compatible
 
@@ -1094,6 +1178,7 @@ const compatible: (range: string, runtimeVersion: string) => boolean
 
 const checkCompatible: (
   pack: Installed,
+  path: Path.Path,
   runtimeVersion: string
 ) => Effect.Effect<void, RegistryError>
 ```
@@ -1120,7 +1205,9 @@ An unreadable range returns `false` from `compatible`, and fails
 `unreadable_pack_range` from `checkCompatible`; a readable but unsatisfied one
 fails `incompatible_pack`. The two codes are separate so an operator can tell a
 dialect this runtime cannot parse from a pack that genuinely needs a newer one.
-A pack with no `requires` passes.
+A pack with no `requires` passes. Both failures name the pack's manifest
+through the `Path` service the caller passes, which is the one `Pack.read` and
+`Pack.sources` use.
 
 ### Pack.digest and Pack.File
 
@@ -1220,9 +1307,13 @@ class RegistryError {
 A failure while constructing, looking up, loading, or rendering a registry
 entry.
 
-Both errors carry the offending `path` as a field rather than only inside the
-prose message, so a caller can act on it without parsing text. Each code, with
-its cause and its fix, is in [Troubleshooting](/troubleshooting/).
+Both errors carry `module` and `method`, the operation that raised them, and
+carry the offending `path` as a field rather than only inside the prose message
+whenever the failure is about a file. A `DiscoveryError` always names its source
+root; a `RegistryError` names no path for `not_found`, `system_collision`, and
+`not_prompt_flow`, which are about a name rather than a file. Each code, with
+its fields, its cause, and its fix, is in
+[Troubleshooting](/troubleshooting/).
 
 ### RegistryError.RegistryFailure
 

@@ -8,7 +8,9 @@ editUrl: "https://github.com/smithersai/smithers/edit/main/packages/smithers/doc
 UI, for another `smthrs --remote`, and for any client that is not this process.
 It is the other side of [Local and remote control planes](/concepts/local-and-remote/).
 
-`smthrs gateway` is an alias of the same verb.
+`smthrs gateway` is an alias of the same verb. Both spellings host the durable
+trigger scheduler alongside HTTP, polling registered schedules and queued
+occurrences. Neither spelling approves a trigger plan automatically.
 
 ## Serve on loopback
 
@@ -74,14 +76,42 @@ compatibility flag `--credential` warns on stderr even under `--quiet`: its
 value is visible in process listings and may remain in shell history. The
 warning never echoes the credential.
 
-A valid bearer is not automatically an approver. The default host allows local
-operator approval; a credentialed gateway stamps `gateway/bearer` and needs an
-explicit `ApprovalAuthority` delegation. A local operator can use
-`smthrs approvals approve` or `smthrs approvals deny` against the same workspace.
-Programmatic hosts can supply `approvalAuthority` through `Application.Config`
-(and `NodeControl.layer`) or the third argument to `NodeControl.engineDurable`.
+A valid bearer is not automatically an approver in `smthrs serve` or its
+`smthrs gateway` alias. The CLI host defaults to `ApprovalAuthority.local`; a credentialed gateway stamps
+`gateway/bearer` and needs explicit host delegation to approve or deny. A local
+operator can use `smthrs approvals approve` or `smthrs approvals deny` against
+the same workspace.
+
+Programmatic CLI hosts opt in through `Cli.makeCli({ approvalAuthority })` or
+`ControlBridge.host`'s third argument. For example, this policy permits the
+bearer to approve Plans with `once` scope and deny Plans, but gives it no Node,
+`run`, or `remembered` approval authority:
+
+```ts
+import { ApprovalAuthority } from "@smthrs/control"
+import { bearerPrincipal } from "@smthrs/gateway/node/NodeGateway"
+import { Effect } from "effect"
+
+const approvalAuthority = await Effect.runPromise(ApprovalAuthority.make([
+  {
+    principal: { id: "local", kind: "operator" },
+    scopes: ["once", "run", "remembered"],
+    targets: ["Plan", "Node"]
+  },
+  { principal: bearerPrincipal, scopes: ["once"], targets: ["Plan"] }
+]))
+```
+
 This policy is host configuration, not a request flag. Delegating a shared bearer
-delegates every holder, including agents. See
+delegates every holder, including agents. Custom policies replace the default;
+include the local operator delegation to retain local approval through that host.
+
+Lower-level hosts using `NodeControl.layer(Application.Config)` or
+`NodeControl.engineDurable` directly retain a different default: a nonempty
+`credential` automatically delegates Plan and Node decisions at `once`, `run`,
+and `remembered` scopes to the gateway bearer. Supply
+`approvalAuthority: ApprovalAuthority.local` to disable that delegation, or
+supply a restricted policy such as the one above. See
 [approval authority](https://control.smithers.sh/guides/approvals/#who-may-decide).
 
 Read the [control-plane guide](https://smithers.sh/docs/guides/control-plane/)

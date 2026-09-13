@@ -11,6 +11,22 @@ Use `McpClient.connect` when you want the session itself, and
 step. Both take the same connection options and both require
 `ChildProcessSpawner` and a `Scope`.
 
+Install a reviewed server version and its dependencies before supplying any
+credentials. This example pins the deprecated GitHub server to `2025.4.8`;
+review it for your use before running it. Use a dedicated directory, review and
+retain `package.json` and `package-lock.json`, then install from that lockfile:
+
+```bash
+mkdir -p /path/to/mcp-servers
+env -u GITHUB_TOKEN -u GITHUB_PERSONAL_ACCESS_TOKEN npm install --prefix /path/to/mcp-servers --package-lock-only --ignore-scripts --save-exact @modelcontextprotocol/server-github@2025.4.8
+# Review the pinned package and lockfile before installing.
+env -u GITHUB_TOKEN -u GITHUB_PERSONAL_ACCESS_TOKEN npm ci --prefix /path/to/mcp-servers --ignore-scripts
+```
+
+Both npm commands remove the GitHub credential variables from their environment.
+Launch the installed executable directly and supply the token only in the
+server's `env`. This server reads `GITHUB_PERSONAL_ACCESS_TOKEN`.
+
 ```ts
 import { NodeServices } from "@effect/platform-node"
 import * as McpClient from "@smthrs/mcp/McpClient"
@@ -19,10 +35,10 @@ import { Effect } from "effect"
 const program = Effect.scoped(Effect.gen(function*() {
   const client = yield* McpClient.connect({
     server: "github",
-    command: "npx",
-    args: ["-y", "@modelcontextprotocol/server-github"],
+    command: "/path/to/mcp-servers/node_modules/.bin/mcp-server-github",
+    args: [],
     cwd: "/path/to/repo",
-    env: { GITHUB_TOKEN: process.env.GITHUB_TOKEN }
+    env: { GITHUB_PERSONAL_ACCESS_TOKEN: process.env.GITHUB_TOKEN }
   })
   return client.tools.map((tool) => tool.name)
 }))
@@ -55,14 +71,14 @@ relative to its own directory needs it; most do.
 ## Declare the server environment
 
 The child inherits only `PATH`, `HOME`, `USER`, `LANG`, `LC_*`, `TERM`,
-`TMPDIR`, and `SHELL`. This keeps a bare executable such as `npx` resolvable
+`TMPDIR`, and `SHELL`. This keeps a bare executable such as `node` resolvable
 without exposing every provider credential held by the Smithers process.
 `env` values are explicit declarations applied on top of that bootstrap set.
 
 ```ts
-// The child gets the bootstrap environment plus GITHUB_TOKEN.
+// The child gets the bootstrap environment plus GITHUB_PERSONAL_ACCESS_TOKEN.
 env: {
-  GITHUB_TOKEN: "..."
+  GITHUB_PERSONAL_ACCESS_TOKEN: process.env.GITHUB_TOKEN
 }
 ```
 
@@ -90,11 +106,8 @@ tools and nothing else.
 
 ## Identify yourself
 
-Every connection discloses the frozen `McpClient.clientInfo`:
-
-```ts
-{ name: "smithers", version: "1.0.0-rc.0" }
-```
+Every connection discloses the frozen `McpClient.clientInfo`: `name` is
+`"smithers"` and `version` is this package's version.
 
 It is not configurable. A server that varies its behavior by client should see
 one honest answer.

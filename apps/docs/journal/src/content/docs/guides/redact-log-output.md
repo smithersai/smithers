@@ -42,6 +42,9 @@ Two halves carry load, and both are necessary:
   name and the pretty cause as the span's `effect.cause` attribute, and never
   touches `Console`. Redacting only the console would hide a credential on
   stderr and export it in clear to whatever OTLP collector is configured.
+  Cause stack annotations are redacted too: span names, lazy stack text, parent
+  frames, and interruptor frames. The original cause is unchanged; the delegate
+  receives rebuilt reasons with redacted frame chains.
 - **The fiber's console.** The wrapped logger is handed a view of the fiber
   whose `Console` is a redacting console, so whatever the logger renders for
   itself, a pretty line or a JSON document, passes through the rules on its way

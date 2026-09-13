@@ -125,8 +125,9 @@ the child's output.
 that never completes, inspect the private stderr diagnostic through a trusted
 host observer: a server that reports a crash is not merely slow.
 
-One `notifications/cancelled` was sent for the timed-out request, unless the
-outbound queue was full or the method was `initialize`.
+If the request was still queued, the writer skips it. If it was already handed
+to the writer, one best-effort `notifications/cancelled` is sent, unless the
+outbound queue is full or the method is `initialize`.
 
 ## MCP server "..." connection scope closed, stdout closed, stdin closed, or exited with code N
 
@@ -135,7 +136,8 @@ outbound queue was full or the method was `initialize`.
 **What happened.** The session ended. Every request pending at that moment
 failed with this one error, and every later request fails with it too. A clean
 child exit ends stdout successfully, so an ordinary exit reads as "stdout
-closed" or "exited with code N".
+closed" or "exited with code N". Closing a healthy connection's scope reports
+"connection scope closed" before I/O teardown can report "stdin closed".
 
 **What to change.** "Connection scope closed" is usually the caller's own bug:
 the scope was closed while a call was still running, or a client was used after
@@ -148,8 +150,11 @@ private stderr diagnostic through a trusted host observer.
 **Code.** `protocol_error`.
 
 **What happened.** One inbound line exceeded `maxFrameBytes` (1 MiB by default).
-The stdout reader never retains more than one bounded partial frame, so this
-also fires when a server writes a large amount of output with no newline.
+The limit is inclusive and counts UTF-8 bytes, excluding the newline and an
+optional preceding carriage return. Chunk boundaries do not affect the limit.
+The stdout reader retains one bounded partial frame plus at most one pending
+carriage return, so this also fires when a server writes too much output
+without a newline. Each byte is scanned once and each frame is decoded once.
 
 **What to change.** For a tool that genuinely returns megabytes, raise
 `maxFrameBytes`. Otherwise check that the server terminates each JSON-RPC
@@ -161,9 +166,14 @@ than N bytes`, means your own arguments exceeded `maxOutboundFrameBytes`.
 **Code.** `protocol_error`.
 
 **What happened.** A line that claimed JSON-RPC by carrying a `jsonrpc` property
-was not a valid reply: the wrong version, no id, an id that is not an integer or
-a canonical decimal string, neither `result` nor `error`, both of them, or a
-malformed error object. This closes the connection.
+was not a valid reply: the wrong version, no id, an invalid id, neither `result`
+nor `error`, both of them, or a malformed error object. This closes the connection.
+
+Reply ids must be integers or canonical decimal strings. A valid error reply
+with `id: null` is the exception: its details go to the private diagnostic
+observer as `remote-error`, then it is dropped without closing the connection.
+Pending requests still wait for their own replies or deadlines. A result with
+`id: null` is malformed.
 
 **What to change.** Fix the server's framing. Note what does **not** cause this:
 a blank line, invalid JSON, a JSON scalar or array, and any object without a
@@ -178,9 +188,17 @@ held to protocol rules.
 **What happened.** A limit was zero, negative, or fractional. This is raised
 before the process is spawned.
 
-**What to change.** Pass a positive integer. The same message with `namePrefix`
-instead means `McpFlows.connected` was given an empty prefix, which would
-produce flow names starting with `/`.
+**What to change.** Pass a positive integer.
+
+## MCP server "..." option "namePrefix" must not be empty
+
+**Code.** `protocol_error`.
+
+**What happened.** `McpFlows.connected` was given an empty prefix. This is
+raised before the process is spawned.
+
+**What to change.** Pass a non-empty `namePrefix`, or omit it to use
+`mcp/<server>`.
 
 ## MCP server "..." has no requested tool
 
@@ -276,3 +294,11 @@ implementation.
 **What to change.** The default prefix `mcp/<server>` keeps two servers apart, so
 this usually means two entries share a `server` name, or a custom `namePrefix`
 collides with another source. Give each server a distinct name.
+
+## Recovering from connection setup failure
+
+`McpClient.connect` and `McpFlows.connected` release the subprocess and I/O
+fibers before returning a failed or interrupted setup attempt. This includes
+negotiation, catalog, and projection validation failures. Catching failures or
+retrying inside an open scope does not retain failed connections. Successful
+connections remain open until the caller scope closes.

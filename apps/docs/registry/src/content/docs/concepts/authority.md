@@ -41,9 +41,21 @@ becomes `irreversible` with the same warning.
 
 When discovery cannot read a flow's authority, it reports the one value that
 cannot understate it: wildcard capabilities `["*"]`, wildcard `reads` and
-`writes` `["**"]`, `mode: "expected"`, and `tier: "irreversible"`. A declared
-`sealed` tier on such a flow is reported as under-classifying rather than
-accepted.
+`writes` `["**"]`, `mode: "expected"`, `onConflict: "serialize"`, and
+`tier: "irreversible"`. A declared `sealed` tier on such a flow is reported as
+under-classifying rather than accepted.
+
+Wildcard capabilities carry that whole projection, whichever way they arose. A
+flow that declares `capabilities: ["*"]` and a flow whose capabilities
+discovery could not read both project the wildcard effect set, because a
+narrower `reads` or `writes` beside an unbounded capability list is a claim
+discovery cannot check. Both body kinds decide this in one place, so equivalent
+markdown and module declarations project the same effects.
+
+A member the declaration leaves out is read the other way. An `effects` object
+discovery can read, with no `reads` key, declares an empty read set rather than
+an unknown one, because the author wrote the object and left the list out. Only
+a member discovery cannot read widens to the wildcard.
 
 The case both body kinds share is a **non-empty `flows` list**. The flow
 delegates to another flow, and that flow's authority is not statically visible,

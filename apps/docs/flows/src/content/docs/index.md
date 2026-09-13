@@ -34,7 +34,7 @@ whole composition.
 the import forms, the platform packages the barrel leaves to you, and when to
 depend on individual engine packages instead.
 
-Durable execution needs Node.js 22.19.0 or later. The API is
+Durable execution uses a Node.js 22.19.0+ or Bun 1.4.0+ host composition. The API is
 [Effect](https://effect.website) throughout: a flow declares its payload and
 result as Effect schemas, an action's implementation is an `Effect`, and a host
 is a `Layer` you provide. The example below is a complete Effect program, and
