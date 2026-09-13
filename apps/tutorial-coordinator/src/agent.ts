@@ -62,7 +62,7 @@ export function agentLayer(filename:string,apiKey:string,modelId:string, supplie
   const forbidden=()=>Effect.die(new Error("The tutorial model cannot mutate coordinator files; mutations belong to its isolated executor."))
   const noSnapshots=Layer.succeed(Jj.Jj,Jj.make({snapshot:forbidden,restore:forbidden,diff:forbidden,workspaceAdd:forbidden,workspaceForget:forbidden,status:forbidden}))
   const durable=NodeRuntime.layer({filename,workspaceRoot:dirname(filename),owner:{hostId:hostIncarnation},isAlive:Ownership.sameHostPidProbe},StepBoundary.layer,WorkspaceSandbox.layerFileSystem(),Layer.empty).pipe(Layer.provideMerge(noSnapshots),Layer.provideMerge(NodeCrypto.layer),Layer.provideMerge(NodeFileSystem.layer))
-  const host=AgentAction.layerHost({registry:Registry.makeNoop({list:()=>Effect.succeed([]),visible:()=>Effect.succeed([]),getOption:()=>Effect.succeed(Option.none())}),limits:{calls:0},capabilityEnvelope:[],maxFrames:3,maxQuotaParks:0,modelRetryPolicy:Schedule.recurs(0)})
+  const host=AgentAction.layerHost({registry:Registry.makeNoop({list:()=>Effect.succeed([]),visible:()=>Effect.succeed([]),getOption:()=>Effect.succeed(Option.none())}),limits:{calls:0},capabilityEnvelope:[],maxFrames:3,maxQuotaParks:0,modelRetryPolicy:Schedule.exponential("250 millis").pipe(Schedule.upTo({times:2}))})
   return Layer.mergeAll(Task.layer,Interpreter.layer(TutorialAgent)).pipe(
     Layer.provideMerge(Layer.mergeAll(host,suppliedSeats??seats(apiKey,modelId,provider),Agent.layer)),
     Layer.provideMerge(Layer.mergeAll(QuotaPolicy.layerUnclassified(),Budget.layer({tokens:{max:32000,onExceeded:"fail"},latency:{maxMillis:120000,onExceeded:"fail"}}))),
