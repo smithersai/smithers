@@ -59,6 +59,12 @@
 .guide-shell p {
   margin: 0;
 }
+/* The shell takes programmatic focus at boot (a container, not a control):
+   never ring it. Specificity must beat the app-wide `:focus-visible` rule in
+   base.css — its violet outline was painting the shell's left edge. */
+.guide-shell:focus-visible {
+  outline: none;
+}
 .guide-shell button:disabled {
   opacity: 0.5;
   cursor: default;

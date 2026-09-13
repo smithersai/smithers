@@ -13,10 +13,18 @@
 	flex: none;
 	flex-direction: column;
 	justify-content: space-between;
-	gap: 8px;
-	padding: 10px 8px 8px;
+	gap: var(--sp-2);
+	padding: var(--sp-3) var(--sp-2) var(--sp-2);
 	border-right: 1px solid var(--border);
-	background: var(--card);
+	/* The rail steps DOWN from the page: surface-2, never the card white. A
+	   pure-white slab on the near-white canvas (or the guide's paper) read as
+	   a floating foreign panel; every palette defines a surface-2 for this. */
+	background: var(--surface-2);
+	/* Row fills derive from the ink, not the palette's --hover: in most dark
+	   palettes --hover IS --surface-2 verbatim, so a var(--hover) row fill
+	   vanished on the rail. An 8% ink tint steps from the rail everywhere. */
+	--rail-fill: color-mix(in srgb, var(--text) 8%, transparent);
+	--rail-fill-strong: color-mix(in srgb, var(--text) 14%, transparent);
 }
 
 /* The list and its `+`: the list scrolls, the `+` stays put below it (and clips nothing). */
@@ -42,19 +50,21 @@
 	height: 32px;
 	flex: none;
 	align-items: center;
-	gap: 4px;
-	padding: 0 4px 0 10px;
-	border-radius: 8px;
+	gap: var(--sp-1);
+	padding: 0 var(--sp-1) 0 var(--sp-2);
+	border-radius: var(--r-sm);
 	color: var(--bubble-meta, var(--text));
 }
 
 .tab:hover {
-	background: var(--hover);
+	background: var(--rail-fill);
 }
 
+/* The selected row is recessed, never a floating card: a flat hover-tone
+   fill, no box-shadow (Linear's list anatomy, verified in its menu CSS). */
 .tab[data-active="true"] {
-	background: var(--bg);
-	box-shadow: var(--shadow-1);
+	background: var(--rail-fill);
+	box-shadow: none;
 	color: var(--text);
 }
 
@@ -74,22 +84,24 @@
 	height: 32px;
 	flex: none;
 	align-items: center;
-	gap: 4px;
-	padding: 0 4px 0 10px;
-	border-radius: 8px;
+	gap: var(--sp-1);
+	padding: 0 var(--sp-1) 0 var(--sp-2);
+	border-radius: var(--r-sm);
 	color: var(--bubble-meta, var(--text));
 }
 
 .workspace-heading:hover {
-	background: var(--hover);
+	background: var(--rail-fill);
 }
 
 .workspace-heading[data-active="true"] {
-	background: var(--bg);
-	box-shadow: var(--shadow-1);
+	background: var(--rail-fill);
+	box-shadow: none;
 	color: var(--text);
 }
 
+/* The rail's one title: semibold title case. All-caps in a shadowed box read
+   as a stray tab; Linear's labels are 12–13px medium with no transform. */
 .workspace-name {
 	min-width: 0;
 	flex: 1;
@@ -99,8 +111,7 @@
 	white-space: nowrap;
 	font-size: var(--fs-small);
 	font-weight: 600;
-	text-transform: uppercase;
-	letter-spacing: 0.04em;
+	letter-spacing: normal;
 }
 
 .workspace-name-input {
@@ -109,7 +120,7 @@
 	height: 24px;
 	padding: 0 6px;
 	border: 1px solid var(--border);
-	border-radius: 6px;
+	border-radius: var(--r-sm);
 	background: var(--bg);
 	color: var(--text);
 	font: inherit;
@@ -136,7 +147,7 @@
 
 .workspace-rename:hover,
 .workspace-rename:focus-visible {
-	background: var(--hover);
+	background: var(--rail-fill-strong);
 }
 
 /* The Repos section: one group per repository, its file tree and its sessions indented beneath it. */
@@ -157,22 +168,22 @@
 
 .repo {
 	display: flex;
-	height: 30px;
+	height: 32px;
 	flex: none;
 	align-items: center;
 	gap: 2px;
-	padding: 0 4px 0 6px;
-	border-radius: 8px;
+	padding: 0 var(--sp-1) 0 var(--sp-2);
+	border-radius: var(--r-sm);
 	color: var(--bubble-meta, var(--text));
 }
 
 .repo:hover {
-	background: var(--hover);
+	background: var(--rail-fill);
 }
 
 .repo-group[data-active="true"] > .repo {
-	background: var(--bg);
-	box-shadow: var(--shadow-1);
+	background: var(--rail-fill);
+	box-shadow: none;
 	color: var(--text);
 }
 
@@ -194,16 +205,31 @@
 	font-weight: 500;
 }
 
+/* Icons form a quiet column: faint at rest, ink on the active row — Linear's
+   list anatomy (text-quaternary → text-primary on highlight). */
+.chrome-bar .repo-select > svg,
+.chrome-bar .tab-add-trigger > svg,
+.chrome-bar .chrome-action > svg {
+	flex: none;
+	color: var(--text-faint);
+}
+
+.chrome-bar .repo-group[data-active="true"] > .repo .repo-select > svg,
+.chrome-bar .chrome-action:hover > svg,
+.chrome-bar .tab-add-trigger:hover > svg {
+	color: var(--text);
+}
+
 .repo-empty {
-	height: 30px;
-	padding: 0 6px;
-	border-radius: 8px;
+	height: 32px;
+	padding: 0 var(--sp-2);
+	border-radius: var(--r-sm);
 	color: var(--bubble-meta, var(--text));
 }
 
 .repo-empty:hover,
 .repo-empty:focus-visible {
-	background: var(--hover);
+	background: var(--rail-fill);
 	color: var(--text);
 }
 
@@ -245,7 +271,7 @@
 .repo-add:focus-visible,
 .repo-unpin:hover,
 .repo-unpin:focus-visible {
-	background: var(--hover);
+	background: var(--rail-fill-strong);
 }
 
 /* The caret that opens a working copy's root; it turns when the root is expanded. */
@@ -270,7 +296,7 @@
 
 .repo-caret:hover,
 .repo-caret:focus-visible {
-	background: var(--hover);
+	background: var(--rail-fill-strong);
 }
 
 /* The file tree under a copy: the library's tree, sized to the sidebar, with a guide line like the sessions. */
@@ -351,7 +377,7 @@
 
 .tab-close:hover,
 .tab-close:focus-visible {
-	background: var(--hover);
+	background: var(--rail-fill-strong);
 }
 
 .tab-add {
@@ -364,11 +390,11 @@
 .tab-add-trigger {
 	display: inline-flex;
 	width: 100%;
-	height: 30px;
+	height: 32px;
 	align-items: center;
-	gap: 8px;
-	padding: 0 10px;
-	border-radius: 8px;
+	gap: var(--sp-2);
+	padding: 0 var(--sp-2);
+	border-radius: var(--r-sm);
 	color: var(--bubble-meta, var(--text));
 	font-size: var(--fs-small);
 }
@@ -376,7 +402,7 @@
 .tab-add-trigger:hover,
 .tab-add-trigger:focus-visible,
 .tab-add-trigger[aria-expanded="true"] {
-	background: var(--hover);
+	background: var(--rail-fill);
 	color: var(--text);
 }
 
@@ -441,61 +467,70 @@
 	color: var(--bubble-meta, var(--text));
 }
 
-/* The bottom chrome: sign-in, then the theme and reset buttons on one row. */
+/* The bottom chrome: sign-in, then the theme and reset buttons on one row.
+   A hairline separates it from the session list (Linear's separator recipe). */
 .chrome-actions {
 	display: flex;
 	flex: none;
 	flex-direction: column;
-	gap: 6px;
+	gap: var(--sp-2);
+	padding-top: var(--sp-2);
+	border-top: 1px solid var(--border);
 }
 
+/* One row recipe for the whole rail: 32px, 8px inline padding, 8px radius. */
 .chrome-action {
-	padding: 6px 10px;
-	border-radius: 8px;
+	display: flex;
+	min-height: 32px;
+	align-items: center;
+	gap: var(--sp-2);
+	padding: 0 var(--sp-2);
+	border-radius: var(--r-sm);
 	text-align: left;
 	font-size: var(--fs-small);
 }
 
 .chrome-action:hover,
 .chrome-action:focus-visible {
-	background: var(--hover);
+	background: var(--rail-fill);
 }
 
-/* The download button and the six chrome buttons carry an icon; keep each on one line with its label. */
-.chrome-action-download,
-.chrome-action-wiki,
-.chrome-action-dispatcher,
-.chrome-action-flows,
-.chrome-action-secrets,
-.chrome-action-history,
-.chrome-action-account {
-	display: flex;
-	align-items: center;
-	gap: 6px;
+/* Sign-in is an action, not a text line: the brand's soft fill. */
+.chrome-action[data-flow="auth.sign-in"] {
+	background: var(--brand-soft);
+	color: var(--brand);
+	font-weight: 500;
+}
+
+.chrome-action[data-flow="auth.sign-in"]:hover,
+.chrome-action[data-flow="auth.sign-in"]:focus-visible {
+	background: var(--brand-soft-strong);
+	color: var(--brand);
 }
 
 .chrome-corner {
 	display: flex;
 	align-items: center;
-	gap: 6px;
+	gap: var(--sp-2);
 }
 
+/* Corner utilities stay quiet: no glass chips on the recessed rail. */
 .chrome-icon-action {
 	display: inline-flex;
 	width: 30px;
 	height: 30px;
 	align-items: center;
 	justify-content: center;
-	border: 1px solid var(--border);
-	border-radius: 8px;
-	background: var(--surface-glass-strong);
-	box-shadow: var(--shadow-1);
+	border: 0;
+	border-radius: var(--r-sm);
+	background: transparent;
+	box-shadow: none;
 	color: var(--text-muted);
 }
 
 .chrome-icon-action:hover,
 .chrome-icon-action:focus-visible {
-	background: var(--hover);
+	background: var(--rail-fill-strong);
 	color: var(--text);
 }
 
