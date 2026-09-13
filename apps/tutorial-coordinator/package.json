@@ -9,6 +9,7 @@
   "dependencies": {
     "@effect/platform-node": "4.0.0-rc.115",
     "@smthrs/agent": "workspace:*",
+    "@smthrs/cli": "workspace:*",
     "@smthrs/engine": "workspace:*",
     "@smthrs/engine-store": "workspace:*",
     "@smthrs/flow": "workspace:*",

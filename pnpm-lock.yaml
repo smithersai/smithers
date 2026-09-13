@@ -1612,6 +1612,9 @@ importers:
       '@smthrs/agent':
         specifier: workspace:*
         version: link:../../packages/smithers/agent
+      '@smthrs/cli':
+        specifier: workspace:*
+        version: link:../../packages/smithers
       '@smthrs/engine':
         specifier: workspace:*
         version: link:../../packages/smithers/flows/engine

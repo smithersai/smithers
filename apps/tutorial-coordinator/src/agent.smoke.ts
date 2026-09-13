@@ -19,7 +19,7 @@ ModelEvent.ModelEvent.Usage({inputTokens:6000,outputTokens:867,totalTokens:6867}
 ModelEvent.ModelEvent.Settle({type:'settle',stopReason:'stop'})])}})
 const seats=SeatResolver.layer({resolve:id=>Effect.succeed(Seat.make({id,modelId:'test',model,contextWindowTokens:32000,route:{prepare:()=>Effect.succeed({routeId:'test',protocolId:'test',method:'POST',url:'https://example.invalid',publicHeaders:{},body:new Uint8Array(),bodyText:''})}}))})
 try {
- const execute=()=>Effect.runPromise(TutorialAgent.execute({instructions:'Research',context:'Observed test failure'},{executionId:'durable-smoke'}).pipe(Effect.provide(agentLayer(join(directory,'flows.sqlite'),'unused','test',seats))))
+ const execute=()=>Effect.runPromise(TutorialAgent.execute({instructions:'Research',context:'Observed test failure'},{executionId:'durable-smoke'}).pipe(Effect.provide(agentLayer(join(directory,'flows.sqlite'),{provider:'openai',apiKey:'unused',modelId:'test'},seats))))
  assert.deepEqual(await execute(),answer)
  assert.deepEqual(await execute(),answer)
  assert.equal(calls,2)

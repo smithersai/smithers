@@ -12,29 +12,50 @@ if (run("kubectl", ["config", "current-context"], { quiet: true }).trim() !== ex
 const release = process.argv[2]
 if (!release || !/^[a-z0-9][a-z0-9.-]{1,60}$/.test(release)) throw new Error("Provide a unique lowercase release tag")
 const registry = "us-central1-docker.pkg.dev/plue-prod-1771780303/smithers"
-const executorImage = `${registry}/smithers-tutorial-executor:${release}`
+const coordinatorOnly = process.argv.includes("--coordinator-only")
+const currentDeployment = coordinatorOnly ? JSON.parse(run("kubectl", ["get", "deployment", "tutorial-coordinator", "-n", "smithers", "-o", "json"], { quiet: true })) : undefined
+const executorImage = coordinatorOnly
+  ? currentDeployment.spec.template.spec.containers.find((container: any) => container.name === "coordinator").env.find((value: any) => value.name === "TUTORIAL_EXECUTOR_IMAGE")?.value
+  : `${registry}/smithers-tutorial-executor:${release}`
+if (!executorImage) throw new Error("Existing executor image is missing")
 const coordinatorImage = `${registry}/smithers-tutorial-coordinator:${release}`
 const directory = mkdtempSync(join(tmpdir(), "smithers-tutorial-release-"))
 try {
   run("gcloud", ["auth", "configure-docker", "us-central1-docker.pkg.dev", "--quiet"])
-  run("docker", ["buildx", "build", "--platform", "linux/amd64", "-f", "apps/tutorial-executor/Dockerfile", "-t", executorImage, "--push", "."])
+  if (!coordinatorOnly) run("docker", ["buildx", "build", "--platform", "linux/amd64", "-f", "apps/tutorial-executor/Dockerfile", "-t", executorImage, "--push", "."])
   copyFileSync("dist/tutorial-coordinator/server.mjs", join(directory, "server.mjs"))
   copyFileSync("apps/tutorial-executor/infra/coordinator.Dockerfile", join(directory, "Dockerfile"))
   run("docker", ["buildx", "build", "--platform", "linux/amd64", "-t", coordinatorImage, "--push", directory])
   // Never print credential-bearing objects. Keep the service token stable across
   // releases, so a rolling Worker release never loses its authenticated link.
-  const source = JSON.parse(run("kubectl", ["get", "secret", "smithers-secrets", "-n", "smithers", "-o", "json"], { quiet: true }))
   let old: any = undefined
   try { old = JSON.parse(run("kubectl", ["get", "secret", "tutorial-coordinator-secrets", "-n", "smithers", "-o", "json"], { quiet: true })) } catch {}
-  const usable = (value: string | undefined) => value !== undefined && value.length > 10 && !/placeholder|changeme|dummy|bootstrap[-_]seed/i.test(value)
-  const existingKey = old?.data?.GEMINI_API_KEY === undefined ? undefined : Buffer.from(old.data.GEMINI_API_KEY, "base64").toString()
-  const sharedKey = source.data?.GEMINI_API_KEY === undefined ? undefined : Buffer.from(source.data.GEMINI_API_KEY, "base64").toString()
-  const providerKey = [process.env.GEMINI_API_KEY, existingKey, sharedKey].find(usable)
-  if (providerKey === undefined) throw new Error("No genuine configured Gemini provider credential; refusing placeholder credentials")
+  const provider = process.env.TUTORIAL_PROVIDER ?? "chatgpt"
+  const model = process.env.TUTORIAL_MODEL ?? (provider === "chatgpt" ? "gpt-5.6-luna" : undefined)
+  if (!["chatgpt", "gemini", "openai"].includes(provider) || !model) throw new Error("Configure tutorial provider and model")
+  const credentialData: Record<string, string> = {}
+  if (provider === "chatgpt") {
+    const file = process.env.TUTORIAL_CHATGPT_AUTH_FILE
+    if (file) {
+      const contents = readFileSync(file, "utf8")
+      const auth = JSON.parse(contents)
+      if (!auth.tokens?.access_token || !auth.tokens?.refresh_token) throw new Error("The tutorial login must use ChatGPT subscription authentication")
+      const bootstrap = { apiVersion: "v1", kind: "Secret", metadata: { name: "tutorial-chatgpt-bootstrap", namespace: "smithers" }, type: "Opaque", data: { "auth.json": Buffer.from(contents).toString("base64") } }
+      run("kubectl", ["apply", "-f", "-"], { input: JSON.stringify(bootstrap), quiet: true })
+    } else {
+      run("kubectl", ["get", "secret", "tutorial-chatgpt-bootstrap", "-n", "smithers", "-o", "name"], { quiet: true })
+    }
+  } else {
+    const variable = provider === "gemini" ? "GEMINI_API_KEY" : "OPENAI_API_KEY"
+    const existing = old?.data?.[variable] === undefined ? undefined : Buffer.from(old.data[variable], "base64").toString()
+    const key = process.env[variable] ?? existing
+    if (!key || key.length < 10 || /placeholder|changeme|dummy|bootstrap[-_]seed/i.test(key)) throw new Error("Configure a genuine provider credential")
+    credentialData[variable] = Buffer.from(key).toString("base64")
+  }
   const token = old?.data?.TUTORIAL_SERVICE_TOKEN ?? randomBytes(32).toString("hex")
   const encodedToken = old?.data?.TUTORIAL_SERVICE_TOKEN === undefined ? Buffer.from(token).toString("base64") : token
   const secret = { apiVersion: "v1", kind: "Secret", metadata: { name: "tutorial-coordinator-secrets", namespace: "smithers" }, type: "Opaque",
-    data: { TUTORIAL_SERVICE_TOKEN: encodedToken, GEMINI_API_KEY: Buffer.from(providerKey).toString("base64"), TUTORIAL_PROVIDER: Buffer.from("gemini").toString("base64"), TUTORIAL_MODEL: Buffer.from("gemini-3-flash-preview").toString("base64") } }
+    data: { TUTORIAL_SERVICE_TOKEN: encodedToken, ...credentialData, TUTORIAL_PROVIDER: Buffer.from(provider).toString("base64"), TUTORIAL_MODEL: Buffer.from(model).toString("base64") } }
   run("kubectl", ["apply", "-f", "-"], { input: JSON.stringify(secret), quiet: true })
   const manifest = readFileSync("apps/tutorial-executor/infra/runtime.yaml", "utf8").replaceAll("__COORDINATOR_IMAGE__", coordinatorImage).replaceAll("__EXECUTOR_IMAGE__", executorImage)
   const manifestPath = join(directory, "runtime.yaml"); writeFileSync(manifestPath, manifest)

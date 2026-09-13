@@ -20,7 +20,7 @@ const settled=[
 ]
 const run=(name:string,model:Model.Model)=>{
  const seats=SeatResolver.layer({resolve:id=>Effect.succeed(Seat.make({id,modelId:'test',model,contextWindowTokens:32000,route:{prepare:()=>Effect.succeed({routeId:'test',protocolId:'test',method:'POST',url:'https://example.invalid',publicHeaders:{},body:new Uint8Array(),bodyText:''})}}))})
- return ()=>Effect.runPromise(TutorialAgent.execute({instructions:'Research',context:'Observed test failure'},{executionId:name}).pipe(Effect.provide(agentLayer(join(directory,`${name}.sqlite`),'unused','test',seats)),Effect.timeout(10000)))
+ return ()=>Effect.runPromise(TutorialAgent.execute({instructions:'Research',context:'Observed test failure'},{executionId:name}).pipe(Effect.provide(agentLayer(join(directory,`${name}.sqlite`),{provider:'openai',apiKey:'unused',modelId:'test'},seats)),Effect.timeout(10000)))
 }
 try {
  let attempts=0

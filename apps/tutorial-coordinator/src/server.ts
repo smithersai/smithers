@@ -5,14 +5,16 @@ import { LiveTutorialOperationSchema, LiveTutorialStartSchema } from "@smthrs/rp
 import { ensure } from "../../tutorial-executor/src/KubernetesExecutor"
 import { runAgent } from "./agent"
 import { Coordinator } from "./coordinator"
+import { modelSettings } from "./model"
+import { prepareSubscription } from "./subscription"
 
 const directory=process.env.TUTORIAL_DATA_DIR??"/data"
-const provider=process.env.TUTORIAL_PROVIDER??"openai"
-if(provider!=="openai"&&provider!=="gemini")throw new Error("Unsupported tutorial provider")
-const token=process.env.TUTORIAL_SERVICE_TOKEN,apiKey=provider==="gemini"?process.env.GEMINI_API_KEY:process.env.OPENAI_API_KEY,model=process.env.TUTORIAL_MODEL
-if(!token||!apiKey||!model)throw new Error("Configure tutorial service authentication and model settings before starting")
+const settings=modelSettings(process.env)
+const token=process.env.TUTORIAL_SERVICE_TOKEN
+if(!token)throw new Error("Configure tutorial service authentication before starting")
 await mkdir(directory,{recursive:true})
-const coordinator=new Coordinator(directory,{ensure,agent:(filename,id,instructions,context)=>runAgent(filename,apiKey,model,id,instructions,context,provider)})
+if(settings.provider==="chatgpt")await prepareSubscription(settings.authFile,process.env.TUTORIAL_CHATGPT_BOOTSTRAP_FILE)
+const coordinator=new Coordinator(directory,{ensure,agent:(filename,id,instructions,context)=>runAgent(filename,settings,id,instructions,context)})
 coordinator.resume()
 setInterval(()=>{void coordinator.prune().catch(()=>console.error("Tutorial artifact cleanup failed"))},5*60*1000).unref()
 createServer(async(request,response)=>{
