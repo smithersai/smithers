@@ -15,14 +15,15 @@ import { createClientErrorReporter } from "./state/ClientErrors"
  * chunk ahead of time for `mountApp` (AppMount.tsx), which mounts the same
  * AppRoot into a page that is already showing and arms the watchdog then.
  *
- * A repository path (`/owner/name`) opens that repository alone; any other
- * entry opens the tutorial alone.
+ * A repository path (`/owner/name`) opens that repository alone; the
+ * homepage's `?tutorial` link and other entries open the tutorial alone.
  */
 
 function AppIsland() {
   // One watchdog per page (browserStartupWatchdog is a singleton), so a re-render re-reads it.
   const watchdog = browserStartupWatchdog({ clientErrors: createClientErrorReporter({ fetchImpl: createAppFetch() }) })
-  return <AppRoot watchdog={watchdog} mode={pathRepo(window.location.pathname) === null ? "onboarding" : "repo"} />
+  const tutorial = new URLSearchParams(window.location.search).has("tutorial")
+  return <AppRoot watchdog={watchdog} mode={tutorial || pathRepo(window.location.pathname) === null ? "onboarding" : "repo"} />
 }
 
 /*

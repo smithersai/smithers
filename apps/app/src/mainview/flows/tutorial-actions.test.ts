@@ -6,8 +6,8 @@ import { PRACTICE_REPO } from "../state/practice/PracticeRepository"
 import { payloadFor } from "./SlashPayload"
 
 const createController = scopedControllers()
-const setup = async () => {
-  const store = await createAppStore({kind:"localStorage",storage:memoryStorage()})
+const setup = async (storage = memoryStorage()) => {
+  const store = await createAppStore({kind:"localStorage",storage})
   let fetched = 0
   const controller = createController(store,unavailableRepositories,silentAgent,{fetchImpl:async()=>{fetched++; throw new Error("The example must stay offline")}})
   return {store,controller,fetched:()=>fetched}
@@ -95,4 +95,40 @@ test("starting the tutorial gathers context, then Show issues is its first repos
   expect([...store.collections.cards.values()].filter(card => card.kind === "repo-update")).toEqual([])
   expect((await controller.commands.run("issues.list", `open ${PRACTICE_REPO}`)).status).toBe("executed")
   expect([...store.collections.cards.values()].filter(card => card.kind === "issue-list")).toHaveLength(1)
+})
+
+test("replay clears only this conversation's practice presentation and fresh actions cannot restore old history", async () => {
+  const storage = memoryStorage()
+  const { store, controller } = await setup(storage)
+  await controller.guideAct("start")
+  await controller.commands.run("issues.list", `open ${PRACTICE_REPO}`)
+  await controller.guideAct("next")
+  await controller.commands.run("issues.view", `3 ${PRACTICE_REPO}`)
+  expect(store.session().guide?.completed).toContain("issue.opened")
+  const previous = store.collections.cards.get("practice-issues")!
+  expect(store.collections.cardHistories.has(previous.id)).toBe(true)
+  const otherRepo = { ...previous, id: "other-repo", payload: { ...previous.payload, repo: "acme/real" } }
+  const otherConversation = { ...previous, id: "other-conversation-practice", tabId: "chat:other" }
+  await store.dispatch({ type: "card.upsert", actor: "system", card: otherRepo }).isPersisted.promise
+  await store.dispatch({ type: "card.upsert", actor: "system", card: otherConversation }).isPersisted.promise
+  const playthrough = store.session().guide?.playthrough ?? 0
+  expect((await controller.commands.run("tut")).status).toBe("executed")
+  expect(store.session().guide).toMatchObject({ step: 1, playthrough: playthrough + 1, completed: ["tutorial.started"] })
+  expect(store.collections.cards.has(previous.id)).toBe(false)
+  expect(store.collections.cardHistories.has(previous.id)).toBe(false)
+  expect([...store.collections.frames.values()].some(frame => frame.cardId === previous.id)).toBe(false)
+  expect(store.collections.cards.get(otherRepo.id)?.payload).toEqual(otherRepo.payload)
+  expect(store.collections.cards.get(otherConversation.id)?.payload).toEqual(otherConversation.payload)
+  await store.settled?.()
+  const restored = await setup(storage)
+  expect(restored.store.session().guide).toMatchObject({ step: 1, playthrough: playthrough + 1 })
+  expect(restored.store.collections.cards.has(previous.id)).toBe(false)
+  expect(restored.store.collections.cardHistories.has(previous.id)).toBe(false)
+  await restored.controller.commands.run("issues.list", `open ${PRACTICE_REPO}`)
+  expect(restored.store.collections.cards.get(previous.id)?.kind).toBe("issue-list")
+  expect(restored.store.collections.cards.get(previous.id)?.navigation).toBeUndefined()
+  await restored.controller.commands.run("card.history.back", previous.id)
+  expect(restored.store.collections.cards.get(previous.id)?.kind).toBe("issue-list")
+  await restored.controller.commands.run("issues.view", `3 ${PRACTICE_REPO}`)
+  expect(restored.store.collections.cardHistories.get(previous.id)?.entries).toHaveLength(2)
 })

@@ -2,6 +2,14 @@ import { expect, test } from "@playwright/test"
 
 test.use({ contextOptions: { reducedMotion: "reduce" } })
 
+test("the homepage's new-tab destination opens the tutorial directly", async ({ page }) => {
+  await page.goto("/smithersai/smithers/?tutorial")
+  await expect(page.getByRole("button", { name: "Show issues", exact: true })).toBeVisible()
+  await expect(page.getByRole("note", { name: "Help" })).toBeVisible()
+  await expect(page.getByRole("button", { name: "Start tutorial", exact: true })).toHaveCount(0)
+  await expect(page.locator(".guide-shell")).toHaveAttribute("data-stage", "1")
+})
+
 for (const width of [1280, 390]) {
   test(`entry opens practice without a second start at ${width}px`, async ({ page }) => {
     await page.setViewportSize({ width, height: 844 })

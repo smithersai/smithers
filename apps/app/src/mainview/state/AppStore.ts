@@ -2,6 +2,7 @@ import { RepositoryContextSchema } from "./RepositoryContext"
 import { RepositoryNotificationSchema } from "./RepositoryNotifications"
 import { migrateGuideV3 } from "./controller/guide"
 import { resumeTutorial } from "../onboarding/resume"
+import { PRACTICE_REPO } from "./practice/PracticeRepository"
 import type { StandardSchemaV1 } from "@standard-schema/spec"
 import { openBrowserWASQLiteOPFSDatabase } from "@tanstack/browser-db-sqlite-persistence"
 import { localOnlyCollectionOptions } from "@tanstack/db"
@@ -1867,11 +1868,27 @@ const initializeAppStore = async (resolved: ResolvedPersistence): Promise<AppSto
           })
           break
 
-        case "guide.changed":
+        case "guide.changed": {
+          // Replay owns a new practice presentation as well as a new cursor.
+          // Clear both the cards and their local navigation atomically, so a
+          // reused practice card id cannot restore the previous run on Back.
+          const replay = (transition.guide.playthrough ?? 0) > (current.guide?.playthrough ?? 0)
+          const removedCards = new Set(replay ? [...collections.cards.values()]
+            .filter(card => inConversation(card, conversationTabId) && "repo" in card.payload && card.payload.repo === PRACTICE_REPO)
+            .map(card => card.id) : [])
+          const removedFrames = [...collections.frames.values()]
+            .filter(frame => frame.branchId === activeBranchId && frame.cardId !== null && removedCards.has(frame.cardId))
+            .map(frame => frame.id)
+          if (removedCards.size > 0) collections.cards.delete([...removedCards])
+          for (const id of removedCards) if (collections.cardHistories.has(id)) collections.cardHistories.delete(id)
+          if (removedFrames.length > 0) collections.frames.delete(removedFrames)
           collections.sessions.update(SESSION_ID, (draft) => {
             draft.guide = transition.guide
+            if (draft.maximizedCardId !== null && removedCards.has(draft.maximizedCardId)) draft.maximizedCardId = null
+            if (removedFrames.includes(draft.activeFrameId)) draft.activeFrameId = rootFrameId(activeBranchId)
           })
           break
+        }
 
         case "theme.changed":
           collections.sessions.update(SESSION_ID, (draft) => {
