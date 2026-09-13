@@ -74,6 +74,27 @@
     }
   },
   {
+    "label": "//:commit",
+    "package": "",
+    "name": "commit",
+    "rule": "ToolRun",
+    "kinds": [
+      "run"
+    ],
+    "cacheable": false,
+    "inputs": [
+      {
+        "kind": "file",
+        "path": "scripts/commit.mjs"
+      }
+    ],
+    "outputs": [],
+    "dependencies": [],
+    "source": {
+      "file": "PACKAGE.ts"
+    }
+  },
+  {
     "label": "//:factoryHarness",
     "package": "",
     "name": "factoryHarness",
@@ -7038,6 +7059,10 @@
       },
       {
         "kind": "file",
+        "path": "apps/tutorial-coordinator/package.json"
+      },
+      {
+        "kind": "file",
         "path": "evals/agent/package.json"
       },
       {
@@ -8303,6 +8328,10 @@
       {
         "kind": "file",
         "path": "apps/status-site/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "apps/tutorial-coordinator/package.json"
       },
       {
         "kind": "file",
@@ -12288,6 +12317,11 @@
         "exclude": []
       },
       {
+        "kind": "glob",
+        "pattern": "packages/repo-targets/test-utils/effect-property.*",
+        "exclude": []
+      },
+      {
         "kind": "file",
         "path": "packages/errors/tsconfig.test.json"
       }
@@ -12427,6 +12461,14 @@
       },
       {
         "kind": "file",
+        "path": "packages/repo-targets/scripts/build-library.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/scripts/compile-commonjs.mjs"
+      },
+      {
+        "kind": "file",
         "path": "packages/errors/src/index.ts"
       },
       {
@@ -12495,6 +12537,11 @@
       {
         "kind": "glob",
         "pattern": "packages/errors/src/**/*.ts",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "packages/repo-targets/test-utils/effect-property.*",
         "exclude": []
       },
       {
@@ -12711,6 +12758,11 @@
         "exclude": []
       },
       {
+        "kind": "glob",
+        "pattern": "packages/repo-targets/test-utils/effect-property.*",
+        "exclude": []
+      },
+      {
         "kind": "file",
         "path": "packages/smithers/agent/chain/tsconfig.test.json"
       }
@@ -12850,6 +12902,14 @@
       },
       {
         "kind": "file",
+        "path": "packages/repo-targets/scripts/build-library.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/scripts/compile-commonjs.mjs"
+      },
+      {
+        "kind": "file",
         "path": "packages/smithers/agent/chain/src/index.ts"
       },
       {
@@ -12921,6 +12981,11 @@
         "exclude": []
       },
       {
+        "kind": "glob",
+        "pattern": "packages/repo-targets/test-utils/effect-property.*",
+        "exclude": []
+      },
+      {
         "kind": "file",
         "path": "packages/smithers/agent/chain/vitest.config.ts"
       }
@@ -12951,6 +13016,11 @@
       {
         "kind": "glob",
         "pattern": "packages/smithers/agent/evals/test/**/*.ts",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "packages/repo-targets/test-utils/effect-property.*",
         "exclude": []
       },
       {
@@ -13093,6 +13163,14 @@
       },
       {
         "kind": "file",
+        "path": "packages/repo-targets/scripts/build-library.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/scripts/compile-commonjs.mjs"
+      },
+      {
+        "kind": "file",
         "path": "packages/smithers/agent/evals/src/index.ts"
       },
       {
@@ -13164,6 +13242,11 @@
         "exclude": []
       },
       {
+        "kind": "glob",
+        "pattern": "packages/repo-targets/test-utils/effect-property.*",
+        "exclude": []
+      },
+      {
         "kind": "file",
         "path": "packages/smithers/agent/evals/vitest.config.ts"
       }
@@ -13194,6 +13277,11 @@
       {
         "kind": "glob",
         "pattern": "packages/smithers/agent/fs/test/**/*.ts",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "packages/repo-targets/test-utils/effect-property.*",
         "exclude": []
       },
       {
@@ -13377,6 +13465,14 @@
       },
       {
         "kind": "file",
+        "path": "packages/repo-targets/scripts/build-library.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/scripts/compile-commonjs.mjs"
+      },
+      {
+        "kind": "file",
         "path": "packages/smithers/agent/fs/src/index.ts"
       },
       {
@@ -13448,6 +13544,11 @@
         "exclude": []
       },
       {
+        "kind": "glob",
+        "pattern": "packages/repo-targets/test-utils/effect-property.*",
+        "exclude": []
+      },
+      {
         "kind": "file",
         "path": "packages/smithers/agent/fs/vitest.config.ts"
       }
@@ -13478,6 +13579,11 @@
       {
         "kind": "glob",
         "pattern": "packages/smithers/agent/harness/test/**/*.ts",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "packages/repo-targets/test-utils/effect-property.*",
         "exclude": []
       },
       {
@@ -13620,6 +13726,14 @@
       },
       {
         "kind": "file",
+        "path": "packages/repo-targets/scripts/build-library.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/scripts/compile-commonjs.mjs"
+      },
+      {
+        "kind": "file",
         "path": "packages/smithers/agent/harness/src/index.ts"
       },
       {
@@ -13691,6 +13805,11 @@
         "exclude": []
       },
       {
+        "kind": "glob",
+        "pattern": "packages/repo-targets/test-utils/effect-property.*",
+        "exclude": []
+      },
+      {
         "kind": "file",
         "path": "packages/smithers/agent/harness/vitest.config.ts"
       }
@@ -13721,6 +13840,11 @@
       {
         "kind": "glob",
         "pattern": "packages/smithers/agent/integrations/test/**/*.ts",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "packages/repo-targets/test-utils/effect-property.*",
         "exclude": []
       },
       {
@@ -13863,6 +13987,14 @@
       },
       {
         "kind": "file",
+        "path": "packages/repo-targets/scripts/build-library.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/scripts/compile-commonjs.mjs"
+      },
+      {
+        "kind": "file",
         "path": "packages/smithers/agent/integrations/src/index.ts"
       },
       {
@@ -13934,6 +14066,11 @@
         "exclude": []
       },
       {
+        "kind": "glob",
+        "pattern": "packages/repo-targets/test-utils/effect-property.*",
+        "exclude": []
+      },
+      {
         "kind": "file",
         "path": "packages/smithers/agent/integrations/vitest.config.ts"
       }
@@ -13964,6 +14101,11 @@
       {
         "kind": "glob",
         "pattern": "packages/smithers/agent/memory/test/**/*.ts",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "packages/repo-targets/test-utils/effect-property.*",
         "exclude": []
       },
       {
@@ -14106,6 +14248,14 @@
       },
       {
         "kind": "file",
+        "path": "packages/repo-targets/scripts/build-library.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/scripts/compile-commonjs.mjs"
+      },
+      {
+        "kind": "file",
         "path": "packages/smithers/agent/memory/src/index.ts"
       },
       {
@@ -14177,6 +14327,11 @@
         "exclude": []
       },
       {
+        "kind": "glob",
+        "pattern": "packages/repo-targets/test-utils/effect-property.*",
+        "exclude": []
+      },
+      {
         "kind": "file",
         "path": "packages/smithers/agent/memory/vitest.config.ts"
       }
@@ -14207,6 +14362,11 @@
       {
         "kind": "glob",
         "pattern": "packages/smithers/agent/model/test/**/*.ts",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "packages/repo-targets/test-utils/effect-property.*",
         "exclude": []
       },
       {
@@ -14349,6 +14509,14 @@
       },
       {
         "kind": "file",
+        "path": "packages/repo-targets/scripts/build-library.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/scripts/compile-commonjs.mjs"
+      },
+      {
+        "kind": "file",
         "path": "packages/smithers/agent/model/src/index.ts"
       },
       {
@@ -14420,6 +14588,11 @@
         "exclude": []
       },
       {
+        "kind": "glob",
+        "pattern": "packages/repo-targets/test-utils/effect-property.*",
+        "exclude": []
+      },
+      {
         "kind": "file",
         "path": "packages/smithers/agent/model/vitest.config.ts"
       }
@@ -14450,6 +14623,11 @@
       {
         "kind": "glob",
         "pattern": "packages/smithers/agent/plugin/test/**/*.ts",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "packages/repo-targets/test-utils/effect-property.*",
         "exclude": []
       },
       {
@@ -14592,6 +14770,14 @@
       },
       {
         "kind": "file",
+        "path": "packages/repo-targets/scripts/build-library.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/scripts/compile-commonjs.mjs"
+      },
+      {
+        "kind": "file",
         "path": "packages/smithers/agent/plugin/src/index.ts"
       },
       {
@@ -14664,6 +14850,11 @@
       },
       {
         "kind": "glob",
+        "pattern": "packages/repo-targets/test-utils/effect-property.*",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
         "pattern": "packages/smithers/agent/plugin/test/fixtures/*.mjs",
         "exclude": []
       },
@@ -14703,6 +14894,11 @@
       {
         "kind": "glob",
         "pattern": "packages/smithers/agent/registry/test/**/*.ts",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "packages/repo-targets/test-utils/effect-property.*",
         "exclude": []
       },
       {
@@ -14845,6 +15041,14 @@
       },
       {
         "kind": "file",
+        "path": "packages/repo-targets/scripts/build-library.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/scripts/compile-commonjs.mjs"
+      },
+      {
+        "kind": "file",
         "path": "packages/smithers/agent/registry/src/index.ts"
       },
       {
@@ -14916,6 +15120,11 @@
         "exclude": []
       },
       {
+        "kind": "glob",
+        "pattern": "packages/repo-targets/test-utils/effect-property.*",
+        "exclude": []
+      },
+      {
         "kind": "file",
         "path": "packages/smithers/agent/registry/vitest.config.ts"
       }
@@ -14946,6 +15155,11 @@
       {
         "kind": "glob",
         "pattern": "packages/smithers/agent/scorers/test/**/*.ts",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "packages/repo-targets/test-utils/effect-property.*",
         "exclude": []
       },
       {
@@ -15088,6 +15302,14 @@
       },
       {
         "kind": "file",
+        "path": "packages/repo-targets/scripts/build-library.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/scripts/compile-commonjs.mjs"
+      },
+      {
+        "kind": "file",
         "path": "packages/smithers/agent/scorers/src/index.ts"
       },
       {
@@ -15159,6 +15381,11 @@
         "exclude": []
       },
       {
+        "kind": "glob",
+        "pattern": "packages/repo-targets/test-utils/effect-property.*",
+        "exclude": []
+      },
+      {
         "kind": "file",
         "path": "packages/smithers/agent/scorers/vitest.config.ts"
       }
@@ -15189,6 +15416,11 @@
       {
         "kind": "glob",
         "pattern": "packages/smithers/agent/std/test/**/*.ts",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "packages/repo-targets/test-utils/effect-property.*",
         "exclude": []
       },
       {
@@ -15331,6 +15563,14 @@
       },
       {
         "kind": "file",
+        "path": "packages/repo-targets/scripts/build-library.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/scripts/compile-commonjs.mjs"
+      },
+      {
+        "kind": "file",
         "path": "packages/smithers/agent/std/src/index.ts"
       },
       {
@@ -15402,6 +15642,11 @@
         "exclude": []
       },
       {
+        "kind": "glob",
+        "pattern": "packages/repo-targets/test-utils/effect-property.*",
+        "exclude": []
+      },
+      {
         "kind": "file",
         "path": "packages/smithers/agent/std/vitest.config.ts"
       }
@@ -15432,6 +15677,11 @@
       {
         "kind": "glob",
         "pattern": "packages/smithers/agent/triggers/test/**/*.ts",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "packages/repo-targets/test-utils/effect-property.*",
         "exclude": []
       },
       {
@@ -15574,6 +15824,14 @@
       },
       {
         "kind": "file",
+        "path": "packages/repo-targets/scripts/build-library.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/scripts/compile-commonjs.mjs"
+      },
+      {
+        "kind": "file",
         "path": "packages/smithers/agent/triggers/src/index.ts"
       },
       {
@@ -15645,6 +15903,11 @@
         "exclude": []
       },
       {
+        "kind": "glob",
+        "pattern": "packages/repo-targets/test-utils/effect-property.*",
+        "exclude": []
+      },
+      {
         "kind": "file",
         "path": "packages/smithers/agent/triggers/vitest.config.ts"
       }
@@ -15675,6 +15938,11 @@
       {
         "kind": "glob",
         "pattern": "packages/smithers/agent/test/**/*.ts",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "packages/repo-targets/test-utils/effect-property.*",
         "exclude": []
       },
       {
@@ -15855,6 +16123,14 @@
       },
       {
         "kind": "file",
+        "path": "packages/repo-targets/scripts/build-library.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/scripts/compile-commonjs.mjs"
+      },
+      {
+        "kind": "file",
         "path": "packages/smithers/agent/src/index.ts"
       },
       {
@@ -15925,6 +16201,11 @@
       {
         "kind": "glob",
         "pattern": "packages/smithers/agent/src/**/*.ts",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "packages/repo-targets/test-utils/effect-property.*",
         "exclude": []
       },
       {
@@ -17090,6 +17371,11 @@
         "exclude": []
       },
       {
+        "kind": "glob",
+        "pattern": "packages/repo-targets/test-utils/effect-property.*",
+        "exclude": []
+      },
+      {
         "kind": "file",
         "path": "packages/smithers/build/tsconfig.test.json"
       }
@@ -17226,6 +17512,14 @@
         "kind": "glob",
         "pattern": "packages/smithers/build/src/**/*.ts",
         "exclude": []
+      },
+      {
+        "kind": "file",
+        "path": "packages/repo-targets/scripts/build-library.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/scripts/compile-commonjs.mjs"
       },
       {
         "kind": "file",
@@ -17445,6 +17739,11 @@
         "exclude": []
       },
       {
+        "kind": "glob",
+        "pattern": "packages/repo-targets/test-utils/effect-property.*",
+        "exclude": []
+      },
+      {
         "kind": "file",
         "path": "packages/smithers/control/tsconfig.test.json"
       }
@@ -17584,6 +17883,14 @@
       },
       {
         "kind": "file",
+        "path": "packages/repo-targets/scripts/build-library.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/scripts/compile-commonjs.mjs"
+      },
+      {
+        "kind": "file",
         "path": "packages/smithers/control/src/index.ts"
       },
       {
@@ -17655,6 +17962,11 @@
         "exclude": []
       },
       {
+        "kind": "glob",
+        "pattern": "packages/repo-targets/test-utils/effect-property.*",
+        "exclude": []
+      },
+      {
         "kind": "file",
         "path": "packages/smithers/control/vitest.config.ts"
       }
@@ -17685,6 +17997,11 @@
       {
         "kind": "glob",
         "pattern": "packages/smithers/create-app/test/**/*.ts",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "packages/repo-targets/test-utils/effect-property.*",
         "exclude": []
       },
       {
@@ -17827,6 +18144,14 @@
       },
       {
         "kind": "file",
+        "path": "packages/repo-targets/scripts/build-library.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/scripts/compile-commonjs.mjs"
+      },
+      {
+        "kind": "file",
         "path": "packages/smithers/create-app/src/index.ts"
       },
       {
@@ -17949,6 +18274,11 @@
         "exclude": []
       },
       {
+        "kind": "glob",
+        "pattern": "packages/repo-targets/test-utils/effect-property.*",
+        "exclude": []
+      },
+      {
         "kind": "file",
         "path": "packages/smithers/create-app/vitest.config.ts"
       }
@@ -18010,6 +18340,11 @@
       {
         "kind": "glob",
         "pattern": "packages/smithers/flows/artifacts/test/**/*.ts",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "packages/repo-targets/test-utils/effect-property.*",
         "exclude": []
       },
       {
@@ -18152,6 +18487,14 @@
       },
       {
         "kind": "file",
+        "path": "packages/repo-targets/scripts/build-library.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/scripts/compile-commonjs.mjs"
+      },
+      {
+        "kind": "file",
         "path": "packages/smithers/flows/artifacts/src/index.ts"
       },
       {
@@ -18223,6 +18566,11 @@
         "exclude": []
       },
       {
+        "kind": "glob",
+        "pattern": "packages/repo-targets/test-utils/effect-property.*",
+        "exclude": []
+      },
+      {
         "kind": "file",
         "path": "packages/smithers/flows/artifacts/vitest.config.ts"
       }
@@ -18284,6 +18632,11 @@
       {
         "kind": "glob",
         "pattern": "packages/smithers/flows/canonical/test/**/*.ts",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "packages/repo-targets/test-utils/effect-property.*",
         "exclude": []
       },
       {
@@ -18449,6 +18802,14 @@
       },
       {
         "kind": "file",
+        "path": "packages/repo-targets/scripts/build-library.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/scripts/compile-commonjs.mjs"
+      },
+      {
+        "kind": "file",
         "path": "packages/smithers/flows/canonical/src/index.ts"
       },
       {
@@ -18520,6 +18881,11 @@
         "exclude": []
       },
       {
+        "kind": "glob",
+        "pattern": "packages/repo-targets/test-utils/effect-property.*",
+        "exclude": []
+      },
+      {
         "kind": "file",
         "path": "packages/smithers/flows/canonical/vitest.config.ts"
       }
@@ -18581,6 +18947,11 @@
       {
         "kind": "glob",
         "pattern": "packages/smithers/flows/capability/test/**/*.ts",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "packages/repo-targets/test-utils/effect-property.*",
         "exclude": []
       },
       {
@@ -18723,6 +19094,14 @@
       },
       {
         "kind": "file",
+        "path": "packages/repo-targets/scripts/build-library.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/scripts/compile-commonjs.mjs"
+      },
+      {
+        "kind": "file",
         "path": "packages/smithers/flows/capability/src/index.ts"
       },
       {
@@ -18794,6 +19173,11 @@
         "exclude": []
       },
       {
+        "kind": "glob",
+        "pattern": "packages/repo-targets/test-utils/effect-property.*",
+        "exclude": []
+      },
+      {
         "kind": "file",
         "path": "packages/smithers/flows/capability/vitest.config.ts"
       }
@@ -18824,6 +19208,11 @@
       {
         "kind": "glob",
         "pattern": "packages/smithers/flows/core/test/**/*.ts",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "packages/repo-targets/test-utils/effect-property.*",
         "exclude": []
       },
       {
@@ -18966,6 +19355,14 @@
       },
       {
         "kind": "file",
+        "path": "packages/repo-targets/scripts/build-library.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/scripts/compile-commonjs.mjs"
+      },
+      {
+        "kind": "file",
         "path": "packages/smithers/flows/core/src/index.ts"
       },
       {
@@ -19037,6 +19434,16 @@
         "exclude": []
       },
       {
+        "kind": "glob",
+        "pattern": "packages/repo-targets/test-utils/effect-property.*",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "packages/smithers/flows/core/test/fixtures/*.json",
+        "exclude": []
+      },
+      {
         "kind": "file",
         "path": "packages/smithers/flows/core/vitest.config.ts"
       }
@@ -19098,6 +19505,11 @@
       {
         "kind": "glob",
         "pattern": "packages/smithers/flows/crypto/test/**/*.ts",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "packages/repo-targets/test-utils/effect-property.*",
         "exclude": []
       },
       {
@@ -19240,6 +19652,14 @@
       },
       {
         "kind": "file",
+        "path": "packages/repo-targets/scripts/build-library.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/scripts/compile-commonjs.mjs"
+      },
+      {
+        "kind": "file",
         "path": "packages/smithers/flows/crypto/src/index.ts"
       },
       {
@@ -19311,6 +19731,11 @@
         "exclude": []
       },
       {
+        "kind": "glob",
+        "pattern": "packages/repo-targets/test-utils/effect-property.*",
+        "exclude": []
+      },
+      {
         "kind": "file",
         "path": "packages/smithers/flows/crypto/vitest.config.ts"
       }
@@ -19341,6 +19766,11 @@
       {
         "kind": "glob",
         "pattern": "packages/smithers/flows/database/test/**/*.ts",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "packages/repo-targets/test-utils/effect-property.*",
         "exclude": []
       },
       {
@@ -19521,6 +19951,14 @@
       },
       {
         "kind": "file",
+        "path": "packages/repo-targets/scripts/build-library.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/scripts/compile-commonjs.mjs"
+      },
+      {
+        "kind": "file",
         "path": "packages/smithers/flows/database/src/index.ts"
       },
       {
@@ -19632,6 +20070,11 @@
         "exclude": []
       },
       {
+        "kind": "glob",
+        "pattern": "packages/repo-targets/test-utils/effect-property.*",
+        "exclude": []
+      },
+      {
         "kind": "file",
         "path": "packages/smithers/flows/database/vitest.config.ts"
       }
@@ -19662,6 +20105,11 @@
       {
         "kind": "glob",
         "pattern": "packages/smithers/flows/engine-store/test/**/*.ts",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "packages/repo-targets/test-utils/effect-property.*",
         "exclude": []
       },
       {
@@ -19835,6 +20283,14 @@
       },
       {
         "kind": "file",
+        "path": "packages/repo-targets/scripts/build-library.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/scripts/compile-commonjs.mjs"
+      },
+      {
+        "kind": "file",
         "path": "packages/smithers/flows/engine-store/src/index.ts"
       },
       {
@@ -19936,6 +20392,11 @@
         "exclude": []
       },
       {
+        "kind": "glob",
+        "pattern": "packages/repo-targets/test-utils/effect-property.*",
+        "exclude": []
+      },
+      {
         "kind": "file",
         "path": "packages/smithers/flows/engine-store/vitest.config.ts"
       }
@@ -19997,6 +20458,11 @@
       {
         "kind": "glob",
         "pattern": "packages/smithers/flows/engine/test/**/*.ts",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "packages/repo-targets/test-utils/effect-property.*",
         "exclude": []
       },
       {
@@ -20202,6 +20668,14 @@
       },
       {
         "kind": "file",
+        "path": "packages/repo-targets/scripts/build-library.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/scripts/compile-commonjs.mjs"
+      },
+      {
+        "kind": "file",
         "path": "packages/smithers/flows/engine/src/index.ts"
       },
       {
@@ -20345,6 +20819,11 @@
       {
         "kind": "glob",
         "pattern": "packages/smithers/flows/engine/src/**/*.ts",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "packages/repo-targets/test-utils/effect-property.*",
         "exclude": []
       },
       {
@@ -20771,6 +21250,11 @@
         "exclude": []
       },
       {
+        "kind": "glob",
+        "pattern": "packages/repo-targets/test-utils/effect-property.*",
+        "exclude": []
+      },
+      {
         "kind": "file",
         "path": "packages/smithers/flows/jj/tsconfig.test.json"
       }
@@ -20948,6 +21432,14 @@
       },
       {
         "kind": "file",
+        "path": "packages/repo-targets/scripts/build-library.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/scripts/compile-commonjs.mjs"
+      },
+      {
+        "kind": "file",
         "path": "packages/smithers/flows/jj/src/index.ts"
       },
       {
@@ -21021,6 +21513,11 @@
         "exclude": []
       },
       {
+        "kind": "glob",
+        "pattern": "packages/repo-targets/test-utils/effect-property.*",
+        "exclude": []
+      },
+      {
         "kind": "file",
         "path": "packages/smithers/flows/jj/vitest.config.ts"
       }
@@ -21051,6 +21548,11 @@
       {
         "kind": "glob",
         "pattern": "packages/smithers/flows/journal/test/**/*.ts",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "packages/repo-targets/test-utils/effect-property.*",
         "exclude": []
       },
       {
@@ -21193,6 +21695,14 @@
       },
       {
         "kind": "file",
+        "path": "packages/repo-targets/scripts/build-library.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/scripts/compile-commonjs.mjs"
+      },
+      {
+        "kind": "file",
         "path": "packages/smithers/flows/journal/src/index.ts"
       },
       {
@@ -21294,6 +21804,11 @@
         "exclude": []
       },
       {
+        "kind": "glob",
+        "pattern": "packages/repo-targets/test-utils/effect-property.*",
+        "exclude": []
+      },
+      {
         "kind": "file",
         "path": "packages/smithers/flows/journal/vitest.config.ts"
       }
@@ -21324,6 +21839,11 @@
       {
         "kind": "glob",
         "pattern": "packages/smithers/flows/kernel/test/**/*.ts",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "packages/repo-targets/test-utils/effect-property.*",
         "exclude": []
       },
       {
@@ -21466,6 +21986,14 @@
       },
       {
         "kind": "file",
+        "path": "packages/repo-targets/scripts/build-library.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/scripts/compile-commonjs.mjs"
+      },
+      {
+        "kind": "file",
         "path": "packages/smithers/flows/kernel/src/index.ts"
       },
       {
@@ -21537,6 +22065,11 @@
         "exclude": []
       },
       {
+        "kind": "glob",
+        "pattern": "packages/repo-targets/test-utils/effect-property.*",
+        "exclude": []
+      },
+      {
         "kind": "file",
         "path": "packages/smithers/flows/kernel/vitest.config.ts"
       }
@@ -21598,6 +22131,11 @@
       {
         "kind": "glob",
         "pattern": "packages/smithers/flows/keys/test/**/*.ts",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "packages/repo-targets/test-utils/effect-property.*",
         "exclude": []
       },
       {
@@ -21740,6 +22278,14 @@
       },
       {
         "kind": "file",
+        "path": "packages/repo-targets/scripts/build-library.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/scripts/compile-commonjs.mjs"
+      },
+      {
+        "kind": "file",
         "path": "packages/smithers/flows/keys/src/index.ts"
       },
       {
@@ -21811,6 +22357,11 @@
         "exclude": []
       },
       {
+        "kind": "glob",
+        "pattern": "packages/repo-targets/test-utils/effect-property.*",
+        "exclude": []
+      },
+      {
         "kind": "file",
         "path": "packages/smithers/flows/keys/vitest.config.ts"
       }
@@ -21841,6 +22392,11 @@
       {
         "kind": "glob",
         "pattern": "packages/smithers/flows/observability/test/**/*.ts",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "packages/repo-targets/test-utils/effect-property.*",
         "exclude": []
       },
       {
@@ -21983,6 +22539,14 @@
       },
       {
         "kind": "file",
+        "path": "packages/repo-targets/scripts/build-library.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/scripts/compile-commonjs.mjs"
+      },
+      {
+        "kind": "file",
         "path": "packages/smithers/flows/observability/src/index.ts"
       },
       {
@@ -22054,6 +22618,11 @@
         "exclude": []
       },
       {
+        "kind": "glob",
+        "pattern": "packages/repo-targets/test-utils/effect-property.*",
+        "exclude": []
+      },
+      {
         "kind": "file",
         "path": "packages/smithers/flows/observability/vitest.config.ts"
       }
@@ -22084,6 +22653,11 @@
       {
         "kind": "glob",
         "pattern": "packages/smithers/flows/patterns/test/**/*.ts",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "packages/repo-targets/test-utils/effect-property.*",
         "exclude": []
       },
       {
@@ -22226,6 +22800,14 @@
       },
       {
         "kind": "file",
+        "path": "packages/repo-targets/scripts/build-library.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/scripts/compile-commonjs.mjs"
+      },
+      {
+        "kind": "file",
         "path": "packages/smithers/flows/patterns/src/index.ts"
       },
       {
@@ -22297,6 +22879,11 @@
         "exclude": []
       },
       {
+        "kind": "glob",
+        "pattern": "packages/repo-targets/test-utils/effect-property.*",
+        "exclude": []
+      },
+      {
         "kind": "file",
         "path": "packages/smithers/flows/patterns/vitest.config.ts"
       }
@@ -22327,6 +22914,11 @@
       {
         "kind": "glob",
         "pattern": "packages/smithers/flows/plan/test/**/*.ts",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "packages/repo-targets/test-utils/effect-property.*",
         "exclude": []
       },
       {
@@ -22470,6 +23062,14 @@
       },
       {
         "kind": "file",
+        "path": "packages/repo-targets/scripts/build-library.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/scripts/compile-commonjs.mjs"
+      },
+      {
+        "kind": "file",
         "path": "packages/smithers/flows/plan/src/index.ts"
       },
       {
@@ -22543,6 +23143,11 @@
         "exclude": []
       },
       {
+        "kind": "glob",
+        "pattern": "packages/repo-targets/test-utils/effect-property.*",
+        "exclude": []
+      },
+      {
         "kind": "file",
         "path": "packages/smithers/flows/plan/vitest.config.ts"
       }
@@ -22605,6 +23210,11 @@
       {
         "kind": "glob",
         "pattern": "packages/smithers/flows/platform-browser/test/**/*.ts",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "packages/repo-targets/test-utils/effect-property.*",
         "exclude": []
       },
       {
@@ -22747,6 +23357,14 @@
       },
       {
         "kind": "file",
+        "path": "packages/repo-targets/scripts/build-library.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/scripts/compile-commonjs.mjs"
+      },
+      {
+        "kind": "file",
         "path": "packages/smithers/flows/platform-browser/src/index.ts"
       },
       {
@@ -22818,6 +23436,11 @@
         "exclude": []
       },
       {
+        "kind": "glob",
+        "pattern": "packages/repo-targets/test-utils/effect-property.*",
+        "exclude": []
+      },
+      {
         "kind": "file",
         "path": "packages/smithers/flows/platform-browser/vitest.config.ts"
       }
@@ -22883,6 +23506,11 @@
       {
         "kind": "glob",
         "pattern": "packages/smithers/flows/platform-bun/test/**/*.ts",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "packages/repo-targets/test-utils/effect-property.*",
         "exclude": []
       },
       {
@@ -23025,6 +23653,14 @@
       },
       {
         "kind": "file",
+        "path": "packages/repo-targets/scripts/build-library.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/scripts/compile-commonjs.mjs"
+      },
+      {
+        "kind": "file",
         "path": "packages/smithers/flows/platform-bun/src/index.ts"
       },
       {
@@ -23096,6 +23732,11 @@
         "exclude": []
       },
       {
+        "kind": "glob",
+        "pattern": "packages/repo-targets/test-utils/effect-property.*",
+        "exclude": []
+      },
+      {
         "kind": "file",
         "path": "packages/smithers/flows/platform-bun/vitest.config.ts"
       }
@@ -23126,6 +23767,11 @@
       {
         "kind": "glob",
         "pattern": "packages/smithers/flows/platform-node/test/**/*.ts",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "packages/repo-targets/test-utils/effect-property.*",
         "exclude": []
       },
       {
@@ -23268,6 +23914,14 @@
       },
       {
         "kind": "file",
+        "path": "packages/repo-targets/scripts/build-library.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/scripts/compile-commonjs.mjs"
+      },
+      {
+        "kind": "file",
         "path": "packages/smithers/flows/platform-node/src/index.ts"
       },
       {
@@ -23340,6 +23994,11 @@
       },
       {
         "kind": "glob",
+        "pattern": "packages/repo-targets/test-utils/effect-property.*",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
         "pattern": "packages/smithers/flows/platform-node/src/internal/AtomicFileSystemHelper.py",
         "exclude": []
       },
@@ -23379,6 +24038,11 @@
       {
         "kind": "glob",
         "pattern": "packages/smithers/flows/run-store/test/**/*.ts",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "packages/repo-targets/test-utils/effect-property.*",
         "exclude": []
       },
       {
@@ -23521,6 +24185,14 @@
       },
       {
         "kind": "file",
+        "path": "packages/repo-targets/scripts/build-library.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/scripts/compile-commonjs.mjs"
+      },
+      {
+        "kind": "file",
         "path": "packages/smithers/flows/run-store/src/index.ts"
       },
       {
@@ -23622,6 +24294,11 @@
         "exclude": []
       },
       {
+        "kind": "glob",
+        "pattern": "packages/repo-targets/test-utils/effect-property.*",
+        "exclude": []
+      },
+      {
         "kind": "file",
         "path": "packages/smithers/flows/run-store/vitest.config.ts"
       }
@@ -23683,6 +24360,11 @@
       {
         "kind": "glob",
         "pattern": "packages/smithers/flows/sandbox/test/**/*.ts",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "packages/repo-targets/test-utils/effect-property.*",
         "exclude": []
       },
       {
@@ -23825,6 +24507,14 @@
       },
       {
         "kind": "file",
+        "path": "packages/repo-targets/scripts/build-library.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/scripts/compile-commonjs.mjs"
+      },
+      {
+        "kind": "file",
         "path": "packages/smithers/flows/sandbox/src/index.ts"
       },
       {
@@ -23896,6 +24586,11 @@
         "exclude": []
       },
       {
+        "kind": "glob",
+        "pattern": "packages/repo-targets/test-utils/effect-property.*",
+        "exclude": []
+      },
+      {
         "kind": "file",
         "path": "packages/smithers/flows/sandbox/vitest.config.ts"
       }
@@ -23926,6 +24621,11 @@
       {
         "kind": "glob",
         "pattern": "packages/smithers/flows/step-cache/test/**/*.ts",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "packages/repo-targets/test-utils/effect-property.*",
         "exclude": []
       },
       {
@@ -24068,6 +24768,14 @@
       },
       {
         "kind": "file",
+        "path": "packages/repo-targets/scripts/build-library.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/scripts/compile-commonjs.mjs"
+      },
+      {
+        "kind": "file",
         "path": "packages/smithers/flows/step-cache/src/index.ts"
       },
       {
@@ -24169,6 +24877,11 @@
         "exclude": []
       },
       {
+        "kind": "glob",
+        "pattern": "packages/repo-targets/test-utils/effect-property.*",
+        "exclude": []
+      },
+      {
         "kind": "file",
         "path": "packages/smithers/flows/step-cache/vitest.config.ts"
       }
@@ -24199,6 +24912,11 @@
       {
         "kind": "glob",
         "pattern": "packages/smithers/flows/sync/test/**/*.ts",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "packages/repo-targets/test-utils/effect-property.*",
         "exclude": []
       },
       {
@@ -24341,6 +25059,14 @@
       },
       {
         "kind": "file",
+        "path": "packages/repo-targets/scripts/build-library.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/scripts/compile-commonjs.mjs"
+      },
+      {
+        "kind": "file",
         "path": "packages/smithers/flows/sync/src/index.ts"
       },
       {
@@ -24412,6 +25138,11 @@
         "exclude": []
       },
       {
+        "kind": "glob",
+        "pattern": "packages/repo-targets/test-utils/effect-property.*",
+        "exclude": []
+      },
+      {
         "kind": "file",
         "path": "packages/smithers/flows/sync/vitest.config.ts"
       }
@@ -24442,6 +25173,11 @@
       {
         "kind": "glob",
         "pattern": "packages/smithers/flows/time-travel/test/**/*.ts",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "packages/repo-targets/test-utils/effect-property.*",
         "exclude": []
       },
       {
@@ -24584,6 +25320,14 @@
       },
       {
         "kind": "file",
+        "path": "packages/repo-targets/scripts/build-library.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/scripts/compile-commonjs.mjs"
+      },
+      {
+        "kind": "file",
         "path": "packages/smithers/flows/time-travel/src/index.ts"
       },
       {
@@ -24685,6 +25429,11 @@
         "exclude": []
       },
       {
+        "kind": "glob",
+        "pattern": "packages/repo-targets/test-utils/effect-property.*",
+        "exclude": []
+      },
+      {
         "kind": "file",
         "path": "packages/smithers/flows/time-travel/vitest.config.ts"
       }
@@ -24715,6 +25464,11 @@
       {
         "kind": "glob",
         "pattern": "packages/smithers/flows/test/**/*.ts",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "packages/repo-targets/test-utils/effect-property.*",
         "exclude": []
       },
       {
@@ -24857,6 +25611,14 @@
       },
       {
         "kind": "file",
+        "path": "packages/repo-targets/scripts/build-library.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/scripts/compile-commonjs.mjs"
+      },
+      {
+        "kind": "file",
         "path": "packages/smithers/flows/src/index.ts"
       },
       {
@@ -24928,6 +25690,11 @@
         "exclude": []
       },
       {
+        "kind": "glob",
+        "pattern": "packages/repo-targets/test-utils/effect-property.*",
+        "exclude": []
+      },
+      {
         "kind": "file",
         "path": "packages/smithers/flows/vitest.config.ts"
       }
@@ -24958,6 +25725,11 @@
       {
         "kind": "glob",
         "pattern": "packages/smithers/gateway/test/**/*.ts",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "packages/repo-targets/test-utils/effect-property.*",
         "exclude": []
       },
       {
@@ -25100,6 +25872,14 @@
       },
       {
         "kind": "file",
+        "path": "packages/repo-targets/scripts/build-library.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/scripts/compile-commonjs.mjs"
+      },
+      {
+        "kind": "file",
         "path": "packages/smithers/gateway/src/index.ts"
       },
       {
@@ -25171,6 +25951,11 @@
         "exclude": []
       },
       {
+        "kind": "glob",
+        "pattern": "packages/repo-targets/test-utils/effect-property.*",
+        "exclude": []
+      },
+      {
         "kind": "file",
         "path": "packages/smithers/gateway/vitest.config.ts"
       }
@@ -25201,6 +25986,11 @@
       {
         "kind": "glob",
         "pattern": "packages/smithers/mcp/test/**/*.ts",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "packages/repo-targets/test-utils/effect-property.*",
         "exclude": []
       },
       {
@@ -25343,6 +26133,14 @@
       },
       {
         "kind": "file",
+        "path": "packages/repo-targets/scripts/build-library.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/scripts/compile-commonjs.mjs"
+      },
+      {
+        "kind": "file",
         "path": "packages/smithers/mcp/src/index.ts"
       },
       {
@@ -25414,6 +26212,11 @@
         "exclude": []
       },
       {
+        "kind": "glob",
+        "pattern": "packages/repo-targets/test-utils/effect-property.*",
+        "exclude": []
+      },
+      {
         "kind": "file",
         "path": "packages/smithers/mcp/vitest.config.ts"
       }
@@ -25444,6 +26247,11 @@
       {
         "kind": "glob",
         "pattern": "packages/smithers/migrate/test/**/*.ts",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "packages/repo-targets/test-utils/effect-property.*",
         "exclude": []
       },
       {
@@ -25586,6 +26394,14 @@
       },
       {
         "kind": "file",
+        "path": "packages/repo-targets/scripts/build-library.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/scripts/compile-commonjs.mjs"
+      },
+      {
+        "kind": "file",
         "path": "packages/smithers/migrate/src/index.ts"
       },
       {
@@ -25657,6 +26473,11 @@
         "exclude": []
       },
       {
+        "kind": "glob",
+        "pattern": "packages/repo-targets/test-utils/effect-property.*",
+        "exclude": []
+      },
+      {
         "kind": "file",
         "path": "packages/smithers/migrate/vitest.config.ts"
       }
@@ -25687,6 +26508,11 @@
       {
         "kind": "glob",
         "pattern": "packages/smithers/notifications/test/**/*.ts",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "packages/repo-targets/test-utils/effect-property.*",
         "exclude": []
       },
       {
@@ -25829,6 +26655,14 @@
       },
       {
         "kind": "file",
+        "path": "packages/repo-targets/scripts/build-library.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/scripts/compile-commonjs.mjs"
+      },
+      {
+        "kind": "file",
         "path": "packages/smithers/notifications/src/index.ts"
       },
       {
@@ -25897,6 +26731,11 @@
       {
         "kind": "glob",
         "pattern": "packages/smithers/notifications/src/**/*.ts",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "packages/repo-targets/test-utils/effect-property.*",
         "exclude": []
       },
       {
@@ -26250,6 +27089,11 @@
         "exclude": []
       },
       {
+        "kind": "glob",
+        "pattern": "packages/repo-targets/test-utils/effect-property.*",
+        "exclude": []
+      },
+      {
         "kind": "file",
         "path": "packages/smithers/tsconfig.test.json"
       }
@@ -26460,6 +27304,14 @@
       },
       {
         "kind": "file",
+        "path": "packages/repo-targets/scripts/build-library.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/scripts/compile-commonjs.mjs"
+      },
+      {
+        "kind": "file",
         "path": "packages/smithers/src/index.ts"
       },
       {
@@ -26643,6 +27495,11 @@
         "exclude": []
       },
       {
+        "kind": "glob",
+        "pattern": "packages/repo-targets/test-utils/effect-property.*",
+        "exclude": []
+      },
+      {
         "kind": "file",
         "path": "packages/smithers/vitest.config.ts"
       }
@@ -26673,6 +27530,11 @@
       {
         "kind": "glob",
         "pattern": "packages/smthrs-deprecation/test/**/*.ts",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "packages/repo-targets/test-utils/effect-property.*",
         "exclude": []
       },
       {
@@ -26815,6 +27677,14 @@
       },
       {
         "kind": "file",
+        "path": "packages/repo-targets/scripts/build-library.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/scripts/compile-commonjs.mjs"
+      },
+      {
+        "kind": "file",
         "path": "packages/smthrs-deprecation/src/index.ts"
       },
       {
@@ -26886,6 +27756,11 @@
         "exclude": []
       },
       {
+        "kind": "glob",
+        "pattern": "packages/repo-targets/test-utils/effect-property.*",
+        "exclude": []
+      },
+      {
         "kind": "file",
         "path": "packages/smthrs-deprecation/vitest.config.ts"
       }
@@ -26916,6 +27791,11 @@
       {
         "kind": "glob",
         "pattern": "packages/testing/test/**/*.ts",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "packages/repo-targets/test-utils/effect-property.*",
         "exclude": []
       },
       {
@@ -27058,6 +27938,14 @@
       },
       {
         "kind": "file",
+        "path": "packages/repo-targets/scripts/build-library.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/scripts/compile-commonjs.mjs"
+      },
+      {
+        "kind": "file",
         "path": "packages/testing/src/index.ts"
       },
       {
@@ -27126,6 +28014,11 @@
       {
         "kind": "glob",
         "pattern": "packages/testing/src/**/*.ts",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "packages/repo-targets/test-utils/effect-property.*",
         "exclude": []
       },
       {
@@ -27613,6 +28506,31 @@
         "kind": "glob",
         "pattern": "scripts/fixtures/**/*.json",
         "exclude": []
+      }
+    ],
+    "outputs": [],
+    "dependencies": [],
+    "source": {
+      "file": "scripts/PACKAGE.ts"
+    }
+  },
+  {
+    "label": "//scripts:commit",
+    "package": "scripts",
+    "name": "commit",
+    "rule": "NodeTest",
+    "kinds": [
+      "test"
+    ],
+    "cacheable": false,
+    "inputs": [
+      {
+        "kind": "file",
+        "path": "scripts/commit.test.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "scripts/commit.mjs"
       }
     ],
     "outputs": [],
@@ -28263,6 +29181,10 @@
       {
         "kind": "file",
         "path": "scripts/build-release.test.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "scripts/check-api-baseline.test.mjs"
       },
       {
         "kind": "file",
