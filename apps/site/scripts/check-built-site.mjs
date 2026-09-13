@@ -111,8 +111,9 @@ export function checkLandingActions(root, appPath) {
   const classes = (tag) => tag.match(/class="([^"]*)"/)?.[1]?.split(/\s+/) ?? []
   const start = anchors.find((tag) => /\bid="start"/.test(tag) || classes(tag).includes("start"))
   if (start === undefined) return ["index.html: the landing page has no Start Here action"]
-  if (href(start) !== appPath) {
-    return [`index.html: Start Here must open the app at ${appPath}, got ${href(start) ?? "no href"}`]
+  const tutorialPath = `${appPath}?tutorial`
+  if (href(start) !== tutorialPath) {
+    return [`index.html: Start Here must open the tutorial at ${tutorialPath}, got ${href(start) ?? "no href"}`]
   }
   return []
 }
