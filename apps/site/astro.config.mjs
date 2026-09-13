@@ -81,7 +81,7 @@ export default defineConfig({
       disable404Route: true,
       description: project.description,
       logo: { src: "./src/docs-assets/logo.png", alt: "Smithers" },
-      favicon: "/favicon.png",
+      favicon: "/favicon.svg",
       customCss: ["./src/styles/starlight.css", "./src/styles/navigation.css"],
       // Inter and IBM Plex Mono are the product UI's pairing. They come from
       // Google Fonts rather than an npm package so the docs add no dependency,
