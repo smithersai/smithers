@@ -161,3 +161,6 @@ apps/app/PIN_NAV.md
 apps/app/REORDER.md
 apps/app/TUTORIAL2_INTEGRATION.md
 apps/app/WHITESPACE*.md
+
+# apps/app/e2e root-level *.mjs are throwaway screenshot/probe scripts (hardcoded ports, temp paths)
+apps/app/e2e/*.mjs
