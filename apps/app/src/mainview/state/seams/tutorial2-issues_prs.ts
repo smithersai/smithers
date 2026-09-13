@@ -1,4 +1,4 @@
-import { publishIssueView } from "../EmbeddedHistory"
+import { publishIssueView, publishRepoView, repoPaneCard } from "../EmbeddedHistory"
 import { lessonCompletion } from "../../onboarding/completion"
 import { isPracticeRepo, PRACTICE_CARD, PRACTICE_NAME, practiceIssue, practiceIssueList, practicePr, practicePrList } from "../practice/PracticeRepository"
 import { activeRepositoryId, resolveOpenRepo, resolveTargetRepo } from "../RepoContext"
@@ -21,7 +21,6 @@ export const finishLesson = async (ctx: SeamContext, signal: string, playthrough
 /** The practice repository answers from its bundle: no identity, no request. */
 const practiceRead = async (ctx: SeamContext, kind: "issues" | "prs", filter: "open" | "closed" | "all"): Promise<{ readonly value: string }> => {
   const playthrough = ctx.store.session().guide?.playthrough
-  const actor = ctx.actor()
   const common = { status: "active" as const, createdAt: Date.now(), ordinal: ctx.nextOrdinal() }
   if (kind === "issues") {
     const baseline = practiceIssueList("all")
@@ -30,12 +29,12 @@ const practiceRead = async (ctx: SeamContext, kind: "issues" | "prs", filter: "o
       return saved ? { ...issue, state: saved.state, comments: saved.comments.length } : issue
     })
     const payload = { ...baseline, filter, issues: all.filter(issue => filter === "all" || issue.state === filter) }
-    await ctx.dispatch({ type: "card.upsert", actor, card: { ...common, id: PRACTICE_CARD.issues, kind: "issue-list", title: `Issues · ${PRACTICE_NAME}`, payload } }).isPersisted.promise
+    await publishRepoView(ctx, { ...common, id: PRACTICE_CARD.issues, kind: "issue-list", title: `Issues · ${PRACTICE_NAME}`, payload })
     await finishLesson(ctx, signalOf(kind), playthrough)
     return readResult(payload.issues.map(issue => `#${issue.number} ${issue.title} [${(issue.labels ?? []).join(", ")}]`).join("\n"))
   }
   const payload = practicePrList()
-  await ctx.dispatch({ type: "card.upsert", actor, card: { ...common, id: PRACTICE_CARD.prs, kind: "pr-list", title: `Pull requests · ${PRACTICE_NAME}`, payload } }).isPersisted.promise
+  await publishRepoView(ctx, { ...common, id: PRACTICE_CARD.prs, kind: "pr-list", title: `Pull requests · ${PRACTICE_NAME}`, payload })
   await finishLesson(ctx, signalOf(kind), playthrough)
   return readResult(payload.landings.map(pr => `#${pr.number} ${pr.title} by ${pr.author} (touches ${(pr.files ?? []).join(", ")})`).join("\n"))
 }
@@ -71,10 +70,10 @@ export async function practiceViewIssue(ctx: SeamContext, number: number): Promi
 export async function practiceViewLanding(ctx: SeamContext, number: number): Promise<string | { readonly value: string }> {
   const payload = practicePr(number)
   if (payload === undefined) return `No pull request #${number} in ${PRACTICE_NAME}.`
-  await ctx.dispatch({ type: "card.upsert", actor: ctx.actor(), card: {
+  await publishRepoView(ctx, {
     id: `practice-pr-${number}`, kind: "pr", title: `#${number} ${payload.title}`, status: "active",
     createdAt: Date.now(), ordinal: ctx.nextOrdinal(), payload
-  } }).isPersisted.promise
+  })
   return readResult(`#${number} ${payload.title} by ${payload.author}\n${payload.prBody}`)
 }
 
@@ -121,7 +120,10 @@ export async function tutorialRepositoryRead(
   } else result = await read(repo)
   const current = ctx.store.session()
   const currentIdentity = ctx.store.collections.identitySessions.get("identity")
-  const card = ctx.store.collections.cards.get(`${kind}-${repo}`)
+  /* The list may be the repository pane's current location rather than a card of its own. */
+  const pane = repoPaneCard(ctx, repo)
+  const card = ctx.store.collections.cards.get(`${kind}-${repo}`) ??
+    (pane !== undefined && pane.kind === (kind === "issues" ? "issue-list" : "pr-list") ? pane : undefined)
   const refused = card?.kind === "issue-list" && (card.payload.github?.refusal || card.payload.github?.syncError || card.payload.github?.stale)
   const selected = local && "repo" in local ? local.repo.path : activeRepositoryId(ctx.store)
   if (typeof result !== "string" && !refused && card && selected === repo && current.activeRepoKey === key &&

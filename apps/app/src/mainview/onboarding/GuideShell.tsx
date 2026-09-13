@@ -72,8 +72,6 @@ export function GuideShell({ children, clock = guideClock }: { children: ReactNo
   const guide = session.guide ?? initialGuide()
   const stage = guide.step
   const practice = stage <= GUIDE_PRACTICE_END
-  /* Not now at login: the workspace stays on the practice repository, badge and all (SCRIPT v4 "Escape hatches"). */
-  const stillPractice = practice || (guide.repo === undefined && guide.declined?.includes("login") === true)
   /* The bridge (SCRIPT v4 principle 9): after practice, the practice cards step aside. */
   const lessonCards = tutorialTranscript(cards.filter(card => inConversation(card, conversation)))
     .filter(card => practice || !cardRepo(card)?.startsWith("practice:"))
@@ -185,9 +183,6 @@ export function GuideShell({ children, clock = guideClock }: { children: ReactNo
     if (asked?.kind !== "do" || !done(step)) return undefined
     return guide.said?.[asked.completion] ?? asked.success
   }
-  const repoChip = stillPractice
-    ? <span className="guide-repo-chip" data-practice="">{PRACTICE_NAME}</span>
-    : <span className="guide-repo-chip" data-your-repo="">{guide.repo ?? "Your repository"}</span>
   if (guide.finished) return <>{children}</>
   return (
     <GuideComposerHost.Provider value={composerHost}>
@@ -324,7 +319,7 @@ export function GuideShell({ children, clock = guideClock }: { children: ReactNo
       </div>
       <header className="guide-header">
         <span className="guide-location">
-          {stage === GUIDE_LAST_STEP ? <>Your workspace{guide.repo !== undefined || stillPractice ? <> · {repoChip}</> : null}</> : repoChip}
+          {stage === GUIDE_LAST_STEP ? "Your workspace" : null}
         </span>
       </header>
       <main className="guide-main">

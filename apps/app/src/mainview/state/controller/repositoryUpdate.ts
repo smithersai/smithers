@@ -51,6 +51,11 @@ export function createRepositoryUpdate(ctx: SeamContext) {
           openIssues: snapshot.issues.available ? snapshot.issues.events.filter(row => row.state === "open").length : null,
           openPrs: snapshot.prs.available ? snapshot.prs.events.filter(row => row.state === "open").length : null } }
       const announced = new Set(fresh.map(row => row.id))
+      /*
+       * The update is the repository pane's home (state/EmbeddedHistory.ts).
+       * Refreshing while the pane shows another location snaps it home; the
+       * frame's Back still walks the snapshots the user already saw.
+       */
       await ctx.dispatch({ type: "repo.update.published", actor: ctx.actor(), card,
         notifications: processed.rows.map(row => announced.has(row.id) ? { ...row, announcedVersion: row.version } : row)
       }).isPersisted.promise

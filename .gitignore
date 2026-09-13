@@ -54,6 +54,7 @@ default.profraw
 
 # Playwright and other test output
 playwright-report/
+.playwright-mcp/
 test-results/
 .tui-test/
 

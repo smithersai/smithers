@@ -133,7 +133,6 @@ test("the whole tutorial walks every beat, keyboard first, through asynchronous 
   await expect(page.locator('[data-message-step="0"] p[data-line="2"]')).toHaveCount(0)
   await expect(page.locator(".guide-goal [data-checkpoint]")).toHaveCount(4)
   await expect(page.locator('.guide-goal [data-done="true"]')).toHaveCount(0)
-  await expect(page.locator(".guide-repo-chip[data-practice]")).toContainText("hello-server")
   await shoot(page, 0)
 
   // Beat 1: Show issues · I — #3 and #2, #3 labelled good first issue and highlighted.
@@ -225,10 +224,8 @@ test("the whole tutorial walks every beat, keyboard first, through asynchronous 
 
   expect(host.external()).toEqual([])
 
-  // Beat 10: the bridge. The practice chip gives way to "Your repository"; Log in · L, Not now · X.
+  // Beat 10: the bridge. The practice cards step aside; Log in · L, Not now · X.
   await expectBeat(page, 10)
-  await expect(page.locator(".guide-repo-chip[data-your-repo]")).toHaveText("Your repository")
-  await expect(page.locator(".guide-repo-chip[data-practice]")).toHaveCount(0)
   await expect(page.locator("[data-tutorial-cards] [data-practice]")).toHaveCount(0)
   await shoot(page, 10)
   await page.keyboard.press("l")
@@ -253,7 +250,6 @@ test("the whole tutorial walks every beat, keyboard first, through asynchronous 
   await until(page, followup(page, 11), "the install is verified")
   await expect(followup(page, 11)).toContainText(`I can see ${INSTALLED_REPO}.`)
   expect(host.verifyCalls).toBeGreaterThanOrEqual(1)
-  await expect(page.locator(".guide-repo-chip[data-your-repo]")).toHaveText(INSTALLED_REPO)
   expect(new URL(page.url()).search).toBe("")
 
   // Beat 12: Create Wiki · W, Create Mythical history · H — two launches, two chips, no run card opened.
@@ -285,7 +281,7 @@ test("the whole tutorial walks every beat, keyboard first, through asynchronous 
   const more = page.getByRole("button", { name: /What else can you do/ })
   await expect(more).toBeVisible()
   await expect(more).toHaveAttribute("aria-keyshortcuts", REEL_BUTTON.key.toLowerCase())
-  await expect(page.locator(".guide-location")).toContainText(INSTALLED_REPO)
+  await expect(page.locator(".guide-location")).toHaveText("Your workspace")
   await expect(page.locator('[data-run-chip="wiki"]')).toBeVisible()
   await tick(page, 5_000)
   await expect(shell(page)).toHaveAttribute("data-stage", "14")
@@ -369,7 +365,6 @@ test.describe("escape hatches", () => {
     await page.keyboard.press("Escape")
     await expectBeat(page, 14, { declined: ["login"] })
     await expect(line(page, 14)).toHaveText("You're set. Log in from Account whenever you want to bring your own repository.")
-    await expect(page.locator(".guide-location .guide-repo-chip[data-practice]")).toContainText("hello-server")
     expect(host.external()).toEqual([])
   })
 

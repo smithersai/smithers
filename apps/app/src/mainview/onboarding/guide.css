@@ -1430,7 +1430,6 @@
 }
 
 /* ---- Onboarding script v4 (onboarding/lessons.ts) ---- */
-.guide-repo-chip { display: inline-flex; align-items: center; gap: .4rem; font-weight: 600; }
 .guide-goal {
   margin: 0 0 .75rem; padding: .7rem .9rem; border: 1px solid var(--border, rgba(0,0,0,.12)); border-radius: 12px;
   background: var(--surface, rgba(255,255,255,.7)); animation: guide-goal-in .35s ease-out both;

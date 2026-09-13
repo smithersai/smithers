@@ -128,6 +128,16 @@ const repoAbout = Smithers.ToolRun({
   cwd: "."
 })
 
+// Explicitly snapshot every contributor's current edits. This run-only target
+// is never executed by build, test, lint, or CI and never cached or replayed.
+const commit = Smithers.ToolRun({
+  command: "node",
+  args: ["scripts/commit.mjs"],
+  inputs: [Smithers.file("//scripts/commit.mjs")],
+  deps: [],
+  cwd: "."
+})
+
 // --- factory projection ----------------------------------------------------
 // The factory is declared in .smithers/FACTORY.ts beside WORKSPACE.ts: the
 // featured flows, the Dispatcher table, the GitHub policy, and the home pane.
@@ -690,6 +700,7 @@ export const packageDefaults = Smithers.PackageDefaults({
 
 export const Package = Smithers.Package({
   targets: {
+    commit,
     changelog,
     ci,
     factoryHarness,

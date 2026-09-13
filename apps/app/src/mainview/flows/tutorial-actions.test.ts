@@ -53,6 +53,32 @@ test("registered issue navigation, Back and Forward preserve one embedded frame"
   expect(fetched()).toBe(0)
 })
 
+test("the repository overview is the web pane's home: issues, a detail and a PR are locations in its one frame", async () => {
+  const {store,controller,fetched} = await setup()
+  expect((await controller.commands.run("repo.update",PRACTICE_REPO)).status).toBe("executed")
+  const overview = [...store.collections.cards.values()].find(c=>c.kind==="repo-update")
+  if(overview?.kind!=="repo-update") throw new Error("No status card was rendered")
+  expect((await controller.commands.run("issues.list",`open ${PRACTICE_REPO}`)).status).toBe("executed")
+  expect([...store.collections.cards.values()]).toHaveLength(1)
+  expect(store.collections.cards.get(overview.id)?.kind).toBe("issue-list")
+  expect((await controller.commands.run("issues.view",`3 ${PRACTICE_REPO}`)).status).toBe("executed")
+  expect(store.collections.cards.get(overview.id)?.kind).toBe("issue")
+  expect((await controller.commands.run("prs.view",`4 ${PRACTICE_REPO}`)).status).toBe("executed")
+  const detail = store.collections.cards.get(overview.id)
+  expect(detail?.kind).toBe("pr")
+  expect(detail?.navigation).toEqual({index:3,length:4})
+  expect([...store.collections.cards.values()]).toHaveLength(1)
+  expect((await controller.commands.run("card.history.back",overview.id)).status).toBe("executed")
+  expect(store.collections.cards.get(overview.id)?.kind).toBe("issue")
+  expect((await controller.commands.run("card.history.back",overview.id)).status).toBe("executed")
+  expect(store.collections.cards.get(overview.id)?.kind).toBe("issue-list")
+  expect((await controller.commands.run("card.history.back",overview.id)).status).toBe("executed")
+  expect(store.collections.cards.get(overview.id)?.kind).toBe("repo-update")
+  expect((await controller.commands.run("card.history.forward",overview.id)).status).toBe("executed")
+  expect(store.collections.cards.get(overview.id)?.kind).toBe("issue-list")
+  expect(fetched()).toBe(0)
+})
+
 test("numbered issue and PR targets accept explicit repositories before catalog loading", () => {
   for(const name of ["issues.view","issues.close","issues.reopen","prs.view","issue.flows","issue.repro","issue.implement"]){
     expect(payloadFor(name,"3 owner/not-loaded",undefined,new Set())).toEqual({payload:{number:3,repo:"owner/not-loaded"}})

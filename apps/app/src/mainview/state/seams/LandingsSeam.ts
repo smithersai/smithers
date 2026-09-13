@@ -1,4 +1,5 @@
 import { practiceViewLanding, tutorialRepositoryRead, type RepositoryForm } from "./tutorial2-issues_prs"
+import { publishRepoView, repoPaneCard } from "../EmbeddedHistory"
 import { isPracticeRepo } from "../practice/PracticeRepository"
 /*
  * The landings seam ("PRs"): /api/repos/{owner}/{repo}/landings* through the
@@ -217,10 +218,6 @@ const deriveBookmarkStack = (
 }
 
 export const createLandingsSeam = (ctx: SeamContext, renderRepositoryForm?: RepositoryForm): LandingsSeam => {
-  const upsert = async (card: Card): Promise<void> => {
-    await ctx.dispatch({ type: "card.upsert", actor: ctx.actor(), card }).isPersisted.promise
-  }
-
   const landingsUrl = (repo: string): string => `${ctx.baseUrl}${repoApiRoot(repo)}/landings`
 
   /** Reviews for the detail card; a section failure degrades to [] (multi's section() stance). */
@@ -392,7 +389,7 @@ export const createLandingsSeam = (ctx: SeamContext, renderRepositoryForm?: Repo
       ...(landing.createdAt !== null ? { createdAt: landing.createdAt } : {}),
       ...stack
     }
-    await upsert({
+    await publishRepoView(ctx, {
       id: `pr-${repo}-${number}`,
       kind: "pr",
       title: `#${number} ${landing.title} · ${repo}`,
@@ -439,7 +436,7 @@ export const createLandingsSeam = (ctx: SeamContext, renderRepositoryForm?: Repo
           author,
           updatedAt
         }))
-      await upsert({
+      await publishRepoView(ctx, {
         id: `prs-${repo}`,
         kind: "pr-list",
         title: `Pull requests · ${repo}`,
@@ -572,13 +569,14 @@ export const createLandingsSeam = (ctx: SeamContext, renderRepositoryForm?: Repo
       if (typeof refreshError !== "string") return
       // The land itself succeeded, so a failed re-read must not report
       // failure. State the queued truth from the land answer plus whatever
-      // the transcript already knows about this PR.
-      const cardId = `pr-${repo}-${number}`
-      const existing = ctx.store.collections.cards.get(cardId)
+      // the transcript already knows about this PR. The detail may be the
+      // repository pane's current location rather than a card of its own.
+      const pane = repoPaneCard(ctx, repo)
+      const existing = pane !== undefined && pane.kind === "pr" && pane.payload.number === number ? pane : ctx.store.collections.cards.get(`pr-${repo}-${number}`)
       const kept = existing !== undefined && existing.kind === "pr" ? existing.payload : undefined
       const title = landed?.title ?? kept?.title ?? `Pull request #${number}`
-      await upsert({
-        id: cardId,
+      await publishRepoView(ctx, {
+        id: `pr-${repo}-${number}`,
         kind: "pr",
         title: `#${number} ${title} · ${repo}`,
         status: "active",

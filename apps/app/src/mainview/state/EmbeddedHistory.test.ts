@@ -38,7 +38,8 @@ test("issue navigation stays in one durable frame, supports back/forward, and fo
   const prior = JSON.stringify(fork)
   expect(await issues.viewIssue(999, PRACTICE_REPO)).toContain("No issue")
   expect(JSON.stringify(store.collections.cards.get(before.id))).toBe(prior)
+  /* One web pane per repository: a PR detail navigates the same frame, it does not append a card. */
   await createLandingsSeam(ctx).viewLanding(4, PRACTICE_REPO)
-  expect(store.collections.cards.size).toBe(2)
-  expect(store.collections.cards.get(before.id)?.kind).toBe("issue")
+  expect(store.collections.cards.size).toBe(1)
+  expect(store.collections.cards.get(before.id)?.kind).toBe("pr")
 })

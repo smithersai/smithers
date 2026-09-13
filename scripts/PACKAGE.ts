@@ -548,8 +548,15 @@ const lint = Smithers.EsLint({
   fix: false
 })
 
+const commit = Smithers.NodeTest({
+  runner: Smithers.testRunner([Smithers.file("//scripts/commit.test.mjs")]),
+  srcs: [Smithers.file("//scripts/commit.mjs")],
+  deps: []
+})
+
 export const Package = Smithers.Package({
   targets: {
+    commit,
     conformanceCheck,
     repositoryConformance,
     mutationGate,

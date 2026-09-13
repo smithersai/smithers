@@ -1,4 +1,4 @@
-import { publishIssueView } from "../EmbeddedHistory"
+import { publishIssueView, publishRepoView } from "../EmbeddedHistory"
 import { isPracticeRepo } from "../practice/PracticeRepository"
 import { mutatePracticeIssue, finishIssueLesson, practiceViewIssue, tutorialRepositoryRead, type RepositoryForm } from "./tutorial2-issues_prs"
 /*
@@ -178,10 +178,6 @@ export const createIssuesSeam = (ctx: SeamContext, renderRepositoryForm?: Reposi
 
   const notImported = (repo: string): string => `${repo} isn't imported yet — run /repos.import ${repo} first`
 
-  const upsert = async (card: Card): Promise<void> => {
-    await ctx.dispatch({ type: "card.upsert", actor: ctx.actor(), card }).isPersisted.promise
-  }
-
   const unreachable = (what: string, error: unknown): string =>
     `Could not reach the backend to ${what}: ${errorText(error)}`
 
@@ -247,7 +243,7 @@ export const createIssuesSeam = (ctx: SeamContext, renderRepositoryForm?: Reposi
       const parsed = parseGithubListRow(entry)
       return parsed === null ? [] : [parsed]
     })
-    await upsert({
+    await publishRepoView(ctx, {
       id: `issues-${repo}`,
       kind: "issue-list",
       title: `Issues · ${repo}`,
@@ -382,7 +378,7 @@ export const createIssuesSeam = (ctx: SeamContext, renderRepositoryForm?: Reposi
        */
       const github = await readGithubIssues(repo, filter)
       const issues = [...native, ...github.issues]
-      await upsert({
+      await publishRepoView(ctx, {
         id: `issues-${repo}`,
         kind: "issue-list",
         title: `Issues · ${repo}`,

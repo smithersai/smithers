@@ -278,6 +278,28 @@ To move `packages/<child>` under `packages/<parent>`:
     `pnpm exec dprint fmt` in every package whose docs quote a path that moved
     — a markdown table's padding is part of its formatting.
 
+## Committing the shared checkout
+
+Run `pnpm exec smithers-build run '//:commit'` to snapshot all nonignored
+changes on `main`, including edits left by other contributors or agents.
+The target is explicit, run-only, and uncached; CI never commits changes.
+It uses jj in a jj checkout and Git in a third-party Git clone.
+
+For a descriptive message and a push to `origin/main`, use the same entry point:
+
+```sh
+pnpm commit --message "fix(app): describe the change" --push
+pnpm deploy
+```
+
+Validate and review the shared diff first. The commit command refuses a checkout
+away from main or unresolved conflicts and serializes concurrent commit commands.
+Without `--push`, it only commits locally, so contributors do not need upstream
+write access. Deploy uses `apps/server/scripts/deploy.ts`, including its identity
+preflight and build receipt, and requires the operator's Cloudflare credentials.
+Keep edits paused during deployment so the build matches the committed revision;
+verify `/__build.json` against that revision before testing production.
+
 ## Working with the pinned jj fork
 
 The Rust crates under `crates/` build against `jj-lib` from the pinned jj fork, which `crates/flows-jj/Cargo.toml` declares as a git dependency; cargo fetches it, so a plain `git clone` needs no extra step.
