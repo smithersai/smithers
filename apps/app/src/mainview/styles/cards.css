@@ -12,7 +12,7 @@
 	box-shadow: var(--shadow-1);
 	color: var(--text);
 	font-size: var(--fs-body);
-	line-height: 1.42;
+	line-height: var(--lh-body);
 	transition: opacity var(--dur) var(--ease-current);
 }
 

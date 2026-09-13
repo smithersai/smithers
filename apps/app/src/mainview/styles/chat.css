@@ -80,8 +80,9 @@
 
 .app-shell .smithers-transcript .sui-chat-messages {
 	width: min(100%, var(--chat-max-width));
-	padding: 42px 24px 24px;
-	gap: 8px;
+	/* 42px top clears the 44px title strip; the rest reads the spacing scale. */
+	padding: 42px var(--sp-6) var(--sp-6);
+	gap: var(--sp-2);
 }
 
 .app-shell .smithers-transcript .sui-chat-messages > :first-child {
@@ -92,13 +93,13 @@
 .app-shell .sui-chat-message[data-role="assistant"] .sui-chat-bubble-pending {
 	position: relative;
 	max-width: min(78%, 720px);
-	padding: 7px 10px 6px;
+	padding: var(--sp-2) var(--sp-3);
 	border-radius: 12px;
 	background: var(--bubble-incoming);
 	box-shadow: var(--shadow-1);
 	color: var(--text);
 	font-size: var(--fs-body);
-	line-height: 1.42;
+	line-height: var(--lh-body);
 }
 
 .app-shell .smithers-chat-message[data-role="user"] .sui-chat-bubble {
@@ -197,7 +198,7 @@
 }
 
 .app-shell .smithers-chat-message .message-reasoning .sui-reasoning-trigger {
-	padding: 6px 10px;
+	padding: var(--sp-2) var(--sp-3);
 	color: var(--text-muted);
 }
 
@@ -212,7 +213,7 @@
 }
 
 .app-shell .smithers-chat-message .message-reasoning .sui-reasoning-body {
-	padding: 0 10px 8px;
+	padding: 0 var(--sp-3) var(--sp-2);
 	color: var(--text-muted);
 	font-size: var(--fs-small);
 }
