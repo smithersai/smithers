@@ -156,6 +156,7 @@ const githubHref = "https://github.com/smithersai/smithers"
 
     /** Swap the home page for the app; answers the app's entrance mark. */
     const swap = (mount: AppMount): HTMLElement | null => {
+      removeEventListener("keydown", onKey)
       hold.disconnect()
       for (const sheet of homeSheets) sheet.media = "not all"
       for (const sheet of appSheets) sheet.removeAttribute("media")
@@ -192,9 +193,14 @@ const githubHref = "https://github.com/smithersai/smithers"
       entering = true
       start.classList.add("pending")
       start.setAttribute("aria-busy", "true")
+      // Let every activation visibly press the same control before the page leaves.
+      const pressed = instant || reduced.matches ? Promise.resolve() : start.animate(
+        [{ transform: "translateY(1px) scale(0.975)" }, { transform: "translateY(1px) scale(0.985)" }],
+        { duration: 140, easing: "cubic-bezier(0.2, 0.8, 0.2, 1)" }
+      ).finished.catch(() => {})
       let mount: AppMount
       try {
-        mount = await load()
+        ;[mount] = await Promise.all([load(), pressed])
       } catch {
         // The chunk did not arrive (offline, a deploy replaced it): Start Here stays and can be pressed again.
         entering = false
@@ -230,13 +236,13 @@ const githubHref = "https://github.com/smithersai/smithers"
     // The app's key convention (apps/app/src/mainview/onboarding/GuideShell.tsx):
     // one bare letter per action, ignored with modifiers or inside text entry.
     const onKey = (event: KeyboardEvent): void => {
-      if (entering) return removeEventListener("keydown", onKey)
+      if (entering) return
       if (event.metaKey || event.ctrlKey || event.altKey || event.shiftKey || event.repeat || event.defaultPrevented) return
       if (event.key.toLowerCase() !== "s") return
       const target = event.target instanceof Element ? event.target : null
       if (target?.closest('input, textarea, select, [contenteditable]:not([contenteditable="false"])')) return
       event.preventDefault()
-      removeEventListener("keydown", onKey)
+      start.focus({ preventScroll: true })
       void enter()
     }
     addEventListener("keydown", onKey)
@@ -336,26 +342,33 @@ const githubHref = "https://github.com/smithersai/smithers"
     font-weight: 600;
     line-height: 1.2;
     text-decoration: none;
-    box-shadow: 0 6px 18px rgb(var(--shadow-rgb) / 16%);
-    transition: background-color 0.15s var(--ease), transform 0.15s var(--ease), box-shadow 0.15s var(--ease), opacity 0.15s var(--ease);
+    box-shadow: inset 0 1px 0 rgb(255 255 255 / 16%), 0 3px 0 color-mix(in srgb, var(--home-accent) 78%, #011627), 0 7px 18px rgb(var(--shadow-rgb) / 16%);
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+    transition: background-color 160ms var(--ease), transform 180ms cubic-bezier(0.2, 0.8, 0.2, 1), box-shadow 180ms var(--ease);
   }
-  .start:hover {
+  @media (hover: hover) {
+    .start:hover {
+      background: var(--home-accent-hover);
+      transform: translateY(-2px);
+      box-shadow: inset 0 1px 0 rgb(255 255 255 / 18%), 0 4px 0 color-mix(in srgb, var(--home-accent) 78%, #011627), 0 11px 24px rgb(var(--shadow-rgb) / 20%);
+    }
+  }
+  .start:active,
+  .start.pending {
     background: var(--home-accent-hover);
-    transform: translateY(-1px);
-    box-shadow: 0 10px 24px rgb(var(--shadow-rgb) / 20%);
-  }
-  .start:active {
-    transform: translateY(0);
-    box-shadow: 0 4px 12px rgb(var(--shadow-rgb) / 14%);
+    transform: translateY(1px) scale(0.985);
+    box-shadow: inset 0 1px 2px rgb(var(--shadow-rgb) / 12%), 0 1px 0 color-mix(in srgb, var(--home-accent) 78%, #011627), 0 3px 8px rgb(var(--shadow-rgb) / 12%);
+    transition-duration: 70ms;
   }
   .start:focus-visible {
     outline: 3px solid var(--home-accent);
-    outline-offset: 3px;
+    outline-offset: 5px;
   }
   /* Pressed before the app finished loading: it waits, visibly. */
   .start.pending {
     cursor: progress;
-    opacity: 0.8;
+    animation: none;
   }
   /* The app's key chip (.guide-primary .guide-button-key), tinted for the filled button. */
   .start-key {
@@ -368,6 +381,13 @@ const githubHref = "https://github.com/smithersai/smithers"
     border-radius: 4px;
     background: var(--home-key-bg);
     color: inherit;
+    box-shadow: inset 0 1px 0 rgb(255 255 255 / 14%), 0 1px 0 rgb(var(--shadow-rgb) / 14%);
+    transition: transform 100ms var(--ease), box-shadow 100ms var(--ease);
+  }
+  .start:active .start-key,
+  .start.pending .start-key {
+    transform: translateY(1px);
+    box-shadow: inset 0 1px 2px rgb(var(--shadow-rgb) / 16%);
   }
   @media (max-width: 480px) {
     .start {
@@ -382,7 +402,11 @@ const githubHref = "https://github.com/smithersai/smithers"
     opacity: 0;
   }
   .start.ready {
-    animation: start-in 0.45s var(--ease) both;
+    /* Release transform after the entrance so hover and press can take over. */
+    animation: start-in 0.45s var(--ease) backwards;
+  }
+  .start.ready.pending {
+    animation: none;
   }
   /* Returning from sign-in: the app replaces the page at once, so the page never shows. */
   :global(html.entering) .home,
@@ -399,7 +423,8 @@ const githubHref = "https://github.com/smithersai/smithers"
   }
   @media (prefers-reduced-motion: reduce) {
     .start.ready { animation-name: start-fade; animation-duration: 0.2s; }
-    .start, .github { transition: none; }
-    .start:hover { transform: none; }
+    .start, .start-key, .github { transition: none; }
+    .start:hover, .start:active, .start.pending,
+    .start:active .start-key, .start.pending .start-key { transform: none; }
   }
 </style>
