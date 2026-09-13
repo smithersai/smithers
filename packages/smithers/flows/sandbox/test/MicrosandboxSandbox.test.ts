@@ -93,6 +93,7 @@ interface Controls {
   readonly createFailure?: (() => unknown) | undefined
   readonly stopFailure?: boolean | undefined
   readonly pingFailure?: Error | undefined
+  readonly readFailure?: (() => unknown) | undefined
 }
 
 /** Every guest filesystem failure arrives as the SDK's one fs error kind. */
@@ -147,7 +148,10 @@ const fakeSdk = (controls: Controls = {}) => {
         const bytes = typeof data === "string" ? encoder.encode(data) : new Uint8Array(data)
         realFs(() => writeFileSync(hostPath(machine, path), bytes))
       },
-      read: async (path) => realFs(() => new Uint8Array(readFileSync(hostPath(machine, path)))),
+      read: async (path) => {
+        if (controls.readFailure !== undefined) throw controls.readFailure()
+        return realFs(() => new Uint8Array(readFileSync(hostPath(machine, path))))
+      },
       readToString: async (path) => {
         if (controls.pingFailure !== undefined) throw controls.pingFailure
         return realFs(() => readFileSync(hostPath(machine, path), "utf8"))
@@ -409,6 +413,32 @@ describe("MicrosandboxSandbox", () => {
             expect(line).not.toContain(secret)
           }
         }))
+    }))
+
+  it.effect("classifies non-Error SDK filesystem failures and preserves their cause", () =>
+    Effect.gen(function*() {
+      const cause = { code: "sandboxFsOps", toString: () => "No such file or directory" }
+      const fake = fakeSdk({ readFailure: () => cause })
+      yield* inSession(MicrosandboxSandbox.make({ sdk: fake.sdk }), "read-failure", (session) =>
+        Effect.gen(function*() {
+          const error = yield* Effect.flip(session.readFile("/missing"))
+          expect(error.code).toBe("not_found")
+          expect(error.cause).toBe(cause)
+        }))
+    }))
+
+  it.effect("runs a relative shell when no environment deletion was requested", () =>
+    Effect.gen(function*() {
+      const fake = fakeSdk()
+      yield* inSession(
+        MicrosandboxSandbox.make({ sdk: fake.sdk, workdir: root, shell: "sh" }),
+        "relative-plain",
+        (session) =>
+          Effect.gen(function*() {
+            const result = yield* Effect.scoped(Effect.flatMap(session.spawn("printf relative", {}), output))
+            expect(result).toEqual(["relative", "", 0])
+          })
+      )
     }))
 
   it.effect("refuses deletion with a relative shell before guest execution", () =>

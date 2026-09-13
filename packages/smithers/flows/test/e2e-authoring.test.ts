@@ -163,7 +163,7 @@ const settledRow = (runId: string) =>
   Effect.gen(function*() {
     const store = yield* RunStore.RunStore
     let row = yield* store.get(runId)
-    for (let attempt = 0; attempt < 50 && row.status === "suspended"; attempt++) {
+    for (let attempt = 0; attempt < 2_000 && ["suspended", "running", "pending"].includes(row.status); attempt++) {
       yield* Effect.yieldNow
       yield* TestClock.adjust("1 milli")
       row = yield* store.get(runId)

@@ -176,6 +176,11 @@ export const make = (options: JustBashSandboxOptions): Provider => {
           // Handed the already-rooted path: `Sandbox.fileSystem` installs an
           // override through its own workdir resolver.
           files: {
+            // Preserve write flags, modes and ownership through the native host.
+            writeFile: options.fs.writeFile,
+            writeFileString: options.fs.writeFileString,
+            chmod: options.fs.chmod,
+            chown: options.fs.chown,
             exists: options.fs.exists,
             stat: options.fs.stat,
             readDirectory: options.fs.readDirectory,

@@ -64,8 +64,7 @@ const rootedSyncFs = (hostRoot: string): SyncFsLike => {
     rmdirSync: (path) => fsModule.rmdirSync(at(path)),
     readlinkSync: (path) => fsModule.readlinkSync(at(path)),
     symlinkSync: (target, path) => fsModule.symlinkSync(target, at(path)),
-    utimesSync: (path, atime, mtime) => fsModule.utimesSync(at(path), atime, mtime),
-    truncateSync: (path, length) => fsModule.truncateSync(at(path), length)
+    utimesSync: (path, atime, mtime) => fsModule.utimesSync(at(path), atime, mtime)
   }
 }
 

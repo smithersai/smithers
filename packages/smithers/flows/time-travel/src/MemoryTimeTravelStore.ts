@@ -22,9 +22,9 @@ import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
 import * as Schema from "effect/Schema"
 import { forkCreatedEventType, Frame, type LineageEdge } from "./Frame.ts"
+import * as LineageTree from "./internal/LineageTree.ts"
 import { error, TimeTravelError } from "./TimeTravelError.ts"
 import * as TimeTravelStore from "./TimeTravelStore.ts"
-import * as LineageTree from "./internal/LineageTree.ts"
 
 /**
  * One journal record as this store holds it.

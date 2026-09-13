@@ -12,12 +12,12 @@ import { Jj } from "@smthrs/kernel"
 import { AttemptStore, type Ownership, RunStore } from "@smthrs/run-store"
 import { CacheStore } from "@smthrs/step-cache"
 import * as Effect from "effect/Effect"
-import * as FileSystem from "effect/FileSystem"
 import * as Layer from "effect/Layer"
 import * as Option from "effect/Option"
 import * as ActionPersistence from "../src/internal/ActionPersistence.ts"
 import * as StepBoundary from "../src/StepBoundary.ts"
 import * as TestStores from "../src/test/TestStores.ts"
+import { memoryFileSystem } from "./fixtures/MemoryFileSystem.ts"
 import { sha256, withCrypto } from "./Sha256.ts"
 
 const owner: Ownership.OwnerId = { hostId: "evidence-bounds-host", pid: 59, nonce: "evidence-bounds-process" }
@@ -48,33 +48,7 @@ const activate = (runId: string) =>
   })
 
 /** An in-memory host filesystem covering everything the real boundary uses. */
-const memoryFs = (seed: Record<string, string>) => {
-  const files = new Map<string, Uint8Array>(
-    Object.entries(seed).map(([path, content]) => [path, encoder.encode(content)])
-  )
-  const fs = FileSystem.makeNoop({
-    exists: ((path: string) => Effect.succeed(files.has(path))) as never,
-    readFile: ((path: string) =>
-      files.has(path)
-        ? Effect.succeed(files.get(path)!)
-        : Effect.fail(new Error(`ENOENT: ${path}`))) as never,
-    makeDirectory: (() => Effect.void) as never,
-    writeFile: ((path: string, bytes: Uint8Array) =>
-      Effect.sync(() => {
-        files.set(path, bytes)
-      })) as never,
-    rename: ((from: string, to: string) =>
-      Effect.sync(() => {
-        files.set(to, files.get(from)!)
-        files.delete(from)
-      })) as never,
-    remove: ((path: string) =>
-      Effect.sync(() => {
-        files.delete(path)
-      })) as never
-  })
-  return { files, fs }
-}
+const memoryFs = memoryFileSystem
 
 describe("persisted evidence stays bounded through the real boundary (issue #125)", () => {
   it.effect("records bounded digest references without admitting the unverified boundary to cache", () =>

@@ -186,7 +186,9 @@ describe("NodeHost.layerContained", () => {
         const status = yield* Effect.flatMap(Jj, (jj) => jj.status()).pipe(Effect.provide(host), Effect.scoped)
 
         expect(status.trim()).toBe(realpathSync(directory))
-        expect(recorded).toEqual(["jj"])
+        // Both the startup version probe and status use the pinned binary and
+        // contained spawner; neither may escape the ledger.
+        expect(recorded).toEqual([join(directory, "jj"), join(directory, "jj")])
         // The invocation finished, so the record was retired with it.
         expect(yield* ledger.live).toEqual([])
       } finally {

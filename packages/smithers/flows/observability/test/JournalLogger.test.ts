@@ -377,8 +377,8 @@ describe("JournalLogger", () => {
               cause: Cause.empty,
               fiber: {
                 id: fiber.id,
-                get currentSpan(): never {
-                  throw new Error("unreadable current span")
+                get context(): never {
+                  throw new Error("unreadable fiber context")
                 }
               } as never,
               date: new Date(0)
@@ -752,7 +752,6 @@ describe("JournalLogger", () => {
                 fiber: {
                   id: fiber.id,
                   context: fiber.context,
-                  currentSpan: undefined,
                   getRef: () => annotations
                 } as never,
                 date: new Date(0)

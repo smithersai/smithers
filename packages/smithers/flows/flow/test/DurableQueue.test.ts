@@ -223,6 +223,7 @@ describe("DurableQueue", () => {
       logs.push({ level: entry.logLevel, message: String(entry.message) })
     })
     const store = PersistedQueue.PersistedQueueStore.of({
+      cleanup: () => Effect.void,
       offer: () => Effect.void,
       take: () => Effect.fail(new PersistedQueue.PersistedQueueError({ message: "take unavailable" }))
     })
@@ -261,6 +262,7 @@ describe("DurableQueue", () => {
   const offerFailureLayer = (offer: PersistedQueue.PersistedQueueStore["Service"]["offer"]) =>
     PersistedQueue.layer.pipe(Layer.provide(
       Layer.succeed(PersistedQueue.PersistedQueueStore)({
+        cleanup: () => Effect.void,
         offer,
         take: () => Effect.never
       })
@@ -521,7 +523,7 @@ describe("DurableQueue", () => {
             for (let turn = 0; turn < 50 && take.pollUnsafe() === undefined; turn++) yield* Effect.yieldNow
             expect(take.pollUnsafe()).toEqual(Exit.succeed({
               item: expect.objectContaining({ token }),
-              metadata: { id: "interrupt", attempts: 0 }
+              metadata: { id: "interrupt", attempts: 1 }
             }))
             yield* Fiber.interrupt(take)
           }

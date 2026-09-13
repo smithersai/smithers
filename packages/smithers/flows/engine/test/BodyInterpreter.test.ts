@@ -6,7 +6,7 @@
  */
 import { describe, expect, it } from "@effect/vitest"
 import { Action, Flow, FlowRuntime, Interpreter, StepIdentity } from "@smthrs/flow"
-import { Node, Planned } from "@smthrs/plan"
+import { Node } from "@smthrs/plan"
 import { Cause, Deferred, Effect, Exit, Fiber, Layer, Option, Schema } from "effect"
 import type * as Crypto from "effect/Crypto"
 import { FlowEngine } from "../src/index.ts"
@@ -169,7 +169,7 @@ describe("bodied flow on the memory engine", () => {
         success: Schema.Number,
         body: ({ path }) =>
           Read.call({ path }).pipe(
-            Node.bindPlanned((result): Node.Node<Flow.Park | Flow.Done<Planned.Planned<number>>> =>
+            Node.bindPlanned((result): Node.Node<Flow.Park | Flow.Done<number>> =>
               approved ? Flow.done(result.value) : Flow.park({ reason: "approval", token: "body-gate" })
             )
           )

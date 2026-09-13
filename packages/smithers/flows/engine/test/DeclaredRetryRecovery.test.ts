@@ -26,6 +26,9 @@ describe("declared retry recovery", () => {
           const flow = Flow.make(`DeclaredRetryRecovery/${terminal}/flow`, {
             payload: {},
             success: Schema.String,
+            // A schema-filtered catch retains the error channel: it may refine
+            // rather than exhaust the declared error type.
+            error: Schema.String,
             body: Node.capture({ action: operation.name, implementationVersion: "recovery/v1" }, () =>
               operation.call({}).pipe(Node.catch({
                 error: Schema.String,

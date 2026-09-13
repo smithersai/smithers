@@ -351,7 +351,9 @@ describe("JustBashSandbox", () => {
             // the workdir rooting rule, against the same tree the probes see.
             const native = Sandbox.fileSystem(session)
             const probed = Sandbox.fileSystem({ ...session, files: undefined })
-            yield* native.writeFileString("notes/agenda.txt", "prepared")
+            yield* native.makeDirectory("notes")
+            yield* native.writeFileString("notes/agenda.txt", "prepared", { flag: "wx", mode: 0o640 })
+            expect((yield* native.stat("notes/agenda.txt")).mode & 0o7777).toBe(0o640)
             yield* fs.symlink(`${session.workdir}/notes/agenda.txt`, `${session.workdir}/notes/link.txt`)
             expect(yield* native.exists("notes/agenda.txt")).toBe(true)
             expect(yield* native.exists("missing")).toBe(false)

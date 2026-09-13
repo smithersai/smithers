@@ -194,11 +194,22 @@ describe("annotated waiting reasons reach the parked row (issue #31)", () => {
             GatedFlow as never,
             (() => Effect.map(waitPoint, (value) => `approved:${value}`)) as never
           )
-          yield* engine.execute(GatedFlow as never, {
+          const running = yield* engine.execute(GatedFlow as never, {
             executionId: "annotated-action",
             payload: {},
-            discard: true
-          })
+            discard: false
+          }).pipe(Effect.forkChild)
+          for (let attempt = 0; attempt < 1_000; attempt++) {
+            if (
+              (yield* store.get("annotated-action").pipe(Effect.option)).pipe(
+                Option.map((row) => row.status),
+                Option.getOrUndefined
+              ) === "suspended"
+            ) break
+            yield* Effect.yieldNow
+          }
+          expect((yield* store.get("annotated-action")).status).toBe("suspended")
+          yield* Fiber.interrupt(running)
           const parked = yield* state.waiting("annotated-action")
           const approvalSweep = yield* state.waitingRuns({ reason: "approval" })
 
@@ -208,11 +219,11 @@ describe("annotated waiting reasons reach the parked row (issue #31)", () => {
             deferredName: gate.name,
             exit: Exit.succeed("yes")
           })
-          yield* engine.execute(GatedFlow as never, {
-            executionId: "annotated-action",
-            payload: {},
-            discard: true
-          })
+          for (let attempt = 0; attempt < 1_000; attempt++) {
+            if ((yield* store.get("annotated-action")).status === "completed") break
+            yield* Effect.yieldNow
+          }
+          yield* engine.execute(GatedFlow as never, { executionId: "annotated-action", payload: {}, discard: false })
           const finished = yield* store.get("annotated-action")
           const afterWake = yield* state.waiting("annotated-action")
           return { parked, approvalSweep, finished, afterWake }

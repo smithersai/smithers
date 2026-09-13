@@ -61,7 +61,12 @@ const failingDatabase = (cause: unknown): Layer.Layer<DurableWriter.DurableWrite
     () => Effect.fail(cause),
     { apply: () => Effect.fail(cause) }
   ) as unknown as SqlClient.SqlClient
-  const write: DurableWriter.Service["write"] = (effect) => effect
+  const write: DurableWriter.Service["write"] = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
+    effect.pipe(Effect.mapError((error) =>
+      SqlError.isSqlError(error)
+        ? DurableWriter.fromSqlError(error)
+        : error as Exclude<E, SqlError.SqlError>
+    ))
   return Layer.merge(
     Layer.succeed(SqlClient.SqlClient)(sql),
     Layer.succeed(DurableWriter.DurableWriter)(DurableWriter.DurableWriter.of({ write }))
@@ -77,7 +82,12 @@ const postgresShapedDatabase = (
 ): Layer.Layer<DurableWriter.DurableWriter | SqlClient.SqlClient> => {
   let next = 0
   const sql = (() => ({ raw: Effect.sync(() => results[next++]) })) as unknown as SqlClient.SqlClient
-  const write: DurableWriter.Service["write"] = (effect) => effect
+  const write: DurableWriter.Service["write"] = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
+    effect.pipe(Effect.mapError((error) =>
+      SqlError.isSqlError(error)
+        ? DurableWriter.fromSqlError(error)
+        : error as Exclude<E, SqlError.SqlError>
+    ))
   return Layer.merge(
     Layer.succeed(SqlClient.SqlClient)(sql),
     Layer.succeed(DurableWriter.DurableWriter)(DurableWriter.DurableWriter.of({ write }))

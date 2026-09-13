@@ -586,11 +586,12 @@ describe("replay-failed classification (issue #150)", () => {
           Layer.provide(KernelWorkspace.layer(root)),
           Layer.provide(GrantStore.layerNoop)
         )
-        const artifacts = ArtifactStore.layerFileSystem({
-          directory: objectsDirectory,
-          durability: "best-effort"
-        }).pipe(
-          Layer.provideMerge(host)
+        // Match NodeRuntime.layerHost: persistence owns a trusted filesystem,
+        // while workspace reads and writes keep the descriptor-relative guard.
+        // Required durability exercises retained file and directory handles.
+        const artifacts = Layer.merge(
+          ArtifactStore.layerFileSystem({ directory: objectsDirectory }).pipe(Layer.provide(NodeFileSystem.layer)),
+          host
         )
         const production = Layer.merge(
           StepBoundary.layer.pipe(Layer.provide(artifacts)),

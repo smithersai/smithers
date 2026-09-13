@@ -562,7 +562,7 @@ export const backup = <R = never, E = never>(
     const maxFileSizeBytes = limit
     const sql = yield* Effect.service(SqlClient.SqlClient)
     const fs = yield* FileSystem.FileSystem
-    const createdAtMs = yield* Clock.currentTimeMillis
+    const createdAtMs = yield* Clock.currentTimeMillis.pipe(Effect.map(Math.floor))
     yield* ensureEmptyDirectory(fs, "backup", options.directory)
 
     const capture = Effect.gen(function*() {
@@ -751,7 +751,7 @@ export const restore = Effect.fn("DisasterRecovery.restore")(function*(options: 
     )
   }
 
-  const restoredAtMs = yield* Clock.currentTimeMillis
+  const restoredAtMs = yield* Clock.currentTimeMillis.pipe(Effect.map(Math.floor))
   const marker = {
     formatVersion: 1,
     restoredAtMs,

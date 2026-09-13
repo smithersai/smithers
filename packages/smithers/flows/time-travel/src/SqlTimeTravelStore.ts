@@ -226,7 +226,8 @@ export const make: Effect.Effect<
      * edges by run_id through the partial lineage indexes. The final edge
      * projection makes the same probes for each reachable parent; unrelated
      * runs are never materialized. CROSS JOIN keeps reachable as the outer
-     * loop, and literal producer predicates let SQLite use the partial indexes.
+     * loop. Pinning the partial indexes keeps unrelated event kinds out of
+     * each probe even when the journal also has a general run/event index.
      * UNION deduplicates the reachable run ids so cycles terminate. The set
      * ignores attachment and frame on purpose: LineageTree.descendants applies those
      * policies to this superset of the edges it visits.
@@ -241,7 +242,7 @@ export const make: Effect.Effect<
         WHERE flows_time_travel_edges.parent_run_id = reachable.run_id
         UNION
         SELECT json_extract(payload_json, '$.effect.output.childRunId')
-        FROM reachable CROSS JOIN flows_journal_events
+        FROM reachable CROSS JOIN flows_journal_events INDEXED BY flows_journal_events_child_spawn_idx
         WHERE flows_journal_events.run_id = reachable.run_id
           AND event_type = ${sql.literal(`'${EffectBoundary.eventType}'`)}
           AND json_extract(payload_json, '$.effect.kind') = ${sql.literal(`'${spawnEffectKind}'`)}
@@ -249,7 +250,7 @@ export const make: Effect.Effect<
           AND json_extract(payload_json, '$.effect.output.childRunId') IS NOT NULL
         UNION
         SELECT json_extract(payload_json, '$.nextExecutionId')
-        FROM reachable CROSS JOIN flows_journal_events
+        FROM reachable CROSS JOIN flows_journal_events INDEXED BY flows_journal_events_handoff_idx
         WHERE flows_journal_events.run_id = reachable.run_id
           AND event_type = ${sql.literal(`'${handoffEventType}'`)}
           AND json_extract(payload_json, '$.decision') = 'handed-off'
@@ -264,7 +265,7 @@ export const make: Effect.Effect<
              json_extract(payload_json, '$.effect.output.childRunId') AS child_run_id,
              'child' AS kind,
              CASE WHEN json_extract(payload_json, '$.effect.output.attached') = 1 THEN 1 ELSE 0 END AS attached
-      FROM reachable CROSS JOIN flows_journal_events
+      FROM reachable CROSS JOIN flows_journal_events INDEXED BY flows_journal_events_child_spawn_idx
       WHERE flows_journal_events.run_id = reachable.run_id
         AND event_type = ${sql.literal(`'${EffectBoundary.eventType}'`)}
         AND json_extract(payload_json, '$.effect.kind') = ${sql.literal(`'${spawnEffectKind}'`)}
@@ -276,7 +277,7 @@ export const make: Effect.Effect<
              json_extract(payload_json, '$.nextExecutionId') AS child_run_id,
              'continuation' AS kind,
              0 AS attached
-      FROM reachable CROSS JOIN flows_journal_events
+      FROM reachable CROSS JOIN flows_journal_events INDEXED BY flows_journal_events_handoff_idx
       WHERE flows_journal_events.run_id = reachable.run_id
         AND event_type = ${sql.literal(`'${handoffEventType}'`)}
         AND json_extract(payload_json, '$.decision') = 'handed-off'

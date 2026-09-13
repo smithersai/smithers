@@ -6,6 +6,7 @@
 import * as TestJournal from "@smthrs/journal/test/TestJournal"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
+import * as NetAddress from "effect/unstable/net/NetAddress"
 import * as RpcClient from "effect/unstable/rpc/RpcClient"
 import * as RpcSerialization from "effect/unstable/rpc/RpcSerialization"
 import * as RpcServer from "effect/unstable/rpc/RpcServer"
@@ -86,7 +87,7 @@ export const connect = (pair: Pair) =>
     // Effect's Cause representation: typed RPC failures never reached clients.
     const serverProtocol = yield* RpcServer.makeProtocolSocketServer.pipe(
       Effect.provideService(SocketServer.SocketServer, {
-        address: { _tag: "TcpAddress", hostname: "test-socket", port: 0 },
+        address: NetAddress.inetAddressFromIpStringUnsafe("127.0.0.1", 0),
         run: (handler) => handler(pair.server).pipe(Effect.orDie, Effect.andThen(Effect.never))
       }),
       Effect.provide(RpcSerialization.layerJson)

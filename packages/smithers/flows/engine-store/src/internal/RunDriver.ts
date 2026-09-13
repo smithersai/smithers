@@ -651,7 +651,7 @@ export const make = (
         }
 
         const expected = snapshot(row)
-        const nowMs = yield* Clock.currentTimeMillis
+        const nowMs = yield* Clock.currentTimeMillis.pipe(Effect.map(Math.floor))
         let claim: RunStore.StealOutcome
         let stealEvidenceKind: Ownership.LivenessEvidence["kind"] | undefined
 
@@ -934,7 +934,7 @@ export const make = (
      */
     const applyChildExitPolicy = (runId: string): Effect.Effect<void> =>
       Effect.gen(function*() {
-        const nowMs = yield* Clock.currentTimeMillis
+        const nowMs = yield* Clock.currentTimeMillis.pipe(Effect.map(Math.floor))
         const outcome = yield* endLinkedChildren(runId, nowMs).pipe(Effect.orDie)
         if (outcome.cancelled.length === 0 && outcome.detached.length === 0) return
         yield* emitDecision(runId, {
@@ -1008,7 +1008,7 @@ export const make = (
         if (cancelled !== undefined) {
           // The parent's own request timestamp, so the inherited request reads
           // as the same operator intent rather than as a later, independent one.
-          const nowMs = cancelled.cancelRequestedAtMs ?? (yield* Clock.currentTimeMillis)
+          const nowMs = cancelled.cancelRequestedAtMs ?? (yield* Clock.currentTimeMillis.pipe(Effect.map(Math.floor)))
           yield* store.requestCancel(childId, nowMs).pipe(Effect.orDie)
           return
         }
@@ -1024,7 +1024,9 @@ export const make = (
         // runs inside the transaction that just wrote the child's row, so the
         // state on disk is the state the caller is holding.
         if (onParentExit === "detach") return
-        yield* store.requestCancel(childId, yield* Clock.currentTimeMillis).pipe(Effect.orDie)
+        yield* store.requestCancel(childId, yield* Clock.currentTimeMillis.pipe(Effect.map(Math.floor))).pipe(
+          Effect.orDie
+        )
       })
 
     const cancelOwned = (
@@ -1032,7 +1034,7 @@ export const make = (
       state: RunState
     ): Effect.Effect<void> =>
       Effect.gen(function*() {
-        const interruptedAtMs = yield* Clock.currentTimeMillis
+        const interruptedAtMs = yield* Clock.currentTimeMillis.pipe(Effect.map(Math.floor))
         const stateJson = yield* encodeState({
           ...withoutResult(state),
           cancellation: { interruptedAtMs }
@@ -1389,7 +1391,7 @@ export const make = (
             yield* store.acknowledgeCancel(
               executionId,
               dependencies.owner,
-              yield* Clock.currentTimeMillis
+              yield* Clock.currentTimeMillis.pipe(Effect.map(Math.floor))
             ).pipe(Effect.orDie)
             return cancelRequested
           }
@@ -1906,7 +1908,10 @@ export const make = (
                 // end with it and its clock rows are closed with it.
                 status === "suspended" ? undefined : Effect.gen(function*() {
                   yield* applyChildExitPolicy(executionId)
-                  yield* engineState.completeRunClocks(executionId, yield* Clock.currentTimeMillis)
+                  yield* engineState.completeRunClocks(
+                    executionId,
+                    yield* Clock.currentTimeMillis.pipe(Effect.map(Math.floor))
+                  )
                 })
               ).pipe(
                 // The park becomes durable the instant this transition commits, so
@@ -2035,7 +2040,7 @@ export const make = (
      * delivered by the re-activation guard, same as for parked runs.
      */
     const sweepStaleRunning: Effect.Effect<void> = Effect.gen(function*() {
-      const nowMs = yield* Clock.currentTimeMillis
+      const nowMs = yield* Clock.currentTimeMillis.pipe(Effect.map(Math.floor))
       // Rows this driver has already arbitrated and been refused. They are the
       // oldest heartbeats in the window, so they sort first and would fill the
       // batch every tick; the read asks for enough extra rows to see past
@@ -2370,7 +2375,7 @@ export const make = (
         // it up, and the caller was told the run was cancelled. The failure is
         // typed instead, so the caller can retry against a state that is still
         // truthful — the run is still running and still cancellable.
-        const nowMs = yield* Clock.currentTimeMillis
+        const nowMs = yield* Clock.currentTimeMillis.pipe(Effect.map(Math.floor))
         const requested = yield* Effect.result(journal.transact(
           Effect.gen(function*() {
             yield* store.requestCancel(executionId, nowMs)

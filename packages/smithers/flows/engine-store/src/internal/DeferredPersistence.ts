@@ -172,7 +172,7 @@ export const make = (
       expectedWaiting?: { readonly reason: string; readonly token: string } | undefined
     ): Effect.Effect<FlowRuntime.DeferredDoneIfWaitingOutcome> =>
       Effect.gen(function*() {
-        const completedAtMs = yield* Clock.currentTimeMillis
+        const completedAtMs = yield* Clock.currentTimeMillis.pipe(Effect.map(Math.floor))
         // The completion row and the record describing it commit as one unit:
         // a crash between them left a resumable deferred the journal never
         // announced. The lossy flush below stays outside — it waits on the
@@ -242,7 +242,7 @@ export const make = (
 
     const fireClock = (row: DurableEngineState.ClockRow): Effect.Effect<void> =>
       Effect.gen(function*() {
-        const completedAtMs = yield* Clock.currentTimeMillis
+        const completedAtMs = yield* Clock.currentTimeMillis.pipe(Effect.map(Math.floor))
         yield* completeDeferred(
           {
             flowName: row.flowName,
@@ -261,7 +261,7 @@ export const make = (
       })
 
     const armClock = (row: DurableEngineState.ClockRow): Effect.Effect<void> =>
-      Clock.currentTimeMillis.pipe(
+      Clock.currentTimeMillis.pipe(Effect.map(Math.floor)).pipe(
         Effect.flatMap((nowMs) =>
           fireClock(row).pipe(
             // A failed fire (journal emit/flush defect included) must not kill
@@ -312,7 +312,7 @@ export const make = (
       options
     ) =>
       Effect.gen(function*() {
-        const nowMs = yield* Clock.currentTimeMillis
+        const nowMs = yield* Clock.currentTimeMillis.pipe(Effect.map(Math.floor))
         // The clock row and its schedule record commit as one unit, so a
         // crash between them can no longer arm a durable timer the journal
         // never announced (or announce one that was rolled back).
@@ -378,7 +378,7 @@ export const make = (
         if (Option.isSome(row)) {
           // Keep the result for replay, but stop registration from waking a
           // run that already observed it and may now be parked on another wait.
-          yield* state.consumeDeferred(address, yield* Clock.currentTimeMillis)
+          yield* state.consumeDeferred(address, yield* Clock.currentTimeMillis.pipe(Effect.map(Math.floor)))
         }
         return Option.map(row, (value) => value.exit as Exit.Exit<unknown, unknown>)
       }),

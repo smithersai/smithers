@@ -63,6 +63,26 @@ const staleEvidence = (
     : "cross-host-unreachable-stale"
 })
 
+describe("store-owned timestamps", () => {
+  it.effect("persists integer milliseconds when a retry wakes at a fractional clock instant", () =>
+    migrated(Effect.gen(function*() {
+      const store = yield* RunStore
+      yield* TestClock.adjust("10.5 millis")
+      yield* store.create("fractional-clock", "{}")
+      const row = yield* store.get("fractional-clock")
+      expect(row.createdAtMs).toBe(10)
+      expect(yield* store.claim("fractional-clock", snapshot(row), ownerA, 10)).toEqual({
+        _tag: "Claimed",
+        claimedAtMs: 10
+      })
+      expect(yield* store.activate("fractional-clock", ownerA, 10, snapshot(row))).toEqual({ _tag: "Activated" })
+      expect((yield* store.get("fractional-clock")).startedAtMs).toBe(10)
+      yield* TestClock.adjust("1 millis")
+      yield* store.transitionOwned("fractional-clock", ownerA, "completed", "{}")
+      expect((yield* store.get("fractional-clock")).finishedAtMs).toBe(11)
+    })))
+})
+
 describe("RunStore well-formed durable text", () => {
   it.effect("rejects lone high and low surrogate run identifiers", () =>
     Effect.gen(function*() {

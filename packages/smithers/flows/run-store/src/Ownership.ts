@@ -313,7 +313,7 @@ export const heartbeatLoop = (
       }
     })
     const pulses = Effect.sleep(heartbeatInterval).pipe(
-      Effect.andThen(Clock.currentTimeMillis),
+      Effect.andThen(Clock.currentTimeMillis.pipe(Effect.map(Math.floor))),
       Effect.flatMap((nowMs) =>
         runStore.heartbeat(runId, owner, nowMs).pipe(
           Effect.flatMap((outcome) =>

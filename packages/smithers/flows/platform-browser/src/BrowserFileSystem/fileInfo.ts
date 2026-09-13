@@ -3,7 +3,8 @@
  *
  * @since 1.0.0-rc.0
  */
-import * as FileSystem from "effect/FileSystem"
+import * as ByteSize from "effect/ByteSize"
+import type * as FileSystem from "effect/FileSystem"
 import * as Option from "effect/Option"
 import type { ZenFsStatsLike } from "./ZenFsStatsLike.ts"
 
@@ -39,7 +40,7 @@ export const fileInfo = (stats: ZenFsStatsLike): FileSystem.File.Info => ({
   uid: Option.none(),
   gid: Option.none(),
   rdev: Option.none(),
-  size: FileSystem.Size(stats.size),
+  size: ByteSize.bytes(stats.size),
   blksize: Option.none(),
   blocks: Option.none()
 })

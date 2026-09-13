@@ -188,7 +188,7 @@ describe("FileSystem real host confinement", () => {
               const file = yield* fileSystem.open(target, { flag: "r+" })
               yield* Effect.promise(() => unlink(target))
               const written = yield* Effect.result(file.writeAll(new TextEncoder().encode("mutated")))
-              const read = yield* Effect.result(file.readAlloc(EffectFileSystem.Size(BigInt(1))))
+              const read = yield* Effect.result(file.readAlloc(1))
               return [written, read] as const
             })
           ))

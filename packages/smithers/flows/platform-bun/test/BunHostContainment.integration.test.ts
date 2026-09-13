@@ -65,7 +65,7 @@ const startOrphanGroup = (directory: string): { follower: Promise<number>; leade
   const pidFile = join(directory, "follower.pid")
   // The path rides in as `$1`, never spliced into the script: a TMPDIR with a
   // space or a shell metacharacter must not change what `sh` parses.
-  const child = spawn("sh", ["-c", 'sleep 30 & echo $! > "$1"; sleep 30', "sh", pidFile], {
+  const child = spawn("sh", ["-c", "sleep 30 & echo $! > \"$1\"; sleep 30", "sh", pidFile], {
     detached: true,
     stdio: "ignore"
   })
@@ -223,7 +223,7 @@ describe.skipIf(process.platform === "win32")("BunHost.layerContained", () => {
               // The marker path rides in as `$1` for the same reason as in `startOrphanGroup`.
               ChildProcess.make("sh", [
                 "-c",
-                'trap "" TERM; echo ready > "$1"; while true; do sleep 0.2; done',
+                "trap \"\" TERM; echo ready > \"$1\"; while true; do sleep 0.2; done",
                 "sh",
                 marker
               ])

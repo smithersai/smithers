@@ -76,14 +76,15 @@ const fixture = (settings: Settings = {}) => {
   const send = (message: unknown) => peer?.write(JSON.stringify(message) + "\n")
   const system: Cleanup.System = {
     platform: "darwin",
-    snapshot: () => ownerDone && Date.now() - ownerEndedAt < (settings.snapshotUnavailableAfterExitMs ?? 0) ? undefined : ({
-      ownGroup: settings.snapshot === "own-group" ? 900_001 : 900_002,
-      members: settings.snapshot === "survivor"
-        ? [{ pid: 900_003, startedAtMs: 1, zombie: false }]
-        : settings.snapshot === "owner" && !ownerDone
-        ? [{ pid: 900_001, startedAtMs: 1, zombie: false }]
-        : []
-    })
+    snapshot: () =>
+      ownerDone && Date.now() - ownerEndedAt < (settings.snapshotUnavailableAfterExitMs ?? 0) ? undefined : ({
+        ownGroup: settings.snapshot === "own-group" ? 900_001 : 900_002,
+        members: settings.snapshot === "survivor"
+          ? [{ pid: 900_003, startedAtMs: 1, zombie: false }]
+          : settings.snapshot === "owner" && !ownerDone
+          ? [{ pid: 900_001, startedAtMs: 1, zombie: false }]
+          : []
+      })
   }
   const spawn = (command: ChildProcess.StandardCommand) =>
     Effect.gen(function*() {

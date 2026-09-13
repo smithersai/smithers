@@ -18,13 +18,13 @@ import { ArtifactStore, ArtifactSweep } from "@smthrs/artifacts"
 import { AttemptStore, type Ownership, RunStore } from "@smthrs/run-store"
 import { CacheStore } from "@smthrs/step-cache"
 import * as Effect from "effect/Effect"
-import * as FileSystem from "effect/FileSystem"
 import * as Layer from "effect/Layer"
 import * as Option from "effect/Option"
 import * as SqlClient from "effect/unstable/sql/SqlClient"
 import * as ArtifactGc from "../src/ArtifactGc.ts"
 import * as TestStores from "../src/test/TestStores.ts"
 import { at } from "./Clocks.ts"
+import { memoryFileSystem } from "./fixtures/MemoryFileSystem.ts"
 import { sha256, withCrypto } from "./Sha256.ts"
 
 const encoder = new TextEncoder()
@@ -42,67 +42,8 @@ const dayMs = 24 * 60 * 60 * 1000
  * writer case.
  */
 const memoryFs = () => {
-  const files = new Map<string, Uint8Array>()
-  const mtimes = new Map<string, number>()
-  const failure: { removeOf?: string | undefined } = {}
-  const hooks: { beforeRemove?: ((path: string) => Effect.Effect<void>) | undefined } = {}
-  const fs = FileSystem.makeNoop({
-    exists: ((path: string) => Effect.succeed(files.has(path))) as never,
-    readFile: ((path: string) =>
-      Effect.suspend(() =>
-        files.has(path)
-          ? Effect.succeed(files.get(path)!)
-          : Effect.fail(new Error(`ENOENT: ${path}`))
-      )) as never,
-    makeDirectory: (() => Effect.void) as never,
-    readDirectory: ((directory: string) =>
-      Effect.suspend(() => {
-        const prefix = `${directory}/`
-        return Effect.succeed(
-          [...files.keys()].filter((path) => path.startsWith(prefix)).map((path) => path.slice(prefix.length))
-        )
-      })) as never,
-    stat: ((path: string) =>
-      Effect.suspend(() =>
-        files.has(path)
-          ? Effect.succeed({
-            type: "File",
-            mtime: Option.some(new Date(mtimes.get(path) ?? 0)),
-            size: BigInt(files.get(path)!.length)
-          })
-          : Effect.fail(new Error(`ENOENT: ${path}`))
-      )) as never,
-    utimes: ((path: string, _atime: Date | number, mtime: Date | number) =>
-      Effect.suspend(() => {
-        if (!files.has(path)) return Effect.fail(new Error(`ENOENT: ${path}`))
-        mtimes.set(path, typeof mtime === "number" ? mtime : mtime.getTime())
-        return Effect.void
-      })) as never,
-    writeFile: ((path: string, content: Uint8Array) =>
-      Effect.sync(() => {
-        files.set(path, content)
-        mtimes.set(path, Date.now())
-      })) as never,
-    rename: ((from: string, to: string) =>
-      Effect.suspend(() => {
-        const content = files.get(from)
-        if (content === undefined) return Effect.fail(new Error(`ENOENT: ${from}`))
-        files.set(to, content)
-        mtimes.set(to, Date.now())
-        files.delete(from)
-        return Effect.void
-      })) as never,
-    remove: ((path: string) =>
-      Effect.suspend(() => {
-        if (path === failure.removeOf) return Effect.fail(new Error(`EIO: ${path}`))
-        const hook = hooks.beforeRemove === undefined ? Effect.void : hooks.beforeRemove(path)
-        return hook.pipe(Effect.andThen(Effect.suspend(() =>
-          files.delete(path)
-            ? Effect.void
-            : Effect.fail(new Error(`ENOENT: ${path}`))
-        )))
-      })) as never
-  })
+  const host = memoryFileSystem()
+  const { files, mtimes } = host
   /** Seeds a published blob whose last write happened `ageMs` ago. */
   const seedBlob = (content: string, ageMs: number): string => {
     const digest = sha256(bytes(content))
@@ -112,7 +53,7 @@ const memoryFs = () => {
     return digest
   }
   const hasBlob = (digest: string): boolean => files.has(blobPathOf(digest))
-  return { files, mtimes, failure, hooks, fs, seedBlob, hasBlob }
+  return { ...host, seedBlob, hasBlob }
 }
 
 type Host = ReturnType<typeof memoryFs>
@@ -646,8 +587,11 @@ describe("sweep: liveness under concurrency and crashes", () => {
     Effect.gen(function*() {
       const host = memoryFs()
       const referenced = host.seedBlob("crash-survivor-output", 100 * dayMs)
-      const first = host.seedBlob("first-orphan", 100 * dayMs)
-      const second = host.seedBlob("second-orphan", 100 * dayMs)
+      // Inventory follows the filesystem's directory order, not seed order.
+      const [first, second] = [
+        host.seedBlob("first-orphan", 100 * dayMs),
+        host.seedBlob("second-orphan", 100 * dayMs)
+      ].sort() as [string, string]
       host.failure.removeOf = blobPathOf(second)
       // One provision throughout: the durable roots live in one in-memory
       // database, and the recovery collection must see the same rows the

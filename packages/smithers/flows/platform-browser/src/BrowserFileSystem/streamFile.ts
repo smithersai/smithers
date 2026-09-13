@@ -3,8 +3,9 @@
  *
  * @since 1.0.0-rc.0
  */
+import * as ByteSize from "effect/ByteSize"
 import * as Effect from "effect/Effect"
-import type * as FileSystem from "effect/FileSystem"
+import * as Option from "effect/Option"
 import * as PlatformError from "effect/PlatformError"
 import * as Stream from "effect/Stream"
 import { platformError } from "./platformError.ts"
@@ -44,11 +45,11 @@ const rejected = (description: string): PlatformError.PlatformError =>
  */
 const count = (
   name: string,
-  value: FileSystem.SizeInput | undefined,
+  value: ByteSize.Input | undefined,
   fallback: number
 ): Effect.Effect<number, PlatformError.PlatformError> => {
   if (value === undefined) return Effect.succeed(fallback)
-  const numeric = Number(value)
+  const numeric = Number(Option.getOrUndefined(ByteSize.fromInput(value)))
   return Number.isSafeInteger(numeric) && numeric >= 0
     ? Effect.succeed(numeric)
     : Effect.fail(rejected(`${name} must be a whole, non-negative number of bytes`))
@@ -61,10 +62,10 @@ const count = (
  * @private
  */
 const chunk = (
-  value: FileSystem.SizeInput | undefined
+  value: ByteSize.Input | undefined
 ): Effect.Effect<number, PlatformError.PlatformError> => {
   if (value === undefined) return Effect.succeed(defaultChunkSize)
-  const numeric = Number(value)
+  const numeric = Number(Option.getOrUndefined(ByteSize.fromInput(value)))
   return Number.isSafeInteger(numeric) && numeric >= 1 && numeric <= maximumChunkSize
     ? Effect.succeed(numeric)
     : Effect.fail(rejected(`chunkSize must be a whole number of bytes between 1 and ${maximumChunkSize}`))
@@ -99,9 +100,9 @@ export const streamFile = (
   fs: ZenFsPromisesLike,
   path: string,
   options?: {
-    readonly bytesToRead?: FileSystem.SizeInput | undefined
-    readonly chunkSize?: FileSystem.SizeInput | undefined
-    readonly offset?: FileSystem.SizeInput | undefined
+    readonly bytesToRead?: ByteSize.Input | undefined
+    readonly chunkSize?: ByteSize.Input | undefined
+    readonly offset?: ByteSize.Input | undefined
   }
 ): Stream.Stream<Uint8Array, PlatformError.PlatformError> =>
   Stream.unwrap(

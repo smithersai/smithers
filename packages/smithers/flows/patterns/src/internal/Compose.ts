@@ -238,7 +238,7 @@ export const seal = (flow: Flow.Any): Flow.Any =>
 
 const schemaDocument = (schema: Schema.Top): unknown | undefined => {
   try {
-    return Schema.toJsonSchemaDocument(schema)
+    return Schema.toJsonSchemaDocument(schema, { onExcessProperty: "error" })
   } catch {
     return undefined
   }

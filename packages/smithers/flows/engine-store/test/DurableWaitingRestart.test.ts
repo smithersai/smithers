@@ -42,8 +42,7 @@ const childEnv = { PATH: process.env.PATH, TMPDIR: process.env.TMPDIR, LANG: "C.
 
 /** Keep only the last 4 KiB of child output in an error message. */
 const outputTailBytes = 4096
-const tail = (text: string): string =>
-  text.length > outputTailBytes ? `...${text.slice(-outputTailBytes)}` : text
+const tail = (text: string): string => text.length > outputTailBytes ? `...${text.slice(-outputTailBytes)}` : text
 
 /** Every child a case starts; `afterEach` kills and awaits any still alive. */
 const liveChildren = new Set<ChildProcessWithoutNullStreams>()
@@ -92,7 +91,13 @@ const runChild = (
     }
     const onClose = (code: number | null, signal: NodeJS.Signals | null) => {
       if (expired) {
-        settle(new Error(`child ${mode} missed its ${options.deadlineMs ?? restartBudget} ms deadline\n${tail(stderr)}\n${tail(stdout)}`))
+        settle(
+          new Error(
+            `child ${mode} missed its ${options.deadlineMs ?? restartBudget} ms deadline\n${tail(stderr)}\n${
+              tail(stdout)
+            }`
+          )
+        )
       } else if (code === 0) {
         settle(undefined)
       } else {

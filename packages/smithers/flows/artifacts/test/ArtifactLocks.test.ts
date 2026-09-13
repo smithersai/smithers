@@ -99,7 +99,9 @@ const files = (
     readFileString: ((path: string) =>
       Effect.suspend(() => {
         const hooked = hooks.read?.(path)
-        if (hooked !== undefined) return hooked
+        if (hooked !== undefined) {
+          return hooked
+        }
         const file = state.get(path)
         return file === undefined
           ? Effect.fail(platformError("NotFound", "readFileString"))
@@ -116,13 +118,16 @@ const files = (
       Effect.suspend(() => {
         hooks.rename?.(from)
         const file = state.get(from)
-        if (file === undefined) return Effect.fail(platformError("NotFound", "rename"))
+        if (file === undefined) {
+          return Effect.fail(platformError("NotFound", "rename"))
+        }
         renames.push(file.value)
         state.set(to, file)
         state.delete(from)
         return Effect.void
       })) as never,
-    remove: ((path: string) => Effect.sync(() => void state.delete(path))) as never,
+    remove: ((path: string) =>
+      Effect.sync(() => void state.delete(path))) as never,
     utimes: (() => Effect.void) as never
   })
   return { fs, state, renames }
@@ -157,7 +162,8 @@ describe("stale lock reclamation", () => {
     Effect.gen(function*() {
       yield* TestClock.adjust("2 minutes")
       const fixture = files({ [lockPath]: { value: "crashed", mtime: 0 } }, {
-        write: (path) => path === claimPath ? Effect.fail(platformError("PermissionDenied", "writeFileString")) : undefined
+        write: (path) =>
+          path === claimPath ? Effect.fail(platformError("PermissionDenied", "writeFileString")) : undefined
       })
       expect(Exit.isFailure(yield* run(fixture.fs, Effect.void).pipe(Effect.exit))).toBe(true)
       expect(fixture.renames).toEqual([])
@@ -427,7 +433,9 @@ describe("artifact lockfile failure and race handling", () => {
             const file = files.get(path)
             if (file === undefined) return Effect.fail(platformError("NotFound", "stat"))
             const info = Effect.succeed(fileInfo(new Date(file.mtime)))
-            if (path !== lockPath || file.value !== "crashed" || staleReads >= 2) return info
+            if (path !== lockPath || file.value !== "crashed" || staleReads >= 2) {
+              return info
+            }
             staleReads++
             return staleReads === 2
               ? Deferred.succeed(bothMeasured, undefined).pipe(Effect.andThen(info))
@@ -436,13 +444,16 @@ describe("artifact lockfile failure and race handling", () => {
         rename: ((from: string, to: string) =>
           Effect.suspend(() => {
             const file = files.get(from)
-            if (file === undefined) return Effect.fail(platformError("NotFound", "rename"))
+            if (file === undefined) {
+              return Effect.fail(platformError("NotFound", "rename"))
+            }
             renames.push(file.value)
             files.set(to, file)
             files.delete(from)
             return Effect.void
           })) as never,
-        remove: ((path: string) => Effect.sync(() => void files.delete(path))) as never,
+        remove: ((path: string) =>
+          Effect.sync(() => void files.delete(path))) as never,
         utimes: (() => Effect.void) as never
       })
       const entered = yield* Deferred.make<void>()

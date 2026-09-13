@@ -141,6 +141,7 @@ describe("source purity", () => {
       "DerivedKey.ts -> effect/Schema",
       "DerivedKey.ts -> effect/SchemaGetter",
       "DerivedKey.ts -> effect/SchemaIssue",
+      "DerivedKey.ts -> effect/SchemaParser",
       "Key.ts -> ./DerivedKey.ts",
       "Key.ts -> ./KeyDerivationError.ts",
       "Key.ts -> ./KeyV1.ts",

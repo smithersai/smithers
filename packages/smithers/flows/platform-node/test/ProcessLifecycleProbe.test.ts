@@ -54,7 +54,7 @@ describe.skipIf(process.platform === "win32")("live process identity probe", () 
       expect(kill).not.toHaveBeenCalled()
       expect(spawnSync).toHaveBeenCalledWith("/bin/ps", ["-A", "-o", "pid=,pgid=,stat=,lstart="], {
         encoding: "utf8",
-        timeout: 500,
+        timeout: 2_000,
         killSignal: "SIGKILL",
         env: { LC_ALL: "C", TZ: "UTC", PATH: "/usr/bin:/bin" }
       })

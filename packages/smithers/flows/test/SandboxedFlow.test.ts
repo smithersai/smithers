@@ -17,6 +17,7 @@ import * as ProcessLedger from "@smthrs/kernel/ProcessLedger"
 import * as Node from "@smthrs/plan/Node"
 import * as NodeHost from "@smthrs/platform-node/NodeHost"
 import { DirectorySandbox, RemoteChildProcessSpawner, type Sandbox } from "@smthrs/sandbox"
+import * as ByteSize from "effect/ByteSize"
 import * as Crypto from "effect/Crypto"
 import * as Deferred from "effect/Deferred"
 import * as Duration from "effect/Duration"
@@ -326,6 +327,8 @@ const limitedGuest = (options: {
   readonly resultSize?: number
   readonly failure?: string
   readonly native?: boolean
+  readonly resultStatFailure?: boolean
+  readonly readbackFailure?: boolean
 } = {}) =>
   Effect.gen(function*() {
     const fs = yield* FileSystem.FileSystem.pipe(Effect.provide(NodeFileSystem.layer))
@@ -389,6 +392,14 @@ const limitedGuest = (options: {
                 // same tick makes a concurrent walk indistinguishable from a
                 // serial one, which is the regression this observes.
                 yield* Effect.sleep("2 millis")
+                if (options.resultStatFailure === true && path.endsWith("result.json")) {
+                  return yield* Effect.fail(PlatformError.systemError({
+                    _tag: "Unknown",
+                    module: "FileSystem",
+                    method: "stat",
+                    description: "result transport unavailable"
+                  }))
+                }
                 return yield* fs.stat(path)
               }).pipe(
                 Effect.ensuring(Effect.sync(() => {
@@ -396,7 +407,7 @@ const limitedGuest = (options: {
                 })),
                 Effect.map((info) => ({
                   ...info,
-                  size: FileSystem.Size(
+                  size: ByteSize.bytes(
                     path.endsWith("result.json")
                       ? options.resultSize ?? Number(info.size)
                       : options.staleSize ?? Number(info.size)
@@ -407,7 +418,16 @@ const limitedGuest = (options: {
           },
           spawn: (command, settings) =>
             Effect.gen(function*() {
-              if (settings.env === undefined) return yield* session.spawn(command, settings)
+              if (settings.env === undefined) {
+                if (options.readbackFailure === true) {
+                  return {
+                    stdout: Stream.empty,
+                    stderr: Stream.succeed(new TextEncoder().encode("readback transport refused")),
+                    exitCode: Effect.succeed(1)
+                  }
+                }
+                return yield* session.spawn(command, settings)
+              }
               yield* session.writeFile(
                 settings.env!.SMITHERS_SANDBOX_RESULT_PATH!,
                 new TextEncoder().encode(
@@ -695,6 +715,56 @@ describe("sandbox limit boundaries", () => {
       expect(failure.message).not.toContain("synthetic-quoted-credential")
       expect(failure.message).toContain("[REDACTED]")
     }), 60_000)
+
+  for (
+    const diagnostic of [
+      {
+        name: "unterminated private key",
+        text: `-----BEGIN PRIVATE KEY-----\n${"private-material".repeat(800)}`,
+        secret: "private-material",
+        tail: "[REDACTED]"
+      },
+      {
+        name: "long ordinary quoted message",
+        text: `message: '${"ordinary text ".repeat(800)}' readable tail`,
+        secret: "[REDACTED]",
+        tail: "readable tail"
+      }
+    ]
+  ) {
+    it.live(`retains safe diagnostics for ${diagnostic.name}`, () =>
+      Effect.gen(function*() {
+        const guest = yield* limitedGuest({
+          noise: Stream.succeed(new TextEncoder().encode(diagnostic.text)),
+          failure: "refused"
+        })
+        const failure = yield* failureOf(SandboxedFlow.execute(pureEntry.Constant, { value: "ok" }, {
+          provider: guest.provider,
+          session: "bounded-diagnostics",
+          entry: pure
+        }))
+        expect(failure.code).toBe("flow_failed")
+        expect(failure.message).not.toContain(diagnostic.secret)
+        expect(failure.message).toContain(diagnostic.tail)
+      }), 60_000)
+  }
+
+  for (const fault of ["resultStatFailure", "readbackFailure"] as const) {
+    it.live(`reports ${fault} as a session failure`, () =>
+      Effect.gen(function*() {
+        const guest = yield* limitedGuest({ native: false, [fault]: true })
+        const failure = yield* failureOf(SandboxedFlow.execute(pureEntry.Constant, { value: "ok" }, {
+          provider: guest.provider,
+          session: "refused-result-transport",
+          entry: pure
+        }))
+        expect(failure.code).toBe("session_failed")
+        expect(failure.message).toContain("the result could not be read back")
+        expect(failure.message).toContain(
+          fault === "readbackFailure" ? "readback transport refused" : "result transport unavailable"
+        )
+      }), 60_000)
+  }
 
   it.live("drains noisy streams without a whole-output string collector", () =>
     Effect.gen(function*() {

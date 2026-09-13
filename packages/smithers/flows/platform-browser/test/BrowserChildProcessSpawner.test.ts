@@ -311,53 +311,56 @@ describe("BrowserChildProcessSpawner", () => {
       expect(calls[0]?.env).toEqual({ KEEP: "yes" })
     }))
 
-  it.effect.each([false, true])("resolves a relative cwd against the volume root (tab: %s)", (tab) =>
-    Effect.gen(function*() {
-      const { bash, calls } = stub(ok())
-      const statted: Array<string> = []
-      const path = yield* Path.Path.pipe(Effect.provide(Path.layer))
-      const pathLayer = Layer.succeed(Path.Path, {
-        ...path,
-        resolve: (...paths) => {
-          if (!tab) return path.resolve(...paths)
-          // Only the synchronous resolver sees a tab's missing process global,
-          // so the test runner and asynchronous filesystem keep their runtime.
-          const descriptor = Object.getOwnPropertyDescriptor(globalThis, "process")!
-          Reflect.deleteProperty(globalThis, "process")
-          try {
-            return path.resolve(...paths)
-          } finally {
-            Object.defineProperty(globalThis, "process", descriptor)
-          }
-        }
-      })
-      const layer = BrowserChildProcessSpawner.layer(bash).pipe(
-        Layer.provide(Layer.mergeAll(
-          BrowserFileSystem.layer({
-            ...NodeFsPromises,
-            stat: (cwd) => {
-              statted.push(cwd)
-              // Model a volume whose backend roots relative paths at /.
-              return NodeFsPromises.stat(join(root, cwd))
+  it.effect.each([false, true])(
+    "resolves a relative cwd against the volume root (tab: %s)",
+    (tab) =>
+      Effect.gen(function*() {
+        const { bash, calls } = stub(ok())
+        const statted: Array<string> = []
+        const path = yield* Path.Path.pipe(Effect.provide(Path.layer))
+        const pathLayer = Layer.succeed(Path.Path, {
+          ...path,
+          resolve: (...paths) => {
+            if (!tab) return path.resolve(...paths)
+            // Only the synchronous resolver sees a tab's missing process global,
+            // so the test runner and asynchronous filesystem keep their runtime.
+            const descriptor = Object.getOwnPropertyDescriptor(globalThis, "process")!
+            Reflect.deleteProperty(globalThis, "process")
+            try {
+              return path.resolve(...paths)
+            } finally {
+              Object.defineProperty(globalThis, "process", descriptor)
             }
-          }),
-          pathLayer
+          }
+        })
+        const layer = BrowserChildProcessSpawner.layer(bash).pipe(
+          Layer.provide(Layer.mergeAll(
+            BrowserFileSystem.layer({
+              ...NodeFsPromises,
+              stat: (cwd) => {
+                statted.push(cwd)
+                // Model a volume whose backend roots relative paths at /.
+                return NodeFsPromises.stat(join(root, cwd))
+              }
+            }),
+            pathLayer
+          ))
+        )
+        yield* Effect.promise(() => NodeFsPromises.mkdir(join(root, "workspace"), { recursive: true }))
+
+        const exit = yield* Effect.exit(Effect.provide(
+          Effect.flatMap(
+            ChildProcessSpawner,
+            (spawner) => spawner.exitCode(ChildProcess.make("thing", [], { cwd: "workspace" }))
+          ),
+          layer
         ))
-      )
-      yield* Effect.promise(() => NodeFsPromises.mkdir(join(root, "workspace"), { recursive: true }))
 
-      const exit = yield* Effect.exit(Effect.provide(
-        Effect.flatMap(
-          ChildProcessSpawner,
-          (spawner) => spawner.exitCode(ChildProcess.make("thing", [], { cwd: "workspace" }))
-        ),
-        layer
-      ))
-
-      expect(exit).toEqual(Exit.succeed(0))
-      expect(calls[0]?.cwd).toBe("/workspace")
-      expect(statted).toEqual(["/workspace"])
-    }))
+        expect(exit).toEqual(Exit.succeed(0))
+        expect(calls[0]?.cwd).toBe("/workspace")
+        expect(statted).toEqual(["/workspace"])
+      })
+  )
 
   it.effect("omits cwd and env entirely when the command declares neither", () =>
     Effect.gen(function*() {

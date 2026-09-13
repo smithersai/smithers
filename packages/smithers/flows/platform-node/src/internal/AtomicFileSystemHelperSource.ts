@@ -49,7 +49,7 @@ SYSCALLS = {
     "exists": "access", "stat": "stat", "readLink": "readlink",
     "realPath": "realpath", "makeDirectory": "mkdir",
     "readDirectory": "scandir", "glob": "scandir",
-    "remove": "unlink", "rename": "rename",
+    "remove": "unlink", "rename": "rename", "chmod": "fchmod", "chown": "fchown",
 }
 SYSCALL = [None]
 
@@ -1072,6 +1072,25 @@ def main(request, content_limit, response_limit, pinned_root=None):
                 os.rename(old_name, new_name, src_dir_fd=old_dir, dst_dir_fd=new_dir)
             finally:
                 os.close(old_dir); os.close(new_dir)
+            return None
+        if operation in ("chmod", "chown"):
+            path = confined(request["path"])
+            # The operation acts on the checked descriptor, never on a path
+            # resolved again after the permission check. Keep the same regular
+            # file and hard-link restrictions as content writes.
+            fd = open_file(root, path, os.O_RDONLY)
+            try:
+                if operation == "chmod":
+                    mode = options.get("mode")
+                    if type(mode) is not int or mode < 0 or mode > 0o7777:
+                        raise OSError(errno.EINVAL, "invalid permission mode", path)
+                    os.fchmod(fd, mode)
+                else:
+                    uid, gid = options.get("uid"), options.get("gid")
+                    if any(type(value) is not int or value < -1 or value >= 2**32 - 1 for value in (uid, gid)):
+                        raise OSError(errno.EINVAL, "invalid owner or group", path)
+                    os.fchown(fd, uid, gid)
+            finally: os.close(fd)
             return None
         if operation == "stat":
             path = confined(request["path"])

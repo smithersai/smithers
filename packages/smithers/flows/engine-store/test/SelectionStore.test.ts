@@ -195,7 +195,9 @@ describe("SelectionStore", () => {
 
   it.effect("refuses a scope over the wildcard cap before writing", () =>
     Effect.gen(function*() {
-      const exit = yield* withStore((store) => store.upsert([edge({ scope: "**a".repeat(12) + "**b" })]).pipe(Effect.exit))
+      const exit = yield* withStore((store) =>
+        store.upsert([edge({ scope: "**a".repeat(12) + "**b" })]).pipe(Effect.exit)
+      )
       expect(errorOf(exit)).toMatchObject({ code: "invalid_input" })
       expect(yield* withStore((store) => store.list())).toEqual([])
     }))

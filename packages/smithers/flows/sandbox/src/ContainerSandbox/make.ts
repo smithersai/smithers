@@ -16,6 +16,7 @@ import { gather, type GatheredRun, providerFailure } from "../internal/localProc
 import { sessionSlug } from "../internal/sessionSlug.ts"
 import { ProviderError } from "../RemoteChildProcessSpawner/ProviderError.ts"
 import type { Provider } from "../Sandbox/Provider.ts"
+import { fileSystem } from "./fileSystem.ts"
 
 /**
  * How the provider reaches and shapes its containers.
@@ -223,7 +224,7 @@ export const make = (options: ContainerSandboxOptions): Provider => {
           () => finalizeWithin(Effect.ignore(run(["rm", "--force", name]), { log: "Warn" }), `container ${name}`)
         )
         yield* step(`the container ${name} could not be started`, ["start", name])
-        return yield* execSession({
+        const session = yield* execSession({
           id: sessionKey,
           name,
           noun: "container",
@@ -256,6 +257,7 @@ export const make = (options: ContainerSandboxOptions): Provider => {
           ],
           ping: ["exec", name, "true"]
         })
+        return { ...session, files: fileSystem(session) }
       })
   }
 }

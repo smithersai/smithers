@@ -25,6 +25,8 @@ import * as Effect from "effect/Effect"
 import * as Exit from "effect/Exit"
 import * as Option from "effect/Option"
 import * as Schema from "effect/Schema"
+import * as Scope from "effect/Scope"
+import { TestClock } from "effect/testing"
 import * as DurableEngineState from "../src/DurableEngineState.ts"
 import * as EngineStore from "../src/EngineStore.ts"
 import * as StepBoundary from "../src/StepBoundary.ts"
@@ -40,6 +42,20 @@ const jj = Jj.make({
   workspaceForget: () => Effect.void,
   status: () => Effect.succeed("")
 })
+
+// Delivery acknowledges a durable signal and schedules a resume. Completion
+// is observed separately, so this also detects a signal that never wakes its run.
+const completed = (store: RunStore.Service, runId: string) =>
+  Effect.gen(function*() {
+    let row = yield* store.get(runId)
+    for (let attempt = 0; attempt < 100 && row.status !== "completed"; attempt++) {
+      yield* Effect.yieldNow
+      yield* TestClock.adjust("10 millis")
+      row = yield* store.get(runId)
+    }
+    expect(row.status).toBe("completed")
+    return row
+  })
 
 const withEngine = <A>(
   state: DurableEngineState.Service,
@@ -116,57 +132,71 @@ describe("a durable wait taken inside an action, under the run's own instance", 
       expect(Option.getOrThrow(result.parked).reason).toBe("timer")
     }))
 
-  it.effect("parks on a nested signal and completes when the signal is delivered", () =>
-    Effect.gen(function*() {
-      // The approval and signal shape: a `DurableDeferred` awaited from inside a
-      // dispatch, resolved by whoever answers the question.
-      const SignalFlow = Flow.make("Parking/NestedSignal", {
-        payload: {},
-        success: Schema.String,
-        body: opaqueHandlerBody
-      })
-      const gate = DurableDeferred.make("nested-signal-gate", { success: Schema.String })
-      const handler = () =>
-        Effect.gen(function*() {
-          const services = yield* Effect.context<FlowRuntime.FlowInstance>()
-          return yield* Action.make({
-            name: "nested/ask",
-            success: Schema.String,
-            tier: "irreversible",
-            idempotencyKey: "nested-ask-key",
-            execute: Effect.provide(DurableDeferred.await(gate), services)
-          })
+  it.effect.each([false, true])(
+    "completes a nested signal after delivery (restart=%s)",
+    (restart) =>
+      Effect.gen(function*() {
+        // The approval and signal shape: a `DurableDeferred` awaited from inside a
+        // dispatch, resolved by whoever answers the question.
+        const SignalFlow = Flow.make("Parking/NestedSignal", {
+          payload: {},
+          success: Schema.String,
+          body: opaqueHandlerBody
         })
-      const state = DurableEngineState.makeMemory()
-
-      const result = yield* withEngine(state, (makeEngine, store) =>
-        Effect.gen(function*() {
-          const engine = (yield* makeEngine) as FlowRuntime.FlowRuntime["Service"]
-          yield* engine.register(SignalFlow as never, handler as never)
-          yield* engine.execute(SignalFlow as never, {
-            executionId: "parking-signal",
-            payload: {},
-            discard: true
+        const gate = DurableDeferred.make("nested-signal-gate", { success: Schema.String })
+        const handler = () =>
+          Effect.gen(function*() {
+            const services = yield* Effect.context<FlowRuntime.FlowInstance>()
+            return yield* Action.make({
+              name: "nested/ask",
+              success: Schema.String,
+              tier: "irreversible",
+              idempotencyKey: "nested-ask-key",
+              execute: Effect.provide(DurableDeferred.await(gate), services)
+            })
           })
-          const suspendedRow = yield* store.get("parking-signal")
-          const parked = yield* state.waiting("parking-signal")
+        const state = DurableEngineState.makeMemory()
 
-          yield* engine.deferredDone(gate as never, {
-            flowName: SignalFlow._tag,
-            executionId: "parking-signal",
-            deferredName: gate.name,
-            exit: Exit.succeed("approved")
-          })
-          const completedRow = yield* store.get("parking-signal")
-          const afterResume = yield* state.waiting("parking-signal")
-          return { suspendedRow, parked, completedRow, afterResume }
-        }))
+        const result = yield* withEngine(state, (makeEngine, store) =>
+          Effect.gen(function*() {
+            const firstScope = yield* Scope.make()
+            let engine =
+              (yield* makeEngine.pipe(Effect.provideService(Scope.Scope, firstScope))) as FlowRuntime.FlowRuntime[
+                "Service"
+              ]
+            yield* engine.register(SignalFlow as never, handler as never)
+            yield* engine.execute(SignalFlow as never, {
+              executionId: "parking-signal",
+              payload: {},
+              discard: true
+            })
+            const suspendedRow = yield* store.get("parking-signal")
+            const parked = yield* state.waiting("parking-signal")
 
-      expect(result.suspendedRow.status).toBe("suspended")
-      expect(Option.getOrThrow(result.parked).reason).toBe("event")
-      expect(result.completedRow.status).toBe("completed")
-      expect(Option.isNone(result.afterResume)).toBe(true)
-    }))
+            if (restart) {
+              yield* Scope.close(firstScope, Exit.void)
+              engine = (yield* makeEngine) as FlowRuntime.FlowRuntime["Service"]
+              yield* engine.register(SignalFlow as never, handler as never)
+            }
+
+            yield* engine.deferredDone(gate as never, {
+              flowName: SignalFlow._tag,
+              executionId: "parking-signal",
+              deferredName: gate.name,
+              exit: Exit.succeed("approved")
+            })
+            const completedRow = yield* completed(store, "parking-signal")
+            const afterResume = yield* state.waiting("parking-signal")
+            if (!restart) yield* Scope.close(firstScope, Exit.void)
+            return { suspendedRow, parked, completedRow, afterResume }
+          }))
+
+        expect(result.suspendedRow.status).toBe("suspended")
+        expect(Option.getOrThrow(result.parked).reason).toBe("event")
+        expect(result.completedRow.status).toBe("completed")
+        expect(Option.isNone(result.afterResume)).toBe(true)
+      })
+  )
 
   it.effect("parks a nested approval under the reason and token the wait declared", () =>
     Effect.gen(function*() {
@@ -221,7 +251,7 @@ describe("a durable wait taken inside an action, under the run's own instance", 
             deferredName: gate.name,
             exit: Exit.succeed("granted")
           })
-          const completedRow = yield* store.get("parking-approval")
+          const completedRow = yield* completed(store, "parking-approval")
           const afterResume = yield* state.waiting("parking-approval")
           return { suspendedRow, parked, sweep, completedRow, afterResume }
         }))

@@ -5,11 +5,12 @@
  * off `entry.meta`; they decode it with this one schema.
  *
  * @since 0.1.0
- * @category schemas
  */
 import * as Schema from "effect/Schema"
 
 /**
+ * Admits the lineage identity carried in journal metadata.
+ *
  * @since 0.1.0
  * @category schemas
  */

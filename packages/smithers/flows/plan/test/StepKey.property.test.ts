@@ -1,11 +1,14 @@
 import { describe, expect, it } from "@effect/vitest"
 import * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
-import { FastCheck } from "effect/testing"
+import * as FastCheck from "fast-check"
+import { effectProperty } from "../../../../repo-targets/test-utils/effect-property.mjs"
 import * as KeyMaterial from "../src/KeyMaterial.ts"
 import * as StepKey from "../src/StepKey.ts"
 import { withCrypto } from "./Crypto.ts"
 import { params as sharedParams } from "./FastCheckParams.ts"
+
+const prop = effectProperty(it.effect)
 
 const params = sharedParams(100)
 
@@ -98,7 +101,7 @@ describe("StepKey.project properties", () => {
 })
 
 describe("StepKey.content properties", () => {
-  it.effect.prop(
+  prop(
     "is total on hostile JSON: every outcome is a key or a typed SchemaError, never a defect",
     [FastCheck.jsonValue({ stringUnit: "binary" })],
     ([body]) =>
@@ -115,7 +118,7 @@ describe("StepKey.content properties", () => {
     { fastCheck: { ...params, examples: [[{ "\uD800": "\uDFFF" }], ["\uD800"], [{ "": null }]] } }
   )
 
-  it.effect.prop(
+  prop(
     "keys structure, not identity: rehashing and a structural clone are byte-identical",
     [literalIdentity],
     ([identity]) =>
@@ -130,7 +133,7 @@ describe("StepKey.content properties", () => {
     { fastCheck: params }
   )
 
-  it.effect.prop(
+  prop(
     "hashes layers and capability patterns as NFC-normalized sets: order, duplication, and composed form never re-key",
     [
       FastCheck.array(cleanString, { maxLength: 4 }),
@@ -156,7 +159,7 @@ describe("StepKey.content properties", () => {
     { fastCheck: { ...params, examples: [[["é", "é"], []]] } }
   )
 
-  it.effect.prop(
+  prop(
     "never lets a literal spelling of any digest-reference shape collide with the branded input",
     [
       FastCheck.string({ unit: "grapheme", maxLength: 12 }),
@@ -198,7 +201,7 @@ describe("StepKey.content properties", () => {
     { fastCheck: params }
   )
 
-  it.effect.prop(
+  prop(
     "keys every reference variant of one digest distinctly",
     [
       FastCheck.string({ unit: "grapheme", maxLength: 12 }),
@@ -222,7 +225,7 @@ describe("StepKey.content properties", () => {
 })
 
 describe("StepKey.fromKeyMaterial properties", () => {
-  const materialArb = Schema.toArbitrary(KeyMaterial.KeyMaterial)(FastCheck)
+  const materialArb = KeyMaterial.KeyMaterial
 
   it.effect.prop(
     "is deterministic over the whole material schema: equal material yields equal keys or equal typed errors",
@@ -242,7 +245,7 @@ describe("StepKey.fromKeyMaterial properties", () => {
         )
         expect(yield* observe).toBe(yield* observe)
       }),
-    { fastCheck: params }
+    { arbitrary: { runs: params.numRuns, seed: params.seed } }
   )
 })
 
@@ -260,7 +263,7 @@ describe("StepKey.dispatchIdentity properties", () => {
       hermetic
     })
 
-  it.effect.prop(
+  prop(
     "keys on the projected settled value: a structural clone of the results is byte-identical",
     [FastCheck.array(cleanString, { maxLength: 3 }), cleanJson],
     ([path, settled]) =>
@@ -274,7 +277,7 @@ describe("StepKey.dispatchIdentity properties", () => {
     { fastCheck: params }
   )
 
-  it.effect.prop(
+  prop(
     "keys distinct projected values distinctly",
     [FastCheck.tuple(FastCheck.integer(), FastCheck.integer()).filter(([left, right]) => left !== right)],
     ([[left, right]]) =>

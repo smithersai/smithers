@@ -16,6 +16,8 @@ import { Ownership, RunStore } from "@smthrs/run-store"
 import * as Clock from "effect/Clock"
 import * as Duration from "effect/Duration"
 import * as Effect from "effect/Effect"
+import * as Fiber from "effect/Fiber"
+import * as Option from "effect/Option"
 import * as Schema from "effect/Schema"
 import type * as Scope from "effect/Scope"
 import { TestClock } from "effect/testing"
@@ -102,11 +104,20 @@ describe("the cancel sweeper survives transient defects (issue #44)", () => {
               EventFlow as never,
               (() => Effect.map(DurableDeferred.await(gate), (value) => `gated:${value}`)) as never
             )
-            yield* engine.execute(EventFlow as never, {
+            const caller = yield* engine.execute(EventFlow as never, {
               executionId: "sweeper-resilience-cancel",
               payload: {},
-              discard: true
-            })
+              discard: false
+            }).pipe(Effect.forkChild)
+            for (let attempt = 0; attempt < 1_000; attempt++) {
+              const observed = yield* store.get("sweeper-resilience-cancel").pipe(Effect.option)
+              if (Option.isSome(observed) && observed.value.status === "suspended") break
+              yield* Effect.yieldNow
+            }
+            expect((yield* store.get("sweeper-resilience-cancel")).status).toBe("suspended")
+            // Stop the caller's automatic follow loop so only the recovery
+            // sweeper can deliver cancellation to this parked run.
+            yield* Fiber.interrupt(caller)
             const nowMs = yield* Clock.currentTimeMillis
             yield* store.requestCancel("sweeper-resilience-cancel", nowMs)
 
@@ -170,11 +181,20 @@ describe("the cancel sweeper survives transient defects (issue #44)", () => {
               EventFlow as never,
               (() => Effect.map(DurableDeferred.await(gate), (value) => `gated:${value}`)) as never
             )
-            yield* engine.execute(EventFlow as never, {
+            const caller = yield* engine.execute(EventFlow as never, {
               executionId: "sweeper-wake-defect-cancel",
               payload: {},
-              discard: true
-            })
+              discard: false
+            }).pipe(Effect.forkChild)
+            for (let attempt = 0; attempt < 1_000; attempt++) {
+              const observed = yield* store.get("sweeper-wake-defect-cancel").pipe(Effect.option)
+              if (Option.isSome(observed) && observed.value.status === "suspended") break
+              yield* Effect.yieldNow
+            }
+            expect((yield* store.get("sweeper-wake-defect-cancel")).status).toBe("suspended")
+            // Stop the caller's automatic follow loop so only the recovery
+            // sweeper can deliver cancellation to this parked run.
+            yield* Fiber.interrupt(caller)
             const nowMs = yield* Clock.currentTimeMillis
             yield* store.requestCancel("sweeper-wake-defect-cancel", nowMs)
 

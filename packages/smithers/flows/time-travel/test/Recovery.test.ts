@@ -740,6 +740,36 @@ describe("Recovery", () => {
       ])
     }))
 
+  it.effect("does not release ownership twice when persisting the rollback audit fails", () =>
+    Effect.gen(function*() {
+      const store = MemoryTimeTravelStore.make()
+      const value = audit("compensated")
+      seed(store, value)
+      const baseRuns = makeRuns()
+      let releases = 0
+      const runs = makeRuns({
+        transitionOwned: (...args) => {
+          releases++
+          return baseRuns.transitionOwned(...args)
+        }
+      })
+      let refused = false
+      const failing = {
+        ...store,
+        updateAudit: (id: string, patch: Parameters<typeof store.updateAudit>[1]) => {
+          if (!refused && patch.status === "failed") {
+            refused = true
+            return Effect.fail(error("unknown", "audit write unavailable"))
+          }
+          return store.updateAudit(id, patch)
+        }
+      }
+      yield* runRecovery(failing, runs, Jj.makeNoop({}), EffectHandlerRegistry.makeNoop(), true)
+      expect(refused).toBe(true)
+      expect(releases).toBe(1)
+      expect(baseRuns.state()).toMatchObject({ status: "suspended", owner: null })
+    }))
+
   it.effect("propagates a pending-audit persistence failure before touching run ownership", () =>
     Effect.gen(function*() {
       let reads = 0

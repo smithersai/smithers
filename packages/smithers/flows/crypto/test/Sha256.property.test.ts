@@ -1,6 +1,6 @@
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
 import { Crypto, Effect } from "effect"
-import { FastCheck } from "effect/testing"
+import * as FastCheck from "fast-check"
 import { createHash } from "node:crypto"
 import { describe, expect, it } from "vitest"
 import { digest, digestSync, syncCrypto } from "../src/index.ts"

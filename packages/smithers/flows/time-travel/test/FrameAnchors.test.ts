@@ -70,6 +70,70 @@ const projectInto = (
 }
 
 describe("the snapshot projector", () => {
+  it.effect("offers the same anchor fold through the journal projection interface", () =>
+    Effect.gen(function*() {
+      const store = MemoryTimeTravelStore.make()
+      const projection = SnapshotProjector.projection(store)
+      const entry = (seq: number, eventType: string, payload: unknown): JournalEvent.Entry =>
+        ({
+          runId: "run" as JournalEvent.RunId,
+          seq: seq as JournalEvent.Seq,
+          eventId: `projection:${seq}`,
+          sourceId: "test" as JournalEvent.SourceId,
+          sourceSeq: seq as JournalEvent.SourceSeq,
+          emittedAtMs: 0,
+          eventType,
+          payload,
+          meta: { lineageId }
+        }) as JournalEvent.Entry
+      const planned = yield* projection.reduce(
+        projection.initial,
+        entry(0, "flows.engine.plan-recorded", { digest: "plan" })
+      )
+      expect(store.state().snapshots).toEqual([])
+      const anchored = yield* projection.reduce(
+        planned,
+        entry(1, "flows.engine.snapshot-identified", { snapshotId: "change" })
+      )
+      expect(anchored.anchors).toBe(1)
+      expect(store.state().snapshots).toEqual([{
+        runId: "run",
+        frame: { lineageId, seq: 1 },
+        changeId: "change",
+        planDigest: "plan"
+      }])
+    }))
+
+  it.effect("resumes at the greatest anchor regardless of listing order and ignores another run", () =>
+    Effect.gen(function*() {
+      const store = MemoryTimeTravelStore.make()
+      const anchors: ReadonlyArray<TimeTravelStore.Snapshot> = [
+        { runId: "other", frame: { lineageId: "other/root", seq: 100 }, changeId: "foreign" },
+        { runId: "run", frame: { lineageId: "latest", seq: 10 }, changeId: "latest" },
+        { runId: "run", frame: { lineageId: "older", seq: 2 }, changeId: "older" },
+        { runId: "run", frame: { lineageId: "middle", seq: 5 }, changeId: "middle" }
+      ]
+      const reads: Array<number | undefined> = []
+      const result = yield* SnapshotProjector.project("run").pipe(
+        Effect.provideService(TimeTravelStore.TimeTravelStore, {
+          ...store,
+          latestSnapshots: () => Effect.succeed(anchors)
+        }),
+        Effect.provideService(
+          Journal.Journal,
+          Journal.makeNoop({
+            entries: (request) => {
+              reads.push(request.after)
+              return Effect.succeed({ entries: [], hasMore: false })
+            }
+          })
+        )
+      )
+      expect(reads).toEqual([undefined, 10])
+      expect(Object.keys(result.lineages).sort()).toEqual(["latest", "middle", "older"])
+      expect(result.anchors).toBe(0)
+    }))
+
   it.effect("resolves a carried anchor to the last real pointer, and stamps the plan digest in force", () =>
     Effect.gen(function*() {
       const result = yield* projectInto([

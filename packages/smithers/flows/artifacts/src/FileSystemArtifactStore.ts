@@ -128,9 +128,13 @@ const fanout = (directory: string, digest: string): { readonly parent: string; r
 /**
  * Builds the filesystem-backed artifact store.
  *
- * Host access arrives through Effect's `FileSystem` tag, which the capability
- * kernel decorates in place — the same seam every host implementation (node,
- * bun, browser, sandbox) already provides.
+ * Host access arrives through Effect's `FileSystem` tag. Persistence needs a
+ * trusted host with exclusive writable handles, symlink inspection and, for
+ * required durability, file and directory syncing. Build this service before
+ * decorating the workflow filesystem with the capability kernel, as native
+ * `layerHost` does. The guarded native filesystem deliberately refuses open
+ * handles and cannot back this store; best-effort durability does not lift
+ * that requirement. A browser host can instead use the memory store.
  *
  * @category constructors
  * @since 1.0.0-rc.0

@@ -7,14 +7,17 @@ import * as Journal from "@smthrs/journal/Journal"
 import * as JournalEvent from "@smthrs/journal/JournalEvent"
 import * as Redaction from "@smthrs/journal/Redaction"
 import * as Cause from "effect/Cause"
+import * as Context from "effect/Context"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
 import * as Logger from "effect/Logger"
 import type * as LogLevel from "effect/LogLevel"
 import * as EffectMetric from "effect/Metric"
+import * as Option from "effect/Option"
 import * as Queue from "effect/Queue"
 import * as References from "effect/References"
 import * as Schema from "effect/Schema"
+import * as Tracer from "effect/Tracer"
 import { schemaIssuePath } from "./internal/schemaIssuePath.ts"
 import { droppedLogRecords } from "./Metric.ts"
 
@@ -439,7 +442,7 @@ const snapshotLog = (options: Logger.Options<unknown>): TelemetryLog => {
     members: maximumSnapshotMembers
   }
   try {
-    const span = options.fiber.currentSpan
+    const span = Option.getOrUndefined(Context.getOption(options.fiber.context, Tracer.ParentSpan))
     const candidate: TelemetryLog = {
       version: 1,
       level: options.logLevel,

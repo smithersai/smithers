@@ -750,7 +750,7 @@ export const make = (): Effect.Effect<Service, never, SqlClient.SqlClient | Jour
 
     const retain: Service["retain"] = Effect.fn("Retention.retain")((options: RetainOptions) =>
       Effect.gen(function*() {
-        const nowMs = yield* Clock.currentTimeMillis
+        const nowMs = yield* Clock.currentTimeMillis.pipe(Effect.map(Math.floor))
         const cutoffMs = nowMs - Math.max(0, options.olderThanMs)
         // One commit: `transact` joins the run-row deletes, the dependent
         // deletes, and the journal truncation into a single write transaction,

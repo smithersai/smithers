@@ -94,6 +94,16 @@ describe("RunStore inert input boundary", () => {
       yield* store.create("boundary-run", "{}")
       const expectedCandidates = [
         null,
+        new Proxy({}, {
+          ownKeys: () => {
+            throw new Error("hostile snapshot")
+          }
+        }),
+        new Proxy({}, {
+          getOwnPropertyDescriptor: () => {
+            throw new Error("hostile descriptor")
+          }
+        }),
         { status: "unknown", owner: null, heartbeatAtMs: null },
         { status: "pending", owner: null, heartbeatAtMs: -1 },
         { status: "pending", owner: ownerA, heartbeatAtMs: null },

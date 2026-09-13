@@ -1,9 +1,12 @@
 import { describe, expect, it } from "@effect/vitest"
 import { Effect } from "effect"
-import { FastCheck } from "effect/testing"
+import * as FastCheck from "fast-check"
+import { effectProperty } from "../../../../repo-targets/test-utils/effect-property.mjs"
 import { type EntriesPage, Journal } from "../src/Journal.ts"
 import type { Entry, RunId, Seq, SourceId } from "../src/JournalEvent.ts"
 import * as TestJournal from "../src/test/TestJournal.ts"
+
+const prop = effectProperty(it.effect)
 
 const params = {
   numRuns: Number(process.env.FC_NUM_RUNS ?? 100),
@@ -21,7 +24,7 @@ describe("SqlJournal paging properties", () => {
   // page — whatever the page size, and wherever the cursor starts — yields
   // exactly the committed sequence, with no entry duplicated or lost at a
   // page boundary, and `hasMore` only ever true on a full page.
-  it.effect.prop(
+  prop(
     "concatenated pages reproduce the full sequence for arbitrary page sizes and cursors",
     [FastCheck.nat({ max: 24 }), FastCheck.integer({ min: 1, max: 7 }), FastCheck.nat({ max: 24 })],
     ([count, limit, startAfter]) =>

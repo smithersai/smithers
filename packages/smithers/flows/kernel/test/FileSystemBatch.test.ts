@@ -2,6 +2,7 @@ import { describe, expect, it } from "@effect/vitest"
 import * as Permission from "@smthrs/capability/Permission"
 import { Deferred, Effect, Fiber, FileSystem, Layer, Option, Path, Result } from "effect"
 import { PlatformError } from "effect"
+import * as ByteSize from "effect/ByteSize"
 import { createHash } from "node:crypto"
 import * as Batch from "../src/FileSystem.ts"
 import * as GrantStore from "../src/GrantStore.ts"
@@ -349,7 +350,7 @@ describe("guarded filesystem batches", () => {
             {
               index: 1,
               path: "/workspace/source.txt",
-              result: Result.succeed({ operation: "stat", info: { ...info, type: "File", size: FileSystem.Size(13) } })
+              result: Result.succeed({ operation: "stat", info: { ...info, type: "File", size: ByteSize.bytes(13) } })
             },
             {
               index: 2,

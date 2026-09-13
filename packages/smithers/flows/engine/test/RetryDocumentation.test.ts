@@ -19,8 +19,8 @@ describe("retry documentation", () => {
       if (page.includes("/concepts/retries.")) {
         expect(source).toMatch(/final (?:declared|typed|business) failure/)
         expect(source).toContain("retry.stopReason")
-        expect(source).toContain('"exhausted"')
-        expect(source).toContain('"expired"')
+        expect(source).toContain("\"exhausted\"")
+        expect(source).toContain("\"expired\"")
         expect(source).toContain("retry.attempt")
       }
     })

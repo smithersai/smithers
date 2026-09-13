@@ -321,7 +321,7 @@ export const make = (
         if (!Number.isSafeInteger(grace) || grace < 0) {
           return yield* Effect.fail(invalidOptions("artifact GC graceMs must be a non-negative safe integer"))
         }
-        const startedAtMs = yield* Clock.currentTimeMillis
+        const startedAtMs = yield* Clock.currentTimeMillis.pipe(Effect.map(Math.floor))
         const bound = startedAtMs - grace
         const live = new Set<string>(gcOptions?.pins ?? [])
         if (Option.isSome(policy) && policy.value.pins !== undefined) {

@@ -490,7 +490,9 @@ const jj = (binary: Binary): Run => (method, args, cwd) =>
         done(Effect.void))
       child.kill("SIGKILL")
     })
-  }).pipe(Effect.flatMap((output) => settle(method, args, output)))
+  }).pipe(Effect.flatMap((output) =>
+    settle(method, args, output)
+  ))
 
 /**
  * Runs `jj` through a `ChildProcessSpawner`.

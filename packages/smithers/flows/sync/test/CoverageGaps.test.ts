@@ -178,12 +178,11 @@ describe("sync malformed and terminal boundaries", () => {
           pair.faults.dropRange("boundary", 0, 1)
           const write = yield* pair.client.writer
           const frames: Array<string> = []
-          const fiber = yield* pair.server.runRaw((bytes) =>
+          const fiber = yield* Stream.runForEach(Socket.toStream(pair.server), (bytes) =>
             Effect.sync(() => {
               frames.push(typeof bytes === "string" ? bytes : new TextDecoder().decode(bytes))
-            })
-          ).pipe(Effect.forkChild)
-          yield* write("null")
+            })).pipe(Effect.forkChild)
+          yield* write.write("null")
           yield* Effect.yieldNow
           yield* Effect.yieldNow
           yield* Fiber.interrupt(fiber)
@@ -194,17 +193,18 @@ describe("sync malformed and terminal boundaries", () => {
       expect(received).toEqual(["null"])
     }))
 
-  it.effect("allows synchronous frame handlers to acknowledge delivery without an Effect result", () =>
+  it.effect("allows synchronous frame handlers to acknowledge delivery", () =>
     Effect.gen(function*() {
       const received = yield* (
         Effect.gen(function*() {
           const pair = yield* TestSocket.makePair()
           const frames: Array<string> = []
-          const fiber = yield* pair.server.runRaw((bytes) => {
-            frames.push(typeof bytes === "string" ? bytes : new TextDecoder().decode(bytes))
-          }).pipe(Effect.forkChild)
+          const fiber = yield* Stream.runForEach(Socket.toStream(pair.server), (bytes) =>
+            Effect.sync(() => {
+              frames.push(typeof bytes === "string" ? bytes : new TextDecoder().decode(bytes))
+            })).pipe(Effect.forkChild)
           const write = yield* pair.client.writer
-          yield* write("synchronous")
+          yield* write.write("synchronous")
           yield* Effect.yieldNow
           yield* Effect.yieldNow
           yield* Fiber.interrupt(fiber)

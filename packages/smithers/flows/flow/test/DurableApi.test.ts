@@ -321,12 +321,14 @@ const negativeTypes = () => {
 }
 void negativeTypes
 
-class Encoder extends Context.Service<Encoder, { readonly encode: (value: string) => string }>()("DurableApi/Encoder") {}
+class Encoder
+  extends Context.Service<Encoder, { readonly encode: (value: string) => string }>()("DurableApi/Encoder")
+{}
 
 /** A success codec whose encode side, and only its encode side, needs `Encoder`. */
 const encoded = Schema.String.pipe(Schema.decodeTo(Schema.String, {
   decode: SchemaGetter.transform((value: string) => value),
-  encode: SchemaGetter.transformOrFail((value: string) =>
+  encode: SchemaGetter.transformEffect((value: string) =>
     Effect.gen(function*() {
       const encoder = yield* Encoder
       return encoder.encode(value)
@@ -350,7 +352,10 @@ const countingEncoder = () => {
 describe("advertised requirements", () => {
   it.effect("DurableDeferred.into advertises the encoding services it records the exit with", () =>
     Effect.gen(function*() {
-      const recorded = DurableDeferred.into(Effect.succeed("ok"), DurableDeferred.make("DurableApi/into", { success: encoded }))
+      const recorded = DurableDeferred.into(
+        Effect.succeed("ok"),
+        DurableDeferred.make("DurableApi/into", { success: encoded })
+      )
       expectTypeOf<Effect.Services<typeof recorded>>().toEqualTypeOf<
         FlowRuntime.FlowRuntime | FlowRuntime.FlowInstance | Encoder
       >()

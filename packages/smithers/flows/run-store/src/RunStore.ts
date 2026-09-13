@@ -595,16 +595,16 @@ const runStoreError = (
     cause
   })
 
-const persistenceError = (method: string, cause: unknown): RunStoreError => {
+const persistenceError = (method: string, cause: RunStoreError | DatabaseError): RunStoreError => {
   if (Schema.is(RunStoreError)(cause)) return cause
-  const code = typeof cause === "object" && cause !== null && "code" in cause && cause.code === "constraint"
+  const code = cause.code === "constraint"
     ? "constraint"
     : "persistence_failed"
   return runStoreError(method, code, "database operation failed", {
     category: code,
     // Keep the classification for outer transaction retries, never driver
     // causes that may contain executable state or bound SQL values.
-    ...(Schema.is(DatabaseError)(cause) ? { cause: new DatabaseError({ code: cause.code }) } : {})
+    cause: new DatabaseError({ code: cause.code })
   })
 }
 
@@ -707,7 +707,7 @@ const snapshotLeaseReading = (
 ): Effect.Effect<number, RunStoreError> =>
   Effect.gen(function*() {
     const nowMs = yield* snapshotTimestamp(method, field, input)
-    const clockMs = yield* Clock.currentTimeMillis
+    const clockMs = yield* Clock.currentTimeMillis.pipe(Effect.map(Math.floor))
     if (nowMs > clockMs + heartbeatSkewAllowanceMs) {
       return yield* Effect.fail(
         invalidRunError(method, {
@@ -1112,9 +1112,9 @@ export const make: Effect.Effect<Service, never, DurableWriter | SqlClient.SqlCl
   const sql = yield* Effect.service(SqlClient.SqlClient)
   const writer = yield* DurableWriter
 
-  const write = <A, E, R>(
+  const write = <A, R>(
     method: string,
-    effect: Effect.Effect<A, E, R>
+    effect: Effect.Effect<A, SqlError.SqlError | RunStoreError, R>
   ): Effect.Effect<A, RunStoreError, R> =>
     writer.write(effect).pipe(Effect.mapError((cause) => persistenceError(method, cause)))
 
@@ -1146,7 +1146,7 @@ export const make: Effect.Effect<Service, never, DurableWriter | SqlClient.SqlCl
           stateJsonValid: isJsonString(stateInput)
         })
         yield* Effect.annotateCurrentSpan({ runId })
-        const createdAtMs = yield* Clock.currentTimeMillis
+        const createdAtMs = yield* Clock.currentTimeMillis.pipe(Effect.map(Math.floor))
         yield* write(
           "create",
           sql`
@@ -1450,7 +1450,7 @@ export const make: Effect.Effect<Service, never, DurableWriter | SqlClient.SqlCl
       )
       const expected = yield* snapshotExpected("activate", expectedInput)
       yield* Effect.annotateCurrentSpan({ runId, claimantHostId: claimant.hostId })
-      const activatedAtMs = yield* Clock.currentTimeMillis
+      const activatedAtMs = yield* Clock.currentTimeMillis.pipe(Effect.map(Math.floor))
       return yield* write(
         "activate",
         Effect.gen(function*() {
@@ -1664,7 +1664,7 @@ export const make: Effect.Effect<Service, never, DurableWriter | SqlClient.SqlCl
       // concurrent cancellation request can never slip between check and write.
       const requireCancelAbsent = guard?.cancelRequested === "absent" ? 1 : 0
       const requireCancelPresent = guard?.cancelRequested === "present" ? 1 : 0
-      const transitionedAtMs = yield* Clock.currentTimeMillis
+      const transitionedAtMs = yield* Clock.currentTimeMillis.pipe(Effect.map(Math.floor))
       const outcome = yield* write(
         "transitionOwned",
         Effect.gen(function*() {

@@ -12,6 +12,7 @@ import {
   PlatformError,
   Stream
 } from "effect"
+import * as ByteSize from "effect/ByteSize"
 import * as FileSystem from "../src/FileSystem.ts"
 import { GrantStore } from "../src/GrantStore.ts"
 import * as Workspace from "../src/Workspace.ts"
@@ -224,7 +225,7 @@ describe("FileSystem", () => {
     return provide(
       Effect.gen(function*() {
         const fileSystem = yield* EffectFileSystem.FileSystem
-        expect(fileSystem["~effect/platform/FileSystem"]).toBe("~effect/platform/FileSystem")
+        expect(fileSystem["~effect/FileSystem"]).toBe("~effect/FileSystem")
         yield* fileSystem.symlink("../target", "links/item")
         expect(checks).toEqual([
           { action: "fs:write", resource: "/workspace/links/item" }
@@ -327,12 +328,12 @@ describe("FileSystem", () => {
       // `open` fstats the handle to bind its authorization; an identity-free
       // Info opts this double out of descriptor verification.
       stat: Effect.succeed({} as EffectFileSystem.File.Info),
-      seek: () => Effect.succeed(EffectFileSystem.Size(0)),
+      seek: () => Effect.succeed(ByteSize.bytes(0)),
       sync: Effect.void,
-      read: () => Effect.sync(() => EffectFileSystem.Size(++reads)),
+      read: () => Effect.sync(() => ++reads),
       readAlloc: () => Effect.succeed(Option.none()),
       truncate: () => Effect.void,
-      write: () => Effect.succeed(EffectFileSystem.Size(0)),
+      write: () => Effect.succeed(0),
       writeAll: () => Effect.void
     }
     const host = hostFileSystem({ open: () => Effect.succeed(handle) })
@@ -372,12 +373,12 @@ describe("FileSystem", () => {
         const handle: EffectFileSystem.File = {
           [EffectFileSystem.FileTypeId]: EffectFileSystem.FileTypeId,
           stat: Effect.succeed({} as EffectFileSystem.File.Info),
-          seek: () => Effect.succeed(EffectFileSystem.Size(0)),
+          seek: () => Effect.succeed(ByteSize.bytes(0)),
           sync: Effect.void,
-          read: () => Effect.succeed(EffectFileSystem.Size(0)),
+          read: () => Effect.succeed(0),
           readAlloc: () => Effect.succeed(Option.none()),
           truncate: () => Effect.void,
-          write: () => Effect.succeed(EffectFileSystem.Size(0)),
+          write: () => Effect.succeed(0),
           writeAll: () => Effect.void
         }
         const host = hostFileSystem({
@@ -507,12 +508,12 @@ describe("FileSystem", () => {
       // `open` fstats the handle to bind its authorization; an identity-free
       // Info opts this double out of descriptor verification.
       stat: Effect.succeed({} as EffectFileSystem.File.Info),
-      seek: () => Effect.succeed(EffectFileSystem.Size(0)),
+      seek: () => Effect.succeed(ByteSize.bytes(0)),
       sync: Effect.void,
-      read: () => Effect.sync(() => EffectFileSystem.Size(++reads)),
+      read: () => Effect.sync(() => ++reads),
       readAlloc: () => Effect.succeed(Option.none()),
       truncate: () => Effect.void,
-      write: () => Effect.sync(() => EffectFileSystem.Size(++writes)),
+      write: () => Effect.sync(() => ++writes),
       writeAll: () => Effect.void
     }
     const host = hostFileSystem({ open: () => Effect.succeed(handle) })

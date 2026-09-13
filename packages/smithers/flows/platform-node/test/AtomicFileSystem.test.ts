@@ -106,6 +106,56 @@ const run = <A, E>(root: string, effect: Effect.Effect<A, E, FileSystem.FileSyst
   effect.pipe(Effect.provide(guarded(root, host)))
 
 describe("Node atomic filesystem", () => {
+  it.live("accepts its own realPath result under a workspace alias", () =>
+    Effect.gen(function*() {
+      const parent = yield* Effect.promise(() => temporaryDirectory())
+      const root = join(parent, "actual")
+      const alias = join(parent, "alias")
+      yield* Effect.promise(() => mkdir(root))
+      yield* Effect.promise(() => symlink(root, alias))
+      yield* run(
+        alias,
+        Effect.gen(function*() {
+          const fs = yield* FileSystem.FileSystem
+          yield* fs.writeFileString(join(alias, "original"), "before")
+          const canonical = yield* fs.realPath(join(alias, "original"))
+          expect(yield* fs.realPath(canonical)).toBe(canonical)
+          const temporary = `${canonical}.tmp`
+          yield* fs.writeFileString(temporary, "after", { flag: "wx", mode: 0o600 })
+          yield* fs.chmod(temporary, 0o640)
+          yield* fs.rename(temporary, canonical)
+          expect(yield* fs.readFileString(join(alias, "original"))).toBe("after")
+          expect((yield* fs.stat(canonical)).mode & 0o777).toBe(0o640)
+        })
+      )
+    }))
+
+  it.live("preserves file modes through descriptor-relative chmod and refuses linked targets", () =>
+    Effect.gen(function*() {
+      const root = yield* Effect.promise(() => temporaryDirectory())
+      const file = join(root, "mode.txt")
+      yield* Effect.promise(() => writeFile(file, "keep", { mode: 0o600 }))
+      yield* run(
+        root,
+        Effect.gen(function*() {
+          const fs = yield* FileSystem.FileSystem
+          yield* fs.chmod(file, 0o640)
+          expect((yield* fs.stat(file)).mode & 0o777).toBe(0o640)
+          yield* fs.chown(file, -1, -1)
+          expect(yield* fs.readFileString(file)).toBe("keep")
+          expect((yield* Effect.flip(fs.chmod(file, -1))).reason._tag).toBe("Unknown")
+          expect((yield* Effect.flip(fs.chown(file, -2, -1))).reason._tag).toBe("Unknown")
+          yield* Effect.promise(() => symlink(file, join(root, "symbolic")))
+          yield* Effect.promise(() => link(file, join(root, "hard")))
+          for (const path of [file, join(root, "symbolic"), join(root, "hard"), root]) {
+            expect((yield* Effect.exit(fs.chmod(path, 0o777)))._tag).toBe("Failure")
+            expect((yield* Effect.exit(fs.chown(path, -1, -1)))._tag).toBe("Failure")
+          }
+        })
+      )
+      expect((yield* Effect.promise(() => lstat(file))).mode & 0o777).toBe(0o640)
+    }))
+
   it.live("executes every descriptor-relative operation without path re-resolution", () =>
     Effect.gen(function*() {
       const root = yield* Effect.promise(() => temporaryDirectory())
@@ -455,6 +505,12 @@ describe("Node atomic filesystem", () => {
       const bin = join(yield* Effect.promise(() => temporaryDirectory()), "bin")
       yield* Effect.promise(() => mkdir(bin))
       const executable = join(bin, "python3")
+      const trailing = yield* run(
+        root,
+        Effect.flatMap(FileSystem.FileSystem, (fs) => Effect.flip(fs.readFile(join(root, "missing.txt")))),
+        AtomicFileSystem.layerWith({ executable: `${executable}/` })
+      )
+      expect(trailing).toMatchObject({ reason: { _tag: "PermissionDenied" } })
       const attempt = run(
         root,
         Effect.flatMap(FileSystem.FileSystem, (fs) => Effect.flip(fs.readFile(join(root, "missing.txt")))),
@@ -522,6 +578,7 @@ describe("Node atomic filesystem", () => {
       expect(outcome.renamedAway).toMatchObject({ reason: { _tag: "PermissionDenied" } })
       expect(outcome.renamedOnto).toMatchObject({ reason: { _tag: "PermissionDenied" } })
       expect(outcome.link.reason._tag).toBe("Unknown")
+      expect(outcome.link.cause).toMatchObject({ code: "EINVAL", syscall: "readlink" })
       // The refused operations left the root and its contents untouched.
       expect(yield* Effect.promise(() => readFile(join(root, "kept", "file.txt"), "utf8"))).toBe("inside")
     }))

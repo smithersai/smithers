@@ -9,6 +9,7 @@ import * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
 import * as SchemaGetter from "effect/SchemaGetter"
 import * as SchemaIssue from "effect/SchemaIssue"
+import * as SchemaParser from "effect/SchemaParser"
 import { deriveKey } from "./deriveKey.ts"
 import type { KeyDerivationError } from "./KeyDerivationError.ts"
 import { KeyV1 } from "./KeyV1.ts"
@@ -19,6 +20,15 @@ const schemaIssue = (error: KeyDerivationError): SchemaIssue.InvalidValue =>
     code: error.code,
     cause: error
   })
+
+const transformation = Schema.Unknown.pipe(
+  Schema.decodeTo(KeyV1, {
+    decode: SchemaGetter.transformEffect((input) => deriveKey(input).pipe(Effect.mapError(schemaIssue))),
+    encode: SchemaGetter.forbidden(
+      () => "A key cannot be converted back into its input"
+    )
+  })
+)
 
 /**
  * Schema that derives a fresh key from its decoded input.
@@ -31,17 +41,11 @@ const schemaIssue = (error: KeyDerivationError): SchemaIssue.InvalidValue =>
  * @category transformations
  * @since 1.0.0
  */
-export const DerivedKey = Schema.Unknown.pipe(
-  Schema.decodeTo(KeyV1, {
-    decode: SchemaGetter.transformOrFail((input) => deriveKey(input).pipe(Effect.mapError(schemaIssue))),
-    encode: SchemaGetter.forbidden(
-      () => "A key cannot be converted back into its input"
-    )
-  })
-).annotate({
-  identifier: "@smthrs/keys/Key",
-  // Omit input from DerivedKey's own InvalidValue and Encoding issues.
-  // Enclosing Struct/Array Composite issues can still retain key material;
-  // keep reportInput off at the outer decoding boundary too.
-  parseOptions: { reportInput: false }
-})
+export const DerivedKey = Schema.declareConstructor<typeof KeyV1.Type, unknown>()(
+  [transformation],
+  // Enclosing schemas still need reportInput: false. This local parser keeps
+  // both decoding and forbidden encoding issues from retaining key material.
+  ([codec]) => (input, _ast, options) =>
+    SchemaParser.decodeUnknownEffect(codec)(input, { ...options, reportInput: false }),
+  { identifier: "@smthrs/keys/Key" }
+)

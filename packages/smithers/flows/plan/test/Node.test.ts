@@ -226,7 +226,7 @@ describe("Node", () => {
       "Catch"
     )
 
-    expect(ast.filter).toEqual(Schema.toJsonSchemaDocument(error))
+    expect(ast.filter).toEqual(Schema.toJsonSchemaDocument(error, { onExcessProperty: "error" }))
     expect(Node.catchFilter(ast)).toBe(error)
   })
 

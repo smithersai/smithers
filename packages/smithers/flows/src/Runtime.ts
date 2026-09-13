@@ -171,7 +171,7 @@ export const storage = (filename: string, workspaceRoot?: string) => {
       Workspace.layer(resolvedWorkspaceRoot),
       ArtifactStore.layerFileSystem({ directory: path.join(databaseRoot, "objects") })
     ).pipe(Layer.provideMerge(database))
-  }))
+  })).pipe(Layer.fresh)
 }
 
 const composition = <
@@ -214,7 +214,10 @@ const composition = <
   // registered durable flow — has both the registry and the engine's own
   // context in hand, and the engine is still live before the first flow is
   // registered.
-  return registerFlows.pipe(Layer.provideMerge(registry), Layer.provideMerge(engine))
+  // Constant store and registration layers must belong to this runtime's SQL
+  // context. An enclosing control plane can build the same layer values over
+  // another database; sharing their memoized instances crosses that boundary.
+  return registerFlows.pipe(Layer.provideMerge(registry), Layer.provideMerge(engine), Layer.fresh)
 }
 
 /**

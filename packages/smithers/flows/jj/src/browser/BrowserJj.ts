@@ -426,6 +426,8 @@ const create = (options: BrowserJjOptions): {
    * by every operation, so this step cannot say which one asked, and a failure
    * that reached a caller without a `method` and a `command` is exactly what
    * `jjError` exists to prevent. `invoke` completes it.
+   * Instantiation and caching finish under the permit even if the caller is
+   * interrupted, so scoped disposal always sees the acquired reactor.
    */
   const ensure: Effect.Effect<Reactor, string> = Effect.suspend(() =>
     disposed
@@ -437,16 +439,10 @@ const create = (options: BrowserJjOptions): {
           catch: (cause) => `failed to instantiate flows_jj.wasm: ${messageOf(cause)}`
         }),
         (reactor) => {
-          // A disposal that raced the instantiation wins: the reactor it never
-          // saw is closed here rather than kept past the scope.
-          if (disposed) {
-            reactor.wasi.dispose()
-            return reactor
-          }
           ready = reactor
           return reactor
         }
-      )
+      ).pipe(Effect.uninterruptible)
       : Effect.succeed(ready)
   )
 

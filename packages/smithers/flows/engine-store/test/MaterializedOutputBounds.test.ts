@@ -18,52 +18,17 @@ import * as ArtifactStore from "@smthrs/artifacts/ArtifactStore"
 import type { FileBoundary } from "@smthrs/flow/FileBoundary"
 import * as Effect from "effect/Effect"
 import * as Encoding from "effect/Encoding"
-import * as FileSystem from "effect/FileSystem"
+import type * as FileSystem from "effect/FileSystem"
 import * as Layer from "effect/Layer"
 import * as StepBoundary from "../src/StepBoundary.ts"
+import { memoryFileSystem } from "./fixtures/MemoryFileSystem.ts"
 import { sha256, withCrypto } from "./Sha256.ts"
 
 const encoder = new TextEncoder()
 const decoder = new TextDecoder()
 
 /** An in-memory host filesystem with directory-aware writes. */
-const memoryFs = (seed: Record<string, string>) => {
-  const files = new Map<string, Uint8Array>(
-    Object.entries(seed).map(([path, content]) => [path, encoder.encode(content)])
-  )
-  const directories = new Set<string>()
-  const writes: Array<string> = []
-  const renames: Array<readonly [string, string]> = []
-  const fs = FileSystem.makeNoop({
-    exists: ((path: string) => Effect.succeed(files.has(path))) as never,
-    readFile: ((path: string) =>
-      files.has(path)
-        ? Effect.succeed(files.get(path)!)
-        : Effect.fail(new Error(`ENOENT: ${path}`))) as never,
-    makeDirectory: ((path: string) =>
-      Effect.sync(() => {
-        directories.add(path)
-      })) as never,
-    writeFile: ((path: string, bytes: Uint8Array) =>
-      Effect.sync(() => {
-        writes.push(path)
-        files.set(path, bytes)
-      })) as never,
-    rename: ((from: string, to: string) =>
-      Effect.sync(() => {
-        renames.push([from, to] as const)
-        const bytes = files.get(from)
-        if (bytes === undefined) throw new Error(`ENOENT: ${from}`)
-        files.set(to, bytes)
-        files.delete(from)
-      })) as never,
-    remove: ((path: string) =>
-      Effect.sync(() => {
-        files.delete(path)
-      })) as never
-  })
-  return { files, directories, writes, renames, fs }
-}
+const memoryFs = memoryFileSystem
 
 /**
  * The blob mechanics moved to `@smthrs/artifacts`; the inline-versus-spill

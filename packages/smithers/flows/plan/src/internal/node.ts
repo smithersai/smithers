@@ -642,7 +642,10 @@ export const catch_ = (subject: string, protectedAst: NodeAst, failure: NodeAst,
     failure,
     ...(filter === undefined
       ? {}
-      : { filter: Schema.toJsonSchemaDocument(filter), filterIdentity: filterIdentity(filter) })
+      : {
+        filter: Schema.toJsonSchemaDocument(filter, { onExcessProperty: "error" }),
+        filterIdentity: filterIdentity(filter)
+      })
   }
   if (filter !== undefined) filters.set(ast, filter)
   return ast

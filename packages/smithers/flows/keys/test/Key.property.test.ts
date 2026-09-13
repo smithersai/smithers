@@ -1,7 +1,7 @@
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
 import { Canonical } from "@smthrs/canonical"
 import { Effect, Result, Schema } from "effect"
-import { FastCheck } from "effect/testing"
+import * as FastCheck from "fast-check"
 import { describe, expect, it } from "vitest"
 import * as Keys from "../src/index.ts"
 

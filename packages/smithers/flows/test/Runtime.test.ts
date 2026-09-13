@@ -5,6 +5,7 @@ import * as DurableWriter from "@smthrs/database/DurableWriter"
 import * as NodeDatabase from "@smthrs/database/node/NodeDatabase"
 import { StepBoundary, WorkspaceSandbox } from "@smthrs/engine-store"
 import * as Jj from "@smthrs/jj/Jj"
+import { Migrations as RunMigrations, RunStore } from "@smthrs/run-store"
 import { Context, Effect, Exit, Layer, Path } from "effect"
 import * as SqlClient from "effect/unstable/sql/SqlClient"
 import { existsSync, mkdtempSync, rmSync } from "node:fs"
@@ -80,6 +81,36 @@ it("uses the caller's SQL instance for every migrated store without opening a se
       )
     )
     expect(existsSync(filename)).toBe(false)
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
+it("isolates store instances from an enclosing control database in the same layer memo map", async () => {
+  const root = mkdtempSync(join(tmpdir(), "flows-runtime-store-isolation-"))
+  const control = RunStore.layer.pipe(Layer.provideMerge(
+    RunMigrations.layer.pipe(Layer.provideMerge(
+      DurableWriter.layer().pipe(Layer.provideMerge(NodeDatabase.layer({ filename: ":memory:" })))
+    ))
+  ))
+  const engine = Runtime.storage(join(root, "engine.sqlite"), root).pipe(
+    Layer.provide(NodeDatabase.layer({ filename: ":memory:" }))
+  )
+  try {
+    await Effect.runPromise(
+      Effect.gen(function*() {
+        const controlStore = yield* RunStore.RunStore
+        yield* controlStore.create("control-only", "{}")
+        const engineContext = yield* Layer.build(engine)
+        const engineStore = Context.get(engineContext, RunStore.RunStore)
+        expect((yield* Effect.flip(engineStore.get("control-only"))).code).toBe("not_found_row")
+        yield* engineStore.create("engine-only", "{}")
+        expect((yield* Effect.flip(controlStore.get("engine-only"))).code).toBe("not_found_row")
+      }).pipe(
+        Effect.provide(Layer.mergeAll(control, NodeFileSystem.layer, NodeCrypto.layer, Path.layer)),
+        Effect.scoped
+      )
+    )
   } finally {
     rmSync(root, { recursive: true, force: true })
   }

@@ -8,7 +8,7 @@
 import { describe, expect, it } from "@effect/vitest"
 import { Journal } from "@smthrs/journal"
 import * as TestJournal from "@smthrs/journal/test/TestJournal"
-import { Effect, Layer, Redacted } from "effect"
+import { Deferred, Effect, Fiber, Layer, Redacted } from "effect"
 import { TestClock } from "effect/testing"
 import * as BranchCommands from "../src/BranchCommands.ts"
 import * as BranchPresence from "../src/BranchPresence.ts"
@@ -260,6 +260,67 @@ describe("BranchCommands identity and bounds", () => {
       expect(idle.receipt).toMatchObject({ status: "duplicate", seq: original.seq })
       expect(idle.reads).toBeGreaterThan(0)
     }))
+
+  it.effect("keeps an old branch's permit while a submission is still in flight", () =>
+    durable(Effect.gen(function*() {
+      const journal = yield* Journal.Journal
+      const entered = yield* Deferred.make<void>()
+      const release = yield* Deferred.make<void>()
+      let reads = 0
+      const counted = Journal.make({
+        ...journal,
+        entries: (request) =>
+          request.runId === BranchProtocol.branchRunId(branchId)
+            ? Effect.gen(function*() {
+              reads++
+              yield* Deferred.succeed(entered, undefined)
+              yield* Deferred.await(release)
+              return yield* journal.entries(request)
+            })
+            : journal.entries(request)
+      })
+      const share = yield* BranchShare.BranchShare
+      const capabilities = new Map([
+        [branchId, yield* capabilityFor(branchId)],
+        [otherBranchId, yield* capabilityFor(otherBranchId)]
+      ])
+      const verified = new Map([
+        [branchId, yield* share.verify(capabilities.get(branchId)!, { branchId, access: "write" })],
+        [
+          otherBranchId,
+          yield* share.verify(capabilities.get(otherBranchId)!, { branchId: otherBranchId, access: "write" })
+        ]
+      ])
+      // Authentication is already exercised by BranchShare's suite. A
+      // synchronous verifier makes the permit handoff deterministic here.
+      const commands = yield* BranchCommands.makeLiveWith({ branchIdleMs: 1_000 }).pipe(
+        Effect.provideService(Journal.Journal, counted),
+        Effect.provideService(BranchShare.BranchShare, {
+          ...share,
+          verify: (_capability, request) => Effect.succeed(verified.get(request.branchId)!)
+        })
+      )
+      const submit = (target: BranchProtocol.BranchId) =>
+        Effect.gen(function*() {
+          const submission = yield* BranchCommands.submission({
+            branchId: target,
+            commandId: commandId("c1"),
+            participantId: alice,
+            name: BranchProtocol.SayCommand
+          })
+          return yield* commands.submit({ capability: capabilities.get(target)!, submission })
+        })
+      const first = yield* submit(branchId).pipe(Effect.forkChild)
+      yield* Deferred.await(entered)
+      yield* TestClock.adjust(1_001)
+      expect((yield* submit(otherBranchId)).status).toBe("admitted")
+      // Another submission to the held branch must share its existing permit.
+      const second = yield* submit(branchId).pipe(Effect.forkChild({ startImmediately: true }))
+      yield* Deferred.succeed(release, undefined)
+      const original = yield* Fiber.join(first)
+      expect(yield* Fiber.join(second)).toMatchObject({ status: "duplicate", seq: original.seq })
+      expect(reads).toBe(1)
+    })))
 
   it.effect("refuses a ledger policy that is not a positive safe integer", () =>
     Effect.gen(function*() {

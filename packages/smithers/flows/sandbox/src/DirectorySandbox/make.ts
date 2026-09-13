@@ -148,6 +148,11 @@ export const make = (options: DirectorySandboxOptions): Provider => ({
         // its workdir resolver, so the rooting rule lives in one place rather
         // than being restated by every adapter that supplies overrides.
         files: {
+          // Preserve write flags, modes and ownership through the native host.
+          writeFile: options.fs.writeFile,
+          writeFileString: options.fs.writeFileString,
+          chmod: options.fs.chmod,
+          chown: options.fs.chown,
           exists: options.fs.exists,
           stat: options.fs.stat,
           readDirectory: options.fs.readDirectory,

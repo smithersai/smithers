@@ -8,7 +8,7 @@
  *
  * @since 0.1.0
  */
-import { Effect, Layer, Option, Queue, type Scope } from "effect"
+import { Effect, Layer, Option, Queue, type Scope, Stream } from "effect"
 import * as RpcClient from "effect/unstable/rpc/RpcClient"
 import type * as RpcClientError from "effect/unstable/rpc/RpcClientError"
 import type * as RpcGroup from "effect/unstable/rpc/RpcGroup"
@@ -67,18 +67,18 @@ export const connect = (
     const writer = yield* pair.server.writer
     const protocol = yield* RpcServer.Protocol.make((writeRequest) =>
       Effect.gen(function*() {
-        yield* pair.server.runRaw((bytes) =>
+        yield* Stream.runForEach(Socket.toStream(pair.server), (bytes) =>
           Effect.forEach(serialization.decode(bytes), (message) => writeRequest(0, message as never), {
             discard: true
-          })
-        ).pipe(Effect.forkScoped)
+          })).pipe(Effect.forkScoped)
         return {
           disconnects: yield* Queue.make<number>(),
           send: (_clientId: number, response: FromServerEncoded) => {
             const encoded = serialization.encode(response)
-            return encoded === undefined ? Effect.void : Effect.orDie(writer(encoded))
+            return encoded === undefined ? Effect.void : Effect.orDie(writer.write(encoded))
           },
-          end: () => Effect.void,
+          end: () =>
+            Effect.void,
           clientIds: Effect.succeed<ReadonlySet<number>>(new Set([0])),
           initialMessage: Effect.succeed(Option.none()),
           supportsAck: true,

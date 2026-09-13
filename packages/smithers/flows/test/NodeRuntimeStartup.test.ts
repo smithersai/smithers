@@ -33,7 +33,11 @@ it("builds the host before the runtime creates its repository and database paren
     )
     const database = new DatabaseSync(filename, { readOnly: true })
     try {
-      expect(database.prepare("SELECT COUNT(*) AS count FROM flows_journal_events").get()).toMatchObject({ count: 0 })
+      // The contained jj layer validates its pinned executable at startup.
+      expect(database.prepare("SELECT event_type FROM flows_journal_events ORDER BY seq").all()).toEqual([
+        { event_type: "flows.host.process-spawned.v1" },
+        { event_type: "flows.host.process-exited.v1" }
+      ])
     } finally {
       database.close()
     }

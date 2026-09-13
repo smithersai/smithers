@@ -297,7 +297,11 @@ const makeWorkerEffect = Effect.fnUntraced(function*<
 ) {
   const queue = yield* PersistedQueue.make({
     name: `DurableQueue/${self.name}`,
-    schema: getQueueSchema(self.payloadSchema)
+    schema: getQueueSchema(self.payloadSchema),
+    maxAttempts,
+    // The worker owns the 500 ms retry pause below. Keep an upstream queue
+    // default from introducing an additional backoff after an Effect upgrade.
+    retrySchedule: Schedule.spaced(0)
   })
 
   const worker = Effect.suspend(() => {
@@ -356,16 +360,16 @@ const makeWorkerEffect = Effect.fnUntraced(function*<
           })
         }
       )
-    }, { maxAttempts }).pipe(
+    }).pipe(
       Effect.tapCause((cause) => {
         if (!completion) return Effect.void
         return Effect.logError("DurableQueue failed to persist or acknowledge a handler result", cause).pipe(
           Effect.annotateLogs({
             token: completion.token,
             itemId: completion.id,
-            attempt: completion.attempts + 1,
+            attempt: completion.attempts,
             maxAttempts,
-            exhausted: !Cause.hasInterrupts(cause) && completion.attempts + 1 >= maxAttempts
+            exhausted: !Cause.hasInterrupts(cause) && completion.attempts >= maxAttempts
           })
         )
       })

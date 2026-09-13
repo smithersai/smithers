@@ -1,5 +1,5 @@
 import { Effect } from "effect"
-import { FastCheck } from "effect/testing"
+import * as FastCheck from "fast-check"
 import { describe, expect, it, vi } from "vitest"
 import * as FileSet from "../src/FileSet.ts"
 import * as EffectCandidates from "../src/internal/EffectCandidates.ts"

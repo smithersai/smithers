@@ -303,7 +303,7 @@ export const make: Effect.Effect<Service, never, DurableWriter | SqlClient.SqlCl
 
   const snapshot: Service["snapshot"] = Effect.fn("SelectionStore.snapshot")(() =>
     Effect.gen(function*() {
-      const pinnedAtMs = yield* Clock.currentTimeMillis
+      const pinnedAtMs = yield* Clock.currentTimeMillis.pipe(Effect.map(Math.floor))
       const edges = yield* list()
       return { pinnedAtMs, edges }
     })

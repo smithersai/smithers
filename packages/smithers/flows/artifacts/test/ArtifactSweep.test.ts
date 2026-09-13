@@ -669,7 +669,9 @@ describe("stale lock reclamation", () => {
             )) as never,
           writeFileString: ((path: string, value: string, options?: { flag?: string }) =>
             Effect.suspend(() => {
-              if (options?.flag === "wx" && files.has(path)) return Effect.fail(missing("writeFileString", "AlreadyExists"))
+              if (options?.flag === "wx" && files.has(path)) {
+                return Effect.fail(missing("writeFileString", "AlreadyExists"))
+              }
               files.set(path, { bytes: bytes(value), mtime: Date.now() })
               return Effect.void
             })) as never,
@@ -680,12 +682,15 @@ describe("stale lock reclamation", () => {
           open: ((path: string, options?: { flag?: string }) =>
             Effect.suspend(() => {
               if (options?.flag === "wx") {
-                if (files.has(path)) return Effect.fail(missing("open", "AlreadyExists"))
+                if (files.has(path)) {
+                  return Effect.fail(missing("open", "AlreadyExists"))
+                }
                 files.set(path, { bytes: new Uint8Array(), mtime: Date.now() })
               }
               return Effect.succeed({
                 stat: self.stat(path),
-                writeAll: (content: Uint8Array) => self.writeFile(path, content),
+                writeAll: (content: Uint8Array) =>
+                  self.writeFile(path, content),
                 sync: Effect.void
               })
             })) as never,
@@ -721,13 +726,17 @@ describe("stale lock reclamation", () => {
           rename: ((from: string, to: string) =>
             Effect.suspend(() => {
               const file = files.get(from)
-              if (file === undefined) return Effect.fail(missing("rename"))
+              if (file === undefined) {
+                return Effect.fail(missing("rename"))
+              }
               files.set(to, file)
               files.delete(from)
               return Effect.void
             })) as never,
           remove: ((path: string) =>
-            Effect.suspend(() => files.delete(path) ? Effect.void : Effect.fail(missing("remove")))) as never,
+            Effect.suspend(() =>
+              files.delete(path) ? Effect.void : Effect.fail(missing("remove"))
+            )) as never,
           utimes: ((path: string, _atime: Date | number, mtime: Date | number) =>
             Effect.suspend(() => {
               const file = files.get(path)

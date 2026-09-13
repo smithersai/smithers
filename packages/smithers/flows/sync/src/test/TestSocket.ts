@@ -3,6 +3,7 @@
  *
  * @since 0.1.0
  */
+import * as Deferred from "effect/Deferred"
 import * as Effect from "effect/Effect"
 import * as Latch from "effect/Latch"
 import * as Queue from "effect/Queue"
@@ -134,23 +135,30 @@ export const makePair = (): Effect.Effect<Pair, never, Scope.Scope> =>
     const socket = (
       incoming: Queue.Queue<Uint8Array, Socket.SocketError>,
       outgoing: Queue.Queue<Uint8Array, Socket.SocketError>
-    ) =>
-      Socket.make({
-        runRaw: (handler, options) =>
-          Effect.gen(function*() {
-            if (options?.onOpen !== undefined) yield* options.onOpen
-            while (true) {
-              const bytes = yield* delivery.whenOpen(Queue.take(incoming))
-              const result = handler(bytes)
-              if (Effect.isEffect(result)) yield* result
-            }
-          }),
-        writer: Effect.succeed((chunk) => {
-          if (Socket.isCloseEvent(chunk)) return Effect.void
-          const bytes = typeof chunk === "string" ? new TextEncoder().encode(chunk) : chunk
-          return offer(outgoing, bytes)
+    ) => {
+      const write: Socket.Writer["write"] = (chunk) => {
+        if (Socket.isCloseEvent(chunk)) return Effect.void
+        const bytes = typeof chunk === "string" ? new TextEncoder().encode(chunk) : chunk
+        return offer(outgoing, bytes)
+      }
+      return Socket.make({
+        reader: Effect.gen(function*() {
+          const closed = yield* Deferred.make<never, Socket.SocketError>()
+          yield* Effect.addFinalizer(() => Deferred.fail(closed, transportError()))
+          return {
+            pull: Effect.raceFirst(
+              Effect.map(delivery.whenOpen(Queue.take(incoming)), (bytes) => [bytes] as const),
+              Deferred.await(closed)
+            ),
+            upgrade: Socket.SocketUpgradeError.unsupported
+          }
+        }),
+        writer: Effect.succeed({
+          write,
+          writeAll: (chunks) => Effect.forEach(chunks, write, { discard: true })
         })
       })
+    }
 
     const faults: TestFaults = {
       installFilter: (filter) => {

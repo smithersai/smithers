@@ -4,6 +4,7 @@
  * @since 0.1.0
  */
 import * as CommandLine from "@smthrs/kernel/CommandLine"
+import * as ByteSize from "effect/ByteSize"
 import * as Effect from "effect/Effect"
 import * as FileSystem from "effect/FileSystem"
 import * as Option from "effect/Option"
@@ -184,7 +185,7 @@ const emptyInfo = {
   uid: Option.none<number>(),
   gid: Option.none<number>(),
   rdev: Option.none<number>(),
-  blksize: Option.none<FileSystem.Size>(),
+  blksize: Option.none<ByteSize.ByteSize>(),
   blocks: Option.none<number>()
 }
 
@@ -302,7 +303,7 @@ export const fileSystem = (session: Session): FileSystem.FileSystem => {
       ...emptyInfo,
       /* v8 ignore next -- `split` always yields a first field, so the `type` nullish arm only discharges the indexed-access optional */
       type: fileTypes[type ?? ""] ?? "Unknown",
-      size: FileSystem.Size(BigInt(size))
+      size: ByteSize.bytes(BigInt(size))
     } satisfies FileSystem.File.Info
   })
   const readFile = (raw: string): Effect.Effect<Uint8Array, PlatformError.PlatformError> => {

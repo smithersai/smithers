@@ -53,11 +53,12 @@ describe("RemoteChildProcessSpawner kill", () => {
           const provider: RemoteChildProcessSpawner.Provider = {
             session: "hung-kill",
             open: () => Effect.void,
-            spawn: () => Effect.succeed({
-              stdout: Stream.make(new TextEncoder().encode("hi")),
-              stderr: Stream.empty,
-              exitCode: Deferred.await(exited)
-            }),
+            spawn: () =>
+              Effect.succeed({
+                stdout: Stream.make(new TextEncoder().encode("hi")),
+                stderr: Stream.empty,
+                exitCode: Deferred.await(exited)
+              }),
             kill: () => Effect.andThen(Deferred.succeed(signalling, undefined), Effect.never)
           }
           const reading = yield* Effect.flatMap(

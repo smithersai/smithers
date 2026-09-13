@@ -45,7 +45,7 @@ const file = (calls: Array<string>): EffectFileSystem.File => ({
   read: () =>
     Effect.sync(() => {
       calls.push("file.read")
-      return EffectFileSystem.Size(BigInt(0))
+      return 0
     }),
   readAlloc: () =>
     Effect.sync(() => {
@@ -59,7 +59,7 @@ const file = (calls: Array<string>): EffectFileSystem.File => ({
   write: () =>
     Effect.sync(() => {
       calls.push("file.write")
-      return EffectFileSystem.Size(BigInt(0))
+      return 0
     }),
   writeAll: () =>
     Effect.sync(() => {
@@ -543,7 +543,7 @@ describe("FileSystem operation guards", () => {
                 yield* handle.truncate(0)
                 yield* handle.write(new Uint8Array(1))
                 yield* handle.writeAll(new Uint8Array(1))
-                yield* handle.seek(0, "current")
+                yield* handle.seek(0n, "current")
               })
             ),
           hostFileSystem(calls),
@@ -644,6 +644,8 @@ describe("the atomic request protocol", () => {
       { readonly operation: K }
     >
   } = {
+    chmod: { operation: "chmod", path: "/workspace/a", options: { mode: 0o600 } },
+    chown: { operation: "chown", path: "/workspace/a", options: { uid: 0, gid: 0 } },
     exists: { operation: "exists", path: "/workspace/a" },
     glob: { operation: "glob", pattern: "/workspace/*.ts", root: "/workspace" },
     makeDirectory: { operation: "makeDirectory", path: "/workspace/dir" },
@@ -667,10 +669,10 @@ describe("the atomic request protocol", () => {
     // @ts-expect-error a glob names the pattern it expands
     const patternlessGlob: FileSystem.AtomicRequest = { operation: "glob", root: "/workspace" }
     // @ts-expect-error the protocol names every operation it carries
-    const invented: FileSystem.AtomicRequest = { operation: "chmod", path: "/workspace/a" }
+    const invented: FileSystem.AtomicRequest = { operation: "unsupported", path: "/workspace/a" }
 
     expect([rename, halfRename, patternlessGlob, invented].map((request) => request.operation))
-      .toEqual(["rename", "rename", "glob", "chmod"])
+      .toEqual(["rename", "rename", "glob", "unsupported"])
   })
 
   it("fixes each operation's result instead of taking it from its caller", () => {
@@ -698,6 +700,8 @@ describe("the atomic request protocol", () => {
       expect(exits.map((exit) => exit._tag)).toEqual(exits.map(() => "Success"))
       // `realPath` is the one host method the double answers without recording.
       expect(calls).toEqual([
+        "chmod",
+        "chown",
         "exists",
         "glob",
         "makeDirectory",

@@ -8,7 +8,7 @@ import { join } from "node:path"
 import * as BrowserFileSystem from "../src/BrowserFileSystem/index.ts"
 import * as BrowserHost from "../src/BrowserHost.ts"
 
-it.effect("publishes and reads an artifact over BrowserHost with Crypto", () =>
+it.effect("refuses filesystem publication without trusted handles and uses memory on BrowserHost", () =>
   Effect.gen(function*() {
     const root = yield* Effect.promise(() => fs.mkdtemp(join(tmpdir(), "browser-artifact-")))
     try {
@@ -20,9 +20,13 @@ it.effect("publishes and reads an artifact over BrowserHost with Crypto", () =>
           durability: "best-effort",
           coordination: "process"
         })
-        const digest = yield* store.put(bytes)
-        expect(yield* store.get(digest)).toEqual(bytes)
-        expect(yield* store.put(bytes)).toBe(digest)
+        const refusal = yield* Effect.flip(store.put(bytes))
+        expect(refusal.code).toBe("unavailable")
+        expect(refusal.message).toContain("readLink")
+        const memory = ArtifactStore.makeMemory()
+        const digest = yield* memory.put(bytes)
+        expect(yield* memory.get(digest)).toEqual(bytes)
+        expect(yield* memory.put(bytes)).toBe(digest)
       }).pipe(
         Effect.provide(BrowserHost.layer({
           fs,

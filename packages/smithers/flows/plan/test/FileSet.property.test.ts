@@ -1,6 +1,6 @@
 import * as FileSet from "@smthrs/plan/FileSet"
 import * as Schema from "effect/Schema"
-import { FastCheck } from "effect/testing"
+import * as FastCheck from "fast-check"
 import { describe, expect, it } from "vitest"
 import { params as sharedParams } from "./FastCheckParams.ts"
 

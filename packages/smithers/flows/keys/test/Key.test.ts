@@ -195,11 +195,10 @@ describe("key derivation", () => {
         ["Array", Schema.Array(Keys.DerivedKey), [material]]
       ] as const
     )("retains only the enclosing %s input when its boundary enables reporting", (_name, schema, input) => {
-      for (const mode of ["enabled", "disabled", "default", "annotated"] as const) {
-        const boundary = mode === "annotated" ? schema.annotate({ parseOptions: { reportInput: false } }) : schema
+      for (const mode of ["enabled", "disabled", "default"] as const) {
         const options = mode === "default" ? undefined : { reportInput: mode !== "disabled" }
         const error = Effect.runSync(Effect.flip(
-          Schema.decodeUnknownEffect(boundary)(input, options).pipe(Effect.provide(failingCrypto))
+          Schema.decodeUnknownEffect(schema)(input, options).pipe(Effect.provide(failingCrypto))
         ))
         expect(error.issue._tag).toBe("Composite")
         const issues = collectIssues(error.issue)

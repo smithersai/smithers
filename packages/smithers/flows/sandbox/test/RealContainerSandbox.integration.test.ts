@@ -118,6 +118,21 @@ describe.skipIf(!engineAvailable)("ContainerSandbox against a real engine", () =
           const stat = yield* files.stat(`${session.workdir}/nested/deep/out.bin`)
           expect(stat.type).toBe("File")
           expect(stat.size).toBe(BigInt(bytes.length))
+          // Exclusive writes preserve an existing entry of every kind and
+          // leave no private staging directories behind after a collision.
+          yield* files.writeFile("private.bin", bytes, { flag: "wx", mode: 0o600 })
+          expect((yield* files.stat("private.bin")).mode & 0o7777).toBe(0o600)
+          yield* Effect.scoped(Effect.flatMap(
+            session.spawn("ln -s private.bin alias.bin; ln -s absent dangling.bin; mkfifo pipe.bin; mkdir dir.bin", {}),
+            (process) => process.exitCode
+          ))
+          for (const path of ["private.bin", "alias.bin", "dangling.bin", "pipe.bin", "dir.bin"]) {
+            const error = yield* Effect.flip(files.writeFile(path, new Uint8Array([99]), { flag: "wx" }))
+            expect(error.reason._tag).toBe("AlreadyExists")
+          }
+          expect(yield* files.readFile("private.bin")).toEqual(bytes)
+          expect((yield* files.readDirectory(session.workdir)).some((name) => name.startsWith(".smithers-write.")))
+            .toBe(false)
           yield* Effect.scoped(
             Effect.flatMap(session.spawn("ln -s nested/deep/out.bin link.bin", {}), (process) => process.exitCode)
           )

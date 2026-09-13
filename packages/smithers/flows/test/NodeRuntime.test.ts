@@ -467,7 +467,7 @@ describe("the supported Node SQLite composition", () => {
       Effect.gen(function*() {
         const runs = yield* RunStore.RunStore
         let row = yield* runs.get("gate-review")
-        for (let attempt = 0; attempt < 200 && row.status === "suspended"; attempt++) {
+        for (let attempt = 0; attempt < 200 && (row.status === "suspended" || row.status === "running"); attempt++) {
           yield* Effect.sleep("25 millis")
           row = yield* runs.get("gate-review")
         }

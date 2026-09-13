@@ -6,7 +6,10 @@
 import * as Effect from "effect/Effect"
 import { providerFailure } from "./localProcess.ts"
 
-/** A stable SHA-256 fingerprint, encoded to fit a Kubernetes label value. */
+/** A stable SHA-256 fingerprint, encoded to fit a Kubernetes label value.
+ * @since 0.1.0
+ * @private
+ */
 export const configurationFingerprint = (configuration: unknown) =>
   Effect.tryPromise({
     try: async () => {

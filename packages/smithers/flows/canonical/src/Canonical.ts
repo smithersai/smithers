@@ -63,7 +63,7 @@ export type Canonical = typeof Canonical.Type
  */
 export const Canonical = Schema.Unknown.pipe(
   Schema.decodeTo(CanonicalString, {
-    decode: SchemaGetter.transformOrFail((value, parseOptions) =>
+    decode: SchemaGetter.transformEffect((value, parseOptions) =>
       Effect.try({
         try: () => {
           const result = canonicalize(value)
@@ -78,7 +78,7 @@ export const Canonical = Schema.Unknown.pipe(
           )
       })
     ),
-    encode: SchemaGetter.transformOrFail((document, parseOptions) =>
+    encode: SchemaGetter.transformEffect((document, parseOptions) =>
       Effect.try({
         try: () => JSON.parse(document) as unknown,
         catch: (cause) =>

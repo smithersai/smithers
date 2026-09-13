@@ -23,6 +23,7 @@ import * as PlatformError from "effect/PlatformError"
 import * as Schema from "effect/Schema"
 import * as SchemaGetter from "effect/SchemaGetter"
 import * as SchemaIssue from "effect/SchemaIssue"
+import * as SchemaParser from "effect/SchemaParser"
 import { sha256 } from "./internal/sha256.ts"
 
 const digestBytes = 32
@@ -288,18 +289,22 @@ const schemaIssue = (error: Sha256Error): SchemaIssue.InvalidValue =>
     cause: error
   })
 
-const Sha256Schema = Schema.Union([Schema.String, Schema.Uint8Array]).pipe(
+const Sha256Transformation = Schema.Union([Schema.String, Schema.Uint8Array]).pipe(
   Schema.decodeTo(Digest, {
-    decode: SchemaGetter.transformOrFail((input) => digest(input).pipe(Effect.mapError(schemaIssue))),
+    decode: SchemaGetter.transformEffect((input) => digest(input).pipe(Effect.mapError(schemaIssue))),
     encode: SchemaGetter.forbidden(() => "A digest cannot be converted back into its source bytes")
   })
-).annotate({
-  identifier: "@smthrs/crypto/Sha256",
-  // Hash inputs can be credentials or multi-megabyte buffers. This overrides
-  // input reporting for this node only. Enclosing schemas use their own parse
-  // options: callers must set reportInput: false at the outermost decode.
-  parseOptions: { reportInput: false }
-})
+)
+
+// Own the parsing boundary: annotations do not override parser options. The
+// declaration also forwards encoding through the reversed parameter codec, so
+// the one-way transformation stays forbidden without retaining its input.
+const Sha256Schema = Schema.declareConstructor<Digest, string | Uint8Array>()(
+  [Sha256Transformation],
+  ([codec]) => (input, _ast, options) =>
+    SchemaParser.decodeUnknownEffect(codec)(input, { ...options, reportInput: false }),
+  { identifier: "@smthrs/crypto/Sha256" }
+)
 
 /**
  * One-way schema transformation from text or bytes to {@link Digest}.

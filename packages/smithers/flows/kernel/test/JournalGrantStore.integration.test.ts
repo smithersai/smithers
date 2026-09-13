@@ -110,7 +110,7 @@ describe("JournalGrantStore real SQL integration", () => {
             const sql = yield* SqlClient.SqlClient
             const writer = yield* DurableWriter
             const failingWriter = DurableWriter.of({
-              write: <A, E, R>(effect: Effect.Effect<A, E, R>): Effect.Effect<A, E | DatabaseError, R> =>
+              write: (effect) =>
                 writer.write(
                   Effect.flatMap(effect, () => Effect.fail(new DatabaseError({ code: "constraint" })))
                 )

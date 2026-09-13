@@ -127,7 +127,7 @@ const program = Effect.gen(function*() {
     Effect.provideService(SyncServer.SnapshotSource, { read: () => Effect.sync(() => checkpoint) })
   )
   const listener = yield* NodeSocketServer.make({ host: "127.0.0.1", port: 0 })
-  assert.equal(listener.address._tag, "TcpAddress")
+  assert.equal(listener.address._tag, "InetAddressV4")
   const port = (listener.address as { port: number }).port
   const serverProtocol = yield* RpcServer.makeProtocolSocketServer.pipe(
     Effect.provideService(SocketServer.SocketServer, listener),

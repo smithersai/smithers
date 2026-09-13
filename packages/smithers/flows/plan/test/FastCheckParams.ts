@@ -1,4 +1,4 @@
-import { FastCheck } from "effect/testing"
+import * as FastCheck from "fast-check"
 
 /**
  * Shared FastCheck parameters for the plan property suites: `FC_NUM_RUNS` and

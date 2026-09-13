@@ -4,9 +4,10 @@ import * as NodeDatabase from "@smthrs/database/node/NodeDatabase"
 import { Journal } from "@smthrs/journal"
 import * as JournalMigrations from "@smthrs/journal/Migrations"
 import * as SqlJournal from "@smthrs/journal/SqlJournal"
-import { Effect, Layer, Redacted } from "effect"
+import { Effect, Layer, Redacted, Stream } from "effect"
 import * as RpcSerialization from "effect/unstable/rpc/RpcSerialization"
 import * as RpcServer from "effect/unstable/rpc/RpcServer"
+import * as Socket from "effect/unstable/socket/Socket"
 import * as Net from "node:net"
 import * as BranchCommands from "../../src/BranchCommands.ts"
 import * as BranchProtocol from "../../src/BranchProtocol.ts"
@@ -133,17 +134,16 @@ const program = Effect.scoped(
     const rpcServer = yield* RpcServer.makeNoSerialization(SyncRpcs.SyncRpcs, {
       onFromServer: (response) => {
         const encoded = serialization.encode(response)
-        return Effect.orDie(writer(encoded!))
+        return Effect.orDie(writer.write(encoded!))
       },
       disableFatalDefects: true
     }).pipe(Effect.provide(handlers))
-    yield* socket.runRaw((bytes) =>
+    yield* Stream.runForEach(Socket.toStream(socket), (bytes) =>
       Effect.forEach(
         serialization.decode(bytes),
         (message) => rpcServer.write(0, message as never),
         { discard: true }
-      )
-    ).pipe(Effect.forkScoped)
+      )).pipe(Effect.forkScoped)
     return yield* Effect.never
   }).pipe(Effect.provide(stack))
 )

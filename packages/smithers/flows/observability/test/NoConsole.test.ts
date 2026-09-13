@@ -26,6 +26,10 @@ const TEACHING = "smithers/agent/harness/src/internal/cellPrompt.ts"
 /** How many `console.*` lines the teaching text is expected to spell. */
 const TEACHING_LINES = 2
 
+// The public sandbox documentation teaches the same cell realm. Keep this
+// exception tied to its single worked example rather than exempting source.
+const SANDBOX_TEACHING = "smithers/agent/harness/src/Sandbox.ts"
+
 /**
  * Source files under every package's `src`. Walked in-process rather than
  * shelled out to ripgrep: a runner without `rg` makes `spawnSync` return
@@ -74,7 +78,8 @@ function packageSourceRoots(dir: string = PACKAGES_DIR): string[] {
   const roots: string[] = []
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
     if (!entry.isDirectory() || entry.name === "node_modules") continue
-    if (ZERO_X_UI_KITS.has(entry.name)) continue
+    // Templates contain browser application source, outside the engine logger.
+    if (ZERO_X_UI_KITS.has(entry.name) || entry.name === "template") continue
     const path = join(dir, entry.name)
     if (existsSync(join(path, "package.json"))) roots.push(join(path, "src"))
     roots.push(...packageSourceRoots(path))
@@ -88,7 +93,7 @@ describe("console guard", () => {
     for (const root of packageSourceRoots()) {
       for (const file of sourceFiles(root)) {
         const relative = file.slice(PACKAGES_DIR.length)
-        if (relative === TEACHING) continue
+        if (relative === TEACHING || relative === SANDBOX_TEACHING) continue
         const source = readFileSync(file, "utf8")
         if (!CONSOLE_CALL.test(source)) continue
         for (const [index, line] of source.split("\n").entries()) {
@@ -103,6 +108,12 @@ describe("console guard", () => {
     const source = readFileSync(join(PACKAGES_DIR, TEACHING), "utf8")
     const matched = source.split("\n").filter((line) => CONSOLE_CALL.test(line))
     expect(matched).toHaveLength(TEACHING_LINES)
+  })
+
+  it("holds the sandbox documentation to its one cell-console example", () => {
+    const source = readFileSync(join(PACKAGES_DIR, SANDBOX_TEACHING), "utf8")
+    const matched = source.split("\n").filter((line) => CONSOLE_CALL.test(line))
+    expect(matched).toEqual([" * console.log(result.ok === false ? result.error.code : result.stdout)"])
   })
 
   it("scans a non-empty set of package sources", () => {

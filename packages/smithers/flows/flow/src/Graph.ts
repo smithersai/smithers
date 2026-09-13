@@ -277,7 +277,7 @@ const declaredPlacement = (annotations: Context.Context<never>): unknown =>
 const schemaIdentity = (schema: Schema.Top): unknown => {
   const cached = schemaDocuments.get(schema)
   if (cached !== undefined) return cached
-  const document = Schema.toJsonSchemaDocument(schema)
+  const document = Schema.toJsonSchemaDocument(schema, { onExcessProperty: "error" })
   schemaDocuments.set(schema, document)
   return document
 }

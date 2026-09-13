@@ -5,7 +5,12 @@ import * as BrowserFileSystem from "../src/BrowserFileSystem/index.ts"
 describe("BrowserFileSystem", () => {
   // Stream completion is the condition; a wall-clock limit only measures
   // machine load, which the package-wide `testTimeout` budgets for.
-  it.effect("streams bounded chunks without loading the complete file", () =>
+  it.effect.each(
+    [
+      { offset: 17, bytesToRead: 100_000, chunkSize: 4_096 },
+      { offset: "17 B", bytesToRead: "100 kB", chunkSize: 4_096 }
+    ] as const
+  )("streams bounded chunks without loading the complete file (%j)", (options) =>
     Effect.gen(function*() {
       const source = Uint8Array.from({ length: 200_000 }, (_, index) => index % 251)
       let closed = false
@@ -43,11 +48,7 @@ describe("BrowserFileSystem", () => {
       const fileSystem = BrowserFileSystem.make(backend)
 
       const chunks = yield* (
-        fileSystem.stream("/large", {
-          offset: 17,
-          bytesToRead: 100_000,
-          chunkSize: 4_096
-        }).pipe(Stream.runCollect)
+        fileSystem.stream("/large", options).pipe(Stream.runCollect)
       )
       const bytes = Uint8Array.from(Array.from(chunks).flatMap((chunk) => [...chunk]))
 

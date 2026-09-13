@@ -34,7 +34,9 @@ import * as CacheStore from "@smthrs/step-cache/CacheStore"
 import * as Deferred from "effect/Deferred"
 import * as Effect from "effect/Effect"
 import * as Exit from "effect/Exit"
+import * as Fiber from "effect/Fiber"
 import * as Layer from "effect/Layer"
+import * as Option from "effect/Option"
 import * as Schema from "effect/Schema"
 import { TestClock } from "effect/testing"
 import * as SqlClient from "effect/unstable/sql/SqlClient"
@@ -198,7 +200,17 @@ const drive = <A, E>(
   return Effect.gen(function*() {
     // Park the run at the deferred. It releases ownership on the way out,
     // which is the only state a rewind accepts.
-    yield* Ledger.execute({}, { executionId: "ledger-1", discard: true })
+    const running = yield* Ledger.execute({}, { executionId: "ledger-1" }).pipe(Effect.forkChild)
+    const runs = yield* RunStore.RunStore
+    for (let attempts = 0; attempts < 1_000; attempts++) {
+      const row = yield* runs.get("ledger-1").pipe(Effect.option)
+      if (Option.isSome(row) && row.value.status === "suspended") break
+      yield* Effect.yieldNow
+    }
+    expect((yield* runs.get("ledger-1")).status).toBe("suspended")
+    // A rewind requires a quiescent executor. Stop this caller's automatic
+    // resume loop while retaining the registered flow for the later replay.
+    yield* Fiber.interrupt(running)
     const journal = yield* Journal.Journal
     yield* journal.flush
     return yield* body(harness)
@@ -666,7 +678,17 @@ describe("time travel over an engine-written journal", () => {
         yield* TestClock.adjust(1000)
         const state = yield* DurableEngineState.DurableEngineState
         const address = { flowName: timer._tag, executionId: "clock-run", clockName: "rewind-sleep" }
-        expect(yield* state.clock(address)).toMatchObject({ _tag: "Some", value: { completedAtMs: 1000 } })
+        // Timer delivery wakes the driver; completion is persisted afterwards.
+        let clock = yield* state.clock(address)
+        for (
+          let attempt = 0;
+          attempt < 2_000 && Option.isSome(clock) && clock.value.completedAtMs === null;
+          attempt++
+        ) {
+          yield* Effect.yieldNow
+          clock = yield* state.clock(address)
+        }
+        expect(clock).toMatchObject({ _tag: "Some", value: { completedAtMs: 1000 } })
         const timeTravel = yield* TimeTravel
         yield* timeTravel.rewind({ runId: "clock-run", frame })
         yield* execute

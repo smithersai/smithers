@@ -284,8 +284,8 @@ export const layerHmac = (keyring: Keyring): Layer.Layer<WorkspaceShare, SyncErr
 export const layerConfig: Layer.Layer<WorkspaceShare, SyncError | Config.ConfigError> = Layer.effect(
   WorkspaceShare,
   Effect.gen(function*() {
-    const secret = yield* Config.redacted("SMITHERS_SYNC_SECRET")
-    const kid = yield* Config.string("SMITHERS_SYNC_KEY_ID").pipe(Config.withDefault("primary"))
+    const secret = yield* Config.Redacted("SMITHERS_SYNC_SECRET")
+    const kid = yield* Config.String("SMITHERS_SYNC_KEY_ID").pipe(Config.withDefault("primary"))
     return yield* makeHmac({ activeKid: kid, keys: [{ kid, secret }] })
   })
 )

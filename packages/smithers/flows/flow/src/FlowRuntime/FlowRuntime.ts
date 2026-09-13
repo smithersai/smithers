@@ -215,8 +215,9 @@ export class FlowRuntime extends Context.Service<
     >
 
     /**
-     * Set the result of a DurableDeferred, and then resume any waiting
-     * flows.
+     * Records the result of a DurableDeferred and schedules waiting flows to
+     * resume. Returning acknowledges delivery; it does not wait for the resumed
+     * flow to complete. Use `poll` to observe the flow's eventual result.
      */
     readonly deferredDone: <
       Success extends Schema.Constraint,

@@ -93,6 +93,14 @@ describe("ProvenanceSlot.accept", () => {
       }))
   }
 
+  it.effect("defaults an omitted source sequence to the producer's zero slot", () =>
+    ProvenanceSlot.accept({
+      journal: Journal.makeNoop({ entries: () => Effect.succeed({ entries: [occupying()], hasMore: false }) }),
+      runId,
+      record: { ...record, sourceSeq: undefined },
+      conflict
+    }).pipe(Effect.map((value) => expect(value).toBeUndefined())))
+
   it.effect("surfaces a history read failure", () =>
     Effect.gen(function*() {
       const result = yield* ProvenanceSlot.accept({

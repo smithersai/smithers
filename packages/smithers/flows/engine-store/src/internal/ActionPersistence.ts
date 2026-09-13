@@ -833,7 +833,7 @@ export const make = (deps: Dependencies) => {
           yield* Effect.forEach(records, (record) => emitLifecycle(record), { discard: true })
           return true
         }))
-      const fencedAtMs = yield* Clock.currentTimeMillis
+      const fencedAtMs = yield* Clock.currentTimeMillis.pipe(Effect.map(Math.floor))
       const heartbeat = yield* runs.heartbeat(deps.runId, deps.owner, fencedAtMs)
       if (heartbeat._tag !== "Updated") return yield* Effect.interrupt
 
@@ -1166,7 +1166,7 @@ export const make = (deps: Dependencies) => {
                 runId: stale.recordedRunId,
                 eventSeq: stale.recordedEventSeq
               }
-              const nowMs = yield* Clock.currentTimeMillis
+              const nowMs = yield* Clock.currentTimeMillis.pipe(Effect.map(Math.floor))
               yield* emitConverging(
                 JournalRecords.cacheProvenance(cacheSource("expired", recorded), {
                   keyDigest,
@@ -1208,7 +1208,7 @@ export const make = (deps: Dependencies) => {
           const admitByAge = (ttlMs: number, row: CacheStore.CacheEntry) =>
             Effect.gen(function*() {
               const recorded = { runId: row.recordedRunId, eventSeq: row.recordedEventSeq }
-              const nowMs = yield* Clock.currentTimeMillis
+              const nowMs = yield* Clock.currentTimeMillis.pipe(Effect.map(Math.floor))
               const measured: "admitted" | "expired" = nowMs - row.createdAtMs <= ttlMs ? "admitted" : "expired"
               const decision = (verdict: "admitted" | "expired") =>
                 JournalRecords.cacheProvenance(cacheSource("ttl", recorded), {
@@ -1665,7 +1665,7 @@ export const make = (deps: Dependencies) => {
                       boundaryQuarantined: true
                     }
                     const quarantined = yield* atomically(Effect.gen(function*() {
-                      const quarantineAtMs = yield* Clock.currentTimeMillis
+                      const quarantineAtMs = yield* Clock.currentTimeMillis.pipe(Effect.map(Math.floor))
                       const fence = yield* runs.heartbeat(deps.runId, deps.owner, quarantineAtMs)
                       if (fence._tag !== "Updated") {
                         return false
@@ -1726,7 +1726,7 @@ export const make = (deps: Dependencies) => {
                 yield* recordCache({
                   result: row.outcome,
                   admission,
-                  createdAtMs: row.finishedAtMs ?? (yield* Clock.currentTimeMillis)
+                  createdAtMs: row.finishedAtMs ?? (yield* Clock.currentTimeMillis.pipe(Effect.map(Math.floor)))
                 })
               }
               // Converge the journal with the durable completion (issue
@@ -1835,7 +1835,7 @@ export const make = (deps: Dependencies) => {
            * `outcome` is the executable copy (see `AttemptMeta.effectCrossing`).
            */
           if (runningRow !== undefined && runningMeta?.effectCrossing === "succeeded") {
-            const finishedAtMs = yield* Clock.currentTimeMillis
+            const finishedAtMs = yield* Clock.currentTimeMillis.pipe(Effect.map(Math.floor))
             // `outcome` and `meta` are deliberately omitted: `FinishAttempt`
             // leaves an omitted field as recorded, so the terminal transition
             // is the crossing's own result being sealed rather than a value
@@ -1883,7 +1883,7 @@ export const make = (deps: Dependencies) => {
           // admitted attempt is never invisible to the journal.
           yield* atomically(Effect.gen(function*() {
             if (!adopted) {
-              const now = yield* Clock.currentTimeMillis
+              const now = yield* Clock.currentTimeMillis.pipe(Effect.map(Math.floor))
               const initialMeta: AttemptMeta = { ...declarationMeta, admittedBy: deps.owner }
               const put = yield* attempts.put(
                 { ...attemptId, state: "running", startedAtMs: now, meta: attemptPayload(initialMeta) },
@@ -1908,7 +1908,7 @@ export const make = (deps: Dependencies) => {
               // patching a run it no longer owns. The patch below carries the
               // owner fence itself; the heartbeat additionally refreshes the
               // lease, and the permit excludes in-process racers.
-              const claimAtMs = yield* Clock.currentTimeMillis
+              const claimAtMs = yield* Clock.currentTimeMillis.pipe(Effect.map(Math.floor))
               const claimFence = yield* runs.heartbeat(deps.runId, deps.owner, claimAtMs)
               if (claimFence._tag !== "Updated") {
                 return yield* Effect.interrupt
@@ -2013,7 +2013,7 @@ export const make = (deps: Dependencies) => {
            */
           const failBoundaryAttempt = (cause: Cause.Cause<unknown>) =>
             Effect.gen(function*() {
-              const finishedAtMs = yield* Clock.currentTimeMillis
+              const finishedAtMs = yield* Clock.currentTimeMillis.pipe(Effect.map(Math.floor))
               const finished = yield* settleAttempt({
                 ...attemptId,
                 state: "failed",
@@ -2124,8 +2124,7 @@ export const make = (deps: Dependencies) => {
           const parked = (cause: Cause.Cause<unknown>) =>
             Effect.map(
               Effect.serviceOption(FlowRuntime.FlowInstance),
-              (instance) =>
-                Option.getOrUndefined(instance)?.suspended === true && Cause.hasInterruptsOnly(cause)
+              (instance) => Option.getOrUndefined(instance)?.suspended === true && Cause.hasInterruptsOnly(cause)
             )
           /**
            * The row's meta as this dispatch last wrote it. The crossing writes
@@ -2172,8 +2171,7 @@ export const make = (deps: Dependencies) => {
                 )
                 return patched._tag === "Patched"
               })),
-              (recorded) =>
-                recorded ? Effect.void : Effect.interrupt
+              (recorded) => recorded ? Effect.void : Effect.interrupt
             )
           const dispatch = effect === undefined
             ? deps.execute(input)
@@ -2212,8 +2210,7 @@ export const make = (deps: Dependencies) => {
             )
           const outcome = isolated === undefined
             ? yield* dispatch.pipe(Effect.exit)
-            : Exit.map(isolated, (settled) =>
-              settled.result)
+            : Exit.map(isolated, (settled) => settled.result)
           if (Exit.isFailure(outcome)) {
             /**
              * A DURABLE PARK IS NOT A SETTLEMENT (N-08). A body that reaches a
@@ -2239,7 +2236,7 @@ export const make = (deps: Dependencies) => {
             if (yield* parked(outcome.cause)) {
               return yield* Effect.failCause(outcome.cause)
             }
-            const finishedAtMs = yield* Clock.currentTimeMillis
+            const finishedAtMs = yield* Clock.currentTimeMillis.pipe(Effect.map(Math.floor))
             // A boundary violation raised while the body ran is classified
             // like one raised at settle time (issue #109): the row records it
             // so a post-crash replay can re-emit the violation record, which
@@ -2279,9 +2276,7 @@ export const make = (deps: Dependencies) => {
               JournalRecords.diffBundleCaptured(attemptSource("diff-bundle"), {
                 ...attemptId,
                 bundleIdentity: settlement.bundleIdentity,
-                changedPaths: settlement.files.map((change) =>
-                  change.path
-                ),
+                changedPaths: settlement.files.map((change) => change.path),
                 deviations: settlement.deviations
               })
             )
@@ -2360,7 +2355,7 @@ export const make = (deps: Dependencies) => {
                   }
                 })
             }
-          const finishedAtMs = yield* Clock.currentTimeMillis
+          const finishedAtMs = yield* Clock.currentTimeMillis.pipe(Effect.map(Math.floor))
           // The declared read set is the key input; the prepare-time
           // measurement is the evidence it described reality when the body
           // ran (issue #106). A mismatch means the result was computed from

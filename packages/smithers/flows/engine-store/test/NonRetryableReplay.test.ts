@@ -84,7 +84,7 @@ const actionKey = (name: string, idempotencyKey: string) =>
   key({
     kind: "cache",
     form: "declared",
-    input: { action: name, idempotencyKey, declaration },
+    input: { action: name, idempotencyKey, declaration: key(declaration) },
     environment
   })
 
@@ -180,7 +180,7 @@ describe("non-retryable verdict durability across resume", () => {
                 // here, and the driver's interrupt finalizer releases the run
                 // through another transaction — which must not park again.
                 parked = true
-                return Effect.never
+                return Effect.interruptible(Effect.never)
               }
             )
             const engine = yield* Effect.provideService(

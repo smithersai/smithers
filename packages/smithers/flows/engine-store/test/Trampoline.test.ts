@@ -289,7 +289,7 @@ describe("a durable lineage", () => {
       ).toBe(true)
     }))
 
-  it.effect("keeps child ancestry on round zero and out of later round edges", () =>
+  it.effect("keeps child ancestry across every round so the parent can cancel the lineage", () =>
     Effect.gen(function*() {
       const observed = yield* durable(Effect.gen(function*() {
         const state = yield* DurableEngineState.DurableEngineState
@@ -337,7 +337,9 @@ describe("a durable lineage", () => {
       expect(observed.value).toBe(3)
       expect(observed.calls).toEqual([0, 1, 2])
       expect(observed.childEdges.map((edge) => edge.parentId)).toEqual(["durable-parent"])
-      expect(observed.laterEdges).toEqual([[], []])
+      expect(observed.laterEdges.map((edges) => edges.map((edge) => edge.parentId))).toEqual([["durable-parent"], [
+        "durable-parent"
+      ]])
     }))
 
   it.effect("replays a settled lineage flat, without re-running any earlier round", () =>

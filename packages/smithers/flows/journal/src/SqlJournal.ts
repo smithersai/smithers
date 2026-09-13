@@ -1072,7 +1072,7 @@ export const layer = (
         }).pipe(Effect.andThen(
           withRunAdmission(
             input.runId,
-            Effect.flatMap(Clock.currentTimeMillis, (emittedAtMs) =>
+            Effect.flatMap(Clock.currentTimeMillis.pipe(Effect.map(Math.floor)), (emittedAtMs) =>
               Effect.flatMap(
                 Effect.suspend(() => Effect.fromResult(prepare(input, emittedAtMs))),
                 (prepared) =>
@@ -1881,7 +1881,7 @@ export const layer = (
               sourceId: input.sourceId,
               eventType: input.eventType
             })
-            const emittedAtMs = yield* Clock.currentTimeMillis
+            const emittedAtMs = yield* Clock.currentTimeMillis.pipe(Effect.map(Math.floor))
             const prepared = yield* Effect.fromResult(prepare(input, emittedAtMs))
             const committed = yield* withActiveRunWrite(
               prepared.validated.runId,
@@ -2038,7 +2038,7 @@ export const layer = (
               (cause) => error("decode_failed", "could not decode persisted checkpoint state", cause)
             )
           )
-          const createdAtMs = yield* Clock.currentTimeMillis
+          const createdAtMs = yield* Clock.currentTimeMillis.pipe(Effect.map(Math.floor))
           return yield* writer.write(Effect.gen(function*() {
             if (fence._tag === "Owned") {
               yield* fenceGuard(checkpointOptions.runId, fence.owner)
@@ -2130,7 +2130,7 @@ export const layer = (
             decodeCompactOptions(compactOptions),
             (cause) => error("invalid_event", "compact options violate the journal contract", cause)
           ))
-          const compactedAtMs = yield* Clock.currentTimeMillis
+          const compactedAtMs = yield* Clock.currentTimeMillis.pipe(Effect.map(Math.floor))
           return yield* withCompactionBarrier(
             compactOptions.runId,
             writer.write(Effect.gen(function*() {

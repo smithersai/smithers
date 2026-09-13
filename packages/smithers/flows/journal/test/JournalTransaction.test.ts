@@ -314,3 +314,16 @@ describe("Journal.emitLossy against an open transaction", () => {
       }))
   )
 })
+
+effect(
+  "normalizes the journal clock without relaxing explicit timestamp validation",
+  () =>
+    withStack(Effect.gen(function*() {
+      const journal = yield* Journal
+      yield* TestClock.adjust("10.5 millis")
+      yield* journal.emitDurableUnfenced(allocatedInput(runId("fractional-clock"), sourceId("clock"), "sample", {}))
+      const page = yield* journal.entries({ runId: runId("fractional-clock"), limit: 10 })
+      expect(page.entries).toHaveLength(1)
+      expect(page.entries[0]!.emittedAtMs).toBe(10)
+    }))
+)

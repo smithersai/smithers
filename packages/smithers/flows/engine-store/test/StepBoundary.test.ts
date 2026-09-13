@@ -1,6 +1,7 @@
 import { describe, expect, it } from "@effect/vitest"
 import * as ArtifactStore from "@smthrs/artifacts/ArtifactStore"
 import type { FileBoundary } from "@smthrs/flow/FileBoundary"
+import * as ByteSize from "effect/ByteSize"
 import * as Deferred from "effect/Deferred"
 import * as Effect from "effect/Effect"
 import * as Encoding from "effect/Encoding"
@@ -269,7 +270,7 @@ describe("StepBoundary.layer (filesystem-backed)", () => {
           ? Effect.sync(() => {
             const info = {
               type: "File",
-              size: FileSystem.Size(files.get(path)!.length),
+              size: ByteSize.bytes(files.get(path)!.length),
               mtime: Option.some(new Date(mtimes.get(path) ?? Date.now())),
               dev: 1,
               ino: Option.some(1)
@@ -630,7 +631,7 @@ describe("StepBoundary.layer (filesystem-backed)", () => {
         stat: (() =>
           Effect.succeed({
             type: "File",
-            size: FileSystem.Size(8),
+            size: ByteSize.bytes(8),
             mtime: Option.none(),
             dev: 1,
             ino: Option.none()

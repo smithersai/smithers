@@ -91,6 +91,12 @@ export interface AtomicRoot {
  */
 export type AtomicRequest =
   | (AtomicRoot & { readonly operation: "exists"; readonly path: string })
+  | (AtomicRoot & { readonly operation: "chmod"; readonly path: string; readonly options: { readonly mode: number } })
+  | (AtomicRoot & {
+    readonly operation: "chown"
+    readonly path: string
+    readonly options: { readonly uid: number; readonly gid: number }
+  })
   | (AtomicRoot & {
     readonly operation: "glob"
     readonly pattern: string
@@ -153,6 +159,8 @@ export type AtomicRequest =
  */
 export interface AtomicResults {
   readonly exists: boolean
+  readonly chmod: void
+  readonly chown: void
   readonly glob: Array<string>
   readonly makeDirectory: void
   readonly readDirectory: Array<string>
@@ -276,6 +284,8 @@ export const withIsolatedFileSystem = (
     isolated: fileSystem,
     execute: dispatch({
       exists: (request) => fileSystem.exists(request.path),
+      chmod: (request) => fileSystem.chmod(request.path, request.options.mode),
+      chown: (request) => fileSystem.chown(request.path, request.options.uid, request.options.gid),
       glob: (request) => fileSystem.glob(request.pattern, { ...request.options, root: request.root }),
       makeDirectory: (request) => fileSystem.makeDirectory(request.path, request.options),
       readDirectory: (request) => fileSystem.readDirectory(request.path, request.options),
@@ -730,10 +740,14 @@ export const layer: Layer.Layer<
           )
         ),
         chmod: Effect.fn("FileSystem.chmod")((value, mode) =>
-          isolatedOne("fs:write", value, "chmod", (host) => host.chmod(normalize(value), mode))
+          atomicOne("fs:write", value, "chmod", { operation: "chmod", path: normalize(value), options: { mode } })
         ),
         chown: Effect.fn("FileSystem.chown")((value, uid, gid) =>
-          isolatedOne("fs:write", value, "chown", (host) => host.chown(normalize(value), uid, gid))
+          atomicOne("fs:write", value, "chown", {
+            operation: "chown",
+            path: normalize(value),
+            options: { uid, gid }
+          })
         ),
         glob: Effect.fn("FileSystem.glob")((pattern, options) => {
           const captured = snapshotOptions(options)

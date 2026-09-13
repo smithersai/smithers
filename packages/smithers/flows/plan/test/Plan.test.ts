@@ -9,8 +9,9 @@ import { describe, expect, it } from "@effect/vitest"
 import { StoredKey } from "@smthrs/keys"
 import * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
-import { FastCheck } from "effect/testing"
+import * as FastCheck from "fast-check"
 import { vi } from "vitest"
+import { effectProperty } from "../../../../repo-targets/test-utils/effect-property.mjs"
 import * as FileSet from "../src/FileSet.ts"
 import * as EffectCandidates from "../src/internal/EffectCandidates.ts"
 import * as KeyMaterial from "../src/KeyMaterial.ts"
@@ -21,6 +22,8 @@ import * as StepKey from "../src/StepKey.ts"
 import { withCrypto, withCryptoFailure } from "./Crypto.ts"
 import { params } from "./FastCheckParams.ts"
 import { compile, draft, effects } from "./PlanFixtures.ts"
+
+const prop = effectProperty(it.effect)
 
 const keyOf = (plan: Plan.Plan, id: string) => plan.nodes.find((node) => node.id === id)!.key
 
@@ -848,7 +851,7 @@ describe("Plan.append", () => {
 })
 
 describe("Plan admission", () => {
-  it.effect.prop(
+  prop(
     "every successful compile and append result decodes through the Plan schema",
     [
       FastCheck.array(draftSpec, { minLength: 1, maxLength: 5 }),

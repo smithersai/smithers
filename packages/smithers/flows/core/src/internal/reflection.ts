@@ -360,7 +360,12 @@ const schemaFields = (source: SchemaAST.AST): object => {
         encodingChecks: source.encodingChecks
       }
     case "Union":
-      return { ...common, types: source.types, mode: source.mode, encodingChecks: source.encodingChecks }
+      return {
+        ...common,
+        types: source.types,
+        mode: source.options?.mode ?? "anyOf",
+        encodingChecks: source.encodingChecks
+      }
     case "TemplateLiteral":
       return { ...common, parts: source.parts }
     case "Enum":
@@ -454,7 +459,7 @@ export function schemaIdentity(
   const identity = schemaStructure(schema.ast, nodeId, depth, path, budget, new Map()) as object
   let document: unknown
   try {
-    document = Schema.toJsonSchemaDocument(schema)
+    document = Schema.toJsonSchemaDocument(schema, { onExcessProperty: "error" })
   } catch {
     return identity
   }

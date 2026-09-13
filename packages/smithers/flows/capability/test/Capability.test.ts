@@ -1,5 +1,5 @@
 import { Effect, Option, Schema } from "effect"
-import { FastCheck } from "effect/testing"
+import * as FastCheck from "fast-check"
 import { spawnSync } from "node:child_process"
 import { describe, expect, expectTypeOf, it } from "vitest"
 import * as Capability from "../src/Capability.ts"

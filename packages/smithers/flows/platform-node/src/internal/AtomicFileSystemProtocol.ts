@@ -6,7 +6,8 @@
  * @since 1.0.0
  */
 import type * as KernelFileSystem from "@smthrs/kernel/FileSystem"
-import { Effect, FileSystem, Option, PlatformError, Result } from "effect"
+import { Effect, type FileSystem, Option, PlatformError, Result } from "effect"
+import * as ByteSize from "effect/ByteSize"
 import type { Limits } from "../AtomicFileSystem.ts"
 
 /**
@@ -126,7 +127,12 @@ export const failure = (
     description: code === undefined
       ? `descriptor-relative filesystem isolation failed closed: ${String(cause)}`
       : rejection?.message,
-    cause
+    // Match the native Node adapter's errno contract. Artifact path checks
+    // distinguish a non-link (EINVAL) from a helper or transport failure.
+    cause: code === undefined ? cause : Object.assign(
+      new Error(rejection?.message, { cause }),
+      { code, syscall: rejection?.syscall }
+    )
   })
 }
 
@@ -229,11 +235,11 @@ const date = (value: unknown, field: string): Date => {
   return result
 }
 
-const size = (value: unknown, field: string): FileSystem.Size => {
+const size = (value: unknown, field: string): ByteSize.ByteSize => {
   if (typeof value === "string" && decimal.test(value)) {
-    return FileSystem.Size(BigInt(value))
+    return ByteSize.bytes(BigInt(value))
   }
-  return FileSystem.Size(BigInt(integer(value, field)))
+  return ByteSize.bytes(BigInt(integer(value, field)))
 }
 
 const optional = <A>(value: unknown, read: (value: unknown) => A): Option.Option<A> =>
@@ -445,6 +451,8 @@ export const convert = <A>(
   if (
     request.operation === "writeFile" ||
     request.operation === "writeFileString" ||
+    request.operation === "chmod" ||
+    request.operation === "chown" ||
     request.operation === "makeDirectory" ||
     request.operation === "remove" ||
     request.operation === "rename"

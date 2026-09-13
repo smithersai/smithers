@@ -6,11 +6,14 @@
 import { describe, expect, it } from "@effect/vitest"
 import { JournalEvent } from "@smthrs/journal"
 import { Effect, Exit, Stream } from "effect"
-import { FastCheck } from "effect/testing"
+import * as FastCheck from "fast-check"
+import { effectProperty } from "../../../../repo-targets/test-utils/effect-property.mjs"
 import * as SyncClient from "../src/SyncClient.ts"
 import { SyncError, SyncGapError } from "../src/SyncError.ts"
 import type * as SyncProtocol from "../src/SyncProtocol.ts"
 import * as TestEntry from "./fixtures/entry.ts"
+
+const prop = effectProperty(it.effect)
 
 const params = {
   numRuns: Number(process.env.FC_NUM_RUNS ?? 100),
@@ -56,7 +59,7 @@ const collect = (
   })
 
 describe("SyncClient properties", () => {
-  it.effect.prop(
+  prop(
     "admits each sequence exactly once, in order, across arbitrary overlapping consistent frames",
     [
       FastCheck.integer({ min: 1, max: 16 }),
@@ -108,7 +111,7 @@ describe("SyncClient properties", () => {
     { fastCheck: params }
   )
 
-  it.effect.prop(
+  prop(
     "fails with a typed gap error and an unmoved cursor for any frame beyond the covered cursor",
     [FastCheck.integer({ min: -1, max: 5 }), FastCheck.integer({ min: 1, max: 10 })],
     ([initialCursor, gap]) =>
@@ -135,7 +138,7 @@ describe("SyncClient properties", () => {
   // below is an internal run/range/sequence inconsistency the client must
   // refuse as a protocol violation without moving the acknowledged cursor.
   // Corroborates the pinned cases in ClientProtocolValidation.test.ts.
-  it.effect.prop(
+  prop(
     "rejects arbitrary inconsistent frames with protocol_violation and never moves the cursor",
     [
       FastCheck.constantFrom(

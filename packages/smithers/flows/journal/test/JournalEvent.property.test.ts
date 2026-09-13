@@ -1,5 +1,6 @@
 import { Schema } from "effect"
-import { FastCheck, TestSchema } from "effect/testing"
+import { TestSchema } from "effect/testing"
+import * as FastCheck from "fast-check"
 import { describe, expect, it } from "vitest"
 import {
   Entry,
@@ -32,12 +33,12 @@ const sourceSeq = (value: number): SourceSeqType => value as SourceSeqType
 describe("JournalEvent properties", () => {
   it("Entry survives encode-then-decode for arbitrary envelopes", async () => {
     const asserts = new TestSchema.Asserts(Entry)
-    await asserts.verifyLosslessTransformation({ params })
+    await asserts.verifyLosslessTransformation({ runs: params.numRuns, seed: params.seed })
   })
 
   it("Input survives encode-then-decode for arbitrary submissions", async () => {
     const asserts = new TestSchema.Asserts(Input)
-    await asserts.verifyLosslessTransformation({ params })
+    await asserts.verifyLosslessTransformation({ runs: params.numRuns, seed: params.seed })
   })
 
   it.each([

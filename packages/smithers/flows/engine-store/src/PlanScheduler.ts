@@ -495,7 +495,7 @@ export const make = (options: Options): Service => {
         generation: plan.generation
       })
       const store = yield* PlanStore.PlanStore
-      const now = yield* Clock.currentTimeMillis
+      const now = yield* Clock.currentTimeMillis.pipe(Effect.map(Math.floor))
       const outcome = yield* atomically(
         "could not atomically record the plan",
         Effect.gen(function*() {
@@ -1081,7 +1081,7 @@ export const make = (options: Options): Service => {
                     "could not settle a sibling aborted by scheduler failure",
                     Effect.gen(function*() {
                       const store = yield* AttemptStore.AttemptStore
-                      const finishedAtMs = yield* Clock.currentTimeMillis
+                      const finishedAtMs = yield* Clock.currentTimeMillis.pipe(Effect.map(Math.floor))
                       const identity = { runId: options.runId, stepKeyDigest: dispatchDigest, attempt: attempts }
                       const finished = yield* store.finish({
                         ...identity,

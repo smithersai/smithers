@@ -117,7 +117,7 @@ const readBack = <A>(filename: string, query: (database: DatabaseSync) => A): A 
 }
 
 describe("a host that was killed", () => {
-  it("journals only its real child after building the jj layers", async () => {
+  it("journals and retires the jj probe before recording its live child", async () => {
     const filename = join(directory, "probe", "runtime.sqlite")
     const pgid = await killHost(filename, "probe-host")
     try {
@@ -128,7 +128,11 @@ describe("a host that was killed", () => {
             database.prepare("SELECT event_type FROM flows_journal_events WHERE run_id = ? ORDER BY seq")
               .all("flows.host:probe-host")
         )
-      ).toEqual([{ event_type: "flows.host.process-spawned.v1" }])
+      ).toEqual([
+        { event_type: "flows.host.process-spawned.v1" },
+        { event_type: "flows.host.process-exited.v1" },
+        { event_type: "flows.host.process-spawned.v1" }
+      ])
     } finally {
       process.kill(-pgid, "SIGKILL")
     }
@@ -149,7 +153,11 @@ describe("a host that was killed", () => {
             "SELECT event_type FROM flows_journal_events WHERE run_id = ? ORDER BY seq"
           )
           .all("flows.host:reap-host"))
-    ).toEqual([{ event_type: "flows.host.process-spawned.v1" }])
+    ).toEqual([
+      { event_type: "flows.host.process-spawned.v1" },
+      { event_type: "flows.host.process-exited.v1" },
+      { event_type: "flows.host.process-spawned.v1" }
+    ])
 
     // A second incarnation of the SAME host over the SAME database. It is
     // handed nothing about the dead one but its id.
@@ -180,7 +188,11 @@ describe("a host that was killed", () => {
           .all("flows.host:reap-host"))
     ).toEqual([
       { event_type: "flows.host.process-spawned.v1" },
-      { event_type: "flows.host.process-reaped.v1" }
+      { event_type: "flows.host.process-exited.v1" },
+      { event_type: "flows.host.process-spawned.v1" },
+      { event_type: "flows.host.process-reaped.v1" },
+      { event_type: "flows.host.process-spawned.v1" },
+      { event_type: "flows.host.process-exited.v1" }
     ])
   }, 120_000)
 

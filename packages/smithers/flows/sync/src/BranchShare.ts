@@ -289,8 +289,8 @@ export const layerHmac = (keyring: Keyring): Layer.Layer<BranchShare, SyncError>
 export const layerConfig: Layer.Layer<BranchShare, SyncError | Config.ConfigError> = Layer.effect(
   BranchShare,
   Effect.gen(function*() {
-    const secret = yield* Config.redacted("SMITHERS_SYNC_BRANCH_SECRET")
-    const kid = yield* Config.string("SMITHERS_SYNC_BRANCH_KEY_ID").pipe(Config.withDefault("primary"))
+    const secret = yield* Config.Redacted("SMITHERS_SYNC_BRANCH_SECRET")
+    const kid = yield* Config.String("SMITHERS_SYNC_BRANCH_KEY_ID").pipe(Config.withDefault("primary"))
     return yield* makeHmac({ activeKid: kid, keys: [{ kid, secret }] })
   })
 )

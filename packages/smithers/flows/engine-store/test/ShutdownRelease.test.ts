@@ -202,6 +202,64 @@ describe("shutdown releases instead of cancelling (issue #26)", () => {
       expect(result.retained).toEqual([])
     }))
 
+  it.effect("can shut down before the first run read completes", () =>
+    withCrypto(provideJournal(Effect.gen(function*() {
+      const store = yield* RunStore.RunStore
+      const reading = yield* Latch.make(false)
+      const driverScope = yield* Scope.make()
+      let reads = 0
+      const driver = yield* makeDriver().pipe(
+        Effect.provideService(RunStore.RunStore, {
+          ...store,
+          get: (runId) =>
+            Effect.suspend(() => {
+              reads++
+              // The admission read succeeds; the coordinator's first read stalls.
+              return reads === 1 ? store.get(runId) : Latch.open(reading).pipe(Effect.andThen(Effect.never))
+            })
+        }),
+        Scope.provide(driverScope)
+      )
+      yield* driver.register(TestFlow, () => Effect.die("must not start"))
+      yield* store.create("shutdown-reading", JSON.stringify({ version: 1, flowName: TestFlow._tag, payload: {} }))
+      yield* driver.resume(TestFlow, "shutdown-reading").pipe(Effect.forkChild({ startImmediately: true }))
+      yield* Latch.await(reading)
+      yield* Scope.close(driverScope, Exit.void)
+      expect((yield* store.get("shutdown-reading")).status).toBe("pending")
+    }))))
+
+  it.effect("tolerates a run removed before interrupted ownership cleanup", () =>
+    withCrypto(provideJournal(Effect.gen(function*() {
+      const store = yield* RunStore.RunStore
+      const started = yield* Latch.make(false)
+      const driverScope = yield* Scope.make()
+      let removed = false
+      const driver = yield* makeDriver().pipe(
+        Effect.provideService(RunStore.RunStore, {
+          ...store,
+          get: (runId) =>
+            removed
+              ? Effect.fail(
+                new RunStore.RunStoreError({
+                  code: "not_found_row",
+                  method: "get",
+                  message: "removed",
+                  cause: undefined
+                })
+              )
+              : store.get(runId)
+        }),
+        Scope.provide(driverScope)
+      )
+      yield* driver.register(TestFlow, () => Latch.open(started).pipe(Effect.andThen(Effect.never)))
+      yield* store.create("shutdown-removed", JSON.stringify({ version: 1, flowName: TestFlow._tag, payload: {} }))
+      yield* driver.resume(TestFlow, "shutdown-removed").pipe(Effect.forkChild({ startImmediately: true }))
+      yield* Latch.await(started)
+      removed = true
+      const closed = yield* Scope.close(driverScope, Exit.void).pipe(Effect.exit)
+      expect(Exit.isSuccess(closed)).toBe(true)
+    }))))
+
   it.effect("operator interrupt still durably cancels the run", () =>
     Effect.gen(function*() {
       const result = yield* withCrypto(provideJournal(Effect.gen(function*() {
