@@ -10,6 +10,7 @@ import {
   REDIRECT_HOP_LIMIT,
   renderTable,
   runSiteChecks,
+  observeSiteResponse,
   tally
 } from "./site-checks.ts"
 import type { Fetcher, Observed } from "./site-checks.ts"
@@ -51,6 +52,9 @@ const healthy: Record<string, Observed> = {
   "/": html(200),
   "/docs/": html(200),
   "/nope": html(404),
+  "/docs/nope/": html(404),
+  "/nope/nope/": isolated,
+  "/robots.txt": { status: 200, headers: { "content-type": "text/plain" }, body: "User-agent: *\nAllow: /\nSitemap: https://smithers.sh/sitemap-index.xml\n" },
   [APP_DOCUMENT_CHECK_PATH]: isolated,
   [APP_CHUNK]: chunk(),
   [FRAME_PATH_SAMPLE]: isolated,
@@ -85,7 +89,7 @@ describe("the site probe grades a deployment of the Worker over the site build",
     const { fetch, requested } = fakeFetch(healthy)
     const checks = await runSiteChecks(fetch, { origin: ORIGIN, legacyPaths: ["/agents/codex", "/reference/journal"] })
     expect(failures(checks)).toEqual([])
-    expect(tally(checks)).toEqual({ passed: 15 + COMING_SOON_REPOS.length, failed: 0 })
+    expect(tally(checks)).toEqual({ passed: 18 + COMING_SOON_REPOS.length, failed: 0 })
     expect(requested).toContain(APP_CHUNK)
     expect(requested).toContain("/docs/guides/model-seats/")
     expect(requested).toContain("/docs/reference/journal/")
@@ -246,4 +250,24 @@ test("the site probe rejects HTML at both icon URLs, even a 200 page", async () 
     expect(requested).toContain(path)
     expect(checks.find((check) => check.path === path)?.status).toBe("fail")
   }
+})
+
+for (const [path, broken] of [["/docs/nope/", html(200)], ["/nope/nope/", html(404)], ["/robots.txt", { status: 200, headers: { "content-type": "text/plain" }, body: "User-agent: *\nAllow: /" }]] as const) {
+  test(`the site probe rejects the routing regression at ${path}`, async () => {
+    const { fetch, requested } = fakeFetch({ ...healthy, [path]: broken })
+    const checks = await runSiteChecks(fetch, { origin: ORIGIN, legacyPaths: [] })
+    expect(requested).toContain(path)
+    expect(checks.find((check) => check.path === path)?.status).toBe("fail")
+    expect(failures(checks)).toHaveLength(1)
+  })
+}
+
+test("the live probe reads robots text as well as app HTML, and cancels binary bodies", async () => {
+  for (const type of ["text/plain; charset=utf-8", "text/html"]) {
+    const observed = await observeSiteResponse(new Response("Sitemap: https://smithers.sh/sitemap-index.xml", { headers: { "content-type": type } }))
+    expect(observed.body).toContain("Sitemap:")
+  }
+  const binary = new Response("image", { headers: { "content-type": "image/png" } })
+  expect((await observeSiteResponse(binary)).body).toBeUndefined()
+  expect(binary.bodyUsed).toBe(true)
 })

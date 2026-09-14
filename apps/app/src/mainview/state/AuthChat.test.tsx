@@ -21,7 +21,7 @@ const createAppController = scopedControllers()
  * composer's attempted send resolves to the calm one-line reply.
  */
 
-GlobalRegistrator.register()
+GlobalRegistrator.register({ url: "https://smithers.sh/" })
 
 afterAll(async () => {
   for (let tick = 0; tick < 3; tick += 1) {
@@ -34,6 +34,7 @@ const mounted: Array<() => void> = []
 
 afterEach(() => {
   while (mounted.length > 0) mounted.pop()?.()
+  window.history.replaceState(null, "", "/")
 })
 
 const mount = (controller: AppControllerType): { host: HTMLElement; markup: () => string } => {
@@ -202,6 +203,31 @@ describe("auth is a conversation state — the chat is the only page", () => {
     expect(host.querySelector(".smithers-composer")).not.toBeNull()
     expect(host.querySelector(".landing-surface")).toBeNull()
   })
+
+  for (const repo of ["nope/nope", "smithersai/smithres", "Some-Owner/repo_name", "cached/selection"]) {
+    test(`signed out at /${repo}/ names the requested path and links the available roster`, async () => {
+      window.history.replaceState(null, "", `/${repo}/`)
+      const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
+      const controller = createAppController(store, unavailableRepositories, silentAgent, {
+        bootstrap: WEB,
+        ...backend({ "/api/auth/session": json(401, { status: "error" }), "/api/auth/scopes": json(200, { scopes: [] }) })
+      })
+      await controller.loadSession()
+      if (repo === "cached/selection") {
+        store.dispatch({ type: "repositories.loaded", actor: "system", repositories: [{
+          id: "smithersai/smithers", org: "smithersai", ownerKind: "user", name: "smithers", head: null, catalog: true
+        }] })
+        store.dispatch({ type: "repo.selected", actor: "user", id: "smithersai/smithers" })
+      }
+      await settled()
+      const { host } = mount(controller)
+      const message = host.querySelector(".smithers-chat-message")
+      expect(message?.textContent).toContain(`${repo} isn't on Smithers yet. Sign in with GitHub to open your own repositories, or pick one below.`)
+      expect(message?.querySelector('a[href="/smithersai/smithers/"]')?.textContent).toBe("smithersai/smithers")
+      expect(message?.querySelector<HTMLButtonElement>(".message-cta")?.dataset.flow).toBe("auth.sign-in")
+      if (repo !== "cached/selection") expect(controller.commands.state().publicRepo).toBe(false)
+    })
+  }
 
   /*
    * Anonymous exploring (apps/server/PUBLIC-REPOSITORIES.md): at

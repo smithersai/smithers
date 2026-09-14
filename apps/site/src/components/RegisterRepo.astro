@@ -1,7 +1,7 @@
 ---
 /* Registration is two steps: sign in with GitHub, then install the Smithers
    GitHub App on the repository. Installing the app is what registers the repo. */
-const appOrigin = (import.meta.env.PUBLIC_APP_ORIGIN || "https://smithers.sh").replace(/\/+$/, "")
+const signInUrl = `/api/auth/github/start?return_to=${encodeURIComponent(Astro.url.pathname)}`
 const installUrl = "https://github.com/apps/smitherspreviewrelease/installations/new"
 ---
 
@@ -17,7 +17,7 @@ const installUrl = "https://github.com/apps/smitherspreviewrelease/installations
         <li><strong>Add the Smithers application to your repo.</strong> Installing the GitHub App on a repository registers it with Smithers.</li>
       </ol>
       <div class="actions">
-        <a class="btn primary" href={appOrigin}>Sign in with GitHub</a>
+        <a class="btn primary" href={signInUrl}>Sign in with GitHub</a>
         <a class="btn ghost" href={installUrl}>Add Smithers to your repo <span aria-hidden="true">↗</span></a>
       </div>
     </div>

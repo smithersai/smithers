@@ -17,7 +17,7 @@
  */
 import { readFileSync, writeFileSync } from "node:fs"
 import { fileURLToPath } from "node:url"
-import { originFromHostname, renderTable, runSiteChecks, tally } from "./site-checks.ts"
+import { observeSiteResponse, originFromHostname, renderTable, runSiteChecks, tally } from "./site-checks.ts"
 
 const args = process.argv.slice(2)
 const target = args[0]
@@ -38,12 +38,7 @@ const legacy = JSON.parse(
 const checks = await runSiteChecks(
   async (url) => {
     const response = await fetch(url, { redirect: "manual", cache: "no-store", headers: { "cache-control": "no-cache" } })
-    const headers = Object.fromEntries(response.headers.entries())
-    // Only an HTML body is read: the app document is scanned for the chunk it
-    // loads. Everything else is graded on status and headers alone.
-    if ((headers["content-type"] ?? "").includes("text/html")) return { status: response.status, headers, body: await response.text() }
-    await response.body?.cancel()
-    return { status: response.status, headers }
+    return observeSiteResponse(response)
   },
   { origin, legacyPaths: legacy.paths }
 )

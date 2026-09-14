@@ -1,3 +1,5 @@
+import { AVAILABLE_REPOS } from "../../../server/src/publicRepoCatalog"
+import { pathRepo } from "./RepoLink"
 import { TranscriptMessage } from "./TranscriptMessage"
 import { GuideButton, GUIDE_KEYS } from "./onboarding/GuideButton"
 import { InputModeMenu } from "./InputModeMenu"
@@ -225,15 +227,22 @@ function App() {
    * cannot name its host has no sign-in to offer and no opening read to give.
    */
   const cloudHost = controller.bootstrap?.host === "cloud"
+  const bootRepository = useMemo(() => typeof window === "undefined" ? null : pathRepo(window.location.pathname), [])
+  const missingBootRepository = bootRepository !== null && !AVAILABLE_REPOS.some((repo) => repo.name.toLowerCase() === bootRepository.toLowerCase())
+    ? bootRepository : null
   const exploringRepo = identity?.state === "signed-out" && cloudHost
     ? catalogRepositoryOf(session.activeRepoKey, repositoryRows)
     : null
   const authMessage: Message | undefined = identity?.state === "signed-out" && cloudHost
-    ? exploringRepo === null
+    ? exploringRepo === null || missingBootRepository !== null
       ? {
         id: "auth-state",
         role: "smithers",
-        text: "This is the Smithers web app. Sign in with GitHub to open one of your repositories and read its files here.",
+        text: missingBootRepository === null
+          ? "This is the Smithers web app. Sign in with GitHub to open one of your repositories and read its files here."
+          : `${missingBootRepository} isn't on Smithers yet. Sign in with GitHub to open your own repositories, or pick one below.\n\n${
+            AVAILABLE_REPOS.map((repo) => `- [${repo.name}](/${repo.name.toLowerCase()}/)`).join("\n")
+          }`,
         status: "complete",
         action: { flow: "auth.sign-in", label: "Sign in with GitHub" },
         createdAt: 0,

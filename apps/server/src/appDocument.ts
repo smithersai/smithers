@@ -59,8 +59,18 @@ export const comingSoonDocumentPath = (pathname: string): string | undefined => 
   return repo === undefined ? undefined : appDocumentPath(repo.name)
 }
 
-/** GitHub owner and repository slugs, with exactly two path segments. */
+/**
+ * Site-owned first segments, inventoried from apps/site/src/pages and its
+ * Starlight content tree, plus the site's infrastructure and reserved routes.
+ * appDocument.test.ts walks both source trees so a new route cannot silently
+ * become a GitHub owner. Keep this the one routing reservation list.
+ */
+export const RESERVED_SITE_SEGMENTS: ReadonlyArray<string> = [
+  "404", "_astro", "api", "blog", "changelogs", "demo", "docs", "download", "pricing", "w"
+]
+
+/** GitHub owner and repository slugs, with exactly two segments outside the site's routes. */
 export const isRepositoryPath = (pathname: string): boolean => {
   const match = /^\/([a-z\d](?:[a-z\d]|-(?=[a-z\d])){0,38})\/([a-z\d_.-]{1,100})\/?$/i.exec(pathname)
-  return match !== null && match[2] !== "." && match[2] !== ".."
+  return match !== null && !RESERVED_SITE_SEGMENTS.includes(match[1]!.toLowerCase()) && match[2] !== "." && match[2] !== ".."
 }

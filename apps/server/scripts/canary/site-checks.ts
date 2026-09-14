@@ -29,6 +29,16 @@ export interface Observed {
   readonly body?: string
 }
 
+/** Read the textual bodies the probe grades; release all other response streams. */
+export const observeSiteResponse = async (response: Response): Promise<Observed> => {
+  const headers = Object.fromEntries(response.headers.entries())
+  if ((headers["content-type"] ?? "").startsWith("text/")) {
+    return { status: response.status, headers, body: await response.text() }
+  }
+  await response.body?.cancel()
+  return { status: response.status, headers }
+}
+
 /** One fetch, redirects NOT followed: a redirect is a verdict of its own. */
 export type Fetcher = (url: string) => Promise<Observed>
 
@@ -155,6 +165,13 @@ const expectIcon = async (fetch: Fetcher, origin: string, path: string): Promise
   return check(path, "200 image", observed.status === 200 && type.startsWith("image/"), `${describeStatus(observed)} ${type}`)
 }
 
+const expectRobots = async (fetch: Fetcher, origin: string): Promise<SiteCheck> => {
+  const path = "/robots.txt"
+  const observed = await fetch(`${origin}${path}`)
+  const sitemap = (observed.body ?? "").includes("Sitemap:")
+  return check(path, "200 with Sitemap:", observed.status === 200 && sitemap, `${describeStatus(observed)} + Sitemap: ${sitemap ? "present" : "absent"}`)
+}
+
 export interface SiteProbeInput {
   readonly origin: string
   readonly legacyPaths: ReadonlyArray<string>
@@ -170,6 +187,9 @@ export const runSiteChecks = async (fetch: Fetcher, input: SiteProbeInput): Prom
     expectStatus(fetch, origin, "/", 200),
     expectStatus(fetch, origin, "/docs/", 200),
     expectStatus(fetch, origin, "/nope", 404),
+    expectStatus(fetch, origin, "/docs/nope/", 404),
+    expectStatus(fetch, origin, "/nope/nope/", 200),
+    expectRobots(fetch, origin),
     expectAppDocument(APP_DOCUMENT_CHECK_PATH, appDocument),
     expectAppChunk(fetch, origin, APP_DOCUMENT_CHECK_PATH, appDocument),
     expectStatus(fetch, origin, FRAME_PATH_SAMPLE, 200),

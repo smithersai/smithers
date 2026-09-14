@@ -122,6 +122,30 @@ describe("routed repository pages", () => {
     }
   })
 
+  test("unknown site routes keep the site's 404 instead of the repository shell", async () => {
+    for (const path of ["/docs/nope/", "/docs/quickstart2/", "/DOCS/nope/", "/changelogs/nope/", "/pricing/nope/", "/blog/hello/", "/demo/nope/", "/download/nope/", "/w/nope/", "/_astro/nope/"]) {
+      for (const method of ["GET", "HEAD"]) {
+        const { env, served } = siteEnv()
+        const response = await worker.fetch(new Request(`https://smithers.sh${path}`, { method }), env)
+        expect({ path, status: response.status, served }).toEqual({ path, status: 404, served: [path] })
+        expect(isolation(response)).toEqual({ coop: null, coep: null })
+        expect(await response.text()).toBe("<html><body>404 page</body></html>")
+      }
+    }
+  })
+
+  test("valid non-catalog repository paths serve the isolated app document", async () => {
+    for (const path of ["/nope/nope/", "/a/b/", "/smithersai/smithres/", "/Some-Owner/repo_name.git"]) {
+      for (const method of ["GET", "HEAD"]) {
+        const { env, served } = siteEnv()
+        const response = await worker.fetch(new Request(`https://smithers.sh${path}`, { method }), env)
+        expect({ path, status: response.status, served }).toEqual({ path, status: 200, served: [path, "/smithersai/smithers/"] })
+        expect(isolation(response)).toEqual({ coop: "same-origin", coep: "require-corp" })
+        expect(await response.text()).toBe(APP_DOCUMENT)
+      }
+    }
+  })
+
   test("invalid repository paths retain the site's 404", async () => {
     for (const path of ["/smithersai/smithers/issues/3", "/smithersai/"]) {
       const { env, served } = siteEnv()

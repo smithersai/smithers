@@ -1,5 +1,5 @@
 import assert from "node:assert/strict"
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs"
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { dirname, join, resolve } from "node:path"
 import test from "node:test"
@@ -253,11 +253,11 @@ test("the landing page's Start Here opens the tutorial, through Astro's scoped c
 
 test("the build requires every coming-soon page with coming-soon copy and no app island", (t) => {
   const repos = [{ name: "Effect-TS/effect" }, { name: "withastro/starlight" }]
-  const missing = fixture(t, { "effect-ts/effect/index.html": "<h1>Effect — Coming soon</h1>" })
+  const missing = fixture(t, { "effect-ts/effect/index.html": '<h1>Effect — Coming soon</h1><a href="/api/auth/github/start?return_to=%2Feffect-ts%2Feffect%2F">Sign in with GitHub</a>' })
   assert.deepEqual(checkRepositoryPages(missing, [], repos), ["withastro/starlight/index.html: missing from the build"])
   const app = fixture(t, { "effect-ts/effect/index.html": '<astro-island>Coming soon</astro-island>' })
   assert.deepEqual(checkRepositoryPages(app, [], [repos[0]]), ["effect-ts/effect/index.html: expected a coming-soon site page"])
-  const healthy = fixture(t, Object.fromEntries(repos.map((repo) => [`${repo.name.toLowerCase()}/index.html`, "<h1>Coming soon</h1>"])))
+  const healthy = fixture(t, Object.fromEntries(repos.map((repo) => [`${repo.name.toLowerCase()}/index.html`, `<h1>Coming soon</h1><a href="/api/auth/github/start?return_to=${encodeURIComponent(`/${repo.name.toLowerCase()}/`)}">Sign in with GitHub</a>`])))
   assert.deepEqual(checkRepositoryPages(healthy, [], repos), [])
 })
 
@@ -267,4 +267,32 @@ test("built pages reject the retired GitHub App installation URL", (t) => {
     "index.html: retired GitHub App URL: https://github.com/apps/smithers/installations/new"
   ])
   assert.deepEqual(checkBuiltSite(fixture(t, { "index.html": page("smitherspreviewrelease") })).failures, [])
+})
+
+test("coming-soon sign-in must start OAuth and return to that repository page", (t) => {
+  const repo = { name: "wevm/incur" }
+  for (const href of ["https://smithers.sh/", "/api/auth/github/start", "/api/auth/github/start?return_to=%2Fpricing%2F", "https://elsewhere.test/api/auth/github/start?return_to=%2Fwevm%2Fincur%2F"]) {
+    const root = fixture(t, { "wevm/incur/index.html": `<h1>Coming soon</h1><a href="${href}">Sign in with GitHub</a>` })
+    assert.match(checkRepositoryPages(root, [], [repo]).join("\n"), /sign-in.*return.*\/wevm\/incur\//i)
+  }
+})
+
+test("registration prose opens the app or starts sign-in instead of the marketing page", () => {
+  for (const path of ["docs/pricing.mdx", "docs/app/repositories.mdx"]) {
+    const source = readFileSync(new URL(`../src/content/docs/${path}`, import.meta.url), "utf8")
+    const registration = source.split("\n").find(line => /sign in with GitHub on/i.test(line))
+    assert.ok(registration, path)
+    const href = registration.match(/\[smithers.sh\]\(([^)]+)\)/)?.[1]
+    const url = new URL(href, "https://smithers.sh")
+    assert.equal(url.origin, "https://smithers.sh")
+    assert.ok(["/api/auth/github/start", "/smithersai/smithers"].includes(url.pathname), `${path}: ${href}`)
+  }
+})
+
+test("origin robots allows crawlers and advertises the sitemap", () => {
+  const robots = readFileSync(new URL("../public/robots.txt", import.meta.url), "utf8")
+  assert.match(robots, /^User-agent: \*$/m)
+  assert.match(robots, /^Allow: \/$/m)
+  assert.match(robots, /^Sitemap: https:\/\/smithers\.sh\/sitemap-index\.xml$/m)
+  assert.doesNotMatch(robots, /^Disallow: \/$/m)
 })

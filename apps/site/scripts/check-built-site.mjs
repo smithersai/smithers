@@ -265,6 +265,13 @@ export function checkRepositoryPages(root, available, comingSoon) {
     if (comingSoon.includes(repo)) {
       const html = readFileSync(join(root, file), "utf8")
       if (!/coming soon/i.test(html) || /<astro-island[\s>]/i.test(html)) return [`${file}: expected a coming-soon site page`]
+      const path = `/${repo.name.toLowerCase()}/`
+      const signIn = [...html.matchAll(/<a\b[^>]*href="([^"]+)"[^>]*>\s*Sign in with GitHub\s*<\/a>/gi)]
+        .some((match) => {
+          const url = new URL(decode(match[1]), origin)
+          return url.origin === origin && url.pathname === "/api/auth/github/start" && url.searchParams.get("return_to") === path
+        })
+      if (!signIn) return [`${file}: sign-in must start OAuth and return to ${path}`]
     }
     return []
   })
@@ -288,14 +295,14 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
       ...await releaseReferences(resolve(siteRoot, "../..")),
       ...legacy.paths.flatMap((path) => path === "/" ? [path] : [path, path + "/"])
     ],
-    [PUBLIC_REPOS_PATH]
+    [PUBLIC_REPOS_PATH, "/api/auth/github/start"]
   )
   // The files the app Worker's assets need beyond the pages: one prerendered
   // app page per available catalog repository, the 404 page the asset
   // host serves for an unknown path, and the build stamp apps/server's canary
   // build probe reads.
   result.failures.push(...checkRepositoryPages(root, AVAILABLE_REPOS, COMING_SOON_REPOS))
-  for (const file of ["404.html", "__build.json", "favicon.png", "apple-touch-icon.png"]) {
+  for (const file of ["404.html", "__build.json", "favicon.png", "apple-touch-icon.png", "robots.txt"]) {
     if (!existsSync(join(root, file))) result.failures.push(`${file}: missing from the build`)
   }
   result.failures.push(...checkAssetHeaders(root))
