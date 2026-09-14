@@ -36,7 +36,12 @@ decoding. The failure carries `code` `invalid_resource_configuration` and a
 **What to change.** Check the value against the bounds: a non-empty service
 name and version of at most 1,024 UTF-16 code units, at most 256 attributes,
 attribute values that are strings of at most 65,536 code units, finite numbers,
-booleans, or homogeneous arrays of those. NUL and unpaired surrogates are
+booleans, or homogeneous arrays of those with at most 256 elements. The complete
+resource must fit 128 KiB of OTLP JSON, including keys, identity, the SDK-added
+`telemetry.sdk.name` and `telemetry.sdk.language` fields, wrappers,
+escaping and UTF-8. Many individually valid values can exceed this budget;
+remove or shorten attributes. The refusal names `attributes`, the measured
+lower bound in bytes and the limit, without retaining values. NUL and unpaired surrogates are
 refused anywhere. An empty `serviceName` is the common one, usually an
 environment variable that was not set.
 
@@ -68,6 +73,24 @@ by default.
    `Disabling exporter for 60 seconds` when it gives up after three retries.
 4. **Is the layer actually provided?** A composition that swapped in
    `Otlp.layerNoop` behaves exactly like a healthy one that delivers nothing.
+
+## An OTLP export batch was discarded
+
+A `Warn` record with code `otlp_export_discarded` means the transport discarded
+a batch because it exceeded 1 MiB (`oversized`), stalled for ten seconds
+(`stalled`), or found all four request slots occupied (`saturated`). The
+`flows/observability/otlp/dropped` counter records every discarded batch. The
+warning carries the request byte size, limit and running drop count, and is
+limited to one per minute per transport.
+
+Warnings go only to the loggers captured before exporter acquisition, without
+logging into this exporter. Keep an ambient sink outside OTLP at level `Warn`
+or lower: it remains useful even when the drop counter cannot reach the
+collector. An empty ambient logger set or a higher minimum level suppresses
+warnings. Reduce unusually large records or metric cardinality for oversized
+batches; check collector availability and latency for stalls and saturation.
+The resource budget reserves 888 KiB for ordinary batches, but cannot bound
+application record sizes.
 
 ## Log records stopped reaching the collector
 

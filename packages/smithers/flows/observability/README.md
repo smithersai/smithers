@@ -49,6 +49,28 @@ const Telemetry = Otlp.layerFetch({
 
 Provide the layer, give it a scope, and every span, log record, and metric series the program already produces posts to the collector. Deleting the provide removes telemetry and changes nothing else.
 
+Resource identity fields and attribute keys are limited to 1,024 UTF-16 code
+units, strings to 65,536 code units, and attributes to 256 entries.
+Resources are refused during layer acquisition with `InvalidResourceConfiguration`
+if arrays exceed 256 elements or the whole OTLP JSON resource exceeds 128 KiB.
+The byte budget counts keys, values, wrappers, JSON escaping, and UTF-8, including
+service identity and SDK-added `telemetry.sdk.name` and `telemetry.sdk.language`.
+These SDK fields are reserved even for the default Effect exporter. Resource
+metadata is explicit; both default OTLP and Node SDK layers isolate ambient
+resource configuration so it cannot enlarge a resource after validation.
+The 1 MiB transport reserves 8 KiB for the request envelope
+and 888 KiB (`Otlp.reservedBatchBytes`) for signal batches: about 909 bytes per
+record in the upstream 1,000-record log or span batch. Large application records
+can still exceed the transport cap.
+
+Discarded batches increment `flows/observability/otlp/dropped` and emit a
+`Warn` diagnostic with code `otlp_export_discarded` at most once per minute per
+transport through the loggers installed before exporter acquisition. Install
+an ambient logger that writes outside OTLP to observe loss independently; an
+empty logger set or a minimum level above `Warn` suppresses that diagnostic.
+The warning never enters this exporter and includes only the discard reason,
+request bytes, byte limit, and running drop count.
+
 ## Documentation
 
 Full documentation is at [observability.smithers.sh](https://observability.smithers.sh):

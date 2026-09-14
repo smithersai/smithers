@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { schemaIssuePath } from "../src/internal/schemaIssuePath.ts"
+import { schemaIssueMessage, schemaIssuePath } from "../src/internal/schemaIssuePath.ts"
 
 /** Builds `depth` nested issue nodes, each contributing one path segment. */
 const nested = (depth: number) => {
@@ -39,5 +39,20 @@ describe("schemaIssuePath", () => {
     const cyclic: { path: ReadonlyArray<string>; issue?: unknown } = { path: ["loop"] }
     cyclic.issue = cyclic
     expect(schemaIssuePath({ issue: cyclic }, "options")).toBe(Array.from({ length: 64 }, () => "loop").join("."))
+  })
+})
+
+describe("schemaIssueMessage", () => {
+  it("reads only a filter's explicit message, never its rejected input", () => {
+    expect(
+      schemaIssueMessage({ issue: { path: ["attributes"], issue: { annotations: { message: "over byte limit" } } } })
+    ).toBe("over byte limit")
+    for (
+      const issue of [undefined, null, {}, { annotations: {} }, { annotations: { message: 123 } }, {
+        actual: "PRIVATE_VALUE"
+      }]
+    ) {
+      expect(schemaIssueMessage({ issue })).toBeUndefined()
+    }
   })
 })

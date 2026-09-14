@@ -1,10 +1,12 @@
-import { Cause, Effect, Layer, Result } from "effect"
+import { Cause, Effect, Layer, Result, Schema } from "effect"
+import * as FetchHttpClient from "effect/unstable/http/FetchHttpClient"
 import { describe, expect, it } from "vitest"
 import * as BrowserOtel from "../src/BrowserOtel.ts"
 import * as NodeOtel from "../src/NodeOtel.ts"
 import * as Otel from "../src/Otel.ts"
 import * as Otlp from "../src/Otlp.ts"
 import * as Resource from "../src/Resource.ts"
+import { boundaryResources, resourceBytes, sdkResourceBytes } from "./fixtures/resources.ts"
 
 const failureOf = async <A, E>(layer: Layer.Layer<A, E>) => {
   const exit = await Effect.runPromiseExit(Effect.scoped(Layer.build(layer)))
@@ -26,6 +28,7 @@ const layersFor = (resource: unknown) => {
     Otel.layerOtel({ resource: resource as never }),
     BrowserOtel.layerOtel({ resource: resource as never }),
     NodeOtel.layerOtel({ endpoint: "http://127.0.0.1:4318", resource: resource as never }),
+    Otlp.layer({ baseUrl: "http://127.0.0.1:4318", ...configuration }).pipe(Layer.provide(FetchHttpClient.layer)),
     Otlp.layerFetch({
       baseUrl: "http://127.0.0.1:4318",
       ...(configuration.serviceName === undefined ? {} : { serviceName: configuration.serviceName }),
@@ -73,7 +76,8 @@ describe("Resource configuration", () => {
         enabled: true,
         texts: ["a", "b"],
         numbers: [1, 2],
-        booleans: [true, false]
+        booleans: [true, false],
+        empty: []
       }
     } as const
     for (const layer of layersFor(configuration)) {
@@ -107,6 +111,101 @@ describe("Resource configuration", () => {
       expect(exit._tag).toBe("Failure")
     }
   })
+
+  it("refuses aggregate and encoded size violations at every acquisition and decoding entry point", async () => {
+    const secret = "PRIVATE_RESOURCE_VALUE"
+    const cases = [
+      {
+        attributes: Object.fromEntries(Array.from({ length: 33 }, (_, i) => [`key-${i}`, secret + "x".repeat(4_096)]))
+      },
+      { attributes: { array: Array.from({ length: 40 }, () => secret + "x".repeat(4_096)) } },
+      { attributes: { text: secret + "\u0001".repeat(25_000) } },
+      { attributes: { text: secret + "漢".repeat(45_000) } },
+      { attributes: { text: secret + "😀".repeat(32_000), second: "😀".repeat(1_000) } },
+      { attributes: Object.fromEntries(Array.from({ length: 24 }, (_, i) => ["\u0001".repeat(1_020) + i, secret])) }
+    ]
+    for (const candidate of cases) {
+      const configuration = { serviceName: "service", serviceVersion: Otlp.defaultServiceVersion, ...candidate }
+      // Each field passes its local schema; the combined encoded resource does not.
+      expect(Schema.decodeUnknownSync(Resource.Attributes)(configuration.attributes)).toEqual(configuration.attributes)
+      const measured = sdkResourceBytes(configuration)
+      expect(measured).toBeGreaterThan(Resource.maximumResourceBytes)
+      const assertRefusal = (error: unknown) => {
+        expect(error).toBeInstanceOf(Resource.InvalidResourceConfiguration)
+        const refusal = error as Resource.InvalidResourceConfiguration
+        expect(refusal.path).toBe("attributes")
+        expect(refusal.message).toContain(`${Resource.maximumResourceBytes} byte limit`)
+        const lowerBound = Number(/at least (\d+) bytes/.exec(refusal.message)?.[1])
+        expect(lowerBound).toBeGreaterThan(Resource.maximumResourceBytes)
+        expect(lowerBound).toBeLessThanOrEqual(measured)
+        expect(JSON.stringify(refusal)).not.toContain(secret)
+        expect(refusal.message).not.toContain("\u0001")
+      }
+      for (const layer of layersFor(configuration)) assertRefusal(await failureOf(layer))
+      const decoded = await Effect.runPromise(Effect.result(Resource.decode(configuration)))
+      expect(decoded._tag).toBe("Failure")
+      if (decoded._tag === "Failure") assertRefusal(decoded.failure)
+      for (const decode of [Resource.decodeSync, Resource.configToAttributes]) {
+        let refusal: unknown
+        try {
+          decode(configuration)
+        } catch (error) {
+          refusal = error
+        }
+        assertRefusal(refusal)
+      }
+    }
+  })
+
+  it.each(["\u0001", "漢", "😀"])("counts encoding expansion for %j even below the character budget", (character) => {
+    const configuration = {
+      serviceName: "service",
+      attributes: { text: character.repeat(32_768), extra: character.repeat(16_384) }
+    }
+    expect(configuration.attributes.text.length).toBeLessThanOrEqual(Resource.maximumAttributeStringLength)
+    expect(configuration.attributes.text.length + configuration.attributes.extra.length).toBeLessThan(
+      Resource.maximumResourceBytes
+    )
+    expect(resourceBytes(configuration)).toBeGreaterThan(Resource.maximumResourceBytes)
+    expect(() => Resource.decodeSync(configuration)).toThrow(Resource.InvalidResourceConfiguration)
+  })
+
+  it("bounds every homogeneous array and reports its path, measured length and limit without values", async () => {
+    for (const element of ["PRIVATE_ARRAY_VALUE", 3, true]) {
+      const exact = Array.from({ length: Resource.maximumAttributeArrayLength }, () => element)
+      expect(Schema.decodeUnknownSync(Resource.AttributeValue)(exact)).toEqual(exact)
+      const oversized = [...exact, element]
+      expect(() => Schema.decodeUnknownSync(Resource.AttributeValue)(oversized)).toThrow()
+      const configuration = { serviceName: "service", attributes: { array: oversized } }
+      for (const layer of layersFor(configuration)) {
+        const failure = await failureOf(layer)
+        expect(failure.path).toBe("attributes.array")
+        expect(failure.message).toContain("257 elements")
+        expect(failure.message).toContain("256 element limit")
+        expect(JSON.stringify(failure)).not.toContain("PRIVATE_ARRAY_VALUE")
+      }
+    }
+  })
+
+  it.each(boundaryResources)(
+    "accepts exact encoded boundaries and refuses one more byte: $serviceName",
+    async (configuration) => {
+      expect(sdkResourceBytes(configuration)).toBe(Resource.maximumResourceBytes)
+      expect(resourceBytes(configuration)).toBeLessThanOrEqual(Resource.maximumResourceBytes)
+      expect(Resource.decodeSync(configuration)).toEqual(configuration)
+      const oversized = {
+        ...configuration,
+        attributes: { ...configuration.attributes, paddingB: configuration.attributes.paddingB + "x" }
+      }
+      expect(sdkResourceBytes(oversized)).toBe(Resource.maximumResourceBytes + 1)
+      expect(() => Resource.decodeSync(oversized)).toThrow(Resource.InvalidResourceConfiguration)
+      expect(() => Resource.configToAttributes(oversized)).toThrow(Resource.InvalidResourceConfiguration)
+      await expect(Effect.runPromise(Resource.decode(oversized))).rejects.toBeInstanceOf(
+        Resource.InvalidResourceConfiguration
+      )
+      for (const layer of layersFor(oversized)) expect((await failureOf(layer)).path).toBe("attributes")
+    }
+  )
 
   it("omits absent optional fields in the SDK projection", () => {
     expect(Resource.toOpenTelemetryConfiguration({ serviceName: "service" })).toEqual({

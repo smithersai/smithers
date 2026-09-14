@@ -17,16 +17,21 @@
  *
  * @since 0.1.0
  */
+import { Clock } from "effect/Clock"
+import * as ConfigProvider from "effect/ConfigProvider"
 import type * as Duration from "effect/Duration"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
+import * as Logger from "effect/Logger"
 import * as Metric from "effect/Metric"
 import * as Option from "effect/Option"
+import * as References from "effect/References"
 import * as Semaphore from "effect/Semaphore"
 import * as FetchHttpClient from "effect/unstable/http/FetchHttpClient"
 import type * as Headers from "effect/unstable/http/Headers"
 import type * as HttpBody from "effect/unstable/http/HttpBody"
 import * as HttpClient from "effect/unstable/http/HttpClient"
+import type * as HttpClientRequest from "effect/unstable/http/HttpClientRequest"
 import * as HttpClientResponse from "effect/unstable/http/HttpClientResponse"
 import * as Otlp from "effect/unstable/observability/Otlp"
 import * as Endpoint from "./Endpoint.ts"
@@ -61,31 +66,101 @@ export const defaultServiceVersion = "1.0.0-rc.0"
 // Do not queue at the transport: upstream forks every full batch independently.
 const maxBatchSize = 1000
 const maxInFlight = 4
-const maxRequestBytes = 1024 * 1024
+/**
+ * Maximum encoded export request size, in bytes.
+ * @category transport
+ * @since 1.0.0-rc.0
+ */
+export const maxRequestBytes = 1024 * 1024
 const requestTimeout = "10 seconds"
+const diagnosticIntervalMillis = 60_000
+// The envelope around the resource in every request repeats `service.name` as
+// the instrumentation scope name: at most 1,024 code units, at most six bytes
+// each once JSON-escaped, so under 8 KiB together with the envelope's own keys.
+/**
+ * Reserved bytes for request wrappers and the escaped instrumentation scope.
+ * @category transport
+ * @since 1.0.0-rc.0
+ */
+export const maximumEnvelopeBytes = 8 * 1024
+
+/**
+ * Bytes of every export request kept free for the signal batch itself.
+ *
+ * The transport discards a request over 1 MiB, and the resource rides in every
+ * request, so the largest resource `Resource.decode` admits
+ * (`Resource.maximumResourceBytes`, 128 KiB) and the envelope that repeats the
+ * service name (under 8 KiB) come off the top. The 888 KiB left gives each
+ * record of a full 1,000-record logger or tracer batch about 900 bytes, three
+ * to four times a bare log record or span, and gives the metrics snapshot room
+ * for several thousand series. Every resource the decoder accepts therefore
+ * leaves an ordinary batch of any signal exportable; what this reserve does
+ * not bound is a single application record or a registry large enough to
+ * exceed it on its own.
+ *
+ * @category transport
+ * @since 1.0.0-rc.0
+ */
+export const reservedBatchBytes = maxRequestBytes - Resource.maximumResourceBytes - maximumEnvelopeBytes
+
+type DiscardReason = "oversized" | "stalled" | "saturated"
 
 const boundedClient = Layer.effect(
   HttpClient.HttpClient,
   Effect.gen(function*() {
     const client = yield* HttpClient.HttpClient
+    const clock = yield* Clock
+    // The loggers installed when this transport is acquired. The OTLP logger
+    // the same acquisition installs does not exist yet, so a diagnostic pinned
+    // to this set cannot enter the exporter it describes, whichever fiber runs
+    // the export: the interval and shutdown fibers inherit this set anyway,
+    // but a flush requested from application code runs with the application's
+    // loggers, which by then include this exporter.
+    const ambientLoggers = yield* Effect.withFiber((fiber) => Effect.succeed(fiber.getRef(Logger.CurrentLoggers)))
     const permits = Semaphore.makeUnsafe(maxInFlight)
-    // Metric handles cache their first registry, so allocate one per layer.
+    // The counter lives with the transport it describes.
     const droppedExports = Metric.counter("flows/observability/otlp/dropped")
+    let nextDiagnosticAt = -Infinity
+    // A local discard is terminal, so the upstream retry loop must not retain
+    // or retry its payload, and the counter records batches, not records. The
+    // warning is the diagnostic the counter cannot be: the counter is exported
+    // through this same transport and shares every outage with it. One
+    // warning per minute keeps a sustained outage from flooding the ambient
+    // loggers; the running total in its annotations carries the volume.
+    // Replace ambient annotations and log spans to bound the diagnostic itself.
+    const discard = (reason: DiscardReason, request: HttpClientRequest.HttpClientRequest, bytes: number) =>
+      Metric.update(droppedExports, 1).pipe(
+        Effect.andThen(Effect.suspend(() => {
+          const now = clock.currentTimeMillisUnsafe()
+          if (now < nextDiagnosticAt) return Effect.void
+          nextDiagnosticAt = now + diagnosticIntervalMillis
+          return Metric.value(droppedExports).pipe(
+            Effect.flatMap((dropped) =>
+              Effect.logWarning("An OTLP export batch was discarded").pipe(
+                Effect.provideService(References.CurrentLogSpans, []),
+                Effect.provideService(References.CurrentLogAnnotations, {
+                  code: "otlp_export_discarded",
+                  reason,
+                  bytes,
+                  limit: maxRequestBytes,
+                  dropped: dropped.count
+                })
+              )
+            ),
+            Effect.provideService(Logger.CurrentLoggers, ambientLoggers)
+          )
+        })),
+        Effect.as(HttpClientResponse.fromWeb(request, new Response(null, { status: 204 })))
+      )
     return HttpClient.transform(client, (requestEffect, request) =>
       Effect.suspend(() => {
-        // A local discard is terminal, so the upstream retry loop must not
-        // retain or retry its payload. Count batches, not records, without
-        // logging into this exporter.
-        const discard = Metric.update(droppedExports, 1).pipe(
-          Effect.as(HttpClientResponse.fromWeb(request, new Response(null, { status: 204 })))
-        )
         // layerJson always supplies a Uint8Array body with a byte length.
-        const body = request.body as HttpBody.Uint8Array
-        if (body.contentLength > maxRequestBytes) return discard
+        const bytes = (request.body as HttpBody.Uint8Array).contentLength
+        if (bytes > maxRequestBytes) return discard("oversized", request, bytes)
         return requestEffect.pipe(
-          Effect.timeoutOrElse({ duration: requestTimeout, orElse: () => discard }),
+          Effect.timeoutOrElse({ duration: requestTimeout, orElse: () => discard("stalled", request, bytes) }),
           permits.withPermitsIfAvailable(1),
-          Effect.flatMap(Option.match({ onNone: () => discard, onSome: Effect.succeed }))
+          Effect.flatMap(Option.match({ onNone: () => discard("saturated", request, bytes), onSome: Effect.succeed }))
         )
       }))
   })
@@ -111,7 +186,13 @@ export interface Options {
   readonly serviceName?: string | undefined
   /** Overrides {@link defaultServiceVersion} as the `service.version` attribute. */
   readonly serviceVersion?: string | undefined
-  /** Additional resource attributes attached to every exported signal. */
+  /**
+   * Additional resource attributes attached to every exported signal, decoded
+   * by `Resource.Attributes`. The whole resource must encode to at most
+   * `Resource.maximumResourceBytes`; a larger one fails acquisition with
+   * {@link Resource.InvalidResourceConfiguration} rather than making every
+   * request oversized.
+   */
   readonly attributes?: Record<string, unknown> | undefined
   /** Headers sent with every export request, for example vendor auth. */
   readonly headers?: Headers.Input | undefined
@@ -125,7 +206,10 @@ export interface Options {
  * Creates the OTLP logs, metrics, and traces layer with flows resource
  * defaults, JSON-serialized. Exports share a four-request limit with no waiting
  * queue. Requests larger than 1 MiB or stalled for ten seconds are discarded;
- * `flows/observability/otlp/dropped` counts discarded batches.
+ * `flows/observability/otlp/dropped` counts discarded batches, and at most
+ * once a minute a `Warn` record with code `otlp_export_discarded` names the
+ * reason, the request size, and the running total through the loggers that
+ * were installed when the layer was acquired, never through this exporter.
  *
  * **Details**
  *
@@ -172,7 +256,12 @@ export const layer = (
             metricsExportInterval: options.exportInterval,
             tracerExportInterval: options.exportInterval,
             shutdownTimeout: options.shutdownTimeout
-          }).pipe(Layer.provide(boundedClient))
+          }).pipe(
+            Layer.provide(boundedClient),
+            // Upstream merges OTEL_RESOURCE_ATTRIBUTES even with explicit
+            // options. Keep unvalidated ambient metadata out of every request.
+            Layer.provide(ConfigProvider.layer(ConfigProvider.fromUnknown({})))
+          )
         )
       }
     )

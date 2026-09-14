@@ -1,12 +1,16 @@
 import { describe, expect, it } from "@effect/vitest"
+import * as ConfigProvider from "effect/ConfigProvider"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
 import * as Logger from "effect/Logger"
 import * as Metric from "effect/Metric"
+import * as References from "effect/References"
 import { TestClock } from "effect/testing"
 import * as FetchHttpClient from "effect/unstable/http/FetchHttpClient"
+import * as OtlpExporter from "effect/unstable/observability/OtlpExporter"
 import { readFileSync } from "node:fs"
-import { Otlp } from "../src/index.ts"
+import { Otlp, Resource } from "../src/index.ts"
+import { boundaryResources, resourceBytes, sdkResourceBytes } from "./fixtures/resources.ts"
 
 interface RecordedRequest {
   readonly url: string
@@ -46,9 +50,9 @@ const runExporting = <A, E>(
   )
 
 /** The same export harness under a controllable clock, for retry assertions. */
-const runExportingTimed = <A, E>(
-  effect: Effect.Effect<A>,
-  layer: Layer.Layer<never, E>,
+const runExportingTimed = <A, E, R>(
+  effect: Effect.Effect<A, never, R>,
+  layer: Layer.Layer<R, E>,
   fetch: typeof globalThis.fetch
 ) =>
   effect.pipe(
@@ -323,6 +327,136 @@ describe("Otlp", () => {
         Otlp.layerFetch({ baseUrl: "http://collector.invalid:4318", exportInterval: "1 second" }),
         collector.fetch
       ).pipe(Effect.provide(Logger.layer([])))
+    }))
+
+  it.effect.each(boundaryResources)(
+    "exports every signal with a resource at the byte boundary: $serviceName",
+    (configuration) =>
+      Effect.gen(function*() {
+        const collector = recordingFetch()
+        expect(sdkResourceBytes(configuration)).toBe(Resource.maximumResourceBytes)
+        expect(resourceBytes(configuration)).toBeLessThanOrEqual(Resource.maximumResourceBytes)
+        yield* runExporting(
+          Effect.gen(function*() {
+            yield* Effect.logInfo("small log")
+            yield* Effect.void.pipe(Effect.withSpan("small span"))
+            yield* Metric.update(Metric.counter("boundary/small_metric"), 1)
+          }),
+          Otlp.layerFetch({ baseUrl: "http://collector.invalid:4318", ...configuration, exportInterval: "1 hour" }),
+          collector.fetch
+        ).pipe(
+          // Ambient resource data must never enlarge the accepted resource.
+          Effect.provide(ConfigProvider.layer(ConfigProvider.fromUnknown({
+            OTEL_RESOURCE_ATTRIBUTES: { ambient: "x".repeat(Otlp.maxRequestBytes) }
+          })))
+        )
+        expect(collector.requests.map((request) => request.url.split("/").at(-1)).sort()).toEqual([
+          "logs",
+          "metrics",
+          "traces"
+        ])
+        for (const request of collector.requests) {
+          const bytes = new TextEncoder().encode(JSON.stringify(request.body)).byteLength
+          expect(bytes).toBeLessThanOrEqual(Otlp.maxRequestBytes - Otlp.reservedBatchBytes + 4_096)
+          expect(JSON.stringify(request.body)).not.toContain("ambient")
+        }
+      })
+  )
+
+  it.effect("reserves enough room for ordinary 1,000-record log and span batches", () =>
+    Effect.gen(function*() {
+      const collector = recordingFetch()
+      yield* runExportingTimed(
+        Effect.gen(function*() {
+          for (let i = 0; i < 1_000; i++) yield* Effect.logInfo("ordinary log record")
+          yield* TestClock.adjust("1 millis")
+          for (let i = 0; i < 1_000; i++) yield* Effect.void.pipe(Effect.withSpan("ordinary span"))
+          yield* TestClock.adjust("1 millis")
+          expect((yield* Metric.value(Metric.counter("flows/observability/otlp/dropped"))).count).toBe(0)
+        }),
+        Otlp.layerFetch({
+          baseUrl: "http://collector.invalid:4318",
+          ...boundaryResources[3]!,
+          exportInterval: "1 hour"
+        }),
+        collector.fetch
+      )
+      const logs = collector.requests.find((request) => request.url.endsWith("/logs"))!
+      const traces = collector.requests.find((request) => request.url.endsWith("/traces"))!
+      expect(
+        (logs.body as { resourceLogs: Array<{ scopeLogs: Array<{ logRecords: unknown[] }> }> }).resourceLogs[0]!
+          .scopeLogs[0]!.logRecords
+      ).toHaveLength(1_000)
+      expect(
+        (traces.body as { resourceSpans: Array<{ scopeSpans: Array<{ spans: unknown[] }> }> }).resourceSpans[0]!
+          .scopeSpans[0]!.spans
+      ).toHaveLength(1_000)
+      for (const request of [logs, traces]) {
+        expect(new TextEncoder().encode(JSON.stringify(request.body)).byteLength).toBeLessThan(Otlp.maxRequestBytes)
+      }
+    }))
+
+  it.effect("warns through the acquisition loggers, rate limits loss and never exports its own diagnostic", () =>
+    Effect.gen(function*() {
+      const collector = recordingFetch()
+      const warnings: Array<
+        {
+          level: string
+          message: unknown
+          annotations: Readonly<Record<string, unknown>>
+          spans: ReadonlyArray<readonly [string, number]>
+        }
+      > = []
+      const ambient = Logger.make((options) => {
+        if (options.logLevel === "Warn") {
+          warnings.push({
+            level: options.logLevel,
+            message: options.message,
+            annotations: options.fiber.getRef(References.CurrentLogAnnotations),
+            spans: options.fiber.getRef(References.CurrentLogSpans)
+          })
+        }
+      })
+      yield* runExportingTimed(
+        Effect.gen(function*() {
+          const flusher = yield* OtlpExporter.Flusher
+          for (let i = 0; i < 2; i++) {
+            yield* Effect.logInfo("PRIVATE_BATCH_VALUE" + "x".repeat(Otlp.maxRequestBytes))
+            yield* flusher.flush
+          }
+          expect(warnings).toHaveLength(1)
+          expect((yield* Metric.value(Metric.counter("flows/observability/otlp/dropped"))).count).toBe(2)
+          yield* TestClock.adjust("60 seconds")
+          yield* Effect.logInfo("x".repeat(Otlp.maxRequestBytes))
+          yield* flusher.flush
+          expect(warnings).toHaveLength(2)
+          expect(warnings.map((warning) => warning.annotations.dropped)).toEqual([1, 3])
+          yield* Effect.logInfo("small batch after loss")
+          yield* flusher.flush
+        }),
+        Otlp.layerFetch({ baseUrl: "http://collector.invalid:4318", exportInterval: "1 hour" }).pipe(
+          Layer.provideMerge(OtlpExporter.layerFlusher)
+        ),
+        collector.fetch
+      ).pipe(
+        Effect.provide(Logger.layer([ambient])),
+        Effect.annotateLogs({ private: "PRIVATE_AMBIENT_VALUE" }),
+        Effect.withLogSpan("PRIVATE_LOG_SPAN")
+      )
+      expect(warnings[0]).toMatchObject({
+        level: "Warn",
+        spans: [],
+        message: ["An OTLP export batch was discarded"],
+        annotations: { code: "otlp_export_discarded", reason: "oversized", limit: Otlp.maxRequestBytes }
+      })
+      expect(warnings[0]!.annotations.bytes).toBeGreaterThan(Otlp.maxRequestBytes)
+      expect(JSON.stringify(warnings)).not.toContain("PRIVATE_")
+      expect(JSON.stringify(warnings).length).toBeLessThan(1_024)
+      const logs = collector.requests.filter((request) => request.url.endsWith("/logs"))
+      expect(logs).toHaveLength(1)
+      expect(JSON.stringify(logs)).toContain("small batch after loss")
+      expect(JSON.stringify(logs)).not.toContain("otlp_export_discarded")
+      expect(JSON.stringify(logs)).not.toContain("An OTLP export batch was discarded")
     }))
 
   it.effect("layerNoop provides nothing and exports nothing", () =>

@@ -8,7 +8,8 @@ import type { Attributes as OtelAttributes } from "@opentelemetry/api"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
 import * as Schema from "effect/Schema"
-import { schemaIssuePath } from "./internal/schemaIssuePath.ts"
+import * as OtlpResource from "effect/unstable/observability/OtlpResource"
+import { schemaIssueMessage, schemaIssuePath } from "./internal/schemaIssuePath.ts"
 
 /**
  * Largest service-name or service-version field accepted by a resource.
@@ -35,12 +36,41 @@ export const maximumAttributeKeyLength = 1_024
 export const maximumAttributeStringLength = 65_536
 
 /**
+ * Largest number of elements accepted in one array attribute value.
+ *
+ * @category constants
+ * @since 1.0.0-rc.0
+ */
+export const maximumAttributeArrayLength = 256
+
+/**
  * Largest number of attributes accepted by one resource.
  *
  * @category constants
  * @since 1.0.0-rc.0
  */
 export const maximumAttributes = 256
+
+/**
+ * Largest OTLP/JSON encoding accepted for one whole resource, in UTF-8 bytes.
+ *
+ * The measure is the OTLP `Resource` message the exporters place in every
+ * request, `{"attributes":[{"key":…,"value":{…}}],"droppedAttributesCount":0}`
+ * with service identity and SDK-added `telemetry.sdk.name` and
+ * `telemetry.sdk.language` included, after JSON escaping and UTF-8 encoding.
+ * These SDK fields are conservatively reserved even for the default Effect
+ * exporter. Caller attributes overwritten by SDK identity or metadata are
+ * still counted. It is the bound the per-field limits cannot express: 256
+ * attributes at the string ceiling would encode to 16 MiB, and the resource
+ * rides in every export request, so the default transport, which discards a
+ * request over 1 MiB, would deliver nothing at all. 128 KiB admits one
+ * ASCII attribute at the string ceiling and leaves that transport 888 KiB of every
+ * request for the signal batch; see `Otlp.reservedBatchBytes`.
+ *
+ * @category constants
+ * @since 1.0.0-rc.0
+ */
+export const maximumResourceBytes = 131_072
 
 const loneSurrogate = /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/
 const embeddedNul = new RegExp(String.fromCharCode(0))
@@ -74,7 +104,16 @@ export const AttributeValue = Schema.Union([
   Schema.Array(attributeString),
   Schema.Array(attributeNumber),
   Schema.Array(Schema.Boolean)
-])
+]).check(
+  Schema.makeFilter(
+    (value) =>
+      !Array.isArray(value) || value.length <= maximumAttributeArrayLength || {
+        path: [],
+        issue: `holds ${value.length} elements, over the ${maximumAttributeArrayLength} element limit`
+      },
+    { title: "boundedResourceAttributeArrays" }
+  )
+)
 
 /**
  * Runtime schema for OpenTelemetry resource attributes.
@@ -96,6 +135,46 @@ export const Attributes = Schema.Record(Schema.String, AttributeValue).check(
   )
 )
 
+const encoder = new TextEncoder()
+
+/**
+ * Counts OTLP JSON fragments, including keys, wrappers, escaping and UTF-8.
+ * Stops at the first fragment over budget: the refusal reports a lower bound.
+ * A configuration may reuse one large string in thousands of array slots, so
+ * serializing the whole resource before checking could allocate gigabytes.
+ */
+const encodedResourceBytes = (configuration: {
+  readonly serviceName: string
+  readonly serviceVersion?: string | undefined
+  readonly attributes?: Record<string, unknown> | undefined
+}): number => {
+  const bytes = (value: unknown) => encoder.encode(JSON.stringify(value)).byteLength
+  const identityAttributes = OtelResource.configToAttributes({
+    serviceName: configuration.serviceName,
+    ...(configuration.serviceVersion === undefined ? {} : { serviceVersion: configuration.serviceVersion })
+  })
+  // Use the pinned SDK projection so its added metadata cannot escape the
+  // complete-resource ceiling. Both exporters use these OTLP AnyValue shapes.
+  let total = bytes({
+    attributes: OtlpResource.entriesToAttributes(Object.entries(identityAttributes)),
+    droppedAttributesCount: 0
+  })
+  for (const [key, value] of Object.entries(configuration.attributes ?? {})) {
+    // An identity attribute is always present, so every addition needs a comma.
+    total += 1 + bytes({ key, value: Array.isArray(value) ? { arrayValue: { values: [] } } : null })
+    if (Array.isArray(value)) {
+      for (const [index, element] of value.entries()) {
+        total += (index === 0 ? 0 : 1) + bytes(OtlpResource.unknownToAttributeValue(element))
+        if (total > maximumResourceBytes) return total
+      }
+    } else {
+      total += bytes(OtlpResource.unknownToAttributeValue(value)) - 4 // replace JSON null
+    }
+    if (total > maximumResourceBytes) return total
+  }
+  return total
+}
+
 /**
  * Runtime schema for the service identity attached to exported telemetry.
  *
@@ -106,7 +185,24 @@ export const Configuration = Schema.Struct({
   serviceName: identity,
   serviceVersion: Schema.optional(identity),
   attributes: Schema.optional(Attributes)
-})
+}).check(
+  Schema.makeFilter(
+    (configuration: {
+      readonly serviceName: string
+      readonly serviceVersion?: string | undefined
+      readonly attributes?: Record<string, unknown> | undefined
+    }) => {
+      const bytes = encodedResourceBytes(configuration)
+      // Only attributes can carry a resource past the budget: the two identity
+      // fields encode to at most 6 KiB each, so the refusal points there.
+      return bytes <= maximumResourceBytes || {
+        path: ["attributes"],
+        issue: `bring the resource to at least ${bytes} bytes of OTLP JSON, over the ${maximumResourceBytes} byte limit`
+      }
+    },
+    { title: "boundedResourceBytes" }
+  )
+)
 
 /**
  * Configuration used to identify the service emitting telemetry.
@@ -136,7 +232,7 @@ const invalid = (cause: unknown): InvalidResourceConfiguration => {
   return new InvalidResourceConfiguration({
     code: "invalid_resource_configuration",
     path,
-    message: `OpenTelemetry resource ${path} is invalid`
+    message: `OpenTelemetry resource ${path} ${schemaIssueMessage(cause) ?? "is invalid"}`
   })
 }
 

@@ -69,7 +69,21 @@ an unencodable payload later:
 - At most 256 attributes, with non-empty, well formed keys of at most 1,024
   code units.
 - Attribute values are finite numbers, booleans, strings of at most 65,536 code
-  units, or homogeneous arrays of one of those scalar types.
+  units, or homogeneous arrays of one of those scalar types with at most 256
+  elements (`Resource.maximumAttributeArrayLength`).
+- The complete OTLP JSON resource is at most 128 KiB
+  (`Resource.maximumResourceBytes`), including identity, SDK-added
+  `telemetry.sdk.name` and `telemetry.sdk.language`, keys, values, array wrappers,
+  escaping and UTF-8. SDK fields are reserved even for the default Effect
+  exporter. Counting stops as soon as the budget is exceeded;
+  the value-free refusal names `attributes`, the measured lower bound and limit.
+  Per-field limits alone cannot guarantee this cumulative bound.
+- Resource metadata is explicit. The default OTLP and Node SDK layers isolate
+  ambient resource configuration so it cannot enlarge metadata after admission.
+- The 1 MiB transport reserves 8 KiB for the JSON envelope and escaped scope
+  name, leaving 888 KiB (`Otlp.reservedBatchBytes`) for a signal batch. This is
+  about 909 bytes per record at the upstream 1,000-record log or span limit,
+  enough for ordinary batches; application records can still be too large.
 - NUL and unpaired UTF-16 surrogates are refused anywhere. Valid astral Unicode
   is preserved.
 

@@ -76,7 +76,33 @@ Installs the OTLP logs, metrics, and traces exporters with the flows resource
 defaults filled in. It requires an Effect `HttpClient`, which is how it stays
 platform-neutral: a Node host may provide Undici, a browser or a test provides
 something else. Both configuration inputs are decoded during acquisition, so
-the returned layer either exports or refuses.
+the returned layer either exports or refuses. Ambient `OTEL_RESOURCE_ATTRIBUTES`
+cannot add unvalidated metadata to these explicit resources.
+
+Requests over `maxRequestBytes` (1 MiB), stalled for ten seconds, or exceeding
+four in-flight requests are discarded locally. Each discard increments
+`flows/observability/otlp/dropped`. A `Warn` diagnostic with code
+`otlp_export_discarded` reports `reason` (`oversized`, `stalled`, or `saturated`),
+`bytes`, `limit`, and cumulative `dropped` at most once per minute per transport.
+It uses the logger set captured before this exporter is installed, so it cannot
+re-enter this exporter. Request bodies, headers, URLs, and ambient log
+annotations are omitted. Keep an ambient sink outside OTLP at level `Warn` or
+lower to observe loss independently; empty or filtered loggers cannot report it.
+
+### Otlp transport constants
+
+```ts
+const maxRequestBytes: number // 1048576 (1 MiB)
+const maximumEnvelopeBytes: number // 8192 (8 KiB)
+const reservedBatchBytes: number // 909312 (888 KiB)
+```
+
+The resource ceiling is 128 KiB. Another 8 KiB covers JSON wrappers and the
+instrumentation scope, which repeats the service name (at most 6 KiB after
+escaping). The remaining 888 KiB gives each record in the upstream 1,000-record
+log or span batch about 909 bytes, several times a bare record. This guarantees
+room for ordinary signal batches, not arbitrary record sizes or metric registry
+cardinality.
 
 ### Otlp.layerFetch
 
@@ -205,8 +231,9 @@ Builds the OTLP/HTTP URL one signal is posted to below a decoded endpoint:
 ## Resource
 
 Explicit, validated OpenTelemetry resource metadata. Every public OTEL builder
-in this package decodes the same `Configuration`, and no builder reads an
-environment variable: every attribute is one the caller passed.
+in this package decodes the same `Configuration`. Resource metadata comes from
+the caller and the SDK's fixed telemetry fields. Neither the default exporter
+nor the Node SDK layer merges ambient resource configuration after validation.
 
 ### Resource.Configuration
 
@@ -232,7 +259,7 @@ const Attributes: Schema.Record<Schema.String, typeof AttributeValue>
 
 `AttributeValue` accepts a string of at most `maximumAttributeStringLength`
 code units, a finite number, a boolean, or a homogeneous array of one of those
-scalar types. `Attributes` bounds the record at `maximumAttributes` entries
+scalar types, with at most `maximumAttributeArrayLength` elements. `Attributes` bounds the record at `maximumAttributes` entries
 with non-empty, well formed keys of at most `maximumAttributeKeyLength` code
 units. NUL and unpaired UTF-16 surrogates are refused in keys and in values;
 valid astral Unicode is preserved.
@@ -244,7 +271,24 @@ const maximumIdentityLength: number // 1024
 const maximumAttributeKeyLength: number // 1024
 const maximumAttributeStringLength: number // 65536
 const maximumAttributes: number // 256
+const maximumAttributeArrayLength: number // 256
+const maximumResourceBytes: number // 131072 (128 KiB)
 ```
+
+The resource byte limit counts the complete OTLP JSON resource, including
+identity, SDK-added `telemetry.sdk.name` and `telemetry.sdk.language`, attribute
+keys, scalar and array wrappers, escaping, and UTF-8. SDK fields are reserved
+even for the default Effect exporter, and caller attributes that the SDK
+overwrites are conservatively counted too.
+Counting stops at the first fragment over budget to bound intermediate
+allocations; the error reports the measured lower bound and byte limit at path
+`attributes`. Array-length errors report the measured element count and limit
+at the attribute path. No rejected attribute values are retained.
+
+All resource-accepting layers and `decode`, `decodeSync`, and
+`configToAttributes` enforce these bounds before exporter acquisition.
+Explicit `serviceName` and `serviceVersion` take precedence over attributes
+with those keys. Admission conservatively counts those redundant attributes.
 
 ### Resource.decode
 
@@ -628,7 +672,10 @@ const layerOtel: (options: Options) => Layer.Layer<
 Builds a scoped Node OTLP/HTTP layer for all three signals: a
 `BatchSpanProcessor`, a `BatchLogRecordProcessor`, and a
 `PeriodicExportingMetricReader`, each behind its own OTLP exporter. Exporter
-objects are created only when the layer is built. Closing the scope
+objects are created only when the layer is built. `OTEL_SERVICE_NAME` and
+`OTEL_RESOURCE_ATTRIBUTES` cannot add resource metadata after validation,
+whether supplied by the process environment or an Effect `ConfigProvider`.
+Closing the scope
 force-flushes both batch processors and collects the metric reader once, so
 release rather than the interval is the deterministic flush.
 

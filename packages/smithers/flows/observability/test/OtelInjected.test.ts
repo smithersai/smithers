@@ -9,7 +9,7 @@ import * as Resource from "../src/Resource.ts"
 
 /**
  * The injected-provider branches of `Otel.layerOtel`. `Otel.test.ts` asserts
- * the empty case — nothing injected composes to a layer that still runs — so
+ * the empty case, where nothing injected composes to a layer that still runs, so
  * what is left is the other side of each of its three conditionals, and the
  * ownership split those branches carry: injected providers are borrowed, the
  * readers the `metricReader` factory returns are owned by the layer scope.
@@ -183,7 +183,11 @@ describe("Otel.layerOtel with injected providers", () => {
     }
   })
 
-  it("validates the resource before invoking provider or reader factories", async () => {
+  it.each([
+    { serviceName: "" },
+    { serviceName: "oversized", attributes: { text: "漢".repeat(65_536) } },
+    { serviceName: "array", attributes: { values: Array.from({ length: 257 }, () => true) } }
+  ])("validates the resource before invoking provider or reader factories", async (resource) => {
     const tracerProvider = vi.fn(() => new BasicTracerProvider())
     const loggerProvider = vi.fn(() => new LoggerProvider())
     const metricReader = vi.fn(() =>
@@ -193,7 +197,7 @@ describe("Otel.layerOtel with injected providers", () => {
       })
     )
     const layer = Otel.layerOtel({
-      resource: { serviceName: "" },
+      resource,
       tracerProvider,
       loggerProvider,
       metricReader

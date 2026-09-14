@@ -10,6 +10,7 @@ import { OTLPTraceExporter } from "@opentelemetry/exporter-trace-otlp-http"
 import { BatchLogRecordProcessor } from "@opentelemetry/sdk-logs"
 import { PeriodicExportingMetricReader } from "@opentelemetry/sdk-metrics"
 import { BatchSpanProcessor } from "@opentelemetry/sdk-trace-base"
+import * as ConfigProvider from "effect/ConfigProvider"
 import type * as Duration from "effect/Duration"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
@@ -39,6 +40,8 @@ export interface Options {
 /**
  * Builds a scoped Node OTLP/HTTP layer for all three telemetry signals.
  * Exporter objects are created only when this layer is built.
+ * Resource metadata is explicit: ambient OTEL resource configuration cannot
+ * enlarge it after validation.
  *
  * @category layers
  * @since 0.1.0
@@ -73,6 +76,11 @@ export const layerOtel = (
             metricReader,
             shutdownTimeout: options.shutdownTimeout
           }
-        })
+        }).pipe(
+          // NodeSdk merges Resource.layerFromEnv after our admission check.
+          // Isolate that lookup so only the validated explicit resource and
+          // the SDK metadata already included in its budget reach exporters.
+          Layer.provide(ConfigProvider.layer(ConfigProvider.fromUnknown({})))
+        )
     )
   )
