@@ -2,7 +2,8 @@
  * The account card (factory mock 21, design session §6c): read-only seam
  * facts about the signed-in person, and the Sign out door. The GitHub login
  * and the allowlist answer always render (the identity seam holds both); the
- * scopes section renders only when the identity worker answered, and the
+ * GitHub App permissions section renders only when the identity worker answered.
+ * OAuth requests only read:user for the profile. The
  * boxes section only when the workspaces seam has listed any. Nothing else
  * exists here: no billing, usage or seat rows, because no seam holds them.
  */
@@ -35,10 +36,14 @@ export const AccountCardBody = ({
         </tr>
       </tbody>
     </table>
+    <p className="secrets-scope">GitHub OAuth scopes</p>
+    <table className="secrets-table" aria-label="GitHub OAuth scopes">
+      <tbody><tr><th scope="row">read:user</th><td>See your GitHub profile.</td></tr></tbody>
+    </table>
     {card.payload.scopes.length === 0 ? null : (
       <>
-        <p className="secrets-scope">GitHub scopes</p>
-        <table className="secrets-table" aria-label="GitHub scopes">
+        <p className="secrets-scope">GitHub App permissions</p>
+        <table className="secrets-table" aria-label="GitHub App permissions">
           <tbody>
             {card.payload.scopes.map((row) => (
               <tr key={row.scope} data-testid={`account-scope-${row.scope}`}>

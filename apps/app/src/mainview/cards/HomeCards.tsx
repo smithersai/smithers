@@ -44,7 +44,7 @@ const BlockBody = ({ block, card, onRunCommand }: { readonly block: HomeBlock; r
         <ul className="world-card-list" data-testid="home-links">
           {block.links.map((link) => (
             <li key={link.url} className="world-card-row">
-              <a href={link.url} target="_blank" rel="noreferrer">{link.label}</a>
+              <a className="text-primary underline underline-offset-2" href={link.url} target="_blank" rel="noreferrer">{link.label}</a>
             </li>
           ))}
         </ul>

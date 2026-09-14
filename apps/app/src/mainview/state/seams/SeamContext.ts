@@ -27,7 +27,7 @@ export interface SeamContext {
   /** The next transcript ordinal — new cards surface at the end, never mid-history. */
   readonly nextOrdinal: () => number
   /** A rejected repository read uses the same transcript door as an unmet requirement. */
-  readonly promptSignIn?: () => void
+  readonly promptSignIn?: (summary?: string) => void
 }
 
 /** A bounded model-readable answer; the card retains the full parsed payload. */

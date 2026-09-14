@@ -625,3 +625,21 @@ test("app.reset durably clears all collections and fences late writes before reb
   expect(reopened.collections.tabs.size).toBe(1)
   expect(reopened.collections.worldDocuments.size).toBeGreaterThan(0)
 })
+
+
+test("web boot leaves the wiki empty and removes only the untouched legacy World stub", async () => {
+  const data = new Map<string, string>()
+  const storage = { getItem: (key: string) => data.get(key) ?? null, setItem: (key: string, value: string) => { data.set(key, value) }, removeItem: (key: string) => { data.delete(key) } }
+  const backend = { kind: "localStorage" as const, storage }
+  const web = await createAppStore(backend, { seedWiki: false })
+  expect(web.collections.worldDocuments.size).toBe(0)
+  const legacy = await createAppStore(backend)
+  expect(legacy.collections.worldDocuments.has("world-home")).toBe(true)
+  const migrated = await createAppStore(backend, { seedWiki: false })
+  expect(migrated.collections.worldDocuments.size).toBe(0)
+  expect(migrated.session().selectedWorldDocumentId).toBeNull()
+  const edited = await createAppStore(backend)
+  await edited.dispatch({ type: "world.document.upserted", actor: "user", document: { ...edited.collections.worldDocuments.get("world-home")!, body: "# World\n\nMy notes" } }).isPersisted.promise
+  const retained = await createAppStore(backend, { seedWiki: false })
+  expect(retained.collections.worldDocuments.get("world-home")?.body).toContain("My notes")
+})

@@ -92,7 +92,7 @@ export interface OnboardingDependencies {
   /** The requirement axis' durable park (AppController.deferCommand). */
   readonly deferCommand: (name: string, args: string | null, requirement: string) => void
   /** The sign-in step, rendered into the chat (auth.prompt). */
-  readonly promptSignIn: () => void
+  readonly promptSignIn: (required?: boolean, request?: { readonly name: string; readonly args?: string | null }) => void
   /** The one launch path (flow.run's): guards, the workspace, the launch, the run card. */
   readonly workflows: Pick<
     WorkflowController,
@@ -229,7 +229,7 @@ export const createOnboardingController = (ctx: ControllerContext, deps: Onboard
   const gate = (flow: string, explicit: string | undefined): string | void => {
     if (!ctx.commands.state().signedOut) return
     if (ctx.commandActor === "user") deps.deferCommand(flow, explicit ?? null, "signed-in")
-    deps.promptSignIn()
+    deps.promptSignIn(false, { name: flow, args: explicit })
     return ctx.commandActor === "user"
       ? undefined
       : "Sign in with GitHub first. The sign-in step is already rendered in the chat; point the user at it."

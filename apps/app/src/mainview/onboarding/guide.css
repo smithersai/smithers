@@ -1436,7 +1436,9 @@
 
 .guide-followup { display: flex; align-items: center; gap: .4rem; margin-top: .35rem; }
 .guide-followup .guide-step-done { color: var(--success); flex: none; }
-.guide-notice { margin-top: .35rem; color: var(--danger); }
+.guide-notice { margin-top: .35rem; color: var(--danger); white-space: pre-line; }
+/* Beat 12 progress has no failure details; only failures use the danger color. */
+.guide-shell[data-stage="12"] .guide-notice:not(:has(details)) { color: var(--g-muted-strong); }
 .guide-actions > .guide-notice { flex-basis: 100%; text-align: left; font-size: var(--fs-small); }
 .guide-notice details { margin-top: .5rem; color: var(--g-muted-strong); font-size: var(--fs-small); }
 .guide-notice summary { cursor: pointer; }

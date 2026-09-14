@@ -54,7 +54,7 @@ describe("Librarian background runs (onboarding beat 12)", () => {
     f.refuse()
     expect(await f.controller.bootstrapHistory("will/demo")).toContain("refused")
     // Beat 12 degrades honestly: the reason is written under the lesson, not only into a chat line the guide never shows.
-    expect(f.store.session().guide?.notice).toBe("Mythical history couldn't start. Retry Mythical history, or choose Do this later to keep going.")
+    expect(f.store.session().guide?.notice).toBe("Mythical history couldn't start. Retry Mythical history, or choose Do this later to keep going. The gateway refused the launch.")
     expect(f.store.session().guide?.noticeDetail).toBe("The gateway refused the launch.")
     await f.controller.inspectLibrarianRun(f.launches[0]!)
     expect(f.store.session().guide?.completed).not.toContain(LIBRARIAN_SIGNAL)
@@ -207,4 +207,18 @@ test("reload before launch acknowledgement preserves the instruction to check Ru
   expect(reloaded.session().guide?.notice).toContain("may have started. Check Runs before retrying")
   expect(reloaded.session().guide?.librarianLaunches?.[0]?.phase).toBe("failed")
   expect(f.launches).toHaveLength(1)
+})
+
+
+test("both failed launches retain their own explanation under the lesson", async () => {
+  const f = await fixture()
+  const controller = createLibrarianRunsController(f.ctx, { ...f.runs,
+    launchWorkflow: async args => ({ message: args.workflow.endsWith("wiki") ? "Wiki source is unavailable." : "History source is unavailable." }) })
+  await Promise.all([controller.createWiki("will/demo"), controller.bootstrapHistory("will/demo")])
+  const notice = f.store.session().guide?.notice
+  expect(notice).toContain("Wiki couldn't start.")
+  expect(notice).toContain("Wiki source is unavailable.")
+  expect(notice).toContain("Mythical history couldn't start.")
+  expect(notice).toContain("History source is unavailable.")
+  expect(notice?.split("\n")).toHaveLength(2)
 })

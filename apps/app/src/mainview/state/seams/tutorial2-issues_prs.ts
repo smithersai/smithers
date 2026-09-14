@@ -132,7 +132,7 @@ export async function tutorialRepositoryRead(
     } catch (error) {
       if (!(error instanceof RepositorySignInRequired)) throw error
       if (ctx.promptSignIn === undefined) return error.message
-      ctx.promptSignIn()
+      ctx.promptSignIn(`read ${kind === "issues" ? "issues" : "pull requests"} on ${repo}`)
       return readResult("The sign-in step is rendered in the chat.")
     }
   }

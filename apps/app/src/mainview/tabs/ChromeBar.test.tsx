@@ -723,7 +723,7 @@ describe("the sidebar's file tree", () => {
     const { controller, requests } = await boxHarness("starting")
     const { host, act } = mount(controller)
     const copyId = "workspace:ws-1"
-    expect(host.querySelector(`[data-testid="copy-${copyId}"]`)?.textContent).toContain("fix-landings · starting")
+    expect(host.querySelector(`[data-testid="copy-${copyId}"]`)?.textContent).toContain("main · starting")
     await settle(act, () => host.querySelector<HTMLButtonElement>(`[data-testid="repo-tree-toggle-${copyId}"]`)?.click())
     const state = host.querySelector<HTMLElement>(`[data-testid="repo-tree-state-${copyId}#"]`)
     expect(state?.textContent).toBe("fix-landings (ws-1) is starting, not running; wait for it to settle (the workspace card tracks it).")
@@ -1465,10 +1465,10 @@ describe("the chrome-actions footer's Account button", () => {
           return new Response(
             JSON.stringify({
               provider: "github",
-              requestedScopes: ["read:user", "repo"],
+              requestedScopes: ["contents", "pull_requests"],
               scopes: [
-                { scope: "read:user", plain: "See your GitHub profile.", why: "Sign-in." },
-                { scope: "repo", plain: "Read access to your repositories.", why: "The connector." }
+                { scope: "contents", plain: "Read and write repository contents.", why: "The GitHub App." },
+                { scope: "pull_requests", plain: "Read and write pull requests.", why: "Reviews." }
               ]
             }),
             { status: 200, headers: { "content-type": "application/json" } }
@@ -1525,15 +1525,17 @@ describe("the chrome-actions footer's Account button", () => {
     const card = host.querySelector<HTMLElement>('[data-kind="account"]')
     expect(card).not.toBeNull()
     expect(card?.getAttribute("aria-label")).toBe("Account · @will")
+    expect(card?.querySelector('table[aria-label="GitHub App permissions"]')).not.toBeNull()
+    expect(card?.querySelector('table[aria-label="GitHub OAuth scopes"]')?.textContent).toContain("read:user")
     expect(card?.querySelector("[data-testid=account-login]")?.textContent).toBe("GitHubConnected as @will")
     expect(card?.querySelector("[data-testid=account-access]")?.textContent).toBe("AccessAllowed")
-    expect(card?.querySelector('[data-testid="account-scope-read:user"]')?.textContent).toBe("read:userSee your GitHub profile.")
-    expect(card?.querySelector("[data-testid=account-scope-repo]")?.textContent).toBe("repoRead access to your repositories.")
+    expect(card?.querySelector('[data-testid="account-scope-contents"]')?.textContent).toBe("contentsRead and write repository contents.")
+    expect(card?.querySelector("[data-testid=account-scope-pull_requests]")?.textContent).toBe("pull_requestsRead and write pull requests.")
     // Boxes list across repositories, sorted by repository then name.
     const boxes = [...(card?.querySelectorAll<HTMLElement>("[data-testid^=account-box-]") ?? [])].map((row) => row.textContent)
     expect(boxes).toEqual(["acme/viemmainsuspended", "will/flowsepic-librarianrunning"])
-    // Exactly the seam-backed rows: two identity rows, two scopes, two boxes.
-    expect(card?.querySelectorAll("tbody tr")).toHaveLength(6)
+    // Two identity rows, the OAuth profile scope, two app permissions, and two boxes.
+    expect(card?.querySelectorAll("tbody tr")).toHaveLength(7)
     const signOut = card?.querySelector<HTMLButtonElement>('[data-flow="auth.sign-out"]')
     expect(signOut?.textContent).toBe("Sign out")
     expect(card?.querySelectorAll(".world-card-list button")).toHaveLength(1)
@@ -1546,7 +1548,7 @@ describe("the chrome-actions footer's Account button", () => {
     const outcome = await controller.commands.runForAgent("account.show")
     expect(outcome.status).toBe("executed")
     expect(outcome.status === "executed" ? outcome.value : "").toBe(
-      "account: @will; access allowed; 2 GitHub scope(s); 2 box(es) listed"
+      "account: @will; access allowed; 2 GitHub App permission(s); GitHub OAuth scope read:user; 2 box(es) listed"
     )
     // The same card is re-surfaced, never a second one.
     await act(() => {})
@@ -1572,8 +1574,9 @@ describe("the chrome-actions footer's Account button", () => {
     await act(() => {})
     const card = host.querySelector<HTMLElement>('[data-kind="account"]')
     expect(card?.querySelector("[data-testid=account-access]")?.textContent).toBe("AccessRequested, waiting on an answer")
-    expect(card?.querySelectorAll("tbody tr")).toHaveLength(2)
-    expect(card?.textContent).not.toContain("GitHub scopes")
+    expect(card?.querySelectorAll("tbody tr")).toHaveLength(3)
+    expect(card?.textContent).not.toContain("GitHub App permissions")
+    expect(card?.textContent).toContain("GitHub OAuth scopes")
     expect(card?.textContent).not.toContain("Boxes")
   })
 
@@ -1595,6 +1598,8 @@ describe("the chrome-actions footer's Account button", () => {
     expect(button).not.toBeNull()
     await act(() => button?.click())
     await act(() => {})
+    const summary = controller.commands.find("account.show")!.metadata.summary
+    expect(host.textContent).toContain(`Sign in with GitHub to ${summary[0]!.toLowerCase()}${summary.slice(1).replace(/[.!?]$/, "")}.`)
     expect(host.querySelector('[data-kind="account"]')).toBeNull()
     const prompt = [...host.querySelectorAll<HTMLButtonElement>('.message-cta[data-flow="auth.sign-in"]')]
     expect(prompt.length).toBeGreaterThan(0)
@@ -1687,4 +1692,47 @@ describe("the chrome-actions footer's History button", () => {
     expect(card?.querySelectorAll("[data-flow^=history]").length).toBe(1)
     controller.dispose()
   })
+})
+
+
+test("repository-page sidebar scopes the inventory to its URL and shows each bookmark's latest workspace", async () => {
+  const { store, controller } = await cloudHarness({ repositoryApp: "smithersai/smithers" })
+  await persisted(store, { type: "repositories.loaded", actor: "system", repositories: [
+    { id: "smithersai/smithers", org: "smithersai", name: "smithers", ownerKind: "org", head: null, catalog: true },
+    { id: "codeplanesmithers/canary-sandbox", org: "codeplanesmithers", name: "canary-sandbox", ownerKind: "user", head: null }
+  ] })
+  for (const [id, repoId, targetBookmark, status] of [
+    ["old", "smithersai/smithers", "main", "failed"],
+    ["new", "smithersai/smithers", "main", "running"],
+    ["topic", "smithersai/smithers", "topic", "suspended"],
+    ["other", "codeplanesmithers/canary-sandbox", "main", "failed"]
+  ] as const) {
+    await persisted(store, { type: "workspace.updated", actor: "system", workspace: {
+      id, repoId, targetBookmark, name: "main", status, provisioningStage: null, suspendedAt: null, createdAt: null
+    } })
+  }
+  const { host, act } = mount(controller)
+  await act(() => {})
+  const sidebar = host.querySelector(".chrome-bar")!
+  expect(sidebar.textContent).toContain("smithersai/")
+  expect(sidebar.textContent).not.toContain("canary-sandbox")
+  expect(sidebar.textContent).not.toContain("main · failed")
+  expect(sidebar.textContent?.match(/main · running/g)).toHaveLength(1)
+  expect(sidebar.textContent).toContain("topic · suspended")
+})
+
+test("bookmark deduplication picks the newest workspace when an inventory lists the old one first", async () => {
+  const { store, controller } = await cloudHarness({ repositoryApp: "smithersai/smithers" })
+  await persisted(store, { type: "repository.upserted", actor: "system", repository: {
+    id: "smithersai/smithers", org: "smithersai", name: "smithers", ownerKind: "org", head: null, catalog: true
+  } })
+  const base = { repoId: "smithersai/smithers", name: "main", targetBookmark: "main", provisioningStage: null, suspendedAt: null }
+  await persisted(store, { type: "workspaces.loaded", actor: "system", workspaces: [
+    { ...base, id: "a-old", status: "failed", createdAt: "2026-09-01T00:00:00Z" },
+    { ...base, id: "z-new", status: "running", createdAt: "2026-09-12T00:00:00Z" }
+  ] })
+  const { host, act } = mount(controller)
+  await act(() => {})
+  expect(host.querySelectorAll('.chrome-bar [data-testid="copy-workspace:z-new"]')).toHaveLength(1)
+  expect(host.querySelectorAll('.chrome-bar [data-testid="copy-workspace:a-old"]')).toHaveLength(0)
 })

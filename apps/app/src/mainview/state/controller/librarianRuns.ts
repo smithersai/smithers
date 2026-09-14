@@ -17,6 +17,15 @@ const label = (kind: LibrarianKind) => kind === "wiki" ? "Create Wiki" : "Create
 export type LibrarianKind = keyof typeof LIBRARIAN_FLOWS
 export type LibrarianRunHost = Pick<WorkflowController, "workflowIdentityGuard" | "workflowBalanceGuard" | "workflowTargetRepo" | "provisionWorkspace" | "launchWorkflow">
 type RunCard = Extract<Card, { kind: "run-trace" }>
+/** Keep transport envelopes in Technical details; the lesson reads their message. */
+const failureReason = (reason?: string): string => {
+  if (!reason) return ""
+  try {
+    const value: unknown = JSON.parse(reason)
+    if (value && typeof value === "object" && "message" in value && typeof value.message === "string") return value.message
+    return ""
+  } catch { return reason }
+}
 interface ReceiptScope { kind: LibrarianKind; scope: string; inspected: boolean }
 const metadata = (card: RunCard): ReceiptScope | undefined => {
   const value = card.payload.input?._librarian
@@ -49,14 +58,15 @@ export const createLibrarianRunsController = (ctx: ControllerContext, runs: Libr
     if (!guide || scope(entry.repo) !== entry.scope) return false
     const entries = [...(guide.librarianLaunches ?? []).filter(row => row.kind !== entry.kind || row.scope !== entry.scope), entry]
     const current = entries.filter(row => row.scope === entry.scope)
-    const failure = [...current].reverse().find(row => row.phase === "failed")
+    const failures = current.filter(row => row.phase === "failed")
     const preparing = current.find(row => row.phase === "preparing" || row.phase === "launching")
     const inline = !guide.finished && GUIDE_STAGES[guide.step]?.kind === "do" && guide.step === 12
     await store.dispatch({ type: "guide.changed", actor: "system", guide: {
       ...guide, librarianLaunches: entries,
       ...(inline ? {
-        notice: failure ? librarianFailureMessage(failure.kind, failure.reason) : preparing ? `Preparing your ${preparing.repo} workspace… This can take up to 3 minutes.` : undefined,
-        noticeDetail: failure?.reason,
+        notice: failures.length > 0 ? failures.map(failure => `${librarianFailureMessage(failure.kind, failure.reason)}${failureReason(failure.reason) ? ` ${failureReason(failure.reason)}` : ""}`).join("\n")
+          : preparing ? `Preparing your ${preparing.repo} workspace… This can take up to 3 minutes.` : undefined,
+        noticeDetail: failures.length > 0 ? failures.map(failure => failure.reason ?? librarianFailureMessage(failure.kind)).join("\n") : undefined,
       } : {})
     } }).isPersisted.promise
     return inline

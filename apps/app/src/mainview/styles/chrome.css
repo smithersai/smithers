@@ -519,17 +519,17 @@
 	background: var(--rail-fill);
 }
 
-/* Sign-in is an action, not a text line: the brand's soft fill. */
+/* Sign-in uses the same green action token as the shell. */
 .chrome-action[data-flow="auth.sign-in"] {
-	background: var(--brand-soft);
-	color: var(--brand);
+	background: color-mix(in srgb, var(--g-accent) 10%, var(--surface));
+	color: var(--g-accent);
 	font-weight: 500;
 }
 
 .chrome-action[data-flow="auth.sign-in"]:hover,
 .chrome-action[data-flow="auth.sign-in"]:focus-visible {
-	background: var(--brand-soft-strong);
-	color: var(--brand);
+	background: color-mix(in srgb, var(--g-accent) 16%, var(--surface));
+	color: var(--g-accent);
 }
 
 .chrome-corner {

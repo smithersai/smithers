@@ -1,11 +1,13 @@
 import { Badge, Button, FileTree } from "@smthrs/ui"
 import { ExternalLink, GitPullRequest, HardDrive, Server } from "lucide-react"
-import { lazy, Suspense, useId } from "react"
+import { lazy, Suspense, useId, useContext } from "react"
 import { parseOutline } from "@smthrs/ui/vault"
 import type { MarkdownEditorHandle } from "@smthrs/ui/adapters/markdown-editor"
 import type { Card, WorldDocument } from "../state/AppState"
 import { WIKI_DISPLAY_NAME } from "../state/AppState"
 import type { CardFamily, RunCommand } from "./CardFamily"
+import { ControllerContext } from "../ControllerContext"
+import { activeRepositoryId } from "../state/RepoContext"
 import { settledPill } from "./CardFamily"
 
 const MarkdownEditorSurface = lazy(() =>
@@ -99,9 +101,11 @@ export const WorldCardBody = ({
   readonly onRunCommand: RunCommand
 }) => {
   const editorSlot = useId()
+  const controller = useContext(ControllerContext)
   if (card.payload.documents.length === 0) {
-    return <div className="world-card-empty"><p>No Wiki pages in this view.</p>{card.payload.index !== undefined && card.payload.index.page > 1 ?
-      <Button size="sm" data-flow="wiki.cloud" onClick={() => onRunCommand("wiki.cloud", `${card.payload.index!.repo} ${card.payload.index!.page - 1}`)}>Previous page</Button> : null}</div>
+    return <div className="world-card-empty"><p>{card.payload.index && card.payload.index.page > 1 ? "No Wiki pages in this view." : "No Wiki yet."}</p>{card.payload.index !== undefined && card.payload.index.page > 1 ?
+      <Button size="sm" data-flow="wiki.cloud" onClick={() => onRunCommand("wiki.cloud", `${card.payload.index!.repo} ${card.payload.index!.page - 1}`)}>Previous page</Button> :
+      <Button size="sm" data-flow="wiki.create" onClick={() => onRunCommand("wiki.create", card.payload.index?.repo ?? (controller ? activeRepositoryId(controller.store) ?? undefined : undefined))}>Create Wiki</Button>}</div>
   }
   const documents = card.payload.documents.map((entry) => ({ entry, document: worldDocuments.find((document) =>
     entry.id === undefined ? document.path === entry.path : document.id === entry.id) }))

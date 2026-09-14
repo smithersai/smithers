@@ -68,6 +68,8 @@ describe("the home card", () => {
     expect([...host.querySelectorAll("h4")].map((heading) => heading.textContent)).toEqual(["Try first", "CI on Smithers", "Read more"])
     const link = host.querySelector<HTMLAnchorElement>('[data-testid="home-links"] a')
     expect(link?.textContent).toBe("Source on GitHub")
+    expect(link?.classList.contains("text-primary")).toBe(true)
+    expect(link?.classList.contains("underline")).toBe(true)
     expect(link?.getAttribute("href")).toBe("https://github.com/smithersai/smithers")
     expect(link?.getAttribute("rel")).toBe("noreferrer")
   })

@@ -234,9 +234,9 @@ describe("the shared read-only copy of a catalog repository", () => {
     // A box on another repository leaves this repository's shared copy alone.
     await store.dispatch({ type: "workspace.updated", actor: "system", workspace }).isPersisted.promise
     expect(store.collections.workingCopies.get("shared:smithersai/smithers")).toBeDefined()
-    // The catalog row leaving the inventory takes its shared copy with it.
+    // A private inventory refresh does not revoke an independently loaded public catalog row.
     await store.dispatch({ type: "repositories.loaded", actor: "system", repositories: [] }).isPersisted.promise
-    expect(store.collections.workingCopies.get("shared:smithersai/smithers")).toBeUndefined()
+    expect(store.collections.workingCopies.get("shared:smithersai/smithers")).toBeDefined()
     await store.dispose?.()
   })
 

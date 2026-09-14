@@ -141,6 +141,8 @@ export interface AppController extends TutorialChangeController, IssueFlowsContr
   /** Control focus ("spotlight"): the one surface the human is driving right now (controller/controlFocus.ts). */
   readonly controlFocus: ControlFocusController
   readonly bootstrap: AppBootstrap | undefined
+  /** Immutable repository pointer from this page's entry URL. */
+  readonly repositoryApp: string | null
   /** The native app's download URL this page offers; null while no native release carries an asset (controller/app.ts). */
   readonly downloadUrl: string | null
   /** The resolved feature flags (every flag defaults off). */
@@ -446,7 +448,7 @@ export interface AppController extends TutorialChangeController, IssueFlowsContr
   /** Render the full visible-flow catalog into the chat (the /chat.commands answer). */
   readonly showCommandCatalog: () => void
   /** Render the sign-in step into the chat (auth.prompt — the agent's door to login). */
-  readonly promptSignIn: (required?: boolean) => void
+  readonly promptSignIn: (required?: boolean, request?: { readonly name?: string; readonly args?: string | null; readonly summary?: string }) => void
   /** Render the Smithers Cloud sign-in step into the chat (cloud.prompt — the agent's door to the cloud session). */
   readonly promptCloudSignIn: () => void
   /** Reload the app window — the /reload affordance (dev loop, stuck states). */
@@ -654,6 +656,7 @@ export interface AppServices {
    */
   readonly cloudLspSocketUrl?: (repo: string, sessionId: string, language: string) => string | undefined
   readonly bootstrap?: AppBootstrap
+  readonly repositoryApp?: string
   readonly frameHistory?: FrameHistoryPort
   readonly baseUrl?: string
   /** The toast debounce (the 300ms law); injectable so tests pin both sides of it. */
@@ -756,7 +759,7 @@ export const createAppController = (
     dispatch: store.dispatch,
     actor: () => ctx.commandActor,
     nextOrdinal: store.nextOrdinal,
-    promptSignIn: () => promptSignIn(true)
+    promptSignIn: (summary) => promptSignIn(true, { summary })
   }
   const repositoryFlowsSeam = createRepositoryFlowsSeam(seamCtx)
   const repositoryFlows = (): RepositoryFlowCatalog | undefined => {
@@ -1249,7 +1252,7 @@ export const createAppController = (
    * Every identity state answers honestly, including a build with no seam.
    * A 401 read requires the door even while identity is being rechecked.
    */
-  const promptSignIn = (required = false): void => {
+  const promptSignIn: AppController["promptSignIn"] = (required = false, request) => {
     const identity = store.collections.identitySessions.get("identity")
     if (!required && identity?.state === "signed-in") {
       store.dispatch({
@@ -1268,10 +1271,20 @@ export const createAppController = (
       })
       return
     }
+    const pending = store.session().pendingCommand
+    const asked = request ?? (pending?.requirement === "signed-in" ? pending : undefined)
+    let summary = asked && "summary" in asked ? asked.summary : undefined
+    if (asked?.name === "flow.run") {
+      const [flow, explicit] = asked.args?.trim().split(/\s+/) ?? []
+      const repo = explicit ?? activeRepositoryId(store)
+      const declared = repo ? store.collections.repositoryFlows.get(repo)?.flows.find(row => row.id === flow)?.summary : undefined
+      summary = declared ? `${declared.replace(/[.!?]$/, "")} on ${repo}` : undefined
+    } else if (!summary && asked?.name) summary = commands.find(asked.name)?.metadata.summary
+    const purpose = summary?.trim().replace(/[.!?]$/, "")
     store.dispatch({
       type: "message.appended",
       actor: "system",
-      text: "One step connects GitHub: sign in, and Smithers can read the repositories you choose.",
+      text: purpose ? `Sign in with GitHub to ${purpose[0]!.toLowerCase()}${purpose.slice(1)}.` : "Sign in with GitHub to continue.",
       action: { flow: "auth.sign-in", label: "Sign in with GitHub" }
     })
   }
@@ -1420,6 +1433,7 @@ export const createAppController = (
     promptStorageRecovery,
     exportStorageRecovery,
     bootstrap: services.bootstrap,
+    repositoryApp: services.repositoryApp ?? null,
     repositoryFlows,
     knownRepositories: () => knownRepositories(store),
     changeDraft,

@@ -50,3 +50,29 @@ for (const source of ["issues", "github", "prs"] as const) {
     expect(redirects).toEqual([])
   })
 }
+
+
+test("gates name the requested flow summary, with a plain fallback", async () => {
+  const { controller, store } = await setup()
+  await controller.commands.run("secrets.list")
+  let prompts = [...store.collections.messages.values()].filter(message => message.action?.flow === "auth.sign-in")
+  const summary = controller.commands.find("secrets.list")!.metadata.summary
+  expect(prompts.at(-1)?.text).toBe(`Sign in with GitHub to ${summary[0]!.toLowerCase()}${summary.slice(1).replace(/[.!?]$/, "")}.`)
+  await controller.commands.runForAgent("flow.run", "unpublished smithersai/smithers")
+  prompts = [...store.collections.messages.values()].filter(message => message.action?.flow === "auth.sign-in")
+  expect(prompts.at(-1)?.text).toBe("Sign in with GitHub to continue.")
+})
+
+test("a repository launch names its human summary and repository for both actors", async () => {
+  for (const actor of ["user", "agent"] as const) {
+    const { controller, store } = await setup()
+    await store.dispatch({ type: "repository-flows.loaded", actor: "system", repo: "smithersai/smithers", flows: [
+      { id: "internal-review-42", summary: "Review the changes", description: "Review", featured: true, modelInvocable: true }
+    ] }).isPersisted.promise
+    if (actor === "agent") await controller.commands.runForAgent("flow.run", "internal-review-42 smithersai/smithers")
+    else await controller.commands.run("flow.run", "internal-review-42 smithersai/smithers")
+    const prompt = [...store.collections.messages.values()].find(message => message.action?.flow === "auth.sign-in")
+    expect(prompt?.text).toBe("Sign in with GitHub to review the changes on smithersai/smithers.")
+    expect(prompt?.text).not.toContain("internal-review-42")
+  }
+})

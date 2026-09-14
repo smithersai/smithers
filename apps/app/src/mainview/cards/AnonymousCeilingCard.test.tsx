@@ -50,16 +50,16 @@ const render = (payload: CeilingCard["payload"]) => {
 }
 
 describe("the anonymous ceiling card", () => {
-  test("renders the per-address sentence verbatim with the Worker's reset time in UTC", () => {
+  test("renders the per-address sentence verbatim with the Worker's reset time in the local timezone", () => {
     const { text } = render({ message: PER_ADDRESS, retryAt: "2026-09-08T00:00:00.000Z" })
     expect(text("anonymous-ceiling-message")).toBe(PER_ADDRESS)
-    expect(text("anonymous-ceiling-reset")).toBe("Resets at 00:00 UTC")
+    expect(text("anonymous-ceiling-reset")).toBe(`Resets at ${new Date("2026-09-08T00:00:00.000Z").toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}`)
   })
 
   test("renders the deployment-wide sentence verbatim and a non-midnight reset", () => {
     const { text } = render({ message: FOR_EVERYONE, retryAt: "2026-09-07T21:05:30.000Z" })
     expect(text("anonymous-ceiling-message")).toBe(FOR_EVERYONE)
-    expect(text("anonymous-ceiling-reset")).toBe("Resets at 21:05 UTC")
+    expect(text("anonymous-ceiling-reset")).toBe(`Resets at ${new Date("2026-09-07T21:05:30.000Z").toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}`)
   })
 
   test("says only that the ceiling is daily when the body carried no reset time", () => {

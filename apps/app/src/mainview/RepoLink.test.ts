@@ -365,3 +365,25 @@ test("a signed-in catalog visitor keeps the public welcome and shared tree witho
   expect(store.session().activeRepoKey).toBe("smithersai/smithers")
   expect(ran).toEqual(["repo.welcome", "repo.tree shared:smithersai/smithers"])
 })
+
+
+test("a late private inventory refresh retains the URL's public repository and shared tree", async () => {
+  const { store, controller } = await fixture()
+  await openRequestedRepo(controller, async () => jsonResponse(catalog), "smithersai/smithers")
+  await store.dispatch({ type: "repositories.loaded", actor: "system", repositories: [
+    { id: "codeplanesmithers/canary-sandbox", org: "codeplanesmithers", name: "canary-sandbox", ownerKind: "user", head: null }
+  ] }).isPersisted.promise
+  expect(store.session().activeRepoKey).toBe("smithersai/smithers")
+  expect(store.collections.repositories.get("smithersai/smithers")?.catalog).toBe(true)
+  expect(store.collections.workingCopies.get("shared:smithersai/smithers")?.repoId).toBe("smithersai/smithers")
+})
+
+test("opening a public URL records catalog provenance even when private inventory loaded it first", async () => {
+  const { store, controller } = await fixture()
+  await store.dispatch({ type: "repositories.loaded", actor: "system", repositories: [
+    { id: "smithersai/smithers", org: "smithersai", name: "smithers", ownerKind: "org", head: null }
+  ] }).isPersisted.promise
+  await openRequestedRepo(controller, async () => jsonResponse(catalog), "smithersai/smithers")
+  await store.dispatch({ type: "repositories.loaded", actor: "system", repositories: [] }).isPersisted.promise
+  expect(store.collections.repositories.get("smithersai/smithers")).toMatchObject({ catalog: true, ownerKind: "org" })
+})

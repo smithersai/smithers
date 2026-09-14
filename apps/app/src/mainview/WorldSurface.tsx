@@ -3,6 +3,7 @@ import { BacklinksPanel, OutlineView } from "@smthrs/ui/vault"
 import { useLiveQuery } from "@tanstack/react-db"
 import { BookOpen, Factory, Plus, Trash2, Waypoints } from "lucide-react"
 import { lazy, Suspense, useMemo } from "react"
+import { activeRepositoryId } from "./state/RepoContext"
 import { useController } from "./ControllerContext"
 import { stampFlows } from "./FlowStamp"
 import { WIKI_DISPLAY_NAME, WIKI_GRAPH_ALL_SCOPE } from "./state/AppState"
@@ -200,9 +201,9 @@ export function WorldSurface({ documents }: { readonly documents: ReadonlyArray<
             (
               <EmptyState
                 icon={<BookOpen size={20} />}
-                title={`No ${WIKI_DISPLAY_NAME} notes yet`}
+                title={`No ${WIKI_DISPLAY_NAME} yet`}
                 description="Smithers will keep what it learns here."
-                action={<Button onClick={() => controller.runCommand("wiki.new-note")}>Create a note</Button>}
+                action={<Button data-flow="wiki.create" onClick={() => controller.runCommand("wiki.create", activeRepositoryId(controller.store) ?? undefined)}>Create Wiki</Button>}
               />
             )}
         </main>}

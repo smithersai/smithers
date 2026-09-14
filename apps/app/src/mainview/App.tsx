@@ -236,7 +236,7 @@ function App() {
     ? catalogRepositoryOf(session.activeRepoKey, repositoryRows)
     : null
   const authMessage: Message | undefined = identity?.state === "signed-out" && cloudHost
-    ? exploringRepo === null || missingBootRepository !== null
+    ? (exploringRepo === null || missingBootRepository !== null) && !messages.some(message => message.action?.flow === "auth.sign-in")
       ? {
         id: "auth-state",
         role: "smithers",

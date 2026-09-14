@@ -24,7 +24,7 @@ export interface AccountControllerDeps {
   /** The next transcript ordinal — the card surfaces at the end, never mid-history. */
   readonly nextOrdinal: () => number
   /** auth.prompt's renderer: the sign-in step as a message whose action is the sign-in button. */
-  readonly promptSignIn: () => void
+  readonly promptSignIn: (required?: boolean, request?: { readonly name: string }) => void
 }
 
 /** The one card: re-surfaced at the end of the transcript each time it is asked for. */
@@ -73,7 +73,7 @@ export const createAccountController = (ctx: ControllerContext, deps: AccountCon
     if (identity === undefined || identity.state === "unknown") return IDENTITY_PENDING_TEXT
     if (identity.state !== "signed-in" || identity.login === null) {
       // Signed out or no seam: auth.prompt's message states which, with the sign-in button when one exists.
-      deps.promptSignIn()
+      deps.promptSignIn(false, { name: "account.show" })
       return { value: SIGNED_OUT_VALUE }
     }
     const scopes = await readScopes()
@@ -98,7 +98,7 @@ export const createAccountController = (ctx: ControllerContext, deps: AccountCon
     ctx.store.dispatch({ type: "card.upsert", actor: ctx.commandActor, card })
     const access = identity.allowlisted ? "allowed" : identity.accessRequested ? "requested" : "not yet allowed"
     return {
-      value: `account: @${identity.login}; access ${access}; ${scopes.length} GitHub scope(s); ${boxes.length} box(es) listed`
+      value: `account: @${identity.login}; access ${access}; ${scopes.length} GitHub App permission(s); GitHub OAuth scope read:user; ${boxes.length} box(es) listed`
     }
   }
 

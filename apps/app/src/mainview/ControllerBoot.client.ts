@@ -43,8 +43,9 @@ const bootProgram = (options: ControllerBootOptions = {}) =>
     // GitHub App setup-URL returns ride on it, and by the end of boot it is gone.
     const entrySearch = yield* Effect.sync(() => window.location.search)
     const http = yield* Effect.sync(() => createAppFetch())
+    const bootstrapRead = loadBootstrap(http)
     const { bootstrap, store } = yield* promiseEffect("prepare runtime and persisted state", () =>
-      loadControllerBootInputs(() => loadBootstrap(http), () => createAppStore()))
+      loadControllerBootInputs(() => bootstrapRead, () => createAppStore(undefined, { seedWiki: bootstrapRead.then(bootstrap => bootstrap.host !== "cloud", () => true) })))
     const runtime = yield* Effect.sync(() => createRuntime({
       bootstrap,
       http,
@@ -60,6 +61,7 @@ const bootProgram = (options: ControllerBootOptions = {}) =>
         {
           fetchImpl: runtime.http,
           bootstrap: runtime.bootstrap,
+          repositoryApp: requested ?? undefined,
           frameHistory: createBrowserFrameHistory(window, { keepUrl: options.keepUrl === true }),
           // The next-step recommender (state/Recommend.ts) is opt-in here, the one real composition root.
           recommender: { enabled: true },

@@ -172,7 +172,8 @@ export const openRequestedRepo = async (
     return `${requested} is not in the public repository catalog.`
   }
   const { repositories } = controller.store.collections
-  if (repositories.get(repository.id) === undefined) {
+  const existing = repositories.get(repository.id)
+  if (existing?.catalog !== true) {
     controller.store.dispatch({
       type: "repository.upserted",
       actor: "system",
@@ -182,7 +183,7 @@ export const openRequestedRepo = async (
        * treats it as "no org changesets", never as a fabricated org.
        * `catalog` records where the row came from: readable signed out.
        */
-      repository: { ...repository, ownerKind: "user" as const, head: null, catalog: true }
+      repository: { ...existing, ...repository, ownerKind: existing?.ownerKind ?? "user", head: existing?.head ?? null, catalog: true }
     })
   }
   const refusal = await controller.selectRepo(repository.id)

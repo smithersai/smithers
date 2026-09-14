@@ -63,7 +63,7 @@ test("an App-connected repository missing from Cloud reports under the lesson an
   await page.route("**/api/workflow/provision", route => route.fulfill({ json: { status: "no-cloud-repo" } }))
   await page.keyboard.press("u")
   const notice = page.locator('[data-message-step="12"] [data-notice]')
-  await expect(notice).toContainText(`Create Wiki didn't start: ${repo} isn't on Smithers Cloud yet`)
+  await expect(notice).toContainText(`${repo} isn't on Smithers Cloud yet`)
   await expect(page.locator('.guide-actions [data-flow="wiki.create"]')).toBeVisible()
   expect(launchedFlows(host)).toEqual([])
   await page.reload()
@@ -84,7 +84,7 @@ test("reload during preparation reports the interrupted launch and preserves ret
   await expect(notice).toContainText(`Preparing your ${repo} workspace… This can take up to 3 minutes.`)
   await page.reload()
   await stage(page, 12)
-  await expect(notice).toContainText("Create Wiki didn't start: Workspace preparation was interrupted by a reload. Try again.")
+  await expect(notice).toContainText("Workspace preparation was interrupted by a reload. Try again.")
   await expect(page.locator('.guide-actions [data-flow="wiki.create"]')).toBeVisible()
   expect(launchedFlows(host)).toEqual([])
 })
@@ -96,7 +96,37 @@ test("a workspace still provisioning at the deadline reports a failure line", as
   await page.keyboard.press("u")
   await expect(page.locator('[data-message-step="12"] [data-notice]')).toContainText("Preparing your")
   await page.clock.fastForward(181_000)
-  await expect(page.locator('[data-message-step="12"] [data-notice]')).toContainText("Create Wiki didn't start: Workspace preparation took longer than 3 minutes. Try again.")
+  await expect(page.locator('[data-message-step="12"] [data-notice]')).toContainText("Workspace preparation took longer than 3 minutes. Try again.")
   await expect(page.locator('.guide-actions [data-flow="wiki.create"]')).toBeVisible()
   expect(launchedFlows(host)).toEqual([])
+})
+
+test("both failed launches explain themselves and preparation uses a neutral color", async ({ page }) => {
+  await reachBackgroundLesson(page)
+  let release!: () => void
+  const held = new Promise<void>(resolve => { release = resolve })
+  await page.route("**/api/workflow/provision", async route => {
+    await held
+    await route.fulfill({ json: { status: "no-cloud-repo" } })
+  })
+  try {
+    await page.keyboard.press("u")
+    const notice = page.locator('.guide-actions [data-notice]')
+    await expect(notice).toContainText("Preparing your")
+    const usesDanger = () => notice.evaluate(node => {
+      const probe = document.createElement("span")
+      probe.style.color = "var(--danger)"
+      node.append(probe)
+      const matches = getComputedStyle(node).color === getComputedStyle(probe).color
+      probe.remove()
+      return matches
+    })
+    expect(await usesDanger()).toBe(false)
+    await page.keyboard.press("y")
+    release()
+    await expect(notice.locator("p")).toContainText("Wiki couldn't start.")
+    await expect(notice.locator("p")).toContainText("Mythical history couldn't start.")
+    expect(await notice.locator("p").innerText()).toContain("\n")
+    expect(await usesDanger()).toBe(true)
+  } finally { release() }
 })

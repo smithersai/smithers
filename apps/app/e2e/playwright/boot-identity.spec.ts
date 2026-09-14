@@ -102,7 +102,7 @@ test("signed-in repository chrome uses the same slot for Account", async ({ page
   await expect(page.getByTestId("chrome-sign-in")).toHaveCount(0)
 })
 
-for (const command of ["/flow.run review smithersai/smithers", "/secrets.list", "/issues smithersai/smithers", "/prs smithersai/smithers"]) {
+for (const command of ["/flow.run review smithersai/smithers", "/secrets.list", "/account.show", "/issues smithersai/smithers", "/prs smithersai/smithers"]) {
   test(`${command} stays in the repository transcript with a sign-in prompt`, async ({ page }) => {
     await signedOutVisitor(page)
     const redirects: string[] = []
@@ -111,7 +111,11 @@ for (const command of ["/flow.run review smithersai/smithers", "/secrets.list", 
     await expect(page.getByTestId("chrome-sign-in")).toBeVisible()
     await slash(page, command)
     const prompt = page.getByRole("article").filter({ has: page.getByRole("button", { name: "Sign in with GitHub", exact: true }) }).last()
-    await expect(prompt).toContainText("One step connects GitHub")
+    await expect(prompt).toContainText(command === "/flow.run review smithersai/smithers" ? "Sign in with GitHub to continue."
+      : command === "/secrets.list" ? "Sign in with GitHub to show the secrets"
+      : command === "/account.show" ? "Sign in with GitHub to show the signed-in account"
+      : command.startsWith("/issues") ? "Sign in with GitHub to read issues on smithersai/smithers."
+      : "Sign in with GitHub to read pull requests on smithersai/smithers.")
     await expect(prompt.getByRole("button", { name: "Sign in with GitHub", exact: true })).toBeVisible()
     await expect(page.getByText(/0 Open|No open issues in/)).toHaveCount(0)
     await expect(page.locator('[data-testid^="toast-"]')).toHaveCount(0)
@@ -125,3 +129,29 @@ for (const command of ["/flow.run review smithersai/smithers", "/secrets.list", 
     }
   })
 }
+
+test("unknown repository has one sign-in card and the web wiki has no seeded World page", async ({ page }) => {
+  await signedOutVisitor(page)
+  await page.route("**/api/public/repos", route => route.fulfill({ json: { repos: [] } }))
+  await page.goto("/unknown/repository/")
+  await expect(page.getByRole("article").filter({ has: page.locator('[data-flow="auth.sign-in"]') })).toHaveCount(1)
+  await slash(page, "/wiki")
+  await expect(page.locator(".world-card-empty")).toContainText("No Wiki yet")
+  await expect(page.locator('.world-card-empty [data-flow="wiki.create"]')).toHaveText("Create Wiki")
+  await expect(page.locator(".world-document-title")).toHaveCount(0)
+})
+
+test("chrome sign-in uses the shell's green action token", async ({ page }) => {
+  await signedOutVisitor(page)
+  await page.goto("/smithersai/smithers/")
+  const door = page.getByTestId("chrome-sign-in")
+  await expect(door).toBeVisible()
+  expect(await door.evaluate(node => {
+    const probe = document.createElement("span")
+    probe.style.color = "var(--g-accent)"
+    node.append(probe)
+    const same = getComputedStyle(node).color === getComputedStyle(probe).color
+    probe.remove()
+    return same
+  })).toBe(true)
+})

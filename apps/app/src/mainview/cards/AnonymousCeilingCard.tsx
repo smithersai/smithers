@@ -7,6 +7,7 @@
  * sentence and the reset time are the body's, and a body with no reset time
  * says only what the ceiling's window is.
  */
+import { timeLabel } from "../Timestamps"
 import { Button } from "@smthrs/ui"
 import type { Card } from "../state/AppState"
 import type { CardFamily } from "./CardFamily"
@@ -16,17 +17,15 @@ type AnonymousCeilingCard = Extract<Card, { kind: "anonymous-ceiling" }>
 /** The ceiling's window is one day (apps/server turnLimit.ts ANONYMOUS_TURN_WINDOW_MS). */
 export const RESETS_DAILY = "Resets daily"
 
-const pad = (value: number): string => String(value).padStart(2, "0")
-
 /**
  * The reset line. The Worker names the reset as an ISO instant; it renders in
- * UTC so the line reads the same everywhere and never guesses a time zone.
+ * the visitor's local time through the shared timestamp formatter.
  */
 export const resetLine = (retryAt: string | null): string => {
   if (retryAt === null) return RESETS_DAILY
   const at = new Date(retryAt)
   if (Number.isNaN(at.getTime())) return RESETS_DAILY
-  return `Resets at ${pad(at.getUTCHours())}:${pad(at.getUTCMinutes())} UTC`
+  return `Resets at ${timeLabel(at.getTime(), at.getTime())}`
 }
 
 export const AnonymousCeilingCardBody = ({

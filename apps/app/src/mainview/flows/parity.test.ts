@@ -368,7 +368,7 @@ describe("launch-law parity: every affordance is a command", () => {
        * pager's onSelect, the view-mode pickers (wiki.card.view), cloud
        * Open page, and Refresh (wiki.sync) — all through onRunCommand.
        */
-      "../cards/ConversationCards.tsx": 10,
+      "../cards/ConversationCards.tsx": 11, // The empty Wiki now offers wiki.create.
       /*
        * The targets table: History in the toolbar, the view, kind and state
        * chips (target.filter), each row's star (target.star / unstar),

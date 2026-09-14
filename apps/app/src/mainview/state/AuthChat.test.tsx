@@ -402,3 +402,49 @@ describe("auth is a conversation state — the chat is the only page", () => {
     )
   })
 })
+
+
+test("an unknown repository's explicit sign-in prompt replaces the web opening card", async () => {
+  const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
+  const controller = createAppController(store, unavailableRepositories, silentAgent, { bootstrap: WEB,
+    ...backend({ "/api/auth/session": json(401, {}), "/api/auth/scopes": json(200, { scopes: [] }) }) })
+  await controller.loadSession()
+  await controller.commands.run("auth.prompt")
+  await settled()
+  const { host } = mount(controller)
+  expect(host.querySelectorAll('.smithers-chat-message [data-flow="auth.sign-in"]')).toHaveLength(1)
+  expect(host.textContent).toContain("Sign in with GitHub to continue.")
+})
+
+test("the web wiki empty state offers Create Wiki through the registered flow", async () => {
+  const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() }, { seedWiki: false })
+  const controller = createAppController(store, unavailableRepositories, silentAgent, { bootstrap: WEB,
+    ...backend({ "/api/auth/session": json(401, {}), "/api/auth/scopes": json(200, { scopes: [] }) }) })
+  await controller.commands.run("wiki")
+  await settled()
+  const { host } = mount(controller)
+  expect(host.querySelector(".world-card-empty")?.textContent).toContain("No Wiki yet")
+  const door = host.querySelector<HTMLButtonElement>('.world-card-empty [data-flow="wiki.create"]')
+  expect(door?.textContent).toBe("Create Wiki")
+  expect(controller.commands.find("wiki.create")).toBeDefined()
+  await store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-out", login: null, allowlisted: false, admin: false, scopesPlain: null }).isPersisted.promise
+  await store.dispatch({ type: "repository.upserted", actor: "system", repository: { id: "smithersai/smithers", org: "smithersai", name: "smithers", ownerKind: "org", head: null, catalog: true } }).isPersisted.promise
+  await store.dispatch({ type: "repo.selected", actor: "user", id: "smithersai/smithers" }).isPersisted.promise
+  door?.click()
+  await settled()
+  expect(store.session().pendingCommand).toMatchObject({ name: "wiki.create", args: "smithersai/smithers" })
+})
+
+test("the expanded empty wiki carries the current repository through Create Wiki", async () => {
+  const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() }, { seedWiki: false })
+  const controller = createAppController(store, unavailableRepositories, silentAgent, { bootstrap: WEB })
+  await store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-out", login: null, allowlisted: false, admin: false, scopesPlain: null }).isPersisted.promise
+  await store.dispatch({ type: "repository.upserted", actor: "system", repository: { id: "smithersai/smithers", org: "smithersai", name: "smithers", ownerKind: "org", head: null, catalog: true } }).isPersisted.promise
+  await store.dispatch({ type: "repo.selected", actor: "user", id: "smithersai/smithers" }).isPersisted.promise
+  await store.dispatch({ type: "surface.changed", actor: "user", surface: "world" }).isPersisted.promise
+  const { host } = mount(controller)
+  expect(host.querySelector(".world-surface")?.textContent).toContain("No Wiki yet")
+  host.querySelector<HTMLButtonElement>('.world-surface [data-flow="wiki.create"]')?.click()
+  await settled()
+  expect(store.session().pendingCommand).toMatchObject({ name: "wiki.create", args: "smithersai/smithers" })
+})

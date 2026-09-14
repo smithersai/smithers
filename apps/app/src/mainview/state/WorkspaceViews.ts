@@ -45,6 +45,7 @@ const workspaceCopy = (workspace: CloudWorkspaceRow): WorkingCopy => ({
   repoId: workspace.repoId,
   kind: "workspace",
   label: workspace.name,
+  ...(workspace.targetBookmark === null ? {} : { bookmark: workspace.targetBookmark }),
   workspaceId: workspace.id,
   state: workspace.status,
   updatedAt: workspace.updatedAt,
@@ -86,7 +87,7 @@ export const workingCopyLabel = (copy: Pick<WorkingCopy, "kind" | "label" | "sta
   if (copy.kind === "shared") {
     return [copy.bookmark, copy.label, ...(copy.access === "read" ? ["read-only"] : [])].filter((part) => part !== undefined).join(" · ")
   }
-  if (copy.kind === "workspace") return copy.state === undefined ? copy.label : `${copy.label} · ${copy.state}`
+  if (copy.kind === "workspace") return copy.state === undefined ? copy.bookmark ?? copy.label : `${copy.bookmark ?? copy.label} · ${copy.state}`
   return copy.ahead === undefined ? copy.label : `${copy.label} · ${copy.ahead} ahead`
 }
 /** Approval wording and authority always project from the runtime record. */

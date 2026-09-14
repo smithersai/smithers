@@ -467,7 +467,7 @@ export const createCommandRegistry = (actions: CommandActions, agentActions: Com
          * invoking it, and prose is not a button.
          */
         if (unmet.fulfill === "auth.prompt") {
-          acting.promptSignIn()
+          acting.promptSignIn(false, { name: nameOf(target), args })
           return {
             status: "failed",
             error: `${unmet.reason} — the sign-in step is already rendered in the chat; point the user at it`

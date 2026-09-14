@@ -813,7 +813,7 @@ const workspaceTabIds = (collections: Pick<StoredCollections, "tabs">, workspace
     )
     .map((tab) => tab.id)
 
-const seed = async (collections: StoredCollections, persistence: CollectionPersistence): Promise<void> => {
+const seed = async (collections: StoredCollections, persistence: CollectionPersistence, seedWiki: boolean): Promise<void> => {
   await Promise.all(Object.values(collections).map((collection) => collection.preload()))
 
   // Seeds and migrations form one durable commit, just like a dispatched transition.
@@ -865,8 +865,18 @@ const seed = async (collections: StoredCollections, persistence: CollectionPersi
       collections.connectorOperations
         .insert(initialConnectorOperation())
     }
-    if (collections.worldDocuments.size === 0) {
+    if (seedWiki && collections.worldDocuments.size === 0) {
       collections.worldDocuments.insert([...initialWorldDocuments()])
+    } else if (!seedWiki) {
+      // Only the untouched bootstrap placeholder is retired. User notes keep their content and identity.
+      const stub = collections.worldDocuments.get("world-home")
+      if (stub?.path === "World.md" && stub.title === "World" && stub.body === "# World\n\n" &&
+        stub.updatedBy === "system" && stub.revision === 0 && stub.sources.length === 1 && stub.sources[0] === "system:bootstrap") {
+        collections.worldDocuments.delete(stub.id)
+      }
+      if (!collections.worldDocuments.has(collections.sessions.get(SESSION_ID)?.selectedWorldDocumentId ?? "")) {
+        collections.sessions.update(SESSION_ID, draft => { draft.selectedWorldDocumentId = null })
+      }
     }
     if (collections.identitySessions.get("identity") === undefined) {
       collections.identitySessions.insert(initialIdentitySession())
@@ -1086,13 +1096,14 @@ const nextOrdinal = (collections: Pick<StoredCollections, "messages" | "cards">)
  * host) carries its mode and degraded flag, so a memory launch boots as one.
  */
 export const createAppStore = async (
-  persistence?: PersistenceBackend | ResolvedPersistence
+  persistence?: PersistenceBackend | ResolvedPersistence,
+  options: { readonly seedWiki?: boolean | Promise<boolean> } = {}
 ): Promise<AppStore> => {
   const resolved: ResolvedPersistence = persistence === undefined
     ? await resolvePersistence()
     : "backend" in persistence ? persistence : { backend: persistence, mode: persistence.kind, degraded: false }
   try {
-    const store = await initializeAppStore(resolved)
+    const store = await initializeAppStore(resolved, options)
     resolved.recordSuccessfulOpen?.()
     return store
   } catch (error) {
@@ -1107,7 +1118,7 @@ export const createAppStore = async (
 }
 
 /** Ownership transfers to the returned store only after every boot step succeeds. */
-const initializeAppStore = async (resolved: ResolvedPersistence): Promise<AppStore> => {
+const initializeAppStore = async (resolved: ResolvedPersistence, options: { readonly seedWiki?: boolean | Promise<boolean> }): Promise<AppStore> => {
   let resolvedBackend = resolved.backend
   /* Validate persisted rows before creating collections. Compatible older
    * rows migrate; a newer store stays untouched. Only a successful open
@@ -1138,7 +1149,7 @@ const initializeAppStore = async (resolved: ResolvedPersistence): Promise<AppSto
     Object.entries(COLLECTION_DEFINITIONS).map(([name, definition]) => [name, definition.create(collectionPersistence)])
   ) as StoredCollections
 
-  await seed(collections, collectionPersistence)
+  await seed(collections, collectionPersistence, await (options.seedWiki ?? true))
   const views = createWorkspaceViews(collections)
   await Promise.all(Object.values(views).map((view) => view.preload()))
   if (resolvedBackend.kind === "opfs") await resolvedBackend.flush()
@@ -2822,13 +2833,14 @@ const initializeAppStore = async (resolved: ResolvedPersistence): Promise<AppSto
         }
         case "repositories.loaded": {
           /*
-           * Lane piper: the cloud inventory replaces the collection. A row
+           * The private inventory replaces private rows; public catalog rows
+           * have their own authority and survive a late inventory read. A row
            * keeps its fresher head when the new answer carries none (the
            * per-repo bookmarks call failed this round): an absent answer is
            * not a fact about the repo.
            */
           const next = new Set(transition.repositories.map((repository) => repository.id))
-          const stale = [...collections.repositories.keys()].filter((id) => !next.has(id))
+          const stale = [...collections.repositories.values()].filter((repo) => !next.has(repo.id) && repo.catalog !== true).map(repo => repo.id)
           if (stale.length > 0) collections.repositories.delete(stale)
           for (const repository of transition.repositories) {
             const existing = collections.repositories.get(repository.id)

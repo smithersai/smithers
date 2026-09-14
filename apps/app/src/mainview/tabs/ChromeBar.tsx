@@ -124,7 +124,19 @@ export function ChromeBar({ identityInHeader = false }: { readonly identityInHea
   const pinIds = new Set(pinRows.map((pin) => pin.id))
   const openByPath = new Map<string, Repo>(repoRows.map((repo) => [repo.path, repo]))
   const copiesByRepoId = new Map<string, ReadonlyArray<WorkingCopy>>()
+  const latest = new Map<string, WorkingCopy>()
+  // Inventory rows share a refresh timestamp; workspace creation identifies the latest branch attempt.
+  const attemptTime = (copy: WorkingCopy) => {
+    const createdAt = copy.workspaceId ? collections.cloudWorkspaces.get(copy.workspaceId)?.createdAt : null
+    const at = createdAt ? Date.parse(createdAt) : NaN
+    return Number.isFinite(at) ? at : copy.updatedAt
+  }
   for (const copy of copyRows) {
+    const key = copy.kind === "workspace" ? JSON.stringify([copy.repoId, copy.bookmark ?? copy.label]) : copy.id
+    const previous = latest.get(key)
+    if (!previous || attemptTime(copy) > attemptTime(previous) || (attemptTime(copy) === attemptTime(previous) && copy.revision > previous.revision)) latest.set(key, copy)
+  }
+  for (const copy of latest.values()) {
     copiesByRepoId.set(copy.repoId, [...(copiesByRepoId.get(copy.repoId) ?? []), copy])
   }
   const tree: Array<TreeRepo> = [...repositoryRows]
@@ -145,7 +157,7 @@ export function ChromeBar({ identityInHeader = false }: { readonly identityInHea
       copies
     }))
     .sort((left, right) => left.name.localeCompare(right.name))
-  const groups = [...tree, ...standalone]
+  const groups = [...tree, ...standalone].filter(repo => controller.repositoryApp === null || repo.repoId.toLowerCase() === controller.repositoryApp.toLowerCase())
   const copyIds = new Set(copyRows.map((copy) => copy.id))
   const sessionsUnder = (key: string): ReadonlyArray<TabRow> =>
     tabRows.filter((tab) => tab.kind !== "main" && tab.repoKey === key)
