@@ -10,7 +10,7 @@ import { createAppStore } from '../state/AppStore'
 import { initialGuide } from '../state/AppState'
 import { memoryStorage, nativeRepositories, silentAgent } from '../state/TestFixtures'
 import { GuideShell } from './GuideShell'
-import { PRACTICE_REPO } from '../state/practice/PracticeRepository'
+import { PRACTICE_CARD, PRACTICE_REPO, practicePicker } from '../state/practice/PracticeRepository'
 
 GlobalRegistrator.register()
 // Assert DOM presence/identity as scalars: dumping a live DOM on failure can
@@ -66,7 +66,7 @@ test('unsupported Dictation is explained and cannot be selected; Chat opens norm
   expect([...store.collections.toasts.values()].some(toast => toast.title.includes("didn't run"))).toBe(false)
 }, 2_000)
 
-test('dictation Tab reaches Stop, Shift+Tab returns to the composer, and Escape releases capture before closing Chat', async () => {
+test('dictation preserves native Tab past the composer and wraps Stop back to Mode', async () => {
   const aborted = speech()
   const { host, store, controller } = await mount()
   controller.runCommand('input.mode', 'dictation')
@@ -76,10 +76,13 @@ test('dictation Tab reaches Stop, Shift+Tab returns to the composer, and Escape 
   const stop = host.querySelector<HTMLButtonElement>('.guide-dictation-stop')!
   expect(stop.getAttribute('aria-keyshortcuts')).toBe('Escape')
   input.focus()
-  await press('Tab', input)
-  expect(document.activeElement?.className).toContain('guide-dictation-stop')
+  const tab = new KeyboardEvent('keydown', { key: 'Tab', bubbles: true, cancelable: true })
+  flushSync(() => input.dispatchEvent(tab))
+  expect(tab.defaultPrevented).toBe(false)
+  stop.focus()
   flushSync(() => stop.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', shiftKey: true, bubbles: true, cancelable: true })))
-  expect(document.activeElement?.getAttribute('data-testid')).toBe('composer-input')
+  expect(document.activeElement?.textContent).toContain('Mode: Dictation')
+  input.focus()
   await press('Escape', input)
   expect(aborted()).toBe(1)
   expect(store.session().dictating).toBe(false)
@@ -132,8 +135,8 @@ test('Escape on dictation Stop releases only capture and restores composer focus
   await settle()
   await press('c')
   const input = host.querySelector<HTMLTextAreaElement>('[data-testid="composer-input"]')!
-  await press('Tab', input)
   const stop = host.querySelector<HTMLButtonElement>('.guide-dictation-stop')!
+  stop.focus()
   expect(document.activeElement === stop).toBe(true)
   await press('Escape', stop)
   expect(aborted()).toBe(1)
@@ -166,8 +169,8 @@ test('Enter on dictation Stop ends capture and returns focus to the open Chat co
   await press('c')
   const input = host.querySelector<HTMLTextAreaElement>('[data-testid="composer-input"]')!
   expect(store.session().dictating).toBe(true)
-  await press('Tab', input)
   const stop = host.querySelector<HTMLButtonElement>('.guide-dictation-stop')!
+  stop.focus()
   expect(document.activeElement === stop).toBe(true)
   // Focus must not depend on a frame firing (background tabs can suspend them).
   const frame = spyOn(globalThis, 'requestAnimationFrame').mockImplementation(() => 1)
@@ -203,6 +206,13 @@ test('practice issue has one projection and wordmark references only an existing
   await settle()
   const fields = host.querySelectorAll('textarea[id^="ghc-comment-"]')
   expect(fields.length).toBe(1)
+  const banners = [...host.querySelectorAll('header,[role="banner"]')].filter(node => !node.parentElement?.closest('article,aside,main,nav,section'))
+  expect(banners.length).toBe(1)
+  expect(banners[0]?.getAttribute('aria-label')).toBe('Smithers')
+  expect(host.querySelectorAll('h1').length).toBe(1)
+  expect(host.querySelector('h1')?.getAttribute('aria-label')).toBe('Smithers')
+  expect(fields[0]?.closest('[data-keyboard-skip-fields]') !== null).toBe(true)
+  expect(host.querySelector('.guide-actions')?.closest('[data-keyboard-skip-fields]') === null).toBe(true)
   const ids = [...host.querySelectorAll('[id]')].map(node => node.id)
   expect(ids.length).toBe(new Set(ids).size)
   expect(host.querySelectorAll('nav[aria-label="Frame history"]').length).toBe(1)
@@ -224,6 +234,24 @@ test('practice issue has one projection and wordmark references only an existing
   await press('m')
   expect(host.querySelector('[role="menu"]') !== null).toBe(true)
 }, 2_000)
+
+test('lesson fields include the current commit picker and restore ordinary access after the guide', async () => {
+  const { host, store } = await mount(9)
+  await store.dispatch({ type: 'card.upsert', actor: 'system', card: {
+    id: PRACTICE_CARD.commits, kind: 'commit-pick', title: 'Pick commits', status: 'active', createdAt: 1, ordinal: 1,
+    payload: practicePicker(),
+  } }).isPersisted.promise
+  await settle()
+  const field = () => host.querySelector('.guide-transcript .commit-pick input:not(:disabled)')!
+  expect(field() !== null).toBe(true)
+  expect(field().closest('[data-keyboard-skip-fields]') === null).toBe(true)
+  await store.dispatch({ type: 'guide.changed', actor: 'user', guide: { ...store.session().guide!, step: 8 } }).isPersisted.promise
+  await settle()
+  expect(field().closest('[data-keyboard-skip-fields]') !== null).toBe(true)
+  await store.dispatch({ type: 'guide.changed', actor: 'user', guide: { ...store.session().guide!, step: 14 } }).isPersisted.promise
+  await settle()
+  expect(host.querySelector('[data-keyboard-skip-fields]') === null).toBe(true)
+}, 10_000)
 
 test('tutorial sounds report new completions once, including goal ticks, and stay quiet on navigation and toggles', async () => {
   let chimes = 0

@@ -1,7 +1,7 @@
 import { GlobalRegistrator } from '@happy-dom/global-registrator'
 import { afterAll, afterEach, expect, test } from 'bun:test'
 import { bindKeyboardInput, type KeyboardHint } from './KeyboardInput'
-import { focusPane } from './KeyboardPanes'
+import { controlsIn, focusPane } from './KeyboardPanes'
 
 GlobalRegistrator.register()
 afterAll(() => GlobalRegistrator.unregister())
@@ -127,4 +127,94 @@ test('the unnamed copy register works between independent text buffers', () => {
   f.key('Escape'); f.key('P')
   expect(second.value).toBe('hello title')
   expect(first.value).toBe('hello world')
+})
+
+for (const tag of ['input', 'textarea']) {
+  function fieldFixture() {
+    const f = fixture(), pane = f.panes[1]!
+    pane.innerHTML = `<button>Before</button><${tag}>${tag === 'textarea' ? 'draft' : ''}</${tag}><button>After</button>`
+    const field = pane.querySelector<HTMLInputElement | HTMLTextAreaElement>(tag)!
+    field.value = 'draft'
+    for (const node of pane.children) f.place(node as HTMLElement, 220, 0)
+    pane.querySelector('button')!.focus()
+    return { ...f, pane, field }
+  }
+
+  test(`roving arrives at ${tag} in normal mode and j continues past it`, () => {
+    const f = fieldFixture()
+    f.key('j')
+    expect(f.doc.activeElement === f.field).toBe(true)
+    expect(f.field.dataset.vimMode).toBe('normal')
+    expect(f.key('j').defaultPrevented).toBe(true)
+    expect(f.doc.activeElement?.textContent).toBe('After')
+    f.key('k')
+    expect(f.field.dataset.vimMode).toBe('normal')
+    f.key('h')
+    expect(f.doc.activeElement?.textContent).toBe('Before')
+    f.key('l'); f.key('l')
+    expect(f.doc.activeElement?.textContent).toBe('After')
+    expect(f.field.value).toBe('draft')
+  })
+
+  for (const insert of ['i', 'Enter']) test(`${insert} inserts in a roved ${tag}; Escape returns to normal, then leaves`, () => {
+    const f = fieldFixture()
+    f.key('j')
+    expect(f.key(insert).defaultPrevented).toBe(true)
+    expect(f.field.dataset.vimMode).toBe('insert')
+    expect(f.key('j').defaultPrevented).toBe(false)
+    f.field.value = 'typed draft'
+    f.field.dispatchEvent(new f.win.Event('input', { bubbles: true }))
+    f.key('Escape')
+    expect(f.doc.activeElement === f.field).toBe(true)
+    expect(f.field.dataset.vimMode).toBe('normal')
+    f.key('Escape')
+    expect(f.doc.activeElement === f.pane).toBe(true)
+    expect(f.field.value).toBe('typed draft')
+    f.key('j')
+    expect(f.doc.activeElement?.textContent).toBe('Before')
+    f.key('j')
+    expect(f.field.dataset.vimMode).toBe('normal')
+  })
+}
+
+test('pane navigation arrives at a field in normal mode even after earlier insertion', () => {
+  const f = fixture(), input = f.root.querySelector('input')!
+  input.focus()
+  expect(f.hint().mode).toBe('insert')
+  f.prefix('o'); f.prefix(';')
+  expect(f.doc.activeElement === input).toBe(true)
+  expect(f.hint().mode).toBe('normal')
+})
+
+test('lesson roving skips unrelated fields while retaining lesson controls and Chat', () => {
+  const f = fixture(), pane = f.panes[1]!
+  pane.setAttribute('data-keyboard-skip-fields', '')
+  const field = pane.querySelector('input')!
+  const after = f.doc.createElement('button')
+  after.textContent = 'After'; pane.append(after as unknown as HTMLElement)
+  f.place(after as unknown as HTMLElement, 220, 0)
+  pane.querySelector('button')!.focus()
+  f.key('j')
+  expect(f.doc.activeElement?.textContent).toBe('After')
+  expect(field.value).toBe('title')
+  expect(controlsIn(f.panes[2]!).some(node => node.tagName === 'TEXTAREA')).toBe(true)
+  pane.removeAttribute('data-keyboard-skip-fields')
+  f.key('k')
+  expect(f.doc.activeElement === field).toBe(true)
+  expect(f.hint().mode).toBe('normal')
+})
+
+test('lesson checkbox controls can be toggled natively and roved past', () => {
+  const f = fixture(), pane = f.panes[1]!
+  const field = pane.querySelector('input')!
+  field.type = 'checkbox'
+  const after = f.doc.createElement('button')
+  after.textContent = 'After'; pane.append(after as unknown as HTMLElement)
+  f.place(after as unknown as HTMLElement, 220, 0)
+  pane.querySelector('button')!.focus()
+  f.key('j')
+  expect(f.doc.activeElement === field).toBe(true)
+  expect(f.key(' ').defaultPrevented).toBe(false)
+  f.key('j')
+  expect(f.doc.activeElement?.textContent).toBe('After')
 })

@@ -409,11 +409,11 @@ export function GuideShell({ children, clock = guideClock }: { children: ReactNo
         <i />
         <i />
       </div>
-      <header className="guide-header">
+      <div className="guide-header">
         <span className="guide-location">
           {stage === GUIDE_LAST_STEP ? "Your workspace" : null}
         </span>
-      </header>
+      </div>
       <main className="guide-main">
         <section className="guide-lesson" aria-label={`Lesson ${stage}`}>
           {stage > 0 && stage < GUIDE_LAST_STEP && (
@@ -510,6 +510,8 @@ export function GuideShell({ children, clock = guideClock }: { children: ReactNo
                 {entries.filter(entry => entry.step === messageStep).map(entry => <div
                   key={entry.kind === "card" ? entry.card.id : entry.message.id}
                   data-entry-step={messageStep}
+                  // Only the active lesson's picker needs fields in the transcript's roving order.
+                  data-keyboard-skip-fields={stage < GUIDE_LAST_STEP && !(lesson?.kind === "do" && lesson.completion === "change.opened" && entry.kind === "card" && entry.card.id === picker?.id) ? "" : undefined}
                   data-chat-message-id={entry.kind === "message" ? entry.message.id : undefined}
                   data-tutorial-cards={entry.kind === "card" ? "" : undefined}
                   data-tutorial-files={entry.kind === "card" ? "" : undefined}
@@ -627,12 +629,6 @@ export function GuideShell({ children, clock = guideClock }: { children: ReactNo
           >
             {session.dictating && (
               <GuideButton className="guide-dictation-stop" data-flow="chat.dictate" shortcut="Escape"
-                onKeyDown={event => {
-                  if (event.key === "Tab" && event.shiftKey) {
-                    const input = event.currentTarget.closest(".guide-composer-layer")?.querySelector<HTMLTextAreaElement>("textarea")
-                    if (input) { event.preventDefault(); input.focus() }
-                  }
-                }}
                 onClick={() => {
                   controller.runCommand("chat.dictate")
                   document.querySelector<HTMLTextAreaElement>(".guide-composer-layer textarea")?.focus()

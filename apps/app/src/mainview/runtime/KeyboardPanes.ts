@@ -22,6 +22,7 @@ export function panesIn(root: HTMLElement): HTMLElement[] {
 
 export function controlsIn(pane: HTMLElement): HTMLElement[] {
   return [...pane.querySelectorAll<HTMLElement>(CONTROLS)].filter(node => (node.tabIndex >= 0 || node.matches('[role="option"]')) && visible(node)
+    && !(node.matches(EDITABLE) && node.closest('[data-keyboard-skip-fields]'))
     && (node.closest(PANE) === pane || !pane.matches(PANE)))
 }
 
@@ -45,15 +46,19 @@ export function adjacentPane(panes: HTMLElement[], current: HTMLElement | undefi
   }).filter(item => item.along > 1).sort((a, b) => a.score - b.score)[0]?.pane
 }
 
-export function focusPane(pane: HTMLElement, remembered?: HTMLElement): void {
+export function focusPane(pane: HTMLElement, remembered?: HTMLElement, focus = focusControl): void {
   const controls = controlsIn(pane)
   // Browsers can focus overflow containers implicitly. Restore a real control,
   // so returning to a list never strands the keyboard on its scroll wrapper.
   const target = remembered && controls.includes(remembered) ? remembered
     : controls.find(node => node.matches('textarea,input,[contenteditable="true"],[aria-selected="true"]')) ?? controls[0] ?? pane
-  if (target === pane && !pane.hasAttribute('tabindex')) {
-    pane.tabIndex = -1
-    pane.addEventListener('blur', () => pane.removeAttribute('tabindex'), { once: true })
+  focus(target)
+}
+
+export function focusControl(target: HTMLElement): void {
+  if (!target.matches(CONTROLS)) {
+    target.tabIndex = -1
+    target.addEventListener('blur', () => target.removeAttribute('tabindex'), { once: true })
   }
   target.focus({ preventScroll: true })
   target.scrollIntoView({ block: 'nearest', inline: 'nearest' })

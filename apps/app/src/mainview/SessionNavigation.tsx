@@ -9,7 +9,7 @@ import { ChromeBar } from "./tabs/ChromeBar"
 import { toastActionShortcut } from "./ToastAction"
 
 const Mark = () => <pre aria-hidden="true">{WORDMARK.map((line, i) => <span key={i} style={{ "--row": i } as CSSProperties}>{line}{"\n"}</span>)}</pre>
-export const SessionNavigationFallback = () => <header className="session-navigation"><div className="guide-wordmark" aria-label="Smithers"><Mark /></div></header>
+export const SessionNavigationFallback = () => <header className="session-navigation" aria-label="Smithers"><h1 className="guide-wordmark" aria-label="Smithers" style={{ margin: 0 }}><Mark /></h1></header>
 
 /** Mode selection is a preference; it never starts microphone capture. */
 export const modeShortcut = (event: KeyboardEvent): boolean => !event.repeat && !event.isComposing && !event.metaKey && !event.ctrlKey && !event.altKey && !event.shiftKey && event.key.toLowerCase() === GUIDE_KEYS.mode && !(event.target as Element | null)?.closest?.('input,textarea,select,[contenteditable]:not([contenteditable="false"])')
@@ -56,8 +56,8 @@ export function SessionNavigation() {
   }, [controller])
   return <>
     {sessions[0]?.inputMode === "vim" && <KeyboardNavigation />}
-    <header className="session-navigation" data-keyboard-pane="Navigation" ref={mount} data-sidebar-open={open}>
-      <button type="button" className="guide-wordmark" aria-label="Smithers" aria-expanded={open} aria-controls={open ? "session-sidebar" : undefined} aria-keyshortcuts="W" data-flow="sidebar.toggle" onClick={() => controller.runCommand("sidebar.toggle")}><Mark /></button>
+    <header className="session-navigation" aria-label="Smithers" data-keyboard-pane="Navigation" ref={mount} data-sidebar-open={open}>
+      <h1 aria-label="Smithers" style={{ margin: 0 }}><button type="button" className="guide-wordmark" aria-label="Smithers" aria-expanded={open} aria-controls={open ? "session-sidebar" : undefined} aria-keyshortcuts="W" data-flow="sidebar.toggle" onClick={() => controller.runCommand("sidebar.toggle")}><Mark /></button></h1>
       <div className="session-identity">
         {identity?.state === "signed-in" ?
           controller.commands.find("account.show") !== undefined && <button type="button" className="chrome-action" data-testid="chrome-account" data-flow="account.show" onClick={() => controller.runCommand("account.show")}>Account (@{identity.login})</button> :

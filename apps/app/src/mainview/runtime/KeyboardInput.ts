@@ -1,5 +1,5 @@
 import { createVimBuffer, nextVimCharacter, vimKey, type VimBuffer, type VimMode } from './VimBuffer'
-import { adjacentPane, controlsIn, EDITABLE, focusPane, keyboardScope, paneAt, panesIn, visible } from './KeyboardPanes'
+import { adjacentPane, controlsIn, EDITABLE, focusControl, focusPane, keyboardScope, paneAt, panesIn, visible } from './KeyboardPanes'
 
 export type KeyboardHint = {
   prefix: 'off' | 'command' | 'numbers' | 'help'
@@ -58,9 +58,26 @@ export function bindKeyboardInput(root: HTMLElement, onHint: (hint: KeyboardHint
       }), portal: scope })
   }
   const cancel = () => { prefix = 'off'; numbered = []; hint() }
+  const rovingFocus = (target: HTMLElement) => {
+    const field = textField(target)
+    // Arriving by navigation never starts typing, including a remembered buffer.
+    if (field) vimKey(bufferFor(field), 'Escape')
+    focusControl(target)
+  }
   const focus = (pane: HTMLElement | undefined) => {
-    if (pane && panesIn(root).includes(pane)) focusPane(pane, remembered.get(pane))
+    if (pane && panesIn(root).includes(pane)) focusPane(pane, remembered.get(pane), rovingFocus)
     hint()
+  }
+  const rove = (event: KeyboardEvent) => {
+    const pane = paneAt(root, doc.activeElement)
+    if (!pane || !['h', 'j', 'k', 'l'].includes(event.key) || doc.activeElement?.closest('[role="menu"],[role="listbox"],[role="tree"],[role="grid"]')) return false
+    consume(event); held.add(event.code || event.key)
+    const controls = controlsIn(pane), index = controls.indexOf(doc.activeElement as HTMLElement)
+    const delta = event.key === 'h' || event.key === 'k' ? -1 : 1
+    const next = controls[Math.max(0, Math.min(controls.length - 1, index + delta))]
+    if (next) rovingFocus(next)
+    hint()
+    return true
   }
   const down = (event: KeyboardEvent) => {
     if (event.defaultPrevented) return
@@ -99,7 +116,17 @@ export function bindKeyboardInput(root: HTMLElement, onHint: (hint: KeyboardHint
         buffer.value = field.value
       }
       if (buffer.mode !== 'visual') buffer.cursor = field.selectionStart ?? 0
-      const bufferKey = field.tagName === 'INPUT' && buffer.mode === 'normal' ? key === 'o' ? 'A' : key === 'O' ? 'I' : key : key
+      if (buffer.mode === 'normal' && !buffer.pending && !buffer.count && !event.ctrlKey && !event.shiftKey) {
+        if (key === 'Escape') {
+          consume(event); held.add(id)
+          focusControl(paneAt(root, field) ?? root)
+          hint()
+          return
+        }
+        if (rove(event)) return
+      }
+      const bufferKey = buffer.mode === 'normal' && !buffer.pending && key === 'Enter' ? 'i'
+        : field.tagName === 'INPUT' && buffer.mode === 'normal' ? key === 'o' ? 'A' : key === 'O' ? 'I' : key : key
       if (!vimKey(buffer, bufferKey, event.ctrlKey)) return
       register = buffer.register; linewise = buffer.linewise
       consume(event); held.add(id)
@@ -116,15 +143,9 @@ export function bindKeyboardInput(root: HTMLElement, onHint: (hint: KeyboardHint
       hint()
       return
     }
-    if (event.ctrlKey || event.metaKey || event.altKey || event.shiftKey || doc.activeElement?.closest(EDITABLE)) return
-    // Once inside a pane, H/J/K/L reaches all its controls, including text fields.
-    const pane = paneAt(root, doc.activeElement)
-    if (!pane || !['h', 'j', 'k', 'l'].includes(key) || doc.activeElement?.closest('[role="menu"],[role="listbox"],[role="tree"],[role="grid"]')) return
-    consume(event); held.add(id)
-    const controls = controlsIn(pane), index = controls.indexOf(doc.activeElement as HTMLElement)
-    const delta = key === 'h' || key === 'k' ? -1 : 1
-    controls[Math.max(0, Math.min(controls.length - 1, index + delta))]?.focus()
-    hint()
+    if (event.ctrlKey || event.metaKey || event.altKey || event.shiftKey) return
+    if (doc.activeElement?.closest(EDITABLE) && !doc.activeElement.matches('input[type="checkbox"],input[type="radio"]')) return
+    rove(event)
   }
   const up = (event: KeyboardEvent) => {
     if (held.delete(event.code || event.key)) consume(event)
