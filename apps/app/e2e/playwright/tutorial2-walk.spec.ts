@@ -351,6 +351,15 @@ test("the whole tutorial walks every beat, keyboard first, through asynchronous 
   await tick(page, 5_000)
   await expect(shell(page)).toHaveAttribute("data-stage", "14")
   await shoot(page, 14)
+  await page.keyboard.press("f")
+  await gone(page, shell(page), "Finish leaves the tutorial")
+  await until(page, page.getByTestId(`card-repo-welcome-${INSTALLED_REPO}`), "the selected repository Welcome")
+  const first = page.getByTestId('transcript').locator('[data-kind]').first()
+  await expect(first).toHaveAttribute("data-kind", /repo-home|repo-onboarding/)
+  await expect(first).toBeInViewport()
+  await expect(page.getByRole("button", { name: "Continue without practice", exact: true })).toHaveCount(0)
+  await expect(page.locator('[data-testid="card-live-tutorial-research"]')).toHaveCount(0)
+  await expect(page.locator('[data-testid="card-practice-issue-flows-3"]')).toHaveCount(0)
 })
 
 test.describe("beat 9: four commit selections are sent to the live Change operation", () => {
@@ -445,7 +454,7 @@ test.describe("escape hatches", () => {
     await atStage(page, 3)
     await doBeat(page, 3, "e")
     await atStage(page, 4)
-    await expect(page.locator(".guide-toasts")).not.toContainText("didn't run")
+    await expect(page.locator('.guide-toast').filter({ hasText: "didn't run" })).toHaveCount(0)
   })
 
   test("Skip at beat 1 and Back never visit undone practice beats", async ({ page, baseURL }) => {
@@ -466,7 +475,7 @@ test.describe("escape hatches", () => {
     await atStage(page, 2)
     await expect(card(page, "issue-list")).toBeVisible()
     expect(host.live).toHaveLength(0)
-    await expect(page.locator(".guide-toasts")).not.toContainText("didn't run")
+    await expect(page.locator('.guide-toast').filter({ hasText: "didn't run" })).toHaveCount(0)
   })
 
   test("Not now (X) at login skips beats 11 and 12; the workspace stays on hello-server", async ({ page, baseURL }) => {

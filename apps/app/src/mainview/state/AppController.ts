@@ -1,3 +1,4 @@
+import { openRequestedRepo } from "../RepoLink"
 import { createInputModeController } from "./controller/inputMode"
 import type { InputMode } from "./InputMode"
 import { createControlFocus } from "./controller/controlFocus"
@@ -733,7 +734,30 @@ export const createAppController = (
   const restoredGuide = store.session().guide
   if (restoredGuide?.conversationOpen) store.dispatch({ type: "guide.changed", actor: "system", guide: { ...restoredGuide, conversationOpen: false } })
   const actors = createActorBindings(ctx.onDispose)
-  const { guideAct } = actors.pair(ctx, context => createGuideController(context, () => context.commands.run("repo.update", "practice:smithersai/hello-server")))
+  const { guideAct } = actors.pair(ctx, (context, select) => createGuideController(context,
+    () => context.commands.run("repo.update", "practice:smithersai/hello-server"),
+    async repo => {
+      if (!store.collections.repositories.get(repo)) {
+        const refusal = await openRequestedRepo(
+          { store, selectRepo, loadRepositories: repositoriesSeam.loadRepositories, runCommand: () => true },
+          (input, init) => context.boundedFetch(typeof input === "string" ? input : input instanceof URL ? input.href : input.url, init),
+          repo,
+        )
+        if (refusal) return refusal
+      }
+      const refusal = await selectRepo(repo)
+      if (refusal) return refusal
+      const welcome = await select(onboarding).welcomeRepo(repo)
+      if (typeof welcome === "string") return welcome
+    },
+    () => {
+      // A URL without ?tutorial acknowledges that Finish has reached SQLite.
+      if (typeof window !== "undefined") {
+        const url = new URL(window.location.href)
+        url.searchParams.delete("tutorial")
+        window.history.replaceState(window.history.state, "", `${url.pathname}${url.search}${url.hash}`)
+      }
+    }))
   if (store.dispose !== undefined) ctx.onDispose(store.dispose)
   const { baseUrl, http } = ctx
   const features: Required<AppFeatures> = {

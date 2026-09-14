@@ -1,3 +1,4 @@
+import { activeLiveTutorialLimit } from "../LiveTutorialLimit"
 import { librarianLaunchFor } from "../LibrarianLaunch"
 import type { CommandOutcome } from "../../flows/Commands"
 import type { ControllerContext } from "./context"
@@ -184,6 +185,30 @@ export const createFailureController = (ctx: ControllerContext): FailureControll
     }
     if (outcome.status !== "failed") return
     if (outcome.error === ZERO_BALANCE_EXHAUSTED_TEXT) return
+    /*
+     * A guide gesture is a key or a pill, never a slash line the user typed,
+     * so `/onboarding.act didn't run` below would name an internal flow id
+     * the tutorial has never shown anyone. The guide has its own channel for
+     * "why this beat could not finish": the notice under the lesson
+     * (AppState.ts guide.notice), which the next completion clears
+     * (onboarding/completion.ts). Once the tutorial is over that channel has
+     * no reader, and the gesture had no toast to promise one.
+     */
+    if (["onboarding.act", "tut", "tut.more"].includes(name)) {
+      const guide = ctx.store.session().guide
+      if (guide && !guide.finished) ctx.store.dispatch({ type: "guide.changed", actor: "system",
+        guide: { ...guide, notice: outcome.error, noticeDetail: undefined } })
+      return
+    }
+    /*
+     * A refused live tutorial launch already states itself inside its own run
+     * card (cards/LiveTutorialRunBody.tsx), with the reset time and the way
+     * on; a toast would say the same sentence a second time.
+     */
+    for (const card of ctx.store.collections.cards.values()) {
+      if (card.kind === "run-trace" && activeLiveTutorialLimit(card)
+        && card.payload.observationError === outcome.error) return
+    }
     const backgroundKind = name === "wiki.create" ? "wiki" : name === "history.bootstrap" ? "history" : undefined
     const guide = ctx.store.session().guide
     const inline = backgroundKind && guide && librarianLaunchFor(guide, backgroundKind)

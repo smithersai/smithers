@@ -38,7 +38,8 @@ test("all agent demos persist through guide.changed; real theme, notification, c
   }
   expect(h.session.guide.reelIndex).toBeUndefined()
   expect(h.session.guide.step).toBe(14)
-  expect(h.session.guide.finished).toBe(true)
+  // The parent guide controller prepares the repository and commits Finish.
+  expect(h.session.guide.finished).not.toBe(true)
   expect(h.events.filter(e => e.type === "guide.changed").every(e => e.actor === "smithers")).toBe(true)
   h.dispose()
 })

@@ -51,6 +51,7 @@ for (const door of ["issues", "prs"]) {
 }
 
 import { signedOutVisitor } from "./identity"
+import { GUIDE_KEYS } from "../../src/mainview/onboarding/GuideButton"
 
 for (const theme of ["light", "dark"] as const) test(`practice Add flow is editable before focus and keeps a refused submit in the card (${theme})`, async ({ page }) => {
   await signedOutVisitor(page)
@@ -123,4 +124,43 @@ test("practice Linear link renders the sign-in prompt; bridge retains the chrome
   await page.keyboard.press("q")
   await expect(page.locator(".guide-shell")).toHaveAttribute("data-stage", "10")
   await expect(page.getByTestId("chrome-sign-in")).toBeVisible()
+})
+
+
+test("the other practice issue opens without completing Read issue #3", async ({ page }) => {
+  await signedOutVisitor(page)
+  await page.clock.install()
+  await page.goto("/")
+  const shell = page.locator(".guide-shell")
+  await expect(shell).toHaveAttribute("data-stage", "1")
+  await page.keyboard.press("i")
+  await expect(shell).toHaveAttribute("data-stage", "2")
+  await page.locator(".guide-transcript").getByText("Add a /time endpoint", { exact: true }).click()
+  await expect(page.locator('.guide-transcript [data-kind="issue"]')).toContainText("Add a /time endpoint")
+  await page.clock.runFor(1500)
+  await page.keyboard.press("ArrowRight")
+  await expect(page.locator('[data-toast-status="failed"]')).toHaveCount(0)
+  await expect(shell).toHaveAttribute("data-stage", "2")
+  await expect(page.getByRole("button", { name: "Read issue #3", exact: true })).toBeVisible()
+  await page.keyboard.press("r")
+  await expect(shell).toHaveAttribute("data-stage", "3")
+  await page.keyboard.press("e")
+  await expect(shell).toHaveAttribute("data-stage", "4")
+  await page.keyboard.press(GUIDE_KEYS.back)
+  await expect(shell).toHaveAttribute("data-stage", "3")
+  await page.keyboard.press(GUIDE_KEYS.back)
+  await expect(shell).toHaveAttribute("data-stage", "2")
+  await page.getByRole("button", { name: "Read issue #3", exact: true }).click()
+  await expect(shell).toHaveAttribute("data-stage", "3")
+  await page.clock.runFor(2000)
+  await expect(shell).toHaveAttribute("data-stage", "3")
+  // Card alignment is covered by the transcript-scroll lane; this lane owns the cursor.
+  await page.keyboard.press(GUIDE_KEYS.back)
+  await expect(shell).toHaveAttribute("data-stage", "2")
+  await page.keyboard.press(GUIDE_KEYS.back)
+  await expect(shell).toHaveAttribute("data-stage", "1")
+  await page.keyboard.press("i")
+  await expect(shell).toHaveAttribute("data-stage", "2")
+  await page.clock.runFor(2000)
+  await expect(shell).toHaveAttribute("data-stage", "2")
 })

@@ -177,3 +177,25 @@ test("a background setup failure already shown inline does not emit a duplicate 
   expect(store.collections.toasts.get("toast-command.failed.wiki.create")?.detail).toBe("different failure")
 })
 
+
+
+for (const name of ["onboarding.act", "tut", "tut.more"]) test(`${name} keeps a guide refusal under the lesson without a flow-name toast`, async () => {
+  const { ctx, store } = await fakeContext()
+  await store.dispatch({ type: "guide.changed", actor: "user", guide: { ...initialGuide(), step: 14 } }).isPersisted.promise
+  createFailureController(ctx).surfaceCommandFailure(name, { status: "failed", error: "The repository catalog could not be read." })
+  expect([...store.collections.toasts.values()]).toEqual([])
+  expect(store.session().guide?.notice).toBe("The repository catalog could not be read.")
+  await store.dispose?.()
+})
+
+
+test("a typed practice refusal already shown in its run card has no second command-failure toast", async () => {
+  const { ctx, store } = await fakeContext()
+  const reason = "This practice run did not start because agent runs are temporarily limited."
+  await store.dispatch({ type: "card.upsert", actor: "system", card: { id: "live-tutorial-research", kind: "run-trace", title: "Research", status: "active", createdAt: 1, ordinal: 1,
+    payload: { repo: "practice:smithersai/hello-server", runId: "pending", workflow: "issue.research", phase: "stopped", steps: [], result: null, lastSeq: 0, observationError: reason,
+      input: { liveTutorial: { playthrough: 0 }, liveTutorialLimit: { kind: "rate-limit" } } } } }).isPersisted.promise
+  createFailureController(ctx).surfaceCommandFailure("issue.repro", { status: "failed", error: reason })
+  expect([...store.collections.toasts.values()]).toEqual([])
+  await store.dispose?.()
+})

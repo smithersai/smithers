@@ -14,8 +14,10 @@ import "./index.css"
 
 /**
  * Which app a page opens. `onboarding` is the tutorial alone (GuidedApp) and
- * names no repository; `repo` is one repository's workspace alone (the bare
- * App) at `/owner/name`, with no tutorial beside it.
+ * names no repository; `repo` is one repository's workspace at `/owner/name`
+ * (RepositoryApp), which does not start a tutorial — but it does show one
+ * already in flight, and its footer's Replay introduction door mounts the
+ * guide over it without a navigation (three-door law, App.tsx).
  */
 export type AppMode = "onboarding" | "repo"
 
@@ -32,7 +34,7 @@ void appModule.then(views => { preparedViews = views }, () => {})
 // React's lazy boundary owns the error even if the download fails before render.
 void appModule.catch(() => {})
 const GuidedApp = lazy(() => appModule.then(({ GuidedApp }) => ({ default: GuidedApp })))
-const RepoApp = lazy(() => appModule.then(({ default: App }) => ({ default: App })))
+const RepoApp = lazy(() => appModule.then(({ RepositoryApp }) => ({ default: RepositoryApp })))
 
 /** Resolve the real controller and view before a homepage entrance swaps its DOM. */
 export const prepareAppRoot = async (mode: AppMode, options: Omit<ControllerBootOptions, "mode"> = {}): Promise<void> => {
@@ -48,7 +50,7 @@ export function AppRoot({
 }) {
   const View = preparedViews === undefined
     ? (mode === "repo" ? RepoApp : GuidedApp)
-    : (mode === "repo" ? preparedViews.default : preparedViews.GuidedApp)
+    : (mode === "repo" ? preparedViews.RepositoryApp : preparedViews.GuidedApp)
   const boot = prepareControllerBoot({ mode })
   return (
     <StrictMode>

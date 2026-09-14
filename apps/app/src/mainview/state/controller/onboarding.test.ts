@@ -663,3 +663,24 @@ describe("feature.prototype", () => {
     expect(runCards(store)).toEqual([])
   })
 })
+
+
+for (const state of ["signed-out", "signed-in", "declined"] as const) test(`Finish opens the destination Home and Welcome for ${state}`, async () => {
+  const home = { blocks: [{ type: "text", text: "Repository home" }] }
+  const { store, controller } = await fixture({
+    "/api/repos/acme/api/contents/.smithers/home.json": () => json(200, { content: JSON.stringify(home) }),
+    [`/api/repos/${REPO}/contents/.smithers/home.json`]: () => json(200, { content: JSON.stringify(home) }),
+  })
+  identity(store, state === "signed-out" ? "signed-out" : "signed-in")
+  await store.dispatch({ type: "repository.upserted", actor: "system", repository: { id: "acme/api", org: "acme", name: "api", ownerKind: "user", head: null } }).isPersisted.promise
+  await store.dispatch({ type: "repo.selected", actor: "user", id: "acme/api" }).isPersisted.promise
+  await store.dispatch({ type: "guide.changed", actor: "user", guide: { ...store.session().guide!, step: 14,
+    ...(state === "declined" ? { declined: ["install"] } : {}) } }).isPersisted.promise
+  const outcome = await controller.commands.run("onboarding.act", "finish")
+  expect(outcome.status).not.toBe("failed")
+  const expected = state === "signed-in" ? "acme/api" : REPO
+  expect(store.session().activeRepoKey).toBe(expected)
+  expect(store.collections.cards.get(`repo-welcome-${expected}`)?.kind).toBe("repo-onboarding")
+  expect(store.collections.cards.get(`repo-home-${expected}`)?.kind).toBe("repo-home")
+  expect(store.session().guide?.finished).toBe(true)
+})

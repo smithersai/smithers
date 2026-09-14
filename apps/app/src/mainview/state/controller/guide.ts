@@ -1,3 +1,5 @@
+import { activeRepositoryId } from "../RepoContext"
+import { REEL_STAGES } from "../../onboarding/reel.ts"
 import { GUIDE_BRIDGE, GUIDE_LAST_STEP, GUIDE_STAGES } from "../../onboarding/lessons"
 import { createReelController } from "../../onboarding/reelController"
 import { guideBackwardStep, guideForwardStep } from "../../onboarding/navigation"
@@ -10,8 +12,20 @@ import type { ControllerContext } from "./context"
 /** Where the escape hatches land: the ⌘K lesson, which every path still runs. */
 const PALETTE_STEP = GUIDE_STAGES.findIndex((stage) => stage.kind === "do" && stage.completion === "palette.opened")
 
+/*
+ * The beat just landed on already holds its receipt, so this is a revisit
+ * (Back, then the act again; or Next over ground already walked). The shell
+ * schedules the next step for any finished beat that is not paused, so
+ * without this the ONE press that moved here would immediately buy a second
+ * step and the card the press reopened would scroll away unread.
+ */
+const revisitingCompletedBeat = (guide: GuideState): boolean => {
+  const stage = GUIDE_STAGES[guide.step]
+  return stage?.kind === "do" && guide.completed?.includes(stage.completion) === true
+}
+
 /** Durable, replayable onboarding. Practice artifacts never enter repository/run tables. */
-export function createGuideController(ctx: ControllerContext, onStart?: () => Promise<unknown>) {
+export function createGuideController(ctx: ControllerContext, onStart?: () => Promise<unknown>, onFinish?: (repo: string) => Promise<string | void>, onFinished?: () => void) {
   /** Revisit the persisted frame result without executing the action that produced it. */
   const restoreLessonCard = async (guide: GuideState, back = false) => {
     const stage = GUIDE_STAGES[guide.step]
@@ -47,6 +61,20 @@ export function createGuideController(ctx: ControllerContext, onStart?: () => Pr
     } }).isPersisted.promise
   }
   /* The optional capability reel owns its own reducer cases (onboarding/reelController.ts). */
+  const finish = async (): Promise<string | void> => {
+    const guide = ctx.store.session().guide ?? initialGuide()
+    const active = activeRepositoryId(ctx.store)
+    const signedIn = ctx.store.collections.identitySessions.get("identity")?.state === "signed-in"
+    const repo = signedIn && !guide.declined?.some(choice => choice === "login" || choice === "install")
+      && active && !active.startsWith("practice:") ? active : "smithersai/smithers"
+    const refusal = await onFinish?.(repo)
+    if (refusal) return refusal
+    for (const toast of ctx.store.collections.toasts.values()) {
+      if (["reel-notify-", "reel-wait-", "guide-hello-", "guide-tip-"].some(prefix => toast.key.startsWith(prefix))) {
+        ctx.store.dispatch({ type: "toast.dismissed", actor: "system", id: toast.id })
+      }
+    }
+  }
   const reelAct = createReelController(ctx)
   const applyGuideAction = async (action: string, value = ""): Promise<string | void> => {
     /*
@@ -58,7 +86,13 @@ export function createGuideController(ctx: ControllerContext, onStart?: () => Pr
       if (action === "back") return
     }
     /* Reducer cases: reel-start, reel-next <epoch:index>, reel-demo <demo>, reel-exit. */
-    if (await reelAct(action, value)) return
+    const beforeReel = ctx.store.session().guide
+    const completingReel = action === "reel-next" && beforeReel?.reelIndex === REEL_STAGES.length - 1
+      && value === `${beforeReel.reelEpoch ?? 0}:${beforeReel.reelIndex}`
+    if (await reelAct(action, value)) {
+      if (completingReel) return applyGuideAction("finish")
+      return
+    }
     const guide: GuideState = migrateGuideV3(ctx.store.session().guide ?? initialGuide())
     switch (action) {
       case "start":
@@ -77,6 +111,9 @@ export function createGuideController(ctx: ControllerContext, onStart?: () => Pr
         if (!lesson || (lesson.kind === "say" ? lesson.terminal : !guide.completed?.includes(lesson.completion))) return
         await restoreLessonCard(guide)
         guide.step = guideForwardStep(guide)
+        // A repeated act (onboarding/completion.ts lessonResumed) resumes this
+        // timer; landing back on walked ground stops it here, not two beats on.
+        if (revisitingCompletedBeat(guide)) guide.autoPaused = true
         await restoreLessonCard(guide)
         break
       }
@@ -90,10 +127,10 @@ export function createGuideController(ctx: ControllerContext, onStart?: () => Pr
       }
       case "next": {
         const stage = GUIDE_STAGES[guide.step]
-        if (stage?.kind === "do" && !guide.completed?.includes(stage.completion)) return "Complete this lesson's action first."
+        if (stage?.kind === "do" && !guide.completed?.includes(stage.completion)) return "Finish this step first."
         await restoreLessonCard(guide)
-        guide.autoPaused = false
         guide.step = guideForwardStep(guide)
+        guide.autoPaused = revisitingCompletedBeat(guide)
         await restoreLessonCard(guide)
         break
       }
@@ -202,15 +239,21 @@ export function createGuideController(ctx: ControllerContext, onStart?: () => Pr
         await ctx.store.dispatch({ type: "theme.changed", actor: ctx.commandActor === "smithers" ? "system" : ctx.commandActor, theme: flipped }).isPersisted.promise
         break
       }
-      case "finish":
+      case "finish": {
+        const refusal = await finish()
+        if (refusal) return refusal
         guide.finished = true
         guide.step = GUIDE_LAST_STEP
         guide.conversationOpen = false
+        guide.notice = undefined
+        guide.noticeDetail = undefined
         break
+      }
       default:
         return `Unknown onboarding action: ${action}`
     }
     await ctx.store.dispatch({ type: "guide.changed", actor: action === "advance" ? "system" : ctx.commandActor, guide }).isPersisted.promise
+    if (action === "finish") onFinished?.()
     if (action === "start" || action === "restart") {
       await onStart?.()
     }

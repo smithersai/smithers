@@ -47,3 +47,11 @@ export function resumeTutorial(guide: GuideState, cards: Iterable<Card>, hasMess
   const agentSignals = new Set(["issue.researched", "plan.ready", "commits.made", "diff.opened", "diff.file.opened", "change.opened"])
   return { ...resumed, step: 4, pick: undefined, autoPaused: true, completed: (resumed.completed ?? []).filter(signal => !agentSignals.has(signal)) }
 }
+
+
+/** Start Here and ?tutorial replay a finished guide; redirects resume the session they left. */
+export function shouldReplayTutorial(mode: "onboarding" | "repo" | undefined, search: string, guide: GuideState | undefined): boolean {
+  if (mode !== "onboarding" || !guide?.finished) return false
+  const params = new URLSearchParams(search)
+  return !params.has("signed-in") && !params.has("installation_id") && !["failed", "error"].includes(params.get("auth") ?? "")
+}

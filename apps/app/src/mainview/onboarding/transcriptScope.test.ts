@@ -32,3 +32,18 @@ test("the terminal workspace keeps the selected repository and omits practice or
   ]
   expect(workspaceTranscript(cards, "acme/api")).toEqual(cards.slice(2))
 })
+
+
+test("finished workspaces exclude tutorial artifacts even without a repo selection or a practice repo payload", () => {
+  const cards = [
+    { id: "practice-issue-3", payload: { repo: "smithersai/hello-server" } },
+    { id: "issue-flows", payload: { repo: "practice:smithersai/hello-server" } },
+    { id: "run", payload: { input: { liveTutorial: { operation: "research" } } } },
+    { id: "flow-run-practice-fix-hello-3", payload: {} },
+    { id: "home", payload: { repo: "acme/api" } },
+    { id: "real-run", payload: { repo: "acme/api", input: { _librarian: { kind: "wiki" } } } },
+    { id: "chat", payload: {} },
+  ]
+  expect(workspaceTranscript(cards, null)).toEqual(cards.slice(4))
+  expect(workspaceTranscript(cards, "acme/api")).toEqual(cards.slice(4))
+})

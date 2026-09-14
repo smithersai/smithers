@@ -78,3 +78,58 @@ test("entry initializes once and replay initializes a new playthrough without a 
   expect(starts).toBe(2)
   await store.dispose?.()
 })
+
+
+/*
+ * R2-T2-1: ArrowRight is Next, Next is a gesture, and its refusal used to
+ * reach the user as a toast titled "/onboarding.act didn't run". The reason
+ * is the guide's own (controller/failures.ts routes it to guide.notice); the
+ * flow id is never spoken.
+ */
+test("Next on an incomplete lesson refuses with the lesson's own reason", async () => {
+  const { store, controller } = await setup(4, fetch)
+  expect(await controller.guideAct("next")).toBe("Finish this step first.")
+  expect(store.session().guide?.step).toBe(4)
+  expect([...store.collections.toasts.values()]).toEqual([])
+  await store.dispose?.()
+})
+
+/*
+ * R2-T2-7: two Backs, then the beat's own pill again. The repeat resumes the
+ * lesson's timer, which advanced one beat and — because that beat was walked
+ * already — immediately bought a second, leaving the card the pill had just
+ * reopened above the viewport.
+ */
+const walkedTo = async (store: Awaited<ReturnType<typeof setup>>["store"], step: number) => {
+  await store.dispatch({ type: "guide.changed", actor: "user", guide: { ...initialGuide(), step,
+    completed: ["issues.opened", "issue.opened", "issue.flows.opened"] } }).isPersisted.promise
+}
+
+test("the repeated pill after two Backs advances exactly one beat and holds there", async () => {
+  const { store, controller } = await setup(4, fetch)
+  await walkedTo(store, 4)
+  await controller.guideAct("back")
+  await controller.guideAct("back")
+  expect(store.session().guide?.step).toBe(2)
+  // The pill's act repeats: onboarding/completion.ts lessonResumed restarts the timer.
+  await store.dispatch({ type: "guide.changed", actor: "user",
+    guide: { ...store.session().guide!, autoPaused: false } }).isPersisted.promise
+  await controller.guideAct("advance", "0:2")
+  expect(store.session().guide?.step).toBe(3)
+  expect(store.session().guide?.autoPaused).toBe(true)
+  await controller.guideAct("advance", "0:3")
+  expect(store.session().guide?.step).toBe(3)
+  await store.dispose?.()
+})
+
+test("Next over walked ground moves one beat per press", async () => {
+  const { store, controller } = await setup(4, fetch)
+  await walkedTo(store, 4)
+  await controller.guideAct("back")
+  await controller.guideAct("back")
+  await controller.guideAct("next")
+  await controller.guideAct("advance", "0:3")
+  expect(store.session().guide?.step).toBe(3)
+  expect(store.session().guide?.autoPaused).toBe(true)
+  await store.dispose?.()
+})

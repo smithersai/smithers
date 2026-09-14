@@ -138,3 +138,15 @@ test("account change while the read is pending does not complete", async () => {
   release(); await read
   expect(store.session().guide?.completed).not.toContain("issues.opened")
 })
+
+
+test("reading practice issue #2 opens it but only #3 completes Read issue #3", async () => {
+  const { ctx, store } = await setup(async () => { throw Error("practice must stay offline") }, false, false, 2)
+  const issues = createIssuesSeam(ctx)
+  expect(await issues.viewIssue(2, PRACTICE_REPO)).toEqual({ value: expect.stringContaining("Add a /time endpoint") })
+  expect([...store.collections.cards.values()].some(card => card.kind === "issue" && card.payload.number === 2)).toBe(true)
+  expect(store.session().guide?.completed).not.toContain("issue.opened")
+  await issues.viewIssue(3, PRACTICE_REPO)
+  expect(store.session().guide?.completed).toContain("issue.opened")
+  await store.dispose?.()
+})

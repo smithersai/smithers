@@ -1,6 +1,8 @@
 import { expect, test } from "bun:test"
 import { renderToStaticMarkup } from "react-dom/server"
 import { CardSchema } from "@smthrs/rpc/Cards"
+import { InTutorial } from "../onboarding/transcriptScope"
+import { workflowCardFamily } from "./WorkflowCards"
 import { LiveTutorialRunBody } from "./LiveTutorialRunBody"
 import type { LiveTutorialRun } from "@smthrs/rpc/LiveTutorial"
 import { GlobalRegistrator } from "@happy-dom/global-registrator"
@@ -41,7 +43,7 @@ test("Start implementation has the house button anatomy and invokes its existing
   const root = createRoot(host)
   const calls: unknown[] = []
   try {
-    flushSync(() => root.render(<LiveTutorialRunBody card={card} onRunCommand={(...args) => { calls.push(args) }} />))
+    flushSync(() => root.render(<InTutorial value={true}><LiveTutorialRunBody card={card} onRunCommand={(...args) => { calls.push(args) }} /></InTutorial>))
     const button = host.querySelector<HTMLButtonElement>('button[data-flow="agent.change.start"]')!
     expect(button.classList.contains("guide-button")).toBe(true)
     expect(button.querySelector(".guide-button-content")?.textContent).toBe("Start implementation")
@@ -73,7 +75,7 @@ test("an expired live session offers a new tutorial instead of a reconnect loop"
     payload: { repo: "practice:smithersai/hello-server", runId: "old-run", workflow: "issue.plan", kind: "plan", phase: "stopped", steps: [], result: null, lastSeq: 0,
       observationError: "This live example session expired. Your saved results remain available.", input: { liveTutorial: { operation: "plan" } } } })
   if (card.kind !== "run-trace") throw Error("Expected run")
-  const html = renderToStaticMarkup(<LiveTutorialRunBody card={card} onRunCommand={() => {}} />)
+  const html = renderToStaticMarkup(<InTutorial value={true}><LiveTutorialRunBody card={card} onRunCommand={() => {}} /></InTutorial>)
   expect(html).toContain('data-flow="onboarding.act"')
   expect(html).toContain("Start new tutorial")
   expect(html).not.toContain("Reconnect")
@@ -88,13 +90,16 @@ test("a quota refusal explains that nothing started and offers the existing skip
   const root = createRoot(host)
   const calls: unknown[] = []
   try {
-    flushSync(() => root.render(<LiveTutorialRunBody card={card} onRunCommand={(...args) => { calls.push(args) }} />))
+    flushSync(() => root.render(<InTutorial value={true}><LiveTutorialRunBody card={card} onRunCommand={(...args) => { calls.push(args) }} /></InTutorial>))
     expect(host.textContent).toContain("did not start")
     expect(host.textContent).toContain("Return to practice after")
     expect(host.textContent).not.toContain("Old sign-in copy")
     expect(host.querySelector('[data-flow="tutorial.live.retry"]')).toBeNull()
     const button = host.querySelector<HTMLButtonElement>('[data-flow="onboarding.act"]')!
-    expect(button.textContent).toBe("Continue without practice")
+    expect(button.textContent?.trim()).toBe("Continue without practice")
+    expect(button.classList.contains("guide-button")).toBe(true)
+    expect(workflowCardFamily["run-trace"].pill(card)).toBe("paused")
+    expect(host.textContent).toContain("nothing was charged")
     button.click()
     expect(calls).toEqual([["onboarding.act", "skip-practice"]])
     card.payload.input.liveTutorialLimit = { kind: "rate-limit", retryAt: Date.now() - 1 }
@@ -102,4 +107,13 @@ test("a quota refusal explains that nothing started and offers the existing skip
     expect(host.querySelector('[data-flow="tutorial.live.retry"]')?.textContent).toBe("Retry")
     expect(host.textContent).not.toContain("Reconnect")
   } finally { flushSync(() => root.unmount()) }
+})
+
+
+test("a tutorial escape hatch never appears in a repository workspace", () => {
+  const card = liveCard({})
+  card.payload.input = { liveTutorial: { operation: "research" }, liveTutorialLimit: { kind: "rate-limit" } }
+  const html = renderToStaticMarkup(<LiveTutorialRunBody card={card} onRunCommand={() => {}} />)
+  expect(html).not.toContain("Continue without practice")
+  expect(html).not.toContain('data-flow="onboarding.act"')
 })

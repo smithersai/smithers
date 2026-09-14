@@ -1,3 +1,4 @@
+import { shouldReplayTutorial } from "./resume"
 import { expect, test } from "bun:test"
 import { createAppStore } from "../state/AppStore"
 import { initialGuide } from "../state/AppState"
@@ -39,4 +40,16 @@ test("new tutorials and legacy entry cursors open practice; replay ignores old a
   const second = await createAppStore({ kind: "localStorage", storage })
   expect(second.session().guide).toMatchObject({ step: 1, playthrough: 1, completed: [] })
   await second.dispose?.()
+})
+
+
+test("explicit tutorial entries replay finished guides, while repository and auth returns preserve progress", () => {
+  const finished = { ...initialGuide(), finished: true, step: 14 }
+  expect(shouldReplayTutorial("onboarding", "?tutorial", finished)).toBe(true)
+  expect(shouldReplayTutorial("onboarding", "", finished)).toBe(true)
+  expect(shouldReplayTutorial("onboarding", "?tutorial", { ...finished, finished: false, step: 4 })).toBe(false)
+  expect(shouldReplayTutorial("repo", "", finished)).toBe(false)
+  for (const query of ["?signed-in=github", "?auth=failed", "?auth=error", "?installation_id=1&setup_action=install"]) {
+    expect(shouldReplayTutorial("onboarding", query, finished)).toBe(false)
+  }
 })

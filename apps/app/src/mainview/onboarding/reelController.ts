@@ -54,7 +54,7 @@ export function createReelController(ctx: ControllerContext, clock: GuideClock =
     } else if (action === "reel-next") {
       if (guide.reelIndex === undefined || value !== `${guide.reelEpoch ?? 0}:${guide.reelIndex}`) return true
       await restore()
-      if (guide.reelIndex + 1 >= REEL_STAGES.length) { await finish(); guide.finished = true }
+      if (guide.reelIndex + 1 >= REEL_STAGES.length) { await finish() }
       else guide.reelIndex++
     } else if (action === "reel-demo") {
       if (guide.reelIndex === undefined || REEL_STAGES[guide.reelIndex]?.demo !== value || guide.reelDemo === value) return true

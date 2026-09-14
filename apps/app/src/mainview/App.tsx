@@ -55,6 +55,22 @@ const entryOrdinal = (entry: TranscriptEntry): number =>
 const entryCreatedAt = (entry: TranscriptEntry): number =>
   entry.kind === "card" ? entry.card.createdAt : entry.message.createdAt
 
+/*
+ * The one place the transcript departs from its ordinals: the workspace a
+ * finished tutorial hands over (SCRIPT.md beat 14, "the workspace lands on
+ * <repo>") opens ON that repository, so its home pane leads and the welcome
+ * follows it, above whatever the walk left behind. Everything else — every
+ * other repository's cards, the chat, and each card made after the handoff —
+ * keeps its place in the conversation below them.
+ */
+const handoffRank = (entry: TranscriptEntry, repo: string | undefined): number => {
+  if (entry.kind !== "card" || repo === undefined) return 2
+  const card = entry.card
+  if (!("repo" in card.payload) || card.payload.repo !== repo) return 2
+  if (card.kind === "repo-home") return 0
+  return card.kind === "repo-onboarding" && card.payload.stage === "welcome" ? 1 : 2
+}
+
 
 
 function App() {
@@ -99,6 +115,7 @@ function App() {
       dictating: session.dictating,
       inputMode: session.inputMode,
       guideStep: session.guide?.step,
+      guideFinished: session.guide?.finished,
       guideTranscript: session.guide?.transcript,
       paletteLastQuery: session.paletteLastQuery,
       resetConfirmOpen: session.resetConfirmOpen,
@@ -133,7 +150,7 @@ function App() {
   const connectTriggerRef = useRef<HTMLButtonElement>(null)
   /* The composer's `+` menu is the third session menu the shell closes the same way. */
   const addTriggerRef = useRef<HTMLButtonElement>(null)
-  const session = sessionRows[0] ?? { ...controller.store.session(), guideTranscript: controller.store.session().guide?.transcript }
+  const session = sessionRows[0] ?? { ...controller.store.session(), guideTranscript: controller.store.session().guide?.transcript, guideFinished: controller.store.session().guide?.finished }
   /*
    * The conversation on screen (docs/LOCAL-APP.md "Tabs"): there is ONE
    * Smithers, the first tab, aware of every other one — so the conversation is
@@ -149,12 +166,12 @@ function App() {
    * Three scopes: a running lesson shows the tutorial's own cards; the handoff
    * beat shows the repository the user ended on, minus the cards a chat turn
    * produced (the guide transcript above already carries those beside their
-   * reply); the bare app shows the conversation as it stands.
+   * reply); the finished workspace keeps those practice artifacts out too.
    */
   const conversationCards = inTutorial ? tutorialTranscript(conversationRows)
     : composerHost !== undefined ?
       workspaceTranscript(conversationRows, session.activeRepoKey ?? null, chatEntryIds(session.guideTranscript)) :
-      conversationRows
+      workspaceTranscript(conversationRows, null)
   /*
    * A stable array: CardView is memoized, and re-sorting the same rows into a
    * fresh array on every render would re-render every card body regardless.
@@ -361,6 +378,10 @@ function App() {
     ...(composerHost === undefined ? messages.map((message): TranscriptEntry => ({ kind: "message", message })) : []),
     ...conversationCards.map((card): TranscriptEntry => ({ kind: "card", card }))
   ].sort((left, right) => {
+    if (session.guideFinished) {
+      const rank = handoffRank(left, session.activeRepoKey) - handoffRank(right, session.activeRepoKey)
+      if (rank !== 0) return rank
+    }
     if (entryOrdinal(left) !== entryOrdinal(right)) return entryOrdinal(left) - entryOrdinal(right)
     return entryCreatedAt(left) - entryCreatedAt(right)
   })
@@ -620,6 +641,7 @@ function App() {
       {/* Terminal, harness, and card tabs; hidden while inactive, never unmounted. */}
       <TabBodies />
       {composerHost === undefined && <footer className="app-chat-controls" aria-label="Chat controls">
+        <GuideButton data-flow="tut" onClick={() => controller.runCommand("tut")}>Replay introduction</GuideButton>
         <GuideButton shortcut={GUIDE_KEYS.chat} data-flow="chat.open" onClick={() => {
           controller.runCommand("chat.open")
           requestAnimationFrame(() => composerWrapRef.current?.querySelector("textarea")?.focus())
@@ -677,3 +699,11 @@ function App() {
  */
 export default App
 export function GuidedApp() { return <GuideShell><App /></GuideShell> }
+
+/** Repository pages can remount the guide through the same persisted /tut door. */
+export function RepositoryApp() {
+  const controller = useController()
+  const { data: sessions } = useLiveQuery(controller.store.collections.sessions)
+  const guide = sessions[0]?.guide ?? controller.store.session().guide
+  return (guide?.playthrough ?? 0) > 0 && !guide?.finished ? <GuidedApp /> : <App />
+}

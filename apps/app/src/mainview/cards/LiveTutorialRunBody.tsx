@@ -1,3 +1,5 @@
+import { useContext } from "react"
+import { InTutorial } from "../onboarding/transcriptScope"
 import { GuideButton } from "../onboarding/GuideButton"
 import { runSourceCommand } from "../flows/RunCommand"
 import { liveTutorialTranscript } from "../state/LiveTutorialTranscript"
@@ -10,6 +12,7 @@ import { activeLiveTutorialLimit, liveTutorialLimitMessage } from "../state/Live
 
 /** The official run card's live tutorial projection. Every row comes from observed execution. */
 export function LiveTutorialRunBody({ card, onRunCommand }: { card: Extract<Card, {kind:"run-trace"}>; onRunCommand: RunCommand }) {
+  const inTutorial = useContext(InTutorial)
   const decoded = LiveTutorialRunSchema.safeParse(card.payload.input?.liveTutorialSnapshot)
   const run = decoded.success ? decoded.data : undefined
   const reproducesBug = run?.operation === "research" && run.events.some(event => event.id === "reproduce" && event.status === "completed")
@@ -57,7 +60,7 @@ export function LiveTutorialRunBody({ card, onRunCommand }: { card: Extract<Card
       })}
     </ol>}
     {failure && <p className="live-tutorial-error" role="alert">{failure}</p>}
-    {(expired || limit) && <button type="button" className="guide-text-button" data-flow="onboarding.act" onClick={() => onRunCommand("onboarding.act", limit ? "skip-practice" : "restart")}>{limit ? "Continue without practice" : "Start new tutorial"}</button>}
+    {inTutorial && (expired || limit) && <GuideButton className="guide-primary" data-flow="onboarding.act" onClick={() => onRunCommand("onboarding.act", limit ? "skip-practice" : "restart")}>{limit ? "Continue without practice" : "Start new tutorial"}</GuideButton>}
     {!expired && !limit && (failure || run?.phase === "failed") && <button type="button" className="guide-text-button" data-flow="tutorial.live.retry"
       onClick={() => onRunCommand("tutorial.live.retry", card.id)}>{run === undefined || run.phase === "failed" ? "Retry" : "Reconnect"}</button>}
     {run?.operation === "implement" && run.phase === "completed" && !failure && <button type="button" className="guide-primary" data-flow="files.implementation-diff"

@@ -45,8 +45,16 @@ export function guideTranscriptEntries(
 export const workspaceTranscript = <Row extends { id?: string; payload: object }>(
   cards: ReadonlyArray<Row>, repo: string | null, chatCardIds: ReadonlySet<string> = new Set(),
 ): Array<Row> =>
-  cards.filter(card => (card.id === undefined || !chatCardIds.has(card.id))
+  cards.filter(card => !isTutorialCard(card) && (card.id === undefined || !chatCardIds.has(card.id))
     && (repo === null || !("repo" in card.payload) || typeof card.payload.repo !== "string" || card.payload.repo === repo))
+
+/** Practice frames retain their provenance even when an older payload lost its repo key. */
+export function isTutorialCard(card: { id?: string; payload: object }): boolean {
+  const payload = card.payload as { repo?: unknown; input?: { liveTutorial?: unknown } }
+  return typeof payload.repo === "string" && payload.repo.startsWith("practice:")
+    || payload.input?.liveTutorial !== undefined
+    || /^(practice-|live-tutorial-|flow-run-practice-)/.test(card.id ?? "")
+}
 
 /** The ids the guide recorded as arriving from a chat turn during this playthrough. */
 export const chatEntryIds = (

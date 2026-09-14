@@ -71,7 +71,7 @@ export async function practiceViewIssue(ctx: SeamContext, number: number): Promi
     id: PRACTICE_CARD.issue(number), kind: "issue", title: `#${number} ${payload.title}`, status: "active",
     createdAt: Date.now(), ordinal: ctx.nextOrdinal(), payload
   })
-  await finishLesson(ctx, "issue.opened", playthrough)
+  if (number === 3) await finishLesson(ctx, "issue.opened", playthrough)
   return readResult(`#${number} ${payload.title}\n${payload.issueBody}`)
 }
 

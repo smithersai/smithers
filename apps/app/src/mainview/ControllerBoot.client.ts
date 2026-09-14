@@ -1,3 +1,4 @@
+import { shouldReplayTutorial } from "./onboarding/resume"
 import { Effect } from "effect"
 import { hasCapability } from "@smthrs/rpc/AppBootstrap"
 import { createAgentSeat } from "./chain/ChainRuntime"
@@ -70,6 +71,10 @@ const bootProgram = (options: ControllerBootOptions = {}) =>
       )
     )
 
+    // Start Here and ?tutorial are explicit entries, including after a finished playthrough.
+    if (shouldReplayTutorial(options.mode, entrySearch, store.session().guide)) {
+      yield* promiseEffect("replay introduction", () => controller.guideAct("restart"))
+    }
     if (!hasCapability(bootstrap, "identity")) {
       yield* promiseEffect("record unavailable identity", () => controller.adoptSession({
         state: "unavailable",

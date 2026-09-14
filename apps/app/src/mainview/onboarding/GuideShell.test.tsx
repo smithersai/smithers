@@ -734,3 +734,39 @@ test("a sign-in answer scrolls into the tutorial read without changing the lesso
     geometry.mockRestore()
   }
 })
+
+
+test("ArrowRight on an incomplete lesson gives quiet guidance without a flow-name toast", async () => {
+  let controller!: ReturnType<typeof createAppController>
+  const host = await mountGuide(4, still, {}, c => { controller = c })
+  document.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true }))
+  document.dispatchEvent(new KeyboardEvent("keyup", { key: "ArrowRight", bubbles: true }))
+  for (let tick = 0; tick < 30 && !host.querySelector("[data-notice]"); tick++) await settle()
+  expect(controller.store.session().guide?.step).toBe(4)
+  expect(text(host.querySelector("[data-notice]"))).toBe("Finish this step first.")
+  expect([...controller.store.collections.toasts.values()]).toEqual([])
+})
+
+test("Finish projects Home first, omits practice frames, and retains the working replay door", async () => {
+  const host = await mountGuide(14, still, { finished: true }, async controller => {
+    const store = controller.store
+    await store.dispatch({ type: "repository.upserted", actor: "system", repository: { id: "acme/api", org: "acme", name: "api", ownerKind: "user", head: null } }).isPersisted.promise
+    await store.dispatch({ type: "repo.selected", actor: "user", id: "acme/api" }).isPersisted.promise
+    await store.dispatch({ type: "card.upsert", actor: "system", card: { id: "practice-issue-flows-3", kind: "workflow-list", title: "Issue #3 · Flows", status: "active", ordinal: 1, createdAt: 1,
+      payload: { repo: PRACTICE_REPO, workflows: [] } } }).isPersisted.promise
+    await store.dispatch({ type: "card.upsert", actor: "system", card: { id: "home", kind: "repo-home", title: "Home · acme/api", status: "active", ordinal: 3, createdAt: 1,
+      payload: { repo: "acme/api", path: ".smithers/home.json", blocks: [{ type: "text", text: "Repository home" }], featuredFlows: null } } }).isPersisted.promise
+    await store.dispatch({ type: "card.upsert", actor: "system", card: { id: "real-read", kind: "file", title: "README.md", status: "active", ordinal: 2, createdAt: 1,
+      payload: { repo: "other/repo", path: "README.md", content: "Real work stays", truncated: false } } }).isPersisted.promise
+  }, <App />)
+  await settle()
+  expect(host.querySelector(".guide-shell")).toBeNull()
+  expect(host.querySelector('.smithers-card')?.getAttribute("data-kind")).toBe("repo-home")
+  expect(host.textContent).not.toContain("Issue #3 · Flows")
+  expect(host.querySelector('[data-testid="card-real-read"]')).not.toBeNull()
+  const replay = host.querySelector<HTMLButtonElement>('[data-flow="tut"]')!
+  expect(text(replay)).toBe("Replay introduction")
+  replay.click()
+  for (let tick = 0; tick < 30 && !host.querySelector('.guide-shell[data-stage="1"]'); tick++) await settle()
+  expect(host.querySelector('.guide-shell[data-stage="1"]')).not.toBeNull()
+})

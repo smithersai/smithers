@@ -350,6 +350,7 @@ export function GuideShell({ children, clock = guideClock }: { children: ReactNo
   if (guide.finished) return <>{children}</>
   return (
     <GuideComposerHost.Provider value={composerHost}>
+    <InTutorial value={true}>
     <div
       key={guide.playthrough ?? 0}
       className="guide-shell"
@@ -689,6 +690,7 @@ export function GuideShell({ children, clock = guideClock }: { children: ReactNo
       </footer>
       {!conversationOpen && notifications}
     </div>
+    </InTutorial>
     </GuideComposerHost.Provider>
   )
 }

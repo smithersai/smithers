@@ -20,7 +20,9 @@ const setup = async (options: { bootstrap?: AppBootstrap; state?: "signed-in" | 
   const requests: StartAgentTurnRequest[] = []
   const controller = createAppController(store, unavailableRepositories, { ...silentAgent, available: true,
     startTurn: async request => { requests.push(request); return options.result ? options.result() : { status: "started" } },
-  }, { bootstrap: options.bootstrap ?? cloud, fetchImpl: async () => new Response("{}", { status: 200 }) })
+  }, { bootstrap: options.bootstrap ?? cloud, fetchImpl: async input => Response.json(
+    String(input).endsWith("/api/public/repos") ? { repos: [{ name: "smithersai/smithers" }] } : {},
+  ) })
   return { storage, store, controller, requests }
 }
 
@@ -42,6 +44,8 @@ describe("anonymous tutorial chat", () => {
     expect(messages.find(message => message.action?.flow === "auth.sign-in")?.text).toContain("Close Chat to continue or finish")
     await controller.commands.run("onboarding.act", "finish")
     expect(store.session().guide?.finished).toBe(true)
+    expect(store.session().activeRepoKey).toBe("smithersai/smithers")
+    expect(store.collections.cards.get("repo-welcome-smithersai/smithers")?.kind).toBe("repo-onboarding")
     expect(store.session().draft).toBe(question)
     await controller.dispose()
     const reopened = await createAppStore({ kind: "localStorage", storage })

@@ -1,3 +1,4 @@
+import { LiveTutorialLimitSchema } from "../state/LiveTutorialLimit"
 /*
  * The workflow cards: the embedded run card (run-trace) with its trace body
  * and steer row, the which-repository chooser (workflow-repo), and the
@@ -453,6 +454,7 @@ export const workflowCardFamily: CardFamily<"run-trace" | "workflow-repo" | "wor
       />
     ),
     pill: (card) => {
+      if (LiveTutorialLimitSchema.safeParse(card.payload.input?.liveTutorialLimit).success) return "paused"
       /* A tutorial plan card wears the plan's state, not a run phase: pending until started, done once it is. */
       if (card.payload.kind === "change-plan") return card.status === "acted" ? "done" : "pending"
       if (card.payload.phase === "completed") return "done"

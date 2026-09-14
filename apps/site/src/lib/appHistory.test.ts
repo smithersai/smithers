@@ -1,11 +1,12 @@
 import assert from "node:assert/strict"
 import { test } from "node:test"
-import { hasSavedApp } from "./appHistory"
+import { shouldResumeApp } from "./appHistory"
 
-test("the homepage auto-enters for either saved backend and legacy store, but not theme-only visitors", () => {
-  for (const key of ["smithers-mvp.persistenceBackend", "smithers-mvp.schemaVersion", "smithers-mvp.store"]) {
-    assert.equal(hasSavedApp(name => name === key ? "saved" : null), true)
-  }
-  assert.equal(hasSavedApp(name => name === "smithers-mvp.theme" ? "light" : null), false)
-  assert.equal(hasSavedApp(() => { throw Error("Storage disabled") }), false)
+test("the landing keeps Start Here on ordinary return visits, including finished profiles", () => {
+  assert.equal(shouldResumeApp(""), false)
+  assert.equal(shouldResumeApp("?tutorial"), false)
+})
+
+test("authentication returns still resume the app immediately", () => {
+  for (const search of ["?signed-in=github", "?auth=failed", "?auth=error"]) assert.equal(shouldResumeApp(search), true)
 })

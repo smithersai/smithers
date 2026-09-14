@@ -5,7 +5,7 @@ import type { ControllerContext } from "./context"
 import { PRACTICE_CARD, PRACTICE_REPO } from "../practice/PracticeRepository"
 import { lessonCompletion } from "../../onboarding/completion"
 import { PRACTICE_DIFF_CARD } from "../seams/DiffFilesSeam"
-import { activeLiveTutorialLimit, liveTutorialLimitMessage, type LiveTutorialLimit } from "../LiveTutorialLimit"
+import { LiveTutorialLimitSchema, activeLiveTutorialLimit, liveTutorialLimitMessage, type LiveTutorialLimit } from "../LiveTutorialLimit"
 
 class TutorialLimitError extends Error {
   constructor(readonly limit: LiveTutorialLimit) { super(liveTutorialLimitMessage(limit)) }
@@ -99,8 +99,8 @@ export function createLiveTutorialController(ctx: ControllerContext, nextOrdinal
     if (!current(id, request)) return
     const card = readCard(id)!
     const limit = error instanceof TutorialLimitError ? error.limit : undefined
-    await upsert({ ...card, ...(limit ? { status: "error" as const } : {}), payload: { ...card.payload,
-      phase: limit || card.payload.phase === "completed" ? "failed" : "stopped",
+    await upsert({ ...card, ...(limit ? { status: "active" as const } : {}), payload: { ...card.payload,
+      phase: !limit && card.payload.phase === "completed" ? "failed" : "stopped",
       observationError: error instanceof Error ? error.message : String(error),
       input: { ...card.payload.input, liveTutorialLimit: limit } } })
     if (limit) scheduleLimitExpiry(id, request, limit)
@@ -128,13 +128,13 @@ export function createLiveTutorialController(ctx: ControllerContext, nextOrdinal
         const { operation, conversation: _, ...body } = request
         const response = await ctx.boundedFetch(`${ctx.baseUrl}${LIVE_TUTORIAL_API}/${operation}`, { method: "POST", credentials: "include", headers: { "content-type": "application/json" }, body: JSON.stringify(body) })
         if (response.status === 429) {
-          const payload = await response.json().catch(() => null) as { retryAt?: unknown } | null
+          const payload = await response.json().catch(() => null) as { retryAt?: unknown; code?: unknown } | null
           const at = typeof payload?.retryAt === "string" ? Date.parse(payload.retryAt) : NaN
           const header = response.headers.get("retry-after")
           const seconds = header === null ? NaN : Number(header)
           const fallback = Number.isFinite(seconds) ? Date.now() + Math.max(0, seconds) * 1000 : Date.parse(header ?? "")
           const retryAt = Number.isFinite(at) ? at : fallback
-          throw new TutorialLimitError({ kind: "rate-limit", ...(Number.isFinite(retryAt) ? { retryAt } : {}) })
+          throw new TutorialLimitError({ kind: "rate-limit", ...(typeof payload?.code === "string" ? { code: payload.code } : {}), ...(Number.isFinite(retryAt) ? { retryAt } : {}) })
         }
         if (!response.ok) throw Error(await ctx.errorMessageOf(response, "The live tutorial workspace could not start."))
         const run = LiveTutorialRunSchema.parse(await response.json())
@@ -155,7 +155,8 @@ export function createLiveTutorialController(ctx: ControllerContext, nextOrdinal
     const limit = prior?.playthrough === playthrough ? activeLiveTutorialLimit(old) : undefined
     if (limit) return liveTutorialLimitMessage(limit)
     const snapshot = liveSnapshotOf(old)
-    if (prior?.playthrough === playthrough && old?.payload.phase !== "failed" && snapshot?.phase !== "failed") {
+    if (prior?.playthrough === playthrough && !LiveTutorialLimitSchema.safeParse(old?.payload.input?.liveTutorialLimit).success
+      && old?.payload.phase !== "failed" && snapshot?.phase !== "failed") {
       if (operation !== "change" || JSON.stringify(prior.commitIds) === JSON.stringify(options.commitIds)) {
         if (snapshot?.phase === "completed") { await publish(id, prior, snapshot); return { value: `The live ${operation} is already complete.` } }
         return send(id, prior)
@@ -194,7 +195,9 @@ export function createLiveTutorialController(ctx: ControllerContext, nextOrdinal
           const request = requestOf(card)
           if (!request || !current(card.id, request)) continue
           const limit = activeLiveTutorialLimit(card)
-          if (limit) { scheduleLimitExpiry(card.id, request, limit); continue }
+          if (limit) scheduleLimitExpiry(card.id, request, limit)
+          // A refused request stays manual even after its deadline; it is no run to resume.
+          if (LiveTutorialLimitSchema.safeParse(card.payload.input?.liveTutorialLimit).success) continue
           if (card.payload.phase === "failed") continue
           const snapshot = liveSnapshotOf(card)
           if (snapshot?.phase === "completed") {
