@@ -90,8 +90,19 @@ it("plans the approval ahead of the write", () => {
     }
   ])
   const gates = Graph.edges(graph).filter((edge) => edge.from === approval[0]!.id)
-  expect(gates).toHaveLength(1)
-  expect(writes(graph).map((node) => node.id)).toContain(gates[0]!.to)
+  const gatedWrites = writes(graph).filter((node) => node.dependencies.includes(approval[0]!.id))
+  expect(gatedWrites).toHaveLength(1)
+  const write = gatedWrites[0]!
+  const body = Graph.nodes(graph).find((node) => node.id === `${write.id}.flow`)!
+  expect(body.kind).toBe("Dynamic")
+  expect(body.dependencies).toContain(approval[0]!.id)
+  // Graph propagates continuation prerequisites into a FlowCall's body.
+  // Both the apply call and its executable body must wait for approval, so
+  // scheduling the body directly cannot bypass the gate.
+  expect(gates).toEqual([
+    { from: approval[0]!.id, to: write.id, reason: "continuation" },
+    { from: approval[0]!.id, to: body.id, reason: "continuation" }
+  ])
 })
 
 it("plans no write and no approval at all on a dry run", () => {

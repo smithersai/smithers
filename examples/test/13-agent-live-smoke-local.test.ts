@@ -5,7 +5,6 @@
  */
 import * as Effect from "effect/Effect"
 import { expect, it } from "vitest"
-import { main } from "../src/13-agent-live-smoke-local.ts"
 
 const liveEnabled = process.env.SMITHERS_LIVE_EXAMPLES === "1"
 const seatModel = "qwen2.5:7b"
@@ -33,6 +32,8 @@ it.skipIf(!liveEnabled)(
       .catch(() => false)
     if (!pulled) ctx.skip(`Requires Ollama at ${daemon} with ${seatModel} pulled`)
 
+    // Collection checks the opt-in gate without loading the native stack.
+    const { main } = await import("../src/13-agent-live-smoke-local.ts")
     for (let attempt = 0; attempt < 3; attempt++) {
       const result = await Effect.runPromise(main("What is the capital of France? Answer in one word."))
       expect(result.answer).toMatch(/paris/i)

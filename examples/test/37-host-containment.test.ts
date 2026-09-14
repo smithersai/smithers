@@ -172,11 +172,16 @@ it("reaps the process group a killed host left running", async () => {
   )).toBe("")
   expect(summary.orphaned).toBe(true)
   expect(summary.survivedTheReaper).toBe(false)
-  // Recorded by the dead host, retired by the live one, both on the journal run
-  // named after the host they share.
+  // Each host's startup jj version probe uses the contained spawner and records
+  // its normal exit. Between those probes, the dead host's process group is
+  // spawned and then reaped by its replacement on their shared journal run.
   expect(summary.hostEvents).toEqual([
     "flows.host.process-spawned.v1",
-    "flows.host.process-reaped.v1"
+    "flows.host.process-exited.v1",
+    "flows.host.process-spawned.v1",
+    "flows.host.process-reaped.v1",
+    "flows.host.process-spawned.v1",
+    "flows.host.process-exited.v1"
   ])
 }, 120_000)
 

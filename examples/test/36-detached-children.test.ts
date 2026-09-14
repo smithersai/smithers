@@ -17,9 +17,9 @@ it.live("keeps a detached child alive past its parent and collects it later", ()
     // The parent is done and the child was not taken down with it.
     expect(summary.parentStatus).toBe("completed")
     expect(summary.childCancelRequested).toBe(false)
-    // The id is derived from the parent and the label, so a re-driven parent
-    // spawns the same child rather than a second one.
-    expect(summary.child).toBe("triage-1/child/digest")
+    // EngineChildren's documented v2 identity length-prefixes the parent and
+    // label, keeping retries stable without the old /child/ path collisions.
+    expect(summary.child).toBe("child-v2:8:triage-16:digest")
     // Collected by an engine that never spawned anything.
     expect(summary.output).toBe("summary of rfc")
   }))

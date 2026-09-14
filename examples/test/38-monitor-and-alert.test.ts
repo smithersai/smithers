@@ -10,7 +10,7 @@ const directory = mkdtempSync(join(tmpdir(), "flows-examples-"))
 
 afterAll(() => rmSync(directory, { recursive: true, force: true }))
 
-it.effect("monitors a real parked run, heals it, and pages once about it", () =>
+it.effect("monitors a real event wait without healing or paging about a healthy run", () =>
   Effect.gen(function*() {
     const summary = yield* main(join(directory, "monitor.sqlite"))
 
@@ -23,19 +23,15 @@ it.effect("monitors a real parked run, heals it, and pages once about it", () =>
     expect(summary.parked).toBe("parked")
     expect(summary.waitingFor).toBe("event")
 
-    // Three beats build the stall; the fourth classifies it. An attempt is
-    // open — the wait point started and never settled — so it is a wedged
-    // node rather than a bare stall.
-    expect(summary.beats).toEqual(["healthy", "healthy", "healthy", "wedged-node"])
-    expect(summary.healed).toBe("resume")
+    // Health.waitReason recognizes an event wait. Even after the stall
+    // threshold, that documented wait is healthy, not a wedged action.
+    expect(summary.beats).toEqual(["healthy", "healthy", "healthy", "healthy"])
+    expect(summary.healed).toBeUndefined()
 
-    // A production delay pages about nothing: the condition is seconds old.
+    // Neither a production delay nor a zero-delay policy may page about a
+    // healthy wait. Repeated ticks leave the real notification queue empty.
     expect(summary.quiet).toBe(0)
-    expect(summary.paged).toEqual(["wedged-node"])
-    // The second tick suppresses: a delivered alert is not delivered again.
+    expect(summary.paged).toEqual([])
     expect(summary.repaged).toBe(0)
-    // One coalesced system event is queued for the run, keyed on the run and
-    // the condition, so a second wedge on the same run replaces it rather than
-    // stacking behind it.
-    expect(summary.pending).toEqual(["examples-supervised:wedged-node"])
+    expect(summary.pending).toEqual([])
   }))

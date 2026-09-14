@@ -17,6 +17,25 @@ SMITHERS_LIVE_EXAMPLES=1 pnpm exec vitest run test/13-agent-live-smoke-local.tes
 Both tests allow 300 seconds for model work. Without opt-in they report skipped
 with their requirements in the test titles. The OpenAI test also skips without
 a key; the local test reports a skip reason if its daemon or model is missing.
+Both declarations defer loading their native agent implementations until the
+test bodies execute. The selection fixture verifies the real opt-in gates and
+rejects eager implementation imports while collecting the declarations.
+
+## Inspecting parked runs
+
+Examples 06 and 38 use `src/park-run.ts` before rewinding or monitoring a parked
+execution. The helper drives the execution in a private engine layer and waits
+for the journal's committed suspension record. Stopping that caller alone is not
+enough: the record can reach the reader after the caller's automatic retry has
+already admitted a new coordinator drive, and the coordinator owns its drives
+separately. The helper therefore stops the caller to end retry admission and
+then closes the private engine, whose scope joins every admitted drive. A
+running drive would otherwise move a rewind's journal tail or count as progress
+to a monitor. The helper requests no durable cancellation and confirms through
+storage that the run is still suspended, so a later engine can resume it.
+The monitor recognizes an explicit event wait as healthy, even beyond its stall
+threshold. Example 38 verifies that neither opt-in recovery nor a zero-delay
+alert policy resumes or pages about that expected wait.
 
 ## Host containment
 
@@ -24,6 +43,8 @@ a key; the local test reports a skip reason if its daemon or model is missing.
 replacement reaps the abandoned process group. The runtime creates the SQLite
 parent directory, which may also be the host's repository root. The jj version
 probe can run before that directory exists.
+Both hosts run that probe through the contained spawner, so the shared journal
+also records its spawn and normal exit before and after the orphan's reaping.
 
 The companion `src/37-host-containment-host.ts` prints its process group id only
 after recording the child durably. Startup failures print the Effect cause to

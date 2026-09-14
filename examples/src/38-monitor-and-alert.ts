@@ -1,14 +1,13 @@
 /**
- * Observe parked runs and test delayed alert delivery.
+ * Observe parked runs without mistaking an expected wait for a stalled action.
  *
  * One run receives its answer and finishes. Another remains parked while a
- * monitor reads its state, records a diagnosis, and attempts opt-in recovery.
- * The alert policy admits a notification after the unhealthy condition lasts
- * long enough.
+ * monitor reads its state and records a diagnosis. The event wait stays
+ * healthy even when recovery of stalled or wedged runs is explicitly enabled.
  *
  * The example compares a positive alert delay with a zero-delay policy. A
- * monitor cannot infer whether an unanswered wait will eventually receive a
- * response, so automatic recovery remains an explicit choice.
+ * known event wait is not an unhealthy condition, so neither policy pages
+ * about it. A short alert delay must not manufacture a stall.
  */
 import { Control, ControlLive, Monitor, SqlControlRuntime } from "@smthrs/control"
 import { Action, DurableDeferred, Flow, Interpreter, WaitFor } from "@smthrs/flow"
@@ -17,7 +16,8 @@ import { Registry } from "@smthrs/registry"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
 import * as Schema from "effect/Schema"
-import { durableEngine } from "./durable-layer.ts"
+import { durableEngine, requirements } from "./durable-layer.ts"
+import { parkRun } from "./park-run.ts"
 
 /** What the supervision loop concluded. */
 export interface Summary {
@@ -35,7 +35,7 @@ export interface Summary {
   readonly quiet: number
   /** The conditions the impatient policy paged about. */
   readonly paged: ReadonlyArray<string>
-  /** Alerts a second tick raised. Zero: a delivered alert is not re-sent. */
+  /** Alerts a second tick raised. The healthy wait still raises none. */
   readonly repaged: number
   /** Coalescing keys pending on the notification queue. */
   readonly pending: ReadonlyArray<string>
@@ -111,14 +111,11 @@ const controlPlane = ControlLive.layer.pipe(
 )
 
 /**
- * The engine and the control plane over ONE database.
- *
- * `Layer.provideMerge` builds what it provides privately, so composing the
- * storage twice would give the monitor its own empty copy of the rows it is
- * supposed to be reading.
+ * A private engine for execution. The monitor opens the same SQLite file
+ * through storage-only services after this engine has shut down.
  */
 const stack = (filename: string) =>
-  Layer.merge(controlPlane, registrations).pipe(
+  registrations.pipe(
     Layer.provideMerge(durableEngine(filename, "examples-monitor"))
   )
 
@@ -139,23 +136,23 @@ export const main = (
   Effect.gen(function*() {
     const control = yield* Control.Control
 
-    // A run that parks and is then answered. `execute` returns the id while
-    // the run is still parked; the engine rebuilds the awaiting frame from the
-    // journal when the deferred is completed, and the second execute reads the
-    // finished result rather than re-running the body.
-    yield* Supervised.execute({}, { executionId: answeredRunId, discard: true })
-    yield* DurableDeferred.succeed(approval, { token: tokenFor(answeredRunId), value: { approved: true } })
-    const answered = yield* Supervised.execute({}, { executionId: answeredRunId })
+    // Observe the durable park before answering. The next execute rebuilds the
+    // awaiting frame from the journal and reads the completed deferred.
+    yield* parkRun(answeredRunId, Supervised.execute({}, { executionId: answeredRunId }), stack(filename))
+    const answered = yield* Effect.gen(function*() {
+      yield* DurableDeferred.succeed(approval, { token: tokenFor(answeredRunId), value: { approved: true } })
+      return yield* Supervised.execute({}, { executionId: answeredRunId })
+    }).pipe(Effect.provide(stack(filename)))
 
     // A run that parks and is not answered. Nothing is driving it now, which
     // is the situation a monitor exists for.
-    yield* Supervised.execute({}, { executionId: supervisedRunId, discard: true })
+    yield* parkRun(supervisedRunId, Supervised.execute({}, { executionId: supervisedRunId }), stack(filename))
     const listed = yield* control.list({ _tag: "runs", filters: { runId: supervisedRunId } })
     const parked = listed._tag === "runs" ? listed.items[0] : undefined
 
-    // Four beats: three build the stall, the fourth classifies it and resumes.
-    // The resume claims the run back onto the control plane, which is where a
-    // deployment's own executor picks it up.
+    // Observe beyond the stall threshold with recovery explicitly enabled.
+    // Monitor recognizes the durable event wait and leaves it healthy; an
+    // unanswered deferred does not authorize a resume or constitute a wedge.
     const report = yield* Monitor.run({
       runId: supervisedRunId,
       monitorId: "examples-oncall",
@@ -197,4 +194,8 @@ export const main = (
           : []
       )
     }
-  }).pipe(Effect.provide(stack(filename)), Effect.scoped, Effect.orDie)
+  }).pipe(
+    Effect.provide(controlPlane.pipe(Layer.provideMerge(requirements(filename)))),
+    Effect.scoped,
+    Effect.orDie
+  )
