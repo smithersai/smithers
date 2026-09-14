@@ -64,3 +64,9 @@ host identity asserted only through an environment variable.
 
 Run `bun apps/app/scripts/check-real-e2e.ts --results <reporter-results.json>`.
 The machine report defaults to `apps/app/test-results/real-e2e-coverage.json`.
+Use `--require-complete --expected-revision <exact-sha> --expected-host <host>`
+for the release gate. Quality-only mode still prints gaps without failing;
+completeness mode fails any inventory, dimension, or executed-evidence gap.
+Global path and door totals are diagnostics; they do not claim every path
+applies to every action. Per-action applicability stays explicit in scenario
+tokens.

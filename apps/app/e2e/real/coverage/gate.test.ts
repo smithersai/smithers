@@ -60,6 +60,18 @@ describe("real E2E coverage gate", () => {
     expect(codes).toContain("reporter-evidence-error")
   })
 
+  test("strict completeness pins evidence and fails remaining gaps", () => {
+    const { root, real, flows } = fixture()
+    writeFileSync(join(real, "repo.spec.ts"), valid)
+    const results = join(root, "results.json")
+    writeFileSync(results, JSON.stringify({ suiteStatus: "passed", reporterErrors: [], runs: [{ scenarioId: "repo.open.success", host: "local", status: "passed", revision: "b".repeat(40), startedAt: "2026-09-14T00:00:00Z", finishedAt: "2026-09-14T00:00:01Z" }] }))
+    const report = checkRealE2E({ realDir: real, flowNameFile: flows, resultsFile: results, requireComplete: true, expectedRevision: "a".repeat(40), expectedHost: "production" })
+    const codes = report.findings.map((finding) => finding.code)
+    expect(codes).toContain("unexpected-revision")
+    expect(codes).toContain("unexpected-host")
+    expect(codes).toContain("incomplete-coverage")
+  })
+
   test("rejects interception and skip constructs in imported executable helpers", () => {
     const { real, flows } = fixture()
     writeFileSync(join(real, "repo.spec.ts"), valid.replace('import { test } from "./support"', 'import { test } from "./support"\nimport "./bad-helper"'))
@@ -68,6 +80,14 @@ describe("real E2E coverage gate", () => {
     expect(report.ok).toBe(false)
     expect(report.findings.filter((item) => item.code === "forbidden-double")).toHaveLength(2)
     expect(executableImportClosure([join(real, "repo.spec.ts")], real)).toContain(join(real, "bad-helper.ts"))
+  })
+
+  test("follows re-exports and dynamic imports and catches renamed receivers", () => {
+    const { real, flows } = fixture()
+    writeFileSync(join(real, "repo.spec.ts"), valid.replace('import { test } from "./support"', 'import { test } from "./support"\nexport { helper } from "./barrel"'))
+    writeFileSync(join(real, "barrel.ts"), `export const helper = () => import("./renamed")\n`)
+    writeFileSync(join(real, "renamed.ts"), `renamedBrowserContext.route("**/*", handler)\n`)
+    expect(checkRealE2E({ realDir: real, flowNameFile: flows }).findings.map((finding) => finding.code)).toContain("forbidden-double")
   })
 
   test("does not scan type-only imports as executable suite code", () => {

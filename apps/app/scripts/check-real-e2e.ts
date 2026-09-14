@@ -13,7 +13,10 @@ const reportFile = resolve(value("--report") ?? joinDefault(appRoot, "test-resul
 const report = checkRealE2E({
   realDir: resolve(value("--real-dir") ?? joinDefault(appRoot, "e2e/real")),
   flowNameFile: resolve(value("--flow-names") ?? joinDefault(appRoot, "src/mainview/flows/FlowName.ts")),
-  resultsFile: value("--results") ? resolve(value("--results")!) : undefined
+  resultsFile: value("--results") ? resolve(value("--results")!) : undefined,
+  requireComplete: args.includes("--require-complete"),
+  expectedRevision: value("--expected-revision"),
+  expectedHost: value("--expected-host") as "local" | "production" | "native" | undefined
 })
 
 mkdirSync(dirname(reportFile), { recursive: true })

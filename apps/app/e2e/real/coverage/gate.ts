@@ -105,14 +105,24 @@ export const executableImportClosure = (specs: readonly string[], boundary: stri
   const seen = new Set<string>()
   while (pending.length) {
     const file = pending.pop()!
-    if (seen.has(file) || !file.startsWith(root) || !SOURCE.test(file)) continue
+    const outside = relative(root, file).startsWith("..") || resolve(file) === root
+    if (seen.has(file) || outside || !SOURCE.test(file)) continue
     seen.add(file)
     const source = sourceFile(file)
-    for (const statement of source.statements) {
-      if (!ts.isImportDeclaration(statement) || statement.importClause?.isTypeOnly || !ts.isStringLiteral(statement.moduleSpecifier)) continue
-      const imported = resolveImport(file, statement.moduleSpecifier.text)
+    const visit = (node: ts.Node): void => {
+      const staticSpecifier = ts.isImportDeclaration(node) && !node.importClause?.isTypeOnly && ts.isStringLiteral(node.moduleSpecifier)
+        ? node.moduleSpecifier.text
+        : ts.isExportDeclaration(node) && !node.isTypeOnly && node.moduleSpecifier && ts.isStringLiteral(node.moduleSpecifier)
+          ? node.moduleSpecifier.text
+          : undefined
+      const callSpecifier = ts.isCallExpression(node) &&
+        ((node.expression.kind === ts.SyntaxKind.ImportKeyword) || (ts.isIdentifier(node.expression) && node.expression.text === "require")) &&
+        node.arguments[0] && ts.isStringLiteral(node.arguments[0]) ? node.arguments[0].text : undefined
+      const imported = resolveImport(file, staticSpecifier ?? callSpecifier ?? "")
       if (imported) pending.push(imported)
+      ts.forEachChild(node, visit)
     }
+    visit(source)
   }
   return [...seen].sort()
 }
@@ -124,16 +134,31 @@ const callPath = (node: ts.Expression): string => {
 }
 
 const forbiddenCalls = new Map<string, string>([
-  ["page.route", "network interception"], ["page.unroute", "network interception"],
-  ["page.routeFromHAR", "captured network fixture"], ["page.routeWebSocket", "websocket interception"],
-  ["context.route", "network interception"], ["context.routeFromHAR", "captured network fixture"],
   ["test.skip", "skipped real scenario"], ["test.fixme", "disabled real scenario"],
   ["describe.skip", "skipped real scenario"], ["it.skip", "skipped real scenario"],
   ["vi.mock", "module mock"], ["jest.mock", "module mock"], ["mock.module", "module mock"]
 ])
+const forbiddenMemberCalls = new Map<string, string>([
+  ["route", "network interception"], ["unroute", "network interception"],
+  ["routeFromHAR", "captured network fixture"], ["routeWebSocket", "websocket interception"]
+])
 
 const forbiddenEnv = new Set(["SMITHERS_CHAT_STUB", "SMITHERS_E2E_CAPTURED_TARGETS", "SMITHERS_OFFLINE"])
 const refusal = /(?:sign in|not authorized|permission denied|unavailable|unsupported|refus(?:e|al)|could not|can't|cannot)/i
+
+const scenarioPathFor = (source: ts.SourceFile, node: ts.Node): readonly string[] => {
+  let current: ts.Node | undefined = node
+  while (current) {
+    if (ts.isCallExpression(current) && ["test", "test.only"].includes(callPath(current.expression))) {
+      const details = current.arguments[1]
+      if (details && ts.isCallExpression(details) && callPath(details.expression) === "scenario" && details.arguments[1] && ts.isObjectLiteralExpression(details.arguments[1])) {
+        return (strings(objectProperty(details.arguments[1], "coverage")) ?? []).filter((token) => token.startsWith("path:")).map((token) => token.slice(5))
+      }
+    }
+    current = current.parent
+  }
+  return []
+}
 
 const scanFile = (file: string): readonly GateFinding[] => {
   const source = sourceFile(file)
@@ -146,6 +171,10 @@ const scanFile = (file: string): readonly GateFinding[] => {
       const path = callPath(node.expression)
       const reason = forbiddenCalls.get(path)
       if (reason) add("error", "forbidden-double", node, `${path} is ${reason}; real E2E code must use the real boundary`)
+      if (ts.isPropertyAccessExpression(node.expression)) {
+        const memberReason = forbiddenMemberCalls.get(node.expression.name.text)
+        if (memberReason) add("error", "forbidden-double", node, `${node.expression.name.text} is ${memberReason}; aliases cannot bypass the real boundary`)
+      }
       if (/^(?:expect\([^)]*\)\.)?(?:toBeTruthy|toBeDefined)$/.test(path)) {
         add("review", "ambiguous-assertion", node, `${path} is not completion evidence on its own; reviewer must verify a later state assertion`)
       }
@@ -154,7 +183,12 @@ const scanFile = (file: string): readonly GateFinding[] => {
         if (/\/\\s\+\/|\/\.\+\/|not\.toHaveText\(["']{2}/.test(`${path}(${text})`)) {
           add("error", "nonempty-is-not-success", node, "A nonempty-text assertion cannot establish required completion")
         }
-        if (refusal.test(text)) add("error", "refusal-is-not-success", node, "A refusal/failure message cannot satisfy a successful scenario")
+        if (refusal.test(text)) {
+          const paths = scenarioPathFor(source, node)
+          add(paths.includes("success") ? "error" : "review", "refusal-is-not-success", node, paths.includes("success")
+            ? "A refusal/failure message cannot satisfy a successful scenario"
+            : "Refusal assertion is valid only when this error/permission scenario also proves the requested boundary behavior")
+        }
       }
     }
     if (ts.isPropertyAccessExpression(node) && ts.isPropertyAccessExpression(node.expression) &&
@@ -265,13 +299,16 @@ export interface GateOptions {
   readonly flowNameFile: string
   readonly resultsFile?: string
   readonly now?: string
+  readonly requireComplete?: boolean
+  readonly expectedRevision?: string
+  readonly expectedHost?: RealHost
 }
 
-export const checkRealE2E = ({ realDir, flowNameFile, resultsFile, now }: GateOptions): GateReport => {
+export const checkRealE2E = ({ realDir, flowNameFile, resultsFile, now, requireComplete = false, expectedRevision, expectedHost }: GateOptions): GateReport => {
   const specs = walkSpecs(realDir).filter((file) => !file.includes(`${join("coverage", "fixtures")}`))
   const actions = declaredFlowNames(flowNameFile)
   const scenarios = scenarioDeclarations(specs)
-  const files = executableImportClosure(specs, realDir)
+  const files = executableImportClosure(specs, resolve(realDir, "../.."))
   const findings = [...files.flatMap(scanFile), ...missingPerTestMetadata(specs)]
   const ids = new Set<string>()
   for (const scenario of scenarios) {
@@ -308,6 +345,12 @@ export const checkRealE2E = ({ realDir, flowNameFile, resultsFile, now }: GateOp
           for (const run of runs) if (!run.scenarioId || !run.host || !run.status || !/^[0-9a-f]{40,64}$/.test(run.revision) || !run.startedAt || !run.finishedAt) {
             findings.push({ severity: "error", code: "malformed-run", file: resultsFile, line: 1, message: "Every run requires scenario, verified host, explicit status, exact revision, and timestamps" })
           }
+          for (const run of runs) {
+            if (!(REAL_HOSTS as readonly string[]).includes(run.host) || !["passed", "failed", "timedOut", "skipped", "interrupted"].includes(run.status)) findings.push({ severity: "error", code: "malformed-run", file: resultsFile, line: 1, message: `Invalid host or verdict for ${run.scenarioId}` })
+            if (run.host === "production" && (!run.buildSha || !/^[0-9a-f]{40,64}$/.test(run.buildSha))) findings.push({ severity: "error", code: "missing-production-build", file: resultsFile, line: 1, message: `Production run ${run.scenarioId} requires its deployed build SHA` })
+          }
+          if (expectedRevision && runs.some((run) => run.revision !== expectedRevision)) findings.push({ severity: "error", code: "unexpected-revision", file: resultsFile, line: 1, message: `Evidence does not exclusively match expected revision ${expectedRevision}` })
+          if (expectedHost && runs.some((run) => run.host !== expectedHost)) findings.push({ severity: "error", code: "unexpected-host", file: resultsFile, line: 1, message: `Evidence does not exclusively match expected host ${expectedHost}` })
         }
       } catch (error) {
         findings.push({ severity: "error", code: "malformed-run-evidence", file: resultsFile, line: 1, message: error instanceof Error ? error.message : String(error) })
@@ -321,8 +364,9 @@ export const checkRealE2E = ({ realDir, flowNameFile, resultsFile, now }: GateOp
   for (const host of REAL_HOSTS) if (!scenarios.some((scenario) => scenario.hosts.includes(host))) gaps.push({ kind: "host", value: host })
   for (const door of DOORS) if (!scenarios.some((scenario) => scenario.doors.includes(door))) gaps.push({ kind: "door", value: door })
   for (const scenario of scenarios) for (const host of scenario.hosts) {
-    if (!runs.some((run) => run.scenarioId === scenario.id && run.host === host && run.status === "passed")) gaps.push({ kind: "execution", value: host, scenarioId: scenario.id })
+    if (!runs.some((run) => run.scenarioId === scenario.id && run.host === host && run.status === "passed" && (!expectedRevision || run.revision === expectedRevision) && (!expectedHost || run.host === expectedHost))) gaps.push({ kind: "execution", value: host, scenarioId: scenario.id })
   }
+  if (requireComplete && gaps.length) findings.push({ severity: "error", code: "incomplete-coverage", file: realDir, line: 1, message: `${gaps.length} declared/action/dimension/execution gaps remain` })
   return { ok: !findings.some((finding) => finding.severity === "error"), generatedAt: now ?? new Date().toISOString(), declaredActions: actions, scenarios, runs, gaps, findings }
 }
 
