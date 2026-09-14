@@ -82,7 +82,7 @@ export const stagePackageProject = async (): Promise<{
       await cp(join(ROOT_DIRECTORY, file), join(workspace, file))
     }
     await symlink(join(ROOT_DIRECTORY, "node_modules"), join(workspace, "node_modules"), "dir")
-    for (const directory of ["packages", "e2e", "examples", "patches"]) {
+    for (const directory of ["packages", "flows", "e2e", "examples", "patches"]) {
       await symlink(join(ROOT_DIRECTORY, directory), join(workspace, directory), "dir")
     }
     for (const entry of await readdir(join(ROOT_DIRECTORY, "apps"), { withFileTypes: true })) {
@@ -213,6 +213,7 @@ const main = async (): Promise<void> => {
         process.execPath,
         "test",
         "src/bun/PackagedE2EBridge.test.ts",
+        "scripts/PackagedBuildCommand.test.ts",
         "e2e/packaged/FixtureRun.test.ts",
         "e2e/packaged/PackagedApp.test.ts",
         "e2e/packaged/bridge.test.ts",

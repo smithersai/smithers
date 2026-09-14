@@ -63,6 +63,13 @@ const withApp = async (
     app = await launchApp({ executable, artifactsDirectory, stateDirectory })
     await app.ready()
     await app.waitFor<RenderedShell>(renderedShell, (value) => value.composer && value.transcript)
+    // Native scenarios exercise the workspace after the current tutorial,
+    // using the same public command and sidebar button as browser fixtures.
+    if (await app.eval<boolean>(`document.querySelector('.guide-shell') !== null`)) {
+      await sendMessage(app, "/onboarding.act finish")
+      await app.waitFor<boolean>(`document.querySelector('.guide-shell') === null`)
+    }
+    await openSidebar(app)
     await run(app, fixture)
   } catch (error) {
     failure = error
@@ -112,6 +119,19 @@ const clickSelector = async (app: PackagedApp, selector: string): Promise<void> 
 
 const clickTestId = (app: PackagedApp, testId: string): Promise<void> => clickSelector(app, selectorForTestId(testId))
 
+const openSidebar = async (app: PackagedApp): Promise<void> => {
+  await app.waitFor<boolean>(`document.querySelector('button[aria-label="Smithers"]') instanceof HTMLButtonElement`)
+  await app.eval<boolean>(`
+    (() => {
+      const navigation = document.querySelector('button[aria-label="Smithers"]')
+      if (!(navigation instanceof HTMLButtonElement)) throw new Error('Missing session navigation')
+      if (navigation.getAttribute('aria-expanded') !== 'true') navigation.click()
+      return true
+    })()
+  `)
+  await app.waitFor<boolean>(`document.querySelector('[data-testid="tab-add"]') !== null`)
+}
+
 const setControlValue = async (app: PackagedApp, testId: string, value: string): Promise<void> => {
   await app.eval<boolean>(`
     (() => {
@@ -131,6 +151,21 @@ const setControlValue = async (app: PackagedApp, testId: string, value: string):
 }
 
 const sendMessage = async (app: PackagedApp, text: string): Promise<void> => {
+  await app.eval<boolean>(`
+    (() => {
+      const input = document.querySelector('[data-testid="composer-input"]')
+      if (!(input instanceof HTMLTextAreaElement) || input.getBoundingClientRect().height === 0) {
+        const opener = Array.from(document.querySelectorAll('button[data-flow="chat.open"]'))
+          .find((button) => button instanceof HTMLButtonElement && button.getBoundingClientRect().height > 0)
+        if (!(opener instanceof HTMLButtonElement)) throw new Error('Missing visible Chat button')
+        opener.click()
+      }
+      return true
+    })()
+  `)
+  await app.waitFor<boolean>(`
+    (document.querySelector('[data-testid="composer-input"]')?.getBoundingClientRect().height ?? 0) > 0
+  `)
   await setControlValue(app, "composer-input", text)
   await app.waitFor<boolean>(`
     (() => {
@@ -169,32 +204,15 @@ const rendererApi = async <T>(
 
 const openRepository = async (app: PackagedApp, path: string | null): Promise<void> => {
   await app.queueRepositorySelection(path)
-  const menuOpen = await app.waitFor<boolean>(
-    `
-    (() => {
-      const trigger = document.querySelector('[data-testid="composer-repo-trigger"]')
-      if (!(trigger instanceof HTMLButtonElement) || trigger.disabled) return null
-      return trigger.getAttribute('aria-expanded') === 'true'
-    })()
-  `,
-    (value) => value !== null
-  )
-  if (!menuOpen) await clickTestId(app, "composer-repo-trigger")
-  await app.waitFor<boolean>(`
-    (() => {
-      const button = document.querySelector('[data-testid="chrome-open-repo"]')
-      return button instanceof HTMLButtonElement && !button.disabled && button.getBoundingClientRect().width > 0
-    })()
-  `)
-  await clickTestId(app, "chrome-open-repo")
+  await sendMessage(app, "/repo.open")
   // A successful native pick still has to be consumed and mirrored into the
   // renderer before subsequent commands can resolve the selected repository.
   if (path !== null && (await stat(path).catch(() => undefined))?.isDirectory()) {
     const selectedPath = await realpath(path)
     await app.waitFor<boolean>(`
-      document.querySelector('[data-testid="repo-chip"]')?.getAttribute('title') === ${JSON.stringify(selectedPath)} &&
       Array.from(document.querySelectorAll('[data-testid^="repo-select-"]')).some((node) =>
-        node.getAttribute('data-testid') === ${JSON.stringify(`repo-select-local:${selectedPath}`)})
+        node.getAttribute('data-testid') === ${JSON.stringify(`repo-select-local:${selectedPath}`)} &&
+        node.getAttribute('aria-current') === 'true')
     `)
   }
 }
@@ -216,14 +234,14 @@ const runCommand = async (argv: ReadonlyArray<string>, cwd: string): Promise<str
 
 const cloneGitHubFixture = async (fixture: PackagedTestFixture): Promise<string> => {
   const destination = await fixture.makeDirectory("github-canary-sandbox")
-  await runCommand(["git", "init", "--quiet"], destination)
-  await runCommand(["git", "remote", "add", "origin", githubFixture.remote], destination)
-  await runCommand(["git", "fetch", "--quiet", "--depth=1", "origin", "main"], destination)
-  const revision = await runCommand(["git", "rev-parse", "FETCH_HEAD"], destination)
+  await runCommand([
+    "jj", "git", "clone", "--quiet", "--colocate", "--depth=1", "--branch", "main",
+    githubFixture.remote, destination
+  ], fixture.directory)
+  const revision = await runCommand(["jj", "log", "--no-graph", "-r", "main@origin", "-T", "commit_id"], destination)
   if (revision !== githubFixture.revision) {
     throw new Error(`GitHub fixture moved: expected ${githubFixture.revision}, received ${revision}.`)
   }
-  await runCommand(["git", "checkout", "--quiet", "--detach", "FETCH_HEAD"], destination)
   if (!(await readFile(join(destination, "README.md"), "utf8")).includes(githubFixture.readme)) {
     throw new Error("The account-owned GitHub fixture README no longer matches its contract.")
   }
@@ -387,7 +405,7 @@ describe.skipIf(!enabled)("the packaged production Electrobun app", () => {
       expect((await rendererApi<{ repos: Array<unknown> }>(app, "/api/repos")).body.repos).toEqual([])
 
       const plain = await fixture.makeDirectory("plain-repository")
-      await runCommand(["git", "init", "--quiet"], plain)
+      await runCommand(["jj", "git", "init", "--quiet", "--colocate"], plain)
       await openRepository(app, plain)
       // Opening renders nothing; why a repository has no targets is /target.list's answer.
       expect(await app.eval<boolean>(`document.querySelector('.smithers-card[data-kind="repo"]') === null`)).toBe(true)
@@ -446,7 +464,7 @@ describe.skipIf(!enabled)("the packaged production Electrobun app", () => {
       )
         .toBe("Prints plugin-hello from the root workspace.")
       expect(
-        await app.eval<string>(`document.querySelector('[data-testid="composer-repo-trigger"]')?.textContent ?? ''`)
+        await app.eval<string>(`document.querySelector('[data-testid^="repo-select-"][aria-current="true"]')?.textContent ?? ''`)
       )
         .toContain("codeplanesmithers/canary-sandbox")
 
@@ -514,6 +532,7 @@ describe.skipIf(!enabled)("the packaged production Electrobun app", () => {
 
       const beforeRelaunch = await app.state()
       await app.relaunch()
+      await openSidebar(app)
       expect((await app.state()).app.pid).not.toBe(beforeRelaunch.app.pid)
       // Native startup restores the user's remembered directory grants before
       // serving requests. Reusing the pin must not require another folder pick.
@@ -562,9 +581,9 @@ describe.skipIf(!enabled)("the packaged production Electrobun app", () => {
   test("runs a real repository PTY, streams output into the native renderer, and deletes the session", async () => {
     await withApp("terminal-lifecycle", async (app, fixture) => {
       const repository = await fixture.makeDirectory("terminal-repository")
-      await runCommand(["git", "init", "--quiet"], repository)
+      await runCommand(["jj", "git", "init", "--quiet", "--colocate"], repository)
       await openRepository(app, repository)
-      expect(await app.waitFor<boolean>(`document.querySelector('[data-testid="repo-chip"]') !== null`)).toBe(true)
+      expect(await app.waitFor<boolean>(`document.querySelector('[data-testid^="repo-select-"][aria-current="true"]') !== null`)).toBe(true)
 
       await clickTestId(app, "tab-add")
       await app.waitFor<boolean>(`document.querySelector('[data-testid="tab-add-terminal"]') !== null`)
@@ -583,6 +602,7 @@ describe.skipIf(!enabled)("the packaged production Electrobun app", () => {
       expect(created.body.sessions).toEqual([
         expect.objectContaining({ sessionId, kind: "terminal", cwd: await realpath(repository), alive: true })
       ])
+      console.log(`[native-persistence] created live shell pid=${created.body.sessions[0]!.pid}`)
 
       // The probe's marker is printed as two quoted halves, so it is absent
       // from the typed command: echo cannot forge the execution evidence.
@@ -598,6 +618,7 @@ describe.skipIf(!enabled)("the packaged production Electrobun app", () => {
       expect(probe.executed(output)).toBe(true)
       const rows = await app.waitFor<string>(terminalRows(sessionId), probe.executed, 30_000)
       expect(probe.executed(rows)).toBe(true)
+      console.log("[native-persistence] execution marker rendered before native quit")
 
       const beforeQuit = await app.state()
       await app.relaunch()
@@ -608,11 +629,14 @@ describe.skipIf(!enabled)("the packaged production Electrobun app", () => {
         sessionId, pid: created.body.sessions[0]!.pid, alive: true
       }))
       expect(probe.executed(await app.waitFor<string>(terminalRows(sessionId), probe.executed, 30_000))).toBe(true)
+      console.log("[native-persistence] native process changed; origin, shell PID and rendered output preserved")
       const resumed = terminalExecutionProbe(crypto.randomUUID().replaceAll("-", "").slice(0, 16))
       await typeInTerminal(app, sessionId, resumed.command)
       await submitTerminal(app, sessionId)
       expect(resumed.executed(await app.waitFor<string>(terminalRows(sessionId), resumed.executed, 30_000))).toBe(true)
+      console.log("[native-persistence] resumed shell executes new terminal input")
 
+      await openSidebar(app)
       await clickTestId(app, `tab-close-${sessionId}`)
       expect(await app.waitFor<boolean>(`document.querySelector('[role="dialog"]') !== null`)).toBe(true)
       await app.eval<boolean>(`

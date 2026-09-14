@@ -1,6 +1,7 @@
 import { constants } from "node:fs"
 import { access, mkdir, readdir, rm, writeFile } from "node:fs/promises"
 import { resolve, sep } from "node:path"
+import { packagedBuildRuntimeCommand } from "./PackagedBuildCommand"
 
 const uiDirectory = resolve(import.meta.dir, "..")
 const rootDirectory = resolve(uiDirectory, "../..")
@@ -38,16 +39,7 @@ const symbolicLinks = async (directory: string): Promise<Array<string>> => {
 const prepare = async (): Promise<void> => {
   await clean()
   await mkdir(runtimeRoot, { recursive: true })
-  const child = Bun.spawn([
-    "pnpm",
-    "--config.inject-workspace-packages=true",
-    "--config.node-linker=hoisted",
-    "--filter",
-    "@smthrs/build-cli",
-    "deploy",
-    "--prod",
-    destination
-  ], {
+  const child = Bun.spawn(packagedBuildRuntimeCommand(destination), {
     cwd: rootDirectory,
     env: { ...process.env, CI: "1" },
     stdin: "ignore",
