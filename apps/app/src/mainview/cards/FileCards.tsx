@@ -6,7 +6,6 @@ import { fileArgs } from "../flows/FileArgs"
  * onRunCommand — the one delegated dispatch CardView threads from App.tsx —
  * and carries data-flow with its registered command name.
  */
-import { lspLanguageFor } from "@smthrs/rpc/LocalApp"
 import { Button } from "@smthrs/ui"
 import { FileText, Folder } from "lucide-react"
 import { Component, lazy, Suspense, useContext } from "react"
@@ -318,18 +317,13 @@ export const FileCardBody = ({
   /*
    * The gestures follow the catalog (THE THREE-DOOR LAW): the surface binds
    * code.hover / code.definition only where this host registers them. The
-   * web host lacks the `local.lsp` door, so there the card states the door
-   * once, under the header, on exactly the files a language server would
-   * serve — the pointer path drops an unregistered name silently, and a
-   * gesture that does nothing is a dead control. Without a controller (a
+   * web host lacks the `local.lsp` door, so no gesture is armed there and
+   * an absent capability renders nothing. Without a controller (a
    * component test) the caller's onRunCommand is the whole door.
    */
   const controller = useContext(ControllerContext)
   const codeIntel = controller === null || controller.commands.find("code.hover") !== undefined
-  const absent = codeIntel ? undefined : controller?.commands.explainAbsent("code.hover")
-  const text = card.payload.binary !== true && !isMarkdownPath(card.payload.path)
-  const intel = card.payload.intel ??
-    (absent !== undefined && text && lspLanguageFor(card.payload.path) !== null ? { state: "unavailable" as const, note: absent.reason } : undefined)
+  const intel = card.payload.intel
   return (
     /*
      * Ask 6 (will, 2026-09-02): the body is a PANEL — capped height, its own

@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test"
+import { stubTutorialHost } from "./tutorial-stubs"
 
 /*
  * Durable frame contract: the same card node expands in chat, frame identity
@@ -16,6 +17,42 @@ test.beforeEach(async ({ page }) => {
       // A browser that denies storage is already an empty profile.
     }
   })
+})
+
+test("a tutorial Issue maximizes in place with one header, a viewport backdrop, scrolling and Escape restore", async ({ page, baseURL }) => {
+  await page.setViewportSize({ width: 1280, height: 800 })
+  await stubTutorialHost(page, baseURL!)
+  await page.goto("/")
+  await page.locator('.guide-actions [data-flow="issues.list"]').click()
+  await page.locator('.guide-actions [data-flow="issues.view"]').click()
+  const card = page.locator('[data-tutorial-cards] .smithers-card[data-kind="issue"]')
+  await expect(card).toBeVisible()
+  const node = await card.elementHandle()
+  await card.getByRole("button", { name: "Maximize card", exact: true }).click()
+  await expect(card).toHaveAttribute("data-maximized", "true")
+  await expect(page.locator(".card-maximize-backdrop:visible")).toHaveCount(1)
+  await expect(card.locator(".smithers-card-header")).toHaveCount(1)
+  await expect(card.getByRole("button", { name: "Back in frame", exact: true })).toHaveCount(1)
+  await expect(card.getByRole("button", { name: "Previous frame", exact: true })).toHaveCount(0)
+  await expect(card.locator(".smithers-card-details")).toHaveCount(0)
+  await expect.poll(async () => {
+    const box = await page.locator(".card-maximize-backdrop:visible").boundingBox()
+    return box && { x: box.x, y: box.y, width: box.width, height: box.height }
+  }).toEqual({ x: 0, y: 0, width: 1280, height: 800 })
+  const box = await card.boundingBox()
+  expect(box!.height).toBeGreaterThan(700)
+  expect(box!.y).toBeGreaterThanOrEqual(0)
+  expect(box!.y + box!.height).toBeLessThanOrEqual(800)
+  // A long recorded issue must remain readable, with Restore reachable after scrolling.
+  await page.setViewportSize({ width: 1280, height: 480 })
+  await card.evaluate(element => { element.scrollTop = element.scrollHeight })
+  expect(await card.evaluate(element => element.scrollTop)).toBeGreaterThan(0)
+  await expect(card.getByRole("button", { name: "Restore", exact: true })).toBeInViewport()
+  await page.keyboard.press("Escape")
+  await expect(card).toHaveAttribute("data-maximized", "false")
+  await expect(card.getByRole("button", { name: "Maximize card", exact: true })).toBeFocused()
+  expect(await card.evaluate((element, previous) => element === previous, node)).toBe(true)
+  await expect(page.locator(".card-maximize-backdrop:visible")).toHaveCount(0)
 })
 
 test("clear archives locally and its recovery link restores the conversation after reload", async ({ page }) => {

@@ -143,7 +143,8 @@ test("T1: /change.diff renders the parent → current pair pinned at the change'
   const card = page.getByTestId("card-diff-smithersai/smithers-qupxosqw")
   await expect(card).toBeVisible({ timeout: 15_000 })
   await expect(card).toContainText("smithersai/smithers · qupxosqw · parent → current")
-  await expect(card).toContainText("pinned at rev 1 · a03f5f11")
+  await expect(card).toContainText("pinned at rev 1 · a03f5f1")
+  await expect(card.locator('span[title="a03f5f1111111111"]')).toHaveText("a03f5f1")
   await expect(card).toContainText("src/app.ts")
   // Code-intel L5: the hunk renders through the pierre view (its lines live in a shadow root, which toContainText pierces), not a bare <pre>.
   const view = card.locator('[data-slot="pierre-diff-view"]')

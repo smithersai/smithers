@@ -105,11 +105,12 @@ describe("a maximized card starts to the right of the sidebar (ask 7)", () => {
     expect(chrome).toMatch(/\.chrome-bar\s*\{[^}]*width:\s*var\(--chrome-bar-width, 200px\);/)
   })
 
-  test("the card and its backdrop both start past that width", () => {
+  test("the card clears the sidebar while its one backdrop fills the height beside it", () => {
     const card = /\.smithers-card\[data-maximized="true"\]\s*\{[^}]*\}/.exec(cards)?.[0] ?? ""
     expect(card).toContain("inset: 1.5rem 1.5rem 8.5rem;")
     expect(card).toContain("left: calc(var(--chrome-bar-width, 200px) + 1.5rem);")
     const backdrop = /\.card-maximize-backdrop\s*\{[^}]*\}/.exec(cards)?.[0] ?? ""
+    expect(backdrop).toContain("inset: 0;")
     expect(backdrop).toContain("left: var(--chrome-bar-width, 200px);")
   })
 })

@@ -6,6 +6,7 @@ import { createRoot } from "react-dom/client"
 import type { Card } from "../state/AppState"
 import { ChangeCardBody, DiffCardBody } from "./ChangeCards"
 import { gitPatch } from "./DiffSurface"
+import { timeLabel } from "../Timestamps"
 
 /*
  * The change and diff cards (lane change, ADR 0003; ADR 0004; lane L1 — the
@@ -387,11 +388,11 @@ describe("the change card", () => {
     )
     const rows = [...host.querySelectorAll('[aria-label="Revisions"] > li')].map((row) => row.textContent ?? "")
     expect(rows[0]).toContain("rev 1")
-    expect(rows[0]).toContain("b775d9aa · push · 2026-09-01 08:00")
+    expect(rows[0]).toContain("b775d9aa · push · " + timeLabel(Date.parse("2026-09-01T08:00:00Z")))
     expect(rows[1]).toContain("rev 2")
-    expect(rows[1]).toContain("a03f5f11 · agent · agent session sess-a03f5f · snapshot s_8d1 · 2026-09-01 10:00")
+    expect(rows[1]).toContain("a03f5f11 · agent · agent session sess-a03f5f · snapshot s_8d1 · " + timeLabel(Date.parse("2026-09-01T10:00:00Z")))
     expect(rows[2]).toContain("landed")
-    expect(rows[2]).toContain("landing #42 · by will · approved by ana at rev 2 · 2026-09-01 12:00")
+    expect(rows[2]).toContain("landing #42 · by will · approved by ana at rev 2 · " + timeLabel(Date.parse("2026-09-01T12:00:00Z")))
     /* rev 1 offers Diff to current; the current revision does not. rev 2 carries the snapshot; rev 1 does not. */
     expect(host.querySelectorAll('button[data-flow="change.pins"]')).toHaveLength(1)
     expect(host.querySelectorAll('button[data-flow="change.open-computer"]')).toHaveLength(1)
@@ -962,7 +963,7 @@ describe("the diff card", () => {
     const { host } = renderDiff(diffCard())
     const text = host.textContent ?? ""
     expect(text).toContain("will/smithers · qupxosqw · parent → current")
-    expect(text).toContain("pinned at a03f5f11")
+    expect(text).toContain("pinned at a03f5f1")
     host.remove()
   })
 
@@ -970,7 +971,7 @@ describe("the diff card", () => {
     const { host } = renderDiff(diffCard({ from: "1", to: "2", pin: { changeId: "qupxosqw", seq: 2, commitId: "a03f5f1111111111" } }))
     const text = host.textContent ?? ""
     expect(text).toContain("qupxosqw · rev 1 → rev 2")
-    expect(text).toContain("pinned at rev 2 · a03f5f11")
+    expect(text).toContain("pinned at rev 2 · a03f5f1")
     host.remove()
   })
 
@@ -1088,4 +1089,32 @@ describe("docs/LOCAL-APP.md's Cards section", () => {
     expect(issues).toContain("`${issuesPath(repo)}/${number}/linear-link`, { method: \"DELETE\" }")
     expect(issues).toContain('`${issuesPath(repo)}/${number}/linear-link`, { method: "POST",')
   })
+})
+
+test("absent Change auxiliaries render no invented unread sentences in any facet", () => {
+  for (const facet of ["diff", "findings", "checks", "review"] as const) {
+    const { host } = renderChange(changeCard({ facet, diff: null, conflicts: null, findings: null,
+      checks: null, reviews: null, threads: null, reviewRequests: null, stack: null, changeset: null }))
+    expect(host.textContent).not.toContain("not read")
+    expect(host.textContent).not.toContain("no reason recorded")
+    host.remove()
+  }
+})
+
+test("the Change timestamp uses the same local clock as card Details", () => {
+  const at = new Date().setHours(4, 5, 0, 0)
+  const { host } = renderChange(changeCard({ timestamp: new Date(at).toISOString() }))
+  expect(host.textContent).toContain(timeLabel(at))
+  host.remove()
+})
+
+test("the diff header abbreviates commit ids to seven characters and retains full titles", () => {
+  const from = "dfea1ec824d94623abeb224108c8b87e5983ad66"
+  const to = "b19b9d00cb01b73370aa37bfa70097ca63d7fb71"
+  const { host } = renderDiff(diffCard({ changeId: to, from, to, pin: { changeId: to, seq: null, commitId: to } }))
+  const header = host.querySelector("p.world-card-path")!
+  expect(header.textContent).toBe("will/smithers · b19b9d0 · rev dfea1ec → rev b19b9d0 · pinned at b19b9d0")
+  expect(header.querySelector(`[title="${from}"]`)?.textContent).toContain("dfea1ec")
+  expect(header.querySelectorAll(`[title="${to}"]`)).toHaveLength(3)
+  host.remove()
 })

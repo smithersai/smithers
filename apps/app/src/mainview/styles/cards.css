@@ -462,8 +462,8 @@
  * fallback; the chat stays mounted beneath the backdrop. */
 .card-maximize-backdrop {
 	position: fixed;
-	inset: 0 0 8.5rem;
-	/* Ask 7: the sidebar stays usable while a card is maximized. */
+	inset: 0;
+	/* The workspace sidebar remains available beside the frame. */
 	left: var(--chrome-bar-width, 200px);
 	z-index: 65;
 	/* The palette's own scrim: --shadow-rgb tracks each theme's ink, so the
@@ -509,6 +509,21 @@
 .app-shell[data-frame-maximized="true"] .composer-wrap {
 	position: relative;
 	z-index: 75;
+}
+/* The guide's layout containment used to trap fixed cards in the lesson
+ * area. Lift it only for the presentation transition; the same card and
+ * transcript stay mounted. The guide composer already sits above cards. */
+.guide-content:has([data-tutorial-cards] .smithers-card[data-maximized="true"]) {
+	contain: none;
+	isolation: auto;
+	overflow: visible;
+}
+.guide-shell [data-tutorial-cards] .smithers-card[data-maximized="true"] {
+	inset: 1.5rem;
+	max-height: none;
+}
+.guide-shell [data-tutorial-cards] .card-maximize-backdrop {
+	left: 0;
 }
 @media (prefers-reduced-motion: no-preference) {
 	.smithers-card[data-maximized="true"] {

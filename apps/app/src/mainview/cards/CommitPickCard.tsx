@@ -15,7 +15,7 @@ export const CommitPickBody = ({ card, onRunCommand }: { readonly card: CommitPi
   const chosen = rows.filter((row) => picked.includes(row.index))
   return (
     <section className="commit-pick" aria-label="Commit picker" data-picked={picked.join(" ")}>
-      <p className="commit-pick-head">{rows.length} commits on <code>{branch}</code> · onto <code>{targetBookmark}</code></p>
+      <p className="commit-pick-head">{rows.length} {rows.length === 1 ? "commit" : "commits"} on <code>{branch}</code>{branch === targetBookmark ? null : <> · onto <code>{targetBookmark}</code></>}</p>
       <ol className="commit-pick-rows">
         {rows.map((row) => {
           const on = picked.includes(row.index)

@@ -19,7 +19,7 @@ import type { ChangeFacet, ChangeRevision, ChangeThread, LandingBlock } from "@s
 import type { Card } from "../state/AppState"
 import type { CardFamily, RunCommand } from "./CardFamily"
 import { settledPill } from "./CardFamily"
-import { dateLabel, durationLabel } from "../Timestamps"
+import { timeLabel, durationLabel } from "../Timestamps"
 import { shortId } from "../state/ids"
 import { flowArgs } from "../flows/FlowArgs"
 import type { FlowName } from "../flows/FlowName"
@@ -41,11 +41,9 @@ type ChangePayload = ChangeCard["payload"]
  */
 const DiffSurface = lazy(() => import("./DiffSurface").then((module) => ({ default: module.DiffSurface })))
 
-/*
- * An unread auxiliary is null and `unread` names why; a null with no reason
- * (a payload built before the rule) says so rather than pass as "none".
- */
-const NO_REASON = "no reason recorded"
+/** An absent auxiliary has no copy unless the server recorded a read failure. */
+const Unread = ({ field, reason }: { readonly field: string; readonly reason: string | null | undefined }) =>
+  reason ? <p className="world-card-empty">{field} not read ({reason})</p> : null
 
 /** `rev N` when a recorded revision carries the commit, else the short commit — a lookup, never an inference. */
 const revisionLabel = (revisions: ReadonlyArray<ChangeRevision>, commitId: string | null): string | null => {
@@ -299,7 +297,7 @@ const ChangeDiffFacet = ({ card, onRunCommand }: { readonly card: ChangeCard } &
         ) :
         null}
       {diff === null ?
-        <p className="world-card-empty">diff of {payload.changeId} not read ({payload.unread?.diff ?? NO_REASON})</p> :
+        <Unread field={`diff of ${payload.changeId}`} reason={payload.unread?.diff} /> :
         diff.files.length === 0 ?
         <p className="world-card-empty">{payload.changeId} changes no files {pinLabel(from)} → {pinLabel(to)}.</p> :
         (
@@ -375,7 +373,7 @@ const ChangeChecksFacet = ({ card, onRunCommand }: { readonly card: ChangeCard }
         ) :
         null}
       {payload.checks === null ?
-        <p className="world-card-empty">checks not read ({payload.unread?.checks ?? NO_REASON})</p> :
+        <Unread field="checks" reason={payload.unread?.checks} /> :
         payload.checks.length === 0 ?
         <p className="world-card-empty">No checks recorded at this revision.</p> :
         (
@@ -403,7 +401,7 @@ const ChangeChecksFacet = ({ card, onRunCommand }: { readonly card: ChangeCard }
 const ChangeFindingsFacet = ({ card, onRunCommand }: { readonly card: ChangeCard } & ChangeCardActions) => {
   const { payload } = card
   if (payload.findings === null) {
-    return <p className="world-card-empty">findings not read ({payload.unread?.findings ?? NO_REASON})</p>
+    return <Unread field="findings" reason={payload.unread?.findings} />
   }
   const analyzers = payload.analyzers ?? []
   return (
@@ -497,7 +495,7 @@ const RequestReviewPicker = ({
   const requests = payload.reviewRequests
   if (requests === undefined) return null
   if (requests === null) {
-    return <p className="world-card-empty">review requests not read ({payload.unread?.reviewRequests ?? NO_REASON})</p>
+    return <Unread field="review requests" reason={payload.unread?.reviewRequests} />
   }
   if (requests.length === 0) return <p className="world-card-empty">Nobody has been asked to review {payload.changeId}.</p>
   return (
@@ -570,10 +568,10 @@ const ChangeReviewFacet = ({ card, onRunCommand }: { readonly card: ChangeCard }
         ) :
         null}
       {payload.reviews === null ?
-        <p className="world-card-empty">reviews not read ({payload.unread?.reviews ?? NO_REASON})</p> :
+        <Unread field="reviews" reason={payload.unread?.reviews} /> :
         null}
       {payload.threads === null ?
-        <p className="world-card-empty">threads not read ({payload.unread?.threads ?? NO_REASON})</p> :
+        <Unread field="threads" reason={payload.unread?.threads} /> :
         null}
       {reviews.length === 0 ? null : (
         <ul className="world-card-list" aria-label="Verdicts">
@@ -678,7 +676,7 @@ const ChangeHistoryFacet = ({ card, onRunCommand }: { readonly card: ChangeCard 
             {revision.source !== undefined ? ` · ${revision.source}` : ""}
             {revision.agentSessionId !== undefined ? ` · agent session ${shortId(revision.agentSessionId)}` : ""}
             {revision.workspaceSnapshotId !== undefined ? ` · snapshot ${revision.workspaceSnapshotId}` : ""}
-            {revision.createdAt !== undefined ? ` · ${dateLabel(revision.createdAt)}` : ""}
+            {revision.createdAt !== undefined ? ` · ${timeLabel(Date.parse(revision.createdAt))}` : ""}
           </span>
           {payload.currentSeq !== null && revision.seq < payload.currentSeq ?
             (
@@ -708,7 +706,7 @@ const ChangeHistoryFacet = ({ card, onRunCommand }: { readonly card: ChangeCard 
               {landed.approvedBy.length > 0 ?
                 ` · approved by ${landed.approvedBy.map((approver) => approver.seq === null ? approver.login : `${approver.login} at rev ${approver.seq}`).join(", ")}` :
                 ""}
-              {landed.at !== null ? ` · ${dateLabel(landed.at)}` : ""}
+              {landed.at !== null ? ` · ${timeLabel(Date.parse(landed.at))}` : ""}
             </span>
           </li>
         ) :
@@ -907,7 +905,7 @@ export const ChangeCardBody = ({
           ) :
           null}
       </p>
-      {payload.timestamp !== null ? <p className="world-card-path">{dateLabel(payload.timestamp)}</p> : null}
+      {payload.timestamp !== null ? <p className="world-card-path">{timeLabel(Date.parse(payload.timestamp))}</p> : null}
       {payload.description !== "" ? <p className="world-card-title">{payload.description.split("\n")[0]}</p> : null}
       {payload.repos.length > 0 ?
         (
@@ -943,7 +941,7 @@ export const ChangeCardBody = ({
         ) :
         null}
       {payload.conflicts === null ?
-        <p className="world-card-empty">conflicts not read ({payload.unread?.conflicts ?? NO_REASON})</p> :
+        <Unread field="conflicts" reason={payload.unread?.conflicts} /> :
         null}
       {/* One row per conflicted file, each with its own Resolve (ADR 0003: the act belongs to the conflicted hunk, not the card). */}
       {payload.conflicts !== null && payload.conflicts.length > 0 ?
@@ -1089,6 +1087,9 @@ export const ChangeCardBody = ({
   )
 }
 
+/** Keep revision numbers and named pins intact; abbreviate recorded hashes. */
+const shortDiffId = (id: string): string => /^[0-9a-f]{13,64}$/i.test(id) ? id.slice(0, 7) : id
+
 export const DiffCardBody = ({
   card,
   onRunCommand
@@ -1097,10 +1098,10 @@ export const DiffCardBody = ({
   return (
     <div className="world-card-list">
       <p className="world-card-path">
-        {payload.repo} · {payload.changeId} · {pinLabel(payload.from)} → {pinLabel(payload.to)}
-        {payload.pin.commitId !== null ?
-          ` · pinned at ${payload.pin.seq !== null ? `rev ${payload.pin.seq} · ` : ""}${shortId(payload.pin.commitId)}` :
-          ""}
+        {payload.repo} · <span title={payload.changeId}>{shortDiffId(payload.changeId)}</span> · <span title={payload.from}>{pinLabel(shortDiffId(payload.from))}</span> → <span title={payload.to}>{pinLabel(shortDiffId(payload.to))}</span>
+        {payload.pin.commitId !== null ? <>
+          {` · pinned at ${payload.pin.seq !== null ? `rev ${payload.pin.seq} · ` : ""}`}<span title={payload.pin.commitId}>{payload.pin.commitId.slice(0, 7)}</span>
+        </> : null}
       </p>
       {payload.error !== undefined ?
         <p className="sui-approval-error" role="alert">{payload.error}</p> :

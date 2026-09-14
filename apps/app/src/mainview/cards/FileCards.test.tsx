@@ -370,9 +370,8 @@ describe("the file card's code intelligence", () => {
  * code.hover / code.definition, and those flows carry `runtime: ["local.lsp"]`,
  * a door the web host lacks. A card that bound them there would be a dead
  * control (the pointer path drops an unregistered name silently), so the
- * card reads the catalog: bound where the flows exist, and on the web the
- * door is stated once under the header, on the files a language server
- * would serve.
+ * card reads the catalog: bound where the flows exist, and absent otherwise.
+ * Opening a file on the web adds no capability-gap copy.
  */
 const memoryStorage = (): StorageApi => {
   const data = new Map<string, string>()
@@ -421,12 +420,13 @@ const renderOn = async (bootstrap: AppBootstrap, card: Extract<Card, { kind: "fi
 }
 
 describe("the file card's gestures follow the host's catalog", () => {
-  test("on the web host a TypeScript card binds no code.* gesture and states the door once under the header", async () => {
+  test("on the web host a TypeScript card binds no code.* gesture and adds no capability-gap copy", async () => {
     const { host, calls } = await renderOn(WEB, fileCard("src/app.ts", "export const answer: number = 42\n"))
     await highlighted(host)
     expect(host.querySelector('[data-flow="code.hover"]')).toBeNull()
     expect(host.querySelector("[data-flow-activate]")).toBeNull()
-    expect(host.querySelector('[data-intel="unavailable"]')?.textContent).toBe("Hover and definitions: /code.hover is not in the web app — it needs the native app.")
+    expect(host.querySelector("[data-intel]")).toBeNull()
+    expect(host.textContent).not.toContain("/code.hover")
     // The file is still highlighted: highlighting is client-side everywhere.
     expect((shadowOf(host)?.querySelectorAll("[data-line] span[style]").length ?? 0) > 1).toBe(true)
     // No gesture is armed: a rest or ⌘-click on the code runs nothing — not a silently dropped command.

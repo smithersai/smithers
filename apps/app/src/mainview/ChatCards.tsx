@@ -99,6 +99,8 @@ export const CardView = memo(function CardView({
   const health = card.kind === "agent" || card.kind === "run-trace" ? card.payload.statusRollup : undefined
   const status = statusPresentation(health, fallback).status
   const quietStatus = ["done", "completed", "succeeded", "success"].includes(status)
+  const hasLocalHistory = card.navigation !== undefined && card.navigation.length > 1
+  const hasRunDetails = card.kind === "agent" || card.kind === "run-trace"
   const statusNode = card.kind === "agent" || card.kind === "run-trace" ?
     <StatusDetails status={health} fallback={fallback} /> :
     fallback === "" ? null : <StatusPill status={fallback} />
@@ -131,9 +133,15 @@ export const CardView = memo(function CardView({
         data-run-id={card.kind === "run-trace" ? card.payload.runId : undefined}
         data-testid={`card-${card.id}`}
         aria-label={card.title}
+        onKeyDown={(event) => {
+          if (!maximized || event.key !== "Escape" || event.defaultPrevented) return
+          event.preventDefault()
+          event.stopPropagation()
+          minimizeThenFocus()
+        }}
       >
         <header className="smithers-card-header">
-          {card.navigation && card.navigation.length > 1 && <nav className="card-local-history" aria-label="Frame history">
+          {hasLocalHistory && card.navigation && <nav className="card-local-history" aria-label="Frame history">
             <button type="button" data-flow="card.history.back" aria-label="Back in frame" disabled={card.navigation.index === 0}
               onClick={() => onRunCommand("card.history.back", card.id)}><ArrowLeft size={16} /></button>
             <button type="button" data-flow="card.history.forward" aria-label="Forward in frame" disabled={card.navigation.index + 1 === card.navigation.length}
@@ -145,28 +153,32 @@ export const CardView = memo(function CardView({
           {maximized ?
             (
               <>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  data-flow="frame.back"
-                  data-testid="frame-back"
-                  aria-label="Previous frame"
-                  title="Previous frame"
-                  onClick={() => onFrameBack?.()}
-                >
-                  <ArrowLeft size={13} />
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  data-flow="frame.forward"
-                  data-testid="frame-forward"
-                  aria-label="Next frame"
-                  title="Next frame"
-                  onClick={() => onFrameForward?.()}
-                >
-                  <ArrowRight size={13} />
-                </Button>
+                {!hasLocalHistory && (
+                  <>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      data-flow="frame.back"
+                      data-testid="frame-back"
+                      aria-label="Previous frame"
+                      title="Previous frame"
+                      onClick={() => onFrameBack?.()}
+                    >
+                      <ArrowLeft size={13} />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      data-flow="frame.forward"
+                      data-testid="frame-forward"
+                      aria-label="Next frame"
+                      title="Next frame"
+                      onClick={() => onFrameForward?.()}
+                    >
+                      <ArrowRight size={13} />
+                    </Button>
+                  </>
+                )}
                 <Button
                   variant="ghost"
                   size="icon"
@@ -256,7 +268,7 @@ export const CardView = memo(function CardView({
           })}
           </CardBodyBoundary>
         </div>
-        {card.kind !== "repo-update" && <details className="smithers-card-details">
+        {hasRunDetails && <details className="smithers-card-details">
           <summary aria-label={`${title} details`}>Details</summary>
           <dl>
             {quietStatus && <><dt>Status</dt><dd>{statusNode}</dd></>}

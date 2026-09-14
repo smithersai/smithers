@@ -1,3 +1,4 @@
+import { GuideButton } from "../onboarding/GuideButton"
 import { runSourceCommand } from "../flows/RunCommand"
 import { liveTutorialTranscript } from "../state/LiveTutorialTranscript"
 import { flowArgs } from "../flows/FlowArgs"
@@ -10,6 +11,7 @@ import type { RunCommand } from "./CardFamily"
 export function LiveTutorialRunBody({ card, onRunCommand }: { card: Extract<Card, {kind:"run-trace"}>; onRunCommand: RunCommand }) {
   const decoded = LiveTutorialRunSchema.safeParse(card.payload.input?.liveTutorialSnapshot)
   const run = decoded.success ? decoded.data : undefined
+  const reproducesBug = run?.operation === "research" && run.events.some(event => event.id === "reproduce" && event.status === "completed")
   const plan = run?.operation === "plan" ? run.plan : undefined
   const busy = card.payload.phase === "launching" || card.payload.phase === "running"
   const failure = card.payload.observationError ?? run?.error
@@ -31,11 +33,11 @@ export function LiveTutorialRunBody({ card, onRunCommand }: { card: Extract<Card
       <p>{plan.summary}</p>
       <ol>{plan.steps.map((step, index) => <li key={index}>{step}</li>)}</ol>
       {plan.files.length > 0 && <p className="live-tutorial-files">{plan.files.map(path => <code key={path}>{path}</code>)}</p>}
-      {card.status === "acted" ? <p className="live-tutorial-outcome">Implementation started</p> : <button type="button" className="guide-primary" data-flow="agent.change.start"
-        onClick={() => onRunCommand("agent.change.start", card.id)}>Start implementation</button>}
+      {card.status === "acted" ? <p className="live-tutorial-outcome">Implementation started</p> : <GuideButton className="guide-primary" data-flow="agent.change.start"
+        onClick={() => onRunCommand("agent.change.start", card.id)}>Start implementation</GuideButton>}
     </section>}
     {!plan && run?.result && <div className="live-tutorial-result"><Markdown content={run.result} /></div>}
-    {run?.tests && <p className="live-tutorial-check" data-passed={run.tests.exitCode === 0}>{run.tests.exitCode === 0 ? "✓ Tests passed" : "Tests failed"} <code>{run.tests.command}</code></p>}
+    {run?.tests && <p className="live-tutorial-check" data-passed={run.tests.exitCode === 0}>{run.tests.exitCode === 0 ? "✓ Tests passed" : reproducesBug ? "Tests failed (expected: reproduces the bug)" : "Tests failed"} <code>{run.tests.command}</code></p>}
     {run?.tests && <details className="live-tutorial-test-output"><summary>Test output</summary><pre tabIndex={0}>{run.tests.output}</pre></details>}
     {run?.commits && run.operation === "implement" && <p className="live-tutorial-outcome">{run.commits.length} {run.commits.length === 1 ? "commit" : "commits"} on <code>{run.branch}</code></p>}
     {(run?.events.length ?? 0) > 0 && <ol className="live-tutorial-events" aria-label="Run trace">
