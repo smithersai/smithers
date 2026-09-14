@@ -211,7 +211,7 @@ const parseScenario = (file: string, source: ts.SourceFile, node: ts.ObjectLiter
   const capabilities = strings(objectProperty(real, "capabilities"))
   const coverage = strings(objectProperty(real, "coverage"))
   if (!id || !capabilities || !coverage) return {
-    id: id ?? "<invalid>", file, line: lineOf(source, real), capabilities: capabilities ?? [], coverage: coverage ?? [],
+    id: "<invalid>", file, line: lineOf(source, real), capabilities: capabilities ?? [], coverage: coverage ?? [],
     actions: [], hosts: [], paths: [], doors: [], dimensions: [], completionEvidence: []
   }
   const values = (prefix: string): string[] => coverage.filter((token) => token.startsWith(prefix)).map((token) => token.slice(prefix.length))
@@ -233,7 +233,7 @@ const declaration = (
   const actualCoverage = coverage ?? []
   const values = (prefix: string): string[] => actualCoverage.filter((token) => token.startsWith(prefix)).map((token) => token.slice(prefix.length))
   return {
-    id: id ?? "<invalid>", file, line: lineOf(source, node), capabilities: capabilities ?? [], coverage: actualCoverage,
+    id: id !== undefined && capabilities !== undefined && coverage !== undefined ? id : "<invalid>", file, line: lineOf(source, node), capabilities: capabilities ?? [], coverage: actualCoverage,
     actions: values("action:"), hosts: values("host:") as RealHost[], paths: values("path:"),
     doors: values("door:"), dimensions: values("dimension:"), completionEvidence: values("evidence:")
   }
@@ -318,7 +318,7 @@ export const checkRealE2E = ({ realDir, flowNameFile, resultsFile, now, requireC
     if (scenario.id === "<invalid>" || !/^[a-z0-9]+(?:[.-][a-z0-9]+)*$/.test(scenario.id)) add("invalid-scenario", "realScenario requires a stable lowercase id and literal arrays")
     if (ids.has(scenario.id)) add("duplicate-scenario", `Duplicate scenario id ${scenario.id}`)
     ids.add(scenario.id)
-    if (!scenario.capabilities.length || scenario.capabilities.some((capability) => capability.trim() === "")) add("missing-capability", "Scenario requires at least one actual bootstrap capability")
+    if (scenario.capabilities.some((capability) => capability.trim() === "")) add("missing-capability", "Capability entries must name actual bootstrap capabilities; browser-only scenarios may explicitly declare []")
     if (scenario.coverage.some((token) => !COVERAGE_TOKEN.test(token))) add("invalid-coverage-token", "Coverage tokens require a known prefix and nonempty value")
     if (!scenario.actions.length) add("missing-action", "Scenario must name at least one action token")
     if (!scenario.hosts.length || scenario.hosts.some((host) => !(REAL_HOSTS as readonly string[]).includes(host))) add("missing-host", "Scenario must name host:local, host:production, or host:native")

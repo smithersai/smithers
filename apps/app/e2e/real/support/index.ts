@@ -101,6 +101,17 @@ export const realApi = async (
   })
 }
 
+/** The same product entry, with the deployed site's marketing root excluded. */
+export const appEntryPath = (): string => {
+  const path = process.env.SMITHERS_REAL_APP_PATH ?? (process.env.SMITHERS_REAL_E2E_HOST === "production" ? "/codeplanesmithers/canary-sandbox" : "/")
+  if (!path.startsWith("/") || path.startsWith("//")) throw new Error("SMITHERS_REAL_APP_PATH must be a same-origin absolute path.")
+  return path
+}
+
+export const openApp = async (page: Page): Promise<void> => {
+  await page.goto(appEntryPath())
+}
+
 /** Open the transient Command-K composer and wait for its real input focus. */
 export const openComposer = async (page: Page): Promise<void> => {
   const input = page.getByTestId("composer-input")
@@ -182,7 +193,7 @@ const validateScenario = (value: RealScenarioMetadata | undefined): RealScenario
   if (!value || !/^[a-z0-9][a-z0-9._-]+$/.test(value.id)) {
     throw new Error("Every real E2E test must set realScenario with a stable lower-case id.")
   }
-  if (value.capabilities.length === 0) throw new Error(`Real scenario ${value.id} declares no required capabilities.`)
+  if (!Array.isArray(value.capabilities) || value.capabilities.some((item) => !item.trim())) throw new Error(`Real scenario ${value.id} requires an explicit capabilities array; browser-only scenarios may declare [].`)
   if (value.coverage.length === 0 || value.coverage.some((token) => !/^(action|path|door|dimension|surface|host|evidence):[^:]+/.test(token))) {
     throw new Error(`Real scenario ${value.id} must declare prefixed coverage tokens.`)
   }
@@ -228,7 +239,7 @@ export const test = base.extend<RealFixtures>({
 
     const request = page.context().request
     const baseURL = new URL(testInfo.project.use.baseURL ?? page.url())
-    const html = await request.get(new URL("/", baseURL).toString())
+    const html = await request.get(new URL(appEntryPath(), baseURL).toString())
     if (!html.ok()) throw new Error(`Real host document preflight failed: HTTP ${html.status()}`)
     const token = /<meta\s+name=["']smithers-local-session["']\s+content=["']([^"']+)["']/i.exec(await html.text())?.[1]
     const bootstrap = await request.get(new URL("/api/bootstrap", baseURL).toString(), {

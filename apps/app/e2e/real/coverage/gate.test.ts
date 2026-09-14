@@ -40,6 +40,15 @@ describe("real E2E coverage gate", () => {
     expect(report.gaps).toContainEqual({ kind: "execution", value: "local", scenarioId: "repo.open.success" })
   })
 
+  test("permits explicit browser-only dependencies while rejecting an omitted dependency declaration", () => {
+    const { real, flows } = fixture()
+    const file = join(real, "browser.spec.ts")
+    writeFileSync(file, valid.replace('capabilities: ["filesystem:read"]', 'capabilities: []'))
+    expect(checkRealE2E({ realDir: real, flowNameFile: flows }).ok).toBe(true)
+    writeFileSync(file, valid.replace('capabilities: ["filesystem:read"],', ''))
+    expect(checkRealE2E({ realDir: real, flowNameFile: flows }).findings.map((finding) => finding.code)).toContain("invalid-scenario")
+  })
+
   test("joins an actual passed verdict without converting other gaps to coverage", () => {
     const { root, real, flows } = fixture()
     writeFileSync(join(real, "repo.spec.ts"), valid)

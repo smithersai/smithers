@@ -5,7 +5,7 @@ fixture. The declaration is inventory, not proof that the test ran:
 
 ```ts
 test("opens a repository", scenario("repo.open.success", {
-    capabilities: ["filesystem:read"],
+    capabilities: ["local.repositories"],
     coverage: [
       "action:repo.open",
       "host:local",
@@ -70,3 +70,11 @@ completeness mode fails any inventory, dimension, or executed-evidence gap.
 Global path and door totals are diagnostics; they do not claim every path
 applies to every action. Per-action applicability stays explicit in scenario
 tokens.
+
+Browser-only features such as Wiki notes, drafts, and appearance declare
+`capabilities: []`: they still use real browser storage and verified bootstrap,
+and must run on every declared applicable host. Do not invent a local-only
+service dependency to exclude them from production. Use `openApp(page)` from
+`support` instead of navigating to `/`: the deployed root is the marketing
+site. `SMITHERS_REAL_APP_PATH` selects a same-origin app repository path; its
+production default is `/codeplanesmithers/canary-sandbox`.
