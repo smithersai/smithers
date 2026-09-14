@@ -10,6 +10,8 @@ export default defineConfig({
     coverage: {
       enabled: true,
       provider: "v8",
+      // Isolate both reports and V8's .tmp scratch files by coordinator PID,
+      // as plan and control do, so another run cannot clean this run's files.
       reportsDirectory: join(tmpdir(), `flows-sandbox-coverage-${process.pid}`),
       include: ["src/**/*.ts"],
       thresholds: { branches: 100, functions: 100, lines: 100, statements: 100 }

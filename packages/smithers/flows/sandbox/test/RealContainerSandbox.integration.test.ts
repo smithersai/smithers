@@ -11,10 +11,9 @@ import { sessionSlug } from "../src/internal/sessionSlug.ts"
 import * as Sandbox from "../src/Sandbox/index.ts"
 import * as SandboxConformance from "../src/SandboxConformance/index.ts"
 
-// The suite drives a real container engine. It skips where none is running —
-// the same posture as the real-CLI e2e suites — so a laptop without Docker and
-// a CI shard without a daemon stay green without pretending to have proven
-// anything.
+// The suite drives a real container engine and records an explicit skip when
+// none is running. A laptop without Docker or a CI shard without a daemon
+// does not claim a real-engine conformance result.
 const engineAvailable = spawnSync("docker", ["info"], { stdio: "ignore" }).status === 0
 const missingEngine = engineAvailable
   ? undefined
@@ -45,14 +44,10 @@ const provider = Effect.gen(function*() {
   return ContainerSandbox.make({ spawner, image })
 }).pipe(Effect.provide(platform))
 
-// The conformance suite gives every check its own session so a check that
-// leaves one unusable cannot decide the next, which costs this backend eleven
-// container starts. Start is the one variable step and its cost is the
-// engine's, not the provider's: on the development machine the same `docker
-// start` was measured at 1 second on an idle engine and 30 seconds with many
-// containers resident, while `create`, `exec`, and `rm` stayed near 50ms
-// throughout. The ceiling is therefore sized for the loaded engine, because a
-// timeout under load would report a conforming provider as broken.
+// Each conformance check acquires and releases a container. Provisioning can
+// exceed the ordinary 10-second conformance default, so each check uses the
+// same allowance as a standalone real-container case. The outer ceiling still
+// bounds the whole suite, including all acquisitions and releases.
 const conformanceBudget = 900_000
 const budget = 180_000
 
@@ -74,6 +69,7 @@ describe.skipIf(!engineAvailable)("ContainerSandbox against a real engine", () =
         const container = yield* provider
         const violations = yield* SandboxConformance.check(container, {
           session: keys[0]!,
+          checkTimeout: budget,
           provides: { kill: true, ping: true }
         })
         expect(violations).toEqual([])
