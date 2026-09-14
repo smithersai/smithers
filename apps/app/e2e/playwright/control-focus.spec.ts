@@ -217,6 +217,68 @@ test("the dim is one layer: every pixel outside the surface is darkened exactly 
 })
 
 /*
+ * The BOX, not the element that took focus. Will's words are "we show the box
+ * it's in expand just a tad": the hole, the ring and the affordance all dress
+ * the card, so its title row and its footer stay bright with the rest of it.
+ * The markdown editor is what focus lands on and what names the surface, and
+ * it must never be what the geometry is measured from — this viewport is tall
+ * enough that the whole card is on screen, so the two are plainly different
+ * rectangles and a regression cannot hide behind a scroller's clipping.
+ */
+test("the hole is the card's box, not the inner element that took focus", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 1000 })
+  const { card, editor } = await openEditorSurface(page)
+  await editor.click()
+  await expect(page.locator(".control-focus-dim")).toHaveCount(1)
+
+  /*
+   * The card element comes from the locator the test clicked into: during the
+   * tutorial the app is mounted twice (the lesson's copy and the live shell
+   * behind it, at `opacity: 0`), so a fresh `querySelector` can pick the copy
+   * the user never sees.
+   */
+  const geometry = await card.evaluate((cardElement) => {
+    const rect = (element: Element) => {
+      const box = element.getBoundingClientRect()
+      return [Math.round(box.left), Math.round(box.top), Math.round(box.right), Math.round(box.bottom)]
+    }
+    const dim = document.querySelector<HTMLElement>(".control-focus-dim")!
+    /* Whatever wears the ring, named rather than assumed, so a regression reads as itself. */
+    const marked = document.querySelector("[data-control-focus]")!
+    const card = cardElement
+    /* The layer's path is the viewport, then the hole; the hole is the second subpath. */
+    const hole = (getComputedStyle(dim).clipPath.split("Z")[1]!.match(/-?[\d.]+/g) ?? []).slice(0, 4).map(Number)
+    return {
+      hole,
+      card: rect(card),
+      header: rect(card.querySelector(".smithers-card-header")!),
+      editor: rect(card.querySelector("[data-slot='markdown-editor']")!),
+      outset: Number.parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--control-focus-outset")),
+      marked: `${marked.tagName.toLowerCase()}.${(marked.className || "").toString().split(" ")[0] ?? ""}`,
+      markedIsTheCard: marked === card,
+      markers: document.querySelectorAll("[data-control-focus]").length,
+      editorIsMarked: card.querySelector("[data-slot='markdown-editor']")!.hasAttribute("data-control-focus")
+    }
+  })
+
+  /* One box wears the ring, and it is the card. */
+  expect(geometry.markers).toBe(1)
+  expect({ marked: geometry.marked, isTheCard: geometry.markedIsTheCard }).toEqual({ marked: "section.smithers-card", isTheCard: true })
+  expect(geometry.editorIsMarked).toBe(false)
+  /* The hole IS the card, grown by the ring's own outset so the ring is not dimmed either. */
+  const { card: box, outset } = geometry
+  expect(geometry.hole).toEqual([box[0]! - outset, box[1]! - outset, box[2]! + outset, box[3]! + outset])
+  /* Which is strictly bigger than the element focus landed on, and covers the card's title row. */
+  expect(geometry.editor[1]!).toBeGreaterThan(geometry.hole[1]!)
+  expect(geometry.header[1]!).toBeGreaterThanOrEqual(geometry.hole[1]!)
+  expect(geometry.header[3]!).toBeLessThanOrEqual(geometry.hole[3]!)
+  /* The whole card is on screen at this viewport, so nothing above is a scroller's doing. */
+  expect(box[3]! - box[1]!).toBeGreaterThan(geometry.editor[3]! - geometry.editor[1]!)
+
+  await expect(card).toHaveAttribute("data-control-focus", "human")
+})
+
+/*
  * The affordance is the ONLY way out of a focused cross-origin frame — that
  * surface swallows every key, Escape included — so "reachable" has to mean a
  * pointer lands on it, at every viewport. `toBeVisible()` checks a bounding

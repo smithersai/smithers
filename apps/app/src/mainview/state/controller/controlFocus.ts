@@ -95,6 +95,24 @@ const PORTAL_ROOTS = [
 const TAP_SLOP = 10
 /** How long after a touch the browser's compat mouse tail is still that touch's, not a new press. */
 const COMPAT_MS = 500
+/*
+ * The BOX, not the element that took focus. Will's words are "we show the box
+ * it's in expand just a tad": the thing that lifts is the container the user
+ * perceives as the object — the card, or the tab body for a terminal — never
+ * the editor, iframe or xterm root that happens to hold the caret. Detection
+ * stays on that inner element (it is what focus lands on, and what marks the
+ * surface), but the ring, the hole in the dim and the release affordance all
+ * dress the container, and `focusSurfaceHome` returns focus to the same box.
+ *
+ * Innermost wins, so a card opened as its own tab is dressed as the card, not
+ * as the whole tab body around it. A surface under neither — a bare frame in
+ * some future mount — falls back to the focused element, which is the only
+ * box there is.
+ */
+const CONTAINER = ".smithers-card, .tab-body"
+
+const containerOf = (element: HTMLElement): HTMLElement => element.closest<HTMLElement>(CONTAINER) ?? element
+
 /** How far the release affordance sits inside the surface's visible corner. */
 const RELEASE_INSET = 6
 /** The ring's width when the page has no token to read (a test DOM with no stylesheet). */
@@ -313,12 +331,12 @@ export const createControlFocus = (doc: Document | undefined): ControlFocusContr
 
   const focusSurfaceHome = (anchor: HTMLElement): void => {
     /*
-     * Focus moves explicitly to the surface's card section or tab body —
-     * never to body: ChatCards.tsx records that focus on body breaks the
-     * shell's Escape. `preventScroll` keeps the release from yanking the
-     * transcript to the card the user was already looking at.
+     * Focus goes back to the same box the ring dressed — never to body:
+     * ChatCards.tsx records that focus on body breaks the shell's Escape.
+     * `preventScroll` keeps the release from yanking the transcript to the
+     * card the user was already looking at.
      */
-    const target = anchor.closest<HTMLElement>(".smithers-card, .tab-body") ?? anchor
+    const target = containerOf(anchor)
     if (!target.hasAttribute("tabindex")) {
       dropBorrowedTabStop()
       borrowedTabStop = target
@@ -398,10 +416,12 @@ export const createControlFocus = (doc: Document | undefined): ControlFocusContr
     if (current?.state.surfaceId === detection.surfaceId) return
     clear(false)
     /*
-     * The ring dresses the box the surface sits in — the card for card
-     * surfaces, the terminal root itself for a tab.
+     * The ring dresses the BOX the surface sits in — the card for a card
+     * surface, the tab body for a terminal — never the inner element focus
+     * landed on. A terminal used to be ringed at its xterm root, so the tab's
+     * own chrome stayed dimmed around a surface the user had in hand.
      */
-    const anchor = detection.element.closest<HTMLElement>(".smithers-card") ?? detection.element
+    const anchor = containerOf(detection.element)
     current = { state: { surfaceId: detection.surfaceId, kind: detection.kind, since: Date.now() }, anchor }
     anchor.setAttribute("data-control-focus", "human")
     const win = doc?.defaultView ?? null

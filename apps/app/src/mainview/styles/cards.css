@@ -587,6 +587,12 @@
 	backdrop-filter: blur(var(--control-focus-blur));
 }
 
+/*
+ * The marker rides the BOX — the card, or the tab body for a terminal — not
+ * the editor, iframe or xterm root focus landed on, so the outset ring reads
+ * as that whole container lifting, which is what the 4px `var(--card)` outset
+ * was drawn for (state/controller/controlFocus.ts picks the container).
+ */
 [data-control-focus] {
 	position: relative;
 	z-index: calc(var(--control-focus-z) + 1);

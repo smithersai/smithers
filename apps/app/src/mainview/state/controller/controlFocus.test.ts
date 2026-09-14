@@ -152,15 +152,60 @@ const key = (win: Window & typeof globalThis, init: KeyboardEventInit): void => 
 const releaseButton = (doc: Document): HTMLButtonElement | null =>
   doc.querySelector<HTMLButtonElement>("[data-control-focus-release]")
 
-test("enter on focusin: the terminal reports control with its surface, and the ring dresses the terminal root", () => {
-  const { control, textarea, terminal } = setup()
+test("enter on focusin: the terminal reports control with its surface, and the ring dresses the TAB BODY", () => {
+  const { control, textarea, terminal, tabBody } = setup()
   expect(control.snapshot()).toBeNull()
   focusIn(window, textarea)
   const state = control.snapshot()
   expect(state?.kind).toBe("terminal")
   expect(state?.surfaceId).toBe("terminal:pty-1")
   expect(typeof state?.since).toBe("number")
-  expect(terminal.getAttribute("data-control-focus")).toBe("human")
+  /*
+   * Blocker: the ring used to dress `.tab-terminal`, the xterm root that takes
+   * the focus, so the tab's own chrome stayed dimmed around a surface the user
+   * had in hand and the hole was cut at the wrong box.
+   */
+  expect(tabBody.getAttribute("data-control-focus")).toBe("human")
+  expect(terminal.hasAttribute("data-control-focus")).toBe(false)
+})
+
+/*
+ * One rule for every surface: the ring, the hole and the release affordance
+ * dress the box the user perceives as the object, and `focusSurfaceHome`
+ * returns focus to that same box. Detection is unchanged — the inner element
+ * is still what takes focus and what names the surface.
+ */
+test("the box is the container, never the element that took focus", () => {
+  const { win, doc, textarea, tabBody, editor, editorCard, browserFrame, browserCard, desktopFrame, desktopCard } = setup()
+  const dressed = (): Element | null => doc.querySelector("[data-control-focus]")
+
+  focusIn(win, textarea)
+  expect(dressed()).toBe(tabBody)
+  focusIn(win, editor.querySelector(".ProseMirror")!)
+  expect(dressed()).toBe(editorCard)
+  frameFocus(win, browserFrame)
+  expect(dressed()).toBe(browserCard)
+  frameFocus(win, desktopFrame)
+  expect(dressed()).toBe(desktopCard)
+  /* And the affordance rides the same box, not the frame it belongs to. */
+  expect(desktopCard.contains(releaseButton(doc)!)).toBe(true)
+  expect(desktopFrame.contains(releaseButton(doc)!)).toBe(false)
+})
+
+/* A card opened as its own tab: the innermost box wins, so the card is dressed, not the tab around it. */
+test("a card inside a tab body is dressed as the card", () => {
+  const { win, doc, browserCard, browserFrame, tabBody } = setup()
+  tabBody.append(browserCard)
+  frameFocus(win, browserFrame)
+  expect(doc.querySelector("[data-control-focus]")).toBe(browserCard)
+})
+
+/* Under neither container there is no box but the element itself; nothing is left unringed. */
+test("a surface under no container falls back to the focused element", () => {
+  const { win, doc, browserFrame, shell } = setup()
+  shell.append(browserFrame)
+  frameFocus(win, browserFrame)
+  expect(doc.querySelector("[data-control-focus]")).toBe(browserFrame)
 })
 
 test("enter on focusin: the markdown editor is detected by its adapter root and the ring dresses its card", () => {
@@ -517,10 +562,10 @@ test("the release affordance is reachable by keyboard and releases the box", () 
 })
 
 test("the release affordance names the terminal it is dressing", () => {
-  const { win, doc, textarea, terminal } = setup()
+  const { win, doc, textarea, tabBody } = setup()
   focusIn(win, textarea)
   const button = releaseButton(doc)!
-  expect(terminal.contains(button)).toBe(true)
+  expect(tabBody.contains(button)).toBe(true)
   expect(button.getAttribute("aria-label")).toBe("Release control of the terminal")
 })
 
