@@ -7,7 +7,9 @@ import {
   nativeFailureStatus,
   nativeWireCode
 } from "../src/NativeFailureCodes.ts"
+import type { NativeRouteCode } from "../src/NativeFailureCodes.ts"
 import { PLUE_FAILURE_CODES, PLUE_FAILURES } from "../src/PlueFailureCodes.ts"
+import type { PlueFault } from "../src/PlueFailureCodes.ts"
 import {
   faultOfStatus,
   isNativeFailureCode,
@@ -95,7 +97,17 @@ describe("the native host's own failure registry", () => {
    * infra.
    */
   test("never claims Smithers' own infra failed, because none of it is ours to run out of", () => {
-    expect(NATIVE_ROUTE_CODES.filter((code) => NATIVE_FAILURES[code].fault === "infra")).toEqual([])
+    /*
+     * Read through the declared fault type, not the literal union `satisfies`
+     * infers from the rows. Against the inferred union TS calls `=== "infra"`
+     * a comparison with no overlap and fails the build (TS2367) — the table
+     * proving the invariant at compile time is exactly what stopped the
+     * runtime check from compiling. Widening keeps both: the types say no row
+     * is infra, and this still catches a row that reaches the map some other
+     * way.
+     */
+    const faultOf = (code: NativeRouteCode): PlueFault => NATIVE_FAILURES[code].fault
+    expect(NATIVE_ROUTE_CODES.filter((code) => faultOf(code) === "infra")).toEqual([])
     for (const code of NATIVE_ROUTE_CODES) {
       const refusal = nativeRefusal(code, "x")
       expect(refusalLead(refusal)).not.toContain("@fucory")
