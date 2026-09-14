@@ -531,6 +531,18 @@ const proxyCloud = async (
    * (or an empty rest) is refused, and the constructed origin must be the
    * upstream's, or the request never leaves this process.
    */
+  /*
+   * KNOWN GAP, recorded 2026-09-13: this proxy and `proxyIdentity` call a bare
+   * `fetch` with no `AbortSignal`, so neither has a deadline and this host has
+   * no 504 leg at all — nothing corresponds to the Worker's `upstream_timeout`
+   * (apps/server/src/Responses.ts `upstreamUnreachable`, whose UpstreamTimeout
+   * branch this host cannot reach). An upstream that hangs hangs the request.
+   * Neither proxy applies `upstreamProse`/`upstreamFailureMessage` either, so
+   * a refusing upstream's body streams through verbatim and a router's plain
+   * 404 or an HTML error page can reach a reader. Both are fixed together by
+   * giving these two a deadline and restating a failure in this host's own
+   * envelope, the way apps/server/src/proxies.ts does.
+   */
   const upstreamOrigin = new URL(upstream).origin
   const rest = url.pathname.slice(CLOUD_ROUTE_PREFIX.length)
   if (rest === "" || rest.startsWith("/") || rest.includes("\\")) {

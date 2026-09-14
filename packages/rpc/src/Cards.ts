@@ -5,6 +5,7 @@
  */
 import { z } from "zod"
 import { PLUE_FAULTS } from "./PlueFailureCodes.ts"
+import { REFUSAL_ORIGINS } from "./Refusal.ts"
 import { StatusRollupSchema } from "./Health.ts"
 import { AgentRoleIdSchema, AgentRoleModelSchema } from "./AgentRoles.ts"
 import {
@@ -443,8 +444,13 @@ export const SessionRefusalSchema = z.object({
    * landed carry none; `refusalFromStored` re-derives it from the code.
    */
   fault: z.enum(PLUE_FAULTS).optional(),
-  /** Which party refused: plue, the Worker in front of it, or this app's own transport. */
-  origin: z.enum(["plue", "worker", "client"]).optional()
+  /**
+   * Which party refused: plue, the Cloudflare Worker in front of it, the
+   * desktop app's own native host, or nothing at all because no answer came
+   * back. Read back from the closed set in @smthrs/rpc/Refusal so the schema
+   * and the union cannot drift.
+   */
+  origin: z.enum(REFUSAL_ORIGINS).optional()
 })
 /**
  * The decoded value accepted by {@link SessionRefusalSchema}.

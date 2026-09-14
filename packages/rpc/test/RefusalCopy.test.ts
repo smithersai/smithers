@@ -1,15 +1,18 @@
 import { describe, expect, test } from "vitest"
 import { PLUE_FAILURES, PLUE_FAULTS } from "../src/PlueFailureCodes"
 import type { PlueFailureCode } from "../src/PlueFailureCodes"
-import { clientRefusal, refusalOf } from "../src/Refusal"
+import { clientRefusal, refusalOf, workerRefusal } from "../src/Refusal"
 import {
   agentRefusalText,
   INFRA_NOT_YOUR_FAULT,
+  NOTHING_ANSWERED,
   REFUSAL_COPY,
   refusalCopy,
   refusalDoors,
   refusalLead
 } from "../src/RefusalCopy"
+import { WORKER_FAILURE_CODES } from "../src/WorkerFailureCodes"
+import type { WorkerFailureCode } from "../src/WorkerFailureCodes"
 
 /** A refusal exactly as plue answers for this code, through its own registry row. */
 const forCode = (code: PlueFailureCode, message = "plue's own words") =>
@@ -68,8 +71,85 @@ describe("the infra line", () => {
     }
   })
 
-  test("a client-side fetch failure gets it too — nothing judged the request, so it was not the user", () => {
-    expect(refusalLead(clientRefusal(new Error("Load failed")))).toBe(INFRA_NOT_YOUR_FAULT)
+  /*
+   * The line says one thing — our fleet is full and somebody has to buy more.
+   * A fetch that never got an answer is `infra` by fault, because nobody
+   * judged the request, but it is not that failure and we are in no position
+   * to claim it is: nothing answered, so nothing is known about the fleet.
+   */
+  test("does NOT appear for a fetch nothing answered — that is the connection, and we cannot see our own fleet from there", () => {
+    const refusal = clientRefusal(new Error("Load failed"))
+    expect(refusal.fault).toBe("infra")
+    const lead = refusalLead(refusal)
+    expect(lead).toBe(NOTHING_ANSWERED)
+    expect(lead).not.toBe(INFRA_NOT_YOUR_FAULT)
+    expect(lead).not.toContain("@fucory")
+    expect(lead).not.toContain("ran out")
+    /* Still says plainly that it was not the reader, and still offers the way on. */
+    expect(lead).toContain("not something you did")
+    expect(refusalDoors(refusal)).toEqual(["retry"])
+    /* And there is nothing to report to us: we were never reached. */
+    expect(refusalDoors(refusal)).not.toContain("report")
+  })
+
+  test("the model is corrected too: it must not claim we ran out when nothing answered", () => {
+    const text = agentRefusalText(clientRefusal(new Error("Load failed")))
+    expect(text).toContain("origin=client")
+    expect(text).toContain("fault=infra")
+    expect(text).toContain("Do NOT say Smithers ran out of infra")
+    expect(text).not.toContain("@fucory")
+    expect(text).toContain("worth trying again")
+  })
+})
+
+/*
+ * The desktop app's own host answers the same `/api/cloud/*` routes the Worker
+ * does, under the same codes. Only the noun in the sentence differs, and
+ * "this deployment" is wrong for a program on the reader's own laptop.
+ */
+describe("a refusal the native host wrote", () => {
+  const local = (code: WorkerFailureCode, message: string) => workerRefusal(code, message, { origin: "local" })
+
+  test("is told apart from the Worker's, which is the point of widening origin", () => {
+    expect(local("seam_not_configured", "x").origin).toBe("local")
+    expect(workerRefusal("seam_not_configured", "x").origin).toBe("worker")
+  })
+
+  test("never talks about a deployment, or about whoever deployed it", () => {
+    for (const code of ["deployment_not_configured", "seam_not_configured"] as const) {
+      const lead = refusalLead(local(code, "x"))
+      expect(lead).toContain("This build")
+      expect(lead).not.toContain("deployment")
+      expect(lead).not.toContain("deployed")
+      expect(lead).not.toContain("@fucory")
+      expect(lead).toContain("Not your fault")
+      const agent = agentRefusalText(local(code, "x"))
+      expect(agent).toContain("origin=local")
+      expect(agent).toContain("do NOT say Smithers ran out of infra")
+      /* Told in as many words not to send the reader after a deployment that does not exist. */
+      expect(agent).toMatch(/never tell them to contact whoever deployed it|do not refer to a deployment/u)
+    }
+  })
+
+  test("keeps the Worker's wording for every code that has no local rewording", () => {
+    for (const code of WORKER_FAILURE_CODES) {
+      if (code === "deployment_not_configured" || code === "seam_not_configured") continue
+      expect(refusalLead(local(code, "x"))).toBe(refusalLead(workerRefusal(code, "x")))
+    }
+  })
+
+  test("is read back off the wire from the origin it states, not guessed from its code", () => {
+    const refusal = refusalOf({
+      body: { status: "error", code: "feature_unavailable_here", origin: "local" },
+      status: 501,
+      message: "The cloud seam is disabled in this build."
+    })
+    expect(refusal.origin).toBe("local")
+    /* An origin nobody states, or one outside the closed set, still reads as the Worker's. */
+    expect(refusalOf({ body: { code: "feature_unavailable_here" }, status: 501, message: "x" }).origin).toBe("worker")
+    expect(
+      refusalOf({ body: { code: "feature_unavailable_here", origin: "somewhere" }, status: 501, message: "x" }).origin
+    ).toBe("worker")
   })
 })
 

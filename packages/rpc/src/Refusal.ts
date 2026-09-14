@@ -50,12 +50,28 @@ export type RefusalCode = PlueFailureCode | WorkerFailureCode
  * - `plue` the platform itself, by a code this build knows.
  * - `worker` the Cloudflare Worker in front of it — its own auth, routing or
  *   envelope, or an upstream refusal it could not attribute.
- * - `client` this app: the request never left, or no response came back.
+ * - `local` the native host inside the desktop app (apps/app/src/bun): a real
+ *   HTTP origin on 127.0.0.1 that serves the same `/api/cloud/*` routes the
+ *   Worker does. It is NOT the Worker, and in a desktop build there is no
+ *   Worker at all, so calling its refusals `worker` named a machine that was
+ *   not running — and the copy for a `worker` refusal says "this deployment",
+ *   which is the wrong noun for a program on the reader's own laptop.
+ * - `client` no server of any kind answered: the request never left the page,
+ *   or nothing came back. The distinction from `local` is whether an answer
+ *   exists at all, not whose machine it came from.
  *
  * @since 1.0.0
  * @category models
  */
-export type RefusalOrigin = "plue" | "worker" | "client"
+export const REFUSAL_ORIGINS = ["plue", "worker", "local", "client"] as const
+
+/**
+ * Who refused.
+ *
+ * @since 1.0.0
+ * @category models
+ */
+export type RefusalOrigin = (typeof REFUSAL_ORIGINS)[number]
 
 /**
  * Every way a request can be refused, in one shape.
@@ -85,6 +101,7 @@ export interface Refusal {
 }
 
 const FAULTS: ReadonlySet<string> = new Set(PLUE_FAULTS)
+const ORIGINS: ReadonlySet<string> = new Set(REFUSAL_ORIGINS)
 
 /**
  * The one reviewed ingress for a code that arrived as a string, mirroring plue's own ParseCode.
@@ -205,6 +222,15 @@ export const refusalOf = (input: RefusalInput): Refusal => {
   const fault = stated !== null && FAULTS.has(stated)
     ? stated as PlueFault
     : entry?.fault ?? faultOfStatus(input.status)
+  /*
+   * A refuser that knows it is not the Worker says so, the same way plue
+   * states its fault. The desktop app's own host serves the Worker's routes in
+   * the Worker's envelope, and only it can tell us the answer came from
+   * 127.0.0.1 rather than from a deployment — the code and the status are
+   * identical either way. Validated against the closed set; anything else is
+   * read from the code as before.
+   */
+  const claimed = textOf(record.origin)
   return {
     code,
     rawCode,
@@ -213,7 +239,11 @@ export const refusalOf = (input: RefusalInput): Refusal => {
     /* The header wins, then the body plue now always writes. What this response said, and nothing inferred. */
     retryAfter: input.retryAfterSeconds ?? secondsOf(record.retry_after) ?? null,
     status: input.status,
-    origin: isWorkerFailureCode(code) || code === null ? "worker" : "plue"
+    origin: claimed !== null && ORIGINS.has(claimed)
+      ? claimed as RefusalOrigin
+      : isWorkerFailureCode(code) || code === null
+      ? "worker"
+      : "plue"
   }
 }
 
@@ -223,21 +253,27 @@ export const refusalOf = (input: RefusalInput): Refusal => {
  * The status and the fault come from the table rather than from the caller, so
  * a route and its code can never disagree about either. This is the
  * constructor the Worker's own `refuse` mirrors and the one a test uses to say
- * "this is what that code looks like once it has reached the app".
+ * "this is what that code looks like once it has reached the app". The desktop
+ * app's native host writes the same vocabulary on the routes it shares with
+ * the Worker, so `origin` says which of the two answered.
  *
  * @since 1.0.0
  * @category constants
  */
-export const workerRefusal = (code: WorkerFailureCode, message: string, retryAfterSeconds?: number | null): Refusal => {
+export const workerRefusal = (
+  code: WorkerFailureCode,
+  message: string,
+  options?: { readonly retryAfterSeconds?: number | null; readonly origin?: "worker" | "local" }
+): Refusal => {
   const entry = WORKER_FAILURES[code]
   return {
     code,
     rawCode: code,
     fault: entry.fault,
     message,
-    retryAfter: secondsOf(retryAfterSeconds) ?? (entry.retryAfter > 0 ? entry.retryAfter : null),
+    retryAfter: secondsOf(options?.retryAfterSeconds) ?? (entry.retryAfter > 0 ? entry.retryAfter : null),
     status: entry.status,
-    origin: "worker"
+    origin: options?.origin ?? "worker"
   }
 }
 

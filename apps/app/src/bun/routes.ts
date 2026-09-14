@@ -45,12 +45,21 @@ export const jsonError = (status: number, code: string, message: string): Respon
  * disabled in this build" read as `fault: bug`, which is a claim about
  * Smithers being broken rather than about this build not having the seam.
  *
- * So on the routes the Worker also serves, this host answers in the Worker's
- * shape and vocabulary. `jsonError` above stays the local envelope for the
- * routes only this host has; those are a third vocabulary and still untyped.
+ * `origin: "local"` is the other half. The code and the status are identical
+ * whichever host answered, so only the answer itself can say which one did —
+ * and a desktop build has no Worker running at all, while the copy for a
+ * `worker` refusal says "this deployment", which is the wrong noun for a
+ * program on the reader's own laptop.
+ *
+ * `jsonError` above stays the local envelope for the routes only this host
+ * has. Those are a THIRD vocabulary, still untyped, and several of their code
+ * strings collide by spelling with plue's (`not_found`, `invalid_path`,
+ * `invalid_json`, `invalid_request`, `unsupported_media_type`,
+ * `language_server_missing`), so typing them needs the same disjointness
+ * decision WorkerFailureCodes.ts made and is its own change.
  */
 export const refuse = (code: WorkerFailureCode, message: string): Response =>
-  json({ status: "error", code, message }, WORKER_FAILURES[code].status)
+  json({ status: "error", code, message, origin: "local" }, WORKER_FAILURES[code].status)
 
 export const notImplemented = (what: string): Response =>
   jsonError(501, "not_implemented", `${what} is not implemented in this build.`)

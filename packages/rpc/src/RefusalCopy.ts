@@ -16,7 +16,8 @@
  * and `doors` is which ways out the surface offers.
  *
  * The table is keyed by fault and overridden per code, not written per code:
- * there are 95 codes and five faults, and the fault is the part a person acts
+ * there are a hundred-odd codes and five faults, and the fault is the part a
+ * person acts
  * on. `satisfies Record<PlueFault, RefusalCopyRow>` means a fault plue adds
  * has no copy until somebody writes it, which is a compile error rather than a
  * blank line in front of a user.
@@ -31,7 +32,7 @@
  */
 import type { PlueFailureCode, PlueFault } from "./PlueFailureCodes.ts"
 import { isWorkerFailureCode, refusalCode, refusalEntry } from "./Refusal.ts"
-import type { Refusal } from "./Refusal.ts"
+import type { Refusal, RefusalOrigin } from "./Refusal.ts"
 import type { WorkerFailureCode } from "./WorkerFailureCodes.ts"
 
 /**
@@ -52,6 +53,27 @@ import type { WorkerFailureCode } from "./WorkerFailureCodes.ts"
  * @category constants
  */
 export const INFRA_NOT_YOUR_FAULT = "This is not your fault — Smithers ran out of infra. Yell at @fucory to buy more."
+
+/**
+ * The line for a request nothing answered at all.
+ *
+ * This is `infra` by fault — nobody judged the request, so the reader cannot
+ * be blamed for it — but it is NOT the failure INFRA_NOT_YOUR_FAULT describes,
+ * and for a while it borrowed that sentence anyway. A fetch that dies on an
+ * offline laptop, a DNS failure or a socket hang up told the reader "Smithers
+ * ran out of infra", which is a claim about OUR capacity that we are in no
+ * position to make: nothing answered, so nothing is known about the fleet at
+ * all. The whole point of the owner's line is that the message is true about
+ * whose fault it is; a false half makes the true half worth less.
+ *
+ * What is true of every one of these, by construction: no answer came back,
+ * that is the connection rather than anything the reader did, and it is worth
+ * asking again.
+ *
+ * @since 1.0.0
+ * @category constants
+ */
+export const NOTHING_ANSWERED = "Nothing answered at all — that's the connection, not something you did. Try it again."
 
 /**
  * A way out of a refusal, offered by whichever surface is rendering it.
@@ -177,9 +199,9 @@ const BY_CODE: Partial<Record<PlueFailureCode, Partial<RefusalCopyRow>>> = {
 /**
  * What the app says about one of the Cloudflare Worker's own refusals.
  *
- * `lead` is REQUIRED here, unlike plue's sparse overrides above. plue's 95
- * codes share five faults and the fault's own sentence is usually the whole
- * truth; the Worker's refusals are the ones where it is not. Two of its codes
+ * `lead` is REQUIRED here, unlike plue's sparse overrides above. plue's codes
+ * share five faults and the fault's own sentence is usually the whole truth;
+ * the Worker's refusals are the ones where it is not. Two of its codes
  * are `infra` — `deployment_not_configured` and `seam_not_configured` — and
  * neither is the failure INFRA_NOT_YOUR_FAULT describes: nothing is full,
  * something was never wired, and telling a reader to yell for more infra would
@@ -307,12 +329,68 @@ export const WORKER_REFUSAL_COPY = {
   upstream_unreachable: { lead: "Smithers couldn't reach something it depends on.", doors: ["retry"] }
 } satisfies Record<WorkerFailureCode, WorkerRefusalCopyRow>
 
+/**
+ * The copy that depends on WHO refused rather than on what the code was.
+ *
+ * Two of the four origins need it. A `client` refusal has no code at all — no
+ * server issued one — so the fault's row is the only thing that would speak
+ * for it, and the fault's row is about our fleet. A `local` refusal is the
+ * desktop app's own host on 127.0.0.1 answering a route the Worker also
+ * serves, under the same code and the same status; the only thing that
+ * separates them is the noun in the sentence, and "this deployment" is wrong
+ * for a program on the reader's own laptop.
+ *
+ * An entry names either a whole row (`client`, which has no code to key on) or
+ * a per-code rewording (`local`). Neither `plue` nor `worker` needs one: their
+ * code tables already say everything.
+ *
+ * @since 1.0.0
+ * @category constants
+ */
+export const BY_ORIGIN: {
+  readonly client: RefusalCopyRow
+  readonly local: Partial<Record<WorkerFailureCode, WorkerRefusalCopyRow>>
+} = {
+  client: {
+    lead: NOTHING_ANSWERED,
+    agent:
+      "fault=infra origin=client: the request never reached a server at all — a dead connection, DNS, TLS, or an aborted fetch. Nothing judged it, so it is not the user's fault and not their request's. Do NOT say Smithers ran out of infra and do NOT say anything is full: nothing answered, so nothing is known about our capacity either way. Say the request did not get through, that it looks like the connection, and that it is worth trying again.",
+    /* Nothing to report to us: we were never reached, so there is nothing on our side to look at. */
+    doors: ["retry"]
+  },
+  local: {
+    /*
+     * The desktop build has no deployment and nobody "deployed" it — the app
+     * on the reader's machine is missing a piece of its own setup, and the
+     * only person who can act is the reader.
+     */
+    deployment_not_configured: {
+      lead:
+        "This build of Smithers isn't fully set up. Not your fault — the app on this machine is missing a piece of its own configuration.",
+      agent:
+        "fault=infra origin=local: the desktop app's own host is missing configuration a seam needs. Not the user's fault and not their request's, and nothing is full, so do NOT say Smithers ran out of infra. This is the build on their machine, NOT a deployment and NOT a server — never tell them to contact whoever deployed it. Do not retry it."
+    },
+    seam_not_configured: {
+      lead: "This build of Smithers doesn't carry the piece that answers this. Not your fault.",
+      agent:
+        "fault=infra origin=local: the seam this needs is absent from the desktop build on the user's machine. Not their fault and not their request's. Nothing is full, so do NOT say Smithers ran out of infra, and do not refer to a deployment or to whoever deployed it. Do not retry it."
+    }
+  }
+}
+
 /** The fault's row with a Worker code's written lead, and its overrides where it states them. */
 const workerRow = (base: RefusalCopyRow, row: WorkerRefusalCopyRow): RefusalCopyRow => ({
   lead: row.lead,
   agent: row.agent ?? base.agent,
   doors: row.doors ?? base.doors
 })
+
+/** A Worker code's row, reworded when the native host — not a deployment — is the one refusing. */
+const codeRow = (code: WorkerFailureCode, origin: RefusalOrigin): WorkerRefusalCopyRow => {
+  const written = WORKER_REFUSAL_COPY[code]
+  const local = origin === "local" ? BY_ORIGIN.local[code] : undefined
+  return local === undefined ? written : { ...written, ...local }
+}
 
 /**
  * The copy for one refusal: its fault's row, with any per-code override applied.
@@ -321,11 +399,17 @@ const workerRow = (base: RefusalCopyRow, row: WorkerRefusalCopyRow): RefusalCopy
  * @category constants
  */
 export const refusalCopy = (refusal: Refusal): RefusalCopyRow => {
+  /*
+   * Nothing answered, so there is no code and no server's verdict — only the
+   * one thing that is true of every such failure. The fault's row would speak
+   * about our fleet, which is exactly what we cannot know here.
+   */
+  if (refusal.origin === "client") return BY_ORIGIN.client
   const base = REFUSAL_COPY[refusal.fault]
   const row = refusal.code === null
     ? base
     : isWorkerFailureCode(refusal.code)
-    ? workerRow(base, WORKER_REFUSAL_COPY[refusal.code])
+    ? workerRow(base, codeRow(refusal.code, refusal.origin))
     : ((override) => override === undefined ? base : { ...base, ...override })(BY_CODE[refusal.code])
   /*
    * A 409 that named no code at all. plue always codes its refusals now, so

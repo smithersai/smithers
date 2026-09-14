@@ -1,4 +1,4 @@
-import { INFRA_NOT_YOUR_FAULT } from "@smthrs/rpc/RefusalCopy"
+import { NOTHING_ANSWERED } from "@smthrs/rpc/RefusalCopy"
 import type { StorageApi } from "@tanstack/db"
 import { describe, expect, test } from "bun:test"
 import { CardSchema } from "@smthrs/rpc/Cards"
@@ -415,7 +415,8 @@ describe("files seam — honest failures", () => {
   /*
    * A throw naming the path and the repo, and now the verdict as well: nothing
    * answered, so nobody judged the request and the reader certainly did not
-   * cause it (`clientRefusal`, @smthrs/rpc/Refusal).
+   * cause it. Never the capacity line — a socket that hung up tells us nothing
+   * about our own fleet (`NOTHING_ANSWERED`, @smthrs/rpc/RefusalCopy).
    */
   test("a network throw answers an honest string naming the path and repo, and whose fault it was", async () => {
     const { store, controller } = await freshController()
@@ -424,7 +425,7 @@ describe("files seam — honest failures", () => {
     expect(outcome.status).toBe("failed")
     if (outcome.status === "failed") {
       expect(outcome.error).toBe(
-        `Could not reach the backend to read net.txt in will/flows: socket hang up. ${INFRA_NOT_YOUR_FAULT}`
+        `Could not reach the backend to read net.txt in will/flows: socket hang up. ${NOTHING_ANSWERED}`
       )
     }
   })

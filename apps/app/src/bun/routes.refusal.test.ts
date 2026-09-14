@@ -30,6 +30,20 @@ describe("the native host on the routes the Worker also serves", () => {
     expect(refusalLead(refusal)).toBe("This build of Smithers doesn't do that.")
   })
 
+  /*
+   * A desktop build runs no Worker at all. Saying `worker` named a machine
+   * that was not running, and the Worker's own copy for a missing seam says
+   * "this deployment" — wrong for a program on the reader's laptop.
+   */
+  test("says it was the local host, not the Worker, because the code alone cannot tell them apart", async () => {
+    const refusal = await classify(refuse("seam_not_configured", "The cloud seam is disabled in this build."))
+    expect(refusal.origin).toBe("local")
+    const lead = refusalLead(refusal)
+    expect(lead).toContain("This build")
+    expect(lead).not.toContain("deployment")
+    expect(lead).not.toContain("@fucory")
+  })
+
   test("an unreachable cloud upstream is a dependency, not a bug this host committed", async () => {
     const refusal = await classify(refuse("upstream_unreachable", "cloud upstream unreachable"))
     expect(refusal.code).toBe("upstream_unreachable")

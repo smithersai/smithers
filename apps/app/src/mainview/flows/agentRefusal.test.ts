@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { agentRefusalText, INFRA_NOT_YOUR_FAULT, refusalSentence } from "@smthrs/rpc/RefusalCopy"
+import { agentRefusalText, NOTHING_ANSWERED, refusalSentence } from "@smthrs/rpc/RefusalCopy"
 import { clientRefusal, refusalOf } from "@smthrs/rpc/Refusal"
 import { agentFailureText } from "./agentTools"
 
@@ -151,7 +151,22 @@ describe("a request that never got an answer", () => {
     const text = agentFailureText(refusalSentence(clientRefusal(new Error("Load failed"))))
     expect(text).not.toBe("failed: Load failed")
     expect(text).toContain("Load failed")
-    expect(text).toContain(INFRA_NOT_YOUR_FAULT)
+    expect(text).toContain(NOTHING_ANSWERED)
+  })
+
+  /*
+   * It is `infra` by fault — nobody judged the request — but it is NOT the
+   * infra the capacity line describes, and we cannot see our own fleet from a
+   * connection that died. Claiming we ran out is a false statement about us,
+   * which is the opposite of what that line is for.
+   */
+  test("never claims we ran out of infra, because nothing answered to tell us either way", () => {
+    const text = agentRefusalText(clientRefusal(new Error("Load failed")))
+    expect(text).toContain("origin=client")
+    expect(text).not.toContain("@fucory")
+    expect(text).toContain("Do NOT say Smithers ran out of infra")
+    expect(text).toContain("worth trying again")
+    expect(NOTHING_ANSWERED).not.toContain("ran out")
   })
 
   test("says it is not the user's fault, because nothing was in a position to judge them", () => {
