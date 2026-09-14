@@ -50,6 +50,18 @@ it('forwards only a signed scoped session, retains private token, bounds bodies,
  const huge=await run(new Request('https://smithers.sh/api/tutorial/live/research',{method:'POST',body:'x'.repeat(4097)}))
  expect(huge.status).toBe(413)
  allowed=false
- expect((await run(request())).status).toBe(429)
- expect(calls.length).toBe(2)
+ const capped=await run(request())
+ expect(capped.status).toBe(429)
+ expect(capped.headers.get('retry-after')).not.toBeNull()
+ const refusal=await capped.json() as {message:string}
+ expect(refusal.message).toContain('from this network')
+ expect(refusal.message).not.toContain('Sign in')
+ // Finishing an existing verified result costs no additional model call.
+ const change=await run(new Request('https://smithers.sh/api/tutorial/live/change',{method:'POST',headers:{cookie:cookie.split(';')[0]!},body:JSON.stringify({playthrough:0,idempotencyKey:'change',commitIds:['verified-commit']})}))
+ expect(change.status).toBe(200)
+ expect(calls[2]!.url.replace('/change','/research')).toBe(calls[0]!.url)
+ expect(JSON.parse(calls[2]!.init!.body as string).commitIds).toEqual(['verified-commit'])
+ const unscopedChange=await run(new Request('https://smithers.sh/api/tutorial/live/change',{method:'POST',body:JSON.stringify({playthrough:0,idempotencyKey:'unscoped'})}))
+ expect(unscopedChange.status).toBe(401)
+ expect(calls.length).toBe(3)
 })
