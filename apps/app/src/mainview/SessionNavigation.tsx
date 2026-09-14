@@ -3,7 +3,7 @@ import { useLiveQuery } from "@tanstack/react-db"
 import { useController } from "./ControllerContext"
 import { WORDMARK } from "./Wordmark"
 import { bindPressActions } from "./runtime/PressActions"
-import { vimFocusAction } from "./runtime/VimNavigation"
+import { KeyboardNavigation } from "./KeyboardNavigation"
 import { GUIDE_KEYS } from "./onboarding/GuideButton"
 import { ChromeBar } from "./tabs/ChromeBar"
 import { toastActionShortcut } from "./ToastAction"
@@ -50,13 +50,13 @@ export function SessionNavigation() {
         if (key === GUIDE_KEYS.chat) return action(toggleChat)
         if (key === GUIDE_KEYS.mode) return action(() => root.querySelector<HTMLButtonElement>('[aria-haspopup="menu"][aria-keyshortcuts="m"]')?.click())
         if (sidebarShortcut(event)) return action(() => controller.runCommand('sidebar.toggle'))
-        if (controller.store.session().inputMode === 'vim') return vimFocusAction(root, key)
       },
     })
 
   }, [controller])
   return <>
-    <header className="session-navigation" ref={mount} data-sidebar-open={open}>
+    {sessions[0]?.inputMode === "vim" && <KeyboardNavigation />}
+    <header className="session-navigation" data-keyboard-pane="Navigation" ref={mount} data-sidebar-open={open}>
       <button type="button" className="guide-wordmark" aria-label="Smithers" aria-expanded={open} aria-controls={open ? "session-sidebar" : undefined} aria-keyshortcuts="W" data-flow="sidebar.toggle" onClick={() => controller.runCommand("sidebar.toggle")}><Mark /></button>
       <div className="session-identity">
         {identity?.state === "signed-in" ?
@@ -64,6 +64,6 @@ export function SessionNavigation() {
           controller.commands.find("auth.sign-in") !== undefined && <button type="button" className="chrome-action" data-testid="chrome-sign-in" data-flow="auth.sign-in" onClick={() => controller.runCommand("auth.sign-in")}>Sign in with GitHub</button>}
       </div>
     </header>
-    {open && <div id="session-sidebar" className="session-sidebar"><ChromeBar identityInHeader /></div>}
+    {open && <div id="session-sidebar" className="session-sidebar" data-keyboard-pane="Sidebar"><ChromeBar identityInHeader /></div>}
   </>
 }

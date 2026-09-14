@@ -68,7 +68,7 @@ export function WorldSurface({ documents }: { readonly documents: ReadonlyArray<
   const notes = useMemo(() => documents.map((document) => ({ path: document.path, label: document.title })), [documents])
 
   return (
-    <section className="world-surface embedded-pane" aria-label={`Smithers ${WIKI_DISPLAY_NAME} state`}>
+    <section data-keyboard-pane="Wiki" className="world-surface embedded-pane" aria-label={`Smithers ${WIKI_DISPLAY_NAME} state`}>
       <SurfaceHeader
         icon={<BookOpen size={17} aria-hidden="true" />}
         title={WIKI_DISPLAY_NAME}

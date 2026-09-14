@@ -1,0 +1,50 @@
+[data-keyboard-active] {
+  outline: 2px solid var(--g-accent, var(--brand, #9449bc));
+  outline-offset: -2px;
+}
+[data-vim-mode="normal"], [data-vim-mode="visual"] {
+  caret-shape: block;
+  caret-color: var(--brand, #9449bc);
+}
+.keyboard-hints, .keyboard-pane-number {
+  position: fixed;
+  z-index: 10000;
+  color: var(--g-ink, var(--text, #403f53));
+  background: var(--g-panel, var(--surface, #fefefe));
+  border: 1px solid var(--g-line, var(--border, #d8d5df));
+  border-radius: 6px;
+  box-shadow: 0 3px 12px #0002;
+  font: 11px/1.6 var(--font-mono, monospace);
+  pointer-events: none;
+}
+.keyboard-hints {
+  top: calc(var(--g-strip, 48px) + 8px);
+  right: 12px;
+  max-width: min(440px, calc(100vw - 24px));
+  padding: 6px 10px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 12px;
+}
+.keyboard-hints[data-prefix="off"] { opacity: .95; }
+.keyboard-hints:not([data-prefix="off"]) { display: grid; }
+.keyboard-hints strong { font-weight: 600; }
+.keyboard-hints kbd, .keyboard-pane-number kbd { font: inherit; font-weight: 600; }
+.keyboard-pane-number { padding: 4px 8px; }
+.keyboard-pane-number kbd { font-size: 18px; margin-right: 4px; color: var(--g-accent, var(--brand, #9449bc)); }
+.keyboard-pane-choice { display: inline-block; margin-right: 12px; }
+
+/* Vim users can leave a buffer without dismissing it. Keep the workspace visible and reachable. */
+.guide-shell[data-input-mode="vim"][data-conversation-open="true"] .guide-composer-dock {
+  inset: auto 0 0;
+  width: auto;
+  height: 40dvh;
+  padding: 12px 16px;
+  background: var(--g-bg);
+  backdrop-filter: none;
+  border-top: 1px solid var(--g-line);
+  align-items: stretch;
+}
+.guide-shell[data-input-mode="vim"][data-conversation-open="true"] { padding-bottom: 40dvh; box-sizing: border-box; }
+.guide-shell[data-input-mode="vim"] .guide-composer-dock .guide-composer-clip { overflow-y: auto; }
+.vim-markdown-buffer { width: 100%; min-height: 300px; height: 100%; resize: vertical; padding: 12px; color: inherit; background: var(--surface); font: 13px/1.6 var(--font-mono, monospace); border: 1px solid var(--border); }

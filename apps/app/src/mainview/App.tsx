@@ -402,7 +402,7 @@ function App() {
    * guide's bottom Chat dock; GuideShell projects the same chat messages above it.
    */
   const composerWrap = (
-    <div className="composer-wrap" ref={composerWrapRef} hidden={composerHost === null || (composerHost === undefined && session.paletteOpen !== true)}>
+    <div className="composer-wrap" data-keyboard-pane="Chat input" ref={composerWrapRef} hidden={composerHost === null || (composerHost === undefined && session.paletteOpen !== true)}>
       <Composer
         minimal
         typing={typing}
@@ -581,7 +581,7 @@ function App() {
             null}
 
           <div className="sui-chat-transcript smithers-transcript" data-slot="chat-transcript"
-            data-testid="transcript" role="log" aria-label="Conversation" aria-busy={typing}>
+            data-testid="transcript" data-keyboard-pane="Conversation" role="log" aria-label="Conversation" aria-busy={typing}>
           <MessageScrollerProvider key={`${conversationTabId ?? "main"}:${session.activeRepoKey ?? ""}`} scrollAnchor="bottom"
             initialMessageId={initialReadId}
             readAnchor={{ messageId: showingArrival ? initialReadId! : latestReadId ?? "",
@@ -640,7 +640,7 @@ function App() {
 
       {/* Terminal, harness, and card tabs; hidden while inactive, never unmounted. */}
       <TabBodies />
-      {composerHost === undefined && <footer className="app-chat-controls" aria-label="Chat controls">
+      {composerHost === undefined && <footer data-keyboard-pane="Chat controls" className="app-chat-controls" aria-label="Chat controls">
         <GuideButton data-flow="tut" onClick={() => controller.runCommand("tut")}>Replay introduction</GuideButton>
         <GuideButton shortcut={GUIDE_KEYS.chat} data-flow="chat.open" onClick={() => {
           controller.runCommand("chat.open")

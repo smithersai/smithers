@@ -28,7 +28,7 @@ export function PluginsSurface() {
   /* What the shelf actually added here: the loader's own answer, recomputed each render. */
   const { surface, problem } = loadedApp(installed, (name) => controller.commands.find(name) !== undefined)
   return (
-    <section className="plugins-surface embedded-pane" aria-label="Plugins on your workspace">
+    <section data-keyboard-pane="Plugins" className="plugins-surface embedded-pane" aria-label="Plugins on your workspace">
       <SurfaceHeader
         icon={<Library size={17} aria-hidden="true" />}
         title="Library"

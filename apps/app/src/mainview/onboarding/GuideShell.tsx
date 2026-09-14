@@ -23,7 +23,6 @@ import "./guide.css"
 
 import { bindPressActions, type PressAction } from "../runtime/PressActions"
 import { InputModeMenu } from "../InputModeMenu"
-import { vimFocusAction } from "../runtime/VimNavigation"
 import { GuideButton, GUIDE_KEYS } from "./GuideButton"
 import { GuideComposerHost } from "./GuideComposerHost"
 import { chatEntryIds, guideTranscriptEntries, InTutorial, tutorialTranscript } from "./transcriptScope"
@@ -282,15 +281,8 @@ export function GuideShell({ children, clock = guideClock }: { children: ReactNo
       }
       if (event.metaKey || event.ctrlKey || event.altKey || event.shiftKey) return
       if (key === 'escape' && conversationOpen) return action(runCommandClose)
-      if (key === 'escape' && session.inputMode === 'vim' && (event.target as Element | null)?.closest?.('input,textarea,select,[contenteditable]')) {
-        return action(() => document.querySelector<HTMLElement>('.guide-shell')?.focus())
-      }
       if (key === GUIDE_KEYS.mode) return action(() => document.querySelector<HTMLButtonElement>('.guide-shell [aria-haspopup="menu"][aria-keyshortcuts="m"]')?.click())
       if (key === GUIDE_KEYS.chat) return action(() => conversationOpen ? runCommandClose() : runCommandOpen())
-      if (session.inputMode === 'vim' && ['h', 'j', 'k', 'l'].includes(key)) {
-        const root = document.querySelector<HTMLElement>(conversationOpen ? '.guide-composer-layer' : '.guide-shell')
-        return root ? vimFocusAction(root, key) : undefined
-      }
       if (key === 'w') return action(() => controller.runCommand('sidebar.toggle'))
       if (conversationOpen) return
       const lessonAction = lesson?.kind === 'do'
@@ -359,6 +351,7 @@ export function GuideShell({ children, clock = guideClock }: { children: ReactNo
         .map((command) => command.name)
         .join(" ")}
       data-conversation-open={conversationOpen}
+      data-input-mode={session.inputMode}
       data-step={stage}
       data-stage={stage}
       data-theme={sessions[0]?.theme ?? "light"}
@@ -395,7 +388,7 @@ export function GuideShell({ children, clock = guideClock }: { children: ReactNo
         }
       }}
     >
-      <div className="guide-content" ref={bindInputs} inert={conversationOpen || undefined}>
+      <div className="guide-content" ref={bindInputs} inert={conversationOpen && session.inputMode !== "vim" || undefined}>
       {/*
         * The workspace is behind the tutorial chrome (guide.css): while a lesson
         * is running it is not reachable, so it leaves the a11y tree and the tab
@@ -418,7 +411,7 @@ export function GuideShell({ children, clock = guideClock }: { children: ReactNo
       <main className="guide-main">
         <section className="guide-lesson" aria-label={`Lesson ${stage}`}>
           {stage > 0 && stage < GUIDE_LAST_STEP && (
-            <nav className="guide-navigation" aria-label="Lesson navigation">
+            <nav data-keyboard-pane="Lesson navigation" className="guide-navigation" aria-label="Lesson navigation">
               {stage > 1 && <GuideButton shortcut={GUIDE_KEYS.back} data-flow="onboarding.act" onClick={() => runCommandGuide("back")}>
                 Back
               </GuideButton>}
@@ -455,6 +448,7 @@ export function GuideShell({ children, clock = guideClock }: { children: ReactNo
           )}
           <div
             className="guide-transcript"
+            data-keyboard-pane="Tutorial"
             role="log"
             aria-label="Onboarding chat history"
             aria-live="polite"
@@ -579,18 +573,22 @@ export function GuideShell({ children, clock = guideClock }: { children: ReactNo
           className="guide-composer-dock"
           role="dialog"
           aria-label="Chat"
-          aria-modal="true"
+          aria-modal={session.inputMode !== "vim"}
           ref={node => {
             if (!node) return
+            const modal = session.inputMode !== "vim"
+            if (node.open && node.dataset.modal !== String(modal)) node.close()
+            node.dataset.modal = String(modal)
             if (conversationOpen && !node.open) {
-              node.showModal()
+              if (modal) node.showModal()
+              else node.show()
               node.querySelector<HTMLTextAreaElement>('textarea')?.focus()
             }
             else if (!conversationOpen && node.open) node.close()
             // The composer is a portal: React events follow App's ancestry,
             // so the modal boundary must listen on its actual DOM ancestor.
             const tab = (event: KeyboardEvent) => {
-              if (event.key !== "Tab" || event.defaultPrevented) return
+              if (!modal || event.key !== "Tab" || event.defaultPrevented) return
               const controls = [...node.querySelectorAll<HTMLElement>('button, input, textarea, select, a[href], [tabindex]')]
                 .filter(control => control.tabIndex >= 0 && !control.matches(':disabled') && !control.closest('[hidden], [inert], [aria-hidden="true"]'))
               const first = controls[0], last = controls.at(-1)
@@ -643,7 +641,7 @@ export function GuideShell({ children, clock = guideClock }: { children: ReactNo
         {conversationOpen && notifications}
         </dialog>
       {/* The footer is the shell's last row; the palette overlay floats above it. */}
-      <footer className="guide-footer" inert={conversationOpen || undefined}>
+      <footer data-keyboard-pane="Tutorial controls" className="guide-footer" inert={conversationOpen && session.inputMode !== "vim" || undefined}>
         <GuideButton
           data-flow="onboarding.act"
           onClick={runCommandSound}

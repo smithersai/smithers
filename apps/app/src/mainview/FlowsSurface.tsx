@@ -44,7 +44,7 @@ export function FlowsSurface({ cards }: { readonly cards: ReadonlyArray<Card> })
   const runCommand = (name: string, commandArgs?: string) => controller.runCommand(name, commandArgs)
 
   return (
-    <section className="flows-surface embedded-pane" aria-label="Flows on your workspace">
+    <section data-keyboard-pane="Flows" className="flows-surface embedded-pane" aria-label="Flows on your workspace">
       <SurfaceHeader
         icon={<Workflow size={17} aria-hidden="true" />}
         title="Flows"

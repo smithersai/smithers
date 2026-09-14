@@ -71,7 +71,7 @@ export function DevtoolsPanel() {
   // The ring as rows: the controller's serialized read is for the human who types /debug.net.
   const netEntries = controller.netTapEntries()
   return (
-    <aside className="devtools-panel" aria-label="Dev tools">
+    <aside data-keyboard-pane="Dev tools" className="devtools-panel" aria-label="Dev tools">
       <SurfaceHeader
         icon={<Sparkles size={17} aria-hidden="true" />}
         title="Dev tools"

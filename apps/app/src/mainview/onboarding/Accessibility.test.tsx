@@ -176,7 +176,11 @@ test('practice issue has one projection and wordmark references only an existing
   const comment = fields[0] as HTMLTextAreaElement
   comment.focus()
   await press('Escape', comment)
-  expect(document.activeElement?.className).toBe('guide-shell')
+  expect(document.activeElement).toBe(comment)
+  expect(comment.getAttribute('data-vim-mode')).toBe('normal')
+  await press('m', comment)
+  expect(host.querySelector('[role="menu"]')).toBeNull()
+  comment.blur()
   await press('m')
   expect(host.querySelector('[role="menu"]')).not.toBeNull()
 })

@@ -172,7 +172,7 @@ export function ConnectorsSurface() {
   }
 
   return (
-    <section className="connectors-surface embedded-pane" aria-label="Smithers connectors">
+    <section data-keyboard-pane="Connectors" className="connectors-surface embedded-pane" aria-label="Smithers connectors">
       <SurfaceHeader
         icon={<Plug size={17} />}
         title="Connectors"

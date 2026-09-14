@@ -37,6 +37,7 @@ export function TabBodies() {
           <div
             key={tab.id}
             className="tab-body"
+            data-keyboard-pane={tab.title}
             data-kind={tab.kind}
             data-testid={`tab-body-${tab.id}`}
             hidden={tab.id !== activeTabId}

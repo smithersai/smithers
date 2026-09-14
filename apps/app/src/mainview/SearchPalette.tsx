@@ -204,7 +204,14 @@ export function PaletteOverlay({ id, answer, rows, highlighted, slashBranch, onH
   const refusal = answer.refusal ?? (parsed.mode === "flows" && rows.rows.length === 0 && /^\S+$/.test(parsed.query)
     ? `There is no /${parsed.query} flow. Type / to see everything Smithers can do.` : undefined)
   return (
-    <div id={listboxId} className="slash-menu" role="listbox" aria-label="Search palette" data-branch={slashBranch} data-mode={parsed.mode} data-testid="palette">
+    <div id={listboxId} className="slash-menu" data-keyboard-pane="Search results" role="listbox" aria-label="Search palette" data-branch={slashBranch} data-mode={parsed.mode} data-testid="palette" onKeyDown={event => {
+      if (event.metaKey || event.ctrlKey || event.altKey || event.isDefaultPrevented()) return
+      const options = [...event.currentTarget.querySelectorAll<HTMLButtonElement>('[role="option"]')]
+      const current = options.indexOf(event.target as HTMLButtonElement)
+      const delta = event.key === 'ArrowDown' || event.key === 'j' ? 1 : event.key === 'ArrowUp' || event.key === 'k' ? -1 : 0
+      const next = event.key === 'Home' ? 0 : event.key === 'End' ? options.length - 1 : delta ? Math.max(0, Math.min(options.length - 1, current + delta)) : undefined
+      if (next !== undefined) { event.preventDefault(); options[next]?.focus(); onHighlight(next) }
+    }}>
       {showHead ? (
         <div className="palette-head">
           <span className="palette-chip" data-testid="palette-chip">{rows.actionsFor === undefined ? chip : "actions"}</span>
