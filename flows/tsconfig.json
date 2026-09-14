@@ -29,7 +29,7 @@
     "test/**/*.ts",
     "PACKAGE.ts",
     "wiki/**/*.ts",
-    "librarian/**/flow.ts",
+    "librarian/**/*.ts",
     "librarian/tutorial2-background_flows-registration.ts",
     "coding/**/*.ts"
   ]

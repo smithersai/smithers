@@ -38,8 +38,12 @@ export const generateHistory = async (root: string, repo: string): Promise<Histo
 export const CreateHistory = Action.make("librarian/create-history", { payload: Executable.Invocation, success: HistoryReceipt, error: Schema.String })
 export const History = Flow.make("librarian/CreateHistory", { payload: Executable.Invocation, success: HistoryReceipt, error: Schema.String,
   body: input => CreateHistory.call(input) })
-export const registration = (root: string) => Layer.mergeAll(
-  CreateHistory.toLayer(({ input }) => Effect.tryPromise({ try: async () => generateHistory(root, Schema.decodeUnknownSync(Input)(input).repo), catch: cause => String(cause) })),
+export const registration = (root: string, owningRepo?: string) => Layer.mergeAll(
+  CreateHistory.toLayer(({ input }) => Effect.tryPromise({ try: async () => {
+      const { repo } = Schema.decodeUnknownSync(Input)(input)
+      if (owningRepo !== undefined && repo !== owningRepo) throw new Error("The requested repository does not own this workspace.")
+      return generateHistory(root, repo)
+    }, catch: cause => String(cause) })),
   Interpreter.layer(History)
 ).pipe(Layer.provideMerge(Action.layerImplementations))
 
