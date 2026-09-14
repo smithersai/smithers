@@ -166,26 +166,26 @@ export const registerRepoTargetRoutes = (
     if ("error" in parsed) return parsed.error
     const body = RepoOpenRequestSchema.safeParse(parsed.body)
     if (!body.success) {
-      return jsonError(400, "invalid_request", "Body must contain exactly one repository authorization.")
+      return jsonError("invalid_request", "Body must contain exactly one repository authorization.")
     }
     let path: string
     let access: RepositoryAccess
     if ("authorizationId" in body.data) {
       const grant = options.authority.claim(body.data.authorizationId)
       if (grant === undefined) {
-        return jsonError(403, "repository_authorization_invalid", "The repository authorization is invalid or expired. Choose the folder again.")
+        return jsonError("repository_authorization_invalid", "The repository authorization is invalid or expired. Choose the folder again.")
       }
       path = grant.path
       access = grant.access
     } else {
       if (options.allowManualRepositoryPaths !== true) {
-        return jsonError(403, "manual_repository_paths_disabled", "Choose repositories through the native folder picker.")
+        return jsonError("manual_repository_paths_disabled", "Choose repositories through the native folder picker.")
       }
       path = body.data.path
       access = "read-write"
     }
     const result = await repos.open(path)
-    if (result.status === "error") return jsonError(400, result.code, result.message)
+    if (result.status === "error") return jsonError(result.code, result.message)
     repoAccess.set(result.repo.id, access)
     if (access === "read") await revoke(result.repo.id)
     await remember(repoAccess)
@@ -235,30 +235,30 @@ export const registerRepoTargetRoutes = (
     const parsed = await readJson(request)
     if ("error" in parsed) return parsed.error
     const body = RepoFilesRequestSchema.safeParse(parsed.body)
-    if (!body.success) return jsonError(400, "invalid_request", "Body must be { repoId, path? }.")
+    if (!body.success) return jsonError("invalid_request", "Body must be { repoId, path? }.")
     const resolved = resolveRepo(body.data.repoId, "read")
     if (resolved.status !== "ok") {
       return resolved.status === "not-found"
-        ? jsonError(404, "repo_not_found", `No open repository with id ${body.data.repoId}.`)
-        : jsonError(403, "repository_read_denied", "This repository was not opened with read access.")
+        ? jsonError("repo_not_found", `No open repository with id ${body.data.repoId}.`)
+        : jsonError("repository_read_denied", "This repository was not opened with read access.")
     }
     const answer = await readRepoPath(resolved.path, body.data.path ?? "")
-    return answer.status === "ok" ? json(answer.body) : jsonError(answer.http, answer.code, answer.message)
+    return answer.status === "ok" ? json(answer.body) : jsonError(answer.code, answer.message)
   })
 
   router.add("POST", "/api/repo/access", ({ request }) => change(async () => {
     const parsed = await readJson(request)
     if ("error" in parsed) return parsed.error
     const body = z.object({ repoId: z.string().min(1), access: z.literal("read") }).strict().safeParse(parsed.body)
-    if (!body.success) return jsonError(400, "invalid_request", "Body must be { repoId, access: 'read' }.")
+    if (!body.success) return jsonError("invalid_request", "Body must be { repoId, access: 'read' }.")
     const { repoId } = body.data
-    if (repos.get(repoId) === undefined) return jsonError(404, "repo_not_found", `No open repository with id ${repoId}.`)
+    if (repos.get(repoId) === undefined) return jsonError("repo_not_found", `No open repository with id ${repoId}.`)
     repoAccess.set(repoId, "read")
     await revoke(repoId)
     try {
       await remember(repoAccess, true)
     } catch {
-      return jsonError(500, "repository_access_not_saved", "Read-only access could not be saved. Retry before quitting.")
+      return jsonError("repository_access_not_saved", "Read-only access could not be saved. Retry before quitting.")
     }
     return json({ ok: true })
   }))
@@ -267,8 +267,8 @@ export const registerRepoTargetRoutes = (
     const parsed = await readJson(request)
     if ("error" in parsed) return parsed.error
     const repoId = stringField(parsed.body, "repoId")
-    if (repoId === undefined) return jsonError(400, "invalid_request", "Body must be { repoId }.")
-    if (repos.get(repoId) === undefined) return jsonError(404, "repo_not_found", `No open repository with id ${repoId}.`)
+    if (repoId === undefined) return jsonError("invalid_request", "Body must be { repoId }.")
+    if (repos.get(repoId) === undefined) return jsonError("repo_not_found", `No open repository with id ${repoId}.`)
     repoAccess.delete(repoId)
     await revoke(repoId)
     await options.onRepoClosed?.(repoId)
@@ -276,7 +276,7 @@ export const registerRepoTargetRoutes = (
       // Keep a denied row on failure so the renderer can resolve and retry it.
       await remember(repoAccess, true, repoId)
     } catch {
-      return jsonError(500, "repository_access_not_saved", "The disconnection could not be saved. Retry before quitting.")
+      return jsonError("repository_access_not_saved", "The disconnection could not be saved. Retry before quitting.")
     }
     repos.close(repoId)
     return json({ ok: true })
@@ -286,9 +286,9 @@ export const registerRepoTargetRoutes = (
     const parsed = await readJson(request)
     if ("error" in parsed) return parsed.error
     const repoId = stringField(parsed.body, "repoId")
-    if (repoId === undefined) return jsonError(400, "invalid_request", "Body must be { repoId }.")
+    if (repoId === undefined) return jsonError("invalid_request", "Body must be { repoId }.")
     const repo = repos.get(repoId)
-    if (repo === undefined) return jsonError(404, "repo_not_found", `No open repository with id ${repoId}.`)
+    if (repo === undefined) return jsonError("repo_not_found", `No open repository with id ${repoId}.`)
     const result = await queryTargets({
       repo: repo.path,
       workspaces: repo.smithers.workspaces,
@@ -322,21 +322,21 @@ export const registerRepoTargetRoutes = (
     if (repoId !== undefined && targetId === undefined && stringField(parsed.body, "verb") !== undefined) {
       const pattern = PatternRunRequestSchema.safeParse(parsed.body)
       if (!pattern.success) {
-        return jsonError(400, "invalid_request", "A pattern run is { repoId, verb, pattern, workspace? } with a CLI verb and a `//dir/...` pattern or label.")
+        return jsonError("invalid_request", "A pattern run is { repoId, verb, pattern, workspace? } with a CLI verb and a `//dir/...` pattern or label.")
       }
       const repo = repos.get(repoId)
-      if (repo === undefined) return jsonError(404, "repo_not_found", `No open repository with id ${repoId}.`)
+      if (repo === undefined) return jsonError("repo_not_found", `No open repository with id ${repoId}.`)
       if (resolveRepo(repoId, "read-write").status !== "ok") {
-        return jsonError(403, "repository_read_only", "Running a target requires read-write repository access.")
+        return jsonError("repository_read_only", "Running a target requires read-write repository access.")
       }
       const workspace = pattern.data.workspace ?? "."
       if (!repo.smithers.workspaces.some((entry) => entry.path === workspace)) {
-        return jsonError(409, "target_stale", "That target workspace is not open.")
+        return jsonError("target_stale", "That target workspace is not open.")
       }
       const node = await options.node
-      if (node === null) return jsonError(503, "node_missing", "No Node.js >= 22.19 was found for the smithers-build CLI.")
+      if (node === null) return jsonError("node_missing", "No Node.js >= 22.19 was found for the smithers-build CLI.")
       if (resolveRepo(repoId, "read-write").status !== "ok" || accessEpoch.get(repoId) !== epoch) {
-        return jsonError(403, "repository_read_only", "Repository access changed before execution.")
+        return jsonError("repository_read_only", "Repository access changed before execution.")
       }
       let run
       try {
@@ -350,7 +350,7 @@ export const registerRepoTargetRoutes = (
           node
         })
       } catch (error) {
-        if (error instanceof TargetRunCapacityError) return jsonError(429, error.code, error.message)
+        if (error instanceof TargetRunCapacityError) return jsonError(error.code, error.message)
         throw error
       }
       try {
@@ -363,24 +363,24 @@ export const registerRepoTargetRoutes = (
       return json({ runId: run.runId })
     }
     if (repoId === undefined || targetId === undefined) {
-      return jsonError(400, "invalid_request", "Body must be { repoId, targetId } or { repoId, verb, pattern }.")
+      return jsonError("invalid_request", "Body must be { repoId, targetId } or { repoId, verb, pattern }.")
     }
     const repo = repos.get(repoId)
-    if (repo === undefined) return jsonError(404, "repo_not_found", `No open repository with id ${repoId}.`)
+    if (repo === undefined) return jsonError("repo_not_found", `No open repository with id ${repoId}.`)
     if (resolveRepo(repoId, "read-write").status !== "ok") {
-      return jsonError(403, "repository_read_only", "Running a target requires read-write repository access.")
+      return jsonError("repository_read_only", "Running a target requires read-write repository access.")
     }
     const grant = targetGrants.get(repoId)?.get(targetId)
     if (grant === undefined) {
-      return jsonError(404, "target_not_found", "That target is not in the current repository target snapshot.")
+      return jsonError("target_not_found", "That target is not in the current repository target snapshot.")
     }
     const workspace = grant.workspace
     if (!repo.smithers.workspaces.some((entry) => entry.path === workspace)) {
       targetGrants.get(repoId)?.delete(targetId)
-      return jsonError(409, "target_stale", "That target workspace is no longer open.")
+      return jsonError("target_stale", "That target workspace is no longer open.")
     }
     const node = await options.node
-    if (node === null) return jsonError(503, "node_missing", "No Node.js >= 22.19 was found for the smithers-build CLI.")
+    if (node === null) return jsonError("node_missing", "No Node.js >= 22.19 was found for the smithers-build CLI.")
     const graphOptions = {
       repoId,
       repo: workspaceCwd(repo.path, workspace),
@@ -405,7 +405,6 @@ export const registerRepoTargetRoutes = (
         const reason = scoped instanceof Error ? scoped.message : String(scoped)
         options.log?.(`target-run ${grant.label} unavailable: ${reason}`)
         return jsonError(
-          503,
           "target_graph_unavailable",
           `The target graph could not be revalidated before execution: ${reason}`
         )
@@ -413,10 +412,10 @@ export const registerRepoTargetRoutes = (
     }
     if (!graph.nodes.some((candidate) => candidate.label === grant.label)) {
       targetGrants.get(repoId)?.delete(targetId)
-      return jsonError(409, "target_stale", "That target is no longer declared by the repository.")
+      return jsonError("target_stale", "That target is no longer declared by the repository.")
     }
     if (resolveRepo(repoId, "read-write").status !== "ok" || accessEpoch.get(repoId) !== epoch) {
-      return jsonError(403, "repository_read_only", "Repository access changed before execution.")
+      return jsonError("repository_read_only", "Repository access changed before execution.")
     }
     let run
     try {
@@ -431,7 +430,7 @@ export const registerRepoTargetRoutes = (
       })
     } catch (error) {
       if (error instanceof TargetRunCapacityError) {
-        return jsonError(429, error.code, error.message)
+        return jsonError(error.code, error.message)
       }
       throw error
     }
@@ -449,8 +448,8 @@ export const registerRepoTargetRoutes = (
     const parsed = await readJson(request)
     if ("error" in parsed) return parsed.error
     const runId = stringField(parsed.body, "runId")
-    if (runId === undefined) return jsonError(400, "invalid_request", "Body must be { runId }.")
-    if (runner.get(runId) === undefined) return jsonError(404, "run_not_found", `No target run with id ${runId}.`)
+    if (runId === undefined) return jsonError("invalid_request", "Body must be { runId }.")
+    if (runner.get(runId) === undefined) return jsonError("run_not_found", `No target run with id ${runId}.`)
     const ok = await runner.cancel(runId)
     await history.flush()
     return json({ ok })

@@ -3,6 +3,12 @@ import * as Option from "effect/Option"
 import * as Result from "effect/Result"
 import { browserFetchResponseBody } from "@smthrs/rpc/BrowserFetch"
 import { CLOUD_ROUTE_PREFIX } from "@smthrs/rpc/LocalApp"
+/*
+ * The machine-readable half of an upstream refusal, shared with the desktop
+ * app's native host (@smthrs/rpc/UpstreamProse): both hosts restate the same
+ * upstreams for the same reader, so the two keep one rule.
+ */
+import { machineReadableRefusal } from "@smthrs/rpc/UpstreamProse"
 import { CLIENT_ERROR_UNKNOWN_SOURCE, ClientErrors } from "./clientErrorLog"
 import { ServerConfig } from "./Config"
 import { BrowserEgress } from "./Environment"
@@ -95,34 +101,6 @@ const platformFailureMessage = (status: number, body: string): string => {
   if (status === 429) return "Smithers Cloud is rate-limiting this account right now. Try again in a minute."
   if (status >= 500) return `Smithers Cloud is having trouble right now (HTTP ${status}).`
   return `Smithers Cloud refused that request (HTTP ${status}).`
-}
-
-/**
- * The parts of an upstream refusal that are NOT prose, kept when the body is
- * restated. `code` names WHICH refusal this is — `no_capacity` (the fleet is
- * full, nobody's fault) reads nothing like `quota_exceeded` (this account is
- * at its own cap), and a client that only gets a sentence cannot tell them
- * apart without matching on English. `retry_after` says when to come back.
- * Both are facts a caller acts on and neither can be re-derived from a
- * message, so they pass through as they arrived. Only these two fields, and
- * only at their documented types: a pass-through of known facts, never of the
- * upstream's body.
- */
-const machineReadableRefusal = (body: string): { readonly code?: string; readonly retry_after?: number } => {
-  let parsed: unknown
-  try {
-    parsed = JSON.parse(body)
-  } catch {
-    return {}
-  }
-  if (typeof parsed !== "object" || parsed === null) return {}
-  const record = parsed as { code?: unknown; retry_after?: unknown }
-  return {
-    ...(typeof record.code === "string" && record.code.trim() !== "" ? { code: record.code.trim().slice(0, 64) } : {}),
-    ...(typeof record.retry_after === "number" && Number.isFinite(record.retry_after)
-      ? { retry_after: record.retry_after }
-      : {})
-  }
 }
 
 export const platformProxyMatch = (pathname: string, method: string): boolean =>

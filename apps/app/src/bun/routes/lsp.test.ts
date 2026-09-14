@@ -106,7 +106,11 @@ describe("/api/lsp refusals that never reach a server", () => {
     expect(((await unknown.json()) as { error: { code: string } }).error.code).toBe("repo_not_found")
     const unsupported = await post(LSP_DIAGNOSTICS_PATH, { repoId, path: "README.md" })
     expect(unsupported.status).toBe(400)
-    expect(await unsupported.json()).toEqual({ error: { code: "language_unsupported", message: "No language server handles .md files." } })
+    expect(await unsupported.json()).toMatchObject({
+      error: { code: "language_unsupported", message: "No language server handles .md files." },
+      code: "native_language_unsupported",
+      origin: "local"
+    })
     const notJson = await post(LSP_HOVER_PATH, "{", { headers: { "content-type": "text/plain" } })
     expect(notJson.status).toBe(415)
   })

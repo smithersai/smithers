@@ -1,4 +1,5 @@
 import * as Effect from "effect/Effect"
+import { upstreamProse } from "@smthrs/rpc/UpstreamProse"
 import { WORKER_FAILURES } from "@smthrs/rpc/WorkerFailureCodes"
 import type { WorkerFailureCode } from "@smthrs/rpc/WorkerFailureCodes"
 import type { BodyFailure, UpstreamFailure } from "./Failures"
@@ -167,26 +168,12 @@ export const causeMessage = (cause: unknown): string => (cause instanceof Error 
  * page, a Go router's `404 page not found`, and a provider's error envelope
  * are never handed to a reader. Only a `message`/`error` string — a field an
  * upstream fills with a sentence — survives.
+ *
+ * The rule itself lives in @smthrs/rpc/UpstreamProse, because the desktop
+ * app's native host proxies the same upstreams to the same reader and two
+ * copies of this decision would be two rules.
  */
-export const upstreamProse = (body: string): string | undefined => {
-  const text = body.trim()
-  if (text === "" || text.startsWith("<")) return undefined
-  let parsed: unknown
-  try {
-    parsed = JSON.parse(text)
-  } catch {
-    return undefined
-  }
-  if (typeof parsed !== "object" || parsed === null) return undefined
-  const record = parsed as { message?: unknown; error?: unknown }
-  const nested = typeof record.error === "object" && record.error !== null
-    ? (record.error as { message?: unknown }).message
-    : record.error
-  const prose = [record.message, nested].find(
-    (value): value is string => typeof value === "string" && value.trim() !== ""
-  )
-  return prose === undefined ? undefined : prose.trim().slice(0, 200)
-}
+export { upstreamProse }
 
 /**
  * One sentence a reader can act on for an upstream that refused. The status is

@@ -294,26 +294,23 @@ export const registerAgentRoutes = (router: Router, options: AgentRoutesOptions)
     if ("error" in parsed) return parsed.error
     const body = AgentPutRequestSchema.safeParse(parsed.body)
     if (!body.success) {
-      return jsonError(400, "invalid_request", `Body must be { label, purpose, harness, model: { provider, id, label } }: ${body.error.issues.map((issue) => `${issue.path.join(".")}: ${issue.message}`).join("; ")}`)
+      return jsonError("invalid_request", `Body must be { label, purpose, harness, model: { provider, id, label } }: ${body.error.issues.map((issue) => `${issue.path.join(".")}: ${issue.message}`).join("; ")}`)
     }
     const result = await store.put(params.id ?? "", body.data)
-    if (result.status === "error") {
-      const status = result.code === "unknown_harness" ? 404 : result.code === "builtin_harness_fixed" ? 409 : 400
-      return jsonError(status, result.code, result.message)
-    }
+    if (result.status === "error") return jsonError(result.code, result.message)
     return json({ agent: result.agent }, result.status === "created" ? 201 : 200)
   })
 
   router.add("DELETE", `${AGENTS_PATH}/:id`, async ({ params }) => {
     const result = await store.remove(params.id ?? "")
-    if (result.status === "error") return jsonError(result.code === "not_found" ? 404 : 409, result.code, result.message)
+    if (result.status === "error") return jsonError(result.code, result.message)
     return json({ ok: true })
   })
 
   router.add("GET", "/api/harnesses/:id/models", async ({ params }) => {
     const id = params.id ?? ""
     const harness = (await options.harnesses()).find((candidate) => candidate.id === id)
-    if (harness === undefined) return jsonError(404, "unknown_harness", `There is no harness with id ${id}. Harnesses: ${HARNESS_IDS.join(", ")}.`)
+    if (harness === undefined) return jsonError("unknown_harness", `There is no harness with id ${id}. Harnesses: ${HARNESS_IDS.join(", ")}.`)
     return json(await listHarnessModels(harness, spawn))
   })
 

@@ -20,14 +20,14 @@ import {
   LspFileRequestSchema,
   LspPositionRequestSchema
 } from "@smthrs/rpc/LocalApp"
-import type { LspDefinitionResponse, LspDiagnosticsResponse, LspErrorResponse, LspHoverResponse, LspServersResponse } from "@smthrs/rpc/LocalApp"
+import type { LspDefinitionResponse, LspDiagnosticsResponse, LspHoverResponse, LspServersResponse } from "@smthrs/rpc/LocalApp"
 import { extname } from "node:path"
 import type { z } from "zod"
 import { serverFor } from "../lsp/LanguageServers"
 import type { LspHost } from "../lsp/LspHost"
 import { LspRequestError } from "../lsp/LspSession"
 import type { LspSession } from "../lsp/LspSession"
-import { json, jsonError } from "../routes"
+import { json, jsonError, jsonErrorWithStatus } from "../routes"
 import type { Router } from "../routes"
 import type { PtyRepositoryResolver } from "./pty"
 
@@ -38,7 +38,7 @@ export interface LspRouteHost {
 /** `resolveRepo` here is the read-access resolver (`repoTargets.resolveRepo(id, "read")`). */
 export type LspRepositoryResolver = PtyRepositoryResolver
 
-const bodyTooLarge = (): Response => jsonError(413, "body_too_large", `Code-intel requests are capped at ${LSP_REQUEST_BODY_CAP_BYTES} bytes.`)
+const bodyTooLarge = (): Response => jsonError("body_too_large", `Code-intel requests are capped at ${LSP_REQUEST_BODY_CAP_BYTES} bytes.`)
 
 /** The JSON body under the cap, or the refusal to answer as-is. */
 const readBounded = async (request: Request): Promise<{ readonly body: unknown } | { readonly error: Response }> => {
@@ -46,14 +46,14 @@ const readBounded = async (request: Request): Promise<{ readonly body: unknown }
   if (declared > LSP_REQUEST_BODY_CAP_BYTES) return { error: bodyTooLarge() }
   const mediaType = request.headers.get("content-type")?.split(";", 1)[0]?.trim().toLowerCase()
   if (mediaType !== "application/json") {
-    return { error: jsonError(415, "unsupported_media_type", "Request body must use application/json.") }
+    return { error: jsonError("unsupported_media_type", "Request body must use application/json.") }
   }
   const bytes = new Uint8Array(await request.arrayBuffer())
   if (bytes.byteLength > LSP_REQUEST_BODY_CAP_BYTES) return { error: bodyTooLarge() }
   try {
     return { body: JSON.parse(new TextDecoder().decode(bytes)) as unknown }
   } catch {
-    return { error: jsonError(400, "invalid_json", "Request body must be valid JSON.") }
+    return { error: jsonError("invalid_json", "Request body must be valid JSON.") }
   }
 }
 
@@ -70,32 +70,34 @@ export const registerLspRoutes = (host: LspRouteHost, lsp: LspHost, repositories
     const parsed = await readBounded(request)
     if ("error" in parsed) return parsed.error
     const body = schema.safeParse(parsed.body)
-    if (!body.success) return jsonError(400, "invalid_request", `Body must be ${shape}.`)
+    if (!body.success) return jsonError("invalid_request", `Body must be ${shape}.`)
     const resolved = repositories.resolveRepo(body.data.repoId)
     if (resolved.status !== "ok") {
       return resolved.status === "not-found"
-        ? jsonError(404, "repo_not_found", `No open repository with id ${body.data.repoId}.`)
-        : jsonError(403, "repository_read_denied", "This repository was not opened with read access.")
+        ? jsonError("repo_not_found", `No open repository with id ${body.data.repoId}.`)
+        : jsonError("repository_read_denied", "This repository was not opened with read access.")
     }
     const session = await lsp.session(body.data.repoId, resolved.path, body.data.path)
     if (session.status === "unsupported") {
       const extension = extname(body.data.path)
-      return jsonError(400, "language_unsupported", `No language server handles ${extension === "" ? "this file" : `${extension} files`}.`)
+      return jsonError("language_unsupported", `No language server handles ${extension === "" ? "this file" : `${extension} files`}.`)
     }
     if (session.status === "missing") {
-      const refusal: LspErrorResponse = {
-        error: {
-          code: LSP_LANGUAGE_SERVER_MISSING,
-          message: `No ${serverFor(session.language).displayName} language server on this machine.`,
-          install: session.install
-        }
-      }
-      return json(refusal, 409)
+      // The install line rides inside `error` beside the code, where the
+      // card reads it (LspErrorResponseSchema); nothing installs it.
+      return jsonError(
+        LSP_LANGUAGE_SERVER_MISSING,
+        `No ${serverFor(session.language).displayName} language server on this machine.`,
+        { install: session.install }
+      )
     }
     try {
       return await run(session.session, body.data)
     } catch (error) {
-      if (error instanceof LspRequestError) return jsonError(error.http, error.code, error.message)
+      // The language server's own failure chose this status (a cancelled
+      // acquisition answers 503 where an exited server answers 502), so it is
+      // evidence rather than the route's choice.
+      if (error instanceof LspRequestError) return jsonErrorWithStatus(error.http, error.code, error.message)
       throw error
     }
   }

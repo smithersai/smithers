@@ -66,6 +66,7 @@ import { binDirOf, createPtyManager } from "./Pty"
 import type { PtyManager } from "./Pty"
 import { createRepositoryAuthority } from "./RepositoryAuthority"
 import type { RepositoryAuthority } from "./RepositoryAuthority"
+import { machineReadableRefusal, upstreamRefusalMessage } from "@smthrs/rpc/UpstreamProse"
 import { decodePath, invalidPath, json, jsonError, readJson, refuse, Router } from "./routes"
 import type { RouteHandler } from "./routes"
 import { registerAgentRoutes } from "./routes/agents"
@@ -87,6 +88,14 @@ export const DEFAULT_CHAT_ORIGIN = "https://canary.smithers.sh"
 export const DEFAULT_IDENTITY_UPSTREAM = "https://canary.smithers.sh"
 /** The Smithers Cloud API `/api/cloud/*` forwards to (SMITHERS_CLOUD_API overrides). */
 export const DEFAULT_CLOUD_API = "https://api.jjhub.tech"
+/**
+ * How long an upstream has to answer with HEADERS before this host gives up,
+ * in milliseconds. The Worker's own default for the same upstreams
+ * (apps/server/src/Http.ts DEFAULT_UPSTREAM_TIMEOUT_MS), so a request that
+ * times out on one host times out on the other; ProxyDeadline.test.ts pins
+ * that the two agree.
+ */
+export const DEFAULT_UPSTREAM_TIMEOUT_MS = 20_000
 export const APP_VERSION = "0.0.1"
 /** Where the SPA posts uncaught errors; the client half is state/ClientErrors.ts. */
 export const CLIENT_ERRORS_PATH = "/api/client-errors"
@@ -154,6 +163,12 @@ export interface LocalServerOptions {
    * disables it either way.
    */
   readonly cloudApi?: string | null
+  /**
+   * How long an upstream has to send HEADERS before this host gives up on it,
+   * in milliseconds. Bounds the wait for headers only, so a streaming answer
+   * is never cut off mid-body. Defaults to DEFAULT_UPSTREAM_TIMEOUT_MS.
+   */
+  readonly upstreamTimeoutMs?: number
   /** Test/replay override for the Cloud sign-in manager; the default stores in the OS keychain. */
   readonly cloudAuth?: CloudAuth
   /** Test override for the keychain behind the default Cloud sign-in manager. */
@@ -434,7 +449,9 @@ export const trailPath = (pathname: string): string => pathname.replace(/(\/line
 const stubIdentity = (pathname: string): Response =>
   pathname === AUTH_SESSION_PATH
     ? json({ status: "signed-out" })
-    : jsonError(501, "not_implemented", "The identity seam is stubbed in this build.")
+    // The identity routes are the Worker's too, so this refusal speaks the
+    // Worker's vocabulary with `origin: "local"`, like every other shared site.
+    : refuse("feature_unavailable_here", "The identity seam is stubbed in this build.")
 
 /*
  * Re-scope an upstream Set-Cookie to this origin. The identity seam serves
@@ -457,6 +474,106 @@ export const describeCookie = (cookie: string): string => {
     .join("; ")
 }
 
+/** The seams this host forwards to, named in the sentence a reader gets when one refuses. */
+const IDENTITY_SEAM = "The Smithers identity service"
+const CLOUD_SEAM = "Smithers Cloud"
+
+/** What one forwarded request came back as: an answer, or the two ways it did not. */
+type UpstreamAnswer =
+  | { readonly response: Response }
+  | { readonly failure: "timeout" }
+  | { readonly failure: "unreachable"; readonly cause: unknown }
+
+type UpstreamFailure = Extract<UpstreamAnswer, { failure: string }>
+
+/**
+ * `fetch` under a deadline: the Worker's `fetchWithDeadline`
+ * (apps/server/src/Http.ts) on this host.
+ *
+ * The timer covers the HEADERS only. Once the upstream has answered it is
+ * cleared, so a streaming body is never cut off mid-flight. The caller's own
+ * signal travels with it, so a renderer that goes away aborts the socket
+ * instead of leaking it.
+ */
+const fetchWithDeadline = async (
+  target: URL,
+  init: RequestInit,
+  timeoutMs: number,
+  incoming?: AbortSignal
+): Promise<UpstreamAnswer> => {
+  const deadline = new AbortController()
+  const timer = setTimeout(() => deadline.abort(), timeoutMs)
+  try {
+    const response = await fetch(target, {
+      ...init,
+      signal: incoming === undefined ? deadline.signal : AbortSignal.any([incoming, deadline.signal])
+    })
+    return { response }
+  } catch (error) {
+    return deadline.signal.aborted ? { failure: "timeout" } : { failure: "unreachable", cause: error }
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
+/**
+ * The refusal a forwarded request earns when nothing answered it, in the two
+ * codes the Worker uses for the same two events. `upstream_timeout` is the leg
+ * this host had no way to reach before it had a deadline at all.
+ */
+const upstreamRefusal = (seam: string, failure: UpstreamFailure, timeoutMs: number): Response =>
+  failure.failure === "timeout"
+    ? refuse("upstream_timeout", `${seam} did not answer within ${timeoutMs}ms. Try again in a moment.`)
+    : refuse(
+      "upstream_unreachable",
+      `${seam} is unreachable right now: ${failure.cause instanceof Error ? failure.cause.message : "unknown error"}`
+    )
+
+/**
+ * A request a PERSON is looking at in a browser, rather than a seam's fetch.
+ *
+ * The native sign-in handoff opens `/api/auth/sign-in?handoff=…` on THIS
+ * origin in the system browser, and the upstream answers a failed navigation
+ * with a branded page written for a reader (apps/server/src/identity.ts).
+ * Restating that as JSON would leave a blob of it in a browser window, so a
+ * document navigation keeps whatever the upstream wrote; every seam's fetch —
+ * which is what renders refusals into the transcript — is restated.
+ */
+const wantsPage = (request: Request): boolean => {
+  const accept = request.headers.get("accept") ?? ""
+  return accept.includes("text/html") && !accept.includes("application/json")
+}
+
+/**
+ * An upstream refusal restated in this host's own envelope, the way
+ * apps/server/src/proxies.ts restates one.
+ *
+ * A failure's PROSE never passes through: the upstream's body is written for
+ * its own callers and the product renders whatever comes back straight to the
+ * reader, so a router's plain `404 page not found` or an HTML error page
+ * reached the transcript verbatim. The machine-readable facts beside the prose
+ * — `code`, `retry_after` and the `Retry-After` header — are kept, because
+ * they are what a client acts on and the code is what names WHICH refusal this
+ * is. The status stays the upstream's, and a Set-Cookie it sent still travels,
+ * re-scoped: a refusal may still be clearing a session.
+ */
+const restateUpstreamFailure = async (
+  seam: string,
+  response: Response,
+  cookies: ReadonlyArray<string>
+): Promise<Response> => {
+  const detail = await response.text().catch(() => "")
+  const restated = json({
+    status: "error",
+    message: upstreamRefusalMessage(seam, response.status, detail),
+    ...machineReadableRefusal(detail)
+  }, response.status)
+  const retryAfter = response.headers.get("retry-after")
+  if (retryAfter !== null) restated.headers.set("retry-after", retryAfter)
+  for (const cookie of cookies) restated.headers.append("set-cookie", cookie)
+  return restated
+}
+
 /**
  * Forwards an identity request to the deployed seam. The upstream refuses
  * cross-origin writes, so the Origin header follows the upstream (the same
@@ -467,6 +584,7 @@ const proxyIdentity = async (
   request: Request,
   url: URL,
   upstream: string,
+  timeoutMs: number,
   log?: (line: string) => void
 ): Promise<Response> => {
   const target = new URL(url.pathname + url.search, upstream)
@@ -476,24 +594,21 @@ const proxyIdentity = async (
   headers.delete("content-length")
   // The per-launch local capability authorizes THIS origin; the seam has no use for it.
   headers.delete(LOCAL_SESSION_HEADER)
-  let response: Response
-  try {
-    response = await fetch(target, {
-      method: request.method,
-      headers,
-      body: request.method === "GET" || request.method === "HEAD" ? undefined : await request.arrayBuffer(),
-      redirect: "manual"
-    })
-  } catch (error) {
-    return jsonError(502, "identity_unreachable", error instanceof Error ? error.message : "identity upstream unreachable")
-  }
+  const answer = await fetchWithDeadline(target, {
+    method: request.method,
+    headers,
+    body: request.method === "GET" || request.method === "HEAD" ? undefined : await request.arrayBuffer(),
+    redirect: "manual"
+  }, timeoutMs, request.signal)
+  if (!("response" in answer)) return upstreamRefusal(IDENTITY_SEAM, answer, timeoutMs)
+  const response = answer.response
   const out = new Headers(response.headers)
   out.delete("content-encoding")
   out.delete("content-length")
-  const cookies = response.headers.getSetCookie()
+  const cookies = response.headers.getSetCookie().map(rescopeCookie)
   if (cookies.length > 0) {
     out.delete("set-cookie")
-    for (const cookie of cookies) out.append("set-cookie", rescopeCookie(cookie))
+    for (const cookie of cookies) out.append("set-cookie", cookie)
   }
   /*
    * The native handoff's session travels ONLY as the claim's Set-Cookie. A
@@ -503,8 +618,13 @@ const proxyIdentity = async (
    * attribute the WebView refuses is the same invisible failure.
    */
   if (url.pathname === AUTH_NATIVE_CLAIM_PATH && log !== undefined) {
-    const shape = cookies.map((cookie) => describeCookie(rescopeCookie(cookie))).join(" | ")
+    const shape = cookies.map((cookie) => describeCookie(cookie)).join(" | ")
     log(`${AUTH_NATIVE_CLAIM_PATH} -> ${response.status}, set-cookie ${cookies.length > 0 ? `present: ${shape}` : "absent"}`)
+  }
+  // A refusal is restated in this host's envelope; only a page a person
+  // navigated to keeps the upstream's own body (wantsPage).
+  if (response.status >= 400 && !wantsPage(request)) {
+    return restateUpstreamFailure(IDENTITY_SEAM, response, cookies)
   }
   return new Response(response.body, { status: response.status, headers: out })
 }
@@ -522,7 +642,8 @@ const proxyCloud = async (
   request: Request,
   url: URL,
   upstream: string,
-  token: string | undefined
+  token: string | undefined,
+  timeoutMs: number
 ): Promise<Response> => {
   /*
    * The path after the prefix is joined as a plain path, never as a URL:
@@ -530,18 +651,6 @@ const proxyCloud = async (
    * WHATWG parser would send the bearer to evil.example. A leading slash
    * (or an empty rest) is refused, and the constructed origin must be the
    * upstream's, or the request never leaves this process.
-   */
-  /*
-   * KNOWN GAP, recorded 2026-09-13: this proxy and `proxyIdentity` call a bare
-   * `fetch` with no `AbortSignal`, so neither has a deadline and this host has
-   * no 504 leg at all — nothing corresponds to the Worker's `upstream_timeout`
-   * (apps/server/src/Responses.ts `upstreamUnreachable`, whose UpstreamTimeout
-   * branch this host cannot reach). An upstream that hangs hangs the request.
-   * Neither proxy applies `upstreamProse`/`upstreamFailureMessage` either, so
-   * a refusing upstream's body streams through verbatim and a router's plain
-   * 404 or an HTML error page can reach a reader. Both are fixed together by
-   * giving these two a deadline and restating a failure in this host's own
-   * envelope, the way apps/server/src/proxies.ts does.
    */
   const upstreamOrigin = new URL(upstream).origin
   const rest = url.pathname.slice(CLOUD_ROUTE_PREFIX.length)
@@ -562,24 +671,24 @@ const proxyCloud = async (
   // WebView attaches it to every same-origin call; it is not the cloud API's.
   headers.delete("cookie")
   if (token !== undefined) headers.set("authorization", `Bearer ${token}`)
-  let response: Response
-  try {
-    response = await fetch(target, {
-      method: request.method,
-      headers,
-      body: request.method === "GET" || request.method === "HEAD" ? undefined : await request.arrayBuffer(),
-      redirect: "manual"
-    })
-  } catch (error) {
-    return refuse("upstream_unreachable", error instanceof Error ? error.message : "cloud upstream unreachable")
-  }
+  const answer = await fetchWithDeadline(target, {
+    method: request.method,
+    headers,
+    body: request.method === "GET" || request.method === "HEAD" ? undefined : await request.arrayBuffer(),
+    redirect: "manual"
+  }, timeoutMs, request.signal)
+  if (!("response" in answer)) return upstreamRefusal(CLOUD_SEAM, answer, timeoutMs)
+  const response = answer.response
   const out = new Headers(response.headers)
   out.delete("content-encoding")
   out.delete("content-length")
-  const cookies = response.headers.getSetCookie()
+  const cookies = response.headers.getSetCookie().map(rescopeCookie)
   if (cookies.length > 0) {
     out.delete("set-cookie")
-    for (const cookie of cookies) out.append("set-cookie", rescopeCookie(cookie))
+    for (const cookie of cookies) out.append("set-cookie", cookie)
+  }
+  if (response.status >= 400 && !wantsPage(request)) {
+    return restateUpstreamFailure(CLOUD_SEAM, response, cookies)
   }
   return new Response(response.body, { status: response.status, headers: out })
 }
@@ -592,6 +701,7 @@ export const startLocalServer = async (options: LocalServerOptions): Promise<Loc
   const distDir = resolve(options.distDir)
   const version = options.version ?? APP_VERSION
   const sandboxHost = options.sandboxHost ?? currentSandboxHost()
+  const upstreamTimeoutMs = options.upstreamTimeoutMs ?? DEFAULT_UPSTREAM_TIMEOUT_MS
   const nodeProbe: Promise<NodeSidecar | null> = options.node === undefined ? findNode() : Promise.resolve(options.node)
   const remoteEnabled = options.cloudMode === "hybrid"
   const identityUpstream = options.chatStub === true || !remoteEnabled
@@ -647,7 +757,9 @@ export const startLocalServer = async (options: LocalServerOptions): Promise<Loc
   }
   router.add("POST", "/api/tools/browser-fetch", ({ request }) => remoteEnabled
     ? handleBrowserFetch(request)
-    : jsonError(501, "not_implemented", "The browser reader is disabled in offline mode."))
+    // Shared with the Worker (apps/server/src/proxies.ts handleBrowserFetch),
+    // so it refuses in the Worker's vocabulary.
+    : refuse("feature_unavailable_here", "The browser reader is disabled in offline mode."))
 
   router.add("GET", APP_BOOTSTRAP_PATH, () => {
     const enforced = sandboxEnforced(sandboxHost)
@@ -686,17 +798,17 @@ export const startLocalServer = async (options: LocalServerOptions): Promise<Loc
     }))
 
   const handleChatTurn: RouteHandler = async ({ request }) => {
-    if (agent === undefined) return jsonError(503, "agent_unavailable", "No agent provider is configured in local-only mode.")
+    if (agent === undefined) return jsonError("agent_unavailable", "No agent provider is configured in local-only mode.")
     // Bounded by bytes received, not by a declared length: a chunked turn
     // carries no Content-Length and would otherwise be read whole.
     const parsed = await readJson(request, MAX_BODY_BYTES)
     if ("error" in parsed) return parsed.error
     if (!isStartTurnRequest(parsed.body)) {
-      return jsonError(400, "invalid_request", "Body must be { runId, messages, instructions } with optional tools and context.")
+      return jsonError("invalid_request", "Body must be { runId, messages, instructions } with optional tools and context.")
     }
     const body = parsed.body
     const runId = body.runId
-    if (writers.has(runId)) return jsonError(409, "turn_running", "That Smithers turn is already running.")
+    if (writers.has(runId)) return jsonError("turn_running", "That Smithers turn is already running.")
     // The writer exists before the agent starts, so a frame published before
     // the response stream opens is queued, never lost.
     let controller: ReadableStreamDefaultController<Uint8Array> | undefined
@@ -724,7 +836,7 @@ export const startLocalServer = async (options: LocalServerOptions): Promise<Loc
     const started = agent.start(body)
     if (started.status === "error") {
       writers.delete(runId)
-      return jsonError(409, "turn_running", started.message)
+      return jsonError("turn_running", started.message)
     }
     const stream = new ReadableStream<Uint8Array>({
       start(streamController) {
@@ -757,11 +869,11 @@ export const startLocalServer = async (options: LocalServerOptions): Promise<Loc
   router.add("POST", CHAT_TURN_PATH, handleChatTurn)
 
   const handleChatCancel: RouteHandler = async ({ request }) => {
-    if (agent === undefined) return jsonError(503, "agent_unavailable", "No agent provider is configured in local-only mode.")
+    if (agent === undefined) return jsonError("agent_unavailable", "No agent provider is configured in local-only mode.")
     const parsed = await readJson(request)
     if ("error" in parsed) return parsed.error
     const runId = typeof parsed.body === "object" && parsed.body !== null && "runId" in parsed.body ? parsed.body.runId : undefined
-    if (typeof runId !== "string" || runId === "") return jsonError(400, "invalid_request", "runId is required.")
+    if (typeof runId !== "string" || runId === "") return jsonError("invalid_request", "runId is required.")
     const result = agent.cancel(runId)
     // Cancelling aborts upstream without a frame, so the stream closes here
     // or the SPA would keep reading a response that can never complete.
@@ -779,9 +891,9 @@ export const startLocalServer = async (options: LocalServerOptions): Promise<Loc
    * stub.
    */
   router.add("POST", CLOUD_AUTH_START_PATH, async () => {
-    if (cloudAuth === undefined) return jsonError(501, "not_implemented", "The cloud seam is disabled in this build.")
+    if (cloudAuth === undefined) return jsonError("not_implemented", "The cloud seam is disabled in this build.")
     const started = await cloudAuth.start()
-    return "error" in started ? jsonError(409, "cloud_auth_unavailable", started.error) : json(started)
+    return "error" in started ? jsonError("cloud_auth_unavailable", started.error) : json(started)
   })
   router.add("GET", CLOUD_AUTH_SESSION_PATH, () =>
     cloudAuth === undefined
@@ -804,7 +916,7 @@ export const startLocalServer = async (options: LocalServerOptions): Promise<Loc
     }
   }
   router.add("POST", CLOUD_AUTH_SIGN_OUT_PATH, async () => {
-    if (cloudAuth === undefined) return jsonError(501, "not_implemented", "The cloud seam is disabled in this build.")
+    if (cloudAuth === undefined) return jsonError("not_implemented", "The cloud seam is disabled in this build.")
     await cloudAuth.signOut()
     closeCloudBridges(4401, "signed out of Smithers Cloud")
     return json({ ok: true })
@@ -821,9 +933,9 @@ export const startLocalServer = async (options: LocalServerOptions): Promise<Loc
     ? undefined
     : createLinearAuth({ origin: () => `http://127.0.0.1:${server.port}`, log })
   router.add("POST", LINEAR_AUTH_START_PATH, async () => {
-    if (linearAuth === undefined) return jsonError(501, "not_implemented", "The cloud seam is disabled in this build.")
+    if (linearAuth === undefined) return jsonError("not_implemented", "The cloud seam is disabled in this build.")
     const started = await linearAuth.start()
-    return "error" in started ? jsonError(409, "linear_auth_unavailable", started.error) : json(started)
+    return "error" in started ? jsonError("linear_auth_unavailable", started.error) : json(started)
   })
   router.add("GET", LINEAR_AUTH_SESSION_PATH, () =>
     linearAuth === undefined
@@ -835,7 +947,7 @@ export const startLocalServer = async (options: LocalServerOptions): Promise<Loc
   router.add("POST", CLIENT_ERRORS_PATH, async ({ request }) => {
     const body = new Uint8Array(await request.arrayBuffer())
     if (body.byteLength > CLIENT_ERROR_MAX_BODY) {
-      return jsonError(413, "body_too_large", `Client error reports are capped at ${CLIENT_ERROR_MAX_BODY} bytes.`)
+      return jsonError("body_too_large", `Client error reports are capped at ${CLIENT_ERROR_MAX_BODY} bytes.`)
     }
     log(`client-error: ${redactClientError(new TextDecoder().decode(body))}`)
     return json({ status: "accepted" }, 202)
@@ -870,7 +982,7 @@ export const startLocalServer = async (options: LocalServerOptions): Promise<Loc
       }
     }
     if (!existsSync(index)) {
-      return jsonError(503, "spa_missing", `No built SPA at ${distDir}. Run \`vite build\` first.`)
+      return jsonError("spa_missing", `No built SPA at ${distDir}. Run \`vite build\` first.`)
     }
     // SPA fallback: every route the page owns renders index.html. Only this
     // response receives the per-launch capability; static assets never do.
@@ -891,24 +1003,24 @@ export const startLocalServer = async (options: LocalServerOptions): Promise<Loc
     const url = new URL(request.url)
     const { pathname } = url
     if (request.headers.get("host") !== expectedHost) {
-      return jsonError(421, "invalid_host", "This local server accepts only its loopback origin.")
+      return jsonError("invalid_host", "This local server accepts only its loopback origin.")
     }
     if (pathname === "/ws") {
       const requestOrigin = request.headers.get("origin")
       if (requestOrigin !== null && requestOrigin !== origin) {
-        return jsonError(403, "invalid_origin", "WebSocket origin does not match the local app.")
+        return jsonError("invalid_origin", "WebSocket origin does not match the local app.")
       }
       const protocols = (request.headers.get("sec-websocket-protocol") ?? "")
         .split(",")
         .map((value) => value.trim())
       if (!protocols.some((protocol) => sameSecret(protocol, websocketProtocol))) {
-        return jsonError(401, "local_session_required", "The local session capability is required.")
+        return jsonError("local_session_required", "The local session capability is required.")
       }
       const upgraded = bunServer.upgrade(request, {
         data: { topics: new Set<string>() },
         headers: { "sec-websocket-protocol": websocketProtocol }
       })
-      return upgraded ? undefined : jsonError(400, "upgrade_failed", "Expected a WebSocket upgrade.")
+      return upgraded ? undefined : jsonError("upgrade_failed", "Expected a WebSocket upgrade.")
     }
     if (pathname.startsWith(CLOUD_WS_ROUTE_PREFIX)) {
       /*
@@ -922,16 +1034,16 @@ export const startLocalServer = async (options: LocalServerOptions): Promise<Loc
        */
       const requestOrigin = request.headers.get("origin")
       if (requestOrigin !== null && requestOrigin !== origin) {
-        return jsonError(403, "invalid_origin", "WebSocket origin does not match the local app.")
+        return jsonError("invalid_origin", "WebSocket origin does not match the local app.")
       }
       const protocols = (request.headers.get("sec-websocket-protocol") ?? "")
         .split(",")
         .map((value) => value.trim())
       if (!protocols.some((protocol) => sameSecret(protocol, websocketProtocol))) {
-        return jsonError(401, "local_session_required", "The local session capability is required.")
+        return jsonError("local_session_required", "The local session capability is required.")
       }
       if (cloudUpstream === null) {
-        return jsonError(501, "not_implemented", "The cloud seam is disabled in this build.")
+        return jsonError("not_implemented", "The cloud seam is disabled in this build.")
       }
       const rest = pathname.slice(CLOUD_WS_ROUTE_PREFIX.length)
       // `[^/]+` admits `.` and `..`; a segment-wise check keeps the joined target under /api/repos/ (WHATWG normalizes dot segments).
@@ -941,7 +1053,7 @@ export const startLocalServer = async (options: LocalServerOptions): Promise<Loc
         branch === null ||
         segments.some((segment) => segment === "." || segment === ".." || segment.includes("%2F") || segment.includes("%2f") || segment.includes("\\"))
       ) {
-        return jsonError(404, "not_found", "The cloud WebSocket tunnel serves only workspace terminal and lsp sessions.")
+        return jsonError("not_found", "The cloud WebSocket tunnel serves only workspace terminal and lsp sessions.")
       }
       const kind: CloudWsSessionKind = branch[1] === "lsp" ? "lsp" : "terminal"
       const upstreamWs = cloudUpstream.startsWith("https:")
@@ -949,12 +1061,12 @@ export const startLocalServer = async (options: LocalServerOptions): Promise<Loc
         : `ws:${cloudUpstream.slice("http:".length)}`
       const tunnelTarget = new URL(`/api/${rest}${url.search}`, upstreamWs)
       if (tunnelTarget.origin !== new URL(upstreamWs).origin || !tunnelTarget.pathname.startsWith("/api/repos/")) {
-        return jsonError(404, "not_found", "The cloud WebSocket tunnel serves only workspace terminal and lsp sessions.")
+        return jsonError("not_found", "The cloud WebSocket tunnel serves only workspace terminal and lsp sessions.")
       }
       // Signed out, the tunnel never dials plue: an anonymous attach would only be refused there.
       const token = cloudAuth?.token()
       if (token === undefined) {
-        return jsonError(401, "cloud_sign_in_required", "Sign in to Smithers Cloud first — /cloud.sign-in.")
+        return jsonError("cloud_sign_in_required", "Sign in to Smithers Cloud first — /cloud.sign-in.")
       }
       const upgraded = bunServer.upgrade(request, {
         data: {
@@ -970,7 +1082,7 @@ export const startLocalServer = async (options: LocalServerOptions): Promise<Loc
         },
         headers: { "sec-websocket-protocol": websocketProtocol }
       })
-      return upgraded ? undefined : jsonError(400, "upgrade_failed", "Expected a WebSocket upgrade.")
+      return upgraded ? undefined : jsonError("upgrade_failed", "Expected a WebSocket upgrade.")
     }
     if (pathname.startsWith("/api/")) {
       /*
@@ -988,11 +1100,11 @@ export const startLocalServer = async (options: LocalServerOptions): Promise<Loc
       if (linearNavigation) url.searchParams.delete("handoff")
       if (pathname !== HEALTH_PATH && !oauthNavigation && !linearNavigation) {
         if (!sameSecret(request.headers.get(LOCAL_SESSION_HEADER) ?? "", sessionToken)) {
-          return jsonError(401, "local_session_required", "The local session capability is required.")
+          return jsonError("local_session_required", "The local session capability is required.")
         }
         const requestOrigin = request.headers.get("origin")
         if (requestOrigin !== null && requestOrigin !== origin) {
-          return jsonError(403, "invalid_origin", "Request origin does not match the local app.")
+          return jsonError("invalid_origin", "Request origin does not match the local app.")
         }
       }
       const matched = router.match(request.method, pathname)
@@ -1001,17 +1113,17 @@ export const startLocalServer = async (options: LocalServerOptions): Promise<Loc
           return await matched.handler({ request, url, params: matched.params })
         } catch (error) {
           log(`${request.method} ${pathname} failed: ${error instanceof Error ? error.stack ?? error.message : String(error)}`)
-          return jsonError(500, "internal", error instanceof Error ? error.message : "Request failed.")
+          return jsonError("internal", error instanceof Error ? error.message : "Request failed.")
         }
       }
-      if (router.knows(pathname)) return jsonError(405, "method_not_allowed", `${request.method} is not allowed on ${pathname}.`)
+      if (router.knows(pathname)) return jsonError("method_not_allowed", `${request.method} is not allowed on ${pathname}.`)
       if (pathname.startsWith(CLOUD_ROUTE_PREFIX)) {
         return cloudUpstream === null
           ? refuse("feature_unavailable_here", "The cloud seam is disabled in this build.")
-          : proxyCloud(request, url, cloudUpstream, cloudAuth?.token())
+          : proxyCloud(request, url, cloudUpstream, cloudAuth?.token(), upstreamTimeoutMs)
       }
       if (pathname.startsWith(AUTH_ROUTE_PREFIX) || pathname.startsWith(IDENTITY_ROUTE_PREFIX)) {
-        return identityUpstream === null ? stubIdentity(pathname) : proxyIdentity(request, url, identityUpstream, log)
+        return identityUpstream === null ? stubIdentity(pathname) : proxyIdentity(request, url, identityUpstream, upstreamTimeoutMs, log)
       }
       /*
        * The product API. The cloud client is served BY the Worker, so every
@@ -1028,12 +1140,12 @@ export const startLocalServer = async (options: LocalServerOptions): Promise<Loc
       if (PRODUCT_PROXY_PREFIXES.some((prefix) => pathname.startsWith(prefix))) {
         return identityUpstream === null
           ? refuse("feature_unavailable_here", "Smithers Cloud is not reachable from this build (offline mode).")
-          : proxyIdentity(request, url, identityUpstream, log)
+          : proxyIdentity(request, url, identityUpstream, upstreamTimeoutMs, log)
       }
-      return jsonError(404, "not_found", `No route for ${request.method} ${pathname}.`)
+      return jsonError("not_found", `No route for ${request.method} ${pathname}.`)
     }
     if (request.method !== "GET" && request.method !== "HEAD") {
-      return jsonError(405, "method_not_allowed", `${request.method} is not allowed on ${pathname}.`)
+      return jsonError("method_not_allowed", `${request.method} is not allowed on ${pathname}.`)
     }
     return serveStatic(pathname)
   }
@@ -1062,7 +1174,7 @@ export const startLocalServer = async (options: LocalServerOptions): Promise<Loc
         return answered
       } catch (error) {
         log(`${request.method} ${trailPath(pathname)} failed: ${error instanceof Error ? error.stack ?? error.message : String(error)}`)
-        answered = jsonError(500, "internal", error instanceof Error ? error.message : "Request failed.")
+        answered = jsonError("internal", error instanceof Error ? error.message : "Request failed.")
         return answered
       } finally {
         if (answered !== undefined && (pathname === "/" || pathname.startsWith("/api/"))) {

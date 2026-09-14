@@ -154,8 +154,17 @@ describe("the local origin", () => {
     const staticPath = await fetch(`${server.origin}/%E0%A4%A`)
     expect(staticPath.status).toBe(400)
     expect(staticPath.headers.get("content-type")).toContain("application/json")
+    /*
+     * The envelope carries the refusal twice: the route's own name where this
+     * host's clients read it, and the same refusal classified in the host's
+     * namespace (@smthrs/rpc/NativeFailureCodes) for the app's one classifier.
+     */
     expect(await staticPath.json()).toEqual({
-      error: { code: "invalid_path", message: "Request path is not valid percent-encoded UTF-8." }
+      error: { code: "invalid_path", message: "Request path is not valid percent-encoded UTF-8." },
+      status: "error",
+      code: "native_invalid_path",
+      message: "Request path is not valid percent-encoded UTF-8.",
+      origin: "local"
     })
     const before = logs.length
     const routed = await apiFetch("/api/agents/%E0%A4%A", {
@@ -177,7 +186,11 @@ describe("the local origin", () => {
   test("unknown /api paths answer a JSON 404, method mismatches a 405", async () => {
     const missing = await apiFetch("/api/nope")
     expect(missing.status).toBe(404)
-    expect(await missing.json()).toEqual({ error: { code: "not_found", message: "No route for GET /api/nope." } })
+    expect(await missing.json()).toMatchObject({
+      error: { code: "not_found", message: "No route for GET /api/nope." },
+      code: "native_not_found",
+      origin: "local"
+    })
     const wrongMethod = await apiFetch("/api/health", { method: "POST" })
     expect(wrongMethod.status).toBe(405)
   })

@@ -1,3 +1,5 @@
+import { NATIVE_FAILURES, nativeWireCode } from "@smthrs/rpc/NativeFailureCodes"
+import type { NativeRouteCode } from "@smthrs/rpc/NativeFailureCodes"
 import { WORKER_FAILURES } from "@smthrs/rpc/WorkerFailureCodes"
 import type { WorkerFailureCode } from "@smthrs/rpc/WorkerFailureCodes"
 /*
@@ -30,8 +32,44 @@ export const json = (body: unknown, status = 200, headers: Record<string, string
     headers: { "content-type": "application/json", "cache-control": "no-store", ...headers }
   })
 
-export const jsonError = (status: number, code: string, message: string): Response =>
-  json({ error: { code, message } }, status)
+/**
+ * A refusal on a route only THIS host serves, in this host's own vocabulary
+ * (@smthrs/rpc/NativeFailureCodes).
+ *
+ * The body carries the refusal twice on purpose. `error: { code, message }` is
+ * the envelope LOCAL-APP.md documents and this host's clients already read —
+ * `LspClient` matches `language_server_missing` there, and the route names
+ * stay the route names. Beside it sits the SAME refusal in the one shape the
+ * app classifies (`status`, `code`, `message`, `origin`), with the code in
+ * this host's namespace: eight of these route names are spelled by plue and
+ * one by the Worker, and until they were namespaced every private-route
+ * refusal reached the app with `code: null` and its fault read off the status
+ * — `503 node_missing` ("there is no Node on this box") guessed `infra`, whose
+ * copy tells the reader Smithers ran out of infra and to ask for more.
+ *
+ * The status comes from the registry rather than from the call site, the way
+ * the Worker's `refuse` reads WORKER_FAILURES, so a route and its code cannot
+ * drift apart. `jsonErrorWithStatus` is the one exception, for a status that
+ * is evidence from somewhere else (the code-intel routes, where the language
+ * server's own failure says which).
+ */
+export const jsonError = (code: NativeRouteCode, message: string, extra?: Record<string, unknown>): Response =>
+  jsonErrorWithStatus(NATIVE_FAILURES[code].status, code, message, extra)
+
+/** The same refusal at a status the route did not choose, mirroring the Worker's `refuseWithStatus`. */
+export const jsonErrorWithStatus = (
+  status: number,
+  code: NativeRouteCode,
+  message: string,
+  extra?: Record<string, unknown>
+): Response =>
+  json({
+    error: { code, message, ...extra },
+    status: "error",
+    code: nativeWireCode(code),
+    message,
+    origin: "local"
+  }, status)
 
 /**
  * A refusal in the CLOUDFLARE WORKER'S envelope, for the routes this host and
@@ -51,22 +89,23 @@ export const jsonError = (status: number, code: string, message: string): Respon
  * `worker` refusal says "this deployment", which is the wrong noun for a
  * program on the reader's own laptop.
  *
- * `jsonError` above stays the local envelope for the routes only this host
- * has. Those are a THIRD vocabulary, still untyped, and several of their code
- * strings collide by spelling with plue's (`not_found`, `invalid_path`,
- * `invalid_json`, `invalid_request`, `unsupported_media_type`,
- * `language_server_missing`), so typing them needs the same disjointness
- * decision WorkerFailureCodes.ts made and is its own change.
+ * `jsonError` below is the envelope for the routes only this host has. Those
+ * are a THIRD vocabulary — typed in this host's own namespace
+ * (@smthrs/rpc/NativeFailureCodes), because eight of their code strings are
+ * spelled by plue (`not_found`, `invalid_path`, `invalid_json`,
+ * `invalid_request`, `unsupported_media_type`, `language_server_missing`,
+ * `not_implemented`, `internal`) and one by the Worker (`method_not_allowed`),
+ * and they do not all mean the same thing.
  */
 export const refuse = (code: WorkerFailureCode, message: string): Response =>
   json({ status: "error", code, message, origin: "local" }, WORKER_FAILURES[code].status)
 
 export const notImplemented = (what: string): Response =>
-  jsonError(501, "not_implemented", `${what} is not implemented in this build.`)
+  jsonError("not_implemented", `${what} is not implemented in this build.`)
 
 /** A path whose percent-encoding is not valid UTF-8 is the client's error, never a 500. */
 export const invalidPath = (): Response =>
-  jsonError(400, "invalid_path", "Request path is not valid percent-encoded UTF-8.")
+  jsonError("invalid_path", "Request path is not valid percent-encoded UTF-8.")
 
 /** The decoded path or segment, or undefined when its percent-encoding is malformed. */
 export const decodePath = (value: string): string | undefined => {
@@ -114,13 +153,13 @@ export const readJson = async (
   maxBytes = Number.POSITIVE_INFINITY
 ): Promise<{ readonly body: unknown } | { readonly error: Response }> => {
   const bodyTooLarge = (): { readonly error: Response } => ({
-    error: jsonError(413, "body_too_large", "Request body is too large.")
+    error: jsonError("body_too_large", "Request body is too large.")
   })
   const declared = Number(request.headers.get("content-length") ?? "0")
   if (declared > maxBytes) return bodyTooLarge()
   const mediaType = request.headers.get("content-type")?.split(";", 1)[0]?.trim().toLowerCase()
   if (mediaType !== "application/json") {
-    return { error: jsonError(415, "unsupported_media_type", "Request body must use application/json.") }
+    return { error: jsonError("unsupported_media_type", "Request body must use application/json.") }
   }
   const text = await readTextBounded(request, maxBytes)
   if (text === undefined) return bodyTooLarge()
@@ -128,7 +167,7 @@ export const readJson = async (
   try {
     return { body: JSON.parse(text) as unknown }
   } catch {
-    return { error: jsonError(400, "invalid_json", "Request body must be valid JSON.") }
+    return { error: jsonError("invalid_json", "Request body must be valid JSON.") }
   }
 }
 

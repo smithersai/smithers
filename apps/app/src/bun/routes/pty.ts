@@ -62,18 +62,18 @@ export const registerPtyRoutes = (
     if ("error" in parsed) return parsed.error
     const body = PtyCreateRequestSchema.safeParse(parsed.body)
     if (!body.success) {
-      return jsonError(400, "invalid_request", "Body must be { kind, cols, rows } with optional repoId and harnessId.")
+      return jsonError("invalid_request", "Body must be { kind, cols, rows } with optional repoId and harnessId.")
     }
     if (body.data.kind === "harness" && body.data.harnessId === undefined && body.data.roleId === undefined) {
-      return jsonError(400, "invalid_request", "A harness session needs a harnessId or a roleId.")
+      return jsonError("invalid_request", "A harness session needs a harnessId or a roleId.")
     }
     const resolved = body.data.repoId === undefined
       ? ({ status: "ok", path: "~" } as const)
       : repositories.resolveRepo(body.data.repoId)
     if (resolved.status !== "ok") {
       return resolved.status === "not-found"
-        ? jsonError(404, "repo_not_found", `No open repository with id ${body.data.repoId}.`)
-        : jsonError(403, "repository_read_only", "A terminal requires read-write repository access.")
+        ? jsonError("repo_not_found", `No open repository with id ${body.data.repoId}.`)
+        : jsonError("repository_read_only", "A terminal requires read-write repository access.")
     }
     const repoId = body.data.repoId
     const epoch = repoId === undefined ? undefined : epochs.get(repoId)
@@ -110,15 +110,11 @@ export const registerPtyRoutes = (
         done.resolve()
       }
     })()
-    if (result === undefined) return jsonError(403, "repository_read_only", "Repository access changed while starting the terminal.")
-    if (result.status === "error") {
-      const status = result.code === "spawn_failed" ? 500
-        : result.code === "manager_closed" ? 503
-        : result.code === "unknown_harness" || result.code === "unknown_role" ? 404
-        : result.code === "capacity_reached" ? 429
-        : 400
-      return jsonError(status, result.code, result.message)
-    }
+    if (result === undefined) return jsonError("repository_read_only", "Repository access changed while starting the terminal.")
+    // Each of the manager's codes names its own status in the host registry
+    // (@smthrs/rpc/NativeFailureCodes), so the route no longer keeps a second
+    // copy of that mapping to drift from it.
+    if (result.status === "error") return jsonError(result.code, result.message)
     return json({ sessionId: result.session.sessionId }, 201)
   })
 
@@ -132,10 +128,10 @@ export const registerPtyRoutes = (
     const tailParam = new URL(request.url).searchParams.get("tail")
     const tail = tailParam === null ? undefined : Number(tailParam)
     if (tail !== undefined && (!Number.isSafeInteger(tail) || tail < 0)) {
-      return jsonError(400, "invalid_request", "tail must be a non-negative safe integer.")
+      return jsonError("invalid_request", "tail must be a non-negative safe integer.")
     }
     const output = manager.read(id, tail)
-    if (output === undefined) return jsonError(404, "not_found", `No PTY session ${id}.`)
+    if (output === undefined) return jsonError("not_found", `No PTY session ${id}.`)
     return json({ sessionId: id, ...output })
   })
 
@@ -143,9 +139,9 @@ export const registerPtyRoutes = (
     const parsed = await readJson(request)
     if ("error" in parsed) return parsed.error
     const body = PtyResizeRequestSchema.safeParse(parsed.body)
-    if (!body.success) return jsonError(400, "invalid_request", "Body must be { cols, rows }.")
+    if (!body.success) return jsonError("invalid_request", "Body must be { cols, rows }.")
     const id = params.id ?? ""
-    if (manager.get(id) === undefined) return jsonError(404, "not_found", `No PTY session ${id}.`)
+    if (manager.get(id) === undefined) return jsonError("not_found", `No PTY session ${id}.`)
     return json({ ok: manager.resize(id, body.data.cols, body.data.rows) })
   })
 
@@ -153,7 +149,7 @@ export const registerPtyRoutes = (
     const id = params.id ?? ""
     const killed = await manager.kill(id)
     sessionRepos.delete(id)
-    return killed ? json({ ok: true }) : jsonError(404, "not_found", `No PTY session ${id}.`)
+    return killed ? json({ ok: true }) : jsonError("not_found", `No PTY session ${id}.`)
   })
 
   host.onMessage("pty.input", (message, socket) => {

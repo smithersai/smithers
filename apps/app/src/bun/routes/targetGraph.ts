@@ -34,13 +34,13 @@ export const registerTargetGraphRoutes = (
     const parsed = await readJson(request)
     if ("error" in parsed) return parsed.error
     const repoId = stringField(parsed.body, "repoId")
-    if (repoId === undefined) return jsonError(400, "invalid_request", "Body must be { repoId, plan?, labels? }.")
+    if (repoId === undefined) return jsonError("invalid_request", "Body must be { repoId, plan?, labels? }.")
     const repo = options.repos.get(repoId)
-    if (repo === undefined) return jsonError(404, "repo_not_found", `No open repository with id ${repoId}.`)
+    if (repo === undefined) return jsonError("repo_not_found", `No open repository with id ${repoId}.`)
     const rawLabels = field(parsed.body, "labels")
     /* Each label becomes one CLI argv element, so only a target pattern passes: `--cache-dir` would be read as a flag. */
     if (rawLabels !== undefined && (!Array.isArray(rawLabels) || rawLabels.some((label) => typeof label !== "string" || !TARGET_PATTERN.test(label)))) {
-      return jsonError(400, "invalid_request", "labels must be an array of target patterns such as //pkg:name or //pkg/....")
+      return jsonError("invalid_request", "labels must be an array of target patterns such as //pkg:name or //pkg/....")
     }
     const result = await queryTargetGraph({
       repoId,
@@ -57,9 +57,9 @@ export const registerTargetGraphRoutes = (
     const parsed = await readJson(request)
     if ("error" in parsed) return parsed.error
     const repoId = stringField(parsed.body, "repoId")
-    if (repoId === undefined) return jsonError(400, "invalid_request", "Body must be { repoId }.")
+    if (repoId === undefined) return jsonError("invalid_request", "Body must be { repoId }.")
     const repo = options.repos.get(repoId)
-    if (repo === undefined) return jsonError(404, "repo_not_found", `No open repository with id ${repoId}.`)
+    if (repo === undefined) return jsonError("repo_not_found", `No open repository with id ${repoId}.`)
     return json({ runs: await options.history.list(repoId, repo.path) })
   })
 
@@ -67,9 +67,9 @@ export const registerTargetGraphRoutes = (
     const parsed = await readJson(request)
     if ("error" in parsed) return parsed.error
     const runId = stringField(parsed.body, "runId")
-    if (runId === undefined) return jsonError(400, "invalid_request", "Body must be { runId }.")
+    if (runId === undefined) return jsonError("invalid_request", "Body must be { runId }.")
     const replay = await options.history.replay(runId, options.repos.list().map((repo) => ({ id: repo.id, path: repo.path })))
-    return replay === undefined ? jsonError(404, "run_not_found", `No target run with id ${runId}.`) : json(replay)
+    return replay === undefined ? jsonError("run_not_found", `No target run with id ${runId}.`) : json(replay)
   })
 
   server.router.add("POST", TARGET_GRAPH_ROUTES.affected, async ({ request }) => {
@@ -77,9 +77,9 @@ export const registerTargetGraphRoutes = (
     const parsed = await readJson(request)
     if ("error" in parsed) return parsed.error
     const repoId = stringField(parsed.body, "repoId")
-    if (repoId === undefined) return jsonError(400, "invalid_request", "Body must be { repoId }.")
+    if (repoId === undefined) return jsonError("invalid_request", "Body must be { repoId }.")
     const repo = options.repos.get(repoId)
-    if (repo === undefined) return jsonError(404, "repo_not_found", `No open repository with id ${repoId}.`)
+    if (repo === undefined) return jsonError("repo_not_found", `No open repository with id ${repoId}.`)
     /*
      * The declarations are rescanned here, not read off the Repo record: that
      * list is what inspectRepo saw at `/api/repo/open`, so a PACKAGE.ts
@@ -102,9 +102,9 @@ export const registerTargetGraphRoutes = (
     const parsed = await readJson(request)
     if ("error" in parsed) return parsed.error
     const repoId = stringField(parsed.body, "repoId")
-    if (repoId === undefined) return jsonError(400, "invalid_request", "Body must be { repoId }.")
+    if (repoId === undefined) return jsonError("invalid_request", "Body must be { repoId }.")
     const repo = options.repos.get(repoId)
-    if (repo === undefined) return jsonError(404, "repo_not_found", `No open repository with id ${repoId}.`)
+    if (repo === undefined) return jsonError("repo_not_found", `No open repository with id ${repoId}.`)
     const node = await options.node
     const [graph, declarationFiles] = await Promise.all([
       queryTargetGraph({ repoId, repo: repo.path, node, ...(options.cli === undefined ? {} : { cli: options.cli }) }),
@@ -125,18 +125,18 @@ export const registerTargetGraphRoutes = (
     const file = stringField(parsed.body, "file")
     const rawLine = field(parsed.body, "line")
     if (repoId === undefined || file === undefined || (rawLine !== undefined && (!Number.isInteger(rawLine) || (rawLine as number) < 1))) {
-      return jsonError(400, "invalid_request", "Body must be { repoId, file, line? } with a positive line number.")
+      return jsonError("invalid_request", "Body must be { repoId, file, line? } with a positive line number.")
     }
     const repo = options.repos.get(repoId)
-    if (repo === undefined) return jsonError(404, "repo_not_found", `No open repository with id ${repoId}.`)
+    if (repo === undefined) return jsonError("repo_not_found", `No open repository with id ${repoId}.`)
     const candidate = resolve(repo.path, file)
     const rel = relative(repo.path, candidate)
-    if (rel.startsWith("..") || isAbsolute(rel)) return jsonError(400, "invalid_source", "The declaration must be inside the open repository.")
+    if (rel.startsWith("..") || isAbsolute(rel)) return jsonError("invalid_source", "The declaration must be inside the open repository.")
     const allowed = new Set(repo.smithers.declarationFiles.map((entry) => resolve(repo.path, entry)))
     let canonical: string
-    try { canonical = await realpath(candidate) } catch { return jsonError(404, "source_not_found", `No declaration exists at ${file}.`) }
+    try { canonical = await realpath(candidate) } catch { return jsonError("source_not_found", `No declaration exists at ${file}.`) }
     if (!allowed.has(candidate) || relative(repo.path, canonical).startsWith("..")) {
-      return jsonError(400, "invalid_source", "The source must be one of the repository's declaration files.")
+      return jsonError("invalid_source", "The source must be one of the repository's declaration files.")
     }
     return json({ path: canonical, ...(rawLine === undefined ? {} : { line: rawLine as number }) })
   })

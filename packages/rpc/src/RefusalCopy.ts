@@ -31,7 +31,7 @@
  * @since 1.0.0
  */
 import type { PlueFailureCode, PlueFault } from "./PlueFailureCodes.ts"
-import { isWorkerFailureCode, refusalCode, refusalEntry } from "./Refusal.ts"
+import { isNativeFailureCode, isWorkerFailureCode, refusalCode, refusalEntry } from "./Refusal.ts"
 import type { Refusal, RefusalOrigin } from "./Refusal.ts"
 import type { WorkerFailureCode } from "./WorkerFailureCodes.ts"
 
@@ -439,10 +439,20 @@ export const refusalCopy = (refusal: Refusal): RefusalCopyRow => {
    */
   if (refusal.origin === "client") return BY_ORIGIN.client
   const base = REFUSAL_COPY[refusal.fault]
+  /*
+   * The native host's own codes take the FAULT'S row, the way plue's do and
+   * unlike the Worker's. The Worker needs a written lead per code because two
+   * of its codes are `infra` and only one of them is a full fleet; no native
+   * code is `infra` at all (NativeFailureCodes.ts), so the fault's sentence is
+   * true of every one of them and there is nothing for a per-code line to
+   * disambiguate.
+   */
   const row = refusal.code === null
     ? base
     : isWorkerFailureCode(refusal.code)
     ? workerRow(base, codeRow(refusal.code, refusal.origin))
+    : isNativeFailureCode(refusal.code)
+    ? base
     : ((override) => override === undefined ? base : { ...base, ...override })(BY_CODE[refusal.code])
   /*
    * A 409 that named no code at all. plue always codes its refusals now, so
@@ -513,9 +523,10 @@ const LEADING_CODE = /^([A-Za-z][A-Za-z0-9_]*) — /u
  * English around it. A string with no code in that position gets no note, and
  * the model is left with the sentence rather than a guess dressed as a fact.
  *
- * Both vocabularies are read: a Worker refusal ("this deployment is not
- * configured") reaches the model through exactly the same string channel as a
- * plue one, and used to arrive with no verdict at all.
+ * All three vocabularies are read: a Worker refusal ("this deployment is not
+ * configured") and a native-host one ("no Node on this box") reach the model
+ * through exactly the same string channel as a plue one, and used to arrive
+ * with no verdict at all.
  *
  * @since 1.0.0
  * @category constants
@@ -531,7 +542,7 @@ export const agentFaultNote = (text: string): string | null => {
     message: "",
     retryAfter: entry.retryAfter === 0 ? null : entry.retryAfter,
     status: entry.status,
-    origin: isWorkerFailureCode(code) ? "worker" : "plue"
+    origin: isNativeFailureCode(code) ? "local" : isWorkerFailureCode(code) ? "worker" : "plue"
   })
   return `[fault=${entry.fault} code=${code}] ${copy.agent}`
 }

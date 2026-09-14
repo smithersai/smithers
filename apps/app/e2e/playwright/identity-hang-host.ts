@@ -26,7 +26,15 @@ const server = await startLocalServer({
   chatStub: false,
   cloudMode: "hybrid",
   identityUpstream: `http://127.0.0.1:${hanging.port}`,
-  cloudApi: null
+  cloudApi: null,
+  /*
+   * The host now gives an upstream 20s to answer and then refuses with
+   * `upstream_timeout` (server.ts DEFAULT_UPSTREAM_TIMEOUT_MS). This fixture's
+   * whole premise is a seam that never answers WITHIN THE SPEC'S BUDGET, so
+   * its deadline is pushed past the socket's own ceiling: a first paint that
+   * waited on identity here still never paints.
+   */
+  upstreamTimeoutMs: 255_000
 })
 
 let shuttingDown = false

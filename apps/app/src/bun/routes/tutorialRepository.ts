@@ -31,14 +31,14 @@ export function registerTutorialRepositoryRoutes(router: Router, authority: Repo
     const parsed = await readJson(request, 4096)
     if ("error" in parsed) return parsed.error
     const input = z.object({ name: z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,79}$/) }).strict().safeParse(parsed.body)
-    if (!input.success) return jsonError(400, "invalid_name", "Choose a repository name with letters, numbers, hyphens or underscores.")
+    if (!input.success) return jsonError("invalid_name", "Choose a repository name with letters, numbers, hyphens or underscores.")
     try {
       const created = await createTutorialRepository(input.data.name, home)
       const grant = await authority.authorize(created.path, "read-write")
-      if (grant.status !== "connected") return jsonError(500, "repository_authorization_failed", `Created ${created.name} at ${created.path}, but could not open it.`)
+      if (grant.status !== "connected") return jsonError("repository_authorization_failed", `Created ${created.name} at ${created.path}, but could not open it.`)
       return json(grant)
     } catch (error) {
-      return jsonError(500, "repository_creation_failed", error instanceof Error ? error.message : "Could not create the repository.")
+      return jsonError("repository_creation_failed", error instanceof Error ? error.message : "Could not create the repository.")
     }
   })
 }

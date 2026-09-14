@@ -18,31 +18,37 @@
  * refusal that reached us through the Worker is classified from the VENDORED
  * registry by its code (PlueFailureCodes.ts); a refusal the Worker wrote
  * ITSELF names a code from its own hand-written registry
- * (WorkerFailureCodes.ts) and is classified from that; only a refusal carrying
- * neither falls back to its status, and a fetch that threw is infra by
- * construction — the user's request never reached anyone who could judge it.
+ * (WorkerFailureCodes.ts) and is classified from that; a refusal the desktop
+ * app's own host wrote on one of ITS private routes names a code from the
+ * third registry (NativeFailureCodes.ts); only a refusal carrying none of them
+ * falls back to its status, and a fetch that threw is infra by construction —
+ * the user's request never reached anyone who could judge it.
  *
- * The two registries are disjoint by gate, not by prefix
- * (test/WorkerFailureCodes.test.ts), so one lookup of the string on the wire
- * answers both which code it is and who wrote it.
+ * The three registries are disjoint (test/WorkerFailureCodes.test.ts,
+ * test/NativeFailureCodes.test.ts) — the Worker's by gate, the host's by gate
+ * and by its `native_` namespace, which it needs because eight of its route
+ * names are spelled by plue — so one lookup of the string on the wire answers
+ * both which code it is and who wrote it.
  *
  * @since 1.0.0
  */
+import { NATIVE_FAILURES, nativeFailureCode, nativeFailureEntry, nativeWireCode } from "./NativeFailureCodes.ts"
+import type { NativeFailureCode, NativeRouteCode } from "./NativeFailureCodes.ts"
 import { PLUE_FAILURES, PLUE_FAULTS } from "./PlueFailureCodes.ts"
 import type { PlueFailureCode, PlueFault } from "./PlueFailureCodes.ts"
 import { WORKER_FAILURES, workerFailureCode } from "./WorkerFailureCodes.ts"
 import type { WorkerFailureCode, WorkerFailureEntry } from "./WorkerFailureCodes.ts"
 
-export type { PlueFailureCode, PlueFault, WorkerFailureCode }
+export type { NativeFailureCode, NativeRouteCode, PlueFailureCode, PlueFault, WorkerFailureCode }
 
 /**
- * A code either refusing party may put on the wire. The two vocabularies share
- * one namespace and never overlap, so a string identifies its author.
+ * A code any refusing party may put on the wire. The three vocabularies never
+ * overlap, so a string identifies its author.
  *
  * @since 1.0.0
  * @category models
  */
-export type RefusalCode = PlueFailureCode | WorkerFailureCode
+export type RefusalCode = PlueFailureCode | WorkerFailureCode | NativeFailureCode
 
 /**
  * Who refused.
@@ -52,10 +58,12 @@ export type RefusalCode = PlueFailureCode | WorkerFailureCode
  *   envelope, or an upstream refusal it could not attribute.
  * - `local` the native host inside the desktop app (apps/app/src/bun): a real
  *   HTTP origin on 127.0.0.1 that serves the same `/api/cloud/*` routes the
- *   Worker does. It is NOT the Worker, and in a desktop build there is no
- *   Worker at all, so calling its refusals `worker` named a machine that was
- *   not running — and the copy for a `worker` refusal says "this deployment",
- *   which is the wrong noun for a program on the reader's own laptop.
+ *   Worker does, in the Worker's own vocabulary, and its private routes in its
+ *   own (NativeFailureCodes.ts). It is NOT the Worker, and in a desktop build
+ *   there is no Worker at all, so calling its refusals `worker` named a
+ *   machine that was not running — and the copy for a `worker` refusal says
+ *   "this deployment", which is the wrong noun for a program on the reader's
+ *   own laptop.
  * - `client` no server of any kind answered: the request never left the page,
  *   or nothing came back. The distinction from `local` is whether an answer
  *   exists at all, not whose machine it came from.
@@ -80,7 +88,7 @@ export type RefusalOrigin = (typeof REFUSAL_ORIGINS)[number]
  * @category models
  */
 export interface Refusal {
-  /** The code, narrowed to one of the two registries; null when the wire named none or one this build predates. */
+  /** The code, narrowed to one of the three registries; null when the wire named none or one this build predates. */
   readonly code: RefusalCode | null
   /** What the wire actually spelled. Shown verbatim, never branched on — a code newer than this build still reaches the user. */
   readonly rawCode: string | null
@@ -131,22 +139,39 @@ export const isWorkerFailureCode = (code: RefusalCode | null): code is WorkerFai
   code !== null && Object.hasOwn(WORKER_FAILURES, code)
 
 /**
+ * Whether a code is one the desktop app's own host wrote on a route only it
+ * serves. The namespace is the answer, so membership IS authorship here too.
+ *
+ * @since 1.0.0
+ * @category constants
+ */
+export const isNativeFailureCode = (code: RefusalCode | null): code is NativeFailureCode =>
+  code !== null && nativeFailureCode(code) !== null
+
+/**
  * The code a string on the wire names, from whichever registry claims it.
  *
  * @since 1.0.0
  * @category constants
  */
-export const refusalCode = (value: unknown): RefusalCode | null => workerFailureCode(value) ?? plueFailureCode(value)
+export const refusalCode = (value: unknown): RefusalCode | null =>
+  workerFailureCode(value) ?? nativeFailureCode(value) ?? plueFailureCode(value)
 
 /**
- * The registry row for any code, from whichever table owns it. Both rows carry
- * the same three fields, so everything downstream reads one shape.
+ * The registry row for any code, from whichever table owns it. All three rows
+ * carry the same three fields, so everything downstream reads one shape.
  *
  * @since 1.0.0
  * @category constants
  */
 export const refusalEntry = (code: RefusalCode | null): WorkerFailureEntry | null =>
-  code === null ? null : isWorkerFailureCode(code) ? WORKER_FAILURES[code] : PLUE_FAILURES[code]
+  code === null
+    ? null
+    : isWorkerFailureCode(code)
+    ? WORKER_FAILURES[code]
+    : isNativeFailureCode(code)
+    ? nativeFailureEntry(code)
+    : PLUE_FAILURES[code]
 
 /**
  * The verdict for a refusal that named no code this build knows. plue always
@@ -241,6 +266,8 @@ export const refusalOf = (input: RefusalInput): Refusal => {
     status: input.status,
     origin: claimed !== null && ORIGINS.has(claimed)
       ? claimed as RefusalOrigin
+      : isNativeFailureCode(code)
+      ? "local"
       : isWorkerFailureCode(code) || code === null
       ? "worker"
       : "plue"
@@ -274,6 +301,32 @@ export const workerRefusal = (
     retryAfter: secondsOf(options?.retryAfterSeconds) ?? (entry.retryAfter > 0 ? entry.retryAfter : null),
     status: entry.status,
     origin: options?.origin ?? "worker"
+  }
+}
+
+/**
+ * A refusal the desktop app's own host wrote on one of its private routes,
+ * built from its own registry.
+ *
+ * The mirror of `workerRefusal` for the third vocabulary: the status and the
+ * fault come from NativeFailureCodes.ts rather than from the caller, so a
+ * route and its code cannot disagree about either, and `origin` is `local`
+ * because this refusal can only have been written by a program on the reader's
+ * own box.
+ *
+ * @since 1.0.0
+ * @category constants
+ */
+export const nativeRefusal = (code: NativeRouteCode, message: string): Refusal => {
+  const entry = NATIVE_FAILURES[code]
+  return {
+    code: nativeWireCode(code),
+    rawCode: nativeWireCode(code),
+    fault: entry.fault,
+    message,
+    retryAfter: entry.retryAfter > 0 ? entry.retryAfter : null,
+    status: entry.status,
+    origin: "local"
   }
 }
 
@@ -348,7 +401,8 @@ export const refusalFromStored = (stored: StoredRefusal): Refusal => {
     message: stored.message,
     retryAfter: secondsOf(stored.retryAfterSeconds) ?? null,
     status,
-    origin: stored.origin ?? (isWorkerFailureCode(code) || code === null ? "worker" : "plue")
+    origin: stored.origin ??
+      (isNativeFailureCode(code) ? "local" : isWorkerFailureCode(code) || code === null ? "worker" : "plue")
   }
 }
 

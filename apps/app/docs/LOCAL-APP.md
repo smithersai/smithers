@@ -303,6 +303,28 @@ leaves its trail line. An agent turn body is capped at 1 MiB by the bytes
 received, so a chunked body is refused with `413 body_too_large` like one that
 declares its length.
 
+Beside `error`, the same refusal is stated in the one shape the app
+classifies, `{ status: "error", code, message, origin: "local" }`, with the
+code in this host's own namespace (`native_invalid_path` for the route's
+`invalid_path`; `@smthrs/rpc/NativeFailureCodes` holds the registry, its fault
+and its status). The route name inside `error` does not change, and is still
+what this host's clients match on. The namespace exists because eight of these
+route names are also plue's spellings and one is the Worker's, and they do not
+all mean the same thing. The status comes from the registry, so a route and its
+code cannot disagree about one.
+
+The routes this host shares with the Cloudflare Worker (`/api/cloud/*`,
+`/api/auth/*`, `/api/identity/*`, `/api/tools/browser-fetch`) refuse in the
+WORKER's vocabulary instead (`@smthrs/rpc/WorkerFailureCodes`), still with
+`origin: "local"`. An upstream those proxies forward to gets 20 s to send
+headers, which is the Worker's own default and the host's `upstreamTimeoutMs`
+option, and then answers `504 upstream_timeout`. The deadline covers headers
+only, so a streaming answer is never cut off. A body an upstream refuses with
+is restated in this host's envelope, keeping the upstream's status, `code`,
+`retry_after` and `Retry-After`, so a router's plain 404 or an HTML error page
+never reaches a reader. A top-level page navigation (the system browser opening
+`/api/auth/github/start`) keeps the upstream's own page.
+
 | Method | Path | Purpose |
 | --- | --- | --- |
 | GET | `/api/bootstrap` | Versioned host/capability contract |
