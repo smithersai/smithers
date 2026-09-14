@@ -696,6 +696,10 @@ export const createTargetRunner = (options: TargetRunnerOptions): TargetRunner =
       return true
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === "ESRCH") return false
+      // EPERM still identifies an existing group. In particular, an orphan
+      // being reaped can briefly refuse this probe after SIGKILL on macOS.
+      // Keep the bounded wait until ESRCH confirms that the group is gone.
+      if ((error as NodeJS.ErrnoException).code === "EPERM") return true
       throw error
     }
   }
