@@ -100,6 +100,24 @@ test('native Enter and Space wait for release; text editing and modified shortcu
   expect(calls).toEqual(['Tutorial', 'Tutorial'])
 })
 
+test('Escape reaches the inner menu before the enclosing close shortcut', () => {
+  const { root, key } = setup()
+  const input = root.querySelector('input')!
+  const calls: string[] = []
+  const stop = bindPressActions({ root, resolveShortcut: event => event.key === 'Escape'
+    ? { activate: () => calls.push('composer') } : undefined })
+  cleanup.push(stop)
+  input.addEventListener('keydown', event => {
+    if (event.key === 'Escape' && calls.length === 0) { event.preventDefault(); calls.push('menu') }
+  })
+  key('keydown', 't')
+  key('keydown', 'Escape', {}, input); key('keyup', 'Escape', {}, input)
+  expect(calls).toEqual(['menu'])
+  expect(root.querySelector('[data-pressed]')).toBeNull()
+  key('keydown', 'Escape', {}, input); key('keyup', 'Escape', {}, input)
+  expect(calls).toEqual(['menu', 'composer'])
+})
+
 
 test('two inputs on the same button keep it highlighted until both are released', () => {
   const { key, pointer, buttons, calls } = setup()

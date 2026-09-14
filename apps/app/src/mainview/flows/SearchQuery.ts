@@ -132,7 +132,7 @@ const splitQualifiers = (rest: string): { readonly query: string; readonly quali
  * The first token decides the mode (§3: "Mode switches when the prefix is
  * the first token"). `//` beats `/`, `@@` beats `@`, a lone `?` is the
  * prefix list, `:N` is a line, a known `word:` is its mode, `#` is issues,
- * and an unprefixed query is a path when it carries a `/` or a `.`.
+ * and a single unprefixed token is a path when it carries a `/` or a `.`.
  */
 export const parseQuery = (text: string): ParsedQuery => {
   const raw = text.trimStart()
@@ -161,7 +161,7 @@ export const parseQuery = (text: string): ParsedQuery => {
   }
   if (raw.startsWith("#")) return { mode: "issues", prefix: "#", ...splitQualifiers(raw.slice(1)) }
   const split = splitQualifiers(raw)
-  return { mode: /[/.]/.test(split.query) ? "path" : "all", prefix: "", ...split }
+  return { mode: /[/.]/.test(split.query) && !/\s/.test(split.query) ? "path" : "all", prefix: "", ...split }
 }
 
 /*

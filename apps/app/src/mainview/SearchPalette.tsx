@@ -44,8 +44,8 @@ export type SlashLeafRow = Exclude<SlashRow<CatalogItem>, { readonly kind: "note
 
 export const paletteRows = (answer: PaletteAnswer, slashRows: ReadonlyArray<SlashRow<CatalogItem>>, actionsRef: string | null, ask = false): PaletteRows => {
   const shown = paletteRowsOf(answer, slashRows, actionsRef)
-  // An empty bare ⌘K leads with "Ask Smithers": typing a question is the first thing the palette offers.
-  if (!ask || answer.parsed.mode !== "all" || answer.parsed.query !== "" || shown.actionsFor !== undefined) return shown
+  // Bare prose stays a question even when helper results match it.
+  if (!ask || answer.parsed.mode !== "all" || shown.actionsFor !== undefined) return shown
   return { ...shown, rows: [{ kind: "ask" }, ...shown.rows], groups: shown.groups.map((group) => ({ ...group, start: group.start + 1 })) }
 }
 
@@ -84,7 +84,8 @@ const paletteRowsOf = (answer: PaletteAnswer, slashRows: ReadonlyArray<SlashRow<
 /** What one key does with the overlay open (§3), decided from the rows and the highlight. */
 export type PaletteDecision =
   | { readonly kind: "none" }
-  | { readonly kind: "move"; readonly index: number }
+  | { readonly kind: "move"; readonly index: number; readonly resultSelected: boolean }
+  | { readonly kind: "send" }
   | { readonly kind: "open-namespace"; readonly id: string }
   | { readonly kind: "root" }
   | { readonly kind: "run-flow"; readonly name: string }
@@ -93,7 +94,7 @@ export type PaletteDecision =
   | { readonly kind: "actions"; readonly ref: string }
   | { readonly kind: "close-actions"; readonly ref: string }
   | { readonly kind: "set-draft"; readonly draft: string }
-  | { readonly kind: "close" }
+  | { readonly kind: "close"; readonly overlayOnly: boolean }
 
 export interface PaletteKeyInput {
   readonly key: string
@@ -103,6 +104,8 @@ export interface PaletteKeyInput {
   readonly answer: PaletteAnswer
   readonly rows: PaletteRows
   readonly highlighted: number
+  /** Only an ArrowDown/ArrowUp choice grants an unprefixed result Enter. */
+  readonly resultSelected: boolean
   /** The draft is inside a `/ns.` branch (the slash tree's own back key). */
   readonly slashBranch: string | undefined
 }
@@ -121,12 +124,15 @@ export const paletteKey = (input: PaletteKeyInput): PaletteDecision => {
   const { key, meta, shift, rows, highlighted, answer, draft } = input
   const row = rows.rows[highlighted]
   const inActions = rows.actionsFor !== undefined
-  if (key === "ArrowDown") return { kind: "move", index: wrap(highlighted + 1, rows.rows.length) }
-  if (key === "ArrowUp") return { kind: "move", index: wrap(highlighted - 1, rows.rows.length) }
-  if (key === "Tab") return { kind: "move", index: nextGroupStart(rows, highlighted, shift ? -1 : 1) }
+  if (key === "ArrowDown" || key === "ArrowUp") {
+    const index = wrap(highlighted + (key === "ArrowDown" ? 1 : -1), rows.rows.length)
+    const kind = rows.rows[index]?.kind
+    return { kind: "move", index, resultSelected: kind === "item" || kind === "action" }
+  }
+  if (key === "Tab") return { kind: "move", index: nextGroupStart(rows, highlighted, shift ? -1 : 1), resultSelected: false }
   if (key === "Escape") {
     if (inActions && rows.actionsFor !== undefined) return { kind: "close-actions", ref: rows.actionsFor.ref }
-    return { kind: "close" }
+    return { kind: "close", overlayOnly: true }
   }
   if (key === "ArrowRight" || (meta && key.toLowerCase() === "k")) {
     if (row?.kind === "slash" && row.row.kind === "namespace") return { kind: "open-namespace", id: row.row.namespace.id }
@@ -142,10 +148,11 @@ export const paletteKey = (input: PaletteKeyInput): PaletteDecision => {
     const { prefix, query, mode } = answer.parsed
     if (mode === "flows" || draft.trimStart().slice(prefix.length).trim() !== "" || query !== "") return { kind: "none" }
     if (prefix !== "") return { kind: "set-draft", draft: "" }
-    return draft === "" ? { kind: "close" } : { kind: "none" }
+    return draft === "" ? { kind: "close", overlayOnly: false } : { kind: "none" }
   }
   if (key === "Enter" && !shift) {
     const chosen = rows.rows.length === 1 ? rows.rows[0] : row
+    if (chosen?.kind === "ask" || (answer.parsed.prefix === "" && !input.resultSelected)) return { kind: "send" }
     if (chosen?.kind === "slash") {
       return chosen.row.kind === "namespace" ? { kind: "open-namespace", id: chosen.row.namespace.id } : { kind: "run-flow", name: chosen.row.flow.name }
     }

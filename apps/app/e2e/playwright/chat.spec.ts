@@ -23,3 +23,42 @@ test("typing 'say ok' and sending renders the stub reply", async ({ page }) => {
   const assistant = page.locator(".smithers-chat-message[data-role=\"assistant\"]", { hasText: "stub: say ok" })
   await expect(assistant).toContainText("stub: say ok", { timeout: 15_000 })
 })
+
+for (const path of ["/", "/smithersai/smithers/"]) {
+  test(`keyboard chat sends a turn and Shift+Enter inserts a newline: ${path}`, async ({ page }) => {
+    await page.goto(path)
+    await expect(page.getByRole("button", { name: "Mode: Normal", exact: true })).toBeVisible()
+    await page.keyboard.press("c")
+    const input = page.getByTestId("composer-input")
+    await expect(input).toBeFocused()
+    await expect(page.getByTestId("palette")).toBeVisible()
+    await input.press("Enter")
+    await expect(input).toBeFocused()
+    await expect(page.locator('.smithers-chat-message[data-role="user"]')).toHaveCount(0)
+    await input.fill("First line")
+    await input.press("Shift+Enter")
+    await expect(input).toHaveValue("First line\n")
+    await expect(page.getByTestId("palette")).toBeVisible()
+
+    const draft = "What does this repository do? Answer in two sentences."
+    await input.fill(draft)
+    const turn = page.waitForRequest(request => request.method() === "POST" && /\/api\/(?:agent|chat)\/turn(?:\?|$)/.test(request.url()))
+    await input.press("Enter")
+    await turn
+    await expect(page.locator('.smithers-chat-message[data-role="assistant"]', { hasText: `stub: ${draft}` })).toContainText(`stub: ${draft}`, { timeout: 15_000 })
+  })
+
+  test(`Escape closes the slash menu before Chat: ${path}`, async ({ page }) => {
+    await page.goto(path)
+    await expect(page.getByRole("button", { name: "Mode: Normal", exact: true })).toBeVisible()
+    await page.keyboard.press("c")
+    const input = page.getByTestId("composer-input")
+    await input.fill("/issues")
+    await expect(page.getByTestId("palette")).toBeVisible()
+    await input.press("Escape")
+    await expect(page.getByTestId("palette")).toBeHidden()
+    await expect(input).toBeFocused()
+    await input.press("Escape")
+    await expect(input).toBeHidden()
+  })
+}

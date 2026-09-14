@@ -101,7 +101,14 @@ export function bindPressActions({ root, resolveShortcut, enabled = () => true }
     if ((event.target as Element | null)?.closest?.(editing)) cancel()
   }
   const visibility = () => { if (doc.visibilityState === 'hidden') cancel() }
-  doc.addEventListener('keydown', down, true)
+  // Inner menus get first refusal on Escape before a shell close is armed.
+  const captureDown = (event: KeyboardEvent) => {
+    if (event.key === 'Escape') held.cancel()
+    else down(event)
+  }
+  const escapeDown = (event: KeyboardEvent) => { if (event.key === 'Escape') down(event) }
+  doc.addEventListener('keydown', captureDown, true)
+  doc.addEventListener('keydown', escapeDown)
   doc.addEventListener('keyup', up, true)
   doc.addEventListener('pointerdown', pointerDown, true)
   doc.addEventListener('pointerup', pointerUp, true)
@@ -114,7 +121,8 @@ export function bindPressActions({ root, resolveShortcut, enabled = () => true }
   doc.defaultView?.addEventListener('pagehide', cancel)
   return () => {
     cancel()
-    doc.removeEventListener('keydown', down, true)
+    doc.removeEventListener('keydown', captureDown, true)
+    doc.removeEventListener('keydown', escapeDown)
     doc.removeEventListener('keyup', up, true)
     doc.removeEventListener('pointerdown', pointerDown, true)
     doc.removeEventListener('pointerup', pointerUp, true)

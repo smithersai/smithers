@@ -22,6 +22,12 @@ const item = (kind: SearchItem["kind"], ref: string, title: string, subtitle?: s
 })
 
 describe("§1 prefixes: the first token decides the mode", () => {
+  test("sentences and long prose are not paths just because they contain punctuation", () => {
+    expect(parseQuery("What does this repository do? Answer in two sentences.").mode).toBe("all")
+    expect(parseQuery("Explain src/Composer.tsx please").mode).toBe("all")
+    expect(parseQuery("A sentence. ".repeat(200).slice(0, 2000)).mode).toBe("all")
+  })
+
   test("every §1 prefix parses to its mode with the prefix stripped", () => {
     expect(parseQuery("redact")).toMatchObject({ mode: "all", prefix: "", query: "redact" })
     expect(parseQuery("src/Redaction")).toMatchObject({ mode: "path", prefix: "", query: "src/Redaction" })

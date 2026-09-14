@@ -130,6 +130,7 @@ const mount = async (): Promise<View> => {
   )
   mounted.push(() => {
     flushSync(() => root.unmount())
+    controller.dispose()
     host.remove()
   })
   const act = async (change: () => void): Promise<void> => {
@@ -171,6 +172,117 @@ const invoked = (store: AppStore): Array<{ name: string; args: string | null }> 
     })
 
 describe("§3 the keyboard contract", () => {
+  for (const draft of ["What does this repository do? Answer in two sentences.", "What is issue 3 about?", "Compose"]) {
+    test(`Enter sends prose through chat.send while the overlay is open: ${draft}`, async () => {
+      const view = await mount()
+      await press(view, "k", { meta: true })
+      await view.act(() => view.controller.changeDraft(draft))
+      await press(view, "Enter")
+      expect(invoked(view.store)).toContainEqual({ name: "chat.send", args: draft })
+      expect(invoked(view.store).some(row => row.name.startsWith("search.") || row.name === "files.read")).toBe(false)
+    })
+  }
+
+  test("Ask Smithers sends a nonempty draft by click and does nothing for an empty draft by either door", async () => {
+    const view = await mount()
+    await press(view, "k", { meta: true })
+    const before = invoked(view.store)
+    await press(view, "Enter")
+    await view.act(() => view.host.querySelector<HTMLButtonElement>("[data-ask]")?.click())
+    expect(invoked(view.store)).toEqual(before)
+    expect(view.store.session().paletteOpen).toBe(true)
+    await view.act(() => view.controller.changeDraft("What is issue 3 about?"))
+    const ask = view.host.querySelector<HTMLButtonElement>("[data-ask]")
+    expect(ask).not.toBeNull()
+    await view.act(() => ask?.click())
+    expect(invoked(view.store)).toContainEqual({ name: "chat.send", args: "What is issue 3 about?" })
+  })
+
+  for (const draft of ["a first line", "/issues", "?"]) {
+    test(`Shift+Enter leaves native newline insertion available with the overlay open: ${draft}`, async () => {
+      const view = await mount()
+      await press(view, "k", { meta: true })
+      await view.act(() => view.controller.changeDraft(draft))
+      const event = new KeyboardEvent("keydown", { key: "Enter", shiftKey: true, bubbles: true, cancelable: true })
+      await view.act(() => textarea(view.host)?.dispatchEvent(event))
+      // Happy DOM has no native text editing; the browser test pins the inserted newline.
+      expect(event.defaultPrevented).toBe(false)
+      expect(invoked(view.store).some(row => row.name === "chat.send" || row.name.startsWith("search."))).toBe(false)
+    })
+  }
+
+  test("a 2000-character prose paste produces no path row", async () => {
+    const view = await mount()
+    await press(view, "k", { meta: true })
+    await view.act(() => view.controller.changeDraft("A sentence about the repository. ".repeat(100).slice(0, 2000)))
+    expect(palette(view.host)?.dataset["mode"]).toBe("all")
+    expect(view.host.querySelector('[data-kind="file"]')).toBeNull()
+  })
+
+  test("only arrow selection grants an unprefixed result Enter; editing resets that choice", async () => {
+    const view = await mount()
+    await press(view, "k", { meta: true })
+    await view.act(() => view.controller.changeDraft("Compose"))
+    await press(view, "ArrowDown")
+    expect(highlighted(view.host)?.dataset["ref"]).toBe("src/Composer.tsx")
+    await press(view, "Enter")
+    expect(invoked(view.store)).toContainEqual({ name: "files.read", args: "src/Composer.tsx" })
+
+    await press(view, "k", { meta: true })
+    await view.act(() => view.controller.changeDraft("Compose"))
+    await press(view, "ArrowDown")
+    await view.act(() => view.controller.changeDraft("Composer.tsx"))
+    await press(view, "Enter")
+    expect(invoked(view.store)).toContainEqual({ name: "chat.send", args: "Composer.tsx" })
+  })
+
+  test("hovering a result does not grant it Enter", async () => {
+    const view = await mount()
+    await press(view, "k", { meta: true })
+    await view.act(() => view.controller.changeDraft("Compose"))
+    await view.act(() => view.host.querySelector('[data-ref="src/Composer.tsx"]')?.dispatchEvent(new MouseEvent("mouseover", { bubbles: true })))
+    expect(highlighted(view.host)?.dataset["ref"]).toBe("src/Composer.tsx")
+    await press(view, "Enter")
+    expect(invoked(view.store)).toContainEqual({ name: "chat.send", args: "Compose" })
+    expect(invoked(view.store).some(row => row.name === "files.read")).toBe(false)
+  })
+
+  test("IME Enter leaves the draft and open overlay alone", async () => {
+    const view = await mount()
+    await press(view, "k", { meta: true })
+    await view.act(() => view.controller.changeDraft("Explain this repository."))
+    const before = invoked(view.store)
+    const event = new KeyboardEvent("keydown", { key: "Enter", isComposing: true, bubbles: true, cancelable: true })
+    await view.act(() => textarea(view.host)?.dispatchEvent(event))
+    expect(event.defaultPrevented).toBe(false)
+    expect(invoked(view.store)).toEqual(before)
+    expect(view.store.session().draft).toBe("Explain this repository.")
+    expect(palette(view.host)).not.toBeNull()
+  })
+
+  test("/issues retains the slash path and exact-name precedence", async () => {
+    const view = await mount()
+    await press(view, "k", { meta: true })
+    await view.act(() => view.controller.changeDraft("/issues"))
+    await press(view, "Enter")
+    expect(invoked(view.store).map(row => row.name)).toContain("issues.list")
+    expect(invoked(view.store).some(row => row.name === "chat.send" || row.name.startsWith("search."))).toBe(false)
+  })
+
+  test("Escape dismisses the slash overlay, then closes the composer on the next press", async () => {
+    const view = await mount()
+    await press(view, "k", { meta: true })
+    await view.act(() => view.controller.changeDraft("/issues"))
+    await press(view, "Escape")
+    expect(palette(view.host)).toBeNull()
+    expect(view.store.session().paletteOpen).toBe(true)
+    expect(view.host.querySelector<HTMLElement>(".composer-wrap")?.hidden).toBe(false)
+    await press(view, "Escape")
+    expect(view.store.session().paletteOpen).toBe(false)
+    expect(view.host.querySelector<HTMLElement>(".composer-wrap")?.hidden).toBe(true)
+    expect(view.store.session().draft).toBe("/issues")
+  })
+
   test("Cmd+K opens the overlay on the composer with the draft as the query; Esc closes it and leaves the draft", async () => {
     const view = await mount()
     expect(palette(view.host)).toBeNull()
@@ -180,23 +292,26 @@ describe("§3 the keyboard contract", () => {
     expect(view.store.session().paletteOpen).toBe(true)
     expect(palette(view.host)?.dataset["mode"]).toBe("all")
     // Files (both prefix matches, in listing order), the run (contains), then the flow whose summary says "compose".
-    expect(rows(view.host)).toEqual(["src/Composer.tsx", "src/Compose.css", runSearchRef("run-compose", "runs-1"), "chat.send"])
+    expect(rows(view.host)).toEqual(["", "src/Composer.tsx", "src/Compose.css", runSearchRef("run-compose", "runs-1"), "chat.send"])
     await press(view, "Escape")
-    expect(view.store.session().paletteOpen).toBe(false)
+    expect(view.store.session().paletteOpen).toBe(true)
     expect(palette(view.host)).toBeNull()
     expect(view.store.session().draft).toBe("Compose")
     // A second Esc mid-query still finds the draft intact (story 10).
     await press(view, "Escape")
     expect(view.store.session().draft).toBe("Compose")
+    expect(view.store.session().paletteOpen).toBe(false)
   })
 
   test("the arrows move and wrap; Tab and Shift+Tab walk the groups", async () => {
     const view = await mount()
     await view.act(() => view.controller.changeDraft("Compose"))
     await press(view, "k", { meta: true })
-    expect(highlighted(view.host)?.dataset["ref"]).toBe("src/Composer.tsx")
+    expect(highlighted(view.host)?.hasAttribute("data-ask")).toBe(true)
     await press(view, "ArrowUp")
     expect(highlighted(view.host)?.dataset["ref"]).toBe("chat.send")
+    await press(view, "ArrowDown")
+    expect(highlighted(view.host)?.hasAttribute("data-ask")).toBe(true)
     await press(view, "ArrowDown")
     expect(highlighted(view.host)?.dataset["ref"]).toBe("src/Composer.tsx")
     await press(view, "ArrowDown")
@@ -240,6 +355,8 @@ describe("§3 the keyboard contract", () => {
     await press(view, "k", { meta: true })
     expect(palette(view.host)?.dataset["mode"]).toBe("path")
     expect(rows(view.host)).toEqual(["src/Composer.tsx"])
+    // An unprefixed file suggestion must be deliberately selected before Enter opens it.
+    await press(view, "ArrowDown")
     await press(view, "Enter")
     expect(invoked(view.store)).toContainEqual({ name: "files.read", args: "src/Composer.tsx" })
     expect(view.store.session().draft).toBe("")
@@ -261,6 +378,7 @@ describe("§3 the keyboard contract", () => {
     // A file's primary flow is Implement (§2), which is not registered: Cmd+Enter runs nothing and never invents a flow.
     await view.act(() => view.controller.changeDraft("Composer.tsx"))
     await press(view, "k", { meta: true })
+    await press(view, "ArrowDown")
     const before = invoked(view.store).length
     await press(view, "Enter", { meta: true })
     expect(invoked(view.store).length).toBe(before)
