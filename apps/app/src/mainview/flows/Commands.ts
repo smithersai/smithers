@@ -526,12 +526,18 @@ export const createCommandRegistry = (actions: CommandActions, agentActions: Com
      */
     const confirmation = invoker === "agent" ? confirmLabel(target.metadata, parsed.payload) : undefined
     if (confirmation !== undefined) {
-      acting.requestFlowConfirmation(nameOf(target), args ?? null, confirmation)
-      trace(invoker, name, args, startedAt, "confirm-requested", confirmation)
+      /*
+       * The line the button will run. A flow whose bare form resolves an
+       * implicit target binds it here (registry.ts `confirmArgs`), so the
+       * confirmation cannot drift to a different target while it waits.
+       */
+      const bound = target.metadata.confirmArgs?.(parsed.payload) ?? args
+      acting.requestFlowConfirmation(nameOf(target), bound ?? null, confirmation)
+      trace(invoker, name, bound, startedAt, "confirm-requested", confirmation)
       return {
         status: "executed",
         value:
-          `asked the user to confirm "/${nameOf(target)}${args === undefined ? "" : ` ${args}`}" — it runs only when they confirm, and nothing has happened yet`
+          `asked the user to confirm "/${nameOf(target)}${bound === undefined ? "" : ` ${bound}`}" — it runs only when they confirm, and nothing has happened yet`
       }
     }
     if (invoker === "agent") {

@@ -6,7 +6,7 @@ import { createActorBindings } from "../ActorBindings"
 import type { AppStore } from "../AppStore"
 import type { CloudWorkspaceInput } from "../AppState"
 import { dropDesktopStream, readDesktopStream } from "./DesktopStream"
-import { createWorkspaceSeam, DEGRADED_WORKSPACE_REFUSAL, desktopSessionRetry, terminalSessionRetry } from "./WorkspaceSeam"
+import { createWorkspaceSeam, DEGRADED_WORKSPACE_REFUSAL, desktopBoxWait, desktopSessionRetry, terminalSessionRetry } from "./WorkspaceSeam"
 import type { SeamContext } from "./SeamContext"
 import { USER_WORKSPACE_ROW } from "./fixtures/UserWorkspaceRow"
 
@@ -144,7 +144,7 @@ type Route = Response | ((url: URL) => Response | Promise<Response>)
 
 const harness = async (
   routes: Record<string, Route>,
-  options: { readonly signedIn?: boolean; readonly degraded?: boolean } = {}
+  options: { readonly signedIn?: boolean; readonly degraded?: boolean; readonly desktopWaitMs?: number } = {}
 ) => {
   const storage = memoryStorage()
   const store = await createAppStore({ kind: "localStorage", storage })
@@ -205,7 +205,17 @@ const harness = async (
       }
     ]
   })
-  return { ctx, store, seam: createWorkspaceSeam(ctx, { pollMs: 1 }), requests, urls, dispatched, storage, bodies, signals }
+  return {
+    ctx,
+    store,
+    seam: createWorkspaceSeam(ctx, { pollMs: 1, desktopWaitMs: options.desktopWaitMs ?? 0 }),
+    requests,
+    urls,
+    dispatched,
+    storage,
+    bodies,
+    signals
+  }
 }
 
 const seedWorkspace = async (store: AppStore, workspace: CloudWorkspaceInput = wsRow): Promise<void> => {
@@ -2377,4 +2387,235 @@ describe("workspace seam lifecycle cancellation", () => {
       })
     }
   }
+})
+
+/*
+ * `/desktop` — the one-command open (create-or-reuse, wait, mint) under the
+ * ONE confirmation the flow asked for.
+ *
+ * Every route double below is plue as it answered prod on 2026-09-13: the
+ * create is find-or-create per (repository, user, kind) — the uniqueness
+ * `uq_workspaces_active` enforces — so REUSE is asserted as "plue answered
+ * the existing box and the app did not create a second one", not as a local
+ * scan of the collection. The wait ends on the DTO's own `desktop.ready`,
+ * the refusals read in plue's words, and the mint's credential is asserted
+ * against the BYTES the persistence backend wrote.
+ */
+describe("the one-command desktop open", () => {
+  /** A desktop box in one status, with `desktop.ready` as the DTO states it. */
+  const desktopBox = (
+    status: string,
+    ready: boolean | null = null,
+    extra: Record<string, unknown> = {}
+  ) => ({
+    ...WS_DESKTOP,
+    status,
+    desktop: { ready, stream_url: "/api/workspaces/ws-1/desktop/stream", session: null },
+    ...extra
+  })
+
+  test("a RUNNING desktop box is reused: plue's create answers it, the app creates no second box, and the stream is minted", async () => {
+    const { seam, store, requests, bodies, storage } = await harness({
+      "POST api/repos/will/smithers/workspaces": json(200, desktopBox("running", true)),
+      "GET api/repos/will/smithers/bookmarks": json(200, { bookmarks: [{ name: "main", change_id: "qupxosqw", commit_id: "c0ffee1" }] }),
+      "GET api/repos/will/smithers/workspace-snapshots": json(200, { snapshots: [] }),
+      "GET api/repos/will/smithers/workspace/sessions": json(200, { sessions: [] }),
+      "POST api/repos/will/smithers/workspaces/ws-1/desktop/session": json(201, DESKTOP_MINT)
+    })
+    try {
+      const result = await seam.openDesktopBox()
+      expect(result).toEqual({ value: `The desktop of "review" (ws-1) is streaming on the card until 2026-09-03T09:12:00Z.` })
+      /* The create asked for the kind and the repository's head bookmark, and ran exactly once. */
+      expect(bodies.filter((row) => row.key === "POST api/repos/will/smithers/workspaces").map((row) => row.body))
+        .toEqual([{ source_bookmark: "main", kind: "desktop" }])
+      expect(requests.filter((key) => key === "POST api/repos/will/smithers/workspaces")).toHaveLength(1)
+      /* A box already running needs no readiness poll: the DTO said ready. */
+      expect(requests.filter((key) => key === "GET api/repos/will/smithers/workspaces/ws-1")).toEqual([])
+      expect(requests.filter((key) => key === "POST api/repos/will/smithers/workspaces/ws-1/resume")).toEqual([])
+      /* The stream is held in module memory, and the facet is the desktop. */
+      expect(readDesktopStream("ws-1")?.url).toBe(DESKTOP_STREAM_URL)
+      expect(payloadOf(store)?.facet).toBe("desktop")
+      /* THE CREDENTIAL RULE: nothing the mint answered reached the card, or the disk behind it. */
+      const payload = JSON.stringify(payloadOf(store))
+      const written = storage.written()
+      for (const secret of [DESKTOP_TOKEN, DESKTOP_VNC_PASSWORD, DESKTOP_STREAM_URL, "dsess-1"]) {
+        expect(payload).not.toContain(secret)
+        expect(written).not.toContain(secret)
+      }
+    } finally {
+      dropDesktopStream()
+      seam.dispose()
+    }
+  })
+
+  test("a SUSPENDED desktop box is resumed, then waited for, then streamed", async () => {
+    let reads = 0
+    const { seam, store, requests } = await harness({
+      "POST api/repos/will/smithers/workspaces": json(200, desktopBox("suspended")),
+      "POST api/repos/will/smithers/workspaces/ws-1/resume": json(200, desktopBox("starting")),
+      "GET api/repos/will/smithers/workspaces/ws-1": () => {
+        reads += 1
+        return json(200, reads < 2 ? desktopBox("running", false) : desktopBox("running", true))
+      },
+      "GET api/repos/will/smithers/bookmarks": json(200, { bookmarks: [] }),
+      "GET api/repos/will/smithers/workspace-snapshots": json(200, { snapshots: [] }),
+      "GET api/repos/will/smithers/workspace/sessions": json(200, { sessions: [] }),
+      "POST api/repos/will/smithers/workspaces/ws-1/desktop/session": json(201, DESKTOP_MINT)
+    })
+    try {
+      const result = await seam.openDesktopBox("main")
+      expect(result).toEqual({ value: `The desktop of "review" (ws-1) is streaming on the card until 2026-09-03T09:12:00Z.` })
+      expect(requests.filter((key) => key === "POST api/repos/will/smithers/workspaces/ws-1/resume")).toHaveLength(1)
+      /* `running` alone did not end the wait: the DTO's `ready: false` did the honest thing. */
+      expect(requests.filter((key) => key === "GET api/repos/will/smithers/workspaces/ws-1")).toHaveLength(2)
+      expect(readDesktopStream("ws-1")?.url).toBe(DESKTOP_STREAM_URL)
+      expect(store.collections.cloudWorkspaces.get("ws-1")?.status).toBe("running")
+    } finally {
+      dropDesktopStream()
+      seam.dispose()
+    }
+  })
+
+  test("a FAILED box is replaced by plue's create, and the replacement is the one waited for", async () => {
+    /* The failed box is loaded locally; `uq_workspaces_active` excludes it, so plue builds a new one. */
+    const { seam, store, requests, bodies } = await harness({
+      "POST api/repos/will/smithers/workspaces": json(202, { ...desktopBox("starting"), id: "ws-2" }),
+      "GET api/repos/will/smithers/workspaces/ws-2": json(200, { ...desktopBox("running", true), id: "ws-2" }),
+      "GET api/repos/will/smithers/bookmarks": json(200, { bookmarks: [] }),
+      "GET api/repos/will/smithers/workspace-snapshots": json(200, { snapshots: [] }),
+      "GET api/repos/will/smithers/workspace/sessions": json(200, { sessions: [] }),
+      "POST api/repos/will/smithers/workspaces/ws-2/desktop/session": json(201, { ...DESKTOP_MINT, workspace_id: "ws-2" })
+    })
+    try {
+      await seedWorkspace(store, { ...wsRow, status: "failed", kind: "desktop", failureCode: "provisioning_failed", failureMessage: "old one died" })
+      const result = await seam.openDesktopBox()
+      expect(result).toEqual({ value: `The desktop of "review" (ws-2) is streaming on the card until 2026-09-03T09:12:00Z.` })
+      /* One create, and the wait followed the id plue answered — never the failed row still in the collection. */
+      expect(bodies.filter((row) => row.key === "POST api/repos/will/smithers/workspaces")).toHaveLength(1)
+      expect(requests.filter((key) => key === "GET api/repos/will/smithers/workspaces/ws-1")).toEqual([])
+      expect(readDesktopStream("ws-2")?.url).toBe(DESKTOP_STREAM_URL)
+    } finally {
+      dropDesktopStream()
+      seam.dispose()
+    }
+  })
+
+  test("a box that FAILS mid-wait ends it with plue's own failure_message and code, and nothing is minted", async () => {
+    const { seam, store, requests } = await harness({
+      "POST api/repos/will/smithers/workspaces": json(202, desktopBox("starting")),
+      "GET api/repos/will/smithers/workspaces/ws-1": json(200, desktopBox("failed", null, {
+        failure_code: "provisioning_failed",
+        failure_message: "bookmark \"main\" not found on will/smithers"
+      })),
+      "GET api/repos/will/smithers/bookmarks": json(200, { bookmarks: [] }),
+      "GET api/repos/will/smithers/workspace-snapshots": json(200, { snapshots: [] }),
+      "GET api/repos/will/smithers/workspace/sessions": json(200, { sessions: [] })
+    })
+    try {
+      /* plue's words, verbatim, code first — a repository whose head is `master`, not `main`, reads exactly this. */
+      expect(await seam.openDesktopBox("main")).toBe(`provisioning_failed — bookmark "main" not found on will/smithers`)
+      expect(requests.filter((key) => key.endsWith("/desktop/session"))).toEqual([])
+      /* The card carries plue's reason, and the wait's stage line is gone. */
+      expect(payloadOf(store)?.failureMessage).toBe(`bookmark "main" not found on will/smithers`)
+      expect(payloadOf(store)?.desktopStage).toBeUndefined()
+      expect(readDesktopStream("ws-1")).toBeNull()
+    } finally {
+      seam.dispose()
+    }
+  })
+
+  test("the wait is BOUNDED: a box that never leaves starting gives up at desktopBoxWait.maxAttempts and says so", async () => {
+    const { seam, store, requests } = await harness({
+      "POST api/repos/will/smithers/workspaces": json(202, desktopBox("starting")),
+      "GET api/repos/will/smithers/workspaces/ws-1": json(200, desktopBox("starting")),
+      "GET api/repos/will/smithers/bookmarks": json(200, { bookmarks: [] }),
+      "GET api/repos/will/smithers/workspace-snapshots": json(200, { snapshots: [] }),
+      "GET api/repos/will/smithers/workspace/sessions": json(200, { sessions: [] })
+    })
+    try {
+      const result = await seam.openDesktopBox()
+      expect(result).toBe(
+        "The desktop box ws-1 on will/smithers is still starting after 120s — /workspace.view ws-1 reads its state, /desktop tries again."
+      )
+      /* One read per attempt, and not one more: the loop stops, it does not slow down. */
+      expect(requests.filter((key) => key === "GET api/repos/will/smithers/workspaces/ws-1")).toHaveLength(desktopBoxWait.maxAttempts)
+      expect(requests.filter((key) => key.endsWith("/desktop/session"))).toEqual([])
+      expect(payloadOf(store)?.desktopStage).toBeUndefined()
+    } finally {
+      seam.dispose()
+    }
+  })
+
+  test("the card names the stage while it waits, and Stop ends the wait without touching the box", async () => {
+    const { seam, store, requests } = await harness({
+      "POST api/repos/will/smithers/workspaces": json(202, desktopBox("starting")),
+      "GET api/repos/will/smithers/workspaces/ws-1": async () => {
+        /* The card said where it had got to before this read was answered. */
+        expect(payloadOf(store)?.desktopStage).toBe("starting")
+        await seam.stopDesktopWait("ws-1")
+        return json(200, desktopBox("starting"))
+      },
+      "GET api/repos/will/smithers/bookmarks": json(200, { bookmarks: [] }),
+      "GET api/repos/will/smithers/workspace-snapshots": json(200, { snapshots: [] }),
+      "GET api/repos/will/smithers/workspace/sessions": json(200, { sessions: [] })
+    }, { desktopWaitMs: 50 })
+    try {
+      /* A superseded wait answers nothing: the human stopped it, so there is no line to read. */
+      expect(await seam.openDesktopBox()).toBeUndefined()
+      expect(payloadOf(store)?.desktopStage).toBeUndefined()
+      expect(requests.filter((key) => key.endsWith("/desktop/session"))).toEqual([])
+      /* Stop touched the box not at all — no suspend, no delete, no second create. */
+      expect(requests.filter((key) => key.startsWith("POST"))).toEqual(["POST api/repos/will/smithers/workspaces"])
+    } finally {
+      seam.dispose()
+    }
+  })
+
+  test("a 503 desktop_not_ready at the end of the wait reads plue's code and Retry-After on the card", async () => {
+    let mints = 0
+    const { seam, store } = await harness({
+      "POST api/repos/will/smithers/workspaces": json(200, desktopBox("running", true)),
+      "GET api/repos/will/smithers/bookmarks": json(200, { bookmarks: [] }),
+      "GET api/repos/will/smithers/workspace-snapshots": json(200, { snapshots: [] }),
+      "GET api/repos/will/smithers/workspace/sessions": json(200, { sessions: [] }),
+      "POST api/repos/will/smithers/workspaces/ws-1/desktop/session": () => {
+        mints += 1
+        return mints === 1
+          ? json(503, { code: "desktop_not_ready", message: "service unavailable" }, { "retry-after": "0" })
+          : json(201, DESKTOP_MINT)
+      }
+    })
+    try {
+      const result = await seam.openDesktopBox()
+      expect(result).toEqual({ value: `The desktop of "review" (ws-1) is streaming on the card until 2026-09-03T09:12:00Z.` })
+      /* plue asked to be retried, so it was — on its own clock, and the refusal read in its own words while it waited. */
+      expect(mints).toBe(2)
+      expect(payloadOf(store)?.desktopRefusal).toBeUndefined()
+    } finally {
+      dropDesktopStream()
+      seam.dispose()
+    }
+  })
+
+  test("a create plue refuses returns its own words, and nothing is waited for", async () => {
+    const { seam, requests } = await harness({
+      "POST api/repos/will/smithers/workspaces": json(409, { message: "no NixOS environment image is registered for kind desktop" })
+    })
+    try {
+      expect(await seam.openDesktopBox()).toBe("no NixOS environment image is registered for kind desktop")
+      expect(requests).toEqual(["POST api/repos/will/smithers/workspaces"])
+    } finally {
+      seam.dispose()
+    }
+  })
+
+  test("signed out, the one-command open refuses before it reaches plue", async () => {
+    const { seam, requests } = await harness({}, { signedIn: false })
+    try {
+      expect(await seam.openDesktopBox()).toBe("Sign in to Smithers Cloud first — /cloud.sign-in.")
+      expect(requests).toEqual([])
+    } finally {
+      seam.dispose()
+    }
+  })
 })

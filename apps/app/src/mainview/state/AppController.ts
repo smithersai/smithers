@@ -562,6 +562,11 @@ export interface AppController extends TutorialChangeController, IssueFlowsContr
   /* Lane L3b: the NixOS desktop and the environment images a repository has built. */
   readonly openWorkspaceDesktop: WorkspaceSeam["openDesktop"]
   readonly rotateWorkspaceDesktop: WorkspaceSeam["rotateDesktop"]
+  /** `/desktop`: create-or-reuse the desktop box, wait for it, and stream it, under one confirm. */
+  readonly openDesktopBox: WorkspaceSeam["openDesktopBox"]
+  readonly stopDesktopWait: WorkspaceSeam["stopDesktopWait"]
+  /** The repository the active selection names, for a flow that must BIND its target before it asks. */
+  readonly activeRepository: () => string | null
   readonly listEnvironmentImages: WorkspaceSeam["listEnvironmentImages"]
   readonly listSessionEgress: EgressSeam["listSessionEgress"]
   /*
@@ -1671,6 +1676,9 @@ export const createAppController = (
     listWorkspaceEgress: workspaceSeam.listEgress,
     openWorkspaceDesktop: workspaceSeam.openDesktop,
     rotateWorkspaceDesktop: workspaceSeam.rotateDesktop,
+    openDesktopBox: workspaceSeam.openDesktopBox,
+    stopDesktopWait: workspaceSeam.stopDesktopWait,
+    activeRepository: () => activeRepositoryId(store),
     listEnvironmentImages: workspaceSeam.listEnvironmentImages,
     listSessionEgress: egressSeam.listSessionEgress,
     viewChange: changeSeam.viewChange,

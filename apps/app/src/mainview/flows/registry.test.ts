@@ -8,6 +8,7 @@ import { PALETTES } from "../state/AppState"
 import { createAppStore } from "../state/AppStore"
 import { agentToolSpecs, executeAgentToolCall } from "./agentTools"
 import { visibleItems } from "./Commands"
+import { payloadFor } from "./SlashPayload"
 import {
   matches,
   namespaceOf,
@@ -219,6 +220,35 @@ describe("command registry pure model", () => {
    * and the world.* names stay registered as hidden aliases, so a saved
    * transcript or a parked command still resolves while nothing lists them.
    */
+  /*
+   * `/desktop` is the one-command open (entries/workspace.ts). The needle
+   * "desktop" is a NAME SUBSTRING of several flows, so the door has to win by
+   * rank, not by luck: `workspace.desktop.open` is the only VISIBLE flow the
+   * needle reaches, and the mint on a card's own id
+   * (`workspace.desktop`/`.rotate`/`.stop`) is hidden beside it. Typed with
+   * arguments the line never opens the overlay at all, and parseSubmit's
+   * exact, hidden-inclusive match lands on the bare `desktop` alias. Both
+   * doors run the same handler, so either resolution is the same act.
+   */
+  test("/desktop resolves to the one-command open, from the overlay and from the typed line", async () => {
+    const { controller } = await freshController()
+    const rows = controller.slashTree("desktop").filter((row) => row.kind === "flow")
+    expect(rows.map((row) => row.kind === "flow" ? row.flow.name : "")).toEqual(["workspace.desktop.open"])
+    /* The mint-again doors stay off the menu: they act on an id a card already holds. */
+    const visibleNames = visibleItems(controller.commands).map((command) => command.name)
+    for (const hidden of ["desktop", "workspace.desktop", "workspace.desktop.rotate", "workspace.desktop.stop"]) {
+      expect(visibleNames).not.toContain(hidden)
+      expect(controller.commands.find(hidden)).toBeDefined()
+    }
+    /* The typed line, with and without arguments, is a command and never a prompt. */
+    expect(parseSubmit("/desktop", controller.commands.all())).toEqual({ kind: "command", name: "desktop" })
+    expect(parseSubmit("/desktop main will/smithers", controller.commands.all()))
+      .toEqual({ kind: "command", name: "desktop", args: "main will/smithers" })
+    expect(payloadFor("desktop", "main will/smithers")).toEqual({ payload: { bookmark: "main", repo: "will/smithers" } })
+    expect(payloadFor("desktop", undefined)).toEqual({ payload: {} })
+    controller.dispose()
+  })
+
   test("/wiki is the visible surface switch and /world its hidden alias", async () => {
     const { controller } = await freshController()
     const visibleNames = visibleItems(controller.commands).map((command) => command.name)
@@ -724,8 +754,12 @@ describe("command registry bindings", () => {
       "workspace.services",
       "workspace.egress",
       // Lane L3b: the NixOS desktop (a minted credential, so confirmed) and the environment images.
+      // `/desktop` is the one-command open; `workspace.desktop` mints again on a card's own id.
+      "workspace.desktop.open",
+      "workspace.desktop.stop",
       "workspace.desktop",
       "workspace.desktop.rotate",
+      "desktop",
       "workspace.images",
       "egress.session",
       "change.view",

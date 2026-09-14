@@ -128,6 +128,19 @@ export interface FlowMetadata {
    */
   readonly confirm?: string | ((payload: Record<string, unknown>) => string | undefined)
   /**
+   * The slash line the confirmation carries, when the raw one the agent typed
+   * would not name the act.
+   *
+   * A confirmation waits for a human, and the world moves while it waits. A
+   * flow whose bare form resolves an implicit target — "the active
+   * repository" — would otherwise be re-parsed at confirm time and run
+   * against whatever is active THEN, not what the label promised. Such a flow
+   * resolves its target at ASK time and returns it here, so the button runs
+   * the act the message described. Undefined keeps the raw line, which is
+   * right for every flow whose payload already names its target.
+   */
+  readonly confirmArgs?: (payload: Record<string, unknown>) => string | undefined
+  /**
    * Why a user-only flow is the human's alone (the three-door law,
    * apps/app/AGENTS.md): the gesture is physically theirs, or the answer is
    * theirs to give. The agent's refusal quotes it, and

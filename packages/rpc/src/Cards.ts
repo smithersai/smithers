@@ -2023,6 +2023,14 @@ const CurrentCardSchema = z.discriminatedUnion("kind", [
        */
       desktopRefusal: SessionRefusalSchema.nullable().optional(),
       /**
+       * How far `/desktop` — the one-command open — has got on this box:
+       * creating, resuming, starting, activating, streaming. Present only while a
+       * wait is running, so the card can name the stage and offer a Stop.
+       * A stage is a state, never a credential: the minted stream URL stays
+       * in module memory (apps/app state/seams/DesktopStream.ts).
+       */
+      desktopStage: z.enum(["creating", "resuming", "starting", "activating", "streaming"]).optional(),
+      /**
        * plue#504: how the terminal session POST refused, on the terminal
        * facet. The same four facts as `desktopRefusal` — a 503
        * `guest_not_ready` is the one the seam retries on its own, because the

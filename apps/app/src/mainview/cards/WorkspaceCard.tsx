@@ -156,6 +156,15 @@ export const sessionUntil = (expiresAt: string | null, now: number = Date.now())
   return Number.isNaN(at) ? null : `session until ${timeLabel(at, now)}`
 }
 
+/** What `/desktop` is doing right now, in the product's words (box, never computer). */
+const DESKTOP_STAGE_LINE: Record<NonNullable<WorkspacePayload["desktopStage"]>, string> = {
+  creating: "creating the box",
+  resuming: "resuming the box",
+  starting: "starting the box",
+  activating: "the box is up, its desktop is still activating",
+  streaming: "starting the stream"
+}
+
 /*
  * Lane L3b — the Desktop facet: plue's NixOS VM streamed over VNC, embedded in
  * the card (THE EMBED LAW; maximize is the card's own act, and the frame fills
@@ -183,7 +192,8 @@ const WorkspaceDesktopBody = ({
   )
   if (stream === null) {
     const refusal = payload.desktopRefusal ?? null
-    if (refusal === null) return null
+    const stage = payload.desktopStage ?? null
+    if (refusal === null && stage === null) return null
     /*
      * plue's own words, verbatim — never a spinner in their place. A 409, and
      * only a 409, means the computer is not running and offers Resume. Every
@@ -198,14 +208,29 @@ const WorkspaceDesktopBody = ({
      */
     return (
       <div className="world-card-list">
-        <p className="world-card-empty">
-          {refusal.code != null ? `${refusal.code} — ` : ""}
-          {refusal.message}
-        </p>
-        {refusal.code === DESKTOP_NOT_READY && refusal.retryAfterSeconds != null ?
+        {/* The one-command open's own line: where the box got to, and the way out of the wait. */}
+        {stage === null ? null : <p className="world-card-path">{DESKTOP_STAGE_LINE[stage]}</p>}
+        {refusal === null ? null : (
+          <p className="world-card-empty">
+            {refusal.code != null ? `${refusal.code} — ` : ""}
+            {refusal.message}
+          </p>
+        )}
+        {refusal?.code === DESKTOP_NOT_READY && refusal.retryAfterSeconds != null ?
           <p className="world-card-path">{`the server asked for ${refusal.retryAfterSeconds}s`}</p> :
           null}
-        {refusal.status === 409 ?
+        {stage === null ? null : (
+          <Button
+            size="sm"
+            variant="outline"
+            data-flow="workspace.desktop.stop"
+            aria-label="Stop waiting for the desktop box"
+            onClick={() => onRunCommand("workspace.desktop.stop", payload.workspaceId)}
+          >
+            Stop waiting
+          </Button>
+        )}
+        {refusal?.status === 409 ?
           (
             <Button
               size="sm"
@@ -218,15 +243,17 @@ const WorkspaceDesktopBody = ({
             </Button>
           ) :
           null}
-        <Button
-          size="sm"
-          variant="outline"
-          data-flow="workspace.desktop"
-          aria-label="Try the desktop session again"
-          onClick={() => onRunCommand("workspace.desktop", payload.workspaceId)}
-        >
-          <RefreshCw size={12} aria-hidden="true" /> Retry
-        </Button>
+        {refusal === null ? null : (
+          <Button
+            size="sm"
+            variant="outline"
+            data-flow="workspace.desktop"
+            aria-label="Try the desktop session again"
+            onClick={() => onRunCommand("workspace.desktop", payload.workspaceId)}
+          >
+            <RefreshCw size={12} aria-hidden="true" /> Retry
+          </Button>
+        )}
       </div>
     )
   }

@@ -1296,6 +1296,7 @@ const FIXTURES: Record<Card["kind"], KindFixtures> = {
       egressCursor: "cursor-1",
       desktop: { ready: true, streamUrl: "/vnc", session: { id: "vnc-1", expiresAt: "2026-09-05T09:05:00Z" } },
       desktopRefusal: { status: 503, message: "desktop not ready", code: "desktop_not_ready", retryAfterSeconds: 5 },
+      desktopStage: "starting",
       terminalRefusal: { status: 503, message: "guest not ready", code: "guest_not_ready", retryAfterSeconds: 3 },
       facet: "desktop",
       terminalSessionId: "pty-1",

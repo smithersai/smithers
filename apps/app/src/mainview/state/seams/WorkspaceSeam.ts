@@ -93,6 +93,22 @@ export const DESKTOP_NOT_READY = "desktop_not_ready"
  * `Retry-After: 2` that is a minute of waiting, which is the activation
  * window. Module-level so tests shorten the wait rather than sleeping.
  */
+/**
+ * The one-command open (`/desktop`): how long the app waits for plue to bring
+ * a desktop box up before it stops and says so. plue took ~21 s on prod on
+ * 2026-09-13 (create 202 `starting` → `running` with `desktop.ready`), so the
+ * bound is generous rather than tight — but it IS a bound: a wait that never
+ * ends is a hang, and the card's Stop is the human's way out before it.
+ */
+export const desktopBoxWait = {
+  /** 60 × 2 s = ~120 s. Tests inject `desktopWaitMs: 0` and keep the attempt bound. */
+  maxAttempts: 60,
+  pollMs: 2_000
+} as const
+
+/** How far the one-command open has got; the card names it while nothing streams yet. */
+export type DesktopStage = "creating" | "resuming" | "starting" | "activating" | "streaming"
+
 export const desktopSessionRetry = {
   maxAttempts: 30,
   /** Used only when the refusal carried no `Retry-After` this app could read. */
@@ -174,6 +190,14 @@ export interface WorkspaceSeam {
   readonly openDesktop: (workspaceId?: string) => Promise<string | void | { readonly value: string }>
   /** `workspace.desktop.rotate <workspaceId>`: mint again (the guest's VNC password changes; the old iframe drops). */
   readonly rotateDesktop: (workspaceId?: string) => Promise<string | void | { readonly value: string }>
+  /**
+   * `/desktop [bookmark] [owner/repo]`: create-or-reuse the desktop box on a
+   * bookmark, wait for plue to report it ready, and mint its stream — the
+   * whole thing under the one confirmation the flow asked for.
+   */
+  readonly openDesktopBox: (bookmark?: string, repo?: string) => Promise<string | void | { readonly value: string }>
+  /** `workspace.desktop.stop <workspaceId>`: stop waiting for the box, without touching the box. */
+  readonly stopDesktopWait: (workspaceId: string) => Promise<string | void>
   /** `workspace.images [owner/repo]`: the environment images a repository has built. */
   readonly listEnvironmentImages: (repo?: string) => Promise<string | void | { readonly value: string }>
   /**
@@ -194,6 +218,8 @@ export type WorkspaceKind = (typeof WORKSPACE_KINDS)[number]
 export interface WorkspaceSeamDeps {
   /** The watch and session-settle poll interval; tests inject ~0. */
   readonly pollMs?: number
+  /** The one-command open's readiness poll interval; tests inject 0. */
+  readonly desktopWaitMs?: number
 }
 
 interface SnapshotRow {
@@ -242,6 +268,11 @@ interface CardAux {
       readonly retryAfterSeconds?: number | null
     }
     | undefined
+  /**
+   * How far `/desktop` has got. An explicit null clears the line — the wait
+   * ended, whether it streamed, failed, or the human stopped it.
+   */
+  readonly desktopStage?: DesktopStage | null | undefined
   /**
    * How the terminal session POST refused: the same four facts, on the
    * terminal facet (plue#504). `guest_not_ready` is the one the seam retries
@@ -602,6 +633,7 @@ const splitRepo = (repoId: string): { readonly owner: string; readonly name: str
 
 export const createWorkspaceSeam = (ctx: SeamContext, deps: WorkspaceSeamDeps = {}): WorkspaceSeam => {
   const pollMs = deps.pollMs ?? 5_000
+  const desktopWaitMs = deps.desktopWaitMs ?? desktopBoxWait.pollMs
   const repoPath = (repoId: string, rest: string): string => {
     const { owner, name } = splitRepo(repoId)
     return `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(name)}${rest}`
@@ -861,6 +893,14 @@ export const createWorkspaceSeam = (ctx: SeamContext, deps: WorkspaceSeamDeps = 
        * it without anyone having to remember to.
        */
       ...(overrides.desktopRefusal === undefined ? {} : { desktopRefusal: overrides.desktopRefusal }),
+      /*
+       * The wait's stage is the act's too, but it must SURVIVE the status
+       * polls that land mid-wait — so unlike a refusal it carries forward,
+       * and only an explicit null (the wait ended) clears it.
+       */
+      ...(overrides.desktopStage === undefined
+        ? prior?.desktopStage == null ? {} : { desktopStage: prior.desktopStage }
+        : overrides.desktopStage === null ? {} : { desktopStage: overrides.desktopStage }),
       ...(overrides.terminalRefusal === undefined ? {} : { terminalRefusal: overrides.terminalRefusal })
     }
     const card: Card = {
@@ -1654,6 +1694,8 @@ export const createWorkspaceSeam = (ctx: SeamContext, deps: WorkspaceSeamDeps = 
         dropDesktopStream(workspace.id)
         renderWorkspace(workspace, {
           facet: "desktop",
+          /* The mint owns the card from here: the one-command open's stage line has done its work. */
+          desktopStage: null,
           desktopRefusal: {
             status: response.status,
             message,
@@ -1674,7 +1716,8 @@ export const createWorkspaceSeam = (ctx: SeamContext, deps: WorkspaceSeamDeps = 
         return `Smithers Cloud's answer for the desktop session on ${workspace.id} was malformed.`
       }
       holdDesktopStream(minted)
-      renderWorkspace(workspace, { facet: "desktop" })
+      /* The frame is the streaming state; a stage line beside it would outlive what it described. */
+      renderWorkspace(workspace, { facet: "desktop", desktopStage: null })
       /* The line names the workspace and when the session lapses — never the URL that carries the password. */
       return {
         value: `The desktop of "${workspace.name}" (${workspace.id}) is ${
@@ -1730,6 +1773,151 @@ export const createWorkspaceSeam = (ctx: SeamContext, deps: WorkspaceSeamDeps = 
 
   const openDesktop: WorkspaceSeam["openDesktop"] = (workspaceId) => mintDesktopSession(workspaceId, "open")
   const rotateDesktop: WorkspaceSeam["rotateDesktop"] = (workspaceId) => mintDesktopSession(workspaceId, "rotate")
+
+  /* plue's own words for a box that failed, its code beside them when it recorded one. */
+  const boxFailure = (box: CloudWorkspaceInput): string => {
+    const message = box.failureMessage ?? `The desktop box ${box.id} failed.`
+    return box.failureCode == null ? message : `${box.failureCode} — ${message}`
+  }
+
+  /*
+   * ---- `/desktop`: the one-command open ----
+   *
+   * Create-or-reuse, wait, mint — under the ONE confirmation the flow asked
+   * for. The three steps are plue's, not this app's invention:
+   *
+   *  - REUSE is plue's. `POST …/workspaces` is find-or-create per
+   *    (repository, user, kind) — the same uniqueness `uq_workspaces_active`
+   *    enforces (plue db/migrations/20260902549500). A RUNNING or STARTING
+   *    desktop box comes back as it stands; a SUSPENDED one comes back
+   *    suspended, so the resume below is the app's part; a FAILED one is not
+   *    active, so plue builds a replacement and the app just waits for it.
+   *    The app does not scan its own collection for a box to reuse: a stale
+   *    row would fight the index rather than agree with it.
+   *  - READINESS is plue's: `running` is not enough, the guest's NixOS
+   *    activation has to finish, which the DTO says as `desktop.ready`.
+   *  - The MINT is `mintDesktopSession`, unchanged: the credential goes to
+   *    module memory and never to the card.
+   *
+   * The wait is BOUNDED (`desktopBoxWait`, ~120 s) and stoppable
+   * (`stopDesktopWait`, the card's button). Every refusal reads in plue's own
+   * words — a `failed` box says its `failure_message`, the 503 the mint
+   * retries says its code and its `Retry-After`.
+   */
+  const openDesktopBox: WorkspaceSeam["openDesktopBox"] = async (bookmark, repo) => {
+    const refusal = gate()
+    if (refusal !== undefined) return refusal
+    const target = resolveTargetRepo(ctx.store, repo)
+    if ("error" in target) return target.error
+    /* The same default `workspace.open` applies: the repository's head bookmark, never an invented one. */
+    const repoRow = ctx.store.collections.repositories.get(target.repo)
+    const source = bookmark === undefined || bookmark === "" ? repoRow?.head?.bookmark ?? undefined : bookmark
+    const created = await sendJson("POST", repoPath(target.repo, "/workspaces"), {
+      ...(source === undefined ? {} : { source_bookmark: source }),
+      kind: "desktop"
+    })
+    if ("error" in created) {
+      return created.code === EGRESS_PROXY_UNAVAILABLE
+        ? `${EGRESS_PROXY_UNAVAILABLE} — ${created.error}`
+        : created.error
+    }
+    const opened = parseWorkspaceWire(created.body, target.repo)
+    if (opened === null) return `Smithers Cloud's answer for the desktop box on ${target.repo} was malformed.`
+    let box: CloudWorkspaceInput = opened
+    ctx.dispatch({ type: "workspace.updated", actor: "system", workspace: box })
+    /*
+     * One wait at a time per box, on the same epoch the mint uses: the card's
+     * Stop, a later mint, and leaving the facet all supersede this wait
+     * because all three bump it.
+     */
+    const epoch = (desktopMintEpochs.get(box.id) ?? 0) + 1
+    desktopMintEpochs.set(box.id, epoch)
+    const authorized = currentOperation(box.id)
+    const current = (): boolean => authorized() && gate() === undefined && desktopMintEpochs.get(box.id) === epoch
+    renderWorkspace(box, { facet: "desktop", desktopStage: "creating" })
+    const [bookmarkHead, snapshots, sessions] = await Promise.all([
+      loadBookmarkHead(box.repoId, box.targetBookmark),
+      loadSnapshots(box.repoId),
+      loadSessions(box.repoId, box.id)
+    ])
+    if (!current()) return
+    renderWorkspace(box, {
+      facet: "desktop",
+      desktopStage: "creating",
+      bookmarkHead,
+      ...(snapshots === null ? {} : { snapshots }),
+      ...(sessions === null ? {} : { sessions })
+    })
+    /* A suspended box is plue's reuse answer for one that was put to sleep; waking it is this app's part. */
+    if (box.status === "suspended" || box.status === "stopped") {
+      renderWorkspace(box, { facet: "desktop", desktopStage: "resuming" })
+      const resumed = await sendJson("POST", workspacePath(box.repoId, box.id, "/resume"))
+      if (!current()) return
+      if ("error" in resumed) {
+        renderWorkspace(box, { facet: "desktop", desktopStage: null, error: resumed.error })
+        return resumed.error
+      }
+      const fresh = parseWorkspaceWire(resumed.body, box.repoId)
+      if (fresh !== null) {
+        box = fresh
+        ctx.dispatch({ type: "workspace.updated", actor: "system", workspace: box })
+      }
+    }
+    /*
+     * The readiness wait. `running` alone does not stream: plue answers the
+     * mint 503 `desktop_not_ready` until the guest finishes activating, and
+     * says so on the DTO as `desktop.ready`. A DTO that names no `ready` at
+     * all (null) is not a "no" — the mint's own bounded retry is the
+     * authority then, so a running box with an unstated readiness goes
+     * through rather than burning the wait on a fact plue never asserted.
+     */
+    for (let attempt = 0;; attempt += 1) {
+      const row: CloudWorkspaceInput = ctx.store.collections.cloudWorkspaces.get(box.id) ?? box
+      if (row.status === "failed") {
+        renderWorkspace(row, { facet: "desktop", desktopStage: null })
+        return boxFailure(row)
+      }
+      if (row.status === "running" && row.desktop?.ready !== false) break
+      /* `running` with `desktop.ready: false` is the guest still activating — a different fact from still booting. */
+      renderWorkspace(row, { facet: "desktop", desktopStage: row.status === "running" ? "activating" : "starting" })
+      if (attempt >= desktopBoxWait.maxAttempts) {
+        renderWorkspace(row, { facet: "desktop", desktopStage: null })
+        return `The desktop box ${row.id} on ${row.repoId} is still ${row.status} after ${
+          Math.round((desktopBoxWait.maxAttempts * desktopBoxWait.pollMs) / 1_000)
+        }s — /workspace.view ${row.id} reads its state, /desktop tries again.`
+      }
+      if (!await sleep(desktopWaitMs, box.id)) return
+      if (!current()) return
+      const answer = await getJson(workspacePath(box.repoId, box.id, ""))
+      if (!current()) return
+      if ("error" in answer) continue
+      const fresh = parseWorkspaceWire(answer.body, box.repoId)
+      if (fresh === null) continue
+      box = fresh
+      ctx.dispatch({ type: "workspace.updated", actor: "system", workspace: box })
+    }
+    renderWorkspace(box, { facet: "desktop", desktopStage: "streaming" })
+    /*
+     * The mint bumps the epoch itself, which ends this wait — by design: from
+     * here the mint owns the card, including the `desktop_not_ready` 503 it
+     * retries on plue's own `Retry-After`.
+     */
+    return mintDesktopSession(box.id, "open")
+  }
+
+  /*
+   * The card's "Stop waiting": bump the epoch and clear the stage. It ends
+   * the wait and any `desktop_not_ready` retry riding the same epoch, and
+   * touches the box itself not at all — plue keeps building it, and
+   * `/workspace.view` reads where it got to.
+   */
+  const stopDesktopWait: WorkspaceSeam["stopDesktopWait"] = async (workspaceId) => {
+    const row = ctx.store.collections.cloudWorkspaces.get(workspaceId)
+    if (row === undefined) return `Workspace ${workspaceId} is not loaded — /workspace.list refreshes the inventory`
+    desktopMintEpochs.set(workspaceId, (desktopMintEpochs.get(workspaceId) ?? 0) + 1)
+    cancelSleeps(workspaceId)
+    renderWorkspace(row, { desktopStage: null })
+  }
 
   /*
    * The environment images a repository has built (ADR 0002: the environment
@@ -1919,6 +2107,8 @@ export const createWorkspaceSeam = (ctx: SeamContext, deps: WorkspaceSeamDeps = 
     listEgress,
     openDesktop,
     rotateDesktop,
+    openDesktopBox,
+    stopDesktopWait,
     listEnvironmentImages,
     applyStatusEvent,
     dispose

@@ -13,6 +13,16 @@ import type { CommandActions } from "./Declare"
 /** The `workspace` namespace row: the slash tree lists it in registry.ts NAMESPACES order. */
 export const namespace: Namespace = { id: "workspace", label: "Boxes", summary: "Open and drive the box for a branch: stream, snapshot, and inspect it (ADR 0002)" }
 
+/**
+ * The repository `/desktop` will act on: the one the invocation named, else
+ * the one the selection names right now. Resolved at ASK time so the
+ * confirmation can bind it (registry.ts `confirmArgs`); undefined when
+ * nothing is selected, which is the seam's refusal to make, not this
+ * declaration's.
+ */
+const desktopRepo = (actions: CommandActions, payload: Record<string, unknown>): string | undefined =>
+  text(payload, "repo") ?? actions.activeRepository() ?? undefined
+
 /** The `workspace.*` flows: the boxes (the design session says box, never computer). */
 export const workspaceFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> => [
   /*
@@ -245,17 +255,68 @@ export const workspaceFlows = (actions: CommandActions): ReadonlyArray<FlowEntry
     handler: ({ workspaceId, cursor }) => actions.listWorkspaceEgress(workspaceId, cursor)
   }),
   /*
-   * Lane L3b: the desktop. `workspace.desktop` MINTS a session — an absolute,
+   * Lane L3b: the desktop. Every flow here MINTS a session — an absolute,
    * already-credentialed stream URL carrying a live machine's VNC password —
-   * so it carries `confirm`: the model may ask for it, the human performs it.
-   * The credential never enters the store; the facet reads it out of module
-   * memory (state/seams/DesktopStream.ts).
+   * so each carries `confirm`: the model may ask for it, the human performs
+   * it. The credential never enters the store; the facet reads it out of
+   * module memory (state/seams/DesktopStream.ts).
+   *
+   * `/desktop` — the one-command open. Two slash commands and two confirms
+   * (`workspace.open --kind desktop`, then `workspace.desktop`) were the
+   * whole of what a person wanted: a box with a screen. This flow is that
+   * want, and it carries ONE confirmation for the launch AND the mint
+   * because it is one act.
+   *
+   * It is the VISIBLE desktop door, which is also how `/desktop` resolves
+   * deterministically: the slash tree ranks by name (registry.ts nameRank),
+   * so a needle of "desktop" reaches exactly the visible flows whose name or
+   * summary holds it. `workspace.desktop` below is therefore hidden — it
+   * mints on an id a card already holds, which is a button's act, like
+   * `workspace.desktop.rotate` beside it — and the bare `desktop` alias at
+   * the end of this block catches the typed line with arguments.
    */
+  flow({
+    name: "workspace.desktop.open",
+    form: {
+      fields: { bookmark: { optionsFrom: "bookmarks", kind: "text" }, repo: { optionsFrom: "cloud-repos", kind: "text" } },
+      args: (payload) => line(text(payload, "bookmark"), text(payload, "repo"))
+    },
+    summary: "Open a desktop box on a bookmark and stream its screen into the card: create or reuse it, wait for it, and start the stream",
+    runtime: ["cloud"],
+    capabilities: ["outbound:launch"],
+    confirm: (payload) => `open a desktop box on ${desktopRepo(actions, payload) ?? "the selected repository"}`,
+    /*
+     * The confirmation carries the repository this ask resolved, never the
+     * bare line: the human may switch repositories while the message waits,
+     * and the button must run the act the message named.
+     */
+    confirmArgs: (payload) => {
+      const repo = desktopRepo(actions, payload)
+      return repo === undefined ? undefined : line(text(payload, "bookmark"), repo)
+    },
+    args: "[bookmark] [owner/repo]",
+    requires: ["signed-in"],
+    input: Schema.Struct({ bookmark: Schema.optional(Schema.String), repo: Schema.optional(Schema.String) }),
+    handler: ({ bookmark, repo }) => actions.openDesktopBox(bookmark, repo)
+  }),
+  flow({
+    /* The card's "Stop waiting": it ends the wait, and leaves the box to plue. */
+    name: "workspace.desktop.stop",
+    form: { fields: { workspaceId: { optionsFrom: "workspaces" } } },
+    summary: "Stop waiting for a desktop box to come up",
+    runtime: ["cloud"],
+    hidden: true,
+    args: "<workspaceId>",
+    requires: ["signed-in"],
+    input: Schema.Struct({ workspaceId: Schema.String }),
+    handler: ({ workspaceId }) => actions.stopDesktopWait(workspaceId)
+  }),
   flow({
     name: "workspace.desktop",
     form: { fields: { workspaceId: { optionsFrom: "workspaces" } } },
-    summary: "Open the desktop of a cloud workspace and stream it into the card",
+    summary: "Mint a new stream for a desktop box the card already holds",
     runtime: ["cloud"],
+    hidden: true,
     confirm: "open the workspace's desktop",
     args: "<workspaceId>",
     requires: ["signed-in"],
@@ -274,6 +335,34 @@ export const workspaceFlows = (actions: CommandActions): ReadonlyArray<FlowEntry
     requires: ["signed-in"],
     input: Schema.Struct({ workspaceId: Schema.String }),
     handler: ({ workspaceId }) => actions.rotateWorkspaceDesktop(workspaceId)
+  }),
+  flow({
+    /*
+     * The bare door. `/desktop` typed with arguments never opens the slash
+     * overlay (the draft holds a space), so it lands on parseSubmit's exact,
+     * hidden-inclusive name match — the same way `/issues open` reaches the
+     * bare `issues` alias. Hidden, because the visible door is
+     * `workspace.desktop.open` and the two run the same handler, so whichever
+     * one a line resolves to, the act is identical.
+     */
+    name: "desktop",
+    hidden: true,
+    form: {
+      fields: { bookmark: { optionsFrom: "bookmarks", kind: "text" }, repo: { optionsFrom: "cloud-repos", kind: "text" } },
+      args: (payload) => line(text(payload, "bookmark"), text(payload, "repo"))
+    },
+    summary: "Open a desktop box on a bookmark and stream its screen into the card",
+    runtime: ["cloud"],
+    capabilities: ["outbound:launch"],
+    confirm: (payload) => `open a desktop box on ${desktopRepo(actions, payload) ?? "the selected repository"}`,
+    confirmArgs: (payload) => {
+      const repo = desktopRepo(actions, payload)
+      return repo === undefined ? undefined : line(text(payload, "bookmark"), repo)
+    },
+    args: "[bookmark] [owner/repo]",
+    requires: ["signed-in"],
+    input: Schema.Struct({ bookmark: Schema.optional(Schema.String), repo: Schema.optional(Schema.String) }),
+    handler: ({ bookmark, repo }) => actions.openDesktopBox(bookmark, repo)
   }),
   flow({
     name: "workspace.images",

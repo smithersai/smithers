@@ -725,6 +725,55 @@ describe("the workspace card's desktop facet", () => {
     host.remove()
   })
 
+  /*
+   * `/desktop` — the one-command open — names where the box has got to while
+   * nothing streams yet, and offers the way out of the wait. plue's own words
+   * still read beside the stage when it refused: the stage is what the app is
+   * doing, the refusal is what the server said, and neither stands in for the
+   * other.
+   */
+  test("the wait names its stage and offers Stop, with no frame and no Retry until the server refuses", () => {
+    dropDesktopStream()
+    const { host, commands } = render(desktopCard({ facet: "desktop", status: "starting", desktopStage: "starting" }))
+    expect(host.textContent).toContain("starting the box")
+    expect(host.querySelector("iframe")).toBeNull()
+    /* Nothing was refused, so the facet offers no Retry and no Resume — only a wait to stop. */
+    const labels = (): Array<string | null> => [...host.querySelectorAll("button")].map((button) => button.getAttribute("aria-label"))
+    expect(labels()).toContain("Stop waiting for the desktop box")
+    expect(labels()).not.toContain("Try the desktop session again")
+    expect(labels()).not.toContain("Resume the workspace and open its desktop")
+    click(host, "Stop waiting for the desktop box")
+    expect(commands[0]).toEqual({ name: "workspace.desktop.stop", args: "ws-1" })
+    host.remove()
+  })
+
+  test("once the mint has answered, the wait's stage is gone: plue's words stand alone", () => {
+    dropDesktopStream()
+    /*
+     * The seam clears the stage the moment the mint owns the card
+     * (WorkspaceSeam mintDesktopSession), so a refusal never reads under a
+     * line claiming the stream is starting. This is the card half of that:
+     * with no stage, the facet is plue's words and the acts they license.
+     */
+    const { host } = render(
+      desktopCard({
+        facet: "desktop",
+        status: "running",
+        desktopRefusal: { status: 503, message: "service unavailable", code: "desktop_not_ready", retryAfterSeconds: 3 }
+      })
+    )
+    expect(host.textContent).toContain("desktop_not_ready — service unavailable")
+    for (const stale of ["starting the stream", "starting the box", "creating the box"]) {
+      expect(host.textContent).not.toContain(stale)
+    }
+    const labels = [...host.querySelectorAll("button")].map((button) => button.getAttribute("aria-label"))
+    expect(labels).toContain("Try the desktop session again")
+    expect(labels).not.toContain("Stop waiting for the desktop box")
+    /* Only a 409 says the box is not running, so only a 409 offers a Resume. */
+    expect(labels).not.toContain("Resume the workspace and open its desktop")
+    host.remove()
+  })
+
   test("a 503 desktop_not_ready prints plue's code beside its sanitized message, and offers Retry (plue#496)", () => {
     dropDesktopStream()
     const { host, commands } = render(

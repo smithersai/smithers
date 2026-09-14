@@ -362,6 +362,39 @@ describe("the three-door law", () => {
     expect(picks()).toBe(1)
   })
 
+  /*
+   * `/desktop` is consequential — it launches a box and mints a live
+   * machine's credential — so the model may ASK for it and never perform it.
+   * The ask is one confirmation for the whole act, and it BINDS the
+   * repository it resolved: a confirmation waits for a human, the selection
+   * moves while it waits, and the button must run the act the message named.
+   */
+  test("the agent's bare /desktop confirms once, naming and binding the repository the ask resolved", async () => {
+    const { controller, store } = await boot()
+    cloudSession(store, "signed-in", "will")
+    store.dispatch({
+      type: "repositories.loaded",
+      actor: "system",
+      repositories: [
+        { id: "will/smithers", org: "will", ownerKind: "user", name: "smithers", head: { bookmark: "main", changeId: "q", commitId: "c" } },
+        { id: "will/force", org: "will", ownerKind: "user", name: "force", head: { bookmark: "main", changeId: "q", commitId: "c" } }
+      ]
+    })
+    store.dispatch({ type: "repo.selected", actor: "user", id: "will/smithers" })
+    await settle()
+    const result = await execute(controller, "desktop")
+    expect(result).toContain("asked the user to confirm")
+    const confirmation = confirmationFor(store, "desktop")
+    expect(confirmation?.text).toContain("open a desktop box on will/smithers")
+    /* The bare line became an explicit one: the button cannot drift to another repository. */
+    expect(confirmation?.action?.args).toBe("will/smithers")
+    /* Switching the selection afterwards changes nothing the confirmation will run. */
+    store.dispatch({ type: "repo.selected", actor: "user", id: "will/force" })
+    await settle()
+    expect(confirmationFor(store, "desktop")?.action?.args).toBe("will/smithers")
+    controller.dispose()
+  })
+
   test("cloud.prompt renders the Smithers Cloud sign-in step; signed in it says so", async () => {
     const { store, controller } = await boot()
     cloudSession(store, "signed-out", null)

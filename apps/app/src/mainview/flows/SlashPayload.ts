@@ -89,6 +89,14 @@ const flowRunBody = (args: string | undefined): { name?: string; repo?: string; 
 /** The three sandbox kinds `workspace.open --kind` accepts (ADR 0002). */
 const KINDS: ReadonlyArray<string> = ["container", "vm", "desktop"]
 
+/** `[bookmark] [owner/repo]`: the one-command desktop open and its bare `desktop` door. */
+const desktopOpen = (args: string | undefined, known?: KnownRepositories): Parsed => {
+  const { rest, repo } = splitTrailingRepo(args, known)
+  const bookmark = rest.trim()
+  if (/\s/.test(bookmark)) return no("desktop takes a bookmark and optionally an owner/repo")
+  return ok({ ...(bookmark === "" ? {} : { bookmark }), ...(repo === undefined ? {} : { repo }) })
+}
+
 /**
  * The rest of the trimmed line after its first `count` tokens, with the
  * spacing inside it intact — how a grammar takes a tail that may hold
@@ -708,8 +716,19 @@ const GRAMMAR: Readonly<Record<string, Grammar>> = {
     return ok(workspaceId === undefined ? { path } : { path, workspaceId })
   },
   "workspace.services": (args) => optional("workspaceId", args),
-  /* Lane L3b: the desktop mints a credential, so it is always addressed by id. */
+  /*
+   * Lane L3b: a mint is always addressed by id, because it hands out a
+   * credential for one named box. The one-command open is the exception that
+   * proves it — it takes no id because it is what CREATES the box:
+   * `/desktop [bookmark] [owner/repo]`, the same shape as `workspace.open`
+   * without the kind. A bookmark is one token; the trailing `owner/repo` is
+   * the target.
+   */
+  "workspace.desktop.open": (args, known) => desktopOpen(args, known),
+  "desktop": (args, known) => desktopOpen(args, known),
   "workspace.desktop": (args) => required("workspaceId", args, "workspace.desktop needs a workspace id"),
+  "workspace.desktop.stop": (args) =>
+    required("workspaceId", args, "workspace.desktop.stop needs a workspace id"),
   "workspace.desktop.rotate": (args) =>
     required("workspaceId", args, "workspace.desktop.rotate needs a workspace id"),
   "workspace.images": (args) => repoOnly("workspace.images", args),
