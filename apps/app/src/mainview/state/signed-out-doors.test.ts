@@ -24,7 +24,7 @@ const setup = async (fetchImpl?: import("./AppController").AppServices["fetchImp
 }
 
 for (const [name, args] of [["flow.run", "review smithersai/smithers"], ["secrets.list", undefined], ["issues.link-linear", "3"]] as const) {
-  test(`${name} signed out parks with the sign-in prompt and no OAuth or toast`, async () => {
+  test(`${name} signed out parks with the sign-in prompt and an actionable toast, without starting OAuth`, async () => {
     const { controller, store, requests, redirects } = await setup()
     controller.runCommand(name, args)
     await settle()
@@ -32,7 +32,9 @@ for (const [name, args] of [["flow.run", "review smithersai/smithers"], ["secret
     expect(store.session().pendingCommand).toMatchObject({ name, args: args ?? null, requirement: "signed-in" })
     expect(requests).toEqual([])
     expect(redirects).toEqual([])
-    expect([...store.collections.toasts.values()]).toEqual([])
+    const toasts = [...store.collections.toasts.values()]
+    expect(toasts).toHaveLength(1)
+    expect(toasts[0]).toMatchObject({ key: "command.requirement", action: { flow: "auth.sign-in", label: "Sign in with GitHub" } })
   })
 }
 

@@ -118,6 +118,7 @@ const PRESENTATION_ONLY = [
 // Indirections added with the focused guide and run cards. Scope each literal
 // to its component so a similarly named handler cannot inherit the exception.
 const DELEGATED_HANDLERS: Readonly<Record<string, readonly string[]>> = {
+  "../ToastAction.tsx": ["onAction(action)"], // ToastStack/App and GuideShell bind the typed action to runCommand(action.flow, action.args)
   "../HelpBubble.tsx": ["onClick={dismiss}"], // restores focus, then onDismiss() dismisses transient help
   "../InputModeMenu.tsx": ["open ? close() : setOpen(true)", "latest.current.onChange(value)"], // transient menu; selection is input.mode at both mounts
   "../cards/LiveTutorialRunBody.tsx": ["scoped("], // runSourceCommand(card.id, onRunCommand) keeps the source frame
@@ -199,7 +200,7 @@ describe("launch-law parity: every affordance is a command", () => {
       // +1: the Flows pane's Triggers button, the button door of triggers.list.
       // +1: the Wiki pane's Factory button, the button door of factory.show.
       // +1 (Librarian L5): the Wiki pane's Graph button, the button door of wiki.graph.
-      "../App.tsx": 4,
+      "../App.tsx": 5,
       // Shared by the workspace and tutorial: copy, message CTA, retry, and explain.
       "../TranscriptMessage.tsx": 4,
       "../StorageRecoveryButton.tsx": 1,
@@ -249,6 +250,7 @@ describe("launch-law parity: every affordance is a command", () => {
       "../DevtoolsPanel.tsx": 1,
       "../SearchPalette.tsx": 6, // + Ask Smithers, the first row of an empty ⌘K
       "../SurfaceChrome.tsx": 3,
+      "../ToastAction.tsx": 1,
       "../ToastStack.tsx": 1,
       /* The multi-parity domain cards: every handler routes through onRunCommand. */
       /* 3 = 2 + the issue card's Link to Linear…, the door onto issues.link-linear's form (lane sync). */

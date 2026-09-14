@@ -260,7 +260,9 @@ describe("the repository's flows are slash leaves", () => {
     controller.send("/review")
     await settled()
     expect(store.session().pendingCommand).toMatchObject({ name: "review", requirement: "signed-in" })
-    expect([...store.collections.toasts.values()].map((toast) => toast.detail)).toEqual([])
+    const toasts = [...store.collections.toasts.values()]
+    expect(toasts).toHaveLength(1)
+    expect(toasts[0]).toMatchObject({ key: "command.requirement", action: { flow: "auth.sign-in" } })
     const outcome = await controller.commands.run("flow.run", "review")
     expect(outcome.status).not.toBe("unknown-command")
   })
