@@ -27,6 +27,25 @@ smithers-coding-host serve --root /home/developer/workspace --host 0.0.0.0 --por
 
 `--help` and `--version` work before opening the repository or resolving provider credentials. The same `Serve.refuse` policy requires a credential and explicit `--listen` for a non-loopback bind. The Plue service owns its workspace lifetime lock and process scope.
 
+Node model requests honor `HTTP_PROXY`, `HTTPS_PROXY` and `NO_PROXY` (lowercase
+forms take precedence), including after a transport pool rebuild. An unconfigured
+host retains its direct Undici agent. Workspace deployments can therefore use
+Plue's existing proxy-bound repository secrets: the guest holds a named
+placeholder while the egress proxy substitutes the credential only for the
+configured host/header. For example, `SMITHERS_CODING_IMPLEMENT_MODEL=cerebras:gpt-oss-120b`
+uses `CEREBRAS_API_KEY`, bound to host `api.cerebras.ai` and header `authorization`.
+Assign that credential through the repository's agent-environment secret route;
+do not put its value in ordinary environment variables or the setup script.
+
+`node flows/test/canary-coding-setup.mjs /tmp/canary-coding-setup` prepares a
+self-contained setup script for the documented canary fixture. It registers the
+real coding/request flow and Markdown checks without installing packages in the
+workspace. Its acceptance test deliberately fails the initial README until the
+requested Purpose section exists, and rejects broken relative Markdown links.
+These checks validate documentation, not an application test suite. The generated
+project configuration is selected with
+`SMITHERS_CODING_PROJECT=.smithers/coding-project.json`.
+
 `coding-plan/v1` is advertised only after the configured catalog includes `coding` and `coding/implementation` with their expected native delegates, and Plue's adapter verifies the repository's provisioned native binding. Conflicted JJ state refuses startup. The gateway reports the existing protocol version and workspace hash, plus the owning gateway row ID. The ordinary CLI does not advertise this capability.
 
 Providing the private `planning` operator configuration also enables
