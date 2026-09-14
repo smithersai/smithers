@@ -13,9 +13,11 @@ export const issueFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> =>
     handler: ({ number, repo }) => actions.runIssueFlow("repro", number, repo) }),
   flow({ name: "issue.poc", summary: "Build a proof of concept for an issue", runtimeAny: ["cloud", "practice"], input: NumberedTarget,
     confirm: "ask an agent to build a proof of concept", handler: ({ number, repo }) => actions.runIssueFlow("poc", number, repo) }),
-  flow({ name: "issue.implement", summary: "Plan an issue's implementation for review", runtimeAny: ["cloud", "practice"], input: NumberedTarget,
-    confirm: "inspect the issue and prepare its implementation plan",
-    handler: ({ number, repo }) => actions.suggestTutorialChange(repo, `Implement issue #${number}; research its context, then plan the fix before changing code.`) }),
+  flow({ name: "issue.implement", summary: "Plan and implement an issue with the workspace's coding flow", runtimeAny: ["cloud", "practice"], input: NumberedTarget,
+    confirm: "research, plan, and implement the issue using the workspace's configured checks",
+    handler: ({ number, repo }) => isPracticeRepo(repo)
+      ? actions.suggestTutorialChange(repo, `Implement issue #${number}; research its context, then plan the fix before changing code.`)
+      : actions.runIssueImplementation(number, repo) }),
   flow({ name: "issue.add-flow", summary: "Add a flow to the issue namespace", runtimeAny: ["cloud", "practice"],
     form: { args: payload => JSON.stringify(payload), fields: { description: { label: "What should this issue flow do?" } } },
     input: Schema.Struct({ number: Schema.Number, repo: Schema.optional(Schema.String), description: Schema.String }),
