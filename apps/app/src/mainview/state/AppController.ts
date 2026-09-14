@@ -46,7 +46,7 @@ import { createAuthBillingController } from "./controller/auth-billing"
 import { createConnectorController } from "./controller/connectors"
 import { createControllerContext } from "./controller/context"
 import type { NetEntry } from "./controller/context"
-import { createFailureController } from "./controller/failures"
+import { humanCommandText, createFailureController } from "./controller/failures"
 import { createFramesController } from "./controller/frames"
 import { createPluginsController } from "./controller/plugins"
 import { createPresentationController } from "./controller/presentation"
@@ -1176,13 +1176,7 @@ export const createAppController = (
    */
   const deferCommand = (name: string, args: string | null, requirement: string): void => {
     store.dispatch({ type: "command.deferred", actor: "user", name, args, requirement })
-    const unmet = flowRequirements.find(candidate => candidate.id === requirement)
-    if (unmet?.fulfill === "auth.prompt" && commands.find("auth.sign-in") !== undefined) {
-      const key = "command.requirement"
-      store.dispatch({ type: "toast.shown", actor: "system", key, title: unmet.reason })
-      resolveToast(key, { status: "failed", detail: `/${name} will continue after sign-in.`,
-        action: { flow: "auth.sign-in", label: "Sign in with GitHub" } })
-    }
+    // The fulfilling prompt owns the answer. Parking survives OAuth silently.
   }
 
   const noteCommandRun = (name: string): void => {
@@ -1420,15 +1414,17 @@ export const createAppController = (
     // IS the act, not its latency) — then the command re-enters the one run
     // path, where the NEXT unmet requirement, if any, parks it again.
     const key = `command.resume.${pending.name}`
-    store.dispatch({ type: "toast.shown", actor: "system", key, title: `Continuing /${pending.name}` })
+    const summary = commands.find(pending.name)?.metadata.summary ?? "This action"
+    store.dispatch({ type: "toast.shown", actor: "system", key, title: `Continuing: ${summary}` })
     void commands.run(pending.name, pending.args ?? undefined).then((outcome) => {
       resolveToast(key, {
         status: outcome.status === "failed" ? "failed" : "ok",
         detail: outcome.status === "failed"
-          ? outcome.error
+          ? humanCommandText(commands, outcome.error)
           : outcome.status === "unknown-command"
-          ? `/${pending.name} is no longer a command`
-          : `/${pending.name} continued`
+          ? `${summary} is no longer available`
+          : `${summary} continued`,
+        autoDismissMs: ctx.toastAutoDismissMs
       })
     })
   }

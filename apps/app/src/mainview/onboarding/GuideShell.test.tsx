@@ -86,13 +86,15 @@ const mountGuide = async (step: number, clock?: GuideClock, answers: Record<stri
 
 const still: GuideClock = { setTimeout: () => 1, clearTimeout: () => {} }
 
-for (const trigger of ["click", "shortcut"] as const) test(`the requirement toast starts sign-in by ${trigger}`, async () => {
+for (const trigger of ["click", "shortcut"] as const) test(`an actionable seam notice starts sign-in by ${trigger}`, async () => {
   let controller!: ReturnType<typeof createAppController>
   const host = await mountGuide(1, still, {}, async c => {
     controller = c
     c.store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-out", login: null,
       allowlisted: false, admin: false, scopesPlain: null })
-    await c.commands.run("flow.list")
+    await c.store.dispatch({ type: "toast.shown", actor: "system", key: "seam.sign-in", title: "Sign in with GitHub" }).isPersisted.promise
+    await c.store.dispatch({ type: "toast.resolved", actor: "system", key: "seam.sign-in", status: "failed", detail: "Sign in to continue.",
+      action: { flow: "auth.sign-in", label: "Sign in with GitHub" } }).isPersisted.promise
   })
   const run = spyOn(controller, "runCommand").mockReturnValue(true)
   try {
@@ -110,8 +112,7 @@ for (const trigger of ["click", "shortcut"] as const) test(`the requirement toas
       expect(run).not.toHaveBeenCalled()
       input.dispatchEvent(new KeyboardEvent("keyup", { key: "G", ctrlKey: true, shiftKey: true, bubbles: true, cancelable: true }))
     }
-    expect(run.mock.calls).toEqual([["toast.dismiss", "toast-command.requirement"], ["auth.sign-in", undefined]])
-    expect(controller.store.session().pendingCommand?.name).toBe("flow.list")
+    expect(run.mock.calls).toEqual([["toast.dismiss", "toast-seam.sign-in"], ["auth.sign-in", undefined]])
   } finally { run.mockRestore(); controller.dispose() }
 }, 2_000)
 const settle = async () => {
@@ -739,6 +740,52 @@ test("a sign-in answer scrolls into the tutorial read without changing the lesso
   } finally {
     geometry.mockRestore()
   }
+}, 2_000)
+
+test("closing Chat keeps its answer anchored independently of the composer", async () => {
+  let controller!: ReturnType<typeof createAppController>
+  const host = await mountGuide(2, still, { conversationOpen: true }, c => { controller = c })
+  const viewport = host.querySelector<HTMLElement>(".guide-transcript")!
+  const originalRect = HTMLElement.prototype.getBoundingClientRect
+  const geometry = spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function(this: HTMLElement) {
+    if (this === viewport) return { top: 100, bottom: 600, height: 500 } as DOMRect
+    if (this.matches('[data-chat-message-id]')) return { top: 650 - viewport.scrollTop } as DOMRect
+    if (this.matches('[data-message-step="2"]')) return { top: 110 - viewport.scrollTop } as DOMRect
+    return originalRect.call(this)
+  })
+  viewport.scrollTo = (options: ScrollToOptions | number = {}) => {
+    if (typeof options !== "number" && options.top !== undefined) viewport.scrollTop = options.top
+  }
+  const frame = () => new Promise<void>(resolve => requestAnimationFrame(() => resolve()))
+  try {
+    await controller.store.dispatch({ type: "message.submitted", actor: "user", turnId: "paused", text: "What is issue 3 about?" }).isPersisted.promise
+    await controller.store.dispatch({ type: "card.upsert", actor: "system", card: {
+      id: "paused-answer", kind: "anonymous-ceiling", title: "Exploring is paused", status: "active", ordinal: 100, createdAt: 100,
+      payload: { message: "Sign in with GitHub to keep going.", retryAt: null },
+    } }).isPersisted.promise
+    await settle()
+    await frame()
+    expect(viewport.scrollTop).toBe(540)
+    await controller.guideAct("close")
+    await settle()
+    await frame()
+    host.querySelector('.guide-message')?.dispatchEvent(new Event("animationend", { bubbles: true }))
+    expect(controller.store.session().guide?.conversationOpen).toBe(false)
+    expect(viewport.scrollTop).toBe(540)
+    expect(host.querySelector('.guide-transcript [data-kind="anonymous-ceiling"] [data-flow="auth.sign-in"]')).not.toBeNull()
+  } finally { geometry.mockRestore(); controller.dispose() }
+}, 2_000)
+
+for (const kind of ["wiki", "history"] as const) test(`${kind} launch receipt uses the pill's name without internal ids`, async () => {
+  const host = await mountGuide(12, still, { repo: "will/demo" }, async controller => {
+    await controller.store.dispatch({ type: "card.upsert", actor: "system", card: {
+      id: `launch-${kind}`, kind: "run-trace", title: "Background run", status: "active", ordinal: 100, createdAt: 100,
+      payload: { repo: "will/demo", runId: "run-7", workflow: `librarian/${kind}`, phase: "running",
+        steps: [`Started librarian/${kind} on will/demo (run run-7).`], result: null, lastSeq: 0,
+        input: { _librarian: { kind, scope: "test", inspected: false } } },
+    } }).isPersisted.promise
+  })
+  expect(text(host.querySelector(`[data-run-chip="${kind}"]`))).toBe(`${kind === "wiki" ? "Wiki" : "Mythical history"} started on will/demo`)
 }, 2_000)
 
 

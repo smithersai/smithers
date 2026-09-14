@@ -3,7 +3,7 @@ import { describe, expect, test } from "bun:test"
 import { initialGuide } from "../AppState"
 import { createAppStore } from "../AppStore"
 import type { ControllerContext } from "./context"
-import { createFailureController } from "./failures"
+import { createFailureController, humanCommandText } from "./failures"
 
 /*
  * The toast run counter used to be write-only: every withToast set an entry
@@ -32,12 +32,22 @@ const fakeContext = async (options?: {
     toastRuns: new Map<string, number>(),
     toastDebounceMs: options?.toastDebounceMs ?? 0,
     toastAutoDismissMs: options?.toastAutoDismissMs ?? 0,
+    commands: { find: (name: string) => {
+      const summary = ({ "auth.sign-in": "Sign in with GitHub", "prs.list": "Read pull requests", "wiki.create": "Create Wiki" } as Record<string, string>)[name]
+      return summary ? { metadata: { summary } } : undefined
+    } },
     unref: () => {}
   } as unknown as ControllerContext
   return { ctx, store }
 }
 
 const settled = () => new Promise((resolve) => setTimeout(resolve, 0))
+
+test("human command references leave diagnostic URLs and file paths intact", async () => {
+  const { ctx } = await fakeContext()
+  expect(humanCommandText(ctx.commands, "Try /auth.sign-in. See https://host/auth.sign-in and /api/auth.sign-in for details."))
+    .toBe("Try Sign in with GitHub. See https://host/auth.sign-in and /api/auth.sign-in for details.")
+})
 
 describe("the toast run counter's terminal cleanup", () => {
   test("an ok run's entry leaves at settle; the toast then dismisses itself on its own state", async () => {
@@ -160,8 +170,20 @@ test("a refused command's notice dismisses itself after stating the refusal", as
   const failures = createFailureController(ctx)
   failures.surfaceCommandFailure("prs.list", { status: "failed", error: "The read was refused." })
   expect(store.collections.toasts.get("toast-command.failed.prs.list")?.detail).toBe("The read was refused.")
+  expect(store.collections.toasts.get("toast-command.failed.prs.list")?.title).toBe("Read pull requests didn't run")
   await settled()
   expect(store.collections.toasts.get("toast-command.failed.prs.list")).toBeUndefined()
+})
+
+test("a seam's sign-in notice uses human summaries and dismisses even with an action", async () => {
+  const { ctx, store } = await fakeContext()
+  createFailureController(ctx).surfaceCommandFailure("prs.list", { status: "failed", error: "Use /auth.sign-in to continue." })
+  const toast = store.collections.toasts.get("toast-command.failed.prs.list")
+  expect(toast?.title).toBe("Read pull requests didn't run")
+  expect(toast?.detail).toBe("Use Sign in with GitHub to continue.")
+  expect(toast?.action).toEqual({ flow: "auth.sign-in", label: "Sign in with GitHub" })
+  await settled()
+  expect(store.collections.toasts.size).toBe(0)
 })
 
 

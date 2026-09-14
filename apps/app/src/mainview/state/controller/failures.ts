@@ -22,6 +22,14 @@ export const ZERO_BALANCE_EXHAUSTED_TEXT =
  */
 export const TOAST_SUPERSEDED: unique symbol = Symbol("toast.superseded")
 
+/** Notices name registered acts in words; unrelated paths in seam errors stay intact. */
+export const humanCommandText = (commands: ControllerContext["commands"], text: string): string =>
+  text.replace(/(^|[\s`(])\/([a-z][\w-]*(?:\.[\w-]+)*)(?![\w/-])/g,
+    (reference, prefix: string, name: string) => {
+      const summary = commands.find(name)?.metadata.summary
+      return summary ? `${prefix}${summary}` : reference
+    })
+
 export interface FailureController {
   readonly withToast: <T>(
     key: string,
@@ -220,9 +228,10 @@ export const createFailureController = (ctx: ControllerContext): FailureControll
     const flow = signIn === "auth.sign-in" || signIn === "cloud.sign-in" ? signIn : undefined
     const entry = flow === undefined ? undefined : ctx.commands.find(flow)
     const action: Toast["action"] = flow && entry ? { flow, label: entry.metadata.summary } : undefined
-    ctx.store.dispatch({ type: "toast.shown", actor: "system", key, title: `/${name} didn't run` })
-    resolveToast(key, { status: "failed", detail: outcome.error, action,
-      ...(action === undefined ? { autoDismissMs: ctx.toastAutoDismissMs } : {}) })
+    const summary = ctx.commands.find(name)?.metadata.summary ?? "This action"
+    ctx.store.dispatch({ type: "toast.shown", actor: "system", key, title: `${summary} didn't run` })
+    resolveToast(key, { status: "failed", detail: humanCommandText(ctx.commands, outcome.error), action,
+      autoDismissMs: ctx.toastAutoDismissMs })
   }
 
   return { withToast, resolveToast, dismissToast, surfaceCommandFailure }

@@ -408,7 +408,7 @@ describe("the unavailable outcome — one answer for slash, button and agent", (
     await settle()
     const toasts = [...store.collections.toasts.values()]
     expect(toasts).toHaveLength(1)
-    expect(toasts[0]?.title).toBe("/workspace.terminal didn't run")
+    expect(toasts[0]?.title).toBe("This action didn't run")
     expect(toasts[0]?.detail).toBe(ORIGIN_REFUSAL)
     const agent = await executeAgentToolCall(controller.commands, {
       name: "commands",

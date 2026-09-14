@@ -124,7 +124,8 @@ export function GuideShell({ children, clock = guideClock }: { children: ReactNo
   const entries = guideTranscriptEntries(lessonCards.filter(card => stage < GUIDE_LAST_STEP || guide.transcript?.[card.id]?.source === "chat"), messages, guide)
   const typing = session.phase === "responding"
   const streamingMessageId = typing ? messages.at(-1)?.id : undefined
-  const chatAnchorId = guide.conversationOpen ? messages.filter(message => message.role === "user" && guide.transcript?.[message.id]?.step === stage).at(-1)?.id : undefined
+  // Closing the composer must not replace the answer's anchor with the lesson.
+  const chatAnchorId = messages.filter(message => message.role === "user" && guide.transcript?.[message.id]?.step === stage).at(-1)?.id
   const promptId = signInPrompts.at(-1)?.id
   const scrollToken = `${promptId ?? ""}:${stage}:${entries.map(entry => `${entry.kind === "card" ? entry.card.id + ':' + entry.card.kind : entry.message.id}`).join(",")}`
   /*
@@ -663,7 +664,7 @@ export function GuideShell({ children, clock = guideClock }: { children: ReactNo
             {librarianRuns.map(run => {
               const kind = (run.payload.input?._librarian as { kind?: string }).kind
               return <span key={run.id} className="guide-run-chip" data-run-chip={kind} data-phase={run.payload.phase}>
-                {kind === "wiki" ? "Wiki" : "History"} · {run.payload.steps[run.payload.steps.length - 1] ?? run.payload.phase}
+                {kind === "wiki" ? "Wiki" : "Mythical history"} {run.payload.phase === "running" ? "started" : run.payload.phase} on {run.payload.repo}
               </span>
             })}
           </span>

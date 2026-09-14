@@ -182,12 +182,16 @@ describe("repo.maintain", () => {
     const { store, controller } = await fixture({})
     identity(store, "signed-out")
     await settled()
+    const before = new Set(store.collections.transitions.keys())
     const outcome = await controller.commands.run("repo.maintain", REPO)
     expect(outcome.status).toBe("executed")
     await settled()
     // The gating decision: the auth.prompt step, one click away, and no maintain card yet.
     const prompt = lastMessage(store)
     expect(prompt?.action).toEqual({ flow: "auth.sign-in", label: "Sign in with GitHub" })
+    const events = [...store.collections.transitions.values()].filter(record => !before.has(record.id))
+    expect(events.filter(record => record.type === "message.appended")).toHaveLength(1)
+    expect(events.filter(record => record.type.startsWith("toast."))).toEqual([])
     expect(onboardingCards(store)).toEqual([])
     expect(store.session().pendingCommand).toMatchObject({ name: "repo.maintain", args: REPO, requirement: "signed-in" })
 

@@ -19,6 +19,17 @@ const webAgent = (message = "Could not reach the Smithers web agent."): AgentPor
   subscribe: () => () => {}
 })
 
+test("parking a gated act dispatches only the durable command, leaving the answer to its prompt", async () => {
+  const store = await webStore()
+  const controller = createAppController(store, unavailableRepositories, webAgent())
+  const before = new Set(store.collections.transitions.keys())
+  controller.deferCommand("issues.link-linear", "3", "signed-in")
+  const events = [...store.collections.transitions.values()].filter(record => !before.has(record.id))
+  expect(events.map(record => record.type)).toEqual(["command.deferred"])
+  expect(store.session().pendingCommand).toMatchObject({ name: "issues.link-linear", args: "3", requirement: "signed-in" })
+  expect([...store.collections.toasts.values()]).toEqual([])
+})
+
 describe("createAppController in pure web mode", () => {
   test("reports the native agent as unavailable without blocking the composer path", async () => {
     const controller = createAppController(await webStore(), unavailableRepositories, webAgent())

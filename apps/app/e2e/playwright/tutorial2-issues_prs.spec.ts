@@ -38,7 +38,11 @@ for (const door of ["issues", "prs"]) {
   test(`/${door} auth refusal does not check`, async ({ page }) => {
     await setup(page, false, true)
     await slash(page, `/${door}`)
-    await expect(page.locator(".guide-transcript").getByRole("button", { name: "Sign in with GitHub", exact: true })).toBeInViewport({ ratio: 1 })
+    const prompt = page.locator('.guide-transcript [data-testid="auth-prompt"]')
+  await expect(prompt).toHaveCount(1)
+  await expect(prompt).toContainText("Sign in with GitHub to link an issue to a Linear identifier.")
+  await expect(prompt.getByRole("button", { name: "Sign in with GitHub", exact: true })).toBeInViewport({ ratio: 1 })
+  await expect(page.locator("[data-toast-status]")).toHaveCount(0)
     await expect(page.locator(".guide-shell")).toHaveAttribute("data-stage", String(step))
   })
   test(`/${door} local-only repository stays local`, async ({ page }) => {
@@ -120,10 +124,47 @@ test("practice Linear link renders the sign-in prompt; bridge retains the chrome
   await expect(page.locator(".guide-shell")).toHaveAttribute("data-stage", "2")
   await page.keyboard.press("r")
   await page.locator(".guide-transcript").getByRole("button", { name: "Link to Linear…", exact: true }).click()
-  await expect(page.locator(".guide-transcript").getByRole("button", { name: "Sign in with GitHub", exact: true })).toBeInViewport({ ratio: 1 })
+  const prompt = page.locator('.guide-transcript [data-testid="auth-prompt"]')
+  await expect(prompt).toHaveCount(1)
+  await expect(prompt).toContainText("Sign in with GitHub to link an issue to a Linear identifier.")
+  await expect(prompt.getByRole("button", { name: "Sign in with GitHub", exact: true })).toBeInViewport({ ratio: 1 })
+  await expect(page.locator("[data-toast-status]")).toHaveCount(0)
   await page.keyboard.press("q")
   await expect(page.locator(".guide-shell")).toHaveAttribute("data-stage", "10")
   await expect(page.getByTestId("chrome-sign-in")).toBeVisible()
+})
+
+test("the paused answer keeps its sign-in door in view after Chat closes", async ({ page }) => {
+  await signedOutVisitor(page)
+  await page.setViewportSize({ width: 1280, height: 800 })
+  await page.route("**/api/agent/turn", route => route.fulfill({ status: 429, json: {
+    status: "error", code: "turn_rate_limited",
+    message: "That is 20 turns today without signing in, which is as far as exploring goes. Sign in with GitHub to keep going, or come back in about 6 hours. Nothing was charged.",
+    retryAt: "2026-09-15T06:00:00.000Z",
+  } }))
+  await page.goto("/")
+  await expect(page.locator(".guide-shell")).toHaveAttribute("data-stage", "1")
+  await page.keyboard.press("i")
+  await expect(page.locator(".guide-shell")).toHaveAttribute("data-stage", "2")
+  await page.keyboard.press("c")
+  await page.getByTestId("composer-input").fill("What is issue 3 about?")
+  await page.getByTestId("composer-input").press("Enter")
+  const card = page.locator('.guide-transcript [data-kind="anonymous-ceiling"]')
+  await expect(card).toContainText("Exploring is paused")
+  await page.keyboard.press("Escape")
+  await expect(page.getByTestId("composer-input")).not.toBeVisible()
+  const door = card.getByRole("button", { name: "Sign in with GitHub", exact: true })
+  await expect(door).toBeInViewport({ ratio: 1 })
+  await expect.poll(() => door.evaluate(node => {
+    const rect = node.getBoundingClientRect()
+    const hit = document.elementFromPoint(rect.x + rect.width / 2, rect.y + rect.height / 2)
+    return hit === node || node.contains(hit)
+  })).toBe(true)
+  await page.route("**/api/auth/github/start**", route => route.fulfill({ body: "Sign-in handoff" }))
+  await door.focus()
+  const signIn = page.waitForRequest(request => new URL(request.url()).pathname === "/api/auth/github/start")
+  await page.keyboard.press("Enter")
+  await signIn
 })
 
 
