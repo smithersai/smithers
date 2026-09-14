@@ -19,6 +19,7 @@ import type { Harness, Repo } from "@smthrs/rpc/LocalApp"
 import { REPOSITORY_ACCESS_VALUES } from "@smthrs/rpc/NativeRepository"
 import type { LocalRepositoryInspection, RepositoryAccess } from "@smthrs/rpc/NativeRepository"
 import { z } from "zod"
+import { FLOW_NAMES } from "../flows/FlowName"
 import { CloudWikiState } from "../wiki/CloudWikiState"
 
 export {
@@ -554,6 +555,7 @@ export const ToastSchema = z.object({
   title: z.string(),
   status: z.enum(["running", "ok", "failed"]),
   detail: z.string(),
+  action: z.object({ flow: z.enum(FLOW_NAMES), args: z.string().optional(), label: z.string() }).optional(),
   createdAt: z.number(),
   updatedAt: z.number()
 })
@@ -1496,6 +1498,7 @@ export type AppTransition =
     /** The settled title, so a done toast stops reading as still running. */
     title?: string
     detail: string
+    action?: Toast["action"]
   }
   | { type: "toast.dismissed"; actor: "user" | "system"; id: string }
 	| { type: "card.removed"; actor: Actor; id: string }

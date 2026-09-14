@@ -86,4 +86,22 @@ describe("a flow typed into the composer states its refusal", () => {
     await settled()
     expect(failedToasts(store).length).toBe(0)
   })
+
+  test("a seam's cloud sign-in refusal offers a persistent sign-in action", async () => {
+    const store = await signedInStore()
+    const controller = createAppController(store, unavailableRepositories, silentAgent, {
+      fetchImpl: async () => json(401, { status: "signed-out" }),
+      toastAutoDismissMs: 1
+    })
+    store.dispatch({ type: "cloud.session.loaded", actor: "system", state: "signed-out", username: null, expiresAt: null, scopes: null })
+    controller.send("/workspace.list")
+    await settled()
+    await settled()
+    const failed = failedToasts(store)
+    expect(failed).toHaveLength(1)
+    expect(failed[0]?.detail).toContain("/cloud.sign-in")
+    expect(failed[0]?.action).toMatchObject({ flow: "cloud.sign-in" })
+    await new Promise(resolve => setTimeout(resolve, 10))
+    expect(store.collections.toasts.get(failed[0]!.id)?.action?.flow).toBe("cloud.sign-in")
+  })
 })

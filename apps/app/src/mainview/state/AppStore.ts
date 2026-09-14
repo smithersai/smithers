@@ -2494,6 +2494,7 @@ const initializeAppStore = async (resolved: ResolvedPersistence, options: { read
             title: transition.title,
             status: "running",
             detail: "",
+            action: undefined,
             createdAt: existing?.createdAt ?? createdAt,
             updatedAt: createdAt
           }
@@ -2514,6 +2515,7 @@ const initializeAppStore = async (resolved: ResolvedPersistence, options: { read
             draft.status = transition.status
             if (transition.title !== undefined) draft.title = transition.title
             draft.detail = transition.detail
+            draft.action = transition.action
             draft.updatedAt = createdAt
           })
           break

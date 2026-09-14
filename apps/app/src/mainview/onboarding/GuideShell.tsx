@@ -32,6 +32,7 @@ import { GuidanceText } from "../GuidanceText"
 import { useCoarsePointer } from "../runtime/PointerMode"
 import { legacyLibrarianFailure, librarianFailureMessage, librarianLaunchFor } from "../state/LibrarianLaunch"
 import { guideActionState } from "./actionState"
+import { ToastActionButton, toastActionShortcut } from "../ToastAction"
 
 /** An original, short opt-in interval; no autoplay or copyrighted game audio. */
 function chime() {
@@ -268,6 +269,8 @@ export function GuideShell({ children, clock = guideClock }: { children: ReactNo
   inputHandlers.current = {
     enabled: () => !guide.finished && guide.reelIndex === undefined && !document.querySelector(".input-mode-menu"),
     resolve: (event) => {
+      const toastAction = toastActionShortcut(event, document)
+      if (toastAction) return toastAction
       const key = event.key.toLowerCase()
       const action = (activate: () => void, shortcut = key): PressAction => ({
         element: Array.from(document.querySelectorAll<HTMLElement>('.session-shell [aria-keyshortcuts], .guide-shell [aria-keyshortcuts]'))
@@ -320,6 +323,30 @@ export function GuideShell({ children, clock = guideClock }: { children: ReactNo
       enabled: () => inputHandlers.current.enabled(),
     })
   }, [stage, guide.playthrough, guide.reelIndex])
+  const notifications = toasts.length > 0 && (
+    <aside className="guide-toasts" aria-label="Notifications">
+      {[...toasts].sort((a, b) => b.createdAt - a.createdAt).map((toast) => (
+        <div className="guide-toast" key={toast.id} data-toast-status={toast.status} role={toast.status === "failed" ? "alert" : "status"}>
+          {toast.status === "running" ? <Spinner size="sm" aria-label="Working" /> : toast.status === "ok" ? <Check size={17} aria-hidden="true" /> : <X size={17} aria-hidden="true" />}
+          <div>
+            <strong>{toast.title}</strong>
+            {toast.detail && <p>{toast.detail}</p>}
+            <ToastActionButton toast={toast} onAction={action => {
+              controller.runCommand("toast.dismiss", toast.id)
+              controller.runCommand(action.flow, action.args)
+            }} />
+          </div>
+          <button
+            aria-label={`Dismiss ${toast.title}`}
+            data-flow="toast.dismiss"
+            onClick={() => controller.runCommand("toast.dismiss", toast.id)}
+          >
+            <X size={14} />
+          </button>
+        </div>
+      ))}
+    </aside>
+  )
   if (guide.finished) return <>{children}</>
   return (
     <GuideComposerHost.Provider value={composerHost}>
@@ -605,6 +632,8 @@ export function GuideShell({ children, clock = guideClock }: { children: ReactNo
             {conversationOpen && <InputModeMenu mode={session.inputMode ?? "normal"} placement="below" onChange={mode => controller.runCommand("input.mode", mode)} />}
           </section>
         </div>
+        {/* Native modal dialogs make everything outside inert, including toast actions. */}
+        {conversationOpen && notifications}
         </dialog>
       {/* The footer is the shell's last row; the palette overlay floats above it. */}
       <footer className="guide-footer" inert={conversationOpen || undefined}>
@@ -652,26 +681,7 @@ export function GuideShell({ children, clock = guideClock }: { children: ReactNo
           </GuideButton>
         )}
       </footer>
-      {toasts.length > 0 && (
-        <aside className="guide-toasts" aria-label="Notifications">
-          {[...toasts].sort((a, b) => b.createdAt - a.createdAt).map((toast) => (
-            <div className="guide-toast" key={toast.id} data-toast-status={toast.status} role={toast.status === "failed" ? "alert" : "status"}>
-              {toast.status === "running" ? <Spinner size="sm" aria-label="Working" /> : toast.status === "ok" ? <Check size={17} aria-hidden="true" /> : <X size={17} aria-hidden="true" />}
-              <div>
-                <strong>{toast.title}</strong>
-                {toast.detail && <p>{toast.detail}</p>}
-              </div>
-              <button
-                aria-label={`Dismiss ${toast.title}`}
-                data-flow="toast.dismiss"
-                onClick={() => controller.runCommand("toast.dismiss", toast.id)}
-              >
-                <X size={14} />
-              </button>
-            </div>
-          ))}
-        </aside>
-      )}
+      {!conversationOpen && notifications}
     </div>
     </GuideComposerHost.Provider>
   )

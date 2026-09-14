@@ -85,6 +85,35 @@ const mountGuide = async (step: number, clock?: GuideClock, answers: Record<stri
 
 
 const still: GuideClock = { setTimeout: () => 1, clearTimeout: () => {} }
+
+for (const trigger of ["click", "shortcut"] as const) test(`the requirement toast starts sign-in by ${trigger}`, async () => {
+  let controller!: ReturnType<typeof createAppController>
+  const host = await mountGuide(1, still, {}, async c => {
+    controller = c
+    c.store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-out", login: null,
+      allowlisted: false, admin: false, scopesPlain: null })
+    await c.commands.run("flow.list")
+  })
+  const run = spyOn(controller, "runCommand").mockReturnValue(true)
+  try {
+    const button = host.querySelector<HTMLButtonElement>('.guide-toasts [data-flow="auth.sign-in"]')!
+    expect(button).not.toBeNull()
+    expect(button.textContent).toContain("Sign in with GitHub")
+    expect(button.getAttribute("aria-keyshortcuts")).toContain("Control+Shift+G")
+    if (trigger === "click") button.click()
+    else {
+      // The recovery chord still works while text editing owns focus.
+      const input = document.createElement("textarea")
+      host.append(input)
+      input.focus()
+      input.dispatchEvent(new KeyboardEvent("keydown", { key: "G", ctrlKey: true, shiftKey: true, bubbles: true, cancelable: true }))
+      expect(run).not.toHaveBeenCalled()
+      input.dispatchEvent(new KeyboardEvent("keyup", { key: "G", ctrlKey: true, shiftKey: true, bubbles: true, cancelable: true }))
+    }
+    expect(run.mock.calls).toEqual([["toast.dismiss", "toast-command.requirement"], ["auth.sign-in", undefined]])
+    expect(controller.store.session().pendingCommand?.name).toBe("flow.list")
+  } finally { run.mockRestore(); controller.dispose() }
+})
 const settle = async () => {
   await new Promise(resolve => setTimeout(resolve, 0))
   flushSync(() => {})

@@ -581,6 +581,16 @@
 	flex: none;
 }
 
+.toast-action {
+	margin-top: var(--sp-3);
+	gap: var(--sp-2);
+}
+
+.toast-action kbd {
+	font-size: var(--fs-caption);
+	opacity: 0.7;
+}
+
 .world-surface {
 	display: flex;
 	min-width: 0;

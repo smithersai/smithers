@@ -146,6 +146,10 @@ describe("requirement axis — the run path", () => {
     expect(pending?.name).toBe("flow.list")
     expect(pending?.requirement).toBe("signed-in")
     expect(pending?.args).toBeNull()
+    expect(store.collections.toasts.get("toast-command.requirement")).toMatchObject({
+      title: "Sign in with GitHub first",
+      action: { flow: "auth.sign-in", label: "Sign in with GitHub" }
+    })
   })
 
   test("an agent-invoked command with an unmet requirement fails honestly and parks nothing", async () => {
@@ -174,6 +178,7 @@ describe("requirement axis — the run path", () => {
     await settled()
     expect(store.session().pendingCommand ?? null).toBeNull()
     const titles = [...store.collections.toasts.values()].map((toast) => toast.title)
+    expect(store.collections.toasts.get("toast-command.requirement")).toBeUndefined()
     expect(titles.some((title) => title.includes("Continuing /flow.list"))).toBe(true)
   })
 

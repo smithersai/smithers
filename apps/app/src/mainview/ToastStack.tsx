@@ -1,6 +1,7 @@
 import { Alert, AlertDescription, AlertTitle, Button, Spinner } from "@smthrs/ui"
 import { X } from "lucide-react"
 import type { Toast } from "./state/AppState"
+import { ToastActionButton, type ToastAction } from "./ToastAction"
 
 /*
  * The one shared toast surface (the 300ms law): a corner stack over the chat,
@@ -11,10 +12,12 @@ import type { Toast } from "./state/AppState"
  */
 export function ToastStack({
   toasts,
-  onDismiss
+  onDismiss,
+  onAction
 }: {
   readonly toasts: ReadonlyArray<Toast>
   readonly onDismiss: (id: string) => void
+  readonly onAction: (action: ToastAction) => void
 }) {
   if (toasts.length === 0) return null
   return (
@@ -37,6 +40,7 @@ export function ToastStack({
           <div className="toast-body">
             <AlertTitle className="toast-title">{toast.title}</AlertTitle>
             {toast.detail !== "" ? <AlertDescription className="toast-detail">{toast.detail}</AlertDescription> : null}
+            <ToastActionButton toast={toast} onAction={action => { onDismiss(toast.id); onAction(action) }} />
           </div>
           {toast.status === "failed" ?
             (

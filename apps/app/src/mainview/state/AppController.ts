@@ -1148,6 +1148,13 @@ export const createAppController = (
    */
   const deferCommand = (name: string, args: string | null, requirement: string): void => {
     store.dispatch({ type: "command.deferred", actor: "user", name, args, requirement })
+    const unmet = flowRequirements.find(candidate => candidate.id === requirement)
+    if (unmet?.fulfill === "auth.prompt" && commands.find("auth.sign-in") !== undefined) {
+      const key = "command.requirement"
+      store.dispatch({ type: "toast.shown", actor: "system", key, title: unmet.reason })
+      resolveToast(key, { status: "failed", detail: `/${name} will continue after sign-in.`,
+        action: { flow: "auth.sign-in", label: "Sign in with GitHub" } })
+    }
   }
 
   const noteCommandRun = (name: string): void => {
@@ -1375,6 +1382,7 @@ export const createAppController = (
     // Still waiting (or the requirement id no longer exists): leave it parked.
     if (requirement !== undefined && !requirement.satisfied(commands.state())) return
     store.dispatch({ type: "command.deferral.cleared", actor: "system" })
+    store.dispatch({ type: "toast.dismissed", actor: "system", id: "toast-command.requirement" })
     if (requirement === undefined || Date.now() - pending.requestedAt > deferralMaxAgeMs) return
     // The app acting on its own is announced (300ms law does not apply: this
     // IS the act, not its latency) — then the command re-enters the one run

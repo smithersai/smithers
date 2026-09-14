@@ -44,7 +44,7 @@ const renderToasts = (toasts: ReadonlyArray<Toast>): HTMLElement => {
   const host = document.createElement("div")
   document.body.append(host)
   const root = createRoot(host)
-  flushSync(() => root.render(<ToastStack toasts={toasts} onDismiss={() => {}} />))
+  flushSync(() => root.render(<ToastStack toasts={toasts} onDismiss={() => {}} onAction={() => {}} />))
   mounted.push(() => {
     flushSync(() => root.unmount())
     host.remove()

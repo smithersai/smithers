@@ -932,7 +932,7 @@
   line-height: 1.7;
   margin-top: 7px;
 }
-.guide-toast button {
+.guide-toast > button {
   background: none;
   border: 0;
   align-self: flex-start;

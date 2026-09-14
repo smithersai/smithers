@@ -1,6 +1,7 @@
 import { librarianLaunchFor } from "../LibrarianLaunch"
 import type { CommandOutcome } from "../../flows/Commands"
 import type { ControllerContext } from "./context"
+import type { Toast } from "../AppState"
 
 /**
  * Launch Checklist D-4's exhausted-balance refusal, shared between the
@@ -33,7 +34,7 @@ export interface FailureController {
    */
   readonly resolveToast: (
     key: string,
-    outcome: { readonly status: "ok" | "failed"; readonly title?: string; readonly detail: string; readonly autoDismissMs?: number }
+    outcome: { readonly status: "ok" | "failed"; readonly title?: string; readonly detail: string; readonly action?: Toast["action"]; readonly autoDismissMs?: number }
   ) => void
   readonly dismissToast: (id: string) => void
   readonly surfaceCommandFailure: (name: string, outcome: CommandOutcome) => void
@@ -58,7 +59,8 @@ export const createFailureController = (ctx: ControllerContext): FailureControll
       key,
       status: outcome.status,
       ...(outcome.title === undefined ? {} : { title: outcome.title }),
-      detail: outcome.detail
+      detail: outcome.detail,
+      action: outcome.action
     })
     if (outcome.status !== "ok" && outcome.autoDismissMs === undefined) return
     const resolvedAt = ctx.store.collections.toasts.get(id)?.updatedAt
@@ -187,8 +189,15 @@ export const createFailureController = (ctx: ControllerContext): FailureControll
     const inline = backgroundKind && guide && librarianLaunchFor(guide, backgroundKind)
     if (guide?.step === 12 && inline?.phase === "failed" && inline.reason === outcome.error) return
     const key = `command.failed.${name}`
+    // A seam can refuse before the requirement axis knows the session is gone.
+    // Turn its explicit sign-in command into the same human gesture as the prompt.
+    const signIn = outcome.error.match(/\/(auth\.sign-in|cloud\.sign-in)\b/)?.[1]
+    const flow = signIn === "auth.sign-in" || signIn === "cloud.sign-in" ? signIn : undefined
+    const entry = flow === undefined ? undefined : ctx.commands.find(flow)
+    const action: Toast["action"] = flow && entry ? { flow, label: entry.metadata.summary } : undefined
     ctx.store.dispatch({ type: "toast.shown", actor: "system", key, title: `/${name} didn't run` })
-    resolveToast(key, { status: "failed", detail: outcome.error, autoDismissMs: ctx.toastAutoDismissMs })
+    resolveToast(key, { status: "failed", detail: outcome.error, action,
+      ...(action === undefined ? { autoDismissMs: ctx.toastAutoDismissMs } : {}) })
   }
 
   return { withToast, resolveToast, dismissToast, surfaceCommandFailure }

@@ -661,6 +661,7 @@ function App() {
           <ToastStack
             toasts={toasts}
             onDismiss={(id) => controller.runCommand("toast.dismiss", id)}
+            onAction={action => controller.runCommand(action.flow, action.args)}
           />
         ) :
         null}
