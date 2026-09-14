@@ -124,9 +124,8 @@ const toPicker = async (page: Page) => {
 test("the whole tutorial walks every beat, keyboard first, through asynchronous live API doubles", async ({ page, baseURL }) => {
   const host = await boot(page, baseURL)
 
-  // Beat 0: both greeting lines and the goal card with four empty checkpoints; it advances with no input.
-  // The boot helper explicitly starts the tutorial.
-  await expect(line(page, 0)).toHaveText(lessonMessage(0, {}))
+  // The retired beat 0 renders no greeting; practice opens with four empty checkpoints.
+  await expect(line(page, 0)).toHaveCount(0)
   await expect(page.locator('[data-message-step="0"] p[data-line="2"]')).toHaveCount(0)
   await expect(page.locator(".guide-goal [data-checkpoint]")).toHaveCount(4)
   await expect(page.locator('.guide-goal [data-done="true"]')).toHaveCount(0)
@@ -221,10 +220,20 @@ test("the whole tutorial walks every beat, keyboard first, through asynchronous 
 
   expect(host.external()).toEqual([])
 
-  // Beat 10: the bridge. The practice cards step aside; Log in · A, Not now · X.
+  // Beat 10: keep the Change and completed goal with Log in · A, Not now · X.
   await expectBeat(page, 10)
-  await expect(page.locator("[data-tutorial-cards] [data-practice]")).toHaveCount(0)
+  await expect(change).toBeVisible()
+  await expect(plan).toBeVisible()
+  await expect(page.locator(".guide-goal")).toHaveAttribute("data-goal-state", "complete")
+  await expect(page.locator('.guide-goal [data-done="true"]')).toHaveCount(4)
   await shoot(page, 10)
+  await page.reload()
+  await rebooted(page)
+  await expectBeat(page, 10)
+  await until(page, change, "the bridge Change finishes hydrating")
+  await expect(change).toContainText("2 commits selected for review")
+  await expect(page.locator(".guide-goal")).toHaveAttribute("data-goal-state", "complete")
+  await expect(page.locator('.guide-goal [data-done="true"]')).toHaveCount(4)
   await page.keyboard.press("a")
   await rebooted(page)
   await until(page, followup(page, 10), "login is checked")
@@ -232,6 +241,9 @@ test("the whole tutorial walks every beat, keyboard first, through asynchronous 
 
   // Beat 11: Install the GitHub App · A — GitHub's page, then the setup-URL return, verified on the server.
   await expectBeat(page, 11)
+  await expect(change).toHaveCount(0)
+  await expect(plan).toHaveCount(0)
+  await expect(page.locator(".guide-goal")).toHaveCount(0)
   await shoot(page, 11)
   const beforeInstallUrl = page.url()
   const popupReady = page.context().waitForEvent("page")
@@ -348,15 +360,22 @@ test.describe("escape hatches", () => {
     await atStage(page, 10)
     await expect(page.locator(".guide-goal")).toHaveAttribute("data-goal-state", "skipped")
     await expect(page.locator(".guide-goal li")).toHaveText(["Issue", "Plan", "Commits", "Change"])
+    await expect(card(page, "issue-list")).toHaveCount(0)
+    await expect(card(page, "issue")).toHaveCount(0)
   })
 
   test("Not now (X) at login skips beats 11 and 12; the workspace stays on hello-server", async ({ page, baseURL }) => {
     const host = await boot(page, baseURL)
-    await atStage(page, 1)
-    await page.keyboard.press("q")
+    await toPicker(page)
+    await doBeat(page, 9, "g")
     await atStage(page, 10)
+    await expect(card(page, "change")).toBeVisible()
+    await expect(page.locator(".guide-goal")).toHaveAttribute("data-goal-state", "complete")
     await page.keyboard.press("x")
     await atStage(page, 13)
+    await expect(card(page, "change")).toHaveCount(0)
+    await expect(card(page, "issue-list")).toHaveCount(0)
+    await expect(page.locator(".guide-goal")).toHaveCount(0)
     await page.keyboard.press("c")
     await until(page, page.getByTestId("palette"), "the palette opens")
     await page.keyboard.press("Escape")

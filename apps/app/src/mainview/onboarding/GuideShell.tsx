@@ -1,6 +1,6 @@
 import { Spinner } from "@smthrs/ui"
 import {
-  GUIDE_BRIDGE, GUIDE_LAST_STEP, GUIDE_PRACTICE_END, GUIDE_STAGES,
+  GUIDE_BRIDGE, GUIDE_LAST_STEP, GUIDE_STAGES,
   lessonMessage, lessonText, lessonVisible, type GoalCheckpoint, type GuideAction,
 } from "./lessons"
 import { guideClock, readPause, scheduleGuideAdvance, type GuideClock } from "./advance"
@@ -80,10 +80,11 @@ export function GuideShell({ children, clock = guideClock }: { children: ReactNo
   const conversation = conversationTabIdOf(session)
   const guide = session.guide ?? initialGuide()
   const stage = guide.step
-  const practice = stage <= GUIDE_PRACTICE_END
-  /* The bridge (SCRIPT v4 principle 9): after practice, the practice cards step aside. */
+  const showPractice = stage <= GUIDE_BRIDGE
+  const skipped = guide.declined?.includes("practice") === true
+  /* Keep the payoff visible until the user acts on the bridge. Skipped practice stays hidden. */
   const lessonCards = tutorialTranscript(cards.filter(card => inConversation(card, conversation)))
-    .filter(card => practice || !cardRepo(card)?.startsWith("practice:"))
+    .filter(card => (showPractice && !skipped) || !cardRepo(card)?.startsWith("practice:"))
     .sort((a, b) => a.ordinal - b.ordinal)
   /*
    * Progression is data (GUIDE_STAGES): a say-beat keeps talking on its own
@@ -99,7 +100,6 @@ export function GuideShell({ children, clock = guideClock }: { children: ReactNo
     const step = GUIDE_STAGES.findIndex(asked => asked.kind === "do" && asked.goal === goal)
     return step >= 0 && done(step)
   }
-  const skipped = guide.declined?.includes("practice") === true
   const goalComplete = GOAL.every(([goal]) => goalDone(goal))
   // Dismissal is transient guidance chrome; lesson completion remains in the store.
   const [dismissedHelp, setDismissedHelp] = useState<string | null>(null)
@@ -342,7 +342,7 @@ export function GuideShell({ children, clock = guideClock }: { children: ReactNo
             </nav>
           )}
           {/* Tutorial progress, pinned above the transcript. */}
-          {stage > 0 && practice && (
+          {stage > 0 && showPractice && (
             <section className="guide-goal" aria-label="Goal" data-goal-state={skipped ? "skipped" : goalComplete ? "complete" : "open"}>
               <ol className="guide-goal-checkpoints">
                 {GOAL.map(([goal, label]) => (

@@ -9,6 +9,7 @@ import type { AgentPort } from "../runtime/AgentPort"
 import { createAppController } from "../state/AppController"
 import { initialGuide } from "../state/AppState"
 import { createAppStore } from "../state/AppStore"
+import { PRACTICE_CARD, practiceChange, practiceStack } from "../state/practice/PracticeRepository"
 import type { GuideClock } from "./advance"
 import { GuideShell } from "./GuideShell"
 import { GUIDE_KEYS, guideShortcut } from "./GuideButton"
@@ -57,10 +58,10 @@ const unavailableRepositories: NativeRepositories = {
 
 const text = (node: Element | null): string => (node?.textContent ?? "").replace(/\s+/g, " ").trim()
 
-const mountGuide = async (step: number, clock?: GuideClock, answers: Record<string, unknown> = { heard: "", project: "" }, observe?: (controller: ReturnType<typeof createAppController>) => void): Promise<HTMLElement> => {
+const mountGuide = async (step: number, clock?: GuideClock, answers: Record<string, unknown> = { heard: "", project: "" }, observe?: (controller: ReturnType<typeof createAppController>) => void | Promise<void>): Promise<HTMLElement> => {
   const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
   const controller = createAppController(store, unavailableRepositories, silentAgent)
-  observe?.(controller)
+  await observe?.(controller)
   await store.dispatch({ type: "guide.changed", actor: "user", guide: { ...initialGuide(), step, ...answers } }).isPersisted.promise
   const host = document.createElement("div")
   document.body.append(host)
@@ -119,11 +120,42 @@ test("every beat has keyboard navigation, one pill shape, and no numbered instru
       // Skip practice (Q) sits beside Back on the practice beats only.
       expect(host.querySelector(".guide-skip") !== null).toBe(lesson.practice === true)
     }
-    // The goal card is pinned through the practice beats.
-    expect(host.querySelector(".guide-goal") !== null).toBe(step > 0 && step <= 9)
+    // The payoff stays pinned until the user acts on the bridge.
+    expect(host.querySelector(".guide-goal") !== null).toBe(step > 0 && step <= GUIDE_BRIDGE)
     mounted.pop()?.()
   }
 })
+
+for (const { step, declined, visible, goalState } of [
+  { step: 10, declined: [], visible: true, goalState: "complete" },
+  { step: 11, declined: [], visible: false, goalState: null },
+  { step: 10, declined: ["practice"], visible: false, goalState: "skipped" },
+]) {
+  test(`persisted practice Change at stage ${step}, declined ${JSON.stringify(declined)}: cards ${visible ? "visible" : "hidden"}, goal ${goalState}`, async () => {
+    const stack = practiceStack([2, 3])
+    if (typeof stack === "string") throw new Error(stack)
+    let controller!: ReturnType<typeof createAppController>
+    const host = await mountGuide(step, still, {
+      completed: ["issue.opened", "plan.ready", "commits.made", "change.opened"], declined,
+    }, async c => {
+      controller = c
+      await c.store.dispatch({ type: "card.upsert", actor: "system", card: {
+        id: PRACTICE_CARD.commits, kind: "change", title: "Change #1", status: "active", createdAt: 1, ordinal: 1,
+        payload: practiceChange(stack),
+      } }).isPersisted.promise
+    })
+    await settle()
+    expect(host.querySelector('[data-tutorial-cards] [data-kind="change"]') !== null).toBe(visible)
+    const goal = host.querySelector(".guide-goal")
+    expect(goal?.getAttribute("data-goal-state") ?? null).toBe(goalState)
+    if (goalState === "complete") {
+      expect([...goal!.querySelectorAll('[data-done="true"]')].map(node => node.getAttribute("data-checkpoint")))
+        .toEqual(["issue", "plan", "commits", "change"])
+    }
+    // Stepping aside only changes the projection; the card survives reloads.
+    expect(controller.store.collections.cards.get(PRACTICE_CARD.commits)?.kind).toBe("change")
+  })
+}
 
 test("a real persisted completion shows the check and the follow-up line before advancing", async () => {
   let controller!: ReturnType<typeof createAppController>
@@ -204,7 +236,7 @@ test("Skip practice lands on an honest bridge without narrating unreached lesson
   await controller.guideAct("skip-practice")
   await settle()
   expect(controller.store.session().guide?.step).toBe(GUIDE_BRIDGE)
-  expect(host.querySelector(".guide-goal")).toBeNull()
+  expect(host.querySelector(".guide-goal")?.getAttribute("data-goal-state")).toBe("skipped")
   expect(text(host)).toContain("Bring your own repository")
   expect(text(host)).not.toContain("Everything you just did")
   expect(host.querySelector('[data-message-step="4"]')).not.toBeNull()
