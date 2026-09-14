@@ -581,8 +581,9 @@
 	min-height: 0;
 	flex: 1;
 	flex-direction: column;
-	gap: 8px;
-	padding: 20px 24px 80px;
+	gap: var(--sp-2);
+	/* 80px bottom keeps the last row clear of the composer dock. */
+	padding: var(--sp-5) var(--sp-6) 80px;
 	overflow: auto;
 }
 
@@ -596,7 +597,8 @@
 	width: min(100%, 980px);
 	min-height: 0;
 	margin: 0 auto;
-	padding: 28px 32px 100px;
+	/* 100px bottom clears the composer dock. */
+	padding: var(--sp-7) var(--sp-8) 100px;
 	flex: 1;
 	flex-direction: column;
 	overflow: auto;
@@ -604,15 +606,15 @@
 
 .plugin-rail {
 	display: flex;
-	gap: 6px;
+	gap: var(--sp-2);
 	flex-wrap: wrap;
-	margin-bottom: 16px;
+	margin-bottom: var(--sp-4);
 }
 
 .plugin-rail button {
 	display: flex;
-	padding: 6px 10px;
-	gap: 6px;
+	padding: var(--sp-2) var(--sp-3);
+	gap: var(--sp-2);
 	align-items: center;
 	border: 1px solid var(--border);
 	border-radius: var(--r-full);
@@ -627,7 +629,7 @@
 }
 
 .plugin-problem {
-	margin-bottom: 12px;
+	margin-bottom: var(--sp-3);
 	color: var(--warning);
 	font-size: var(--fs-small);
 }
@@ -635,14 +637,14 @@
 .plugin-gallery {
 	display: flex;
 	flex-direction: column;
-	gap: 20px;
+	gap: var(--sp-5);
 }
 
 .plugin-start {
 	display: flex;
-	padding: 16px 18px;
+	padding: var(--sp-4) var(--sp-5);
 	flex-direction: column;
-	gap: 10px;
+	gap: var(--sp-3);
 	border: 1px solid var(--golden-border);
 	border-radius: var(--r-sm);
 	background: var(--warning-soft);
@@ -659,9 +661,9 @@
 .plugin-start ol {
 	display: flex;
 	margin: 0;
-	padding-left: 18px;
+	padding-left: var(--sp-5);
 	flex-direction: column;
-	gap: 6px;
+	gap: var(--sp-2);
 	list-style: decimal;
 }
 
@@ -671,7 +673,7 @@
 }
 
 .plugin-start li strong {
-	margin-right: 6px;
+	margin-right: var(--sp-2);
 	color: var(--text);
 	font-weight: 600;
 }
@@ -690,13 +692,13 @@
 .plugin-shelf {
 	display: flex;
 	flex-direction: column;
-	gap: 10px;
+	gap: var(--sp-3);
 }
 
 .plugin-card {
 	display: grid;
-	padding: 14px 16px;
-	gap: 14px;
+	padding: var(--sp-4);
+	gap: var(--sp-4);
 	grid-template-columns: auto 1fr auto;
 	align-items: start;
 	border: 1px solid var(--border);
@@ -715,8 +717,8 @@
 
 .plugin-icon {
 	display: flex;
-	width: 36px;
-	height: 36px;
+	width: var(--ctl-h);
+	height: var(--ctl-h);
 	align-items: center;
 	justify-content: center;
 	border-radius: var(--r-sm);
@@ -728,7 +730,7 @@
 	display: flex;
 	min-width: 0;
 	flex-direction: column;
-	gap: 6px;
+	gap: var(--sp-2);
 }
 
 .plugin-body h3 {
@@ -767,7 +769,7 @@
 }
 
 .plugin-tags li {
-	padding: 1px 7px;
+	padding: 1px var(--sp-2);
 	border: 1px solid var(--border);
 	border-radius: var(--r-full);
 	color: var(--text-faint);
@@ -777,9 +779,9 @@
 .plugin-steps {
 	display: flex;
 	margin: 2px 0 0;
-	padding-left: 18px;
+	padding-left: var(--sp-5);
 	flex-direction: column;
-	gap: 4px;
+	gap: var(--sp-1);
 	color: var(--text-muted);
 	font-size: var(--fs-small);
 	list-style: decimal;
