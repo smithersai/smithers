@@ -1,0 +1,115 @@
+import { afterEach, describe, expect, test } from "bun:test"
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs"
+import { join } from "node:path"
+import { tmpdir } from "node:os"
+import { checkRealE2E, declaredFlowNames, executableImportClosure } from "./gate"
+
+const roots: string[] = []
+const fixture = (): { root: string; real: string; flows: string } => {
+  const root = mkdtempSync(join(tmpdir(), "real-e2e-gate-"))
+  roots.push(root)
+  const real = join(root, "real")
+  mkdirSync(real, { recursive: true })
+  const flows = join(root, "FlowName.ts")
+  writeFileSync(flows, `export const FLOW_NAMES = ["repo.open", "chat.send"] as const\n`)
+  return { root, real, flows }
+}
+
+afterEach(() => { while (roots.length) rmSync(roots.pop()!, { recursive: true, force: true }) })
+
+const valid = `
+import { test } from "./support"
+import { scenario } from "./coverage/types"
+test("opens", scenario("repo.open.success", { capabilities: ["filesystem:read"],
+  coverage: ["action:repo.open", "host:local", "path:success", "door:button", "dimension:desktop", "evidence:filesystem-readback"]
+}), async ({ page }) => { await page.getByRole("button").click(); expect(await readDisk()).toBe("bytes") })
+`
+
+describe("real E2E coverage gate", () => {
+  test("reads the canonical static action declaration rather than test names", () => {
+    const { flows } = fixture()
+    expect(declaredFlowNames(flows)).toEqual(["chat.send", "repo.open"])
+  })
+
+  test("accepts structured metadata but keeps unexecuted and uncovered cells visible", () => {
+    const { real, flows } = fixture()
+    writeFileSync(join(real, "repo.spec.ts"), valid)
+    const report = checkRealE2E({ realDir: real, flowNameFile: flows, now: "2026-09-14T00:00:00.000Z" })
+    expect(report.ok).toBe(true)
+    expect(report.gaps).toContainEqual({ kind: "action", value: "chat.send" })
+    expect(report.gaps).toContainEqual({ kind: "execution", value: "local", scenarioId: "repo.open.success" })
+  })
+
+  test("joins an actual passed verdict without converting other gaps to coverage", () => {
+    const { root, real, flows } = fixture()
+    writeFileSync(join(real, "repo.spec.ts"), valid)
+    const results = join(root, "results.json")
+    writeFileSync(results, JSON.stringify({ suiteStatus: "passed", reporterErrors: [], runs: [{ scenarioId: "repo.open.success", host: "local", status: "passed", revision: "a".repeat(40), startedAt: "2026-09-14T00:00:00Z", finishedAt: "2026-09-14T00:00:01Z" }] }))
+    const report = checkRealE2E({ realDir: real, flowNameFile: flows, resultsFile: results })
+    expect(report.gaps.some((gap) => gap.kind === "execution")).toBe(false)
+    expect(report.gaps).toContainEqual({ kind: "action", value: "chat.send" })
+  })
+
+  test("fails malformed or incomplete reporter evidence instead of treating it as no runs", () => {
+    const { root, real, flows } = fixture()
+    writeFileSync(join(real, "repo.spec.ts"), valid)
+    const results = join(root, "results.json")
+    writeFileSync(results, JSON.stringify({ suiteStatus: "failed", reporterErrors: ["host unverified"], runs: [] }))
+    const codes = checkRealE2E({ realDir: real, flowNameFile: flows, resultsFile: results }).findings.map((item) => item.code)
+    expect(codes).toContain("suite-did-not-pass")
+    expect(codes).toContain("reporter-evidence-error")
+  })
+
+  test("rejects interception and skip constructs in imported executable helpers", () => {
+    const { real, flows } = fixture()
+    writeFileSync(join(real, "repo.spec.ts"), valid.replace('import { test } from "./support"', 'import { test } from "./support"\nimport "./bad-helper"'))
+    writeFileSync(join(real, "bad-helper.ts"), `page.route("**/api/**", route => route.fulfill({ json: {} })); test.skip(true)\n`)
+    const report = checkRealE2E({ realDir: real, flowNameFile: flows })
+    expect(report.ok).toBe(false)
+    expect(report.findings.filter((item) => item.code === "forbidden-double")).toHaveLength(2)
+    expect(executableImportClosure([join(real, "repo.spec.ts")], real)).toContain(join(real, "bad-helper.ts"))
+  })
+
+  test("does not scan type-only imports as executable suite code", () => {
+    const { real, flows } = fixture()
+    writeFileSync(join(real, "repo.spec.ts"), valid.replace('import { test } from "./support"', 'import { test } from "./support"\nimport type { Fake } from "./types"'))
+    writeFileSync(join(real, "types.ts"), `page.route("**/*", handler)\nexport type Fake = string\n`)
+    expect(checkRealE2E({ realDir: real, flowNameFile: flows }).ok).toBe(true)
+  })
+
+  test("rejects unknown actions, invalid dimensions, and success without completion evidence", () => {
+    const { real, flows } = fixture()
+    writeFileSync(join(real, "bad.spec.ts"), valid.replace("action:repo.open", "action:repo.typo").replace(', "evidence:filesystem-readback"', "").replace('"dimension:desktop"', '"dimension:keyboard"').replace('"path:success"', '"path:success", "path:keyboard"'))
+    const codes = checkRealE2E({ realDir: real, flowNameFile: flows }).findings.map((item) => item.code)
+    expect(codes).toContain("unknown-action")
+    expect(codes).toContain("missing-completion-evidence")
+  })
+
+  test("allows only the explicit runtime repository-flow family marker", () => {
+    const { real, flows } = fixture()
+    writeFileSync(join(real, "dynamic.spec.ts"), valid.replace("action:repo.open", "action:repository-flow:*"))
+    expect(checkRealE2E({ realDir: real, flowNameFile: flows }).ok).toBe(true)
+  })
+
+  test("supports suite defaults but rejects duplicate ids across per-test and default declarations", () => {
+    const { real, flows } = fixture()
+    writeFileSync(join(real, "repo.spec.ts"), valid + `\ntest.use({ realScenario: { id: "repo.open.success", capabilities: ["filesystem:read"], coverage: ["action:repo.open", "host:local", "path:error", "door:slash", "dimension:error"] } })\n`)
+    const report = checkRealE2E({ realDir: real, flowNameFile: flows })
+    expect(report.findings.map((finding) => finding.code)).toContain("duplicate-scenario")
+  })
+
+  test("rejects a test whose suite defaults hide missing per-test identity", () => {
+    const { real, flows } = fixture()
+    writeFileSync(join(real, "default.spec.ts"), `import { test } from "./support"\ntest.use({ realScenario: { id: "suite.default", capabilities: ["filesystem:read"], coverage: ["action:repo.open", "host:local", "path:error", "door:button", "dimension:error"] } })\ntest("anonymous case", async () => {})\n`)
+    const report = checkRealE2E({ realDir: real, flowNameFile: flows })
+    expect(report.findings.map((finding) => finding.code)).toContain("missing-per-test-scenario")
+  })
+
+  test("rejects refusal text and nonempty text as success evidence", () => {
+    const { real, flows } = fixture()
+    writeFileSync(join(real, "weak.spec.ts"), valid.replace('expect(await readDisk()).toBe("bytes")', 'await expect(page.locator("output")).toContainText(/\\s+/); await expect(page.locator("output")).toContainText("permission denied")'))
+    const codes = checkRealE2E({ realDir: real, flowNameFile: flows }).findings.map((item) => item.code)
+    expect(codes).toContain("nonempty-is-not-success")
+    expect(codes).toContain("refusal-is-not-success")
+  })
+})
