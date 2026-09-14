@@ -35,7 +35,7 @@ export const PLUE_FAILURE_SCHEMA_VERSION = 1
  * @since 1.0.0
  * @category constants
  */
-export const PLUE_FAILURE_DIGEST = "sha256:bfb9d552dfd58163a6c338f2a87c18afa94a23e1730ac8a0b0221220e35150ce"
+export const PLUE_FAILURE_DIGEST = "sha256:e94c0c22f49a440667bffc84a8a337b14208a0380c3231eb44b24ed0213966b8"
 
 /**
  * Whose problem a failure is — plue's own word, and the only question the app
@@ -75,6 +75,7 @@ export const PLUE_FAILURE_CODES = [
   "bad_gateway",
   "bad_request",
   "branch_lock_held",
+  "build_cache_busy",
   "coding_guest_failure",
   "coding_host_unavailable",
   "coding_invalid_request",
@@ -215,6 +216,8 @@ export const PLUE_FAILURES = {
   "bad_request": { fault: "user", status: 400, retryAfter: 0 },
   /** Another person or agent holds the branch lock; details carry the holder and whether the caller may ask to join. */
   "branch_lock_held": { fault: "user", status: 409, retryAfter: 0 },
+  /** The build cache is at its own concurrency ceiling; the caller is inside its budget and the identical request works once a slot frees. */
+  "build_cache_busy": { fault: "wait", status: 429, retryAfter: 1 },
   /** The guest's coding helper failed. The guest's own sentence is logged server-side, never returned. */
   "coding_guest_failure": { fault: "bug", status: 503, retryAfter: 0 },
   /** The repository's configured coding host has not registered its native capability. */

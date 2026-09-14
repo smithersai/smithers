@@ -68,7 +68,7 @@ describe("the vendored plue failure registry", () => {
   test("every code has exactly one row — the table is the exhaustiveness gate", () => {
     // `satisfies Record<PlueFailureCode, PlueFailureEntry>` in the generated
     // file makes a missing row a COMPILE error; this pins the same fact at
-    // runtime so the count cannot silently diverge from plue's 95.
+    // runtime so the row count cannot silently diverge from plue's code list.
     expect(Object.keys(PLUE_FAILURES)).toHaveLength(PLUE_FAILURE_CODES.length)
     expect(new Set(PLUE_FAILURE_CODES).size).toBe(PLUE_FAILURE_CODES.length)
   })

@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "digest": "sha256:bfb9d552dfd58163a6c338f2a87c18afa94a23e1730ac8a0b0221220e35150ce",
+  "digest": "sha256:e94c0c22f49a440667bffc84a8a337b14208a0380c3231eb44b24ed0213966b8",
   "faults": [
     "user",
     "wait",
@@ -64,6 +64,13 @@
       "status": 409,
       "retry_after": 0,
       "doc": "Another person or agent holds the branch lock; details carry the holder and whether the caller may ask to join."
+    },
+    {
+      "code": "build_cache_busy",
+      "fault": "wait",
+      "status": 429,
+      "retry_after": 1,
+      "doc": "The build cache is at its own concurrency ceiling; the caller is inside its budget and the identical request works once a slot frees."
     },
     {
       "code": "coding_guest_failure",

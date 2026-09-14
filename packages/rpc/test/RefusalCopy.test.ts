@@ -1,7 +1,7 @@
 import { describe, expect, test } from "vitest"
 import { PLUE_FAILURES, PLUE_FAULTS } from "../src/PlueFailureCodes.ts"
 import type { PlueFailureCode } from "../src/PlueFailureCodes.ts"
-import { clientRefusal, refusalOf, workerRefusal } from "../src/Refusal.ts"
+import { clientRefusal, mayAutoRetry, refusalOf, workerRefusal } from "../src/Refusal.ts"
 import {
   agentRefusalText,
   INFRA_NOT_YOUR_FAULT,
@@ -28,7 +28,7 @@ describe("the copy table", () => {
     expect(Object.keys(REFUSAL_COPY).sort()).toEqual([...PLUE_FAULTS].sort())
   })
 
-  test("every one of plue's 95 codes resolves to a lead line and an agent sentence", () => {
+  test("every one of plue's codes resolves to a lead line and an agent sentence", () => {
     // The exhaustiveness that matters at runtime: the table is keyed by fault,
     // so a code plue adds is covered the moment it has a registry row — and a
     // code whose fault somehow has no row would surface here rather than as a
@@ -38,6 +38,28 @@ describe("the copy table", () => {
       expect(copy.lead, code).not.toBe("")
       expect(copy.agent, code).not.toBe("")
     }
+  })
+
+  test("a busy build cache is a wait with a stated pace, never the caller's request to change", () => {
+    // plue's build cache refuses with 429 when the CACHE is at its own
+    // concurrency ceiling, not the caller's budget. The Worker proxy forwards
+    // `code` and `retry_after` but drops `fault`, so a build that predates the
+    // code guesses from the status and tells the reader to change a request
+    // that works unchanged a second later.
+    expect(PLUE_FAILURES.build_cache_busy).toEqual({ fault: "wait", status: 429, retryAfter: 1 })
+    const refusal = refusalOf({
+      body: { code: "build_cache_busy", retry_after: 1 },
+      status: 429,
+      message: "build cache is busy"
+    })
+    expect(refusal.code).toBe("build_cache_busy")
+    expect(refusal.fault).toBe("wait")
+    expect(refusal.origin).toBe("plue")
+    expect(mayAutoRetry(refusal)).toBe(true)
+    expect(refusalLead(refusal)).toBe(REFUSAL_COPY.wait.lead)
+    expect(refusalDoors(refusal)).toEqual(["retry"])
+    expect(agentRefusalText(refusal)).toContain("fault=wait")
+    expect(agentRefusalText(refusal)).not.toContain("@fucory")
   })
 
   test("each fault renders its own lead line", () => {
