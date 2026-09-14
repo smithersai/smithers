@@ -113,15 +113,30 @@ export const GUIDE_BRIDGE = 10
 /** Global controls and Vim navigation cannot be assigned to lesson actions. */
 export const GUIDE_RESERVED_KEYS = ["s", "c", "m", "h", "j", "k", "l", "b", "w", "n", "q"] as const
 
-type GuideContext = { readonly repo?: string; readonly declined?: ReadonlyArray<string> }
+type GuideContext = { readonly repo?: string; readonly declined?: ReadonlyArray<string>; readonly completed?: ReadonlyArray<string>; readonly step?: number }
 /** `{repo}` becomes the user's repository; the terminal line follows the escape hatch taken. */
 export const lessonText = (text: string, guide: GuideContext): string => text.replaceAll("{repo}", guide.repo ?? "your repository")
 export const lessonMessage = (step: number, guide: GuideContext): string => {
   const lesson = GUIDE_STAGES[step]
   if (lesson === undefined) return ""
+  if (step === GUIDE_BRIDGE && guide.declined?.includes("practice")) return "Bring your own repository to Smithers. First, log in to GitHub."
   if (lesson.kind === "say" && lesson.variants !== undefined) {
     if (guide.declined?.includes("login")) return lesson.variants.login
     if (guide.declined?.includes("install")) return lesson.variants.install
   }
   return lessonText(lesson.message, guide)
+}
+
+/** A jump past declined lessons must not invent transcript messages for them. */
+export function lessonVisible(step: number, guide: GuideContext): boolean {
+  const lesson = GUIDE_STAGES[step]
+  if (lesson?.kind !== "do") return true
+  if (lesson.requires === "signed-in" && guide.declined?.includes("login")) return false
+  if (lesson.requires === "installed" && (guide.declined?.includes("login") || guide.declined?.includes("install"))) return false
+  if (lesson.practice && guide.declined?.includes("practice")) {
+    // Existing completion receipts recover the last reached lesson after reload.
+    const reached = Math.max(1, ...GUIDE_STAGES.flatMap((asked, index) => asked.kind === "do" && asked.practice && guide.completed?.includes(asked.completion) ? [index + 1] : []))
+    return step <= reached || step === guide.step
+  }
+  return true
 }

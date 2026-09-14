@@ -170,17 +170,11 @@
 .guide-lesson {
   text-align: center;
   animation: none;
-  /*
-   * The lesson keeps navigation in a full-height sticky range. Its transcript
-   * sizes to its content, so suggested actions follow the last chat card.
-   */
+  /* Only the transcript scrolls; navigation and the next action stay reachable. */
   display: flex;
   flex-direction: column;
-  /*
-   * Never shrink: the box always contains its rows, so the pinned navigation
-   * (PIN_NAV.md) keeps a sticky range as long as the lesson itself.
-   */
-  flex: 1 0 auto;
+  flex: 1;
+  min-height: 0;
 }
 /* Only the transcript gives up height; every other row keeps its own size. */
 .guide-lesson > * {
@@ -264,9 +258,8 @@
   text-wrap: pretty;
 }
 /*
- * Back and Next are pinned: the lesson scroller is `.guide-content`, and the
- * navigation sticks to its top so the two controls stay reachable however far
- * the transcript is scrolled. The background is opaque so cards pass under it,
+ * Back and Next keep their own row above the scrolling transcript, so the
+ * controls stay reachable however far the reader scrolls. The background is opaque so cards pass under it,
  * and the z-index outranks the cards (and the header it slides over).
  */
 .guide-navigation {
@@ -1136,7 +1129,7 @@
   isolation: isolate;
   flex: 1;
   min-height: 0;
-  overflow: auto;
+  overflow: hidden;
   display: flex;
   flex-direction: column;
 }
@@ -1145,7 +1138,8 @@
 }
 .guide-main {
   width: 100%;
-  flex: 1 0 auto;
+  flex: 1;
+  min-height: 0;
   display: flex;
   flex-direction: column;
   padding-bottom: 12px;
@@ -1190,11 +1184,8 @@
   display: grid;
   grid-template-columns: minmax(0, 1fr);
   gap: 16px;
-  /*
-   * Size to the messages rather than filling the remaining window. The
-   * lesson scroller accommodates longer conversations and their actions.
-   */
-  flex: 0 0 auto;
+  /* Short lessons keep actions close; long cards yield space to the action row. */
+  flex: 0 1 auto;
   min-height: 0;
   align-content: start;
   overflow-y: auto;

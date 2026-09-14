@@ -1,7 +1,7 @@
 import { Spinner } from "@smthrs/ui"
 import {
   GUIDE_BRIDGE, GUIDE_LAST_STEP, GUIDE_PRACTICE_END, GUIDE_STAGES,
-  lessonMessage, lessonText, type GoalCheckpoint, type GuideAction,
+  lessonMessage, lessonText, lessonVisible, type GoalCheckpoint, type GuideAction,
 } from "./lessons"
 import { guideClock, readPause, scheduleGuideAdvance, type GuideClock } from "./advance"
 import { ReelShell } from "./Reel.tsx"
@@ -25,6 +25,7 @@ import { GuideComposerHost } from "./GuideComposerHost"
 import { InTutorial, tutorialTranscript } from "./transcriptScope"
 import { HelpBubble } from "../HelpBubble"
 import { GuidanceText } from "../GuidanceText"
+import { guideActionState } from "./actionState"
 
 /** An original, short opt-in interval; no autoplay or copyrighted game audio. */
 function chime() {
@@ -170,7 +171,10 @@ export function GuideShell({ children, clock = guideClock }: { children: ReactNo
     if (action.args.includes("{repo}")) return guide.repo === undefined ? undefined : action.args.replaceAll("{repo}", guide.repo)
     return action.args
   }
-  const runLessonAction = (action: GuideAction) => {
+  const runLessonAction = (suggestion: GuideAction) => {
+    // Read the store again at release so a run started while held cannot launch twice.
+    const action = guideActionState(suggestion, [...controller.store.collections.cards.values()], controller.store.session().guide ?? guide)
+    if (action.disabled) return
     if (action.flow === "chat.open" || action.flow === "palette.open") {
       runCommandOpen()
       return
@@ -338,7 +342,7 @@ export function GuideShell({ children, clock = guideClock }: { children: ReactNo
             </nav>
           )}
           {/* Tutorial progress, pinned above the transcript. */}
-          {stage > 0 && (practice || (skipped && stage === GUIDE_BRIDGE)) && (
+          {stage > 0 && practice && (
             <section className="guide-goal" aria-label="Goal" data-goal-state={skipped ? "skipped" : goalComplete ? "complete" : "open"}>
               <ol className="guide-goal-checkpoints">
                 {GOAL.map(([goal, label]) => (
@@ -370,7 +374,7 @@ export function GuideShell({ children, clock = guideClock }: { children: ReactNo
             }}
           >
             {GUIDE_STAGES.slice(0, stage + 1).map((asked, messageStep) => {
-              if (asked.message === "") return null
+              if (asked.message === "" || !lessonVisible(messageStep, guide)) return null
               const message = lessonMessage(messageStep, guide)
               const line = lineOf(messageStep)
               const words = (text: string, from = 0) => text.split(" ").map((word, index, all) => {
@@ -427,7 +431,8 @@ export function GuideShell({ children, clock = guideClock }: { children: ReactNo
             )}
           </div>
           <div className="guide-actions" data-help-sequence={lesson?.kind === "do" && lesson.help?.introduction !== undefined || undefined}>
-            {lesson?.kind === "do" && lesson.actions.map(action => {
+            {lesson?.kind === "do" && lesson.actions.map(suggestion => {
+              const action = guideActionState(suggestion, lessonCards, guide)
               const guidedAction = lesson.help?.actionKey === action.key
               const helpOpen = guidedAction && showTutorialHelp && !chatHelpOpen
               const button = (
@@ -436,7 +441,8 @@ export function GuideShell({ children, clock = guideClock }: { children: ReactNo
                   aria-describedby={`guide-instruction-${stage}${helpOpen ? ` guide-help-${stage}` : ""}`}
                   data-guided={helpOpen || undefined}
                   data-done={done(stage)}
-                  onClick={() => runLessonAction(action)}>
+                  disabled={action.disabled} aria-busy={action.busy || undefined}
+                  onClick={() => runLessonAction(suggestion)}>
                   <span className="guide-primary-label">
                     {lessonText(action.label, guide)}
                     {action.subtitle !== undefined ? <small className="guide-primary-subtitle">{action.subtitle}</small> : null}

@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test"
-import { GUIDE_RESERVED_KEYS, GUIDE_STAGES, lessonMessage } from "./lessons"
+import { GUIDE_RESERVED_KEYS, GUIDE_STAGES, lessonMessage, lessonVisible } from "./lessons"
 // The explicit extension: on a case-insensitive filesystem "./reel" can resolve to Reel.tsx.
 import { REEL_BUTTON } from "./reel.ts"
 
@@ -32,4 +32,13 @@ test("the terminal line follows the escape hatch taken, and {repo} is the user's
   expect(lessonMessage(last, { repo: "acme/api" })).toContain("pick one of acme/api's issues")
   expect(lessonMessage(last, { declined: ["login"] })).toBe("You're set. Log in from Account whenever you want to bring your own repository.")
   expect(lessonMessage(last, { declined: ["install"] })).toBe("Install the GitHub App from Account when you're ready, and I'll start your Wiki and history.")
+})
+
+
+test("declined installation and login do not create history for skipped lessons", () => {
+  expect(lessonVisible(11, { declined: ["login"] })).toBe(false)
+  expect(lessonVisible(12, { declined: ["login"] })).toBe(false)
+  expect(lessonVisible(12, { declined: ["install"] })).toBe(false)
+  expect(lessonVisible(13, { declined: ["login"] })).toBe(true)
+  expect(lessonMessage(10, { declined: ["practice"] })).not.toContain("Everything you just did")
 })

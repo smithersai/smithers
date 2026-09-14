@@ -198,14 +198,17 @@ test("Not now at login skips the repository beats; Later at install skips the ba
   expect(controller.store.session().guide?.declined).toEqual(["install"])
 })
 
-test("Skip practice lands on the bridge and marks the goal skipped", async () => {
+test("Skip practice lands on an honest bridge without narrating unreached lessons", async () => {
   let controller!: ReturnType<typeof createAppController>
-  const host = await mountGuide(3, still, {}, c => { controller = c })
+  const host = await mountGuide(4, still, { completed: ["issues.opened", "issue.opened", "issue.flows.opened"] }, c => { controller = c })
   await controller.guideAct("skip-practice")
   await settle()
   expect(controller.store.session().guide?.step).toBe(GUIDE_BRIDGE)
-  expect(host.querySelector(".guide-goal")?.getAttribute("data-goal-state")).toBe("skipped")
-  expect([...host.querySelectorAll(".guide-goal li")].map(item => text(item))).toEqual(["Issue", "Plan", "Commits", "Change"])
+  expect(host.querySelector(".guide-goal")).toBeNull()
+  expect(text(host)).toContain("Bring your own repository")
+  expect(text(host)).not.toContain("Everything you just did")
+  expect(host.querySelector('[data-message-step="4"]')).not.toBeNull()
+  for (let step = 5; step <= 9; step++) expect(host.querySelector(`[data-message-step="${step}"]`)).toBeNull()
 })
 
 
@@ -349,4 +352,26 @@ test("Mode opens on release and selecting Dictation does not open Chat", async (
   key('keydown', 'Escape'); key('keyup', 'Escape')
   expect(host.querySelector('[role="menu"]')).toBeNull()
   expect(document.activeElement).toBe(host.querySelector('[aria-keyshortcuts="m"]'))
+})
+
+
+test("a running tutorial suggestion cannot dispatch through a click or shortcut", async () => {
+  let controller!: ReturnType<typeof createAppController>
+  const host = await mountGuide(4, still, {}, c => { controller = c })
+  await controller.store.dispatch({ type: "card.upsert", actor: "system", card: {
+    id: "live-tutorial-research", kind: "run-trace", title: "Research", status: "active", createdAt: 1, ordinal: 1,
+    payload: { repo: "practice:hello-server", workflow: "issue.research", runId: "pending-research", phase: "launching", steps: [], result: null, lastSeq: 0,
+      input: { liveTutorial: { operation: "research", playthrough: 0 } } },
+  } }).isPersisted.promise
+  await settle()
+  const calls: string[] = []
+  spyOn(controller, "runCommand").mockImplementation(name => { calls.push(name); return true })
+  const button = host.querySelector<HTMLButtonElement>('.guide-actions [data-flow="issue.repro"]')!
+  expect(button.disabled).toBe(true)
+  expect(text(button)).toContain("Researching issue")
+  button.click()
+  const shell = host.querySelector<HTMLElement>(".guide-shell")!
+  shell.dispatchEvent(new KeyboardEvent("keydown", { key: "r", bubbles: true }))
+  shell.dispatchEvent(new KeyboardEvent("keyup", { key: "r", bubbles: true }))
+  expect(calls).not.toContain("issue.repro")
 })
