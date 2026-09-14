@@ -19,7 +19,7 @@ import { Component, type ErrorInfo, type ReactNode } from "react"
  * Without this the error reaches the app's startup boundary and the whole
  * app reads "Smithers failed to start".
  */
-class CardBodyBoundary extends Component<{ readonly cardId: string; readonly children: ReactNode }, { readonly error: Error | null }> {
+export class CardBodyBoundary extends Component<{ readonly cardId: string; readonly onRunCommand: CardActions["onRunCommand"]; readonly children: ReactNode }, { readonly error: Error | null }> {
   override state: { readonly error: Error | null } = { error: null }
   static getDerivedStateFromError(error: Error) { return { error } }
   override componentDidCatch(error: Error, info: ErrorInfo) {
@@ -30,9 +30,11 @@ class CardBodyBoundary extends Component<{ readonly cardId: string; readonly chi
     if (error === null) return this.props.children
     const chunk = /dynamically imported module|Loading chunk|Importing a module script failed/i.test(error.message)
     return (
-      <p className="world-card-empty" role="alert" data-card-error="">
-        {chunk ? "This card's viewer did not load; the app was updated. Reload the page to see it." : `This card could not be shown: ${error.message}`}
-      </p>
+      <div className="world-card-empty" role="alert" data-card-error="">
+        <p>{chunk ? "This card's viewer did not load; the app was updated. Reload the app to see it." : `This card could not be shown: ${error.message}`}</p>
+        {chunk && <Button type="button" size="sm" variant="outline" data-flow="chat.reload"
+          onClick={() => this.props.onRunCommand("chat.reload")}>Reload app</Button>}
+      </div>
     )
   }
 }
@@ -246,7 +248,7 @@ export const CardView = memo(function CardView({
             )}
         </header>
         <div className="smithers-card-body">
-          <CardBodyBoundary cardId={card.id}>
+          <CardBodyBoundary cardId={card.id} onRunCommand={onRunCommand}>
           {renderCardBody(card, {
             onDecideApproval,
             onGrantConfirm,

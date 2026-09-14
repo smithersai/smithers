@@ -351,7 +351,9 @@ export const FileCardBody = ({
           {diagnosticsCount(card.payload.diagnostics, card.payload.diagnosticsTotal)}
         </p>
       )}
-      {intel === undefined ? null : <CodeIntelNote intel={intel} language={language} />}
+      {intel === undefined ? null : intel.state === "missing" || intel.state === "unavailable" ? (
+        <details className="world-card-path"><summary>Code navigation</summary><CodeIntelNote intel={intel} language={language} /></details>
+      ) : <CodeIntelNote intel={intel} language={language} />}
       {card.payload.binary === true ?
         (
           <p className="world-card-empty">
