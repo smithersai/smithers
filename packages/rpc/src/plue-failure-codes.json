@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "digest": "sha256:634f265e0847fbbd573a3ada67f237f155556a943fec7268bbccabda51da8722",
+  "digest": "sha256:18a8d4e7ea8c70fd0b5ffe03bbb28b9d8fcc207e2f87ce95a255ada78b0ec6ae",
   "faults": [
     "user",
     "wait",
@@ -73,6 +73,13 @@
       "doc": "The build cache is at its own concurrency ceiling; the caller is inside its budget and the identical request works once a slot frees."
     },
     {
+      "code": "coding_gateway_not_configured",
+      "fault": "infra",
+      "status": 503,
+      "retry_after": 0,
+      "doc": "This deployment has no workspace-gateway health probe configured, so it cannot verify a box's coding gateway and refuses every bound gateway until an operator configures one."
+    },
+    {
       "code": "coding_guest_failure",
       "fault": "bug",
       "status": 503,
@@ -81,10 +88,10 @@
     },
     {
       "code": "coding_host_unavailable",
-      "fault": "user",
+      "fault": "infra",
       "status": 409,
       "retry_after": 0,
-      "doc": "The repository's configured coding host has not registered its native capability."
+      "doc": "The box's staged coding host or native adapter is older than the operation requires, or never registered the coding capability. plue stages both, so it is plue's rollout lag rather than anything the caller did."
     },
     {
       "code": "coding_invalid_request",

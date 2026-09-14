@@ -1492,7 +1492,16 @@ describe("workspace seam egress_proxy_unavailable", () => {
       })
     })
     const refusal = await seam.openWorkspace("main", "will/smithers")
-    expect(refusal).toBe("egress_proxy_unavailable — service unavailable. " + INFRA_NOT_YOUR_FAULT)
+    expect(refusal).toContain("egress_proxy_unavailable — service unavailable.")
+    /*
+     * And says what actually went wrong. This is `infra`, and it used to
+     * inherit the capacity line — "Smithers ran out of infra, yell at @fucory
+     * to buy more" — about a proxy that was not answering. Nothing was full.
+     */
+    expect(refusal).toContain("no outbound network")
+    expect(refusal).toContain("Not your fault")
+    expect(refusal).not.toContain("@fucory")
+    expect(refusal).not.toBe("egress_proxy_unavailable — service unavailable. " + INFRA_NOT_YOUR_FAULT)
   })
 
   test("the same refusal on an act with a card puts the code on the card beside the server's words", async () => {
@@ -1503,7 +1512,10 @@ describe("workspace seam egress_proxy_unavailable", () => {
       })
     })
     await seedWorkspace(store, { ...wsRow, status: "suspended" })
-    expect(await seam.resumeWorkspace("ws-1")).toBe(`egress_proxy_unavailable — service unavailable. ${INFRA_NOT_YOUR_FAULT}`)
+    const refusal = await seam.resumeWorkspace("ws-1")
+    expect(refusal).toContain("egress_proxy_unavailable — service unavailable.")
+    expect(refusal).toContain("no outbound network")
+    expect(refusal).not.toContain("@fucory")
     expect(payloadOf(store)?.egressProxyUnavailable).toBe(true)
     expect(payloadOf(store)?.error).toBe("service unavailable")
   })

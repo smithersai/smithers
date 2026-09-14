@@ -22,11 +22,20 @@
  * has no copy until somebody writes it, which is a compile error rather than a
  * blank line in front of a user.
  *
- * The Cloudflare Worker's OWN refusals are the exception to "keyed by fault":
- * every one of its codes carries a written lead (WORKER_REFUSAL_COPY below),
- * because the fault alone does not separate the two infra failures a person
- * can hit. "Our fleet is full" and "this deployment is missing a secret" are
- * both `infra`, and only one of them is fixed by buying more of anything.
+ * `infra` is where that stops being enough, and every one of its codes has a
+ * written row below. The fault says whose problem it is, which is true of all
+ * of them; it does not say WHAT went wrong, and infra failures differ there
+ * more than any other fault does. A fleet with no free slots, a deployment
+ * nobody migrated, a box on last month's image and a component that is not
+ * answering are one fault and four different sentences — and for a long time
+ * they shared the first one, so a reader whose wiki backend was down was told
+ * Smithers had run out of infra and that somebody should buy more of it.
+ * Nothing was full. The fault's own lead is now the vague-but-true line a new
+ * code inherits until somebody writes its row.
+ *
+ * The Cloudflare Worker's OWN refusals go further and REQUIRE a written lead
+ * (WORKER_REFUSAL_COPY below), because there is no registry doc behind them to
+ * write one from later.
  *
  * @since 1.0.0
  */
@@ -36,14 +45,20 @@ import type { Refusal, RefusalOrigin } from "./Refusal.ts"
 import type { WorkerFailureCode } from "./WorkerFailureCodes.ts"
 
 /**
- * The whole of the infra answer, in one place so it can be reworded in one
- * place.
+ * The line for a real shortage of infra, in one place so it can be reworded in
+ * one place.
  *
- * This is the product owner's ruling, close to verbatim: an infra failure must
- * say plainly that it is NOT the user's fault and that the fix is more infra,
- * by name. It is deliberately not corporate — "we're experiencing higher than
- * usual demand" is the sentence that makes a person think they did something
- * wrong, and a full fleet is the one failure where they certainly did not.
+ * This is the product owner's ruling, close to verbatim: say plainly that it
+ * is NOT the user's fault and that the fix is more infra, by name. It is
+ * deliberately not corporate — "we're experiencing higher than usual demand"
+ * is the sentence that makes a person think they did something wrong, and a
+ * full fleet is the one failure where they certainly did not.
+ *
+ * It belongs to `no_capacity` and to nothing else. The ruling's other half is
+ * that the sentence be TRUE, and "we ran out, buy more" is a claim about a
+ * shortage: on every other infra code nothing is full, and pointing a reader
+ * at @fucory sends them after a problem that does not exist and a fix that
+ * would not work. RefusalCopy.test.ts checks both directions.
  *
  * It is words only for now. Whether "Tell @fucory" is a real door — a button
  * that files something — has not been ruled on, so nothing here renders a
@@ -145,10 +160,24 @@ export const REFUSAL_COPY = {
       "fault=wait: nothing is broken, it just is not ready yet, and the server said how long to wait. The app is already waiting where it is allowed to; do not re-run it in a loop.",
     doors: ["retry"]
   },
+  /*
+   * The default is the SAFE half of the ruling, not the whole of it. "Not your
+   * fault" is true of every infra refusal by construction; "we ran out, yell at
+   * @fucory to buy more" is true of exactly one of them, and for a long time
+   * every infra code inherited it — a deployment that was never migrated, a box
+   * on an old image and a component that was not answering all told the reader
+   * that Smithers was full and that somebody should buy more of it. None of
+   * them were, and the fix was never a purchase.
+   *
+   * So the shortage sentence lives on `no_capacity`, which is the code that
+   * reports one, and a code plue adds tomorrow inherits a line that is vague
+   * rather than one that is false. Vague is recoverable by writing a row below;
+   * false is not recoverable by anything the reader can do.
+   */
   infra: {
-    lead: INFRA_NOT_YOUR_FAULT,
+    lead: "Something on Smithers' side failed. Not your fault, and nothing your request could have changed.",
     agent:
-      "fault=infra: Smithers' own infrastructure failed, NOT the user. Say plainly that this is not their fault and that the fix is more infra — yell at @fucory to buy more. Do not suggest they change their request, and do not retry it on a timer.",
+      "fault=infra: Smithers' own infrastructure failed, NOT the user. Say plainly that this is not their fault and not their request's. Nothing is known to be full, so do NOT say Smithers ran out of infra and do NOT tell them to ask for more of it — only the code for a capacity shortage licenses that. Do not suggest they change their request, and do not retry it on a timer.",
     doors: ["retry", "report"]
   },
   dependency: {
@@ -166,6 +195,32 @@ export const REFUSAL_COPY = {
 } satisfies Record<PlueFault, RefusalCopyRow>
 
 /*
+ * Four codes, one sentence, on purpose. `runtime_error`, `worker_error`,
+ * `worker_draining` and `host_lease_lost` are all the machine behind the box:
+ * its runtime driver failed, the controller lost its lease on it, it is being
+ * drained, or there is no more specific word for it. A reader cannot tell them
+ * apart from outside and does not need to — every one of them is one machine
+ * rather than the fleet, and plue says the remedy itself in the registry:
+ * "Another worker may well succeed."
+ */
+const MACHINE_BEHIND_THE_BOX =
+  "The machine behind your box couldn't take that. Not your fault — trying again can land on a different one."
+
+const MACHINE_BEHIND_THE_BOX_AGENT =
+  "fault=infra: the machine behind this box failed or refused the operation — a runtime driver fault, a lost host lease, a machine being drained, or one Smithers has no more specific word for; its own message says which. This is ONE machine, not the fleet: nothing is full, so do NOT say Smithers ran out of infra and do NOT tell them to ask for more of it. Not the user's fault and not their request's. Another machine may well succeed, so it is worth asking again; do not suggest they change what they asked for."
+
+/*
+ * Two codes for one check: Smithers could not read the box's native source at
+ * all, or the box answered about a different revision than the one asked for.
+ * Neither records anything, and the act after both is to ask again.
+ */
+const SOURCE_NOT_CONFIRMED =
+  "Smithers couldn't confirm the source this box was opened from. Not your fault — nothing was recorded, and it's worth asking again."
+
+const SOURCE_NOT_CONFIRMED_AGENT =
+  "fault=infra: Smithers could not verify the box's native source, or the box acknowledged a different revision than the one requested. Nothing was recorded either way. Not the user's fault and not their request's, and nothing is full, so do NOT say Smithers ran out of infra and do NOT tell them to ask for more of it. It is worth asking again; do not suggest they change what they asked for."
+
+/*
  * The codes whose fault does not say enough on its own. A row here overrides
  * only the fields it names — the fault's row still supplies the rest — and a
  * code that is not one of plue's does not compile.
@@ -177,6 +232,7 @@ const BY_CODE: Partial<Record<PlueFailureCode, Partial<RefusalCopyRow>>> = {
    * nobody reads "no capacity" as "my work is gone".
    */
   no_capacity: {
+    lead: INFRA_NOT_YOUR_FAULT,
     agent:
       "fault=infra: every box in the fleet is full — the user's own box and its disk are untouched. Say plainly that this is not their fault and that the fix is more infra: yell at @fucory to buy more. Do not retry it on a timer.",
     doors: ["retry", "report"]
@@ -218,8 +274,195 @@ const BY_CODE: Partial<Record<PlueFailureCode, Partial<RefusalCopyRow>>> = {
     lead:
       "Smithers has no image built for this kind of box yet. Not your fault, and not something you can fix from here.",
     agent:
-      "fault=infra: this DEPLOYMENT has no registered image for the kind of box being opened, so none can boot here until Smithers builds and registers one. Not the user's fault and not their request's, and nothing is full, so do NOT say Smithers ran out of infra and do NOT tell them to ask for more of it. Do not retry it and do not suggest they change what they asked for.",
+      "fault=infra: this DEPLOYMENT has no registered image for the kind of box being opened, so none can boot here until Smithers builds and registers one. Not the user's fault and not their request's, and nothing is full, so do NOT say Smithers ran out of infra and do NOT tell them to ask for more of it. Retrying fails identically until Smithers registers an image; do not offer to try again and do not suggest they change what they asked for.",
     doors: ["report"]
+  },
+  /*
+   * The same rollout lag on the coding side, and plue called it the caller's
+   * fault until 2026-09-14 — "update its provisioned runtime", said to someone
+   * who provisioned nothing. plue stages the coding host and its adapter into
+   * the box from the API pod's own filesystem; no repository and no person
+   * picks, pins or edits either. A box staged before the current artifact
+   * shipped refuses a good request, and no re-ask against that box changes it.
+   */
+  coding_host_unavailable: {
+    lead:
+      "This box's coding tools are older than the ones Smithers needs. Not your fault — retrying won't update them, and a box opened now comes with the current ones.",
+    agent:
+      "fault=infra: the coding host and adapter STAGED INTO THIS BOX by Smithers are older than the operation requires, or never registered the coding capability. Smithers stages both; the user picked nothing and provisioned nothing. Not their fault and not their request's, and nothing is full, so do NOT say Smithers ran out of infra and do NOT tell them to ask for more of it. Retrying fails identically on this box — a box opened now is staged with the current artifact.",
+    doors: ["report"]
+  },
+  /*
+   * The other half of that refusal, split out of it in the same pass. An API
+   * pod with no health-probe URL configured cannot verify ANY box's coding
+   * gateway, so it refuses every one of them, for every account, until an
+   * operator sets the variable. It used to borrow the sentence above and send
+   * a reader off to update a box nothing had even looked at.
+   */
+  coding_gateway_not_configured: {
+    lead:
+      "This deployment of Smithers can't check a box's coding gateway, so it won't open one. Not your fault, and not something you can switch on from here.",
+    agent:
+      "fault=infra: this DEPLOYMENT has no workspace-gateway health probe configured, so it refuses every bound coding gateway rather than answer for one it cannot verify. The user's box was never inspected — do NOT tell them to update, re-provision or replace it. Not their fault and not their request's, and nothing is full, so do NOT say Smithers ran out of infra and do NOT tell them to ask for more of it. Retrying fails identically until whoever deployed it configures the probe.",
+    doors: ["report"]
+  },
+  /*
+   * Rollout lag inside a RUNNING box: the guest kept a reporter from before
+   * Smithers' last upgrade. plue's own doc says the start/resume path installs
+   * and restarts the current one, so the reader has a cheap fix — and a Retry
+   * against the box as it stands is not it.
+   */
+  coding_reporter_upgrade_required: {
+    lead:
+      "This box is still running a reporter from before Smithers' last update. Not your fault — stop the box and start it again, and it picks up the current one.",
+    agent:
+      "fault=infra: this BOX kept a coding reporter older than the API talking to it, because Smithers upgraded the API without re-staging the guest component. Not the user's fault and not their request's, and nothing is full, so do NOT say Smithers ran out of infra and do NOT tell them to ask for more of it. Retrying as it stands fails identically — tell them to stop the box and start it again, which installs the current reporter. Reading revisions still works meanwhile.",
+    doors: ["report"]
+  },
+  /*
+   * The box's jj is older than the version plue's parser is pinned to, and
+   * plue refuses to guess at output it does not recognise. The version comes
+   * from the image, so no re-ask against this box moves it.
+   */
+  coding_unsupported_jj: {
+    lead:
+      "This box's jj is older than the one Smithers writes changes with. Not your fault — and no retry updates it; a new box boots the current one.",
+    agent:
+      "fault=infra: this BOX's jj is older than the version Smithers' parser is pinned to, and it refuses to guess rather than misread the output. The version comes from the image the box booted, which Smithers built. Not the user's fault and not their request's, and nothing is full, so do NOT say Smithers ran out of infra and do NOT tell them to ask for more of it. Retrying fails identically on this box — a box opened now boots the current image and its pinned jj.",
+    doors: ["report"]
+  },
+  /*
+   * Deployment shape, the three of them. Nothing is full, nothing is down, and
+   * nothing the reader does changes any of it: a table was never migrated, a
+   * credential was never set, a worker build never shipped the capability.
+   * Each gets its own sentence because each rules out a DIFFERENT wrong move —
+   * waiting, signing in again, changing the request.
+   */
+  feature_not_enabled: {
+    lead:
+      "This deployment of Smithers doesn't have that switched on. Not your fault, and not something you can switch on from here.",
+    agent:
+      "fault=infra: the storage this endpoint needs was never provisioned on this DEPLOYMENT, so the feature is off here — Smithers' own words name which one. Not the user's fault and not their request's, and nothing is full, so do NOT say Smithers ran out of infra and do NOT tell them to ask for more of it. Retrying fails identically until the deployment is migrated; say so rather than offering to try again.",
+    doors: ["report"]
+  },
+  authentication_not_configured: {
+    lead:
+      "Smithers' own credentials for this deployment were never set up, so nothing here can be authorised. Not your fault — and signing in again won't change it.",
+    agent:
+      "fault=infra: this DEPLOYMENT's controller has no authentication material configured, so it refuses every authenticated call from everyone. It is NOT the user's session — never tell them to sign in again, sign out, or reconnect anything. Not their fault and not their request's, and nothing is full, so do NOT say Smithers ran out of infra and do NOT tell them to ask for more of it. Retrying fails identically until whoever deployed it sets the credential.",
+    doors: ["report"]
+  },
+  secret_delivery_unavailable: {
+    lead: "This build of Smithers can't put secrets into a box. Not your fault, and nothing you can change from here.",
+    agent:
+      "fault=infra: the worker BUILD running this box cannot deliver secrets into a guest at all — the capability is not in it. Not the user's fault and not their request's, and nothing is full, so do NOT say Smithers ran out of infra and do NOT tell them to ask for more of it. Retrying fails identically on this build, and no change to their secret or their request helps.",
+    doors: ["report"]
+  },
+  /*
+   * The machine behind the box, four ways: its runtime driver failed, its
+   * lease expired, it is being drained, or the controller has no more specific
+   * word for it. One sentence, because the reader cannot tell them apart and
+   * does not need to — the act is the same, and plue says so itself
+   * ("Another worker may well succeed").
+   */
+  runtime_error: { lead: MACHINE_BEHIND_THE_BOX, agent: MACHINE_BEHIND_THE_BOX_AGENT, doors: ["retry", "report"] },
+  worker_error: { lead: MACHINE_BEHIND_THE_BOX, agent: MACHINE_BEHIND_THE_BOX_AGENT, doors: ["retry", "report"] },
+  worker_draining: { lead: MACHINE_BEHIND_THE_BOX, agent: MACHINE_BEHIND_THE_BOX_AGENT, doors: ["retry", "report"] },
+  host_lease_lost: { lead: MACHINE_BEHIND_THE_BOX, agent: MACHINE_BEHIND_THE_BOX_AGENT, doors: ["retry", "report"] },
+  /*
+   * Two ways the same check fails: Smithers could not read the box's native
+   * source, or the box answered about a different revision than the one asked
+   * for. Same sentence — nothing was recorded either way, and the act is to
+   * ask again.
+   */
+  workspace_source_unavailable: {
+    lead: SOURCE_NOT_CONFIRMED,
+    agent: SOURCE_NOT_CONFIRMED_AGENT,
+    doors: ["retry", "report"]
+  },
+  workspace_source_invalid_ack: {
+    lead: SOURCE_NOT_CONFIRMED,
+    agent: SOURCE_NOT_CONFIRMED_AGENT,
+    doors: ["retry", "report"]
+  },
+  /*
+   * The box would have had no way out to the network, so plue stopped rather
+   * than run the work half-connected. Its own sentence because the reader may
+   * otherwise read a failed install or fetch inside the box as their doing.
+   */
+  egress_proxy_unavailable: {
+    lead:
+      "Your box would have had no outbound network, so Smithers stopped instead of running it half-connected. Not your fault; worth trying again.",
+    agent:
+      "fault=infra: the box's egress proxy is not answering, so the box would have had no outbound network and Smithers refused rather than run the work without it. Not the user's fault and not their request's, and nothing is full, so do NOT say Smithers ran out of infra and do NOT tell them to ask for more of it. Nothing about their network or their machine is involved. It is worth asking again.",
+    doors: ["retry", "report"]
+  },
+  /*
+   * The generic one, and deliberately generic: plue is up and something behind
+   * it is not answering, with plue's own words naming which. A lead that
+   * guessed harder than that would be guessing.
+   */
+  service_unavailable: {
+    lead: "A piece of Smithers isn't answering right now. Not your fault; worth trying again in a moment.",
+    agent:
+      "fault=infra: Smithers is up but a component it needs is not answering — its own words say which. Not the user's fault and not their request's, and nothing is full, so do NOT say Smithers ran out of infra and do NOT tell them to ask for more of it. It is worth asking again shortly; do not suggest they change what they asked for.",
+    doors: ["retry", "report"]
+  },
+  /*
+   * Mid-rollout, and it clears on its own. The reader's repository is fine;
+   * the sentence has to stop them going off to fix it.
+   */
+  repository_provisioning_rollout: {
+    lead:
+      "Smithers is mid-update here and isn't setting up repositories just now. Not your fault; it takes them again shortly.",
+    agent:
+      "fault=infra: repository provisioning is mid-rollout on this DEPLOYMENT and is not accepting new work. Nothing is wrong with the repository they named. Not their fault and not their request's, and nothing is full, so do NOT say Smithers ran out of infra and do NOT tell them to ask for more of it. It clears on its own; it is worth asking again shortly.",
+    doors: ["retry", "report"]
+  },
+  /*
+   * The three plue paces itself, with a second's Retry-After in the registry.
+   * A `report` door on a designed one-second blip is noise, so they carry the
+   * retry alone.
+   */
+  sse_unavailable: {
+    lead:
+      "Smithers couldn't open the live updates stream, so nothing here will move on its own. Not your fault; asking again usually opens it.",
+    agent:
+      "fault=infra: Smithers' event-stream tier could not open the stream, so the client gets no live updates. The stream was never established and no data was lost. Not the user's fault and not their request's, and nothing is full, so do NOT say Smithers ran out of infra and do NOT tell them to ask for more of it. Opening it again usually works.",
+    doors: ["retry"]
+  },
+  wiki_unavailable: {
+    lead: "The wiki's backend isn't answering. Not your fault; try it again in a second.",
+    agent:
+      "fault=infra: the wiki's collaboration backend is not answering — Smithers' own words say what it was doing. Not the user's fault and not their request's, and nothing is full, so do NOT say Smithers ran out of infra and do NOT tell them to ask for more of it. Smithers asks for a second's wait; asking again after that usually works.",
+    doors: ["retry"]
+  },
+  /*
+   * The one that reads like the reader's fault and is not: the limiter is
+   * DOWN, and the endpoint turns work away rather than let a budget go
+   * uncounted. Saying "you're going too fast" here would be a lie, and it is
+   * the lie the status code invites.
+   */
+  rate_limiter_unavailable: {
+    lead:
+      "You're not over any limit — Smithers' rate limiter isn't answering, so it turned this away rather than let it through uncounted. Not your fault; try again in a second.",
+    agent:
+      "fault=infra: Smithers' rate-limit store is not answering and the endpoint fails closed, so this was turned away WITHOUT the user being over any budget. Never tell them they are going too fast or should slow down. Not their fault and not their request's, and nothing is full, so do NOT say Smithers ran out of infra and do NOT tell them to ask for more of it. Smithers asks for a second's wait; asking again after that usually works.",
+    doors: ["retry"]
+  },
+  /*
+   * The honest awkward one. plue classes it infra, and the refusal is
+   * certainly not a verdict on the request — but the gateway cannot tell its
+   * own fault from a process inside the box that stopped listening, and the
+   * copy must not pick one. See the report: whether this stays `infra` is a
+   * product decision nobody has made.
+   */
+  preview_unavailable: {
+    lead:
+      "Smithers couldn't reach the preview port on your box. Not your fault — though it's worth checking your server is still listening before you try again.",
+    agent:
+      "fault=infra: the preview gateway could not reach the port the box is serving. Smithers classes this as ours and it is NOT a verdict on the user's request — but the gateway cannot tell a gateway fault from a process inside the box that stopped listening, so do NOT assert which it was. Nothing is full, so do NOT say Smithers ran out of infra and do NOT tell them to ask for more of it. Say what is known, and that checking the process is up is worth doing before asking again.",
+    doors: ["retry", "report"]
   },
   /* The 409 the desktop facet has always offered Resume for: the box is stopped, not broken. */
   desktop_not_running: { lead: "That box isn't running.", doors: ["resume", "retry"] },
@@ -329,7 +572,7 @@ export const WORKER_REFUSAL_COPY = {
   service_temporarily_unavailable: {
     lead: "That part of Smithers couldn't answer just now. Not your fault.",
     agent:
-      "fault=infra: one of Smithers' own seams is up but could not answer this request. Not the user's fault and not their request's. It is worth asking again shortly; do not suggest they change what they asked for.",
+      "fault=infra: one of Smithers' own seams is up but could not answer this request. Not the user's fault and not their request's, and nothing is full, so do NOT say Smithers ran out of infra and do NOT tell them to ask for more of it. It is worth asking again shortly; do not suggest they change what they asked for.",
     doors: ["retry"]
   },
   session_expired: {
@@ -340,7 +583,7 @@ export const WORKER_REFUSAL_COPY = {
   storage_failed: {
     lead: "Smithers' own storage failed on that. Not your fault, and nothing you asked for caused it.",
     agent:
-      "fault=infra: Smithers' own Durable Object storage failed. Not the user's fault, not their request's, and not an upstream's. Do not suggest they change what they asked for.",
+      "fault=infra: Smithers' own Durable Object storage failed. Not the user's fault, not their request's, and not an upstream's, and nothing is full, so do NOT say Smithers ran out of infra and do NOT tell them to ask for more of it. Do not suggest they change what they asked for.",
     doors: ["retry", "report"]
   },
   tools_not_supported: { lead: "That part of Smithers answers in plain text and runs no tools.", doors: [] },

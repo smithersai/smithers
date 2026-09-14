@@ -11,12 +11,44 @@ import {
   refusalDoors,
   refusalLead
 } from "../src/RefusalCopy.ts"
-import { WORKER_FAILURE_CODES } from "../src/WorkerFailureCodes.ts"
+import { WORKER_FAILURE_CODES, WORKER_FAILURES } from "../src/WorkerFailureCodes.ts"
 import type { WorkerFailureCode } from "../src/WorkerFailureCodes.ts"
 
 /** A refusal exactly as plue answers for this code, through its own registry row. */
 const forCode = (code: PlueFailureCode, message = "plue's own words") =>
   refusalOf({ body: { code, fault: PLUE_FAILURES[code].fault }, status: PLUE_FAILURES[code].status, message })
+
+/** Every code plue calls `infra`, read off the vendored registry rather than listed here. */
+const INFRA_CODES = (Object.keys(PLUE_FAILURES) as ReadonlyArray<PlueFailureCode>).filter(
+  (code) => PLUE_FAILURES[code].fault === "infra"
+)
+
+/**
+ * The infra codes that really are a shortage of infra — the only ones licensed
+ * to say we ran out and to point at @fucory.
+ *
+ * Written out rather than derived, because "is this a capacity shortage?" is a
+ * fact about the failure and not about anything in the row. A code plue adds
+ * is NOT on this list, which is the safe default: it must earn the sentence.
+ */
+const CAPACITY_CODES: ReadonlyArray<PlueFailureCode> = ["no_capacity"]
+
+/**
+ * The infra codes a Retry can never satisfy: nothing changes until Smithers
+ * ships, migrates, or the reader opens a different box. Offering them a Retry
+ * button is a door onto a wall, and telling the model to suggest one is worse.
+ */
+const TERMINAL_UNTIL_WE_SHIP: ReadonlyArray<PlueFailureCode> = [
+  "authentication_not_configured",
+  "coding_gateway_not_configured",
+  "coding_host_unavailable",
+  "coding_reporter_upgrade_required",
+  "coding_unsupported_jj",
+  "desktop_tools_unavailable",
+  "environment_image_unavailable",
+  "feature_not_enabled",
+  "secret_delivery_unavailable"
+]
 
 describe("the copy table", () => {
   test("every fault has a row, and every row says something", () => {
@@ -96,9 +128,76 @@ describe("the infra line", () => {
    * other direction, so no refusal outside a real shortage can borrow it.
    */
   test("every infra lead says plainly it is not the reader's fault", () => {
-    for (const code of Object.keys(PLUE_FAILURES) as ReadonlyArray<PlueFailureCode>) {
-      if (PLUE_FAILURES[code].fault !== "infra") continue
+    for (const code of INFRA_CODES) {
       expect(refusalLead(forCode(code)).toLowerCase(), code).toContain("not your fault")
+    }
+  })
+
+  /*
+   * The other half of the ruling, and the half that was only ever checked on a
+   * handful of codes: the sentence has to be TRUE. "Smithers ran out of infra"
+   * is a claim about a shortage, and a shortage is what exactly one of plue's
+   * codes reports. The other twenty are a deployment that was never migrated, a
+   * box on an old image, a component that is not answering — nothing is full in
+   * any of them, and pointing the reader at @fucory to buy more sends them
+   * after a problem that does not exist.
+   */
+  test("only a genuine shortage claims we ran out, or names @fucory", () => {
+    for (const code of INFRA_CODES) {
+      const lead = refusalLead(forCode(code))
+      const claims = lead.includes("@fucory") || lead.includes("ran out")
+      expect(claims, code).toBe(CAPACITY_CODES.includes(code))
+    }
+  })
+
+  /* And the model is told the same thing, in as many words, on every one of them. */
+  test("a non-capacity infra code forbids the capacity claim to the model", () => {
+    for (const code of INFRA_CODES) {
+      if (CAPACITY_CODES.includes(code)) continue
+      const agent = refusalCopy(forCode(code)).agent
+      expect(agent.toLowerCase(), code).toContain("do not say smithers ran out of infra")
+      expect(agent, code).not.toContain("@fucory")
+    }
+  })
+
+  /* The Worker's own infra refusals are not a shortage either, and say so. */
+  test("the Worker's infra codes forbid it too", () => {
+    for (const code of WORKER_FAILURE_CODES) {
+      if (WORKER_FAILURES[code].fault !== "infra") continue
+      const refusal = workerRefusal(code, "the Worker's own words")
+      expect(refusalLead(refusal).toLowerCase(), code).toContain("not your fault")
+      expect(refusalLead(refusal), code).not.toContain("@fucory")
+      expect(refusalCopy(refusal).agent.toLowerCase(), code).toContain("do not say smithers ran out of infra")
+    }
+  })
+
+  /*
+   * A door that cannot open. `retry` is the human's re-ask button, and on these
+   * codes the re-ask fails identically until Smithers ships something or the
+   * reader opens a different box — plue says so in the registry doc itself
+   * ("Retrying does not help until the deployment is migrated", "terminal for
+   * that box"). The lead has to say so instead of offering the button.
+   */
+  test("no infra refusal offers a Retry that cannot work", () => {
+    for (const code of TERMINAL_UNTIL_WE_SHIP) {
+      expect(PLUE_FAILURES[code].fault, code).toBe("infra")
+      expect(refusalDoors(forCode(code)), code).not.toContain("retry")
+      expect(refusalCopy(forCode(code)).agent.toLowerCase(), code).toContain("fails identically")
+    }
+  })
+
+  /* The inverse: where plue itself paces a re-ask, the button has to be there. */
+  test("a paced infra refusal offers the Retry plue asked for", () => {
+    for (const code of INFRA_CODES) {
+      if (PLUE_FAILURES[code].retryAfter === 0) continue
+      expect(refusalDoors(forCode(code)), code).toContain("retry")
+    }
+  })
+
+  /* No infra refusal is a dead end: something is always offered. */
+  test("every infra refusal offers at least one door", () => {
+    for (const code of INFRA_CODES) {
+      expect(refusalDoors(forCode(code)).length, code).toBeGreaterThan(0)
     }
   })
 

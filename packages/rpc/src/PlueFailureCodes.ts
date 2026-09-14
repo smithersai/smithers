@@ -35,7 +35,7 @@ export const PLUE_FAILURE_SCHEMA_VERSION = 1
  * @since 1.0.0
  * @category constants
  */
-export const PLUE_FAILURE_DIGEST = "sha256:634f265e0847fbbd573a3ada67f237f155556a943fec7268bbccabda51da8722"
+export const PLUE_FAILURE_DIGEST = "sha256:18a8d4e7ea8c70fd0b5ffe03bbb28b9d8fcc207e2f87ce95a255ada78b0ec6ae"
 
 /**
  * Whose problem a failure is — plue's own word, and the only question the app
@@ -76,6 +76,7 @@ export const PLUE_FAILURE_CODES = [
   "bad_request",
   "branch_lock_held",
   "build_cache_busy",
+  "coding_gateway_not_configured",
   "coding_guest_failure",
   "coding_host_unavailable",
   "coding_invalid_request",
@@ -219,10 +220,12 @@ export const PLUE_FAILURES = {
   "branch_lock_held": { fault: "user", status: 409, retryAfter: 0 },
   /** The build cache is at its own concurrency ceiling; the caller is inside its budget and the identical request works once a slot frees. */
   "build_cache_busy": { fault: "wait", status: 429, retryAfter: 1 },
+  /** This deployment has no workspace-gateway health probe configured, so it cannot verify a box's coding gateway and refuses every bound gateway until an operator configures one. */
+  "coding_gateway_not_configured": { fault: "infra", status: 503, retryAfter: 0 },
   /** The guest's coding helper failed. The guest's own sentence is logged server-side, never returned. */
   "coding_guest_failure": { fault: "bug", status: 503, retryAfter: 0 },
-  /** The repository's configured coding host has not registered its native capability. */
-  "coding_host_unavailable": { fault: "user", status: 409, retryAfter: 0 },
+  /** The box's staged coding host or native adapter is older than the operation requires, or never registered the coding capability. plue stages both, so it is plue's rollout lag rather than anything the caller did. */
+  "coding_host_unavailable": { fault: "infra", status: 409, retryAfter: 0 },
   /** The guest refused the coding request as malformed. */
   "coding_invalid_request": { fault: "user", status: 400, retryAfter: 0 },
   /** The transport to the box was interrupted before its receipt came back; the identical request recovers it. */
