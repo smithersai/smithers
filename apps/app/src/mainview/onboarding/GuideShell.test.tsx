@@ -823,3 +823,46 @@ test("Finish projects Home first, omits practice frames, and retains the working
   for (let tick = 0; tick < 30 && !host.querySelector('.guide-shell[data-stage="1"]'); tick++) await settle()
   expect(host.querySelector('.guide-shell[data-stage="1"]') !== null).toBe(true)
 }, 2_000)
+
+test("closing Chat keeps the transcript at the current chat read", async () => {
+  let controller!: ReturnType<typeof createAppController>
+  const host = await mountGuide(2, still, { conversationOpen: true }, c => { controller = c })
+  const viewport = host.querySelector<HTMLElement>(".guide-transcript")!
+  const originalRect = HTMLElement.prototype.getBoundingClientRect
+  const geometry = spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function(this: HTMLElement) {
+    if (this === viewport) return DOMRect.fromRect({ y: 100, height: 458 })
+    if (this.matches('[data-chat-message-id]')) return DOMRect.fromRect({ y: 154 - viewport.scrollTop, height: 100 })
+    return originalRect.call(this)
+  })
+  viewport.scrollTo = (options: ScrollToOptions | number = {}) => {
+    if (typeof options !== "number" && options.top !== undefined) viewport.scrollTop = options.top
+  }
+  const frame = () => new Promise<void>(resolve => requestAnimationFrame(() => resolve()))
+  try {
+    await controller.store.dispatch({ type: "message.submitted", actor: "user", turnId: "close-chat", text: "Explain this issue" }).isPersisted.promise
+    await settle(); await frame()
+    expect(viewport.scrollTop).toBe(44)
+    await controller.guideAct("close")
+    await settle(); await frame()
+    expect(viewport.scrollTop).toBe(44)
+  } finally { geometry.mockRestore() }
+}, 5_000)
+
+test("touch Chat has a Close button that dismisses and restores focus", async () => {
+  const descriptor = Object.getOwnPropertyDescriptor(navigator, "maxTouchPoints")
+  Object.defineProperty(navigator, "maxTouchPoints", { configurable: true, value: 1 })
+  mounted.push(() => { if (descriptor) Object.defineProperty(navigator, "maxTouchPoints", descriptor); else Reflect.deleteProperty(navigator, "maxTouchPoints") })
+  let controller!: ReturnType<typeof createAppController>
+  const host = await mountGuide(2, still, {}, c => { controller = c })
+  const opener = host.querySelector<HTMLButtonElement>('[data-flow="chat.open"]')!
+  opener.focus()
+  flushSync(() => opener.click())
+  await settle()
+  const close = [...host.querySelectorAll<HTMLButtonElement>('.guide-composer-layer button')].find(button => text(button) === "Close")
+  expect(close).toBeDefined()
+  flushSync(() => close!.click())
+  await settle()
+  expect(controller.store.session().guide?.conversationOpen).toBe(false)
+  expect(host.querySelector('.guide-shell')?.getAttribute('data-conversation-open')).toBe('false')
+  expect(document.activeElement === opener).toBe(true)
+}, 5_000)

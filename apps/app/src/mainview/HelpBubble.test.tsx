@@ -142,3 +142,29 @@ for (const sentence of ["Press C anytime to open Chat and commands.", "Start wit
     flushSync(() => root.unmount())
   })
 }
+
+test("floating help clamps below a nearby goal instead of drawing over it", () => {
+  const bounds = spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (this: HTMLElement) {
+    const [x, y, width, height] = this.matches(".help-anchor") ? [140, 512, 60, 44]
+      : this.matches(".help-bubble") ? [16, 226, 288, 100]
+      : this.matches("footer") ? [0, 504, 320, 64]
+      : this.matches("#nearby-actions") ? [40, 344, 240, 144]
+      : this.matches("#goal") ? [20, 154, 280, 80]
+      : [0, 0, 0, 0]
+    return DOMRect.fromRect({ x, y, width, height })
+  })
+  cleanups.push(() => bounds.mockRestore())
+  const host = document.createElement("div")
+  document.body.append(host)
+  const root = createRoot(host)
+  cleanups.push(() => { flushSync(() => root.unmount()); host.remove() })
+  flushSync(() => root.render(<>
+    <div id="goal">Issue Plan Commits Change</div>
+    <div id="nearby-actions"><button>Review changes</button></div>
+    <footer><HelpBubble id="chat-help" open placement="above" avoid="#nearby-actions" below="#goal"
+      content="Tap Chat anytime to open Chat and commands." onDismiss={() => {}}><button>Chat</button></HelpBubble></footer>
+  </>))
+  const bubble = host.querySelector<HTMLElement>(".help-bubble")!
+  expect(bubble.style.bottom).toBe("calc(100% + 168px)")
+  expect(parseFloat(bubble.style.maxHeight)).toBe(84)
+})

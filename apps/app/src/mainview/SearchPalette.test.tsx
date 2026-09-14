@@ -517,3 +517,13 @@ test("moving the active option scrolls only the palette list and keeps input foc
   expect(body.scrollTop).toBe(0)
   expect(document.activeElement).toBe(textarea(view.host))
 })
+
+for (const touch of [false, true]) test(`Ask Smithers describes the ${touch ? "touch" : "keyboard"} send gesture`, async () => {
+  const descriptor = Object.getOwnPropertyDescriptor(navigator, "maxTouchPoints")
+  Object.defineProperty(navigator, "maxTouchPoints", { configurable: true, value: touch ? 1 : 0 })
+  mounted.push(() => { if (descriptor) Object.defineProperty(navigator, "maxTouchPoints", descriptor); else Reflect.deleteProperty(navigator, "maxTouchPoints") })
+  const view = await mount()
+  await press(view, "k", { meta: true })
+  expect(view.host.querySelector("[data-ask] .slash-menu-description")?.textContent)
+    .toBe(touch ? "Type a question or a task, then tap to send" : "Type a question or a task, then press Enter")
+})

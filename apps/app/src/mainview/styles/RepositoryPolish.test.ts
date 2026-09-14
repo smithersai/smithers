@@ -3,7 +3,7 @@ import { afterAll, afterEach, expect, test } from "bun:test"
 import { readFileSync } from "node:fs"
 
 GlobalRegistrator.register()
-afterEach(() => { document.head.innerHTML = ""; document.body.innerHTML = "" })
+afterEach(() => { document.head.innerHTML = ""; document.body.innerHTML = ""; document.documentElement.removeAttribute("data-theme") })
 afterAll(() => GlobalRegistrator.unregister())
 const style = (path: string) => {
   const sheet = document.createElement("style")
@@ -11,11 +11,16 @@ const style = (path: string) => {
   document.head.append(sheet)
 }
 
-test("chrome sign-in inherits the shell's green action color", () => {
-  style("./chrome.css")
-  document.body.innerHTML = '<div style="--g-accent:#3a756b;--brand:#994cc3"><button class="chrome-action" data-flow="auth.sign-in">Sign in with GitHub</button></div>'
-  expect(getComputedStyle(document.querySelector("button")!).color).toBe("#3a756b")
-})
+for (const [theme, accent] of [["light", "#3a756b"], ["dark", "#9bd5c6"]]) {
+  test(`chrome sign-in inherits the ${theme} action color without a guide shell`, () => {
+    style("./tokens.css")
+    style("./base.css")
+    style("./chrome.css")
+    document.documentElement.dataset.theme = theme
+    document.body.innerHTML = '<div class="session-shell"><button class="chrome-action" data-flow="auth.sign-in">Sign in with GitHub</button></div>'
+    expect(getComputedStyle(document.querySelector("button")!).color).toBe(accent)
+  })
+}
 
 test("workspace preparation is neutral while failed launches remain danger-colored and separate lines", () => {
   style("../onboarding/guide.css")

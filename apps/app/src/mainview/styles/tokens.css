@@ -28,6 +28,7 @@
 
 :root {
 	color-scheme: light;
+	--g-accent: #3a756b;
 
 	/* ── Paper raw scale (the `paper` palette's source; still named directly by a few surfaces) ── */
 	--paper-0: #fffefa;
@@ -197,6 +198,7 @@
 
 :root[data-theme="dark"] {
 	color-scheme: dark;
+	--g-accent: #9bd5c6;
 
 	/* ── night-owl · dark (the default palette, Night Owl) ───── */
 	--bg: #011627;

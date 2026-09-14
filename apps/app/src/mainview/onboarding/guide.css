@@ -1072,7 +1072,7 @@
   .guide-footer {
     padding: 12px 20px;
     gap: 12px;
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
   }
   .guide-footer .guide-chat-controls { display: contents; }
   .guide-footer button {
@@ -1643,3 +1643,13 @@
 @media (pointer: coarse) {
   .guide-button-key { display: none; }
 }
+
+/* Preserve the single footer row and leave the wrapped actions their own space. */
+@media (max-width: 359px) {
+  .guide-footer { padding-inline: 12px; gap: 8px; }
+  .guide-footer > .guide-button .guide-button-content > span { display: none; }
+  .guide-actions { row-gap: 12px; }
+}
+
+/* Mode reserves this bottom row; Close shares it on touch screens. */
+.guide-composer-close { position: absolute; bottom: 8px; left: 8px; }

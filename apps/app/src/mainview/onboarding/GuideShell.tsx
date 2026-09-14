@@ -559,6 +559,7 @@ export function GuideShell({ children, clock = guideClock }: { children: ReactNo
                 <HelpBubble key={suggestion.flow} id={`guide-help-${stage}`} open={helpOpen}
                   pulse={introduction === undefined}
                   placement={lesson.help?.introduction ? "above" : "flow"}
+                  below=".guide-goal"
                   content={guidanceContent} onDismiss={() => setDismissedHelp(helpKey)}>
                   {button}
                 </HelpBubble>
@@ -638,6 +639,7 @@ export function GuideShell({ children, clock = guideClock }: { children: ReactNo
             )}
             <div className="guide-composer-host" ref={setComposerHost} />
             {conversationOpen && <InputModeMenu mode={session.inputMode ?? "normal"} placement="below" onChange={mode => controller.runCommand("input.mode", mode)} />}
+            {conversationOpen && touch && <button type="button" className="guide-button guide-composer-close" onClick={runCommandClose}>Close</button>}
           </section>
         </div>
         {/* Native modal dialogs make everything outside inert, including toast actions. */}
@@ -672,7 +674,7 @@ export function GuideShell({ children, clock = guideClock }: { children: ReactNo
         </div>
         {stage >= 1 && (
           <div className="guide-chat-controls">
-            <HelpBubble id={`guide-chat-help-${stage}`} placement="above" avoid=".guide-actions" open={chatHelpOpen}
+            <HelpBubble id={`guide-chat-help-${stage}`} placement="above" avoid=".guide-actions .guide-primary, .guide-actions .guide-secondary" below=".guide-goal" open={chatHelpOpen}
               content={guidanceContent} onDismiss={() => setDismissedHelp(helpKey)}>
             <GuideButton ref={opener} shortcut={GUIDE_KEYS.chat} data-flow="chat.open" data-pulse={lesson?.kind === "do" && lesson.completion === "palette.opened" && !done(stage)}
               aria-describedby={chatHelpOpen ? `guide-chat-help-${stage}` : undefined}

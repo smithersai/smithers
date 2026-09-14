@@ -90,6 +90,7 @@ const reachableAction = async (page: Page, action: Locator) => {
 }
 
 for (const device of [
+  { name: "320px phone", descriptor: "iPhone SE", viewport: { width: 320, height: 568 } },
   { name: "iPhone 14 portrait", descriptor: "iPhone 14", viewport: { width: 390, height: 844 } },
   { name: "iPhone 14 landscape", descriptor: "iPhone 14", viewport: { width: 844, height: 390 } },
   { name: "iPad Mini", descriptor: "iPad Mini", viewport: { width: 768, height: 1024 } },
@@ -118,6 +119,7 @@ for (const device of [
       const input = page.getByTestId("composer-input")
       // A touch open shows the composer; the on-screen keyboard follows the user's own tap on it.
       await expect(input).toBeVisible()
+      await expect(page.locator("[data-ask] .slash-menu-description")).toHaveText("Type a question or a task, then tap to send")
       await input.tap()
       await expect(input).toBeFocused()
       const header = (await page.locator(".session-navigation").boundingBox())!
@@ -143,7 +145,7 @@ for (const device of [
       const mode = page.getByRole("dialog", { name: "Chat" }).getByRole("button", { name: "Mode: Normal", exact: true })
       expect((await mode.boundingBox())!.y).toBeGreaterThanOrEqual(listBox.y + listBox.height)
       await input.fill("hello from a phone")
-      await page.keyboard.press("Escape")
+      await page.getByRole("dialog", { name: "Chat", exact: true }).getByRole("button", { name: "Close", exact: true }).tap()
       await expect(page.getByRole("dialog", { name: "Chat", exact: true })).toBeHidden()
       await expect(page.locator(".guide-shell")).toHaveAttribute("data-conversation-open", "false")
       await page.getByRole("button", { name: "Chat", exact: true }).tap()
@@ -161,13 +163,31 @@ for (const device of [
       await expect(page.locator(".guide-shell")).toHaveAttribute("data-stage", "3")
       const transcript = page.getByRole("log", { name: "Onboarding chat history" })
       await expect(transcript.locator('[data-kind="issue"]')).toBeVisible()
-      expect((await transcript.boundingBox())!.height).toBeGreaterThanOrEqual(device.viewport.height * 0.4)
+      // Visibility alone does not detect clipping by a scroll container.
+      // Measure the card preview before any manual scroll or locator tap.
+      await expect.poll(() => transcript.locator('[data-kind="issue"]').evaluate(element => {
+        const card = element.getBoundingClientRect()
+        const pane = element.closest(".guide-transcript")!.getBoundingClientRect()
+        return Math.min(card.bottom, pane.bottom) - Math.max(card.top, pane.top)
+      })).toBeGreaterThanOrEqual(100)
+      // The 320px goal wraps too: the transcript yields to these fixed controls.
+      expect((await transcript.boundingBox())!.height).toBeGreaterThanOrEqual(device.viewport.height * (device.viewport.width === 320 ? 0.25 : 0.4))
       const action = page.getByRole("button", { name: "View issue flows", exact: true })
       const before = await reachableAction(page, action)
       await transcript.evaluate(element => { element.scrollTop = element.scrollHeight })
       expect(await reachableAction(page, action)).toEqual(before)
       await transcript.evaluate(element => { element.scrollTop = 0 })
       await expect.poll(() => transcript.evaluate(element => element.scrollTop)).toBe(0)
+    })
+
+    test("the first help bubble stays below the goal and above the pills", async ({ page }) => {
+      await openTutorial(page)
+      const help = page.locator('.guide-footer .help-bubble')
+      await expect(help).toBeVisible()
+      const bubble = (await help.boundingBox())!
+      const goal = (await page.locator('.guide-goal').boundingBox())!
+      expect(bubble.y).toBeGreaterThanOrEqual(goal.y + goal.height)
+      for (const action of await page.locator('.guide-actions .guide-primary').all()) await reachableAction(page, action)
     })
 
     if (device.viewport.width === 390) {

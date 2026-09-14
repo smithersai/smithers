@@ -12,6 +12,8 @@ export type HelpBubbleProps = {
   placement?: "flow" | "above"
   /** Nearby controls that floating guidance must clear (a CSS selector). */
   avoid?: string
+  /** Keep floating guidance below this content, shrinking the tip if necessary. */
+  below?: string
   /** Draw attention to the target while awaiting its action. */
   pulse?: boolean
   /** The control being explained. It remains mounted when guidance is dismissed. */
@@ -24,12 +26,13 @@ export type HelpBubbleProps = {
  * The caller owns when to show it; no tutorial, timer, or permission policy
  * belongs here. Opening guidance neither moves focus nor traps the keyboard.
  */
-export function HelpBubble({ id, open, content, onDismiss, children, placement = "flow", avoid, pulse = false }: HelpBubbleProps) {
+export function HelpBubble({ id, open, content, onDismiss, children, placement = "flow", avoid, below, pulse = false }: HelpBubbleProps) {
   const target = useRef<HTMLDivElement>(null)
   const bubble = useRef<HTMLDivElement>(null)
   const anchor = useCallback((node: HTMLDivElement | null) => {
     if (!node || !open || placement !== "above") return
     const obstacles = avoid ? Array.from(node.ownerDocument.querySelectorAll<HTMLElement>(avoid)) : []
+    const boundary = below ? node.ownerDocument.querySelector<HTMLElement>(below) : null
     const measure = () => {
       const tip = bubble.current
       if (!tip) return
@@ -52,7 +55,8 @@ export function HelpBubble({ id, open, content, onDismiss, children, placement =
           rect.top < edge && rect.bottom > edge - gap - height) edge = rect.top
       }
       tip.style.bottom = `calc(100% + ${bounds.top - edge}px)`
-      const availableHeight = Math.max(0, edge - gap - 16)
+      const top = Math.max(16, boundary ? boundary.getBoundingClientRect().bottom + 8 : 16)
+      const availableHeight = Math.max(0, edge - gap - top)
       tip.style.maxHeight = `${availableHeight}px`
       tip.style.overflowY = tip.scrollHeight > availableHeight ? "auto" : ""
     }
@@ -63,6 +67,7 @@ export function HelpBubble({ id, open, content, onDismiss, children, placement =
     const footer = node.closest("footer")
     if (footer) observer.observe(footer)
     for (const obstacle of obstacles) observer.observe(obstacle)
+    if (boundary) observer.observe(boundary)
     if (bubble.current) observer.observe(bubble.current)
     window.addEventListener("resize", measure)
     window.addEventListener("scroll", measure, true)
@@ -72,7 +77,7 @@ export function HelpBubble({ id, open, content, onDismiss, children, placement =
       window.removeEventListener("resize", measure)
       window.removeEventListener("scroll", measure, true)
     }
-  }, [open, placement, avoid])
+  }, [open, placement, avoid, below])
   const dismiss = () => {
     if (bubble.current?.contains(document.activeElement)) {
       target.current?.querySelector<HTMLElement>("button, a[href], input, select, textarea, [tabindex]")?.focus()
