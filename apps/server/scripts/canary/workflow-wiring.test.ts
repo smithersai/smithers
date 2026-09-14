@@ -29,11 +29,38 @@ interface WorkflowStep {
   readonly uses?: string
   readonly run?: string
   readonly with?: { readonly name?: string }
+  readonly env?: Record<string, unknown>
+}
+
+interface CiJob {
+  readonly if?: unknown
+  readonly steps?: ReadonlyArray<WorkflowStep>
 }
 
 interface CiWorkflow {
-  readonly jobs: Record<string, { readonly if?: unknown; readonly steps?: ReadonlyArray<WorkflowStep> }>
+  readonly on?: { readonly push?: { readonly branches?: ReadonlyArray<string> } | null }
+  readonly jobs: Record<string, CiJob>
 }
+
+/*
+ * The one job-level `if:` that is not a skipped gate: the cache publisher's
+ * push guard. `cache-publish` is the only job handed the cache write
+ * credential, and the guard is what keeps that credential out of pull-request
+ * runs (packages/smithers/build/infra/CACHE-TRUST.md). GithubCiGen renders it
+ * from the workflow's push branches, `missingGates` refuses a gate only the
+ * publisher performs, and the root PACKAGE.ts leaves the publisher out of
+ * `requiredJobs`, so the guard cannot make a required check disappear.
+ * scripts/test/ci.test.ts carves out the same job. Both halves are read from
+ * the workflow: the guard must be exactly the declared push branches, and the
+ * job must hold the write credential.
+ */
+const publishGuard = (workflow: CiWorkflow): string | undefined => {
+  const refs = (workflow.on?.push?.branches ?? []).map((branch) => `github.ref == 'refs/heads/${branch}'`)
+  if (refs.length === 0) return undefined
+  return `\${{ github.event_name == 'push' && ${refs.length === 1 ? refs[0] : `(${refs.join(" || ")})`} }}`
+}
+const holdsCacheWriteCredential = (job: CiJob): boolean =>
+  (job.steps ?? []).some((step) => step.env?.SMITHERS_CACHE_WRITE_TOKEN === "${{ secrets.SMITHERS_CACHE_WRITE_TOKEN }}")
 
 const evidenceNames = ["ci-test-tier-evidence", "apps-e2e-artifacts"]
 const evidenceFinalizer = (step: WorkflowStep): boolean =>
@@ -47,9 +74,11 @@ const evidenceFinalizer = (step: WorkflowStep): boolean =>
 /** Conditional evidence retention cannot make a validation job or step disappear. */
 const conditionalEnforcement = (source: string): ReadonlyArray<string> => {
   const workflow = Bun.YAML.parse(source) as CiWorkflow
+  const guard = publishGuard(workflow)
   const violations: string[] = []
   for (const [name, job] of Object.entries(workflow.jobs)) {
-    if (job.if !== undefined) violations.push(`${name}: conditional job`)
+    const publisher = guard !== undefined && job.if === guard && holdsCacheWriteCredential(job)
+    if (job.if !== undefined && !publisher) violations.push(`${name}: conditional job`)
     for (const [index, step] of (job.steps ?? []).entries()) {
       if (step.if !== undefined && !evidenceFinalizer(step)) {
         violations.push(`${name}: ${step.name ?? `step ${index + 1}`}`)
@@ -170,6 +199,39 @@ jobs:
       "checks: Collect ci-test-tier-evidence",
       "checks: Upload apps-e2e-artifacts",
       "skipped: conditional job"
+    ])
+  })
+
+  it("admits only the cache publisher's push guard, and nothing that borrows or widens it", () => {
+    const workflow = (jobs: string): string => `
+on:
+  push:
+    branches: [main]
+  pull_request:
+jobs:
+${jobs}`
+    const writeStep = `    steps:
+      - name: Workspace targets
+        run: pnpm exec smthrs ci '//packages/...'
+        env:
+          SMITHERS_CACHE_WRITE_TOKEN: "\${{ secrets.SMITHERS_CACHE_WRITE_TOKEN }}"`
+    const readStep = `    steps:
+      - name: Workspace targets
+        run: pnpm exec smthrs ci '//packages/...'`
+    const mainGuard = `    if: \${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}`
+
+    expect(conditionalEnforcement(workflow(`  publish:\n${mainGuard}\n${writeStep}`))).toEqual([])
+    expect(conditionalEnforcement(workflow([
+      // The guard on a job without the write credential: an ordinary gate that skips on every pull request.
+      `  borrowed:\n${mainGuard}\n${readStep}`,
+      // The write credential on every push, not only the declared branch.
+      `  wide:\n    if: \${{ github.event_name == 'push' }}\n${writeStep}`,
+      // The write credential guarded to a branch the workflow never pushes.
+      `  elsewhere:\n    if: \${{ github.event_name == 'push' && github.ref == 'refs/heads/release' }}\n${writeStep}`
+    ].join("\n")))).toEqual([
+      "borrowed: conditional job",
+      "wide: conditional job",
+      "elsewhere: conditional job"
     ])
   })
 })
