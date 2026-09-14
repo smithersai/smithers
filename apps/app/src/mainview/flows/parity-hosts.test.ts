@@ -622,8 +622,13 @@ describe("host parity — the web and native catalogs against the servers' own c
       expect(host.querySelector('[data-kind="file"]')).not.toBeNull()
       expect(rendered).toContain("workspace.session.destroy")
       expect(rendered.filter((name) => !webNames.has(name))).toEqual([])
-      // The door is stated on the card instead.
-      expect(host.querySelector('[data-kind="file"] [data-intel="unavailable"]')?.textContent).toContain("needs the native app")
+      // An absent capability adds neither a gesture nor developer copy on the web.
+      const file = host.querySelector('[data-kind="file"]')!
+      expect(file.querySelector('[data-flow="code.hover"]')).toBeNull()
+      expect(file.querySelector("[data-flow-activate]")).toBeNull()
+      expect(file.querySelector("[data-intel]")).toBeNull()
+      expect(file.textContent).not.toContain("/code.hover")
+      expect(file.textContent).not.toContain("needs the native app")
     } finally {
       flushSync(() => root.unmount())
       await controller.dispose()

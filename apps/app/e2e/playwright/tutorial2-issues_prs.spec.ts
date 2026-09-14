@@ -62,13 +62,13 @@ test("practice Add flow opens its form and keeps a refused submit in the card", 
   const chip = page.locator(".guide-transcript").getByRole("button", { name: "Add flow", exact: true })
   await chip.focus()
   await page.keyboard.press("Enter")
-  const form = page.locator(".guide-transcript").getByTestId("card-form-issue.add-flow")
+  const form = page.locator('.guide-transcript .flow-form[data-flow-name="issue.add-flow"]')
   await expect(form).toBeVisible()
   await form.getByLabel("What should this issue flow do?").fill("Research error responses")
   await page.keyboard.press("Tab")
   await form.getByRole("button", { name: "Submit", exact: true }).click()
   await expect(form).toContainText("Practice repositories can't take new flows yet.")
-  await expect(page.locator('[data-testid^="toast-"][data-status="failed"]')).toHaveCount(0)
+  await expect(page.locator('[data-toast-status="failed"]')).toHaveCount(0)
 })
 
 test("practice Linear link renders the sign-in prompt; bridge retains the chrome door", async ({ page }) => {

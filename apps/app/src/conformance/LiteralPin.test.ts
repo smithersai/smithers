@@ -161,11 +161,6 @@ const RESOLVES_ELSEWHERE: ReadonlyArray<Excuse> = [
     reason: "the GuideLesson kind from src/mainview/onboarding/lessons.ts, which the walk switches on; it is a lesson kind and never a card kind"
   },
   {
-    literal: "say",
-    file: "e2e/playwright/tutorial2-background_flows.spec.ts",
-    reason: "the GuideLesson kind from src/mainview/onboarding/lessons.ts, which the walk switches on; it is a lesson kind and never a card kind"
-  },
-  {
     literal: "do",
     file: "e2e/playwright/tutorial2-walk.spec.ts",
     reason: "the GuideLesson kind from src/mainview/onboarding/lessons.ts, which the script v4 walk switches on; a lesson kind, never a card kind"
@@ -179,11 +174,6 @@ const RESOLVES_ELSEWHERE: ReadonlyArray<Excuse> = [
     literal: "librarian-run-",
     file: "e2e/playwright/tutorial-stubs.ts",
     reason: "the workflow gateway double's run id for the beat 12 launches; the app wraps it as flow-run-<runId>, so the bare prefix is never a card id"
-  },
-  {
-    literal: "do",
-    file: "e2e/playwright/tutorial2-reel.spec.ts",
-    reason: "the GuideLesson kind from src/mainview/onboarding/lessons.ts, which the walk switches on; it is a lesson kind and never a card kind"
   },
   {
     literal: "data-char",
@@ -436,7 +426,8 @@ describe("the pin catches the 2026-08-15 rename it was built for", () => {
     // so the dead kind is reported with no lead rather than a stranger; `flow-run` is retired too.
     expect(messages.some((message) => message.includes(`"workflow-run"`) && !message.includes(`"flow-run"`))).toBe(true)
     expect(messages.some((message) => message.includes(`"run-trace"`))).toBe(false)
-    expect(messages.some((message) => message.includes(`"workflow-run-"`) && message.includes(`"flow-run-"`))).toBe(
+    // The flow-run form's prefix is now a closer lead (three edits versus four).
+    expect(messages.some((message) => message.includes(`"workflow-run-"`) && message.includes(`"form-flow-run-"`))).toBe(
       true
     )
     // `data-command` → `data-flow` shares no tail, so the pin names the dead
@@ -636,7 +627,9 @@ describe("a card kind is checked wherever it appears, not only in the two easy p
 describe("the suggestion is a lead, not noise", () => {
   test("a near miss names its neighbour and a stranger names nobody", () => {
     expect(nearest("workflow.create", vocabularies.dottedIdentifiers)).toBe("flow.create")
-    expect(nearest("workflow-run-", vocabularies.cardIdPrefixes)).toBe("flow-run-")
+    expect(nearest("workflow-run-", ["flow-run-"])).toBe("flow-run-")
+    // The new form prefix is closer; the original run prefix still resolves above.
+    expect(nearest("workflow-run-", vocabularies.cardIdPrefixes)).toBe("form-flow-run-")
     // No shared tail, no guess.
     expect(nearest("data-command", vocabularies.dataAttributes)).toBeUndefined()
     expect(nearest("zzzzzzzzzzzzzzzzzzzz", vocabularies.cardKinds)).toBeUndefined()
