@@ -1,6 +1,6 @@
 import { readFile } from "node:fs/promises"
 import { createHash } from "node:crypto"
-import { request as httpsRequest } from "node:https"
+import { requestJson } from "./requestJson"
 
 export interface Snapshot { files: Record<string, string>; base: string; head: string }
 export interface TestResult { code: number; stdout: string; stderr: string; command: string }
@@ -25,17 +25,8 @@ async function kubernetes(method: string, path: string, body?: unknown): Promise
     readFile("/var/run/secrets/kubernetes.io/serviceaccount/token", "utf8"),
     readFile("/var/run/secrets/kubernetes.io/serviceaccount/ca.crt")
   ])
-  return new Promise((done, reject) => {
-    const outgoing = httpsRequest({ hostname: process.env.KUBERNETES_SERVICE_HOST, port: Number(process.env.KUBERNETES_SERVICE_PORT ?? 443), path,
-      method, ca, headers: { authorization: `Bearer ${token.trim()}`, "content-type": "application/json" }, timeout: 10_000 }, incoming => {
-      const chunks: Buffer[] = []; let size = 0
-      incoming.on("data", chunk => { size += chunk.length; if (size > 2 * 1024 * 1024) { outgoing.destroy(new Error("Kubernetes reply exceeds limit")); return }; chunks.push(chunk) })
-      incoming.on("end", () => { try { done({ status: incoming.statusCode ?? 500, body: JSON.parse(Buffer.concat(chunks).toString() || "{}") }) } catch (error) { reject(error) } })
-    })
-    outgoing.on("timeout", () => outgoing.destroy(new Error("Kubernetes request timed out")))
-    outgoing.on("error", reject)
-    outgoing.end(body === undefined ? undefined : JSON.stringify(body))
-  })
+  return requestJson({ hostname: process.env.KUBERNETES_SERVICE_HOST, port: Number(process.env.KUBERNETES_SERVICE_PORT ?? 443), path,
+    method, ca, headers: { authorization: `Bearer ${token.trim()}` }, timeout: 10_000 }, body)
 }
 const podsPath = `/api/v1/namespaces/${encodeURIComponent(namespace)}/pods`
 
