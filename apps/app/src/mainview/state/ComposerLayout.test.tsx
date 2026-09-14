@@ -4,8 +4,10 @@ import { flushSync } from "react-dom"
 import { createRoot } from "react-dom/client"
 import type { AppBootstrap } from "@smthrs/rpc/AppBootstrap"
 import App from "../App"
-import { SidebarRepositoryPicker } from "../Composer"
-import { ControllerTestProvider } from "../ControllerContext"
+import { useRef } from "react"
+import { useLiveQuery } from "@tanstack/react-db"
+import { Composer, SidebarRepositoryPicker } from "../Composer"
+import { ControllerTestProvider, useController } from "../ControllerContext"
 import { scopedControllers } from "./ControllerTestScope"
 import type { AppController as AppControllerType } from "./AppController"
 import { createAppStore } from "./AppStore"
@@ -14,12 +16,9 @@ import { backend, json, memoryStorage, nativeRepositories, settled, silentAgent 
 
 const createAppController = scopedControllers()
 
-/*
- * The composer's layout (will's brief, 2026-08-30): a header row above the box
- * holds the repository selector and where the repository lives (a local path,
- * or owner/repo on GitHub); inside the box the `+` (add files, a connector, a
- * flow, an agent) and the surface pill sit bottom-left. Every affordance is a
- * registered flow; every menu's open state is the session's.
+/* The full Composer still exposes its optional repository header and menus.
+ * The current App explicitly opts into minimal mode (f2561c7606f2); exercise
+ * the optional component directly and pin that the shell does not mount it.
  */
 
 GlobalRegistrator.register()
@@ -54,14 +53,27 @@ interface View {
   readonly act: (change: () => void) => Promise<void>
 }
 
-const mount = (controller: AppControllerType, sidebar = false): View => {
+function FullComposer() {
+  const controller = useController()
+  const { data: sessions } = useLiveQuery(controller.store.collections.sessions)
+  const session = sessions[0] ?? controller.store.session()
+  const surfaces = useRef<HTMLButtonElement>(null)
+  const connect = useRef<HTMLButtonElement>(null)
+  const add = useRef<HTMLButtonElement>(null)
+  return <Composer typing={session.phase === "responding"} surface={session.surface}
+    surfacesMenuOpen={session.surfacesMenuOpen} connectMenuOpen={session.connectMenuOpen === true}
+    addMenuOpen={session.addMenuOpen === true} surfacesTriggerRef={surfaces}
+    connectTriggerRef={connect} addTriggerRef={add} autoFocus={false} placeholder="Ask Smithers to work on something…" />
+}
+
+const mount = (controller: AppControllerType, mode: "full" | "minimal" | "sidebar" = "full"): View => {
   const host = document.createElement("div")
   document.body.append(host)
   const root = createRoot(host)
   flushSync(() =>
     root.render(
       <ControllerTestProvider controller={controller}>
-        {sidebar ? <SidebarRepositoryPicker /> : <App />}
+        {mode === "sidebar" ? <SidebarRepositoryPicker /> : <><App />{mode === "full" && <FullComposer />}</>}
       </ControllerTestProvider>
     )
   )
@@ -98,7 +110,7 @@ const localController = async (harnesses: ReadonlyArray<unknown> = []) => {
   return { store, controller }
 }
 
-describe("the composer header: the repository selector and where it lives", () => {
+describe("the optional full composer header: the repository selector and where it lives", () => {
   test("no repository: the selector says Select a repo, no origin chip, and the chrome has no duplicate", async () => {
     const { controller } = await localController()
     const view = mount(controller)
@@ -111,9 +123,9 @@ describe("the composer header: the repository selector and where it lives", () =
     // The header holds the selector; the chrome bar no longer repeats it.
     expect(byTestId(view.host, "composer-header")?.contains(trigger)).toBe(true)
     expect(view.host.querySelector(".chrome-bar .repo-chip")).toBeNull()
-    // The sidebar's Repos section offers the same one step when nothing is pinned, and nothing else binds repo.open there.
+    // The minimal app no longer mounts a ChromeBar beside the optional component.
     const sidebarOpens = [...view.host.querySelectorAll(".chrome-bar [data-flow=\"repo.open\"]")]
-    expect(sidebarOpens.map((el) => el.getAttribute("data-testid"))).toEqual(["repo-empty"])
+    expect(sidebarOpens.map((el) => el.getAttribute("data-testid"))).toEqual([])
 
     // Its menu offers the IDE's open-folder, through the registered flow.
     await view.act(() => trigger?.click())
@@ -327,7 +339,7 @@ describe("the composer header: the repository selector and where it lives", () =
   })
 })
 
-describe("the composer's + menu and surface pill", () => {
+describe("the optional full composer's + menu and surface pill", () => {
   test("+ opens a store-owned menu: Add files first, then a connector and an agent; the pill names the surface", async () => {
     const { store, controller } = await localController([{
       id: "claude",
@@ -488,7 +500,7 @@ test("signed-out sidebar loads public repositories and selects one without conne
     bootstrap: { ...localBootstrap, host: "cloud", capabilities: ["cloud"], authFlow: "redirect" },
     ...backend({ "/api/public/repos": json(200, { repos: [{ name: "smithersai/smithers" }] }) })
   })
-  const view = mount(controller, true)
+  const view = mount(controller, "sidebar")
   await view.act(() => byTestId(view.host, "composer-repo-trigger")?.click())
   await settled()
   const menu = view.host.querySelector('[role="menu"]')
@@ -509,4 +521,17 @@ test("signed-out sidebar loads public repositories and selects one without conne
   expect(view.host.querySelector('[role="menu"]')).toBeNull()
   expect(text(byTestId(view.host, "composer-repo-trigger"))).toBe("smithersai/smithers")
   await controller.dispose()
+})
+
+
+test("the app summons a minimal composer without the optional header, + menu, or surface pill", async () => {
+  const { controller } = await localController()
+  const view = mount(controller, "minimal")
+  expect(byTestId(view.host, "composer-header")).toBeNull()
+  expect(byTestId(view.host, "composer-add")).toBeNull()
+  expect(byTestId(view.host, "composer-surface-trigger")).toBeNull()
+  expect(view.host.querySelector<HTMLElement>(".composer-wrap")?.hidden).toBe(true)
+  await view.act(() => view.host.querySelector<HTMLButtonElement>('[data-flow="chat.open"]')?.click())
+  expect(view.host.querySelector<HTMLElement>(".composer-wrap")?.hidden).toBe(false)
+  expect(view.host.querySelector("textarea")).not.toBeNull()
 })

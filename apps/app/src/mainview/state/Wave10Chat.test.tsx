@@ -81,7 +81,7 @@ describe("wave 10 — the derived pill row (§2a/§2f)", () => {
     expect(host.querySelectorAll(".smithers-suggestion")).toHaveLength(0)
   })
 
-  test("signed-out, no pill: sign-in is the chrome button, never a gate on the chat (LOCAL-APP.md)", async () => {
+  test("signed-out, no pill: sign-in stays callable without permanent chrome", async () => {
     const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
     const controller = createAppController(store, unavailableRepositories, silentAgent)
     store.dispatch({
@@ -97,7 +97,9 @@ describe("wave 10 — the derived pill row (§2a/§2f)", () => {
     const { host } = mount(controller)
     expect(host.querySelectorAll(".smithers-suggestion")).toHaveLength(0)
     const signIn = host.querySelector<HTMLElement>("[data-testid=\"chrome-sign-in\"]")
-    expect(signIn?.dataset.flow).toBe("auth.sign-in")
+    expect(signIn).toBeNull()
+    expect(controller.commands.find("auth.sign-in")).toBeDefined()
+    expect(host.querySelector(".smithers-transcript")).not.toBeNull()
   })
 })
 
@@ -121,12 +123,13 @@ describe("wave 10 — admin-only affordances are absent, not hidden (§2/§2b)",
     expect(manifest).not.toContain("debug.seams")
   })
 
-  test("admin: the reset button renders and admin.devtools toggles the panel", async () => {
+  test("admin: reset stays in the registry and admin.devtools toggles the panel", async () => {
     const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
     const controller = createAppController(store, unavailableRepositories, silentAgent)
     await signedIn(store, true)
     const { host } = mount(controller)
-    expect(host.querySelector(".corner-reset-btn")).not.toBeNull()
+    expect(host.querySelector(".corner-reset-btn")).toBeNull()
+    expect(controller.commands.find("admin.reset.ask")).toBeDefined()
     expect(host.querySelector(".devtools-panel")).toBeNull()
     act(() => void controller.runCommand("admin.devtools"))
     expect(host.querySelector(".devtools-panel")).not.toBeNull()

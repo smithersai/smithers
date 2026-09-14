@@ -255,41 +255,22 @@ describe("chat-first shell: panes never replace the conversation", () => {
     expect(view.host.querySelector("textarea")).not.toBeNull()
   })
 
-  test("the composer's surfaces menu opens the panes without leaving chat", async () => {
+  test("the summoned composer's slash door opens panes without leaving the conversation", async () => {
     const { store, controller } = await harness()
     const view = mount(controller)
-
-    for (
-      const [command, paneClass] of [
-        ["connect", "connectors-surface"],
-        ["wiki", "world-card-workspace"]
-      ] as const
-    ) {
-      // The surface buttons collapsed into ONE dropdown (§2c′): open it,
-      // then invoke the entry — a direct command binding, state-aware.
-      const trigger = view.host.querySelector<HTMLButtonElement>(".composer-menu-trigger")
-      expect(trigger).not.toBeNull()
-      await view.act(() => trigger?.click())
-      const item = view.host.querySelector<HTMLButtonElement>(
-        `.composer-menu-item[data-flow="${command}"]`
-      )
-      expect(item).not.toBeNull()
-
-      await view.act(() => item?.click())
+    await view.act(() => view.host.querySelector<HTMLButtonElement>('[data-flow="chat.open"]')?.click())
+    expect(view.host.querySelector<HTMLElement>(".composer-wrap")?.hidden).toBe(false)
+    expect(view.host.querySelector(".composer-menu-trigger")).toBeNull()
+    const before = [...store.collections.messages.values()]
+    for (const [command, paneClass] of [["connect", "connectors-surface"], ["wiki", "world-card-workspace"]] as const) {
+      await view.act(() => controller.send(`/${command}`))
       expect(store.session().surface).toBe(command === "connect" ? "connectors" : "chat")
       expect(view.host.querySelector(`.${paneClass}`)).not.toBeNull()
-      // The toggle law (§2c): invoking the open pane's entry returns to chat.
-      await view.act(() => trigger?.click())
-      const again = view.host.querySelector<HTMLButtonElement>(
-        `.composer-menu-item[data-flow="${command}"]`
-      )
-      expect(again?.getAttribute("aria-pressed")).toBe(command === "connect" ? "true" : "false")
-      await view.act(() => again?.click())
+      await view.act(() => controller.send(`/${command}`))
       expect(store.session().surface).toBe("chat")
-      if (command === "connect") expect(view.host.querySelector(`.${paneClass}`)).toBeNull()
-      else expect(view.host.querySelector(`.${paneClass}`)).not.toBeNull()
+      expect(view.host.querySelector(`.${paneClass}`) !== null).toBe(command === "wiki")
+      expect([...store.collections.messages.values()]).toEqual(before)
       expect(view.host.querySelector("textarea")).not.toBeNull()
       expect(view.host.querySelector(".smithers-transcript")).not.toBeNull()
     }
-  })
-})
+  })})

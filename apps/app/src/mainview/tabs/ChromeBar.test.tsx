@@ -1196,7 +1196,7 @@ describe("the chrome buttons", () => {
     }
   })
 
-  test("Wiki, signed out, opens the Wiki pane beside the chat and touches no message; a second click returns to the chat", async () => {
+  test("Wiki, signed out, opens one embedded card without changing messages; a second click reuses it", async () => {
     const { store, controller } = await cloudHarness()
     await signedOut(store)
     const { host, act } = mount(controller)
@@ -1204,12 +1204,15 @@ describe("the chrome buttons", () => {
     const button = host.querySelector<HTMLButtonElement>("[data-testid=chrome-wiki]")
     expect(button?.dataset.flow).toBe("wiki")
     await act(() => button?.click())
-    expect(store.session().surface).toBe("world")
+    expect(store.session().surface).toBe("chat")
+    expect(store.collections.cards.get("world-embedded")?.kind).toBe("world")
     expect([...store.collections.messages.values()].map((message) => message.id)).toEqual(before)
     // The chrome stays visible with the pane open: every screen of the mock shows it.
     expect(rendered(host).map((b) => b.textContent)).toEqual(["Wiki", "Dispatcher", "Flows", "Secrets", "History", "Account"])
     await act(() => host.querySelector<HTMLButtonElement>("[data-testid=chrome-wiki]")?.click())
     expect(store.session().surface).toBe("chat")
+    expect([...store.collections.cards.values()].filter(card => card.kind === "world")).toHaveLength(1)
+    expect([...store.collections.messages.values()].map(message => message.id)).toEqual(before)
   })
 
   test("Flows, signed out, opens the Flows pane and invents no flow rows: the list waits on sign-in", async () => {

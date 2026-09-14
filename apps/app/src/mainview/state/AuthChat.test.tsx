@@ -68,7 +68,7 @@ const WEB: AppBootstrap = {
 const WEB_OPENING = "This is the Smithers web app. Sign in with GitHub to open one of your repositories and read its files here."
 
 describe("auth is a conversation state — the chat is the only page", () => {
-  test("signed-out: the chat renders open, with sign-in as the chrome's option (LOCAL-APP.md)", async () => {
+  test("signed-out: the chat stays available and sign-in has an explicit embedded door", async () => {
     const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
     const controller = createAppController(store, unavailableRepositories, silentAgent, {
       ...backend({
@@ -81,16 +81,17 @@ describe("auth is a conversation state — the chat is the only page", () => {
     await controller.loadSession()
     await settled()
 
+    await controller.commands.runForAgent("auth.prompt")
+    await settled()
     const { host, markup } = mount(controller)
     const html = markup()
     // The chat surface — transcript AND composer — not a landing takeover.
     expect(host.querySelector(".smithers-transcript")).not.toBeNull()
     expect(host.querySelector(".smithers-composer")).not.toBeNull()
     expect(host.querySelector(".landing-surface")).toBeNull()
-    // No auth gate rides the transcript: sign-in is the chrome button, bound
-    // to the registered command, and the composer invites the conversation.
+    // Sign-in is the explicit auth.prompt action; the composer remains available.
     expect(html).not.toContain("sign in with GitHub to continue")
-    const signIn = host.querySelector<HTMLButtonElement>("[data-testid=\"chrome-sign-in\"]")
+    const signIn = host.querySelector<HTMLButtonElement>("[data-flow=\"auth.sign-in\"]")
     expect(signIn).not.toBeNull()
     expect(signIn?.dataset.flow).toBe("auth.sign-in")
     expect(controller.commands.find("auth.sign-in")).toBeDefined()
@@ -115,11 +116,14 @@ describe("auth is a conversation state — the chat is the only page", () => {
     await controller.adoptSession({ state: "signed-out", login: null, allowlisted: false, admin: false })
     await settled()
 
+    await controller.commands.runForAgent("auth.prompt")
+    await settled()
     const { host, markup } = mount(controller)
     const html = markup()
     expect(html).not.toContain("sign in with GitHub to continue")
     expect(html).not.toContain("The identity service isn't configured")
-    expect(host.querySelector("[data-testid=\"chrome-sign-in\"]")).not.toBeNull()
+    expect(host.querySelector("[data-flow=\"auth.sign-in\"]")).not.toBeNull()
+    expect(store.collections.identitySessions.get("identity")?.scopesPlain).toContain("See your GitHub profile.")
   })
 
   test("signed-out: a send reaches the agent; the chat is not gated on identity", async () => {

@@ -4,6 +4,7 @@ import { Profiler } from "react"
 import { flushSync } from "react-dom"
 import { createRoot } from "react-dom/client"
 import App from "../App"
+import { SidebarRepositoryPicker } from "../Composer"
 import { ControllerTestProvider } from "../ControllerContext"
 import * as VaultAdapter from "../wiki/VaultAdapter"
 import { scopedControllers } from "./ControllerTestScope"
@@ -59,7 +60,7 @@ interface Counted {
 }
 
 /** Mount App behind a controller whose registry read counts the shell's renders. */
-const mountCounted = async (): Promise<Counted> => {
+const mountCounted = async (sidebar = false): Promise<Counted> => {
   const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
   const real = createAppController(store, unavailableRepositories, unavailableAgent, { recommender: { debounceMs: 0 } })
   let count = 0
@@ -82,6 +83,7 @@ const mountCounted = async (): Promise<Counted> => {
       <ControllerTestProvider controller={controller}>
         <Profiler id="shell" onRender={() => { commits += 1 }}>
           <App />
+          {sidebar && <SidebarRepositoryPicker />}
         </Profiler>
       </ControllerTestProvider>
     )
@@ -129,7 +131,7 @@ describe("the composer hot path: typing never re-renders the transcript", () => 
     // must still project it. This is the other half of the projection —
     // dropping a field the shell needs has to fail as loudly as keeping the
     // draft it does not.
-    await view.act(() => void view.controller.runCommand("world"))
+    await view.act(() => view.controller.store.dispatch({ type: "surface.changed", actor: "user", surface: "world" }))
 
     expect(view.renders()).toBeGreaterThan(before)
     expect(view.host.querySelector(".world-surface")).not.toBeNull()
@@ -141,10 +143,19 @@ describe("the composer hot path: typing never re-renders the transcript", () => 
       await view.controller.commands.run("chat.send", "a message worth keeping")
       // Sending also schedules a recommendation row. Settle that material
       // update before attributing subsequent shell renders to keystrokes.
-      for (let tick = 0; tick < 100 && (view.controller.store.session().phase !== "idle" || view.controller.store.collections.recommendations.size === 0); tick += 1) {
+      const settledRecommendation = () => {
+        const store = view.controller.store
+        const failureRevision = Math.max(0, ...[...store.collections.transitions.values()]
+          .filter(record => record.type === "message.response.failed").map(record => record.revision))
+        return failureRevision > 0 && [...store.collections.recommendations.values()]
+          .some(row => row.revision >= failureRevision)
+      }
+      // Boot already writes a recommendation. Wait for this turn's row,
+      // otherwise its pending update gets mistaken for a keystroke render.
+      for (let tick = 0; tick < 100 && !settledRecommendation(); tick += 1) {
         await new Promise((resolve) => setTimeout(resolve, 0))
       }
-      expect(view.controller.store.collections.recommendations.size).toBe(1)
+      expect(settledRecommendation()).toBe(true)
     })
     const before = view.host.querySelector(".smithers-transcript")?.innerHTML
     const renders = view.renders()
@@ -276,7 +287,7 @@ const connectList = (host: HTMLElement): HTMLElement | null => host.querySelecto
 
 describe("the connect menu's open state lives in the store", () => {
   test("the open state round-trips through the connect-menu.toggled transition", async () => {
-    const view = await mountCounted()
+    const view = await mountCounted(true)
     const { store } = view.controller
     expect(store.session().connectMenuOpen).toBe(false)
     expect(connectList(view.host)).toBeNull()
@@ -299,11 +310,11 @@ describe("the connect menu's open state lives in the store", () => {
     const toggles = [...store.collections.transitions.values()].filter(
       (record) => record.type === "connect-menu.toggled"
     )
-    expect(toggles.map((record) => JSON.parse(record.payload).open)).toEqual([true, false])
+    expect(toggles.sort((left, right) => left.revision - right.revision).map((record) => JSON.parse(record.payload).open)).toEqual([true, false])
   })
 
   test("opening from the trigger, then a pointer press outside, closes it", async () => {
-    const view = await mountCounted()
+    const view = await mountCounted(true)
     const { store } = view.controller
 
     await view.act(() => connectTrigger(view.host)?.click())
@@ -327,7 +338,7 @@ describe("the connect menu's open state lives in the store", () => {
   })
 
   test("opening from the trigger, then Escape, closes it and returns focus", async () => {
-    const view = await mountCounted()
+    const view = await mountCounted(true)
     const { store } = view.controller
 
     await view.act(() => connectTrigger(view.host)?.click())
