@@ -79,6 +79,17 @@ const storedRun = <const Kind extends string, Input extends Schema.Top>(kind: Ki
 export const StoredRun = Schema.Union([storedRun("release", ReleaseInput), storedRun("release-content", ContentInput)])
 export type StoredRun = typeof StoredRun.Type
 
+/** One release.yml gate the local path declared it cannot run; reported, never counted as passed. */
+export const GateException = Schema.Struct({ name: Schema.String, command: Schema.String, reason: Schema.String })
+/**
+ * The checks step's receipt: every inventory gate that passed, by release.yml
+ * step name and in order, and every declared exception that did not run. The
+ * pack step writes it beside the release manifest as gate-evidence.json and
+ * the approval prompt repeats the exceptions.
+ */
+export const GateEvidence = Schema.Struct({ ran: Schema.Array(Schema.String), exceptions: Schema.Array(GateException) })
+export type GateEvidence = typeof GateEvidence.Type
+
 export const Evidence = Schema.Struct({
   version: Schema.String,
   currentVersion: Schema.String,
@@ -89,7 +100,9 @@ export const Evidence = Schema.Struct({
   changes: Schema.String,
   documents: Schema.String,
   recordings: Schema.Array(RecordingAsset),
-  sources: Schema.Array(Schema.String)
+  sources: Schema.Array(Schema.String),
+  // Absent until the checks step runs; pack refuses evidence without it.
+  gates: Schema.optionalKey(GateEvidence)
 })
 export type Evidence = typeof Evidence.Type
 

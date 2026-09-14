@@ -1,4 +1,5 @@
 import assert from "node:assert/strict"
+import "../release-support/operations.test.ts"
 import { execFile } from "node:child_process"
 import { promisify } from "node:util"
 import { join } from "node:path"
@@ -16,7 +17,7 @@ import { actionLayers, operations } from "../release-support/operations.ts"
 import { agentLayers } from "../release-support/runtime.ts"
 import { ReleaseError, type Candidate } from "../release-support/schema.ts"
 import { evidence, repository, scriptedSeats } from "./fixtures.ts"
-import { releaseGateArgs, releaseGates } from "../../scripts/release-gates.mjs"
+import { releaseGateArgs, releaseGateCommand, releaseGates } from "../../scripts/release-gates.mjs"
 
 test("content approval survives exit and restart in a different Node process", { timeout: 60_000 }, async (test) => {
   const fixture = await repository(test)
@@ -212,30 +213,67 @@ test("a failed release gate prevents packing and publication", { timeout: 60_000
   assert.equal(packed, false)
 })
 
-test("the checks gate runs the shared release inventory, including the serial fault matrix and the WASM byte-compare", { timeout: 60_000 }, async (test) => {
-  // The flow used to keep its own partial gate list and skipped both targets;
-  // this pins the inventory as the single source and the two gates by name.
+test("the checks gate runs the whole shared release inventory and returns a receipt naming every gate", { timeout: 60_000 }, async (test) => {
+  // The flow used to keep its own partial gate list, then a 12-gate inventory
+  // of release.yml's 35; this pins the inventory as the single source, the
+  // gates the review found missing by name, and the receipt the pack step
+  // files with the candidate.
   const fixture = await repository(test)
   const gates: string[] = []
-  const ops = operations({ root: fixture.root, run: async (command, args, options) => {
+  const ops = operations({ root: fixture.root, gates: { inventory: releaseGates, exceptions: [] }, run: async (command, args, options) => {
     if (command !== "pnpm") return commandRunner(fixture.root)(command, args, options)
     assert.deepEqual(args.slice(0, 2), ["exec", "smthrs"])
     gates.push(args.slice(2).join(" "))
     return ""
   } })
-  assert.deepEqual(await ops.checks(fixture.evidence), fixture.evidence)
+  const checked = await ops.checks(fixture.evidence)
+  assert.deepEqual(checked, { ...fixture.evidence, gates: { ran: releaseGates.map((gate) => gate.name), exceptions: [] } })
   assert.deepEqual(gates, releaseGates.map((gate) => releaseGateArgs(gate).join(" ")))
-  assert.ok(gates.includes("test //packages/...:faults --jobs 1 --verbose"))
-  assert.ok(gates.includes("test //crates/flows-jj:wasmReproducibility --verbose"))
+  assert.ok(gates.length >= 37, `${gates.length} gates is fewer than release.yml's publish job plus the flow's own two`)
+  for (const command of [
+    "ci //packages/... --jobs 2 --verbose", "test //scripts/... --verbose", "lint //:jsdocTree --verbose",
+    "build //apps/app:check --verbose", "test //apps/app:unitTests --verbose", "ci //apps/server/... --verbose",
+    "test //evals/agent:test --verbose", "build //evals/agent:check --verbose", "test //evals/swebench:offline --jobs 1 --verbose",
+    "lint //:ci --verbose", "lint //:factoryProjection --verbose", "lint //:targetIndex --verbose",
+    "test //packages/...:faults --jobs 1 --verbose", "test //packages/smithers/flows/engine-store:disasterRecovery --verbose",
+    "test //crates/flows-jj:buildScript --verbose", "test //crates/flows-jj:wasmReproducibility --verbose"
+  ]) assert.ok(gates.includes(command), `${command} ran`)
   assert.ok(gates.indexOf("ci //packages/... --jobs 2 --verbose") < gates.indexOf("test //packages/...:faults --jobs 1 --verbose"))
+  assert.ok(gates.indexOf("test //packages/...:faults --jobs 1 --verbose") < gates.indexOf("test //crates/flows-jj:wasmReproducibility --verbose"))
 })
 
-for (const target of ["//packages/...:faults", "//crates/flows-jj:wasmReproducibility"]) {
+test("a declared exception is never run and is reported in the receipt instead of counted as passed", { timeout: 60_000 }, async (test) => {
+  // Inject a partition independent of the test host: the fault
+  // matrix moves from the inventory to the exceptions and the checks step must
+  // skip exactly that command, run everything else, and say so in the receipt.
+  const fixture = await repository(test)
+  const skipped = releaseGates.find((gate) => gate.target === "//packages/...:faults")!
+  const exception = { name: skipped.name, command: releaseGateCommand(skipped), reason: "this host has no exclusive resources" }
+  const gates: string[] = []
+  const ops = operations({
+    root: fixture.root,
+    gates: { inventory: releaseGates.filter((gate) => gate !== skipped), exceptions: [exception] },
+    run: async (command, args, options) => {
+      if (command !== "pnpm") return commandRunner(fixture.root)(command, args, options)
+      gates.push(args.slice(2).join(" "))
+      return ""
+    }
+  })
+  const checked = await ops.checks(fixture.evidence)
+  assert.equal(gates.includes("test //packages/...:faults --jobs 1 --verbose"), false, "the exception did not run")
+  assert.equal(gates.length, releaseGates.length - 1, "every other gate ran")
+  assert.deepEqual(checked.gates, { ran: releaseGates.filter((gate) => gate !== skipped).map((gate) => gate.name), exceptions: [exception] })
+  assert.equal(checked.gates!.ran.includes(skipped.name), false, "the receipt never lists an exception as ran")
+  // Pack refuses evidence that skipped the checks step altogether.
+  await assert.rejects(ops.pack(fixture.evidence), /Release checks did not run/)
+})
+
+for (const target of ["//packages/...:faults", "//crates/flows-jj:wasmReproducibility", "//apps/app:unitTests", "//packages/smithers/flows/engine-store:disasterRecovery"]) {
   test(`a failing ${target} gate fails checks before any later gate runs`, { timeout: 60_000 }, async (test) => {
     const fixture = await repository(test)
     const after: string[] = []
     let failed = false
-    const ops = operations({ root: fixture.root, run: async (command, args, options) => {
+    const ops = operations({ root: fixture.root, gates: { inventory: releaseGates, exceptions: [] }, run: async (command, args, options) => {
       if (command !== "pnpm") return commandRunner(fixture.root)(command, args, options)
       if (failed) after.push(args.join(" "))
       if (args[3] === target) { failed = true; throw new Error(`${target} failed`) }

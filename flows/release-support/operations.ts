@@ -6,14 +6,14 @@ import { randomUUID } from "node:crypto"
 import { readWorkspaceManifests } from "../../scripts/pack-release.mjs"
 import { readVersionedManifests, retarget, retargetSource, versionedSources } from "../../scripts/set-release-version.mjs"
 import { candidateIntegrity, preflight, publishCandidate, verifyLocalCandidate } from "../../scripts/publish-release.mjs"
-import { releaseGateArgs, releaseGates } from "../../scripts/release-gates.mjs"
+import { releaseGateArgs, releaseGateSetForHost } from "../../scripts/release-gates.mjs"
 import * as Content from "../release-content/workflow.ts"
 import * as Release from "../release/workflow.ts"
 import { changelogNarrative, checkContent, digest, renderCard } from "./content.ts"
 import { atomicWrite, commandRunner, inside, json, maybeRead, postTweet, type RunCommand } from "./io.ts"
 import { recordUi } from "./recording.ts"
 import {
-  Artifact, Candidate, ContentInput, Evidence, ReleaseError, ReleaseInput,
+  Artifact, Candidate, ContentInput, Evidence, GateEvidence, ReleaseError, ReleaseInput,
   type Analysis, type Draft, type Review, type Brief, type DocumentationAudit
 } from "./schema.ts"
 
@@ -35,15 +35,41 @@ interface Bundle {
 }
 type Manifest = Parameters<typeof candidateIntegrity>[0]
 
+/**
+ * The release inventory the checks step runs and the exceptions it reports.
+ * Defaults to `scripts/release-gates.mjs`; tests inject a mutated copy to
+ * prove the receipt without running the real gates.
+ */
+export type ReleaseGateSet = ReturnType<typeof releaseGateSetForHost>
+
 export interface Options {
   readonly root: string
   readonly run?: RunCommand
   readonly tweet?: typeof postTweet
   readonly reviewDirectory?: string
+  readonly gates?: ReleaseGateSet
+}
+
+/** Copy the receipt as gate-evidence.json spells it so later mutations cannot change it. */
+const gateReceipt = (gates: ReleaseGateSet): GateEvidence => ({
+  ran: gates.inventory.map((gate) => gate.name),
+  exceptions: gates.exceptions.map(({ name, command, reason }) => ({ name, command, reason }))
+})
+
+/** Run gates serially; a failed command produces no receipt and stops the inventory. */
+export const runReleaseGates = async (
+  run: RunCommand,
+  gates: ReleaseGateSet = releaseGateSetForHost(),
+  signal?: AbortSignal
+): Promise<GateEvidence> => {
+  for (const gate of gates.inventory) {
+    await run("pnpm", ["exec", "smthrs", ...releaseGateArgs(gate)], signal ? { signal } : {})
+  }
+  return gateReceipt(gates)
 }
 
 /** All I/O lives in registered action implementations, never in flow planning. */
-export const operations = ({ root, run = commandRunner(root), tweet = postTweet, reviewDirectory }: Options) => {
+export const operations = ({ root, run = commandRunner(root), tweet = postTweet, reviewDirectory, gates = releaseGateSetForHost() }: Options) => {
   const git = (args: readonly string[], signal?: AbortSignal) => run("git", args, signal ? { signal } : {})
   const head = async (signal?: AbortSignal) => (await git(["rev-parse", "HEAD"], signal)).trim()
   const assertHead = async (expected: string, signal?: AbortSignal) => {
@@ -341,13 +367,14 @@ export const operations = ({ root, run = commandRunner(root), tweet = postTweet,
   const checks = async (evidence: Evidence, signal?: AbortSignal): Promise<Evidence> => {
     await assertHead(evidence.sourceSha, signal)
     // Smithers targets are the gate. No GitHub YAML is parsed or dispatched.
-    // The inventory is shared with release.yml by drift test, so this path runs
-    // the serial fault matrix and the WASM byte-compare the workflow requires.
-    for (const gate of releaseGates) {
-      await run("pnpm", ["exec", "smthrs", ...releaseGateArgs(gate)], signal ? { signal } : {})
-    }
+    // The inventory is release.yml's publish job, proved in both directions by
+    // release-gates.test.mjs. The host partition runs every portable gate.
+    // A declared platform exception is never run or counted: it goes into
+    // the receipt, which pack files with the candidate and the approval prompt
+    // repeats, so the operator sees what this run did not prove.
+    const receipt = await runReleaseGates(run, gates, signal)
     await assertCleanMain(signal)
-    return evidence
+    return { ...evidence, gates: receipt }
   }
 
   const build = async (evidence: Evidence, signal?: AbortSignal): Promise<Evidence> => {
@@ -358,6 +385,7 @@ export const operations = ({ root, run = commandRunner(root), tweet = postTweet,
   }
 
   const pack = async (evidence: Evidence, signal?: AbortSignal): Promise<Candidate> => {
+    if (evidence.gates === undefined) throw new Error("Release checks did not run; evidence carries no gate receipt to pack")
     await assertHead(evidence.sourceSha, signal)
     await assertCleanMain(signal)
     const directory = `.flows/releases/npm/${evidence.version}/${evidence.sourceSha}/${randomUUID()}`
@@ -367,6 +395,7 @@ export const operations = ({ root, run = commandRunner(root), tweet = postTweet,
     })
     const manifest = await readJson<Manifest>(`${directory}/release-manifest.json`)
     await verifyLocalCandidate(await inside(root, directory), manifest)
+    await writeJson(`${directory}/gate-evidence.json`, evidence.gates)
     return {
       directory, digest: candidateIntegrity(manifest), version: evidence.version,
       sourceSha: evidence.sourceSha, packageCount: manifest.packages.length, approvalPrompt: ""
@@ -382,6 +411,21 @@ export const operations = ({ root, run = commandRunner(root), tweet = postTweet,
     const expected = [...readWorkspaceManifests(root).values()].map((pkg) => pkg.name).sort()
     if (JSON.stringify(manifest.packages.map((pkg: { name: string }) => pkg.name).sort()) !== JSON.stringify(expected)) throw new Error("Candidate does not contain the complete release roster")
     return manifest
+  }
+
+  /**
+   * The candidate's gate receipt, and that it is this inventory's: a candidate
+   * checked against fewer gates, or with other exceptions, is not this
+   * release's candidate, the same way a smoke receipt for another integrity is
+   * not this candidate's smoke.
+   */
+  const gateEvidenceFor = async (candidate: Candidate): Promise<GateEvidence> => {
+    const text = await maybeRead(await inside(root, `${candidate.directory}/gate-evidence.json`))
+    if (text === undefined) throw new Error("Missing gate evidence; the checks step did not produce a receipt for this candidate")
+    const receipt = Schema.decodeUnknownSync(GateEvidence)(json<unknown>(text))
+    const expected = gateReceipt(gates)
+    if (JSON.stringify(receipt) !== JSON.stringify(expected)) throw new Error("Gate evidence does not match the release inventory; run the checks step again")
+    return receipt
   }
 
   const smoke = async (candidate: Candidate, runtime: "22.19.0" | "24.11.0", signal?: AbortSignal): Promise<Candidate> => {
@@ -428,9 +472,13 @@ export const operations = ({ root, run = commandRunner(root), tweet = postTweet,
       if (smoke.status !== "passed" || smoke.candidateIntegrity !== candidate.digest || smoke.toolchain.node !== `v${runtime}`) throw new Error(`Missing verified Node ${runtime} smoke result`)
     }
     const pending = await preflight(await inside(root, candidate.directory), manifest, { ...registry(input, signal), sourceSha: candidate.sourceSha })
+    const receipt = await gateEvidenceFor(candidate)
+    const exceptions = receipt.exceptions.length === 0
+      ? "Every release.yml gate ran on this host."
+      : `${receipt.exceptions.length} release.yml gate(s) did NOT run on this host and are not proved by this candidate:\n${receipt.exceptions.map((exception) => `  ${exception.name}: ${exception.reason}`).join("\n")}`
     const verified = {
       ...candidate,
-      approvalPrompt: `Publish Smithers ${input.version} to npm (${input.version.includes("-") ? "next" : "latest"})?\n${pending.length} pending of ${candidate.packageCount} packages.\nSource: ${candidate.sourceSha}\nCandidate integrity: ${candidate.digest}\nReview ${candidate.directory}/release-manifest.json and both smoke-node-*.json files.\nProvenance: ${input.provenance ? "required" : "explicitly disabled"}.\nOnly these exact tested tarballs will be published.`
+      approvalPrompt: `Publish Smithers ${input.version} to npm (${input.version.includes("-") ? "next" : "latest"})?\n${pending.length} pending of ${candidate.packageCount} packages.\nSource: ${candidate.sourceSha}\nCandidate integrity: ${candidate.digest}\nGates: ${receipt.ran.length} passed. ${exceptions}\nReview ${candidate.directory}/release-manifest.json, gate-evidence.json and both smoke-node-*.json files.\nProvenance: ${input.provenance ? "required" : "explicitly disabled"}.\nOnly these exact tested tarballs will be published.`
     }
     if (!input.dryRun) await showReview(verified.approvalPrompt)
     return verified

@@ -1,16 +1,17 @@
 import assert from "node:assert/strict"
-import { mkdir, writeFile } from "node:fs/promises"
+import { mkdir, rm, writeFile } from "node:fs/promises"
 import { basename, join } from "node:path"
 import { test, type TestContext } from "node:test"
 import { publishedPackages } from "../../scripts/pack-release.mjs"
 import { candidateIntegrity, integrity } from "../../scripts/publish-release.mjs"
 import { releaseInput } from "../release-support/input.ts"
 import { commandRunner } from "../release-support/io.ts"
-import { operations } from "../release-support/operations.ts"
+import { operations, type ReleaseGateSet } from "../release-support/operations.ts"
 import { ReleaseError, type Candidate } from "../release-support/schema.ts"
+import { releaseGateCommand, releaseGates } from "../../scripts/release-gates.mjs"
 import { repository } from "./fixtures.ts"
 
-const fixture = async (test: TestContext) => {
+const fixture = async (test: TestContext, options: { gates?: ReleaseGateSet } = {}) => {
   const repo = await repository(test)
   const version = repo.evidence.version
   await writeFile(join(repo.root, "pnpm-workspace.yaml"), 'packages:\n  - "packages/*"\n')
@@ -36,10 +37,14 @@ const fixture = async (test: TestContext) => {
     await writeFile(join(repo.root, directory, `smoke-node-${runtime}.json`), JSON.stringify(smoke))
     await writeFile(join(repo.root, directory, "smoke-evidence.json"), JSON.stringify(smoke))
   }
+  // The receipt the checks step produces and the pack step files; verification refuses a candidate without it.
+  const gates = options.gates ?? { inventory: releaseGates, exceptions: [] }
+  await writeFile(join(repo.root, directory, "gate-evidence.json"), JSON.stringify({ ran: gates.inventory.map((gate) => gate.name), exceptions: gates.exceptions }))
   const registry = new Map(packages.slice(0, -1).map((entry) => [`${entry.name}@${version}`, entry.integrity]))
   const publishes: string[][] = []
   const ops = operations({
     root: repo.root,
+    gates,
     run: async (command, args, options) => {
       if (command === "git") return commandRunner(repo.root)(command, args, options)
       assert.equal(command, "pnpm")
@@ -71,6 +76,33 @@ test("the publisher rechecks both runtime receipts and publishes only missing ex
   assert.equal(state.publishes[0]![state.publishes[0]!.indexOf("--tag") + 1], "next")
   await state.ops.publish({ input: state.input, candidate: verified })
   assert.equal(state.publishes.length, 1)
+})
+
+test("verification reads the gate receipt into the approval prompt and refuses a candidate without one or with another inventory's", async (test) => {
+  const state = await fixture(test)
+  const verified = await state.ops.verifyCandidate({ input: state.input, candidate: state.candidate })
+  assert.match(verified.approvalPrompt, new RegExp(`Gates: ${releaseGates.length} passed\\. Every release\\.yml gate ran on this host\\.`))
+  assert.match(verified.approvalPrompt, /gate-evidence\.json/)
+  // A receipt from a shorter inventory is not this release's proof.
+  const receipt = join(state.root, state.directory, "gate-evidence.json")
+  await writeFile(receipt, JSON.stringify({ ran: releaseGates.slice(1).map((gate) => gate.name), exceptions: [] }))
+  await assert.rejects(state.ops.verifyCandidate({ input: state.input, candidate: state.candidate }), /Gate evidence does not match the release inventory/)
+  await assert.rejects(state.ops.publish({ input: state.input, candidate: state.candidate }), /Gate evidence does not match the release inventory/)
+  assert.equal(state.publishes.length, 0)
+  await rm(receipt)
+  await assert.rejects(state.ops.verifyCandidate({ input: state.input, candidate: state.candidate }), /Missing gate evidence/)
+  assert.equal(state.publishes.length, 0)
+})
+
+test("a declared exception reaches the approval prompt by name and reason", async (test) => {
+  // Inject a foreign-host partition so the prompt's reporting is independent of this test host.
+  const skipped = releaseGates.find((gate) => gate.target === "//crates/flows-jj:wasmReproducibility")!
+  const exception = { name: skipped.name, command: releaseGateCommand(skipped), reason: "this host has no wasm32 target" }
+  const state = await fixture(test, { gates: { inventory: releaseGates.filter((gate) => gate !== skipped), exceptions: [exception] } })
+  const verified = await state.ops.verifyCandidate({ input: state.input, candidate: state.candidate })
+  assert.match(verified.approvalPrompt, new RegExp(`Gates: ${releaseGates.length - 1} passed\\. 1 release\\.yml gate\\(s\\) did NOT run on this host`))
+  assert.match(verified.approvalPrompt, /Rebuild and byte-compare flows_jj\.wasm: this host has no wasm32 target/)
+  assert.doesNotMatch(verified.approvalPrompt, /Every release\.yml gate ran/)
 })
 
 test("registry conflicts, tampered smoke receipts and stale source each refuse the whole publication", async (test) => {
