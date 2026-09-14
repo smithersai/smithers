@@ -23,8 +23,8 @@ export const load = (root: string, environment: Record<string, string | undefine
       delete environment.SMITHERS_JJHUB_TOKEN
       return ConfigProvider.fromEnvRecord(selected, { preserveEmptyStrings: true })
     })
-    const token = yield* Config.option(Config.redacted("SMITHERS_JJHUB_TOKEN")).parse(provider).pipe(Effect.mapError(unavailable))
-    const api = yield* Config.option(Config.string("SMITHERS_JJHUB_API_URL")).parse(provider).pipe(Effect.mapError(unavailable))
+    const token = yield* Config.option(Config.Redacted("SMITHERS_JJHUB_TOKEN")).parse(provider).pipe(Effect.mapError(unavailable))
+    const api = yield* Config.option(Config.String("SMITHERS_JJHUB_API_URL")).parse(provider).pipe(Effect.mapError(unavailable))
     if (Option.isNone(token) && Option.isNone(api)) return undefined
     if (Option.isNone(token) || Option.isNone(api)) return yield* unavailable()
     const fs = yield* FileSystem.FileSystem

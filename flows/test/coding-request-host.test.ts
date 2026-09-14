@@ -9,6 +9,7 @@ import * as Model from "@smthrs/model/Model"
 import { ModelEvent } from "@smthrs/model/ModelEvent"
 import { Cause, Context, Deferred, Effect, Layer, Option, Schema, Stream } from "effect"
 import * as HttpServer from "effect/unstable/http/HttpServer"
+import * as NetAddress from "effect/unstable/net/NetAddress"
 import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/unstable/http"
 import { RpcClient, RpcSerialization } from "effect/unstable/rpc"
 import * as NativeControl from "../../packages/smithers/src/internal/NativeControl.ts"
@@ -147,8 +148,7 @@ test("configured request host verifies wiki, prototypes, consumes steering, repl
   const observedPlatform: NativeControl.Platform = { ...platform,
     gateway: (health, options) => platform.gateway(health, options).pipe(Layer.tap(context => {
       const server = Context.get(context, HttpServer.HttpServer)
-      assert.equal(server.address._tag, "TcpAddress")
-      if (server.address._tag !== "TcpAddress") throw new Error("expected TCP gateway")
+      if (!NetAddress.isInetAddress(server.address)) throw new Error("expected TCP gateway")
       return Deferred.succeed(listening, server.address.port)
     })) }
   const result = await Effect.runPromise(Effect.gen(function*() {
