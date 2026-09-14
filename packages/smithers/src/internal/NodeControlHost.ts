@@ -3,6 +3,7 @@
  */
 import { NodeCrypto, NodeHttpClient, NodeServices } from "@effect/platform-node"
 import type * as Undici from "@effect/platform-node/Undici"
+import { EnvHttpProxyAgent } from "@effect/platform-node/Undici"
 import * as NodeFlowsRuntime from "@smthrs/flows/NodeRuntime"
 import * as NodeGateway from "@smthrs/gateway/node/NodeGateway"
 import * as NodeJj from "@smthrs/jj/node/NodeJj"
@@ -11,6 +12,23 @@ import * as AtomicFileSystem from "@smthrs/platform-node/AtomicFileSystem"
 import { Effect, Exit, Layer, Scope, Semaphore } from "effect"
 import * as ControlDatabase from "./ControlDatabase.ts"
 import * as NativeControl from "./NativeControl.ts"
+
+/** Respect the workspace's egress proxy without changing unproxied Node hosts. */
+export const environmentDispatcher = (
+  environment: Readonly<Record<string, string | undefined>> = process.env
+): Effect.Effect<Undici.Dispatcher, never, Scope.Scope> =>
+  Effect.suspend(() => {
+    const httpProxy = environment.http_proxy ?? environment.HTTP_PROXY ?? ""
+    const httpsProxy = environment.https_proxy ?? environment.HTTPS_PROXY ?? ""
+    const noProxy = environment.no_proxy ?? environment.NO_PROXY ?? ""
+    if (!httpProxy && !httpsProxy) return NodeHttpClient.makeDispatcher
+    // Explicit empty values prevent Undici from falling back to a different
+    // ambient environment. Each replacement pool uses the same proxy policy.
+    return Effect.acquireRelease(
+      Effect.sync(() => new EnvHttpProxyAgent({ httpProxy, httpsProxy, noProxy })),
+      (dispatcher) => Effect.promise(() => dispatcher.destroy())
+    )
+  })
 
 /**
  * A replaceable HTTP transport over Undici, given a way to acquire a dispatcher.
@@ -30,7 +48,7 @@ import * as NativeControl from "./NativeControl.ts"
  * and owned the same way.
  *
  * `acquire` is a parameter so a test can hand it a scripted dispatcher; the
- * production caller passes `NodeHttpClient.makeDispatcher`.
+ * production caller passes `environmentDispatcher()`.
  *
  * @category constructors
  * @since 0.1.0
@@ -58,7 +76,7 @@ export const rebuildableTransport = (
 
 /** The production executor: an Undici agent the run may replace. */
 const rebuildableUndici: Effect.Effect<RequestExecutor.RequestExecutor, never, Scope.Scope> = Effect.flatMap(
-  rebuildableTransport(NodeHttpClient.makeDispatcher),
+  rebuildableTransport(environmentDispatcher()),
   RequestExecutor.makeWith
 )
 
