@@ -1324,3 +1324,98 @@ describe("MessageScroller compound", () => {
     expect(latestState!.following).toBe(false);
   });
 });
+
+describe("readable transcript following", () => {
+  const view = (id: string, actor: "user" | "output" = "output") => (
+    <MessageScrollerProvider scrollAnchor="bottom" initialMessageId="home" readAnchor={{ messageId: id, actor }}>
+      <MessageScrollerViewport><MessageScrollerContent>
+        <MessageScrollerItem messageId="home">Home</MessageScrollerItem>
+        <MessageScrollerItem messageId={id}>New content</MessageScrollerItem>
+      </MessageScrollerContent></MessageScrollerViewport>
+      <MessageScrollerButton />
+    </MessageScrollerProvider>
+  );
+  test("Home restore stays ready to follow a card, then manual scroll-up releases it", async () => {
+    geometryByMessageId.set("home", { top: 20, height: 900 });
+    geometryByMessageId.set("welcome", { top: 950, height: 100 });
+    await render(view("welcome"), { scrollHeight: 1100, clientHeight: 600, scrollTop: 0 });
+    expect(getViewport().scrollTop).toBe(10);
+    geometryByMessageId.set("issues", { top: 1100, height: 900 });
+    metrics().scrollHeight = 2000;
+    await act(async () => root!.render(view("issues")));
+    expect(getViewport().scrollTop).toBe(1090);
+    metrics().scrollTop = 400;
+    await scroll();
+    geometryByMessageId.set("reply", { top: 2000, height: 100 });
+    metrics().scrollHeight = 2100;
+    await act(async () => root!.render(view("reply")));
+    expect(getViewport().scrollTop).toBe(400);
+    expect(container!.querySelector('[data-slot="message-scroller-button"]')!.getAttribute("data-active")).toBe("true");
+    geometryByMessageId.set("sent", { top: 2100, height: 100 });
+    metrics().scrollHeight = 2200;
+    await act(async () => root!.render(view("sent", "user")));
+    expect(getViewport().scrollTop).toBe(1600);
+  });
+  test("a Home heading stays anchored when its content grows asynchronously", async () => {
+    geometryByMessageId.set("home", { top: 800, height: 900 });
+    geometryByMessageId.set("welcome", { top: 1750, height: 100 });
+    await render(view("welcome"), { scrollHeight: 1900, clientHeight: 600, scrollTop: 0 });
+    geometryByMessageId.set("home", { top: 800, height: 1200 });
+    metrics().scrollHeight = 2200;
+    const content = container!.querySelector('[data-slot="message-scroller-content"]')!;
+    await act(async () => resizeCallbacks.get(content)?.([], {} as ResizeObserver));
+    expect(getViewport().scrollTop).toBe(790);
+  });
+});
+
+test("a send batched with its reply resumes a released reader", async () => {
+  const view = (id: string, userMessageId?: string) => <MessageScrollerProvider scrollAnchor="bottom"
+    readAnchor={{ messageId: id, userMessageId }}>
+    <MessageScrollerViewport><MessageScrollerContent>
+      <MessageScrollerItem messageId={id}>Reply</MessageScrollerItem>
+    </MessageScrollerContent></MessageScrollerViewport>
+  </MessageScrollerProvider>;
+  geometryByMessageId.set("old", { top: 1000, height: 100 });
+  await render(view("old"), { scrollHeight: 1100, clientHeight: 600, scrollTop: 0 });
+  metrics().scrollTop = 100;
+  await scroll();
+  geometryByMessageId.set("reply", { top: 1100, height: 100 });
+  metrics().scrollHeight = 1200;
+  await act(async () => root!.render(view("reply", "sent")));
+  expect(getViewport().scrollTop).toBe(600);
+});
+
+test("a slash request waits for its new card before resuming follow", async () => {
+  const view = (id: string, requestId: number) => <MessageScrollerProvider scrollAnchor="bottom"
+    readAnchor={{ messageId: id, requestId }}>
+    <MessageScrollerViewport><MessageScrollerContent>
+      <MessageScrollerItem messageId={id}>Card</MessageScrollerItem>
+    </MessageScrollerContent></MessageScrollerViewport>
+  </MessageScrollerProvider>;
+  geometryByMessageId.set("home", { top: 20, height: 1000 });
+  await render(view("home", 0), { scrollHeight: 1100, clientHeight: 600, scrollTop: 0 });
+  metrics().scrollTop = 100;
+  await scroll();
+  await act(async () => root!.render(view("home", 1)));
+  expect(getViewport().scrollTop).toBe(100);
+  geometryByMessageId.set("issues", { top: 1100, height: 200 });
+  metrics().scrollHeight = 1300;
+  await act(async () => root!.render(view("issues", 1)));
+  expect(getViewport().scrollTop).toBe(700);
+});
+
+test("late Home hydration respects a scroll-up after Welcome was painted", async () => {
+  const view = (id: string) => <MessageScrollerProvider scrollAnchor="bottom"
+    readAnchor={{ messageId: id, actor: "arrival" }}>
+    <MessageScrollerViewport><MessageScrollerContent>
+      <MessageScrollerItem messageId={id}>Repository opening</MessageScrollerItem>
+    </MessageScrollerContent></MessageScrollerViewport>
+  </MessageScrollerProvider>;
+  geometryByMessageId.set("welcome", { top: 1500, height: 100 });
+  await render(view("welcome"), { scrollHeight: 1700, clientHeight: 600, scrollTop: 0 });
+  metrics().scrollTop = 400;
+  await scroll();
+  geometryByMessageId.set("home", { top: 800, height: 900 });
+  await act(async () => root!.render(view("home")));
+  expect(getViewport().scrollTop).toBe(400);
+});

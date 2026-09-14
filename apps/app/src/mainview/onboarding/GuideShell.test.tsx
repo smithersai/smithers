@@ -608,3 +608,37 @@ test("saved raw setup errors become one concise action-row message with closed t
   expect(host.querySelectorAll("[data-notice]").length).toBe(1)
   expect(text(host.querySelector('.guide-actions [data-flow="wiki.create"]'))).toContain("Retry Wiki")
 })
+
+test("a sign-in answer scrolls into the tutorial read without changing the lesson", async () => {
+  let controller!: ReturnType<typeof createAppController>
+  const host = await mountGuide(3, still, {}, c => { controller = c })
+  const viewport = host.querySelector<HTMLElement>(".guide-transcript")!
+  const originalRect = HTMLElement.prototype.getBoundingClientRect
+  const geometry = spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function(this: HTMLElement) {
+    if (this === viewport) return { top: 100, bottom: 600, height: 500 } as DOMRect
+    if (this.matches('[data-testid="auth-prompt"]')) return { top: 850 - viewport.scrollTop, height: 100 } as DOMRect
+    return originalRect.call(this)
+  })
+  const moves: number[] = []
+  viewport.scrollTo = (options: ScrollToOptions | number = {}) => {
+    if (typeof options !== "number" && options.top !== undefined) {
+      moves.push(options.top)
+      viewport.scrollTop = options.top
+    }
+  }
+  try {
+    await controller.store.dispatch({ type: "message.appended", actor: "system", text: "Sign in to connect Linear.",
+      action: { flow: "auth.sign-in", label: "Sign in with GitHub" },
+    }).isPersisted.promise
+    await settle()
+    await new Promise(resolve => requestAnimationFrame(resolve))
+    expect(moves.at(-1)).toBe(740)
+    expect(controller.store.session().guide?.step).toBe(3)
+    viewport.scrollTop = 200
+    viewport.dispatchEvent(new Event("scroll"))
+    host.querySelector('.guide-message')?.dispatchEvent(new Event("animationend", { bubbles: true }))
+    expect(viewport.scrollTop).toBe(200)
+  } finally {
+    geometry.mockRestore()
+  }
+})

@@ -69,7 +69,10 @@ for (const path of ["/", "/smithersai/smithers/"]) {
     const turn = page.waitForRequest(request => request.method() === "POST" && /\/api\/(?:agent|chat)\/turn(?:\?|$)/.test(request.url()))
     await input.press("Enter")
     await turn
-    await expect(page.locator('.smithers-chat-message[data-role="assistant"]', { hasText: `stub: ${draft}` })).toContainText(`stub: ${draft}`, { timeout: 15_000 })
+    const reply = page.locator('.smithers-chat-message[data-role="assistant"]', { hasText: `stub: ${draft}` })
+    await expect(reply).toContainText(`stub: ${draft}`, { timeout: 15_000 })
+    await expect(page.locator('.smithers-chat-message[data-role="user"]', { hasText: draft })).toBeInViewport({ ratio: 1 })
+    await expect(reply).toBeInViewport({ ratio: 1 })
   })
 
   test(`Escape closes the slash menu before Chat: ${path}`, async ({ page }) => {

@@ -16,7 +16,7 @@
 import type { SearchAction, SearchItem } from "@smthrs/rpc/Cards"
 import type { CatalogItem } from "./flows/Commands"
 import { Sparkles } from "lucide-react"
-import { Fragment, useId } from "react"
+import { Fragment, useCallback, useId } from "react"
 import type { SlashRow } from "./flows/registry"
 import { actionForKey, prefixRow } from "./flows/SearchQuery"
 import type { PrefixRow } from "./flows/SearchQuery"
@@ -193,6 +193,16 @@ const roleWord = (role: SearchAction["role"]): string => (role === "open" ? "Ent
  * prints no banner and never echoes "(none)".
  */
 export function PaletteOverlay({ id, answer, rows, highlighted, slashBranch, onHighlight, onChoose }: PaletteOverlayProps) {
+  const revealHighlighted = useCallback((node: HTMLDivElement | null) => {
+    if (!node) return
+    const row = node.querySelector<HTMLElement>('[aria-selected="true"]')
+    if (!row) return
+    const view = node.getBoundingClientRect()
+    const option = row.getBoundingClientRect()
+    // Move only this list, preserving composer focus and transcript position.
+    if (option.top < view.top) node.scrollTop += option.top - view.top
+    else if (option.bottom > view.bottom) node.scrollTop += option.bottom - view.bottom
+  }, [highlighted, rows])
   const generatedId = useId()
   const listboxId = id ?? generatedId
   const { parsed } = answer
@@ -207,7 +217,7 @@ export function PaletteOverlay({ id, answer, rows, highlighted, slashBranch, onH
           <span className="palette-query">{rows.actionsFor?.title ?? parsed.query}</span>
         </div>
       ) : null}
-      <div className="slash-menu-body">
+      <div className="slash-menu-body" ref={revealHighlighted}>
         {answer.refusal === undefined ? null : <p className="palette-refusal" data-testid="palette-refusal">{answer.refusal}</p>}
         {rows.rows.map((row, index) => {
           const label = groupAt.get(index)

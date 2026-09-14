@@ -38,7 +38,7 @@ for (const door of ["issues", "prs"]) {
   test(`/${door} auth refusal does not check`, async ({ page }) => {
     await setup(page, false, true)
     await slash(page, `/${door}`)
-    await expect(page.locator(".guide-transcript").getByRole("button", { name: "Sign in with GitHub", exact: true })).toBeVisible()
+    await expect(page.locator(".guide-transcript").getByRole("button", { name: "Sign in with GitHub", exact: true })).toBeInViewport({ ratio: 1 })
     await expect(page.locator(".guide-shell")).toHaveAttribute("data-stage", String(step))
   })
   test(`/${door} local-only repository stays local`, async ({ page }) => {
@@ -119,7 +119,7 @@ test("practice Linear link renders the sign-in prompt; bridge retains the chrome
   await expect(page.locator(".guide-shell")).toHaveAttribute("data-stage", "2")
   await page.keyboard.press("r")
   await page.locator(".guide-transcript").getByRole("button", { name: "Link to Linear…", exact: true }).click()
-  await expect(page.locator(".guide-transcript").getByRole("button", { name: "Sign in with GitHub", exact: true })).toBeVisible()
+  await expect(page.locator(".guide-transcript").getByRole("button", { name: "Sign in with GitHub", exact: true })).toBeInViewport({ ratio: 1 })
   await page.keyboard.press("q")
   await expect(page.locator(".guide-shell")).toHaveAttribute("data-stage", "10")
   await expect(page.getByTestId("chrome-sign-in")).toBeVisible()

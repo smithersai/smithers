@@ -447,3 +447,24 @@ describe("§3 the keyboard contract", () => {
     expect(view.store.session().draft).toBe("/appearance.")
   })
 })
+
+test("moving the active option scrolls only the palette list and keeps input focus", async () => {
+  const view = await mount()
+  await view.act(() => view.controller.changeDraft("Compose"))
+  await press(view, "k", { meta: true })
+  const body = view.host.querySelector<HTMLElement>(".slash-menu-body")!
+  body.getBoundingClientRect = () => ({ top: 100, bottom: 180, height: 80 } as DOMRect)
+  const options = [...body.querySelectorAll<HTMLElement>('[role="option"]')]
+  options.forEach((option, index) => {
+    option.getBoundingClientRect = () => ({ top: 100 + index * 40 - body.scrollTop, bottom: 140 + index * 40 - body.scrollTop, height: 40 } as DOMRect)
+  })
+  textarea(view.host)!.focus()
+  await press(view, "ArrowDown")
+  expect(body.scrollTop).toBe(0)
+  await press(view, "ArrowDown")
+  expect(body.scrollTop).toBe(40)
+  await press(view, "ArrowUp")
+  await press(view, "ArrowUp")
+  expect(body.scrollTop).toBe(0)
+  expect(document.activeElement).toBe(textarea(view.host))
+})

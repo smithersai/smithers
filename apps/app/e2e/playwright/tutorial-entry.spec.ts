@@ -127,6 +127,6 @@ for (const viewport of [{ width: 1280, height: 800 }, { width: 390, height: 844 
     await page.keyboard.press('Escape')
     await page.reload()
     await expect(heading).toBeInViewport()
-    await expect(page.getByRole('button', { name: "Jump to latest" })).toBeVisible()
+    await expect(page.getByRole('button', { name: "Jump to latest" })).toHaveAttribute("data-active", "false")
   })
 }

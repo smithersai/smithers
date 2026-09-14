@@ -12,6 +12,7 @@ import {
   MessageScrollerProvider,
   MessageScrollerViewport,
   MessageScrollerContent,
+  MessageScrollerItem,
   MessageScrollerButton,
   EmptyState,
   SmithersUiStyles,
@@ -121,6 +122,7 @@ function App() {
   const surfacesTriggerRef = useRef<HTMLButtonElement>(null)
   /* The composer wrap: Cmd+K focuses the textarea inside it (the palette opens on the composer). */
   const composerWrapRef = useRef<HTMLDivElement>(null)
+  const readRequestRef = useRef(0)
   /*
    * The guide's composer host: inside the guide shell the composer is hidden
    * by default and Command-K summons ONLY it into the bottom dock;
@@ -363,6 +365,15 @@ function App() {
     return entryCreatedAt(left) - entryCreatedAt(right)
   })
 
+  const latestEntry = entries.at(-1)
+  const latestReadId = latestEntry?.kind === "card" ? latestEntry.card.id : latestEntry?.message.id
+  // Start at this repository's Home, or Welcome until its declared pane arrives,
+  // even when this profile has another repository's conversation above it.
+  const homeReadId = session.activeRepoKey ? `repo-home-${session.activeRepoKey}` : undefined
+  const welcomeReadId = session.activeRepoKey ? `repo-welcome-${session.activeRepoKey}` : undefined
+  const initialReadId = entries.some(entry => entry.kind === "card" && entry.card.id === homeReadId) ? homeReadId : welcomeReadId
+  const showingArrival = latestReadId !== undefined && latestReadId === welcomeReadId
+
   /*
    * The composer's one home. Summoned in the chat column when the app stands
    * alone; hidden while the guide owns the window (the UI is full-screen
@@ -421,6 +432,12 @@ function App() {
       data-frame-maximized={session.maximizedCardId !== null}
       data-flows={flows.map((command) => command.name).join(" ")}
       onPointerDownCapture={onShellPointerDownCapture}
+      onClickCapture={event => {
+        if (event.target instanceof Element && event.target.closest("button[data-flow], [data-testid=composer-send]")) readRequestRef.current += 1
+      }}
+      onKeyDownCapture={event => {
+        if (event.key === "Enter" && !event.shiftKey && event.target instanceof HTMLTextAreaElement && event.target.dataset.testid === "composer-input" && event.target.value.trim()) readRequestRef.current += 1
+      }}
       onKeyDown={(event) => {
         if (event.defaultPrevented) return
         if (event.key === "Escape" && session.maximizedCardId !== null) {
@@ -544,14 +561,21 @@ function App() {
 
           <div className="sui-chat-transcript smithers-transcript" data-slot="chat-transcript"
             data-testid="transcript" role="log" aria-label="Conversation" aria-busy={typing}>
-          <MessageScrollerProvider scrollAnchor={messages.some(message => message.role === "user") ? "bottom" : "none"}>
+          <MessageScrollerProvider key={`${conversationTabId ?? "main"}:${session.activeRepoKey ?? ""}`} scrollAnchor="bottom"
+            initialMessageId={initialReadId}
+            readAnchor={{ messageId: showingArrival ? initialReadId! : latestReadId ?? "",
+              actor: showingArrival ? "arrival" : latestEntry?.kind === "message" && latestEntry.message.role === "user" ? "user" : "output",
+              requestId: readRequestRef.current,
+              userMessageId: messages.filter(message => message.role === "user").at(-1)?.id,
+              version: latestEntry?.kind === "card" && !showingArrival ? `${latestEntry.card.ordinal}:${latestEntry.card.kind}` : undefined }}>
             <div data-slot="message-scroller" className="sui-msg-scroller" data-streaming={typing ? "true" : "false"}>
             <MessageScrollerViewport fade>
             <MessageScrollerContent className="sui-chat-messages">
             {entries.length === 0 && <EmptyState className="transcript-empty" icon={<Sparkles size={20} />}
               title="Nothing here yet" description="Ask Smithers anything to get started." />}
-            {entries.map((entry) =>
-              entry.kind === "card" ?
+            {entries.map((entry) => <MessageScrollerItem key={entry.kind === "card" ? entry.card.id : entry.message.id}
+              messageId={entry.kind === "card" ? entry.card.id : entry.message.id} style={{ contentVisibility: "visible" }}>
+              {entry.kind === "card" ?
                 (
                   <CardView
                     key={entry.card.id}
@@ -564,8 +588,8 @@ function App() {
                     {...actions}
                   />
                 ) :
-                <TranscriptMessage key={entry.message.id} entry={entry} streamingMessageId={streamingMessageId} />
-            )}
+                <TranscriptMessage key={entry.message.id} entry={entry} streamingMessageId={streamingMessageId} />}
+            </MessageScrollerItem>)}
             {typing && composerHost === undefined && <ChatMessage role="assistant" pending pendingLabel="Smithers is responding" />}
             </MessageScrollerContent>
             </MessageScrollerViewport>

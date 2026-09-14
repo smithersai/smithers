@@ -120,7 +120,8 @@ export function GuideShell({ children, clock = guideClock }: { children: ReactNo
   const typing = session.phase === "responding"
   const streamingMessageId = typing ? messages.at(-1)?.id : undefined
   const chatAnchorId = guide.conversationOpen ? messages.filter(message => message.role === "user" && guide.transcript?.[message.id]?.step === stage).at(-1)?.id : undefined
-  const scrollToken = `${stage}:${entries.map(entry => `${entry.kind === "card" ? entry.card.id + ':' + entry.card.kind : entry.message.id}`).join(",")}`
+  const promptId = signInPrompts.at(-1)?.id
+  const scrollToken = `${promptId ?? ""}:${stage}:${entries.map(entry => `${entry.kind === "card" ? entry.card.id + ':' + entry.card.kind : entry.message.id}`).join(",")}`
   /*
    * Progression is data (GUIDE_STAGES): a say-beat keeps talking on its own
    * after a read pause, and a do-beat waits for its real outcome, shows its
@@ -156,11 +157,37 @@ export function GuideShell({ children, clock = guideClock }: { children: ReactNo
   const paused = guide.autoPaused === true
   const showNext = lesson === undefined || (lesson.kind === "say" ? paused : lesson.skippable)
   const transcriptRef = useRef<HTMLDivElement>(null)
+  const readRef = useRef<{ stage: number; promptId?: string; targetId?: string; chatAnchorId?: string; top: number; following: boolean } | null>(null)
+  const userReadPending = useRef(false)
   const bindTranscript = useCallback((node: HTMLDivElement | null) => {
     transcriptRef.current = node
     if (!node) return
-    const frame = requestAnimationFrame(() => scrollToGuideRead(node, stage, chatAnchorId))
-    return () => cancelAnimationFrame(frame)
+    const previous = readRef.current
+    const targetId = previous?.stage === stage && promptId !== previous.promptId ? promptId : chatAnchorId
+    const following = !previous || previous.following || previous.stage !== stage
+      || previous.chatAnchorId !== chatAnchorId || previous.promptId !== promptId || userReadPending.current
+    userReadPending.current = false
+    const read = { stage, promptId, targetId, chatAnchorId, top: node.scrollTop, following }
+    readRef.current = read
+    const align = () => {
+      if (!read.following) return
+      scrollToGuideRead(node, stage, read.targetId)
+      read.top = node.scrollTop
+    }
+    const onScroll = () => {
+      if (node.scrollTop < read.top) read.following = false
+      read.top = node.scrollTop
+    }
+    const frame = requestAnimationFrame(align)
+    const observer = new ResizeObserver(align)
+    observer.observe(node)
+    for (const child of node.children) observer.observe(child)
+    node.addEventListener("scroll", onScroll)
+    return () => {
+      cancelAnimationFrame(frame)
+      observer.disconnect()
+      node.removeEventListener("scroll", onScroll)
+    }
   }, [scrollToken, stage, chatAnchorId])
   /* Keep the portal mounted so closing can animate without losing the draft. */
   const [composerHost, setComposerHost] = useState<HTMLDivElement | null>(null)
@@ -405,6 +432,9 @@ export function GuideShell({ children, clock = guideClock }: { children: ReactNo
             aria-relevant="additions"
             tabIndex={0}
             ref={bindTranscript}
+            onClickCapture={event => {
+              if (event.target instanceof Element && event.target.closest("button[data-flow]")) userReadPending.current = true
+            }}
           >
             {GUIDE_STAGES.slice(0, stage + 1).map((asked, messageStep) => {
               const message = lessonMessage(messageStep, guide, touch)
@@ -424,7 +454,10 @@ export function GuideShell({ children, clock = guideClock }: { children: ReactNo
                   data-enter={messageStep === stage && messageStep === enteredStep.current}
                   onAnimationEnd={(event) => {
                     if (event.target !== event.currentTarget || messageStep !== stage) return
-                    if (transcriptRef.current) scrollToGuideRead(transcriptRef.current, stage, chatAnchorId)
+                    if (transcriptRef.current && readRef.current?.following) {
+                      scrollToGuideRead(transcriptRef.current, stage, readRef.current.targetId)
+                      readRef.current.top = transcriptRef.current.scrollTop
+                    }
                   }}
                 >
                   <article
@@ -463,7 +496,7 @@ export function GuideShell({ children, clock = guideClock }: { children: ReactNo
             {typing && <ChatMessage role="assistant" pending pendingLabel="Smithers is responding" />}
             <ReelShell clock={clock} />
             {signInPrompts.map(message => (
-              <article key={message.id} className="message" data-testid="auth-prompt">
+              <article key={message.id} className="message" data-testid="auth-prompt" data-chat-message-id={message.id}>
                 <p>{message.text}</p>
                 <Button className="message-cta" data-flow="auth.sign-in" onClick={() => controller.runCommand("auth.sign-in", message.action?.args)}>
                   {message.action?.label}
