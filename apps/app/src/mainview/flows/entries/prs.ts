@@ -44,6 +44,13 @@ export const prsFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> => [
     handler: ({ number, repo }) => actions.viewLanding(number, repo)
   }),
   flow({
+    name: "prs.tab",
+    summary: "Show a pull request's conversation, commits, checks, or files",
+    args: "<cardId> conversation|commits|checks|files",
+    input: Schema.Struct({ cardId: Schema.String, tab: Schema.Literals(["conversation", "commits", "checks", "files"]) }),
+    handler: ({ cardId, tab }) => actions.setLandingTab(cardId, tab)
+  }),
+  flow({
     name: "prs.create",
     form: {
       fields: { from: { optionsFrom: "bookmarks", kind: "text", label: "From bookmark" }, repo: { optionsFrom: "cloud-repos", kind: "text" } },

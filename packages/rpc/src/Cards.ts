@@ -1297,6 +1297,7 @@ const CurrentCardSchema = z.discriminatedUnion("kind", [
     ...cardBaseShape,
     kind: z.literal("pr"),
     payload: z.object({
+      tab: z.enum(["conversation", "commits", "checks", "files"]).optional(),
       repo: z.string(),
       number: z.number().int(),
       title: z.string(),

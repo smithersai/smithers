@@ -481,6 +481,7 @@ export interface AppController extends TutorialChangeController, IssueFlowsContr
   readonly unlinkIssueLinear: IssuesSeam["unlinkLinear"]
   readonly listLandings: LandingsSeam["listLandings"]
   readonly viewLanding: LandingsSeam["viewLanding"]
+  readonly setLandingTab: LandingsSeam["setTab"]
   readonly createLanding: LandingsSeam["createLanding"]
   readonly landLanding: LandingsSeam["landLanding"]
   readonly reviewLanding: LandingsSeam["reviewLanding"]
@@ -1624,6 +1625,7 @@ export const createAppController = (
     unlinkIssueLinear: issuesSeam.unlinkLinear,
     listLandings: landingsSeam.listLandings,
     viewLanding: landingsSeam.viewLanding,
+    setLandingTab: landingsSeam.setTab,
     createLanding: landingsSeam.createLanding,
     landLanding: landingsSeam.landLanding,
     reviewLanding: landingsSeam.reviewLanding,

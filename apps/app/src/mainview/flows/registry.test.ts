@@ -678,6 +678,7 @@ describe("command registry bindings", () => {
       "prs",
       "prs.list",
       "prs.view",
+      "prs.tab",
       "prs.create",
       "prs.land",
       "prs.review",

@@ -481,6 +481,11 @@ const GRAMMAR: Readonly<Record<string, Grammar>> = {
   },
   "prs.list": (args) => repoOnly("prs.list", args),
   "prs.view": (args, known) => numbered(args, "prs.view needs a pull request number", known),
+  "prs.tab": args => {
+    const [cardId, tab, ...rest] = tokensOf(args)
+    return cardId && tab && rest.length === 0 && ["conversation", "commits", "checks", "files"].includes(tab)
+      ? ok({ cardId, tab }) : no("Choose a pull request card and tab")
+  },
   "prs.create": (args, known) => {
     const { rest, repo } = splitTrailingRepo(args, known)
     // The source bookmark rides as a `from:<name>` token anywhere in the text;

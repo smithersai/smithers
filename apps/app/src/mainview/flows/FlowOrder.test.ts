@@ -99,6 +99,7 @@ const PRE_SPLIT_BASE: ReadonlyArray<string> = [
   "issues.comment",
   "prs.list",
   "prs.view",
+  "prs.tab",
   "prs.create",
   "prs.land",
   "prs.review",

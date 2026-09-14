@@ -22,6 +22,7 @@ import type { SeamContext } from "./SeamContext"
 import { readErrorMessage, readResult } from "./SeamContext"
 
 export interface LandingsSeam {
+  readonly setTab: (cardId: string, tab: "conversation" | "commits" | "checks" | "files") => Promise<string | void>
   readonly listLandings: (repo?: string) => Promise<string | { readonly value: string }>
   readonly viewLanding: (number: number, repo?: string) => Promise<string | { readonly value: string }>
   readonly createLanding: (
@@ -411,6 +412,11 @@ export const createLandingsSeam = (ctx: SeamContext, renderRepositoryForm?: Repo
   }
 
   return {
+    setTab: async (cardId, tab) => {
+      const card = ctx.store.collections.cards.get(cardId)
+      if (card?.kind !== "pr") return "That pull request card is no longer available."
+      await ctx.dispatch({ type: "card.updated", actor: ctx.actor(), id: cardId, patch: { payload: { tab } } }).isPersisted.promise
+    },
     listLandings: (repoArg) => tutorialRepositoryRead(ctx, "prs", repoArg, "all", renderRepositoryForm, async (repo) => {
       let response: Response
       try {

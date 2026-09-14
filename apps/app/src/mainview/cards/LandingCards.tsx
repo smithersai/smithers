@@ -8,7 +8,8 @@
  * tab bar is local presentation state (setPrTab, allowlisted there).
  */
 import { Button, Markdown } from "@smthrs/ui"
-import { lazy, Suspense, useState } from "react"
+import { lazy, Suspense } from "react"
+import { flowArgs } from "../flows/FlowArgs"
 import type { Card } from "../state/AppState"
 import type { CardFamily, RunCommand } from "./CardFamily"
 import { settledPill } from "./CardFamily"
@@ -238,7 +239,9 @@ export const LandingCardBody = ({
 }: { readonly card: Extract<Card, { kind: "pr" }> } & LandingCardActions) => {
   const { repo, number, title, state, author, prBody, reviews, checks } = card.payload
   const extra = card.payload
-  const [tab, setPrTab] = useState<PrTab>("conversation")
+  const actionable = ["open", "draft", "failed"].includes(state.toLowerCase())
+  const canLand = actionable && state.toLowerCase() !== "draft" && !extra.draft
+  const tab = card.payload.tab ?? "conversation"
   const summary = checksSummary(checks)
   const additions = (extra.files ?? []).reduce((sum, file) => sum + (file.additions ?? 0), 0)
   const deletions = (extra.files ?? []).reduce((sum, file) => sum + (file.deletions ?? 0), 0)
@@ -279,7 +282,8 @@ export const LandingCardBody = ({
             role="tab"
             className="ghc-tab"
             aria-selected={tab === name}
-            onClick={() => setPrTab(name)}
+            data-flow="prs.tab"
+            onClick={() => onRunCommand("prs.tab", flowArgs("prs.tab", { cardId: card.id, tab: name }))}
           >
             <Octicon name={icon} /> {label}
             {count !== undefined ? <span className="ghc-tab-count">{count}</span> : null}
@@ -347,14 +351,14 @@ export const LandingCardBody = ({
                     </ul>
                   ) :
                   null}
-                <footer className="ghc-merge-foot">
-                  <Button
+                {actionable && <footer className="ghc-merge-foot">
+                  {canLand && <Button
                     size="sm"
                     data-flow="prs.land"
                     onClick={() => onRunCommand("prs.land", `${number} ${repo}`)}
                   >
                     <Octicon name="git-merge" /> Land (queue merge)
-                  </Button>
+                  </Button>}
                   <Button
                     size="sm"
                     variant="outline"
@@ -371,7 +375,7 @@ export const LandingCardBody = ({
                   >
                     Request changes
                   </Button>
-                </footer>
+                </footer>}
               </section>
             ) :
             null}
