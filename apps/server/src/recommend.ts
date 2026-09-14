@@ -58,6 +58,8 @@ export const RECOMMEND_LOG_LIMIT = 5000
 export const RECOMMEND_TIMEOUT_MS = 6000
 /** The model the deployment asks unless `CEREBRAS_MODEL` says otherwise. */
 export const RECOMMEND_DEFAULT_MODEL = "gpt-oss-120b"
+/** Includes the reasoning tokens needed before the structured command list. */
+export const RECOMMEND_MAX_TOKENS = 1024
 export const CEREBRAS_CHAT_COMPLETIONS_URL = "https://api.cerebras.ai/v1/chat/completions"
 
 /**
@@ -565,6 +567,7 @@ export interface CerebrasChatRequest {
   readonly messages: ReadonlyArray<CerebrasChatMessage>
   readonly maxTokens: number
   readonly temperature: number
+  readonly reasoningEffort?: "low" | "medium" | "high"
   /** The provider's `response_format` object, when the caller wants structured output. */
   readonly responseFormat?: Record<string, unknown>
 }
@@ -614,6 +617,7 @@ export const cerebrasChat = (
         model: request.model,
         temperature: request.temperature,
         max_tokens: request.maxTokens,
+        ...(request.reasoningEffort === undefined ? {} : { reasoning_effort: request.reasoningEffort }),
         messages: request.messages,
         ...(request.responseFormat === undefined ? {} : { response_format: request.responseFormat })
       })
@@ -665,7 +669,8 @@ const askModel = (body: RecommendRequest, model: string): Effect.Effect<ModelAns
       cerebrasChat({
         model,
         temperature: 0,
-        maxTokens: 256,
+        maxTokens: RECOMMEND_MAX_TOKENS,
+        ...(model === RECOMMEND_DEFAULT_MODEL ? { reasoningEffort: "low" as const } : {}),
         messages: recommendMessages(body),
         ...(strict ? { responseFormat: { type: "json_schema", json_schema: { name: "recommendation", strict: true, schema: ANSWER_SCHEMA } } } : {})
       }, RECOMMEND_TIMEOUT_MS)

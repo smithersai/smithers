@@ -25,6 +25,7 @@ import {
   RECOMMEND_COMMAND_SUMMARY_MAX_CHARS,
   RECOMMEND_LOG_LIMIT,
   RECOMMEND_LOG_NAME,
+  RECOMMEND_MAX_TOKENS,
   RECOMMEND_OUTCOME_BODY_MAX_BYTES,
   RECOMMEND_TAIL_MAX_CHARS,
   RECOMMEND_TAIL_MAX_ENTRIES,
@@ -182,6 +183,10 @@ describe("POST /api/recommend", () => {
     expect(body.commands.length).toBeLessThanOrEqual(RECOMMEND_ANSWER_MAX)
     expect(body.model).toBe("gpt-oss-120b")
     expect(body.id).not.toBe("")
+    const providerRequest = await calls[0]!.clone().json() as { max_tokens: number; reasoning_effort: string }
+    expect(providerRequest.reasoning_effort).toBe("low")
+    expect(providerRequest.max_tokens).toBe(RECOMMEND_MAX_TOKENS)
+    expect(providerRequest.max_tokens).toBeGreaterThan(256)
 
     // The call carried the contract: temperature 0, strict JSON, the key, every command.
     expect(calls.length).toBe(1)
