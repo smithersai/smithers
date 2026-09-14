@@ -93,6 +93,15 @@ curl -s http://127.0.0.1:3000/projections \
   "runId": "run-1",
   "flowId": "hello",
   "status": "completed",
+  "statusRollup": {
+    "subjectId": "run:run-1",
+    "state": "completed",
+    "activity": "unknown",
+    "health": "healthy",
+    "attention": "none",
+    "freshness": "unobserved",
+    "updatedAt": 2000
+  },
   "createdAt": 1000,
   "updatedAt": 2000,
   "seat": "anthropic:claude-sonnet-4-5",
