@@ -362,8 +362,10 @@
   transform: translateX(-50%);
 }
 .guide-progress span {
-  width: var(--sp-1);
-  height: var(--sp-1);
+  /* 6px: the one progress read the tutorial has — 4px (--sp-1) read as dust
+     at a glance, 8px (--sp-2) read as beads. Deliberate mid value. */
+  width: 6px;
+  height: 6px;
   border-radius: 50%;
   background: var(--g-line);
   transition: background var(--dur-slow) var(--ease-current);
@@ -702,6 +704,18 @@
   visibility: visible;
   opacity: 1;
   transition-delay: 0s;
+}
+/*
+ * The dock is fixed to the viewport, so with the session sidebar open it
+ * centred on the window and its left half slid under the rail (the rail's
+ * z-index beats the whole guide stacking context). Shift it clear of the
+ * rail so the palette centres on the visible area. Below 600px the sidebar
+ * is an overlay and the shell keeps no left padding.
+ */
+@media (min-width: 601px) {
+  .session-shell:has(.session-sidebar) .guide-composer-dock {
+    left: 240px;
+  }
 }
 .guide-composer-clip {
   width: min(var(--chat-max-width), 100%);
