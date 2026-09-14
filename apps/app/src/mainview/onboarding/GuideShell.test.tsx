@@ -89,6 +89,50 @@ const settle = async () => {
   flushSync(() => {})
 }
 
+test("completed pills and their keys advance after Back, including the live approval", async () => {
+  for (const step of [2, 6, 7, 8]) {
+    const lesson = GUIDE_STAGES[step]!
+    if (lesson.kind !== "do") throw Error("expected action lesson")
+    const calls: Array<[string, string?]> = []
+    const host = await mountGuide(step, still, { autoPaused: true, completed: [lesson.completion] }, c => {
+      spyOn(c, "runCommand").mockImplementation((name, args) => { calls.push([name, args]); return true })
+    })
+    const button = host.querySelector<HTMLButtonElement>(".guide-actions .guide-primary")!
+    expect(button.disabled).toBe(false)
+    expect(button.dataset.done).toBe("true")
+    button.click()
+    const key = lesson.actions[0]!.key
+    document.dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true }))
+    document.dispatchEvent(new KeyboardEvent("keyup", { key, bubbles: true }))
+    expect(calls).toEqual([["onboarding.act", "next"], ["onboarding.act", "next"]])
+    mounted.pop()?.()
+  }
+})
+
+/* Beat 13's key is the reserved C: it must still open Chat, and the rewound lesson moves on. */
+test("Chat still opens at a completed beat 13, and pressing it again resumes the lesson", async () => {
+  for (const press of ["key", "pointer"] as const) {
+    const timers: Array<() => void> = []
+    const ticking: GuideClock = { setTimeout: callback => timers.push(callback), clearTimeout: () => {} }
+    let controller!: ReturnType<typeof createAppController>
+    const host = await mountGuide(13, ticking, { autoPaused: true, completed: ["palette.opened"] }, c => { controller = c })
+    const button = host.querySelector<HTMLButtonElement>(".guide-actions .guide-primary")!
+    expect(button.dataset.flow).toBe("chat.open")
+    if (press === "pointer") button.click()
+    else {
+      document.dispatchEvent(new KeyboardEvent("keydown", { key: GUIDE_KEYS.chat, bubbles: true }))
+      document.dispatchEvent(new KeyboardEvent("keyup", { key: GUIDE_KEYS.chat, bubbles: true }))
+    }
+    await settle()
+    expect(controller.store.session().paletteOpen).toBe(true)
+    expect(controller.store.session().guide?.autoPaused).toBe(false)
+    timers.pop()?.()
+    await settle()
+    expect(controller.store.session().guide?.step).toBe(14)
+    mounted.pop()?.()
+  }
+})
+
 test("every beat has keyboard navigation, one pill shape, and no numbered instruction rows", async () => {
   for (let step = 1; step <= GUIDE_LAST_STEP; step++) {
     const host = await mountGuide(step, still, { repo: "acme/api" })

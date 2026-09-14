@@ -4,7 +4,7 @@ import { initialGuide } from "../AppState"
 import { memoryStorage } from "../TestFixtures"
 import type { ControllerContext } from "./context"
 import { createLiveTutorialController, liveSnapshotOf } from "./liveTutorial"
-import { PRACTICE_CARD } from "../practice/PracticeRepository"
+import { PRACTICE_CARD, PRACTICE_REPO } from "../practice/PracticeRepository"
 import { createDiffFilesSeam, PRACTICE_DIFF_CARD } from "../seams/DiffFilesSeam"
 import { createGuideController } from "./guide"
 import type { LiveTutorialRun } from "@smthrs/rpc/LiveTutorial"
@@ -44,6 +44,15 @@ test("anonymous live plan→implementation uses real results once, and diff/file
   const picker = t.store.collections.cards.get(PRACTICE_CARD.commits)
   expect(picker?.kind === "commit-pick" && picker.payload.rows[0]?.commitId).toBe(sha)
   expect(t.store.session().guide?.completed).toContain("commits.made")
+  // Reading another practice file must not steal the diff frame's restoration.
+  await t.store.dispatch({ type: "card.upsert", actor: "user", card: {
+    id: PRACTICE_CARD.file("README.md"), kind: "file", title: "README.md", status: "active", createdAt: 1, ordinal: t.store.nextOrdinal(),
+    payload: { repo: PRACTICE_REPO, path: "README.md", content: "Example repository", truncated: false },
+  } }).isPersisted.promise
+  await t.store.dispatch({ type: "card.navigated", actor: "user", card: {
+    ...t.store.collections.cards.get(PRACTICE_CARD.file("README.md"))!, kind: "file", title: "src/server.ts",
+    payload: { repo: PRACTICE_REPO, path: "src/server.ts", content: "// HTTP server", truncated: false },
+  } }).isPersisted.promise
   await t.step(7)
   await t.live.showDiff()
   await t.step(8)
@@ -58,6 +67,31 @@ test("anonymous live plan→implementation uses real results once, and diff/file
   await createGuideController(t.ctx).guideAct("back")
   const restored = t.store.collections.cards.get(PRACTICE_CARD.commits)
   expect(restored?.kind === "commit-pick" && restored.payload.rows[0]?.commitId).toBe(sha)
+  expect(t.store.session().guide?.completed).toContain("change.opened")
+  const navigation = createGuideController(t.ctx)
+  const calls = t.calls.length
+  await navigation.guideAct("next")
+  expect(t.store.session().guide?.step).toBe(10)
+  expect(t.store.collections.cards.get(PRACTICE_CARD.commits)?.kind).toBe("change")
+  await navigation.guideAct("back")
+  expect(t.store.session().guide?.step).toBe(9)
+  expect(t.store.collections.cards.get(PRACTICE_CARD.commits)?.kind).toBe("commit-pick")
+  await navigation.guideAct("back")
+  expect(t.store.session().guide?.step).toBe(8)
+  expect(t.store.collections.cards.get(PRACTICE_DIFF_CARD)?.kind).toBe("file")
+  await navigation.guideAct("back")
+  expect(t.store.session().guide?.step).toBe(7)
+  expect(t.store.collections.cards.get(PRACTICE_DIFF_CARD)?.kind).toBe("diff")
+  await navigation.guideAct("next")
+  expect(t.store.session().guide?.step).toBe(8)
+  expect(t.store.collections.cards.get(PRACTICE_DIFF_CARD)?.kind).toBe("file")
+  // Revisited completed beats retain normal automatic advancement and its cards.
+  await navigation.guideAct("advance", "0:8")
+  expect(t.store.session().guide?.step).toBe(9)
+  await navigation.guideAct("advance", "0:9")
+  expect(t.store.session().guide?.step).toBe(10)
+  expect(t.store.collections.cards.get(PRACTICE_CARD.commits)?.kind).toBe("change")
+  expect(t.calls).toHaveLength(calls)
   t.dispose()
 })
 test("failed tests never complete implementation or invent commits", async () => {
@@ -125,13 +159,13 @@ test("reload reconciles a saved completed snapshot before its guide and artifact
   t.live.resume()
   await new Promise(resolve => setTimeout(resolve, 30))
   expect(t.store.collections.cards.get(PRACTICE_CARD.commits)?.kind).toBe("commit-pick")
-  expect(t.store.session().guide?.completed).not.toContain("change.opened")
+  expect(t.store.session().guide?.completed).toContain("change.opened")
   const hydrated = await createAppStore({ kind: "localStorage", storage: t.storage })
   createLiveTutorialController({ ...t.ctx, store: hydrated }, hydrated.nextOrdinal).resume()
   await new Promise(resolve => setTimeout(resolve, 30))
   expect(hydrated.collections.cards.get(PRACTICE_CARD.commits)?.kind).toBe("commit-pick")
-  expect(hydrated.session().guide?.completed).not.toContain("change.opened")
-  await t.live.createChange([sha])
+  expect(hydrated.session().guide?.completed).toContain("change.opened")
+  await createGuideController(t.ctx).guideAct("next")
   expect(t.store.collections.cards.get(PRACTICE_CARD.commits)?.kind).toBe("change")
   expect(t.calls.length).toBe(beforeCalls + 1)
   t.dispose()

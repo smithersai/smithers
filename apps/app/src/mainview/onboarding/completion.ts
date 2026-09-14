@@ -21,3 +21,15 @@ export const lessonCompletion = (guide: GuideState | undefined, signal: string, 
   if (stage?.kind !== "do" || stage.completion !== signal || guide.completed?.includes(signal)) return undefined
   return completeGuide(guide, signal, said)
 }
+
+/**
+ * The guide after a REPEAT of the current lesson's own act (Back, then the act
+ * again). There is no second receipt: the rewound lesson simply resumes, and
+ * the shell moves on as it did the first time.
+ */
+export const lessonResumed = (guide: GuideState | undefined, signal: string): GuideState | undefined => {
+  if (guide === undefined || guide.autoPaused !== true) return undefined
+  const stage = GUIDE_STAGES[guide.step]
+  if (stage?.kind !== "do" || stage.completion !== signal || !guide.completed?.includes(signal)) return undefined
+  return { ...guide, autoPaused: false, notice: undefined }
+}

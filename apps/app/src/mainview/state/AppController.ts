@@ -5,7 +5,7 @@ import type { ControlFocusController } from "./controller/controlFocus"
 import { createLiveTutorialController } from "./controller/liveTutorial"
 import { createRepositoryUpdate } from "./controller/repositoryUpdate"
 import { createDictation } from "./controller/dictation"
-import { lessonCompletion } from "../onboarding/completion"
+import { lessonCompletion, lessonResumed } from "../onboarding/completion"
 import { createGuideController } from "./controller/guide"
 import type { CommandActions } from "../flows/Flows"
 import { createActorBindings } from "./ActorBindings"
@@ -1166,6 +1166,11 @@ export const createAppController = (
     // The ⌘K lesson (onboarding SCRIPT v4 beat 13) finishes on the real open.
     const learned = lessonCompletion(store.session().guide, "palette.opened")
     if (learned !== undefined) store.dispatch({ type: "guide.changed", actor: "user", guide: learned })
+    else {
+      // Opening Chat again after Back resumes that lesson; C never stops opening Chat.
+      const again = lessonResumed(store.session().guide, "palette.opened")
+      if (again !== undefined) store.dispatch({ type: "guide.changed", actor: "user", guide: again })
+    }
   }
   const inputMode = createInputModeController(store, {
     actor: () => ctx.commandActor,

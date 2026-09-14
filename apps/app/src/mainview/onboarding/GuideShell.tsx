@@ -447,7 +447,7 @@ export function GuideShell({ children, clock = guideClock }: { children: ReactNo
               const guidedAction = lesson.help?.actionKey === action.key
               const helpOpen = guidedAction && showTutorialHelp && !chatHelpOpen
               const button = (
-                <GuideButton key={action.flow} className="guide-primary"
+                <GuideButton key={suggestion.flow} className="guide-primary"
                   data-flow={action.flow} shortcut={action.key}
                   aria-describedby={`guide-instruction-${stage}${helpOpen ? ` guide-help-${stage}` : ""}`}
                   data-guided={helpOpen || undefined}
@@ -461,7 +461,7 @@ export function GuideShell({ children, clock = guideClock }: { children: ReactNo
                 </GuideButton>
               )
               return guidedAction ? (
-                <HelpBubble key={action.flow} id={`guide-help-${stage}`} open={helpOpen}
+                <HelpBubble key={suggestion.flow} id={`guide-help-${stage}`} open={helpOpen}
                   pulse={introduction === undefined}
                   placement={lesson.help?.introduction ? "above" : "flow"}
                   content={guidanceContent} onDismiss={() => setDismissedHelp(helpKey)}>

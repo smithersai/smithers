@@ -1,6 +1,7 @@
 import { LiveTutorialRunSchema, type LiveTutorialOperation } from "@smthrs/rpc/LiveTutorial"
 import type { Card, GuideState } from "../state/AppState"
 import type { GuideAction } from "./lessons"
+import { completedGuideAction } from "./advance"
 
 const liveActions: Readonly<Record<string, { operation: LiveTutorialOperation; busy: string; retry: string; complete: string; completion: string }>> = {
   "issue.repro": { operation: "research", busy: "Researching issue…", retry: "Retry repro", complete: "Research complete", completion: "issue.researched" },
@@ -11,6 +12,7 @@ const liveActions: Readonly<Record<string, { operation: LiveTutorialOperation; b
 
 /** The suggestion and its shortcut share the current persisted run's state. */
 export function guideActionState(action: GuideAction, cards: readonly Card[], guide: GuideState): GuideAction & { disabled?: boolean; busy?: boolean } {
+  if (completedGuideAction(action, guide)) return { ...action, flow: "onboarding.act", args: "next" }
   const operation = liveActions[action.flow]
   if (!operation) return action
   const card = cards.find(card => {

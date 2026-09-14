@@ -1,34 +1,51 @@
 import { GUIDE_BRIDGE, GUIDE_LAST_STEP, GUIDE_STAGES } from "../../onboarding/lessons"
 import { createReelController } from "../../onboarding/reelController"
-import { initialGuide } from "../AppState"
+import { guideBackwardStep, guideForwardStep } from "../../onboarding/navigation"
+import { conversationTabIdOf, inConversation, initialGuide } from "../AppState"
 import type { GuideState } from "../AppState"
-import { PRACTICE_BRANCH, PRACTICE_CARD, practicePicker } from "../practice/PracticeRepository"
+import { PRACTICE_BRANCH, PRACTICE_CARD, PRACTICE_REPO, practicePicker } from "../practice/PracticeRepository"
+import { PRACTICE_DIFF_CARD } from "../seams/DiffFilesSeam"
 import type { ControllerContext } from "./context"
 
 /** Where the escape hatches land: the ⌘K lesson, which every path still runs. */
 const PALETTE_STEP = GUIDE_STAGES.findIndex((stage) => stage.kind === "do" && stage.completion === "palette.opened")
 
-/** Whether an escape hatch took away what a beat needs (login declined, install declined). */
-const unreachable = (guide: GuideState, step: number): boolean => {
-  const stage = GUIDE_STAGES[step]
-  if (stage?.kind !== "do" || stage.requires === undefined) return false
-  const declined = guide.declined ?? []
-  return stage.requires === "signed-in" ? declined.includes("login") : declined.includes("login") || declined.includes("install")
-}
-/** The next beat from `step`, stepping over beats an escape hatch made unreachable. */
-const forward = (guide: GuideState, step: number): number => {
-  let next = Math.min(GUIDE_LAST_STEP, step)
-  while (next < GUIDE_LAST_STEP && unreachable(guide, next)) next += 1
-  return next
-}
-const backward = (guide: GuideState, step: number): number => {
-  let previous = Math.max(1, step)
-  while (previous > 1 && unreachable(guide, previous)) previous -= 1
-  return previous
-}
-
 /** Durable, replayable onboarding. Practice artifacts never enter repository/run tables. */
 export function createGuideController(ctx: ControllerContext, onStart?: () => Promise<unknown>) {
+  /** Revisit the persisted frame result without executing the action that produced it. */
+  const restoreLessonCard = async (guide: GuideState, back = false) => {
+    const stage = GUIDE_STAGES[guide.step]
+    if (stage?.kind !== "do") return
+    const stackBack = back && stage.completion === "change.opened"
+      && ctx.store.collections.cards.get(PRACTICE_CARD.commits)?.kind === "change"
+    if (!guide.completed?.includes(stage.completion) && !stackBack) return
+    const kind = stage.completion === "issues.opened" ? "issue-list"
+      : stage.completion === "issue.opened" ? "issue"
+      : stage.completion === "diff.opened" ? "diff"
+      : stage.completion === "diff.file.opened" ? "file"
+      : stage.completion === "change.opened" ? back ? "commit-pick" : "change" : undefined
+    if (kind === undefined) return
+    const frame = kind === "diff" || kind === "file" ? PRACTICE_DIFF_CARD
+      : kind === "commit-pick" || kind === "change" ? PRACTICE_CARD.commits : undefined
+    const conversation = conversationTabIdOf(ctx.store.session())
+    for (const history of ctx.store.collections.cardHistories.values()) {
+      if (frame !== undefined && history.id !== frame) continue
+      const current = ctx.store.collections.cards.get(history.id)
+      if (!current || !inConversation(current, conversation)) continue
+      const index = history.entries.map(card => card.kind === kind && "repo" in card.payload && card.payload.repo === PRACTICE_REPO).lastIndexOf(true)
+      if (index < 0) continue
+      const delta = index > history.index ? 1 : -1
+      for (let count = Math.abs(index - history.index); count > 0; count--) {
+        await ctx.store.dispatch({ type: "card.history.moved", actor: ctx.commandActor, id: history.id, delta }).isPersisted.promise
+      }
+      return
+    }
+    // Older bundled Changes predate frame history; keep their stack as a forward location.
+    const shown = ctx.store.collections.cards.get(PRACTICE_CARD.commits)
+    if (stackBack && shown) await ctx.store.dispatch({ type: "card.navigated", actor: ctx.commandActor, card: {
+      ...shown, kind: "commit-pick", title: `Commits on ${PRACTICE_BRANCH}`, status: "active", payload: practicePicker(guide.pick),
+    } }).isPersisted.promise
+  }
   /* The optional capability reel owns its own reducer cases (onboarding/reelController.ts). */
   const reelAct = createReelController(ctx)
   const applyGuideAction = async (action: string, value = ""): Promise<string | void> => {
@@ -58,7 +75,9 @@ export function createGuideController(ctx: ControllerContext, onStart?: () => Pr
         if (value !== `${guide.playthrough ?? 0}:${guide.step}` || guide.autoPaused) return
         const lesson = GUIDE_STAGES[guide.step]
         if (!lesson || (lesson.kind === "say" ? lesson.terminal : !guide.completed?.includes(lesson.completion))) return
-        guide.step = forward(guide, guide.step + 1)
+        await restoreLessonCard(guide)
+        guide.step = guideForwardStep(guide)
+        await restoreLessonCard(guide)
         break
       }
       case "signal": {
@@ -72,11 +91,14 @@ export function createGuideController(ctx: ControllerContext, onStart?: () => Pr
       case "next": {
         const stage = GUIDE_STAGES[guide.step]
         if (stage?.kind === "do" && !guide.completed?.includes(stage.completion)) return "Complete this lesson's action first."
+        await restoreLessonCard(guide)
         guide.autoPaused = false
-        guide.step = forward(guide, guide.step + 1)
+        guide.step = guideForwardStep(guide)
+        await restoreLessonCard(guide)
         break
       }
       case "back": {
+        if (guide.step <= 1) return
         guide.autoPaused = true
         guide.notice = undefined
         const stage = GUIDE_STAGES[guide.step]
@@ -86,28 +108,21 @@ export function createGuideController(ctx: ControllerContext, onStart?: () => Pr
          * signal, and a Back pressed in between must still reopen the picker rather than rewind a beat.
          */
         const shown = ctx.store.collections.cards.get(PRACTICE_CARD.commits)
-        if (stage?.kind === "do" && stage.completion === "change.opened" && (guide.completed?.includes("change.opened") || shown?.kind === "change")) {
-          const history = ctx.store.collections.cardHistories.get(PRACTICE_CARD.commits)
-          if (shown?.kind === "change" && history?.entries[history.index - 1]?.kind === "commit-pick") {
-            await ctx.store.dispatch({ type: "card.history.moved", actor: ctx.commandActor, id: shown.id, delta: -1 }).isPersisted.promise
-            guide.completed = (guide.completed ?? []).filter(signal => signal !== "change.opened")
-            break
-          }
-          const card = shown
-          await ctx.store.dispatch({ type: "card.upsert", actor: ctx.commandActor, card: {
-            id: PRACTICE_CARD.commits, kind: "commit-pick", title: `Commits on ${PRACTICE_BRANCH}`, status: "active",
-            createdAt: card?.createdAt ?? Date.now(), ordinal: card?.ordinal ?? 0, payload: practicePicker(guide.pick)
-          } }).isPersisted.promise
-          guide.completed = (guide.completed ?? []).filter((signal) => signal !== "change.opened")
-          break
+        if (!(stage?.kind === "do" && stage.completion === "change.opened" && shown?.kind === "change")) {
+          guide.step = guideBackwardStep(guide)
         }
-        guide.step = backward(guide, guide.step - 1)
+        await restoreLessonCard(guide, true)
+        if (guide.step < GUIDE_BRIDGE) {
+          guide.declined = guide.declined?.filter(choice => choice !== "practice")
+          delete guide.practiceSkippedFrom
+        }
         break
       }
       case "skip-practice": {
         const stage = GUIDE_STAGES[guide.step]
         if (stage?.kind !== "do" || stage.practice !== true) return "Skip tutorial is offered on the practice lessons."
         guide.declined = [...new Set([...(guide.declined ?? []), "practice" as const])]
+        guide.practiceSkippedFrom = guide.step
         guide.autoPaused = false
         guide.step = GUIDE_BRIDGE
         break
@@ -126,7 +141,7 @@ export function createGuideController(ctx: ControllerContext, onStart?: () => Pr
       }
       case "restart": {
         const playthrough = (guide.playthrough ?? 0) + 1
-        for (const field of ["finished", "acceptedPracticeTitle", "responseId", "demoRun", "said", "declined", "repo", "pick", "notice"] as const) delete guide[field]
+        for (const field of ["finished", "acceptedPracticeTitle", "responseId", "demoRun", "said", "declined", "practiceSkippedFrom", "repo", "pick", "notice"] as const) delete guide[field]
         Object.assign(guide, initialGuide(), { playthrough, completed: ["tutorial.started"] })
         break
       }

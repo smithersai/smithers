@@ -660,6 +660,8 @@ export const GuideSchema = z.object({
    */
   said: z.record(z.string(), z.string()).optional(),
   declined: z.array(z.enum(["practice", "login", "install"])).optional(),
+  /** Exact departure for Skip practice, including a skip after Back. */
+  practiceSkippedFrom: z.number().int().min(1).max(9).optional(),
   repo: z.string().optional(),
   pick: z.array(z.number().int().positive()).optional(),
   notice: z.string().optional(),
