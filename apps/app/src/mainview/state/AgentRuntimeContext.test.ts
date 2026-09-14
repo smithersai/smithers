@@ -256,7 +256,7 @@ describe("per-turn runtime context", () => {
     expect(requests[2]?.context?.cloud).toEqual({ state: "degraded", username: "will" })
   })
 
-  test("on the web the GitHub sign-in is the Smithers Cloud sign-in, so the cloud line follows the identity", async () => {
+  test("public catalog turns on the web report cloud context from the GitHub identity", async () => {
     const store = await webStore()
     const requests: StartAgentTurnRequest[] = []
     const controller = createAppController(store, unavailableRepositories, recordingAgent(requests), {
@@ -270,13 +270,22 @@ describe("per-turn runtime context", () => {
         sandbox: null
       }
     })
-    store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-out", login: null, allowlisted: false, admin: false, scopesPlain: null })
+    // Anonymous web turns are supported for public catalog exploration. An
+    // ordinary signed-out turn is gated before a request/context is sent.
+    await store.dispatch({ type: "repository.upserted", actor: "system", repository: {
+      id: "smithersai/smithers", org: "smithersai", ownerKind: "org", name: "smithers", head: null, catalog: true
+    } }).isPersisted.promise
+    await store.dispatch({ type: "repo.selected", actor: "user", id: "smithersai/smithers" }).isPersisted.promise
+    await store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-out", login: null, allowlisted: false, admin: false, scopesPlain: null }).isPersisted.promise
     controller.send("hi")
     await settled()
+    expect(requests).toHaveLength(1)
+    expect(requests[0]?.context?.activeRepository).toBe("smithersai/smithers")
     expect(requests[0]?.context?.cloud).toEqual({ state: "signed-out", username: null })
-    store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-in", login: "will", allowlisted: true, admin: false, scopesPlain: null })
+    await store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-in", login: "will", allowlisted: true, admin: false, scopesPlain: null }).isPersisted.promise
     controller.send("again")
     await settled()
+    expect(requests).toHaveLength(2)
     expect(requests[1]?.context?.cloud).toEqual({ state: "signed-in", username: "will" })
   })
 
