@@ -283,10 +283,11 @@ describe("host paths never leave the session", () => {
     expect(redactHostPaths(`File '${root}/src/a.ts' is not under 'rootDir' '${root}'.`, root)).toBe("File 'src/a.ts' is not under 'rootDir' '.'.")
     expect(redactHostPaths(`at ${root}/src/a.ts:12:3 and ${root}/`, root)).toBe("at src/a.ts:12:3 and .")
   })
-  test("a path outside the repository keeps only its last segment, so the host's layout and user name never leave", () => {
+  test("outside paths keep only a safe final segment; short roots never reveal account names", () => {
     expect(redactHostPaths(`module "/private/var/folders/x/sec-outside-1/secret"`, root)).toBe(`module "…/secret"`)
     expect(redactHostPaths(`/Users/person/other/pkg/index.d.ts`, root)).toBe("…/index.d.ts")
-    expect(redactHostPaths("see /tmp/", root)).toBe("see …/tmp/")
+    expect(redactHostPaths("see /tmp/", root)).toBe("see …")
+    expect(redactHostPaths("see /Users/person/", root)).toBe("see …")
   })
   test("relative paths, URLs and lone slashes are not paths of the host", () => {
     for (const text of ["src/greet.ts", "node_modules/typescript/lib/lib.es5.d.ts", "https://smithers.sh/docs/x", "a / b", "/", "1/2"]) {

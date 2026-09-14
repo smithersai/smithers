@@ -221,7 +221,8 @@ describe("the agents routes", () => {
       if (!read.alive) break
       await Bun.sleep(25)
     }
-    expect(output).toContain("-m gpt-5.6-terra review it")
+    // AgentRoles terminates options before the task so it cannot become a flag.
+    expect(output).toContain("-m gpt-5.6-terra -- review it")
     await apiFetch(`/api/pty/${sessionId}`, { method: "DELETE" })
     const unknown = await apiFetch("/api/pty", {
       method: "POST",

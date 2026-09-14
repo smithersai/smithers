@@ -158,14 +158,21 @@ describe("repo.welcome", () => {
     })
   })
 
-  test("the model's door answers the sentence and names the three flows", async () => {
-    const { controller } = await fixture({})
+  test("the model's door returns observed repository context while the welcome retains its three doors", async () => {
+    const { store, controller } = await fixture({})
     const outcome = await controller.commands.runForAgent("repo.welcome")
     expect(outcome.status).toBe("executed")
     if (outcome.status === "executed") {
-      expect(outcome.value).toContain(`Welcome to Smithers. ${REPO} is a durable framework`)
-      expect(outcome.value).toContain("repo.maintain")
-      expect(outcome.value).toContain("repo.explore")
+      const context = JSON.parse(outcome.value ?? "")
+      expect(context).toMatchObject({ repo: REPO, openIssues: null, openPrs: null, items: [], truncated: false })
+      expect(context.problems).toEqual(["Could not load repository activity (404).", "Could not load notifications (404)."])
+      expect([...store.collections.repositoryContexts.values()].some(row => JSON.stringify(row.data) === outcome.value)).toBe(true)
+      expect(onboardingCards(store)[0]?.payload).toMatchObject({
+        stage: "welcome",
+        summary: "a durable framework that lets agents plan, run, and review changes to a code repository through flows."
+      })
+      const callable = controller.commands.callable().map(entry => entry.binding.descriptor.name)
+      for (const name of ["repo.maintain", "repo.contribute", "repo.explore"]) expect(callable).toContain(name)
     }
   })
 })
@@ -409,7 +416,7 @@ describe("repo.home", () => {
     })
     const outcome = await declared.controller.commands.runForAgent("repo.welcome")
     expect(outcome.status).toBe("executed")
-    if (outcome.status === "executed") expect(outcome.value).toContain("repo.home")
+    if (outcome.status === "executed") expect(JSON.parse(outcome.value ?? "").repo).toBe(REPO)
     const [home] = homeCards(declared.store)
     const [welcome] = onboardingCards(declared.store)
     expect(home?.payload.blocks).toEqual(HOME.blocks)
