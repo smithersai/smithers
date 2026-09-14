@@ -1316,10 +1316,20 @@ const initializeAppStore = async (resolved: ResolvedPersistence): Promise<AppSto
        * collection here.
        */
       const conversationTabId = conversationTabIdOf(current)
+      const recordGuideEntry = (id: string, source: "chat" | "lesson", ordinal?: number) => {
+        if (!current.guide || current.guide.finished) return
+        collections.sessions.update(SESSION_ID, draft => {
+          if (draft.guide) (draft.guide.transcript ??= {})[id] = { step: current.guide!.step, source,
+            ...(ordinal === undefined ? {} : { ordinal }),
+          }
+        })
+      }
       const insertMessage = (row: Message): void => {
+        recordGuideEntry(row.id, "chat")
         collections.messages.insert(conversationTabId === undefined ? row : { ...row, tabId: conversationTabId })
       }
       const insertCard = (row: Card): void => {
+        recordGuideEntry(row.id, current.phase === "responding" ? "chat" : "lesson")
         collections.cards.insert(conversationTabId === undefined ? row : { ...row, tabId: conversationTabId })
       }
       const ensureCardFrame = (cardId: string): Frame => {
@@ -1371,7 +1381,8 @@ const initializeAppStore = async (resolved: ResolvedPersistence): Promise<AppSto
           collections.sessions.update(SESSION_ID, (draft) => {
             draft.draft = ""
             draft.phase = "responding"
-            if (draft.guide) draft.guide.conversationOpen = false
+            // Sending dismisses search results, while the tutorial's chat dock stays open.
+            if (draft.guide?.conversationOpen && !draft.guide.finished) draft.paletteOpen = false
             // The turn belongs to the conversation it was asked in, whatever tab is active later.
             draft.turnTabId = conversationTabId ?? null
             draft.turnId = transition.turnId
@@ -1894,7 +1905,10 @@ const initializeAppStore = async (resolved: ResolvedPersistence): Promise<AppSto
           for (const id of removedCards) if (collections.cardHistories.has(id)) collections.cardHistories.delete(id)
           if (removedFrames.length > 0) collections.frames.delete(removedFrames)
           collections.sessions.update(SESSION_ID, (draft) => {
-            draft.guide = transition.guide
+            draft.guide = !replay && draft.guide?.transcript ? { ...transition.guide,
+              // Async lesson producers may carry an older placement snapshot.
+              transcript: { ...transition.guide.transcript, ...draft.guide.transcript },
+            } : transition.guide
             if (draft.maximizedCardId !== null && removedCards.has(draft.maximizedCardId)) draft.maximizedCardId = null
             if (draft.activeFrameId !== undefined && removedFrames.includes(draft.activeFrameId)) draft.activeFrameId = rootFrameId(activeBranchId)
           })
@@ -2102,6 +2116,8 @@ const initializeAppStore = async (resolved: ResolvedPersistence): Promise<AppSto
         case "card.navigated": {
           const currentCard = collections.cards.get(transition.card.id)
           if (!currentCard || isApprovalRequest(currentCard) || isApprovalRequest(transition.card) || approvalRequest(currentCard.id)) return
+          recordGuideEntry(currentCard.id, current.phase === "responding" ? "chat" : "lesson",
+            current.phase === "responding" ? nextOrdinal(collections) : undefined)
           const history = collections.cardHistories.get(currentCard.id)
           const snapshot = { ...currentCard, navigation: undefined }
           const entries = history ? [...history.entries.slice(0, history.index), snapshot] : [snapshot]
@@ -2230,6 +2246,11 @@ const initializeAppStore = async (resolved: ResolvedPersistence): Promise<AppSto
           if (existing === undefined) {
             insertCard(card)
           } else {
+            // A new view of an existing frame (for example picker → Change) is a fresh read.
+            const chat = current.phase === "responding"
+            if (existing.kind !== card.kind || (chat && current.guide?.transcript?.[card.id]?.source !== "chat")) {
+              recordGuideEntry(card.id, chat ? "chat" : "lesson", chat ? nextOrdinal(collections) : undefined)
+            }
             collections.cards.update(card.id, (draft) => { Object.assign(draft, card) })
           }
           const frame = ensureCardFrame(card.id)
@@ -2517,7 +2538,6 @@ const initializeAppStore = async (resolved: ResolvedPersistence): Promise<AppSto
           }
           collections.sessions.update(SESSION_ID, (draft) => {
             draft.draft = ""
-            if (draft.guide) draft.guide.conversationOpen = false
           })
           break
         }

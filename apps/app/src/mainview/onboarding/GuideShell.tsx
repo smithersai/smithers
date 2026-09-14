@@ -1,4 +1,7 @@
-import { Button, Spinner } from "@smthrs/ui"
+import { REEL_BUTTON } from "./reel.ts"
+import { scrollToGuideRead } from "./transcriptScroll"
+import { TranscriptMessage } from "../TranscriptMessage"
+import { Button, ChatMessage, Spinner } from "@smthrs/ui"
 import {
   GUIDE_BRIDGE, GUIDE_LAST_STEP, GUIDE_STAGES,
   lessonMessage, lessonText, lessonVisible, type GoalCheckpoint, type GuideAction,
@@ -7,7 +10,7 @@ import { guideClock, readPause, scheduleGuideAdvance, type GuideClock } from "./
 import { ReelShell } from "./Reel.tsx"
 import { guideForwardAction } from "./navigation"
 import { useLiveQuery } from "@tanstack/react-db"
-import { useCallback, useRef, useState, type ReactNode, type CSSProperties } from "react"
+import { Fragment, useCallback, useRef, useState, type ReactNode, type CSSProperties } from "react"
 import { Check, Mic, Volume2, VolumeX, X } from "lucide-react"
 import { useController } from "../ControllerContext"
 import { initialGuide, conversationTabIdOf, inConversation, type Card } from "../state/AppState"
@@ -22,7 +25,7 @@ import { InputModeMenu } from "../InputModeMenu"
 import { vimFocusAction } from "../runtime/VimNavigation"
 import { GuideButton, GUIDE_KEYS } from "./GuideButton"
 import { GuideComposerHost } from "./GuideComposerHost"
-import { InTutorial, tutorialTranscript } from "./transcriptScope"
+import { chatEntryIds, guideTranscriptEntries, InTutorial, tutorialTranscript } from "./transcriptScope"
 import { HelpBubble } from "../HelpBubble"
 import { GuidanceText } from "../GuidanceText"
 import { useCoarsePointer } from "../runtime/PointerMode"
@@ -73,24 +76,31 @@ export function GuideShell({ children, clock = guideClock }: { children: ReactNo
   const controller = useController()
   const touch = useCoarsePointer()
   const { data: sessions } = useLiveQuery(controller.store.collections.sessions)
+  const { data: messageRows } = useLiveQuery(controller.store.collections.messages)
   const { data: storedToasts } = useLiveQuery(controller.store.collections.toasts)
   // Old persisted tutorial tips are superseded by the action-anchored guidance.
   const toasts = storedToasts.filter(toast => !toast.key.startsWith("guide-tip-"))
   const cards = useCardRows(controller.store.collections.cards)
   const { data: worldDocuments } = useLiveQuery(controller.store.collections.worldDocuments)
-  const { data: messages } = useLiveQuery(controller.store.collections.messages)
   const session = sessions[0] ?? controller.store.session()
   const conversation = conversationTabIdOf(session)
-  const signInPrompts = messages.filter(message => inConversation(message, conversation) && message.action?.flow === "auth.sign-in")
+  const signInPrompts = messageRows.filter(message => inConversation(message, conversation) && message.action?.flow === "auth.sign-in")
     .sort((a, b) => a.ordinal - b.ordinal)
   const guide = session.guide ?? initialGuide()
   const stage = guide.step
   const showPractice = stage <= GUIDE_BRIDGE
   const skipped = guide.declined?.includes("practice") === true
   /* Keep the payoff visible until the user acts on the bridge. Skipped practice stays hidden. */
-  const lessonCards = tutorialTranscript(cards.filter(card => inConversation(card, conversation)))
-    .filter(card => (showPractice && !skipped) || !cardRepo(card)?.startsWith("practice:"))
+  const lessonCards = tutorialTranscript(cards.filter(card => inConversation(card, conversation)),
+    chatEntryIds(guide.transcript))
+    .filter(card => guide.transcript?.[card.id]?.source === "chat" || (showPractice && !skipped) || !cardRepo(card)?.startsWith("practice:"))
     .sort((a, b) => a.ordinal - b.ordinal)
+  const messages = messageRows.filter(message => inConversation(message, conversation) && message.action?.flow !== "auth.sign-in")
+  const entries = guideTranscriptEntries(lessonCards.filter(card => stage < GUIDE_LAST_STEP || guide.transcript?.[card.id]?.source === "chat"), messages, guide)
+  const typing = session.phase === "responding"
+  const streamingMessageId = typing ? messages.at(-1)?.id : undefined
+  const chatAnchorId = guide.conversationOpen ? messages.filter(message => message.role === "user" && guide.transcript?.[message.id]?.step === stage).at(-1)?.id : undefined
+  const scrollToken = `${stage}:${entries.map(entry => `${entry.kind === "card" ? entry.card.id + ':' + entry.card.kind : entry.message.id}`).join(",")}`
   /*
    * Progression is data (GUIDE_STAGES): a say-beat keeps talking on its own
    * after a read pause, and a do-beat waits for its real outcome, shows its
@@ -125,8 +135,13 @@ export function GuideShell({ children, clock = guideClock }: { children: ReactNo
   /> : null
   const paused = guide.autoPaused === true
   const showNext = lesson === undefined || (lesson.kind === "say" ? paused : lesson.skippable)
-  const lastScrolledStep = useRef(-1)
   const transcriptRef = useRef<HTMLDivElement>(null)
+  const bindTranscript = useCallback((node: HTMLDivElement | null) => {
+    transcriptRef.current = node
+    if (!node) return
+    const frame = requestAnimationFrame(() => scrollToGuideRead(node, stage, chatAnchorId))
+    return () => cancelAnimationFrame(frame)
+  }, [scrollToken, stage, chatAnchorId])
   /* Keep the portal mounted so closing can animate without losing the draft. */
   const [composerHost, setComposerHost] = useState<HTMLDivElement | null>(null)
   /* Only a message that mounts AT the current stage enters with the open animation. */
@@ -242,9 +257,11 @@ export function GuideShell({ children, clock = guideClock }: { children: ReactNo
       if (key === 'n') return action(() => runCommandGuide('notify'))
       if (key === 'arrowright') return action(() => runCommandGuide(guideForwardAction(stage)))
       if (key === GUIDE_KEYS.back && stage > 1) return action(() => runCommandGuide('back'))
-      if (stage === GUIDE_LAST_STEP && key === GUIDE_KEYS.finish) return action(() => runCommandGuide('finish'))
-      if (stage === GUIDE_LAST_STEP && key === GUIDE_KEYS.replay) return action(() => runCommandGuide('restart'))
-      if (key === 'e' && stage === GUIDE_LAST_STEP) return action(() => controller.runCommand('tut.more'))
+      if (stage === GUIDE_LAST_STEP) {
+        if (key === REEL_BUTTON.key) return action(() => controller.runCommand(REEL_BUTTON.command))
+        if (key === GUIDE_KEYS.finish) return action(() => runCommandGuide('finish'))
+        if (key === GUIDE_KEYS.replay) return action(() => runCommandGuide('restart'))
+      }
     },
   }
   // Ref ownership survives incidental renders (for example the auto-advance pause on keydown).
@@ -309,10 +326,8 @@ export function GuideShell({ children, clock = guideClock }: { children: ReactNo
         * order too. The lesson's own cards are projected into the transcript
         * below; without this the same card would answer a query twice.
         */}
-      <div className="guide-app" inert={stage < GUIDE_LAST_STEP ? true : undefined} aria-hidden={stage < GUIDE_LAST_STEP}>
-        <InTutorial value={true}>{children}</InTutorial>
-        {/* The optional capability reel: inline at workspace width, after the last lesson. */}
-        <ReelShell clock={clock} />
+      <div className="guide-app" data-repo={session.activeRepoKey ?? undefined} inert={stage < GUIDE_LAST_STEP ? true : undefined} aria-hidden={stage < GUIDE_LAST_STEP}>
+        <InTutorial value={stage < GUIDE_LAST_STEP}>{children}</InTutorial>
       </div>
       <div className="guide-atmosphere" aria-hidden="true">
         <i />
@@ -369,20 +384,9 @@ export function GuideShell({ children, clock = guideClock }: { children: ReactNo
             aria-live="polite"
             aria-relevant="additions"
             tabIndex={0}
-            ref={(node) => {
-              transcriptRef.current = node
-              if (node && lastScrolledStep.current !== stage) {
-                lastScrolledStep.current = stage
-                requestAnimationFrame(() => {
-                  const latest = node.querySelector("[data-tutorial-cards]")?.lastElementChild
-                  if (latest) latest.scrollIntoView({ block: "nearest", behavior: "instant" })
-                  else node.scrollTo({ top: node.scrollHeight })
-                })
-              }
-            }}
+            ref={bindTranscript}
           >
             {GUIDE_STAGES.slice(0, stage + 1).map((asked, messageStep) => {
-              if (asked.message === "" || !lessonVisible(messageStep, guide)) return null
               const message = lessonMessage(messageStep, guide, touch)
               const line = lineOf(messageStep)
               const words = (text: string, from = 0) => text.split(" ").map((word, index, all) => {
@@ -394,14 +398,13 @@ export function GuideShell({ children, clock = guideClock }: { children: ReactNo
                 >{word}{" "}</span>
               })
               return (
-                <div
-                  key={messageStep}
+                <Fragment key={messageStep}>
+                {asked.message !== "" && lessonVisible(messageStep, guide) && <div
                   className="guide-message"
                   data-enter={messageStep === stage && messageStep === enteredStep.current}
                   onAnimationEnd={(event) => {
-                    /* The open grows the history: settle the scroll at the bottom. */
-                    if (event.target !== event.currentTarget) return
-                    transcriptRef.current?.scrollTo({ top: transcriptRef.current.scrollHeight })
+                    if (event.target !== event.currentTarget || messageStep !== stage) return
+                    if (transcriptRef.current) scrollToGuideRead(transcriptRef.current, stage, chatAnchorId)
                   }}
                 >
                   <article
@@ -423,20 +426,24 @@ export function GuideShell({ children, clock = guideClock }: { children: ReactNo
                       <p className="guide-notice" role="status" data-notice="">{guide.notice}</p>
                     )}
                   </article>
-                </div>
+                </div>}
+                {entries.filter(entry => entry.step === messageStep).map(entry => <div
+                  key={entry.kind === "card" ? entry.card.id : entry.message.id}
+                  data-entry-step={messageStep}
+                  data-chat-message-id={entry.kind === "message" ? entry.message.id : undefined}
+                  data-tutorial-cards={entry.kind === "card" ? "" : undefined}
+                  data-tutorial-files={entry.kind === "card" ? "" : undefined}
+                  data-tutorial-trace={entry.kind === "card" ? "" : undefined}
+                >
+                  {entry.kind === "card" ? <CardView card={entry.card} maximized={session.maximizedCardId === entry.card.id}
+                    worldDocuments={worldDocuments} debugVerbose={session.verbose === true}
+                    {...cardActions(controller)} /> : <TranscriptMessage entry={entry} streamingMessageId={streamingMessageId} />}
+                </div>)}
+                </Fragment>
               )
             })}
-            {/* The same persisted cards as the slash transcript: forms and pickers
-                must be usable while the tutorial covers the workspace. */}
-            {stage < GUIDE_LAST_STEP && (
-              <div data-tutorial-cards="" data-tutorial-files="" data-tutorial-trace="">
-                {lessonCards.map(card => (
-                  <CardView key={card.id} card={card} maximized={session.maximizedCardId === card.id}
-                    worldDocuments={worldDocuments} debugVerbose={session.verbose === true}
-                    {...cardActions(controller)} />
-                ))}
-              </div>
-            )}
+            {typing && <ChatMessage role="assistant" pending pendingLabel="Smithers is responding" />}
+            <ReelShell clock={clock} />
             {signInPrompts.map(message => (
               <article key={message.id} className="message" data-testid="auth-prompt">
                 <p>{message.text}</p>
@@ -482,6 +489,7 @@ export function GuideShell({ children, clock = guideClock }: { children: ReactNo
               </GuideButton>
             )}
             {lesson?.kind === "do" && <span id={`guide-instruction-${stage}`} hidden>{lesson.instruction}</span>}
+            <ReelShell clock={clock} actions />
           </div>
         </section>
       </main>
@@ -499,7 +507,7 @@ export function GuideShell({ children, clock = guideClock }: { children: ReactNo
           onCancel={event => event.preventDefault()}
           inert={!guide.conversationOpen ? true : undefined}
           aria-hidden={!guide.conversationOpen}
-          /* Clicking the scrim (not the palette) dismisses, like a command palette. */
+          /* A click beside the composer dismisses the dock. */
           onMouseDown={(event) => {
             if (event.target === event.currentTarget) {
               event.preventDefault()
@@ -572,7 +580,7 @@ export function GuideShell({ children, clock = guideClock }: { children: ReactNo
           </div>
         )}
         {stage === GUIDE_LAST_STEP && (
-          <GuideButton data-flow="onboarding.act" shortcut={GUIDE_KEYS.replay} onClick={() => runCommandGuide("restart")}>
+          <GuideButton tabIndex={0} data-flow="onboarding.act" shortcut={GUIDE_KEYS.replay} onClick={() => runCommandGuide("restart")}>
             Replay introduction
           </GuideButton>
         )}

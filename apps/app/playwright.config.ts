@@ -24,7 +24,9 @@ export default defineConfig({
     headless: true,
     trace: "retain-on-failure"
   },
-  projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
+  projects: process.env.SMITHERS_E2E_BROWSER === "webkit"
+    ? [{ name: "webkit", use: { ...devices["Desktop Safari"] } }]
+    : [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
   webServer: {
     command: "bun e2e/playwright/webserver.ts",
     url: `${BASE_URL}/api/health`,

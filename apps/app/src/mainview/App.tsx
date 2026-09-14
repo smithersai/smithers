@@ -1,3 +1,4 @@
+import { TranscriptMessage } from "./TranscriptMessage"
 import { GuideButton, GUIDE_KEYS } from "./onboarding/GuideButton"
 import { InputModeMenu } from "./InputModeMenu"
 import { GUIDE_LAST_STEP } from "./onboarding/lessons"
@@ -6,18 +7,18 @@ import { GuideComposerHost } from "./onboarding/GuideComposerHost"
 import {
   Button,
   ChatMessage,
-  ChatTranscript,
+  MessageScrollerProvider,
+  MessageScrollerViewport,
+  MessageScrollerContent,
+  MessageScrollerButton,
   EmptyState,
-  Markdown,
-  Marker,
-  Reasoning,
   SmithersUiStyles,
   Suggestion,
   SuggestionGroup
 } from "@smthrs/ui"
 import { useLiveQuery } from "@tanstack/react-db"
-import { CheckCircle2, Copy, HelpCircle, RotateCcw, Sparkles } from "lucide-react"
-import { useMemo, useContext, useRef, useState } from "react"
+import { Sparkles } from "lucide-react"
+import { useMemo, useContext, useRef } from "react"
 import type { PointerEvent as ReactPointerEvent } from "react"
 import { createPortal } from "react-dom"
 import { CardView } from "./ChatCards"
@@ -28,26 +29,17 @@ import { FlowsSurface } from "./FlowsSurface"
 import { PluginsSurface } from "./plugins/PluginsSurface"
 import { useController } from "./ControllerContext"
 import { DevtoolsPanel } from "./DevtoolsPanel"
-import { INIT_GREETING, INIT_TITLE, initMessage, repoStep, repoSuggestion } from "./Onboarding"
+import { initMessage, repoStep, repoSuggestion } from "./Onboarding"
 import type { InitMessage } from "./Onboarding"
 import type { Card, Message, Suggestion as SuggestionBinding } from "./state/AppState"
-import { scrubToolEcho } from "./state/MessageScrub"
 import { conversationTabIdOf, inConversation, MAIN_TAB_ID } from "./state/AppState"
 import { catalogRepositoryOf } from "./state/RepoContext"
 import { ConfirmDialog } from "./SurfaceChrome"
 import { TabBodies } from "./tabs/TabBodies"
-import { timeLabel } from "./Timestamps"
 import { ToastStack } from "./ToastStack"
 import { useCardRows, useWorkflowCatalogRows } from "./state/useCardRows"
-import { InTutorial, tutorialTranscript } from "./onboarding/transcriptScope"
-import { StorageRecoveryButton } from "./StorageRecoveryButton"
-import { STORAGE_RECOVERY_EXPORT } from "./state/StorageRecoveryContract"
+import { chatEntryIds, InTutorial, tutorialTranscript, workspaceTranscript } from "./onboarding/transcriptScope"
 import { WorldSurface } from "./WorldSurface"
-
-const systemNoteLabel = (message: Message): string => {
-  if (message.statusDetail !== undefined) return `Turn interrupted — ${message.statusDetail}`
-  return message.status === "failed" ? "Turn failed" : "Turn interrupted"
-}
 
 type TranscriptEntry =
   | { readonly kind: "message"; readonly message: Message }
@@ -60,32 +52,6 @@ const entryOrdinal = (entry: TranscriptEntry): number =>
 const entryCreatedAt = (entry: TranscriptEntry): number =>
   entry.kind === "card" ? entry.card.createdAt : entry.message.createdAt
 
-function CopyMessageButton({
-  text,
-  onCopy
-}: {
-  readonly text: string
-  readonly onCopy: (text: string) => void
-}) {
-  const [copied, setCopied] = useState(false)
-  return (
-    <Button
-      variant="ghost"
-      size="icon"
-      className="message-action"
-      data-flow="chat.copy-message"
-      aria-label={copied ? "Copied" : "Copy message"}
-      title={copied ? "Copied" : "Copy message"}
-      onClick={() => {
-        onCopy(text)
-        setCopied(true)
-        window.setTimeout(() => setCopied(false), 1200)
-      }}
-    >
-      {copied ? <span className="message-action-copied">Copied</span> : <Copy size={12} />}
-    </Button>
-  )
-}
 
 
 function App() {
@@ -130,6 +96,7 @@ function App() {
       dictating: session.dictating,
       inputMode: session.inputMode,
       guideStep: session.guide?.step,
+      guideTranscript: session.guide?.transcript,
       paletteLastQuery: session.paletteLastQuery,
       resetConfirmOpen: session.resetConfirmOpen,
       verbose: session.verbose,
@@ -154,7 +121,7 @@ function App() {
   const composerWrapRef = useRef<HTMLDivElement>(null)
   /*
    * The guide's composer host: inside the guide shell the composer is hidden
-   * by default and Command-K summons ONLY it into the transparent overlay;
+   * by default and Command-K summons ONLY it into the bottom dock;
    * outside the guide (undefined) the palette state controls the composer.
    */
   const composerHost = useContext(GuideComposerHost)
@@ -162,7 +129,7 @@ function App() {
   const connectTriggerRef = useRef<HTMLButtonElement>(null)
   /* The composer's `+` menu is the third session menu the shell closes the same way. */
   const addTriggerRef = useRef<HTMLButtonElement>(null)
-  const session = sessionRows[0] ?? controller.store.session()
+  const session = sessionRows[0] ?? { ...controller.store.session(), guideTranscript: controller.store.session().guide?.transcript }
   /*
    * The conversation on screen (docs/LOCAL-APP.md "Tabs"): there is ONE
    * Smithers, the first tab, aware of every other one — so the conversation is
@@ -174,7 +141,16 @@ function App() {
   // Beneath the tutorial, a repository route's entry cards stay with that route (onboarding/transcriptScope.ts).
   const inTutorial = useContext(InTutorial)
   const conversationRows = cardRows.filter((card) => inConversation(card, conversationTabId))
-  const conversationCards = inTutorial ? tutorialTranscript(conversationRows) : conversationRows
+  /*
+   * Three scopes: a running lesson shows the tutorial's own cards; the handoff
+   * beat shows the repository the user ended on, minus the cards a chat turn
+   * produced (the guide transcript above already carries those beside their
+   * reply); the bare app shows the conversation as it stands.
+   */
+  const conversationCards = inTutorial ? tutorialTranscript(conversationRows)
+    : composerHost !== undefined ?
+      workspaceTranscript(conversationRows, session.activeRepoKey ?? null, chatEntryIds(session.guideTranscript)) :
+      conversationRows
   /*
    * A stable array: CardView is memoized, and re-sorting the same rows into a
    * fresh array on every render would re-render every card body regardless.
@@ -367,7 +343,7 @@ function App() {
   const entries: ReadonlyArray<TranscriptEntry> = [
     ...(openingMessage === undefined ? [] : [{ kind: "init", message: openingMessage } as const]),
     ...(authMessage === undefined ? [] : [{ kind: "message", message: authMessage } as const]),
-    ...messages.map((message): TranscriptEntry => ({ kind: "message", message })),
+    ...(composerHost === undefined ? messages.map((message): TranscriptEntry => ({ kind: "message", message })) : []),
     ...conversationCards.map((card): TranscriptEntry => ({ kind: "card", card }))
   ].sort((left, right) => {
     if (entryOrdinal(left) !== entryOrdinal(right)) return entryOrdinal(left) - entryOrdinal(right)
@@ -378,7 +354,7 @@ function App() {
    * The composer's one home. Summoned in the chat column when the app stands
    * alone; hidden while the guide owns the window (the UI is full-screen
    * without a composer by default); summoned through a portal into the
-   * guide's transparent Command-K overlay, where it is the only thing shown.
+   * guide's bottom Chat dock; GuideShell projects the same chat messages above it.
    */
   const composerWrap = (
     <div className="composer-wrap" ref={composerWrapRef} hidden={composerHost === null || (composerHost === undefined && session.paletteOpen !== true)}>
@@ -553,21 +529,14 @@ function App() {
             ) :
             null}
 
-          <ChatTranscript
-            className="smithers-transcript"
-            data-testid="transcript"
-            pending={typing}
-            pendingLabel="Smithers is responding"
-            aria-label="Conversation"
-            empty={
-              <EmptyState
-                className="transcript-empty"
-                icon={<Sparkles size={20} />}
-                title="Nothing here yet"
-                description="Ask Smithers anything to get started."
-              />
-            }
-          >
+          <div className="sui-chat-transcript smithers-transcript" data-slot="chat-transcript"
+            data-testid="transcript" role="log" aria-label="Conversation" aria-busy={typing}>
+          <MessageScrollerProvider scrollAnchor={messages.some(message => message.role === "user") ? "bottom" : "none"}>
+            <div data-slot="message-scroller" className="sui-msg-scroller" data-streaming={typing ? "true" : "false"}>
+            <MessageScrollerViewport fade>
+            <MessageScrollerContent className="sui-chat-messages">
+            {entries.length === 0 && <EmptyState className="transcript-empty" icon={<Sparkles size={20} />}
+              title="Nothing here yet" description="Ask Smithers anything to get started." />}
             {entries.map((entry) =>
               entry.kind === "card" ?
                 (
@@ -582,153 +551,15 @@ function App() {
                     {...actions}
                   />
                 ) :
-                entry.message.act !== undefined ?
-                (
-                  <Marker
-                    key={entry.message.id}
-                    variant="note"
-                    className="bubble-system-note tool-act-line"
-                  >
-                    {entry.message.text}
-                  </Marker>
-                ) :
-                (
-                  <ChatMessage
-                    className="smithers-chat-message"
-                    key={entry.message.id}
-                    role={entry.message.role === "user" ? "user" : "assistant"}
-                    meta={entry.message.status !== "complete" ?
-                      (
-                        <Marker variant="note" live className="bubble-system-note">
-                          {systemNoteLabel(entry.message)}
-                        </Marker>
-                      ) :
-                      undefined}
-                  >
-                    {entry.message.reasoning !== undefined && entry.message.reasoning !== "" ?
-                      (
-                        <Reasoning
-                          className="message-reasoning"
-                          streaming={entry.message.id === streamingMessageId}
-                          title="Reasoning"
-                        >
-                          <div className="message-reasoning-text">{entry.message.reasoning}</div>
-                        </Reasoning>
-                      ) :
-                      null}
-                    {entry.kind === "init" ?
-                      (
-                        <div className="message-init" data-testid="init-message">
-                          <CheckCircle2 size={16} className="message-init-check" aria-label="Initialized" />
-                          <div className="message-init-body">
-                            <Markdown
-                              className="message-markdown message-init-greeting"
-                              content={`**${INIT_GREETING}**`}
-                            />
-                            <Markdown
-                              className="message-markdown message-init-title"
-                              content={`**${INIT_TITLE}**`}
-                            />
-                            <details className="message-init-details">
-                              <summary>Details</summary>
-                              <Markdown
-                                className="message-markdown message-init-details-content"
-                                content={entry.message.details}
-                              />
-                            </details>
-                            {entry.message.prompt === undefined ?
-                              null :
-                              (
-                                <Markdown
-                                  className="message-markdown message-init-prompt"
-                                  content={entry.message.prompt}
-                                />
-                              )}
-                          </div>
-                        </div>
-                      ) :
-                      entry.message.text !== "" ?
-                      (
-                        // scrubToolEcho: a weak model's tool call written into prose
-                        // is wire debris, never content — stripped at render only;
-                        // the store and dev-tools keep the raw truth.
-                        <Markdown
-                          className="message-markdown"
-                          content={scrubToolEcho(entry.message.text)}
-                        />
-                      ) :
-                      null}
-                    {/* The synthetic auth message has no clock time to tell. */}
-                    {entry.message.createdAt > 0 ?
-                      (
-                        <time
-                          className="message-time"
-                          dateTime={new Date(entry.message.createdAt).toISOString()}
-                        >
-                          {timeLabel(entry.message.createdAt)}
-                        </time>
-                      ) :
-                      null}
-                    {entry.message.action?.flow === STORAGE_RECOVERY_EXPORT ?
-                      <StorageRecoveryButton state={controller.storageRecoveryState} onDownload={() => { controller.runCommand(STORAGE_RECOVERY_EXPORT) }} /> :
-                      entry.message.action !== undefined ?
-                      (
-                        <Button
-                          className="message-cta"
-                          data-flow={entry.message.action.flow}
-                          autoFocus={entry.message.id === "auth-state"}
-                          onClick={() =>
-                            // A confirm flow's button carries the agent's argument text.
-                            controller.runCommand(entry.message.action?.flow ?? "", entry.message.action?.args)}
-                        >
-                          {entry.message.action.label}
-                        </Button>
-                      ) :
-                      null}
-                    <span className="message-actions">
-                      <CopyMessageButton
-                        text={entry.message.text}
-                        onCopy={(text) => controller.runCommand("chat.copy-message", text)}
-                      />
-                      {entry.message.status === "failed" ?
-                        (
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="message-action"
-                            aria-label="Retry turn"
-                            title="Retry turn"
-                            onClick={() => controller.runCommand("chat.retry")}
-                          >
-                            <RotateCcw size={12} />
-                          </Button>
-                        ) :
-                        null}
-                      {/* The Explainer (AgentRoles.ts) on a failed turn: an embedded answer, only where the explain flow registers. */}
-                      {entry.message.status === "failed" && controller.commands.find("agent.explain") !== undefined ?
-                        (
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="message-action"
-                            data-flow="agent.explain"
-                            aria-label="Explain this"
-                            title="Explain this"
-                            onClick={() =>
-                              controller.runCommand(
-                                "agent.explain",
-                                `This turn failed: ${systemNoteLabel(entry.message)}. ${entry.message.text}`.trim()
-                              )}
-                          >
-                            <HelpCircle size={12} />
-                          </Button>
-                        ) :
-                        null}
-                    </span>
-                  </ChatMessage>
-                )
+                <TranscriptMessage key={entry.message.id} entry={entry} streamingMessageId={streamingMessageId} />
             )}
-          </ChatTranscript>
+            {typing && composerHost === undefined && <ChatMessage role="assistant" pending pendingLabel="Smithers is responding" />}
+            </MessageScrollerContent>
+            </MessageScrollerViewport>
+            <MessageScrollerButton />
+            </div>
+          </MessageScrollerProvider>
+          </div>
 
           {composerHost ? createPortal(composerWrap, composerHost) : composerWrap}
 

@@ -696,6 +696,12 @@ export const GuideSchema = z.object({
   version: z.union([z.literal(1), z.literal(2), z.literal(3)]),
   playthrough: z.number().int().nonnegative().optional(),
   step: z.number().int().min(0).max(15),
+  /** Where transcript entries arrived during this playthrough; survives a reload. */
+  transcript: z.record(z.string(), z.object({
+    step: z.number().int(), source: z.enum(["chat", "lesson"]),
+    /** A reused card joins the new chat turn without changing its frame's ordinal. */
+    ordinal: z.number().optional(),
+  })).optional(),
   conversationOpen: z.boolean(),
   library: z.boolean(),
   librarian: z.boolean(),

@@ -16,6 +16,7 @@ for (const width of [1280, 390]) {
     await expect(page.locator(".guide-toasts .guide-tip")).toHaveCount(0)
     await expect(target).toHaveAttribute("aria-describedby", "guide-instruction-1 guide-help-1")
     await expect(page.locator("[data-help-pulse]")).toHaveCount(0)
+    await expect(help.locator(".guidance-text-visual > span").last()).toHaveCSS("opacity", "1")
     const initialButton = await target.boundingBox()
     await page.clock.runFor(3800)
     await expect(help.locator(".guidance-text-visual")).toHaveText("You can also talk to Smithers anytime by pressing C.")
@@ -96,4 +97,17 @@ test("only the final instruction pulses, and holding its key yields to pressed f
   await expect(page.locator(".guide-shell")).toHaveAttribute("data-stage", "1")
   await page.keyboard.up("i")
   await expect(page.getByRole("button", { name: "Read issue #3", exact: true })).toBeVisible()
+})
+
+
+test("typewriter paints every character of both instructions with motion enabled", async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: "no-preference" })
+  await page.goto("/")
+  const visual = page.locator('.help-bubble .guidance-text-visual')
+  const painted = () => visual.evaluate(node => {
+    const letters = [...node.children]
+    return letters.length ? letters.filter(letter => getComputedStyle(letter).opacity === '1').map(letter => letter.textContent).join('') : node.textContent
+  })
+  await expect.poll(painted, { timeout: 15_000 }).toBe("You can also talk to Smithers anytime by pressing C.")
+  await expect.poll(painted, { timeout: 15_000 }).toBe("Start with the practice repository’s issues. Click Show issues or press i.")
 })

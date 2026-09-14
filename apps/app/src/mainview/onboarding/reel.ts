@@ -2,6 +2,8 @@ import { GUIDE_KEYS } from "./GuideButton"
 import { bindPressActions, createPressActions, type PressAction } from "../runtime/PressActions"
 
 /* Bare e opens the optional reel after the tutorial. */
+export const FINISH_BUTTON = { label: "Finish tutorial", key: GUIDE_KEYS.finish } as const
+export const REPLAY_KEY = GUIDE_KEYS.replay
 export const REEL_BUTTON = { label: "What else can you do?", command: "tut.more", key: "e" } as const
 
 export const REEL_STAGES = [

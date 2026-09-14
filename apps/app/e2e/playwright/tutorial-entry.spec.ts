@@ -99,3 +99,29 @@ test("dictation Stop is reachable by Tab and Enter without closing Chat", async 
   await expect(page.getByTestId("composer-input")).toBeFocused()
   await expect(page.getByRole("dialog", { name: "Chat", exact: true })).toBeVisible()
 })
+
+for (const viewport of [{ width: 1280, height: 800 }, { width: 390, height: 844 }]) {
+  test(`repository Home heading remains visible on first paint at ${viewport.width}px`, async ({ page }) => {
+    await page.setViewportSize(viewport)
+    await page.route('**/api/bootstrap', route => route.fulfill({ json: {
+      apiVersion: 1, host: 'cloud', version: 'test', buildSha: 'test', capabilities: ['identity', 'cloud'], authFlow: 'redirect', sandbox: null,
+    } }))
+    await page.route('**/api/auth/session', route => route.fulfill({ json: { status: 'signed-in', login: 'tutorial-user', allowlisted: true, admin: false } }))
+    await page.route('**/api/public/repos', route => route.fulfill({ json: { repos: [{ name: 'smithersai/smithers' }] } }))
+    await page.route('**/api/repos/smithersai/smithers', route => route.fulfill({ json: { default_bookmark: 'main' } }))
+    await page.route('**/contents/.smithers/home.json', route => route.fulfill({ json: {
+      type: 'file', encoding: 'utf-8', content: JSON.stringify({ blocks: [{ type: 'text', text: 'Home introduction. ' + 'A long repository description. '.repeat(70) }] }),
+    } }))
+    await page.goto('/smithersai/smithers')
+    await expect(page.locator('.app-shell')).toBeVisible()
+    await page.keyboard.press('c')
+    await page.getByTestId('composer-input').fill('/repo.home smithersai/smithers')
+    await page.keyboard.press('Enter')
+    const heading = page.locator('[data-kind="repo-home"] .smithers-card-title')
+    await expect(heading).toBeVisible()
+    await page.keyboard.press('Escape')
+    await page.reload()
+    await expect(heading).toBeInViewport()
+    await expect(page.getByRole('button', { name: "Jump to latest" })).toBeVisible()
+  })
+}

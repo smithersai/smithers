@@ -77,14 +77,31 @@ const boot = async (page: Page, baseURL: string | undefined): Promise<TutorialHo
   await expect(shell(page)).toHaveAttribute("data-stage", "1")
   return host
 }
-/** A reload under the paused clock (the OAuth and install hops): pump until the shell is back. */
-const rebooted = (page: Page) => pumpUntil(page, "the app is back after the hop", async () => await shell(page).isVisible().catch(() => false), 25)
+/** Storage workers use real time; do not race their hydration with a pumped timeout. */
+const rebooted = async (page: Page) => {
+  await page.clock.resume()
+  await shell(page).waitFor()
+  const now = await page.evaluate(() => Date.now())
+  await page.clock.pauseAt(new Date(now + 100))
+}
+const signIn = async (page: Page) => {
+  await page.clock.resume()
+  await Promise.all([
+    page.waitForURL(url => url.searchParams.get("signed-in") === "github"),
+    page.keyboard.press("a"),
+  ])
+  await rebooted(page)
+}
 
 /** The line equals the table's copy, and each pill shows its label and its key chip. */
 const expectBeat = async (page: Page, step: number, guide: { repo?: string; declined?: Array<string> } = {}) => {
   await atStage(page, step)
   if (lessonMessage(step, guide) === "") await expect(line(page, step)).toHaveCount(0)
-  else await expect(line(page, step)).toHaveText(lessonMessage(step, guide))
+  else {
+    await expect(line(page, step)).toHaveText(lessonMessage(step, guide))
+    await tick(page, 100)
+    await expect(line(page, step)).toBeInViewport()
+  }
   const lesson = GUIDE_STAGES[step]!
   if (lesson.kind !== "do") return
   for (const action of lesson.actions) {
@@ -108,6 +125,8 @@ const doBeat = async (page: Page, step: number, key: string) => {
   const lesson = GUIDE_STAGES[step]!
   if (lesson.kind === "do" && lesson.success !== undefined) await expect(followup(page, step)).toContainText(lesson.success)
   await atStage(page, step)
+  await tick(page)
+  await expect(line(page, step)).toBeInViewport()
 }
 const goalMark = (page: Page, goal: string): Locator => page.locator(`.guide-goal [data-checkpoint="${goal}"]`)
 
@@ -148,6 +167,7 @@ test("the whole tutorial walks every beat, keyboard first, through asynchronous 
   await expect(card(page, "issue")).toContainText(`GET /hello without a name replies "Hello, null!"`)
   await expect(card(page, "issue")).toContainText(/Actual:\s+Hello, null!/)
   await expect(goalMark(page, "issue")).toHaveAttribute("data-done", "true")
+  await expect(card(page, "issue").locator('.smithers-card-title')).toBeInViewport()
   await shoot(page, 2)
 
   // Issue navigation keeps the list's frame; the official flow view shows the actual repro prompt.
@@ -248,6 +268,7 @@ test("the whole tutorial walks every beat, keyboard first, through asynchronous 
   const change = card(page, "change")
   await expect(card(page, "commit-pick")).toHaveCount(0)
   await expect(change).toContainText("2 commits selected for review")
+  await expect(change.locator(".smithers-card-title")).toBeInViewport()
   expect(host.live.find(call => call.operation === "change")?.body.commitIds).toEqual(commitsFixture.commits.slice(1).map(commit => commit.commitId))
   await expect(page.locator(".guide-goal")).toHaveAttribute("data-goal-state", "complete")
 
@@ -267,8 +288,7 @@ test("the whole tutorial walks every beat, keyboard first, through asynchronous 
   await expect(change).toContainText("2 commits selected for review")
   await expect(page.locator(".guide-goal")).toHaveAttribute("data-goal-state", "complete")
   await expect(page.locator('.guide-goal [data-done="true"]')).toHaveCount(4)
-  await page.keyboard.press("a")
-  await rebooted(page)
+  await signIn(page)
   await until(page, followup(page, 10), "login is checked")
   await expect(followup(page, 10)).toContainText(`Signed in as @${TUTORIAL_LOGIN}.`)
 
@@ -320,10 +340,13 @@ test("the whole tutorial walks every beat, keyboard first, through asynchronous 
 
   // Beat 14: terminal, on acme/api, with the run chips still in the chrome and the reel on E.
   await expectBeat(page, 14, { repo: INSTALLED_REPO })
+  await expect(page.locator(".guide-app")).toHaveAttribute("data-repo", INSTALLED_REPO)
   const more = page.getByRole("button", { name: /What else can you do/ })
   await expect(more).toBeVisible()
   await expect(more).toHaveAttribute("aria-keyshortcuts", REEL_BUTTON.key.toLowerCase())
   await expect(page.locator(".guide-location")).toHaveText("Your workspace")
+  await expect(page.locator(".guide-location")).toBeVisible()
+  await expect(page.locator('.guide-actions').getByRole('button', { name: 'Finish tutorial', exact: true })).toBeInViewport()
   await expect(page.locator('[data-run-chip="wiki"]')).toBeVisible()
   await tick(page, 5_000)
   await expect(shell(page)).toHaveAttribute("data-stage", "14")
@@ -471,8 +494,7 @@ test.describe("escape hatches", () => {
     await atStage(page, 1)
     await page.keyboard.press("q")
     await atStage(page, 10)
-    await page.keyboard.press("a")
-    await rebooted(page)
+    await signIn(page)
     await until(page, followup(page, 10), "login is checked")
     await expect(followup(page, 10)).toContainText(`Signed in as @${TUTORIAL_LOGIN}.`)
     await atStage(page, 11)
@@ -547,7 +569,7 @@ test("live plan and implementation remain readable on a phone", async ({ page, b
   await page.setViewportSize({ width: 390, height: 844 })
   const host = await boot(page, baseURL)
   for (const [step, key] of [[1, "i"], [2, "r"], [3, "e"], [4, "r"], [5, "f"]] as const) {
-    await atStage(page, step)
+    await expectBeat(page, step)
     await doBeat(page, step, key)
   }
   const research = page.locator('[data-tutorial-cards] [data-testid="card-live-tutorial-research"]')

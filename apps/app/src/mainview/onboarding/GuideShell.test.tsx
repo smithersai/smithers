@@ -9,11 +9,12 @@ import type { AgentPort } from "../runtime/AgentPort"
 import { createAppController } from "../state/AppController"
 import { initialGuide } from "../state/AppState"
 import { createAppStore } from "../state/AppStore"
-import { PRACTICE_CARD, practiceChange, practiceStack } from "../state/practice/PracticeRepository"
+import { PRACTICE_CARD, PRACTICE_REPO, practiceChange, practicePicker, practiceStack } from "../state/practice/PracticeRepository"
 import type { GuideClock } from "./advance"
 import { GuideShell } from "./GuideShell"
+import App from "../App"
 import { GUIDE_KEYS, guideShortcut } from "./GuideButton"
-import { GUIDE_BRIDGE, GUIDE_LAST_STEP, GUIDE_STAGES, lessonText } from "./lessons"
+import { GUIDE_BRIDGE, GUIDE_LAST_STEP, GUIDE_STAGES, GUIDE_RESERVED_KEYS, lessonMessage, lessonText } from "./lessons"
 
 
 GlobalRegistrator.register()
@@ -58,7 +59,7 @@ const unavailableRepositories: NativeRepositories = {
 
 const text = (node: Element | null): string => (node?.textContent ?? "").replace(/\s+/g, " ").trim()
 
-const mountGuide = async (step: number, clock?: GuideClock, answers: Record<string, unknown> = { heard: "", project: "" }, observe?: (controller: ReturnType<typeof createAppController>) => void | Promise<void>): Promise<HTMLElement> => {
+const mountGuide = async (step: number, clock?: GuideClock, answers: Record<string, unknown> = { heard: "", project: "" }, observe?: (controller: ReturnType<typeof createAppController>) => void | Promise<void>, children = <div />): Promise<HTMLElement> => {
   const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
   const controller = createAppController(store, unavailableRepositories, silentAgent)
   await observe?.(controller)
@@ -70,7 +71,7 @@ const mountGuide = async (step: number, clock?: GuideClock, answers: Record<stri
     root.render(
       <ControllerTestProvider controller={controller}>
         <GuideShell clock={clock}>
-          <div />
+          {children}
         </GuideShell>
       </ControllerTestProvider>
     )
@@ -453,4 +454,130 @@ test("a running tutorial suggestion cannot dispatch through a click or shortcut"
   shell.dispatchEvent(new KeyboardEvent("keydown", { key: "r", bubbles: true }))
   shell.dispatchEvent(new KeyboardEvent("keyup", { key: "r", bubbles: true }))
   expect(calls).not.toContain("issue.repro")
+})
+
+for (const declined of [[], ["login"], ["install"]]) {
+  test(`terminal message and ordinary keyed actions survive ${JSON.stringify(declined)}`, async () => {
+    const calls: Array<[string, string?]> = []
+    const host = await mountGuide(14, still, { repo: "acme/api", declined }, c => {
+      spyOn(c, "runCommand").mockImplementation((name, args) => { calls.push([name, args]); return true })
+    })
+    expect(text(host.querySelector('[data-message-step="14"] [data-line="1"]'))).toBe(lessonMessage(14, { repo: "acme/api", declined }))
+    const actions = [...host.querySelectorAll<HTMLButtonElement>('.guide-actions button')]
+    expect(actions.map(button => text(button.querySelector('.guide-button-content')))).toEqual(["Finish tutorial", "What else can you do?"])
+    const keys = actions.map(button => button.getAttribute('aria-keyshortcuts')!)
+    expect(new Set(keys).size).toBe(2)
+    for (const key of keys) {
+      expect(key).toMatch(/^[a-z]$/)
+      expect(GUIDE_RESERVED_KEYS as readonly string[]).not.toContain(key)
+      document.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true }))
+      document.dispatchEvent(new KeyboardEvent('keyup', { key, bubbles: true }))
+    }
+    expect(calls).toEqual([["onboarding.act", "finish"], ["tut.more", undefined]])
+  })
+}
+
+test("a chat turn arriving at beat 2 is visible in the tutorial, including its pending bubble", async () => {
+  let controller!: ReturnType<typeof createAppController>
+  const host = await mountGuide(2, still, { conversationOpen: true }, c => { controller = c })
+  await controller.store.dispatch({ type: "message.submitted", actor: "user", turnId: "tutorial-chat", text: "Explain this issue" }).isPersisted.promise
+  await settle()
+  expect(text(host.querySelector('.guide-transcript .smithers-chat-message[data-role="user"]'))).toContain("Explain this issue")
+  expect(host.querySelector('.guide-transcript .sui-chat-bubble-pending')).not.toBeNull()
+  await controller.store.dispatch({ type: "message.response.delta", actor: "smithers", turnId: "tutorial-chat", channel: "text", delta: "The default name is missing." }).isPersisted.promise
+  await settle()
+  expect(text(host.querySelector('.guide-transcript .smithers-chat-message[data-role="assistant"]'))).toContain("The default name is missing.")
+  expect(controller.store.session().guide?.conversationOpen).toBe(true)
+  await controller.store.dispatch({ type: "card.upsert", actor: "smithers", card: {
+    id: "chat-home", kind: "repo-home", title: "Home from chat", status: "active", ordinal: 100, createdAt: 100,
+    payload: { repo: "acme/api", path: ".smithers/home.json", blocks: [{ type: "text", text: "This is the repository overview." }], featuredFlows: null },
+  } }).isPersisted.promise
+  await settle()
+  const reply = host.querySelector('.guide-transcript .smithers-chat-message[data-role="assistant"]')!
+  const card = host.querySelector('.guide-transcript [data-testid="card-chat-home"]')!
+  expect(card).not.toBeNull()
+  expect(reply.compareDocumentPosition(card) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  await controller.store.dispatch({ type: "guide.changed", actor: "system", guide: { ...controller.store.session().guide!, step: 3 } }).isPersisted.promise
+  await settle()
+  const user = host.querySelector('.guide-transcript [data-role="user"]')!
+  const next = host.querySelector('[data-message-step="3"]')!
+  expect(user.compareDocumentPosition(next) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+})
+
+
+for (const transition of ["card.upsert", "card.navigated"] as const) test(`a picker replaced through ${transition} lands below the current Smithers line`, async () => {
+  const stack = practiceStack([2, 3])
+  if (typeof stack === "string") throw new Error(stack)
+  let controller!: ReturnType<typeof createAppController>
+  const host = await mountGuide(9, still, {}, async c => {
+    controller = c
+    await c.store.dispatch({ type: "guide.changed", actor: "system", guide: { ...initialGuide(), step: 6 } }).isPersisted.promise
+    await c.store.dispatch({ type: "card.upsert", actor: "system", card: {
+      id: PRACTICE_CARD.commits, kind: "commit-pick", title: "Pick commits", status: "active", createdAt: 1, ordinal: 1,
+      payload: practicePicker(),
+    } }).isPersisted.promise
+    await c.store.dispatch({ type: "guide.changed", actor: "system", guide: { ...c.store.session().guide!, step: 7 } }).isPersisted.promise
+    await c.store.dispatch({ type: "card.upsert", actor: "system", card: {
+      id: "previous", kind: "change", title: "Previous card", status: "active", createdAt: 2, ordinal: 2,
+      payload: practiceChange(stack),
+    } }).isPersisted.promise
+  })
+  const beforeReplacement = controller.store.session().guide!
+  await controller.store.dispatch({ type: transition, actor: "system", card: {
+    id: PRACTICE_CARD.commits, kind: "change", title: "Change #1", status: "active", createdAt: 1, ordinal: 1,
+    payload: practiceChange(stack),
+  } }).isPersisted.promise
+  // Completion captured the guide before the replacement card arrived.
+  await controller.store.dispatch({ type: "guide.changed", actor: "system", guide: {
+    ...beforeReplacement, completed: ["change.opened"],
+  } }).isPersisted.promise
+  await settle()
+  const change = host.querySelector(`[data-testid="card-${PRACTICE_CARD.commits}"]`)!
+  expect(change.closest('[data-entry-step]')?.getAttribute('data-entry-step')).toBe('9')
+  expect(host.querySelector('[data-message-step="9"]')!.compareDocumentPosition(change) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+})
+
+test("chat cards still join their reply at the terminal beat", async () => {
+  let controller!: ReturnType<typeof createAppController>
+  const host = await mountGuide(14, still, { conversationOpen: true }, c => { controller = c }, <App />)
+  await controller.store.dispatch({ type: "message.submitted", actor: "user", turnId: "terminal-chat", text: "Show the home card" }).isPersisted.promise
+  await controller.store.dispatch({ type: "card.upsert", actor: "smithers", card: {
+    id: "terminal-chat-home", kind: "repo-home", title: "Home from chat", status: "active", ordinal: 100, createdAt: 100,
+    payload: { repo: "acme/api", path: ".smithers/home.json", blocks: [{ type: "text", text: "This is the repository overview." }], featuredFlows: null },
+  } }).isPersisted.promise
+  await settle()
+  expect(host.querySelector('.guide-transcript [data-testid="card-terminal-chat-home"]')).not.toBeNull()
+  expect(host.querySelectorAll('[data-testid="card-terminal-chat-home"]')).toHaveLength(1)
+})
+
+test("chat can show a practice card after the practice lessons have been skipped", async () => {
+  let controller!: ReturnType<typeof createAppController>
+  const host = await mountGuide(14, still, { declined: ["practice", "login"], conversationOpen: true }, c => { controller = c })
+  await controller.store.dispatch({ type: "message.submitted", actor: "user", turnId: "practice-chat", text: "Show the practice repository" }).isPersisted.promise
+  await controller.store.dispatch({ type: "card.upsert", actor: "smithers", card: {
+    id: "practice-chat-home", kind: "repo-home", title: "Practice Home", status: "active", ordinal: 100, createdAt: 100,
+    payload: { repo: PRACTICE_REPO, path: ".smithers/home.json", blocks: [], featuredFlows: null },
+  } }).isPersisted.promise
+  await settle()
+  expect(host.querySelector('.guide-transcript [data-testid="card-practice-chat-home"]')).not.toBeNull()
+})
+
+test("a Home card requested again in chat follows the user bubble", async () => {
+  let controller!: ReturnType<typeof createAppController>
+  const home = {
+    id: "entry-home", kind: "repo-home" as const, title: "Home", status: "active" as const, ordinal: 1, createdAt: 1,
+    payload: { repo: "acme/api", path: ".smithers/home.json", blocks: [], featuredFlows: null },
+  }
+  const host = await mountGuide(2, still, { conversationOpen: true }, async c => {
+    controller = c
+    await c.store.dispatch({ type: "card.upsert", actor: "system", card: home }).isPersisted.promise
+  })
+  expect(host.querySelector('[data-testid="card-entry-home"]')).toBeNull()
+  await controller.store.dispatch({ type: "message.submitted", actor: "user", turnId: "home-again", text: "Show Home" }).isPersisted.promise
+  await controller.store.dispatch({ type: "card.upsert", actor: "smithers", card: home }).isPersisted.promise
+  await settle()
+  const card = host.querySelector('.guide-transcript [data-testid="card-entry-home"]')
+  expect(card).not.toBeNull()
+  const user = host.querySelector('.guide-transcript [data-role="user"]')!
+  expect(user.compareDocumentPosition(card!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
 })

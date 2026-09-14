@@ -90,7 +90,12 @@
 }
 .guidance-text-visual > span {
   opacity: 0;
-  animation: guidance-character 1ms step-end var(--character-delay) forwards;
+  /*
+   * A 1ms step-end effect with a delay past one second can finish just below
+   * progress 1 in Chromium and WebKit, leaving later characters invisible.
+   * A linear effect avoids the step-end rounding edge.
+   */
+  animation: guidance-character 1ms linear var(--character-delay) forwards;
 }
 @keyframes guidance-character { to { opacity: 1; } }
 @media (prefers-reduced-motion: reduce) {

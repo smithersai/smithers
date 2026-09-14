@@ -1,55 +1,86 @@
-import { expect, test, type Page } from "@playwright/test"
-import { GUIDE_STAGES } from "../../src/mainview/onboarding/lessons"
+import { expect, test } from "@playwright/test"
+import { lessonMessage } from "../../src/mainview/onboarding/lessons"
+import { FINISH_BUTTON, REEL_BUTTON, REPLAY_KEY } from "../../src/mainview/onboarding/reel.ts"
 
-const hold = async (page: Page) => {
-  await page.locator(".guide-shell").waitFor()
-  await page.keyboard.press("Shift")
-}
-const expectStage = (page: Page, step: number) => expect(page.locator(".guide-shell")).toHaveAttribute("data-stage", String(step))
-const slash = async (page: Page, command: string) => {
-  if (await page.locator(".guide-shell").getAttribute("data-conversation-open") !== "true") await page.keyboard.press("Control+k")
-  await page.getByTestId("composer-input").fill(command)
-  await page.keyboard.press("Enter")
-}
-/** Skeleton integration harness. Explicit named events stand in for future feature producers.
- * This checks tutorial plumbing, not OAuth, GitHub writes, or an agent execution.
- */
-const complete = async (page: Page, step: number) => {
-  const stage = GUIDE_STAGES[step]
-  if (stage.kind !== "do") { await page.keyboard.press("ArrowRight"); return }
-  await slash(page, `/onboarding.act signal ${stage.completion}`)
-  await expect(page.locator(`[data-message-step="${step}"] .guide-step-done`).first()).toBeVisible()
-  if (await page.getByTestId("composer-input").isVisible()) await page.keyboard.press("Escape")
-  await expectStage(page, step + 1)
-}
-const walkTo = async (page: Page, target: number) => {
-  await hold(page)
-  while (Number(await page.locator(".guide-shell").getAttribute("data-stage")) < target) {
-    const step = Number(await page.locator(".guide-shell").getAttribute("data-stage"))
-    await complete(page, step)
-    await expectStage(page, step + 1)
-    await hold(page)
-  }
-}
+test.use({ contextOptions: { reducedMotion: "reduce" } })
 
-// walkTo is kept identical to onboarding.spec.ts's unexported skeleton helper.
-// Named signals exercise plumbing; this does not claim real OAuth/agent work.
-test("optional reel advances without input, demonstrates theme and toast, and Escape exits", async ({ page }) => {
-  await page.goto("/")
-  await walkTo(page, 14)
-  const shell = page.locator(".guide-shell")
-  const originalTheme = await shell.getAttribute("data-theme")
-  await expect(page.getByRole("button", { name: "What else can you do?" })).toBeVisible()
-  await page.keyboard.press("e")
-  await expect(page.locator("[data-reel-stage='0']")).toBeVisible()
-  await expect(shell).toHaveAttribute("data-theme", originalTheme === "dark" ? "light" : "dark")
-  await expect(page.locator("[data-reel-stage='1']")).toBeVisible()
-  await expect(shell).toHaveAttribute("data-theme", originalTheme!)
-  await expect(page.getByRole("status").filter({ hasText: "You can keep working" })).toBeVisible()
-  await expect(page.locator("[data-reel-stage='2']")).toBeVisible()
-  await page.keyboard.press("Escape")
-  await expect(page.locator("[data-reel-stage]")).toHaveCount(0)
-  await expectStage(page, 14)
-  await expect(shell).toHaveAttribute("data-conversation-open", "false")
-  await expect(page.getByTestId("composer-input")).toBeHidden()
-})
+for (const viewport of [{ width: 1280, height: 800 }, { width: 390, height: 844 }]) {
+  test(`terminal read, keyed pills and optional reel at ${viewport.width}px`, async ({ page }) => {
+    await page.setViewportSize(viewport)
+    await page.route('**/api/bootstrap', route => route.fulfill({ json: {
+      apiVersion: 1, host: 'cloud', version: 'test', buildSha: 'test', capabilities: ['identity', 'cloud'], authFlow: 'redirect', sandbox: null,
+    } }))
+    await page.route('**/api/auth/session', route => route.fulfill({ json: { status: 'signed-out' } }))
+    await page.route('**/api/public/repos', route => route.fulfill({ json: { repos: [{ name: 'smithersai/smithers' }] } }))
+    await page.route('**/api/repos/smithersai/smithers', route => route.fulfill({ json: { default_bookmark: 'main' } }))
+    await page.goto("/smithersai/smithers/?tutorial")
+    const shell = page.locator('.guide-shell')
+    await expect(shell).toHaveAttribute('data-stage', '1')
+    await expect(page.locator('.guide-app')).toHaveAttribute('data-repo', 'smithersai/smithers')
+    await page.keyboard.press('q')
+    await expect(shell).toHaveAttribute('data-stage', '10')
+    await page.keyboard.press('x')
+    await expect(shell).toHaveAttribute('data-stage', '13')
+    await page.keyboard.press('c')
+    await expect(page.getByTestId('composer-input')).toBeVisible()
+    await expect(page.getByTestId('palette')).toBeVisible()
+    await page.keyboard.press('Escape')
+    await expect(page.getByTestId('palette')).toBeHidden()
+    await expect(page.getByTestId('composer-input')).toBeFocused()
+    await page.keyboard.press('Escape')
+    await expect(shell).toHaveAttribute('data-stage', '14')
+    await expect(shell).toHaveAttribute('data-conversation-open', 'false')
+    await expect(page.getByTestId('composer-input')).toBeHidden()
+    await expect(page.locator(".guide-app")).toHaveAttribute("data-repo", "smithersai/smithers")
+    const terminal = page.locator('[data-message-step="14"]')
+    await expect(terminal).toBeInViewport()
+    await expect(terminal.locator('[data-line="1"]')).toHaveText(lessonMessage(14, { declined: ['login'] }))
+    await expect(page.locator('.guide-location')).toBeVisible()
+    await expect(page.locator('.guide-location')).toHaveText('Your workspace')
+    const finish = page.getByRole('button', { name: FINISH_BUTTON.label, exact: true })
+    const more = page.getByRole('button', { name: REEL_BUTTON.label, exact: true })
+    for (const [button, key] of [[finish, FINISH_BUTTON.key], [more, REEL_BUTTON.key]] as const) {
+      await expect(button).toHaveAttribute('aria-keyshortcuts', key)
+      if (viewport.width <= 640) await expect(button.locator('kbd')).toBeHidden()
+      else await expect(button.locator('kbd')).toBeVisible()
+      await expect(button.locator('kbd')).toHaveText(key)
+      expect(await button.evaluate(node => !!node.closest('.guide-actions'))).toBe(true)
+      const bounds = (await button.boundingBox())!
+      expect(bounds.height).toBeLessThan(70)
+      const workspace = (await page.locator('.guide-app').boundingBox())!
+      expect(bounds.y + bounds.height).toBeLessThanOrEqual(workspace.y)
+    }
+    await finish.focus()
+    await page.keyboard.press('Tab')
+    await expect(more).toBeFocused()
+    const originalTheme = await shell.getAttribute('data-theme')
+    await page.keyboard.press(REEL_BUTTON.key)
+    await expect(page.locator('[data-reel-stage="0"]')).toBeVisible()
+    await expect(shell).toHaveAttribute('data-theme', originalTheme === 'dark' ? 'light' : 'dark')
+    await page.keyboard.press('ArrowRight')
+    await expect(page.locator('[data-reel-stage="1"]')).toBeVisible()
+    await page.keyboard.press('Escape')
+    await expect(page.locator('[data-reel-stage]')).toHaveCount(0)
+    await expect(more).toBeFocused()
+    await expect(shell).toHaveAttribute('data-theme', originalTheme!)
+    await page.screenshot({ path: `/tmp/smithers-terminal-${viewport.width}-${test.info().project.name}.png` })
+    await page.keyboard.press(REPLAY_KEY)
+    await expect(shell).toHaveAttribute('data-stage', '1')
+    await page.keyboard.press('q')
+    await expect(shell).toHaveAttribute('data-stage', '10')
+    await page.keyboard.press('x')
+    await expect(shell).toHaveAttribute('data-stage', '13')
+    await page.keyboard.press('c')
+    await expect(page.getByTestId('composer-input')).toBeVisible()
+    await expect(page.getByTestId('palette')).toBeVisible()
+    await page.keyboard.press('Escape')
+    await expect(page.getByTestId('palette')).toBeHidden()
+    await expect(page.getByTestId('composer-input')).toBeFocused()
+    await page.keyboard.press('Escape')
+    await expect(shell).toHaveAttribute('data-stage', '14')
+    await expect(shell).toHaveAttribute('data-conversation-open', 'false')
+    await expect(page.getByTestId('composer-input')).toBeHidden()
+    await page.keyboard.press(FINISH_BUTTON.key)
+    await expect(shell).toHaveCount(0)
+  })
+}

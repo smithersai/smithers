@@ -731,13 +731,14 @@
   width: min(var(--chat-max-width), 100%);
   min-height: 0;
   max-height: 100%;
+  overflow: hidden;
   display: flex;
 }
 .guide-composer-layer {
   flex-direction: column;
   width: 100%;
   display: flex;
-  max-height: 70dvh;
+  max-height: 40dvh;
   overflow: hidden;
   padding: 8px;
   border: 1px solid var(--g-line);
@@ -863,34 +864,27 @@
   opacity: 1;
   transition-delay: 0s;
 }
-/*
- * The workspace step hands the window to the app: the tutorial chrome
- * (transcript, header, atmosphere, plugin shelf, progress) retires, and only
- * the outro card and the footer float above the full-screen UI.
- */
+/* The terminal read, actions, and workspace occupy their own rows. */
 .guide-shell[data-step="14"] .guide-atmosphere,
-.guide-shell[data-step="14"] .guide-header,
-.guide-shell[data-step="14"] .guide-transcript,
-.guide-shell[data-step="14"] .guide-progress {
-  display: none;
-}
-.guide-shell[data-step="14"] .guide-start-actions {
-  background: var(--g-panel);
-  backdrop-filter: blur(18px);
-  border: 1px solid var(--g-line);
-  border-radius: var(--r-4);
-  padding: var(--sp-6) var(--sp-7);
-  box-shadow: var(--shadow-3);
-}
+.guide-shell[data-step="14"] .guide-progress { display: none; }
+.guide-shell[data-step="14"] .guide-header { order: 0; }
 .guide-shell[data-step="14"] .guide-main {
-  pointer-events: none;
+  order: 1;
+  flex: 0 1 auto;
+  max-height: 45dvh;
 }
-.guide-shell[data-step="14"] .guide-lesson > * {
-  pointer-events: auto;
+.guide-shell[data-step="14"] .guide-app {
+  order: 2;
+  position: relative;
+  inset: auto;
+  z-index: 0;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
 }
+.guide-shell[data-step="14"] .guide-location { margin-left: 0; }
 .guide-shell[data-step="14"] .guide-footer {
   background: var(--g-panel);
-  backdrop-filter: blur(18px);
   border-top: 1px solid var(--g-line);
 }
 .guide-toasts {
@@ -1074,6 +1068,7 @@
     gap: 12px;
     flex-wrap: wrap;
   }
+  .guide-footer .guide-chat-controls { display: contents; }
   .guide-footer button {
     font-size: var(--fs-caption);
   }
@@ -1215,7 +1210,8 @@
   align-content: start;
   overflow-y: auto;
   overscroll-behavior: contain;
-  scroll-behavior: smooth;
+  scroll-behavior: auto;
+  overflow-anchor: none;
   padding: 10px;
   margin: -10px;
   scrollbar-width: thin;
@@ -1358,71 +1354,25 @@
   .guide-step-done { animation: none; }
 }
 
-/*
- * The optional capability reel (onboarding/Reel.tsx), offered after the last
- * lesson. It is mounted inside .guide-app so the terminal CSS does not retire
- * it with the tutorial transcript — but .guide-app is a flex row whose only
- * other child is the full-width workspace, so both the launch pill and the
- * playing card are taken out of that row and floated above it at conversation
- * width. The reel never replaces the workspace or maximizes over it.
- */
-.guide-app > [data-flow="tut.more"],
-.guide-app > [data-reel-stage] {
-  position: absolute;
-  left: 50%;
-  transform: translateX(-50%);
-  z-index: 2;
-  box-sizing: border-box;
-  width: min(720px, calc(100% - 48px));
-}
-.guide-app > [data-flow="tut.more"] {
-  bottom: 92px;
-  width: auto;
-  max-width: calc(100% - 48px);
-  display: inline-flex;
-  align-items: center;
-  gap: var(--sp-2);
-  padding: 10px 18px;
-  background: var(--g-panel);
-  backdrop-filter: blur(18px);
-  color: inherit;
-  font: inherit;
-  box-shadow: var(--shadow-2);
-}
-/* Centred over the workspace, clear of the footer and of any settling toast. */
-.guide-app > [data-reel-stage] {
-  top: 50%;
-  transform: translate(-50%, -50%);
+/* The optional reel is an embed in the terminal transcript. */
+.guide-transcript > [data-reel-stage] {
   display: flex;
   flex-direction: column;
   gap: 12px;
   padding: var(--sp-6) var(--sp-7);
   background: var(--g-panel);
-  backdrop-filter: blur(18px);
   border: 1px solid var(--g-line);
   border-radius: var(--r-4);
-  box-shadow: var(--shadow-3);
+  text-align: left;
 }
-.guide-app > [data-reel-stage] .guide-message p {
-  margin: 0;
-}
-.guide-app > [data-reel-stage] form,
-.guide-app > [data-reel-stage] [role="group"] {
+.guide-transcript > [data-reel-stage] [role="group"] {
   display: flex;
   flex-direction: column;
   gap: 8px;
   margin-top: 12px;
 }
-.guide-app > [data-reel-stage] pre {
-  margin: 12px 0 0;
-  padding: 10px 12px;
-  border-radius: var(--r-2);
-  background: var(--g-line);
-  overflow-x: auto;
-}
-.guide-app > [data-reel-stage] > button {
-  align-self: flex-start;
-}
+.guide-transcript > [data-reel-stage] pre { margin: 12px 0 0; overflow-x: auto; }
+.guide-transcript > [data-reel-stage] > button { align-self: flex-start; }
 
 /* ---- Onboarding script v4 (onboarding/lessons.ts) ----
    Colour reads the guide and app tokens only — no fallback hex from outside

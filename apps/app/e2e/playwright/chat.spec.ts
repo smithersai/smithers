@@ -9,6 +9,30 @@ import { expect, test } from "@playwright/test"
 
 test.skip(process.env.SMITHERS_CHAT_STUB === "0", "the stub suite; chat.real.spec.ts covers the real endpoint")
 
+for (const viewport of [{ width: 1280, height: 800 }, { width: 390, height: 844 }]) {
+test(`tutorial chat sends and displays the stub reply at ${viewport.width}px`, async ({ page }) => {
+  await page.setViewportSize(viewport)
+  await page.goto("/")
+  await expect(page.locator('.guide-shell')).toHaveAttribute('data-stage', '1')
+  await page.keyboard.press('i')
+  await expect(page.locator('.guide-shell')).toHaveAttribute('data-stage', '2')
+  const input = page.getByTestId("composer-input")
+  await expect(input).toBeHidden()
+  await page.keyboard.press("c")
+  await expect(input).toBeVisible()
+  await input.fill("say ok")
+  await page.getByTestId("composer-send").click()
+  await expect(input).toBeVisible()
+  // The user's own bubble first, then the assistant's streamed text.
+  await expect(page.locator(".guide-transcript .smithers-chat-message[data-role=\"user\"]")).toContainText("say ok")
+  const assistant = page.locator(".guide-transcript .smithers-chat-message[data-role=\"assistant\"]", { hasText: "stub: say ok" })
+  await expect(assistant).toContainText("stub: say ok", { timeout: 15_000 })
+  await expect(assistant).toBeInViewport()
+  await expect(input).toBeVisible()
+  await expect(page.locator('.guide-shell')).toHaveAttribute('data-conversation-open', 'true')
+})
+}
+
 test("typing 'say ok' and sending renders the stub reply", async ({ page }) => {
   await page.goto("/")
   await page.getByRole("button", { name: "Skip tutorial", exact: true }).click()

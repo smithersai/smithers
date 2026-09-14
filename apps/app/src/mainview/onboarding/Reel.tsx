@@ -4,7 +4,7 @@ import { useController } from "../ControllerContext"
 import { guideClock, type GuideClock } from "./advance"
 import { GuideButton, GUIDE_KEYS } from "./GuideButton"
 import { GUIDE_LAST_STEP } from "./lessons"
-import { REEL_BUTTON, REEL_STAGES, dispatchReelDemo, playReelChime, scheduleReel, type ReelDispatch, type ReelState } from "./reel.ts"
+import { FINISH_BUTTON, REEL_BUTTON, REEL_STAGES, dispatchReelDemo, playReelChime, scheduleReel, type ReelDispatch, type ReelState } from "./reel.ts"
 
 /** Standalone projection: the parent supplies durable state and the shared dispatcher. */
 export function Reel({ index, epoch = 0, demo, dispatch, playSound = playReelChime }: {
@@ -38,7 +38,7 @@ export function Reel({ index, epoch = 0, demo, dispatch, playSound = playReelChi
 }
 
 /** Mount beside GuideShell's transcript; composer and toast hosts remain mounted. */
-export function ReelShell({ clock = guideClock }: { clock?: GuideClock }) {
+export function ReelShell({ clock = guideClock, actions = false }: { clock?: GuideClock; actions?: boolean }) {
   const controller = useController()
   const { data: sessions } = useLiveQuery(controller.store.collections.sessions)
   const guide = sessions[0]?.guide as (ReelState & { step: number }) | undefined
@@ -47,13 +47,14 @@ export function ReelShell({ clock = guideClock }: { clock?: GuideClock }) {
   }, [controller])
   const launchRef = useCallback((node: HTMLButtonElement | null) => {
     if (!node) return
-    if (guide?.reelSeen) node.focus()
+    if (guide?.reelSeen) node.focus({ preventScroll: true })
 
   }, [controller, guide?.reelSeen])
   if (guide?.step !== GUIDE_LAST_STEP) return null
-  if (guide.reelIndex !== undefined) return <Reel index={guide.reelIndex} epoch={guide.reelEpoch} demo={guide.reelDemo} dispatch={dispatch} clock={clock} />
-  return <><GuideButton className="guide-primary" data-flow="onboarding.act" shortcut={GUIDE_KEYS.finish} onClick={() => dispatch("finish")}>Finish tutorial</GuideButton>
-  <GuideButton ref={launchRef} className="guide-primary" style={{ border: "1px solid currentColor", borderRadius: 999 }} data-flow="tut.more" shortcut={REEL_BUTTON.key} onClick={() => controller.runCommand(REEL_BUTTON.command)}>
+  if (guide.reelIndex !== undefined) return actions ? null : <Reel index={guide.reelIndex} epoch={guide.reelEpoch} demo={guide.reelDemo} dispatch={dispatch} clock={clock} />
+  if (!actions) return null
+  return <><GuideButton tabIndex={0} className="guide-primary" data-flow="onboarding.act" shortcut={GUIDE_KEYS.finish} onClick={() => dispatch("finish")}>{FINISH_BUTTON.label}</GuideButton>
+  <GuideButton tabIndex={0} ref={launchRef} className="guide-primary" data-flow="tut.more" shortcut={REEL_BUTTON.key} onClick={() => controller.runCommand(REEL_BUTTON.command)}>
     {REEL_BUTTON.label}
   </GuideButton></>
 }
