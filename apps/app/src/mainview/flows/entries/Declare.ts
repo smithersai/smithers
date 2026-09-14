@@ -30,6 +30,8 @@ export type CommandActions =
   & Omit<
     AppController,
     | "store"
+    // Control focus is the composition root's DOM-owned projection, never a flow's act.
+    | "controlFocus"
     | "storageRecoveryState"
     | "nativeAgentAvailable"
     | "nativeRepositoriesAvailable"

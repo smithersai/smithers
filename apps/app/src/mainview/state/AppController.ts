@@ -1,5 +1,7 @@
 import { createInputModeController } from "./controller/inputMode"
 import type { InputMode } from "./InputMode"
+import { createControlFocus } from "./controller/controlFocus"
+import type { ControlFocusController } from "./controller/controlFocus"
 import { createLiveTutorialController } from "./controller/liveTutorial"
 import { createRepositoryUpdate } from "./controller/repositoryUpdate"
 import { createDictation } from "./controller/dictation"
@@ -136,6 +138,8 @@ export interface AppController extends TutorialChangeController, IssueFlowsContr
   readonly promptStorageRecovery: () => Promise<void>
   readonly exportStorageRecovery: () => Promise<string | void>
   readonly store: AppStore
+  /** Control focus ("spotlight"): the one surface the human is driving right now (controller/controlFocus.ts). */
+  readonly controlFocus: ControlFocusController
   readonly bootstrap: AppBootstrap | undefined
   /** The native app's download URL this page offers; null while no native release carries an asset (controller/app.ts). */
   readonly downloadUrl: string | null
@@ -1769,6 +1773,9 @@ export const createAppController = (
   watchIdentityAcrossTabs()
   // Cmd+T / Cmd+W / Cmd+1..9 on the document, released with the controller.
   if (typeof document !== "undefined") ctx.onDispose(installKeyboard(document))
+  /* Control focus: surface detection and the dismissal swallow ride window capture. */
+  const controlFocus = createControlFocus(typeof document === "undefined" ? undefined : document)
+  ctx.onDispose(controlFocus.dispose)
   // One completion identity, including for a reentrant close from a resource.
   // The scope stops pumps, then releases consumers before their hosts.
   const dispose = ctx.dispose
@@ -1789,6 +1796,7 @@ export const createAppController = (
   return {
     ...sharedActions,
     store,
+    controlFocus,
     storageRecoveryState,
     downloadUrl,
     features,

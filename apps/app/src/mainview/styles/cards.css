@@ -540,6 +540,107 @@
 	margin-left: auto;
 }
 
+/*
+ * Control focus ("spotlight"): while the human drives one surface, ONE dim
+ * layer rendered inside .app-shell darkens and blurs everything else a
+ * touch, modal-style, and the surface "expands just a tad" — a ring painted
+ * in the card colour plus elevation, never a transform (a scale() blurs
+ * text, shifts xterm's mouse coordinates, and refits the PTY on every focus
+ * change). The dim is pointer-events:none so hover and wheel reach the
+ * dimmed content, and it sits below the portalled popovers (dialog 50, ui
+ * tooltip/select 60, maximize backdrop 65) so a controlled card's own
+ * dropdown is never dimmed. All tuning is the four tokens.
+ *
+ * Every selector here is namespaced `data-control-focus*`. The bare
+ * `data-controlled` is the onboarding shell's own flag on every guide bubble
+ * (guide.css `.smithers-control[data-controlled="true"]`), and React
+ * stringifies its boolean, so a bare `[data-controlled]` rule matched
+ * "false" too and lifted every bubble above the pinned navigation.
+ */
+:root {
+	--control-focus-outset: 4px;
+	--control-focus-dim: 12%;
+	--control-focus-blur: 1.5px;
+	--control-focus-ms: 160ms;
+	--control-focus-z: 40;
+}
+
+.control-focus-dim {
+	position: fixed;
+	inset: 0;
+	z-index: var(--control-focus-z);
+	pointer-events: none;
+	background: rgb(20 17 12 / var(--control-focus-dim));
+	backdrop-filter: blur(var(--control-focus-blur));
+}
+
+/*
+ * A trapping ancestor — the transcript viewport's mask-image (@smthrs/ui
+ * .sui-scroll-fade), the lesson mount's contain:layout — caps its
+ * descendants' z-index, so a card inside it can never rise above the
+ * shell's dim layer. While it hosts the controlled surface the scroller
+ * itself lifts above the shell dim and carries a second dim inside its own
+ * stacking context (state/controller/controlFocus.ts renders it); the card
+ * lifts one step further within it.
+ */
+[data-control-focus-host] {
+	position: relative;
+	z-index: calc(var(--control-focus-z) + 1);
+}
+
+[data-control-focus] {
+	position: relative;
+	z-index: calc(var(--control-focus-z) + 1);
+	box-shadow: 0 0 0 var(--control-focus-outset) var(--card), 0 8px 24px rgb(0 0 0 / 18%);
+}
+
+/* A completed (acted) card stays readable while it is the controlled surface, exactly as maximize does. */
+.smithers-card[data-control-focus] {
+	opacity: 1;
+}
+
+/*
+ * The way out that needs no pointer. A focused cross-origin frame eats every
+ * key and xterm swallows Tab, so the release chord cannot reach the document
+ * from inside those surfaces; the ring carries its own button instead
+ * (state/controller/controlFocus.ts mounts it). Small and quiet: the ghost
+ * button recipe on the card colour, in the surface's own bottom corner.
+ */
+.control-focus-release {
+	position: absolute;
+	/* Inside the box, never over its header: a terminal clips its own overflow. */
+	right: 6px;
+	bottom: 6px;
+	z-index: 1;
+	min-height: 22px;
+	padding: 0 8px;
+	border-color: var(--border);
+	background: var(--card);
+	font-size: 11px;
+	opacity: 0.72;
+}
+.control-focus-release:hover,
+.control-focus-release:focus-visible {
+	opacity: 1;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+	/*
+	 * The dim mounts and unmounts with the state, so a transition on opacity
+	 * would never run; it fades in the way the maximize backdrop does.
+	 */
+	.control-focus-dim {
+		animation: control-focus-dim-in var(--control-focus-ms) ease-out;
+	}
+	[data-control-focus] {
+		transition: box-shadow var(--control-focus-ms) ease-out;
+	}
+	@keyframes control-focus-dim-in {
+		from { opacity: 0; }
+		to { opacity: 1; }
+	}
+}
+
 /* Wave 10 — the connect store rows (§2e), shared by the pane and the embedded card. */
 .connect-store-list {
 	list-style: none;

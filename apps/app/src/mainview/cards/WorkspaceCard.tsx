@@ -266,6 +266,9 @@ const WorkspaceDesktopBody = ({
         src={stream.url}
         allow="clipboard-read; clipboard-write"
         sandbox="allow-scripts allow-same-origin allow-forms"
+        /* Control focus: a cross-origin frame is detected as window blur + activeElement === this iframe. */
+        data-control-focus-id={`desktop:${payload.workspaceId}`}
+        data-control-focus-kind="desktop"
       />
       <p className="world-card-row">
         {until === null ? null : <span className="world-card-path">{until}</span>}

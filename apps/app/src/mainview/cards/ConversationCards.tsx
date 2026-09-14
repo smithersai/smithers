@@ -217,6 +217,9 @@ export const BrowserCardBody = ({ card }: { readonly card: Extract<Card, { kind:
             // @ts-expect-error React has no typing for the credentialless attribute yet.
             credentialless=""
             sandbox="allow-scripts allow-same-origin"
+            /* Control focus: a cross-origin frame is detected as window blur + activeElement === this iframe. */
+            data-control-focus-id={`browser:${card.id}`}
+            data-control-focus-kind="browser"
           />
         ) :
         (

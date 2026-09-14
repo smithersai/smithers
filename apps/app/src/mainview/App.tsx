@@ -16,7 +16,7 @@ import {
 } from "@smthrs/ui"
 import { useLiveQuery } from "@tanstack/react-db"
 import { CheckCircle2, Copy, HelpCircle, RotateCcw, Sparkles } from "lucide-react"
-import { useMemo, useContext, useRef, useState } from "react"
+import { useMemo, useContext, useRef, useState, useSyncExternalStore } from "react"
 import type { PointerEvent as ReactPointerEvent } from "react"
 import { createPortal } from "react-dom"
 import { CardView } from "./ChatCards"
@@ -90,6 +90,15 @@ function CopyMessageButton({
 function App() {
   const controller = useController()
   const { collections } = controller.store
+  /*
+   * Control focus ("spotlight"): the controller owns the record and the DOM
+   * wiring; the shell only projects it — while a surface is controlled, one
+   * dim layer renders inside .app-shell. The layer is pointer-events:none:
+   * hover and wheel pass through to the dimmed content, and the dismissing
+   * click is swallowed by the controller's window-capture listeners, never
+   * by this div.
+   */
+  const controlFocus = useSyncExternalStore(controller.controlFocus.subscribe, controller.controlFocus.snapshot)
   /*
    * The transcript's order is the QUERY's order (§hot path): sorting a copy of
    * every row on every render made each keystroke O(messages log messages) on
@@ -487,6 +496,9 @@ function App() {
       }}
     >
       <SmithersUiStyles />
+
+      {/* The control-focus dim: everything but the controlled surface, a touch darker and softer. */}
+      {controlFocus === null ? null : <div className="control-focus-dim" aria-hidden="true" />}
 
       {/* The chrome bar: the tab strip upper-left, the repo chip and chrome actions right. */}
 

@@ -32,6 +32,9 @@ export function TerminalView({ tab }: { readonly tab: Extract<TabRow, { kind: "t
     <Terminal
       className="tab-terminal"
       data-testid={`terminal-${sessionId}`}
+      /* Control focus (state/controller/controlFocus.ts): the xterm helper textarea's focusin finds this marker. */
+      data-control-focus-id={`terminal:${sessionId}`}
+      data-control-focus-kind="terminal"
       stream={(write) =>
         workspace !== undefined
           ? controller.cloudTerminal.attach(workspace.repo, sessionId, { onOutput: write })
