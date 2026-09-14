@@ -340,7 +340,7 @@ describe("the probe grades through the verdict", () => {
   const probe = readFileSync(fileURLToPath(new URL("./build-probe.ts", import.meta.url)), "utf8")
 
   test("build-probe.ts calls htmlAgreementVerdict", () => {
-    expect(probe).toContain("htmlAgreementVerdict(stamp, { status: htmlResponse.status, metaSha }, allowUnstampedHtml)")
+    expect(probe).toContain("htmlAgreementVerdict(stamp, settle.read.html, allowUnstampedHtml)")
   })
 
   test("build-probe.ts no longer passes a null metaSha as an agreement", () => {
@@ -385,10 +385,17 @@ describe("the probe's exit code moves with the deployment", () => {
       }
     })
 
+  /*
+   * `--settle-ms 0` grades the first read. These cases assert the verdicts and
+   * the exit code, not the propagation window, and this server's answers never
+   * change — waiting ninety seconds for a fixture to change its mind would
+   * only make the suite slow. build-probe.test.ts is where the window is held
+   * to a stopwatch.
+   */
   const runProbe = async (html: string, extraArgs: ReadonlyArray<string> = []) => {
     const server = serve(html)
     try {
-      const proc = Bun.spawn(["bun", probePath, server.url.origin, "--sha", SERVED_SHA, ...extraArgs], {
+      const proc = Bun.spawn(["bun", probePath, server.url.origin, "--sha", SERVED_SHA, "--settle-ms", "0", ...extraArgs], {
         stdout: "pipe",
         stderr: "pipe"
       })

@@ -132,6 +132,12 @@ export interface Graded {
 export interface FetchedHtml {
   readonly status: number
   readonly metaSha: string | null
+  /**
+   * Why the request never produced a response at all — DNS, TLS, a reset
+   * connection. `status` is 0 then, and "HTTP 0" is not a thing any server
+   * said, so the reason is carried rather than invented.
+   */
+  readonly transportError?: string | undefined
 }
 
 /**
@@ -164,10 +170,13 @@ export const htmlAgreementVerdict = (
   allowUnstampedHtml: boolean
 ): Graded => {
   if (html.status < 200 || html.status > 299) {
+    const cause = html.transportError === undefined
+      ? `GET of the app document answered HTTP ${html.status}`
+      : `GET of the app document never answered: ${html.transportError}`
     return {
       status: "skip",
       detail:
-        `GET of the app document answered HTTP ${html.status}, so the served HTML could not be compared with ${BUILD_STAMP_PATH} (the uptime probe grades availability)`
+        `${cause}, so the served HTML could not be compared with ${BUILD_STAMP_PATH} (the uptime probe grades availability)`
     }
   }
   if (html.metaSha === null) {
