@@ -1,7 +1,7 @@
 import { describe, expect, test } from "vitest"
-import { PLUE_FAILURES, PLUE_FAULTS } from "../src/PlueFailureCodes"
-import type { PlueFailureCode } from "../src/PlueFailureCodes"
-import { clientRefusal, refusalOf, workerRefusal } from "../src/Refusal"
+import { PLUE_FAILURES, PLUE_FAULTS } from "../src/PlueFailureCodes.ts"
+import type { PlueFailureCode } from "../src/PlueFailureCodes.ts"
+import { clientRefusal, refusalOf, workerRefusal } from "../src/Refusal.ts"
 import {
   agentRefusalText,
   INFRA_NOT_YOUR_FAULT,
@@ -10,9 +10,9 @@ import {
   refusalCopy,
   refusalDoors,
   refusalLead
-} from "../src/RefusalCopy"
-import { WORKER_FAILURE_CODES } from "../src/WorkerFailureCodes"
-import type { WorkerFailureCode } from "../src/WorkerFailureCodes"
+} from "../src/RefusalCopy.ts"
+import { WORKER_FAILURE_CODES } from "../src/WorkerFailureCodes.ts"
+import type { WorkerFailureCode } from "../src/WorkerFailureCodes.ts"
 
 /** A refusal exactly as plue answers for this code, through its own registry row. */
 const forCode = (code: PlueFailureCode, message = "plue's own words") =>

@@ -2,13 +2,14 @@ import { readFileSync } from "node:fs"
 import { join } from "node:path"
 import { describe, expect, test } from "vitest"
 import { digestOf } from "../scripts/refresh-failure-codes.mjs"
+import type { FailureCodeRow } from "../scripts/refresh-failure-codes.mjs"
 import {
   PLUE_FAILURE_CODES,
   PLUE_FAILURE_DIGEST,
   PLUE_FAILURE_SCHEMA_VERSION,
   PLUE_FAILURES,
   PLUE_FAULTS
-} from "../src/PlueFailureCodes"
+} from "../src/PlueFailureCodes.ts"
 import {
   clientRefusal,
   faultOfStatus,
@@ -18,21 +19,13 @@ import {
   refusalOf,
   retryAfterHeader,
   statedRetryDelayMs
-} from "../src/Refusal"
-
-interface VendoredRow {
-  readonly code: string
-  readonly fault: string
-  readonly status: number
-  readonly retry_after: number
-  readonly doc: string
-}
+} from "../src/Refusal.ts"
 
 const vendored = JSON.parse(readFileSync(join(__dirname, "..", "src", "plue-failure-codes.json"), "utf8")) as {
   readonly schema_version: number
   readonly digest: string
   readonly faults: ReadonlyArray<string>
-  readonly codes: ReadonlyArray<VendoredRow>
+  readonly codes: ReadonlyArray<FailureCodeRow>
 }
 
 /*

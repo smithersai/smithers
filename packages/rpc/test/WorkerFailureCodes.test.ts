@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest"
-import { PLUE_FAILURE_CODES, PLUE_FAILURES } from "../src/PlueFailureCodes"
+import { PLUE_FAILURE_CODES, PLUE_FAILURES } from "../src/PlueFailureCodes.ts"
 import {
   faultOfStatus,
   isWorkerFailureCode,
@@ -10,7 +10,7 @@ import {
   refusalOf,
   storedRefusal,
   workerRefusal
-} from "../src/Refusal"
+} from "../src/Refusal.ts"
 import {
   agentFaultNote,
   agentRefusalText,
@@ -19,8 +19,8 @@ import {
   refusalLead,
   refusalSentence,
   WORKER_REFUSAL_COPY
-} from "../src/RefusalCopy"
-import { WORKER_FAILURE_CODES, WORKER_FAILURES, workerFailureCode } from "../src/WorkerFailureCodes"
+} from "../src/RefusalCopy.ts"
+import { WORKER_FAILURE_CODES, WORKER_FAILURES, workerFailureCode } from "../src/WorkerFailureCodes.ts"
 
 /*
  * The Cloudflare Worker's own refusals. plue's registry is generated and

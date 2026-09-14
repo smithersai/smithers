@@ -1,5 +1,5 @@
 import { z } from "zod"
-import { DiffFileSchema } from "./Changes"
+import { DiffFileSchema } from "./Changes.ts"
 
 export const LiveTutorialOperationSchema = z.enum(["research", "plan", "implement", "change", "poc"])
 export type LiveTutorialOperation = z.infer<typeof LiveTutorialOperationSchema>
