@@ -420,6 +420,10 @@ test("the web wiki empty state offers Create Wiki through the registered flow", 
   const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() }, { seedWiki: false })
   const controller = createAppController(store, unavailableRepositories, silentAgent, { bootstrap: WEB,
     ...backend({ "/api/auth/session": json(401, {}), "/api/auth/scopes": json(200, { scopes: [] }) }) })
+  // Select the repository before opening its Wiki: changing scope replaces the transcript.
+  await store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-out", login: null, allowlisted: false, admin: false, scopesPlain: null }).isPersisted.promise
+  await store.dispatch({ type: "repository.upserted", actor: "system", repository: { id: "smithersai/smithers", org: "smithersai", name: "smithers", ownerKind: "org", head: null, catalog: true } }).isPersisted.promise
+  await store.dispatch({ type: "repo.selected", actor: "user", id: "smithersai/smithers" }).isPersisted.promise
   await controller.commands.run("wiki")
   await settled()
   const { host } = mount(controller)
@@ -427,10 +431,8 @@ test("the web wiki empty state offers Create Wiki through the registered flow", 
   const door = host.querySelector<HTMLButtonElement>('.world-card-empty [data-flow="wiki.create"]')
   expect(door?.textContent).toBe("Create Wiki")
   expect(controller.commands.find("wiki.create")).toBeDefined()
-  await store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-out", login: null, allowlisted: false, admin: false, scopesPlain: null }).isPersisted.promise
-  await store.dispatch({ type: "repository.upserted", actor: "system", repository: { id: "smithersai/smithers", org: "smithersai", name: "smithers", ownerKind: "org", head: null, catalog: true } }).isPersisted.promise
-  await store.dispatch({ type: "repo.selected", actor: "user", id: "smithersai/smithers" }).isPersisted.promise
-  door?.click()
+  expect(door?.isConnected).toBe(true)
+  door!.click()
   await settled()
   expect(store.session().pendingCommand).toMatchObject({ name: "wiki.create", args: "smithersai/smithers" })
 })
