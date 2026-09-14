@@ -407,8 +407,8 @@
 /* The surface pill: the current surface's name, a chevron, a rounded chip. */
 .app-shell .composer-pill {
 	height: 30px;
-	padding: 0 10px 0 12px;
-	border-radius: 999px;
+	padding: 0 var(--sp-3);
+	border-radius: var(--r-full);
 	background: var(--surface-2);
 	color: var(--text);
 	font-family: var(--font-ui);
@@ -423,9 +423,9 @@
 .composer-header {
 	display: flex;
 	min-height: 24px;
-	margin: 0 6px 6px;
+	margin: 0 var(--sp-2) var(--sp-2);
 	align-items: center;
-	gap: 10px;
+	gap: var(--sp-2);
 }
 .composer-origin {
 	display: inline-flex;
@@ -1076,18 +1076,22 @@
 }
 .composer-menu-list {
 	position: absolute;
-	bottom: calc(100% + 6px);
+	bottom: calc(100% + var(--sp-2));
 	left: 0;
 	z-index: 40;
 	min-width: 10rem;
 	display: flex;
 	flex-direction: column;
 	gap: 2px;
-	padding: 4px;
+	padding: var(--sp-1);
 	border: 1px solid var(--border);
-	border-radius: 10px;
-	background: var(--popover);
-	box-shadow: 0 8px 24px rgb(33 29 24 / 12%);
+	border-radius: var(--r-2);
+	/* The house overlay anatomy (composer, palette, toasts share it): glass,
+	   hairline, blur, shadow-2 — never a raw tinted shadow in another palette's
+	   ink (the old rgb(33 29 24 / 12%) was warm brown in every dark theme). */
+	background: var(--surface-glass-strong);
+	backdrop-filter: blur(20px);
+	box-shadow: var(--shadow-2);
 }
 .composer-menu-item {
 	display: flex;

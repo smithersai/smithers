@@ -462,7 +462,7 @@
 .sui-approval-error {
 	margin: 8px 0 0;
 	font-size: var(--fs-caption);
-	color: var(--ember-600, var(--text));
+	color: var(--danger);
 }
 
 /* Wave 10 — the maximize transition (§2d′): the SAME card element becomes
@@ -474,7 +474,11 @@
 	/* Ask 7: the sidebar stays usable while a card is maximized. */
 	left: var(--chrome-bar-width, 200px);
 	z-index: 65;
-	background: rgb(20 17 12 / 45%);
+	/* The palette's own scrim: --shadow-rgb tracks each theme's ink, so the
+	   dim is neutral everywhere — the old rgb(20 17 12 / 45%) was a warm
+	   brown fog over every dark palette. */
+	background: rgb(var(--shadow-rgb) / 45%);
+	backdrop-filter: blur(4px);
 }
 .smithers-card[data-maximized="true"] {
 	position: fixed;
@@ -491,6 +495,9 @@
 	/* A completed card remains readable while it is the active review surface. */
 	opacity: 1;
 	background: var(--card);
+	/* The one full-screen surface: it floats over a scrim, so it wears the
+	   top elevation, not the inline-card shadow-1. */
+	box-shadow: var(--shadow-3);
 }
 /*
  * Ask 8: the maximized card scrolls, and Restore lives in its header — so the
@@ -513,10 +520,10 @@
 }
 @media (prefers-reduced-motion: no-preference) {
 	.smithers-card[data-maximized="true"] {
-		animation: card-maximize-in 180ms ease-out;
+		animation: card-maximize-in var(--dur) var(--ease-current);
 	}
 	.card-maximize-backdrop {
-		animation: card-backdrop-in 180ms ease-out;
+		animation: card-backdrop-in var(--dur) var(--ease-current);
 	}
 	@keyframes card-maximize-in {
 		from { transform: scale(0.96) translateY(6px); opacity: 0.4; }
