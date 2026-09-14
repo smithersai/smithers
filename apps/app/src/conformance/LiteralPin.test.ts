@@ -81,6 +81,41 @@ interface Excuse {
  */
 const RESOLVES_ELSEWHERE: ReadonlyArray<Excuse> = [
   {
+    literal: "fixture.semantic",
+    file: "scripts/browser-test-host.ts",
+    reason: "test-owned semantic health checker id bound to the browser fixture policy"
+  },
+  {
+    literal: "demo.v2",
+    file: "e2e/playwright/cloudFixture.spec.ts",
+    reason: "test repository basename containing a dot; the fixture preserves its full identity"
+  },
+  {
+    literal: "data-control-focus-host",
+    file: "e2e/playwright/control-focus.spec.ts",
+    reason: "negative assertion: the former stacking-host marker must remain absent after the single body dim layer change"
+  },
+  {
+    literal: "section.smithers-card",
+    file: "e2e/playwright/control-focus.spec.ts",
+    reason: "tag and class composed by the geometry probe from the real card element, not a flow id"
+  },
+  {
+    literal: "fixture-live-",
+    file: "e2e/playwright/tutorial-stubs.ts",
+    reason: "test-owned live tutorial run id echoed by the fixture, not a card id prefix"
+  },
+  {
+    literal: "do",
+    file: "e2e/playwright/tutorial-tip.spec.ts",
+    reason: "GuideLesson kind used to read the current lesson help, not a card kind"
+  },
+  {
+    literal: "data-practice",
+    file: "e2e/playwright/tutorial2-walk.spec.ts",
+    reason: "negative assertion: practice badges were deliberately removed from both issue and bridge cards"
+  },
+  {
     literal: "storage-test-",
     file: "e2e/playwright/storage-refusal.spec.ts",
     reason: "test-owned request IDs on the shipped SQLite worker protocol, not application card IDs"
@@ -134,16 +169,6 @@ const RESOLVES_ELSEWHERE: ReadonlyArray<Excuse> = [
     literal: "do",
     file: "e2e/playwright/tutorial2-walk.spec.ts",
     reason: "the GuideLesson kind from src/mainview/onboarding/lessons.ts, which the script v4 walk switches on; a lesson kind, never a card kind"
-  },
-  {
-    literal: "say",
-    file: "e2e/playwright/tutorial2-walk.spec.ts",
-    reason: "the GuideLesson kind from src/mainview/onboarding/lessons.ts (a say-beat); a lesson kind, never a card kind"
-  },
-  {
-    literal: "call",
-    file: "e2e/playwright/tutorial2-walk.spec.ts",
-    reason: "RunTraceCard stamps a trace span's kind on data-kind (cards/RunTraceCard.tsx), and the walk selects the call spans of the practice run's trace"
   },
   {
     literal: "plan-",
@@ -271,6 +296,8 @@ describe("the vocabularies are derived from the app and are never empty", () => 
     expect(vocabularies.dataAttributes.size).toBeGreaterThan(30)
     expect(vocabularies.dataAttributes.has("data-flow")).toBe(true)
     expect(vocabularies.dataAttributes.has("data-flows")).toBe(true)
+    // PressActions writes this through toggleAttribute, including key release.
+    expect(vocabularies.dataAttributes.has("data-pressed")).toBe(true)
     expect(vocabularies.dataAttributes.has("data-command")).toBe(false)
   })
 

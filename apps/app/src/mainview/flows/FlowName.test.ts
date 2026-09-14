@@ -18,7 +18,7 @@ const declaredNames = (): ReadonlyArray<string> => {
   for (const file of readdirSync(entries).sort()) {
     if (!file.endsWith(".ts") || file.endsWith(".test.ts")) continue
     const source = readFileSync(`${entries}${file}`, "utf8")
-    for (const match of source.matchAll(/^\s*name: "([^"]+)",$/gm)) names.push(match[1]!)
+    for (const match of source.matchAll(/\bname:\s*"([^"]+)"/g)) names.push(match[1]!)
   }
   return names
 }

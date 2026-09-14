@@ -641,6 +641,8 @@ describe("host parity — the web and native catalogs against the servers' own c
         new Response(JSON.stringify({ status: "error" }), { status: 404, headers: { "content-type": "application/json" } })
     })
     await controller.adoptSession({ state: "signed-out", login: null, allowlisted: false, admin: false })
+    // Download is now an explicit embedded prompt, not permanent shell chrome.
+    await controller.commands.runForAgent("app.download.prompt")
     await new Promise((resolve) => setTimeout(resolve, 0))
     const host = document.createElement("div")
     document.body.append(host)

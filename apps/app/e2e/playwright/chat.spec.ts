@@ -11,7 +11,10 @@ test.skip(process.env.SMITHERS_CHAT_STUB === "0", "the stub suite; chat.real.spe
 
 test("typing 'say ok' and sending renders the stub reply", async ({ page }) => {
   await page.goto("/")
+  await page.getByRole("button", { name: "Skip tutorial", exact: true }).click()
   const input = page.getByTestId("composer-input")
+  await expect(input).toBeHidden()
+  await page.keyboard.press("c")
   await expect(input).toBeVisible()
   await input.fill("say ok")
   await page.getByTestId("composer-send").click()

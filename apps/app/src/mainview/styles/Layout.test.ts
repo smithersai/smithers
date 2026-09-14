@@ -136,15 +136,18 @@ describe("the shell shrinks to a phone viewport (no sideways scroll)", () => {
 })
 
 describe("the shared card frame fits the phone column", () => {
-  test("the card header may shrink, so its title and meta shrink rules apply", () => {
+  test("the card header may shrink, so its title shrink rule applies", () => {
     const header = /\.smithers-card-header\s*\{[^}]*\}/.exec(cards)?.[0] ?? ""
     expect(header).toContain("min-width: 0;")
   })
 
-  test("the title truncates before the status pill", () => {
+  test("the title truncates and metadata lives in the wrapping details row", () => {
     const title = /\.smithers-card-title\s*\{\s*flex: 0 1 auto;[^}]*\}/.exec(cards)?.[0] ?? ""
     expect(title).toContain("min-width: 0;")
     expect(title).toContain("text-overflow: ellipsis;")
+    const details = /\.smithers-card-details dl\s*\{[^}]*\}/.exec(cards)?.[0] ?? ""
+    expect(details).toContain("flex-wrap: wrap;")
+    expect(cards).not.toContain(".smithers-card-meta")
   })
 
   test("a run's action pills wrap instead of running past the card edge", () => {

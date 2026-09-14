@@ -43,7 +43,7 @@ export function InputModeMenu({ mode, onChange, placement = 'above' }: {
     <GuideButton ref={trigger} shortcut={GUIDE_KEYS.mode} aria-haspopup="menu" aria-expanded={open} aria-controls={open ? id : undefined}
       onClick={() => open ? close() : setOpen(true)}>Mode: {inputModeLabel(mode)}</GuideButton>
     {open && <div id={id} ref={mount} className="input-mode-menu" role="menu" aria-label="Input mode">
-      {INPUT_MODES.map(value => <button key={value} type="button" role="menuitemradio" aria-checked={mode === value}
+      {INPUT_MODES.map(value => <button key={value} type="button" role="menuitemradio" aria-checked={mode === value} data-flow="input.mode"
         onClick={() => { latest.current.onChange(value); close() }}>
         <span>{inputModeLabel(value)}</span>{mode === value && <Check size={14} aria-hidden="true" />}
       </button>)}

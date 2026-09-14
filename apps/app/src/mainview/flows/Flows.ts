@@ -98,6 +98,8 @@ export { Ack } from "./entries/Declare"
  * is a conscious act pinned by flows/invocable.test.ts.
  */
 export const USER_ONLY_VISIBLE: ReadonlyArray<{ readonly name: string; readonly why: string }> = [
+  { name: "chat.open", why: "opening Chat and starting the selected microphone mode is the human's gesture" },
+  { name: "chat.dictate", why: "microphone capture is the human's explicit gesture" },
   { name: "chat.send", why: "turn mechanics: the model is already the turn; sending would nest one" },
   { name: "chat.stop", why: "turn mechanics: stopping the model's own turn from inside it" },
   { name: "admin.reset", why: "destroys the whole store with no undo; the confirm dialog is the only door" },

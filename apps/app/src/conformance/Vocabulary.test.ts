@@ -164,3 +164,10 @@ describe("the product vocabulary is derived from the app alone", () => {
     ).toEqual(["dotted-identifier"])
   })
 })
+
+test("health checker IDs are external data; the same literal used as a flow is still checked", () => {
+  const fields = extractLiterals("fixture.ts", 'const status = { provenance: { checkerId: "fixture.semantic" } }; runCommand("fixture.semantic")')
+  const reports = fields.flatMap(literal => violationsOf(literal, vocabularies))
+  expect(reports.filter(report => report.rule === "dotted-identifier")).toHaveLength(1)
+  expect(reports.filter(report => report.rule === "flow")).toHaveLength(1)
+})

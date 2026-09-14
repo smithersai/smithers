@@ -191,7 +191,7 @@ export const manifestFlowNames = async (): Promise<ReadonlySet<string>> => {
 
 /**
  * Every `data-*` attribute the rendered DOM can carry. There are three ways to
- * put one there and all three are read: a JSX attribute, a `setAttribute`
+ * put one there and all three are read: a JSX attribute, a `setAttribute`/`toggleAttribute`
  * call, and a `dataset` property write. Sources are the app's own components
  * and the component library the app renders through — a CDP selector naming
  * anything else matches nothing, which is exactly what seventeen stale
@@ -220,7 +220,7 @@ export const emittedDataAttributes = (): ReadonlySet<string> => {
       }
       if (
         ts.isCallExpression(node) && ts.isPropertyAccessExpression(node.expression)
-        && node.expression.name.text === "setAttribute"
+        && ["setAttribute", "toggleAttribute"].includes(node.expression.name.text)
       ) {
         const first = node.arguments[0]
         if (first !== undefined && ts.isStringLiteral(first) && first.text.startsWith("data-")) {

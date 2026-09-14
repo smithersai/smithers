@@ -116,6 +116,15 @@ const PRESENTATION_ONLY = [
   "dispatch(\"reel-" // delegated: Reel.tsx's dispatch is runCommand("onboarding.act", ...)
 ] as const
 
+// Indirections added with the focused guide and run cards. Scope each literal
+// to its component so a similarly named handler cannot inherit the exception.
+const DELEGATED_HANDLERS: Readonly<Record<string, readonly string[]>> = {
+  "../HelpBubble.tsx": ["onClick={dismiss}"], // restores focus, then onDismiss() dismisses transient help
+  "../InputModeMenu.tsx": ["open ? close() : setOpen(true)", "latest.current.onChange(value)"], // transient menu; selection is input.mode at both mounts
+  "../cards/LiveTutorialRunBody.tsx": ["scoped("], // runSourceCommand(card.id, onRunCommand) keeps the source frame
+  "../cards/WorkflowCards.tsx": ["sendRunCommand("], // the original onRunCommand prop, before the frame wrapper
+}
+
 const routesThroughRegistry = (context: string): boolean =>
   context.includes("runCommand") || context.includes("runSlashCommand")
 
@@ -149,10 +158,21 @@ describe("launch-law parity: every affordance is a command", () => {
         const opensBody = /=>\s*\{?\s*$/.test(handler.line)
         const allowance = opensBody ? handler.context : handler.line
         if (PRESENTATION_ONLY.some((token) => allowance.includes(token))) continue
+        if (DELEGATED_HANDLERS[file]?.some((token) => allowance.includes(token))) continue
         violations.push(`${file}: ${handler.prop} → ${handler.context.split("\n")[0]?.trim()}`)
       }
     }
     expect(violations).toEqual([])
+  })
+
+  test("the focused guide and run-card indirections retain their bindings", () => {
+    expect(files["../HelpBubble.tsx"]).toContain("onDismiss()")
+    expect(files["../InputModeMenu.tsx"]).toContain('data-flow="input.mode"')
+    for (const file of ["../App.tsx", "../onboarding/GuideShell.tsx"]) {
+      expect(files[file]).toContain('onChange={mode => controller.runCommand("input.mode", mode)}')
+    }
+    expect(files["../cards/LiveTutorialRunBody.tsx"]).toContain("const scoped=runSourceCommand(card.id,onRunCommand)")
+    expect(files["../cards/WorkflowCards.tsx"]).toContain("onRunCommand: sendRunCommand")
   })
 
   test("the expected affordances are all present (removal fails loudly too)", () => {
@@ -164,9 +184,9 @@ describe("launch-law parity: every affordance is a command", () => {
         .filter(([, count]) => count > 0)
     )
     expect(counts).toEqual({
-      "../onboarding/GuideShell.tsx": 11, // Includes skip/secondary actions and the footer/dialog dictation controls.
+      "../onboarding/GuideShell.tsx": 10, // Includes skip/secondary actions and the footer/dialog dictation controls.
       // The optional capability reel after the last lesson: its launch pill and its Back.
-      "../onboarding/Reel.tsx": 2, // Delegates to the shared onboarding and existing app flows; the Command-K overlay is the summoned composer with no chrome of its own. The sidebar lists Wiki and Mythical history only — no Library entry.
+      "../onboarding/Reel.tsx": 4, // Delegates to the shared onboarding and existing app flows; the Command-K overlay is the summoned composer with no chrome of its own. The sidebar lists Wiki and Mythical history only — no Library entry.
       /*
        * The chrome Sign in button (LOCAL-APP.md: sign-in is an option in the
        * chrome, never a gate on the chat) is one of ChromeBar's nine below.
@@ -179,8 +199,17 @@ describe("launch-law parity: every affordance is a command", () => {
       // +1: the Flows pane's Triggers button, the button door of triggers.list.
       // +1: the Wiki pane's Factory button, the button door of factory.show.
       // +1 (Librarian L5): the Wiki pane's Graph button, the button door of wiki.graph.
-      "../App.tsx": 17,
+      "../App.tsx": 8,
       "../StorageRecoveryButton.tsx": 1,
+      "../FlowsSurface.tsx": 2,
+      "../WorldSurface.tsx": 8,
+      "../HelpBubble.tsx": 1,
+      "../InputModeMenu.tsx": 2,
+      "../SessionNavigation.tsx": 1,
+      "../cards/CodingVibeCard.tsx": 1,
+      "../cards/LiveTutorialRunBody.tsx": 7,
+      "../cards/RepositoryUpdateCard.tsx": 3,
+      "../tabs/RepoTree.tsx": 1,
       /*
        * The Library (the `plugins` surface and the guided introduction share
        * it): Install and Remove on a row, and the rail button each installed
@@ -201,7 +230,7 @@ describe("launch-law parity: every affordance is a command", () => {
        * Restore and Maximize. Every card body lives in its family file under
        * cards/ and is pinned there.
        */
-      "../ChatCards.tsx": 7,
+      "../ChatCards.tsx": 9,
       /* The turn's approval card: approve and deny. */
       "../cards/ApprovalCard.tsx": 2,
       /* The admin grant confirm: Post the grant and Cancel. */
@@ -214,14 +243,14 @@ describe("launch-law parity: every affordance is a command", () => {
        * watching, Resume, Stop, Run again, the steer row's send, the
        * repository chooser's row and the workflow list's Run.
        */
-      "../cards/WorkflowCards.tsx": 12,
+      "../cards/WorkflowCards.tsx": 14,
       "../DevtoolsPanel.tsx": 1,
       "../SearchPalette.tsx": 6, // + Ask Smithers, the first row of an empty ⌘K
       "../SurfaceChrome.tsx": 3,
       "../ToastStack.tsx": 1,
       /* The multi-parity domain cards: every handler routes through onRunCommand. */
       /* 3 = 2 + the issue card's Link to Linear…, the door onto issues.link-linear's form (lane sync). */
-      "../cards/IssueCards.tsx": 4, // + the detail's comment box submit (issues.comment)
+      "../cards/IssueCards.tsx": 9, // + the detail's comment box submit (issues.comment)
       "../cards/LandingCards.tsx": 5, // + the PR detail's tab bar (setPrTab, presentation only)
       "../cards/FileCards.tsx": 3,
       /* Mark-all-read. */
@@ -256,7 +285,7 @@ describe("launch-law parity: every affordance is a command", () => {
        * handler, and so does the facet strip (the Desktop tab mints through
        * workspace.desktop, every other tab switches through workspace.facet).
        */
-      "../cards/WorkspaceCard.tsx": 18,
+      "../cards/WorkspaceCard.tsx": 19,
       /*
        * The target-graph cards: the graph drawer's close/copy/open/run acts
        * (4), the timeline row's log toggle (1), the history row's replay
@@ -313,7 +342,7 @@ describe("launch-law parity: every affordance is a command", () => {
        * rows' Diff to current, and the diff card's re-read — all through
        * onRunCommand with data-flow set.
        */
-      "../cards/ChangeCards.tsx": 21,
+      "../cards/ChangeCards.tsx": 22,
       /*
        * The plan inside a run card: Inspect review feedback and Inspect failed
        * execution (runs.trace.select), Vibe this change (flow.run), Check
@@ -363,7 +392,7 @@ describe("launch-law parity: every affordance is a command", () => {
       /* 27 = 26 + the footer's Account button, the button door of account.show (factory mock 21; renders where an identity seam exists). */
       /* 28 = 27 + the footer's History button, the button door of history.show (design session 2026-09-07 chrome; cloud host only). */
       /* 30 = 28 + the footer's Wiki and Flows buttons, the button doors of the `wiki` and `flows` surface switches (the chrome is exactly Wiki, Dispatcher, Flows, Secrets, History, Account). */
-      "../tabs/ChromeBar.tsx": 30,
+      "../tabs/ChromeBar.tsx": 29,
       /* The live-process close question: confirm through tab.close.confirm. */
       "../tabs/TabBodies.tsx": 1
     })
@@ -504,7 +533,8 @@ describe("launch-law parity: every affordance is a command", () => {
     // binding naming a command the registry does not have is a lie both
     // gates can catch here.
     const app = files["../App.tsx"]
-    expect(app).toContain("data-flows={controller.commands.all()")
+    expect(app).toContain("const flows = controller.commands.all()")
+    expect(app).toContain('data-flows={flows.map((command) => command.name).join(" ")}')
     // Registry names from the registry source itself — the same file the
     // runtime registers — so a renamed command fails this gate.
     const registrySource = registrySources()
@@ -536,7 +566,7 @@ describe("launch-law parity: every affordance is a command", () => {
     // The chat-first contract: a pane's only exit is /chat. A pane wired to
     // close into another takeover would pass the registry gate above and still
     // break the contract, so the target itself is pinned.
-    const panes = ["../App.tsx", "../ConnectorsSurface.tsx"] as const
+    const panes = ["../WorldSurface.tsx", "../FlowsSurface.tsx", "../ConnectorsSurface.tsx"] as const
     for (const pane of panes) {
       const source = files[pane] ?? ""
       expect(source).toContain("closeCommand=\"chat\"")

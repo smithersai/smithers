@@ -238,6 +238,9 @@ export const violationsOf = (literal: ExtractedLiteral, vocabularies: Vocabulari
 
   if (
     literal.form === "string" && DOTTED_IDENTIFIER.test(literal.value) && !FILE_NAME.test(literal.value)
+    // Health checker IDs are supplied by pluggable monitors, not app commands.
+    // This does not exempt the same literal in a runCommand or data-flow.
+    && literal.propertyName !== "checkerId"
     && !vocabularies.dottedIdentifiers.has(literal.value)
     && !composedDotted(literal.value, vocabularies.composedDottedHeads, vocabularies.productStringLiterals)
   ) {

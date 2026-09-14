@@ -49,6 +49,7 @@ import * as flow from "./entries/flow"
 import * as frame from "./entries/frame"
 import * as github from "./entries/github"
 import * as history from "./entries/history"
+import * as issue from "./entries/issue"
 import * as issues from "./entries/issues"
 import * as linear from "./entries/linear"
 import * as notifications from "./entries/notifications"
@@ -428,7 +429,7 @@ export const NAMESPACES: ReadonlyArray<Namespace> = [
   runs.namespace,
   approvals.namespace,
   issues.namespace,
-  { id: "issue", label: "Issue flows", summary: "Research, reproduce, and implement an issue" },
+  issue.namespace,
   prs.namespace,
   linear.namespace,
   github.namespace,

@@ -52,7 +52,7 @@ describe("landed library contracts have no host workaround left", () => {
   })
 
   test("the Wiki file tree names its flow through FileTree's nodeProps", async () => {
-    const source = await readFile(new URL("./App.tsx", import.meta.url), "utf8")
+    const source = await readFile(new URL("./WorldSurface.tsx", import.meta.url), "utf8")
     expect(source).toContain('nodeProps={() => ({ "data-flow": "wiki.select" })}')
   })
 })
