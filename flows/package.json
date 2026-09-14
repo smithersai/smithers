@@ -4,6 +4,7 @@
   "type": "module",
   "scripts": {
     "check": "tsc -p tsconfig.json --noEmit",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "node --experimental-strip-types --test test/*.test.ts"
   },
   "dependencies": {

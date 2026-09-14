@@ -2,12 +2,23 @@ import { Flow as Declaration } from "@smthrs/core"
 import { Action, Flow, Interpreter } from "@smthrs/flow"
 import * as Executable from "@smthrs/registry/Executable"
 import { Effect, Layer, Schema } from "effect"
-import { git, sourceRevision, commitEnvironment } from "../tutorial2-background_flows-git.ts"
+import { git, GitError, sourceRevision, commitEnvironment } from "../tutorial2-background_flows-git.ts"
 
 const Input = Schema.Struct({ repo: Schema.NonEmptyString })
 export const HistoryReceipt = Schema.Struct({ repo: Schema.String, sourceHead: Schema.String, sourceTree: Schema.String,
   mythicalHead: Schema.String, notesHead: Schema.String, treeEqual: Schema.Boolean })
 export type HistoryReceipt = typeof HistoryReceipt.Type
+export class MissingSourceBookmark extends Schema.TaggedError<MissingSourceBookmark>()("librarian/MissingSourceBookmark", {
+  bookmark: Schema.String, message: Schema.String
+}) {}
+const HistoryError = Schema.Union([Schema.String, MissingSourceBookmark])
+const symbolicRef = async (root: string, name: string): Promise<string | null> => {
+  try { return await git(root, ["symbolic-ref", "-q", name]) } catch (cause) {
+    // Exit 1 without stderr means this ref is not symbolic (including detached HEAD).
+    if (cause instanceof GitError && cause.code === 1 && !cause.stderr.trim()) return null
+    throw cause
+  }
+}
 const ref = async (root: string, name: string) => {
   // Missing refs are absent; every other Git error is a failure.
   const result = await git(root, ["for-each-ref", "--format=%(objectname)", name])
@@ -15,7 +26,19 @@ const ref = async (root: string, name: string) => {
 }
 /** Bootstrap is create-only. Deterministic objects + atomic CAS make crash replay safe. */
 export const generateHistory = async (root: string, repo: string): Promise<HistoryReceipt> => {
+  let sourceRef = await symbolicRef(root, "HEAD")
+  if (sourceRef && !(await git(root, ["for-each-ref", "--format=%(refname)", sourceRef])).split("\n").includes(sourceRef)) {
+    const bookmark = sourceRef.replace(/^refs\/heads\//, "")
+    throw new MissingSourceBookmark({ bookmark, message: `Cannot create Mythical history: bookmark "${bookmark}" has no commit (HEAD is unborn).` })
+  }
   const { head, tree, date } = await sourceRevision(root)
+  if (!sourceRef) {
+    const branches = (await git(root, ["for-each-ref", "--points-at", "HEAD", "--format=%(refname)", "refs/heads/"])).split("\n").filter(Boolean)
+    // A clone records the repository's default bookmark in origin/HEAD when available.
+    const originHead = await symbolicRef(root, "refs/remotes/origin/HEAD")
+    const defaultRef = originHead?.replace(/^refs\/remotes\/origin\//, "refs/heads/")
+    sourceRef = branches.find(branch => branch === defaultRef) ?? branches[0] ?? null
+  }
   const environment = commitEnvironment(date)
   const mythicalHead = await git(root, ["commit-tree", tree], `Create Mythical history\n\nSource: ${head}\n`, environment)
   const note = `---\nversion: 1\nsourceHead: ${head}\nsourceTree: ${tree}\nconfidence: 1\nactor: smithers\n---\n\n## Tried\nCreated a repository snapshot at the captured source revision.\n\n## Evidence\nSource commit: ${head}\nSource and mythical tree: ${tree}\n\n## Folded\nNo outside merges were folded.\n\n## Superseded\nNo existing mythical history was replaced.\n`
@@ -26,24 +49,25 @@ export const generateHistory = async (root: string, repo: string): Promise<Histo
   const existingNotes = await ref(root, "refs/notes/mythical")
   if (existing === mythicalHead && existingNotes === notesHead) return { repo, sourceHead: head, sourceTree: tree, mythicalHead, notesHead, treeEqual: true }
   if (existing || existingNotes) throw new Error("Mythical history already exists. Bootstrap will not replace it.")
-  if (await git(root, ["rev-parse", "HEAD"]) !== head) throw new Error("HEAD moved. Retry against the new source revision.")
-  // Verify the source branch and create BOTH refs in one ref transaction.
-  const sourceRef = await git(root, ["symbolic-ref", "-q", "HEAD"])
   if (sourceRef === "refs/heads/mythical") throw new Error("Select the source branch before creating mythical history.")
-  await git(root, ["update-ref", "--stdin"], `start\nverify ${sourceRef} ${head}\ncreate refs/heads/mythical ${mythicalHead}\ncreate refs/notes/mythical ${notesHead}\nprepare\ncommit\n`)
+  // Detached HEAD needs no branch. Recheck it immediately before the atomic create;
+  // when a source branch exists, also verify that branch in the transaction.
+  const verify = sourceRef ? `verify ${sourceRef} ${head}\n` : ""
+  if (await git(root, ["rev-parse", "HEAD"]) !== head) throw new Error("HEAD moved. Retry against the new source revision.")
+  await git(root, ["update-ref", "--stdin"], `start\n${verify}create refs/heads/mythical ${mythicalHead}\ncreate refs/notes/mythical ${notesHead}\nprepare\ncommit\n`)
   const actual = await git(root, ["rev-parse", `${mythicalHead}^{tree}`])
   if (actual !== tree) throw new Error("The mythical history tree differs from the captured source tree.")
   return { repo, sourceHead: head, sourceTree: tree, mythicalHead, notesHead, treeEqual: true }
 }
-export const CreateHistory = Action.make("librarian/create-history", { payload: Executable.Invocation, success: HistoryReceipt, error: Schema.String })
-export const History = Flow.make("librarian/CreateHistory", { payload: Executable.Invocation, success: HistoryReceipt, error: Schema.String,
+export const CreateHistory = Action.make("librarian/create-history", { payload: Executable.Invocation, success: HistoryReceipt, error: HistoryError })
+export const History = Flow.make("librarian/CreateHistory", { payload: Executable.Invocation, success: HistoryReceipt, error: HistoryError,
   body: input => CreateHistory.call(input) })
 export const registration = (root: string, owningRepo?: string) => Layer.mergeAll(
   CreateHistory.toLayer(({ input }) => Effect.tryPromise({ try: async () => {
       const { repo } = Schema.decodeUnknownSync(Input)(input)
       if (owningRepo !== undefined && repo !== owningRepo) throw new Error("The requested repository does not own this workspace.")
       return generateHistory(root, repo)
-    }, catch: cause => String(cause) })),
+    }, catch: cause => cause instanceof MissingSourceBookmark ? cause : String(cause) })),
   Interpreter.layer(History)
 ).pipe(Layer.provideMerge(Action.layerImplementations))
 

@@ -84,6 +84,8 @@ test("standalone product gateway executes real librarian flows, publishes before
   assert.equal(published.sourceHead, sourceHead)
   assert.equal(published.pages.length, 2)
   assert.match(published.pages[1].body, /README.md/)
+  // Production workspaces can have a detached source commit after provisioning.
+  git(root, "checkout", "--detach", sourceHead)
   const history = await run("history")
   assert.equal(history.status, "completed", logs)
   assert.equal(git(root, "rev-parse", "mythical^{tree}"), git(root, "rev-parse", "main^{tree}"))

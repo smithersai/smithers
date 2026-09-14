@@ -1,12 +1,12 @@
 import { describe, expect, test } from "bun:test"
-import { mkdtemp, rm, writeFile } from "node:fs/promises"
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { generateWiki, Wiki, registration as wikiRegistration } from "./wiki/flow.ts"
-import { Effect, Layer } from "effect"
+import { Effect, Layer, Schema } from "effect"
 import * as NodeRuntime from "@smthrs/flows/BunRuntime"
 import { generateHistory, History, registration as historyRegistration } from "./history/flow.ts"
-import { git } from "./tutorial2-background_flows-git.ts"
+import { commitEnvironment, git } from "./tutorial2-background_flows-git.ts"
 
 const repository = async () => {
   const root = await mkdtemp(join(tmpdir(), "tutorial2-background_flows-"))
@@ -20,6 +20,79 @@ const repository = async () => {
 }
 
 describe("Librarian generation against real Git", () => {
+  test("Git errors name the command for silent failures and retain stderr", async () => {
+    const root = await repository()
+    try {
+      await git(root, ["checkout", "--detach"])
+      await expect(git(root, ["symbolic-ref", "-q", "HEAD"])).rejects.toThrow("git symbolic-ref -q HEAD exited 1")
+      await expect(git(root, ["rev-parse", "--verify", "refs/heads/missing^{commit}"])).rejects.toThrow(
+        /git rev-parse --verify refs\/heads\/missing\^\{commit\} exited 128: fatal:/)
+    } finally { await rm(root, { recursive: true, force: true }) }
+  }, 30000)
+  for (const shape of ["default branch", "other branch", "no branch"] as const) {
+    test(`detached HEAD with ${shape} creates both refs and preserves its source tree`, async () => {
+      const root = await repository()
+      try {
+        const head = await git(root, ["rev-parse", "HEAD"])
+        const tree = await git(root, ["rev-parse", "HEAD^{tree}"])
+        await git(root, ["checkout", "--detach", head])
+        await git(root, ["branch", "aaa", head])
+        if (shape === "default branch") {
+          await git(root, ["branch", "release", head])
+          await git(root, ["update-ref", "refs/remotes/origin/release", head])
+          await git(root, ["symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/release"])
+        } else {
+          await git(root, ["branch", "-D", "main"])
+          if (shape === "no branch") await git(root, ["branch", "-D", "aaa"])
+        }
+        // Git reports the refs actually locked by the transaction, including verifies.
+        await writeFile(join(root, ".git/hooks/reference-transaction"),
+          '#!/bin/sh\nif [ "$1" = prepared ]; then cat > .git/history-transaction; fi\n', { mode: 0o755 })
+        const receipt = await generateHistory(root, "will/demo")
+        expect(receipt.treeEqual).toBe(true)
+        expect(receipt.sourceHead).toBe(head)
+        expect(receipt.sourceTree).toBe(tree)
+        expect(await git(root, ["rev-parse", "refs/heads/mythical"])).toBe(receipt.mythicalHead)
+        expect(await git(root, ["rev-parse", "refs/notes/mythical"])).toBe(receipt.notesHead)
+        expect(await git(root, ["rev-parse", "mythical^{tree}"])).toBe(tree)
+        expect(await git(root, ["rev-parse", "HEAD"])).toBe(head)
+        expect(await readFile(join(root, ".git/HEAD"), "utf8")).toBe(`${head}\n`)
+        const transaction = await readFile(join(root, ".git/history-transaction"), "utf8")
+        const refs = transaction.trim().split("\n").map(line => line.split(" ")[2]).sort()
+        expect(refs).toEqual([
+          ...(shape === "default branch" ? ["refs/heads/release"] : shape === "other branch" ? ["refs/heads/aaa"] : []),
+          "refs/heads/mythical", "refs/notes/mythical"
+        ].sort())
+        expect(await generateHistory(root, "will/demo")).toEqual(receipt)
+      } finally { await rm(root, { recursive: true, force: true }) }
+    }, 30000)
+  }
+  test("an unborn HEAD fails with a typed error naming the missing bookmark, including through the engine", async () => {
+    const root = await mkdtemp(join(tmpdir(), "tutorial2-unborn-"))
+    try {
+      await git(root, ["init", "-b", "missing-release"])
+      // A clone can have remote commits while its own HEAD bookmark is absent.
+      const tree = await git(root, ["mktree"], "")
+      const head = await git(root, ["commit-tree", tree], "Remote source\n", commitEnvironment("2026-09-14T00:00:00Z"))
+      await git(root, ["update-ref", "refs/remotes/origin/release", head])
+      const checkFailure = (failure: unknown) => {
+        expect(failure).toMatchObject({ _tag: "librarian/MissingSourceBookmark", bookmark: "missing-release" })
+        expect((failure as Error).message).toContain('bookmark "missing-release"')
+        expect((failure as Error).message).toContain("no commit")
+        expect(Schema.is(History.errorSchema)(failure)).toBe(true)
+      }
+      const failure = await generateHistory(root, "will/demo").then(() => undefined, cause => cause)
+      checkFailure(failure)
+      const host = NodeRuntime.layerHost({ filename: join(root, "engine.db"), workspaceRoot: root,
+        owner: { hostId: "unborn-history" }, signals: [] }, historyRegistration(root))
+      const result = await Effect.runPromise(Effect.scoped(History.execute({ flow: "librarian/history", input: { repo: "will/demo" },
+        prompt: "", model: null, placement: null, placementOptions: null, capabilities: [], flows: [] },
+        { executionId: crypto.randomUUID() }).pipe(Effect.catch(cause => Effect.succeed(cause)), Effect.provide(host))))
+      checkFailure(result)
+      expect(await git(root, ["for-each-ref", "--format=%(refname)", "refs/heads/mythical", "refs/notes/mythical"])).toBe("")
+      expect(await git(root, ["symbolic-ref", "HEAD"])).toBe("refs/heads/missing-release")
+    } finally { await rm(root, { recursive: true, force: true }) }
+  }, 60000)
   test("linked Markdown pages have exact source revision provenance", async () => {
     const root = await repository()
     try {

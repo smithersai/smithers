@@ -1,4 +1,13 @@
 import { spawn } from "node:child_process"
+export class GitError extends Error {
+  readonly code: number | null
+  readonly stderr: string
+  constructor(args: readonly string[], code: number | null, stderr: string) {
+    super(`git ${args.join(" ")} exited ${code}${stderr.trim() ? `: ${stderr.trim()}` : ""}`)
+    this.code = code
+    this.stderr = stderr
+  }
+}
 /** Argument arrays only; never checks out, resets, stages, or touches the worktree. */
 export const git = (cwd: string, args: readonly string[], input?: string, env: Record<string, string> = {}): Promise<string> => new Promise((resolve, reject) => {
   const child = spawn("git", ["-C", cwd, ...args], { env: { ...process.env, ...env }, stdio: ["pipe", "pipe", "pipe"] })
@@ -6,7 +15,7 @@ export const git = (cwd: string, args: readonly string[], input?: string, env: R
   child.stdout.setEncoding("utf8").on("data", chunk => { out += chunk })
   child.stderr.setEncoding("utf8").on("data", chunk => { error += chunk })
   child.on("error", reject)
-  child.on("close", code => code === 0 ? resolve(out.replace(/\n$/, "")) : reject(new Error(error.trim() || `git exited ${code}`)))
+  child.on("close", code => code === 0 ? resolve(out.replace(/\n$/, "")) : reject(new GitError(args, code, error)))
   child.stdin.on("error", () => {})
   child.stdin.end(input)
 })
