@@ -23,7 +23,7 @@ const verify = async (id: string | undefined, options: { signedIn?: boolean; ins
 
 test("callback only returns source-only GitHub repositories with a verified matching installation, without prior import", async () => {
   const { response, seen } = await verify("42")
-  expect(await response.json()).toEqual({ repos: [{ fullName: "ada/hello", pushedAt: "2026-09-12T00:00:00Z" }] })
+  expect(await response.json()).toEqual({ repos: [{ fullName: "ada/hello", pushedAt: "2026-09-12T00:00:00Z", installationId: 42 }] })
   expect(seen).toEqual([
     { path: "/api/user/github-repos", auth: "Bearer ada-cloud-token" },
     { path: "/api/user/github-access/ada/hello", auth: "Bearer ada-cloud-token" }
@@ -52,4 +52,27 @@ test("an existing installation never bypasses the user's own repository grant", 
     code: "request_conflict",
     message: "Your GitHub credential cannot access this repository."
   })
+})
+
+test("verification includes later pages so a second installation and every repository reach the chooser", async () => {
+  const pages: string[] = []
+  const response = await Effect.runPromise(handleGitHubAppInstall(new Request("https://app.test/api/user/github-app/installations", {
+    headers: { cookie: "smithers_session=test" }
+  })).pipe(Effect.provide(configLayer({ IDENTITY_UPSTREAM_URL: "https://identity.test", IDENTITY_SERVICE_TOKEN: "svc", SMITHERS_CLOUD_API_BASE_URL: "https://cloud.test" })),
+  Effect.provide(transportLayer(async (input) => {
+    const url = new URL(input instanceof Request ? input.url : String(input))
+    if (url.pathname === "/api/identity/validate") return Response.json({ login: "ada", allowlisted: true, admin: false, scopes: [] })
+    if (url.pathname === "/api/identity/cloud-token") return Response.json({ found: true, token: "fixture-token" })
+    if (url.pathname === "/api/user/github-repos") {
+      pages.push(url.searchParams.get("page")!)
+      return Response.json(url.searchParams.get("page") === "1"
+        ? Array.from({ length: 100 }, (_, i) => ({ full_name: `ada/repo-${i}`, pushed_at: "2026-09-12T00:00:00Z" }))
+        : [{ full_name: "acme/api", pushed_at: "2026-09-01T00:00:00Z" }])
+    }
+    return Response.json({ verdict: "ok", installation_id: url.pathname.includes("/acme/") ? 99 : 42 })
+  }))))
+  const body = await response.json() as { repos: Array<{ fullName: string; installationId: number }> }
+  expect(pages).toEqual(["1", "2"])
+  expect(body.repos).toHaveLength(101)
+  expect(body.repos.at(-1)).toMatchObject({ fullName: "acme/api", installationId: 99 })
 })

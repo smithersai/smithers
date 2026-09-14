@@ -8,6 +8,9 @@ import { flow, RepoTarget } from "./Declare"
 import type { FlowEntry, Namespace } from "../registry"
 import type { CommandActions } from "./Declare"
 
+export const GitHubInstallationInput = Schema.Struct({ installationId: Schema.String })
+export const GitHubInstallationForm = { fields: { installationId: { label: "Installation", kind: "select" as const } } }
+
 /** The `github` namespace row: the slash tree lists it in registry.ts NAMESPACES order. */
 export const namespace: Namespace = { id: "github", label: "GitHub", summary: "The GitHub App and the mirror (ADR 0005)" }
 
@@ -38,6 +41,17 @@ export const githubFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> =
     requires: ["signed-in"],
     input: RepoTarget,
     handler: ({ repo }) => actions.githubOpenInstall(repo)
+  }),
+  flow({
+    name: "github.app.choose",
+    summary: "Choose a GitHub App installation",
+    hidden: true,
+    runtime: ["cloud"],
+    args: "<installationId>",
+    requires: ["signed-in"],
+    input: GitHubInstallationInput,
+    form: GitHubInstallationForm,
+    handler: ({ installationId }) => actions.githubChooseInstallation(installationId)
   }),
   flow({
     name: "github.reconcile",

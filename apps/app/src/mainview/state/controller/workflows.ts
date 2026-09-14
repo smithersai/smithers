@@ -44,7 +44,7 @@ export interface WorkflowController {
   /** The refusal a $0 balance answers a launch with, already in the transcript; undefined when work may start. */
   readonly workflowBalanceGuard: () => string | undefined
   readonly workflowTargetRepo: (preferred?: string) => { readonly repo: string } | { readonly error: string }
-  readonly provisionWorkspace: (repo: string, binding?: GatewayWorkspaceBinding) => Promise<true | string>
+  readonly provisionWorkspace: (repo: string, binding?: GatewayWorkspaceBinding, signal?: AbortSignal) => Promise<true | string>
   readonly upsertRunCard: (args: {
     readonly runId: string
     readonly repo: string
@@ -169,18 +169,20 @@ export const createWorkflowController = (
     return { description: input.trim() }
   }
 
-  const provisionWorkspaceImpl = async (repo: string, binding: GatewayWorkspaceBinding): Promise<true | string> => {
+  const provisionWorkspaceImpl = async (repo: string, binding: GatewayWorkspaceBinding, signal?: AbortSignal): Promise<true | string> => {
     // The Worker absorbs the upstream 409 and answers 200 `{ status: "provisioning" }`
     // while a workspace is mid-provision (apps/server/src/index.ts): poll that
     // body to a bounded deadline, never stampede. Any non-2xx here is a failure.
-    const deadline = Date.now() + RUN_POLL_MS * 36
+    const deadline = Date.now() + 180_000
     for (;;) {
+      if (signal?.aborted) return "Workspace preparation took longer than 3 minutes. Try again."
       let body: { status?: unknown; message?: unknown } | undefined
       try {
         const response = await boundedFetch(`${baseUrl}${WORKFLOW_PROVISION_PATH}`, {
           method: "POST",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ repo, ...binding })
+          body: JSON.stringify({ repo, ...binding }),
+          signal
         })
         if (!response.ok) {
           return await errorMessageOf(response, "The workspace couldn't be prepared.")
@@ -210,14 +212,14 @@ export const createWorkflowController = (
     }
   }
 
-  const provisionWorkspace = (repo: string, requestedBinding?: GatewayWorkspaceBinding): Promise<true | string> => {
+  const provisionWorkspace = (repo: string, requestedBinding?: GatewayWorkspaceBinding, signal?: AbortSignal): Promise<true | string> => {
     const binding = requestedBinding ?? gatewayBindingFor(store, repo)
     if ("error" in binding) return Promise.resolve(binding.error)
     return withToast(
       `flow.provision.${repo}.${binding.workspaceId ?? "legacy"}`,
       `Preparing your ${repo} workspace…`,
       "Workspace ready",
-      () => provisionWorkspaceImpl(repo, binding)
+      () => provisionWorkspaceImpl(repo, binding, signal)
     )
   }
 

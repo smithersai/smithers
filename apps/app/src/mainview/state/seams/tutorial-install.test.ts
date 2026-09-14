@@ -39,6 +39,7 @@ test("a verified install selects the most recently pushed repository and finishe
   expect(guide?.repo).toBe("acme/api")
   expect(guide?.said?.["github.app.installed"]).toBe("I can see acme/api.")
   expect(store.collections.repositories.has("acme/api")).toBe(true)
+  expect(store.collections.repositories.has("acme/web")).toBe(true)
   await store.dispose?.()
 })
 
@@ -120,4 +121,98 @@ test("returning with no imported repositories verifies a newly installed source 
   expect(store.session().guide?.completed).toContain("github.app.installed")
   expect(store.session().guide?.repo).toBe("ada/new-repo")
   await store.dispose?.()
+})
+
+const signIn = async (store: Awaited<ReturnType<typeof createAppStore>>) => {
+  await store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-in", login: "ada", allowlisted: true, admin: false, scopesPlain: null }).isPersisted.promise
+}
+test("the install pill verifies first and never opens GitHub for an existing installation", async () => {
+  const f = await setup(() => Response.json({ repos: [{ fullName: "ada/hello", installationId: 42 }] }))
+  await signIn(f.store)
+  const opened: string[] = []
+  const seam = createGitHubSeam(f.ctx, { openExternal: async url => { opened.push(url); return true } })
+  await seam.openInstall()
+  expect(f.requested).toEqual([INSTALL_VERIFY_PATH])
+  expect(opened).toEqual([])
+  expect(f.store.session().guide?.said?.["github.app.installed"]).toBe("I can see ada/hello.")
+})
+test("several installations render a schema-derived chooser; selecting re-verifies that installation", async () => {
+  const f = await setup(() => Response.json({ repos: [
+    { fullName: "ada/hello", installationId: 42 }, { fullName: "acme/api", installationId: 99 }
+  ] }))
+  await signIn(f.store)
+  await f.seam.settleInstallLesson()
+  expect(f.store.session().guide?.completed).not.toContain("github.app.installed")
+  const card = f.store.collections.cards.get("form-github.app.choose")
+  expect(card).toMatchObject({ kind: "flow-form", payload: { flow: "github.app.choose", fields: [
+    { name: "installationId", required: true, kind: "select", options: [
+      { value: "42", label: "ada" }, { value: "99", label: "acme" }
+    ] }
+  ] } })
+  Object.assign(f.ctx, { http: async (input: RequestInfo | URL) => { f.requested.push(String(input)); return Response.json({ repos: [{ fullName: "acme/api", installationId: 99 }] }) } })
+  await f.seam.chooseInstallation("99")
+  expect(f.requested.at(-1)).toBe(`${INSTALL_VERIFY_PATH}/99`)
+  expect(f.store.session().guide?.repo).toBe("acme/api")
+})
+test("a typed verification failure keeps the lesson retryable and never opens GitHub", async () => {
+  const f = await setup(() => Response.json({ code: "request_conflict", message: "Your GitHub credential cannot access this repository." }, { status: 409 }))
+  await signIn(f.store)
+  const opened: string[] = []
+  await createGitHubSeam(f.ctx, { openExternal: async url => { opened.push(url); return true } }).openInstall()
+  expect(opened).toEqual([])
+  expect(f.store.session().guide?.notice).toBe("Your GitHub credential cannot access this repository.")
+  expect(f.store.session().guide?.completed).not.toContain("github.app.installed")
+})
+
+test("malformed inventory is a verification failure, not permission to open GitHub", async () => {
+  const f = await setup(() => Response.json({ repos: [{ fullName: "not-a-repo" }] }))
+  await signIn(f.store)
+  const opened: string[] = []
+  await createGitHubSeam(f.ctx, { openExternal: async url => { opened.push(url); return true } }).openInstall()
+  expect(opened).toEqual([])
+  expect(f.store.session().guide?.notice).toContain("unreadable")
+})
+
+test("returning focus after GitHub installation re-verifies and settles the same lesson", async () => {
+  let installed = false
+  const f = await setup(() => Response.json({ repos: installed ? [{ fullName: "ada/hello", installationId: 42 }] : [] }))
+  await signIn(f.store)
+  const original = Object.getOwnPropertyDescriptor(globalThis, "window")
+  const focusTarget = new EventTarget()
+  Object.defineProperty(globalThis, "window", { configurable: true, value: focusTarget })
+  try {
+    const seam = createGitHubSeam(f.ctx, { openExternal: async () => { installed = true; return true } })
+    await seam.openInstall()
+    expect(f.store.session().guide?.completed).not.toContain("github.app.installed")
+    focusTarget.dispatchEvent(new Event("focus"))
+    await settle()
+    expect(f.requested).toEqual([INSTALL_VERIFY_PATH, INSTALL_VERIFY_PATH])
+    expect(f.store.session().guide?.said?.["github.app.installed"]).toBe("I can see ada/hello.")
+  } finally {
+    if (original) Object.defineProperty(globalThis, "window", original)
+    else Reflect.deleteProperty(globalThis, "window")
+  }
+})
+
+test("a chooser verification failure is returned to the form so submission remains retryable", async () => {
+  const f = await setup(() => Response.json({ code: "request_conflict", message: "Your GitHub credential cannot access this repository." }, { status: 409 }))
+  await signIn(f.store)
+  expect(await f.seam.chooseInstallation("42")).toBe("Your GitHub credential cannot access this repository.")
+  expect(f.store.session().guide?.completed).not.toContain("github.app.installed")
+  await f.store.dispose?.()
+})
+
+test("returning to the install lesson re-verifies after an earlier empty check", async () => {
+  let installed = false
+  const f = await setup(() => Response.json({ repos: installed ? [{ fullName: "ada/hello", installationId: 42 }] : [] }))
+  await signIn(f.store)
+  await f.seam.settleInstallLesson()
+  await f.store.dispatch({ type: "guide.changed", actor: "user", guide: { ...f.store.session().guide!, step: 10 } }).isPersisted.promise
+  await f.seam.settleInstallLesson()
+  installed = true
+  await f.store.dispatch({ type: "guide.changed", actor: "user", guide: { ...f.store.session().guide!, step: 11 } }).isPersisted.promise
+  await f.seam.settleInstallLesson()
+  expect(f.requested).toEqual([INSTALL_VERIFY_PATH, INSTALL_VERIFY_PATH])
+  expect(f.store.session().guide?.said?.["github.app.installed"]).toBe("I can see ada/hello.")
+  await f.store.dispose?.()
 })

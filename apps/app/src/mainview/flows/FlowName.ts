@@ -137,6 +137,7 @@ export const FLOW_NAMES = [
   "frame.forward",
   "github.app",
   "github.app.open",
+  "github.app.choose",
   "github.mirror-sync",
   "github.mirror.retry-ref",
   "github.reconcile",

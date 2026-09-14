@@ -536,3 +536,24 @@ describe("THE FORM LAW — every flow's form submits its own named payload", () 
     expect(payloadFor("change.diff", submission?.display)).toEqual({ payload: { changeId: "c1", from: "1" } })
   })
 })
+
+test("GitHub installation choice has the same missing-input form at slash and agent doors", async () => {
+  const { store, controller } = await boot()
+  for (const [repo, installationId] of [["ada/hello", 42], ["ada/second", 42], ["acme/api", 99]] as const) {
+    await store.dispatch({ type: "github.app-status.loaded", actor: "system", status: {
+      repo, installationId, installed: true, configured: true, installUrl: null, rateLimit: null
+    } }).isPersisted.promise
+  }
+  const slash = await controller.commands.run("github.app.choose")
+  expect(slash.status).toBe("form")
+  const fields = formOf(store, "github.app.choose")?.payload.fields.map(field => ({
+    ...field, options: [...(field.options ?? [])].sort((a, b) => a.value.localeCompare(b.value))
+  }))
+  expect(fields).toEqual([
+    { name: "installationId", label: "Installation", kind: "select", required: true,
+      options: [{ value: "42", label: "ada" }, { value: "99", label: "acme" }] }
+  ])
+  expect(await execute(controller, "github.app.choose")).toBe("rendered a form for installationId: ask the user to fill it in")
+  expect(formOf(store, "github.app.choose")?.payload.via).toBe("agent")
+  await controller.dispose()
+})

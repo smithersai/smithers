@@ -13,7 +13,7 @@ export const handleGitHubAppInstall = (request: Request, installationId?: string
     const url = new URL(path, request.url)
     return handlePlatformProxy(new Request(url, { headers: request.headers }), url)
   }
-  const repos: Array<{ fullName: string; pushedAt: string }> = []
+  const repos: Array<{ fullName: string; pushedAt: string; installationId: number }> = []
   const seen = new Set<string>()
   const blockers: string[] = []
   for (let page = 1; page <= 10; page++) {
@@ -46,13 +46,12 @@ export const handleGitHubAppInstall = (request: Request, installationId?: string
       if (app.verdict === "ok" &&
         typeof app.installation_id === "number" && Number.isSafeInteger(app.installation_id) && app.installation_id > 0 &&
         (installationId === undefined || String(app.installation_id) === installationId)) {
-        repos.push({ fullName: status.name, pushedAt: status.pushedAt })
+        repos.push({ fullName: status.name, pushedAt: status.pushedAt, installationId: app.installation_id })
       }
     }
-    // Live inventory is sorted by most recently pushed. Once a page has a
-    // verified candidate, later pages cannot improve the tutorial choice.
-    if (repos.length > 0) return json(200, { repos })
-    if (rows.length < 100) return blockers.length > 0 ? refuse("request_conflict", blockers[0] ?? "") : json(200, { repos })
+    // Read every page: another installation (and the rest of the chip menu)
+    // may be on a later page even after the active repository is known.
+    if (rows.length < 100) return repos.length === 0 && blockers.length > 0 ? refuse("request_conflict", blockers[0] ?? "") : json(200, { repos })
   }
   return refuse(
     "service_temporarily_unavailable",

@@ -1,3 +1,5 @@
+import { formFieldsFor } from "../../flows/FlowForms"
+import { GitHubInstallationInput, GitHubInstallationForm } from "../../flows/entries/github"
 import { lessonCompletion } from "../../onboarding/completion"
 import { GUIDE_STAGES } from "../../onboarding/lessons"
 import { actorSharedState } from "../ActorBindings"
@@ -86,7 +88,8 @@ export interface GitHubSeam {
    * Answers whether the search string carried a return.
    */
   readonly handleInstallReturn: (search: string) => boolean
-  /** Finish the tutorial's install lesson from what Smithers already sees (exactly one repository). */
+  readonly chooseInstallation: (installationId: string) => Promise<string | void>
+  /** Finish the tutorial's install lesson from one verified installation. */
   readonly settleInstallLesson: () => Promise<void>
   /** `github.reconcile [repo]`: re-derive the wiring, then re-read the status. */
   readonly reconcile: (repo?: string) => Promise<string | void | { readonly value: string }>
@@ -354,7 +357,7 @@ export const createGitHubSeam = (ctx: SeamContext, deps: GitHubSeamDeps = {}): G
     return guide !== undefined && stage?.kind === "do" && stage.completion === INSTALL_SIGNAL && !guide.completed?.includes(INSTALL_SIGNAL)
   }
   /** A line under the install lesson: why it could not finish, in words the user can act on. */
-  const installNotice = async (text: string): Promise<void> => {
+  const installNotice = async (text: string | undefined): Promise<void> => {
     const guide = ctx.store.session().guide
     if (guide === undefined || !installLesson()) return
     await ctx.dispatch({ type: "guide.changed", actor: "system", guide: { ...guide, notice: text } }).isPersisted.promise
@@ -367,17 +370,20 @@ export const createGitHubSeam = (ctx: SeamContext, deps: GitHubSeamDeps = {}): G
    */
   const adoption = actorSharedState(ctx, "install-adoption", () => ({ current: undefined as Promise<void> | undefined }))
   /** Select the installed repository and finish the lesson with it. */
-  const adoptInstalled = (repo: string): Promise<void> => {
+  const adoptInstalled = (repo: string, repos: ReadonlyArray<{ fullName: string }>): Promise<void> => {
     if (adoption.current !== undefined) return adoption.current
-    const run = adopt(repo).finally(() => { adoption.current = undefined })
+    const run = adopt(repo, repos).finally(() => { adoption.current = undefined })
     adoption.current = run
     return run
   }
-  const adopt = async (repo: string): Promise<void> => {
-    const [org = "", name = ""] = repo.split("/")
-    if (!ctx.store.collections.repositories.has(repo)) {
+  const adopt = async (repo: string, repos: ReadonlyArray<{ fullName: string }>): Promise<void> => {
+    const missing = repos.filter(row => !ctx.store.collections.repositories.has(row.fullName))
+    if (missing.length > 0) {
       await ctx.dispatch({ type: "repositories.loaded", actor: "system", repositories: [
-        ...ctx.store.collections.repositories.values(), { id: repo, org, name, ownerKind: "user", head: null }
+        ...ctx.store.collections.repositories.values(), ...missing.map(row => {
+          const [org = "", name = ""] = row.fullName.split("/")
+          return { id: row.fullName, org, name, ownerKind: "user" as const, head: null }
+        })
       ] }).isPersisted.promise
     }
     if (activeRepositoryId(ctx.store) !== repo) await ctx.dispatch({ type: "repo.selected", actor: "system", id: repo }).isPersisted.promise
@@ -385,7 +391,7 @@ export const createGitHubSeam = (ctx: SeamContext, deps: GitHubSeamDeps = {}): G
     const next = lessonCompletion(guide, INSTALL_SIGNAL, `I can see ${repo}.`)
     if (next !== undefined) await ctx.dispatch({ type: "guide.changed", actor: "system", guide: { ...next, repo } }).isPersisted.promise
   }
-  const verifyInstall = async (installationId?: string): Promise<void> => {
+  const verifyInstall = async (installationId?: string): Promise<"empty" | void> => {
     if (!installLesson()) return
     const playthrough = ctx.store.session().guide?.playthrough ?? 0
     const login = ctx.store.collections.identitySessions.get("identity")?.login
@@ -395,6 +401,7 @@ export const createGitHubSeam = (ctx: SeamContext, deps: GitHubSeamDeps = {}): G
     try {
       response = await ctx.http(`${ctx.baseUrl}${INSTALL_VERIFY_PATH}${installationId === undefined ? "" : `/${encodeURIComponent(installationId)}`}`)
     } catch (error) {
+      if (!stillCurrent()) return
       return installNotice(`Nothing came back from GitHub that I could confirm (${error instanceof Error ? error.message : String(error)}). Try again?`)
     }
     if (!stillCurrent()) { await response.body?.cancel(); return }
@@ -407,16 +414,48 @@ export const createGitHubSeam = (ctx: SeamContext, deps: GitHubSeamDeps = {}): G
       return
     }
     const body: unknown = await response.json().catch(() => null)
+    if (!stillCurrent()) return
+    if (!isRecord(body) || (!Array.isArray(body.repos) && typeof body.repo !== "string")) return installNotice("Smithers Cloud returned an unreadable installation list. Try again.")
     const rows = isRecord(body) && Array.isArray(body.repos) ? body.repos : isRecord(body) && typeof body.repo === "string" ? [{ fullName: body.repo }] : []
     const repos = rows.flatMap((row) => {
       if (!isRecord(row)) return []
       const fullName = str(row.fullName) ?? str(row.full_name)
-      return fullName === null ? [] : [{ fullName, pushedAt: str(row.pushedAt) ?? str(row.pushed_at) ?? "" }]
+      return fullName === null || !/^[a-zA-Z0-9_.-]+\/[a-zA-Z0-9_.-]+$/.test(fullName) ? [] : [{ fullName, installationId: intOrNull(row.installationId) ?? intOrNull(row.installation_id), pushedAt: str(row.pushedAt) ?? str(row.pushed_at) ?? "" }]
     })
-    // Several picked: the most recently pushed becomes active (SCRIPT v4 beat 11).
+    if (repos.length !== rows.length) return installNotice("Smithers Cloud returned an unreadable installation list. Try again.")
+    const installations = new Map<number, string>()
+    for (const repo of repos) if (repo.installationId !== null) installations.set(repo.installationId, repo.fullName.split("/")[0]!)
+    for (const repo of repos) {
+      if (repo.installationId !== null) dispatchStatus(repo.fullName, {
+        installed: true, configured: true, installationId: repo.installationId, installUrl: null, rateLimit: null
+      })
+    }
+    if (installationId === undefined && installations.size > 1) {
+      const id = "form-github.app.choose"
+      const existing = ctx.store.collections.cards.get(id)
+      await installNotice(undefined)
+      await ctx.dispatch({ type: "card.upsert", actor: ctx.actor(), card: {
+        id, kind: "flow-form", title: "Choose a GitHub App installation", status: "active",
+        createdAt: existing?.createdAt ?? Date.now(), ordinal: existing?.ordinal ?? ctx.nextOrdinal(),
+        payload: { flow: "github.app.choose", via: ctx.actor() === "smithers" ? "agent" : "user", given: {}, draft: {},
+          fields: formFieldsFor(GitHubInstallationInput, GitHubInstallationForm).map(field => ({ ...field,
+            options: [...installations].map(([id, owner]) => ({ value: String(id), label: owner })) })) }
+      } }).isPersisted.promise
+      return
+    }
+    // Several repositories in ONE installation: newest active, the rest in the chip menu.
     const chosen = [...repos].sort((a, b) => b.pushedAt.localeCompare(a.pushedAt))[0]
-    if (chosen === undefined) return installNotice("No installed repository is visible yet. Select a repository on GitHub, then return here to check again.")
-    if (stillCurrent()) await adoptInstalled(chosen.fullName)
+    if (chosen === undefined) {
+      await installNotice("No installed repository is visible yet. Select a repository on GitHub, then return here to check again.")
+      return "empty"
+    }
+    if (stillCurrent()) await adoptInstalled(chosen.fullName, repos)
+  }
+  const chooseInstallation: GitHubSeam["chooseInstallation"] = async installationId => {
+    if (!/^\d+$/.test(installationId)) return "Choose a GitHub App installation from the list."
+    await verifyInstall(installationId)
+    // A failed verification must keep the shared form retryable, not mark it submitted.
+    if (installLesson()) return ctx.store.session().guide?.notice
   }
   const handleInstallReturn: GitHubSeam["handleInstallReturn"] = (search) => {
     const params = new URLSearchParams(search)
@@ -433,7 +472,8 @@ export const createGitHubSeam = (ctx: SeamContext, deps: GitHubSeamDeps = {}): G
   }
   const installChecks = actorSharedState(ctx, "install-checks", () => ({ current: "" }))
   const settleInstallLesson: GitHubSeam["settleInstallLesson"] = async () => {
-    if (!installLesson() || adoption.current !== undefined) return
+    if (!installLesson()) { installChecks.current = ""; return }
+    if (adoption.current !== undefined) return
     // Inventory membership alone does not prove that this App is installed.
     const repos = [...ctx.store.collections.repositories.values()].filter((repository) => repository.catalog !== true)
     if (ctx.store.collections.identitySessions.get("identity")?.state !== "signed-in") return
@@ -445,6 +485,7 @@ export const createGitHubSeam = (ctx: SeamContext, deps: GitHubSeamDeps = {}): G
   /** GitHub's own chooser: the tutorial's install lesson, where the user has no repository yet. */
   const openChooser = async (): Promise<string | void> => {
     if (ctx.store.collections.identitySessions.get("identity")?.state !== "signed-in") return "Log in to GitHub first; the install page asks as you."
+    if (await verifyInstall() !== "empty" || !installLesson()) return
     // `onboarding:<playthrough>`: GitHub echoes it back; a colon keeps it out of the app's id-prefix vocabulary (conformance/LiteralPin).
     const url = `${GITHUB_APP_INSTALL_URL}?state=${encodeURIComponent(`onboarding:${ctx.store.session().guide?.playthrough ?? 0}`)}`
     // Recheck the verified inventory when the person returns to this tab,
@@ -720,5 +761,5 @@ export const createGitHubSeam = (ctx: SeamContext, deps: GitHubSeamDeps = {}): G
     })
   }
 
-  return { app, openInstall, handleInstallReturn, settleInstallLesson, reconcile, mirrorSync, retryMirrorRef }
+  return { app, openInstall, chooseInstallation, handleInstallReturn, settleInstallLesson, reconcile, mirrorSync, retryMirrorRef }
 }

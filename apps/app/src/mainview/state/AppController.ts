@@ -527,6 +527,7 @@ export interface AppController extends TutorialChangeController, IssueFlowsContr
   readonly showMoreSyncOps: LinearSeam["showMoreOps"]
   readonly loadOlderSyncOps: LinearSeam["loadOlderOps"]
   readonly githubApp: GitHubSeam["app"]
+  readonly githubChooseInstallation: GitHubSeam["chooseInstallation"]
   readonly githubOpenInstall: GitHubSeam["openInstall"]
   readonly githubReconcile: GitHubSeam["reconcile"]
   readonly retryMirrorRef: GitHubSeam["retryMirrorRef"]
@@ -815,7 +816,8 @@ export const createAppController = (
   }))
   /* Onboarding SCRIPT v4 beat 11: a reader whose repository Smithers already sees finishes the install lesson on arrival. */
   const settleInstall = () => queueMicrotask(() => { void gitHubSeam.settleInstallLesson() })
-  const installLessonSubscriptions = [store.collections.sessions.subscribeChanges(settleInstall), store.collections.repositories.subscribeChanges(settleInstall)]
+  const installLessonSubscriptions = [store.collections.sessions.subscribeChanges(settleInstall), store.collections.repositories.subscribeChanges(settleInstall), store.collections.identitySessions.subscribeChanges(settleInstall)]
+  settleInstall()
   ctx.onDispose(() => { for (const subscription of installLessonSubscriptions) subscription.unsubscribe() })
   const linearSeam = actors.pair(seamCtx, (context) => createLinearSeam(context, {
     ...(services.openExternal === undefined ? {} : { openExternal: services.openExternal })
@@ -1069,6 +1071,7 @@ export const createAppController = (
   const { listTriggers, registerTrigger } = triggersSeam
   const runs = actors.pair(ctx, (context, select) => createRunsController(context, store.nextOrdinal, select(workflowController), undefined, select(renderFlowForm)))
   const librarianRuns = actors.pair(ctx, (context, select) => createLibrarianRunsController(context, select(workflowController)))
+  void librarianRuns.recoverLaunches()
   /*
    * Stage 6 completes when both generated runs have actually been read: the
    * inspection is recorded only after the existing run read rendered its monitor.
@@ -1655,6 +1658,7 @@ export const createAppController = (
     showMoreSyncOps: linearSeam.showMoreOps,
     loadOlderSyncOps: linearSeam.loadOlderOps,
     githubApp: gitHubSeam.app,
+    githubChooseInstallation: gitHubSeam.chooseInstallation,
     githubOpenInstall: gitHubSeam.openInstall,
     githubReconcile: gitHubSeam.reconcile,
     retryMirrorRef: gitHubSeam.retryMirrorRef,

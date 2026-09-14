@@ -893,6 +893,7 @@ const GRAMMAR: Readonly<Record<string, Grammar>> = {
   "repos.app": (args) => repoOnly("repos.app", args),
   /* Lane sync (ADR 0005): Linear and GitHub sync as actions. */
   "github.app": (args) => repoOnly("github.app", args),
+  "github.app.choose": (args) => required("installationId", args, "Choose a GitHub App installation."),
   "github.app.open": (args) => repoOnly("github.app.open", args),
   "github.reconcile": (args) => repoOnly("github.reconcile", args),
   "github.mirror-sync": (args) => repoOnly("github.mirror-sync", args),

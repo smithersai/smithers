@@ -262,6 +262,13 @@ export const createFormsController = (ctx: ControllerContext, deps: FormsControl
             .filter(card => card.kind === "run-trace")
             .map(card => ({ value: card.kind === "run-trace" ? card.payload.runId : "", label: card.title })) }
         : field)
+    if (request.name === "github.app.choose") {
+      const installed = new Map<number, string>()
+      for (const row of collections.githubAppStatuses.values()) {
+        if (row.installed && row.configured && row.installationId !== null) installed.set(row.installationId, row.repo.split("/")[0]!)
+      }
+      fields = fields.map(field => ({ ...field, options: [...installed].map(([id, owner]) => ({ value: String(id), label: owner })) }))
+    }
     if (fields.length === 0) return undefined
     /* A line the grammar parses whole prefills exactly (agent.new's edit prefill); a line it refuses prefills what it can. */
     const parsed = payloadFor(

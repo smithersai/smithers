@@ -663,6 +663,15 @@ export const GuideSchema = z.object({
   repo: z.string().optional(),
   pick: z.array(z.number().int().positive()).optional(),
   notice: z.string().optional(),
+  /** Launch intent is durable before provisioning; a reload can report an interrupted attempt. */
+  librarianLaunches: z.array(z.object({
+    kind: z.enum(["wiki", "history"]),
+    repo: z.string(),
+    scope: z.string(),
+    phase: z.enum(["preparing", "launching", "started", "failed"]),
+    startedAt: z.number(),
+    reason: z.string().optional()
+  })).optional(),
   completed: z.array(z.string()).optional(),
   autoPaused: z.boolean().optional(),
   responseId: z.string().uuid().optional(),

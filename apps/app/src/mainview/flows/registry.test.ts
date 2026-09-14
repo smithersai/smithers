@@ -715,6 +715,7 @@ describe("command registry bindings", () => {
       // Lane sync: Linear and GitHub sync as actions (ADR 0005).
       "github.app",
       "github.app.open",
+      "github.app.choose",
       "github.reconcile",
       "github.mirror-sync",
       "github.mirror.retry-ref",

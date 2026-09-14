@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test"
+import { stubTutorialHost } from "./tutorial-stubs"
 
 // Contract fixtures exercise real boot, slash, handoff, persistence and guide
 // producers. GitHub itself is external; no generic tutorial signal is injected.
@@ -71,3 +72,69 @@ for (const host of ["local", "cloud"] as const) {
     })
   }
 }
+
+test("already installed: boot selects the latest pushed repository and completes without opening GitHub", async ({ page, baseURL }) => {
+  const host = await stubTutorialHost(page, baseURL!)
+  host.signedIn = true
+  host.installed = true
+  await page.route("**/api/user/github-app/installations**", route => route.fulfill({ json: { repos: [
+    { fullName: "acme/older", pushedAt: "2026-08-01T00:00:00Z", installationId: 42 },
+    { fullName: "acme/api", pushedAt: "2026-09-01T00:00:00Z", installationId: 42 }
+  ] } }))
+  await page.goto("/")
+  await skipPractice(page)
+  await expect(page.locator(".guide-shell")).toHaveAttribute("data-stage", "12")
+  await expect(page.getByText("I can see acme/api.", { exact: true })).toBeVisible()
+  expect(page.context().pages()).toHaveLength(1)
+  expect(host.external()).toEqual([])
+  await page.reload()
+  await expect(page.locator(".guide-shell")).toHaveAttribute("data-stage", "12")
+})
+
+test("several installations: the embedded chooser is keyboard operable and verifies the selection", async ({ page, baseURL }) => {
+  const host = await stubTutorialHost(page, baseURL!)
+  host.signedIn = true
+  const verified: string[] = []
+  await page.route("**/api/user/github-app/installations**", route => {
+    const path = new URL(route.request().url()).pathname
+    verified.push(path)
+    const repos = [{ fullName: "ada/hello", installationId: 42 }, { fullName: "acme/api", installationId: 99 }]
+    return route.fulfill({ json: { repos: path.endsWith("/99") ? [repos[1]] : repos } })
+  })
+  await page.goto("/")
+  await skipPractice(page)
+  await expect(page.locator(".guide-shell")).toHaveAttribute("data-stage", "11")
+  const chooser = page.locator("[data-tutorial-cards]")
+  const select = chooser.getByTestId("flow-form-installationId")
+  await expect(select).toBeVisible()
+  await select.focus()
+  await page.keyboard.press("a")
+  await page.keyboard.press("ArrowDown")
+  await page.keyboard.press("Enter")
+  // Native select selection is asserted before submitting through the keyboard door.
+  await expect(select).toHaveValue("99")
+  await chooser.getByRole("button", { name: /submit/i }).focus()
+  await page.keyboard.press("Enter")
+  await expect(page.locator(".guide-shell")).toHaveAttribute("data-stage", "12")
+  expect(verified).toContain("/api/user/github-app/installations/99")
+  await expect(page.getByText("I can see acme/api.", { exact: true })).toBeVisible()
+})
+
+test("verification failure keeps Install and Later, and the pill rechecks without opening GitHub", async ({ page, baseURL }) => {
+  const host = await stubTutorialHost(page, baseURL!)
+  host.signedIn = true
+  let reads = 0
+  await page.route("**/api/user/github-app/installations**", route => {
+    reads++
+    return route.fulfill({ status: 409, json: { code: "request_conflict", message: "Your GitHub credential cannot access this repository." } })
+  })
+  await page.goto("/")
+  await skipPractice(page)
+  await expect(page.locator('[data-message-step="11"] [data-notice]')).toHaveText("Your GitHub credential cannot access this repository.")
+  const before = reads
+  await page.keyboard.press("a")
+  await expect.poll(() => reads).toBeGreaterThan(before)
+  await expect(page.locator('.guide-actions [data-flow="github.app.open"]')).toBeVisible()
+  await expect(page.locator('.guide-actions [data-secondary]')).toContainText("Later")
+  expect(page.context().pages()).toHaveLength(1)
+})

@@ -3,7 +3,7 @@ import { createAppStore } from "../AppStore"
 import { initialGuide, type Card } from "../AppState"
 import type { ControllerContext } from "./context"
 import type { WorkflowController } from "./workflows"
-import { createLibrarianRunsController, LIBRARIAN_SIGNAL, type LibrarianRunHost } from "./librarianRuns"
+import { createLibrarianRunsController, LIBRARIAN_SIGNAL, librarianLaunchTiming, type LibrarianRunHost } from "./librarianRuns"
 
 const fixture = async () => {
   const data = new Map<string, string>()
@@ -82,4 +82,65 @@ describe("Librarian background runs (onboarding beat 12)", () => {
     for (const runId of f.launches) await f.controller.inspectLibrarianRun(runId)
     expect(f.store.collections.cards.get(id)).toMatchObject({ payload: { phase: "failed", error: "Git refused the update." } })
   })
+})
+
+test("preparation has a deadline, persists its failure, and ignores a late ready answer", async () => {
+  const f = await fixture()
+  let ready!: (value: true) => void
+  const host = { ...f.runs, provisionWorkspace: () => new Promise<true>(resolve => { ready = resolve }) }
+  const previous = librarianLaunchTiming.deadlineMs
+  librarianLaunchTiming.deadlineMs = 25
+  try {
+    const controller = createLibrarianRunsController(f.ctx, host)
+    const result = await controller.createWiki("will/demo")
+    expect(result).toContain("3 minutes")
+    expect(f.store.session().guide?.notice).toContain("Create Wiki didn't start:")
+    expect(f.store.session().guide?.completed).not.toContain(LIBRARIAN_SIGNAL)
+    ready(true)
+    await new Promise(resolve => setTimeout(resolve, 0))
+    expect(f.launches).toEqual([])
+    const reloaded = await createAppStore({ kind: "localStorage", storage: f.storage })
+    expect(reloaded.session().guide?.notice).toContain("3 minutes")
+  } finally { librarianLaunchTiming.deadlineMs = previous }
+})
+test("reload during preparation reports the interrupted launch instead of losing it", async () => {
+  const f = await fixture()
+  let ready!: (value: true) => void
+  const host = { ...f.runs, provisionWorkspace: () => new Promise<true>(resolve => { ready = resolve }) }
+  const controller = createLibrarianRunsController(f.ctx, host)
+  const running = controller.createWiki("will/demo")
+  await new Promise(resolve => setTimeout(resolve, 10))
+  expect(f.store.session().guide?.notice).toContain("Preparing your will/demo workspace…")
+  const reloaded = await createAppStore({ kind: "localStorage", storage: f.storage })
+  const resumed = createLibrarianRunsController({ ...f.ctx, store: reloaded }, host)
+  await resumed.recoverLaunches()
+  expect(reloaded.session().guide?.notice).toContain("Create Wiki didn't start: Workspace preparation was interrupted by a reload. Try again.")
+  expect(f.launches).toEqual([])
+  ready(true)
+  await running
+})
+test("a thrown provision failure is visible and a retry can launch", async () => {
+  const f = await fixture()
+  const host = { ...f.runs, provisionWorkspace: async () => { throw new Error("Smithers Cloud is unavailable.") } }
+  await createLibrarianRunsController(f.ctx, host).createWiki("will/demo")
+  expect(f.store.session().guide?.notice).toBe("Create Wiki didn't start: Smithers Cloud is unavailable.")
+  await f.controller.createWiki("will/demo")
+  expect(f.launches).toHaveLength(1)
+  expect(f.store.session().guide?.notice ?? "").not.toContain("didn't start")
+})
+
+test("sign-out clears a preparing launch and a late answer cannot restore it", async () => {
+  const f = await fixture()
+  await f.store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-in", login: "will", allowlisted: true, admin: false, scopesPlain: null }).isPersisted.promise
+  let ready!: (value: true) => void
+  const host = { ...f.runs, provisionWorkspace: () => new Promise<true>(resolve => { ready = resolve }) }
+  const running = createLibrarianRunsController(f.ctx, host).createWiki("will/demo")
+  await new Promise(resolve => setTimeout(resolve, 10))
+  await f.store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-out", login: null, allowlisted: false, admin: false, scopesPlain: null }).isPersisted.promise
+  expect(f.store.session().guide?.librarianLaunches ?? []).toEqual([])
+  expect(f.store.session().guide?.notice).toBeUndefined()
+  ready(true)
+  await running
+  expect(f.store.session().guide?.librarianLaunches ?? []).toEqual([])
+  expect(f.launches).toEqual([])
 })

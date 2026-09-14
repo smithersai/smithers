@@ -1049,6 +1049,10 @@ const forgetAccountState = (collections: StoredCollections): void => {
       draft.selectedWorldDocumentId = [...collections.worldDocuments.values()][0]?.id ?? null
     }
     draft.activeRepoKey = null
+    if (draft.guide?.librarianLaunches !== undefined) {
+      delete draft.guide.librarianLaunches
+      delete draft.guide.notice
+    }
     draft.maximizedCardId = null
     draft.activeFrameId = rootFrameId(branchId)
   })
