@@ -2,18 +2,19 @@ import type { AppBootstrap } from "@smthrs/rpc/AppBootstrap"
 import type { Harness, LocalRepositoryConnector, Message, Repo, Suggestion } from "./state/AppState"
 
 /*
- * The opening entry of a session: "Smithers initialized successfully", derived
+ * The host opening entry: "Smithers initialized successfully", derived
  * (never stored) from what the host actually registered — the bootstrap
  * contract, the flow registry, the harness snapshot, the repositories — and
  * the one next step, selecting a repository. Same discipline as the derived
  * auth message in App.tsx: a projection of live collections, gone the moment
- * the state it reads changes.
+ * the state it reads changes. Cloud repository pages use their Welcome actions
+ * instead; App.tsx suppresses this diagnostic entry from the selected repo onward.
  */
 
 export const INIT_MESSAGE_ID = "init-state"
 /** The one-word name, pinned: a live model once introduced itself as "Smith Smithers". */
 export const SMITHERS_NAME = "Smithers"
-/** The first line of every session: the agent names itself before it reports anything. */
+/** The greeting for the host diagnostic entry, when that entry is shown. */
 export const INIT_GREETING = `${SMITHERS_NAME} here.`
 export const INIT_TITLE = "Smithers initialized successfully"
 export const SELECT_REPO_LABEL = "Select a repo"

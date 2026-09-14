@@ -37,6 +37,7 @@ describe("per-turn runtime context", () => {
     const requests: StartAgentTurnRequest[] = []
     const controller = createAppController(store, unavailableRepositories, recordingAgent(requests))
 
+    store.dispatch({ type: "guide.changed", actor: "user", guide: { ...initialGuide(), finished: true } })
     controller.send("first turn")
     await settled()
     controller.showConnectors()

@@ -61,6 +61,8 @@ const silentAgent: AgentPort = {
 }
 
 const mount = (controller: AppControllerType): HTMLElement => {
+  const guide = controller.store.session().guide
+  if (guide) controller.store.dispatch({ type: "guide.changed", actor: "user", guide: { ...guide, finished: true } })
   const host = document.createElement("div")
   document.body.append(host)
   const root = createRoot(host)

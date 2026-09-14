@@ -17,11 +17,12 @@ const createAppController = scopedControllers()
 /*
  * Onboarding — the opening entry of a fresh session.
  *
- * The FIRST message says "Smithers initialized successfully" and reads back
+ * A native session's first message says "Smithers initialized successfully" and reads back
  * what the host registered (bootstrap, capabilities, flows, harnesses,
  * repositories). Its one next step is "Select a repo": the native folder
  * picker (`repo.open`, the IDE's open-folder). The pill under the composer
- * names the same step.
+ * names the same step. Cloud repository pages open with useful Welcome actions
+ * and omit the redundant successful host initialization entry.
  */
 
 GlobalRegistrator.register()
@@ -211,6 +212,34 @@ describe("onboarding — the opening entry", () => {
     const pills = [...host.querySelectorAll<HTMLElement>(".smithers-suggestion")]
     expect(pills.map((pill) => text(pill))).not.toContain("Select a repo")
     expect(host.querySelector(".message-cta")).toBeNull()
+  })
+
+  test("a selected cloud repository opens on Welcome actions without startup chatter and retains failures", async () => {
+    const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
+    const controller = createAppController(store, unavailableRepositories, silentAgent, {
+      bootstrap: { ...localBootstrap, host: "cloud", capabilities: ["identity"], authFlow: "redirect", sandbox: null },
+      ...backend({})
+    })
+    await store.dispatch({ type: "repositories.loaded", actor: "system", repositories: [
+      { id: "will/flows", org: "will", ownerKind: "user", name: "flows", head: null }
+    ] }).isPersisted.promise
+    await store.dispatch({ type: "repo.selected", actor: "user", id: "will/flows" }).isPersisted.promise
+    const host = mount(controller)
+    expect(host.querySelector('[data-testid="init-message"]')).toBeNull()
+    await store.dispatch({ type: "card.upsert", actor: "system", card: {
+      id: "repo-welcome-will/flows", kind: "repo-onboarding", title: "Welcome", status: "active", createdAt: 0, ordinal: 1,
+      payload: { stage: "welcome", repo: "will/flows", summary: null }
+    } }).isPersisted.promise
+    await store.dispatch({ type: "message.appended", actor: "system", text: "Repository initialization failed. Retry opening the repository." }).isPersisted.promise
+    await settled()
+    flushSync(() => {})
+    expect(host.querySelector('[data-testid="init-message"]')).toBeNull()
+    expect(text(host)).not.toContain(INIT_GREETING)
+    expect(text(host)).not.toContain(INIT_TITLE)
+    for (const flow of ["repo.maintain", "repo.contribute", "repo.explore"]) {
+      expect(host.querySelector(`[data-testid="onboarding-${flow}"]`)).not.toBeNull()
+    }
+    expect(text(host)).toContain("Repository initialization failed. Retry opening the repository.")
   })
 
   test("local host, signed out: sign-in is an option, so the init read still opens the session", async () => {

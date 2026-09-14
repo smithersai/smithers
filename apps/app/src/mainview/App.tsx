@@ -315,8 +315,12 @@ function App() {
    */
   const gatedByAuth = (identity?.state === "signed-out" && controller.bootstrap?.host !== "local") ||
     (identity?.state === "signed-in" && !identity.allowlisted)
+  // A cloud repository opens on its Welcome actions. Selection is durable and
+  // precedes that card's load, so the technical success read never flashes first.
+  // Native host diagnostics and stored failures keep their existing presentation.
+  const repositoryOpening = cloudHost && session.activeRepoKey != null
   // A new conversation opens empty; the host's opening read belongs to main alone.
-  const openingMessage: InitMessage | undefined = gatedByAuth || conversationTabId !== undefined ? undefined : initMessage({
+  const openingMessage: InitMessage | undefined = gatedByAuth || repositoryOpening || conversationTabId !== undefined ? undefined : initMessage({
     bootstrap: controller.bootstrap,
     flowCount: flows.length,
     harnesses: harnessRows,

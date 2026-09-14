@@ -86,6 +86,8 @@ const renderApp = (controller: AppControllerType): string => mount(controller).m
 const harness = async (): Promise<{ store: AppStore; controller: AppControllerType }> => {
   const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
   const controller = createAppController(store, unavailableRepositories, unavailableAgent)
+  const guide = store.session().guide
+  if (guide) store.dispatch({ type: "guide.changed", actor: "user", guide: { ...guide, finished: true } })
   return { store, controller }
 }
 

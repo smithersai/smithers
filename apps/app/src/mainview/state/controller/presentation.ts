@@ -72,7 +72,11 @@ export const createPresentationController = (
   }
 
   const showConnectors = (): void => {
-    if (ctx.commandActor === "smithers") {
+    // During onboarding the workspace panes are inert behind the guide.
+    // Project the same connector card into its transcript so the command's
+    // repository actions remain reachable from every door.
+    const guide = ctx.store.session().guide
+    if (ctx.commandActor === "smithers" || (guide !== undefined && !guide.finished)) {
       const identity = ctx.store.collections.identitySessions.get("identity")
       let highest = -1
       for (const message of ctx.store.collections.messages.values()) highest = Math.max(highest, message.ordinal)
@@ -92,7 +96,10 @@ export const createPresentationController = (
           nativeAvailable: ctx.repositories.available
         }
       }
-      ctx.store.dispatch({ type: "card.upsert", actor: "smithers", card })
+      ctx.store.dispatch({ type: "card.upsert", actor: ctx.commandActor, card })
+      if (guide !== undefined && !guide.finished && ctx.commandActor === "user" && guide.conversationOpen) {
+        ctx.store.dispatch({ type: "guide.changed", actor: "user", guide: { ...guide, conversationOpen: false } })
+      }
       return
     }
     ctx.store.dispatch({
