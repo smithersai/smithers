@@ -621,6 +621,12 @@ export function GuideShell({ children, clock = guideClock }: { children: ReactNo
           >
             {session.dictating && (
               <GuideButton className="guide-dictation-stop" data-flow="chat.dictate" shortcut="Escape"
+                onKeyDown={event => {
+                  if (event.key === "Tab" && event.shiftKey) {
+                    const input = event.currentTarget.closest(".guide-composer-layer")?.querySelector<HTMLTextAreaElement>("textarea")
+                    if (input) { event.preventDefault(); input.focus() }
+                  }
+                }}
                 onClick={() => {
                   controller.runCommand("chat.dictate")
                   requestAnimationFrame(() => document.querySelector<HTMLTextAreaElement>(".guide-composer-layer textarea")?.focus())

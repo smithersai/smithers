@@ -1103,6 +1103,12 @@ export function Composer({
   const onComposerKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>): void => {
     if (event.nativeEvent.isComposing) return
     if (event.key === "Enter" && event.shiftKey) return
+    // Capture adds a Stop control before this portaled composer. Keep its
+    // direct keyboard path without taking Tab away from Send or Mode otherwise.
+    if (event.key === "Tab" && !event.shiftKey && controller.store.session().dictating) {
+      const stop = event.currentTarget.closest(".guide-composer-layer")?.querySelector<HTMLButtonElement>(".guide-dictation-stop")
+      if (stop) { event.preventDefault(); stop.focus(); return }
+    }
     // Release microphone capture before the palette or Chat handles Escape.
     if (event.key === "Escape" && controller.store.session().dictating) controller.cancelDictation()
     // Input can arrive before the live-query render catches up. Keyboard

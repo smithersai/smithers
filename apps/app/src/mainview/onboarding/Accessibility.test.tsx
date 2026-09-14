@@ -82,16 +82,25 @@ test('dictation Tab reaches Stop, Shift+Tab returns to the composer, and Escape 
   expect(aborted()).toBe(1)
   expect(store.session().dictating).toBe(false)
   expect(host.querySelector('[role="listbox"]')).toBeNull()
+  expect(store.session().guide?.conversationOpen).toBe(true)
+  expect(host.querySelector('dialog')!.open).toBe(true)
+  await press('Escape', input)
+  expect(aborted()).toBe(1)
   expect(store.session().guide?.conversationOpen).toBe(false)
 })
 
-test('Escape dismisses Chat together with its root palette and preserves the draft', async () => {
+test('Escape dismisses the root palette before Chat and preserves the draft through both presses', async () => {
   const { host, store, controller } = await mount()
   await press('c')
   controller.changeDraft('hello from a phone')
   await settle()
   const input = host.querySelector<HTMLTextAreaElement>('[data-testid="composer-input"]')!
   input.focus()
+  await press('Escape', input)
+  expect(host.querySelector('[role="listbox"]')).toBeNull()
+  expect(store.session().guide?.conversationOpen).toBe(true)
+  expect(host.querySelector('dialog')!.open).toBe(true)
+  expect(store.session().draft).toBe('hello from a phone')
   await press('Escape', input)
   expect(store.session().guide?.conversationOpen).toBe(false)
   expect(host.querySelector('dialog')!.open).toBe(false)
