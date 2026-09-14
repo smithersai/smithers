@@ -11,7 +11,10 @@
  *   `<html>` (settable via the host page's `?theme=` query param). The
  *   `data-theme` override always wins over the media query.
  * - Without the style guide, the fallbacks reproduce the exact light values,
- *   so components render sensibly standalone with no CSS loader.
+ *   so components render sensibly standalone with no CSS loader. The light
+ *   values are the generated Night Owl light theme in
+ *   `ui-styleguide/src/themes/nightOwl.ts`; when that file is regenerated,
+ *   the fallbacks here follow it.
  *
  * INVARIANTS (enforced by tests/css-contract.test.ts):
  *
@@ -73,9 +76,9 @@ export const tokens = {
   warning: "var(--warning, #846701)",
   warningSoft: "var(--warning-soft, color-mix(in srgb, var(--warning, #846701) 12%, var(--surface, #fefefe)))",
   warningBorder: "var(--warning-border, color-mix(in srgb, var(--warning, #846701) 40%, transparent))",
-  info: "var(--info, #3f66ba)",
-  infoSoft: "var(--info-soft, color-mix(in srgb, var(--info, #3f66ba) 10%, var(--surface, #fefefe)))",
-  infoBorder: "var(--info-border, color-mix(in srgb, var(--info, #3f66ba) 40%, transparent))",
+  info: "var(--info, #416ac1)",
+  infoSoft: "var(--info-soft, color-mix(in srgb, var(--info, #416ac1) 10%, var(--surface, #fefefe)))",
+  infoBorder: "var(--info-border, color-mix(in srgb, var(--info, #416ac1) 40%, transparent))",
   /** Hairline borders. */
   border: "var(--border, rgba(64,63,83,0.08))",
   borderStrong: "var(--border-strong, rgba(64,63,83,0.14))",

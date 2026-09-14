@@ -16,7 +16,7 @@ export const vaultCss = `
 .sui-vault-graph-node circle { fill:currentColor; stroke:var(--border-strong, rgba(64,63,83,0.14)); }
 .sui-vault-graph-node[data-tint='brand'] { color:color-mix(in srgb, var(--brand, #9449bc) 80%, var(--text, #403f53)); }
 .sui-vault-graph-node[data-tint='success'] { color:color-mix(in srgb, var(--success, #21766f) 80%, var(--text, #403f53)); }
-.sui-vault-graph-node[data-tint='info'] { color:color-mix(in srgb, var(--info, #3f66ba) 80%, var(--text, #403f53)); }
+.sui-vault-graph-node[data-tint='info'] { color:color-mix(in srgb, var(--info, #416ac1) 80%, var(--text, #403f53)); }
 .sui-vault-graph-node[data-tint='warning'] { color:color-mix(in srgb, var(--warning, #846701) 80%, var(--text, #403f53)); }
 .sui-vault-graph-label { fill:var(--text-muted, #676676); }
 .sui-vault-graph-meta { color:var(--text-muted, #676676); font-size:11px; }

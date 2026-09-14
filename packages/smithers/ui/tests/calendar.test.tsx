@@ -58,7 +58,7 @@ describe("Calendar month view", () => {
 
   test("explicit color overrides the tint rotation", () => {
     const html = renderToStaticMarkup(
-      <Calendar events={[event("a", at(27, 9), { source: "x", color: "var(--info, #3f66ba)" })]} now={NOW} />,
+      <Calendar events={[event("a", at(27, 9), { source: "x", color: "var(--info, #416ac1)" })]} now={NOW} />,
     );
     expect(html).not.toContain('data-tint="brand"');
     expect(html).toContain("color-mix(in srgb");
