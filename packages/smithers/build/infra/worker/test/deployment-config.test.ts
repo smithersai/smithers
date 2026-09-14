@@ -7,6 +7,7 @@ import * as Fs from "node:fs/promises"
 import * as NodePath from "node:path"
 import { fileURLToPath } from "node:url"
 import { describe, expect, it } from "vitest"
+import cacheStack from "../../alchemy.run.ts"
 import {
   artifactLifecycleRules,
   cacheBucketOptions,
@@ -299,11 +300,11 @@ describe("cache credential verification", () => {
     expect(touched).toEqual(["stack", "database", "bucket", "worker"])
   })
 
-  it("declares the Cloudflare resource graph from those seams", async () => {
-    // Importing the graph declares its resources without applying them, so
-    // the wiring itself runs under the suite even though only a deployment
-    // can execute the resources.
-    const stack = (await import("../../alchemy.run.ts")).default as unknown as Record<string, unknown>
+  it("declares the Cloudflare resource graph from those seams", () => {
+    // Suite setup imports the real graph without applying its resources.
+    // Keep dependency loading out of this assertion's runtime budget, just
+    // like the deployment helpers imported above; import errors fail the suite.
+    const stack = cacheStack as unknown as Record<string, unknown>
 
     expect(stack["stackName"]).toBe(stackName)
     expect(stack["state"]).toBeDefined()

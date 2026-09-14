@@ -79,7 +79,37 @@ jobs remain unconditional. Release gates receive only the read credential.
 The existing `.smithers/WORKSPACE.ts` declares `cache.remote` with those same
 read and write names. This declaration is necessary: with only an endpoint
 override and no declared remote, the CLI would use the shared
-`SMITHERS_CACHE_TOKEN` default instead of the split credentials.
+`SMITHERS_CACHE_TOKEN` default instead of the split credentials. The CLI reads
+`Workspace.cache.remote`; a standalone `RemoteCache` export in `PACKAGE.ts`
+does not configure it. Another repository adopts the split with the same
+wiring. The complete example includes the required repository and Node
+toolchain declarations. Keep your repository's identity and existing toolchain
+options when adding the cache configuration:
+
+```ts
+import { Smithers as S } from "@smthrs/targets"
+
+const runtime = S.Runtime.Node({ version: ">=22.19.0" })
+
+export const Workspace = S.Workspace("smithers", {
+  // Use your repository URL and retain your existing toolchain declarations.
+  repository: "git+https://github.com/smithersai/smithers.git",
+  runtime,
+  packageManager: S.PackageManager.Pnpm({ version: "11.25.0", runtime }),
+  nodeModules: S.Npm.NodeModules({
+    packageJson: S.file("//package.json"),
+    workspaces: S.file("//pnpm-workspace.yaml")
+  }),
+  cache: S.Cache({
+    directory: ".flows",
+    remote: S.RemoteCache.make({
+      endpoint: "https://build.smithers.sh",
+      read: S.Secret("SMITHERS_CACHE_READ_TOKEN"),
+      write: S.Secret("SMITHERS_CACHE_WRITE_TOKEN")
+    })
+  })
+})
+```
 
 The workflow is generated and drift-gated. Regenerate and check it together
 with the declarations. Temporarily set the root CI declaration to

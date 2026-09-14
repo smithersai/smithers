@@ -1,7 +1,26 @@
 import { readFile } from "node:fs/promises"
 import { URL } from "node:url"
-import { runInNewContext } from "node:vm"
+import { compileFunction, runInNewContext } from "node:vm"
 import { describe, expect, it } from "vitest"
+
+// Load the Node host API during suite setup without adding its source graph
+// to this test project's Cloudflare ambient types. These are real constructors.
+const { Smithers } = await import(import.meta.resolve("@smthrs/targets"))
+
+const evaluateWorkspace = (example: string): unknown => {
+  // The real declaration constructors validate inert data without I/O.
+  // Compile in this realm so RemoteCache's plain-object check sees native
+  // objects, just as it does when the workspace loader imports the example.
+  // A standalone RemoteCache export must not count as Workspace.cache.remote.
+  const source = example.replace(/^import .*$/gm, "").replace(/^export /gm, "")
+  const evaluate = compileFunction(
+    `${source}\n; return typeof Workspace === "undefined" ? undefined : Workspace`,
+    ["S", "Smithers"]
+  )
+  // Bound execution without moving the compiled function's objects or the
+  // real constructors into the VM context's realm.
+  return runInNewContext("evaluate(Smithers, Smithers)", { evaluate, Smithers }, { timeout: 1_000 })
+}
 
 describe("operator documentation", () => {
   it("connects the rollout's split credentials to the workspace cache", async () => {
@@ -11,32 +30,29 @@ describe("operator documentation", () => {
       .find((source) => source.includes("RemoteCache.make"))
     expect(example).toBeDefined()
 
-    // Evaluate the documented wiring with inert constructors. A standalone
-    // RemoteCache export must not count as configuring Workspace.cache.remote.
-    const constructors = {
-      Secret: (env: string) => ({ env }),
-      RemoteCache: { make: (options: unknown) => options },
-      Cache: (options: unknown) => options,
-      Workspace: (_name: string, options: unknown) => options
-    }
-    const source = example!.replace(/^import .*$/gm, "").replace(/^export /gm, "")
-    const workspace: unknown = runInNewContext(
-      `${source}\n; typeof Workspace === "undefined" ? undefined : Workspace`,
-      { S: constructors, Smithers: constructors },
-      { timeout: 1_000 }
-    )
+    const workspace = evaluateWorkspace(example!)
     expect(workspace).toMatchObject({
       cache: {
         directory: ".flows",
         remote: {
           endpoint: "https://build.smithers.sh",
-          read: { env: "SMITHERS_CACHE_READ_TOKEN" },
+          // RemoteCache.make normalizes the read alias into its token slot.
+          token: { env: "SMITHERS_CACHE_READ_TOKEN" },
           write: { env: "SMITHERS_CACHE_WRITE_TOKEN" }
         }
       }
     })
     expect(guide).toContain(".smithers/WORKSPACE.ts")
     expect(guide).toContain("docs/guides/remote-cache/")
+  })
+
+  it("stops a 1200 ms synchronous example at the one-second execution deadline", () => {
+    expect(() =>
+      evaluateWorkspace(`
+        const started = performance.now()
+        while (performance.now() - started < 1_200) {}
+      `)
+    ).toThrow("Script execution timed out after 1000ms")
   })
 
   it("documents process-long target-cache degradation separately from CAS recovery", async () => {
