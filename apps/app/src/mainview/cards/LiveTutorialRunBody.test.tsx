@@ -78,3 +78,28 @@ test("an expired live session offers a new tutorial instead of a reconnect loop"
   expect(html).toContain("Start new tutorial")
   expect(html).not.toContain("Reconnect")
 })
+
+test("a quota refusal explains that nothing started and offers the existing skip flow", () => {
+  const card = liveCard({})
+  card.payload.phase = "failed"
+  card.payload.input = { liveTutorial: { operation: "research" }, liveTutorialLimit: { kind: "rate-limit", retryAt: Date.now() + 60_000 } }
+  card.payload.observationError = "Old sign-in copy"
+  const host = document.createElement("div")
+  const root = createRoot(host)
+  const calls: unknown[] = []
+  try {
+    flushSync(() => root.render(<LiveTutorialRunBody card={card} onRunCommand={(...args) => { calls.push(args) }} />))
+    expect(host.textContent).toContain("did not start")
+    expect(host.textContent).toContain("Return to practice after")
+    expect(host.textContent).not.toContain("Old sign-in copy")
+    expect(host.querySelector('[data-flow="tutorial.live.retry"]')).toBeNull()
+    const button = host.querySelector<HTMLButtonElement>('[data-flow="onboarding.act"]')!
+    expect(button.textContent).toBe("Continue without practice")
+    button.click()
+    expect(calls).toEqual([["onboarding.act", "skip-practice"]])
+    card.payload.input.liveTutorialLimit = { kind: "rate-limit", retryAt: Date.now() - 1 }
+    flushSync(() => root.render(<LiveTutorialRunBody card={card} onRunCommand={() => {}} />))
+    expect(host.querySelector('[data-flow="tutorial.live.retry"]')?.textContent).toBe("Retry")
+    expect(host.textContent).not.toContain("Reconnect")
+  } finally { flushSync(() => root.unmount()) }
+})

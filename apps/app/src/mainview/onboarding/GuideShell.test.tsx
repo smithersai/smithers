@@ -581,3 +581,30 @@ test("a Home card requested again in chat follows the user bubble", async () => 
   const user = host.querySelector('.guide-transcript [data-role="user"]')!
   expect(user.compareDocumentPosition(card!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
 })
+
+
+test("optional background setup can be deferred without a launch receipt", async () => {
+  let controller!: ReturnType<typeof createAppController>
+  const host = await mountGuide(12, still, { repo: "will/demo", notice: "Setup failed", noticeDetail: "upstream detail" }, c => { controller = c })
+  expect(text(host.querySelector(".guide-actions [data-secondary]"))).toContain("Do this later")
+  await controller.guideAct("decline", "background")
+  await settle()
+  const guide = controller.store.session().guide!
+  expect(guide.step).toBe(13)
+  expect(guide.declined).toContain("background")
+  expect(guide.completed).not.toContain("librarian.runs.launched")
+  expect(guide.notice).toBeUndefined()
+  expect(guide.noticeDetail).toBeUndefined()
+})
+
+
+test("saved raw setup errors become one concise action-row message with closed technical details", async () => {
+  const raw = '{"status":502,"message":"upstream failed"}'
+  const host = await mountGuide(12, still, { repo: "will/demo", notice: `Create Wiki didn't start: ${raw}` })
+  const notice = host.querySelector(".guide-actions [data-notice]")!
+  expect(text(notice.querySelector("p"))).toBe("Wiki couldn't start. Retry Wiki, or choose Do this later to keep going.")
+  expect(notice.querySelector("details")?.open).toBe(false)
+  expect(text(notice.querySelector("pre"))).toBe(raw)
+  expect(host.querySelectorAll("[data-notice]").length).toBe(1)
+  expect(text(host.querySelector('.guide-actions [data-flow="wiki.create"]'))).toContain("Retry Wiki")
+})

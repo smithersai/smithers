@@ -336,7 +336,7 @@ test("the whole tutorial walks every beat, keyboard first, through asynchronous 
   await shoot(page, 13)
   await page.keyboard.press("Escape")
   await gone(page, palette, "Escape closes the palette")
-  await expect(followup(page, 13)).toContainText("Type a message here. Choose Dictation from Mode before opening Chat to speak. Escape closes Chat.")
+  await expect(followup(page, 13)).toContainText("Choose Dictation from Mode before opening Chat to speak. Escape closes Chat. You can finish the tutorial without sending a message.")
 
   // Beat 14: terminal, on acme/api, with the run chips still in the chrome and the reel on E.
   await expectBeat(page, 14, { repo: INSTALLED_REPO })
@@ -485,7 +485,7 @@ test.describe("escape hatches", () => {
     await until(page, page.getByTestId("palette"), "the palette opens")
     await page.keyboard.press("Escape")
     await expectBeat(page, 14, { declined: ["login"] })
-    await expect(line(page, 14)).toHaveText("You're set. Log in from Account whenever you want to bring your own repository.")
+    await expect(line(page, 14)).toHaveText("You're set. Log in from Account whenever you want to chat or bring your own repository.")
     expect(host.external()).toEqual([])
   })
 

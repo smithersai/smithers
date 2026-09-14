@@ -30,8 +30,19 @@ test("no user-visible copy says workflow, PR, landing request, or type /", () =>
 test("the terminal line follows the escape hatch taken, and {repo} is the user's repository", () => {
   const last = GUIDE_STAGES.length - 1
   expect(lessonMessage(last, { repo: "acme/api" })).toContain("pick one of acme/api's issues")
-  expect(lessonMessage(last, { declined: ["login"] })).toBe("You're set. Log in from Account whenever you want to bring your own repository.")
+  expect(lessonMessage(last, { declined: ["login"] })).toBe("You're set. Log in from Account whenever you want to chat or bring your own repository.")
   expect(lessonMessage(last, { declined: ["install"] })).toBe("Install the GitHub App from Account when you're ready, and I'll start your Wiki and history.")
+})
+
+test("declining sign-in teaches commands and offers finishing without sending a chat turn", () => {
+  for (const touch of [false, true]) {
+    const message = lessonMessage(13, { declined: ["login"] }, touch)
+    expect(message).toContain(touch ? "Tap Chat" : "Press C")
+    expect(message).toContain("Sign in from Account to send a message")
+    expect(message).toContain("finish this tutorial without sending anything")
+  }
+  const lesson = GUIDE_STAGES[13]
+  expect(lesson?.kind === "do" ? lesson.secondary : undefined).toEqual({ label: "Finish tutorial", key: "f", flow: "onboarding.act", args: "finish" })
 })
 
 
@@ -41,4 +52,13 @@ test("declined installation and login do not create history for skipped lessons"
   expect(lessonVisible(12, { declined: ["install"] })).toBe(false)
   expect(lessonVisible(13, { declined: ["login"] })).toBe(true)
   expect(lessonMessage(10, { declined: ["practice"] })).not.toContain("Everything you just did")
+})
+
+
+test("deferred background setup never claims Wiki or history were launched", () => {
+  const message = lessonMessage(14, { repo: "will/demo", declined: ["background"] })
+  expect(message).toContain("ask Chat")
+  expect(message).toContain("later")
+  expect(message).toContain("will/demo")
+  expect(message).not.toMatch(/land soon|running|started/)
 })

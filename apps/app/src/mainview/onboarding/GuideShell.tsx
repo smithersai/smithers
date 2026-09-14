@@ -29,6 +29,7 @@ import { chatEntryIds, guideTranscriptEntries, InTutorial, tutorialTranscript } 
 import { HelpBubble } from "../HelpBubble"
 import { GuidanceText } from "../GuidanceText"
 import { useCoarsePointer } from "../runtime/PointerMode"
+import { legacyLibrarianFailure, librarianFailureMessage, librarianLaunchFor } from "../state/LibrarianLaunch"
 import { guideActionState } from "./actionState"
 
 /** An original, short opt-in interval; no autoplay or copyrighted game audio. */
@@ -79,7 +80,19 @@ export function GuideShell({ children, clock = guideClock }: { children: ReactNo
   const { data: messageRows } = useLiveQuery(controller.store.collections.messages)
   const { data: storedToasts } = useLiveQuery(controller.store.collections.toasts)
   // Old persisted tutorial tips are superseded by the action-anchored guidance.
-  const toasts = storedToasts.filter(toast => !toast.key.startsWith("guide-tip-"))
+  const toasts = storedToasts.filter(toast => {
+    if (toast.key.startsWith("guide-tip-")) return false
+    const guide = sessions[0]?.guide
+    if (guide?.step !== 12) return true
+    const legacy = legacyLibrarianFailure(guide)
+    if (legacy && toast.key === `command.failed.${legacy.kind === "wiki" ? "wiki.create" : "history.bootstrap"}` && toast.detail === legacy.error) return false
+    if (legacy && toast.key.startsWith(`flow.provision.${guide.repo}.`) && toast.detail === legacy.error) return false
+    const launches = { wiki: librarianLaunchFor(guide, "wiki"), history: librarianLaunchFor(guide, "history") }
+    const inlineFailure = toast.key === "command.failed.wiki.create" ? launches?.wiki : toast.key === "command.failed.history.bootstrap" ? launches?.history : undefined
+    if (inlineFailure?.phase === "failed" && toast.detail === inlineFailure.reason) return false
+    const preparing = Object.values(launches ?? {}).some(launch => launch && launch.repo === guide.repo && (launch.phase === "preparing" || launch.phase === "launching"))
+    return !(preparing && toast.key.startsWith(`flow.provision.${guide.repo}.`))
+  })
   const cards = useCardRows(controller.store.collections.cards)
   const { data: worldDocuments } = useLiveQuery(controller.store.collections.worldDocuments)
   const session = sessions[0] ?? controller.store.session()
@@ -88,6 +101,13 @@ export function GuideShell({ children, clock = guideClock }: { children: ReactNo
     .sort((a, b) => a.ordinal - b.ordinal)
   const guide = session.guide ?? initialGuide()
   const stage = guide.step
+  const legacyFailure = legacyLibrarianFailure(guide)
+  const notice = legacyFailure ? librarianFailureMessage(legacyFailure.kind, legacyFailure.error) : guide.notice
+  const noticeDetail = legacyFailure?.error ?? guide.noticeDetail
+  const noticeContent = notice === undefined ? null : <div className="guide-notice" role="alert" data-notice="">
+    <p>{notice}</p>
+    {noticeDetail && <details><summary>Technical details</summary><pre>{noticeDetail}</pre></details>}
+  </div>
   const showPractice = stage <= GUIDE_BRIDGE
   const skipped = guide.declined?.includes("practice") === true
   /* Keep the payoff visible until the user acts on the bridge. Skipped practice stays hidden. */
@@ -422,9 +442,7 @@ export function GuideShell({ children, clock = guideClock }: { children: ReactNo
                         {line !== undefined ? <span>{line}</span> : null}
                       </p>
                     )}
-                    {messageStep === stage && guide.notice !== undefined && (
-                      <p className="guide-notice" role="status" data-notice="">{guide.notice}</p>
-                    )}
+                    {messageStep === stage && stage !== 12 && noticeContent}
                   </article>
                 </div>}
                 {entries.filter(entry => entry.step === messageStep).map(entry => <div
@@ -489,6 +507,7 @@ export function GuideShell({ children, clock = guideClock }: { children: ReactNo
               </GuideButton>
             )}
             {lesson?.kind === "do" && <span id={`guide-instruction-${stage}`} hidden>{lesson.instruction}</span>}
+            {stage === 12 && noticeContent}
             <ReelShell clock={clock} actions />
           </div>
         </section>

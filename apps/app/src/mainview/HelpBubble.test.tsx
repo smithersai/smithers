@@ -103,7 +103,7 @@ test('coarse pointers hide tutorial and repository key chips at desktop width', 
   for (const chip of chips) expect(getComputedStyle(chip).display).toBe('none')
 })
 
-for (const sentence of ["You can also talk to Smithers anytime by pressing C.", "Start with the practice repository’s issues. Click Show issues or press i."]) {
+for (const sentence of ["Press C anytime to open Chat and commands.", "Start with the practice repository’s issues. Click Show issues or press i."]) {
   test(`help retains the complete sentence: ${sentence}`, () => {
     const host = document.createElement("div")
     const root = createRoot(host)

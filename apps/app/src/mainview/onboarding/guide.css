@@ -1394,6 +1394,10 @@
 .guide-followup { display: flex; align-items: center; gap: .4rem; margin-top: .35rem; }
 .guide-followup .guide-step-done { color: var(--success); flex: none; }
 .guide-notice { margin-top: .35rem; color: var(--danger); }
+.guide-actions > .guide-notice { flex-basis: 100%; text-align: left; font-size: var(--fs-small); }
+.guide-notice details { margin-top: .5rem; color: var(--g-muted-strong); font-size: var(--fs-small); }
+.guide-notice summary { cursor: pointer; }
+.guide-notice pre { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 12rem; overflow: auto; }
 .guide-primary-label { display: inline-flex; flex-direction: column; align-items: flex-start; }
 .guide-primary-subtitle { font-size: var(--fs-small); opacity: .75; font-weight: 400; }
 .guide-run-chips { display: inline-flex; gap: .4rem; margin-inline-start: .75rem; flex-wrap: wrap; }

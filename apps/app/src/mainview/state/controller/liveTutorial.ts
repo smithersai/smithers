@@ -5,6 +5,11 @@ import type { ControllerContext } from "./context"
 import { PRACTICE_CARD, PRACTICE_REPO } from "../practice/PracticeRepository"
 import { lessonCompletion } from "../../onboarding/completion"
 import { PRACTICE_DIFF_CARD } from "../seams/DiffFilesSeam"
+import { activeLiveTutorialLimit, liveTutorialLimitMessage, type LiveTutorialLimit } from "../LiveTutorialLimit"
+
+class TutorialLimitError extends Error {
+  constructor(readonly limit: LiveTutorialLimit) { super(liveTutorialLimitMessage(limit)) }
+}
 
 type RunCard = Extract<Card, { kind: "run-trace" }>
 type Request = LiveTutorialStart & { operation: LiveTutorialOperation; conversation?: string }
@@ -43,7 +48,7 @@ export function createLiveTutorialController(ctx: ControllerContext, nextOrdinal
       payload: { ...card.payload, runId: run.runId, phase: run.phase === "queued" ? "launching" : run.phase,
         result: run.result ?? null, error: run.error, observationError: undefined,
         steps: run.events.map(event => event.label), lastSeq: run.events.length,
-        input: { ...card.payload.input, liveTutorialSnapshot: run, ...(run.plan ? { liveTutorialPlan: run.plan } : {}) } } })
+        input: { ...card.payload.input, liveTutorialLimit: undefined, liveTutorialSnapshot: run, ...(run.plan ? { liveTutorialPlan: run.plan } : {}) } } })
     if (run.phase !== "completed") return
     if (run.operation === "research" || run.operation === "poc") {
       const catalog = ctx.store.collections.cards.get("practice-issue-flows-3")
@@ -77,10 +82,28 @@ export function createLiveTutorialController(ctx: ControllerContext, nextOrdinal
     const applied = readCard(id)!
     await upsert({ ...applied, payload: { ...applied.payload, input: { ...applied.payload.input, liveTutorialAppliedRun: run.runId } } })
   }
+  const scheduleLimitExpiry = (id: string, request: Request, limit: LiveTutorialLimit) => {
+    if (limit.retryAt === undefined) return
+    const timer = setTimeout(() => {
+      timers.delete(timer)
+      if (!current(id, request)) return
+      const card = readCard(id)!
+      // Wake the projection without retrying or claiming the server now has capacity.
+      const savedLimit = card.payload.input?.liveTutorialLimit as LiveTutorialLimit | undefined
+      if (savedLimit?.retryAt === limit.retryAt && !activeLiveTutorialLimit(card)) void upsert({ ...card, payload: { ...card.payload,
+        observationError: "The previous practice request was limited. You can try again now." } })
+    }, Math.max(0, Math.min(2_147_483_647, limit.retryAt - Date.now())))
+    timers.add(timer)
+  }
   const failObservation = async (id: string, request: Request, error: unknown) => {
     if (!current(id, request)) return
     const card = readCard(id)!
-    await upsert({ ...card, payload: { ...card.payload, phase: card.payload.phase === "completed" ? "failed" : "stopped", observationError: error instanceof Error ? error.message : String(error) } })
+    const limit = error instanceof TutorialLimitError ? error.limit : undefined
+    await upsert({ ...card, ...(limit ? { status: "error" as const } : {}), payload: { ...card.payload,
+      phase: limit || card.payload.phase === "completed" ? "failed" : "stopped",
+      observationError: error instanceof Error ? error.message : String(error),
+      input: { ...card.payload.input, liveTutorialLimit: limit } } })
+    if (limit) scheduleLimitExpiry(id, request, limit)
   }
   const poll = (id: string, request: Request, runId: string) => {
     if (!current(id, request)) return
@@ -104,6 +127,15 @@ export function createLiveTutorialController(ctx: ControllerContext, nextOrdinal
       try {
         const { operation, conversation: _, ...body } = request
         const response = await ctx.boundedFetch(`${ctx.baseUrl}${LIVE_TUTORIAL_API}/${operation}`, { method: "POST", credentials: "include", headers: { "content-type": "application/json" }, body: JSON.stringify(body) })
+        if (response.status === 429) {
+          const payload = await response.json().catch(() => null) as { retryAt?: unknown } | null
+          const at = typeof payload?.retryAt === "string" ? Date.parse(payload.retryAt) : NaN
+          const header = response.headers.get("retry-after")
+          const seconds = header === null ? NaN : Number(header)
+          const fallback = Number.isFinite(seconds) ? Date.now() + Math.max(0, seconds) * 1000 : Date.parse(header ?? "")
+          const retryAt = Number.isFinite(at) ? at : fallback
+          throw new TutorialLimitError({ kind: "rate-limit", ...(Number.isFinite(retryAt) ? { retryAt } : {}) })
+        }
         if (!response.ok) throw Error(await ctx.errorMessageOf(response, "The live tutorial workspace could not start."))
         const run = LiveTutorialRunSchema.parse(await response.json())
         await publish(id, request, run)
@@ -120,6 +152,8 @@ export function createLiveTutorialController(ctx: ControllerContext, nextOrdinal
     const playthrough = ctx.store.session().guide?.playthrough ?? 0
     const old = readCard(id)
     const prior = old && requestOf(old)
+    const limit = prior?.playthrough === playthrough ? activeLiveTutorialLimit(old) : undefined
+    if (limit) return liveTutorialLimitMessage(limit)
     const snapshot = liveSnapshotOf(old)
     if (prior?.playthrough === playthrough && old?.payload.phase !== "failed" && snapshot?.phase !== "failed") {
       if (operation !== "change" || JSON.stringify(prior.commitIds) === JSON.stringify(options.commitIds)) {
@@ -158,7 +192,10 @@ export function createLiveTutorialController(ctx: ControllerContext, nextOrdinal
         for (const card of [...ctx.store.collections.cards.values()].sort((a, b) => a.ordinal - b.ordinal)) {
           if (card.kind !== "run-trace") continue
           const request = requestOf(card)
-          if (!request || !current(card.id, request) || card.payload.phase === "failed") continue
+          if (!request || !current(card.id, request)) continue
+          const limit = activeLiveTutorialLimit(card)
+          if (limit) { scheduleLimitExpiry(card.id, request, limit); continue }
+          if (card.payload.phase === "failed") continue
           const snapshot = liveSnapshotOf(card)
           if (snapshot?.phase === "completed") {
             await publish(card.id, request, snapshot, true).catch(error => failObservation(card.id, request, error))

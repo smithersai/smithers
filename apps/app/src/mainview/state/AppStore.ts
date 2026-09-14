@@ -1051,6 +1051,7 @@ const forgetAccountState = (collections: StoredCollections): void => {
     draft.activeRepoKey = null
     if (draft.guide?.librarianLaunches !== undefined) {
       delete draft.guide.librarianLaunches
+      delete draft.guide.noticeDetail
       delete draft.guide.notice
     }
     draft.maximizedCardId = null

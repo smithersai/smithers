@@ -15,7 +15,7 @@ const complete = (operation: LiveTutorialRun["operation"]): LiveTutorialRun => (
   ...(operation === "implement" ? { plan, baseCommitId: base, branch: "fix/live", commits: [{ commitId: sha, parentCommitId: base, message: "Default missing greetings", files: ["src/hello.ts"], additions: 1, deletions: 1 }],
     diff: [{ path: "src/hello.ts", changeType: "modified", additions: 1, deletions: 1, isBinary: false, patch: "@@ -1 +1 @@\n-old\n+new" }], files: { "src/hello.ts": 'export const greet = (name) => `Hello, ${name || "world"}!`' }, tests: { command: "node --test", exitCode: 0, output: "3 tests pass" } } : {}),
   ...(operation === "change" ? { change: { id: "live-change", title: "Fix greetings", summary: "Handle missing names", baseCommitId: base, commitIds: [sha] } } : {}) })
-async function setup(answer: (operation: LiveTutorialRun["operation"], body: Record<string, unknown>) => Promise<LiveTutorialRun> = async op => complete(op)) {
+async function setup(answer: (operation: LiveTutorialRun["operation"], body: Record<string, unknown>) => Promise<LiveTutorialRun | Response> = async op => complete(op)) {
   const storage = memoryStorage()
   const store = await createAppStore({ kind: "localStorage", storage })
   const calls: Array<{ operation: string; body: Record<string, unknown> }> = []
@@ -24,12 +24,79 @@ async function setup(answer: (operation: LiveTutorialRun["operation"], body: Rec
     const operation = url.split("/").at(-1)! as LiveTutorialRun["operation"]
     const body = JSON.parse(String(init.body))
     calls.push({ operation, body })
-    return Response.json(await answer(operation, body), { status: 202 })
+    const result = await answer(operation, body)
+    return result instanceof Response ? result : Response.json(result, { status: 202 })
   }, errorMessageOf: async () => "Unavailable" } as unknown as ControllerContext
   const live = createLiveTutorialController(ctx, store.nextOrdinal)
   const step = async (step: number) => { await store.dispatch({ type: "guide.changed", actor: "user", guide: { ...(store.session().guide ?? initialGuide()), step } }).isPersisted.promise }
   return { store, storage, calls, ctx, live, step, dispose: () => dispose.forEach(fn => fn()) }
 }
+
+test("a quota-rejected launch persists its deadline, never reconnects on reload, and can leave practice honestly", async () => {
+  const retryAt = Date.now() + 60_000
+  const t = await setup(async () => Response.json({ code: "turn_rate_limited", retryAt: new Date(retryAt).toISOString() }, { status: 429 }))
+  await t.step(4)
+  expect(await t.live.research()).toContain("did not start")
+  const rejected = [...t.store.collections.cards.values()].find(card => card.kind === "run-trace")!
+  if (rejected.kind !== "run-trace") throw Error("Expected rejected research")
+  expect(rejected.payload.phase).toBe("failed")
+  expect(rejected.status).toBe("error")
+  expect(rejected.payload.input?.liveTutorialLimit).toEqual({ kind: "rate-limit", retryAt })
+  expect(liveSnapshotOf(rejected)).toBeUndefined()
+  expect(await t.live.retry(rejected.id)).toContain("continue without practice")
+  expect(t.calls).toHaveLength(1)
+  t.dispose()
+  await t.store.settled?.()
+  await t.store.dispose?.()
+  const restored = await createAppStore({ kind: "localStorage", storage: t.storage })
+  const ctx = { ...t.ctx, store: restored }
+  const live = createLiveTutorialController(ctx, restored.nextOrdinal)
+  live.resume()
+  await new Promise(resolve => setTimeout(resolve, 20))
+  expect(await live.retry(rejected.id)).toContain("did not start")
+  expect(t.calls).toHaveLength(1)
+  await createGuideController(ctx).guideAct("skip-practice")
+  expect(restored.session().guide?.completed).not.toContain("issue.researched")
+  expect(restored.session().guide?.step).toBeGreaterThan(4)
+  t.dispose()
+  await restored.settled?.()
+  await restored.dispose?.()
+})
+
+test("a limit deadline exposes an explicit retry without automatically spending another turn", async () => {
+  let attempts = 0
+  const t = await setup(async operation => ++attempts === 1
+    ? Response.json({ retryAt: new Date(Date.now() + 150).toISOString() }, { status: 429 })
+    : complete(operation))
+  await t.step(4)
+  await t.live.research()
+  const rejected = [...t.store.collections.cards.values()].find(card => card.kind === "run-trace")!
+  for (let tick = 0; tick < 100; tick++) {
+    const current = t.store.collections.cards.get(rejected.id)
+    if (current?.kind === "run-trace" && current.payload.observationError?.includes("try again now")) break
+    await new Promise(resolve => setTimeout(resolve, 10))
+  }
+  const ready = t.store.collections.cards.get(rejected.id)
+  expect(ready?.kind === "run-trace" && ready.payload.observationError).toContain("try again now")
+  t.live.resume()
+  await new Promise(resolve => setTimeout(resolve, 20))
+  expect(attempts).toBe(1)
+  expect(await t.live.retry(rejected.id)).toEqual({ value: "Live research completed." })
+  expect(attempts).toBe(2)
+  expect(t.store.session().guide?.completed).toContain("issue.researched")
+  t.dispose()
+})
+
+test("rate limits without a JSON deadline use the server Retry-After header", async () => {
+  const before = Date.now()
+  const t = await setup(async () => new Response("Busy", { status: 429, headers: { "Retry-After": "120" } }))
+  await t.live.research()
+  const rejected = [...t.store.collections.cards.values()].find(card => card.kind === "run-trace")!
+  const receipt = rejected.kind === "run-trace" ? rejected.payload.input?.liveTutorialLimit as { retryAt: number } : undefined
+  expect(receipt?.retryAt).toBeGreaterThanOrEqual(before + 120_000)
+  expect(receipt?.retryAt).toBeLessThanOrEqual(Date.now() + 120_000)
+  t.dispose()
+})
 test("anonymous live plan→implementation uses real results once, and diff/file/Change preserve those revisions", async () => {
   const t = await setup()
   await t.step(5)

@@ -4,6 +4,7 @@ import type { WorkflowController } from "./workflows"
 import type { CommandResult } from "../../flows/entries/Declare"
 import { actorSharedState } from "../ActorBindings"
 import { lessonCompletion } from "../../onboarding/completion"
+import { LIBRARIAN_LAUNCH_OWNER, LIBRARIAN_UNCONFIRMED, LIBRARIAN_COMMANDS, librarianFailureMessage } from "../LibrarianLaunch"
 import { GUIDE_STAGES } from "../../onboarding/lessons"
 
 /** Onboarding SCRIPT v4 beat 12: both background runs launched; the user never has to open either card. */
@@ -43,29 +44,30 @@ export const createLibrarianRunsController = (ctx: ControllerContext, runs: Libr
       identity?.state === "signed-in" ? identity.login : null, session.guide?.playthrough ?? 0])
   }
   const cards = (): RunCard[] => [...store.collections.cards.values()].filter(card => card.kind === "run-trace")
-  const noticeFor = (entries: ReadonlyArray<LaunchIntent>): string | undefined => {
-    const lines = entries.flatMap(entry => entry.phase === "failed" ? [`${label(entry.kind)} didn't start: ${entry.reason}`] : [])
-    const preparing = entries.find(entry => entry.phase === "preparing" || entry.phase === "launching")
-    if (preparing) lines.push(`Preparing your ${preparing.repo} workspace… This can take up to 3 minutes.`)
-    return lines.length > 0 ? lines.join("\n") : undefined
-  }
-  const saveIntent = async (entry: LaunchIntent): Promise<void> => {
+  const saveIntent = async (entry: LaunchIntent): Promise<boolean> => {
     const guide = store.session().guide
-    if (!guide || scope(entry.repo) !== entry.scope) return
+    if (!guide || scope(entry.repo) !== entry.scope) return false
     const entries = [...(guide.librarianLaunches ?? []).filter(row => row.kind !== entry.kind || row.scope !== entry.scope), entry]
+    const current = entries.filter(row => row.scope === entry.scope)
+    const failure = [...current].reverse().find(row => row.phase === "failed")
+    const preparing = current.find(row => row.phase === "preparing" || row.phase === "launching")
+    const inline = !guide.finished && GUIDE_STAGES[guide.step]?.kind === "do" && guide.step === 12
     await store.dispatch({ type: "guide.changed", actor: "system", guide: {
-      ...guide, librarianLaunches: entries, notice: noticeFor(entries)
+      ...guide, librarianLaunches: entries,
+      ...(inline ? {
+        notice: failure ? librarianFailureMessage(failure.kind, failure.reason) : preparing ? `Preparing your ${preparing.repo} workspace… This can take up to 3 minutes.` : undefined,
+        noticeDetail: failure?.reason,
+      } : {})
     } }).isPersisted.promise
+    return inline
   }
-  const refuse = async (kind: LibrarianKind, reason: string, intent?: LaunchIntent): Promise<CommandResult> => {
-    if (intent) await saveIntent({ ...intent, phase: "failed", reason })
-    else {
-      const guide = store.session().guide
-      const stage = guide === undefined ? undefined : GUIDE_STAGES[guide.step]
-      if (guide && stage?.kind === "do" && stage.completion === LIBRARIAN_SIGNAL) {
-        await store.dispatch({ type: "guide.changed", actor: "system", guide: {
-          ...guide, notice: `${label(kind)} didn't start: ${reason}`
-        } }).isPersisted.promise
+  const refuse = async (kind: LibrarianKind, reason: string, entry: LaunchIntent): Promise<CommandResult> => {
+    if (await saveIntent({ ...entry, phase: "failed", reason })) {
+      // The lesson owns this failure; do not repeat it in preparation or command toasts.
+      for (const toast of store.collections.toasts.values()) {
+        if (toast.key.startsWith(`flow.provision.${entry.repo}.`) || toast.key === `command.failed.${LIBRARIAN_COMMANDS[kind]}`) {
+          await store.dispatch({ type: "toast.dismissed", actor: "system", id: toast.id }).isPersisted.promise
+        }
       }
     }
     return reason
@@ -79,22 +81,27 @@ export const createLibrarianRunsController = (ctx: ControllerContext, runs: Libr
       if (receipt) { await saveIntent({ ...entry, phase: "started" }); await launchedBoth(entry.repo, entry.scope); continue }
       await refuse(entry.kind, entry.phase === "preparing"
         ? "Workspace preparation was interrupted by a reload. Try again."
-        : "The page reloaded before Smithers could confirm the run. Check Runs before retrying.", entry)
+        : LIBRARIAN_UNCONFIRMED, entry)
     }
   }
   const launch = async (kind: LibrarianKind, repo: string): Promise<CommandResult> => {
+    const rejected: LaunchIntent = { kind, repo, scope: scope(repo), phase: "failed", startedAt: Date.now() }
     const guard = runs.workflowIdentityGuard() ?? runs.workflowBalanceGuard()
-    if (guard) return refuse(kind, guard)
+    if (guard) return refuse(kind, guard, rejected)
     const target = runs.workflowTargetRepo(repo)
-    if ("error" in target) return refuse(kind, target.error)
+    if ("error" in target) return refuse(kind, target.error, rejected)
     const captured = scope(repo)
     const previous = cards().find(card => card.payload.repo === repo && card.payload.workflow === LIBRARIAN_FLOWS[kind] && metadata(card)?.scope === captured)
-    if (previous) return { value: `Run ${previous.payload.runId} is already recorded for ${repo}. Open its monitor with /runs.open ${previous.payload.runId}.` }
+    if (previous) {
+      await saveIntent({ kind, repo, scope: captured, phase: "started", startedAt: previous.createdAt })
+      await launchedBoth(repo, captured)
+      return { value: `Run ${previous.payload.runId} is already recorded for ${repo}. Open its monitor with /runs.open ${previous.payload.runId}.` }
+    }
     const key = `${kind}:${captured}`
     const held = pending.get(key)
     if (held) return held
     const work = (async (): Promise<CommandResult> => {
-      const intent: LaunchIntent = { kind, repo, scope: captured, phase: "preparing", startedAt: Date.now() }
+      const intent: LaunchIntent = { kind, repo, scope: captured, phase: "preparing", startedAt: Date.now(), owner: LIBRARIAN_LAUNCH_OWNER }
       await saveIntent(intent)
       const abort = new AbortController()
       let timer: ReturnType<typeof setTimeout> | undefined

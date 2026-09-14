@@ -1,3 +1,4 @@
+import { librarianLaunchFor } from "../LibrarianLaunch"
 import type { CommandOutcome } from "../../flows/Commands"
 import type { ControllerContext } from "./context"
 
@@ -181,6 +182,10 @@ export const createFailureController = (ctx: ControllerContext): FailureControll
     }
     if (outcome.status !== "failed") return
     if (outcome.error === ZERO_BALANCE_EXHAUSTED_TEXT) return
+    const backgroundKind = name === "wiki.create" ? "wiki" : name === "history.bootstrap" ? "history" : undefined
+    const guide = ctx.store.session().guide
+    const inline = backgroundKind && guide && librarianLaunchFor(guide, backgroundKind)
+    if (guide?.step === 12 && inline?.phase === "failed" && inline.reason === outcome.error) return
     const key = `command.failed.${name}`
     ctx.store.dispatch({ type: "toast.shown", actor: "system", key, title: `/${name} didn't run` })
     resolveToast(key, { status: "failed", detail: outcome.error, autoDismissMs: ctx.toastAutoDismissMs })

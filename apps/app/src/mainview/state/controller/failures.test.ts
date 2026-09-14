@@ -1,5 +1,6 @@
 import type { StorageApi } from "@tanstack/db"
 import { describe, expect, test } from "bun:test"
+import { initialGuide } from "../AppState"
 import { createAppStore } from "../AppStore"
 import type { ControllerContext } from "./context"
 import { createFailureController } from "./failures"
@@ -162,3 +163,17 @@ test("a refused command's notice dismisses itself after stating the refusal", as
   await settled()
   expect(store.collections.toasts.get("toast-command.failed.prs.list")).toBeUndefined()
 })
+
+
+test("a background setup failure already shown inline does not emit a duplicate command alert", async () => {
+  const { ctx, store } = await fakeContext()
+  const failures = createFailureController(ctx)
+  await store.dispatch({ type: "guide.changed", actor: "user", guide: { ...initialGuide(), step: 12,
+    librarianLaunches: [{ kind: "wiki", repo: "will/demo", scope: JSON.stringify(["will/demo", null, null, null, null, 0]), startedAt: 1, phase: "failed", reason: "setup failed" }],
+  } }).isPersisted.promise
+  failures.surfaceCommandFailure("wiki.create", { status: "failed", error: "setup failed" })
+  expect(store.collections.toasts.size).toBe(0)
+  failures.surfaceCommandFailure("wiki.create", { status: "failed", error: "different failure" })
+  expect(store.collections.toasts.get("toast-command.failed.wiki.create")?.detail).toBe("different failure")
+})
+

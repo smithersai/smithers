@@ -101,6 +101,7 @@ export function createGuideController(ctx: ControllerContext, onStart?: () => Pr
         if (guide.step <= 1) return
         guide.autoPaused = true
         guide.notice = undefined
+        guide.noticeDetail = undefined
         const stage = GUIDE_STAGES[guide.step]
         /*
          * Back from the stack view reopens the picker with the previous pick (SCRIPT v4 "Back"). The stack view on
@@ -130,18 +131,26 @@ export function createGuideController(ctx: ControllerContext, onStart?: () => Pr
       case "decline": {
         // "Not now" at login, "Later" at install: the ⌘K lesson still runs, and the terminal line says where to pick up.
         const stage = GUIDE_STAGES[guide.step]
-        const wants = value === "login" ? "identity.signed-in" : value === "install" ? "github.app.installed" : undefined
-        if (wants === undefined) return "Decline takes login or install."
+        const wants = value === "login" ? "identity.signed-in" : value === "install" ? "github.app.installed" : value === "background" ? "librarian.runs.launched" : undefined
+        if (wants === undefined) return "Decline takes login, install, or background."
         if (stage?.kind !== "do" || stage.completion !== wants) return `There is no ${value} step to decline here.`
-        guide.declined = [...new Set([...(guide.declined ?? []), value as "login" | "install"])]
+        guide.declined = [...new Set([...(guide.declined ?? []), value as "login" | "install" | "background"])]
+        if (value === "background") {
+          for (const toast of ctx.store.collections.toasts.values()) {
+            if (toast.key === "command.failed.wiki.create" || toast.key === "command.failed.history.bootstrap" || toast.key.startsWith(`flow.provision.${guide.repo}.`)) {
+              ctx.store.dispatch({ type: "toast.dismissed", actor: ctx.commandActor === "smithers" ? "system" : "user", id: toast.id })
+            }
+          }
+        }
         guide.autoPaused = false
         guide.notice = undefined
+        guide.noticeDetail = undefined
         guide.step = PALETTE_STEP
         break
       }
       case "restart": {
         const playthrough = (guide.playthrough ?? 0) + 1
-        for (const field of ["finished", "acceptedPracticeTitle", "responseId", "demoRun", "said", "declined", "practiceSkippedFrom", "repo", "pick", "notice"] as const) delete guide[field]
+        for (const field of ["finished", "acceptedPracticeTitle", "responseId", "demoRun", "said", "declined", "practiceSkippedFrom", "repo", "pick", "notice", "noticeDetail", "librarianLaunches"] as const) delete guide[field]
         Object.assign(guide, initialGuide(), { playthrough, completed: ["tutorial.started"] })
         break
       }

@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test"
 import { createAppStore } from "../AppStore"
 import { initialGuide, type Card } from "../AppState"
 import type { ControllerContext } from "./context"
+import { createGuideController } from "./guide"
 import type { WorkflowController } from "./workflows"
 import { createLibrarianRunsController, LIBRARIAN_SIGNAL, librarianLaunchTiming, type LibrarianRunHost } from "./librarianRuns"
 
@@ -16,7 +17,7 @@ const fixture = async () => {
   const launches: string[] = []
   const runs = {
     workflowIdentityGuard: () => undefined, workflowBalanceGuard: () => undefined,
-    workflowTargetRepo: () => ({ repo }), provisionWorkspace: async () => true,
+    workflowTargetRepo: () => ({ repo }), provisionWorkspace: async (): Promise<true | string> => true,
     launchWorkflow: async (args: Parameters<WorkflowController["launchWorkflow"]>[0]) => {
       if (refused) return { message: "The gateway refused the launch." }
       const runId = `receipt-${++next}`
@@ -53,7 +54,8 @@ describe("Librarian background runs (onboarding beat 12)", () => {
     f.refuse()
     expect(await f.controller.bootstrapHistory("will/demo")).toContain("refused")
     // Beat 12 degrades honestly: the reason is written under the lesson, not only into a chat line the guide never shows.
-    expect(f.store.session().guide?.notice).toBe("Create Mythical history didn't start: The gateway refused the launch.")
+    expect(f.store.session().guide?.notice).toBe("Mythical history couldn't start. Retry Mythical history, or choose Do this later to keep going.")
+    expect(f.store.session().guide?.noticeDetail).toBe("The gateway refused the launch.")
     await f.controller.inspectLibrarianRun(f.launches[0]!)
     expect(f.store.session().guide?.completed).not.toContain(LIBRARIAN_SIGNAL)
   })
@@ -94,13 +96,13 @@ test("preparation has a deadline, persists its failure, and ignores a late ready
     const controller = createLibrarianRunsController(f.ctx, host)
     const result = await controller.createWiki("will/demo")
     expect(result).toContain("3 minutes")
-    expect(f.store.session().guide?.notice).toContain("Create Wiki didn't start:")
+    expect(f.store.session().guide?.notice).toContain("Retry Wiki")
     expect(f.store.session().guide?.completed).not.toContain(LIBRARIAN_SIGNAL)
     ready(true)
     await new Promise(resolve => setTimeout(resolve, 0))
     expect(f.launches).toEqual([])
     const reloaded = await createAppStore({ kind: "localStorage", storage: f.storage })
-    expect(reloaded.session().guide?.notice).toContain("3 minutes")
+    expect(reloaded.session().guide?.noticeDetail).toContain("3 minutes")
   } finally { librarianLaunchTiming.deadlineMs = previous }
 })
 test("reload during preparation reports the interrupted launch instead of losing it", async () => {
@@ -114,7 +116,7 @@ test("reload during preparation reports the interrupted launch instead of losing
   const reloaded = await createAppStore({ kind: "localStorage", storage: f.storage })
   const resumed = createLibrarianRunsController({ ...f.ctx, store: reloaded }, host)
   await resumed.recoverLaunches()
-  expect(reloaded.session().guide?.notice).toContain("Create Wiki didn't start: Workspace preparation was interrupted by a reload. Try again.")
+  expect(reloaded.session().guide?.noticeDetail).toBe("Workspace preparation was interrupted by a reload. Try again.")
   expect(f.launches).toEqual([])
   ready(true)
   await running
@@ -123,7 +125,7 @@ test("a thrown provision failure is visible and a retry can launch", async () =>
   const f = await fixture()
   const host = { ...f.runs, provisionWorkspace: async () => { throw new Error("Smithers Cloud is unavailable.") } }
   await createLibrarianRunsController(f.ctx, host).createWiki("will/demo")
-  expect(f.store.session().guide?.notice).toBe("Create Wiki didn't start: Smithers Cloud is unavailable.")
+  expect(f.store.session().guide?.noticeDetail).toBe("Smithers Cloud is unavailable.")
   await f.controller.createWiki("will/demo")
   expect(f.launches).toHaveLength(1)
   expect(f.store.session().guide?.notice ?? "").not.toContain("didn't start")
@@ -139,8 +141,70 @@ test("sign-out clears a preparing launch and a late answer cannot restore it", a
   await f.store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-out", login: null, allowlisted: false, admin: false, scopesPlain: null }).isPersisted.promise
   expect(f.store.session().guide?.librarianLaunches ?? []).toEqual([])
   expect(f.store.session().guide?.notice).toBeUndefined()
+  expect(f.store.session().guide?.noticeDetail).toBeUndefined()
   ready(true)
   await running
   expect(f.store.session().guide?.librarianLaunches ?? []).toEqual([])
   expect(f.launches).toEqual([])
+})
+
+test("preparation is visible before a receipt, failure survives reload, and retry launches once", async () => {
+  const f = await fixture()
+  let release!: (value: true | string) => void
+  let provisions = 0
+  f.runs.provisionWorkspace = () => { provisions++; return new Promise<true | string>(resolve => { release = resolve }) }
+  const first = f.controller.createWiki("will/demo")
+  const duplicate = f.controller.createWiki("will/demo")
+  await new Promise(resolve => setTimeout(resolve, 0))
+  expect(provisions).toBe(1)
+  expect(f.store.session().guide?.librarianLaunches?.find(entry => entry.kind === "wiki")?.phase).toBe("preparing")
+  expect(f.launches).toHaveLength(0)
+  release('{"status":502,"message":"upstream failed"}')
+  await Promise.all([first, duplicate])
+  expect(f.store.session().guide?.librarianLaunches?.find(entry => entry.kind === "wiki")?.phase).toBe("failed")
+  expect(f.store.session().guide?.notice).not.toContain("502")
+  const reloaded = await createAppStore({ kind: "localStorage", storage: f.storage })
+  expect(reloaded.session().guide?.librarianLaunches?.find(entry => entry.kind === "wiki")?.phase).toBe("failed")
+  expect(reloaded.session().guide?.completed).not.toContain(LIBRARIAN_SIGNAL)
+  f.runs.provisionWorkspace = async () => true
+  await f.controller.createWiki("will/demo")
+  expect(f.store.session().guide?.librarianLaunches?.find(entry => entry.kind === "wiki")?.phase).toBe("started")
+  expect(f.store.session().guide?.notice).toBeUndefined()
+  expect(f.launches).toHaveLength(1)
+})
+
+test("deferring background setup does not block later launches from the normal product", async () => {
+  const f = await fixture()
+  await f.store.dispatch({ type: "guide.changed", actor: "user", guide: { ...initialGuide(), step: 14, finished: true, declined: ["background"] } }).isPersisted.promise
+  await f.controller.createWiki("will/demo")
+  await f.controller.bootstrapHistory("will/demo")
+  expect(f.launches).toHaveLength(2)
+  expect(f.store.session().guide?.completed).not.toContain(LIBRARIAN_SIGNAL)
+})
+
+
+test("Do this later persists across reload without inventing started runs", async () => {
+  const f = await fixture()
+  const guide = createGuideController(f.ctx)
+  await guide.guideAct("decline", "background")
+  const reloaded = await createAppStore({ kind: "localStorage", storage: f.storage })
+  expect(reloaded.session().guide?.step).toBe(13)
+  expect(reloaded.session().guide?.declined).toContain("background")
+  expect(reloaded.session().guide?.completed).not.toContain(LIBRARIAN_SIGNAL)
+  expect([...reloaded.collections.cards.values()].filter(card => card.kind === "run-trace")).toHaveLength(0)
+})
+
+
+test("reload before launch acknowledgement preserves the instruction to check Runs", async () => {
+  const f = await fixture()
+  await f.controller.createWiki("will/demo")
+  const guide = f.store.session().guide!
+  const entry = guide.librarianLaunches![0]!
+  await f.store.dispatch({ type: "guide.changed", actor: "system", guide: { ...guide,
+    librarianLaunches: [{ ...entry, kind: "history", phase: "launching" }] } }).isPersisted.promise
+  const reloaded = await createAppStore({ kind: "localStorage", storage: f.storage })
+  await createLibrarianRunsController({ ...f.ctx, store: reloaded }, f.runs).recoverLaunches()
+  expect(reloaded.session().guide?.notice).toContain("may have started. Check Runs before retrying")
+  expect(reloaded.session().guide?.librarianLaunches?.[0]?.phase).toBe("failed")
+  expect(f.launches).toHaveLength(1)
 })

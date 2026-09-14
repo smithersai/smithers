@@ -19,7 +19,7 @@ for (const width of [1280, 390]) {
     await expect(help.locator(".guidance-text-visual > span").last()).toHaveCSS("opacity", "1")
     const initialButton = await target.boundingBox()
     await page.clock.runFor(3800)
-    await expect(help.locator(".guidance-text-visual")).toHaveText("You can also talk to Smithers anytime by pressing C.")
+    await expect(help.locator(".guidance-text-visual")).toHaveText("Press C anytime to open Chat and commands.")
     const chat = page.getByRole("button", { name: "Chat", exact: true })
     await expect(chat).toHaveAttribute("aria-describedby", "guide-chat-help-1")
     const chatBounds = await chat.boundingBox()
@@ -112,6 +112,6 @@ test("typewriter paints every character of both instructions with motion enabled
     const letters = [...node.children]
     return letters.length ? letters.filter(letter => getComputedStyle(letter).opacity === '1').map(letter => letter.textContent).join('') : node.textContent
   })
-  await expect.poll(painted, { timeout: 15_000 }).toBe("You can also talk to Smithers anytime by pressing C.")
+  await expect.poll(painted, { timeout: 15_000 }).toBe("Press C anytime to open Chat and commands.")
   await expect.poll(painted, { timeout: 15_000 }).toBe("Start with the practice repository’s issues. Click Show issues or press i.")
 })

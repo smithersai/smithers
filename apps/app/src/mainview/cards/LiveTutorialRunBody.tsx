@@ -6,6 +6,7 @@ import { Button, Markdown } from "@smthrs/ui"
 import { LiveTutorialRunSchema } from "@smthrs/rpc/LiveTutorial"
 import type { Card } from "../state/AppState"
 import type { RunCommand } from "./CardFamily"
+import { activeLiveTutorialLimit, liveTutorialLimitMessage } from "../state/LiveTutorialLimit"
 
 /** The official run card's live tutorial projection. Every row comes from observed execution. */
 export function LiveTutorialRunBody({ card, onRunCommand }: { card: Extract<Card, {kind:"run-trace"}>; onRunCommand: RunCommand }) {
@@ -14,7 +15,8 @@ export function LiveTutorialRunBody({ card, onRunCommand }: { card: Extract<Card
   const reproducesBug = run?.operation === "research" && run.events.some(event => event.id === "reproduce" && event.status === "completed")
   const plan = run?.operation === "plan" ? run.plan : undefined
   const busy = card.payload.phase === "launching" || card.payload.phase === "running"
-  const failure = card.payload.observationError ?? run?.error
+  const limit = activeLiveTutorialLimit(card)
+  const failure = limit ? liveTutorialLimitMessage(limit) : card.payload.observationError ?? run?.error
   const expired = failure?.toLowerCase().includes("expired") === true
   const facet=card.payload.facet??"steps"
   const scoped=runSourceCommand(card.id,onRunCommand)
@@ -37,8 +39,8 @@ export function LiveTutorialRunBody({ card, onRunCommand }: { card: Extract<Card
         onClick={() => onRunCommand("agent.change.start", card.id)}>Start implementation</GuideButton>}
     </section>}
     {!plan && run?.result && <div className="live-tutorial-result"><Markdown content={run.result} /></div>}
-    {run?.tests && <p className="live-tutorial-check" data-passed={run.tests.exitCode === 0}>{run.tests.exitCode === 0 ? "✓ Tests passed" : reproducesBug ? "Tests failed (expected: reproduces the bug)" : "Tests failed"} <code>{run.tests.command}</code></p>}
-    {run?.tests && <details className="live-tutorial-test-output"><summary>Test output</summary><pre tabIndex={0}>{run.tests.output}</pre></details>}
+    {run?.tests && <p className="live-tutorial-check" data-passed={run.tests.exitCode === 0}>{run.tests.exitCode === 0 ? "✓ Tests passed" : reproducesBug ? "Tests failed (expected: reproduces the bug)" : "Tests failed"}</p>}
+    {run?.tests && <details className="live-tutorial-test-output"><summary>Test output</summary><p><code>{run.tests.command}</code></p><pre tabIndex={0}>{run.tests.output}</pre></details>}
     {run?.commits && run.operation === "implement" && <p className="live-tutorial-outcome">{run.commits.length} {run.commits.length === 1 ? "commit" : "commits"} on <code>{run.branch}</code></p>}
     {(run?.events.length ?? 0) > 0 && <ol className="live-tutorial-events" aria-label="Run trace">
       {run!.events.map(event => {
@@ -55,9 +57,9 @@ export function LiveTutorialRunBody({ card, onRunCommand }: { card: Extract<Card
       })}
     </ol>}
     {failure && <p className="live-tutorial-error" role="alert">{failure}</p>}
-    {expired && <button type="button" className="guide-text-button" data-flow="onboarding.act" onClick={() => onRunCommand("onboarding.act", "restart")}>Start new tutorial</button>}
-    {!expired && (failure || run?.phase === "failed") && <button type="button" className="guide-text-button" data-flow="tutorial.live.retry"
-      onClick={() => onRunCommand("tutorial.live.retry", card.id)}>{run?.phase === "failed" ? "Retry" : "Reconnect"}</button>}
+    {(expired || limit) && <button type="button" className="guide-text-button" data-flow="onboarding.act" onClick={() => onRunCommand("onboarding.act", limit ? "skip-practice" : "restart")}>{limit ? "Continue without practice" : "Start new tutorial"}</button>}
+    {!expired && !limit && (failure || run?.phase === "failed") && <button type="button" className="guide-text-button" data-flow="tutorial.live.retry"
+      onClick={() => onRunCommand("tutorial.live.retry", card.id)}>{run === undefined || run.phase === "failed" ? "Retry" : "Reconnect"}</button>}
     {run?.operation === "implement" && run.phase === "completed" && !failure && <button type="button" className="guide-primary" data-flow="files.implementation-diff"
       onClick={() => onRunCommand("files.implementation-diff")}>View diff</button>}
   </div>

@@ -659,12 +659,13 @@ export const GuideSchema = z.object({
    *   notice:   why the current beat could not finish ("Nothing came back from GitHub.")
    */
   said: z.record(z.string(), z.string()).optional(),
-  declined: z.array(z.enum(["practice", "login", "install"])).optional(),
+  declined: z.array(z.enum(["practice", "login", "install", "background"])).optional(),
   /** Exact departure for Skip practice, including a skip after Back. */
   practiceSkippedFrom: z.number().int().min(1).max(9).optional(),
   repo: z.string().optional(),
   pick: z.array(z.number().int().positive()).optional(),
   notice: z.string().optional(),
+  noticeDetail: z.string().optional(),
   /** Launch intent is durable before provisioning; a reload can report an interrupted attempt. */
   librarianLaunches: z.array(z.object({
     kind: z.enum(["wiki", "history"]),
@@ -672,6 +673,7 @@ export const GuideSchema = z.object({
     scope: z.string(),
     phase: z.enum(["preparing", "launching", "started", "failed"]),
     startedAt: z.number(),
+    owner: z.string().optional(),
     reason: z.string().optional()
   })).optional(),
   completed: z.array(z.string()).optional(),

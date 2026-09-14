@@ -23,7 +23,7 @@ export type GoalCheckpoint = "issue" | "plan" | "commits" | "change"
 export type GuideLesson = {
   kind: "say"; message: string; more?: string; terminal?: boolean; optionalAction?: typeof REEL_BUTTON
   /** The terminal line after an escape hatch: login declined, or install declined. */
-  variants?: { readonly login: string; readonly install: string }
+  variants?: { readonly login: string; readonly install: string; readonly background: string }
 } | {
   kind: "do"; message: string; touchMessage?: string; completion: string
   /** Optional guidance anchored to one action, never sent as a notification. */
@@ -54,7 +54,7 @@ export const GUIDE_STAGES: readonly GuideLesson[] = [
       touchContent: "Start with the practice repository’s issues. Tap Show issues.",
       introduction: [
         { target: "action", content: "Smithers makes suggestions as to what we should do next as you use it." },
-        { target: "chat", content: "You can also talk to Smithers anytime by pressing C.", touchContent: "You can also talk to Smithers anytime by tapping Chat." },
+        { target: "chat", content: "Press C anytime to open Chat and commands.", touchContent: "Tap Chat anytime to open Chat and commands." },
       ] },
     instruction: "Lists the practice repository's open issues.",
     actions: [
@@ -96,15 +96,18 @@ export const GUIDE_STAGES: readonly GuideLesson[] = [
   /* 12 */ { kind: "do", requires: "installed", message: "I can study {repo} in the background. Start a Wiki that explains the code, and a Mythical history of how it got here.", completion: "librarian.runs.launched", skippable: false,
     instruction: "Starts both background flows on your repository.", success: "Both are running. I'll tell you when they're done.",
     actions: [{ label: "Create Wiki for {repo}", key: "u", flow: "wiki.create", args: "{repo}" },
-      { label: "Create Mythical history", key: "y", flow: "history.bootstrap", args: "{repo}", subtitle: "On its own branch. Your branches stay untouched." }] },
+      { label: "Create Mythical history", key: "y", flow: "history.bootstrap", args: "{repo}", subtitle: "On its own branch. Your branches stay untouched." }],
+    secondary: { label: "Do this later", key: "z", flow: "onboarding.act", args: "decline background" } },
   /* 13 */ { kind: "do", message: "If you ever need to just chat with me rather than using the fast controls or UI to interact you can press C to open Chat. From there you can type any message.\n\nPress M to choose Normal, Vim, or Dictation mode. Vim uses H/J/K/L to move focus. Dictation starts when you next open Chat; review the text before sending.", completion: "palette.opened", skippable: false,
     touchMessage: "If you ever need to just chat with me rather than using the fast controls or UI to interact you can tap Chat to open Chat. From there you can type any message.\n\nTap Mode to choose Normal, Vim, or Dictation mode. Dictation starts when you next open Chat; review the text before sending.",
-    instruction: "Opens Chat. Escape closes it.", success: "Type a message here. Choose Dictation from Mode before opening Chat to speak. Escape closes Chat.",
-    actions: [{ label: "Chat", key: "c", flow: "chat.open" }] },
+    instruction: "Opens Chat. Escape closes it. Sending a message is optional.", success: "Choose Dictation from Mode before opening Chat to speak. Escape closes Chat. You can finish the tutorial without sending a message.",
+    actions: [{ label: "Chat", key: "c", flow: "chat.open" }],
+    secondary: { label: "Finish tutorial", key: "f", flow: "onboarding.act", args: "finish" } },
   /* 14 */ { kind: "say", terminal: true, optionalAction: REEL_BUTTON,
     message: "You're set. Your Wiki and history will land soon. When you're ready, pick one of {repo}'s issues and we'll make a real Change.",
-    variants: { login: "You're set. Log in from Account whenever you want to bring your own repository.",
-      install: "Install the GitHub App from Account when you're ready, and I'll start your Wiki and history." } },
+    variants: { login: "You're set. Log in from Account whenever you want to chat or bring your own repository.",
+      install: "Install the GitHub App from Account when you're ready, and I'll start your Wiki and history.",
+      background: "You're set. You can ask Chat to create your Wiki and Mythical history later. Pick one of {repo}'s issues when you're ready to make a Change." } },
 ]
 export const GUIDE_LESSONS = GUIDE_STAGES.map(stage => stage.message)
 export const GUIDE_LAST_STEP = GUIDE_STAGES.length - 1
@@ -122,9 +125,14 @@ export const lessonMessage = (step: number, guide: GuideContext, touch = false):
   const lesson = GUIDE_STAGES[step]
   if (lesson === undefined) return ""
   if (step === GUIDE_BRIDGE && guide.declined?.includes("practice")) return "Bring your own repository to Smithers. First, log in to GitHub."
+  if (lesson.kind === "do" && lesson.completion === "palette.opened" && guide.declined?.includes("login")) {
+    return (touch ? "Tap Chat" : "Press C") + " to explore Chat and commands. Sign in from Account to send a message. You can finish this tutorial without sending anything.\n\n"
+      + (touch ? "Tap Mode" : "Press M") + " to choose Normal, Vim, or Dictation mode. Dictation starts when you next open Chat; review the text before sending."
+  }
   if (lesson.kind === "say" && lesson.variants !== undefined) {
     if (guide.declined?.includes("login")) return lesson.variants.login
     if (guide.declined?.includes("install")) return lesson.variants.install
+    if (guide.declined?.includes("background")) return lessonText(lesson.variants.background, guide)
   }
   return lessonText(touch && lesson.kind === "do" ? lesson.touchMessage ?? lesson.message : lesson.message, guide)
 }
