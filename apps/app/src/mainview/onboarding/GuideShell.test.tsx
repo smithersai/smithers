@@ -86,6 +86,50 @@ const mountGuide = async (step: number, clock?: GuideClock, answers: Record<stri
 
 const still: GuideClock = { setTimeout: () => 1, clearTimeout: () => {} }
 
+test("workspace Account opened before mounting stays out of every lesson, including beat 12", async () => {
+  let controller!: ReturnType<typeof createAppController>
+  const host = await mountGuide(1, still, {}, async c => {
+    controller = c
+    await c.store.dispatch({ type: "card.upsert", actor: "user", card: { id: "account", kind: "account",
+      title: "Account · @tutorial-user", status: "active", ordinal: 1, createdAt: 1,
+      payload: { login: "tutorial-user", scopes: [], allowlisted: true, accessRequested: false, boxes: [] },
+    } }).isPersisted.promise
+  })
+  await settle()
+  expect(controller.store.collections.cards.get("account")?.kind).toBe("account")
+  expect(host.querySelector('.guide-transcript [data-kind="account"]') === null).toBe(true)
+  await controller.store.dispatch({ type: "guide.changed", actor: "user", guide: { ...controller.store.session().guide!, step: 12 } }).isPersisted.promise
+  await settle()
+  expect(host.querySelector('.guide-transcript [data-kind="account"]') === null).toBe(true)
+  // Chrome remains workspace-owned even while the tutorial is visible.
+  await controller.store.dispatch({ type: "card.upsert", actor: "user", card: controller.store.collections.cards.get("account")! }).isPersisted.promise
+  await settle()
+  expect(host.querySelector('.guide-transcript [data-kind="account"]') === null).toBe(true)
+  expect(controller.store.collections.cards.get("account")?.kind).toBe("account")
+  await controller.store.dispatch({ type: "message.submitted", actor: "user", turnId: "scoped-chat", text: "Explain this lesson" }).isPersisted.promise
+  await controller.store.dispatch({ type: "card.upsert", actor: "system", card: controller.store.collections.cards.get("account")! }).isPersisted.promise
+  await settle()
+  expect(host.querySelector('.guide-transcript [data-kind="account"]') === null).toBe(true)
+  mounted.pop()?.()
+  expect(controller.store.session().guideVisible).toBe(false)
+}, 10_000)
+
+test("the installation beat owns its chooser, including a reused workspace form", async () => {
+  let controller!: ReturnType<typeof createAppController>
+  const host = await mountGuide(11, still, {}, async c => {
+    controller = c
+    await c.commands.run("github.app.choose")
+  })
+  await settle()
+  expect(host.querySelector('.guide-transcript [data-kind="flow-form"]') === null).toBe(true)
+  await controller.commands.run("github.app.choose")
+  await settle()
+  expect(host.querySelector('.guide-transcript [data-kind="flow-form"]') !== null).toBe(true)
+  expect(controller.store.session().guide?.transcript?.["form-github.app.choose"]).toMatchObject({
+    step: 11, source: "lesson", owned: true,
+  })
+}, 10_000)
+
 for (const trigger of ["click", "shortcut"] as const) test(`an actionable seam notice starts sign-in by ${trigger}`, async () => {
   let controller!: ReturnType<typeof createAppController>
   const host = await mountGuide(1, still, {}, async c => {

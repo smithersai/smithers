@@ -128,7 +128,7 @@ export const createTurnController = (
       ordinal: nextOrdinal(),
       payload: { message: refusal.message, retryAt: refusal.retryAt }
     }
-    store.dispatch({ type: "card.upsert", actor: "system", card })
+    store.dispatch({ type: "card.upsert", actor: "system", card, turnId })
     store.dispatch({ type: "message.response.completed", actor: "smithers", turnId })
     return true
   }
@@ -236,7 +236,7 @@ export const createTurnController = (
        * to the lesson and real work skips it (onboarding.act finish).
        * Absent once the workspace step is reached — the tutorial is done.
        */
-      ...(current.guide === undefined || current.guide.step >= GUIDE_LAST_STEP
+      ...(!current.guideVisible || current.guide === undefined || current.guide.finished || current.guide.step >= GUIDE_LAST_STEP
         ? {}
         : {
           onboarding: {

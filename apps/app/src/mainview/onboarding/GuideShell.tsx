@@ -25,7 +25,7 @@ import { bindPressActions, type PressAction } from "../runtime/PressActions"
 import { InputModeMenu } from "../InputModeMenu"
 import { GuideButton, GUIDE_KEYS } from "./GuideButton"
 import { GuideComposerHost } from "./GuideComposerHost"
-import { chatEntryIds, guideTranscriptEntries, InTutorial, tutorialTranscript } from "./transcriptScope"
+import { guideTranscriptEntries, InTutorial, tutorialTranscript } from "./transcriptScope"
 import { HelpBubble } from "../HelpBubble"
 import { GuidanceText } from "../GuidanceText"
 import { useCoarsePointer } from "../runtime/PointerMode"
@@ -100,7 +100,7 @@ export function GuideShell({ children, clock = guideClock }: { children: ReactNo
   const conversation = conversationTabIdOf(session)
   const isIdentityPrompt = (message: Message) =>
     (message.action ?? message.answeredAction)?.flow === "auth.sign-in"
-  const signInPrompts = messageRows.filter(message => inConversation(message, conversation) && isIdentityPrompt(message))
+  const signInPrompts = messageRows.filter(message => inConversation(message, conversation) && isIdentityPrompt(message) && session.guide?.transcript?.[message.id]?.owned === true)
     .sort((a, b) => a.ordinal - b.ordinal)
   const guide = session.guide ?? initialGuide()
   // The palette transition is synchronous; guide progression may await a reel act.
@@ -117,10 +117,10 @@ export function GuideShell({ children, clock = guideClock }: { children: ReactNo
   const skipped = guide.declined?.includes("practice") === true
   /* Keep the payoff visible until the user acts on the bridge. Skipped practice stays hidden. */
   const lessonCards = tutorialTranscript(cards.filter(card => inConversation(card, conversation)),
-    chatEntryIds(guide.transcript))
+    guide.transcript)
     .filter(card => guide.transcript?.[card.id]?.source === "chat" || (showPractice && !skipped) || !cardRepo(card)?.startsWith("practice:"))
     .sort((a, b) => a.ordinal - b.ordinal)
-  const messages = messageRows.filter(message => inConversation(message, conversation) && !isIdentityPrompt(message))
+  const messages = messageRows.filter(message => inConversation(message, conversation) && guide.transcript?.[message.id]?.owned === true && !isIdentityPrompt(message))
   const entries = guideTranscriptEntries(lessonCards.filter(card => stage < GUIDE_LAST_STEP || guide.transcript?.[card.id]?.source === "chat"), messages, guide)
   const typing = session.phase === "responding"
   const streamingMessageId = typing ? messages.at(-1)?.id : undefined
@@ -316,11 +316,16 @@ export function GuideShell({ children, clock = guideClock }: { children: ReactNo
   // Ref ownership survives incidental renders (for example the auto-advance pause on keydown).
   const bindInputs = useCallback((node: HTMLDivElement | null) => {
     if (!node?.parentElement) return
-    return bindPressActions({ root: node.closest<HTMLElement>(".session-shell") ?? node.parentElement,
+    controller.store.dispatch({ type: "guide.visibility.changed", actor: "system", visible: true })
+    const unbind = bindPressActions({ root: node.closest<HTMLElement>(".session-shell") ?? node.parentElement,
       resolveShortcut: event => inputHandlers.current.resolve(event),
       enabled: () => inputHandlers.current.enabled(),
     })
-  }, [stage, guide.playthrough, guide.reelIndex])
+    return () => {
+      unbind()
+      controller.store.dispatch({ type: "guide.visibility.changed", actor: "system", visible: false })
+    }
+  }, [controller, stage, guide.playthrough, guide.reelIndex])
   const notifications = toasts.length > 0 && (
     <aside className="guide-toasts" aria-label="Notifications">
       {[...toasts].sort((a, b) => b.createdAt - a.createdAt).map((toast) => (

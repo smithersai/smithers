@@ -26,6 +26,7 @@ test("accepted messages keep Chat open; empty or busy submissions preserve the o
 test("tutorial chat placement survives a concurrent guide update and reload", async () => {
   const storage = memoryStorage()
   const store = await createAppStore({ kind: "localStorage", storage })
+  await store.dispatch({ type: "guide.visibility.changed", actor: "system", visible: true }).isPersisted.promise
   const guide = { ...initialGuide(), step: 2, conversationOpen: true }
   await store.dispatch({ type: "guide.changed", actor: "user", guide }).isPersisted.promise
   await store.dispatch({ type: "message.submitted", actor: "user", turnId: "chat", text: "Explain" }).isPersisted.promise
@@ -33,8 +34,8 @@ test("tutorial chat placement survives a concurrent guide update and reload", as
   // This producer captured the guide before the reply arrived.
   await store.dispatch({ type: "guide.changed", actor: "system", guide: { ...guide, step: 3 } }).isPersisted.promise
   const placement = store.session().guide?.transcript
-  expect(placement?.['message-chat-user']).toEqual({ step: 2, source: "chat" })
-  expect(placement?.['message-chat-smithers']).toEqual({ step: 2, source: "chat" })
+  expect(placement?.['message-chat-user']).toEqual({ step: 2, source: "chat", owned: true })
+  expect(placement?.['message-chat-smithers']).toEqual({ step: 2, source: "chat", owned: true })
   const reloaded = await createAppStore({ kind: "localStorage", storage })
   expect(reloaded.session().guide?.transcript).toEqual(placement)
 })

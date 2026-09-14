@@ -1,18 +1,27 @@
 import { createContext } from "react"
+import type { Card, GuideState } from "../state/AppState"
+import { GUIDE_STAGES } from "./lessons"
 
-/*
- * The tutorial and a repository route share one persisted store and one
- * conversation. A repository route (`/owner/name`, RepoLink.openRequestedRepo)
- * opens its transcript with that repository's welcome and home cards, and a
- * later visit to the tutorial would replay them. They belong to the route
- * that opened them: the tutorial's own repository step renders a
- * `repository-choice` card instead, so none of these is ever a lesson's.
- */
-export const REPO_ENTRY_KINDS: ReadonlySet<string> = new Set(["repo-home", "repo-onboarding"])
+/** Only explicit guide ownership or durable practice provenance enters a lesson. */
+export const tutorialTranscript = <Row extends { id: string; payload: object }>(
+  cards: ReadonlyArray<Row>, transcript: GuideState["transcript"] = {},
+): Array<Row> => cards.filter(card => transcript[card.id]?.owned === true || isTutorialCard(card))
 
-/** The cards the tutorial shows: everything but a repository route's entry cards. */
-export const tutorialTranscript = <Card extends { readonly kind: string }>(cards: ReadonlyArray<Card>, chatCardIds: ReadonlySet<string> = new Set()): Array<Card> =>
-  cards.filter((card) => !REPO_ENTRY_KINDS.has(card.kind) || ("id" in card && chatCardIds.has(String(card.id))))
+/** Positive producer provenance, never a list of workspace kinds to exclude. */
+export function isLessonCard(card: Card, guide: GuideState): boolean {
+  if (isTutorialCard(card) || card.id === `tutorial-repository-${guide.playthrough ?? 0}`) return true
+  if (card.kind === "flow-form") {
+    const lesson = GUIDE_STAGES[guide.step]
+    return lesson?.kind === "do" && (lesson.actions.some(action => action.flow === card.payload.flow)
+      || (guide.step === 11 && card.payload.flow === "github.app.choose"))
+  }
+  if (card.kind === "run-trace") {
+    const origin = card.payload.input?._librarian as { scope?: string; kind?: string } | undefined
+    return origin != null && guide.step === 12 && guide.librarianLaunches?.some(launch =>
+      launch.scope === origin.scope && launch.kind === origin.kind && launch.repo === card.payload.repo) === true
+  }
+  return false
+}
 
 /** True beneath GuideShell: the app is the tutorial's workspace, not a repository route's. */
 export const InTutorial = createContext(false)
@@ -58,6 +67,6 @@ export function isTutorialCard(card: { id?: string; payload: object }): boolean 
 
 /** The ids the guide recorded as arriving from a chat turn during this playthrough. */
 export const chatEntryIds = (
-  transcript: Readonly<Record<string, { readonly source: "chat" | "lesson" }>> | undefined,
+  transcript: Readonly<Record<string, { readonly source: "chat" | "lesson"; readonly owned?: true }>> | undefined,
 ): ReadonlySet<string> =>
-  new Set(Object.entries(transcript ?? {}).filter(([, at]) => at.source === "chat").map(([id]) => id))
+  new Set(Object.entries(transcript ?? {}).filter(([, at]) => at.source === "chat" && at.owned === true).map(([id]) => id))

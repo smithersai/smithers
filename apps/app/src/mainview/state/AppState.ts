@@ -715,6 +715,8 @@ export const GuideSchema = z.object({
   /** Where transcript entries arrived during this playthrough; survives a reload. */
   transcript: z.record(z.string(), z.object({
     step: z.number().int(), source: z.enum(["chat", "lesson"]),
+    /** Explicit ownership; older records indiscriminately included workspace chrome. */
+    owned: z.literal(true).optional(),
     /** A reused card joins the new chat turn without changing its frame's ordinal. */
     ordinal: z.number().optional(),
   })).optional(),
@@ -735,6 +737,8 @@ export const initialGuide = (): GuideState => ({ version: 3, sequence: "practice
 export const SessionSchema = z.object({
   sidebarOpen: z.boolean().optional(),
   guide: GuideSchema.optional(),
+  /** Current view registration; reset on boot, never restored as visibility. */
+  guideVisible: z.boolean().optional(),
   id: z.literal("main"),
   draft: z.string(),
   phase: z.enum(["idle", "responding"]),
@@ -1205,6 +1209,7 @@ export type AppTransition =
     interruptedTurnId?: string
   }
   | { type: "app.reset"; actor: Actor }
+  | { type: "guide.visibility.changed"; actor: "system"; visible: boolean }
   | { type: "guide.changed"; actor: Actor; guide: GuideState }
   | { type: "theme.changed"; actor: "user" | "system"; theme: Session["theme"] }
   /* The color theme (/theme) — the axis orthogonal to light/dark. */
@@ -1443,7 +1448,7 @@ export type AppTransition =
     actor: "user"
     id: string
   }
-  | { type: "card.upsert"; actor: Actor; card: Card }
+  | { type: "card.upsert"; actor: Actor; card: Card; /** The turn a system-authored answer belongs to. */ turnId?: string }
   // Local producers may omit kind: the store binds it to the existing card.
   // RPC producers must pass the discriminated CardPatchSchema instead.
   | { type: "card.updated"; actor: Actor; id: string; patch: Omit<CardPatch, "kind"> & { kind?: Card["kind"] } }

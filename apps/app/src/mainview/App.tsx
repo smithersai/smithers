@@ -168,7 +168,7 @@ function App() {
    * produced (the guide transcript above already carries those beside their
    * reply); the finished workspace keeps those practice artifacts out too.
    */
-  const conversationCards = inTutorial ? tutorialTranscript(conversationRows)
+  const conversationCards = inTutorial ? tutorialTranscript(conversationRows, session.guideTranscript)
     : composerHost !== undefined ?
       workspaceTranscript(conversationRows, session.activeRepoKey ?? null, chatEntryIds(session.guideTranscript)) :
       workspaceTranscript(conversationRows, null)

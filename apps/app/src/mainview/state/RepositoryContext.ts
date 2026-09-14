@@ -1,4 +1,4 @@
-import { GUIDE_BRIDGE } from "../onboarding/lessons"
+import { isPracticeContext } from "./practice/PracticeContext"
 import { z } from "zod"
 import { AgentRepositoryUpdateSchema, type AgentRepositoryUpdate } from "@smthrs/rpc/AgentContext"
 import type { AppStore } from "./AppStore"
@@ -20,8 +20,7 @@ export function repositoryScope(store: AppStore, repo: string): string {
 
 /** Never carry observations from another account, conversation, or tutorial playthrough. */
 export function currentRepositoryUpdate(store: AppStore): AgentRepositoryUpdate | undefined {
-  const guide = store.session().guide
-  const target = guide && guide.step > 0 && guide.step < GUIDE_BRIDGE
+  const target = isPracticeContext(store)
     ? { repo: PRACTICE_REPO } : resolveTargetRepo(store, undefined)
   if ("error" in target) return undefined
   const repo = target.repo

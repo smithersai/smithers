@@ -81,14 +81,25 @@ test("already installed: boot selects the latest pushed repository and completes
     { fullName: "acme/older", pushedAt: "2026-08-01T00:00:00Z", installationId: 42 },
     { fullName: "acme/api", pushedAt: "2026-09-01T00:00:00Z", installationId: 42 }
   ] } }))
-  await page.goto("/")
+  await page.goto("/smithersai/smithers/")
+  await page.getByTestId("chrome-account").focus()
+  await page.keyboard.press("Enter")
+  await expect(page.locator('[data-kind="account"]')).toBeVisible()
+  await page.goto("/smithersai/smithers/?tutorial")
+  await expect(page.locator(".guide-shell")).toHaveAttribute("data-stage", "1")
+  await expect(page.locator('.guide-transcript [data-kind="account"]')).toHaveCount(0)
   await skipPractice(page)
   await expect(page.locator(".guide-shell")).toHaveAttribute("data-stage", "12")
+  await expect(page.locator('.guide-transcript [data-kind="account"]')).toHaveCount(0)
+  await page.getByTestId("chrome-account").focus()
+  await page.keyboard.press("Enter")
+  await expect(page.locator('.guide-transcript [data-kind="account"]')).toHaveCount(0)
   await expect(page.getByText("I can see acme/api.", { exact: true })).toBeVisible()
   expect(page.context().pages()).toHaveLength(1)
   expect(host.external()).toEqual([])
   await page.reload()
   await expect(page.locator(".guide-shell")).toHaveAttribute("data-stage", "12")
+  await expect(page.locator('.guide-transcript [data-kind="account"]')).toHaveCount(0)
 })
 
 test("several installations: the embedded chooser is keyboard operable and verifies the selection", async ({ page, baseURL }) => {

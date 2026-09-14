@@ -2,25 +2,23 @@ import { describe, expect, test } from "bun:test"
 import { tutorialTranscript, workspaceTranscript } from "./transcriptScope"
 
 describe("tutorial transcript", () => {
-  test("drops a repository route's welcome and home cards replayed from the shared store", () => {
-    const cards = [
-      { id: "repo-home-smithersai/smithers", kind: "repo-home" },
-      { id: "welcome", kind: "repo-onboarding" },
-      { id: "choose", kind: "repository-choice" },
-      { id: "issues", kind: "issues" }
-    ]
-    expect(tutorialTranscript(cards).map((card) => card.id)).toEqual(["choose", "issues"])
+  test("allows lesson origins and tutorial chat, excluding preexisting workspace chrome and legacy unscoped records", () => {
+    const cards = ["account", "secrets", "settings", "world", "runs", "repo-home", "repo-onboarding", "future-workspace-card"]
+      .map(kind => ({ id: kind, kind, payload: {} }))
+    const lesson = { id: "choose", kind: "repository-choice", payload: {} }
+    const practice = { id: "practice-issue-3", kind: "issue", payload: {} }
+    const chat = { id: "chat-home", kind: "repo-home", payload: {} }
+    expect(tutorialTranscript([...cards, lesson, practice, chat], {
+      account: { step: 1, source: "lesson" },
+      choose: { step: 11, source: "lesson", owned: true },
+      "chat-home": { step: 12, source: "chat", owned: true },
+    })).toEqual([lesson, practice, chat])
   })
 
-  test("keeps every card when none came from a repository route", () => {
-    const cards = [{ id: "a", kind: "repository-choice" }, { id: "b", kind: "file" }]
-    expect(tutorialTranscript(cards)).toEqual(cards)
+  test("an unrecorded file is workspace-owned even though a lesson can produce the same kind", () => {
+    const cards = [{ id: "workspace-file", kind: "file", payload: {} }, { id: "lesson-file", kind: "file", payload: {} }]
+    expect(tutorialTranscript(cards, { "lesson-file": { step: 8, source: "lesson", owned: true } })).toEqual([cards[1]!])
   })
-})
-
-test("an explicitly requested Home card from chat is not mistaken for repository entry chrome", () => {
-  const cards = [{ id: "entry-home", kind: "repo-home" }, { id: "chat-home", kind: "repo-home" }]
-  expect(tutorialTranscript(cards, new Set(["chat-home"]))).toEqual([cards[1]!])
 })
 
 test("the terminal workspace keeps the selected repository and omits practice or another route's cards", () => {

@@ -4,6 +4,7 @@ import { sameApproval } from "./ApprovalReference"
 import { StatusRollupSchema } from "@smthrs/rpc/Health"
 import { acceptStatus, expireStatus, exitedStatus } from "./HealthStatus"
 import { migrateGuideV3 } from "./controller/guide"
+import { isLessonCard } from "../onboarding/transcriptScope"
 import { resumeTutorial } from "../onboarding/resume"
 import { PRACTICE_REPO } from "./practice/PracticeRepository"
 import type { StandardSchemaV1 } from "@standard-schema/spec"
@@ -851,6 +852,7 @@ const seed = async (collections: StoredCollections, persistence: CollectionPersi
       }
     }
     if (collections.sessions.get(SESSION_ID)?.sidebarOpen === true) collections.sessions.update(SESSION_ID, draft => { draft.sidebarOpen = false })
+    if (collections.sessions.get(SESSION_ID)?.guideVisible) collections.sessions.update(SESSION_ID, draft => { draft.guideVisible = false })
     const currentGuide = collections.sessions.get(SESSION_ID)?.guide ?? initialGuide()
     {
       const resumed = resumeTutorial(currentGuide, collections.cards.values(), collections.messages.size > 0)
@@ -1390,19 +1392,26 @@ const initializeAppStore = async (resolved: ResolvedPersistence, options: { read
        */
       const conversationTabId = conversationTabIdOf(current)
       const recordGuideEntry = (id: string, source: "chat" | "lesson", ordinal?: number) => {
-        if (!current.guide || current.guide.finished) return
+        if (!current.guide || current.guide.finished || !current.guideVisible) return
         collections.sessions.update(SESSION_ID, draft => {
-          if (draft.guide) (draft.guide.transcript ??= {})[id] = { step: current.guide!.step, source,
+          if (draft.guide) (draft.guide.transcript ??= {})[id] = { step: current.guide!.step, source, owned: true,
             ...(ordinal === undefined ? {} : { ordinal }),
           }
         })
       }
+      const tutorialTurn = current.turnId !== undefined && current.turnId !== null
+        && current.guide?.transcript?.[`message-${current.turnId}-user`]?.owned === true
+      const recordGuideCard = (card: Card, ordinal?: number) => {
+        const fromTurn = transition.actor === "smithers" || ("turnId" in transition && transition.turnId === current.turnId)
+        if (current.phase === "responding" && tutorialTurn && fromTurn) recordGuideEntry(card.id, "chat", ordinal)
+        else if (current.guide && isLessonCard(card, current.guide)) recordGuideEntry(card.id, "lesson", ordinal)
+      }
       const insertMessage = (row: Message): void => {
-        recordGuideEntry(row.id, "chat")
+        if (current.phase !== "responding" || tutorialTurn) recordGuideEntry(row.id, "chat")
         collections.messages.insert(conversationTabId === undefined ? row : { ...row, tabId: conversationTabId })
       }
       const insertCard = (row: Card): void => {
-        recordGuideEntry(row.id, current.phase === "responding" ? "chat" : "lesson")
+        recordGuideCard(row)
         collections.cards.insert(conversationTabId === undefined ? row : { ...row, tabId: conversationTabId })
       }
       const ensureCardFrame = (cardId: string): Frame => {
@@ -1963,6 +1972,10 @@ const initializeAppStore = async (resolved: ResolvedPersistence, options: { read
           })
           break
 
+        case "guide.visibility.changed": {
+          collections.sessions.update(SESSION_ID, draft => { draft.guideVisible = transition.visible })
+          break
+        }
         case "guide.changed": {
           // Replay owns a new practice presentation as well as a new cursor.
           // Clear both the cards and their local navigation atomically, so a
@@ -2189,7 +2202,7 @@ const initializeAppStore = async (resolved: ResolvedPersistence, options: { read
         case "card.navigated": {
           const currentCard = collections.cards.get(transition.card.id)
           if (!currentCard || isApprovalRequest(currentCard) || isApprovalRequest(transition.card) || approvalRequest(currentCard.id)) return
-          recordGuideEntry(currentCard.id, current.phase === "responding" ? "chat" : "lesson",
+          recordGuideCard(transition.card,
             current.phase === "responding" ? nextOrdinal(collections) : undefined)
           const history = collections.cardHistories.get(currentCard.id)
           const snapshot = { ...currentCard, navigation: undefined }
@@ -2321,8 +2334,8 @@ const initializeAppStore = async (resolved: ResolvedPersistence, options: { read
           } else {
             // A new view of an existing frame (for example picker → Change) is a fresh read.
             const chat = current.phase === "responding"
-            if (existing.kind !== card.kind || (chat && current.guide?.transcript?.[card.id]?.source !== "chat")) {
-              recordGuideEntry(card.id, chat ? "chat" : "lesson", chat ? nextOrdinal(collections) : undefined)
+            if (existing.kind !== card.kind || !current.guide?.transcript?.[card.id]?.owned || (chat && current.guide?.transcript?.[card.id]?.source !== "chat")) {
+              recordGuideCard(card, chat ? nextOrdinal(collections) : undefined)
             }
             collections.cards.update(card.id, (draft) => { Object.assign(draft, card) })
           }

@@ -105,6 +105,12 @@ test("signed-in repository chrome uses the same slot for Account", async ({ page
   const account = page.locator('[data-kind="account"]')
   await expect(account.getByRole("table", { name: "GitHub App permissions", exact: true })).toContainText("contents:write")
   await expect(account.getByRole("table", { name: "GitHub scopes", exact: true })).toContainText("read:user")
+  await page.goto("/smithersai/smithers/?tutorial")
+  await expect(page.locator(".guide-shell")).toHaveAttribute("data-stage", "1")
+  await expect(page.locator('.guide-transcript [data-kind="account"]')).toHaveCount(0)
+  await page.reload()
+  await expect(page.locator(".guide-shell")).toHaveAttribute("data-stage", "1")
+  await expect(page.locator('.guide-transcript [data-kind="account"]')).toHaveCount(0)
 })
 
 for (const command of ["/flow.run review smithersai/smithers", "/secrets.list", "/account.show", "/issues smithersai/smithers", "/prs smithersai/smithers"]) {
@@ -165,4 +171,22 @@ test("chrome sign-in uses the shell's green action token", async ({ page }) => {
     probe.remove()
     return same
   })).toBe(true)
+})
+
+
+test("plain repository chat never sends bundled practice priming", async ({ page }) => {
+  await signedOutVisitor(page)
+  await page.route("**/api/public/repos", route => route.fulfill({ json: { repos: [
+    { name: "smithersai/smithers", title: "Smithers", url: "https://github.com/smithersai/smithers", summary: "Smithers.", stats: null },
+  ] } }))
+  await page.route("**/api/agent/turn", route => route.fulfill({ status: 503, json: { message: "Captured test turn" } }))
+  await page.goto("/smithersai/smithers/")
+  await expect(page.getByTestId("chrome-sign-in")).toBeVisible()
+  await expect(page.locator(".guide-shell")).toHaveCount(0)
+  const turn = page.waitForRequest(request => new URL(request.url()).pathname === "/api/agent/turn" && request.method() === "POST")
+  await slash(page, "What does this repository do?")
+  const payload = (await turn).postDataJSON()
+  expect(JSON.stringify(payload.messages)).not.toContain("The repository on screen is practice:")
+  expect(JSON.stringify(payload.context?.repositoryUpdate) ?? "").not.toContain("practice:")
+  expect(payload.context?.onboarding).toBeUndefined()
 })

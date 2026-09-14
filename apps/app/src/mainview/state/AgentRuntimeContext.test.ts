@@ -330,6 +330,7 @@ describe("per-turn runtime context", () => {
     const requests: StartAgentTurnRequest[] = []
     const controller = createAppController(store, unavailableRepositories, recordingAgent(requests))
 
+    await store.dispatch({ type: "guide.visibility.changed", actor: "system", visible: true }).isPersisted.promise
     // Direct entry already has the first practice lesson in its durable context.
     controller.send("hi")
     await settled()
@@ -357,6 +358,7 @@ describe("per-turn runtime context", () => {
 
 test("direct tutorial entry and replay initialize hidden repository context without a start gate", async () => {
   const store = await webStore()
+  await store.dispatch({ type: "guide.visibility.changed", actor: "system", visible: true }).isPersisted.promise
   const requests: StartAgentTurnRequest[] = []
   const controller = createAppController(store, unavailableRepositories, recordingAgent(requests))
   await settled()
@@ -385,7 +387,8 @@ test("practice chat composes the displayed issue list and issue body without sig
   const controller = createAppController(store, unavailableRepositories, recordingAgent(requests), {
     fetchImpl: async input => { reads.push(String(input)); return Response.json({}, { status: 404 }) },
   })
-  store.dispatch({ type: "guide.changed", actor: "user", guide: initialGuide() })
+  store.dispatch({ type: "guide.visibility.changed", actor: "system", visible: true })
+  store.dispatch({ type: "guide.changed", actor: "user", guide: { ...initialGuide(), completed: ["tutorial.started"] } })
   store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-out", login: null, allowlisted: false, admin: false, scopesPlain: null })
   store.dispatch({ type: "repositories.loaded", actor: "system", repositories: [
     { id: "smithersai/smithers", org: "smithersai", name: "smithers", ownerKind: "user", head: null, catalog: true },
@@ -417,12 +420,24 @@ test("practice chat composes the displayed issue list and issue body without sig
   await settled()
   expect(requests[1]?.context?.activeRepository).toBe("smithersai/smithers")
   expect(JSON.stringify(requests[1]?.messages)).not.toContain("Add a /time endpoint")
-  // Selecting the practice key itself also supplies context after the guide.
-  // A persisted practice selection is also a context source outside the guide.
+  // A persisted practice selection cannot keep tutorial priming alive after its beat.
   store.collections.sessions.update(store.session().id, draft => { draft.activeRepoKey = PRACTICE_REPO })
   controller.send("Read the practice repository")
   await settled()
-  expect(requests[2]?.context?.capabilities.join(" ")).toContain(PRACTICE_REPO)
-  expect(JSON.stringify(requests[2]?.messages)).toContain("Expected: Hello, world!")
+  expect(JSON.stringify(requests[2]?.messages)).not.toContain("Expected: Hello, world!")
   expect(JSON.stringify(requests[2]?.messages)).not.toContain("Add a /time endpoint") // The detail card replaced the list.
+})
+
+
+test("plain repository chat carries no practice priming or hidden tutorial observations", async () => {
+  const store = await webStore()
+  const requests: StartAgentTurnRequest[] = []
+  const controller = createAppController(store, unavailableRepositories, recordingAgent(requests), { repositoryApp: "smithersai/smithers" })
+  await settled()
+  controller.send("What does this repository do?")
+  await settled()
+  expect(requests).toHaveLength(1)
+  expect(JSON.stringify(requests[0]?.messages)).not.toContain("The repository on screen is practice:")
+  expect((JSON.stringify(requests[0]?.context?.repositoryUpdate) ?? "")).not.toContain("practice:")
+  expect(requests[0]?.context?.onboarding).toBeUndefined()
 })

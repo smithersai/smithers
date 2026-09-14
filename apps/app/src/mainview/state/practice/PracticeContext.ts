@@ -1,14 +1,13 @@
 import { GUIDE_PRACTICE_END } from "../../onboarding/lessons"
 import { conversationTabIdOf, inConversation } from "../AppState"
 import type { AppStore } from "../AppStore"
-import { activeRepositoryId } from "../RepoContext"
 import { isPracticeRepo, PRACTICE_REPO, practiceIssue } from "./PracticeRepository"
 
 /** The lesson's repository is independent of the URL that hosts the guide. */
 export const isPracticeContext = (store: AppStore): boolean => {
-  const guide = store.session().guide
-  return isPracticeRepo(store.session().activeRepoKey) || isPracticeRepo(activeRepositoryId(store)) ||
-    (guide !== undefined && !guide.finished && guide.step <= GUIDE_PRACTICE_END)
+  const { guide, guideVisible } = store.session()
+  return guideVisible === true && guide?.completed?.includes("tutorial.started") === true
+    && !guide.finished && guide.step >= 1 && guide.step <= GUIDE_PRACTICE_END
 }
 
 export const PRACTICE_CONTEXT_INSTRUCTION = `The repository on screen is ${PRACTICE_REPO}, the bundled practice repository. Answer from the practice card data in this turn; no sign-in or network is needed to read it. For further reads, pass ${PRACTICE_REPO} as the repository argument (for example issues.view 3 ${PRACTICE_REPO}). The activeRepository routing field identifies the page hosting this tutorial, not the subject of practice questions.`
