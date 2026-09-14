@@ -163,7 +163,15 @@
 	--line: var(--border-solid);
 	--muted: var(--text-muted);
 	--primary: var(--brand);
-	--accent: var(--brand);
+	/*
+	 * shadcn's --accent is the SUBTLE hover surface (the gray a row takes on
+	 * hover), never the saturated brand — the bridge mapped it to --brand,
+	 * and every consumer that wrote var(--accent) for a quiet fill painted
+	 * purple: the targets card's hovers, the workflow highlight, and the
+	 * devtools JSON block, each with a beige fallback documenting the intent.
+	 * Point it at the stepped hover so shadcn-semantic code behaves as named.
+	 */
+	--accent: var(--hover);
 	--ok: var(--success);
 	--warn: var(--warning);
 	--warning-color: var(--warning);
