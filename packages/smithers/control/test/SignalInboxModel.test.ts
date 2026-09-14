@@ -401,8 +401,10 @@ describe("generated durable signal inbox histories", () => {
   }
 
   // This aggregate durability journey makes 4,093 write calls and opens eight
-  // independent pairs of connections. Keep its full history and page oracles
-  // while allowing a finite minute for shared-runner disk contention.
+  // independent pairs of connections. Under coverage and shared-runner load,
+  // the prior minute expired after 2,205 writes in the fifth cohort. Keep every
+  // history and page oracle with a finite three-minute budget for this case;
+  // the rest of the suite retains its normal timeout.
   it("bounds pages and preserves pending fairness through long terminal history and repeated reopen", async ({
     onTestFailed
   }) => {
@@ -467,5 +469,5 @@ describe("generated durable signal inbox histories", () => {
     } finally {
       rmSync(directory, { recursive: true, force: true })
     }
-  }, 60_000)
+  }, 180_000)
 })

@@ -1,4 +1,6 @@
+import { Journal, JournalEvent } from "@smthrs/journal"
 import { Deferred, Effect, Fiber, Stream } from "effect"
+import { TestClock } from "effect/testing"
 import { describe, expect, it } from "vitest"
 import { Control } from "../src/Control.ts"
 import { ControlRuntime } from "../src/ControlRuntime.ts"
@@ -122,6 +124,115 @@ describe("configured Monitor over the durable control journal", () => {
         )
       ).toBe(true)
       expect((yield* (yield* ControlRuntime).getRun(runId)).status).toBe("accepted")
+    }))
+  })
+  it("backs off failed probes and restores the configured cadence after success", async () => {
+    await Effect.runPromise(
+      Effect.gen(function*() {
+        const runId = yield* start
+        const began = yield* Effect.forEach([0, 1, 2, 3], () => Deferred.make<void>())
+        const times: Array<number> = []
+        const healthCheck = Health.makeRegistry({
+          checkers: [{
+            id: "recovering",
+            probe: () =>
+              Effect.gen(function*() {
+                const attempt = times.length
+                times.push(yield* Effect.clockWith((clock) => clock.currentTimeMillis))
+                yield* Deferred.succeed(began[attempt]!, undefined)
+                if (attempt < 2) return yield* Effect.fail(new Error("unavailable"))
+                return { activity: "working" as const }
+              })
+          }],
+          bindings: {
+            flow: {
+              checkerId: "recovering",
+              policy: {
+                intervalMs: 10,
+                timeoutMs: 5,
+                ttlMs: 1_000,
+                backoff: { initialMs: 20, maxMs: 80, factor: 2 }
+              }
+            }
+          }
+        }).resolve("flow")
+        const fiber = yield* Monitor.run({ runId, healthCheck, maxChecks: 4, stallBeats: 100 }).pipe(
+          Effect.forkChild({ startImmediately: true })
+        )
+        yield* Deferred.await(began[0]!)
+        for (const [index, delay] of [20, 40, 10].entries()) {
+          yield* TestClock.adjust(delay - 1)
+          expect(times).toHaveLength(index + 1)
+          yield* TestClock.adjust(1)
+          yield* Deferred.await(began[index + 1]!)
+        }
+        expect((yield* Fiber.join(fiber)).beats).toHaveLength(4)
+        expect(times).toEqual([0, 20, 60, 70])
+        const events = yield* (yield* Control).watch({ runId, follow: false }).pipe(Stream.runCollect)
+        const observations = events.filter((event) => event.kind === Health.statusObservedEventType)
+        // Identical failures coalesce; recovery publishes its fresh evidence.
+        expect(observations.map((event) => (event.payload as Health.HealthObservation).outcome)).toEqual([
+          "error",
+          "ok"
+        ])
+        expect(observations[1]?.payload).toMatchObject({ activity: "working", health: "healthy", observedAt: 60 })
+      }).pipe(Effect.provide(durable()), Effect.scoped, Effect.provide(TestClock.layer()), Effect.orDie)
+    )
+  })
+  it("bounds probe events to the newest 256 and advances past them on the next beat", async () => {
+    await run(Effect.gen(function*() {
+      const runId = yield* start
+      const journal = yield* Journal.Journal
+      const append = (index: number) =>
+        journal.emitDurableUnfenced(
+          new JournalEvent.Input({
+            runId: JournalEvent.RunId.make(runId),
+            sourceId: JournalEvent.SourceId.make("/test/progress"),
+            eventType: "test.progress",
+            payload: { index }
+          })
+        )
+      for (let index = 0; index < 260; index += 1) yield* append(index)
+      const began = yield* Deferred.make<void>()
+      const finish = yield* Deferred.make<void>()
+      const contexts: Array<Health.ProbeContext> = []
+      const healthCheck = Health.makeRegistry({
+        checkers: [{
+          id: "incremental",
+          probe: (context) =>
+            Effect.gen(function*() {
+              contexts.push(context)
+              if (contexts.length === 1) {
+                yield* Deferred.succeed(began, undefined)
+                yield* Deferred.await(finish)
+              }
+              return { activity: "unknown" as const }
+            })
+        }],
+        bindings: { flow: { checkerId: "incremental" } }
+      }).resolve("flow")
+      const fiber = yield* Monitor.run({ runId, healthCheck, intervalMs: 0, maxChecks: 2 }).pipe(
+        Effect.forkChild({ startImmediately: true })
+      )
+      yield* Deferred.await(began)
+      yield* append(260)
+      yield* Deferred.succeed(finish, undefined)
+      const report = yield* Fiber.join(fiber)
+      expect(contexts).toHaveLength(2)
+      const first = contexts[0]!
+      const second = contexts[1]!
+      expect(first.events.map((event) => event.payload)).toEqual(
+        Array.from({ length: 256 }, (_, index) => ({ index: index + 4 }))
+      )
+      expect(first.sinceCursor).toBe(0)
+      expect(second.sinceCursor).toBe(first.events[255]!.sequence)
+      expect(second.events.map((event) => ({ kind: event.kind, payload: event.payload }))).toEqual([
+        { kind: "test.progress", payload: { index: 260 } }
+      ])
+      expect(report.beats.map((beat) => beat.sequence)).toEqual([
+        first.events[255]!.sequence,
+        second.events[0]!.sequence
+      ])
     }))
   })
   it.each(["quota", "timer", "event"])("classifies a known %s wait without a stall", (waitingReason) => {

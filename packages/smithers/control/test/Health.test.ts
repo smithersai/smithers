@@ -1,4 +1,4 @@
-import { Effect, Fiber, Metric, Schema, Tracer } from "effect"
+import { Cause, Effect, Fiber, Metric, Schema, Tracer } from "effect"
 import { TestClock } from "effect/testing"
 import { describe, expect, it } from "vitest"
 import * as Health from "../src/Health.ts"
@@ -125,6 +125,26 @@ describe("Health authority and freshness", () => {
     expect(roll({ baseHealth: "failing" }).health).toBe("failing")
     expect(roll({ baseHealth: "runaway-loop" }).health).toBe("runaway-loop")
   })
+  it("fresh activity alone does not establish base health", () => {
+    expect(roll({ baseHealth: undefined })).toMatchObject({
+      activity: "working",
+      health: "unknown",
+      attention: "none",
+      freshness: "fresh"
+    })
+  })
+  it.each(
+    [
+      ["healthy", "stalled"],
+      ["failing", "failing"],
+      ["awaiting-human", "awaiting-human"]
+    ] as const
+  )("no-progress demotes %s to %s without erasing independent evidence", (baseHealth, health) => {
+    expect(roll({
+      baseHealth,
+      latest: { observation: observation({ report: { activity: "unknown", reason: "no-progress" } }), sequence: 9 }
+    })).toMatchObject({ health, reason: "no-progress", freshness: "fresh" })
+  })
 })
 
 describe("Health ordering", () => {
@@ -234,6 +254,30 @@ describe("Health configuration and Effect evaluation", () => {
         .resolve("role").checker.id
     ).toBe("lifecycle.session")
   })
+  it.each([null, "invalid"])("refuses a non-object backoff from host configuration: %j", (backoff) => {
+    expect(() =>
+      Health.makeRegistry({
+        bindings: { role: { checkerId: "lifecycle.run", policy: { backoff: backoff as never } } }
+      })
+    ).toThrow(new Health.HealthConfigurationError({ reason: "invalid-policy" }))
+  })
+  it("refuses malformed checker config at startup without exposing the rejected value", () => {
+    let called = false
+    const make = () =>
+      Health.makeRegistry({
+        checkers: [{
+          id: "marker",
+          configSchema: Schema.Struct({ enabled: Schema.Boolean }),
+          probe: () => {
+            called = true
+            return Effect.succeed({ activity: "working" })
+          }
+        }],
+        bindings: { role: { checkerId: "marker", config: { enabled: "private-config" } } }
+      })
+    expect(make).toThrow(new Health.HealthConfigurationError({ reason: "invalid-config" }))
+    expect(called).toBe(false)
+  })
   it.each([
     { limits: { maxSubjects: 0 } },
     { limits: { maxConcurrentProbes: 1000 } },
@@ -298,6 +342,13 @@ describe("Health configuration and Effect evaluation", () => {
     }))
     expect(finalized).toBe(true)
     expect(value?._tag).toBe("Failure")
+  })
+  it("propagates a checker's own interruption without publishing an error or success", async () => {
+    const exit = await Effect.runPromise(Effect.exit(
+      Health.evaluate(configured(() => Effect.interrupt), context, stamp)
+    ))
+    expect(exit._tag).toBe("Failure")
+    if (exit._tag === "Failure") expect(Cause.hasInterruptsOnly(exit.cause)).toBe(true)
   })
   it("bounds exponential failure backoff and resets on success", () => {
     expect([0, 1, 2, 500].map((failures) => Health.nextDelay(Health.defaultPolicy, failures))).toEqual([
