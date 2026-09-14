@@ -526,12 +526,16 @@ export function GuideShell({ children, clock = guideClock }: { children: ReactNo
           onCancel={event => event.preventDefault()}
           inert={!guide.conversationOpen ? true : undefined}
           aria-hidden={!guide.conversationOpen}
-          /* A click beside the composer dismisses the dock. */
-          onMouseDown={(event) => {
+          /* Pointer events avoid the synthesized mousedown after the touch
+             that opened Chat, which would immediately dismiss the modal. */
+          onPointerDown={(event) => {
             if (event.target === event.currentTarget) {
               event.preventDefault()
               runCommandClose()
             }
+          }}
+          onMouseDown={event => {
+            if (event.target === event.currentTarget) event.preventDefault()
           }}
         >
         <div className="guide-composer-clip">

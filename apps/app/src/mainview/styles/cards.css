@@ -275,6 +275,11 @@
 	margin-left: auto;
 }
 
+@media (max-width: 600px) {
+	.palette-foot { flex-wrap: wrap; }
+	.palette-hint-end { margin-left: 0; }
+}
+
 .palette-group {
 	padding: var(--sp-2) var(--sp-3) var(--sp-1);
 	color: var(--text-faint);
@@ -1396,6 +1401,14 @@
 	overflow: hidden;
 	text-overflow: ellipsis;
 	white-space: nowrap;
+}
+
+@media (max-width: 600px) {
+	.workflow-list-text > span {
+		white-space: normal;
+		text-overflow: clip;
+		overflow-wrap: anywhere;
+	}
 }
 
 /* Wave 12 — the quiet run's two acts, and the which-watched-repo question. */

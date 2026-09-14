@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test"
+import { devices, expect, test, type Locator, type Page } from "@playwright/test"
 
 /*
  * The shell fits a phone. `.app-shell` is a flex item, so its default
@@ -64,3 +64,123 @@ test("mounted cards stay inside the transcript column at 400px", async ({ page }
 
   expect(overflowing).toEqual([])
 })
+
+const openTutorial = async (page: Page) => {
+  await page.goto("/smithersai/smithers/?tutorial")
+  await expect(page.locator(".guide-shell")).toHaveAttribute("data-stage", "1")
+}
+
+// Measure before tapping: locator.tap() can scroll overflow:hidden ancestors,
+// making a pill that a real finger cannot reach appear to work.
+const reachableAction = async (page: Page, action: Locator) => {
+  await expect(action).toBeVisible()
+  const box = (await action.boundingBox())!
+  const footer = (await page.locator(".guide-footer").boundingBox())!
+  const viewport = page.viewportSize()!
+  expect(box.x).toBeGreaterThanOrEqual(0)
+  expect(box.y).toBeGreaterThanOrEqual(0)
+  expect(box.x + box.width).toBeLessThanOrEqual(viewport.width)
+  expect(box.y + box.height).toBeLessThanOrEqual(viewport.height)
+  expect(box.y + box.height).toBeLessThanOrEqual(footer.y)
+  expect(await action.evaluate(element => {
+    const rect = element.getBoundingClientRect()
+    return element.contains(document.elementFromPoint(rect.x + rect.width / 2, rect.y + rect.height / 2))
+  })).toBe(true)
+  return { x: box.x + box.width / 2, y: box.y + box.height / 2 }
+}
+
+for (const device of [
+  { name: "iPhone 14 portrait", descriptor: "iPhone 14", viewport: { width: 390, height: 844 } },
+  { name: "iPhone 14 landscape", descriptor: "iPhone 14", viewport: { width: 844, height: 390 } },
+  { name: "iPad Mini", descriptor: "iPad Mini", viewport: { width: 768, height: 1024 } },
+]) {
+  test.describe(device.name, () => {
+    const { defaultBrowserType: _, ...descriptor } = devices[device.descriptor]
+    test.use({ ...descriptor, viewport: device.viewport, contextOptions: { reducedMotion: "reduce" } })
+
+    test("tutorial pills stay reachable above the footer with help open and dismissed", async ({ page }) => {
+      await openTutorial(page)
+      const issues = page.getByRole("button", { name: "Show issues", exact: true })
+      const review = page.getByRole("button", { name: "Review changes", exact: true })
+      await expect(page.getByRole("note", { name: "Help" })).toBeVisible()
+      await reachableAction(page, issues)
+      await reachableAction(page, review)
+      await page.locator(".guide-actions .help-bubble-dismiss").tap()
+      await reachableAction(page, review)
+      const point = await reachableAction(page, issues)
+      await page.touchscreen.tap(point.x, point.y)
+      await expect(page.locator(".guide-shell")).toHaveAttribute("data-stage", "2")
+    })
+
+    test("Chat clears the header, shows the complete close hint, and closes with Escape", async ({ page }) => {
+      await openTutorial(page)
+      await page.getByRole("button", { name: "Chat", exact: true }).tap()
+      const input = page.getByTestId("composer-input")
+      await expect(input).toBeFocused()
+      const header = (await page.locator(".session-navigation").boundingBox())!
+      const inputBox = (await input.boundingBox())!
+      expect.soft(inputBox.y).toBeGreaterThanOrEqual(header.y + header.height)
+      await input.fill("hello from a phone")
+      await expect(input).toHaveValue("hello from a phone")
+      expect(await input.evaluate(element => {
+        const rect = element.getBoundingClientRect()
+        return document.elementFromPoint(rect.x + 2, rect.y + 2) === element
+      })).toBe(true)
+      const hint = page.locator(".palette-hint").filter({ hasText: "escClose" })
+      await expect(hint).toBeVisible()
+      const hintBox = (await hint.boundingBox())!
+      const layer = (await page.locator(".guide-composer-layer").boundingBox())!
+      expect.soft(hintBox.x + hintBox.width).toBeLessThanOrEqual(Math.min(device.viewport.width, layer.x + layer.width))
+      expect.soft(hintBox.y + hintBox.height).toBeLessThanOrEqual(layer.y + layer.height)
+      await page.keyboard.press("Escape")
+      await expect(page.getByRole("dialog", { name: "Chat", exact: true })).toBeHidden()
+      await expect(page.locator(".guide-shell")).toHaveAttribute("data-conversation-open", "false")
+      await page.getByRole("button", { name: "Chat", exact: true }).tap()
+      await expect(input).toBeFocused()
+      await expect(input).toHaveValue("hello from a phone")
+      await page.touchscreen.tap(1, device.viewport.height / 2)
+      await expect(page.getByRole("dialog", { name: "Chat", exact: true })).toBeHidden()
+    })
+
+    test("the issue transcript gets the remaining height and scrolls independently of the actions", async ({ page }) => {
+      await openTutorial(page)
+      await page.keyboard.press("i")
+      await expect(page.locator(".guide-shell")).toHaveAttribute("data-stage", "2")
+      await page.keyboard.press("r")
+      await expect(page.locator(".guide-shell")).toHaveAttribute("data-stage", "3")
+      const transcript = page.getByRole("log", { name: "Onboarding chat history" })
+      await expect(transcript.locator('[data-kind="issue"]')).toBeVisible()
+      expect((await transcript.boundingBox())!.height).toBeGreaterThanOrEqual(device.viewport.height * 0.4)
+      const action = page.getByRole("button", { name: "View issue flows", exact: true })
+      const before = await reachableAction(page, action)
+      await transcript.evaluate(element => { element.scrollTop = element.scrollHeight })
+      expect(await reachableAction(page, action)).toEqual(before)
+      await transcript.evaluate(element => { element.scrollTop = 0 })
+      await expect.poll(() => transcript.evaluate(element => element.scrollTop)).toBe(0)
+    })
+
+    if (device.viewport.width === 390) {
+      test("the flows card wraps the full flow title at phone width", async ({ page }) => {
+        await openTutorial(page)
+        await page.keyboard.press("i")
+        await expect(page.locator(".guide-shell")).toHaveAttribute("data-stage", "2")
+        await page.keyboard.press("r")
+        await expect(page.locator(".guide-shell")).toHaveAttribute("data-stage", "3")
+        await page.keyboard.press("e")
+        await expect(page.locator(".guide-shell")).toHaveAttribute("data-stage", "4")
+        const title = page.locator('.guide-transcript .workflow-list-text > span').first()
+        await expect(title).toContainText("Research and reproduce")
+        await title.scrollIntoViewIfNeeded()
+        const metrics = await title.evaluate(element => {
+          const style = getComputedStyle(element)
+          return { whiteSpace: style.whiteSpace, overflow: style.textOverflow, height: element.getBoundingClientRect().height,
+            lineHeight: parseFloat(style.lineHeight), width: element.clientWidth, scrollWidth: element.scrollWidth }
+        })
+        expect(metrics.whiteSpace).not.toBe("nowrap")
+        expect(metrics.overflow).not.toBe("ellipsis")
+        expect(metrics.height).toBeGreaterThan(metrics.lineHeight)
+        expect(metrics.scrollWidth).toBeLessThanOrEqual(metrics.width)
+      })
+    }
+  })
+}

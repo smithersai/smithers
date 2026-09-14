@@ -82,10 +82,20 @@ test('dictation Tab reaches Stop, Shift+Tab returns to the composer, and Escape 
   expect(aborted()).toBe(1)
   expect(store.session().dictating).toBe(false)
   expect(host.querySelector('[role="listbox"]')).toBeNull()
-  expect(store.session().guide?.conversationOpen).toBe(true)
-  await press('Escape', input)
-  expect(aborted()).toBe(1)
   expect(store.session().guide?.conversationOpen).toBe(false)
+})
+
+test('Escape dismisses Chat together with its root palette and preserves the draft', async () => {
+  const { host, store, controller } = await mount()
+  await press('c')
+  controller.changeDraft('hello from a phone')
+  await settle()
+  const input = host.querySelector<HTMLTextAreaElement>('[data-testid="composer-input"]')!
+  input.focus()
+  await press('Escape', input)
+  expect(store.session().guide?.conversationOpen).toBe(false)
+  expect(host.querySelector('dialog')!.open).toBe(false)
+  expect(store.session().draft).toBe('hello from a phone')
 })
 
 test('Chat has a modal boundary and makes the tutorial and footer inert; Mode remains inside', async () => {

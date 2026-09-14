@@ -1097,7 +1097,7 @@ export function Composer({
       const stop = event.currentTarget.closest(".guide-composer-layer")?.querySelector<HTMLButtonElement>(".guide-dictation-stop")
       if (stop) { event.preventDefault(); stop.focus(); return }
     }
-    // Release capture while preserving the palette's two-step Escape dismissal.
+    // Release microphone capture before the palette or Chat handles Escape.
     if (event.key === "Escape" && controller.store.session().dictating) controller.cancelDictation()
     // Input can arrive before the live-query render catches up. Keyboard
     // decisions must use the text under the caret, never the previous menu.
@@ -1118,21 +1118,23 @@ export function Composer({
       }
       return
     }
-    const performed = perform(
-      paletteKey({
-        key: event.key,
-        meta: event.metaKey || event.ctrlKey,
-        shift: event.shiftKey,
-        draft: inputDraft,
-        answer: inputAnswer,
-        rows: inputRows,
-        highlighted: changed ? 0 : slashHighlighted,
-        resultSelected: !changed && slashMenuLive.resultSelected === true,
-        slashBranch: changed ? (inputQuery !== undefined && /^[a-z0-9_-]+\.$/.test(inputQuery) ? inputQuery.slice(0, -1) : undefined) : slashBranch
-      }), inputDraft
-    )
+    const decision = paletteKey({
+      key: event.key,
+      meta: event.metaKey || event.ctrlKey,
+      shift: event.shiftKey,
+      draft: inputDraft,
+      answer: inputAnswer,
+      rows: inputRows,
+      highlighted: changed ? 0 : slashHighlighted,
+      resultSelected: !changed && slashMenuLive.resultSelected === true,
+      slashBranch: changed ? (inputQuery !== undefined && /^[a-z0-9_-]+\.$/.test(inputQuery) ? inputQuery.slice(0, -1) : undefined) : slashBranch
+    })
+    const performed = perform(decision, inputDraft)
     if (performed) {
-      event.preventDefault()
+      // Chat and its root palette are one dialog. Let the guide's release
+      // handler close it on the same Escape; nested action menus still own
+      // their dismissal, as does the standalone workspace palette.
+      if (decision.kind !== "close" || !inputSession.guide?.conversationOpen) event.preventDefault()
       return
     }
     if (event.key !== "Enter") return
