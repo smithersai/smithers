@@ -31,7 +31,7 @@ export type PaletteRow =
   /* "Ask Smithers": the composer itself, the first row of an empty ⌘K (onboarding SCRIPT v4, open decision). */
   | { readonly kind: "ask" }
 
-/** The overlay's rows for one draft, plus where each group starts (Tab walks groups). */
+/** The overlay's rows for one draft, plus where each group starts. */
 export interface PaletteRows {
   readonly rows: ReadonlyArray<PaletteRow>
   readonly groups: ReadonlyArray<{ readonly label: string; readonly start: number }>
@@ -112,14 +112,6 @@ export interface PaletteKeyInput {
 
 const wrap = (index: number, length: number): number => (length === 0 ? 0 : (index + length) % length)
 
-/** The index of the first row of the group after (or before) the highlighted one. */
-const nextGroupStart = (rows: PaletteRows, highlighted: number, direction: 1 | -1): number => {
-  const starts = rows.groups.map((group) => group.start)
-  if (starts.length === 0) return highlighted
-  const current = starts.reduce((found, start, index) => (start <= highlighted ? index : found), 0)
-  return starts[wrap(current + direction, starts.length)] ?? 0
-}
-
 export const paletteKey = (input: PaletteKeyInput): PaletteDecision => {
   const { key, meta, shift, rows, highlighted, answer, draft } = input
   const row = rows.rows[highlighted]
@@ -129,7 +121,7 @@ export const paletteKey = (input: PaletteKeyInput): PaletteDecision => {
     const kind = rows.rows[index]?.kind
     return { kind: "move", index, resultSelected: kind === "item" || kind === "action" }
   }
-  if (key === "Tab") return { kind: "move", index: nextGroupStart(rows, highlighted, shift ? -1 : 1), resultSelected: false }
+  if (key === "Tab") return { kind: "none" }
   if (key === "Escape") {
     if (inActions && rows.actionsFor !== undefined) return { kind: "close-actions", ref: rows.actionsFor.ref }
     return { kind: "close", overlayOnly: true }
@@ -209,6 +201,8 @@ export function PaletteOverlay({ id, answer, rows, highlighted, slashBranch, onH
   const chip = parsed.mode === "flows" ? "/" : prefixRow(parsed.mode).label
   const groupAt = new Map(rows.groups.map((group) => [group.start, group.label]))
   const showHead = rows.actionsFor !== undefined || (parsed.mode !== "all" && parsed.mode !== "flows")
+  const refusal = answer.refusal ?? (parsed.mode === "flows" && rows.rows.length === 0 && /^\S+$/.test(parsed.query)
+    ? `There is no /${parsed.query} flow. Type / to see everything Smithers can do.` : undefined)
   return (
     <div id={listboxId} className="slash-menu" role="listbox" aria-label="Search palette" data-branch={slashBranch} data-mode={parsed.mode} data-testid="palette">
       {showHead ? (
@@ -218,7 +212,7 @@ export function PaletteOverlay({ id, answer, rows, highlighted, slashBranch, onH
         </div>
       ) : null}
       <div className="slash-menu-body" ref={revealHighlighted}>
-        {answer.refusal === undefined ? null : <p className="palette-refusal" data-testid="palette-refusal">{answer.refusal}</p>}
+        {refusal === undefined ? null : <p className="palette-refusal" role="status" data-testid="palette-refusal">{refusal}</p>}
         {rows.rows.map((row, index) => {
           const label = groupAt.get(index)
           const highlightedRow = index === highlighted

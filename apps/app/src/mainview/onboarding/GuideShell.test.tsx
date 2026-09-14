@@ -90,6 +90,69 @@ const settle = async () => {
   flushSync(() => {})
 }
 
+test("Chat button focuses the input before another keydown, including reopening", async () => {
+  const host = await mountGuide(1, still, { autoPaused: true }, undefined, <App />)
+  await settle()
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const chat = host.querySelector<HTMLButtonElement>('.guide-footer [data-flow="chat.open"]')!
+    chat.focus()
+    chat.click()
+    expect(document.activeElement === host.querySelector('textarea[data-testid="composer-input"]')).toBe(true)
+    const input = document.activeElement!
+    for (let escape = 0; escape < 2; escape++) {
+      flushSync(() => {
+        input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }))
+        input.dispatchEvent(new KeyboardEvent('keyup', { key: 'Escape', bubbles: true, cancelable: true }))
+      })
+    }
+    await settle()
+  }
+})
+
+test("tutorial slash Escape dismisses just the menu, then Chat, preserving the draft", async () => {
+  let controller!: ReturnType<typeof createAppController>
+  const host = await mountGuide(1, still, { autoPaused: true }, c => { controller = c }, <App />)
+  await settle()
+  flushSync(() => controller.runCommand('chat.open'))
+  await settle()
+  flushSync(() => controller.changeDraft('/'))
+  await settle()
+  const input = host.querySelector<HTMLTextAreaElement>('textarea[data-testid="composer-input"]')!
+  const escape = () => flushSync(() => {
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }))
+    input.dispatchEvent(new KeyboardEvent('keyup', { key: 'Escape', bubbles: true, cancelable: true }))
+  })
+  escape()
+  await settle()
+  expect(host.querySelector('[data-testid="palette"]')).toBeNull()
+  expect(controller.store.session().guide?.conversationOpen).toBe(true)
+  expect(controller.store.session().draft).toBe('/')
+  escape()
+  await settle()
+  expect(controller.store.session().guide?.conversationOpen).toBe(false)
+})
+
+test("Tab wraps from Mode to the input and Shift+Tab wraps back inside Chat", async () => {
+  let controller!: ReturnType<typeof createAppController>
+  const host = await mountGuide(1, still, { autoPaused: true }, c => { controller = c }, <App />)
+  await settle()
+  flushSync(() => controller.runCommand('chat.open'))
+  await settle()
+  flushSync(() => controller.changeDraft('hello'))
+  await settle()
+  const input = host.querySelector<HTMLTextAreaElement>('textarea[data-testid="composer-input"]')!
+  const mode = host.querySelector<HTMLButtonElement>('.guide-composer-layer [aria-haspopup="menu"]')!
+  mode.focus()
+  const tab = new KeyboardEvent('keydown', { key: 'Tab', bubbles: true, cancelable: true })
+  flushSync(() => mode.dispatchEvent(tab))
+  expect(tab.defaultPrevented).toBe(true)
+  expect(document.activeElement === input).toBe(true)
+  const back = new KeyboardEvent('keydown', { key: 'Tab', shiftKey: true, bubbles: true, cancelable: true })
+  flushSync(() => input.dispatchEvent(back))
+  expect(back.defaultPrevented).toBe(true)
+  expect(document.activeElement === mode).toBe(true)
+})
+
 test("completed pills and their keys advance after Back, including the live approval", async () => {
   for (const step of [2, 6, 7, 8]) {
     const lesson = GUIDE_STAGES[step]!

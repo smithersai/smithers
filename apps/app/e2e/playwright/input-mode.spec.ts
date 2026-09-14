@@ -2,6 +2,43 @@ import { expect, test } from '@playwright/test'
 
 test.use({ contextOptions: { reducedMotion: 'reduce' } })
 
+test('Chat Tab reaches Send and Mode and cycles inside the dialog', async ({ page }) => {
+  await page.goto('/')
+  await page.getByRole('button', { name: 'Chat', exact: true }).click()
+  const input = page.getByTestId('composer-input')
+  const send = page.getByTestId('composer-send')
+  const mode = page.getByRole('dialog', { name: 'Chat' }).getByRole('button', { name: 'Mode: Normal', exact: true })
+  await input.fill('hello there')
+  await page.keyboard.press('Tab')
+  await expect(send).toBeFocused()
+  await page.keyboard.press('Tab')
+  await expect(mode).toBeFocused()
+  await page.keyboard.press('Tab')
+  await expect(input).toBeFocused()
+  await page.keyboard.press('Shift+Tab')
+  await expect(mode).toBeFocused()
+  await page.keyboard.press('Enter')
+  await expect(page.getByRole('menuitemradio', { name: 'Normal' })).toBeFocused()
+  await page.keyboard.press('Escape')
+  await expect(mode).toBeFocused()
+  const hint = (await page.locator('.palette-foot').boundingBox())!
+  expect((await mode.boundingBox())!.y).toBeGreaterThanOrEqual(hint.y + hint.height)
+})
+
+for (const colorScheme of ['light', 'dark'] as const) test(`palette and Mode paint opaque surfaces (${colorScheme})`, async ({ page }) => {
+  await page.emulateMedia({ colorScheme })
+  for (const path of ['/', '/smithersai/smithers/']) {
+    await page.goto(path)
+    await page.getByRole('button', { name: 'Mode: Normal', exact: true }).click()
+    await expect(page.getByRole('menu', { name: 'Input mode' })).toHaveCSS('background-color', /^rgb\(/)
+    await page.keyboard.press('Escape')
+    await page.getByRole('button', { name: 'Chat', exact: true }).click()
+    // The tutorial palette shares its opaque parent panel.
+    const panel = path === '/' ? page.locator('.guide-composer-layer') : page.getByTestId('palette')
+    await expect(panel).toHaveCSS('background-color', /^rgb\(/)
+  }
+})
+
 test('Mode selects on release, dismisses accessibly, persists, and Vim navigates without activating', async ({ page }) => {
   await page.goto('/')
   const mode = page.getByRole('button', { name: 'Mode: Normal', exact: true })
@@ -138,7 +175,7 @@ test('touch guidance and repository footer use taps without key chips', async ({
   await expect(page.getByRole('note', { name: 'Help' })).not.toContainText(/pressing C/)
   await page.getByRole('button', { name: 'Skip tutorial', exact: true }).tap()
   await page.getByRole('button', { name: 'Not now', exact: true }).tap()
-  await expect(page.locator('[data-message-step="13"]')).toContainText('tap Chat')
+  await expect(page.locator('[data-message-step="13"]')).toContainText(/[Tt]ap Chat/)
   await expect(page.locator('[data-message-step="13"]')).not.toContainText(/Press M|press C|H\/J\/K\/L/)
   await page.goto('/smithersai/smithers/')
   await expect(page.getByRole('button', { name: 'Chat', exact: true })).toBeVisible()

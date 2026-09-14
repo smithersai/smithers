@@ -1,7 +1,7 @@
 /*
  * The palette's keyboard contract (Search and Command Palette Spec 2026-09-07
  * §3) against the real App: Cmd+K opens on the composer, the arrows wrap,
- * Tab walks groups, → opens the actions panel and ← walks back, Enter runs
+ * Tab reaches controls, → opens the actions panel and ← walks back, Enter runs
  * the item's open flow and clears the draft, Backspace on an empty query
  * strips the prefix and then closes, Esc closes and leaves the draft, `?`
  * lists the prefixes, and Cmd+Shift+K reopens the last query. The slash tree
@@ -172,6 +172,27 @@ const invoked = (store: AppStore): Array<{ name: string; args: string | null }> 
     })
 
 describe("§3 the keyboard contract", () => {
+  test("an unknown /help stays visible with a refusal and never submits a metered turn", async () => {
+    const view = await mount()
+    await press(view, "k", { meta: true })
+    await view.act(() => view.controller.changeDraft('/help'))
+    await press(view, 'Enter')
+    expect(view.store.session().draft).toBe('/help')
+    expect(palette(view.host)?.textContent).toContain('There is no /help flow.')
+    expect(invoked(view.store).some(row => row.name === 'chat.send')).toBe(false)
+  })
+
+  test("opening and reopening Chat focus the composer in the opening render", async () => {
+    const view = await mount()
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const button = view.host.querySelector<HTMLButtonElement>('.app-chat-controls [data-flow="chat.open"]')!
+      button.focus()
+      flushSync(() => button.click())
+      expect(document.activeElement === textarea(view.host)).toBe(true)
+      await view.act(() => view.controller.closePalette())
+    }
+  })
+
   for (const draft of ["What does this repository do? Answer in two sentences.", "What is issue 3 about?", "Compose"]) {
     test(`Enter sends prose through chat.send while the overlay is open: ${draft}`, async () => {
       const view = await mount()
@@ -303,7 +324,7 @@ describe("§3 the keyboard contract", () => {
     expect(view.store.session().paletteOpen).toBe(false)
   })
 
-  test("the arrows move and wrap; Tab and Shift+Tab walk the groups", async () => {
+  test("the arrows move and wrap; Tab and Shift+Tab keep native control navigation", async () => {
     const view = await mount()
     await view.act(() => view.controller.changeDraft("Compose"))
     await press(view, "k", { meta: true })
@@ -316,12 +337,12 @@ describe("§3 the keyboard contract", () => {
     expect(highlighted(view.host)?.dataset["ref"]).toBe("src/Composer.tsx")
     await press(view, "ArrowDown")
     expect(highlighted(view.host)?.dataset["ref"]).toBe("src/Compose.css")
-    await press(view, "Tab")
-    expect(highlighted(view.host)?.dataset["ref"]).toBe(runSearchRef("run-compose", "runs-1"))
-    await press(view, "Tab")
-    expect(highlighted(view.host)?.dataset["ref"]).toBe("chat.send")
-    await press(view, "Tab", { shift: true })
-    expect(highlighted(view.host)?.dataset["ref"]).toBe(runSearchRef("run-compose", "runs-1"))
+    for (const shiftKey of [false, true]) {
+      const event = new KeyboardEvent("keydown", { key: "Tab", shiftKey, bubbles: true, cancelable: true })
+      await view.act(() => { textarea(view.host)!.dispatchEvent(event) })
+      expect(event.defaultPrevented).toBe(false)
+      expect(highlighted(view.host)?.dataset["ref"]).toBe("src/Compose.css")
+    }
   })
 
   test("→ opens the item's actions (registered flows), ← walks back, Enter on an action runs it", async () => {

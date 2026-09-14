@@ -960,6 +960,17 @@ export function Composer({
   })
   const draft = draftRows[0]?.draft ?? controller.store.session().draft
   const paletteOpen = draftRows[0]?.paletteOpen ?? controller.store.session().paletteOpen ?? false
+  // Focus as part of the opening commit; waiting for an animation frame lets
+  // the next character reach a shell shortcut. Do not refocus on draft edits.
+  const focusedOpen = useRef(false)
+  const bindInput = (node: HTMLTextAreaElement | null) => {
+    inputRef.current = node
+    if (!paletteOpen) focusedOpen.current = false
+    else if (node && !focusedOpen.current) {
+      focusedOpen.current = true
+      node.focus()
+    }
+  }
   const actionsRef = draftRows[0]?.paletteActionsRef ?? controller.store.session().paletteActionsRef ?? null
   const [wasOpen, setWasOpen] = useState(paletteOpen)
   if (wasOpen !== paletteOpen) {
@@ -988,7 +999,7 @@ export function Composer({
   const slashRows = slashQuery === undefined ? [] : controller.slashTree(slashQuery)
   const overlayKey = `${draft}\u0000${actionsRef ?? ""}`
   const slashMenuLive = slashMenu.draft === overlayKey ? slashMenu : { draft: overlayKey, index: 0, dismissed: false }
-  const overlayWanted = paletteOpen || (slashQuery !== undefined && slashRows.length > 0)
+  const overlayWanted = paletteOpen || slashQuery !== undefined
   const answer = overlayWanted ? controller.searchPalette(draft) : undefined
   const rows = answer === undefined ? undefined : paletteRows(answer, slashRows, actionsRef, true)
   const slashOpen = rows !== undefined && !slashMenuLive.dismissed
@@ -1092,11 +1103,6 @@ export function Composer({
   const onComposerKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>): void => {
     if (event.nativeEvent.isComposing) return
     if (event.key === "Enter" && event.shiftKey) return
-    // Dictation has a real Tab stop even while the palette owns ordinary Tab navigation.
-    if (event.key === "Tab" && controller.store.session().dictating) {
-      const stop = event.currentTarget.closest(".guide-composer-layer")?.querySelector<HTMLButtonElement>(".guide-dictation-stop")
-      if (stop) { event.preventDefault(); stop.focus(); return }
-    }
     // Release microphone capture before the palette or Chat handles Escape.
     if (event.key === "Escape" && controller.store.session().dictating) controller.cancelDictation()
     // Input can arrive before the live-query render catches up. Keyboard
@@ -1106,7 +1112,7 @@ export function Composer({
     const inputQuery = inputDraft.startsWith("/") && !inputDraft.slice(1).includes(" ") ? inputDraft.slice(1).toLowerCase() : undefined
     const inputSlashRows = changed ? (inputQuery === undefined ? [] : controller.slashTree(inputQuery)) : slashRows
     const inputSession = controller.store.session()
-    const inputWanted = changed ? inputSession.paletteOpen || (inputQuery !== undefined && inputSlashRows.length > 0) : slashOpen
+    const inputWanted = changed ? inputSession.paletteOpen || inputQuery !== undefined : slashOpen
     const inputAnswer = changed ? (inputWanted ? controller.searchPalette(inputDraft) : undefined) : answer
     const inputRows = changed ? (inputAnswer === undefined ? undefined : paletteRows(inputAnswer, inputSlashRows, inputSession.paletteActionsRef ?? null, true)) : rows
     if (!inputWanted || inputAnswer === undefined || inputRows === undefined) {
@@ -1131,10 +1137,7 @@ export function Composer({
     })
     const performed = perform(decision, inputDraft)
     if (performed) {
-      // Chat and its root palette are one dialog. Let the guide's release
-      // handler close it on the same Escape; nested action menus still own
-      // their dismissal, as does the standalone workspace palette.
-      if (decision.kind !== "close" || !inputSession.guide?.conversationOpen) event.preventDefault()
+      event.preventDefault()
       return
     }
     if (event.key !== "Enter") return
@@ -1146,6 +1149,12 @@ export function Composer({
      * consume Enter; bare prose has already taken the button's submit path.
      */
     if (inputAnswer.parsed.mode === "flows") {
+      // Keep an unmatched slash name and its refusal visible. Arguments still
+      // reach the registered flow's normal submit/form path below.
+      if (inputQuery !== undefined && inputSlashRows.length === 0) {
+        event.preventDefault()
+        return
+      }
       controller.closePalette(inputDraft)
       return
     }
@@ -1185,7 +1194,7 @@ export function Composer({
         lifecycleStatus={typing ? "submitted" : "ready"}
         submitProps={COMPOSER_SEND_PROPS}
         stopProps={COMPOSER_STOP_PROPS}
-        textareaProps={{ ref: inputRef, autoFocus, onKeyDown: onComposerKeyDown, ...COMPOSER_INPUT_TEST_ID,
+        textareaProps={{ ref: bindInput, autoFocus, onKeyDown: onComposerKeyDown, ...COMPOSER_INPUT_TEST_ID,
           role: "combobox", "aria-autocomplete": "list", "aria-haspopup": "listbox",
           "aria-expanded": slashOpen,
           "aria-controls": slashOpen ? paletteId : undefined,

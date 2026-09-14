@@ -2,7 +2,7 @@
 .input-mode-menu {
   position: absolute; z-index: 100; bottom: calc(100% + 8px); right: 0;
   min-width: 170px; padding: 5px; border: 1px solid var(--g-line, var(--border, #ccd6d2)); border-radius: 12px;
-  background: var(--g-panel, var(--popover, #fff)); color: var(--g-ink, var(--text, #183e2d)); box-shadow: 0 6px 22px #001c2524;
+  background: var(--surface); color: var(--g-ink, var(--text, #183e2d)); box-shadow: 0 6px 22px #001c2524;
 }
 .input-mode-control[data-placement="below"] .input-mode-menu { top: calc(100% + 8px); bottom: auto; }
 .input-mode-menu [role="menuitemradio"], .guide-footer .input-mode-menu [role="menuitemradio"] {
@@ -11,7 +11,7 @@
 }
 .input-mode-menu [role="menuitemradio"]:is(:hover,:focus-visible,[data-pressed]) { background: color-mix(in srgb, var(--g-accent, #3a756b) 14%, transparent); outline: none; }
 /* Mode stays within the modal focus boundary while Chat is open. */
-.guide-composer-layer > .input-mode-control { align-self: flex-end; }
+.guide-composer-layer > .input-mode-control { align-self: flex-end; flex-shrink: 0; margin-top: 8px; }
 .guide-composer-layer .input-mode-menu { position: static; margin-top: 8px; }
 .input-mode-reason { max-width: 220px; padding: 8px 10px; font-size: 12px; }
 .input-mode-menu [aria-disabled="true"] { opacity: .65; cursor: default; }

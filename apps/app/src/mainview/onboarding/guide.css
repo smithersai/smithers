@@ -743,7 +743,7 @@
   flex-direction: column;
   width: 100%;
   display: flex;
-  max-height: 40dvh;
+  max-height: 100%;
   overflow: hidden;
   padding: 8px;
   border: 1px solid var(--g-line);
@@ -778,6 +778,7 @@
   flex-shrink: 0;
 }
 .guide-composer-layer .smithers-composer {
+  flex-shrink: 0;
   width: 100%;
   margin: 0;
   gap: 4px;
@@ -820,7 +821,7 @@
   bottom: auto;
   right: auto;
   left: auto;
-  margin: 6px -8px -8px;
+  margin: 6px 0 0;
   max-height: none;
   border: 0;
   border-top: 1px solid var(--g-line);

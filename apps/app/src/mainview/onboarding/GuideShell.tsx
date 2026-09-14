@@ -11,6 +11,7 @@ import { ReelShell } from "./Reel.tsx"
 import { guideForwardAction } from "./navigation"
 import { useLiveQuery } from "@tanstack/react-db"
 import { Fragment, useCallback, useRef, useState, type ReactNode, type CSSProperties } from "react"
+import { flushSync } from "react-dom"
 import { Check, Mic, Volume2, VolumeX, X } from "lucide-react"
 import { useController } from "../ControllerContext"
 import { initialGuide, conversationTabIdOf, inConversation, type Card } from "../state/AppState"
@@ -100,6 +101,8 @@ export function GuideShell({ children, clock = guideClock }: { children: ReactNo
   const signInPrompts = messageRows.filter(message => inConversation(message, conversation) && message.action?.flow === "auth.sign-in")
     .sort((a, b) => a.ordinal - b.ordinal)
   const guide = session.guide ?? initialGuide()
+  // The palette transition is synchronous; guide progression may await a reel act.
+  const conversationOpen = session.paletteOpen === true || guide.conversationOpen
   const stage = guide.step
   const legacyFailure = legacyLibrarianFailure(guide)
   const notice = legacyFailure ? librarianFailureMessage(legacyFailure.kind, legacyFailure.error) : guide.notice
@@ -147,7 +150,7 @@ export function GuideShell({ children, clock = guideClock }: { children: ReactNo
     key: helpKey, index: (previous.key === helpKey ? previous.index : 0) + 1,
   })), [helpKey])
   const showTutorialHelp = lesson?.kind === "do" && lesson.help !== undefined && !done(stage)
-    && dismissedHelp !== helpKey && !guide.conversationOpen && !session.paletteOpen
+    && dismissedHelp !== helpKey && !conversationOpen
   const chatHelpOpen = showTutorialHelp && introduction?.target === "chat"
   const guidanceContent = lesson?.kind === "do" && lesson.help ? <GuidanceText
     key={`${helpKey}:${guidanceIndex}`}
@@ -209,10 +212,8 @@ export function GuideShell({ children, clock = guideClock }: { children: ReactNo
    */
   const runCommandOpen = () => {
     previousFocus.current = document.activeElement instanceof HTMLElement ? document.activeElement : null
-    controller.runCommand("chat.open")
-    requestAnimationFrame(() =>
-      document.querySelector<HTMLTextAreaElement>(".guide-composer-layer textarea")?.focus(),
-    )
+    flushSync(() => controller.runCommand("chat.open"))
+    document.querySelector<HTMLTextAreaElement>(".guide-composer-layer textarea")?.focus()
   }
   const runCommandClose = () => {
     controller.cancelDictation()
@@ -274,21 +275,21 @@ export function GuideShell({ children, clock = guideClock }: { children: ReactNo
         activate,
       })
       if ((event.metaKey || event.ctrlKey) && !event.altKey && !event.shiftKey && key === 'k') {
-        return action(() => guide.conversationOpen ? runCommandClose() : runCommandOpen(), event.metaKey ? 'meta+k' : 'control+k')
+        return action(() => conversationOpen ? runCommandClose() : runCommandOpen(), event.metaKey ? 'meta+k' : 'control+k')
       }
       if (event.metaKey || event.ctrlKey || event.altKey || event.shiftKey) return
-      if (key === 'escape' && guide.conversationOpen) return action(runCommandClose)
+      if (key === 'escape' && conversationOpen) return action(runCommandClose)
       if (key === 'escape' && session.inputMode === 'vim' && (event.target as Element | null)?.closest?.('input,textarea,select,[contenteditable]')) {
         return action(() => document.querySelector<HTMLElement>('.guide-shell')?.focus())
       }
       if (key === GUIDE_KEYS.mode) return action(() => document.querySelector<HTMLButtonElement>('.guide-shell [aria-haspopup="menu"][aria-keyshortcuts="m"]')?.click())
-      if (key === GUIDE_KEYS.chat) return action(() => guide.conversationOpen ? runCommandClose() : runCommandOpen())
+      if (key === GUIDE_KEYS.chat) return action(() => conversationOpen ? runCommandClose() : runCommandOpen())
       if (session.inputMode === 'vim' && ['h', 'j', 'k', 'l'].includes(key)) {
-        const root = document.querySelector<HTMLElement>(guide.conversationOpen ? '.guide-composer-layer' : '.guide-shell')
+        const root = document.querySelector<HTMLElement>(conversationOpen ? '.guide-composer-layer' : '.guide-shell')
         return root ? vimFocusAction(root, key) : undefined
       }
       if (key === 'w') return action(() => controller.runCommand('sidebar.toggle'))
-      if (guide.conversationOpen || session.paletteOpen) return
+      if (conversationOpen) return
       const lessonAction = lesson?.kind === 'do'
         ? [...lesson.actions, ...(lesson.secondary === undefined ? [] : [lesson.secondary])].find(candidate => candidate.key.toLowerCase() === key)
         : undefined
@@ -329,7 +330,7 @@ export function GuideShell({ children, clock = guideClock }: { children: ReactNo
         .all()
         .map((command) => command.name)
         .join(" ")}
-      data-conversation-open={guide.conversationOpen}
+      data-conversation-open={conversationOpen}
       data-step={stage}
       data-stage={stage}
       data-theme={sessions[0]?.theme ?? "light"}
@@ -366,7 +367,7 @@ export function GuideShell({ children, clock = guideClock }: { children: ReactNo
         }
       }}
     >
-      <div className="guide-content" ref={bindInputs} inert={guide.conversationOpen || undefined}>
+      <div className="guide-content" ref={bindInputs} inert={conversationOpen || undefined}>
       {/*
         * The workspace is behind the tutorial chrome (guide.css): while a lesson
         * is running it is not reachable, so it leaves the a11y tree and the tab
@@ -553,12 +554,28 @@ export function GuideShell({ children, clock = guideClock }: { children: ReactNo
           aria-modal="true"
           ref={node => {
             if (!node) return
-            if (guide.conversationOpen && !node.open) node.showModal()
-            else if (!guide.conversationOpen && node.open) node.close()
+            if (conversationOpen && !node.open) {
+              node.showModal()
+              node.querySelector<HTMLTextAreaElement>('textarea')?.focus()
+            }
+            else if (!conversationOpen && node.open) node.close()
+            // The composer is a portal: React events follow App's ancestry,
+            // so the modal boundary must listen on its actual DOM ancestor.
+            const tab = (event: KeyboardEvent) => {
+              if (event.key !== "Tab" || event.defaultPrevented) return
+              const controls = [...node.querySelectorAll<HTMLElement>('button, input, textarea, select, a[href], [tabindex]')]
+                .filter(control => control.tabIndex >= 0 && !control.matches(':disabled') && !control.closest('[hidden], [inert], [aria-hidden="true"]'))
+              const first = controls[0], last = controls.at(-1)
+              const next = event.shiftKey && document.activeElement === first ? last
+                : !event.shiftKey && document.activeElement === last ? first : undefined
+              if (next) { event.preventDefault(); next.focus() }
+            }
+            node.addEventListener('keydown', tab)
+            return () => node.removeEventListener('keydown', tab)
           }}
           onCancel={event => event.preventDefault()}
-          inert={!guide.conversationOpen ? true : undefined}
-          aria-hidden={!guide.conversationOpen}
+          inert={!conversationOpen ? true : undefined}
+          aria-hidden={!conversationOpen}
           /* Pointer events avoid the synthesized mousedown after the touch
              that opened Chat, which would immediately dismiss the modal. */
           onPointerDown={(event) => {
@@ -577,12 +594,6 @@ export function GuideShell({ children, clock = guideClock }: { children: ReactNo
           >
             {session.dictating && (
               <GuideButton className="guide-dictation-stop" data-flow="chat.dictate" shortcut="Escape"
-                onKeyDown={event => {
-                  if (event.key === "Tab" && event.shiftKey) {
-                    event.preventDefault()
-                    event.currentTarget.closest(".guide-composer-layer")?.querySelector<HTMLTextAreaElement>("textarea")?.focus()
-                  }
-                }}
                 onClick={() => {
                   controller.runCommand("chat.dictate")
                   requestAnimationFrame(() => document.querySelector<HTMLTextAreaElement>(".guide-composer-layer textarea")?.focus())
@@ -591,12 +602,12 @@ export function GuideShell({ children, clock = guideClock }: { children: ReactNo
               </GuideButton>
             )}
             <div className="guide-composer-host" ref={setComposerHost} />
-            {guide.conversationOpen && <InputModeMenu mode={session.inputMode ?? "normal"} placement="below" onChange={mode => controller.runCommand("input.mode", mode)} />}
+            {conversationOpen && <InputModeMenu mode={session.inputMode ?? "normal"} placement="below" onChange={mode => controller.runCommand("input.mode", mode)} />}
           </section>
         </div>
         </dialog>
       {/* The footer is the shell's last row; the palette overlay floats above it. */}
-      <footer className="guide-footer" inert={guide.conversationOpen || undefined}>
+      <footer className="guide-footer" inert={conversationOpen || undefined}>
         <GuideButton
           data-flow="onboarding.act"
           onClick={runCommandSound}
@@ -632,7 +643,7 @@ export function GuideShell({ children, clock = guideClock }: { children: ReactNo
               <span>Chat</span>
             </GuideButton>
             </HelpBubble>
-            {!guide.conversationOpen && <InputModeMenu mode={session.inputMode ?? "normal"} onChange={mode => controller.runCommand("input.mode", mode)} />}
+            {!conversationOpen && <InputModeMenu mode={session.inputMode ?? "normal"} onChange={mode => controller.runCommand("input.mode", mode)} />}
           </div>
         )}
         {stage === GUIDE_LAST_STEP && (

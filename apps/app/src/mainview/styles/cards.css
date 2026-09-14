@@ -144,7 +144,7 @@
 	flex-direction: column;
 	border: 1px solid var(--border-strong);
 	border-radius: var(--r-3);
-	background: var(--surface-glass-strong);
+	background: var(--surface);
 	box-shadow: var(--shadow-2);
 	overflow: hidden;
 }
@@ -161,6 +161,7 @@
 
 .slash-menu-item {
 	display: flex;
+	flex-shrink: 0;
 	padding: var(--sp-2) var(--sp-3);
 	align-items: baseline;
 	gap: 10px;
@@ -2831,3 +2832,7 @@
 .live-event-mark { color: var(--brand); }
 .live-tutorial-events pre { max-height: 260px; overflow: auto; padding: 16px; margin: 0 0 16px 32px; border-radius: 8px; background: var(--bg); white-space: pre-wrap; overflow-wrap: anywhere; font-size: var(--fs-small); }
 .live-tutorial-error, .live-tutorial-events [data-status="failed"] .live-event-mark { color: var(--danger); }
+
+@media (pointer: coarse) {
+	.palette-foot { display: none; }
+}

@@ -30,7 +30,7 @@ export function createPressActions() {
 
 const editing = 'input:not([type="checkbox"]), textarea, select, [contenteditable]:not([contenteditable="false"])'
 const control = 'button, a[href]'
-const available = (element: HTMLElement) => !element.closest('[inert], [aria-hidden="true"]') && !element.matches(':disabled, [aria-disabled="true"]')
+const available = (element: HTMLElement) => !element.closest('[hidden], [inert], [aria-hidden="true"]') && !element.matches(':disabled, [aria-disabled="true"]')
 
 /** Delegate native button clicks and shortcuts through one release arbiter. */
 export function bindPressActions({ root, resolveShortcut, enabled = () => true }: {
@@ -57,7 +57,10 @@ export function bindPressActions({ root, resolveShortcut, enabled = () => true }
     if (event.key === 'Tab') return held.cancel()
     const button = buttonAt(event.target)
     const native = button && !event.metaKey && !event.ctrlKey && !event.altKey && !event.shiftKey && (event.key === 'Enter' || (event.key === ' ' && button.tagName === 'BUTTON'))
-    const action = native ? buttonAction(button) : (event.target as Element | null)?.closest?.(editing) && !event.metaKey && !event.ctrlKey && event.key !== 'Escape' ? undefined : resolveShortcut(event)
+    const editingTarget = (event.target as Element | null)?.closest?.(editing) || doc.activeElement?.closest(editing)
+    const composerOpen = [...root.querySelectorAll<HTMLElement>('.composer-wrap textarea')].some(available)
+    const plainKey = !event.metaKey && !event.ctrlKey && event.key !== 'Escape'
+    const action = native ? buttonAction(button) : plainKey && (editingTarget || composerOpen) ? undefined : resolveShortcut(event)
     if (!action) {
       if (event.key === 'Escape') held.cancel()
       return

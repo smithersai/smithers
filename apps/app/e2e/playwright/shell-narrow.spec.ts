@@ -112,10 +112,13 @@ for (const device of [
       await expect(page.locator(".guide-shell")).toHaveAttribute("data-stage", "2")
     })
 
-    test("Chat clears the header, shows the complete close hint, and closes with Escape", async ({ page }) => {
+    test("Chat gives touch suggestions the remaining height and keeps Mode clear", async ({ page }) => {
       await openTutorial(page)
       await page.getByRole("button", { name: "Chat", exact: true }).tap()
       const input = page.getByTestId("composer-input")
+      // A touch open shows the composer; the on-screen keyboard follows the user's own tap on it.
+      await expect(input).toBeVisible()
+      await input.tap()
       await expect(input).toBeFocused()
       const header = (await page.locator(".session-navigation").boundingBox())!
       const inputBox = (await input.boundingBox())!
@@ -126,12 +129,22 @@ for (const device of [
         const rect = element.getBoundingClientRect()
         return document.elementFromPoint(rect.x + 2, rect.y + 2) === element
       })).toBe(true)
-      const hint = page.locator(".palette-hint").filter({ hasText: "escClose" })
-      await expect(hint).toBeVisible()
-      const hintBox = (await hint.boundingBox())!
-      const layer = (await page.locator(".guide-composer-layer").boundingBox())!
-      expect.soft(hintBox.x + hintBox.width).toBeLessThanOrEqual(Math.min(device.viewport.width, layer.x + layer.width))
-      expect.soft(hintBox.y + hintBox.height).toBeLessThanOrEqual(layer.y + layer.height)
+      await expect(page.locator(".palette-foot")).toBeHidden()
+      await input.fill("/")
+      const list = page.locator(".slash-menu-body")
+      const first = page.getByTestId("palette").getByRole("option").first()
+      const listBox = (await list.boundingBox())!
+      const rowBox = (await first.boundingBox())!
+      expect(listBox.height).toBeGreaterThanOrEqual(rowBox.height)
+      expect(await first.evaluate(element => {
+        const box = element.getBoundingClientRect()
+        return element.contains(document.elementFromPoint(box.x + box.width / 2, box.y + box.height / 2))
+      })).toBe(true)
+      const mode = page.getByRole("dialog", { name: "Chat" }).getByRole("button", { name: "Mode: Normal", exact: true })
+      expect((await mode.boundingBox())!.y).toBeGreaterThanOrEqual(listBox.y + listBox.height)
+      await input.fill("hello from a phone")
+      await page.keyboard.press("Escape")
+      await expect(input).toBeFocused()
       await page.keyboard.press("Escape")
       await expect(page.getByRole("dialog", { name: "Chat", exact: true })).toBeHidden()
       await expect(page.locator(".guide-shell")).toHaveAttribute("data-conversation-open", "false")

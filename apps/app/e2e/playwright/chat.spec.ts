@@ -10,8 +10,10 @@ import { expect, test } from "@playwright/test"
 test.skip(process.env.SMITHERS_CHAT_STUB === "0", "the stub suite; chat.real.spec.ts covers the real endpoint")
 
 for (const viewport of [{ width: 1280, height: 800 }, { width: 390, height: 844 }]) {
-test(`tutorial chat sends and displays the stub reply at ${viewport.width}px`, async ({ page }) => {
+for (const theme of ["light", "dark"] as const) {
+test(`tutorial chat sends and displays the stub reply at ${viewport.width}px (${theme})`, async ({ page }) => {
   await page.setViewportSize(viewport)
+  await page.emulateMedia({ colorScheme: theme })
   await page.goto("/")
   await expect(page.locator('.guide-shell')).toHaveAttribute('data-stage', '1')
   await page.keyboard.press('i')
@@ -25,12 +27,19 @@ test(`tutorial chat sends and displays the stub reply at ${viewport.width}px`, a
   await expect(input).toBeVisible()
   // The user's own bubble first, then the assistant's streamed text.
   await expect(page.locator(".guide-transcript .smithers-chat-message[data-role=\"user\"]")).toContainText("say ok")
+  await expect(page.locator("html")).toHaveAttribute("data-theme", theme)
+  const colours = await page.locator('.guide-transcript .smithers-chat-message[data-role="user"]').evaluate(element => ({
+    text: getComputedStyle(element.querySelector('.sui-md-p')!).color,
+    background: getComputedStyle(element.querySelector('.sui-chat-bubble')!).backgroundColor,
+  }))
+  expect(colours.text).not.toBe(colours.background)
   const assistant = page.locator(".guide-transcript .smithers-chat-message[data-role=\"assistant\"]", { hasText: "stub: say ok" })
   await expect(assistant).toContainText("stub: say ok", { timeout: 15_000 })
   await expect(assistant).toBeInViewport()
   await expect(input).toBeVisible()
   await expect(page.locator('.guide-shell')).toHaveAttribute('data-conversation-open', 'true')
 })
+}
 }
 
 test("typing 'say ok' and sending renders the stub reply", async ({ page }) => {
@@ -49,6 +58,33 @@ test("typing 'say ok' and sending renders the stub reply", async ({ page }) => {
 })
 
 for (const path of ["/", "/smithersai/smithers/"]) {
+  test(`Chat button preserves immediately typed slash prefixes on every open: ${path}`, async ({ page }) => {
+    await page.goto(path)
+    const input = page.getByTestId('composer-input')
+    for (const draft of ['/account.show', '/wiki', '/factory.show']) {
+      await page.getByRole('button', { name: 'Chat', exact: true }).click()
+      await page.keyboard.type(draft)
+      await expect(input).toHaveValue(draft)
+      await expect(page.locator('.session-sidebar')).toHaveCount(0)
+      await input.fill('')
+      await page.keyboard.press('Escape')
+      await page.keyboard.press('Escape')
+      await expect(input).toBeHidden()
+    }
+  })
+
+  test(`/help displays an unknown-flow refusal and keeps the draft: ${path}`, async ({ page }) => {
+    let turns = 0
+    page.on('request', request => { if (request.method() === 'POST' && /\/api\/(?:agent|chat)\/turn/.test(request.url())) turns++ })
+    await page.goto(path)
+    await page.getByRole('button', { name: 'Chat', exact: true }).click()
+    await page.keyboard.type('/help')
+    await page.keyboard.press('Enter')
+    await expect(page.getByTestId('palette')).toContainText('There is no /help flow.')
+    await expect(page.getByTestId('composer-input')).toHaveValue('/help')
+    expect(turns).toBe(0)
+  })
+
   test(`keyboard chat sends a turn and Shift+Enter inserts a newline: ${path}`, async ({ page }) => {
     await page.goto(path)
     await expect(page.getByRole("button", { name: "Mode: Normal", exact: true })).toBeVisible()

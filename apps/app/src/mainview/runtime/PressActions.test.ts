@@ -118,6 +118,23 @@ test('Escape reaches the inner menu before the enclosing close shortcut', () => 
   expect(calls).toEqual(['menu', 'composer'])
 })
 
+test('an open composer owns plain keys even if focus is still on the opener', () => {
+  const { root, buttons, key, calls } = setup()
+  const composer = document.createElement('div')
+  composer.className = 'composer-wrap'
+  composer.innerHTML = '<textarea data-testid="composer-input"></textarea>'
+  root.append(composer)
+  buttons[0]!.focus()
+  key('keydown', 'h', {}, buttons[0]); key('keyup', 'h', {}, buttons[0])
+  expect(calls).toEqual([])
+  // Native button activation still belongs to the focused control.
+  key('keydown', 'Enter', {}, buttons[1]); key('keyup', 'Enter', {}, buttons[1])
+  expect(calls).toEqual(['Help'])
+  composer.hidden = true
+  key('keydown', 't', {}, buttons[0]); key('keyup', 't', {}, buttons[0])
+  expect(calls).toEqual(['Help', 'Tutorial'])
+})
+
 
 test('two inputs on the same button keep it highlighted until both are released', () => {
   const { key, pointer, buttons, calls } = setup()
