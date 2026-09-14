@@ -115,21 +115,27 @@ const fillerNonEmpty = FastCheck.array(FastCheck.constantFrom(..."xyz01\\ é."),
   .map((chars) => chars.join(""))
 
 describe("FileSet.matchesPattern properties", () => {
-  it("rejects an admitted 24-star near miss within 100 ms", () => {
+  it("rejects an admitted 24-star near miss within 100 ms of thread CPU", () => {
     const pattern = "*a".repeat(24) + "b"
     const path = "a".repeat(47) + "c"
     expect(Schema.is(FileSet.Pattern)(pattern)).toBe(true)
     expect(Schema.is(FileSet.Pattern)(path)).toBe(true)
-    const started = performance.now()
+    // Charge only this synchronous matcher, excluding time descheduled by
+    // other workers and CPU consumed by other threads in this process.
+    const started = process.threadCpuUsage()
     expect(FileSet.matchesPattern(pattern, path)).toBe(false)
-    expect(performance.now() - started).toBeLessThan(100)
+    const elapsed = process.threadCpuUsage(started)
+    expect((elapsed.user + elapsed.system) / 1_000).toBeLessThan(100)
   })
 
-  it("bounds repeated recursive segments and long literal near misses", () => {
-    const started = performance.now()
+  it("bounds thread CPU for repeated recursive segments and long literal near misses", () => {
+    // Charge only this synchronous matcher, excluding time descheduled by
+    // other workers and CPU consumed by other threads in this process.
+    const started = process.threadCpuUsage()
     expect(FileSet.matchesPattern("**/a/".repeat(24) + "b", "a/".repeat(48) + "c")).toBe(false)
     expect(FileSet.matchesPattern("*" + "a".repeat(20_000) + "b*", "a".repeat(40_000) + "c")).toBe(false)
-    expect(performance.now() - started).toBeLessThan(100)
+    const elapsed = process.threadCpuUsage(started)
+    expect((elapsed.user + elapsed.system) / 1_000).toBeLessThan(100)
   })
 
   it.each(["\u2028", "\u2029"])("trailing ** covers single-star paths containing %j", (separator) => {

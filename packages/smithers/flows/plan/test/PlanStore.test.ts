@@ -3,6 +3,8 @@ import * as TestDatabase from "@smthrs/database/test/TestDatabase"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
 import * as Option from "effect/Option"
+import * as Schema from "effect/Schema"
+import * as Tracer from "effect/Tracer"
 import * as SqlClient from "effect/unstable/sql/SqlClient"
 import * as Migrations from "../src/Migrations.ts"
 import * as Plan from "../src/Plan.ts"
@@ -29,6 +31,18 @@ const samplePlan = () =>
     draft("root", { writes: ["out"] }),
     draft("child", { inputs: [{ _tag: "Ref", from: "root", path: [] }] })
   ])
+
+const assertAppendQueries = (queries: ReadonlyArray<string>) => {
+  // Check the complete ordered statement list, including each statement's shape.
+  // Extra reads or writes must fail regardless of quoting, aliases or SQL syntax.
+  expect(queries).toEqual([
+    "UPDATE flows_plans SET digest = ?, generation = ? WHERE plan_id = ? " +
+    "AND generation = ? AND flow = ? AND base_digest = ? AND digest = ?",
+    "INSERT INTO flows_plan_nodes (plan_id, node_id, generation, ordinal, kind, key_digest, node_json) " +
+    "VALUES (?, ?, ?, ?, ?, ?, ?)",
+    "INSERT INTO flows_plan_edges (plan_id, from_node, to_node) VALUES (?, ?, ?)"
+  ])
+}
 
 describe("PlanStore", () => {
   it.effect("records a plan and reads it back node for node", () =>
@@ -519,17 +533,36 @@ describe("PlanStore", () => {
       expect(failure).toMatchObject({ code: "decode_failed" })
     }))
 
-  it.effect(
-    "keeps per-append cost flat: the window around append 300 stays within a small multiple of the first 25",
-    () =>
+  it.effect.each([
+    {
+      name: "appends 300 generations without reading stored node rows or rewriting the prefix",
+      readPrefix: false
+    },
+    {
+      name: "rejects quoted prefix reads, decoding and verification across 300 generations",
+      readPrefix: true
+    }
+  ])(
+    "$name",
+    ({ readPrefix }) =>
       Effect.gen(function*() {
-        const { early, late } = yield* withStore((store) =>
+        const spans: Array<Tracer.NativeSpan> = []
+        const tracer = Tracer.make({
+          span(options) {
+            const span = new Tracer.NativeSpan(options)
+            spans.push(span)
+            return span
+          }
+        })
+        yield* withStore((store) =>
           Effect.gen(function*() {
+            const sql = yield* SqlClient.SqlClient
+            const decodeNode = Schema.decodeUnknownEffect(Schema.fromJsonString(Plan.PlanNode))
+            let prefixRowsRead = 0
             let plan = yield* withCrypto(compile([draft("n0", { writes: ["out/0"] })]))
             yield* store.record(plan, 1)
-            let early = 0
-            let late = 0
             for (let generation = 1; generation <= 300; generation++) {
+              const prefix = plan
               plan = yield* withCrypto(
                 Plan.append(plan, [
                   draft(`n${generation}`, {
@@ -538,22 +571,44 @@ describe("PlanStore", () => {
                   })
                 ])
               )
-              const started = yield* Effect.sync(() => performance.now())
-              yield* store.append(plan)
-              const elapsed = yield* Effect.sync(() => performance.now() - started)
-              if (generation <= 25) early += elapsed
-              if (generation > 275) late += elapsed
+              spans.length = 0
+              yield* Effect.gen(function*() {
+                if (readPrefix) {
+                  // Negative control: the SQL identifier helper quotes the table.
+                  // Read, decode and verify the actual prefix before each append.
+                  const rows = yield* sql<{ node_json: string }>`
+                    SELECT node_json FROM ${sql("flows_plan_nodes")}
+                    WHERE plan_id = ${prefix.planId} ORDER BY ordinal
+                  `
+                  expect(rows).toHaveLength(generation)
+                  prefixRowsRead += rows.length
+                  const nodes = yield* Effect.forEach(rows, (row) => decodeNode(row.node_json))
+                  expect(yield* withCrypto(Plan.verify({ ...prefix, nodes }))).toEqual(prefix)
+                }
+                yield* store.append(plan)
+              }).pipe(Effect.provideService(Tracer.Tracer, tracer))
+              const queries = spans.flatMap((span) => {
+                const query = span.attributes.get("db.query.text")
+                return typeof query === "string" ? [query.replace(/\s+/g, " ").trim()] : []
+              })
+              // Observe real SQLite executions. A successful append authenticates
+              // the prefix through the envelope CAS, then inserts only its new
+              // node and edge. Re-reading and verifying the growing prefix is the
+              // regression; wall-time ratios also charge unrelated machine load.
+              if (readPrefix) {
+                expect(queries[0]).toBe(
+                  "SELECT node_json FROM \"flows_plan_nodes\" WHERE plan_id = ? ORDER BY ordinal"
+                )
+                expect(() => assertAppendQueries(queries)).toThrow()
+                assertAppendQueries(queries.slice(1))
+              } else {
+                assertAppendQueries(queries)
+              }
             }
-            return { early: early / 25, late: late / 25 }
+            expect(prefixRowsRead).toBe(readPrefix ? 45_150 : 0)
+            expect(Option.getOrThrow(yield* store.get(plan.planId))).toEqual(plan)
           })
         )
-        // Append used to re-read, decode, and re-verify the whole stored plan
-        // per append, so the window around append 300 cost roughly fifty
-        // times the first 25 (the review probe measured 2.7 ms growing to
-        // 68.9 ms; this in-memory setup measures ~75 ms against ~1.5 ms).
-        // Matching the stored envelope against the verified prefix's approval
-        // digest keeps the ratio near the cost of one prefix hash.
-        expect(late).toBeLessThan(early * 12)
       }),
     300_000
   )
