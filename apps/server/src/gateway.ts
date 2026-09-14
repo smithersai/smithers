@@ -14,6 +14,7 @@ import { BodyUnreadable } from "./Failures"
 import type { UpstreamFailure } from "./Failures"
 import { discardBody, fetchWithDeadline, readJsonOrUndefined, readText, TransportLive } from "./Http"
 import type { Transport } from "./Http"
+import { upstreamProse } from "./Responses"
 
 /*
  * Wave 11 — the per-user gateway seam. The product Worker provisions (or
@@ -482,6 +483,14 @@ export type ProvisionOutcome =
   | { readonly status: "ready"; readonly record: GatewayRecord }
   | { readonly status: "provisioning"; readonly detail: string }
   | { readonly status: "no_capacity"; readonly detail: string }
+  /*
+   * The account is already holding every workspace it is allowed. A DIFFERENT
+   * fact from `no_capacity`, about a different party: the fleet is fine, this
+   * user's own cap is spent. The product answers the two in opposite voices
+   * ("not your fault" vs "your boxes"), so folding them together tells a user
+   * at their limit that the infrastructure failed them.
+   */
+  | { readonly status: "quota_exceeded"; readonly detail: string }
   | { readonly status: "unavailable"; readonly detail: string }
   | { readonly status: "no_cloud_token"; readonly detail: string }
   /*
@@ -494,13 +503,29 @@ export type ProvisionOutcome =
 
 const NO_CAPACITY_DETAIL = "Smithers Cloud has no free workspace capacity right now — nothing was queued; try again in a bit."
 
+/** Said only when Cloud refused for quota and wrote no message of its own. */
+const QUOTA_EXCEEDED_DETAIL = "Smithers Cloud says this account is already at its workspace limit."
+
+/**
+ * The refusal `code` a failing provision names, read out of the bounded body
+ * text. Smithers Cloud states which refusal this is in the body, not in the
+ * status line — `503 {"code":"no_capacity","fault":"infra"}` for a full pool,
+ * `429 {"code":"quota_exceeded"}` for an account at its own cap — so the code
+ * is what the taxonomy turns on and the status is only a fallback.
+ *
+ * Matched in the text rather than parsed: the body is read to a ceiling
+ * (`readBoundedResponseText`) and a long one arrives truncated, which no JSON
+ * parser will accept. `code` is the first field in every shape seen live.
+ */
+const refusalCode = (detail: string): string | undefined => /"code"\s*:\s*"([A-Za-z0-9_.-]+)"/.exec(detail)?.[1]
+
 /**
  * Provision-or-resume (§5): POST {cloud}/api/repos/{owner}/{repo}/gateway with
  * the user's Cloud token. Idempotent; on success ALWAYS adopt the returned
  * gateway_id/token/base_url. The taxonomy: 401 = the Cloud token was rejected
  * (the caller may re-mint and retry once), 409 = mid-provision (poll, don't
- * stampede), 500 no_capacity = pool exhausted (surface honestly, never
- * retry-loop).
+ * stampede), `no_capacity` = pool exhausted (surface honestly, never
+ * retry-loop), `quota_exceeded` = this account's own cap.
  */
 const provisionGateway = (
   repo: string,
@@ -563,19 +588,36 @@ const provisionGateway = (
         detail: `${repo} isn't on Smithers Cloud yet, so there is no workspace to provision for it.`
       } as const
     }
-    /*
-     * The pool says no, in the second shape it has: `429 quota_exceeded /
-     * concurrent sandboxes limit reached`, caught live on canary. It is the same
-     * truth as the 500 `no_capacity` below and deserves the same honest state —
-     * leaking "answered HTTP 429: {…}" is exactly the raw failure §4 is about.
-     */
-    if (response.status === 429) {
-      yield* readBoundedResponseText(response)
-      return { status: "no_capacity", detail: NO_CAPACITY_DETAIL } as const
-    }
     if (!response.ok) {
       const detail = yield* readBoundedResponseText(response)
-      if (response.status === 500 && detail.includes("no_capacity")) {
+      /*
+       * The body's own `code` decides, and the status line is consulted only
+       * when there is none. Smithers Cloud is moving the full-pool refusal
+       * from `500 {"error":"no_capacity"}` to the honest
+       * `503 {"code":"no_capacity","fault":"infra"}`; both are live at once,
+       * so a classifier keyed on the status is wrong about one of them
+       * whichever status it picks. Reading the code is right for both.
+       */
+      const code = refusalCode(detail)
+      if (code === "quota_exceeded") {
+        /*
+         * The account's own cap, in Cloud's words: only Cloud knows what the
+         * limit is and how much of it this user holds. Never NO_CAPACITY_DETAIL
+         * — that sentence blames the fleet for a boundary the user set.
+         */
+        return { status: "quota_exceeded", detail: upstreamProse(detail) ?? QUOTA_EXCEEDED_DETAIL } as const
+      }
+      /*
+       * `429 quota_exceeded / concurrent sandboxes limit reached` was caught
+       * live on canary and is handled above. A 429 that names NO code is the
+       * shape this seam has always read as the pool saying no, and stays it:
+       * moving it under a user-fault sentence on no evidence would blame the
+       * user for the fleet.
+       */
+      if (
+        code === "no_capacity" ||
+        (code === undefined && (response.status === 429 || (response.status === 500 && detail.includes("no_capacity"))))
+      ) {
         return { status: "no_capacity", detail: NO_CAPACITY_DETAIL } as const
       }
       return {
@@ -704,6 +746,7 @@ export type GatewayCallOutcome =
   | { readonly status: "unknown_outcome"; readonly detail: string }
   | { readonly status: "provisioning"; readonly detail: string }
   | { readonly status: "no_capacity"; readonly detail: string }
+  | { readonly status: "quota_exceeded"; readonly detail: string }
   | { readonly status: "no_cloud_token"; readonly detail: string }
   | { readonly status: "no_cloud_repo"; readonly detail: string }
   | { readonly status: "unavailable"; readonly detail: string }

@@ -62,6 +62,9 @@ const requireWorkflowSession = (request: Request): Effect.Effect<ValidatedIdenti
 const gatewayCallResponse = (call: Exclude<GatewayCallOutcome, { readonly status: "ok" }>): Response => {
   if (call.status === "provisioning") return json(200, { status: "provisioning", message: call.detail })
   if (call.status === "no_capacity") return json(200, { status: "no-capacity", message: call.detail })
+  // The user's own box cap, not the fleet's: a separate wire state so the
+  // product never tells someone at their limit that the infrastructure failed.
+  if (call.status === "quota_exceeded") return json(200, { status: "quota-exceeded", message: call.detail })
   if (call.status === "no_cloud_token") return json(200, { status: "no-cloud-identity", message: call.detail })
   if (call.status === "no_cloud_repo") return json(200, { status: "no-cloud-repo", message: call.detail })
   return json(502, { status: "error", message: call.detail })
@@ -107,6 +110,10 @@ export const handleWorkflowProvision = (request: Request): Effect.Effect<Respons
         return json(200, { status: "provisioning", message: outcome.detail })
       case "no_capacity":
         return json(200, { status: "no-capacity", message: outcome.detail })
+      case "quota_exceeded":
+        // Distinct from no-capacity on purpose: this account is at its own
+        // workspace limit, which is a fact about the user, not the fleet.
+        return json(200, { status: "quota-exceeded", message: outcome.detail })
       case "no_cloud_token":
         return json(200, { status: "no-cloud-identity", message: outcome.detail })
       case "no_cloud_repo":

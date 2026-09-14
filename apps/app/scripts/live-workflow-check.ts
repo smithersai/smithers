@@ -137,6 +137,9 @@ check(
 
 const ready = firstBody.status === "ready"
 const honestUnavailable = firstBody.status === "no-capacity" ||
+  // The canary account at its own workspace cap: a named state like any
+  // other, and not the deployment failing.
+  firstBody.status === "quota-exceeded" ||
   firstBody.status === "no-cloud-identity" ||
   firstBody.status === "provisioning"
 

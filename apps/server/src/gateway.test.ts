@@ -373,7 +373,26 @@ describe("wave 11 — provision-or-resume (§5)", () => {
   })
 
   test("500 no_capacity is surfaced honestly and never retried", async () => {
+    // The OLD shape, kept green on purpose: Smithers Cloud is moving the
+    // full-pool refusal to a 503 with a `code` (below), and until every
+    // deployment has it both shapes answer this route. Backwards
+    // compatibility here is not legacy tolerance, it is the coexistence
+    // window.
     const { calls, fetch } = relay({ provision: () => json(500, { error: "no_capacity", message: "no worker has capacity" }) })
+    const outcome = await run(ensureGateway("will", "will/mvp").pipe(Effect.provide(seam(fetch))))
+    expect(outcome.status).toBe("no_capacity")
+    expect(outcome.status === "no_capacity" && outcome.detail).toContain("no free workspace capacity")
+    expect(calls.filter((call) => call.url.includes("/gateway")).length).toBe(1)
+  })
+
+  test("503 no_capacity is the same capacity truth — the status moved, the meaning did not", async () => {
+    // Smithers Cloud's corrected shape for "the whole pool is full": a 503
+    // (the honest status for a full fleet) naming the reason in `code`, with
+    // `fault: "infra"` saying whose fault it is. Classifying on the status
+    // alone dropped this into the generic branch and the browser saw a 502.
+    const { calls, fetch } = relay({
+      provision: () => json(503, { code: "no_capacity", fault: "infra", message: "no sandbox slots are free" })
+    })
     const outcome = await run(ensureGateway("will", "will/mvp").pipe(Effect.provide(seam(fetch))))
     expect(outcome.status).toBe("no_capacity")
     expect(outcome.status === "no_capacity" && outcome.detail).toContain("no free workspace capacity")
@@ -397,17 +416,33 @@ describe("wave 11 — provision-or-resume (§5)", () => {
     expect(outcome.detail.length).toBeLessThanOrEqual("Provisioning the workspace answered HTTP 500: ".length + 240)
   })
 
-  test("429 quota_exceeded is the same honest no-capacity truth, not a leaked status code", async () => {
-    // Caught live on canary while verifying wave 12: the pool's other refusal
-    // shape is `429 {"code":"quota_exceeded","message":"concurrent sandboxes
-    // limit reached"}`, which used to surface as "answered HTTP 429: {…}".
+  test("429 quota_exceeded is the USER's own cap, a state of its own — not the fleet being full", async () => {
+    // Caught live on canary while verifying wave 12: `429
+    // {"code":"quota_exceeded","message":"concurrent sandboxes limit
+    // reached"}`. This used to be folded into `no_capacity`, which is a
+    // different fact about a different party: no_capacity is the fleet's
+    // fault and nothing the user can do; quota_exceeded is this account
+    // already holding every box it is allowed. The product says so
+    // differently, so the seam must tell them apart — and the user's own
+    // limit is stated in Cloud's words, because only Cloud knows the number.
     const { calls, fetch } = relay({
       provision: () => json(429, { code: "quota_exceeded", message: "concurrent sandboxes limit reached" })
     })
     const outcome = await run(ensureGateway("will", "will/mvp").pipe(Effect.provide(seam(fetch))))
-    expect(outcome.status).toBe("no_capacity")
-    expect(outcome.status === "no_capacity" && outcome.detail).toContain("no free workspace capacity")
+    expect(outcome.status).toBe("quota_exceeded")
+    expect(outcome.status === "quota_exceeded" && outcome.detail).toBe("concurrent sandboxes limit reached")
+    expect(outcome.status === "quota_exceeded" && outcome.detail).not.toContain("no free workspace capacity")
     expect(calls.filter((call) => call.url.includes("/gateway")).length).toBe(1)
+  })
+
+  test("a 429 that names no code stays the capacity truth it has always been", async () => {
+    // Only the `code` distinguishes the two refusals. A 429 without one is
+    // the shape this seam has always read as the pool saying no, and moving
+    // it under a user-fault message on no evidence would blame the user for
+    // the fleet.
+    const { fetch } = relay({ provision: () => json(429, { message: "slow down" }) })
+    const outcome = await run(ensureGateway("will", "will/mvp").pipe(Effect.provide(seam(fetch))))
+    expect(outcome.status).toBe("no_capacity")
   })
 
   test("a repo with no Smithers Cloud counterpart is its own state, not a raw HTTP failure", async () => {

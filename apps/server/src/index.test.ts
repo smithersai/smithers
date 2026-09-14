@@ -2952,6 +2952,60 @@ describe("the browser tool route (§2d)", () => {
       globalThis.fetch = original
     }
   })
+
+  test("a 503 refusal keeps its machine-readable code, retry_after and Retry-After header", async () => {
+    /*
+     * The proxy restates an upstream failure in the seam's envelope so a
+     * reader always gets a sentence — that stays. But the envelope was
+     * dropping the two fields that are not prose: `code` (which refusal this
+     * is) and `retry_after` (when to come back), header included. Smithers
+     * Cloud is about to answer a full pool with exactly that shape, and a
+     * client that cannot read the code cannot tell a full fleet from its own
+     * quota — the distinction this whole change exists to keep.
+     */
+    const env: WorkerEnv = {
+      ...assetsEnv(),
+      IDENTITY_UPSTREAM_URL: "https://identity.test",
+      IDENTITY_SERVICE_TOKEN: "svc",
+      SMITHERS_CLOUD_API_BASE_URL: "https://cloud.test"
+    }
+    const original = globalThis.fetch
+    globalThis.fetch = (async (input: RequestInfo | URL) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url
+      if (url.startsWith("https://identity.test/api/identity/validate")) {
+        return new Response(JSON.stringify({ login: "will", allowlisted: true, admin: false, scopes: [] }), {
+          status: 200,
+          headers: { "content-type": "application/json" }
+        })
+      }
+      if (url.startsWith("https://identity.test/api/identity/cloud-token")) {
+        return new Response(JSON.stringify({ found: true, token: "cloud-token-1" }), {
+          status: 200,
+          headers: { "content-type": "application/json" }
+        })
+      }
+      return new Response(
+        JSON.stringify({ code: "no_capacity", fault: "infra", message: "no sandbox slots are free", retry_after: 30 }),
+        { status: 503, headers: { "content-type": "application/json", "retry-after": "30" } }
+      )
+    }) as unknown as typeof fetch
+    try {
+      const response = await worker.fetch(
+        new Request("https://mvp.test/api/repos/will/flows/issues", { headers: { cookie: "smithers_session=sealed" } }),
+        env
+      )
+      expect(response.status).toBe(503)
+      expect(response.headers.get("retry-after")).toBe("30")
+      const body = (await response.json()) as { status: string; message: string; code?: string; retry_after?: number }
+      // The sentence still comes from the seam's own envelope.
+      expect(body.status).toBe("error")
+      expect(body.message).toBe("no sandbox slots are free")
+      expect(body.code).toBe("no_capacity")
+      expect(body.retry_after).toBe(30)
+    } finally {
+      globalThis.fetch = original
+    }
+  })
 })
 
 /*
@@ -4217,6 +4271,42 @@ describe("wave 11 — the /api/workflow/* routes", () => {
         expect(body.status).toBe("no-capacity")
         expect(body.message).toContain("nothing was queued")
         expect(calls.filter((call) => call.url.includes("/gateway"))).toHaveLength(1)
+      }
+    )
+  })
+
+  test("a 503 no_capacity reaches the browser as the same honest state, not a 502", async () => {
+    // Smithers Cloud's corrected full-fleet status. Before the body's `code`
+    // was read it fell through to the generic branch and the route answered
+    // 502 with a leaked "answered HTTP 503".
+    await withRelay(
+      { provision: () => json(503, { code: "no_capacity", fault: "infra", message: "no sandbox slots are free" }) },
+      async (calls) => {
+        const response = await worker.fetch(
+          signedIn("/api/workflow/provision", { method: "POST", body: JSON.stringify({ repo: "will/mvp" }) }),
+          env()
+        )
+        expect(response.status).toBe(200)
+        const body = (await response.json()) as { status: string; message: string }
+        expect(body.status).toBe("no-capacity")
+        expect(body.message).toContain("nothing was queued")
+        expect(calls.filter((call) => call.url.includes("/gateway"))).toHaveLength(1)
+      }
+    )
+  })
+
+  test("the user's own box cap is its own state on the wire, never the fleet's no-capacity", async () => {
+    await withRelay(
+      { provision: () => json(429, { code: "quota_exceeded", message: "concurrent sandboxes limit reached" }) },
+      async () => {
+        const response = await worker.fetch(
+          signedIn("/api/workflow/provision", { method: "POST", body: JSON.stringify({ repo: "will/mvp" }) }),
+          env()
+        )
+        expect(response.status).toBe(200)
+        const body = (await response.json()) as { status: string; message: string }
+        expect(body.status).toBe("quota-exceeded")
+        expect(body.message).toBe("concurrent sandboxes limit reached")
       }
     )
   })

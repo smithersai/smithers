@@ -97,6 +97,34 @@ const platformFailureMessage = (status: number, body: string): string => {
   return `Smithers Cloud refused that request (HTTP ${status}).`
 }
 
+/**
+ * The parts of an upstream refusal that are NOT prose, kept when the body is
+ * restated. `code` names WHICH refusal this is — `no_capacity` (the fleet is
+ * full, nobody's fault) reads nothing like `quota_exceeded` (this account is
+ * at its own cap), and a client that only gets a sentence cannot tell them
+ * apart without matching on English. `retry_after` says when to come back.
+ * Both are facts a caller acts on and neither can be re-derived from a
+ * message, so they pass through as they arrived. Only these two fields, and
+ * only at their documented types: a pass-through of known facts, never of the
+ * upstream's body.
+ */
+const machineReadableRefusal = (body: string): { readonly code?: string; readonly retry_after?: number } => {
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(body)
+  } catch {
+    return {}
+  }
+  if (typeof parsed !== "object" || parsed === null) return {}
+  const record = parsed as { code?: unknown; retry_after?: unknown }
+  return {
+    ...(typeof record.code === "string" && record.code.trim() !== "" ? { code: record.code.trim().slice(0, 64) } : {}),
+    ...(typeof record.retry_after === "number" && Number.isFinite(record.retry_after)
+      ? { retry_after: record.retry_after }
+      : {})
+  }
+}
+
 export const platformProxyMatch = (pathname: string, method: string): boolean =>
   PLATFORM_PROXY_RULES.some(
     (rule) =>
@@ -188,14 +216,25 @@ export const handlePlatformProxy = (
     if (Result.isFailure(fetched)) return upstreamUnreachable("Smithers Cloud", fetched.failure)
     const upstream = fetched.success
     /*
-     * A failure never passes through: the upstream's body is written for its
-     * own callers, and the product renders whatever comes back straight to the
-     * user. Restate it in the seam's own envelope so a reader always gets a
-     * sentence, and the shape matches every other refusal this Worker makes.
+     * A failure's PROSE never passes through: the upstream's body is written
+     * for its own callers, and the product renders whatever comes back
+     * straight to the user. Restate it in the seam's own envelope so a reader
+     * always gets a sentence, and the shape matches every other refusal this
+     * Worker makes. The machine-readable facts beside the prose — `code`,
+     * `retry_after`, and the `Retry-After` header — are kept: they are what a
+     * client acts on, and dropping the code left a caller unable to tell a
+     * full fleet from its own quota.
      */
     if (upstream.status >= 400) {
       const detail = yield* readText(upstream).pipe(Effect.catch(() => Effect.succeed("")))
-      return json(upstream.status, { status: "error", message: platformFailureMessage(upstream.status, detail) })
+      const failure = json(upstream.status, {
+        status: "error",
+        message: platformFailureMessage(upstream.status, detail),
+        ...machineReadableRefusal(detail)
+      })
+      const retryAfter = upstream.headers.get("retry-after")
+      if (retryAfter !== null) failure.headers.set("retry-after", retryAfter)
+      return failure
     }
     // Status and body pass through; upstream headers do not (no set-cookie, no
     // upstream CORS) — only the content type survives.
