@@ -176,3 +176,30 @@ on stable Rust without changing the runtime dependencies. Instrumentation needs
 its declared nightly toolchain; an uninstrumented pass does not certify it.
 Developer runs with a separate configuration must report their reduced scope
 and do not replace the supported package gate.
+
+## Startup probes under machine load
+
+The version and spawner contract tests run real fixture executables under
+Effect's test clock. Host scheduling does not consume their simulated startup
+budget. Timeout tests wait for an atomically published child PID before advancing
+the clock. Readiness uses cancellable asynchronous reads of that PID file, so
+native filesystem watchers are not a prerequisite. A FIFO holds the child without
+sleeps.
+
+The 500 ms regression observes the real child's cleanup signal: no `SIGKILL`
+at 499 ms, then `SIGKILL` and the typed timeout error at 500 ms, with the child
+reaped before retrying. A pending layer fiber alone cannot prove the timeout
+is still pending because an expired probe may be awaiting child cleanup. The
+same assertions must reject a 1 ms budget supplied through `StartupTimeoutMs`;
+the negative control checks that exact assertion failure. The production
+5000 ms startup deadline is unchanged.
+
+The live repository-lock fixture supplies a 60-second startup budget through
+`StartupTimeoutMs`, matching the existing test watchdog. Those cases assert lock
+semantics; startup latency belongs to the version tests under the test clock.
+A FIFO regression holds a real version child through 5200 simulated milliseconds,
+then releases it and verifies the typed lock error instead of a startup timeout.
+
+The package runs test files serially so its child processes and WASM workloads do
+not compete with every other file in the recursive workspace gate. The existing
+finite test watchdog still reports a stalled test.

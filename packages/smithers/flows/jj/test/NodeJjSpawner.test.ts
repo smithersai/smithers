@@ -176,7 +176,7 @@ const run = <A, E>(effect: Effect.Effect<A, E, Jj>, spawner: Layer.Layer<ChildPr
 process.on("exit", () => rmSync(directory, { recursive: true, force: true }))
 
 describe.skipIf(process.platform === "win32")("NodeJj.layerSpawner", () => {
-  it.live("probes and runs the same absolute binary despite an older jj on the spawner PATH", () =>
+  it.effect("probes and runs the same absolute binary despite an older jj on the spawner PATH", () =>
     Effect.gen(function*() {
       const oldDirectory = mkdtempSync(join(tmpdir(), "flows-jj-old-path-"))
       writeFileSync(
@@ -206,7 +206,7 @@ describe.skipIf(process.platform === "win32")("NodeJj.layerSpawner", () => {
       }
     }))
 
-  it.live("checks the version reported by each host runner even after a passing direct probe", () =>
+  it.effect("checks the version reported by each host runner even after a passing direct probe", () =>
     Effect.gen(function*() {
       yield* Effect.provide(Jj, NodeJj.layerAt(directory))
       const calls: Array<EffectChildProcess.StandardCommand> = []
@@ -216,7 +216,7 @@ describe.skipIf(process.platform === "win32")("NodeJj.layerSpawner", () => {
       expect(calls.map((command) => command.args[0])).toEqual(["--version"])
     }))
 
-  it.live("does not let a repository replace a relative override through the host spawner", () =>
+  it.effect("does not let a repository replace a relative override through the host spawner", () =>
     Effect.gen(function*() {
       const trusted = mkdtempSync(join(tmpdir(), "flows-jj-trusted-"))
       const repository = join(trusted, "repository")
@@ -236,7 +236,7 @@ describe.skipIf(process.platform === "win32")("NodeJj.layerSpawner", () => {
       }
     }))
 
-  it.live("refuses an unresolved host binary without spawning the bare fallback", () =>
+  it.effect("refuses an unresolved host binary without spawning the bare fallback", () =>
     Effect.gen(function*() {
       const previousPath = process.env.PATH
       const calls: Array<EffectChildProcess.StandardCommand> = []
@@ -252,7 +252,7 @@ describe.skipIf(process.platform === "win32")("NodeJj.layerSpawner", () => {
       }
     }))
 
-  it.live("trusts the version the injected spawner reports over an old local answer", () =>
+  it.effect("trusts the version the injected spawner reports over an old local answer", () =>
     Effect.gen(function*() {
       // The host resolves the old binary, and a direct probe of it fails. A
       // spawner that executes a supported jj at that path is authoritative for
@@ -267,7 +267,7 @@ describe.skipIf(process.platform === "win32")("NodeJj.layerSpawner", () => {
       expect(calls.map((command) => command.args[0])).toEqual(["--version", "status"])
     }))
 
-  it.live("rejects an old local version before exposing the spawner-backed Jj", () =>
+  it.effect("rejects an old local version before exposing the spawner-backed Jj", () =>
     Effect.gen(function*() {
       process.env.SMITHERS_JJ_PATH = oldBinary
       const error = yield* Effect.flip(run(Jj, realSpawner))
@@ -275,14 +275,14 @@ describe.skipIf(process.platform === "win32")("NodeJj.layerSpawner", () => {
       expect(error.message).toContain("0.39.0")
     }))
 
-  it.live("fails typed on refused-file warnings through the host spawner", () =>
+  it.effect("fails typed on refused-file warnings through the host spawner", () =>
     Effect.gen(function*() {
       const error = yield* run(Effect.flip(Effect.flatMap(Jj, (jj) => jj.restore("saved"))), realSpawner)
       expect(error.code).toBe("snapshot_refused")
       expect(error.message).toContain("Refused to snapshot")
     }))
 
-  it.live("builds the unbound spawner layer and runs operations through the host", () =>
+  it.effect("builds the unbound spawner layer and runs operations through the host", () =>
     Effect.gen(function*() {
       const output = yield* Effect.flatMap(Jj, (jj) => jj.status()).pipe(
         Effect.provide(Layer.provide(NodeJj.layerSpawner, realSpawner))
@@ -290,13 +290,13 @@ describe.skipIf(process.platform === "win32")("NodeJj.layerSpawner", () => {
       expect(output).toBe("the working copy is clean\n")
     }))
 
-  it.live("runs jj through the host spawner and returns its stdout", () =>
+  it.effect("runs jj through the host spawner and returns its stdout", () =>
     Effect.gen(function*() {
       const output = yield* run(Effect.flatMap(Jj, (jj) => jj.status()), realSpawner)
       expect(output).toBe("the working copy is clean\n")
     }))
 
-  it.live("passes the working directory through to the spawned command", () =>
+  it.effect("passes the working directory through to the spawned command", () =>
     Effect.gen(function*() {
       // The shim prints its ACTUAL working directory, so this cell goes red
       // the moment `viaSpawner` stops forwarding the cwd — a fixed scripted
@@ -307,7 +307,7 @@ describe.skipIf(process.platform === "win32")("NodeJj.layerSpawner", () => {
       expect(root).toBe(realpathSync(directory))
     }))
 
-  it.live("runs root(from) in its argument directory, not the bound root", () =>
+  it.effect("runs root(from) in its argument directory, not the bound root", () =>
     Effect.acquireUseRelease(
       Effect.sync(() => mkdtempSync(join(tmpdir(), "flows-jj-spawner-bound-"))),
       (bound) =>
@@ -325,7 +325,7 @@ describe.skipIf(process.platform === "win32")("NodeJj.layerSpawner", () => {
       (bound) => Effect.sync(() => rmSync(bound, { recursive: true, force: true }))
     ))
 
-  it.live("builds a repository-bound adapter over the host spawner", () =>
+  it.effect("builds a repository-bound adapter over the host spawner", () =>
     Effect.gen(function*() {
       const output = yield* Effect.flatMap(Jj, (jj) => jj.status()).pipe(
         Effect.provide(Layer.provide(NodeJj.layerSpawnerAt(directory), realSpawner))
@@ -334,7 +334,7 @@ describe.skipIf(process.platform === "win32")("NodeJj.layerSpawner", () => {
       expect(output).toBe("the working copy is clean\n")
     }))
 
-  it.live.skipIf(!jjInstalled)(
+  it.effect.skipIf(!jjInstalled)(
     "snapshots and restores the bound repository through the host spawner, leaving a second repository untouched",
     () =>
       Effect.acquireUseRelease(
@@ -384,7 +384,7 @@ describe.skipIf(process.platform === "win32")("NodeJj.layerSpawner", () => {
       )
   )
 
-  it.live("classifies a nonzero exit from jj's own stderr vocabulary", () =>
+  it.effect("classifies a nonzero exit from jj's own stderr vocabulary", () =>
     Effect.gen(function*() {
       const error = yield* run(Effect.flip(Effect.flatMap(Jj, (jj) => jj.diff("a", "b"))), realSpawner)
       expect(error.code).toBe("invalid_ref")
@@ -413,7 +413,7 @@ describe.skipIf(process.platform === "win32")("NodeJj.layerSpawner", () => {
       }
     }))
 
-  it.live("spawns the binary SMITHERS_JJ_PATH names, through the spawner too", () =>
+  it.effect("spawns the binary SMITHERS_JJ_PATH names, through the spawner too", () =>
     Effect.gen(function*() {
       // The spawner hands the child `PATH=directory`, where the scripted `jj`
       // lives, so the only way this answer can come back is the override being

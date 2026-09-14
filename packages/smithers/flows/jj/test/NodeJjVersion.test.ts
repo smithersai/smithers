@@ -1,11 +1,24 @@
 import { describe, expect, it } from "@effect/vitest"
+import * as Cause from "effect/Cause"
 import * as Effect from "effect/Effect"
+import * as Exit from "effect/Exit"
 import * as Fiber from "effect/Fiber"
+import * as TestClock from "effect/testing/TestClock"
+import { execFileSync, spawn } from "node:child_process"
 import { chmod, mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
+import { vi } from "vitest"
 import { Jj } from "../src/Jj.ts"
 import * as NodeJj from "../src/node/NodeJj.ts"
+
+// Observe cleanup at the real spawn boundary. Every invocation still starts
+// the fixture executable, and every signal is forwarded to the actual child.
+vi.mock("node:child_process", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("node:child_process")>()
+  return { ...actual, spawn: vi.fn(actual.spawn) }
+})
+const actualChildProcess = await vi.importActual<typeof import("node:child_process")>("node:child_process")
 
 const withVersion = <A, E, R>(version: string, use: (root: string) => Effect.Effect<A, E, R>) =>
   Effect.acquireUseRelease(
@@ -40,8 +53,100 @@ fi
       })
   )
 
+// Publish the PID atomically, then block on a FIFO until NodeJj kills the child.
+// Readiness retries real asynchronous file reads, without native watchers,
+// sleeps, or a wall-clock budget. Cancellation stops the readiness loop too.
+const withBlockedProbe = <A, E, R>(
+  root: string,
+  use: (probe: {
+    readonly ready: Effect.Effect<number>
+    readonly kills: Array<NodeJS.Signals | number | undefined>
+  }) => Effect.Effect<A, E, R>
+) =>
+  Effect.acquireUseRelease(
+    Effect.promise(async () => {
+      execFileSync("mkfifo", [join(root, "hold")])
+      await writeFile(
+        join(root, "jj"),
+        `#!/bin/sh
+cd "\${0%/*}"
+echo probe >> probes
+echo $$ > pid.tmp
+/bin/mv pid.tmp pid
+exec /bin/cat hold
+`
+      )
+      const kills: Array<NodeJS.Signals | number | undefined> = []
+      vi.mocked(spawn).mockImplementationOnce((...args) => {
+        const child = actualChildProcess.spawn(...args)
+        const kill = child.kill.bind(child)
+        child.kill = (signal) => {
+          kills.push(signal)
+          return kill(signal)
+        }
+        return child
+      })
+      const ready = Effect.promise(async (signal) => {
+        for (;;) {
+          signal.throwIfAborted()
+          try {
+            return Number(await readFile(join(root, "pid"), "utf8"))
+          } catch (cause) {
+            if ((cause as NodeJS.ErrnoException).code !== "ENOENT") throw cause
+          }
+        }
+      })
+      return { ready, kills }
+    }),
+    use,
+    () => Effect.sync(() => vi.mocked(spawn).mockReset())
+  )
+
+// Both the real deadline regression and its early-budget negative control use
+// these exact assertions. A pending fiber alone can already be in cleanup.
+const verifyStartupBudget = (budget: number) =>
+  withVersion("jj 0.39.0", (root) =>
+    Effect.gen(function*() {
+      const binary = join(root, "jj")
+      const original = yield* Effect.promise(() => readFile(binary, "utf8"))
+      yield* withBlockedProbe(root, ({ ready, kills }) =>
+        Effect.acquireUseRelease(
+          Effect.forkChild(
+            Effect.flip(Effect.provide(Jj, NodeJj.layerAt(root))).pipe(
+              Effect.provideService(NodeJj.StartupTimeoutMs, budget)
+            )
+          ),
+          (building) =>
+            Effect.gen(function*() {
+              const pid = yield* ready
+              expect(pid).toBeGreaterThan(0)
+              yield* TestClock.adjust(499)
+              expect(kills, "startup probe cleanup before 500 ms").toEqual([])
+              expect(building.pollUnsafe()).toBeUndefined()
+              yield* TestClock.adjust(1)
+              expect(kills).toEqual(["SIGKILL"])
+              const error = yield* Fiber.join(building)
+              expect(error).toMatchObject({
+                code: "unknown",
+                module: "NodeJj",
+                method: "version",
+                command: `${binary} --version`,
+                cause: { name: "TimeoutError", code: "ETIMEDOUT" }
+              })
+              expect(() => process.kill(pid, 0)).toThrow()
+              yield* Effect.promise(() => writeFile(binary, original))
+              yield* Effect.provide(Jj, NodeJj.layerAt(root)).pipe(
+                Effect.provideService(NodeJj.StartupTimeoutMs, 2_000)
+              )
+              expect(yield* Effect.promise(() => readFile(join(root, "probes"), "utf8"))).toBe("probe\nprobe\n")
+            }),
+          // A rejected negative control must reap its real child as well.
+          (building) => Fiber.interrupt(building)
+        ))
+    }))
+
 describe("NodeJj version requirement", () => {
-  it.live("keeps a relative override bound to the host executable in another repository", () =>
+  it.effect("keeps a relative override bound to the host executable in another repository", () =>
     withVersion("jj 0.39.0", (trusted) =>
       withVersion("jj 0.39.0", (repository) =>
         Effect.gen(function*() {
@@ -68,7 +173,7 @@ describe("NodeJj version requirement", () => {
           }
         }))))
 
-  it.live("keeps an existing layer on the verified PATH executable after PATH changes", () =>
+  it.effect("keeps an existing layer on the verified PATH executable after PATH changes", () =>
     withVersion("jj 0.39.0", (trusted) =>
       withVersion("jj 0.38.0", (old) =>
         Effect.gen(function*() {
@@ -87,7 +192,7 @@ describe("NodeJj version requirement", () => {
           }
         }))))
 
-  it.live("builds before the repository parent exists and runs after it is created", () =>
+  it.effect("builds before the repository parent exists and runs after it is created", () =>
     withVersion("jj 0.39.0", (root) =>
       Effect.gen(function*() {
         const repository = join(root, "missing", "repository")
@@ -101,14 +206,14 @@ describe("NodeJj version requirement", () => {
         expect(yield* Effect.promise(() => readFile(join(root, "probes"), "utf8"))).toBe("probe\n")
       })))
 
-  it.live("refuses an unsupported binary even before the repository exists", () =>
+  it.effect("refuses an unsupported binary even before the repository exists", () =>
     withVersion("jj 0.38.0", (root) =>
       Effect.gen(function*() {
         const error = yield* Effect.flip(Effect.provide(Jj, NodeJj.layerAt(join(root, "missing", "repository"))))
         expect(error.code).toBe("unsupported_version")
       })))
 
-  it.live("reports an executable that loses permission after the version probe", () =>
+  it.effect("reports an executable that loses permission after the version probe", () =>
     withVersion("jj 0.39.0", (root) =>
       Effect.gen(function*() {
         const jj = yield* Effect.provide(Jj, NodeJj.layerAt(root))
@@ -118,7 +223,7 @@ describe("NodeJj version requirement", () => {
         expect(error.cause).toMatchObject({ code: "EACCES" })
       })))
 
-  it.live("does not reuse an unresolved command's failure after PATH changes", () =>
+  it.effect("does not reuse an unresolved command's failure after PATH changes", () =>
     withVersion("jj 0.39.0", (root) =>
       Effect.gen(function*() {
         const previousPath = process.env.PATH
@@ -142,46 +247,42 @@ describe("NodeJj version requirement", () => {
         }
       })))
 
-  it.live("retries an interrupted probe when another layer is built", () =>
+  it.effect("retries an interrupted probe when another layer is built", () =>
     withVersion("jj 0.39.0", (root) =>
       Effect.gen(function*() {
         const binary = join(root, "jj")
         const original = yield* Effect.promise(() => readFile(binary, "utf8"))
-        yield* Effect.promise(() =>
-          writeFile(binary, "#!/bin/sh\necho probe >> \"${0%/*}/probes\"\nexec /bin/sleep 300\n")
-        )
-        const building = yield* Effect.forkChild(Effect.provide(Jj, NodeJj.layerAt(root)), { startImmediately: true })
-        yield* Effect.promise(() =>
-          expect.poll(() => readFile(join(root, "probes"), "utf8"), { timeout: 10_000 }).toBe("probe\n")
-        )
-        yield* Fiber.interrupt(building)
-        yield* Effect.promise(() => writeFile(binary, original))
-        yield* Effect.provide(Jj, NodeJj.layerAt(root))
-        expect(yield* Effect.promise(() => readFile(join(root, "probes"), "utf8"))).toBe("probe\nprobe\n")
+        yield* withBlockedProbe(root, ({ ready }) =>
+          Effect.gen(function*() {
+            const building = yield* Effect.forkChild(Effect.provide(Jj, NodeJj.layerAt(root)))
+            const pid = yield* ready
+            expect(pid).toBeGreaterThan(0)
+            yield* Fiber.interrupt(building)
+            expect(() => process.kill(pid, 0)).toThrow()
+            yield* Effect.promise(() => writeFile(binary, original))
+            yield* Effect.provide(Jj, NodeJj.layerAt(root))
+            expect(yield* Effect.promise(() => readFile(join(root, "probes"), "utf8"))).toBe("probe\nprobe\n")
+          }))
       })))
 
-  it.live("retries a timed out probe with a new layer's budget", () =>
-    withVersion("jj 0.39.0", (root) =>
-      Effect.gen(function*() {
-        const binary = join(root, "jj")
-        const original = yield* Effect.promise(() => readFile(binary, "utf8"))
-        yield* Effect.promise(() => writeFile(binary, "#!/bin/sh\necho $$ > \"${0%/*}/pid\"\nexec /bin/sleep 300\n"))
-        const error = yield* Effect.flip(Effect.provide(Jj, NodeJj.layerAt(root))).pipe(
-          Effect.provideService(NodeJj.StartupTimeoutMs, 500)
-        )
-        expect(error).toMatchObject({ method: "version", cause: { code: "ETIMEDOUT" } })
-        const pid = Number(yield* Effect.promise(() => readFile(join(root, "pid"), "utf8")))
-        expect(pid).toBeGreaterThan(0)
-        expect(() => process.kill(pid, 0)).toThrow()
-        yield* Effect.promise(() => writeFile(binary, original))
-        yield* Effect.provide(Jj, NodeJj.layerAt(root)).pipe(
-          Effect.provideService(NodeJj.StartupTimeoutMs, 2_000)
-        )
-        expect(yield* Effect.promise(() => readFile(join(root, "probes"), "utf8"))).toBe("probe\n")
-      })))
+  it.effect("retries a timed out probe with a new layer's budget", () => verifyStartupBudget(500))
+
+  it.effect("rejects a 1 ms startup budget against the 500 ms deadline", () =>
+    Effect.gen(function*() {
+      const exit = yield* Effect.exit(verifyStartupBudget(1))
+      expect(Exit.isFailure(exit)).toBe(true)
+      if (Exit.isFailure(exit)) {
+        expect(Cause.squash(exit.cause)).toMatchObject({
+          name: "AssertionError",
+          message: expect.stringContaining("startup probe cleanup before 500 ms"),
+          actual: ["SIGKILL"],
+          expected: []
+        })
+      }
+    }))
 
   for (const budget of [0, -1, Infinity, NaN, 2_147_483_648]) {
-    it.live(`rejects invalid startup budget ${budget} before spawning`, () =>
+    it.effect(`rejects invalid startup budget ${budget} before spawning`, () =>
       withVersion("jj 0.39.0", (root) =>
         Effect.gen(function*() {
           const error = yield* Effect.flip(Effect.provide(Jj, NodeJj.layerAt(root))).pipe(
@@ -192,7 +293,7 @@ describe("NodeJj version requirement", () => {
         })))
   }
 
-  it.live("shares a completed probe across concurrent and subsequent layer builds", () =>
+  it.effect("shares a completed probe across concurrent and subsequent layer builds", () =>
     withVersion("jj 0.39.0", (root) =>
       Effect.gen(function*() {
         yield* Effect.all(
@@ -203,7 +304,7 @@ describe("NodeJj version requirement", () => {
         expect(yield* Effect.promise(() => readFile(join(root, "probes"), "utf8"))).toBe("probe\n")
       })))
 
-  it.live("checks each executable selected by PATH independently", () =>
+  it.effect("checks each executable selected by PATH independently", () =>
     withVersion("jj 0.39.0", (first) =>
       withVersion("jj 0.38.0", (second) =>
         Effect.gen(function*() {
@@ -229,7 +330,7 @@ describe("NodeJj version requirement", () => {
         }))))
 
   for (const version of ["jj 0.9.0", "jj 0.38.9", "unrecognized version"]) {
-    it.live(`rejects ${version} while constructing the layer`, () =>
+    it.effect(`rejects ${version} while constructing the layer`, () =>
       withVersion(version, (root) =>
         Effect.gen(function*() {
           const error = yield* Effect.flip(Effect.provide(Jj, NodeJj.layerAt(root)))
@@ -243,7 +344,7 @@ describe("NodeJj version requirement", () => {
   }
 
   for (const version of ["jj 0.39.0", "jj 0.39.1", "jj 0.40.0", "jj 1.0.0"]) {
-    it.live(`accepts ${version} before exposing repository operations`, () =>
+    it.effect(`accepts ${version} before exposing repository operations`, () =>
       withVersion(version, (root) =>
         Effect.gen(function*() {
           yield* Effect.gen(function*() {

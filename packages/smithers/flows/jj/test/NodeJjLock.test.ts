@@ -2,8 +2,10 @@ import { afterEach, describe, expect, it } from "@effect/vitest"
 import * as Effect from "effect/Effect"
 import * as Fiber from "effect/Fiber"
 import * as Schedule from "effect/Schedule"
+import * as TestClock from "effect/testing/TestClock"
+import { execFileSync } from "node:child_process"
 import { existsSync } from "node:fs"
-import { chmod, mkdir, mkdtemp, readdir, readFile, rename, rm, rmdir, unlink, writeFile } from "node:fs/promises"
+import { chmod, mkdir, mkdtemp, open, readdir, readFile, rename, rm, rmdir, unlink, writeFile } from "node:fs/promises"
 import { hostname, tmpdir } from "node:os"
 import { join } from "node:path"
 import { vi } from "vitest"
@@ -51,7 +53,9 @@ echo snapshotid
       process.env.SMITHERS_JJ_PATH = binary
       return { root, previous }
     }),
-    ({ root }) => use(root),
+    // These live cases assert lock semantics. NodeJjVersion covers startup
+    // latency under the test clock; allow preflight the full test watchdog here.
+    ({ root }) => use(root).pipe(Effect.provideService(NodeJj.StartupTimeoutMs, 60_000)),
     ({ root, previous }) =>
       Effect.promise(async () => {
         if (previous === undefined) delete process.env.SMITHERS_JJ_PATH
@@ -67,6 +71,62 @@ const until = (predicate: () => Promise<boolean>) =>
   })
 
 describe("NodeJj repository locks", () => {
+  it.effect("reaches lock assertions after fixture startup exceeds the production deadline", () =>
+    fixture((root) =>
+      Effect.acquireUseRelease(
+        Effect.promise(async () => {
+          const gate = join(root, "version-gate")
+          execFileSync("mkfifo", [gate])
+          await writeFile(
+            join(root, "jj-shim"),
+            `#!/bin/sh
+cd "\${0%/*}"
+if [ "$1" = "--version" ]; then
+  exec 3< version-gate
+  echo ready > ready.tmp
+  /bin/mv ready.tmp ready
+  read version <&3
+  echo "$version"
+else
+  : > started
+  echo snapshotid
+fi
+`
+          )
+          return open(gate, "r+")
+        }),
+        (gate) =>
+          Effect.acquireUseRelease(
+            Effect.forkChild(Effect.provide(Jj, NodeJj.layerAt(root))),
+            (building) =>
+              Effect.gen(function*() {
+                yield* Effect.promise(async (signal) => {
+                  for (;;) {
+                    signal.throwIfAborted()
+                    try {
+                      await readFile(join(root, "ready"))
+                      return
+                    } catch (cause) {
+                      if ((cause as NodeJS.ErrnoException).code !== "ENOENT") throw cause
+                    }
+                  }
+                })
+                // The FIFO holds a real child; only the test clock advances.
+                yield* TestClock.adjust(5_200)
+                yield* Effect.promise(() => gate.writeFile("jj 0.39.0\n"))
+                const jj = yield* Fiber.join(building)
+                vi.mocked(rename).mockRejectedValueOnce(errno("EACCES"))
+                const error = yield* Effect.flip(jj.snapshot())
+                expect(error).toMatchObject({ code: "unknown", module: "NodeJj", method: "snapshot" })
+                expect(error.message).toContain("repository lock failed")
+                expect(existsSync(join(root, "started"))).toBe(false)
+              }),
+            (building) => Fiber.interrupt(building)
+          ),
+        (gate) => Effect.promise(() => gate.close())
+      )
+    ))
+
   it.live("leaves the CLI to report operations outside a workspace", () =>
     fixture((root) =>
       Effect.gen(function*() {
@@ -86,7 +146,7 @@ describe("NodeJj repository locks", () => {
     ))
 
   for (const cause of [errno("EACCES"), null, "filesystem failure", {}]) {
-    it.live(`reports an acquisition failure as a typed lock error: ${String(cause)}`, () =>
+    it.effect(`reports an acquisition failure as a typed lock error: ${String(cause)}`, () =>
       fixture((root) =>
         Effect.gen(function*() {
           const jj = yield* Effect.provide(Jj, NodeJj.layerAt(root))

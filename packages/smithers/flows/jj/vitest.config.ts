@@ -13,14 +13,10 @@ export default defineConfig({
     include: ["test/**/*.test.ts"],
     exclude: [...configDefaults.exclude, "test/faults/**"],
     environment: "node",
-    // This package is the last one still on Vitest's 5 s/10 s defaults, and
-    // it is the one that can least afford them: `NodeJj` spawns the real `jj`
-    // binary and every suite in the package competes for the same working-copy
-    // lock, while the WASM suites load and drive `flows_jj.wasm`. Under the
-    // recursive root gate those run alongside every other package's workers,
-    // where correct cases have been measured well past the default wall — the
-    // machine-load multiplier, not the workload, is what fails them. The
-    // budget stays FINITE so a genuine hang still fails the run.
+    // Keep package workers serial: child startup and WASM conformance tests
+    // must not compete with every other file in the recursive workspace gate.
+    // The existing finite watchdog remains a hang guard, not a performance test.
+    fileParallelism: false,
     testTimeout: 60_000,
     hookTimeout: 60_000,
     coverage: {
