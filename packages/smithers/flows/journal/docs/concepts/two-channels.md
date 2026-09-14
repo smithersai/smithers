@@ -45,11 +45,42 @@ crash can lose an accepted but unwritten entry, and that is the trade the
 channel exists to make.
 
 `emitLossy` opens no transaction and performs no deduplication lookup in SQL.
-Admission is read-free only when its allocation floors are warmed. On a cold
+New allocation is read-free only when its allocation floors are warmed. On a cold
 run, it reads `MAX(seq) + 1` from the run's durable entries. If `sourceSeq` is
 omitted and the producer floor is uncached, it also reads
 `MAX(source_seq) + 1` for `(runId, sourceId)`. An explicit `sourceSeq` avoids
 the producer-floor read, but does not warm the run floor by itself.
+
+A retained duplicate needs no allocation floors and returns from the identity
+cache even when those floors are cold. For a new admission, cold floor reads
+run outside the run permit. Admission then checks the compaction gate,
+rechecks the producer identity, and takes the maximum of each read floor and
+its current in-memory floor before reserving sequences. A batch holding the
+database transaction can therefore drain while a new producer waits for SQL.
+Top-level compaction drains accepted work with admission open, then acquires
+its SQL transaction before its run locks. It checks the drain again before closing the
+admission gate and reading the checkpoint. If work arrived while it waited for
+SQL, compaction releases the transaction and drains again. It never holds a run
+permit or a closed gate while waiting for a database connection. Producers in
+an enclosing transaction can therefore finish admission and release SQL before
+compaction closes the gate. Continuous admissions can postpone compaction until
+the run drains; accepted work takes precedence over truncation.
+
+Compaction inside an enclosing managed or raw SQL transaction already owns the
+connection. It cannot wait for the queued writer. Instead, it inserts this run's
+pending lossy entries inline before truncation, including the batch waiting for
+SQL. It uses the same transactional insert path as the batch writer. Queue
+settlement stays with that writer: an outer rollback leaves the entries queued,
+and an outer commit makes their later batch attempts collapse by identity.
+Managed transactions publish only after the outer commit; raw SQL transactions
+leave replay authoritative, as with durable emits.
+
+A pending reservation below the chosen checkpoint moves above the durable tail
+when inserted inline. It survives replay after the checkpoint, with unchanged
+producer identity and content checks. Reservations below a previously compacted
+floor retain the existing loss behavior. Durable writers register as active
+only after acquiring SQL; a writer waiting for the compactor's connection has
+allocated no canonical sequence and inserts above the surviving tail later.
 
 Inside `Journal.transact` or `DurableWriter.write` using the same SQL client,
 these floor reads join the caller's transaction. A raw `sql.withTransaction`
@@ -70,6 +101,11 @@ may be cold, including after truncation invalidates them. Do not wait for
 `flush` waits for everything currently queued to reach disk. It says nothing
 about the durable channel, which was already committed when its receipt
 arrived.
+
+A producer still waiting for a cold allocation-floor read has not queued an
+entry. Await its `emitLossy` receipt before flushing to cover that entry. If
+the journal closes during this admission wait, the emit fails with
+`journal_closed` after the wait instead of offering to the closed queue.
 
 A batch the writer cannot persist is lost and reported once: to the `flush`
 waiters that covered it, to live `stream` consumers that were following at the

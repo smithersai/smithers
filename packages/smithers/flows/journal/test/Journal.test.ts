@@ -416,7 +416,7 @@ const readGatedDatabase = (gate: ReadGate): Layer.Layer<SqlClient.SqlClient, nev
     })
   )
 
-/** Parks the first canonical floor read after explicit-id preflight. */
+/** Parks the first canonical floor read before the admission identity check. */
 const allocationReadGatedDatabase = (
   gate: ReadGate
 ): Layer.Layer<SqlClient.SqlClient, never, SqlClient.SqlClient> =>
@@ -995,13 +995,11 @@ describe("Journal", () => {
         yield* Deferred.succeed(gate.release, undefined)
         const retried = yield* Fiber.join(lossy)
         expect(durable).toMatchObject({ _tag: "Accepted", seq: 0, sourceSeq: 0 })
-        // The queued emit admits without consulting the dedup index, so it
-        // cannot see the durable commit that landed while it was parked on the
-        // floor read: its receipt is an admission, not a commit, and the
-        // canonical sequence it reserved is simply left unused. The unique
-        // index is what settles the race, at the insert, and one row is the
-        // whole guarantee that matters.
-        expect(retried).toMatchObject({ _tag: "Accepted", seq: 1, sourceSeq: 0 })
+        // Floors are read before taking the run permit. The admission then
+        // rechecks the in-process identity index, which the durable commit
+        // populated while this caller waited. The documented Duplicate
+        // receipt returns that committed sequence without a new reservation.
+        expect(retried).toEqual({ _tag: "Duplicate", seq: 0, sourceSeq: 0, status: "committed" })
 
         yield* journal.flush
         const page = yield* journal.entries({ runId: run, limit: 10 })

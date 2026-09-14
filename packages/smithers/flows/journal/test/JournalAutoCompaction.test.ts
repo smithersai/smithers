@@ -217,11 +217,12 @@ describe("automatic compaction maintenance", () => {
       )
     }))
 
-  it.effect("does not retire a barrier with an admission holder or waiter", () =>
+  it.effect("does not retire a barrier with a compaction holder and an admission waiter", () =>
     Effect.gen(function*() {
       const observed = observeBarriers()
       const reached = yield* Deferred.make<void>()
       const release = yield* Deferred.make<void>()
+      let armed = false
       const gatedSql = Layer.effect(
         SqlClient.SqlClient,
         Effect.gen(function*() {
@@ -229,7 +230,7 @@ describe("automatic compaction maintenance", () => {
           return new Proxy(base, {
             apply(target, thisArgument, argumentsList) {
               const statement = Reflect.apply(target, thisArgument, argumentsList) as Statement.Statement<unknown>
-              return statement.compile()[0].includes("MAX(seq) + 1 AS next")
+              return armed && statement.compile()[0].includes("FROM flows_journal_checkpoints")
                 ? Deferred.succeed(reached, undefined).pipe(
                   Effect.andThen(Deferred.await(release)),
                   Effect.andThen(statement)
@@ -241,7 +242,20 @@ describe("automatic compaction maintenance", () => {
       )
       yield* Effect.gen(function*() {
         const service = yield* Journal
-        const holder = yield* service.emitLossy(input(0)).pipe(Effect.forkChild({ startImmediately: true }))
+        const sql = yield* SqlClient.SqlClient
+        const owner = { hostId: "compactor", pid: 1, nonce: "owner" }
+        yield* sql`CREATE TABLE flows_runs (
+          run_id TEXT PRIMARY KEY, status TEXT NOT NULL,
+          owner_host_id TEXT, owner_pid INTEGER, owner_nonce TEXT
+        )`
+        yield* sql`INSERT INTO flows_runs VALUES (${run}, 'running', ${owner.hostId}, ${owner.pid}, ${owner.nonce})`
+        const receipt = yield* service.emitDurableUnfenced(input(0))
+        yield* service.checkpoint({ runId: run, seq: receipt.seq, state: null }, owner)
+        // Floor reads now run outside admission, so parking one cannot prove
+        // that a compaction owner survives retirement. Compaction holds
+        // its gate closed across this checkpoint query inside its transaction.
+        armed = true
+        const holder = yield* service.compact({ runId: run }, owner).pipe(Effect.forkChild({ startImmediately: true }))
         yield* Deferred.await(reached)
         const waiter = yield* service.emitLossy(input(1)).pipe(Effect.forkChild({ startImmediately: true }))
         yield* service.flush
@@ -250,10 +264,16 @@ describe("automatic compaction maintenance", () => {
         expect(waiter.pollUnsafe()).toBeUndefined()
         yield* Fiber.interrupt(waiter)
         yield* Fiber.interrupt(holder)
+        armed = false
         yield* service.flush
         expect(observed.size()).toBe(0)
+        // Both cancellations released their references and the compaction
+        // gate, so the same run admits and persists again.
+        expect(yield* service.emitLossy(input(1))).toMatchObject({ _tag: "Accepted", seq: 1 })
+        yield* service.flush
+        expect(yield* committed(run)).toEqual([0, 1])
       }).pipe(
-        Effect.provide(Layer.provide(
+        Effect.provide(Layer.provideMerge(
           SqlJournal.layer({ capacity: 64, overflow: "reject" }),
           Layer.provideMerge(gatedSql, database)
         )),

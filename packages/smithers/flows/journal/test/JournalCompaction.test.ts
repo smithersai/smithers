@@ -260,35 +260,19 @@ const gateFirstWrite = (
 }
 
 /**
- * Parks the first journal write and forces a scheduling boundary after every
- * canonical-sequence floor read.
+ * Parks compaction at its checkpoint read inside SQL, with the gate closed,
+ * and forces a scheduling boundary after every canonical-sequence floor read.
  *
  * `node:sqlite` is synchronous, so without that boundary one durable write
  * runs from admission to COMMIT without ever yielding, and two writers racing
  * for one run can never actually overlap in a test.
  */
-const gateFirstWriteWithYieldingFloors = (
+const gateCompactionWithYieldingFloors = (
   reached: Deferred.Deferred<void>,
   gate: Deferred.Deferred<void>
 ): DatabaseDecorator => {
-  let first = true
   return Layer.merge(
-    Layer.effect(
-      DurableWriter,
-      Effect.gen(function*() {
-        const writer = yield* DurableWriter
-        return DurableWriter.of({
-          write: (write) => {
-            if (!first) return writer.write(write)
-            first = false
-            return Deferred.succeed(reached, undefined).pipe(
-              Effect.andThen(Deferred.await(gate)),
-              Effect.andThen(writer.write(write))
-            ) as never
-          }
-        })
-      })
-    ),
+    Layer.effect(DurableWriter, Effect.service(DurableWriter)),
     Layer.effect(
       SqlClient.SqlClient,
       Effect.gen(function*() {
@@ -296,9 +280,15 @@ const gateFirstWriteWithYieldingFloors = (
         return new Proxy(base, {
           apply(target, thisArgument, argumentsList) {
             const statement = Reflect.apply(target, thisArgument, argumentsList) as Statement.Statement<unknown>
-            if (typeof statement.compile !== "function" || !statement.compile()[0].includes("MAX(seq) + 1")) {
-              return statement
+            if (typeof statement.compile !== "function") return statement
+            const [query] = statement.compile()
+            if (query.includes("SELECT run_id, seq, state_json")) {
+              return Deferred.succeed(reached, undefined).pipe(
+                Effect.andThen(Deferred.await(gate)),
+                Effect.andThen(statement)
+              )
             }
+            if (!query.includes("MAX(seq) + 1")) return statement
             return statement.pipe(Effect.tap(() => Effect.yieldNow))
           }
         }) as SqlClient.SqlClient
@@ -662,20 +652,17 @@ describe("Journal.compact", () => {
         }
         expect(compacting.pollUnsafe()).toBeUndefined()
 
-        const lateAdmission = yield* service.emitLossy(input(2)).pipe(
-          Effect.forkChild({ startImmediately: true })
-        )
-        for (let attempt = 0; attempt < 8; attempt++) {
-          yield* Effect.yieldNow
-        }
-        expect(lateAdmission.pollUnsafe()).toBeUndefined()
+        // Admission stays open during the drain. This reservation joins the
+        // work compaction owes, without waiting for the parked batch's SQL.
+        const lateAdmission = yield* service.emitLossy(input(2))
+        expect(lateAdmission).toEqual({ _tag: "Accepted", seq: 2, sourceSeq: 2 })
+        expect(compacting.pollUnsafe()).toBeUndefined()
 
         yield* Deferred.succeed(gate, undefined)
         const compacted = yield* Fiber.join(compacting)
         // The overtaken reservation commits at 2, above this checkpoint, so
         // compaction must retain it for replay after the checkpoint.
         expect(compacted).toEqual({ runId: run, checkpointSeq: 1, deleted: 0 })
-        expect((yield* Fiber.join(lateAdmission)).seq).toBe(3)
         yield* service.flush
 
         const rows = yield* sql<{ readonly seq: number; readonly source_seq: number }>`
@@ -712,17 +699,13 @@ describe("Journal.compact", () => {
           const sql = yield* Effect.service(SqlClient.SqlClient)
           yield* claim(owner)
 
-          // One admitted lossy entry whose batch is parked, so the barrier has
-          // something to drain and stays open while we queue writers behind it.
-          expect((yield* service.emitLossy(input(0))).seq).toBe(0)
-          yield* Deferred.await(reached)
+          expect((yield* service.emitDurableUnfenced(input(0))).seq).toBe(0)
 
           const compacting = yield* Effect.flip(service.compact({ runId: run }, owner)).pipe(
             Effect.forkChild({ startImmediately: true })
           )
-          for (let attempt = 0; attempt < 8; attempt++) {
-            yield* Effect.yieldNow
-          }
+          // SQL is owned and the admission gate is closed at this exact read.
+          yield* Deferred.await(reached)
           expect(compacting.pollUnsafe()).toBeUndefined()
 
           // Two durable writes on the SAME run: both are refused entry while the
@@ -757,7 +740,7 @@ describe("Journal.compact", () => {
           expect(rows.map((row) => row.seq)).toEqual([0, 1, 2])
         }).pipe(
           Effect.ensuring(Deferred.succeed(gate, undefined)),
-          Effect.provide(journal({}, gateFirstWriteWithYieldingFloors(reached, gate))),
+          Effect.provide(journal({}, gateCompactionWithYieldingFloors(reached, gate))),
           Effect.scoped
         )
       })
