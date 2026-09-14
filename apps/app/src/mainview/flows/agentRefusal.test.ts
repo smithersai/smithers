@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { INFRA_NOT_YOUR_FAULT, refusalSentence } from "@smthrs/rpc/RefusalCopy"
+import { agentRefusalText, INFRA_NOT_YOUR_FAULT, refusalSentence } from "@smthrs/rpc/RefusalCopy"
 import { clientRefusal, refusalOf } from "@smthrs/rpc/Refusal"
 import { agentFailureText } from "./agentTools"
 
@@ -64,6 +64,78 @@ describe("the refusal the agent is handed", () => {
     const coded = agentFailureText(seamAnswer({ code: "unauthorized" }, 401, "sign in with /cloud.sign-in, or use a PAT"))
     expect(coded).toContain("cloud.prompt")
     expect(coded).toContain("fault=user")
+  })
+})
+
+/*
+ * The Cloudflare Worker answers about a third of what a person sees refused
+ * without plue ever seeing it — no session, no such route, a body past the
+ * ceiling, a secret this deployment never set. Those used to reach the model
+ * as prose with no verdict on it at all, which is the same guessing problem
+ * one layer down: "not configured on this deployment" reads like something the
+ * user did until somebody says whose problem it is.
+ */
+describe("a refusal the Worker wrote itself", () => {
+  const workerAnswer = (code: string, status: number, message: string) =>
+    refusalSentence(refusalOf({ body: { status: "error", code }, status, message }))
+
+  test("a misconfigured deployment reaches the model as infra — and never as a full fleet", () => {
+    const text = agentFailureText(
+      workerAnswer("deployment_not_configured", 501, "The chat seam is not configured on this deployment (CHAT_URL).")
+    )
+    expect(text).toContain("fault=infra")
+    expect(text).toContain("code=deployment_not_configured")
+    expect(text).not.toContain("@fucory")
+    /* Told in as many words NOT to reach for the capacity sentence, which is about a different failure. */
+    expect(text).toContain("do NOT say Smithers ran out of infra")
+    expect(text).toContain("this deployment is misconfigured")
+    expect(text).toContain("whoever deployed it")
+    /* The deployment's own words survive into the model's view of it. */
+    expect(text).toContain("CHAT_URL")
+  })
+
+  test("a signed-out caller is a user fault with a door, not a platform failure", () => {
+    const text = agentFailureText(workerAnswer("sign_in_required", 401, "Sign in to run a Smithers turn."))
+    expect(text).toContain("fault=user")
+    expect(text).toContain("code=sign_in_required")
+    expect(text).not.toContain("@fucory")
+  })
+
+  test("an upstream that never answered is a dependency, so the model does not tell the user to change the ask", () => {
+    const text = agentFailureText(
+      workerAnswer("upstream_unreachable", 502, "Smithers Cloud chat is unreachable: connection refused")
+    )
+    expect(text).toContain("fault=dependency")
+    expect(text).toContain("Not the user's doing")
+  })
+
+  test("a spent turn budget is a wait, and the model is told not to loop on it", () => {
+    const text = agentFailureText(workerAnswer("turn_rate_limited", 429, "That is 20 turns today without signing in."))
+    expect(text).toContain("fault=wait")
+    expect(text).toContain("Nothing is broken")
+    expect(text).not.toContain("@fucory")
+  })
+
+  test("the Worker's 500 is named a bug, the same as plue's", () => {
+    const text = agentFailureText(
+      workerAnswer("unexpected_failure", 500, "Smithers could not complete this request. Try again in a moment.")
+    )
+    expect(text).toContain("fault=bug")
+    expect(text).toContain("Do not blame the user")
+  })
+
+  test("the tool result carries the verdict as machine facts, origin included", () => {
+    const refusal = refusalOf({
+      body: { status: "error", code: "deployment_not_configured" },
+      status: 501,
+      message: "The chat seam is not configured on this deployment (CHAT_URL)."
+    })
+    const text = agentRefusalText(refusal)
+    expect(text).toContain("fault=infra")
+    expect(text).toContain("code=deployment_not_configured")
+    expect(text).toContain("status=501")
+    expect(text).toContain("origin=worker")
+    expect(text.startsWith("failed: ")).toBe(true)
   })
 })
 

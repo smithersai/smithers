@@ -8,6 +8,8 @@ import { ServerConfig } from "./Config"
 import { answeredJson, namespaceCall } from "./DurableStorage"
 import type { NativeNamespace } from "./DurableStorage"
 import { StorageFailure } from "./Failures"
+import { WORKER_FAILURES } from "@smthrs/rpc/WorkerFailureCodes"
+import type { WorkerFailureCode } from "@smthrs/rpc/WorkerFailureCodes"
 import type { BodyFailure } from "./Failures"
 import { discardBody, fetchWithDeadline, readBoundedJson, readJsonOrUndefined } from "./Http"
 import type { Transport } from "./Http"
@@ -266,7 +268,7 @@ export const recommendLogRequest = (request: Request): Effect.Effect<Response, n
         // defers concurrent events only while a storage operation is pending,
         // and two appends that both read the same sequence would share a key.
         const row = yield* readJsonOrUndefined(request)
-        if (!isRow(row)) return answer(400, { status: "error", message: "bad row" })
+        if (!isRow(row)) return answer(400, { status: "error", code: "request_invalid", message: "bad row" })
         const seq = ((yield* storage.get<number>(SEQ_KEY)) ?? 0) + 1
         const id = mintId(seq)
         yield* storage.put(SEQ_KEY, seq)
@@ -283,12 +285,16 @@ export const recommendLogRequest = (request: Request): Effect.Effect<Response, n
         if (
           body === undefined || body === null || typeof body.id !== "string" || typeof body.command !== "string" ||
           typeof body.at !== "string"
-        ) return answer(400, { status: "error", message: "bad outcome" })
+        ) return answer(400, { status: "error", code: "request_invalid", message: "bad outcome" })
         const seq = seqOf(body.id)
-        if (seq === undefined) return answer(404, { status: "error", message: "unknown id" })
+        if (seq === undefined) return answer(404, { status: "error", code: "route_not_found", message: "unknown id" })
         const row = yield* storage.get<RecommendLogRow>(rowKey(seq))
-        if (row === undefined || row.id !== body.id) return answer(404, { status: "error", message: "unknown id" })
-        if (row.outcome !== null) return answer(409, { status: "error", message: "outcome already recorded" })
+        if (row === undefined || row.id !== body.id) {
+          return answer(404, { status: "error", code: "route_not_found", message: "unknown id" })
+        }
+        if (row.outcome !== null) {
+          return answer(409, { status: "error", code: "request_conflict", message: "outcome already recorded" })
+        }
         yield* storage.put(rowKey(seq), { ...row, outcome: { command: body.command, at: body.at } })
         return answer(204, undefined)
       }
@@ -299,10 +305,13 @@ export const recommendLogRequest = (request: Request): Effect.Effect<Response, n
         return answer(200, { rows: [...rows.values()] })
       }
       default:
-        return answer(404, { status: "error", message: "not found" })
+        return answer(404, { status: "error", code: "route_not_found", message: "not found" })
     }
   }).pipe(
-    Effect.catchTag("StorageFailure", (failure) => Effect.succeed(answer(500, { status: "error", message: failure.message })))
+    Effect.catchTag(
+      "StorageFailure",
+      (failure) => Effect.succeed(answer(500, { status: "error", code: "storage_failed", message: failure.message }))
+    )
   )
 
 export class RecommendLog {
@@ -402,7 +411,7 @@ const ROLES: ReadonlyArray<string> = ["user", "assistant", "system"]
 /** What reading a body decided: a request, or the status the refusal carries. */
 export type ParsedRecommendRequest =
   | { readonly ok: true; readonly body: RecommendRequest }
-  | { readonly ok: false; readonly status: 400 | 413; readonly message: string }
+  | { readonly ok: false; readonly code: WorkerFailureCode; readonly message: string }
 
 const isTailMessage = (value: unknown): value is RecommendTailMessage =>
   typeof value === "object" && value !== null &&
@@ -414,47 +423,50 @@ const isCommand = (value: unknown): value is RecommendCommand =>
   typeof (value as { name?: unknown }).name === "string" && (value as { name: string }).name !== "" &&
   typeof (value as { summary?: unknown }).summary === "string"
 
-/** A bounded JSON read as the routes report it: 413 past the cap, 400 unreadable or not JSON. */
-const bodyRefusal = (failure: BodyFailure, subject: string): { readonly status: 400 | 413; readonly message: string } => {
+/** A bounded JSON read as the routes report it, in the Worker's own failure vocabulary. */
+const bodyRefusal = (
+  failure: BodyFailure,
+  subject: string
+): { readonly code: WorkerFailureCode; readonly message: string } => {
   switch (failure._tag) {
     case "BodyTooLarge":
-      return { status: 413, message: `${subject} is too large.` }
+      return { code: "request_body_too_large", message: `${subject} is too large.` }
     case "BodyUnreadable":
-      return { status: 400, message: `${subject} could not be read.` }
+      return { code: "request_body_unreadable", message: `${subject} could not be read.` }
     case "BodyNotJson":
-      return { status: 400, message: `${subject} is not JSON.` }
+      return { code: "request_body_not_json", message: `${subject} is not JSON.` }
   }
 }
 
 /** Validate a decoded body. Malformed is 400; well-formed but too big is 413. */
 export const validateRecommendRequest = (value: unknown): ParsedRecommendRequest => {
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
-    return { ok: false, status: 400, message: "The recommendation request must be a JSON object." }
+    return { ok: false, code: "request_invalid", message: "The recommendation request must be a JSON object." }
   }
   const { repo, tail, commands } = value as { repo?: unknown; tail?: unknown; commands?: unknown }
   if (repo !== null && (typeof repo !== "string" || !RECOMMEND_REPO_PATTERN.test(repo))) {
-    return { ok: false, status: 400, message: "repo must be \"owner/name\" or null." }
+    return { ok: false, code: "request_invalid", message: "repo must be \"owner/name\" or null." }
   }
   if (!Array.isArray(tail) || !tail.every(isTailMessage)) {
-    return { ok: false, status: 400, message: "tail must be a list of { role, text } messages." }
+    return { ok: false, code: "request_invalid", message: "tail must be a list of { role, text } messages." }
   }
   if (!Array.isArray(commands) || !commands.every(isCommand)) {
-    return { ok: false, status: 400, message: "commands must be a list of { name, summary } entries." }
+    return { ok: false, code: "request_invalid", message: "commands must be a list of { name, summary } entries." }
   }
   if (commands.some((command) => command.name.length > RECOMMEND_COMMAND_NAME_MAX_CHARS)) {
-    return { ok: false, status: 400, message: `A command name may carry at most ${RECOMMEND_COMMAND_NAME_MAX_CHARS} characters.` }
+    return { ok: false, code: "request_invalid", message: `A command name may carry at most ${RECOMMEND_COMMAND_NAME_MAX_CHARS} characters.` }
   }
   if (commands.some((command) => command.summary.length > RECOMMEND_COMMAND_SUMMARY_MAX_CHARS)) {
-    return { ok: false, status: 400, message: `A command summary may carry at most ${RECOMMEND_COMMAND_SUMMARY_MAX_CHARS} characters.` }
+    return { ok: false, code: "request_invalid", message: `A command summary may carry at most ${RECOMMEND_COMMAND_SUMMARY_MAX_CHARS} characters.` }
   }
   if (tail.length > RECOMMEND_TAIL_MAX_ENTRIES) {
-    return { ok: false, status: 413, message: `tail may carry at most ${RECOMMEND_TAIL_MAX_ENTRIES} messages.` }
+    return { ok: false, code: "request_body_too_large", message: `tail may carry at most ${RECOMMEND_TAIL_MAX_ENTRIES} messages.` }
   }
   if (tail.reduce((sum, message) => sum + message.text.length, 0) > RECOMMEND_TAIL_MAX_CHARS) {
-    return { ok: false, status: 413, message: `tail may carry at most ${RECOMMEND_TAIL_MAX_CHARS} characters of text.` }
+    return { ok: false, code: "request_body_too_large", message: `tail may carry at most ${RECOMMEND_TAIL_MAX_CHARS} characters of text.` }
   }
   if (commands.length > RECOMMEND_COMMANDS_MAX) {
-    return { ok: false, status: 413, message: `commands may carry at most ${RECOMMEND_COMMANDS_MAX} entries.` }
+    return { ok: false, code: "request_body_too_large", message: `commands may carry at most ${RECOMMEND_COMMANDS_MAX} entries.` }
   }
   return { ok: true, body: { repo: repo ?? null, tail, commands } }
 }
@@ -685,6 +697,10 @@ export const recommendKey = (request: Request, login: string | undefined, salt: 
 const jsonWith = (status: number, body: unknown, headers: Record<string, string>): Response =>
   new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json", ...headers } })
 
+/* This route's own refusal: the code names the status, and the caller's headers ride along. */
+const refusal = (code: WorkerFailureCode, message: string, headers: Record<string, string>): Response =>
+  jsonWith(WORKER_FAILURES[code].status, { status: "error", code, message }, headers)
+
 /**
  * POST /api/recommend. `login` is the validated session's login when the
  * caller has one; the router resolves it and passes `undefined` for a
@@ -699,13 +715,10 @@ export const handleRecommend = (
 ): Effect.Effect<Response, never, RecommendLogStore | TurnLimits | ServerConfig | Transport> =>
   Effect.gen(function*() {
     const parsed = yield* parseRecommendRequest(request)
-    if (!parsed.ok) return jsonWith(parsed.status, { status: "error", message: parsed.message }, headers)
+    if (!parsed.ok) return refusal(parsed.code, parsed.message, headers)
     const config = yield* ServerConfig
     if (config.cerebrasApiKey === undefined) {
-      return jsonWith(503, {
-        status: "error",
-        message: "CEREBRAS_API_KEY is unset. Command suggestions are unavailable on this deployment."
-      }, headers)
+      return refusal("seam_not_configured", "CEREBRAS_API_KEY is unset. Command suggestions are unavailable on this deployment.", headers)
     }
     const limits = yield* TurnLimits
     const salt = config.anonymousTurnSalt === undefined ? undefined : Redacted.value(config.anonymousTurnSalt)
@@ -716,7 +729,7 @@ export const handleRecommend = (
     if (!shared.allowed) return turnLimitResponse(shared, headers, RECOMMEND_ALL_CEILING)
     const model = config.cerebrasModel ?? RECOMMEND_DEFAULT_MODEL
     const answer = yield* askModel(parsed.body, model)
-    if (!answer.ok) return jsonWith(503, { status: "error", message: answer.message }, headers)
+    if (!answer.ok) return refusal("service_temporarily_unavailable", answer.message, headers)
     const digest = yield* sha256Hex(tailText(parsed.body.tail))
     const store = yield* RecommendLogStore
     const id = yield* store.append({
@@ -741,12 +754,12 @@ export const handleRecommendOutcome = (
     if (Result.isFailure(read)) {
       switch (read.failure._tag) {
         case "BodyTooLarge":
-          return jsonWith(413, { status: "error", message: "The outcome is too large." }, headers)
+          return refusal("request_body_too_large", "The outcome is too large.", headers)
         case "BodyUnreadable":
-          return jsonWith(400, { status: "error", message: "The outcome could not be read." }, headers)
+          return refusal("request_body_unreadable", "The outcome could not be read.", headers)
         case "BodyNotJson":
           // A body that is not JSON is a malformed outcome, as it always was.
-          return jsonWith(400, { status: "error", message: "An outcome is { id, command }, both strings." }, headers)
+          return refusal("request_invalid", "An outcome is { id, command }, both strings.", headers)
       }
     }
     const body = read.success as { readonly id?: unknown; readonly command?: unknown } | null | undefined
@@ -754,26 +767,27 @@ export const handleRecommendOutcome = (
       body === undefined || body === null || typeof body !== "object" ||
       typeof body.id !== "string" || body.id === "" || typeof body.command !== "string" || body.command === ""
     ) {
-      return jsonWith(400, { status: "error", message: "An outcome is { id, command }, both strings." }, headers)
+      return refusal("request_invalid", "An outcome is { id, command }, both strings.", headers)
     }
     if (body.command.length > RECOMMEND_COMMAND_NAME_MAX_CHARS) {
-      return jsonWith(400, {
-        status: "error",
-        message: `An outcome's command is a command name of at most ${RECOMMEND_COMMAND_NAME_MAX_CHARS} characters.`
-      }, headers)
+      return refusal(
+        "request_invalid",
+        `An outcome's command is a command name of at most ${RECOMMEND_COMMAND_NAME_MAX_CHARS} characters.`,
+        headers
+      )
     }
     const store = yield* RecommendLogStore
     const recorded = yield* store.outcome(body.id, body.command, new Date().toISOString())
     switch (recorded) {
       case undefined:
-        return jsonWith(404, { status: "error", message: "No recommendation log on this deployment: no recommendation has that id." }, headers)
+        return refusal("route_not_found", "No recommendation log on this deployment: no recommendation has that id.", headers)
       case 204:
         return new Response(null, { status: 204, headers })
       case 409:
-        return jsonWith(409, { status: "error", message: "An outcome is already recorded for that recommendation." }, headers)
+        return refusal("request_conflict", "An outcome is already recorded for that recommendation.", headers)
       case 404:
-        return jsonWith(404, { status: "error", message: "No recommendation has that id." }, headers)
+        return refusal("route_not_found", "No recommendation has that id.", headers)
       default:
-        return jsonWith(500, { status: "error", message: "The recommendation log did not record the outcome." }, headers)
+        return refusal("storage_failed", "The recommendation log did not record the outcome.", headers)
     }
   })

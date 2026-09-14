@@ -1,4 +1,6 @@
 import { Effect, Redacted } from "effect"
+import { WORKER_FAILURES } from "@smthrs/rpc/WorkerFailureCodes"
+import type { WorkerFailureCode } from "@smthrs/rpc/WorkerFailureCodes"
 import { LiveTutorialStartSchema } from "@smthrs/rpc/LiveTutorial"
 import { ServerConfig } from "./Config"
 import { fetchWithDeadline, readBoundedText } from "./Http"
@@ -26,27 +28,32 @@ export const readTutorialSession = (cookie: string | null, secret: string, now =
   const valid=yield* Effect.promise(()=>crypto.subtle.verify("HMAC",key,signature,new TextEncoder().encode(`${id}.${time}`)))
   return valid ? id : undefined
 })
-const json = (status:number,message:string) => Response.json({message},{status,headers:{"cache-control":"no-store"}})
+/* The Worker's own refusal, at the status its code names (@smthrs/rpc/WorkerFailureCodes). */
+const json = (code: WorkerFailureCode, message: string) =>
+  Response.json({ status: "error", code, message }, {
+    status: WORKER_FAILURES[code].status,
+    headers: { "cache-control": "no-store" }
+  })
 
 export const handleLiveTutorial = (request:Request) => Effect.gen(function*(){
   const config=yield* ServerConfig
-  if(!config.tutorialServiceUrl||!config.tutorialServiceToken) return json(503,"The live tutorial service is not available yet.")
+  if(!config.tutorialServiceUrl||!config.tutorialServiceToken) return json("seam_not_configured","The live tutorial service is not available yet.")
   const token=Redacted.value(config.tutorialServiceToken)
   const path=new URL(request.url).pathname.slice("/api/tutorial/live".length)
   const operation=/^\/(research|plan|implement|change|poc)$/.exec(path)?.[1]
   const read=/^\/run\/([a-zA-Z0-9_-]{1,128})$/.exec(path)?.[1]
-  if(!(request.method==="POST"&&operation)&&!(request.method==="GET"&&read)) return json(404,"Unknown live tutorial action.")
+  if(!(request.method==="POST"&&operation)&&!(request.method==="GET"&&read)) return json("route_not_found","Unknown live tutorial action.")
   let session=yield* readTutorialSession(request.headers.get("cookie"),token)
-  if(!session&&(operation==="plan"||operation==="implement"||operation==="change")) return json(401,"This live example session expired. Your saved results remain available; start a new tutorial to run the agent again.")
+  if(!session&&(operation==="plan"||operation==="implement"||operation==="change")) return json("session_expired","This live example session expired. Your saved results remain available; start a new tutorial to run the agent again.")
   let setCookie:string|undefined
   let body:string|undefined
   if(operation){
     const raw=yield* readBoundedText(request,4096).pipe(Effect.catch(error=>Effect.succeed(error._tag==="BodyTooLarge"?undefined:"")))
-    if(raw===undefined) return json(413,"The tutorial request is too large.")
+    if(raw===undefined) return json("request_body_too_large","The tutorial request is too large.")
     let parsed:unknown
-    try{parsed=JSON.parse(raw)}catch{return json(400,"The tutorial request must be JSON.")}
+    try{parsed=JSON.parse(raw)}catch{return json("request_body_not_json","The tutorial request must be JSON.")}
     const input=LiveTutorialStartSchema.safeParse(parsed)
-    if(!input.success) return json(400,"The tutorial request needs an idempotency key and playthrough.")
+    if(!input.success) return json("request_invalid","The tutorial request needs an idempotency key and playthrough.")
     const limits=yield* TurnLimits
     const key=yield* anonymousTurnKey(request,token)
     const local=yield* limits.spend(`tutorial:${key}`,ANONYMOUS_CEILING)
@@ -60,10 +67,10 @@ export const handleLiveTutorial = (request:Request) => Effect.gen(function*(){
     }
     body=JSON.stringify(input.data)
   }
-  if(!session)return json(401,"This live example session expired. Your saved results remain available; start a new tutorial to run the agent again.")
+  if(!session)return json("session_expired","This live example session expired. Your saved results remain available; start a new tutorial to run the agent again.")
   const response=yield* fetchWithDeadline("The live tutorial",`${config.tutorialServiceUrl.replace(/\/$/, "")}/sessions/${session}${path}`,{
     method:request.method,headers:{authorization:`Bearer ${token}`,"content-type":"application/json"},...(body?{body}:{})
-  },30_000).pipe(Effect.catch(()=>Effect.succeed(json(503,"The live tutorial service is temporarily unavailable. Your run can be resumed."))))
+  },30_000).pipe(Effect.catch(()=>Effect.succeed(json("service_temporarily_unavailable","The live tutorial service is temporarily unavailable. Your run can be resumed."))))
   const headers=new Headers(response.headers)
   headers.set("cache-control","no-store")
   headers.delete("set-cookie")

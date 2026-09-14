@@ -21,7 +21,7 @@
  */
 import type { Card } from "../AppState"
 import { resolveTargetRepo } from "../RepoContext"
-import { readErrorMessage } from "./SeamContext"
+import { readErrorMessage, unreachableSentence } from "./SeamContext"
 import type { SeamContext } from "./SeamContext"
 
 export interface FactorySeam {
@@ -42,7 +42,7 @@ type Listing =
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   value !== null && typeof value === "object" && !Array.isArray(value)
 
-const errorText = (error: unknown): string => (error instanceof Error ? error.message : String(error))
+
 
 /** The names in one directory answer ({name?, path?, type} rows, the FilesSeam wire shape); malformed rows drop. */
 const namesOf = (body: unknown): ReadonlySet<string> => {
@@ -84,7 +84,7 @@ export const createFactorySeam = (ctx: SeamContext): FactorySeam => {
     try {
       response = await ctx.http(contentsUrl(repo, path))
     } catch (error) {
-      return { error: `Could not reach the backend to list ${label} in ${repo}: ${errorText(error)}` }
+      return { error: unreachableSentence(`the backend to list ${label} in ${repo}`, error) }
     }
     if (response.status === 404) return { absent: true }
     if (!response.ok) return { error: await readErrorMessage(response, `Listing ${label} in ${repo} failed (${response.status})`) }

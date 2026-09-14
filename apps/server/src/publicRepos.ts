@@ -196,7 +196,7 @@ export const makePublicReposHandler = (roster: PublicReposRoster = {}): PublicRe
     Effect.gen(function*() {
       if (request.method === "OPTIONS") return new Response(null, { status: 204, headers })
       if (request.method !== "GET" && request.method !== "HEAD") {
-        return new Response(JSON.stringify({ message: "Method not allowed." }), {
+        return new Response(JSON.stringify({ status: "error", code: "method_not_allowed", message: "Method not allowed." }), {
           status: 405, headers: { ...headers, allow: "GET, HEAD, OPTIONS" }
         })
       }

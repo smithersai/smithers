@@ -1,3 +1,4 @@
+import { INFRA_NOT_YOUR_FAULT } from "@smthrs/rpc/RefusalCopy"
 import type { StorageApi } from "@tanstack/db"
 import { describe, expect, test } from "bun:test"
 import type { NativeRepositories } from "../../native/NativeBridge"
@@ -294,7 +295,7 @@ describe("factory seam: a root listing the backend refused", () => {
     expect(factoryCard(store)?.payload.infra[2]).toEqual({
       path: "PACKAGE.ts",
       state: "unreadable",
-      reason: "Could not reach the backend to list the repository root in will/flows: socket hang up"
+      reason: `Could not reach the backend to list the repository root in will/flows: socket hang up. ${INFRA_NOT_YOUR_FAULT}`
     })
   })
 

@@ -3,6 +3,7 @@ import * as Effect from "effect/Effect"
 import * as Exit from "effect/Exit"
 import * as Fiber from "effect/Fiber"
 import type * as ManagedRuntime from "effect/ManagedRuntime"
+import type { WorkerFailureCode } from "@smthrs/rpc/WorkerFailureCodes"
 
 /*
  * Where an Effect meets a Web callback. Exactly three callers exist: the
@@ -30,8 +31,8 @@ export const UNEXPECTED_FAILURE_MESSAGE = "Smithers could not complete this requ
  * request is cross-origin isolated, and a 499 or 500 must not read as a
  * different origin's page.
  */
-const answer = (status: number, body: unknown): Response =>
-  new Response(JSON.stringify(body), {
+const answer = (status: number, code: WorkerFailureCode, message: string): Response =>
+  new Response(JSON.stringify({ status: "error", code, message }), {
     status,
     headers: {
       "content-type": "application/json; charset=utf-8",
@@ -40,7 +41,8 @@ const answer = (status: number, body: unknown): Response =>
     }
   })
 
-const clientDisconnected = (): Response => answer(CLIENT_DISCONNECTED_STATUS, { status: "error", message: "The client disconnected." })
+const clientDisconnected = (): Response =>
+  answer(CLIENT_DISCONNECTED_STATUS, "client_disconnected", "The client disconnected.")
 
 /**
  * One request handler's outcome as the Response the caller gets. Success is
@@ -55,7 +57,7 @@ export const responseFromExit = (exit: Exit.Exit<Response, never>): Response => 
   if (Exit.isSuccess(exit)) return exit.value
   if (Cause.hasInterruptsOnly(exit.cause)) return clientDisconnected()
   console.error("worker fetch failed:", Cause.squash(exit.cause))
-  return answer(500, { status: "error", message: UNEXPECTED_FAILURE_MESSAGE })
+  return answer(500, "unexpected_failure", UNEXPECTED_FAILURE_MESSAGE)
 }
 
 /** The 499 a caller reads when it went away before the response settled. */

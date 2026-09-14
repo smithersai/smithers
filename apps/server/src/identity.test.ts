@@ -66,7 +66,7 @@ describe("validateSession", () => {
     expect(broken.status).toBe("unavailable")
     if (broken.status === "unavailable") {
       expect(broken.response.status).toBe(502)
-      expect(await broken.response.json()).toEqual({ status: "error", message: "The identity service answered HTTP 500." })
+      expect(await broken.response.json()).toEqual({ status: "error", code: "upstream_refused", message: "The identity service answered HTTP 500." })
     }
   })
 
@@ -78,6 +78,7 @@ describe("validateSession", () => {
     if (withCookie.status === "unavailable") {
       expect(await withCookie.response.json()).toEqual({
         status: "error",
+        code: "upstream_malformed",
         message: "The identity service returned a malformed session response."
       })
     }
@@ -92,7 +93,7 @@ describe("validateSession", () => {
     expect(down.status).toBe("unavailable")
     if (down.status === "unavailable") {
       expect(down.response.status).toBe(502)
-      expect(await down.response.json()).toEqual({ status: "error", message: "The identity service is unreachable." })
+      expect(await down.response.json()).toEqual({ status: "error", code: "upstream_unreachable", message: "The identity service is unreachable." })
     }
     const stalled = wire((request) =>
       new Promise<Response>((_resolve, reject) => {
@@ -103,7 +104,7 @@ describe("validateSession", () => {
     expect(slow.status).toBe("unavailable")
     if (slow.status === "unavailable") {
       expect(slow.response.status).toBe(504)
-      expect(await slow.response.json()).toEqual({ status: "error", message: "The identity service did not answer within 20ms." })
+      expect(await slow.response.json()).toEqual({ status: "error", code: "upstream_timeout", message: "The identity service did not answer within 20ms." })
     }
   })
 
@@ -120,7 +121,7 @@ describe("requireTurnSession", () => {
     const signedOut = await run(requireTurnSession(session()), wire(() => new Response("{}", { status: 401 })).layer, config())
     expect(signedOut).toBeInstanceOf(Response)
     expect((signedOut as Response).status).toBe(401)
-    expect(await (signedOut as Response).json()).toEqual({ status: "error", message: "Sign in to run a Smithers turn." })
+    expect(await (signedOut as Response).json()).toEqual({ status: "error", code: "sign_in_required", message: "Sign in to run a Smithers turn." })
     const stranger = await run(
       requireTurnSession(session("smithers_session=abc")),
       wire(() => jsonAnswer(200, { login: "stranger", allowlisted: false })).layer,
@@ -166,7 +167,7 @@ describe("proxyToIdentity", () => {
     const { seen, layer } = wire(() => jsonAnswer(200, { ok: true }))
     const hidden = await run(proxyToIdentity(new Request("https://mvp.test/api/identity/admin/allowlist")), layer, config())
     expect(hidden.status).toBe(404)
-    expect(await hidden.json()).toEqual({ status: "error", message: "Not found." })
+    expect(await hidden.json()).toEqual({ status: "error", code: "route_not_found", message: "Not found." })
     expect(seen).toEqual([])
     const unset = await run(proxyToIdentity(new Request("https://mvp.test/api/auth/session")), layer, testConfigLayer())
     expect(unset.status).toBe(501)
@@ -191,7 +192,7 @@ describe("proxyToIdentity", () => {
       config({ upstreamTimeoutMs: 20 })
     )
     expect(slow.status).toBe(504)
-    expect(await slow.json()).toEqual({ status: "error", message: "The identity service did not answer within 20ms. Try again in a moment." })
+    expect(await slow.json()).toEqual({ status: "error", code: "upstream_timeout", message: "The identity service did not answer within 20ms. Try again in a moment." })
   })
 })
 
@@ -249,7 +250,7 @@ describe("probeAuthSession and the OAuth navigations", () => {
     )
     expect(machine.status).toBe(502)
     // The proxy's own envelope, untouched: no second prefix.
-    expect(await machine.json()).toEqual({ status: "error", message: "The identity service is unreachable right now: connection refused" })
+    expect(await machine.json()).toEqual({ status: "error", code: "upstream_unreachable", message: "The identity service is unreachable right now: connection refused" })
   })
 
   test("an identity deadline on a navigation is the 504 page for a browser and the proxy's 504 envelope, verbatim, for a machine", async () => {
@@ -274,7 +275,7 @@ describe("probeAuthSession and the OAuth navigations", () => {
       config({ upstreamTimeoutMs: 20 })
     )
     expect(machine.status).toBe(504)
-    expect(await machine.json()).toEqual({ status: "error", message: "The identity service did not answer within 20ms. Try again in a moment." })
+    expect(await machine.json()).toEqual({ status: "error", code: "upstream_timeout", message: "The identity service did not answer within 20ms. Try again in a moment." })
   })
 
   test("validReturnTo admits only a same-origin page path", () => {

@@ -606,7 +606,8 @@ describe("the Smithers Cloud seam", () => {
       for (const path of ["/api/cloud//evil.example/x", "/api/cloud/"]) {
         const refused = await fetch(`${proxied.origin}${path}`, { headers })
         expect(refused.status).toBe(400)
-        expect(((await refused.json()) as { error: { code: string } }).error.code).toBe("invalid_cloud_path")
+        /* The Worker's envelope on the route the Worker also serves, so one classifier reads both hosts. */
+        expect(await refused.json()).toMatchObject({ status: "error", code: "request_invalid" })
       }
       expect(seen).toEqual([])
       const ok = await fetch(`${proxied.origin}/api/cloud/api/user/repos`, { headers })

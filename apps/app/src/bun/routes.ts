@@ -1,3 +1,5 @@
+import { WORKER_FAILURES } from "@smthrs/rpc/WorkerFailureCodes"
+import type { WorkerFailureCode } from "@smthrs/rpc/WorkerFailureCodes"
 /*
  * A tiny HTTP router for the local server. Lanes register their routes on
  * the shared instance (`server.router.add(...)`); a path pattern may carry
@@ -30,6 +32,25 @@ export const json = (body: unknown, status = 200, headers: Record<string, string
 
 export const jsonError = (status: number, code: string, message: string): Response =>
   json({ error: { code, message } }, status)
+
+/**
+ * A refusal in the CLOUDFLARE WORKER'S envelope, for the routes this host and
+ * the Worker both answer.
+ *
+ * The two hosts serve the same `/api/cloud/*` path from the same product code,
+ * and the app classifies whatever comes back with one classifier
+ * (@smthrs/rpc/Refusal) that reads `code` at the TOP level. This host's own
+ * shape nests it under `error`, so a refusal it wrote arrived at the app with
+ * no code at all and its fault guessed from the status: "the cloud seam is
+ * disabled in this build" read as `fault: bug`, which is a claim about
+ * Smithers being broken rather than about this build not having the seam.
+ *
+ * So on the routes the Worker also serves, this host answers in the Worker's
+ * shape and vocabulary. `jsonError` above stays the local envelope for the
+ * routes only this host has; those are a third vocabulary and still untyped.
+ */
+export const refuse = (code: WorkerFailureCode, message: string): Response =>
+  json({ status: "error", code, message }, WORKER_FAILURES[code].status)
 
 export const notImplemented = (what: string): Response =>
   jsonError(501, "not_implemented", `${what} is not implemented in this build.`)

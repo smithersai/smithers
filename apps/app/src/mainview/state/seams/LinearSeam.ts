@@ -39,7 +39,7 @@ import { linearIntegrationRepo } from "../AppState"
 import { resolveTargetRepo } from "../RepoContext"
 /* plue pages the ops feed with the same Link/`rel="next"` keyset scheme the egress audit uses. */
 import { nextEgressCursor } from "./EgressSeam"
-import { readErrorMessage } from "./SeamContext"
+import { readErrorMessage, unreachableSentence } from "./SeamContext"
 import { createCloudClient } from "./CloudClient"
 import { createRunEpochs } from "./RunEpochs"
 import type { SeamContext } from "./SeamContext"
@@ -789,7 +789,7 @@ export const createLinearSeam = (ctx: SeamContext, deps: LinearSeamDeps = {}): L
     try {
       response = await ctx.http(cloud(`/linear/${encodeURIComponent(row.id)}/sync`), { method: "POST" })
     } catch (error) {
-      const message = `Could not reach Smithers Cloud: ${error instanceof Error ? error.message : String(error)}`
+      const message = unreachableSentence("Smithers Cloud", error)
       upsertSyncCard(row, { error: message })
       return message
     }

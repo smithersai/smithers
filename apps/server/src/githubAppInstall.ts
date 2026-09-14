@@ -1,6 +1,6 @@
 import * as Effect from "effect/Effect"
 import { handlePlatformProxy } from "./proxies"
-import { json } from "./Responses"
+import { json, refuse } from "./Responses"
 
 export const INSTALLATIONS_PATH = "/api/user/github-app/installations"
 const record = (value: unknown): value is Record<string, unknown> => typeof value === "object" && value !== null && !Array.isArray(value)
@@ -21,7 +21,7 @@ export const handleGitHubAppInstall = (request: Request, installationId?: string
     if (!inventory.ok) return inventory
     const body: unknown = yield* Effect.promise(() => inventory.json().catch(() => null))
     const rows = Array.isArray(body) ? body : record(body) && Array.isArray(body.repos) ? body.repos : record(body) && Array.isArray(body.items) ? body.items : undefined
-    if (rows === undefined) return json(502, { message: "Smithers Cloud returned an unreadable repository list." })
+    if (rows === undefined) return refuse("upstream_malformed", "Smithers Cloud returned an unreadable repository list.")
     const candidates = rows.flatMap(row => {
       if (!record(row)) return []
       const name = typeof row.full_name === "string" ? row.full_name : undefined
@@ -40,7 +40,7 @@ export const handleGitHubAppInstall = (request: Request, installationId?: string
       if (status.status === 403 || status.status === 404) continue
       if (!status.ok) return json(status.status, { message: "Smithers Cloud could not verify the GitHub App installation. Try again." })
       const app = status.body
-      if (!record(app) || typeof app.verdict !== "string") return json(502, { message: "Smithers Cloud returned an unreadable GitHub access diagnosis." })
+      if (!record(app) || typeof app.verdict !== "string") return refuse("upstream_malformed", "Smithers Cloud returned an unreadable GitHub access diagnosis.")
       if (app.verdict !== "ok" && app.verdict !== "app-not-installed" && typeof app.detail === "string" &&
         (installationId === undefined || String(app.installation_id) === installationId)) blockers.push(app.detail)
       if (app.verdict === "ok" &&
@@ -52,7 +52,10 @@ export const handleGitHubAppInstall = (request: Request, installationId?: string
     // Live inventory is sorted by most recently pushed. Once a page has a
     // verified candidate, later pages cannot improve the tutorial choice.
     if (repos.length > 0) return json(200, { repos })
-    if (rows.length < 100) return blockers.length > 0 ? json(409, { message: blockers[0] }) : json(200, { repos })
+    if (rows.length < 100) return blockers.length > 0 ? refuse("request_conflict", blockers[0] ?? "") : json(200, { repos })
   }
-  return json(503, { message: "The repository inventory is too large to verify in one request. Try connecting the repository directly." })
+  return refuse(
+    "service_temporarily_unavailable",
+    "The repository inventory is too large to verify in one request. Try connecting the repository directly."
+  )
 })

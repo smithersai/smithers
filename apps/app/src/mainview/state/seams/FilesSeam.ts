@@ -20,7 +20,7 @@ import type { Card } from "../AppState"
 import { parseRepoSelection, repoIdFromRemote, repoKeyOf } from "../AppState"
 import type { AppStore } from "../AppStore"
 import { resolveOpenRepo, resolveTargetRepo } from "../RepoContext"
-import { readErrorMessage } from "./SeamContext"
+import { errorText, readErrorMessage, unreachableSentence } from "./SeamContext"
 import { captureFileLesson, finishFileLesson } from "./tutorial2-file_open"
 import type { SeamContext } from "./SeamContext"
 
@@ -232,7 +232,7 @@ const decodeBase64 = (value: string): { readonly text: string; readonly binary: 
   }
 }
 
-const errorText = (error: unknown): string => error instanceof Error ? error.message : String(error)
+
 
 /**
  * The open LOCAL repository a files command means, if any (LOCAL-APP.md): an
@@ -426,7 +426,7 @@ export const createFilesSeam = (ctx: SeamContext): FilesSeam => {
       try {
         response = await ctx.http(contentsUrl(repo, normalized))
       } catch (error) {
-        return `Could not reach the backend to list ${label} in ${repo}: ${errorText(error)}`
+        return unreachableSentence(`the backend to list ${label} in ${repo}`, error)
       }
       if (response.status === 404) {
         return explain404(response, repo, `Path not found: ${label} in ${repo}`)
@@ -474,7 +474,7 @@ export const createFilesSeam = (ctx: SeamContext): FilesSeam => {
       try {
         response = await ctx.http(contentsUrl(repo, normalized))
       } catch (error) {
-        return `Could not reach the backend to read ${normalized} in ${repo}: ${errorText(error)}`
+        return unreachableSentence(`the backend to read ${normalized} in ${repo}`, error)
       }
       if (response.status === 404) {
         return explain404(response, repo, `Path not found: ${normalized} in ${repo}`)

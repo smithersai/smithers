@@ -28,7 +28,10 @@ import {
   ISOLATION_HEADERS,
   json,
   readBody,
+  refuse,
+  refuseWithStatus,
   TRANSCRIPT_TOO_LARGE,
+  upstreamFailureCode,
   upstreamFailureMessage,
   upstreamUnreachable,
   withIsolationHeaders
@@ -188,7 +191,9 @@ export const turnCancelRequest = (request: Request): Effect.Effect<Response, nev
         return new Response("not found", { status: 404 })
     }
   }).pipe(
-    Effect.catch((failure) => Effect.succeed(Response.json({ status: "error", message: failure.message }, { status: 500 })))
+    Effect.catch((failure) =>
+      Effect.succeed(Response.json({ status: "error", code: "storage_failed", message: failure.message }, { status: 500 }))
+    )
   )
 
 export class TurnCancelRegistry {
@@ -622,10 +627,7 @@ export const readStartTurn = (request: Request): Effect.Effect<TurnRequest | Res
   Effect.map(readBody(request, TRANSCRIPT_TOO_LARGE), (body) => {
     if (body instanceof Response) return body
     if (!isStartTurnRequest(body)) {
-      return json(400, {
-        status: "error",
-        message: "Body must be { runId, messages, instructions } with optional tools and context."
-      })
+      return refuse("request_invalid", "Body must be { runId, messages, instructions } with optional tools and context.")
     }
     // The hints (tier, purpose, role) are read leniently: an unknown value is
     // dropped here, never refused (cloudRoleTurn.ts turnHints).
@@ -668,7 +670,7 @@ export const handleTurn = (
     }
     const registration = registered.success
     if (registration.status !== "started") {
-      return json(409, { status: "error", message: "That Smithers turn is already running." })
+      return refuse("turn_already_running", "That Smithers turn is already running.")
     }
     const generation = registration.generation
     const ctx = yield* ExecutionContext
@@ -711,21 +713,20 @@ export const handleTurn = (
         yield* settle
         const failure = fetched.failure
         if (failure._tag === "UpstreamTimeout") return upstreamUnreachable(MODEL_SEAM, failure)
-        return json(502, {
-          status: "error",
-          message: `Smithers Cloud chat is unreachable: ${causeMessage(failure.cause)}`
-        })
+        return refuse("upstream_unreachable", `Smithers Cloud chat is unreachable: ${causeMessage(failure.cause)}`)
       }
       const response = fetched.success
       if (!response.ok || response.body === null) {
         yield* settle
         const detail = yield* readText(response).pipe(Effect.catch(() => Effect.succeed("")))
-        return json(response.ok ? 502 : response.status, {
-          status: "error",
-          message: response.ok
-            ? "The model service accepted the turn and then sent no answer at all. Nothing was charged."
-            : upstreamFailureMessage(response.status, detail, response.headers.get("retry-after"))
-        })
+        return response.ok
+          ? refuse("model_no_answer", "The model service accepted the turn and then sent no answer at all. Nothing was charged.")
+          : refuseWithStatus(
+            response.status,
+            upstreamFailureCode(response.status),
+            upstreamFailureMessage(response.status, detail, response.headers.get("retry-after")),
+            { retryAfterSeconds: upstreamRetryAfter(response) }
+          )
       }
       // Stream the upstream NDJSON through with the run tagged on every frame so
       // the client can match it to its turn; a terminal frame, a kill observed
@@ -750,6 +751,17 @@ export const handleTurn = (
       Effect.onInterrupt(() => settle)
     )
   })
+
+/**
+ * The seconds an upstream's own `Retry-After` asked for, when it sent one a
+ * client can act on. Kept rather than re-derived: only the upstream knows when
+ * its throttle lifts, and a number this Worker invented would be a guess the
+ * app would then sleep on.
+ */
+const upstreamRetryAfter = (response: Response): number | null => {
+  const seconds = Number(response.headers.get("retry-after") ?? "")
+  return Number.isInteger(seconds) && seconds > 0 ? seconds : null
+}
 
 /* ------------------------------------------------------------------------ */
 /* The model relay                                                           */
@@ -795,12 +807,12 @@ export const handleModelStream = (
     const body = yield* readBody(request, TRANSCRIPT_TOO_LARGE)
     if (body instanceof Response) return body
     if (!isModelStreamBody(body)) {
-      return json(400, { status: "error", message: "Body must carry a non-empty messages array." })
+      return refuse("request_invalid", "Body must carry a non-empty messages array.")
     }
     // The sealed-step law, enforced at the boundary: the author call carries no
     // tools, so a tool-bearing request has no business on this relay.
     if (hasTools(body)) {
-      return json(400, { status: "error", message: "The model relay serves sealed author calls only — no tools." })
+      return refuse("tools_not_supported", "The model relay serves sealed author calls only — no tools.")
     }
     /*
      * The run id is minted HERE, never read from the caller. Upstream derives
@@ -824,20 +836,19 @@ export const handleModelStream = (
     if (Result.isFailure(fetched)) {
       const failure = fetched.failure
       if (failure._tag === "UpstreamTimeout") return upstreamUnreachable(MODEL_SEAM, failure)
-      return json(502, {
-        status: "error",
-        message: `The model service is unreachable: ${causeMessage(failure.cause)}`
-      })
+      return refuse("upstream_unreachable", `The model service is unreachable: ${causeMessage(failure.cause)}`)
     }
     const response = fetched.success
     if (!response.ok || response.body === null) {
       const detail = yield* readText(response).pipe(Effect.catch(() => Effect.succeed("")))
-      return json(response.ok ? 502 : response.status, {
-        status: "error",
-        message: response.ok
-          ? "The model service accepted the request and then sent no answer at all."
-          : upstreamFailureMessage(response.status, detail, response.headers.get("retry-after"))
-      })
+      return response.ok
+        ? refuse("model_no_answer", "The model service accepted the request and then sent no answer at all.")
+        : refuseWithStatus(
+          response.status,
+          upstreamFailureCode(response.status),
+          upstreamFailureMessage(response.status, detail, response.headers.get("retry-after")),
+          { retryAfterSeconds: upstreamRetryAfter(response) }
+        )
     }
     return withIsolationHeaders(
       new Response(response.body, {
@@ -869,7 +880,7 @@ export const handleCancel = (
     if (body instanceof Response) return body
     const runId = typeof body === "object" && body !== null && "runId" in body ? body.runId : undefined
     if (typeof runId !== "string" || runId === "") {
-      return json(400, { status: "error", message: "runId is required." })
+      return refuse("request_invalid", "runId is required.")
     }
     const cancels = yield* TurnCancels
     const outcome = yield* Effect.result(cancels.cancel(runId, session?.login))
@@ -878,7 +889,7 @@ export const handleCancel = (
       return registryUnreachable(outcome.failure)
     }
     if (outcome.success === "forbidden") {
-      return json(403, { status: "error", message: "That turn belongs to a different account." })
+      return refuse("turn_not_yours", "That turn belongs to a different account.")
     }
     return json(200, { status: outcome.success })
   })

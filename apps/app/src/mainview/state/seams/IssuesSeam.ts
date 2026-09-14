@@ -23,7 +23,7 @@ import { mutatePracticeIssue, finishIssueLesson, practiceViewIssue, tutorialRepo
  */
 import type { Card } from "../AppState"
 import { resolveTargetRepo } from "../RepoContext"
-import { readErrorMessage, readResult } from "./SeamContext"
+import { errorText, readErrorMessage, readResult, unreachableSentence } from "./SeamContext"
 import type { SeamContext } from "./SeamContext"
 
 export interface IssuesSeam {
@@ -153,7 +153,7 @@ const parseDetail = (
 const issueRowValue = (issue: IssueListRow, source = issue.source): string =>
   `#${issue.number} ${issue.title} · ${issue.state}${source === "github" ? " · GitHub" : ""}`
 
-const errorText = (error: unknown): string => error instanceof Error ? error.message : String(error)
+
 
 export const createIssuesSeam = (ctx: SeamContext, renderRepositoryForm?: RepositoryForm): IssuesSeam => {
   const issuesPath = (repo: string): string => {
@@ -179,8 +179,7 @@ export const createIssuesSeam = (ctx: SeamContext, renderRepositoryForm?: Reposi
 
   const notImported = (repo: string): string => `${repo} isn't imported yet — run /repos.import ${repo} first`
 
-  const unreachable = (what: string, error: unknown): string =>
-    `Could not reach the backend to ${what}: ${errorText(error)}`
+  const unreachable = (what: string, error: unknown): string => unreachableSentence(`the backend to ${what}`, error)
 
   /**
    * GitHub's issues for `repo`, through the GitHub-source route, with the

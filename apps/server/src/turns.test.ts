@@ -247,7 +247,9 @@ describe("handleTurn over the registry", () => {
       expect(response.status).toBe(502)
       expect(await response.json()).toEqual({
         status: "error",
-        message: "The turn registry is unreachable right now: Registry register returned 500: {\"status\":\"error\",\"message\":\"storage is sealed\"}"
+        code: "upstream_unreachable",
+        message:
+          "The turn registry is unreachable right now: Registry register returned 500: {\"status\":\"error\",\"code\":\"storage_failed\",\"message\":\"storage is sealed\"}"
       })
       expect(upstreamCalls).toBe(0)
       expect(logged[0]?.[0]).toBe("turn registry register failed:")

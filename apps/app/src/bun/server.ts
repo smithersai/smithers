@@ -66,7 +66,7 @@ import { binDirOf, createPtyManager } from "./Pty"
 import type { PtyManager } from "./Pty"
 import { createRepositoryAuthority } from "./RepositoryAuthority"
 import type { RepositoryAuthority } from "./RepositoryAuthority"
-import { decodePath, invalidPath, json, jsonError, readJson, Router } from "./routes"
+import { decodePath, invalidPath, json, jsonError, readJson, refuse, Router } from "./routes"
 import type { RouteHandler } from "./routes"
 import { registerAgentRoutes } from "./routes/agents"
 import { tutorialChangeRoute, type TutorialChangeHost } from "./routes/tutorial2-agent_change"
@@ -534,11 +534,11 @@ const proxyCloud = async (
   const upstreamOrigin = new URL(upstream).origin
   const rest = url.pathname.slice(CLOUD_ROUTE_PREFIX.length)
   if (rest === "" || rest.startsWith("/") || rest.includes("\\")) {
-    return jsonError(400, "invalid_cloud_path", "A cloud path is /api/cloud/<path> with a non-empty, single-slash path.")
+    return refuse("request_invalid", "A cloud path is /api/cloud/<path> with a non-empty, single-slash path.")
   }
   const target = new URL(`/${rest}${url.search}`, upstreamOrigin)
   if (target.origin !== upstreamOrigin) {
-    return jsonError(400, "invalid_cloud_path", "The cloud path resolved outside the cloud API origin.")
+    return refuse("request_invalid", "The cloud path resolved outside the cloud API origin.")
   }
   const headers = new Headers(request.headers)
   headers.set("host", target.host)
@@ -559,7 +559,7 @@ const proxyCloud = async (
       redirect: "manual"
     })
   } catch (error) {
-    return jsonError(502, "cloud_unreachable", error instanceof Error ? error.message : "cloud upstream unreachable")
+    return refuse("upstream_unreachable", error instanceof Error ? error.message : "cloud upstream unreachable")
   }
   const out = new Headers(response.headers)
   out.delete("content-encoding")
@@ -995,7 +995,7 @@ export const startLocalServer = async (options: LocalServerOptions): Promise<Loc
       if (router.knows(pathname)) return jsonError(405, "method_not_allowed", `${request.method} is not allowed on ${pathname}.`)
       if (pathname.startsWith(CLOUD_ROUTE_PREFIX)) {
         return cloudUpstream === null
-          ? jsonError(501, "not_implemented", "The cloud seam is disabled in this build.")
+          ? refuse("feature_unavailable_here", "The cloud seam is disabled in this build.")
           : proxyCloud(request, url, cloudUpstream, cloudAuth?.token())
       }
       if (pathname.startsWith(AUTH_ROUTE_PREFIX) || pathname.startsWith(IDENTITY_ROUTE_PREFIX)) {
@@ -1015,7 +1015,7 @@ export const startLocalServer = async (options: LocalServerOptions): Promise<Loc
        */
       if (PRODUCT_PROXY_PREFIXES.some((prefix) => pathname.startsWith(prefix))) {
         return identityUpstream === null
-          ? jsonError(501, "not_implemented", "Smithers Cloud is not reachable from this build (offline mode).")
+          ? refuse("feature_unavailable_here", "Smithers Cloud is not reachable from this build (offline mode).")
           : proxyIdentity(request, url, identityUpstream, log)
       }
       return jsonError(404, "not_found", `No route for ${request.method} ${pathname}.`)

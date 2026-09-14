@@ -25,7 +25,7 @@ import type { Repo } from "@smthrs/rpc/LocalApp"
 import type { RepoTreeEntry, WorkingCopy } from "../AppState"
 import { createCloudClient } from "./CloudClient"
 import { encodeRepoPath, parseEntry, requestLocalFiles, sortEntries, unsafePath } from "./FilesSeam"
-import { readErrorMessage } from "./SeamContext"
+import { readErrorMessage, unreachableSentence } from "./SeamContext"
 import type { SeamContext } from "./SeamContext"
 
 export interface RepoTreeSeam {
@@ -127,7 +127,7 @@ export const createRepoTreeSeam = (ctx: SeamContext): RepoTreeSeam => {
     try {
       response = await ctx.http(`${ctx.baseUrl}${sharedContentsPath(copy.repoId, path)}`)
     } catch (error) {
-      failed(copy.id, path, `Could not reach the backend to list ${label} in ${copy.repoId}: ${error instanceof Error ? error.message : String(error)}`)
+      failed(copy.id, path, unreachableSentence(`the backend to list ${label} in ${copy.repoId}`, error))
       return
     }
     if (!response.ok) {

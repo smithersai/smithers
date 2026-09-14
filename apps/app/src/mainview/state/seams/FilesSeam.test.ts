@@ -1,3 +1,4 @@
+import { INFRA_NOT_YOUR_FAULT } from "@smthrs/rpc/RefusalCopy"
 import type { StorageApi } from "@tanstack/db"
 import { describe, expect, test } from "bun:test"
 import { CardSchema } from "@smthrs/rpc/Cards"
@@ -411,14 +412,19 @@ describe("files seam — honest failures", () => {
     expect(fileCard(store, "file-will/flows-boom.txt")).toBeUndefined()
   })
 
-  test("a network throw answers an honest string naming the path and repo", async () => {
+  /*
+   * A throw naming the path and the repo, and now the verdict as well: nothing
+   * answered, so nobody judged the request and the reader certainly did not
+   * cause it (`clientRefusal`, @smthrs/rpc/Refusal).
+   */
+  test("a network throw answers an honest string naming the path and repo, and whose fault it was", async () => {
     const { store, controller } = await freshController()
     await ready(store)
     const outcome = await controller.commands.run("files.read", "net.txt")
     expect(outcome.status).toBe("failed")
     if (outcome.status === "failed") {
       expect(outcome.error).toBe(
-        "Could not reach the backend to read net.txt in will/flows: socket hang up"
+        `Could not reach the backend to read net.txt in will/flows: socket hang up. ${INFRA_NOT_YOUR_FAULT}`
       )
     }
   })

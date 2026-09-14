@@ -47,5 +47,9 @@ test("signed-out callbacks cannot read the repository or App installation invent
 test("an existing installation never bypasses the user's own repository grant", async () => {
   const { response } = await verify("42", { verdict: "no-org-grant" })
   expect(response.status).toBe(409)
-  expect(await response.json()).toEqual({ message: "Your GitHub credential cannot access this repository." })
+  expect(await response.json()).toEqual({
+    status: "error",
+    code: "request_conflict",
+    message: "Your GitHub credential cannot access this repository."
+  })
 })

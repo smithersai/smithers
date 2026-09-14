@@ -28,7 +28,7 @@ describe("runRequest, the native fetch boundary", () => {
     const response = await pending
     expect(response.status).toBe(499)
     expect(CLIENT_DISCONNECTED_STATUS).toBe(499)
-    expect(await response.json()).toEqual({ status: "error", message: "The client disconnected." })
+    expect(await response.json()).toEqual({ status: "error", code: "client_disconnected", message: "The client disconnected." })
     expect(released).toBe(true)
   })
 
@@ -56,7 +56,7 @@ describe("runRequest, the native fetch boundary", () => {
     try {
       const response = await runRequest(Effect.die(new Error("boom")))
       expect(response.status).toBe(500)
-      expect(await response.json()).toEqual({ status: "error", message: "Smithers could not complete this request. Try again in a moment." })
+      expect(await response.json()).toEqual({ status: "error", code: "unexpected_failure", message: "Smithers could not complete this request. Try again in a moment." })
       expect(UNEXPECTED_FAILURE_MESSAGE).toBe("Smithers could not complete this request. Try again in a moment.")
       expect(JSON.stringify(logged.map(String))).toContain("boom")
     } finally {

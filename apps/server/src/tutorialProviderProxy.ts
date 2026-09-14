@@ -1,9 +1,16 @@
 import { Effect, Redacted } from "effect"
+import { WORKER_FAILURES } from "@smthrs/rpc/WorkerFailureCodes"
+import type { WorkerFailureCode } from "@smthrs/rpc/WorkerFailureCodes"
 import { TUTORIAL_PROVIDER_PROXY_PATH, TUTORIAL_PROXY_TOKEN_HEADER, tutorialProviderDestinations } from "@smthrs/rpc/TutorialProviderProxy"
 import { ServerConfig } from "./Config"
 import { discardBody, fetchWithDeadline, readBoundedBytes } from "./Http"
 
-const json = (status: number, message: string) => Response.json({ message }, { status, headers: { "cache-control": "no-store" } })
+/* The Worker's own refusal, at the status its code names (@smthrs/rpc/WorkerFailureCodes). */
+const json = (code: WorkerFailureCode, message: string) =>
+  Response.json({ status: "error", code, message }, {
+    status: WORKER_FAILURES[code].status,
+    headers: { "cache-control": "no-store" }
+  })
 const sameToken = (left: string, right: string) => {
   const a = new TextEncoder().encode(left), b = new TextEncoder().encode(right)
   let difference = a.length ^ b.length
@@ -13,14 +20,14 @@ const sameToken = (left: string, right: string) => {
 
 export const handleTutorialProviderProxy = (request: Request) => Effect.gen(function*() {
   const config = yield* ServerConfig
-  if (!config.tutorialServiceToken) return json(503, "The tutorial provider proxy is not configured.")
-  if (!sameToken(request.headers.get(TUTORIAL_PROXY_TOKEN_HEADER) ?? "", Redacted.value(config.tutorialServiceToken))) return json(401, "Service authentication required.")
+  if (!config.tutorialServiceToken) return json("seam_not_configured", "The tutorial provider proxy is not configured.")
+  if (!sameToken(request.headers.get(TUTORIAL_PROXY_TOKEN_HEADER) ?? "", Redacted.value(config.tutorialServiceToken))) return json("service_auth_required", "Service authentication required.")
   const url = new URL(request.url)
   const destination = url.pathname.slice(TUTORIAL_PROVIDER_PROXY_PATH.length + 1)
-  if (url.search || !Object.hasOwn(tutorialProviderDestinations, destination)) return json(404, "Unknown provider route.")
-  if (request.method !== "POST") return json(405, "Unsupported provider method.")
+  if (url.search || !Object.hasOwn(tutorialProviderDestinations, destination)) return json("route_not_found", "Unknown provider route.")
+  if (request.method !== "POST") return json("method_not_allowed", "Unsupported provider method.")
   const body = yield* readBoundedBytes(request, 1024 * 1024).pipe(Effect.catch(() => Effect.succeed(undefined)))
-  if (!body) return json(413, "Provider request body is too large or unreadable.")
+  if (!body) return json("request_body_too_large", "Provider request body is too large or unreadable.")
   const headers = new Headers()
   for (const name of ["authorization", "chatgpt-account-id", "content-type", "accept", "openai-beta", "originator", "user-agent", "openai-project", "openai-organization"]) {
     const value = request.headers.get(name)
@@ -29,18 +36,18 @@ export const handleTutorialProviderProxy = (request: Request) => Effect.gen(func
   // Subscription endpoints reject Worker egress. Keep the Worker as the
   // authenticated ingress, with our existing backend making the final hop.
   const subscription = destination === "chatgpt" || destination === "refresh"
-  if (subscription && !config.tutorialServiceUrl) return json(503, "The subscription relay is not configured.")
+  if (subscription && !config.tutorialServiceUrl) return json("seam_not_configured", "The subscription relay is not configured.")
   const upstream = subscription
     ? `${config.tutorialServiceUrl!.replace(/\/$/, "")}/provider/${destination}`
     : tutorialProviderDestinations[destination as keyof typeof tutorialProviderDestinations]
   if (subscription) headers.set(TUTORIAL_PROXY_TOKEN_HEADER, Redacted.value(config.tutorialServiceToken))
   const response = yield* fetchWithDeadline("Tutorial provider", upstream, { method: "POST", headers, body, redirect: "manual", signal: request.signal }, 120_000)
-    .pipe(Effect.catch(() => Effect.succeed(json(502, "The tutorial provider could not be reached."))))
+    .pipe(Effect.catch(() => Effect.succeed(json("upstream_unreachable", "The tutorial provider could not be reached."))))
   // Never follow a redirect with a subscription credential or return a new
   // destination for the coordinator to follow outside this proxy.
   if (response.status >= 300 && response.status < 400) {
     yield* discardBody(response)
-    return json(502, "The tutorial provider returned an unexpected redirect.")
+    return json("upstream_malformed", "The tutorial provider returned an unexpected redirect.")
   }
   const outgoing = new Headers()
   for (const name of ["content-type", "retry-after", "retry-after-ms", "x-request-id", "request-id"]) {

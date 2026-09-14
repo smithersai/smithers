@@ -495,7 +495,7 @@ describe("public available repositories", () => {
     const write = await handler(new Request(request(), { method: "POST" }))
     expect(write.status).toBe(405)
     expect(write.headers.get("allow")).toBe("GET, HEAD, OPTIONS")
-    expect(await write.json()).toEqual({ message: "Method not allowed." })
+    expect(await write.json()).toEqual({ status: "error", code: "method_not_allowed", message: "Method not allowed." })
     expect(requests).toHaveLength(0)
     const head = await handler(new Request(request(), { method: "HEAD" }))
     expect(head.status).toBe(200)

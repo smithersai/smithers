@@ -11,7 +11,7 @@ import { fetchWithDeadline, readBoundedBytes, readText } from "./Http"
 import type { Transport } from "./Http"
 import { requireTurnSession } from "./identity"
 import { isPublicRepositoryRead, readPublicRepository } from "./publicRepositoryReads"
-import { json, notFound, readBody, upstreamProse, upstreamUnreachable, withIsolationHeaders } from "./Responses"
+import { json, notFound, readBody, refuse, upstreamProse, upstreamUnreachable, withIsolationHeaders } from "./Responses"
 import { anonymousBucketAddress } from "./turnLimit"
 
 /*
@@ -167,32 +167,25 @@ export const handlePlatformProxy = (
     if (gate === undefined) {
       // No identity seam on this deployment (local dev/stub): the honest state,
       // not a 404 — the client renders the message as-is.
-      return json(503, {
-        status: "error",
-        message: "Repository actions need the identity seam, which this deployment does not have."
-      })
+      return refuse("seam_not_configured", "Repository actions need the identity seam, which this deployment does not have.")
     }
     if (CHECKOUT_PATHS.includes(url.pathname) && !config.billingCheckoutEnabled) {
-      return json(501, {
-        status: "error",
-        message:
-          "There is nothing to buy during the closed alpha: your balance is comped, so there is no checkout and no billing portal. You'll be told before that changes."
-      })
+      return refuse(
+        "feature_unavailable_here",
+        "There is nothing to buy during the closed alpha: your balance is comped, so there is no checkout and no billing portal. You'll be told before that changes."
+      )
     }
     const token = yield* fetchCloudToken(gate.login)
     if (token.status !== "ok") {
-      return json(503, {
-        status: "error",
-        message: `Smithers Cloud isn't reachable for your account right now (${token.status}).`
-      })
+      return refuse("cloud_token_unavailable", `Smithers Cloud isn't reachable for your account right now (${token.status}).`)
     }
     let body: Uint8Array<ArrayBuffer> | undefined
     if (request.method !== "GET" && request.method !== "HEAD") {
       const read = yield* Effect.result(readBoundedBytes(request, platformBodyLimit(url.pathname, request.method)))
       if (Result.isFailure(read)) {
         return read.failure._tag === "BodyTooLarge"
-          ? json(413, { status: "error", message: "Request body too large." })
-          : json(400, { status: "error", message: "Invalid request." })
+          ? refuse("request_body_too_large", "Request body too large.")
+          : refuse("request_invalid", "Invalid request.")
       }
       body = read.success
     }
@@ -294,11 +287,11 @@ export const handleBrowserFetch = (request: Request): Effect.Effect<Response, ne
       ? body.url
       : undefined
     if (url === undefined || url.trim() === "") {
-      return json(400, { status: "error", message: "Body must be { url }." })
+      return refuse("request_invalid", "Body must be { url }.")
     }
     const egress = yield* BrowserEgress
     if (Option.isNone(egress)) {
-      return json(501, { status: "error", message: "Web page reading is unavailable on this host. Open it in the native app." })
+      return refuse("feature_unavailable_here", "Web page reading is unavailable on this host. Open it in the native app.")
     }
     const outcome = yield* egress.value.read(url.trim()).pipe(
       Effect.catch((failure) => Effect.succeed({ ok: false as const, message: `Reading the page failed: ${failure.message}` }))
@@ -336,8 +329,8 @@ export const handleClientError = (request: Request): Effect.Effect<Response, nev
     const read = yield* Effect.result(readBoundedBytes(request, CLIENT_ERROR_MAX_BODY))
     if (Result.isFailure(read)) {
       return read.failure._tag === "BodyTooLarge"
-        ? json(413, { status: "error", message: "Error report too large." })
-        : json(400, { status: "error", message: "Invalid request." })
+        ? refuse("request_body_too_large", "Error report too large.")
+        : refuse("request_invalid", "Invalid request.")
     }
     const text = new TextDecoder().decode(read.success)
     // The log is what makes an alpha user's crash readable afterwards, through
@@ -364,7 +357,7 @@ export const handleClientError = (request: Request): Effect.Effect<Response, nev
       clientErrorSource(request)
     )
     if (outcome === "throttled") {
-      return json(429, { status: "error", message: "Too many error reports." })
+      return refuse("error_reports_throttled", "Too many error reports.")
     }
     yield* Effect.sync(() => console.error("client-error:", text))
     return json(202, { status: "accepted" })

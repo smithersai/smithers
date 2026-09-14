@@ -48,7 +48,7 @@ import { CLOUD_ROUTE_PREFIX } from "@smthrs/rpc/LocalApp"
 import type { Card, GitHubAppStatusInput } from "../AppState"
 import { activeRepositoryId, resolveTargetRepo } from "../RepoContext"
 import { createRunEpochs } from "./RunEpochs"
-import { readGitHubRefusal, trustedHttpsUrl } from "./SeamContext"
+import { readGitHubRefusal, trustedHttpsUrl, unreachableSentence } from "./SeamContext"
 import type { GitHubRefusal, SeamContext } from "./SeamContext"
 
 export const SIGN_OUT_REFUSAL = "Sign in to Smithers Cloud first — /cloud.sign-in."
@@ -225,7 +225,7 @@ export const createGitHubSeam = (ctx: SeamContext, deps: GitHubSeamDeps = {}): G
     try {
       response = await ctx.http(cloud(repoPath(repo, "github-app-status")))
     } catch (error) {
-      return { refusal: { message: `Could not reach Smithers Cloud: ${error instanceof Error ? error.message : String(error)}` } }
+      return { refusal: { message: unreachableSentence("Smithers Cloud", error) } }
     }
     if (!response.ok) {
       return { refusal: await readGitHubRefusal(response, `The GitHub App status for ${repo} couldn't be read (${response.status})`) }
@@ -486,7 +486,7 @@ export const createGitHubSeam = (ctx: SeamContext, deps: GitHubSeamDeps = {}): G
     try {
       response = await ctx.http(cloud(repoPath(target.repo, "github/reconcile")), { method: "POST" })
     } catch (error) {
-      return `Could not reach Smithers Cloud: ${error instanceof Error ? error.message : String(error)}`
+      return unreachableSentence("Smithers Cloud", error)
     }
     if (!response.ok) {
       /* plue gates this on repository write (plue#490): a refusal is its own sentence, verbatim. */
@@ -675,7 +675,7 @@ export const createGitHubSeam = (ctx: SeamContext, deps: GitHubSeamDeps = {}): G
     try {
       response = await ctx.http(cloud(path), { method: "POST" })
     } catch (error) {
-      const message = `Could not reach Smithers Cloud: ${error instanceof Error ? error.message : String(error)}`
+      const message = unreachableSentence("Smithers Cloud", error)
       upsertMirrorCard(repo, { error: message, ...mirror })
       return message
     }

@@ -10,6 +10,9 @@
  * Cards carry the human presentation; raw backend payloads are not results.
  */
 import { isRecord } from "@smthrs/canonical/Record"
+import { clientRefusal } from "@smthrs/rpc/Refusal"
+import type { Refusal } from "@smthrs/rpc/Refusal"
+import { refusalSentence } from "@smthrs/rpc/RefusalCopy"
 import type { AppStore } from "../AppStore"
 
 export type SeamFetch = (input: string, init?: RequestInit) => Promise<Response>
@@ -45,6 +48,26 @@ export const readResult = (value: string): { readonly value: string } => {
 export const readErrorMessage = async (response: Response, fallback: string): Promise<string> => {
   return errorMessage(await response.json().catch(() => null), fallback)
 }
+
+/** The prose of a thrown value, which is all a rejected fetch ever carries. */
+export const errorText = (error: unknown): string => error instanceof Error ? error.message : String(error)
+
+/**
+ * A request that threw before anything answered it: offline, DNS, TLS, a
+ * connection reset, an abort.
+ *
+ * No server judged it, so no server can be blamed for it and the user
+ * certainly cannot — `clientRefusal` is infra by construction
+ * (@smthrs/rpc/Refusal). What this adds is that every seam builds the same
+ * shape for the same event: the throw used to reach the transcript, a card and
+ * the chat model as a bare `Could not reach X: Load failed`, which reads as
+ * something the reader did, and a dozen seams each worded it themselves.
+ */
+export const unreachable = (what: string, error: unknown): Refusal =>
+  clientRefusal(error, `Could not reach ${what}: ${errorText(error)}`)
+
+/** The one sentence a thrown request earns, with the verdict on the end of it. */
+export const unreachableSentence = (what: string, error: unknown): string => refusalSentence(unreachable(what, error))
 
 /** The human-facing message in an already decoded response. */
 export const errorMessage = (body: unknown, fallback: string): string => {

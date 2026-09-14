@@ -1709,7 +1709,7 @@ describe("the deleted approval-decision route", () => {
       assetsEnv()
     )
     expect(response.status).toBe(404)
-    expect(await response.json()).toEqual({ status: "error", message: "Not found." })
+    expect(await response.json()).toEqual({ status: "error", code: "route_not_found", message: "Not found." })
   })
 })
 
@@ -1718,7 +1718,7 @@ describe("the deleted recommendations seam", () => {
     for (const path of ["/api/reco/first-run", "/api/reco/feedback", "/api/reco/repos", "/api/reco/watched"]) {
       const response = await worker.fetch(new Request(`https://mvp.test${path}`), assetsEnv())
       expect(`${path} → ${response.status}`).toBe(`${path} → 404`)
-      expect(await response.json()).toEqual({ status: "error", message: "Not found." })
+      expect(await response.json()).toEqual({ status: "error", code: "route_not_found", message: "Not found." })
     }
   })
 })
@@ -1949,6 +1949,7 @@ describe("the admin surface (non-enumerable)", () => {
         expect(conflict.status).toBe(409)
         expect(await conflict.json()).toEqual({
           status: "error",
+          code: "request_conflict",
           message: expect.stringContaining("already granted $25.00")
         })
       }
@@ -2003,6 +2004,7 @@ describe("the admin surface (non-enumerable)", () => {
         expect(response.status).toBe(400)
         expect(await response.json()).toEqual({
           status: "error",
+          code: "request_invalid",
           message: expect.stringContaining("operationKey")
         })
       }
@@ -3218,7 +3220,7 @@ describe("the /api/cloud bridge", () => {
       for (const [method, path] of cases) {
         const response = await worker.fetch(new Request(`https://mvp.test${path}`, { method }), signedInEnv)
         expect(`${method} ${path} → ${response.status}`).toBe(`${method} ${path} → 404`)
-        expect(await response.json()).toEqual({ status: "error", message: "Not found." })
+        expect(await response.json()).toEqual({ status: "error", code: "route_not_found", message: "Not found." })
       }
       expect(calls).toEqual([])
     })
@@ -3242,7 +3244,7 @@ describe("the /api/cloud bridge", () => {
       for (const path of attacks) {
         const response = await worker.fetch(new Request(`https://mvp.test${path}`), signedInEnv)
         expect(`${path} → ${response.status}`).toBe(`${path} → 404`)
-        expect(await response.json()).toEqual({ status: "error", message: "Not found." })
+        expect(await response.json()).toEqual({ status: "error", code: "route_not_found", message: "Not found." })
       }
       expect(calls).toEqual([])
     })
@@ -3548,7 +3550,7 @@ describe("sibling admin surfaces are unreachable through the transparent proxies
             env
           )
           expect(`${method} ${path} → ${response.status}`).toBe(`${method} ${path} → 404`)
-          expect(await response.json()).toEqual({ status: "error", message: "Not found." })
+          expect(await response.json()).toEqual({ status: "error", code: "route_not_found", message: "Not found." })
         }
         expect(forwarded).toEqual([])
       }
@@ -3606,7 +3608,7 @@ describe("Durable Object rejections and the Worker error boundary", () => {
       })
       expect(response.status).toBe(500)
       expect(await response.json()).toEqual({
-        status: "error", message: "Smithers could not complete this request. Try again in a moment."
+        status: "error", code: "unexpected_failure", message: "Smithers could not complete this request. Try again in a moment."
       })
       expect(logged).toHaveBeenCalledWith("worker fetch failed:", cause)
     } finally {
@@ -3626,7 +3628,7 @@ describe("Durable Object rejections and the Worker error boundary", () => {
         expect(response.headers.get("content-type")).toContain("application/json")
         expect(response.headers.get("Cross-Origin-Opener-Policy")).toBe("same-origin")
         expect(await response.json()).toEqual({
-          status: "error", message: "Smithers could not complete this request. Try again in a moment."
+          status: "error", code: "unexpected_failure", message: "Smithers could not complete this request. Try again in a moment."
         })
         expect(logged).toHaveBeenCalledWith("worker fetch failed:", failure)
       } finally {
@@ -3687,6 +3689,7 @@ describe("configured upstream headers deadlines", () => {
         expect(response.status).toBe(504)
         expect(await response.json()).toEqual({
           status: "error",
+          code: "upstream_timeout",
           message: expect.stringContaining("20ms")
         })
         expect(aborted).toHaveLength(1)
@@ -4663,7 +4666,7 @@ describe("the client-error route", () => {
     const env = adminEnv(logs)
     const big = await worker.fetch(report({ message: "x".repeat(17 * 1024) }), env)
     expect(big.status).toBe(413)
-    expect(await big.json()).toEqual({ status: "error", message: "Error report too large." })
+    expect(await big.json()).toEqual({ status: "error", code: "request_body_too_large", message: "Error report too large." })
     const declared = await worker.fetch(
       new Request("https://mvp.test/api/client-errors", {
         method: "POST",
@@ -4692,7 +4695,7 @@ describe("the client-error route", () => {
       async () => {
         const visitor = await worker.fetch(new Request("https://mvp.test/api/admin/errors"), env)
         expect(visitor.status).toBe(404)
-        expect(await visitor.json()).toEqual({ status: "error", message: "Not found." })
+        expect(await visitor.json()).toEqual({ status: "error", code: "route_not_found", message: "Not found." })
       }
     )
     await withMockedFetch(
@@ -4706,7 +4709,7 @@ describe("the client-error route", () => {
       async () => {
         const member = await readAdmin(env)
         expect(member.status).toBe(404)
-        expect(await member.json()).toEqual({ status: "error", message: "Not found." })
+        expect(await member.json()).toEqual({ status: "error", code: "route_not_found", message: "Not found." })
       }
     )
     await asAdmin(async () => {
@@ -4766,7 +4769,12 @@ describe("the client-error route", () => {
         }
         const refused = await worker.fetch(flood(CLIENT_ERROR_SOURCE_WINDOW_MAX), env)
         expect(refused.status).toBe(429)
-        expect(await refused.json()).toEqual({ status: "error", message: "Too many error reports." })
+        expect(await refused.json()).toEqual({
+          status: "error",
+          code: "error_reports_throttled",
+          message: "Too many error reports.",
+          retry_after: 60
+        })
         expect((await worker.fetch(anonymous(1, 10), env)).status).toBe(202)
       })
       await asAdmin(async () => {
@@ -4846,7 +4854,7 @@ describe("the recommend routes at the router", () => {
       for (const path of ["/api/recommend", "/api/recommend/outcome"]) {
         const get = await worker.fetch(new Request(`https://mvp.test${path}`), adminEnv())
         expect(get.status).toBe(405)
-        expect(await get.json()).toEqual({ status: "error", message: "Method not allowed." })
+        expect(await get.json()).toEqual({ status: "error", code: "method_not_allowed", message: "Method not allowed." })
         const cross = await worker.fetch(
           new Request(`https://mvp.test${path}`, { method: "POST", headers: { origin: "https://evil.example" }, body: "{}" }),
           adminEnv()
@@ -4897,7 +4905,7 @@ describe("the recommend routes at the router", () => {
     await withMockedFetch(identity(new Response("{}", { status: 401 })), async () => {
       const visitor = await worker.fetch(new Request("https://mvp.test/api/admin/recommend/log"), env)
       expect(visitor.status).toBe(404)
-      expect(await visitor.json()).toEqual({ status: "error", message: "Not found." })
+      expect(await visitor.json()).toEqual({ status: "error", code: "route_not_found", message: "Not found." })
     })
     const member = new Response(JSON.stringify({ login: "will", allowlisted: true, admin: false }), {
       status: 200,

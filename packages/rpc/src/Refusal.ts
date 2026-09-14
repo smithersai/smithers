@@ -16,16 +16,33 @@
  * The fault is never guessed from prose. plue states it on the wire; the
  * Worker's pass-through keeps `code` and `retry_after` but not `fault`, so a
  * refusal that reached us through the Worker is classified from the VENDORED
- * registry by its code (PlueFailureCodes.ts); only a refusal carrying neither
- * falls back to its status, and a fetch that threw is infra by construction —
- * the user's request never reached anyone who could judge it.
+ * registry by its code (PlueFailureCodes.ts); a refusal the Worker wrote
+ * ITSELF names a code from its own hand-written registry
+ * (WorkerFailureCodes.ts) and is classified from that; only a refusal carrying
+ * neither falls back to its status, and a fetch that threw is infra by
+ * construction — the user's request never reached anyone who could judge it.
+ *
+ * The two registries are disjoint by gate, not by prefix
+ * (test/WorkerFailureCodes.test.ts), so one lookup of the string on the wire
+ * answers both which code it is and who wrote it.
  *
  * @since 1.0.0
  */
 import { PLUE_FAILURES, PLUE_FAULTS } from "./PlueFailureCodes.ts"
 import type { PlueFailureCode, PlueFault } from "./PlueFailureCodes.ts"
+import { WORKER_FAILURES, workerFailureCode } from "./WorkerFailureCodes.ts"
+import type { WorkerFailureCode, WorkerFailureEntry } from "./WorkerFailureCodes.ts"
 
-export type { PlueFailureCode, PlueFault }
+export type { PlueFailureCode, PlueFault, WorkerFailureCode }
+
+/**
+ * A code either refusing party may put on the wire. The two vocabularies share
+ * one namespace and never overlap, so a string identifies its author.
+ *
+ * @since 1.0.0
+ * @category models
+ */
+export type RefusalCode = PlueFailureCode | WorkerFailureCode
 
 /**
  * Who refused.
@@ -47,8 +64,8 @@ export type RefusalOrigin = "plue" | "worker" | "client"
  * @category models
  */
 export interface Refusal {
-  /** The code, narrowed to the vendored registry; null when the wire named none or one this build predates. */
-  readonly code: PlueFailureCode | null
+  /** The code, narrowed to one of the two registries; null when the wire named none or one this build predates. */
+  readonly code: RefusalCode | null
   /** What the wire actually spelled. Shown verbatim, never branched on — a code newer than this build still reaches the user. */
   readonly rawCode: string | null
   readonly fault: PlueFault
@@ -85,6 +102,34 @@ export const plueFailureCode = (value: unknown): PlueFailureCode | null =>
  * @category constants
  */
 export const plueFailureEntry = (code: PlueFailureCode | null) => code === null ? null : PLUE_FAILURES[code]
+
+/**
+ * Whether a code is one the Cloudflare Worker wrote rather than one plue did.
+ * The tables are disjoint, so membership IS authorship.
+ *
+ * @since 1.0.0
+ * @category constants
+ */
+export const isWorkerFailureCode = (code: RefusalCode | null): code is WorkerFailureCode =>
+  code !== null && Object.hasOwn(WORKER_FAILURES, code)
+
+/**
+ * The code a string on the wire names, from whichever registry claims it.
+ *
+ * @since 1.0.0
+ * @category constants
+ */
+export const refusalCode = (value: unknown): RefusalCode | null => workerFailureCode(value) ?? plueFailureCode(value)
+
+/**
+ * The registry row for any code, from whichever table owns it. Both rows carry
+ * the same three fields, so everything downstream reads one shape.
+ *
+ * @since 1.0.0
+ * @category constants
+ */
+export const refusalEntry = (code: RefusalCode | null): WorkerFailureEntry | null =>
+  code === null ? null : isWorkerFailureCode(code) ? WORKER_FAILURES[code] : PLUE_FAILURES[code]
 
 /**
  * The verdict for a refusal that named no code this build knows. plue always
@@ -140,10 +185,13 @@ export interface RefusalInput {
 /**
  * The refusal a response describes.
  *
- * Origin is read from the evidence rather than configured: a body that names a
- * code this build knows was written by plue and passed through (the Worker
- * restates prose but preserves `code` and `retry_after` exactly), and anything
- * else that still reached us as a response was refused by the Worker itself.
+ * Origin is read from the evidence rather than configured: a body naming a code
+ * from the Worker's own registry was refused BY the Worker; one naming a plue
+ * code was written by plue and passed through (the Worker restates prose but
+ * preserves `code` and `retry_after` exactly); and anything else that still
+ * reached us as a response was refused by the Worker without a code — an older
+ * deployment, or a route this change has not reached — so it stays the Worker's
+ * with its fault read off the status.
  *
  * @since 1.0.0
  * @category constants
@@ -151,8 +199,8 @@ export interface RefusalInput {
 export const refusalOf = (input: RefusalInput): Refusal => {
   const record = typeof input.body === "object" && input.body !== null ? input.body as Record<string, unknown> : {}
   const rawCode = textOf(record.code)
-  const code = plueFailureCode(rawCode)
-  const entry = plueFailureEntry(code)
+  const code = refusalCode(rawCode)
+  const entry = refusalEntry(code)
   const stated = textOf(record.fault)
   const fault = stated !== null && FAULTS.has(stated)
     ? stated as PlueFault
@@ -165,7 +213,31 @@ export const refusalOf = (input: RefusalInput): Refusal => {
     /* The header wins, then the body plue now always writes. What this response said, and nothing inferred. */
     retryAfter: input.retryAfterSeconds ?? secondsOf(record.retry_after) ?? null,
     status: input.status,
-    origin: code === null ? "worker" : "plue"
+    origin: isWorkerFailureCode(code) || code === null ? "worker" : "plue"
+  }
+}
+
+/**
+ * A refusal the Cloudflare Worker wrote, built from its own registry.
+ *
+ * The status and the fault come from the table rather than from the caller, so
+ * a route and its code can never disagree about either. This is the
+ * constructor the Worker's own `refuse` mirrors and the one a test uses to say
+ * "this is what that code looks like once it has reached the app".
+ *
+ * @since 1.0.0
+ * @category constants
+ */
+export const workerRefusal = (code: WorkerFailureCode, message: string, retryAfterSeconds?: number | null): Refusal => {
+  const entry = WORKER_FAILURES[code]
+  return {
+    code,
+    rawCode: code,
+    fault: entry.fault,
+    message,
+    retryAfter: secondsOf(retryAfterSeconds) ?? (entry.retryAfter > 0 ? entry.retryAfter : null),
+    status: entry.status,
+    origin: "worker"
   }
 }
 
@@ -231,16 +303,16 @@ export const storedRefusal = (refusal: Refusal): StoredRefusal => ({
  * @category constants
  */
 export const refusalFromStored = (stored: StoredRefusal): Refusal => {
-  const code = plueFailureCode(stored.code)
+  const code = refusalCode(stored.code)
   const status = stored.status === 0 ? null : stored.status
   return {
     code,
     rawCode: stored.code ?? null,
-    fault: stored.fault ?? plueFailureEntry(code)?.fault ?? faultOfStatus(status),
+    fault: stored.fault ?? refusalEntry(code)?.fault ?? faultOfStatus(status),
     message: stored.message,
     retryAfter: secondsOf(stored.retryAfterSeconds) ?? null,
     status,
-    origin: stored.origin ?? (code === null ? "worker" : "plue")
+    origin: stored.origin ?? (isWorkerFailureCode(code) || code === null ? "worker" : "plue")
   }
 }
 
@@ -269,7 +341,7 @@ export const isCapacityRefusal = (refusal: Refusal): boolean => refusal.code ===
  */
 export const mayAutoRetry = (refusal: Refusal): boolean =>
   refusal.fault === "wait" &&
-  (refusal.retryAfter !== null || secondsOf(plueFailureEntry(refusal.code)?.retryAfter) !== null)
+  (refusal.retryAfter !== null || secondsOf(refusalEntry(refusal.code)?.retryAfter) !== null)
 
 /**
  * The interval THIS RESPONSE asked for, in milliseconds, or null when it asked

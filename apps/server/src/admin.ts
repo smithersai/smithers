@@ -19,7 +19,7 @@ import type { Transport } from "./Http"
 import { validateSession } from "./identity"
 import { readRecommendLog } from "./recommend"
 import type { RecommendLogStore } from "./recommend"
-import { causeMessage, ISOLATION_HEADERS, json, notConfigured, notFound, readBody, upstreamUnreachable } from "./Responses"
+import { causeMessage, ISOLATION_HEADERS, json, notConfigured, notFound, readBody, refuse, upstreamUnreachable } from "./Responses"
 
 /*
  * The admin plugin's server half (Launch Checklist §E). Every /api/admin/*
@@ -265,10 +265,10 @@ const readAdminGrant = (
     const response = fetched.success
     if (!response.ok) {
       yield* discardBody(response)
-      return json(502, {
-        status: "error",
-        message: `The billing service refused the ledger read for ${login} (HTTP ${response.status}), so the grant was not posted.`
-      })
+      return refuse(
+        "upstream_refused",
+        `The billing service refused the ledger read for ${login} (HTTP ${response.status}), so the grant was not posted.`
+      )
     }
     const ledger = (yield* readJsonOrUndefined(response)) as { credits?: unknown } | undefined
     const credits = Array.isArray(ledger?.credits) ? ledger.credits : []
@@ -280,7 +280,7 @@ const parseAdminBody = (request: Request): Effect.Effect<Record<string, unknown>
   Effect.map(readBody(request), (body) => {
     if (body instanceof Response) return body
     if (typeof body !== "object" || body === null || Array.isArray(body)) {
-      return json(400, { status: "error", message: "Body must be a JSON object." })
+      return refuse("request_invalid", "Body must be a JSON object.")
     }
     return body as Record<string, unknown>
   })
@@ -324,7 +324,7 @@ export const handleAdmin = (
       const login = typeof body.login === "string" ? body.login.trim() : ""
       const action = body.action
       if (login === "" || (action !== "add" && action !== "remove")) {
-        return json(400, { status: "error", message: "Body must be { login, action: \"add\" | \"remove\" }." })
+        return refuse("request_invalid", "Body must be { login, action: \"add\" | \"remove\" }.")
       }
       /*
        * An admin cannot remove its own login. Now that being allowlisted is
@@ -336,11 +336,10 @@ export const handleAdmin = (
        * name the route that does work.
        */
       if (action === "remove" && login.toLowerCase() === session.login.toLowerCase()) {
-        return json(409, {
-          status: "error",
-          message:
-            "You can't remove your own login from the allowlist: it would revoke your admin access through the only door that could restore it. Ask another admin to remove you, or use the identity worker's admin token."
-        })
+        return refuse(
+          "request_conflict",
+          "You can't remove your own login from the allowlist: it would revoke your admin access through the only door that could restore it. Ask another admin to remove you, or use the identity worker's admin token."
+        )
       }
       return yield* forwardAdminCall(
         config.identityUpstreamUrl,
@@ -361,7 +360,7 @@ export const handleAdmin = (
       const login = url.searchParams.get("login")?.trim() ?? ""
       const operationKey = url.searchParams.get("operationKey") ?? ""
       if (login === "" || !GRANT_OPERATION_KEY.test(operationKey)) {
-        return json(400, { status: "error", message: `Query must carry login and operationKey ${GRANT_OPERATION_KEY_GRAMMAR}.` })
+        return refuse("request_invalid", `Query must carry login and operationKey ${GRANT_OPERATION_KEY_GRAMMAR}.`)
       }
       const grantId = grantIdOf(operationKey)
       const existing = yield* readAdminGrant(config, config.billingUpstreamUrl, url.origin, login, grantId)
@@ -384,11 +383,10 @@ export const handleAdmin = (
       const amountUsd = typeof body.amountUsd === "number" ? body.amountUsd : Number.NaN
       const operationKey = typeof body.operationKey === "string" ? body.operationKey : ""
       if (login === "" || !Number.isFinite(amountUsd) || amountUsd <= 0 || !GRANT_OPERATION_KEY.test(operationKey)) {
-        return json(400, {
-          status: "error",
-          message:
-            `Body must be { login, amountUsd, operationKey } with a positive dollar amount and an operationKey ${GRANT_OPERATION_KEY_GRAMMAR}.`
-        })
+        return refuse(
+          "request_invalid",
+          `Body must be { login, amountUsd, operationKey } with a positive dollar amount and an operationKey ${GRANT_OPERATION_KEY_GRAMMAR}.`
+        )
       }
       /*
        * The grant id is derived from the caller's operation key, never minted
@@ -411,13 +409,12 @@ export const handleAdmin = (
         const sameAmount = Number.isFinite(grantedUsd) && Math.abs(grantedUsd - amountUsd) < 0.005
         const sameRequester = existing.requestedBy === session.login
         if (!sameAmount || !sameRequester) {
-          return json(409, {
-            status: "error",
-            message:
-              `Operation ${operationKey} already granted $${Number.isFinite(grantedUsd) ? grantedUsd.toFixed(2) : "?"} to ${login}` +
+          return refuse(
+            "request_conflict",
+            `Operation ${operationKey} already granted $${Number.isFinite(grantedUsd) ? grantedUsd.toFixed(2) : "?"} to ${login}` +
               ` (requested by ${typeof existing.requestedBy === "string" ? existing.requestedBy : "unknown"}).` +
               " Start a new grant for a different amount instead of reusing this confirmation."
-          })
+          )
         }
         return json(200, { granted: true, duplicate: true, grantId, userId: login, grant: existing })
       }

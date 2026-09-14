@@ -1,4 +1,6 @@
 import * as Effect from "effect/Effect"
+import { WORKER_FAILURES } from "@smthrs/rpc/WorkerFailureCodes"
+import type { WorkerFailureCode } from "@smthrs/rpc/WorkerFailureCodes"
 import type { BodyFailure, UpstreamFailure } from "./Failures"
 import { readBoundedJson } from "./Http"
 
@@ -31,18 +33,75 @@ export const json = (status: number, body: unknown): Response =>
     headers: { "content-type": "application/json", ...ISOLATION_HEADERS }
   })
 
+/**
+ * A refusal this Worker writes itself, in the one shape the app classifies.
+ *
+ * The refusals here are the ones plue never sees: no session, no such route,
+ * a body past the ceiling, a secret this deployment never set, an upstream
+ * that never answered. They used to be PROSE and nothing else, so the app had
+ * to read English to tell "you are signed out" from "this deployment is
+ * misconfigured" — and the second one is an INFRA failure whose audience is
+ * whoever deployed this, not the person reading it.
+ *
+ * `code` is the machine fact that settles it. Its status comes from
+ * @smthrs/rpc/WorkerFailureCodes rather than from the call site, so a route
+ * and its code can never disagree, and the same table on the client side reads
+ * the fault back without inferring anything (packages/rpc/src/Refusal.ts). The
+ * envelope is unchanged otherwise: `status: "error"` and the seam's own
+ * sentence, which the product still renders verbatim.
+ *
+ * A row whose `retryAfter` is more than zero also answers the `Retry-After`
+ * header and the body's `retry_after`, which is the pair the client already
+ * reads. A route that knows a better interval passes `retryAfterSeconds`.
+ */
+export const refuse = (
+  code: WorkerFailureCode,
+  message: string,
+  options?: { readonly retryAfterSeconds?: number | null }
+): Response => {
+  const entry = WORKER_FAILURES[code]
+  return coded(entry.status, code, message, options?.retryAfterSeconds ?? (entry.retryAfter > 0 ? entry.retryAfter : null))
+}
+
+/**
+ * The same refusal at a status the route did not choose — an upstream's, kept
+ * so a caller sees what the upstream actually said.
+ *
+ * The ONLY reason to use this instead of `refuse`: the status is evidence from
+ * somewhere else. A route inventing its own status for a code would be exactly
+ * the drift `refuse` reading the table prevents.
+ */
+export const refuseWithStatus = (
+  status: number,
+  code: WorkerFailureCode,
+  message: string,
+  options?: { readonly retryAfterSeconds?: number | null }
+): Response => coded(status, code, message, options?.retryAfterSeconds ?? null)
+
+/** The refusal envelope itself: the code beside the sentence, and a stated wait on both the header and the body. */
+const coded = (status: number, code: WorkerFailureCode, message: string, seconds: number | null): Response => {
+  const response = json(status, { status: "error", code, message, ...(seconds === null ? {} : { retry_after: seconds }) })
+  if (seconds !== null) response.headers.set("retry-after", String(seconds))
+  return response
+}
+
 /*
  * The canonical unknown-route answer. The admin surface is non-enumerable
  * (Launch Checklist §E): a non-admin — or signed-out — caller probing
  * /api/admin/* gets EXACTLY this response, byte-identical to any other
  * unknown /api/* route. Never 401, never 403, never a different shape.
  */
-export const notFound = (): Response => json(404, { status: "error", message: "Not found." })
+export const notFound = (): Response => refuse("route_not_found", "Not found.")
 
-export const methodNotAllowed = (): Response => json(405, { status: "error", message: "Method not allowed." })
+export const methodNotAllowed = (): Response => refuse("method_not_allowed", "Method not allowed.")
 
+/**
+ * A seam this deployment publishes with nothing configured behind it. INFRA,
+ * and deliberately not the infra the capacity line describes: nothing is full,
+ * a value was never set, and the fix belongs to whoever deployed this.
+ */
 export const notConfigured = (name: string, detail: string): Response =>
-  json(501, { status: "error", message: `${name} is not configured on this deployment (${detail}).` })
+  refuse("deployment_not_configured", `${name} is not configured on this deployment (${detail}).`)
 
 /**
  * Cap for a single turn request body. Every turn replays the whole transcript,
@@ -72,14 +131,14 @@ export const BODY_TOO_LARGE = "Request body is too large."
 export const bodyRefusal = (failure: BodyFailure, tooLarge: string = BODY_TOO_LARGE): Response => {
   switch (failure._tag) {
     case "BodyTooLarge":
-      return json(413, { status: "error", message: tooLarge })
+      return refuse("request_body_too_large", tooLarge)
     case "BodyNotJson":
-      return json(400, { status: "error", message: "Request body must be valid JSON." })
+      return refuse("request_body_not_json", "Request body must be valid JSON.")
     case "BodyUnreadable":
-      return json(400, {
-        status: "error",
-        message: failure.cause instanceof Error ? failure.cause.message : "Invalid request."
-      })
+      return refuse(
+        "request_body_unreadable",
+        failure.cause instanceof Error ? failure.cause.message : "Invalid request."
+      )
   }
 }
 
@@ -96,8 +155,8 @@ export const readBody = (request: Request, tooLarge: string = BODY_TOO_LARGE): E
  */
 export const upstreamUnreachable = (seam: string, failure: UpstreamFailure): Response =>
   failure._tag === "UpstreamTimeout"
-    ? json(504, { status: "error", message: `${failure.message} Try again in a moment.` })
-    : json(502, { status: "error", message: `${seam} is unreachable right now: ${causeMessage(failure.cause)}` })
+    ? refuse("upstream_timeout", `${failure.message} Try again in a moment.`)
+    : refuse("upstream_unreachable", `${seam} is unreachable right now: ${causeMessage(failure.cause)}`)
 
 /** The prose of a native cause, or the seam's placeholder. */
 export const causeMessage = (cause: unknown): string => (cause instanceof Error ? cause.message : "unknown error")
@@ -159,6 +218,23 @@ export const upstreamFailureMessage = (status: number, body: string, retryAfter:
   return prose === undefined
     ? `The model service refused this turn (HTTP ${status}).`
     : `The model service refused this turn: ${prose}`
+}
+
+/**
+ * Which refusal an upstream's status IS, beside the sentence above.
+ *
+ * The interesting row is 401/403: the prose already says "this is a deployment
+ * configuration problem rather than anything to fix from here", and that is
+ * exactly `deployment_not_configured` — an INFRA fault for whoever deployed
+ * this, not a `user` one for whoever is reading it, which is what the status
+ * alone would have made it. 429 is the provider throttling this DEPLOYMENT,
+ * never the account's own ceiling (`turn_rate_limited`).
+ */
+export const upstreamFailureCode = (status: number): WorkerFailureCode => {
+  if (status === 429) return "model_rate_limited"
+  if (status === 401 || status === 403) return "deployment_not_configured"
+  if (status === 413) return "request_body_too_large"
+  return "upstream_refused"
 }
 
 /**

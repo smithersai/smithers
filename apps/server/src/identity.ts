@@ -11,6 +11,7 @@ import {
   json,
   notConfigured,
   notFound,
+  refuse,
   siblingAdminRoute,
   strippedHeaders,
   upstreamUnreachable,
@@ -104,10 +105,9 @@ export const validateSession = (request: Request): Effect.Effect<SessionValidati
       const failure = fetched.failure
       return {
         status: "unavailable",
-        response: json(failure._tag === "UpstreamTimeout" ? 504 : 502, {
-          status: "error",
-          message: failure._tag === "UpstreamTimeout" ? failure.message : "The identity service is unreachable."
-        })
+        response: failure._tag === "UpstreamTimeout"
+          ? refuse("upstream_timeout", failure.message)
+          : refuse("upstream_unreachable", "The identity service is unreachable.")
       } as const
     }
     const response = fetched.success
@@ -117,7 +117,7 @@ export const validateSession = (request: Request): Effect.Effect<SessionValidati
         ? { status: "invalid" } as const
         : {
           status: "unavailable",
-          response: json(502, { status: "error", message: `The identity service answered HTTP ${response.status}.` })
+          response: refuse("upstream_refused", `The identity service answered HTTP ${response.status}.`)
         } as const
     }
     const body = (yield* readJsonOrUndefined(response)) as {
@@ -135,7 +135,7 @@ export const validateSession = (request: Request): Effect.Effect<SessionValidati
       if (cookie === null && body !== undefined) return { status: "invalid" } as const
       return {
         status: "unavailable",
-        response: json(502, { status: "error", message: "The identity service returned a malformed session response." })
+        response: refuse("upstream_malformed", "The identity service returned a malformed session response.")
       } as const
     }
     return {
@@ -173,14 +173,11 @@ export const requireTurnSession = (
     const validation = yield* validateSession(request)
     if (validation.status === "unavailable") return validation.response
     if (validation.status === "invalid") {
-      return json(401, { status: "error", message: "Sign in to run a Smithers turn." })
+      return refuse("sign_in_required", "Sign in to run a Smithers turn.")
     }
     const session = validation.identity
     if (!session.allowlisted) {
-      return json(403, {
-        status: "error",
-        message: "This account is not in the closed-alpha allowlist yet."
-      })
+      return refuse("account_not_allowlisted", "This account is not in the closed-alpha allowlist yet.")
     }
     return session
   })

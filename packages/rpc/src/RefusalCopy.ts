@@ -21,12 +21,18 @@
  * has no copy until somebody writes it, which is a compile error rather than a
  * blank line in front of a user.
  *
+ * The Cloudflare Worker's OWN refusals are the exception to "keyed by fault":
+ * every one of its codes carries a written lead (WORKER_REFUSAL_COPY below),
+ * because the fault alone does not separate the two infra failures a person
+ * can hit. "Our fleet is full" and "this deployment is missing a secret" are
+ * both `infra`, and only one of them is fixed by buying more of anything.
+ *
  * @since 1.0.0
  */
-import { PLUE_FAILURES } from "./PlueFailureCodes.ts"
 import type { PlueFailureCode, PlueFault } from "./PlueFailureCodes.ts"
-import { plueFailureCode } from "./Refusal.ts"
+import { isWorkerFailureCode, refusalCode, refusalEntry } from "./Refusal.ts"
 import type { Refusal } from "./Refusal.ts"
+import type { WorkerFailureCode } from "./WorkerFailureCodes.ts"
 
 /**
  * The whole of the infra answer, in one place so it can be reworded in one
@@ -169,6 +175,146 @@ const BY_CODE: Partial<Record<PlueFailureCode, Partial<RefusalCopyRow>>> = {
 }
 
 /**
+ * What the app says about one of the Cloudflare Worker's own refusals.
+ *
+ * `lead` is REQUIRED here, unlike plue's sparse overrides above. plue's 95
+ * codes share five faults and the fault's own sentence is usually the whole
+ * truth; the Worker's refusals are the ones where it is not. Two of its codes
+ * are `infra` — `deployment_not_configured` and `seam_not_configured` — and
+ * neither is the failure INFRA_NOT_YOUR_FAULT describes: nothing is full,
+ * something was never wired, and telling a reader to yell for more infra would
+ * point them at the wrong problem and the wrong person. Requiring a lead per
+ * code is what stops a new Worker code inheriting a sentence that is false
+ * about it.
+ *
+ * @since 1.0.0
+ * @category models
+ */
+export interface WorkerRefusalCopyRow {
+  /** The line above the Worker's own words. Written for every code; never inherited. */
+  readonly lead: string
+  /** The sentence handed to the chat model, when the fault's own is not specific enough. */
+  readonly agent?: string
+  /** The ways out, when they differ from the fault's. */
+  readonly doors?: ReadonlyArray<RefusalDoor>
+}
+
+/**
+ * The copy for every code the Cloudflare Worker refuses with.
+ *
+ * `satisfies Record<WorkerFailureCode, WorkerRefusalCopyRow>` is the gate: a
+ * code added to WorkerFailureCodes.ts with no row here does not compile, so no
+ * Worker refusal can reach a person with a sentence nobody wrote for it.
+ *
+ * @since 1.0.0
+ * @category constants
+ */
+export const WORKER_REFUSAL_COPY = {
+  account_not_allowlisted: { lead: "This account isn't off the closed-alpha waitlist yet.", doors: [] },
+  client_disconnected: { lead: "That request stopped before it finished — the page went away.", doors: ["retry"] },
+  cloud_token_unavailable: {
+    lead: "Smithers couldn't get a Cloud token for your account, so it never got as far as asking.",
+    doors: ["retry"]
+  },
+  cross_origin_blocked: { lead: "Smithers only answers this from its own page.", doors: [] },
+  /*
+   * The refusal this whole file was extended for. It is `infra`, like a full
+   * fleet, and it must NOT read like one: "we ran out" tells a reader that
+   * somebody should buy more, when in fact a value on this deployment was
+   * never set and buying more of anything changes nothing. The audience is
+   * whoever deployed it, which is the part the sentence has to carry.
+   */
+  deployment_not_configured: {
+    lead:
+      "This deployment of Smithers isn't fully set up. Not your fault — and not something you can fix from here; whoever deployed it has to finish wiring it.",
+    agent:
+      "fault=infra: this DEPLOYMENT is missing configuration a seam needs — an unset secret, a missing binding, an upstream nobody filled in. Not the user's fault and not their request's, and nothing is full, so do NOT say Smithers ran out of infra and do NOT tell them to ask for more of it. Say plainly that this deployment is misconfigured and that it takes whoever deployed it to fix. Do not retry it and do not suggest they change what they asked for.",
+    doors: ["report"]
+  },
+  error_reports_throttled: {
+    lead: "Smithers is already holding enough crash reports from here. Nothing you were doing is lost.",
+    doors: []
+  },
+  feature_unavailable_here: { lead: "This build of Smithers doesn't do that.", doors: [] },
+  gateway_proxy_removed: { lead: "That door was removed from Smithers.", doors: [] },
+  method_not_allowed: { lead: "That address doesn't take that kind of request.", doors: [] },
+  model_no_answer: {
+    lead: "The model service took the turn and then said nothing at all. Nothing was charged.",
+    doors: ["retry"]
+  },
+  model_rate_limited: {
+    lead: "The model service is throttling this whole deployment — not your account. Nothing was charged.",
+    agent:
+      "fault=dependency: the model provider is rate-limiting THIS DEPLOYMENT, not the user's account and not their request. Nothing was charged. Say it is worth trying again shortly, and never suggest they change what they asked for.",
+    doors: ["retry"]
+  },
+  procedure_not_relayed: { lead: "Smithers doesn't relay that call.", doors: [] },
+  request_body_not_json: { lead: "Smithers couldn't read that request as JSON.", doors: ["retry"] },
+  request_body_too_large: { lead: "That's more than this part of Smithers takes in one request.", doors: ["retry"] },
+  request_body_unreadable: { lead: "That request ended before Smithers had all of it.", doors: ["retry"] },
+  request_conflict: { lead: "That can't be done from the state things are in right now.", doors: ["retry"] },
+  request_invalid: { lead: "Smithers can't do that as asked.", doors: ["retry"] },
+  route_not_found: { lead: "There's nothing at that address.", doors: [] },
+  /*
+   * The other half of `deployment_not_configured`, at the status a seam that
+   * is simply absent answers. Same audience, same "nothing is full", and the
+   * same reason it must not borrow the capacity sentence.
+   */
+  seam_not_configured: {
+    lead:
+      "This deployment of Smithers doesn't have the piece that answers this. Not your fault — and not something you can switch on from here.",
+    agent:
+      "fault=infra: the seam this needs is ABSENT on this deployment (a local or stub stack, a preview without it). Not the user's fault and not their request's. Nothing is full, so do NOT say Smithers ran out of infra and do NOT tell them to ask for more of it. Say the deployment does not have this seam. Do not retry it.",
+    doors: ["report"]
+  },
+  service_auth_required: {
+    lead: "That door is for Smithers' own services, and the credential didn't match.",
+    doors: []
+  },
+  service_temporarily_unavailable: {
+    lead: "That part of Smithers couldn't answer just now. Not your fault.",
+    agent:
+      "fault=infra: one of Smithers' own seams is up but could not answer this request. Not the user's fault and not their request's. It is worth asking again shortly; do not suggest they change what they asked for.",
+    doors: ["retry"]
+  },
+  session_expired: {
+    lead: "That session has expired. Anything you already finished is still saved.",
+    doors: ["sign-in", "retry"]
+  },
+  sign_in_required: { lead: "Smithers Cloud doesn't recognise this session.", doors: ["sign-in"] },
+  storage_failed: {
+    lead: "Smithers' own storage failed on that. Not your fault, and nothing you asked for caused it.",
+    agent:
+      "fault=infra: Smithers' own Durable Object storage failed. Not the user's fault, not their request's, and not an upstream's. Do not suggest they change what they asked for.",
+    doors: ["retry", "report"]
+  },
+  tools_not_supported: { lead: "That part of Smithers answers in plain text and runs no tools.", doors: [] },
+  turn_already_running: { lead: "That turn is already running.", doors: [] },
+  turn_not_yours: { lead: "That turn belongs to a different account.", doors: [] },
+  turn_rate_limited: {
+    lead: "That's the turn budget for now — nothing is broken, and nothing was charged.",
+    agent:
+      "fault=wait: a turn budget is spent — the user's own, or this deployment's shared anonymous one; the message says which. Nothing is broken and nothing was charged. Do not re-run the turn in a loop and do not tell them to change what they asked for.",
+    doors: ["retry"]
+  },
+  unexpected_failure: { lead: "That's a bug in Smithers, not something you did.", doors: ["retry", "report"] },
+  upstream_malformed: {
+    lead: "Something Smithers depends on answered in a shape Smithers couldn't use.",
+    doors: ["retry"]
+  },
+  upstream_refused: { lead: "Something Smithers depends on refused that. Not your doing.", doors: ["retry"] },
+  upstream_timeout: { lead: "Something Smithers depends on didn't answer in time.", doors: ["retry"] },
+  upstream_unreachable: { lead: "Smithers couldn't reach something it depends on.", doors: ["retry"] }
+} satisfies Record<WorkerFailureCode, WorkerRefusalCopyRow>
+
+/** The fault's row with a Worker code's written lead, and its overrides where it states them. */
+const workerRow = (base: RefusalCopyRow, row: WorkerRefusalCopyRow): RefusalCopyRow => ({
+  lead: row.lead,
+  agent: row.agent ?? base.agent,
+  doors: row.doors ?? base.doors
+})
+
+/**
  * The copy for one refusal: its fault's row, with any per-code override applied.
  *
  * @since 1.0.0
@@ -176,8 +322,11 @@ const BY_CODE: Partial<Record<PlueFailureCode, Partial<RefusalCopyRow>>> = {
  */
 export const refusalCopy = (refusal: Refusal): RefusalCopyRow => {
   const base = REFUSAL_COPY[refusal.fault]
-  const override = refusal.code === null ? undefined : BY_CODE[refusal.code]
-  const row = override === undefined ? base : { ...base, ...override }
+  const row = refusal.code === null
+    ? base
+    : isWorkerFailureCode(refusal.code)
+    ? workerRow(base, WORKER_REFUSAL_COPY[refusal.code])
+    : ((override) => override === undefined ? base : { ...base, ...override })(BY_CODE[refusal.code])
   /*
    * A 409 that named no code at all. plue always codes its refusals now, so
    * this is an older deployment or the Worker's own envelope — and 409 on a
@@ -243,17 +392,21 @@ const LEADING_CODE = /^([A-Za-z][A-Za-z0-9_]*) — /u
  * carries a message and nothing else (`CallResult`; see
  * LIBRARY-CHANGE-REQUESTS.md, which already asks for more). So the verdict is
  * recovered from the one machine token the app itself put at the front of that
- * message, looked up in the closed vendored registry — never inferred from the
+ * message, looked up in the two closed registries — never inferred from the
  * English around it. A string with no code in that position gets no note, and
  * the model is left with the sentence rather than a guess dressed as a fact.
+ *
+ * Both vocabularies are read: a Worker refusal ("this deployment is not
+ * configured") reaches the model through exactly the same string channel as a
+ * plue one, and used to arrive with no verdict at all.
  *
  * @since 1.0.0
  * @category constants
  */
 export const agentFaultNote = (text: string): string | null => {
-  const code = plueFailureCode(LEADING_CODE.exec(text)?.[1])
-  if (code === null) return null
-  const entry = PLUE_FAILURES[code]
+  const code = refusalCode(LEADING_CODE.exec(text)?.[1])
+  const entry = refusalEntry(code)
+  if (code === null || entry === null) return null
   const copy = refusalCopy({
     code,
     rawCode: code,
@@ -261,7 +414,7 @@ export const agentFaultNote = (text: string): string | null => {
     message: "",
     retryAfter: entry.retryAfter === 0 ? null : entry.retryAfter,
     status: entry.status,
-    origin: "plue"
+    origin: isWorkerFailureCode(code) ? "worker" : "plue"
   })
   return `[fault=${entry.fault} code=${code}] ${copy.agent}`
 }

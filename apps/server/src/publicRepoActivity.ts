@@ -301,13 +301,16 @@ export const makePublicRepoActivityHandler = (): PublicRepoActivityHandler => {
     Effect.gen(function*() {
       if (request.method === "OPTIONS") return new Response(null, { status: 204, headers })
       if (request.method !== "GET" && request.method !== "HEAD") {
-        return new Response(JSON.stringify({ message: "Method not allowed." }), {
+        return new Response(JSON.stringify({ status: "error", code: "method_not_allowed", message: "Method not allowed." }), {
           status: 405, headers: { ...headers, allow: "GET, HEAD, OPTIONS" }
         })
       }
       const name = parsePublicRepoActivityPath(new URL(request.url).pathname)
       if (name === undefined || cloudRepoFor(name) === undefined) {
-        return new Response(JSON.stringify({ message: "Repository is not in the public catalog." }), { status: 404, headers })
+        return new Response(
+          JSON.stringify({ status: "error", code: "route_not_found", message: "Repository is not in the public catalog." }),
+          { status: 404, headers }
+        )
       }
       // The catalog's spelling is the cache key, so a mixed-case request shares the answer.
       const repo = AVAILABLE_REPOS.find((entry) => entry.name.toLowerCase() === name.toLowerCase())!.name

@@ -242,7 +242,11 @@ describe("GET /api/public/repos/<owner>/<name>/activity", () => {
     for (const path of ["/api/public/repos/example/other/activity", "/api/public/repos/smithersai/smithers-docs/activity"]) {
       const response = await request(path)
       expect(response.status).toBe(404)
-      expect(await response.json()).toEqual({ message: "Repository is not in the public catalog." })
+      expect(await response.json()).toEqual({
+        status: "error",
+        code: "route_not_found",
+        message: "Repository is not in the public catalog."
+      })
     }
     expect(requests).toHaveLength(0)
   })
@@ -281,7 +285,7 @@ describe("GET /api/public/repos/<owner>/<name>/activity", () => {
     const post = await request(undefined, { method: "POST" })
     expect(post.status).toBe(405)
     expect(post.headers.get("allow")).toBe("GET, HEAD, OPTIONS")
-    expect(await post.json()).toEqual({ message: "Method not allowed." })
+    expect(await post.json()).toEqual({ status: "error", code: "method_not_allowed", message: "Method not allowed." })
     expect(requests).toHaveLength(0)
     const head = await request(undefined, { method: "HEAD" })
     expect(head.status).toBe(200)

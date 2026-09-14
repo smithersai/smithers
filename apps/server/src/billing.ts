@@ -3,7 +3,7 @@ import * as Redacted from "effect/Redacted"
 import { ServerConfig } from "./Config"
 import type { Transport } from "./Http"
 import { forwardUnderDeadline, validateSession } from "./identity"
-import { json, notConfigured, notFound, siblingAdminRoute, strippedHeaders, withProxyOrigin } from "./Responses"
+import { notConfigured, notFound, refuse, siblingAdminRoute, strippedHeaders, withProxyOrigin } from "./Responses"
 
 /**
  * Billing reads dollars for one authenticated account. Wave 13: a SIGNED-IN
@@ -50,10 +50,10 @@ export const proxyToBilling = (request: Request): Effect.Effect<Response, never,
       if (session.scopes.length > 0) headers.set("x-user-scopes", session.scopes.join(" "))
     } else {
       if (config.identityUpstreamUrl !== undefined) {
-        return json(401, {
-          status: "error",
-          message: "Sign in before reading your balance — the identity service did not validate a session."
-        })
+        return refuse(
+          "sign_in_required",
+          "Sign in before reading your balance — the identity service did not validate a session."
+        )
       }
       if (config.billingAuthToken === undefined) {
         return notConfigured(

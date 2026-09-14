@@ -12,7 +12,7 @@ import { discardBody, readText } from "./Http"
 import type { Transport } from "./Http"
 import { validateSession } from "./identity"
 import type { ValidatedIdentity } from "./identity"
-import { json, notConfigured, readBody } from "./Responses"
+import { json, notConfigured, readBody, refuse } from "./Responses"
 import { LIST_TRIGGERS_PAYLOAD, noLiveTriggers, workflowTriggersFromFrame } from "./workflowTriggers"
 
 /*
@@ -46,14 +46,11 @@ const requireWorkflowSession = (request: Request): Effect.Effect<ValidatedIdenti
     const validation = yield* validateSession(request)
     if (validation.status === "unavailable") return validation.response
     if (validation.status === "invalid") {
-      return json(401, { status: "error", message: "Sign in to run workflows on your workspace." })
+      return refuse("sign_in_required", "Sign in to run workflows on your workspace.")
     }
     const session = validation.identity
     if (!session.allowlisted) {
-      return json(403, {
-        status: "error",
-        message: "This account is not in the closed-alpha allowlist yet."
-      })
+      return refuse("account_not_allowlisted", "This account is not in the closed-alpha allowlist yet.")
     }
     return session
   })
@@ -67,7 +64,7 @@ const gatewayCallResponse = (call: Exclude<GatewayCallOutcome, { readonly status
   if (call.status === "quota_exceeded") return json(200, { status: "quota-exceeded", message: call.detail })
   if (call.status === "no_cloud_token") return json(200, { status: "no-cloud-identity", message: call.detail })
   if (call.status === "no_cloud_repo") return json(200, { status: "no-cloud-repo", message: call.detail })
-  return json(502, { status: "error", message: call.detail })
+  return refuse("upstream_refused", call.detail)
 }
 
 /*
@@ -88,11 +85,11 @@ export const handleWorkflowProvision = (request: Request): Effect.Effect<Respons
       ? parseWorkflowRepo((body as { repo?: unknown }).repo)
       : undefined
     if (repo === undefined) {
-      return json(400, { status: "error", message: "Body must be { repo } as owner/repo." })
+      return refuse("request_invalid", "Body must be { repo } as owner/repo.")
     }
     const workspaceId = (body as { workspaceId?: unknown }).workspaceId
     if (workspaceId !== undefined && !isGatewayWorkspaceId(workspaceId)) {
-      return json(400, { status: "error", message: "workspaceId must be a canonical workspace UUID." })
+      return refuse("request_invalid", "workspaceId must be a canonical workspace UUID.")
     }
     const outcome = yield* ensureGateway(session.login, repo, false, workspaceId)
     switch (outcome.status) {
@@ -120,7 +117,7 @@ export const handleWorkflowProvision = (request: Request): Effect.Effect<Respons
         // §4: a watched repo with no Cloud counterpart — a state of its own.
         return json(200, { status: "no-cloud-repo", message: outcome.detail })
       default:
-        return json(502, { status: "error", message: outcome.detail })
+        return refuse("upstream_refused", outcome.detail)
     }
   })
 
@@ -143,15 +140,15 @@ export const handleWorkflowRpc = (request: Request): Effect.Effect<Response, nev
     const repo = parseWorkflowRepo(candidate?.repo)
     const procedure = typeof candidate?.procedure === "string" ? candidate.procedure : ""
     if (repo === undefined || procedure === "") {
-      return json(400, { status: "error", message: "Body must be { repo, procedure, payload? }." })
+      return refuse("request_invalid", "Body must be { repo, procedure, payload? }.")
     }
     const workspaceId = candidate?.workspaceId
     if (workspaceId !== undefined && !isGatewayWorkspaceId(workspaceId)) {
-      return json(400, { status: "error", message: "workspaceId must be a canonical workspace UUID." })
+      return refuse("request_invalid", "workspaceId must be a canonical workspace UUID.")
     }
     const mount = GATEWAY_PROCEDURE_MOUNTS[procedure]
     if (mount === undefined) {
-      return json(400, { status: "error", message: `The workflow seam does not relay ${procedure}.` })
+      return refuse("procedure_not_relayed", `The workflow seam does not relay ${procedure}.`)
     }
     const call = yield* callGateway(session.login, repo, mount, {
       method: "POST",
@@ -185,7 +182,7 @@ export const handleWorkflowTriggers = (request: Request, url: URL): Effect.Effec
   Effect.gen(function* () {
     const repo = parseWorkflowRepo(url.searchParams.get("repo") ?? undefined)
     if (repo === undefined) {
-      return json(400, { status: "error", message: "Query must name the repository as ?repo=owner/repo." })
+      return refuse("request_invalid", "Query must name the repository as ?repo=owner/repo.")
     }
     const session = yield* requireWorkflowSession(request)
     if (session instanceof Response) return json(200, noLiveTriggers(repo))

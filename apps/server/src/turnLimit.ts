@@ -5,6 +5,7 @@ import * as Layer from "effect/Layer"
 import { runDurable } from "./Boundary"
 import { answeredJson, DurableStorage, namespaceCall, storageLayer } from "./DurableStorage"
 import type { NativeNamespace, NativeStorage } from "./DurableStorage"
+import type { WorkerFailureCode } from "@smthrs/rpc/WorkerFailureCodes"
 import { CryptoFailure } from "./Failures"
 /**
  * A per-login ceiling on model calls, because every one of them spends model
@@ -188,7 +189,15 @@ export const turnRateLimiterRequest = (request: Request): Effect.Effect<Response
         return new Response("not found", { status: 404 })
     }
   }).pipe(
-    Effect.catchTag("StorageFailure", (failure) => Effect.succeed(new Response(failure.message, { status: 500 })))
+    Effect.catchTag(
+      "StorageFailure",
+      (failure) =>
+        Effect.succeed(
+          Response.json({ status: "error", code: "storage_failed" satisfies WorkerFailureCode, message: failure.message }, {
+            status: 500
+          })
+        )
+    )
   )
 
 export class TurnRateLimiter {
@@ -321,7 +330,7 @@ export const turnLimitResponse = (
   return new Response(
     JSON.stringify({
       status: "error",
-      code: "turn_rate_limited",
+      code: "turn_rate_limited" satisfies WorkerFailureCode,
       message: ceiling.kind === "recommend"
         ? `Command suggestions have reached their daily limit. Chat keeps working; suggestions come back in about ${
           waitLabel(seconds)

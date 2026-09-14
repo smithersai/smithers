@@ -1,4 +1,6 @@
 import * as Effect from "effect/Effect"
+import { WORKER_FAILURES } from "@smthrs/rpc/WorkerFailureCodes"
+import type { WorkerFailureCode } from "@smthrs/rpc/WorkerFailureCodes"
 /**
  * The cloud roles: turns the Worker answers itself, on Cerebras.
  *
@@ -119,6 +121,10 @@ export const cloudRoleMessages = (body: TurnRequest): ReadonlyArray<CerebrasChat
 const jsonWith = (status: number, body: unknown, headers: Record<string, string>): Response =>
   new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json", ...headers } })
 
+/* This route's own refusal: the code names the status, and the caller's headers ride along. */
+const refusal = (code: WorkerFailureCode, message: string, headers: Record<string, string>): Response =>
+  jsonWith(WORKER_FAILURES[code].status, { status: "error", code, message }, headers)
+
 const ndjson = (frames: ReadonlyArray<AgentTurnFrame>, headers: Record<string, string>): Response =>
   new Response(frames.map((frame) => `${JSON.stringify(frame)}\n`).join(""), {
     status: 200,
@@ -140,28 +146,31 @@ export const handleCloudRoleTurn = (
 ): Effect.Effect<Response, never, Transport | ServerConfig> =>
   Effect.gen(function*() {
     if (body.role === undefined || !isCloudRoleId(body.role)) {
-      return jsonWith(400, { status: "error", message: "Not a cloud role turn." }, headers)
+      return refusal("request_invalid", "Not a cloud role turn.", headers)
     }
     const role = cloudRole(body.role)
     if (body.tools !== undefined && body.tools.length > 0) {
-      return jsonWith(400, {
-        status: "error",
-        message: `The ${role.label} answers one question at a time and runs no tools; send this turn without tools.`
-      }, headers)
+      return refusal(
+        "tools_not_supported",
+        `The ${role.label} answers one question at a time and runs no tools; send this turn without tools.`,
+        headers
+      )
     }
     const messages = cloudRoleMessages(body)
     if (messages === undefined) {
-      return jsonWith(400, {
-        status: "error",
-        message: `The ${role.label} runs no tools, so it cannot continue a tool call; send plain messages only.`
-      }, headers)
+      return refusal(
+        "tools_not_supported",
+        `The ${role.label} runs no tools, so it cannot continue a tool call; send plain messages only.`,
+        headers
+      )
     }
     const config = yield* ServerConfig
     if (config.cerebrasApiKey === undefined) {
-      return jsonWith(503, {
-        status: "error",
-        message: `CEREBRAS_API_KEY is unset. The ${role.label} is unavailable on this deployment.`
-      }, headers)
+      return refusal(
+        "seam_not_configured",
+        `CEREBRAS_API_KEY is unset. The ${role.label} is unavailable on this deployment.`,
+        headers
+      )
     }
     const model = cloudRoleModel(role, config)
     const answer = yield* cerebrasChat({
@@ -173,24 +182,25 @@ export const handleCloudRoleTurn = (
     if (!answer.ok) {
       switch (answer.reason) {
         case "http":
-          return jsonWith(answer.status === 429 ? 429 : 502, {
-            status: "error",
-            message: `The ${role.label}'s model service answered HTTP ${answer.status}.`
-          }, headers)
+          return answer.status === 429
+            ? refusal("model_rate_limited", `The ${role.label}'s model service answered HTTP 429.`, headers)
+            : refusal("upstream_refused", `The ${role.label}'s model service answered HTTP ${answer.status}.`, headers)
         case "empty":
-          return jsonWith(502, { status: "error", message: `The ${role.label}'s model service sent no answer.` }, headers)
+          return refusal("model_no_answer", `The ${role.label}'s model service sent no answer.`, headers)
         case "timeout":
-          return jsonWith(504, {
-            status: "error",
-            message: `The ${role.label} did not answer within ${Math.round(CLOUD_ROLE_TIMEOUT_MS / 1000)}s.`
-          }, headers)
+          return refusal(
+            "upstream_timeout",
+            `The ${role.label} did not answer within ${Math.round(CLOUD_ROLE_TIMEOUT_MS / 1000)}s.`,
+            headers
+          )
         case "aborted":
-          return jsonWith(499, { status: "error", message: "The client disconnected." }, headers)
+          return refusal("client_disconnected", "The client disconnected.", headers)
         case "unreachable":
-          return jsonWith(502, {
-            status: "error",
-            message: `The ${role.label}'s model service is unreachable: ${answer.message}`
-          }, headers)
+          return refusal(
+            "upstream_unreachable",
+            `The ${role.label}'s model service is unreachable: ${answer.message}`,
+            headers
+          )
       }
     }
     const runId = body.runId

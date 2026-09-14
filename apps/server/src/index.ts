@@ -49,7 +49,7 @@ import { AVAILABLE_REPOS, PUBLIC_REPOS_PATH } from "./publicRepoCatalog"
 import { handlePublicRepoActivity, parsePublicRepoActivityPath } from "./publicRepoActivity"
 import { handlePublicRepos } from "./publicRepos"
 import { handleRecommend, handleRecommendOutcome, RecommendLog } from "./recommend"
-import { ISOLATION_HEADERS, json, methodNotAllowed, notFound, withIsolationHeaders } from "./Responses"
+import { ISOLATION_HEADERS, json, methodNotAllowed, notFound, refuse, withIsolationHeaders } from "./Responses"
 import {
   ANONYMOUS_ALL_CEILING,
   ANONYMOUS_ALL_KEY,
@@ -95,12 +95,10 @@ export type { TurnCancelNamespace, TurnCancelStorage } from "./turns"
 const RETIRED_GATEWAY_ROUTE_PREFIXES = ["/rpc", "/projections", "/sync", "/health"] as const
 
 const retiredGatewayProxy = (): Response =>
-  json(410, {
-    status: "error",
-    code: "gateway_proxy_removed",
-    message:
-      "The static gateway proxy was removed. Use the session-validated /api/workflow/provision and /api/workflow/rpc routes, or connect directly to a separately authenticated gateway."
-  })
+  refuse(
+    "gateway_proxy_removed",
+    "The static gateway proxy was removed. Use the session-validated /api/workflow/provision and /api/workflow/rpc routes, or connect directly to a separately authenticated gateway."
+  )
 
 const isRetiredGatewayRoute = (pathname: string): boolean =>
   RETIRED_GATEWAY_ROUTE_PREFIXES.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`))
@@ -283,7 +281,7 @@ export const handleRequest = (request: Request): Effect.Effect<Response, never, 
     // deployment credentials are still configured.
     const retiredGatewayRoute = isRetiredGatewayRoute(url.pathname)
     if (isApiRoute(url.pathname) && isCrossOriginRequest(request, url)) {
-      return json(403, { status: "error", message: "This API only answers requests from its own origin." })
+      return refuse("cross_origin_blocked", "This API only answers requests from its own origin.")
     }
     if (url.pathname.startsWith("/api/tutorial/live/")) return yield* handleLiveTutorial(request)
     if (url.pathname.startsWith(`${TUTORIAL_PROVIDER_PROXY_PATH}/`)) return yield* handleTutorialProviderProxy(request)
@@ -302,7 +300,7 @@ export const handleRequest = (request: Request): Effect.Effect<Response, never, 
     if (url.pathname === INSTALLATIONS_PATH || url.pathname.startsWith(`${INSTALLATIONS_PATH}/`)) {
       if (request.method !== "GET") return methodNotAllowed()
       const id = url.pathname === INSTALLATIONS_PATH ? undefined : url.pathname.slice(INSTALLATIONS_PATH.length + 1)
-      if (id !== undefined && !/^[1-9]\d*$/.test(id)) return json(400, { message: "Invalid installation id." })
+      if (id !== undefined && !/^[1-9]\d*$/.test(id)) return refuse("request_invalid", "Invalid installation id.")
       return yield* handleGitHubAppInstall(request, id)
     }
     if (url.pathname === APP_BOOTSTRAP_PATH) {
