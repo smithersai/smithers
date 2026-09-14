@@ -41,6 +41,38 @@
 	font-weight: 600;
 }
 
+/* Cards retain their reading alignment inside centered onboarding screens. */
+.smithers-card-body,
+.smithers-card-details {
+	text-align: left;
+}
+
+.smithers-card-details {
+	margin-top: var(--sp-2);
+	color: var(--text-muted);
+	font-size: var(--fs-small);
+}
+.smithers-card-details > summary {
+	cursor: pointer;
+	width: fit-content;
+	border-radius: 3px;
+}
+.smithers-card-details > summary:focus-visible {
+	outline: 2px solid var(--brand);
+	outline-offset: 4px;
+}
+.smithers-card-details dl {
+	display: flex;
+	align-items: center;
+	flex-wrap: wrap;
+	gap: 4px 8px;
+	margin: 8px 0 0;
+}
+.smithers-card-details dd {
+	margin: 0;
+	font-variant-numeric: tabular-nums;
+}
+
 .smithers-card-meta {
 	margin-left: auto;
 	color: var(--text-faint);

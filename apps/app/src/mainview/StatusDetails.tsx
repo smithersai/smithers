@@ -4,7 +4,7 @@ import { expireStatus, terminalStatus } from "./state/HealthStatus"
 
 /** One projection on cards and tabs; the dispatcher clock makes expiry live even while offline. */
 export const statusPresentation = (input: StatusRollup | undefined, fallback: string, now = Date.now()) => {
-  if (input === undefined) return { status: fallback, label: `${formatStatus(fallback)}${fallback === "running" ? " · Not observed" : ""}` }
+  if (input === undefined) return { status: fallback, label: formatStatus(fallback) }
   // A cancellation/exit receipt can reach the card before the next health frame.
   if (["completed", "failed", "cancelled", "done", "stopped"].includes(fallback) && !terminalStatus(input)) {
     return { status: fallback, label: formatStatus(fallback) }
@@ -19,9 +19,10 @@ export const statusPresentation = (input: StatusRollup | undefined, fallback: st
   if (status.reason === "timer-wait") return { status: "waiting", label: "Waiting for timer" }
   if (status.reason === "event-wait") return { status: "waiting", label: "Waiting for event" }
   if (status.state === "parked" && status.health === "awaiting-human") return { status: "awaiting-human", label: "Parked · Needs attention" }
-  if (status.freshness !== "fresh") return { status: "unknown", label: `${lifecycle} · ${status.freshness === "stale" ? "Stale" : "Not observed"}` }
+  if (status.freshness === "stale") return { status: "unknown", label: `${lifecycle} · Stale` }
   if (status.attention === "needs-input") return { status: "waiting", label: `${lifecycle} · Needs input` }
   if (status.attention === "unhealthy") return { status: status.health, label: `${lifecycle} · ${formatStatus(status.health)}` }
+  if (status.freshness === "unobserved") return { status: status.state, label: lifecycle }
   if (status.activity === "working") return { status: "running", label: `${lifecycle} · Working` }
   if (status.activity === "idle") return { status: "muted", label: `${lifecycle} · Idle` }
   return { status: status.health === "awaiting-human" ? "awaiting-human" : "unknown", label: `${lifecycle} · ${status.health === "awaiting-human" ? "Needs attention" : "Activity unknown"}` }

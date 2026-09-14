@@ -1,5 +1,5 @@
 /*
- * The card shell: header (title, status pill, kind and time), the maximize and
+ * The card shell: header (title and actionable status), the maximize and
  * frame controls, and the body from the kind's family renderer.
  *
  * Every card body lives in a family file under ./cards and registers itself in
@@ -38,7 +38,7 @@ class CardBodyBoundary extends Component<{ readonly cardId: string; readonly chi
 }
 import type { Card } from "./state/AppState"
 import { timeLabel as clockLabel } from "./Timestamps"
-import { StatusDetails } from "./StatusDetails"
+import { StatusDetails, statusPresentation } from "./StatusDetails"
 
 export interface CardViewProps extends CardActions {
   readonly card: Card
@@ -92,7 +92,16 @@ export const CardView = memo(function CardView({
    * the shell whose onKeyDown owns Escape. Each act hands focus to the
    * button that took its place, so Escape (and the Tab ring) keep working.
    */
-  const title = card.kind === "repo-update" ? "Activity" : card.title
+  const title = card.kind === "repo-update" ? "Activity" :
+    card.kind === "issue-list" ? "Issues" : card.kind === "issue" ? "Issue" :
+    card.kind === "pr-list" ? "Pull requests" : card.kind === "pr" ? "Pull request" : card.title
+  const fallback = pillStatus(card)
+  const health = card.kind === "agent" || card.kind === "run-trace" ? card.payload.statusRollup : undefined
+  const status = statusPresentation(health, fallback).status
+  const quietStatus = ["done", "completed", "succeeded", "success"].includes(status)
+  const statusNode = card.kind === "agent" || card.kind === "run-trace" ?
+    <StatusDetails status={health} fallback={fallback} /> :
+    fallback === "" ? null : <StatusPill status={fallback} />
   const maximizeRef = useRef<HTMLButtonElement>(null)
   const minimizeRef = useRef<HTMLButtonElement>(null)
   const maximizeThenFocus = (): void => {
@@ -121,7 +130,7 @@ export const CardView = memo(function CardView({
         data-maximized={maximized}
         data-run-id={card.kind === "run-trace" ? card.payload.runId : undefined}
         data-testid={`card-${card.id}`}
-        aria-label={title}
+        aria-label={card.title}
       >
         <header className="smithers-card-header">
           {card.navigation && card.navigation.length > 1 && <nav className="card-local-history" aria-label="Frame history">
@@ -132,12 +141,7 @@ export const CardView = memo(function CardView({
           </nav>}
           <span className="smithers-card-title">{title}</span>
           {/* A family that has no status word for a card (a picker awaiting its human) renders no pill: "" is not a status. */}
-          {card.kind === "agent" || card.kind === "run-trace" ?
-            <StatusDetails status={card.payload.statusRollup} fallback={pillStatus(card)} /> :
-            pillStatus(card) === "" ? null : <StatusPill status={pillStatus(card)} />}
-          {card.kind !== "repo-update" && <span className="smithers-card-meta" data-testid={`card-kind-${card.kind}`}>
-            {clockLabel(card.createdAt)}
-          </span>}
+          {!quietStatus && statusNode}
           {maximized ?
             (
               <>
@@ -252,6 +256,13 @@ export const CardView = memo(function CardView({
           })}
           </CardBodyBoundary>
         </div>
+        {card.kind !== "repo-update" && <details className="smithers-card-details">
+          <summary aria-label={`${title} details`}>Details</summary>
+          <dl>
+            {quietStatus && <><dt>Status</dt><dd>{statusNode}</dd></>}
+            <dt>Created</dt><dd><time dateTime={new Date(card.createdAt).toISOString()}>{clockLabel(card.createdAt)}</time></dd>
+          </dl>
+        </details>}
       </section>
     </>
   )
