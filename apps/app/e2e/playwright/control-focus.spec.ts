@@ -1,13 +1,19 @@
 import { expect, test } from "@playwright/test"
+import type { Page } from "@playwright/test"
 
 /*
- * Control focus ("spotlight"): clicking into a card's markdown editor dims
- * the rest of the app modal-style — one dim layer inside .app-shell plus the
- * scoped dim the trapped transcript scroller carries — but both layers are
- * pointer-events:none, so hover and wheel still reach the dimmed content.
- * Clicking out releases exactly like a modal backdrop: the releasing click
- * is swallowed (it does not activate what it landed on) and only the NEXT
- * click acts.
+ * Control focus ("spotlight"): clicking into a card's markdown editor dims the
+ * rest of the app modal-style — ONE layer on the body with a hole cut where
+ * the surface shows — but the layer is pointer-events:none, so hover and wheel
+ * still reach the dimmed content. Clicking out releases exactly like a modal
+ * backdrop: the releasing click is swallowed (it does not activate what it
+ * landed on) and only the NEXT click acts.
+ *
+ * Three of the four things asserted here are invisible to a unit test and were
+ * shipped broken: the dim composited two and three deep in visible bands, the
+ * release affordance was scrolled out of reach while `toBeVisible()` still
+ * passed (a bounding box is not a hit test), and its own styling lost every
+ * declaration to `.sui-button-ghost` and `.guide-shell button`.
  */
 
 test.beforeEach(async ({ page }) => {
@@ -20,9 +26,8 @@ test.beforeEach(async ({ page }) => {
   })
 })
 
-test("hover and wheel reach dimmed content; the releasing click is swallowed, the next one acts", async ({ page }) => {
-  /* A short window so the transcript scroller genuinely overflows. */
-  await page.setViewportSize({ width: 1100, height: 520 })
+/** Drive the tutorial to a world card showing its Document view: the markdown editor surface. */
+const openEditorSurface = async (page: Page) => {
   await page.goto("/")
   /* The guide shell owns first paint; the composer hides until summoned (2026-09-08 brief). */
   await expect(page.locator(".guide-shell")).toBeVisible()
@@ -44,17 +49,37 @@ test("hover and wheel reach dimmed content; the releasing click is swallowed, th
   /* The composer dock is a fixed layer over the transcript while open; Escape closes it (2026-09-08 brief). */
   await page.keyboard.press("Escape")
   await expect(composer).toBeHidden()
+  return { card, composer, editor }
+}
+
+/** Where the release affordance actually answers a pointer, which `toBeVisible()` never asks. */
+const releaseIsReachable = async (page: Page): Promise<boolean> =>
+  page.evaluate(() => {
+    const button = document.querySelector("[data-control-focus-release]")
+    if (button === null) return false
+    const rect = button.getBoundingClientRect()
+    const hit = document.elementFromPoint(rect.x + rect.width / 2, rect.y + rect.height / 2)
+    return hit === button || button.contains(hit)
+  })
+
+test("hover and wheel reach dimmed content; the releasing click is swallowed, the next one acts", async ({ page }) => {
+  /* A short window so the transcript scroller genuinely overflows. */
+  await page.setViewportSize({ width: 1100, height: 520 })
+  const { card, composer, editor } = await openEditorSurface(page)
   await editor.click()
 
-  /* Controlled: the card wears the ring; the shell dim and the trapping scroller's scoped dim render.
+  /* Controlled: the card wears the ring; ONE dim layer renders, on the body.
      The marker is namespaced — a bare `data-controlled` is the guide shell's own flag on every bubble. */
   await expect(card).toHaveAttribute("data-control-focus", "human")
-  const dim = page.locator(".app-shell > .control-focus-dim")
+  const dim = page.locator("body > .control-focus-dim")
   await expect(dim).toHaveCount(1)
-  /* The lesson mount's scroller (contain:layout) traps the card: it lifts and carries the scoped dim. */
-  const host = page.locator("[data-control-focus-host]")
-  await expect(host).toHaveCount(1)
-  await expect(host.locator(".control-focus-dim--scoped")).toHaveCount(1)
+  /* And nowhere else: a layer per stacking ancestor is what composited the dim two and three deep. */
+  await expect(page.locator(".control-focus-dim")).toHaveCount(1)
+  /* Nothing is lifted to escape a stacking trap any more; the hole does that work. */
+  await expect(page.locator("[data-control-focus-host]")).toHaveCount(0)
+  /* The hole is cut where the surface shows, so the layer covers the window minus that rect. */
+  await expect(dim).toHaveAttribute("aria-hidden", "true")
+  expect(await dim.evaluate((element) => getComputedStyle(element).clipPath)).toMatch(/^path\(evenodd,/)
 
   /* The dim never intercepts: what sits under the pointer is the content, not the layer. */
   const chatButton = page.getByRole("button", { name: "Chat" }).first()
@@ -69,23 +94,20 @@ test("hover and wheel reach dimmed content; the releasing click is swallowed, th
   await chatButton.hover()
   expect(await chatButton.evaluate((element) => element.matches(":hover"))).toBe(true)
 
-  /* And the wheel scrolls the dimmed transcript (pointer over dimmed content, away from the raised card). */
+  /* And the wheel scrolls the dimmed transcript. The lesson's scroller is the transcript itself:
+     the mount and the shell around it are `overflow: hidden` and can never move. */
+  const scroller = page.locator(".guide-transcript")
   await expect
-    .poll(async () => host.evaluate((element) => element.scrollHeight - element.clientHeight), { timeout: 10_000 })
+    .poll(async () => scroller.evaluate((element) => element.scrollHeight - element.clientHeight), { timeout: 10_000 })
     .toBeGreaterThan(0)
-  const before = await host.evaluate((element) => element.scrollTop)
-  const point = await host.evaluate((element) => {
+  const before = await scroller.evaluate((element) => element.scrollTop)
+  const point = await scroller.evaluate((element) => {
     const rect = element.getBoundingClientRect()
-    return { x: rect.x + 40, y: rect.y + 24 }
+    return { x: rect.x + 6, y: rect.y + rect.height / 2 }
   })
   await page.mouse.move(point.x, point.y)
   await page.mouse.wheel(0, 400)
-  await expect.poll(async () => host.evaluate((element) => element.scrollTop)).not.toBe(before)
-
-  /* The ring carries its own way out for a surface no chord can reach (a focused cross-origin frame). */
-  const release = card.locator("[data-control-focus-release]")
-  await expect(release).toBeVisible()
-  await expect(release).toHaveText("Release control")
+  await expect.poll(async () => scroller.evaluate((element) => element.scrollTop)).not.toBe(before)
 
   /* The releasing click only unfocuses: the Chat button it landed on did not summon the composer. */
   await chatButton.click()
@@ -99,4 +121,146 @@ test("hover and wheel reach dimmed content; the releasing click is swallowed, th
   /* The NEXT click is a normal click: the composer opens. */
   await chatButton.click()
   await expect(composer).toBeVisible()
+})
+
+/*
+ * The invariant, measured in pixels rather than argued from stacking rules:
+ * every pixel outside the controlled surface is darkened EXACTLY once. The
+ * shipped ladder failed it in three bands at this very viewport — the window's
+ * top strip untouched, one layer over the lesson header, two below it.
+ *
+ * The experiment holds the DOM still and toggles only the layer, so nothing
+ * but the dim can move a pixel; two frames of the undimmed state mask off what
+ * the page animates on its own (the editor caret, the help bubble).
+ */
+test("the dim is one layer: every pixel outside the surface is darkened exactly once", async ({ page }) => {
+  await page.setViewportSize({ width: 1100, height: 520 })
+  const { editor } = await openEditorSurface(page)
+  await editor.click()
+  await expect(page.locator(".control-focus-dim")).toHaveCount(1)
+
+  const setDim = async (shown: boolean) => {
+    await page.evaluate((shown) => {
+      for (const layer of document.querySelectorAll<HTMLElement>(".control-focus-dim")) {
+        layer.style.display = shown ? "" : "none"
+      }
+    }, shown)
+    await page.waitForTimeout(250)
+  }
+  await setDim(false)
+  const plainA = (await page.screenshot({ animations: "disabled" })).toString("base64")
+  const plainB = (await page.screenshot({ animations: "disabled" })).toString("base64")
+  await setDim(true)
+  const dimmed = (await page.screenshot({ animations: "disabled" })).toString("base64")
+
+  const alpha = await page.evaluate(() =>
+    Number.parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--control-focus-dim")) / 100
+  )
+  expect(alpha).toBeGreaterThan(0)
+
+  const survey = await page.evaluate(
+    async ({ plainA, plainB, dimmed, alpha }) => {
+      const load = async (b64: string) => {
+        const bitmap = await createImageBitmap(await (await fetch(`data:image/png;base64,${b64}`)).blob())
+        const canvas = new OffscreenCanvas(bitmap.width, bitmap.height)
+        const context = canvas.getContext("2d")!
+        context.drawImage(bitmap, 0, 0)
+        return { width: bitmap.width, height: bitmap.height, data: context.getImageData(0, 0, bitmap.width, bitmap.height).data }
+      }
+      const a = await load(plainA)
+      const b = await load(plainB)
+      const d = await load(dimmed)
+      const luma = (image: typeof a, x: number, y: number) => {
+        const i = (image.width * y + x) << 2
+        return 0.2126 * image.data[i]! + 0.7152 * image.data[i + 1]! + 0.0722 * image.data[i + 2]!
+      }
+      /* One layer of rgb(20 17 12) at the token's alpha over luma L. */
+      const ink = 0.2126 * 20 + 0.7152 * 17 + 0.0722 * 12
+      const once = (l: number) => l * (1 - alpha) + ink * alpha
+      const hole = document.querySelector("[data-control-focus]")!.getBoundingClientRect()
+      const scale = a.width / window.innerWidth
+      const counts = { once: 0, untouched: 0, twice: 0, other: 0 }
+      const examples: Array<Record<string, number>> = []
+      for (let y = 8; y < a.height - 8; y += 4) {
+        for (let x = 8; x < a.width - 8; x += 4) {
+          if (x >= (hole.x - 8) * scale && x <= (hole.right + 8) * scale && y >= (hole.y - 8) * scale && y <= (hole.bottom + 8) * scale) continue
+          const base = luma(a, x, y)
+          /* Only pixels the page itself holds still, and only where the 1.5px blur cannot move ink in. */
+          let steady = Math.abs(luma(b, x, y) - base) <= 1
+          for (let dy = -3; steady && dy <= 3; dy++) {
+            for (let dx = -3; steady && dx <= 3; dx++) steady = Math.abs(luma(a, x + dx, y + dy) - base) <= 1
+          }
+          if (!steady) continue
+          const lit = luma(d, x, y)
+          if (Math.abs(lit - once(base)) <= 2.5) counts.once++
+          else if (Math.abs(lit - base) <= 2.5) {
+            counts.untouched++
+            if (examples.length < 5) examples.push({ x, y, base: Math.round(base), lit: Math.round(lit) })
+          } else if (Math.abs(lit - once(once(base))) <= 2.5) {
+            counts.twice++
+            if (examples.length < 5) examples.push({ x, y, base: Math.round(base), lit: Math.round(lit) })
+          } else {
+            counts.other++
+            if (examples.length < 5) examples.push({ x, y, base: Math.round(base), lit: Math.round(lit) })
+          }
+        }
+      }
+      return { counts, examples }
+    },
+    { plainA, plainB, dimmed, alpha }
+  )
+
+  const { once, untouched, twice, other } = survey.counts
+  /* A survey this small would prove nothing; the window holds thousands of steady pixels. */
+  expect(once + untouched + twice + other).toBeGreaterThan(2000)
+  expect({ untouched, twice, other, examples: survey.examples }).toEqual({ untouched: 0, twice: 0, other: 0, examples: [] })
+})
+
+/*
+ * The affordance is the ONLY way out of a focused cross-origin frame — that
+ * surface swallows every key, Escape included — so "reachable" has to mean a
+ * pointer lands on it, at every viewport. `toBeVisible()` checks a bounding
+ * box and passed while the card's own scroller had scrolled the button away.
+ */
+test("the release affordance is reachable at every viewport, and reads as a control", async ({ page }) => {
+  await page.setViewportSize({ width: 1100, height: 520 })
+  const { card, editor } = await openEditorSurface(page)
+  await editor.click()
+  const release = card.locator("[data-control-focus-release]")
+  await expect(release).toHaveText("Release control")
+
+  for (const size of [
+    { width: 1100, height: 520 },
+    { width: 980, height: 700 },
+    { width: 1440, height: 900 },
+    { width: 1280, height: 460 },
+    { width: 760, height: 600 }
+  ]) {
+    await page.setViewportSize(size)
+    await expect.poll(async () => releaseIsReachable(page), { timeout: 5_000 }).toBe(true)
+  }
+
+  /* And it looks like a control: its own recipe, not the ghost button's transparent one. */
+  const style = await release.evaluate((element) => {
+    const computed = getComputedStyle(element)
+    return {
+      fontSize: computed.fontSize,
+      background: computed.backgroundColor,
+      borderColor: computed.borderTopColor,
+      borderWidth: computed.borderTopWidth
+    }
+  })
+  expect(style.fontSize).toBe("11px")
+  expect(style.borderWidth).toBe("1px")
+  for (const colour of [style.background, style.borderColor]) {
+    expect(colour).not.toBe("rgba(0, 0, 0, 0)")
+    expect(colour).not.toBe("transparent")
+  }
+  /* An opaque fill, so the label is legible over a terminal or a frame. */
+  expect(style.background).toMatch(/^rgb\(/)
+
+  /* It releases, and takes the dim with it. */
+  await release.click()
+  await expect(page.locator(".control-focus-dim")).toHaveCount(0)
+  await expect(card).not.toHaveAttribute("data-control-focus", /./)
 })

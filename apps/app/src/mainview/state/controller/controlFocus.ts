@@ -8,9 +8,9 @@
  * The state is one app-level record owned by the controller, never React
  * state and never a journal transition: it is a projection of where focus
  * physically is, changing with every focus event, so persisting it would
- * spam the journal. Components read it through `useSyncExternalStore`
- * (App.tsx renders the dim layer); every surface is detected
- * declaratively from the DOM, so this module is the only authority:
+ * spam the journal. Components read it through `useSyncExternalStore`;
+ * every surface is detected declaratively from the DOM, so this module is
+ * the only authority:
  *
  *  - terminal / desktop / browser surfaces mark their interactive element
  *    with `data-control-focus-id` + `data-control-focus-kind`;
@@ -95,6 +95,49 @@ const PORTAL_ROOTS = [
 const TAP_SLOP = 10
 /** How long after a touch the browser's compat mouse tail is still that touch's, not a new press. */
 const COMPAT_MS = 500
+/** How far the release affordance sits inside the surface's visible corner. */
+const RELEASE_INSET = 6
+/** The ring's width when the page has no token to read (a test DOM with no stylesheet). */
+const FALLBACK_OUTSET = 4
+
+/*
+ * The dim is ONE layer over the whole viewport with a hole cut where the
+ * surface shows, so every pixel outside the surface is darkened exactly once
+ * and the surface is not darkened at all. It replaces the earlier ladder of
+ * one dim per trapping ancestor: those layers composited over each other
+ * (measured −21% against a −12% token) and banded wherever an inner layer
+ * stopped, because an outer dim still shows through an inner container's
+ * transparent background however the two are stacked. A hole needs no
+ * stacking argument at all: the layer is a child of the body, above the app's
+ * own chrome, and paints nothing over the surface.
+ */
+interface Rect {
+  readonly top: number
+  readonly right: number
+  readonly bottom: number
+  readonly left: number
+}
+
+const intersect = (a: Rect, b: Rect): Rect => ({
+  top: Math.max(a.top, b.top),
+  right: Math.min(a.right, b.right),
+  bottom: Math.min(a.bottom, b.bottom),
+  left: Math.max(a.left, b.left)
+})
+
+const isEmpty = (rect: Rect): boolean => rect.right <= rect.left || rect.bottom <= rect.top
+
+const outward = (rect: Rect, by: number): Rect => ({
+  top: rect.top - by,
+  right: rect.right + by,
+  bottom: rect.bottom + by,
+  left: rect.left - by
+})
+
+const boxOf = (element: Element): Rect => {
+  const { top, right, bottom, left } = element.getBoundingClientRect()
+  return { top, right, bottom, left }
+}
 
 const asElement = (target: EventTarget | null): Element | null =>
   target !== null && typeof (target as Element).closest === "function" ? (target as Element) : null
@@ -139,8 +182,12 @@ export const createControlFocus = (doc: Document | undefined): ControlFocusContr
   let gesture: { readonly pointerId: number | null; readonly inside: boolean; readonly touch: boolean; readonly x: number; readonly y: number; sawMouseDown: boolean } | null = null
   /* Until when the browser's compat mouse tail still belongs to a finished touch. */
   let compatUntil = 0
-  /* The trapping scrollers hosting the surface, innermost first, each with the dim drawn inside it. */
-  let scoped: Array<{ readonly host: HTMLElement; readonly dim: HTMLDivElement; readonly reanchors: boolean }> = []
+  /* The one dim layer: a child of the body, with a hole cut where the surface shows. */
+  let dim: HTMLDivElement | null = null
+  /* Everything between the surface and the viewport that clips it, so the hole is the VISIBLE surface. */
+  let clippers: Array<HTMLElement> = []
+  /* The ring's painted width, so the hole clears the ring instead of dimming half of it. */
+  let outset = FALLBACK_OUTSET
   /* The "Release control" button mounted beside the ringed surface while it is controlled. */
   let releaseButton: HTMLButtonElement | null = null
   /* The element we lent a tab stop to for one focus move, so it can be taken back. */
@@ -157,97 +204,94 @@ export const createControlFocus = (doc: Document | undefined): ControlFocusContr
     return current.anchor.contains(target) || target.closest(PORTAL_ROOTS) !== null
   }
 
-  /*
-   * What re-anchors position:fixed or caps a descendant's z-index (the
-   * probe-verified list): contain layout/paint, any filter, backdrop-filter,
-   * any transform, perspective, will-change: transform, content-visibility —
-   * and the stacking-context triggers that only cap z-index without
-   * re-anchoring: mask-image, isolation, mix-blend-mode, opacity below 1, and
-   * a positioned ancestor carrying its own z-index. A card under any of these
-   * can never rise above the shell's dim layer, so the dim is drawn inside
-   * that same scroller and the scroller itself is lifted.
-   */
-  const isSet = (value: string): boolean => value !== "" && value !== "none" && value !== "normal"
+  /** A resolved overflow is never empty; only a test DOM reports one, and it clips nothing. */
+  const clipsAxis = (value: string): boolean => value !== "" && value !== "visible"
 
   /*
-   * The transcript's viewport always carries @smthrs/ui's `.sui-scroll-fade`
-   * class, but the mask only paints while a fade edge is showing (uiCss.ts
-   * keys it off the data attributes), and only a painted mask traps. The class
-   * is read by name so detection does not depend on mask support in test DOMs.
+   * A surface is rarely shown whole: the transcript scroller, the lesson
+   * mount and the window itself each clip it. The hole and the release
+   * affordance both belong to what is actually ON SCREEN, so the clipping
+   * ancestors are collected once per control and re-measured on every fit.
+   * A fixed surface (a maximized card) hangs off the viewport alone.
    */
-  const masked = (element: HTMLElement, style: CSSStyleDeclaration): boolean => {
-    if (element.classList.contains("sui-scroll-fade")) {
-      return element.getAttribute("data-fade-top") === "true" || element.getAttribute("data-fade-bottom") === "true"
-    }
-    return isSet(style.maskImage)
-  }
-
-  const traps = (element: HTMLElement, win: Window): { readonly trapped: boolean; readonly reanchors: boolean } => {
-    const style = win.getComputedStyle(element)
-    if (isSet(style.transform) || isSet(style.filter) || isSet(style.backdropFilter) || style.willChange.includes("transform")) {
-      return { trapped: true, reanchors: true }
-    }
-    if (style.contain.includes("layout") || style.contain.includes("paint") || style.contain.includes("strict") || style.contain.includes("content")) {
-      return { trapped: true, reanchors: true }
-    }
-    if (style.contentVisibility === "hidden" || style.contentVisibility === "auto") return { trapped: true, reanchors: true }
-    if (isSet(style.perspective)) return { trapped: true, reanchors: true }
-    if (masked(element, style)) return { trapped: true, reanchors: false }
-    if (style.isolation === "isolate") return { trapped: true, reanchors: false }
-    if (isSet(style.mixBlendMode)) return { trapped: true, reanchors: false }
-    const opacity = Number.parseFloat(style.opacity)
-    if (Number.isFinite(opacity) && opacity < 1) return { trapped: true, reanchors: false }
-    if (style.position !== "" && style.position !== "static" && style.zIndex !== "" && style.zIndex !== "auto") {
-      return { trapped: true, reanchors: false }
-    }
-    return { trapped: false, reanchors: false }
-  }
-
-  /*
-   * EVERY trapping ancestor is a host, innermost first: stopping at the first
-   * one leaves an outer trap capping the lifted scroller just as it capped the
-   * card. Each host lifts inside its parent's stacking context and carries its
-   * own dim, so every region is dimmed exactly once.
-   */
-  const findTrapHosts = (anchor: HTMLElement, win: Window): Array<{ readonly host: HTMLElement; readonly reanchors: boolean }> => {
-    const hosts: Array<{ readonly host: HTMLElement; readonly reanchors: boolean }> = []
-    const shell = anchor.closest(".app-shell")
-    for (let element = anchor.parentElement; element !== null && element !== win.document.body && element !== shell; element = element.parentElement) {
-      const { trapped, reanchors } = traps(element, win)
-      if (trapped) hosts.push({ host: element, reanchors })
-    }
-    return hosts
-  }
-
-  const fitScopedDims = (): void => {
-    for (const { host, dim, reanchors } of scoped) {
-      /*
-       * The scoped dim is fixed but pinned to the scroller's box. When the
-       * host re-anchors fixed to itself, inset:0 IS the box. When it only
-       * caps z-index (the mask case), fixed stays viewport-anchored: inset:0
-       * would double-dim the whole window (the shell already carries one), so
-       * the layer is pinned to the scroller's viewport rect — the mask clips
-       * it to the same box anyway. A ResizeObserver keeps it fitted, so a pane
-       * opening or a breakpoint change no longer leaves it misaligned.
-       */
-      if (reanchors) {
-        dim.style.inset = "0"
-        continue
+  const findClippers = (anchor: HTMLElement, win: Window): Array<HTMLElement> => {
+    const found: Array<HTMLElement> = []
+    if (win.getComputedStyle(anchor).position === "fixed") return found
+    for (let element = anchor.parentElement; element !== null && element !== win.document.body; element = element.parentElement) {
+      const style = win.getComputedStyle(element)
+      if (clipsAxis(style.overflowX) || clipsAxis(style.overflowY) || style.contain.includes("paint") || style.contain.includes("strict")) {
+        found.push(element)
       }
-      const rect = host.getBoundingClientRect()
-      dim.style.top = `${rect.top}px`
-      dim.style.left = `${rect.left}px`
-      dim.style.width = `${rect.width}px`
-      dim.style.height = `${rect.height}px`
     }
+    return found
   }
 
-  const clearScoped = (): void => {
-    for (const { host, dim } of scoped) {
-      dim.remove()
-      host.removeAttribute("data-control-focus-host")
+  /** What the user can actually see of the surface: its box, clipped by every scroller and the window. */
+  const visibleSurface = (anchor: HTMLElement, win: Window): Rect => {
+    let rect = boxOf(anchor)
+    for (const clipper of clippers) rect = intersect(rect, boxOf(clipper))
+    return intersect(rect, { top: 0, right: win.innerWidth, bottom: win.innerHeight, left: 0 })
+  }
+
+  /*
+   * The hole, and the affordance that rides in it. `clip-path: path(evenodd)`
+   * cuts one rectangle out of the full-viewport layer: everything outside is
+   * dimmed exactly once, the surface and its ring are not dimmed at all, and
+   * there is no second layer anywhere to composite with. A surface scrolled
+   * entirely out of view leaves the layer whole — there is nothing to spare.
+   */
+  const fit = (): void => {
+    if (current === null || doc === undefined) return
+    const win = doc.defaultView
+    if (win === null) return
+    const anchor = current.anchor
+    const visible = visibleSurface(anchor, win)
+    if (dim !== null) {
+      if (isEmpty(visible)) dim.style.clipPath = "none"
+      else {
+        const hole = intersect(outward(visible, outset), { top: 0, right: win.innerWidth, bottom: win.innerHeight, left: 0 })
+        const round = (value: number): number => Math.round(value * 100) / 100
+        dim.style.clipPath =
+          `path(evenodd, "M0 0H${round(win.innerWidth)}V${round(win.innerHeight)}H0Z` +
+          ` M${round(hole.left)} ${round(hole.top)}H${round(hole.right)}V${round(hole.bottom)}H${round(hole.left)}Z")`
+      }
     }
-    scoped = []
+    if (releaseButton === null) return
+    /*
+     * The affordance is the only way out of a focused cross-origin frame, so
+     * it is pinned to the surface's VISIBLE corner, not to the box's: a card
+     * taller than its scroller used to carry the button below the fold, where
+     * `elementFromPoint` found the scroller instead and no pointer could ever
+     * reach it. Offsets are measured from the anchor's padding box, which is
+     * what `right`/`bottom` resolve against.
+     */
+    const box = boxOf(anchor)
+    const style = win.getComputedStyle(anchor)
+    const padRight = box.right - (Number.parseFloat(style.borderRightWidth) || 0)
+    const padBottom = box.bottom - (Number.parseFloat(style.borderBottomWidth) || 0)
+    const edge = isEmpty(visible) ? intersect(box, { top: 0, right: win.innerWidth, bottom: win.innerHeight, left: 0 }) : visible
+    if (isEmpty(edge)) return
+    const width = releaseButton.offsetWidth
+    const height = releaseButton.offsetHeight
+    /*
+     * Reachability is a property of the CENTRE, because that is where a
+     * pointer — and `elementFromPoint` — lands. The corner placement is the
+     * want; the clamp is the guarantee, and it matters: a sliver of card
+     * shorter than the button itself still has a hittable middle row, and
+     * without the clamp the button's centre sat one pixel past the scroller's
+     * edge and the hit test returned the lesson behind it.
+     */
+    const centred = (low: number, high: number, wanted: number): number => Math.min(Math.max(wanted, low + 1), high - 1)
+    const centreX = centred(edge.left, edge.right, edge.right - RELEASE_INSET - width / 2)
+    const centreY = centred(edge.top, edge.bottom, edge.bottom - RELEASE_INSET - height / 2)
+    releaseButton.style.right = `${Math.round(padRight - (centreX + width / 2))}px`
+    releaseButton.style.bottom = `${Math.round(padBottom - (centreY + height / 2))}px`
+  }
+
+  const clearDim = (): void => {
+    dim?.remove()
+    dim = null
+    clippers = []
   }
 
   /*
@@ -291,7 +335,7 @@ export const createControlFocus = (doc: Document | undefined): ControlFocusContr
     anchor.removeAttribute("data-control-focus")
     releaseButton?.remove()
     releaseButton = null
-    clearScoped()
+    clearDim()
     observer?.disconnect()
     observer = null
     resizeObserver?.disconnect()
@@ -311,7 +355,16 @@ export const createControlFocus = (doc: Document | undefined): ControlFocusContr
     if (doc === undefined) return
     const button = doc.createElement("button")
     button.type = "button"
-    button.className = "sui-button sui-button-ghost sui-button-sm control-focus-release"
+    /*
+     * Its own recipe, never the shared ghost one: `.sui-button-ghost` and
+     * `.sui-button-sm` are defined after this rule at equal specificity and
+     * the tutorial's `.guide-shell button { font: inherit }` outranks a bare
+     * class outright, so the affordance shipped at 16px with a transparent
+     * background and border — a label, not a control, and illegible over a
+     * terminal. The stylesheet pairs the class with the marker attribute to
+     * outrank both honestly.
+     */
+    button.className = "control-focus-release"
     button.setAttribute("data-control-focus-release", "")
     button.setAttribute("aria-label", `Release control of the ${NOUN[kind]}`)
     button.textContent = "Release control"
@@ -354,27 +407,33 @@ export const createControlFocus = (doc: Document | undefined): ControlFocusContr
     const win = doc?.defaultView ?? null
     if (doc !== undefined && win !== null) {
       /*
-       * A trapping ancestor (the transcript viewport's mask, the lesson
-       * mount's contain:layout) caps its descendants' z-index, so a card
-       * inside it can never rise above the shell's dim layer. While it hosts
-       * the controlled surface the scroller itself lifts and carries a dim
-       * inside its own stacking context; the card lifts one step further
-       * within it. Hover and wheel pass through every layer (pointer-events: none).
+       * The dim is a child of the BODY, never of the app shell: in the
+       * tutorial the shell is mounted inside `.guide-app`, which is
+       * `opacity: 0` until the workspace step, so a layer rendered there
+       * painted nothing at all and the window's top strip stayed bright.
+       * From the body it covers the whole viewport, over the app's own
+       * chrome, and the hole is what keeps the surface out of it.
        */
-      for (const { host, reanchors } of findTrapHosts(anchor, win)) {
-        const dim = doc.createElement("div")
-        dim.className = "control-focus-dim control-focus-dim--scoped"
-        dim.setAttribute("aria-hidden", "true")
-        host.setAttribute("data-control-focus-host", "")
-        host.append(dim)
-        scoped.push({ host, dim, reanchors })
-      }
-      fitScopedDims()
-      if (typeof win.ResizeObserver === "function" && scoped.length > 0) {
-        resizeObserver = new win.ResizeObserver(() => fitScopedDims())
-        for (const { host } of scoped) resizeObserver.observe(host)
-      }
+      clippers = findClippers(anchor, win)
+      outset = Number.parseFloat(win.getComputedStyle(anchor).getPropertyValue("--control-focus-outset"))
+      if (!Number.isFinite(outset)) outset = FALLBACK_OUTSET
+      dim = doc.createElement("div")
+      dim.className = "control-focus-dim"
+      dim.setAttribute("aria-hidden", "true")
+      doc.body.append(dim)
       mountReleaseButton(anchor, detection.kind)
+      fit()
+      /*
+       * The hole tracks the surface: a pane opening, a breakpoint change or a
+       * wheel over the dimmed transcript all move it. Scroll is watched in
+       * the capture phase because a scroller's own scroll event never bubbles.
+       */
+      if (typeof win.ResizeObserver === "function") {
+        resizeObserver = new win.ResizeObserver(() => fit())
+        for (const element of [anchor, anchor.parentElement, ...clippers]) {
+          if (element !== null) resizeObserver.observe(element)
+        }
+      }
       watchForUnmount(anchor)
     }
     notify()
@@ -543,7 +602,8 @@ export const createControlFocus = (doc: Document | undefined): ControlFocusContr
     clear(true)
   }
 
-  const onResize = (): void => fitScopedDims()
+  /* `fit` is a no-op while nothing is controlled, so both listeners can live for the controller's life. */
+  const onReflow = (): void => fit()
 
   const win = doc?.defaultView ?? null
   if (doc !== undefined && win !== null) {
@@ -562,7 +622,9 @@ export const createControlFocus = (doc: Document | undefined): ControlFocusContr
     for (const type of SWALLOWED) win.addEventListener(type, onGestureTail as EventListener, true)
     win.addEventListener("keydown", onKeyDown, true)
     win.addEventListener("blur", onWindowBlur)
-    win.addEventListener("resize", onResize)
+    win.addEventListener("resize", onReflow)
+    /* A scroller's own scroll never bubbles, so the hole follows the surface from the capture phase. */
+    win.addEventListener("scroll", onReflow, { capture: true, passive: true })
   }
 
   return {
@@ -586,7 +648,8 @@ export const createControlFocus = (doc: Document | undefined): ControlFocusContr
         for (const type of SWALLOWED) win.removeEventListener(type, onGestureTail as EventListener, true)
         win.removeEventListener("keydown", onKeyDown, true)
         win.removeEventListener("blur", onWindowBlur)
-        win.removeEventListener("resize", onResize)
+        win.removeEventListener("resize", onReflow)
+        win.removeEventListener("scroll", onReflow, true)
       }
     }
   }

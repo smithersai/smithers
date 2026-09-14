@@ -205,29 +205,14 @@ test("the control marker is namespaced: guide bubbles keep data-controlled and g
   expect(css.includes("[data-control-focus]")).toBe(true)
 })
 
-test("a card surface inside the scroll-fade viewport lifts the scroller and draws the scoped dim; release removes both", () => {
-  const { win, doc, control, scroller, browserFrame } = setup()
-  frameFocus(win, browserFrame)
-  expect(scroller.hasAttribute("data-control-focus-host")).toBe(true)
-  expect(scroller.querySelector(".control-focus-dim--scoped")).not.toBeNull()
-  releaseButton(doc)!.click()
-  expect(control.snapshot()).toBeNull()
-  expect(scroller.hasAttribute("data-control-focus-host")).toBe(false)
-  expect(scroller.querySelector(".control-focus-dim--scoped")).toBeNull()
-})
-
-/* Minor: the fade class is always on the viewport; the mask only paints while a fade edge is on. */
-test("a scroll-fade viewport with no fade edge showing is not a trapping host", () => {
-  const { win, control, scroller, browserFrame } = setup()
-  scroller.setAttribute("data-fade-bottom", "false")
-  frameFocus(win, browserFrame)
-  expect(control.snapshot()?.kind).toBe("browser")
-  expect(scroller.hasAttribute("data-control-focus-host")).toBe(false)
-  expect(scroller.querySelector(".control-focus-dim--scoped")).toBeNull()
-})
-
-/* Minor: the search used to stop at the innermost trap, leaving an outer one capping it anyway. */
-test("every trapping ancestor becomes a host, not just the innermost one", () => {
+/*
+ * Blocker: the dim used to be a ladder — one layer inside every ancestor that
+ * capped z-index, plus one the shell rendered — and the layers composited over
+ * each other (a real browser measured −21% against a −12% token, in three
+ * banded strips). There is ONE layer now, on the body, and the surface is kept
+ * out of it by a hole rather than by a z-index a trapping ancestor caps.
+ */
+test("the dim is ONE layer on the body, however many stacking traps wrap the surface", () => {
   const { win, doc, control, scroller, browserFrame } = setup()
   const outer = doc.createElement("div")
   outer.className = "sui-scroll-fade"
@@ -236,9 +221,67 @@ test("every trapping ancestor becomes a host, not just the innermost one", () =>
   outer.append(scroller)
   frameFocus(win, browserFrame)
   expect(control.snapshot()?.kind).toBe("browser")
-  expect(scroller.hasAttribute("data-control-focus-host")).toBe(true)
-  expect(outer.hasAttribute("data-control-focus-host")).toBe(true)
-  expect(outer.querySelectorAll(".control-focus-dim--scoped").length).toBe(2)
+  expect(doc.querySelectorAll(".control-focus-dim").length).toBe(1)
+  expect(doc.querySelector(".control-focus-dim")?.parentElement).toBe(doc.body)
+  /* Nothing is lifted any more: a hole needs no stacking argument at all. */
+  expect(doc.querySelectorAll("[data-control-focus-host]").length).toBe(0)
+  releaseButton(doc)!.click()
+  expect(control.snapshot()).toBeNull()
+  expect(doc.querySelectorAll(".control-focus-dim").length).toBe(0)
+})
+
+/** A layout the test DOM cannot lay out on its own: a card half-clipped by its scroller. */
+const stubRect = (element: Element, rect: { top: number; right: number; bottom: number; left: number }): void => {
+  element.getBoundingClientRect = () =>
+    ({
+      ...rect,
+      x: rect.left,
+      y: rect.top,
+      width: rect.right - rect.left,
+      height: rect.bottom - rect.top,
+      toJSON: () => rect
+    }) as DOMRect
+}
+
+/*
+ * Blocker: the hole and the release affordance both belong to what is ON
+ * SCREEN. A hole cut at the card's full box would leave the scroller's
+ * neighbours undimmed, and pinning the button to the box's corner put it below
+ * the fold — where no pointer reached the only way out of a focused frame.
+ */
+test("the hole and the release affordance follow the surface's VISIBLE rect, not its box", () => {
+  const { win, doc, control, scroller, browserCard, browserFrame } = setup()
+  /* happy-dom reports longhands only; a real browser always resolves both. */
+  scroller.style.overflowY = "auto"
+  stubRect(browserCard, { top: 100, right: 400, bottom: 300, left: 100 })
+  stubRect(scroller, { top: 50, right: 500, bottom: 250, left: 0 })
+  frameFocus(win, browserFrame)
+  expect(control.snapshot()?.kind).toBe("browser")
+  const dim = doc.querySelector<HTMLElement>(".control-focus-dim")!
+  /* The card shows from y=100 down to the scroller's edge at y=250, grown by the 4px ring. */
+  expect(dim.style.clipPath).toContain("M96 96H404V254H96Z")
+  /* And the button rides that edge — 50px up from the card's own bottom, not 6px. */
+  expect(releaseButton(doc)!.style.bottom).toBe("56px")
+  expect(releaseButton(doc)!.style.right).toBe("6px")
+})
+
+/*
+ * Blocker: the affordance borrowed `.sui-button-ghost` + `.sui-button-sm`,
+ * defined after its own rule at equal specificity, and the tutorial's
+ * `.guide-shell button { font: inherit }` outranks a bare class outright — it
+ * computed 16px on a transparent background with a transparent border, a label
+ * rather than a control. The recipe is its own, and it outranks both honestly.
+ */
+test("the release affordance carries its own recipe, never the shared ghost button's", () => {
+  const { win, doc, browserFrame } = setup()
+  frameFocus(win, browserFrame)
+  expect(releaseButton(doc)!.className).toBe("control-focus-release")
+  const css = readFileSync(new URL("../../styles/cards.css", import.meta.url), "utf8").replaceAll(/\/\*[\s\S]*?\*\//g, "")
+  expect(css).toContain(".control-focus-release[data-control-focus-release] {")
+  expect(css.includes("\n.control-focus-release {")).toBe(false)
+  for (const declaration of ["font-size: 11px", "background: var(--card)", "border: 1px solid var(--border)"]) {
+    expect(css).toContain(declaration)
+  }
 })
 
 test("exit on outside click: the first click only unfocuses and focus lands on the tab body, never on body", () => {

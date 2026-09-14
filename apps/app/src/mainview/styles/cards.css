@@ -542,14 +542,27 @@
 
 /*
  * Control focus ("spotlight"): while the human drives one surface, ONE dim
- * layer rendered inside .app-shell darkens and blurs everything else a
- * touch, modal-style, and the surface "expands just a tad" — a ring painted
- * in the card colour plus elevation, never a transform (a scale() blurs
- * text, shifts xterm's mouse coordinates, and refits the PTY on every focus
- * change). The dim is pointer-events:none so hover and wheel reach the
- * dimmed content, and it sits below the portalled popovers (dialog 50, ui
- * tooltip/select 60, maximize backdrop 65) so a controlled card's own
- * dropdown is never dimmed. All tuning is the four tokens.
+ * layer darkens and blurs everything else a touch, modal-style, and the
+ * surface "expands just a tad" — a ring painted in the card colour plus
+ * elevation, never a transform (a scale() blurs text, shifts xterm's mouse
+ * coordinates, and refits the PTY on every focus change). The dim is
+ * pointer-events:none so hover and wheel reach the dimmed content. All
+ * tuning is the four tokens.
+ *
+ * The layer is a child of the BODY with a HOLE cut where the surface shows
+ * (state/controller/controlFocus.ts sets the clip-path). It used to be a
+ * ladder — one dim inside every ancestor that capped z-index, plus one in
+ * the app shell — and those layers composited over each other: measured
+ * −21% against a −12% token, in three banded strips, because an outer dim
+ * still shows through an inner container's transparent background however
+ * the two are stacked, and because the shell's own layer sat inside the
+ * tutorial's `opacity: 0` mount and painted nothing at all. A hole needs no
+ * stacking argument: nothing is dimmed twice and the surface is not dimmed.
+ *
+ * The z sits above the app's own chrome (session navigation 60, sidebar 55)
+ * — undimmed chrome was the third band — and below the maximize backdrop
+ * (65) and the maximized card (70). A popover the controlled surface opens
+ * lands over the surface, which is the hole, so it is not dimmed either.
  *
  * Every selector here is namespaced `data-control-focus*`. The bare
  * `data-controlled` is the onboarding shell's own flag on every guide bubble
@@ -562,7 +575,7 @@
 	--control-focus-dim: 12%;
 	--control-focus-blur: 1.5px;
 	--control-focus-ms: 160ms;
-	--control-focus-z: 40;
+	--control-focus-z: 61;
 }
 
 .control-focus-dim {
@@ -572,20 +585,6 @@
 	pointer-events: none;
 	background: rgb(20 17 12 / var(--control-focus-dim));
 	backdrop-filter: blur(var(--control-focus-blur));
-}
-
-/*
- * A trapping ancestor — the transcript viewport's mask-image (@smthrs/ui
- * .sui-scroll-fade), the lesson mount's contain:layout — caps its
- * descendants' z-index, so a card inside it can never rise above the
- * shell's dim layer. While it hosts the controlled surface the scroller
- * itself lifts above the shell dim and carries a second dim inside its own
- * stacking context (state/controller/controlFocus.ts renders it); the card
- * lifts one step further within it.
- */
-[data-control-focus-host] {
-	position: relative;
-	z-index: calc(var(--control-focus-z) + 1);
 }
 
 [data-control-focus] {
@@ -603,25 +602,49 @@
  * The way out that needs no pointer. A focused cross-origin frame eats every
  * key and xterm swallows Tab, so the release chord cannot reach the document
  * from inside those surfaces; the ring carries its own button instead
- * (state/controller/controlFocus.ts mounts it). Small and quiet: the ghost
- * button recipe on the card colour, in the surface's own bottom corner.
+ * (state/controller/controlFocus.ts mounts it and pins it to the surface's
+ * VISIBLE corner, which is not the box's corner once a scroller clips it).
+ *
+ * The recipe is its own, not `.sui-button-ghost` + `.sui-button-sm`: those
+ * are defined after this rule at equal specificity and won every declaration
+ * they shared, and the tutorial's `.guide-shell button { font: inherit }`
+ * (0,1,1) outranks a bare class outright. The affordance shipped computing
+ * 16px on a transparent background with a transparent border — a label, not
+ * a control, and unreadable over a terminal. Pairing the class with the
+ * marker attribute the module already writes takes it to (0,2,0), which
+ * outranks both without an `!important` and without load-order luck.
  */
-.control-focus-release {
+.control-focus-release[data-control-focus-release] {
 	position: absolute;
 	/* Inside the box, never over its header: a terminal clips its own overflow. */
 	right: 6px;
 	bottom: 6px;
-	z-index: 1;
+	z-index: 2;
+	display: inline-flex;
+	align-items: center;
 	min-height: 22px;
+	margin: 0;
 	padding: 0 8px;
-	border-color: var(--border);
+	border: 1px solid var(--border);
+	border-radius: 6px;
 	background: var(--card);
+	box-shadow: 0 1px 3px rgb(0 0 0 / 16%);
+	color: var(--text);
+	font-family: inherit;
 	font-size: 11px;
-	opacity: 0.72;
+	font-weight: 500;
+	line-height: 1;
+	white-space: nowrap;
+	cursor: pointer;
+	opacity: 0.82;
 }
-.control-focus-release:hover,
-.control-focus-release:focus-visible {
+.control-focus-release[data-control-focus-release]:hover,
+.control-focus-release[data-control-focus-release]:focus-visible {
 	opacity: 1;
+}
+.control-focus-release[data-control-focus-release]:focus-visible {
+	outline: 2px solid var(--accent, currentColor);
+	outline-offset: 2px;
 }
 
 @media (prefers-reduced-motion: no-preference) {
