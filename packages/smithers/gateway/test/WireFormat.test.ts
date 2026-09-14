@@ -4,11 +4,13 @@
  * A projection row and a subscription frame are read by clients that are not
  * this repository: the product relay hand-parses the NDJSON envelope, and a
  * browser decodes the rows. A renamed field, a field that became optional, or
- * a frame that grew a member is a breaking change for all of them, and the
- * only way that shows up as a test failure is if the exact encoded shape is
- * written down. Every expectation here is the whole object, never a subset.
+ * a frame that grew a member needs a compatibility review. Exact encoded
+ * shapes make that drift visible, and decoder tests establish whether an
+ * addition remains compatible. Every expectation here is the whole object,
+ * never a subset.
  */
 import type { ControlSchema } from "@smthrs/control"
+import * as Health from "@smthrs/control/Health"
 import { Schema } from "effect"
 import { describe, expect, it } from "vitest"
 import { GatewayError } from "../src/GatewayError.ts"
@@ -47,10 +49,30 @@ describe("the encoded projection rows", () => {
       event(6, "control.run.completed", { runId: "run-1", status: "completed" })
     ])
 
+    expect(Schema.decodeUnknownSync(GatewayProjection.RunSummaryRow)(encode(GatewayProjection.RunSummaryRow, row)))
+      .toEqual(row)
     expect(encode(GatewayProjection.RunSummaryRow, row)).toEqual({
       runId: "run-1",
       flowId: "deploy",
       status: "completed",
+      /*
+       * `statusRollup` joined the row in 1.0.0-rc.0 as an additive change:
+       * the schema declares it optional, every field that was on the wire
+       * before it is still there with the same meaning, and a client built
+       * against the previous Effect row drops it (strict external decoders
+       * need their own compatibility review). The fold always emits
+       * one, so a run nobody has probed still reports its lifecycle state,
+       * unobserved, rather than no health at all.
+       */
+      statusRollup: {
+        subjectId: "run:run-1",
+        state: "completed",
+        activity: "unknown",
+        health: "healthy",
+        attention: "none",
+        freshness: "unobserved",
+        updatedAt: 2_000
+      },
       createdAt: 1_000,
       updatedAt: 2_000,
       seat: "opus",
@@ -71,6 +93,95 @@ describe("the encoded projection rows", () => {
       ].join("\n"),
       finalOutput: "shipped"
     })
+  })
+
+  it("freezes a run summary row whose rollup carries a fresh observation", () => {
+    // The richest rollup the wire carries: a probe of the run's current
+    // incarnation, still inside its lifetime at `now`, so its activity, its
+    // reason, and its provenance all reach the client.
+    const running: ControlSchema.RunSummary = { ...run, status: "running", ownerId: "owner-1" }
+    const incarnation = Health.runIncarnation(running)
+    const observation: Health.HealthObservation = {
+      subjectId: "run:run-1",
+      state: "running",
+      checkerId: "semantic",
+      monitorId: "monitor-1",
+      incarnation,
+      evidenceSeq: 2,
+      observedAt: 3_000,
+      expiresAt: 4_000,
+      durationMs: 5,
+      outcome: "ok",
+      baseHealth: "healthy",
+      report: { activity: "working", reason: "ok" }
+    }
+    const row = GatewayProjection.runSummary(running, [
+      event(1, "control.run.accepted", { runId: "run-1", status: "accepted" }),
+      event(2, "control.agent.turn-opened", { seat: "opus", contextDigest: "ctx" }),
+      event(3, Health.statusObservedEventType, Schema.encodeUnknownSync(Health.HealthObservation)(observation))
+    ], 3_500)
+
+    expect(Schema.decodeUnknownSync(GatewayProjection.RunSummaryRow)(encode(GatewayProjection.RunSummaryRow, row)))
+      .toEqual(row)
+    expect(encode(GatewayProjection.RunSummaryRow, row)).toEqual({
+      runId: "run-1",
+      flowId: "deploy",
+      status: "running",
+      statusRollup: {
+        subjectId: "run:run-1",
+        state: "running",
+        activity: "working",
+        health: "healthy",
+        attention: "none",
+        freshness: "fresh",
+        reason: "ok",
+        provenance: {
+          checkerId: "semantic",
+          monitorId: "monitor-1",
+          observedAt: 3_000,
+          expiresAt: 4_000,
+          evidenceSeq: 2,
+          incarnation,
+          version: 3
+        },
+        updatedAt: 3_000
+      },
+      createdAt: 1_000,
+      updatedAt: 2_000,
+      seat: "opus",
+      turns: 1,
+      calls: 0,
+      callsFailed: 0,
+      editsAttempted: 0,
+      editsSucceeded: 0,
+      inputTokens: 0,
+      outputTokens: 0,
+      verdict: "running",
+      diagnosis: [
+        "Verdict   running",
+        "Run       run-1 · deploy · opus · 1s",
+        "Activity  1 turns · 0 calls (0 refused) · edits 0/0",
+        "Tokens    0 in / 0 out"
+      ].join("\n")
+    })
+  })
+
+  it("still decodes for a client built against the row before statusRollup", () => {
+    // The previous RunSummaryRow, as a client that predates the field holds
+    // it: the same fields without `statusRollup`. Additive means such a
+    // client reads today's row and sees exactly what it always saw.
+    const { statusRollup: _added, ...previousFields } = GatewayProjection.RunSummaryRow.fields
+    const PreviousRunSummaryRow = Schema.Struct(previousFields)
+    const encoded = encode(GatewayProjection.RunSummaryRow, GatewayProjection.runSummary(run, [])) as Record<
+      string,
+      unknown
+    >
+    const { statusRollup, ...previousRow } = encoded
+
+    expect(statusRollup).toBeDefined()
+    expect(Schema.decodeUnknownSync(PreviousRunSummaryRow)(encoded)).toEqual(previousRow)
+    // New clients also accept old rows without inventing an observation.
+    expect(Schema.decodeUnknownSync(GatewayProjection.RunSummaryRow)(previousRow)).toEqual(previousRow)
   })
 
   it("freezes a run tree row and the node output that names the same node", () => {
