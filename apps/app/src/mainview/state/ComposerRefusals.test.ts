@@ -87,6 +87,14 @@ describe("a flow typed into the composer states its refusal", () => {
     expect(failedToasts(store).length).toBe(0)
   })
 
+  /*
+   * The persistent door is the transcript step, not the toast. A toast is a
+   * notification and may auto-dismiss; the sign-in step stays in the
+   * transcript with its button, and the button is bound to the flow THIS host
+   * registers — cloud.sign-in natively, the GitHub step on the web, where the
+   * GitHub sign-in IS the Cloud sign-in. The refusal's own prose names no
+   * slash recipe: a missing step is a button, never "type /x".
+   */
   test("a seam's cloud sign-in refusal offers a persistent sign-in action", async () => {
     const store = await signedInStore()
     const controller = createAppController(store, unavailableRepositories, silentAgent, {
@@ -97,11 +105,13 @@ describe("a flow typed into the composer states its refusal", () => {
     controller.send("/workspace.list")
     await settled()
     await settled()
-    const failed = failedToasts(store)
-    expect(failed).toHaveLength(1)
-    expect(failed[0]?.detail).toContain("/cloud.sign-in")
-    expect(failed[0]?.action).toMatchObject({ flow: "cloud.sign-in" })
-    await new Promise(resolve => setTimeout(resolve, 10))
-    expect(store.collections.toasts.get(failed[0]!.id)?.action?.flow).toBe("cloud.sign-in")
+    const prompts = [...store.collections.messages.values()].filter(message => message.action !== undefined)
+    expect(prompts).not.toHaveLength(0)
+    const action = prompts[prompts.length - 1]?.action
+    const flow = action?.flow ?? ""
+    expect(["cloud.sign-in", "auth.sign-in"]).toContain(flow)
+    /* The door it names is one this host actually has, or it is a dead end. */
+    expect(controller.commands.find(flow)).toBeDefined()
+    for (const toast of failedToasts(store)) expect(toast.detail).not.toContain("/cloud.sign-in")
   })
 })
