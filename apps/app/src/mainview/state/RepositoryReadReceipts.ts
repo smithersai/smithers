@@ -6,12 +6,12 @@ import type { SeamContext } from "./seams/SeamContext"
 /** Capture the versions before loading; a later update must remain unread. */
 export async function readRepositoryDetail(
   ctx: SeamContext, repo: string, kind: "issue" | "pr", number: number,
-  read: () => Promise<string | { readonly value: string }>
+  read: () => Promise<string | { readonly value: string }>,
+  origin: "smithers" | "github" = "smithers"
 ): Promise<string | { readonly value: string }> {
   const scope = repositoryScope(ctx.store, repo)
   const conversation = conversationTabIdOf(ctx.store.session())
-  // Hosted details currently read the Smithers tracker, not the separate GitHub list source.
-  const source = isPracticeRepo(repo) ? "practice" : "smithers"
+  const source = isPracticeRepo(repo) ? "practice" : origin
   const receipts = [...ctx.store.collections.repositoryNotifications.values()]
     .filter(row => row.scope === scope && row.repo === repo && row.source === source && row.kind === kind && row.number === number)
     .map(row => ({ id: row.id, version: row.version }))

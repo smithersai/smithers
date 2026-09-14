@@ -147,3 +147,12 @@ test("repository detail buttons preserve typed issue and PR targets", () => {
     expect(payloadFor(flow, flowArgs(flow, { number: 3, repo: "practice:smithersai/hello-server" }))).toEqual({ payload: { number: 3, repo: "practice:smithersai/hello-server" } })
   }
 })
+
+test("issue detail preserves the tracker even when native and GitHub numbers collide", () => {
+  for (const source of ["github", "smithers-cloud"] as const) {
+    roundTrip("issues.view", { number: 1, repo: "will/flows", source }, `1 will/flows --source ${source}`, { number: 1, repo: "will/flows", source })
+  }
+  roundTrip("issues.view", { number: 1, source: "github" }, "1 --source github", { number: 1, source: "github" })
+  roundTrip("issues.view", { number: 1, repo: "will/flows" }, "1 will/flows", { number: 1, repo: "will/flows" })
+  expect(payloadFor("issues.view", "will/flows --source github")).toHaveProperty("error")
+})

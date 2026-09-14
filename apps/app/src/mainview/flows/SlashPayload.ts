@@ -69,6 +69,18 @@ const numbered = (args: string | undefined, reason: string, _known?: KnownReposi
   return ok(repo === undefined ? { number } : { number, repo })
 }
 
+/** Keep source and repository when a missing issue number opens the shared form. */
+export const issueViewParts = (args: string | undefined): Record<string, unknown> => {
+  const match = /^(.*?)\s*--source\s+(\S+)$/.exec(trimmed(args))
+  const { rest, repo } = splitTrailingRepo(match ? match[1] : args)
+  const number = Number(rest)
+  return {
+    ...(Number.isInteger(number) && number > 0 ? { number } : {}),
+    ...(repo ? { repo } : {}),
+    ...(match ? { source: match[2] } : {})
+  }
+}
+
 /** Preserve JSON string whitespace when extracting the optional flow input. */
 export const flowRunParts = (args: string | undefined): { name?: string; repo?: string; input?: string; sourceCard?: string } => {
   const source = splitRunSource(args)
@@ -430,7 +442,12 @@ const GRAMMAR: Readonly<Record<string, Grammar>> = {
   "issue.poc": (args, known) => numbered(args, "An issue number is required", known),
   "issue.implement": (args, known) => numbered(args, "An issue number is required", known),
   "issue.add-flow": (args) => { try { return ok(JSON.parse(trimmed(args))) } catch { return no("Describe the flow to add") } },
-  "issues.view": (args, known) => numbered(args, "issues.view needs an issue number", known),
+  "issues.view": args => {
+    const parts = issueViewParts(args)
+    if (parts.number === undefined) return no("issues.view needs an issue number")
+    if (parts.source !== undefined && parts.source !== "github" && parts.source !== "smithers-cloud") return no("Choose GitHub or Smithers Cloud as the issue source")
+    return ok(parts)
+  },
   "issues.create": (args, known) => {
     const { rest, repo } = splitTrailingRepo(args, known)
     if (rest === "") return no("issues.create needs a title")

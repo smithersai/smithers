@@ -657,7 +657,7 @@ const CurrentCardSchema = z.discriminatedUnion("kind", [
   z.object({ ...cardBaseShape, kind: z.literal("repo-update"), payload: z.object({
     repo: z.string(), scope: z.string(), checkedAt: z.number(), summary: z.string(), branch: z.string().optional(),
     openIssues: z.number().int().nonnegative().nullable(), openPrs: z.number().int().nonnegative().nullable(), problems: z.array(z.string()),
-    items: z.array(z.object({ id: z.string(), version: z.string(), kind: z.enum(["issue", "pr", "notification"]), number: z.number().int().optional(),
+    items: z.array(z.object({ id: z.string(), version: z.string(), source: z.string().optional(), kind: z.enum(["issue", "pr", "notification"]), number: z.number().int().optional(),
       title: z.string(), state: z.string(), tags: z.array(z.string()), read: z.boolean() }))
   }) }),
   /* The tutorial's ranked repository chooser and its local-creation receipt. */
@@ -1237,6 +1237,8 @@ const CurrentCardSchema = z.discriminatedUnion("kind", [
       state: z.enum(["open", "closed"]),
       author: z.string().nullable(),
       issueBody: z.string(),
+      source: z.enum(["smithers-cloud", "github"]).optional(),
+      htmlUrl: z.string().optional(),
       labels: z.array(z.string()),
       /*
        * Lane sync (ADR 0005 "Link an issue to Linear"): the Linear mapping

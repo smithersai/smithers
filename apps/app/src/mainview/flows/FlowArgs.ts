@@ -23,7 +23,7 @@ export interface FlowInput {
   readonly "approvals.open": { readonly runId: string; readonly sourceCard?: string }
   readonly "tutorial.live.inspect": { readonly cardId: string; readonly eventId: string }
   readonly "files.open-diff": { readonly cardId: string; readonly path: string }
-  readonly "issues.view": { readonly number: number; readonly repo?: string }
+  readonly "issues.view": { readonly number: number; readonly repo?: string; readonly source?: "smithers-cloud" | "github" }
   readonly "prs.view": { readonly number: number; readonly repo?: string }
   readonly "issue.flows": { readonly number: number; readonly repo?: string }
   readonly "issue.repro": { readonly number: number; readonly repo?: string }
@@ -113,7 +113,7 @@ const ENCODERS: { readonly [N in FlowWithInput]: (payload: Payload) => string } 
   "approvals.open": (payload) => line(keyed(payload, "sourceCard"), token(payload, "runId")),
   "tutorial.live.inspect": (payload) => line(token(payload, "cardId"), token(payload, "eventId")),
   "files.open-diff": (payload) => JSON.stringify(payload),
-  "issues.view": (payload) => line(token(payload, "number"), token(payload, "repo")),
+  "issues.view": (payload) => line(token(payload, "number"), token(payload, "repo"), payload.source ? `--source ${payload.source}` : undefined),
   "prs.view": (payload) => line(token(payload, "number"), token(payload, "repo")),
   "issue.flows": (payload) => line(token(payload, "number"), token(payload, "repo")),
   "issue.repro": (payload) => line(token(payload, "number"), token(payload, "repo")),

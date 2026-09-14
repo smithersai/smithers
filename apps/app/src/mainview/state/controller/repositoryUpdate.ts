@@ -60,7 +60,7 @@ export function createRepositoryUpdate(ctx: SeamContext) {
       const visible = new Map(fresh.map(row => [row.id, row]))
       // Refreshing does not erase notices the user has yet to read.
       for (const row of processed.rows) if (row.announcedVersion === row.version && row.readVersion !== row.version) visible.set(row.id, row)
-      const items = [...visible.values()].map(row => ({ id: row.id, version: row.version, kind: row.kind, number: row.number, title: row.title, state: row.state, tags: row.tags, read: row.readVersion === row.version }))
+      const items = [...visible.values()].map(row => ({ id: row.id, version: row.version, source: row.source, kind: row.kind, number: row.number, title: row.title, state: row.state, tags: row.tags, read: row.readVersion === row.version }))
       const card: UpdateCard = { id, kind: "repo-update", title: "Activity",
         status: "active", createdAt: existing?.createdAt ?? at, ordinal: existing?.ordinal ?? ctx.nextOrdinal(),
         payload: { repo, scope, checkedAt: at, summary, items, problems, branch: snapshot.branch,

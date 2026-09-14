@@ -15,6 +15,15 @@ import { Octicon } from "./Octicon"
 
 type UpdateItem = Extract<Card, { kind: "repo-update" }>["payload"]["items"][number]
 
+/** Older saved updates encoded the source in their durable notification identity. */
+const issueSource = (item: UpdateItem): "github" | "smithers-cloud" => {
+  if (item.source) return item.source === "github" ? "github" : "smithers-cloud"
+  try {
+    const identity: unknown = JSON.parse(item.id)
+    return Array.isArray(identity) && identity[2] === "github" ? "github" : "smithers-cloud"
+  } catch { return "smithers-cloud" }
+}
+
 const KIND_LABEL: Readonly<Record<UpdateItem["kind"], string>> = { issue: "Issue", pr: "Pull request", notification: "Notification" }
 
 /** Tags are `[kind, state, ...labels]` (RepositoryUpdateSource); only the labels are pills. */
@@ -68,7 +77,9 @@ export const repositoryUpdateCardFamily: CardFamily<"repo-update"> = {
               return <li key={item.id} className="ghc-row repo-update-item" data-read={item.read} data-kind={item.kind} data-state={item.state}>
                 {viewFlow !== undefined && item.number !== undefined ?
                   <button type="button" className="ghc-row-btn" data-flow={viewFlow}
-                    onClick={() => actions.onRunCommand(viewFlow, flowArgs(viewFlow, { number: item.number!, repo }))}>{body}</button> :
+                    onClick={() => actions.onRunCommand(viewFlow, viewFlow === "issues.view"
+                      ? flowArgs("issues.view", { number: item.number!, repo, source: issueSource(item) })
+                      : flowArgs("prs.view", { number: item.number!, repo }))}>{body}</button> :
                   <span className="ghc-row-btn repo-update-static">{body}</span>}
               </li>
             })}

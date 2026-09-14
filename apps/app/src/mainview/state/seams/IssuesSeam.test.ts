@@ -7,6 +7,7 @@ import type { AppServices } from "../AppController"
 import type { Card } from "../AppState"
 import { createAppStore } from "../AppStore"
 import type { AppStore } from "../AppStore"
+import { processRepositoryEvents } from "../RepositoryNotifications"
 
 /*
  * The issues seam, driven through the one command run path: issues.list /
@@ -96,11 +97,12 @@ const reposChosen = async (store: AppStore): Promise<void> => {
 }
 
 const issuesController = async (services: AppServices) => {
-  const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
+  const storage = memoryStorage()
+  const store = await createAppStore({ kind: "localStorage", storage })
   const controller = createAppController(store, unavailableRepositories, unavailableAgent, services)
   await signedIn(store)
   await reposChosen(store)
-  return { store, controller }
+  return { store, controller, storage }
 }
 
 /* Plue's issue wire shape (multi src/smithersCloud/issues.ts). */
@@ -487,6 +489,8 @@ describe("issues seam — source-only fallback (repo not imported)", () => {
     expect(card.payload.issues).toEqual([
       {
         number: 12,
+        source: "github",
+        htmlUrl: "https://github.com/will/flows/issues/12",
         title: "Upstream bug 12",
         state: "open",
         author: "octo",
@@ -495,6 +499,8 @@ describe("issues seam — source-only fallback (repo not imported)", () => {
       },
       {
         number: 15,
+        source: "github",
+        htmlUrl: "https://github.com/will/flows/issues/15",
         title: "Upstream bug 15",
         state: "closed",
         author: null,
@@ -556,7 +562,7 @@ describe("issues seam — source-only fallback (repo not imported)", () => {
     expect(store.collections.cards.get("issues-will/flows")).toBeUndefined()
   })
 
-  test("issues.view on a 404 states that detail needs the import — no per-issue source read exists", async () => {
+  test("native issues.view on a 404 names the explicit GitHub door without switching trackers", async () => {
     const calls: string[] = []
     const { store, controller } = await issuesController(
       backend({ "GET /api/repos/will/flows/issues/7": json(404, { message: "not found" }) }, calls)
@@ -565,7 +571,7 @@ describe("issues seam — source-only fallback (repo not imported)", () => {
     expect(outcome.status).toBe("failed")
     if (outcome.status === "failed") {
       expect(outcome.error).toContain("Issue #7 in will/flows answered 404")
-      expect(outcome.error).toContain("run /repos.import will/flows")
+      expect(outcome.error).toContain("/issues.view 7 will/flows --source github")
     }
     expect(calls.some((call) => call.includes("/api/user/github-repos/"))).toBe(false)
     expect(store.collections.cards.get("issue-will/flows-7")).toBeUndefined()
@@ -702,6 +708,97 @@ describe("issues seam — the Linear link (lane L5, live routes)", () => {
       expect(bare.error).toBe(
         "Unlinking issue #9 in will/flows from Linear needs its identifier typed back exactly — /issues.unlink-linear 9 <identifier>."
       )
+    }
+  })
+})
+
+describe("source-qualified issue identity", () => {
+  test("same-number native and GitHub rows open their own details and remain separate in history", async () => {
+    const calls: string[] = []
+    const { store, controller, storage } = await issuesController(backend({
+      "GET /api/repos/will/flows/issues": json(200, [wireIssue(1, { title: "Native issue" })]),
+      "GET /api/repos/will/flows/issues/1": json(200, wireIssue(1, { title: "Native issue" })),
+      "GET /api/repos/will/flows/issues/1/comments": json(200, []),
+      "GET /api/user/github-repos/will/flows/issues": json(200, [wireGithubIssue(1, { title: "GitHub issue" })]),
+      "GET /api/user/github-repos/will/flows/issues/1/comments": json(200, [{ user: { login: "octo" }, body: "GitHub comment", created_at: "2026-09-14T12:00:00Z" }])
+    }, calls))
+    expect((await controller.commands.run("issues.list", "will/flows")).status).toBe("executed")
+    const list = cardOfKind(store, "issues-will/flows", "issue-list")
+    expect(list.payload.issues.map(row => [row.number, row.source])).toEqual([[1, "smithers-cloud"], [1, "github"]])
+    expect((await controller.commands.run("issues.view", "1 will/flows --source smithers-cloud")).status).toBe("executed")
+    expect(cardOfKind(store, list.id, "issue").payload.title).toBe("Native issue")
+    calls.length = 0
+    expect((await controller.commands.run("issues.view", "1 will/flows --source github")).status).toBe("executed")
+    const detail = cardOfKind(store, list.id, "issue")
+    expect(detail.payload).toMatchObject({ number: 1, source: "github", title: "GitHub issue", issueBody: "Seen on main.", author: "octo", labels: ["bug"], comments: [{ author: "octo", commentBody: "GitHub comment" }] })
+    expect(calls.filter(call => call.includes("/issues"))).toEqual([
+      "GET /api/user/github-repos/will/flows/issues?state=all&per_page=100&page=1",
+      "GET /api/user/github-repos/will/flows/issues/1/comments?per_page=100&page=1"
+    ])
+    const history = store.collections.cardHistories.get(list.id)!
+    expect(history.entries.filter(entry => entry.kind === "issue").map(entry => entry.payload.title)).toEqual(["Native issue", "GitHub issue"])
+    await controller.dispose()
+    await store.settled?.()
+    await store.dispose?.()
+    const restored = await createAppStore({ kind: "localStorage", storage })
+    expect(cardOfKind(restored, list.id, "issue").payload.source).toBe("github")
+    await restored.dispatch({ type: "card.history.moved", actor: "user", id: list.id, delta: -1 }).isPersisted.promise
+    expect(cardOfKind(restored, list.id, "issue").payload.title).toBe("Native issue")
+    await restored.dispatch({ type: "card.history.moved", actor: "user", id: list.id, delta: 1 }).isPersisted.promise
+    expect(cardOfKind(restored, list.id, "issue").payload.source).toBe("github")
+  })
+
+  test("GitHub read follows metadata pagination and refuses a missing source issue without reading native detail", async () => {
+    const calls: string[] = []
+    const { store, controller } = await issuesController(backend({
+      "GET /api/user/github-repos/will/flows/issues": request => new URL(request.url).searchParams.get("page") === "1"
+        ? new Response(JSON.stringify([wireGithubIssue(2)]), { headers: { link: '<https://untrusted.example/path?page=2>; rel="next"' } })
+        : json(200, [wireGithubIssue(1)]),
+      "GET /api/user/github-repos/will/flows/issues/1/comments": json(200, [])
+    }, calls))
+    expect((await controller.commands.run("issues.view", "1 will/flows --source github")).status).toBe("executed")
+    expect(cardOfKind(store, "issue-github-will/flows-1", "issue").payload.title).toBe("Upstream bug 1")
+    expect(calls).toContain("GET /api/user/github-repos/will/flows/issues?state=all&per_page=100&page=2")
+    expect((await controller.commands.run("issues.view", "99 will/flows --source github")).status).toBe("failed")
+    expect(calls.some(call => /\/api\/repos\/.*\/issues/.test(call) || call.includes("untrusted"))).toBe(false)
+  })
+
+  test("missing issue number preserves GitHub source and repository in the shared form", async () => {
+    const calls: string[] = []
+    const { store, controller } = await issuesController(backend({
+      "GET /api/user/github-repos/will/flows/issues": json(200, [wireGithubIssue(1)]),
+      "GET /api/user/github-repos/will/flows/issues/1/comments": json(200, [])
+    }, calls))
+    const outcome = await controller.commands.run("issues.view", "will/flows --source github")
+    expect(outcome.status).toBe("form")
+    await settled()
+    const form = [...store.collections.cards.values()].find(card => card.kind === "flow-form")
+    expect(form?.kind).toBe("flow-form")
+    if (form?.kind !== "flow-form") throw Error("Missing form")
+    expect(form.payload.draft).toMatchObject({ source: "github", repo: "will/flows" })
+    expect(form.payload.fields.find(field => field.name === "number")?.required).toBe(true)
+    expect((await controller.commands.run("form.set", `${form.id} number 1`)).status).toBe("executed")
+    expect((await controller.commands.run("form.submit", form.id)).status).toBe("executed")
+    expect(cardOfKind(store, "issue-github-will/flows-1", "issue").payload.source).toBe("github")
+    expect(calls.some(call => /\/api\/repos\/.*\/issues/.test(call))).toBe(false)
+  })
+
+  test("opening a GitHub issue marks only that tracker read and failed reads leave receipts unread", async () => {
+    const { store, controller } = await issuesController(backend({
+      "GET /api/user/github-repos/will/flows/issues": json(200, [wireGithubIssue(1)]),
+      "GET /api/user/github-repos/will/flows/issues/1/comments": json(200, [])
+    }))
+    const notices = processRepositoryEvents("github:will", "will/flows", ["smithers", "github"].flatMap(source => [1, 99].map(number => ({
+      source, sourceId: String(number), kind: "issue" as const, number, title: `${source} ${number}`, state: "open", updatedAt: null, tags: []
+    }))), [], 0).rows
+    await store.dispatch({ type: "repo.update.published", actor: "system", notifications: notices, card: {
+      id: "activity", kind: "repo-update", title: "Activity", status: "active", createdAt: 0, ordinal: 0,
+      payload: { repo: "will/flows", scope: "github:will", checkedAt: 0, summary: "", openIssues: 4, openPrs: 0, problems: [], items: [] }
+    } }).isPersisted.promise
+    expect((await controller.commands.run("issues.view", "1 will/flows --source github")).status).toBe("executed")
+    expect((await controller.commands.run("issues.view", "99 will/flows --source github")).status).toBe("failed")
+    for (const notice of store.collections.repositoryNotifications.values()) {
+      expect(notice.readVersion === notice.version).toBe(notice.source === "github" && notice.number === 1)
     }
   })
 })

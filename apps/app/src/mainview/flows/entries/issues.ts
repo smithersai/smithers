@@ -5,7 +5,8 @@
  */
 import { Schema } from "effect"
 import { issueFlows } from "./issue"
-import { payloadFor } from "../SlashPayload"
+import { issueViewParts, payloadFor } from "../SlashPayload"
+import { flag, line, text } from "../FlowForms"
 import { flow, NumberedTarget } from "./Declare"
 import type { FlowEntry, Namespace } from "../registry"
 import type { CommandActions } from "./Declare"
@@ -42,13 +43,17 @@ export const issuesFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> =
   }),
   flow({
     name: "issues.view",
-    summary: "Open an issue with its comments",
+    summary: "Open an issue with its comments; use source github for GitHub rows",
+    form: { partial: issueViewParts, args: payload => line(text(payload, "number"), text(payload, "repo"), flag(payload, "source")) },
     /* The practice repository (state/practice) answers without the cloud; its key also skips the sign-in gate. */
     runtimeAny: ["cloud", "practice"],
-    args: "<number> [owner/repo]",
+    args: "<number> [owner/repo] [--source github|smithers-cloud]",
     requires: ["signed-in"],
-    input: NumberedTarget,
-    handler: ({ number, repo }) => actions.viewIssue(number, repo)
+    input: Schema.Struct({
+      ...NumberedTarget.fields,
+      source: Schema.optional(Schema.Literals(["smithers-cloud", "github"]))
+    }),
+    handler: ({ number, repo, source }) => actions.viewIssue(number, repo, source)
   }),
   flow({
     name: "issues.create",

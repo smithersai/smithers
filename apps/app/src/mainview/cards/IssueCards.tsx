@@ -71,7 +71,7 @@ const IssueListRow = ({ repo, issue, onRunCommand }: { readonly repo: string; re
         type="button"
         className="ghc-row-btn"
         data-flow="issues.view"
-        onClick={() => onRunCommand("issues.view", `${issue.number} ${repo}`)}
+        onClick={() => onRunCommand("issues.view", flowArgs("issues.view", { number: issue.number, repo, source: issue.source }))}
       >
         <StateIcon display={issueDisplay(issue.state)} />
         <span className="ghc-row-main">
@@ -126,12 +126,12 @@ export const IssueListCardBody = ({
           null}
         <span className="ghc-toolbar-repo">{repoLabel(repo)}</span>
       </div>
-      {github !== undefined ?
+      {github !== undefined && (github.refusal !== null || github.stale || github.syncError !== null) ?
         (
           <p className="ghc-note">
             {github.refusal !== null
               ? `GitHub: ${github.refusal}`
-              : `GitHub · ${github.source}${github.syncedAt !== null ? ` · synced ${dateLabel(github.syncedAt)}` : ""}${github.stale ? " · stale" : ""}${github.syncError !== null ? ` · sync error: ${github.syncError}` : ""}`}
+              : `GitHub updates${github.stale ? " may be out of date" : " couldn't sync"}${github.syncedAt !== null ? ` · last synced ${dateLabel(github.syncedAt)}` : ""}${github.syncError !== null ? `: ${github.syncError}` : ""}`}
           </p>
         ) :
         null}
@@ -146,7 +146,7 @@ export const IssueListCardBody = ({
         ) :
         (
           <ul className="ghc-rows">
-            {issues.map((issue) => <IssueListRow key={issue.number} repo={repo} issue={issue} onRunCommand={onRunCommand} />)}
+            {issues.map((issue) => <IssueListRow key={`${issue.source ?? "smithers-cloud"}-${issue.number}`} repo={repo} issue={issue} onRunCommand={onRunCommand} />)}
           </ul>
         )}
     </div>
@@ -192,6 +192,8 @@ export const IssueCardBody = ({
   onRunCommand
 }: { readonly card: Extract<Card, { kind: "issue" }> } & IssueCardActions) => {
   const { repo, number, title, state, author, issueBody, labels, comments, linear } = card.payload
+  const github = card.payload.source === "github"
+  const githubHref = github ? trustedHttpsUrl(card.payload.htmlUrl ?? "", "github.com") : null
   const extra: IssuePayload = card.payload
   const toggleCommand = state === "open" ? "issues.close" : "issues.reopen"
   /* The DTO's URL is vetted like the install URL (review finding 10): https on linear.app, or no link at all. */
@@ -212,13 +214,15 @@ export const IssueCardBody = ({
           </span>
         </div>
       </header>
-      <nav className="ghc-actions" aria-label="Issue actions">
+      {github ? <nav className="ghc-actions" aria-label="Issue actions">
+        {githubHref ? <a href={githubHref} target="_blank" rel="noreferrer">Open on GitHub</a> : null}
+      </nav> : <nav className="ghc-actions" aria-label="Issue actions">
         <Button size="sm" variant="outline" data-flow="issue.flows" onClick={() => onRunCommand("issue.flows", flowArgs("issue.flows", { number, repo }))}>Issue flows</Button>
         <Button size="sm" variant="outline" data-flow="issue.repro" onClick={() => onRunCommand("issue.repro", flowArgs("issue.repro", { number, repo }))}>Research / repro</Button>
         <Button size="sm" variant="outline" data-flow="issue.poc" onClick={() => onRunCommand("issue.poc", flowArgs("issue.poc", { number, repo }))}>Proof of concept</Button>
         <Button size="sm" data-flow="issue.implement" onClick={() => onRunCommand("issue.implement", flowArgs("issue.implement", { number, repo }))}>Implement</Button>
         <Button size="sm" variant="outline" data-flow="issue.add-flow" onClick={() => onRunCommand("issue.add-flow", flowArgs("issue.add-flow", { number, repo }))}>Add flow</Button>
-      </nav>
+      </nav>}
       <div className="ghc-detail-grid">
         <div className="ghc-detail-main">
           <CommentBox author={author} avatarUrl={extra.authorAvatar} createdAt={extra.createdAt} verb="opened this issue">
@@ -231,7 +235,7 @@ export const IssueCardBody = ({
               <Markdown className="smithers-card-markdown" content={comment.commentBody} />
             </CommentBox>
           ))}
-          <div className="ghc-detail-foot">
+          {!github ? <div className="ghc-detail-foot">
             <IssueCommentForm repo={repo} number={number} onRunCommand={onRunCommand} />
             <div className="ghc-actions">
               <Button
@@ -246,7 +250,7 @@ export const IssueCardBody = ({
                 {state === "open" ? "Close issue" : "Reopen issue"}
               </Button>
             </div>
-          </div>
+          </div> : null}
         </div>
         <aside className="ghc-side" aria-label={`Issue #${number} details`}>
           <SideSection title="Assignees" empty="No one assigned">
@@ -261,7 +265,7 @@ export const IssueCardBody = ({
             * LAW, superseding the ADR's composer prefill): it carries the issue
             * number it knows and issues.link-linear asks for the identifier.
             */}
-          <SideSection title="Linear">
+          {!github ? <SideSection title="Linear">
             {linear != null ?
               (
                 <span>
@@ -281,7 +285,7 @@ export const IssueCardBody = ({
                   Link to Linear…
                 </Button>
               )}
-          </SideSection>
+          </SideSection> : null}
           <SideSection title="Repository">
             <span className="ghc-mono">{repoLabel(repo)}</span>
           </SideSection>

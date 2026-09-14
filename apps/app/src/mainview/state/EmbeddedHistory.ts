@@ -44,7 +44,8 @@ export async function publishRepoView(ctx: SeamContext, card: RepoPaneLocation):
   const next = { ...card, id: target.id, ordinal: target.ordinal, createdAt: target.createdAt, tabId: target.tabId }
   /* Refreshing the location already on screen keeps its place in history; anything else navigates. */
   const sameLocation =
-    (target.kind === "issue" && card.kind === "issue" && target.payload.number === card.payload.number) ||
+    (target.kind === "issue" && card.kind === "issue" && target.payload.number === card.payload.number &&
+      (target.payload.source ?? "smithers-cloud") === (card.payload.source ?? "smithers-cloud")) ||
     (target.kind === "issue-list" && card.kind === "issue-list") ||
     (target.kind === "pr" && card.kind === "pr" && target.payload.number === card.payload.number) ||
     (target.kind === "pr-list" && card.kind === "pr-list")

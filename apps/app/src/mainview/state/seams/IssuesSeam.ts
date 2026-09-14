@@ -18,8 +18,8 @@ import { mutatePracticeIssue, finishIssueLesson, practiceViewIssue, tutorialRepo
  * IMPORT-READINESS degradation (multi importReadiness.ts + githubIssues.ts):
  * a 404 off the imported namespace means "not imported", so the LIST falls
  * back to the GET-only GitHub-source read and the card says so in `body`;
- * detail has no source read and mutations never fall back — both answer
- * honest strings pointing at /repos.import.
+ * source-qualified detail uses the GitHub metadata list and comments routes.
+ * Mutations remain native and never fall back to a different tracker.
  */
 import type { Card } from "../AppState"
 import { resolveTargetRepo } from "../RepoContext"
@@ -29,7 +29,7 @@ import type { SeamContext } from "./SeamContext"
 export interface IssuesSeam {
   /** Renders the list card and answers the rows as text (the model reads the value, never the card). */
   readonly listIssues: (filter: "open" | "closed" | "all", repo?: string) => Promise<string | { readonly value: string }>
-  readonly viewIssue: (number: number, repo?: string) => Promise<string | { readonly value: string }>
+  readonly viewIssue: (number: number, repo?: string, source?: "smithers-cloud" | "github") => Promise<string | { readonly value: string }>
   readonly createIssue: (title: string, repo?: string) => Promise<string | void>
   readonly setIssueState: (
     number: number,
@@ -94,6 +94,8 @@ const parseGithubListRow = (value: unknown): IssueListRow | null => {
   const comments = asInt(value.comments)
   return {
     number,
+    source: "github",
+    ...(typeof value.html_url === "string" ? { htmlUrl: value.html_url } : {}),
     title: typeof value.title === "string" ? value.title : "",
     state: asIssueState(value.state),
     author: authorLogin(value.user),
@@ -264,6 +266,55 @@ export const createIssuesSeam = (ctx: SeamContext, renderRepositoryForm?: Reposi
       : issues.map((issue) => issueRowValue(issue, "github")).join("\n"))
   }
 
+  /** GitHub has a separate tracker. Its supported metadata routes expose full issue bodies in the list. */
+  const showGithubIssue = async (repo: string, number: number): Promise<string | { readonly value: string }> => {
+    const listPath = githubSourceIssuesPath(repo, "all")
+    let issue: Record<string, unknown> | undefined
+    for (let page = 1; page <= 50; page += 1) {
+      let response: Response
+      try { response = await ctx.http(`${listPath}&per_page=100&page=${page}`) }
+      catch (error) { return unreachable(`load GitHub issue #${number} in ${repo}`, error) }
+      if (!response.ok) return readErrorMessage(response, `Loading GitHub issue #${number} failed (${response.status})`)
+      const rows: unknown = await response.json().catch(() => null)
+      if (!Array.isArray(rows)) return `GitHub answered issues for ${repo} with an unreadable payload`
+      issue = rows.find((row): row is Record<string, unknown> => isRecord(row) && row.number === number && !("pull_request" in row))
+      if (issue) break
+      // Rebuild our own scoped route; never follow a server-provided host or path.
+      if (!/rel="?next"?/.test(response.headers.get("link") ?? "")) break
+    }
+    if (!issue) return `GitHub issue #${number} in ${repo} was not found. Refresh the issue list and try again.`
+    const comments: IssueCommentRow[] = []
+    const commentsPath = `${listPath.split("?")[0]}/${number}/comments`
+    for (let page = 1; page <= 50; page += 1) {
+      let response: Response
+      try { response = await ctx.http(`${commentsPath}?per_page=100&page=${page}`) }
+      catch (error) { return unreachable(`load comments for GitHub issue #${number} in ${repo}`, error) }
+      if (!response.ok) return readErrorMessage(response, `Loading GitHub issue comments failed (${response.status})`)
+      const rows: unknown = await response.json().catch(() => null)
+      if (!Array.isArray(rows)) return `GitHub answered comments for #${number} with an unreadable payload`
+      comments.push(...rows.flatMap(row => isRecord(row) ? [{
+        author: authorLogin(row.user),
+        commentBody: typeof row.body === "string" ? row.body : "",
+        createdAt: typeof row.created_at === "string" ? row.created_at : null
+      }] : []))
+      if (!/rel="?next"?/.test(response.headers.get("link") ?? "")) break
+      if (page === 50) return `GitHub issue #${number} has more comments than could be loaded. Open it on GitHub to read the full conversation.`
+    }
+    const payload = parseDetail({ ...issue, author: issue.user }, repo, number, comments)!
+    payload.source = "github"
+    payload.htmlUrl = `https://github.com/${repo}/issues/${number}`
+    await publishIssueView(ctx, {
+      id: `issue-github-${repo}-${number}`, kind: "issue", title: `GitHub issue #${number} · ${repo}`,
+      status: "active", createdAt: Date.now(), ordinal: ctx.nextOrdinal(), payload
+    })
+    return readResult([
+      `${repo} · GitHub #${number} ${payload.title} · ${payload.state}`,
+      `Author: ${payload.author ?? "unknown"}`,
+      `Labels: ${payload.labels.join(", ") || "none"}`, payload.issueBody,
+      ...comments.map(comment => `Comment by ${comment.author ?? "unknown"}:\n${comment.commentBody}`)
+    ].join("\n"))
+  }
+
   /** Fetches the issue AND its comments, then upserts the detail card. */
   const showIssue = async (repo: string, number: number): Promise<string | { readonly value: string }> => {
     let issueResponse: Response
@@ -273,15 +324,8 @@ export const createIssuesSeam = (ctx: SeamContext, renderRepositoryForm?: Reposi
       return unreachable(`load issue #${number} in ${repo}`, error)
     }
     if (!issueResponse.ok) {
-      // No per-issue GitHub-source read exists (multi's github-repos
-      // namespace serves issue LISTS only — githubIssues.ts,
-      // githubRepoMetadata.ts), so the detail cannot degrade; state that.
       if (issueResponse.status === 404) {
-        return (
-          `Issue #${number} in ${repo} answered 404. If ${repo} isn't imported, ` +
-          `only the issue list can read from GitHub — issue detail needs the ` +
-          `import: run /repos.import ${repo}`
-        )
+        return `Issue #${number} in ${repo} answered 404. For a GitHub issue, use /issues.view ${number} ${repo} --source github.`
       }
       return readErrorMessage(
         issueResponse,
@@ -392,10 +436,12 @@ export const createIssuesSeam = (ctx: SeamContext, renderRepositoryForm?: Reposi
         : issues.map((issue) => issueRowValue(issue)).join("\n"))
     }),
 
-    viewIssue: async (number, explicitRepo) => {
+    viewIssue: async (number, explicitRepo, source) => {
       if (isPracticeRepo(explicitRepo)) return readRepositoryDetail(ctx, explicitRepo!, "issue", number, () => practiceViewIssue(ctx, number))
       const target = resolveTargetRepo(ctx.store, explicitRepo)
       if ("error" in target) return target.error
+      if (source === "github") return readRepositoryDetail(ctx, target.repo, "issue", number,
+        () => showGithubIssue(target.repo, number), "github")
       const playthrough = ctx.store.session().guide?.playthrough
       const shown = await readRepositoryDetail(ctx, target.repo, "issue", number, () => showIssue(target.repo, number))
       if (typeof shown !== "string") await finishIssueLesson(ctx, playthrough)
