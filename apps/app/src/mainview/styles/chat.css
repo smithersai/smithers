@@ -893,12 +893,12 @@
 .connector-empty {
 	display: flex;
 	min-height: 92px;
-	padding: 18px;
+	padding: var(--sp-5);
 	align-items: center;
 	justify-content: center;
-	gap: 12px;
+	gap: var(--sp-3);
 	border: 1px dashed var(--border-strong);
-	border-radius: 10px;
+	border-radius: var(--r-2);
 	color: var(--text-muted);
 }
 
@@ -920,13 +920,13 @@
 /* §11.6: the empty state's own next step sits under the sentence naming it. */
 .connector-empty div > button {
 	align-self: flex-start;
-	margin-top: 8px;
+	margin-top: var(--sp-2);
 }
 
 .connected-repository-list {
 	display: flex;
 	flex-direction: column;
-	gap: 10px;
+	gap: var(--sp-3);
 }
 
 .repository-path {
