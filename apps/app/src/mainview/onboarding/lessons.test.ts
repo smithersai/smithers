@@ -2,6 +2,7 @@ import { expect, test } from "bun:test"
 import { GUIDE_RESERVED_KEYS, GUIDE_STAGES, lessonMessage, lessonVisible } from "./lessons"
 // The explicit extension: on a case-insensitive filesystem "./reel" can resolve to Reel.tsx.
 import { REEL_BUTTON } from "./reel.ts"
+import { initialGuide, type GuideState } from "../state/AppState"
 
 test("each lesson's shortcuts are unique, single, lowercase, and clear of the shell's reserved keys", () => {
   for (const lesson of GUIDE_STAGES) {
@@ -61,4 +62,13 @@ test("deferred background setup never claims Wiki or history were launched", () 
   expect(message).toContain("later")
   expect(message).toContain("will/demo")
   expect(message).not.toMatch(/land soon|running|started/)
+})
+
+test("the terminal promise follows the current attempts, not a failed earlier scope or playthrough", () => {
+  const entry = { kind: "history" as const, repo: "will/demo", startedAt: 1, phase: "failed" as const,
+    scope: JSON.stringify(["will/demo", null, null, null, null, 0]) }
+  const guide: GuideState = { ...initialGuide(), repo: "will/demo", librarianLaunches: [entry] }
+  expect(lessonMessage(14, guide)).not.toContain("land soon")
+  expect(lessonMessage(14, { ...guide, playthrough: 1 })).toContain("land soon")
+  expect(lessonMessage(14, { ...guide, librarianLaunches: [entry, { ...entry, phase: "started", scope: JSON.stringify(["will/demo", "repo", "workspace", "branch", "will", 0]) }] })).toContain("land soon")
 })

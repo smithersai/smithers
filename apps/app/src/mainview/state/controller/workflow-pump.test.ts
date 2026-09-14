@@ -14,7 +14,7 @@ const summary = {
 const cursor = (projection: string, value: number, offset = 0) => ({
   selector: { _tag: projection, runId: "run-1" }, projection, runId: "run-1", value, offset
 })
-type Cycle = { events: ReturnType<typeof event>[]; revision?: number; journalFailure?: boolean; summaryFailure?: boolean; status?: string; statusRollup?: StatusRollup }
+type Cycle = { events: ReturnType<typeof event>[]; revision?: number; journalFailure?: boolean; summaryFailure?: boolean; status?: string; verdict?: string; statusRollup?: StatusRollup }
 const poll = async (cycles: Cycle[], options: {
   initialEvents?: ReturnType<typeof event>[]
   inspectAt?: number
@@ -29,6 +29,7 @@ const poll = async (cycles: Cycle[], options: {
   let rowsRequested = 0
   const journalRequests: unknown[] = []
   const updates: typeof card[] = []
+  const messages: string[] = []
   const gateway = createGatewaySeam({
     baseUrl: "https://test", errorMessageOf: async (_, fallback) => fallback,
     fetch: async (_, init) => {
@@ -40,7 +41,7 @@ const poll = async (cycles: Cycle[], options: {
         if (projection === "run-events") journalRequests.push(payload.after)
         return Response.json({ ok: false, error: { message: "offline" } })
       }
-      let rows: unknown[] = [{ ...summary, status: cycle.status ?? "running", statusRollup: cycle.statusRollup }]
+      let rows: unknown[] = [{ ...summary, status: cycle.status ?? "running", verdict: cycle.verdict ?? summary.verdict, statusRollup: cycle.statusRollup }]
       if (projection === "run-events") {
         journalRequests.push(payload.after)
         let offset = 0
@@ -65,6 +66,7 @@ const poll = async (cycles: Cycle[], options: {
   const ctx = {
     finishTutorialChange: async () => {},
     store: { collections: { cards }, dispatch: (action: any) => {
+      if (action.type === "message.appended") messages.push(action.text)
       if (action.type !== "card.updated") return
       card = { ...card, ...action.patch }
       if (options.cloneStored) card = structuredClone(card)
@@ -82,8 +84,16 @@ const poll = async (cycles: Cycle[], options: {
     }
   }
   await createWorkflowPumpController(ctx as unknown as ControllerContext, () => 1).pumpWorkflowRun(card.id)
-  return { card, updates, rowsRequested, journalRequests }
+  return { card, updates, rowsRequested, journalRequests, messages }
 }
+
+test("a failed run keeps raw evidence on its card and announces only typed human copy", async () => {
+  const raw = "failed — Error: Error: git exited 1"
+  const result = await poll([{ events: [], status: "failed", verdict: raw }])
+  expect(result.card.payload.error).toBe(raw)
+  expect(result.messages.join(" ")).toContain("Not your fault")
+  expect(result.messages.join(" ")).not.toContain(raw)
+})
 
 test("four unchanged iterations read and dispatch a 20,000-row journal only once", async () => {
   const events = Array.from({ length: 20_000 }, (_, i) => event(i + 1))

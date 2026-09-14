@@ -1,5 +1,7 @@
 import { REEL_BUTTON } from "./reel.ts"
 import { PRACTICE_CARD, PRACTICE_REPO } from "../state/practice/PracticeRepository.ts"
+import type { GuideState } from "../state/AppState"
+import { librarianLaunchFor } from "../state/LibrarianLaunch"
 
 /*
  * Onboarding tutorial, script v4 (~/Desktop/smithers-tutorial/SCRIPT.md).
@@ -118,7 +120,9 @@ export const GUIDE_BRIDGE = 10
 /** Global controls and Vim navigation cannot be assigned to lesson actions. */
 export const GUIDE_RESERVED_KEYS = ["s", "c", "m", "h", "j", "k", "l", "b", "w", "n", "q"] as const
 
-type GuideContext = { readonly repo?: string; readonly declined?: ReadonlyArray<string>; readonly completed?: ReadonlyArray<string>; readonly step?: number }
+type GuideContext = Pick<GuideState, "repo" | "playthrough" | "librarianLaunches"> & {
+  readonly declined?: ReadonlyArray<string>; readonly completed?: ReadonlyArray<string>; readonly step?: number
+}
 /** `{repo}` becomes the user's repository; the terminal line follows the escape hatch taken. */
 export const lessonText = (text: string, guide: GuideContext): string => text.replaceAll("{repo}", guide.repo ?? "your repository")
 export const lessonMessage = (step: number, guide: GuideContext, touch = false): string => {
@@ -132,7 +136,7 @@ export const lessonMessage = (step: number, guide: GuideContext, touch = false):
   if (lesson.kind === "say" && lesson.variants !== undefined) {
     if (guide.declined?.includes("login")) return lesson.variants.login
     if (guide.declined?.includes("install")) return lesson.variants.install
-    if (guide.declined?.includes("background")) return lessonText(lesson.variants.background, guide)
+    if (guide.declined?.includes("background") || (["wiki", "history"] as const).some(kind => librarianLaunchFor(guide, kind)?.phase === "failed")) return lessonText(lesson.variants.background, guide)
   }
   return lessonText(touch && lesson.kind === "do" ? lesson.touchMessage ?? lesson.message : lesson.message, guide)
 }

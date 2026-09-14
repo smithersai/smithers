@@ -5,6 +5,8 @@ import type { ControllerContext } from "./context"
 import { createGuideController } from "./guide"
 import type { WorkflowController } from "./workflows"
 import { createLibrarianRunsController, LIBRARIAN_SIGNAL, librarianLaunchTiming, type LibrarianRunHost } from "./librarianRuns"
+import { guideActionState } from "../../onboarding/actionState"
+import { lessonMessage } from "../../onboarding/lessons"
 
 const fixture = async () => {
   const data = new Map<string, string>()
@@ -13,7 +15,7 @@ const fixture = async () => {
   const store = await createAppStore({ kind: "localStorage", storage })
   await store.dispatch({ type: "guide.changed", actor: "user", guide: { ...initialGuide(), step: 12 } }).isPersisted.promise
   let repo = "will/demo", next = 0, refused = false
-  const ctx = { store, commandActor: "user" } as ControllerContext
+  const ctx = { store, commandActor: "user", onDispose: () => {} } as unknown as ControllerContext
   const launches: string[] = []
   const runs = {
     workflowIdentityGuard: () => undefined, workflowBalanceGuard: () => undefined,
@@ -22,7 +24,7 @@ const fixture = async () => {
       if (refused) return { message: "The gateway refused the launch." }
       const runId = `receipt-${++next}`
       launches.push(runId)
-      const card: Card = { id: `flow-run-${runId}`, kind: "run-trace", title: args.title, status: "active", createdAt: 1, ordinal: next,
+      const card: Card = { id: `flow-run-${runId}`, kind: "run-trace", title: args.title, status: "active", createdAt: Date.now(), ordinal: next,
         payload: { repo: args.repo, runId, workflow: args.workflow, input: args.input, phase: "running", steps: [], result: null, lastSeq: 0 } }
       await store.dispatch({ type: "card.upsert", actor: "user", card }).isPersisted.promise
       return { runId }
@@ -54,7 +56,7 @@ describe("Librarian background runs (onboarding beat 12)", () => {
     f.refuse()
     expect(await f.controller.bootstrapHistory("will/demo")).toContain("refused")
     // Beat 12 degrades honestly: the reason is written under the lesson, not only into a chat line the guide never shows.
-    expect(f.store.session().guide?.notice).toBe("Mythical history couldn't start. Retry Mythical history, or choose Do this later to keep going. The gateway refused the launch.")
+    expect(f.store.session().guide?.notice).toBe(failedLine)
     expect(f.store.session().guide?.noticeDetail).toBe("The gateway refused the launch.")
     await f.controller.inspectLibrarianRun(f.launches[0]!)
     expect(f.store.session().guide?.completed).not.toContain(LIBRARIAN_SIGNAL)
@@ -71,7 +73,7 @@ describe("Librarian background runs (onboarding beat 12)", () => {
     await g.controller.bootstrapHistory("other/repo")
     expect(g.store.session().guide?.completed).not.toContain(LIBRARIAN_SIGNAL)
   })
-  test("a run that fails after launching still counted, and stays inspectable with its error", async () => {
+  test("a run that fails after launching stays inspectable with its error", async () => {
     const f = await fixture()
     await f.controller.createWiki("will/demo")
     await f.controller.bootstrapHistory("will/demo")
@@ -86,6 +88,100 @@ describe("Librarian background runs (onboarding beat 12)", () => {
   })
 })
 
+const rawFailure = "failed — Error: Error: git exited 1"
+const failedLine = "Create Mythical history didn't start: Something on Smithers' side failed. Not your fault, and nothing your request could have changed."
+const settle = () => new Promise(resolve => setTimeout(resolve, 10))
+const changePhase = async (f: Awaited<ReturnType<typeof fixture>>, index: number, phase: "failed" | "launching" | "running" | "completed") => {
+  const id = `flow-run-${f.launches[index]}`
+  const card = f.store.collections.cards.get(id)!
+  if (card.kind !== "run-trace") throw new Error("missing run")
+  await f.store.dispatch({ type: "card.updated", actor: "system", id,
+    patch: { payload: { ...card.payload, phase, ...(phase === "failed" ? { error: rawFailure } : {}) } } }).isPersisted.promise
+  await settle()
+}
+
+test("a receipt still launching does not complete until both cards are running or completed", async () => {
+  const f = await fixture()
+  await f.controller.createWiki("will/demo")
+  await changePhase(f, 0, "launching")
+  await f.controller.bootstrapHistory("will/demo")
+  expect(f.store.session().guide?.completed).not.toContain(LIBRARIAN_SIGNAL)
+  await changePhase(f, 0, "completed")
+  expect(f.store.session().guide?.completed).toContain(LIBRARIAN_SIGNAL)
+})
+
+test("failure before launch acknowledgement blocks completion and Retry launches a fresh run", async () => {
+  const f = await fixture()
+  await f.controller.createWiki("will/demo")
+  const launch = f.runs.launchWorkflow
+  f.runs.launchWorkflow = async args => {
+    const receipt = await launch(args)
+    await changePhase(f, 1, "failed")
+    return receipt
+  }
+  await f.controller.bootstrapHistory("will/demo")
+  expect(f.store.session().guide?.completed).not.toContain(LIBRARIAN_SIGNAL)
+  expect(f.store.session().guide?.notice).toBe(failedLine)
+  expect(f.store.session().guide?.noticeDetail).toBe(rawFailure)
+  expect(guideActionState({ label: "Create Mythical history", key: "y", flow: "history.bootstrap", args: "will/demo" }, [], f.store.session().guide!))
+    .toMatchObject({ label: "Retry Mythical history", flow: "history.bootstrap" })
+  f.runs.launchWorkflow = launch
+  await f.controller.bootstrapHistory("will/demo")
+  expect(f.launches).toHaveLength(3)
+  expect(f.store.session().guide?.completed).toContain(LIBRARIAN_SIGNAL)
+  expect(f.store.session().guide?.notice).toBeUndefined()
+  // Updates to the old failed attempt cannot poison the successful retry.
+  await changePhase(f, 1, "failed")
+  expect(f.store.session().guide?.completed).toContain(LIBRARIAN_SIGNAL)
+})
+
+test("failure during the beat's success pause retracts completion and restores the Retry pill", async () => {
+  const f = await fixture()
+  await f.controller.createWiki("will/demo")
+  await f.controller.bootstrapHistory("will/demo")
+  expect(f.store.session().guide?.completed).toContain(LIBRARIAN_SIGNAL)
+  await changePhase(f, 1, "failed")
+  expect(f.store.session().guide?.step).toBe(12)
+  expect(f.store.session().guide?.completed).not.toContain(LIBRARIAN_SIGNAL)
+  expect(f.store.session().guide?.notice).toBe(failedLine)
+  expect([...f.store.collections.toasts.values()]).toHaveLength(0)
+})
+
+for (const step of [13, 14]) test(`failure at beat ${step} posts one typed Retry toast and retracts the terminal promise, including after reload`, async () => {
+  const f = await fixture()
+  await f.controller.createWiki("will/demo")
+  await f.controller.bootstrapHistory("will/demo")
+  await f.store.dispatch({ type: "guide.changed", actor: "system", guide: { ...f.store.session().guide!, step, finished: step === 14 } }).isPersisted.promise
+  await changePhase(f, 1, "failed")
+  const toasts = [...f.store.collections.toasts.values()]
+  expect(toasts).toHaveLength(1)
+  expect(toasts[0]).toMatchObject({ status: "failed", title: failedLine,
+    action: { label: "Retry Mythical history", flow: "history.bootstrap", args: "will/demo" } })
+  expect(toasts[0]?.detail).not.toContain("git exited")
+  expect(lessonMessage(14, f.store.session().guide!)).not.toContain("land soon")
+  await changePhase(f, 1, "failed")
+  expect([...f.store.collections.toasts.values()][0]?.updatedAt).toBe(toasts[0]?.updatedAt)
+  const reloaded = await createAppStore({ kind: "localStorage", storage: f.storage })
+  await createLibrarianRunsController({ ...f.ctx, store: reloaded }, f.runs).recoverLaunches()
+  expect(lessonMessage(14, reloaded.session().guide!)).not.toContain("land soon")
+  expect([...reloaded.collections.toasts.values()]).toHaveLength(1)
+  await f.controller.bootstrapHistory("will/demo")
+  expect(f.launches).toHaveLength(3)
+  expect([...f.store.collections.toasts.values()]).toHaveLength(0)
+})
+
+test("returning to beat 12 after a background failure restores its inline explanation", async () => {
+  const f = await fixture()
+  await f.controller.createWiki("will/demo")
+  await f.controller.bootstrapHistory("will/demo")
+  await f.store.dispatch({ type: "guide.changed", actor: "system", guide: { ...f.store.session().guide!, step: 13 } }).isPersisted.promise
+  await changePhase(f, 1, "failed")
+  await f.store.dispatch({ type: "guide.changed", actor: "user", guide: { ...f.store.session().guide!, step: 12, notice: undefined } }).isPersisted.promise
+  await settle()
+  expect(f.store.session().guide?.step).toBe(12)
+  expect(f.store.session().guide?.notice).toBe(failedLine)
+})
+
 test("preparation has a deadline, persists its failure, and ignores a late ready answer", async () => {
   const f = await fixture()
   let ready!: (value: true) => void
@@ -96,7 +192,7 @@ test("preparation has a deadline, persists its failure, and ignores a late ready
     const controller = createLibrarianRunsController(f.ctx, host)
     const result = await controller.createWiki("will/demo")
     expect(result).toContain("3 minutes")
-    expect(f.store.session().guide?.notice).toContain("Retry Wiki")
+    expect(f.store.session().guide?.notice).toContain("Create Wiki didn't start:")
     expect(f.store.session().guide?.completed).not.toContain(LIBRARIAN_SIGNAL)
     ready(true)
     await new Promise(resolve => setTimeout(resolve, 0))
@@ -216,9 +312,9 @@ test("both failed launches retain their own explanation under the lesson", async
     launchWorkflow: async args => ({ message: args.workflow.endsWith("wiki") ? "Wiki source is unavailable." : "History source is unavailable." }) })
   await Promise.all([controller.createWiki("will/demo"), controller.bootstrapHistory("will/demo")])
   const notice = f.store.session().guide?.notice
-  expect(notice).toContain("Wiki couldn't start.")
-  expect(notice).toContain("Wiki source is unavailable.")
-  expect(notice).toContain("Mythical history couldn't start.")
-  expect(notice).toContain("History source is unavailable.")
+  expect(notice).toContain("Create Wiki didn't start:")
+  expect(f.store.session().guide?.noticeDetail).toContain("Wiki source is unavailable.")
+  expect(notice).toContain("Create Mythical history didn't start:")
+  expect(f.store.session().guide?.noticeDetail).toContain("History source is unavailable.")
   expect(notice?.split("\n")).toHaveLength(2)
 })

@@ -6,6 +6,7 @@ import type { ApprovalRow, RunStatus, RunSummaryRow } from "./gateway"
 import { engineProjectionPending } from "../../cards/EngineTrace"
 import { reconcileRunApprovals } from "./approval-reconciliation"
 import { expireStatus } from "../HealthStatus"
+import { runFailure } from "../RunFailure"
 
 export interface WorkflowPumpController {
   readonly pumpWorkflowRun: (cardId: string) => Promise<void>
@@ -351,11 +352,10 @@ export const createWorkflowPumpController = (
             await ctx.finishTutorialChange(cardId)
             if (!alreadyTerminal) store.dispatch({ type: "message.appended", actor: "system", text: result })
           } else {
-            // Lead with the run's own diagnosis; the generic line is the
-            // fallback, never a cover for it.
+            // Raw diagnosis stays on the card under Technical details.
             const detail = row.status === "failed" ? row.verdict : undefined
             const message = phase === "failed"
-              ? `The run failed on your workspace: ${detail ?? "the card has what the gateway reported."}`
+              ? `The run failed: ${runFailure(detail).message}`
               : "The run was cancelled."
             patchRunCard(
               cardId,

@@ -122,6 +122,17 @@ const click = (element: Element | null): void => {
 }
 
 describe("the run card as a trace", () => {
+  test("a failed run uses typed infra copy and keeps raw errors inside a closed disclosure", () => {
+    const raw = "failed — Error: Error: git exited 1"
+    const { host } = renderRun({ phase: "failed", error: raw })
+    const alert = host.querySelector('[role="alert"]')!
+    expect(alert.textContent).toContain("Not your fault")
+    expect(alert.textContent).not.toContain(raw)
+    expect(alert.getAttribute("data-refusal-fault")).toBe("infra")
+    const detail = [...host.querySelectorAll("details")].find(node => node.querySelector("summary")?.textContent === "Technical details")!
+    expect(detail.open).toBe(false)
+    expect(detail.querySelector("pre")?.textContent).toBe(raw)
+  })
   test("an observation refusal keeps the completed verdict and offers the existing keyboard-reachable retry", () => {
     const retried: Array<string> = []
     const host = render(<WorkflowRunCardBody

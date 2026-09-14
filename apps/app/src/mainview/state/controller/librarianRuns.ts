@@ -17,15 +17,7 @@ const label = (kind: LibrarianKind) => kind === "wiki" ? "Create Wiki" : "Create
 export type LibrarianKind = keyof typeof LIBRARIAN_FLOWS
 export type LibrarianRunHost = Pick<WorkflowController, "workflowIdentityGuard" | "workflowBalanceGuard" | "workflowTargetRepo" | "provisionWorkspace" | "launchWorkflow">
 type RunCard = Extract<Card, { kind: "run-trace" }>
-/** Keep transport envelopes in Technical details; the lesson reads their message. */
-const failureReason = (reason?: string): string => {
-  if (!reason) return ""
-  try {
-    const value: unknown = JSON.parse(reason)
-    if (value && typeof value === "object" && "message" in value && typeof value.message === "string") return value.message
-    return ""
-  } catch { return reason }
-}
+const healthy = (card: RunCard) => card.payload.phase === "running" || card.payload.phase === "completed"
 interface ReceiptScope { kind: LibrarianKind; scope: string; inspected: boolean }
 const metadata = (card: RunCard): ReceiptScope | undefined => {
   const value = card.payload.input?._librarian
@@ -53,6 +45,12 @@ export const createLibrarianRunsController = (ctx: ControllerContext, runs: Libr
       identity?.state === "signed-in" ? identity.login : null, session.guide?.playthrough ?? 0])
   }
   const cards = (): RunCard[] => [...store.collections.cards.values()].filter(card => card.kind === "run-trace")
+    .sort((a, b) => b.ordinal - a.ordinal)
+  const receiptFor = (entry: LaunchIntent) => cards().find(card => card.payload.repo === entry.repo
+    && metadata(card)?.scope === entry.scope && metadata(card)?.kind === entry.kind
+    && card.payload.workflow === LIBRARIAN_FLOWS[entry.kind]
+    && (entry.runId === undefined || card.payload.runId === entry.runId))
+  const toastKey = (entry: LaunchIntent) => `librarian.failed.${entry.kind}.${entry.scope}`
   const saveIntent = async (entry: LaunchIntent): Promise<boolean> => {
     const guide = store.session().guide
     if (!guide || scope(entry.repo) !== entry.scope) return false
@@ -63,12 +61,27 @@ export const createLibrarianRunsController = (ctx: ControllerContext, runs: Libr
     const inline = !guide.finished && GUIDE_STAGES[guide.step]?.kind === "do" && guide.step === 12
     await store.dispatch({ type: "guide.changed", actor: "system", guide: {
       ...guide, librarianLaunches: entries,
+      ...(failures.length > 0 ? { completed: guide.completed?.filter(signal => signal !== LIBRARIAN_SIGNAL) } : {}),
       ...(inline ? {
-        notice: failures.length > 0 ? failures.map(failure => `${librarianFailureMessage(failure.kind, failure.reason)}${failureReason(failure.reason) ? ` ${failureReason(failure.reason)}` : ""}`).join("\n")
+        notice: failures.length > 0 ? failures.map(failure => librarianFailureMessage(failure.kind, failure.reason)).join("\n")
           : preparing ? `Preparing your ${preparing.repo} workspace… This can take up to 3 minutes.` : undefined,
         noticeDetail: failures.length > 0 ? failures.map(failure => failure.reason ?? librarianFailureMessage(failure.kind)).join("\n") : undefined,
       } : {})
     } }).isPersisted.promise
+    if (entry.phase === "failed" && !inline) {
+      const key = toastKey(entry)
+      const title = librarianFailureMessage(entry.kind, entry.reason)
+      const shown = store.collections.toasts.get(`toast-${key}`)
+      if (shown?.status !== "failed" || shown.title !== title) {
+        await store.dispatch({ type: "toast.shown", actor: "system", key, title }).isPersisted.promise
+        await store.dispatch({ type: "toast.resolved", actor: "system", key, status: "failed", detail: "",
+          action: { flow: LIBRARIAN_COMMANDS[entry.kind], args: entry.repo, label: entry.kind === "wiki" ? "Retry Wiki" : "Retry Mythical history" }
+        }).isPersisted.promise
+      }
+    } else {
+      const toast = store.collections.toasts.get(`toast-${toastKey(entry)}`)
+      if (toast) await store.dispatch({ type: "toast.dismissed", actor: "system", id: toast.id }).isPersisted.promise
+    }
     return inline
   }
   const refuse = async (kind: LibrarianKind, reason: string, entry: LaunchIntent): Promise<CommandResult> => {
@@ -85,14 +98,18 @@ export const createLibrarianRunsController = (ctx: ControllerContext, runs: Libr
   /** A reload reports interrupted preparation; it never blindly repeats a possibly submitted launch. */
   const recoverLaunches = async (): Promise<void> => {
     for (const entry of store.session().guide?.librarianLaunches ?? []) {
+      // Toasts are transient; the durable intent restores the Retry door after reload.
+      if (entry.phase === "failed") { await saveIntent(entry); continue }
       if (entry.phase !== "preparing" && entry.phase !== "launching") continue
       if (pending.has(`${entry.kind}:${entry.scope}`)) continue
-      const receipt = cards().find(card => card.payload.repo === entry.repo && metadata(card)?.scope === entry.scope && metadata(card)?.kind === entry.kind)
-      if (receipt) { await saveIntent({ ...entry, phase: "started" }); await launchedBoth(entry.repo, entry.scope); continue }
+      const recorded = receiptFor(entry)
+      const receipt = recorded && recorded.createdAt >= entry.startedAt ? recorded : undefined
+      if (receipt) { await saveReceipt(entry, receipt); await launchedBoth(entry.repo, entry.scope); continue }
       await refuse(entry.kind, entry.phase === "preparing"
         ? "Workspace preparation was interrupted by a reload. Try again."
         : LIBRARIAN_UNCONFIRMED, entry)
     }
+    await reconcile()
   }
   const launch = async (kind: LibrarianKind, repo: string): Promise<CommandResult> => {
     const rejected: LaunchIntent = { kind, repo, scope: scope(repo), phase: "failed", startedAt: Date.now() }
@@ -101,15 +118,15 @@ export const createLibrarianRunsController = (ctx: ControllerContext, runs: Libr
     const target = runs.workflowTargetRepo(repo)
     if ("error" in target) return refuse(kind, target.error, rejected)
     const captured = scope(repo)
-    const previous = cards().find(card => card.payload.repo === repo && card.payload.workflow === LIBRARIAN_FLOWS[kind] && metadata(card)?.scope === captured)
-    if (previous) {
-      await saveIntent({ kind, repo, scope: captured, phase: "started", startedAt: previous.createdAt })
-      await launchedBoth(repo, captured)
-      return { value: `Run ${previous.payload.runId} is already recorded for ${repo}. Open its monitor with /runs.open ${previous.payload.runId}.` }
-    }
     const key = `${kind}:${captured}`
     const held = pending.get(key)
     if (held) return held
+    const previous = receiptFor({ ...rejected, scope: captured })
+    if (previous && previous.payload.phase !== "failed") {
+      await saveReceipt({ kind, repo, scope: captured, phase: "started", startedAt: previous.createdAt }, previous)
+      await launchedBoth(repo, captured)
+      return { value: `Run ${previous.payload.runId} is already recorded for ${repo}. Open its monitor with /runs.open ${previous.payload.runId}.` }
+    }
     const work = (async (): Promise<CommandResult> => {
       const intent: LaunchIntent = { kind, repo, scope: captured, phase: "preparing", startedAt: Date.now(), owner: LIBRARIAN_LAUNCH_OWNER }
       await saveIntent(intent)
@@ -133,9 +150,9 @@ export const createLibrarianRunsController = (ctx: ControllerContext, runs: Libr
         if ("message" in receipt) return refuse(kind, receipt.message, intent)
         const card = cards().find(candidate => candidate.payload.runId === receipt.runId && candidate.payload.repo === repo)
         if (!card) return refuse(kind, "the run started, but its monitor could not be saved. Open it from the run list.", intent)
-        await store.dispatch({ type: "card.upsert", actor: ctx.commandActor, card }).isPersisted.promise
-        await saveIntent({ ...intent, phase: "started" })
+        await saveReceipt(intent, card)
         await launchedBoth(repo, captured)
+        if (card.payload.phase === "failed") return card.payload.error ?? librarianFailureMessage(kind)
         return { value: `Started ${label(kind)} on ${repo}. Run ${receipt.runId}.` }
       } catch (error) {
         return refuse(kind, error instanceof Error ? error.message : String(error), intent)
@@ -144,7 +161,7 @@ export const createLibrarianRunsController = (ctx: ControllerContext, runs: Libr
       }
     })()
     pending.set(key, work)
-    try { return await work } finally { pending.delete(key) }
+    try { return await work } finally { pending.delete(key); await reconcile() }
   }
   const inspectLibrarianRun = async (runId: string): Promise<void> => {
     const card = cards().find(card => card.payload.runId === runId)
@@ -156,13 +173,60 @@ export const createLibrarianRunsController = (ctx: ControllerContext, runs: Libr
       patch: { payload: { ...card.payload, input: { ...card.payload.input, _librarian: { ...receipt, inspected: true } } } }
     }).isPersisted.promise
   }
-  /* The lesson completes when BOTH generators have a persisted run for this repository and scope. */
+  async function saveReceipt(entry: LaunchIntent, card: RunCard): Promise<void> {
+    await saveIntent({ ...entry, runId: card.payload.runId,
+      phase: card.payload.phase === "failed" ? "failed" : "started",
+      reason: card.payload.phase === "failed" ? card.payload.error : undefined })
+  }
+  /** Card updates are the authority, including failures after launch acknowledgement and reload. */
+  async function reconcile(): Promise<void> {
+    for (const entry of store.session().guide?.librarianLaunches ?? []) {
+      if (entry.scope !== scope(entry.repo) || pending.has(`${entry.kind}:${entry.scope}`)) continue
+      if (entry.phase === "preparing" || entry.phase === "launching") continue
+      if (entry.phase === "failed" && entry.runId === undefined) continue
+      const card = receiptFor(entry)
+      if (!card) continue
+      if (card.payload.phase === "failed" && (entry.phase !== "failed" || entry.runId !== card.payload.runId || entry.reason !== card.payload.error)) {
+        await saveReceipt(entry, card)
+      }
+      await launchedBoth(entry.repo, entry.scope)
+    }
+    const guide = store.session().guide
+    if (guide?.step === 12 && !guide.finished) {
+      const failed = guide.librarianLaunches?.filter(entry => entry.scope === scope(entry.repo) && entry.phase === "failed") ?? []
+      const notice = failed.map(entry => librarianFailureMessage(entry.kind, entry.reason)).join("\n")
+      if (failed[0] && guide.notice !== notice) await saveIntent(failed[0])
+    }
+  }
+  actorSharedState(ctx, "librarian-run-observation", () => {
+    let queued = false
+    let dirty = false
+    let disposed = false
+    const changed = () => {
+      if (disposed) return
+      dirty = true
+      if (queued) return
+      queued = true
+      queueMicrotask(async () => {
+        try {
+          while (dirty && !disposed) { dirty = false; await reconcile() }
+        } finally { queued = false }
+      })
+    }
+    const subscriptions = [store.collections.cards.subscribeChanges(changed), store.collections.sessions.subscribeChanges(changed)]
+    ctx.onDispose(() => { disposed = true; for (const subscription of subscriptions) subscription.unsubscribe() })
+    return subscriptions
+  })
+  /* A receipt alone is not evidence that work is running. Read BOTH current attempts. */
   async function launchedBoth(repo: string, captured: string): Promise<void> {
     if (scope(repo) !== captured) return
-    const launched = cards().filter(candidate => candidate.payload.repo === repo && metadata(candidate)?.scope === captured)
-    const wiki = launched.find(candidate => metadata(candidate)?.kind === "wiki")
-    const history = launched.find(candidate => metadata(candidate)?.kind === "history")
+    const current = store.session().guide?.librarianLaunches?.filter(entry => entry.repo === repo && entry.scope === captured && entry.phase === "started") ?? []
+    const wikiEntry = current.find(entry => entry.kind === "wiki")
+    const historyEntry = current.find(entry => entry.kind === "history")
+    const wiki = wikiEntry && receiptFor(wikiEntry)
+    const history = historyEntry && receiptFor(historyEntry)
     if (!wiki || !history || wiki.payload.runId === history.payload.runId) return
+    if (!healthy(wiki) || !healthy(history)) return
     const next = lessonCompletion(store.session().guide, LIBRARIAN_SIGNAL)
     if (next !== undefined) await store.dispatch({ type: "guide.changed", actor: ctx.commandActor, guide: next }).isPersisted.promise
   }

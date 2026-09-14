@@ -199,6 +199,16 @@ test("a background setup failure already shown inline does not emit a duplicate 
   expect(store.collections.toasts.get("toast-command.failed.wiki.create")?.detail).toBe("different failure")
 })
 
+test("a background failure after the lesson leaves its Retry toast as the only alert", async () => {
+  const { ctx, store } = await fakeContext()
+  await store.dispatch({ type: "guide.changed", actor: "system", guide: { ...initialGuide(), step: 13,
+    librarianLaunches: [{ kind: "history", repo: "will/demo", scope: JSON.stringify(["will/demo", null, null, null, null, 0]),
+      startedAt: 1, phase: "failed", runId: "history-run", reason: "Error: Error: git exited 1" }] }
+  }).isPersisted.promise
+  createFailureController(ctx).surfaceCommandFailure("history.bootstrap", { status: "failed", error: "Error: Error: git exited 1" })
+  expect(store.collections.toasts.size).toBe(0)
+})
+
 
 
 for (const name of ["onboarding.act", "tut", "tut.more"]) test(`${name} keeps a guide refusal under the lesson without a flow-name toast`, async () => {

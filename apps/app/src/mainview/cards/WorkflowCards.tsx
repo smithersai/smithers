@@ -18,6 +18,7 @@ import type { CardFamily, RunCommand } from "./CardFamily"
 import { defaultPill, settledPill } from "./CardFamily"
 import { RunTraceBody, TERMINAL_RUN_PHASES } from "./RunTraceCard"
 import { flowArgs } from "../flows/FlowArgs"
+import { runFailure } from "../state/RunFailure"
 
 /*
  * Wave 11 — the embedded run card. RunTraceBody carries the run's outcome,
@@ -45,6 +46,7 @@ export const WorkflowRunCardBody = ({
   const onRunCommand = runSourceCommand(card.id, sendRunCommand)
   if (card.payload.input?.liveTutorial) return <LiveTutorialRunBody card={card} onRunCommand={sendRunCommand} />
   const { phase, error, observationError, runId, kind } = card.payload
+  const failure = runFailure(error)
   const facet = card.payload.facet ?? "steps"
   /* A tutorial plan card is the plan alone: no facets, no lifecycle acts, no steer. */
   const planOnly = kind === "change-plan"
@@ -94,9 +96,10 @@ export const WorkflowRunCardBody = ({
         null}
       {(phase === "completed" || phase === "failed" || phase === "cancelled" || phase === "no-capacity") && error !== undefined && !planOnly ?
         (
-          <p className="sui-approval-error" role="alert">
-            {error}
-          </p>
+          <div>
+            <p className="sui-approval-error" role="alert" data-refusal-fault={failure.fault}>{failure.message}</p>
+            <details><summary>Technical details</summary><pre tabIndex={0}>{failure.detail}</pre></details>
+          </div>
         ) :
         null}
       {observationError !== undefined ? <p className="sui-approval-error" role="alert">{observationError}</p> : null}

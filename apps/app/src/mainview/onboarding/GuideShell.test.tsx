@@ -695,7 +695,7 @@ test("saved raw setup errors become one concise action-row message with closed t
   const raw = '{"status":502,"message":"upstream failed"}'
   const host = await mountGuide(12, still, { repo: "will/demo", notice: `Create Wiki didn't start: ${raw}` })
   const notice = host.querySelector(".guide-actions [data-notice]")!
-  expect(text(notice.querySelector("p"))).toBe("Wiki couldn't start. Retry Wiki, or choose Do this later to keep going.")
+  expect(text(notice.querySelector("p"))).toBe("Create Wiki didn't start: Something on Smithers' side failed. Not your fault, and nothing your request could have changed.")
   expect(notice.querySelector("details")?.open).toBe(false)
   expect(text(notice.querySelector("pre"))).toBe(raw)
   expect(host.querySelectorAll("[data-notice]").length).toBe(1)

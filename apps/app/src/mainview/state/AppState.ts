@@ -685,6 +685,8 @@ export const GuideSchema = z.object({
     scope: z.string(),
     phase: z.enum(["preparing", "launching", "started", "failed"]),
     startedAt: z.number(),
+    /** The current attempt's receipt; an older failed card cannot overwrite a retry. */
+    runId: z.string().optional(),
     owner: z.string().optional(),
     reason: z.string().optional()
   })).optional(),

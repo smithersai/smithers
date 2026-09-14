@@ -220,7 +220,8 @@ export const createFailureController = (ctx: ControllerContext): FailureControll
     const backgroundKind = name === "wiki.create" ? "wiki" : name === "history.bootstrap" ? "history" : undefined
     const guide = ctx.store.session().guide
     const inline = backgroundKind && guide && librarianLaunchFor(guide, backgroundKind)
-    if (guide?.step === 12 && inline?.phase === "failed" && inline.reason === outcome.error) return
+    // Librarian failures own either the lesson notice or a persistent Retry toast.
+    if (inline?.phase === "failed" && inline.reason === outcome.error) return
     const key = `command.failed.${name}`
     // A seam can refuse before the requirement axis knows the session is gone.
     // Turn its explicit sign-in command into the same human gesture as the prompt.
