@@ -209,7 +209,13 @@ const scriptedSeats = (
   SeatResolver.layer({
     resolve: (id) =>
       Effect.succeed(
-        Seat.make({ id, model: scripted(recorder, respond), route, contextWindowTokens: 200_000 })
+        Seat.make({
+          id,
+          modelId: Seat.modelIdOf(id),
+          model: scripted(recorder, respond),
+          route,
+          contextWindowTokens: 200_000
+        })
       )
   })
 
@@ -479,6 +485,7 @@ export const runAgent = (options: AgentOptions): Effect.Effect<Observation> =>
         session: "evals-agent",
         seat: Seat.make({
           id: "anthropic:scripted",
+          modelId: "scripted",
           model: scripted(options.recorder, options.respond),
           route,
           contextWindowTokens: 200_000

@@ -165,7 +165,7 @@ export const intervene = (options: {
         dryRun: options.dryRun,
         // The declaration named `Read.flow` and `Edit.flow`; execution runs
         // their implementations, `Read.run` and `Edit.run`.
-        read: (job) => Read.run({ path: job.path }),
+        read: ({ input }) => Read.run({ path: input.path }),
         propose: ({ input }) =>
           Effect.succeed({ path: input.path, oldString: input.from, newString: input.to }),
         apply: ({ proposal }) => Edit.run(proposal),

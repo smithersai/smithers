@@ -1,7 +1,27 @@
 import { describe, expect, test } from "bun:test";
+import { Effect } from "effect";
 import { readFileSync } from "node:fs";
+import * as SeatResolver from "../../packages/smithers/agent/src/SeatResolver.ts";
 import { addedLines, readPrompt, replacedLines, reviewDiff } from "./deterministicReviewer.ts";
 import { loadCorpus } from "./labels.ts";
+import { scriptedSeats } from "./scriptedSeats.ts";
+
+describe("scriptedSeats", () => {
+  test("preserves distinct seat aliases while sharing one scripted model identity", async () => {
+    const aliases = ["review", "review-verify", "review-narrate", "review-quiz"];
+    const seats = await Effect.runPromise(
+      Effect.gen(function* () {
+        const resolver = yield* SeatResolver.SeatResolver;
+        return yield* Effect.all(aliases.map((id) => resolver.resolve(id)));
+      }).pipe(Effect.provide(scriptedSeats(() => []))),
+    );
+
+    expect(seats.map((seat) => seat.id)).toEqual(aliases);
+    expect(new Set(seats.map((seat) => seat.id)).size).toBe(4);
+    expect(new Set(seats.map((seat) => seat.modelId))).toEqual(new Set(["scripted-reviewer"]));
+    expect(new Set(seats.map((seat) => seat.model)).size).toBe(1);
+  });
+});
 
 const diff = [
   "--- a/src/order.ts",

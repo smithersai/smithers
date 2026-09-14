@@ -16,6 +16,8 @@ import * as ModelEvent from "../../packages/smithers/agent/model/src/ModelEvent.
 import type * as Route from "../../packages/smithers/agent/model/src/Route.ts";
 import { Effect, Layer, Stream } from "effect";
 
+const SCRIPTED_MODEL_ID = "scripted-reviewer";
+
 const prepared: Route.PreparedRequest = {
   routeId: "review-seeded-bugs",
   protocolId: "review-seeded-bugs",
@@ -77,6 +79,7 @@ export function scriptedSeats(answer: (ask: Ask) => unknown): Layer.Layer<SeatRe
       Effect.succeed(
         Seat.make({
           id,
+          modelId: SCRIPTED_MODEL_ID,
           model,
           route: { prepare: () => Effect.succeed(prepared) } as FlowEngineLike.RouteResolver,
           contextWindowTokens: 200_000,

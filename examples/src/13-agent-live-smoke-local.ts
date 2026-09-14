@@ -76,6 +76,7 @@ export const liveLocalSeats = (baseUrl: string) =>
             )
             return Seat.make({
               id,
+              modelId,
               model,
               route: FlowEngineLike.routeResolver(routeConfig),
               contextWindowTokens: SeatResolver.contextWindowTokensFor(modelId)

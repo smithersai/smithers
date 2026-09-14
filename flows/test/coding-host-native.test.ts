@@ -11,7 +11,6 @@ import * as Descriptor from "@smthrs/registry/Descriptor"
 import { Cause, Context, Deferred, Effect, Layer, Stream } from "effect"
 import * as HttpServer from "effect/unstable/http/HttpServer"
 import * as NetAddress from "effect/unstable/net/NetAddress"
-import * as Registry from "@smthrs/registry/Registry"
 import * as NativeControl from "../../packages/smithers/src/internal/NativeControl.ts"
 import * as Serve from "../../packages/smithers/src/Serve.ts"
 import { layer } from "../coding/host.ts"
@@ -105,8 +104,15 @@ test("configured coding host runs the real AgentAction, guarded file tool and na
   const observedPlatform: NativeControl.Platform = { ...platform,
     gateway: (health, options) => platform.gateway(health, options).pipe(Layer.tap(context => {
       const server = Context.get(context, HttpServer.HttpServer)
+<<<<<<< lane
+      assert.equal(server.address._tag, "InetAddressV4")
+      if (server.address._tag !== "InetAddressV4") throw new Error("expected TCP gateway")
+||||||| base
+      assert.equal(server.address._tag, "TcpAddress")
+      if (server.address._tag !== "TcpAddress") throw new Error("expected TCP gateway")
+=======
       if (!NetAddress.isInetAddress(server.address)) throw new Error("expected TCP gateway")
-      return Deferred.succeed(listening, server.address.port)
+>>>>>>> main
     })) }
   const result = await Effect.runPromise(Effect.gen(function*() {
     const control = yield* Control.Control

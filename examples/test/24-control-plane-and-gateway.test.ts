@@ -75,7 +75,7 @@ const boundary = <A, E>(use: (url: string, calls: Array<ControlSchema.Principal>
   })).pipe(Layer.provide(Control.layerNoop))
   return Effect.scoped(Effect.gen(function*() {
     const server = yield* HttpServer.HttpServer
-    if (server.address._tag !== "TcpAddress") throw new Error("expected TCP")
+    if (server.address._tag !== "InetAddressV4") throw new Error("expected TCP")
     return yield* use(`http://127.0.0.1:${server.address.port}`, calls)
   }).pipe(Effect.provide(serve(credential).pipe(Layer.provide(control)))))
 }

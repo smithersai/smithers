@@ -138,6 +138,7 @@ const policies = (calls: Array<string>) =>
         Effect.succeed(
           Seat.make({
             id,
+            modelId: Seat.modelIdOf(id),
             model: scripted(calls),
             route: { prepare: () => Effect.succeed(prepared) },
             contextWindowTokens: 200_000

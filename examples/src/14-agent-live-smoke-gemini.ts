@@ -73,6 +73,7 @@ export const liveGeminiSeats = (baseUrl: string, apiKey: string) =>
             )
             return Seat.make({
               id,
+              modelId,
               model,
               route: FlowEngineLike.routeResolver(routeConfig),
               contextWindowTokens: SeatResolver.contextWindowTokensFor(modelId)
