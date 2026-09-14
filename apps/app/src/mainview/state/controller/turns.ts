@@ -401,9 +401,9 @@ export const createTurnController = (
    */
   const composeTurn = (): { readonly context: AgentRuntimeContext; readonly instructions: string } => {
     const limit = CHAT_INSTRUCTIONS_CAP_BYTES - INSTRUCTIONS_HEADROOM_BYTES
-    const render = (worldBodyBudget: number) => {
+    const render = (worldBodyBudget: number, lastStage: InstructionStage = 2) => {
       const context = agentRuntimeContext(worldBodyBudget)
-      const instructions = turnInstructions(context, 2)
+      const instructions = turnInstructions(context, lastStage)
       return { context, instructions, over: bytesOf(composeAgentInstructions(instructions, context)) - limit }
     }
     const whole = render(WORLD_BODY_BUDGET)
@@ -416,12 +416,20 @@ export const createTurnController = (
      * hundreds of bytes of room unused and every note bodiless.
      */
     let fit = render(0)
-    if (fit.over > 0) return { context: fit.context, instructions: turnInstructions(fit.context, 3) }
+    const lastStage = fit.over > 0 ? 3 : 2
+    if (lastStage === 3) {
+      // The namespace-count floor frees room. Refill the note bodies under
+      // that same cap instead of carrying the zero-budget probe into the turn.
+      const floorWhole = render(WORLD_BODY_BUDGET, lastStage)
+      if (floorWhole.over <= 0) return { context: floorWhole.context, instructions: floorWhole.instructions }
+      fit = render(0, lastStage)
+      if (fit.over > 0) return { context: fit.context, instructions: fit.instructions }
+    }
     let low = 0
     let high = WORLD_BODY_BUDGET
     for (let round = 0; round < 8 && high - low > 16; round += 1) {
       const middle = Math.floor((low + high) / 2)
-      const candidate = render(middle)
+      const candidate = render(middle, lastStage)
       if (candidate.over <= 0) {
         low = middle
         fit = candidate

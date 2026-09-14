@@ -113,9 +113,11 @@ describe("the instructions budget", () => {
     })
     if (context === undefined) throw new Error("no context captured")
     expect(bytes(composed)).toBeLessThanOrEqual(CHAT_INSTRUCTIONS_CAP_BYTES - INSTRUCTIONS_HEADROOM_BYTES)
-    // The roles are in the prompt (the largest native prompt), and the catalog kept every command's name.
+    // The live registry now needs the namespace-count floor beside the roles.
+    // That floor must spend its recovered room on the notes, not leave them empty.
     expect(instructions).toContain("You are the ORCHESTRATOR role")
-    expect(instructionStageOf(instructions)).toBeLessThanOrEqual(2)
+    expect(instructionStageOf(instructions)).toBe(3)
+    expect(instructions).toContain('call the "commands" tool with action "list"')
     // Every note is still listed with its body (the head of it) and says when it was cut; none silently vanished.
     const notes = context.worldState.documents.filter((document) => document.path.startsWith("notes/"))
     expect(notes).toHaveLength(3)

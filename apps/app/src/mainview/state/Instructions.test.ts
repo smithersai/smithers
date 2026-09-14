@@ -11,9 +11,10 @@ import type { AppBootstrap } from "@smthrs/rpc/AppBootstrap"
 import { cloudCapabilities, localCapabilities } from "@smthrs/rpc/HostCapabilities"
 import type { AgentTurnFrame, StartAgentTurnRequest } from "@smthrs/rpc/NativeAgent"
 import type { AgentPort } from "../runtime/AgentPort"
+import { executeAgentToolCall } from "../flows/agentTools"
 import { scopedControllers } from "./ControllerTestScope"
 import { createAppStore } from "./AppStore"
-import { IDENTITY_LINE, NO_DOWNLOAD_LINE, smithersInstructions, WEB_HOST_LINE } from "./Instructions"
+import { IDENTITY_LINE, NO_DOWNLOAD_LINE, instructionStageOf, smithersInstructions, WEB_HOST_LINE } from "./Instructions"
 import type { InstructionHonesty } from "./Instructions"
 import { memoryStorage, settle, unavailableRepositories } from "./TestFixtures"
 
@@ -100,7 +101,7 @@ const bootstrapFor = (host: AppBootstrap["host"]): AppBootstrap =>
       sandbox: { platform: "darwin", mode: "enforced" }
     }
 
-const firstTurnInstructions = async (host: AppBootstrap["host"], prompt = "hello"): Promise<string> => {
+const firstTurnInstructions = async (host: AppBootstrap["host"], prompt = "hello"): Promise<{ instructions: string; names: string[] }> => {
   const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
   const { agent, requests } = recordingAgent()
   const controller = createAppController(store, unavailableRepositories, agent, { bootstrap: bootstrapFor(host) })
@@ -117,7 +118,8 @@ const firstTurnInstructions = async (host: AppBootstrap["host"], prompt = "hello
   controller.send(prompt)
   await settle()
   expect(requests.length).toBeGreaterThan(0)
-  return requests[0]?.instructions ?? ""
+  const catalog = JSON.parse(await executeAgentToolCall(controller.commands, { name: "commands", arguments: JSON.stringify({ action: "list" }) }))
+  return { instructions: requests[0]?.instructions ?? "", names: catalog.commands.map((command: { name: string }) => command.name) }
 }
 
 /*
@@ -131,11 +133,12 @@ const firstTurnInstructions = async (host: AppBootstrap["host"], prompt = "hello
 describe("a turn asking who you are is answered with the name", () => {
   for (const host of ["cloud", "local"] as const) {
     test(`${host}: the instructions pin the one-word name, name smithers.who, and the catalog lists it`, async () => {
-      const instructions = await firstTurnInstructions(host, "who are you?")
+      const { instructions, names } = await firstTurnInstructions(host, "who are you?")
       expect(instructions).toContain(IDENTITY_LINE)
       expect(IDENTITY_LINE).toContain("answer with the single word Smithers")
       expect(IDENTITY_LINE).toContain("execute smithers.who")
-      expect(instructions).toContain("/smithers.who")
+      expect(names).toContain("smithers.who")
+      expect(instructions).toContain(instructionStageOf(instructions) === 3 ? "smithers (" : "/smithers.who")
       expect(instructions).toContain("Your name is exactly \"Smithers\"")
       // The wiki is what the notes are called in the prompt; the flow ids keep their names.
       expect(instructions).toContain("keep the Wiki notes")
@@ -145,7 +148,7 @@ describe("a turn asking who you are is answered with the name", () => {
 
 describe("the turn passes the host from the bootstrap", () => {
   test("a cloud bootstrap's turn carries the web line and the flow it names", async () => {
-    const instructions = await firstTurnInstructions("cloud")
+    const { instructions } = await firstTurnInstructions("cloud")
     expect(instructions).toContain(WEB_HOST_LINE)
     // The line names a flow this host's catalog actually has.
     expect(instructions).toContain("/app.download.prompt")
@@ -154,7 +157,7 @@ describe("the turn passes the host from the bootstrap", () => {
   })
 
   test("a local bootstrap's turn carries neither", async () => {
-    const instructions = await firstTurnInstructions("local")
+    const { instructions } = await firstTurnInstructions("local")
     expect(instructions).not.toContain("Smithers web app")
     expect(instructions).not.toContain("/app.download.prompt")
   })

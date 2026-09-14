@@ -12,9 +12,10 @@
  * affordance and the command are the same act.
  */
 import { describe, expect, test } from "bun:test"
+import { executeAgentToolCall } from "../flows/agentTools"
 import { scopedControllers } from "./ControllerTestScope"
 import { createAppStore } from "./AppStore"
-import { smithersInstructions } from "./Instructions"
+import { instructionStageOf, smithersInstructions } from "./Instructions"
 import { offersImpossibleCapability, renderedRunTurnText } from "./RunClaims"
 import { memoryStorage, scriptedToolAgent, settle, unavailableRepositories } from "./TestFixtures"
 
@@ -181,7 +182,11 @@ describe("wave 13 §F — the capability section is generated from the live cata
     const instructions = requests[0]?.instructions ?? ""
     // The generated section reflects THIS session's truth.
     expect(instructions).toContain("What you can do is EXACTLY this")
-    expect(instructions).toContain("/flow.create")
+    const catalog = JSON.parse(await executeAgentToolCall(controller.commands, { name: "commands", arguments: JSON.stringify({ action: "list" }) }))
+    const names = catalog.commands.map((command: { name: string }) => command.name)
+    expect(names).toContain("flow.create")
+    expect(instructions).toContain(instructionStageOf(instructions) === 3 ? "flow (" : "/flow.create")
+    for (const name of ["chat.send", "chat.open", "chat.dictate", "auth.sign-in"]) expect(names).not.toContain(name)
     expect(instructions).toContain("GitHub is connected as codeplanesmithers, 1 repositories loaded")
     expect(instructions).toContain("Everything else is a can't-yet")
     // User-only browser mechanics are not the agent's to offer.
