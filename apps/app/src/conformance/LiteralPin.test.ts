@@ -81,6 +81,11 @@ interface Excuse {
  */
 const RESOLVES_ELSEWHERE: ReadonlyArray<Excuse> = [
   {
+    literal: "main.home",
+    file: "e2e/site/landing-start.spec.ts",
+    reason: "CSS selector for the Astro landing's main.home in apps/site/src/pages/index.astro, outside the app vocabulary; the browser assertion requires the element to be visible"
+  },
+  {
     literal: "fixture.semantic",
     file: "scripts/browser-test-host.ts",
     reason: "test-owned semantic health checker id bound to the browser fixture policy"
@@ -388,6 +393,28 @@ describe("every literal the suites assert against still resolves", () => {
     // answer is to narrow a rule, not to add another line here.
     expect(ALLOWLIST.length).toBeLessThanOrEqual(24)
   })
+})
+
+test("composed form test ids require both live prefixes and a registered flow", () => {
+  const literal = extractLiterals("/fixture/form.spec.ts", 'page.getByTestId("card-form-issue.add-flow")')[0]!
+  expect(violationsOf(literal, vocabularies)).toEqual([])
+  for (const prefix of ["card-", "form-"]) {
+    const cardIdPrefixes = new Set([...vocabularies.cardIdPrefixes].filter(value => value !== prefix))
+    expect(violationsOf(literal, { ...vocabularies, cardIdPrefixes }).map(violation => violation.rule))
+      .toEqual(["dotted-identifier"])
+  }
+  const flowNames = new Set([...vocabularies.flowNames].filter(value => value !== "issue.add-flow"))
+  expect(violationsOf(literal, { ...vocabularies, flowNames }).map(violation => violation.rule))
+    .toEqual(["dotted-identifier"])
+  for (const source of [
+    'page.getByTestId("card-form-issue.retired-flow")',
+    'page.getByTestId("invented-form-issue.add-flow")',
+    'controller.runCommand("card-form-issue.add-flow")',
+    'page.locator("main.retired-class")'
+  ]) {
+    expect(extractLiterals("/fixture/form.spec.ts", source).flatMap(value => [...violationsOf(value, vocabularies)]).length)
+      .toBeGreaterThan(0)
+  }
 })
 
 describe("the pin catches the 2026-08-15 rename it was built for", () => {

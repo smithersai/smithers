@@ -117,6 +117,18 @@ const composedDotted = (
   )
 
 /**
+ * Form test ids compose the DOM card prefix, the form prefix, and a flow
+ * name: `card-${formCardId(flow)}`. Check both prefixes and the registered
+ * tail, and only in a test-id lookup so this cannot excuse a dead flow call.
+ */
+const composedFlowTestId = (literal: ExtractedLiteral, vocabularies: Vocabularies): boolean =>
+  literal.argumentOf?.callee === "getByTestId" && [...vocabularies.flowNames].some(flow => {
+    if (!literal.value.endsWith(flow)) return false
+    const prefix = literal.value.slice(0, -flow.length)
+    return vocabularies.cardIdPrefixes.has(prefix) || composedPrefix(prefix, vocabularies.cardIdPrefixes)
+  })
+
+/**
  * How many of a card's other fields an object literal must carry before its
  * `kind` is read as a card kind.
  *
@@ -243,6 +255,7 @@ export const violationsOf = (literal: ExtractedLiteral, vocabularies: Vocabulari
     && literal.propertyName !== "checkerId"
     && !vocabularies.dottedIdentifiers.has(literal.value)
     && !composedDotted(literal.value, vocabularies.composedDottedHeads, vocabularies.productStringLiterals)
+    && !composedFlowTestId(literal, vocabularies)
   ) {
     found.push({
       ...at,
