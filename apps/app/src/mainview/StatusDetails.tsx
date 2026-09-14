@@ -18,6 +18,7 @@ export const statusPresentation = (input: StatusRollup | undefined, fallback: st
   if (status.reason === "quota-wait") return { status: "waiting", label: "Waiting for quota" }
   if (status.reason === "timer-wait") return { status: "waiting", label: "Waiting for timer" }
   if (status.reason === "event-wait") return { status: "waiting", label: "Waiting for event" }
+  if (status.state === "parked" && status.health === "awaiting-human") return { status: "awaiting-human", label: "Parked · Needs attention" }
   if (status.freshness !== "fresh") return { status: "unknown", label: `${lifecycle} · ${status.freshness === "stale" ? "Stale" : "Not observed"}` }
   if (status.attention === "needs-input") return { status: "waiting", label: `${lifecycle} · Needs input` }
   if (status.attention === "unhealthy") return { status: status.health, label: `${lifecycle} · ${formatStatus(status.health)}` }

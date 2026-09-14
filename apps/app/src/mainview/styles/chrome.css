@@ -79,7 +79,9 @@
 }
 
 .tab:has([data-testid="status-details"]) {
-	height: 52px;
+	height: auto;
+	min-height: 52px;
+	padding-block: 4px;
 }
 
 .tab-select:has([data-testid="status-details"]) {
@@ -93,6 +95,11 @@
 	max-width: 100%;
 	overflow: hidden;
 	text-overflow: ellipsis;
+}
+
+.tab-select [data-testid="status-details"] {
+	max-width: 100%;
+	white-space: normal;
 }
 
 /* The workspace heading: the name is the way back to the chat; the pencil renames it inline. */

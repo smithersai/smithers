@@ -599,6 +599,7 @@ test("health: gateway observations distinguish working, idle and input, then exp
   const card = page.getByTestId(`card-flow-run-${RUN_ID}`)
   const details = card.getByTestId("status-details")
   await expect(details).toHaveText("Running · Working")
+  const authorityCallsAtLaunch = rpc.filter((call) => call.procedure === "Approval.Submit" || call.procedure === "Resume").length
   status = { ...status, activity: "idle", provenance: { ...status.provenance!, version: 2 } }
   await expect(details).toHaveText("Running · Idle", { timeout: 10_000 })
   status = { ...status, activity: "needs-input", attention: "needs-input", provenance: { ...status.provenance!, version: 3 } }
@@ -615,5 +616,5 @@ test("health: gateway observations distinguish working, idle and input, then exp
   await expect(details).toHaveAttribute("data-health", "unknown")
   await expect(card).not.toContainText("Completed.")
   expect(rpc.some((call) => /Health|Status/.test(call.procedure))).toBe(false)
-  expect(rpc.some((call) => call.procedure === "Approval.Submit" || call.procedure === "Resume")).toBe(false)
+  expect(rpc.filter((call) => call.procedure === "Approval.Submit" || call.procedure === "Resume")).toHaveLength(authorityCallsAtLaunch)
 })

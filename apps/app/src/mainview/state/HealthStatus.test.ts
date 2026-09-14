@@ -37,6 +37,7 @@ test("expiry withdraws activity without erasing authoritative approval, known wa
   expect(expireStatus(reading({ state: "waiting-approval", health: "awaiting-human", attention: "awaiting-approval" }), 200))
     .toMatchObject({ health: "awaiting-human", attention: "awaiting-approval", freshness: "stale" })
   expect(expireStatus(reading({ state: "parked", reason: "quota-wait" }), 200).health).toBe("healthy")
+  expect(expireStatus(reading({ state: "parked", health: "awaiting-human" }), 200).health).toBe("awaiting-human")
   expect(expireStatus(reading({ state: "exited", health: "failing", attention: "unhealthy" }), 200).health).toBe("failing")
   expect(expireStatus(reading({ provenance: undefined }), 150).freshness).toBe("stale")
   expect(expireStatus(reading(), 99).freshness).toBe("stale")
@@ -57,6 +58,7 @@ test("shared labels distinguish idle, human input, approval, stale activity, fai
   expect(statusPresentation(reading({ state: "waiting-approval", attention: "awaiting-approval" }), "running", 200).label).toBe("Waiting for approval")
   expect(statusPresentation(reading({ state: "exited", health: "unknown" }), "running", 200).label).toBe("Exited · Outcome unknown")
   expect(statusPresentation(reading({ state: "failed", health: "failing" }), "running", 200).label).toBe("Failed")
+  expect(statusPresentation(reading({ state: "parked", health: "awaiting-human" }), "running", 200).label).toBe("Parked · Needs attention")
 })
 
 test("one controller deadline expires hidden tabs and cards durably while offline; observations cannot exit an agent", async () => {

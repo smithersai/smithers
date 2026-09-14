@@ -41,7 +41,7 @@ const health: Health.HealthConfig = {
     "my-flow-or-agent-role": {
       checkerId: "worker.activity",
       config: { worker: "build-worker" },
-      policy: { intervalMs: 2_000, timeoutMs: 1_000, ttlMs: 8_000 }
+      policy: { intervalMs: 2_000, timeoutMs: 1_000, ttlMs: 8_000, stallAfterMs: 120_000 }
     }
   },
   limits: { maxSubjects: 64, maxConcurrentProbes: 4 }
@@ -54,6 +54,11 @@ request can return `{ activity: "needs-input", reason: "awaiting-reply" }`.
 `idle` alone does not mean the user owes input. Reasons such as `unreachable`
 can mark an observation unhealthy. Run health also uses the runtime's durable
 progress and failure evidence.
+
+Production flow monitors allow two minutes without progress by default before
+classifying a stall. Configure `stallAfterMs` per binding for the work's expected
+latency. A known timer, event, quota, or approval wait remains a wait; it does
+not become stalled simply because it is quiet.
 
 Checks may use Effect services; provide their requirements before registration.
 The host validates configuration and reports, controls deadlines, bounds
@@ -81,8 +86,10 @@ The daemon stamps owner incarnation, observation time, expiry, and evidence
 cursor. It discards a report if the process changes lifecycle while its check
 is running. Observations commit to `local-health.sqlite` using the existing
 Smithers SQL journal before they reach HTTP list snapshots or `pty.status`
-WebSocket frames. Every 256 local observations the journal checkpoints the
-latest observation and compacts the earlier heartbeat payloads. The shared
+WebSocket frames. Unchanged observations coalesce until their half-TTL renewal;
+the UI keeps the last committed timestamp during that interval. Every 256
+local observations the journal checkpoints the latest observation and compacts
+the earlier heartbeat payloads. The shared
 journal retains deduplication tombstones, so total disk usage still grows; this
 is not a hard disk quota or a deletion policy for old sessions. A fresh daemon
 does not use old observations to revive a missing process.
@@ -111,7 +118,10 @@ through the actual daemon, journal, authenticated socket, dispatcher and UI.
 
 Flow evidence is recorded as `control.status.observed` and appears through the
 existing authenticated run-summary projection. Local observations use that same
-event type and schema. `smithers.health.probes` counts outcomes and
+event type and schema. Derived gateway projections keep bounded recent health
+observations while preserving the source cursor, so heartbeats do not exhaust
+their event budget. Raw run-event history retains its existing limits and host
+retention policy. `smithers.health.probes` counts outcomes and
 `smithers.health.probe_duration_ms` measures probe latency; probe spans are named
 `smithers.health.probe`. Fields contain bounded states and reason codes, not
 terminal contents, credentials, or raw checker errors.

@@ -8,10 +8,10 @@ import type { LocalServerOptions } from "../src/bun/server"
 import { Effect } from "effect"
 import type { HealthConfig } from "@smthrs/control/Health"
 
-/** Opt-in semantic fixture: only an explicit control-delimited shell record is evidence of activity. */
+/** Opt-in semantic fixture: only a complete explicit output record is evidence of activity. */
 const fixtureHealth: HealthConfig = {
   checkers: [{ id: "fixture.semantic", probe: (context) => {
-    const marker = [...(context.session?.outputTail ?? "").matchAll(/\x1eSMITHERS_TEST_HEALTH:(working|idle|needs-input)\x1f/g)].at(-1)?.[1]
+    const marker = [...(context.session?.outputTail ?? "").matchAll(/^SMITHERS_TEST_HEALTH:(working|idle|needs-input)$/gm)].at(-1)?.[1]
     const activity = marker === "working" || marker === "idle" || marker === "needs-input" ? marker : "unknown"
     return Effect.succeed({ activity, reason: activity === "needs-input" ? "awaiting-reply" : "ok" })
   } }],

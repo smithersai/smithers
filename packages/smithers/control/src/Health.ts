@@ -214,6 +214,8 @@ export interface CheckPolicy {
   readonly intervalMs: number
   readonly timeoutMs: number
   readonly ttlMs: number
+  /** Grace for silent work before the flow host considers missing progress unhealthy. */
+  readonly stallAfterMs: number
   readonly backoff: { readonly initialMs: number; readonly maxMs: number; readonly factor: number }
 }
 /** Trusted host checker; supply service requirements around its Effect before registration.
@@ -281,6 +283,7 @@ export const defaultPolicy: CheckPolicy = {
   intervalMs: 5_000,
   timeoutMs: 2_000,
   ttlMs: 20_000,
+  stallAfterMs: 120_000,
   backoff: { initialMs: 5_000, maxMs: 60_000, factor: 2 }
 }
 /** A known engine wait is a lifecycle fact, not missing progress.
@@ -335,6 +338,7 @@ export const makeRegistry = (config: HealthConfig = {}, kind: "run" | "session" 
     if (
       !bounded(policy.intervalMs, 10, 3_600_000) || !bounded(policy.timeoutMs, 1, 60_000) ||
       !bounded(policy.ttlMs, policy.timeoutMs, 86_400_000) ||
+      !bounded(policy.stallAfterMs, policy.intervalMs, 86_400_000) ||
       !bounded(policy.backoff.initialMs, 10, 3_600_000) ||
       !bounded(policy.backoff.maxMs, policy.backoff.initialMs, 3_600_000) ||
       !Number.isFinite(policy.backoff.factor) || policy.backoff.factor < 1 || policy.backoff.factor > 10
@@ -411,8 +415,19 @@ export const evaluate = (
         duration: check.policy.timeoutMs,
         orElse: () => Effect.succeed({ outcome: "timeout" as const, reason: "probe-timeout" as const })
       }),
+      Effect.tap((outcome) =>
+        Effect.annotateCurrentSpan({
+          outcome: outcome.outcome,
+          activity: "report" in outcome ? outcome.report.activity : "unknown"
+        })
+      ),
       Effect.withSpan("smithers.health.probe", {
-        attributes: { subjectKind: context.session === undefined ? "run" : "session" }
+        attributes: {
+          subjectKind: context.session === undefined ? "run" : "session",
+          subjectId,
+          checkerId: check.checker.id,
+          monitorId: captured.monitorId
+        }
       })
     )
     const observedAt = yield* Effect.clockWith((clock) => clock.currentTimeMillis)

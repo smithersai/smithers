@@ -3,7 +3,8 @@ import type { StatusRollup } from "@smthrs/rpc/Health"
 export const terminalStatus = (status: StatusRollup): boolean =>
   ["completed", "failed", "cancelled", "exited"].includes(status.state)
 const knownWait = (status: StatusRollup): boolean => status.state === "waiting-approval" ||
-  status.state === "parked" && ["awaiting-reply", "quota-wait", "timer-wait", "event-wait"].includes(status.reason ?? "")
+  status.state === "parked" && (status.health === "awaiting-human" ||
+    ["awaiting-reply", "quota-wait", "timer-wait", "event-wait"].includes(status.reason ?? ""))
 
 /** Presentation expiry cannot change execution, release a wait, or turn an exit into success. */
 export const expireStatus = (status: StatusRollup, now: number): StatusRollup => {

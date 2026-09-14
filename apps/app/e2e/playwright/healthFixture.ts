@@ -2,10 +2,11 @@ import { expect, type Page } from "@playwright/test"
 
 /** Health scenarios use the current tutorial exit and existing session navigation. */
 export const prepareHealthPage = async (page: Page, sidebar = false): Promise<void> => {
-  const skip = page.getByRole("button", { name: "Skip tutorial", exact: true })
-  await expect(skip).toBeVisible()
-  await skip.focus()
-  await page.keyboard.press("Enter")
+  await expect(page.locator(".guide-shell")).toBeVisible()
+  await page.keyboard.press("Control+k")
+  await expect(page.getByTestId("composer-input")).toBeFocused()
+  await page.getByTestId("composer-input").fill("/onboarding.act finish")
+  await page.getByTestId("composer-input").press("Enter")
   await expect(page.locator(".guide-shell")).toHaveCount(0)
   if (sidebar) {
     const navigation = page.getByRole("button", { name: "Smithers", exact: true })

@@ -2,8 +2,8 @@
  * @since 1.0.0
  */
 import { Control, Health, Monitor } from "@smthrs/control"
-import { Journal } from "@smthrs/journal"
-import { Cause, Effect, Fiber, Metric, Scope, Semaphore } from "effect"
+import type { Journal } from "@smthrs/journal"
+import { Cause, Effect, type Fiber, Metric, type Scope, Semaphore } from "effect"
 import { randomUUID } from "node:crypto"
 
 const activeSubjects = Metric.gauge("smithers.health.monitored_subjects")
@@ -34,10 +34,12 @@ export const watch = (
             yield* Metric.update(refusedSubjects, 1)
             continue
           }
+          const healthCheck = registry.resolve(run.flowId)
           const fiber = yield* Monitor.run({
             runId: run.runId,
             monitorId,
-            healthCheck: registry.resolve(run.flowId),
+            healthCheck,
+            stallBeats: Math.ceil(healthCheck.policy.stallAfterMs / healthCheck.policy.intervalMs),
             withProbePermit: gate.withPermits(1),
             maxChecks: Number.MAX_SAFE_INTEGER,
             retainBeats: 1,

@@ -1,4 +1,4 @@
-import { Effect, Fiber, Schema } from "effect"
+import { Effect, Fiber, Metric, Schema, Tracer } from "effect"
 import { TestClock } from "effect/testing"
 import { describe, expect, it } from "vitest"
 import * as Health from "../src/Health.ts"
@@ -156,6 +156,55 @@ describe("Health ordering", () => {
 })
 
 describe("Health configuration and Effect evaluation", () => {
+  it("records successful, failed and timed-out probes in counters, latency and safe completed spans", async () => {
+    const spans: Array<Tracer.NativeSpan> = []
+    const tracer = Tracer.make({
+      span: (options) => {
+        const span = new Tracer.NativeSpan(options)
+        spans.push(span)
+        return span
+      }
+    })
+    const metrics = new Map()
+    await Effect.runPromise(
+      Effect.gen(function*() {
+        yield* Health.evaluate(configured(() => Effect.succeed({ activity: "working" })), context, stamp)
+        yield* Health.evaluate(configured(() => Effect.fail(new Error("secret-token"))), context, stamp)
+        const timed = yield* Health.evaluate(configured(() => Effect.never, { timeoutMs: 20 }), context, stamp)
+          .pipe(Effect.forkChild({ startImmediately: true }))
+        yield* TestClock.adjust(20)
+        yield* Fiber.join(timed)
+        for (const outcome of ["ok", "error", "timeout"]) {
+          const value = yield* Metric.value(
+            Metric.counter("smithers.health.probes").pipe(Metric.withAttributes({ outcome }))
+          )
+          expect(value.count).toBe(1)
+        }
+        const latency = yield* Metric.value(Metric.histogram("smithers.health.probe_duration_ms", {
+          boundaries: [1, 10, 100, 1_000, 5_000, 60_000]
+        }))
+        expect(latency.count).toBe(3)
+        expect(latency.sum).toBe(20)
+      }).pipe(
+        Effect.provide(TestClock.layer()),
+        Effect.provideService(Metric.MetricRegistry, metrics),
+        Effect.provideService(Tracer.Tracer, tracer)
+      )
+    )
+    const probes = spans.filter((span) => span.name === "smithers.health.probe")
+    expect(probes.map((span) => span.attributes.get("outcome"))).toEqual(["ok", "error", "timeout"])
+    expect(probes.map((span) => span.attributes.get("activity"))).toEqual(["working", "unknown", "unknown"])
+    expect(probes.every((span) => span.status._tag === "Ended")).toBe(true)
+    expect(probes.every((span) => span.attributes.get("checkerId") === "custom")).toBe(true)
+    expect(
+      JSON.stringify(
+        probes.map((span) => ({ attributes: [...span.attributes], status: span.status })),
+        (_key, value) => typeof value === "bigint" ? String(value) : value
+      )
+    ).not
+      .toContain("secret-token")
+    expect(JSON.stringify([...metrics.keys()])).not.toContain("secret-token")
+  })
   it("defaults remain unknown for both quiet and chatty sessions", async () => {
     const check = Health.makeRegistry({}, "session").resolve("anything")
     for (const outputCursor of [0, 1_000_000]) {

@@ -3,6 +3,7 @@ import type { RunSummary } from "@smthrs/control/ControlSchema"
 import * as TestControl from "@smthrs/control/test/TestControl"
 import { Journal, JournalEvent } from "@smthrs/journal"
 import { Deferred, Effect, Fiber, Stream } from "effect"
+import { TestClock } from "effect/testing"
 import { describe, expect, it } from "vitest"
 import * as HealthHost from "../src/internal/HealthHost.ts"
 
@@ -27,6 +28,26 @@ const source = (control: Control.Service): Control.Service => ({
 })
 
 describe("native health producer lifetime", () => {
+  it("does not alarm on an ordinary minute of silent work under production defaults", async () => {
+    await Effect.runPromise(
+      Effect.gen(function*() {
+        const journal = yield* Journal.Journal
+        const control = source(yield* Control.Control)
+        const registry = Health.makeRegistry({ limits: { maxSubjects: 1 } })
+        expect(registry.resolve("checked").policy.stallAfterMs).toBe(120_000)
+        const fiber = yield* Effect.scoped(
+          HealthHost.watch(registry).pipe(Effect.provideService(Control.Control, control))
+        )
+          .pipe(Effect.forkChild({ startImmediately: true }))
+        yield* TestClock.adjust(60_000)
+        const page = yield* journal.entries({ runId: JournalEvent.RunId.make("health-0"), limit: 100 })
+        const statuses = page.entries.filter((entry) => entry.eventType === Health.statusObservedEventType)
+        expect(statuses.length).toBeGreaterThan(1)
+        expect(statuses.every((entry) => (entry.payload as { health: string }).health === "healthy")).toBe(true)
+        yield* Fiber.interrupt(fiber)
+      }).pipe(Effect.provide(TestControl.layer()), Effect.scoped, Effect.provide(TestClock.layer()))
+    )
+  })
   it("enforces shared subject and probe admission and interrupts checks on host teardown", async () => {
     let inFlight = 0
     let finalized = 0

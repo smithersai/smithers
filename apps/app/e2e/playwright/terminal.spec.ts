@@ -110,11 +110,16 @@ test("health: a real shell's explicit semantic markers reach the persisted termi
   const terminal = page.getByTestId(`terminal-${sessionId}`)
   const details = page.getByTestId(`tab-${sessionId}`).getByTestId("status-details")
   await expect(details).toHaveText("Running · Activity unknown", { timeout: 10_000 })
+  expect(await details.evaluate((element) => element.getBoundingClientRect().right <= element.parentElement!.getBoundingClientRect().right + 1)).toBe(true)
   for (const [activity, label] of [["working", "Working"], ["idle", "Idle"], ["needs-input", "Needs input"]]) {
     await terminal.click()
-    // Typed backslash escapes do not match the fixture: printf must execute and emit the record.
-    await page.keyboard.type(`printf '\\036SMITHERS_TEST_HEALTH:${activity}\\037\\n'`)
+    // The echoed printf command is not a complete record. Only its actual output matches.
+    await page.keyboard.type(`${activity === "needs-input" ? "sleep 1; " : ""}printf 'SMITHERS_TEST_HEALTH:%s\\n' ${activity}`)
     await page.keyboard.press("Enter")
+    if (activity === "needs-input") {
+      await page.getByTestId("workspace-name").click()
+      await expect(terminal).toBeHidden()
+    }
     await expect(details).toHaveText(`Running · ${label}`, { timeout: 10_000 })
   }
   const snapshot = await localApiGet(page, request, "/api/pty")
@@ -122,6 +127,8 @@ test("health: a real shell's explicit semantic markers reach the persisted termi
   expect(body.sessions.find((session: { sessionId: string }) => session.sessionId === sessionId).status)
     .toMatchObject({ subjectId: `session:${sessionId}`, activity: "needs-input", attention: "needs-input",
       provenance: { checkerId: "fixture.semantic" } })
+  await page.getByTestId(`tab-${sessionId}`).getByRole("tab").click()
+  await expect(terminal).toBeVisible()
   await page.screenshot({ path: "/tmp/smithers-health-ui.png" })
   await terminal.click()
   await page.keyboard.type("exit 7")
