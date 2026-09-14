@@ -104,6 +104,7 @@ export const FLOW_NAMES = [
   "debug.reset",
   "debug.chain",
   "debug.events",
+  "debug.errors",
   "debug.grants.reset",
   "debug.net",
   "debug.seams",

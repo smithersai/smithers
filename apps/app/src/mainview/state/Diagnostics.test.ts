@@ -1,0 +1,149 @@
+import { describe, expect, test } from "bun:test"
+import { commandEntries, disclosedEntries } from "../chain/FlowCatalog"
+import { createAppStore } from "./AppStore"
+import type { AppStore } from "./AppStore"
+import { scopedControllers } from "./ControllerTestScope"
+import { parseDiagnosticQuery, readDiagnostics } from "./Diagnostics"
+import { SMITHERS_INSTRUCTIONS } from "./Instructions"
+import { memoryStorage, silentAgent, unavailableRepositories } from "./TestFixtures"
+
+const createAppController = scopedControllers()
+const toast = async (store: AppStore, detail: string, key = "billing.refresh") => {
+  await store.dispatch({ type: "toast.shown", actor: "system", key, title: "Refreshing balance" }).isPersisted.promise
+  await store.dispatch({ type: "toast.resolved", actor: "system", key, status: "failed", detail }).isPersisted.promise
+}
+const read = async (controller: ReturnType<typeof createAppController>, args?: string) => {
+  const result = await controller.commands.runForAgent("debug.errors", args)
+  if (result.status !== "executed") throw new Error(JSON.stringify(result))
+  return JSON.parse(result.value!) as ReturnType<typeof readDiagnostics>
+}
+
+describe("app diagnostics without a repository", () => {
+  test("the agent discovers and reads failures signed out without admin access", async () => {
+    const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
+    const controller = createAppController(store, unavailableRepositories, silentAgent)
+    await toast(store, "Billing service unavailable")
+    expect(store.collections.repositories.size).toBe(0)
+    expect(commandEntries(controller.commands).map(row => row.name)).toContain("debug.errors")
+    expect(disclosedEntries(controller.commands).map(row => row.name)).toContain("debug.errors")
+    expect(controller.commands.find("debug.snapshot")).toBeUndefined()
+    const before = store.collections.messages.size
+    const result = await read(controller)
+    expect(result.items).toHaveLength(1)
+    expect(result.items[0]).toMatchObject({ source: "toast", status: "failed", title: "Refreshing balance", detail: "Billing service unavailable" })
+    expect(store.collections.messages.size).toBe(before)
+    expect(SMITHERS_INSTRUCTIONS).toContain("execute debug.errors in this turn")
+    expect(SMITHERS_INSTRUCTIONS).toContain("never ask to import a repo to inspect app errors")
+  })
+
+  test("dismissed and repeated toasts remain readable after reopening the store", async () => {
+    const storage = memoryStorage()
+    const store = await createAppStore({ kind: "localStorage", storage })
+    await toast(store, "First attempt failed")
+    await toast(store, "Second attempt failed")
+    await store.dispatch({ type: "toast.dismissed", actor: "user", id: "toast-billing.refresh" }).isPersisted.promise
+    const reopened = await createAppStore({ kind: "localStorage", storage })
+    const controller = createAppController(reopened, unavailableRepositories, silentAgent)
+    expect(reopened.collections.toasts.size).toBe(0)
+    const result = await read(controller, "--source toast")
+    expect(result.items.map(row => row.detail)).toEqual(["Second attempt failed", "First attempt failed"])
+    expect(result.coverage.note).toContain("newest 500 transitions")
+  })
+
+  test("the human slash door renders the errors in chat and leaves the current surface alone", async () => {
+    const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
+    const controller = createAppController(store, unavailableRepositories, silentAgent)
+    await toast(store, "Service refused the request")
+    const surface = store.session().surface
+    expect((await controller.commands.run("debug.errors", "refused --source toast")).status).toBe("executed")
+    expect([...store.collections.messages.values()].at(-1)?.text).toContain("Service refused the request")
+    expect(store.session().surface).toBe(surface)
+  })
+
+  test("filters text, source, time and limit; includes running notices only with --all", async () => {
+    const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
+    const controller = createAppController(store, unavailableRepositories, silentAgent)
+    await toast(store, "Request timed out", "first")
+    await toast(store, "Request refused", "second")
+    await store.dispatch({ type: "toast.shown", actor: "system", key: "active", title: "Still loading" }).isPersisted.promise
+    const limited = await read(controller, "--source toast --limit 1")
+    expect(limited.items).toHaveLength(1)
+    expect(limited.totalMatching).toBe(2)
+    expect(limited.hasMore).toBe(true)
+    expect((await read(controller, "TIMED OUT --source toast")).items[0]?.detail).toBe("Request timed out")
+    expect((await read(controller, "--since 2999-01-01T00:00:00Z")).items).toEqual([])
+    expect((await read(controller, "Still loading")).items).toEqual([])
+    expect((await read(controller, "Still loading --all")).items[0]?.status).toBe("running")
+    expect((await read(controller, "--source event")).items).toEqual([])
+    for (const args of ["--limit 0", "--limit 101", "--limit 1.5", "--since yesterday", "--source missing", "--unknown"]) {
+      expect((await controller.commands.runForAgent("debug.errors", args)).status).toBe("failed")
+    }
+  })
+
+  test("reads network and application failures without exposing request data or successful tool content", async () => {
+    const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
+    const controller = createAppController(store, unavailableRepositories, silentAgent, {
+      fetchImpl: async input => {
+        if (String(input).includes("offline")) throw new Error("offline")
+        return new Response("private response body", { status: String(input).includes("healthy") ? 200 : 503 })
+      }
+    })
+    await controller.tappedFetch("https://user:private-password@app.test/failing?token=private-token#private-fragment")
+    await controller.tappedFetch("/healthy")
+    await controller.tappedFetch("/offline").catch(() => {})
+    await store.dispatch({ type: "message.response.failed", actor: "system", turnId: "turn", message: "Chat request failed" }).isPersisted.promise
+    await store.dispatch({ type: "toolcall.recorded", actor: "smithers", turnId: "turn", name: "files.read", arguments: "private arguments", result: "private content mentions error" }).isPersisted.promise
+    await store.dispatch({ type: "toolcall.recorded", actor: "smithers", turnId: "turn", name: "files.list", arguments: "private arguments", result: "failed: Access denied" }).isPersisted.promise
+    const result = await read(controller)
+    expect(result.items.map(row => row.source).sort()).toEqual(["event", "network", "network", "tool"])
+    expect(result.items.find(row => row.status === "503")?.title).toBe("GET https://app.test/failing")
+    expect(JSON.stringify(result)).not.toContain("private")
+    expect((await read(controller, "--all --source network")).items).toHaveLength(3)
+  })
+
+  test("account changes scrub old evidence and late requests cannot restore it", async () => {
+    const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
+    const identity = (login: string | null) => store.dispatch({ type: "identity.session.loaded", actor: "system", state: login ? "signed-in" : "signed-out", login, allowlisted: true, admin: false, scopesPlain: null }).isPersisted.promise
+    await identity("alice")
+    let release!: (response: Response) => void
+    const controller = createAppController(store, unavailableRepositories, silentAgent, {
+      fetchImpl: async input => String(input).includes("late") ? new Promise<Response>(resolve => { release = resolve }) : new Response("", { status: 500 })
+    })
+    await toast(store, "Alice's failure")
+    await controller.tappedFetch("/alice/private")
+    const pending = controller.tappedFetch("/alice/late")
+    await identity(null)
+    await identity("bob")
+    release(new Response("", { status: 500 }))
+    await pending
+    const result = await read(controller)
+    expect(JSON.stringify(result)).not.toContain("alice")
+    expect(JSON.stringify(result)).not.toContain("Alice")
+    expect(result.items).toEqual([])
+  })
+
+  test("long results stay bounded and report omitted matches", () => {
+    const query = parseDiagnosticQuery("--limit 100")
+    if (typeof query === "string") throw new Error(query)
+    const result = readDiagnostics({ transitions: [], network: [], toolCalls: [], toasts: Array.from({ length: 100 }, (_, index) => ({
+      id: String(index), key: String(index), title: "failure", status: "failed" as const,
+      detail: "x".repeat(10_000), createdAt: index, updatedAt: index
+    })) }, query)
+    expect(result.totalMatching).toBe(100)
+    expect(result.hasMore).toBe(true)
+    expect(JSON.stringify(result).length).toBeLessThan(25_000)
+    expect(result.items[0]?.detail).toContain("[truncated]")
+  })
+
+  test("records card failures while keeping arbitrary card payloads out of the read", () => {
+    const result = readDiagnostics({ toasts: [], network: [], toolCalls: [], transitions: [
+      { id: "transition-1", revision: 1, actor: "system", type: "card.upsert", createdAt: 1,
+        payload: JSON.stringify({ card: { id: "graph", title: "Target graph", status: "error", payload: { error: "Graph load failed", content: "private file bytes" } } }) },
+      { id: "transition-2", revision: 2, actor: "system", type: "card.updated", createdAt: 2,
+        payload: JSON.stringify({ id: "graph", patch: { status: "error", payload: { error: "Retry failed" } } }) }
+    ] }, { text: "", all: false, limit: 20 })
+    expect(result.items.map(row => row.detail)).toEqual(["Retry failed", "Graph load failed"])
+    expect(result.items[1]?.title).toBe("Target graph")
+    expect(JSON.stringify(result)).not.toContain("private file bytes")
+  })
+})

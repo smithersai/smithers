@@ -128,7 +128,14 @@ export const createControllerContext = (
    * debug mode adds beyond what the app already stores.
    */
   const netRing: NetEntry[] = []
-  const recordNet = (entry: NetEntry): void => {
+  const networkOwner = (): string | null => {
+    const identity = store.collections.identitySessions.get("identity")
+    return identity?.accountOwnerLogin ?? identity?.login ?? null
+  }
+  let netOwner = networkOwner()
+  let netGeneration = 0
+  const recordNet = (entry: NetEntry, generation: number): void => {
+    if (generation !== netGeneration) return
     netRing.push(entry)
     if (netRing.length > 100) netRing.shift()
   }
@@ -218,6 +225,16 @@ export const createControllerContext = (
     errorMessageOf: undefined as unknown as ControllerContext["errorMessageOf"]
   } satisfies ControllerContext
 
+  // Match the persisted diagnostic scrub on account changes, including requests still in flight.
+  const netIdentity = store.collections.identitySessions.subscribeChanges(() => {
+    const owner = networkOwner()
+    if (owner === netOwner) return
+    netOwner = owner
+    netGeneration += 1
+    netRing.length = 0
+  })
+  ctx.onDispose(() => { netIdentity.unsubscribe() })
+
   /*
    * Mid-session 401 recovery (multi's AUTH_REQUIRED discipline, one seam):
    * a 401 off any /api call while the app believes it is signed in means the
@@ -237,15 +254,16 @@ export const createControllerContext = (
   }
   ctx.http = async (input: RequestInfo | URL, init?: RequestInit) => {
     const started = Date.now()
+    const generation = netGeneration
     const method = init?.method ?? (input instanceof Request ? input.method : "GET")
     const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url
     try {
       const response = await rawHttp(input, init)
-      recordNet({ at: started, method, url, status: response.status, ms: Date.now() - started })
+      recordNet({ at: started, method, url, status: response.status, ms: Date.now() - started }, generation)
       if (response.status === 401) noteUnauthorized(url)
       return response
     } catch (error) {
-      recordNet({ at: started, method, url, status: "error", ms: Date.now() - started })
+      recordNet({ at: started, method, url, status: "error", ms: Date.now() - started }, generation)
       throw error
     }
   }

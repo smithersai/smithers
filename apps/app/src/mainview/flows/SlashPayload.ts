@@ -976,6 +976,7 @@ const GRAMMAR: Readonly<Record<string, Grammar>> = {
     return ok(repo === undefined ? { number, ...confirmed } : { number, ...confirmed, repo })
   },
   "debug.backend": (args) => ok({ backend: args ?? "" }),
+  "debug.errors": (args) => optional("query", args),
   "admin.allowlist.add": (args) => required("login", args, "admin.allowlist.add needs a login"),
   "admin.allowlist.remove": (args) => required("login", args, "admin.allowlist.remove needs a login"),
   "admin.grant": (args) => {

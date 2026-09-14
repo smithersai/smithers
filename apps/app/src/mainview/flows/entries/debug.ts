@@ -11,7 +11,7 @@ import type { CommandActions } from "./Declare"
 /** The `debug` namespace row: the slash tree lists it in registry.ts NAMESPACES order. */
 export const namespace: Namespace = { id: "debug", label: "Debug", summary: "Observability and dev tooling" }
 
-/** `debug.verbose`, the one debug flow every session registers. */
+/** Public diagnostics, available without an account, repository or admin plugin. */
 export const debugVerboseFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> => {
   /*
    * The maintainer's switch: every flow invocation (hidden, aliased,
@@ -28,7 +28,14 @@ export const debugVerboseFlows = (actions: CommandActions): ReadonlyArray<FlowEn
     handler: () => actions.toggleVerbose()
   }
   return [
-  flow(VERBOSE)
+  flow(VERBOSE),
+  flow({
+    name: "debug.errors",
+    summary: "Read recent app errors and toast history, including dismissed notifications; no repository or sign-in needed",
+    args: "[text] [--source toast|network|event|tool] [--since ISO-timestamp] [--limit 1..100] [--all]",
+    input: Schema.Struct({ query: Schema.optional(Schema.String) }),
+    handler: ({ query }) => actions.debugErrors(query)
+  })
   ]
 }
 

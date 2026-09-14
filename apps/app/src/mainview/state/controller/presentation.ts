@@ -4,6 +4,7 @@ import { foldLineages } from "../../chain/DebugFolds"
 import { DEFAULT_PALETTE, isPalette, PALETTES, WIKI_DISPLAY_NAME } from "../AppState"
 import type { Card, Palette } from "../AppState"
 import { THEME_PICKER_CARD_ID } from "../AppStore"
+import { parseDiagnosticQuery, readDiagnostics } from "../Diagnostics"
 import type { ControllerContext, NetEntry } from "./context"
 
 export interface PresentationController {
@@ -22,6 +23,7 @@ export interface PresentationController {
   readonly describeAgentBackend: (backend: string) => string | { readonly value: string }
   readonly debugSnapshot: () => { readonly value: string }
   readonly debugEvents: () => { readonly value: string }
+  readonly debugErrors: (query?: string) => string | { readonly value: string }
   readonly debugChain: () => { readonly value: string }
   readonly netTapEntries: () => ReadonlyArray<NetEntry>
   readonly netTap: () => string
@@ -310,6 +312,27 @@ export const createPresentationController = (
     )
   }
 
+  const debugErrors = (query?: string): string | { readonly value: string } => {
+    const filters = parseDiagnosticQuery(query)
+    if (typeof filters === "string") return filters
+    const result = readDiagnostics({
+      transitions: [...ctx.store.collections.transitions.values()],
+      toasts: [...ctx.store.collections.toasts.values()],
+      toolCalls: [...ctx.store.collections.toolCalls.values()],
+      network: ctx.netRing
+    }, filters)
+    // A human gets a readable transcript answer; the agent receives the bounded structured result.
+    if (ctx.commandActor !== "smithers") {
+      const lines = result.items.map(item => `${item.at} · ${item.source} · ${item.status}\n${item.title}${item.detail ? `\n${item.detail}` : ""}`)
+      ctx.store.dispatch({ type: "message.appended", actor: "system", text: [
+        lines.length === 0 ? "No matching errors or notifications in the retained app history." : lines.join("\n\n"),
+        ...(result.hasMore ? [`Showing ${result.items.length} of ${result.totalMatching} matching records. Narrow the filters to read more.`] : []),
+        result.coverage.note
+      ].join("\n\n") })
+    }
+    return { value: JSON.stringify(result) }
+  }
+
   const netTapEntries = (): ReadonlyArray<NetEntry> => [...ctx.netRing].reverse()
 
   const netTap = (): string => JSON.stringify(netTapEntries())
@@ -533,6 +556,7 @@ export const createPresentationController = (
     describeAgentBackend,
     debugSnapshot,
     debugEvents,
+    debugErrors,
     debugChain,
     netTapEntries,
     netTap,

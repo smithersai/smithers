@@ -346,6 +346,27 @@ recommendation while regeneration is pending.
 
 ## Retention
 
+`/debug.errors` reads recent app failures without a repository, sign-in or
+admin access. The agent uses the same Flow for questions about errors and
+toasts. It searches retained toast transitions (including dismissed notices),
+failed app/flow/card events, failed tool results, active toasts and the network
+tap. It returns newest matches first with timestamps and coverage information.
+For example, `/debug.errors timeout --source toast --limit 10` filters by text
+and source; `--since 2026-09-14T13:00:00-07:00` sets an inclusive time bound.
+`--all` includes running/successful notifications and successful requests.
+Sources are `toast`, `network`, `event` and `tool`; the default limit is 20,
+the maximum is 100, and result rows are bounded to 24 KB with long text clipped.
+The result reports omitted matches so the caller can narrow its filters.
+
+This reads existing local evidence, not console or server logs. Dismissed
+toasts cannot be recovered after their transitions age out. The last 100
+network requests exist only for the current controller, are cleared on account
+changes, and late responses from an old account cannot restore them. The
+agent read excludes tool arguments, arbitrary card/transition payloads, request
+and response bodies, and URL credentials, query strings and fragments. It
+returns only failure text from unsuccessful tools. An empty result means no
+matches in the retained evidence, not that no failures happened.
+
 Diagnostic compaction is part of the same dispatch as the append. The store
 keeps the newest 500 transition records and 250 tool-call records. Entity
 collections and authoritative `chainEvents` are not time-trimmed. Both active

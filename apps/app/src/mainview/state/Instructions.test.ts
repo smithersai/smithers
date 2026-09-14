@@ -148,10 +148,11 @@ describe("a turn asking who you are is answered with the name", () => {
 
 describe("the turn passes the host from the bootstrap", () => {
   test("a cloud bootstrap's turn carries the web line and the flow it names", async () => {
-    const { instructions } = await firstTurnInstructions("cloud")
+    const { instructions, names } = await firstTurnInstructions("cloud")
     expect(instructions).toContain(WEB_HOST_LINE)
     // The line names a flow this host's catalog actually has.
-    expect(instructions).toContain("/app.download.prompt")
+    expect(names).toContain("app.download.prompt")
+    expect(instructions).toContain(instructionStageOf(instructions) === 3 ? "app (" : "/app.download.prompt")
     // And the live download fact: no native release carries an asset today (AppLinks.ts).
     expect(instructions).toContain(NO_DOWNLOAD_LINE)
   })

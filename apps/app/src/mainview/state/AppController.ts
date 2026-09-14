@@ -379,6 +379,7 @@ export interface AppController extends TutorialChangeController, IssueFlowsContr
   readonly addFiles: () => void
   readonly debugSnapshot: () => { readonly value: string }
   readonly debugEvents: () => { readonly value: string }
+  readonly debugErrors: (query?: string) => string | { readonly value: string }
   readonly debugSeams: () => Promise<string | void | { readonly value: string }>
   /** The chain x-ray (DESIGN.md §14 debug mode): the journal fold, as data. */
   readonly debugChain: () => { readonly value: string }
@@ -906,6 +907,7 @@ export const createAppController = (
     describeAgentBackend,
     debugSnapshot,
     debugEvents,
+    debugErrors,
     debugChain,
     netTap,
     netTapEntries,
@@ -1592,6 +1594,7 @@ export const createAppController = (
     describeAgentBackend,
     debugSnapshot,
     debugEvents,
+    debugErrors,
     debugChain,
     debugNet,
     netTap,
