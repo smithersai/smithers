@@ -142,17 +142,46 @@ for (const device of [
         const box = element.getBoundingClientRect()
         return element.contains(document.elementFromPoint(box.x + box.width / 2, box.y + box.height / 2))
       })).toBe(true)
+      await expect(page.getByRole('button', { name: 'Close Chat', exact: true })).toBeInViewport({ ratio: 1 })
       const mode = page.getByRole("dialog", { name: "Chat" }).getByRole("button", { name: "Mode: Normal", exact: true })
       expect((await mode.boundingBox())!.y).toBeGreaterThanOrEqual(listBox.y + listBox.height)
       await input.fill("hello from a phone")
-      await page.getByRole("dialog", { name: "Chat", exact: true }).getByRole("button", { name: "Close", exact: true }).tap()
+      await page.getByRole("dialog", { name: "Chat", exact: true }).getByRole("button", { name: "Close Chat", exact: true }).tap()
       await expect(page.getByRole("dialog", { name: "Chat", exact: true })).toBeHidden()
       await expect(page.locator(".guide-shell")).toHaveAttribute("data-conversation-open", "false")
       await page.getByRole("button", { name: "Chat", exact: true }).tap()
       await expect(input).toBeFocused()
       await expect(input).toHaveValue("hello from a phone")
-      await page.touchscreen.tap(1, device.viewport.height / 2)
+      const close = page.getByRole('button', { name: 'Close Chat', exact: true })
+      await expect(close).toBeInViewport({ ratio: 1 })
+      await close.tap()
       await expect(page.getByRole("dialog", { name: "Chat", exact: true })).toBeHidden()
+    })
+
+    test("sent bubbles stay readable above Chat and the transcript can scroll with the dock open", async ({ page }) => {
+      await openTutorial(page)
+      await page.getByRole('button', { name: 'Chat', exact: true }).tap()
+      const input = page.getByTestId('composer-input')
+      await input.fill('ok')
+      await input.press('Enter')
+      const transcript = page.getByRole('log', { name: 'Onboarding chat history' })
+      await expect(transcript.locator('[data-role="assistant"]')).toContainText('stub: ok')
+      const dock = page.getByRole('dialog', { name: 'Chat', exact: true })
+      for (const role of ['user', 'assistant']) {
+        const bubble = transcript.locator(`.smithers-chat-message[data-role="${role}"]`).last()
+        await expect(bubble).toBeInViewport({ ratio: 1 })
+        const box = (await bubble.boundingBox())!
+        expect(box.y + box.height).toBeLessThanOrEqual((await dock.boundingBox())!.y)
+        expect(await bubble.evaluate(element => {
+          const rect = element.getBoundingClientRect()
+          return element.contains(document.elementFromPoint(rect.x + rect.width / 2, rect.y + rect.height / 2))
+        })).toBe(true)
+      }
+      await transcript.focus()
+      await expect(transcript).toBeFocused()
+      await page.keyboard.press('Home')
+      await expect(dock).toBeVisible()
+      await page.screenshot({ path: `/tmp/r3-dock-${device.viewport.width}.png` })
     })
 
     test("the issue transcript gets the remaining height and scrolls independently of the actions", async ({ page }) => {

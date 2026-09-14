@@ -2,9 +2,10 @@ import { expect, test } from "bun:test"
 import { createAppStore } from "./AppStore"
 import { initialGuide } from "./AppState"
 import { memoryStorage } from "./TestFixtures"
-test("accepted messages keep Chat open; empty or busy submissions preserve the open draft", async () => {
+for (const step of [2, 13, 14]) test(`accepted messages at beat ${step} keep Chat open; empty or busy submissions preserve the open draft`, async () => {
   const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
-  await store.dispatch({ type: "guide.changed", actor: "user", guide: { ...initialGuide(), conversationOpen: true } }).isPersisted.promise
+  await store.dispatch({ type: "guide.visibility.changed", actor: "system", visible: true }).isPersisted.promise
+  await store.dispatch({ type: "guide.changed", actor: "user", guide: { ...initialGuide(), step, conversationOpen: true } }).isPersisted.promise
   await store.dispatch({ type: "palette.toggled", actor: "user", open: true }).isPersisted.promise
   await store.dispatch({ type: "composer.changed", actor: "user", draft: "hello" }).isPersisted.promise
   await store.dispatch({ type: "message.submitted", actor: "user", turnId: "blank", text: " " }).isPersisted.promise
@@ -14,6 +15,10 @@ test("accepted messages keep Chat open; empty or busy submissions preserve the o
   expect(store.session().guide?.conversationOpen).toBe(true)
   expect(store.session().draft).toBe("")
   expect(store.session().paletteOpen).toBe(false)
+  await store.dispatch({ type: "message.response.delta", actor: "smithers", turnId: "first", channel: "text", delta: "Here is the answer." }).isPersisted.promise
+  expect(store.session().guide?.conversationOpen).toBe(true)
+  expect(store.session().guide?.transcript?.['message-first-user']).toEqual({ step, source: "chat", owned: true })
+  expect(store.session().guide?.transcript?.['message-first-smithers']).toEqual({ step, source: "chat", owned: true })
   await store.dispatch({ type: "guide.changed", actor: "user", guide: { ...store.session().guide!, conversationOpen: true } }).isPersisted.promise
   await store.dispatch({ type: "composer.changed", actor: "user", draft: "later" }).isPersisted.promise
   await store.dispatch({ type: "message.submitted", actor: "user", turnId: "busy", text: "later" }).isPersisted.promise

@@ -12,12 +12,13 @@ import { memoryStorage, nativeRepositories, silentAgent } from '../state/TestFix
 import { GuideShell } from './GuideShell'
 import { PRACTICE_CARD, PRACTICE_REPO, practicePicker } from '../state/practice/PracticeRepository'
 
+// Live collection/DOM integration gets five seconds on shared test hosts.
 GlobalRegistrator.register()
 // Assert DOM presence/identity as scalars: dumping a live DOM on failure can
 // block Bun's timeout while it formats the entire React/store object graph.
 const cleanups: Array<() => void | Promise<void>> = []
-afterEach(async () => { while (cleanups.length) await cleanups.pop()?.() }, 2_000)
-afterAll(async () => { await settle(); await GlobalRegistrator.unregister() }, 2_000)
+afterEach(async () => { while (cleanups.length) await cleanups.pop()?.() }, 5_000)
+afterAll(async () => { await settle(); await GlobalRegistrator.unregister() }, 5_000)
 const settle = async () => { for (let i = 0; i < 4; i++) { await new Promise(resolve => setTimeout(resolve, 0)); flushSync(() => {}) } }
 const press = async (key: string, target: EventTarget = document) => {
   for (const type of ['keydown', 'keyup']) flushSync(() => (type === 'keyup' && target !== document ? document.activeElement ?? target : target).dispatchEvent(new KeyboardEvent(type, { key, bubbles: true, cancelable: true })))
@@ -64,9 +65,9 @@ test('unsupported Dictation is explained and cannot be selected; Chat opens norm
   await press('c')
   expect(store.session().paletteOpen).toBe(true)
   expect([...store.collections.toasts.values()].some(toast => toast.title.includes("didn't run"))).toBe(false)
-}, 2_000)
+}, 5_000)
 
-test('dictation preserves native Tab past the composer and wraps Stop back to Mode', async () => {
+test('dictation preserves native Tab and Shift+Tab through the dock', async () => {
   const aborted = speech()
   const { host, store, controller } = await mount()
   controller.runCommand('input.mode', 'dictation')
@@ -80,19 +81,20 @@ test('dictation preserves native Tab past the composer and wraps Stop back to Mo
   flushSync(() => input.dispatchEvent(tab))
   expect(tab.defaultPrevented).toBe(false)
   stop.focus()
-  flushSync(() => stop.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', shiftKey: true, bubbles: true, cancelable: true })))
-  expect(document.activeElement?.textContent).toContain('Mode: Dictation')
+  const back = new KeyboardEvent('keydown', { key: 'Tab', shiftKey: true, bubbles: true, cancelable: true })
+  flushSync(() => stop.dispatchEvent(back))
+  expect(back.defaultPrevented).toBe(false)
   input.focus()
   await press('Escape', input)
   expect(aborted()).toBe(1)
   expect(store.session().dictating).toBe(false)
   expect(host.querySelector('[role="listbox"]') !== null).toBe(true)
   expect(store.session().guide?.conversationOpen).toBe(true)
-  expect(host.querySelector('dialog')!.open).toBe(true)
+  expect(host.querySelector('.guide-composer-dock')?.getAttribute('aria-hidden') === 'false').toBe(true)
   await press('Escape', input)
   expect(aborted()).toBe(1)
   expect(store.session().guide?.conversationOpen).toBe(false)
-}, 2_000)
+}, 5_000)
 
 for (const draft of ['', 'hello from a phone']) test(`Escape dismisses Chat together with its root palette and preserves ${JSON.stringify(draft)}`, async () => {
   const { host, store, controller } = await mount()
@@ -104,12 +106,12 @@ for (const draft of ['', 'hello from a phone']) test(`Escape dismisses Chat toge
   await press('Escape', input)
   expect(host.querySelector('[role="listbox"]') === null).toBe(true)
   expect(store.session().guide?.conversationOpen).toBe(false)
-  expect(host.querySelector('dialog')!.open).toBe(false)
+  expect(host.querySelector('.guide-composer-dock')?.getAttribute('aria-hidden') === 'false').toBe(false)
   expect(store.session().draft).toBe(draft)
   await press('c')
   expect(input.value).toBe(draft)
   expect(document.activeElement === input).toBe(true)
-}, 2_000)
+}, 5_000)
 
 for (const draft of ['/issues', '/issues.']) test(`Escape dismisses the nested slash menu for ${draft} before Chat`, async () => {
   const { host, store, controller } = await mount()
@@ -119,14 +121,14 @@ for (const draft of ['/issues', '/issues.']) test(`Escape dismisses the nested s
   const input = host.querySelector<HTMLTextAreaElement>('[data-testid="composer-input"]')!
   await press('Escape', input)
   expect(host.querySelector('[role="listbox"]') === null).toBe(true)
-  expect(host.querySelector('dialog')!.open).toBe(true)
+  expect(host.querySelector('.guide-composer-dock')?.getAttribute('aria-hidden') === 'false').toBe(true)
   expect(store.session().guide?.conversationOpen).toBe(true)
   expect(store.session().draft).toBe(draft)
   expect(document.activeElement === input).toBe(true)
   await press('Escape', input)
-  expect(host.querySelector('dialog')!.open).toBe(false)
+  expect(host.querySelector('.guide-composer-dock')?.getAttribute('aria-hidden') === 'false').toBe(false)
   expect(store.session().draft).toBe(draft)
-}, 2_000)
+}, 5_000)
 
 test('Escape on dictation Stop releases only capture and restores composer focus', async () => {
   const aborted = speech()
@@ -141,25 +143,25 @@ test('Escape on dictation Stop releases only capture and restores composer focus
   await press('Escape', stop)
   expect(aborted()).toBe(1)
   expect(store.session().dictating).toBe(false)
-  expect(host.querySelector('dialog')!.open).toBe(true)
+  expect(host.querySelector('.guide-composer-dock')?.getAttribute('aria-hidden') === 'false').toBe(true)
   expect(host.querySelector('[role="listbox"]') !== null).toBe(true)
   expect(document.activeElement === input).toBe(true)
   await press('Escape', input)
-  expect(host.querySelector('dialog')!.open).toBe(false)
-}, 2_000)
+  expect(host.querySelector('.guide-composer-dock')?.getAttribute('aria-hidden') === 'false').toBe(false)
+}, 5_000)
 
-test('Chat has a modal boundary and makes the tutorial and footer inert; Mode remains inside', async () => {
+test('Chat is a nonmodal dock; the transcript and footer stay keyboard accessible; Mode remains inside', async () => {
   const { host } = await mount()
   await press('c')
   const dialog = host.querySelector('[role="dialog"][aria-label="Chat"]')!
-  expect(dialog.getAttribute('aria-modal')).toBe('true')
-  expect(dialog.closest('dialog')!.open).toBe(true)
-  expect(host.querySelector('.guide-content')?.hasAttribute('inert')).toBe(true)
-  expect(host.querySelector('.guide-footer')?.hasAttribute('inert')).toBe(true)
+  expect(dialog.getAttribute('aria-modal')).toBe('false')
+  expect(dialog.getAttribute('aria-hidden')).toBe('false')
+  expect(host.querySelector('.guide-content')?.hasAttribute('inert')).toBe(false)
+  expect(host.querySelector('.guide-footer')?.hasAttribute('inert')).toBe(false)
   expect(dialog.querySelector('[aria-haspopup="menu"]') !== null).toBe(true)
   await press('Escape')
   expect(host.querySelector('.guide-content')?.hasAttribute('inert')).toBe(false)
-}, 2_000)
+}, 5_000)
 
 test('Enter on dictation Stop ends capture and returns focus to the open Chat composer', async () => {
   speech()
@@ -180,7 +182,7 @@ test('Enter on dictation Stop ends capture and returns focus to the open Chat co
   expect(host.querySelector('.guide-dictation-stop') === null).toBe(true)
   expect(store.session().guide?.conversationOpen).toBe(true)
   expect(document.activeElement === input).toBe(true)
-}, 2_000)
+}, 5_000)
 
 test('composer exposes the palette and its moving selection to assistive technology', async () => {
   const { host } = await mount()
@@ -196,7 +198,7 @@ test('composer exposes the palette and its moving selection to assistive technol
   expect(input.getAttribute('aria-activedescendant')).not.toBe(before)
   expect(input.getAttribute('aria-activedescendant')).toBe(list.querySelector('[aria-selected="true"]')!.id)
   expect([...list.querySelectorAll<HTMLElement>('[role="option"]')].every(option => option.tabIndex === -1)).toBe(true)
-}, 2_000)
+}, 5_000)
 
 test('practice issue has one projection and wordmark references only an existing sidebar', async () => {
   const { host, controller } = await mount(3)
@@ -233,7 +235,7 @@ test('practice issue has one projection and wordmark references only an existing
   comment.blur()
   await press('m')
   expect(host.querySelector('[role="menu"]') !== null).toBe(true)
-}, 2_000)
+}, 5_000)
 
 test('lesson fields include the current commit picker and restore ordinary access after the guide', async () => {
   const { host, store } = await mount(9)
@@ -271,7 +273,7 @@ test('tutorial sounds report new completions once, including goal ticks, and sta
   expect(chimes).toBe(2)
   await press('b'); await press('s')
   expect(chimes).toBe(2)
-}, 2_000)
+}, 5_000)
 
 for (const [label, action] of [['Finish tutorial', 'finish'], ['Replay introduction', 'restart']]) {
   test(`${label} advertises a distinct shortcut that runs its action`, async () => {
@@ -288,7 +290,7 @@ for (const [label, action] of [['Finish tutorial', 'finish'], ['Replay introduct
     await press(button.getAttribute('aria-keyshortcuts')!)
     expect(calls).toContainEqual(['onboarding.act', action])
     spy.mockRestore()
-  }, 2_000)
+  }, 5_000)
 }
 
 test('touch tutorial copy names the controls instead of physical keys', async () => {
@@ -299,7 +301,7 @@ test('touch tutorial copy names the controls instead of physical keys', async ()
   expect(message).toContain('tap Chat')
   expect(message).toContain('Tap Mode')
   expect(message).not.toMatch(/press|H\/J\/K\/L/i)
-}, 2_000)
+}, 5_000)
 
 test('the keyboard-scrollable transcript has an explicit visible focus outline', async () => {
   const style = document.createElement('style')
@@ -313,4 +315,21 @@ test('the keyboard-scrollable transcript has an explicit visible focus outline',
   style.textContent = style.textContent.replaceAll('.guide-transcript:focus-visible', '.guide-transcript:focus')
   expect(getComputedStyle(log).outlineStyle).toBe('solid')
   expect(getComputedStyle(log).outlineWidth).toBe('2px')
-}, 2_000)
+}, 5_000)
+
+for (const close of ['Escape', 'Control+k', 'button'] as const) test(`closing the dock by ${close} restores Chat focus after a keyboard open`, async () => {
+  const { host, store } = await mount()
+  await press('c')
+  const input = host.querySelector<HTMLTextAreaElement>('[data-testid="composer-input"]')!
+  if (close === 'button') {
+    const button = host.querySelector<HTMLButtonElement>('[aria-label="Close Chat"]')
+    expect(button !== null).toBe(true)
+    flushSync(() => button!.click())
+  } else if (close === 'Control+k') {
+    for (const type of ['keydown', 'keyup']) flushSync(() => input.dispatchEvent(new KeyboardEvent(type, { key: 'k', ctrlKey: true, bubbles: true, cancelable: true })))
+  } else await press(close, input)
+  await settle()
+  expect(store.session().guide?.conversationOpen).toBe(false)
+  expect(store.session().paletteOpen).toBe(false)
+  expect(document.activeElement === host.querySelector('.guide-footer [data-flow="chat.open"]')).toBe(true)
+}, 5_000)

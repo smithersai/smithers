@@ -37,3 +37,12 @@ test("a small card that fits with its message keeps the message anchor", () => {
   expect(transcriptScrollTop({ scrollTop: 800, viewportTop: 100, viewportHeight: 164,
     messageTop: 250, cardTop: 350, cardHeight: 40 })).toBe(950)
 })
+
+
+test("a streaming chat turn follows its reply once the turn outgrows the viewport", () => {
+  expect(transcriptScrollTop({ scrollTop: 800, viewportTop: 100, viewportHeight: 400, messageTop: 100,
+    viewportBottom: 500, contentBottom: 650 })).toBe(950)
+  // A short turn keeps the user's question in view with the reply.
+  expect(transcriptScrollTop({ scrollTop: 800, viewportTop: 100, viewportHeight: 400, messageTop: 150,
+    viewportBottom: 500, contentBottom: 350 })).toBe(850)
+})

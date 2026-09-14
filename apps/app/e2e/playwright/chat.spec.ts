@@ -1,4 +1,24 @@
-import { expect, test } from "@playwright/test"
+import { expect, test, type Page } from "@playwright/test"
+
+// IntersectionObserver alone accepts bubbles covered by a fixed scrim.
+const expectReadableTurn = async (page: Page, text: string) => {
+  const dock = page.locator('.guide-composer-dock')
+  const transcript = page.getByRole('log', { name: 'Onboarding chat history' })
+  for (const role of ['user', 'assistant']) {
+    const bubble = transcript.locator(`.smithers-chat-message[data-role="${role}"]`, { hasText: text }).last()
+    await expect(bubble).toBeInViewport({ ratio: 1 })
+    await expect.poll(async () => {
+      const box = (await bubble.boundingBox())!
+      return box.y + box.height <= (await dock.boundingBox())!.y
+    }).toBe(true)
+    expect(await bubble.evaluate(element => {
+      const rect = element.getBoundingClientRect()
+      return element.contains(document.elementFromPoint(rect.x + rect.width / 2, rect.y + rect.height / 2))
+    })).toBe(true)
+  }
+  expect(await dock.evaluate(element => getComputedStyle(element).backdropFilter)).toBe('none')
+  expect(await transcript.evaluate(element => element.closest('[inert]') === null)).toBe(true)
+}
 
 test.use({ actionTimeout: 3_000, navigationTimeout: 10_000 })
 test.setTimeout(30_000)
@@ -38,7 +58,7 @@ test(`tutorial chat sends and displays the stub reply at ${viewport.width}px (${
   expect(colours.text).not.toBe(colours.background)
   const assistant = page.locator(".guide-transcript .smithers-chat-message[data-role=\"assistant\"]", { hasText: "stub: say ok" })
   await expect(assistant).toContainText("stub: say ok", { timeout: 5_000 })
-  await expect(assistant).toBeInViewport()
+  await expectReadableTurn(page, "say ok")
   await expect(input).toBeVisible()
   await expect(page.locator('.guide-shell')).toHaveAttribute('data-conversation-open', 'true')
 })
@@ -111,6 +131,7 @@ for (const path of ["/", "/smithersai/smithers/"]) {
     await expect(reply).toContainText(`stub: ${draft}`, { timeout: 5_000 })
     await expect(page.locator('.smithers-chat-message[data-role="user"]', { hasText: draft })).toBeInViewport({ ratio: 1 })
     await expect(reply).toBeInViewport({ ratio: 1 })
+    if (path === "/") await expectReadableTurn(page, draft)
   })
 
   test(`Escape closes Chat and its root palette and restores the draft on reopen: ${path}`, async ({ page }) => {
@@ -122,6 +143,7 @@ for (const path of ["/", "/smithersai/smithers/"]) {
     await expect(page.getByTestId('palette')).toBeVisible()
     await input.press('Escape')
     await expect(input).toBeHidden()
+    if (path === "/") await expect(chat).toBeFocused()
     await expect(page.getByTestId('palette')).toBeHidden()
     await chat.click()
     await expect(input).toBeFocused()
@@ -163,8 +185,29 @@ for (const query of ["/", "m"]) for (const height of [800, 600]) test(`practice 
     const body = node.querySelector(".slash-menu-body")!.getBoundingClientRect()
     const rows = [...node.querySelectorAll('[role="option"]')].map(row => row.getBoundingClientRect())
     return rows.filter(row => row.top >= body.top && row.bottom <= body.bottom).length
-  })).toBeGreaterThanOrEqual(5)
+  // A bottom dock shares short windows with the transcript; suggestions scroll.
+  })).toBeGreaterThanOrEqual(height === 600 ? 3 : 5)
   const body = palette.locator(".slash-menu-body")
   expect(await body.evaluate(node => getComputedStyle(node).overflowY)).toBe("auto")
+  await body.evaluate(node => { node.scrollTop = node.scrollHeight })
+  await expect(palette.getByRole('option').last()).toBeInViewport({ ratio: 1 })
   await expect(palette.locator(".palette-foot")).toBeInViewport({ ratio: 1 })
 })
+
+
+for (const viewport of [{ width: 1280, height: 800 }, { width: 390, height: 844 }, { width: 844, height: 390 }]) {
+  test(`the chat lesson keeps the exchange visible through its terminal beat at ${viewport.width}px`, async ({ page }) => {
+    await page.setViewportSize(viewport)
+    await page.goto('/?tutorial')
+    await page.getByRole('button', { name: 'Skip tutorial', exact: true }).click()
+    await expect(page.locator('.guide-shell')).toHaveAttribute('data-stage', '10')
+    await page.getByRole('button', { name: 'Not now', exact: true }).click()
+    await expect(page.locator('.guide-shell')).toHaveAttribute('data-stage', '13')
+    await page.keyboard.press('c')
+    await page.getByTestId('composer-input').fill('say ok')
+    await page.getByTestId('composer-input').press('Enter')
+    await expect(page.locator('.guide-shell')).toHaveAttribute('data-stage', '14')
+    await expect(page.locator('.guide-transcript [data-role="assistant"]')).toContainText('stub: say ok')
+    await expectReadableTurn(page, 'say ok')
+  })
+}

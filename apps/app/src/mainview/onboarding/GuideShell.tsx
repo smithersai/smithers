@@ -124,8 +124,8 @@ export function GuideShell({ children, clock = guideClock }: { children: ReactNo
   const entries = guideTranscriptEntries(lessonCards.filter(card => stage < GUIDE_LAST_STEP || guide.transcript?.[card.id]?.source === "chat"), messages, guide)
   const typing = session.phase === "responding"
   const streamingMessageId = typing ? messages.at(-1)?.id : undefined
-  // Closing the composer must not replace the answer's anchor with the lesson.
-  const chatAnchorId = messages.filter(message => message.role === "user" && guide.transcript?.[message.id]?.step === stage).at(-1)?.id
+  // Closing the composer keeps the chat read; the terminal beat retains the last question.
+  const chatAnchorId = messages.filter(message => message.role === "user" && (guide.transcript?.[message.id]?.step === stage || stage === GUIDE_LAST_STEP)).at(-1)?.id
   const promptId = signInPrompts.at(-1)?.id
   const scrollToken = `${promptId ?? ""}:${stage}:${entries.map(entry => `${entry.kind === "card" ? entry.card.id + ':' + entry.card.kind : entry.message.id}`).join(",")}`
   /*
@@ -202,7 +202,7 @@ export function GuideShell({ children, clock = guideClock }: { children: ReactNo
   if (stage > enteredStep.current) enteredStep.current = stage
   const sounded = useRef({ playthrough: guide.playthrough, completed: guide.completed ?? [] })
   const opener = useRef<HTMLButtonElement>(null)
-  const previousFocus = useRef<HTMLElement | null>(null)
+  const dockWasOpen = useRef(false)
   const picker = cards.find(card => card.id === PRACTICE_CARD.commits)
   const runCard = cards.find(card => card.id === PRACTICE_CARD.run)
   const librarianRuns = cards.flatMap(card => card.kind === "run-trace" && typeof card.payload.input?._librarian === "object" ? [card] : [])
@@ -211,19 +211,20 @@ export function GuideShell({ children, clock = guideClock }: { children: ReactNo
   }
   /*
    * C opens Chat (Cmd/Ctrl-K remains an alias) (SCRIPT v4 "Open decision"): the composer rises
-   * into the palette layer with "Ask Smithers" as its first row.
+   * into the bottom dock with "Ask Smithers" as its first row.
    */
   const runCommandOpen = () => {
-    previousFocus.current = document.activeElement instanceof HTMLElement ? document.activeElement : null
     flushSync(() => controller.runCommand("chat.open"))
     document.querySelector<HTMLTextAreaElement>(".guide-composer-layer textarea")?.focus()
   }
   const runCommandClose = () => {
     controller.cancelDictation()
-    controller.closePalette()
-    runCommandGuide("close")
-    if (previousFocus.current?.isConnected) previousFocus.current.focus()
-    else (opener.current ?? document.querySelector<HTMLElement>(".guide-shell"))?.focus()
+    flushSync(() => {
+      controller.closePalette()
+      runCommandGuide("close")
+    })
+    const target = opener.current ?? document.querySelector<HTMLElement>(".guide-shell")
+    target?.focus()
   }
   /** `{repo}` is the user's repository; `{picked}` is the picker's checked commits. Unresolved args render the flow's form. */
   const argsOf = (action: GuideAction): string | undefined => {
@@ -399,7 +400,7 @@ export function GuideShell({ children, clock = guideClock }: { children: ReactNo
         }
       }}
     >
-      <div className="guide-content" ref={bindInputs} inert={conversationOpen && session.inputMode !== "vim" || undefined}>
+      <div className="guide-content" ref={bindInputs}>
       {/*
         * The workspace is behind the tutorial chrome (guide.css): while a lesson
         * is running it is not reachable, so it leaves the a11y tree and the tab
@@ -541,7 +542,7 @@ export function GuideShell({ children, clock = guideClock }: { children: ReactNo
               </article>
             ))}
           </div>
-          <div className="guide-actions" data-keyboard-pane="Lesson actions" data-help-sequence={lesson?.kind === "do" && lesson.help?.introduction !== undefined || undefined}>
+          <div className="guide-actions" data-keyboard-pane="Lesson actions" data-help-sequence={showTutorialHelp && !chatHelpOpen && lesson?.kind === "do" && lesson.help?.introduction !== undefined || undefined}>
             {lesson?.kind === "do" && lesson.actions.map(suggestion => {
               const action = guideActionState(suggestion, lessonCards, guide)
               const guidedAction = lesson.help?.actionKey === action.key
@@ -584,50 +585,22 @@ export function GuideShell({ children, clock = guideClock }: { children: ReactNo
         </section>
       </main>
       </div>
-        <dialog
+        <section
           className="guide-composer-dock"
           role="dialog"
           aria-label="Chat"
-          aria-modal={session.inputMode !== "vim"}
+          aria-modal={false}
           ref={node => {
             if (!node) return
-            const modal = session.inputMode !== "vim"
-            if (node.open && node.dataset.modal !== String(modal)) node.close()
-            node.dataset.modal = String(modal)
-            if (conversationOpen && !node.open) {
-              if (modal) node.showModal()
-              else node.show()
+            if (conversationOpen && !dockWasOpen.current) {
               node.querySelector<HTMLTextAreaElement>('textarea')?.focus()
+            } else if (!conversationOpen && dockWasOpen.current) {
+              opener.current?.focus()
             }
-            else if (!conversationOpen && node.open) node.close()
-            // The composer is a portal: React events follow App's ancestry,
-            // so the modal boundary must listen on its actual DOM ancestor.
-            const tab = (event: KeyboardEvent) => {
-              if (!modal || event.key !== "Tab" || event.defaultPrevented) return
-              const controls = [...node.querySelectorAll<HTMLElement>('button, input, textarea, select, a[href], [tabindex]')]
-                .filter(control => control.tabIndex >= 0 && !control.matches(':disabled') && !control.closest('[hidden], [inert], [aria-hidden="true"]'))
-              const first = controls[0], last = controls.at(-1)
-              const next = event.shiftKey && document.activeElement === first ? last
-                : !event.shiftKey && document.activeElement === last ? first : undefined
-              if (next) { event.preventDefault(); next.focus() }
-            }
-            node.addEventListener('keydown', tab)
-            return () => node.removeEventListener('keydown', tab)
+            dockWasOpen.current = conversationOpen
           }}
-          onCancel={event => event.preventDefault()}
           inert={!conversationOpen ? true : undefined}
           aria-hidden={!conversationOpen}
-          /* Pointer events avoid the synthesized mousedown after the touch
-             that opened Chat, which would immediately dismiss the modal. */
-          onPointerDown={(event) => {
-            if (event.target === event.currentTarget) {
-              event.preventDefault()
-              runCommandClose()
-            }
-          }}
-          onMouseDown={event => {
-            if (event.target === event.currentTarget) event.preventDefault()
-          }}
         >
         <div className="guide-composer-clip">
           <section
@@ -643,15 +616,15 @@ export function GuideShell({ children, clock = guideClock }: { children: ReactNo
               </GuideButton>
             )}
             <div className="guide-composer-host" ref={setComposerHost} />
-            {conversationOpen && <InputModeMenu mode={session.inputMode ?? "normal"} placement="below" onChange={mode => controller.runCommand("input.mode", mode)} />}
-            {conversationOpen && touch && <button type="button" className="guide-button guide-composer-close" onClick={runCommandClose}>Close</button>}
+            {conversationOpen && <div className="guide-composer-controls">
+              <InputModeMenu mode={session.inputMode ?? "normal"} placement="below" onChange={mode => controller.runCommand("input.mode", mode)} />
+              <GuideButton className="guide-composer-close" aria-label="Close Chat" onClick={runCommandClose}>{touch ? "Close" : <X size={16} />}</GuideButton>
+            </div>}
           </section>
         </div>
-        {/* Native modal dialogs make everything outside inert, including toast actions. */}
-        {conversationOpen && notifications}
-        </dialog>
-      {/* The footer is the shell's last row; the palette overlay floats above it. */}
-      <footer data-keyboard-pane="Tutorial controls" className="guide-footer" inert={conversationOpen && session.inputMode !== "vim" || undefined}>
+        </section>
+      {/* The footer shares the shell's column with the dock. */}
+      <footer data-keyboard-pane="Tutorial controls" className="guide-footer">
         <GuideButton
           data-flow="onboarding.act"
           onClick={runCommandSound}
@@ -683,7 +656,9 @@ export function GuideShell({ children, clock = guideClock }: { children: ReactNo
               content={guidanceContent} onDismiss={() => setDismissedHelp(helpKey)}>
             <GuideButton ref={opener} shortcut={GUIDE_KEYS.chat} data-flow="chat.open" data-pulse={lesson?.kind === "do" && lesson.completion === "palette.opened" && !done(stage)}
               aria-describedby={chatHelpOpen ? `guide-chat-help-${stage}` : undefined}
-              onClick={runCommandOpen}>
+              onPointerDown={event => { if (event.pointerType === "touch") event.preventDefault() }}
+              onMouseDown={event => event.preventDefault()}
+              onClick={() => conversationOpen ? runCommandClose() : runCommandOpen()}>
               <span>Chat</span>
             </GuideButton>
             </HelpBubble>
@@ -696,7 +671,7 @@ export function GuideShell({ children, clock = guideClock }: { children: ReactNo
           </GuideButton>
         )}
       </footer>
-      {!conversationOpen && notifications}
+      {notifications}
     </div>
     </InTutorial>
     </GuideComposerHost.Provider>

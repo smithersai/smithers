@@ -65,24 +65,25 @@ test("dictation opens chat, appends recognized speech, and Escape releases the m
   await expect(page.getByRole("dialog", { name: "Chat", exact: true }).getByRole("button", { name: "Stop dictation" })).toBeVisible()
   const stop = page.getByRole("button", { name: "Stop dictation" })
   await expect(stop).toHaveAttribute("aria-keyshortcuts", "Escape")
-  await input.press("Tab")
+  // Stop precedes the input in the nonmodal dock's native tab order.
+  await input.press("Shift+Tab")
   await expect(stop).toBeFocused()
-  await page.keyboard.press("Shift+Tab")
+  await page.keyboard.press("Tab")
   await expect(input).toBeFocused()
   await page.screenshot({ path: "/tmp/smithers-dictation.png" })
   await page.keyboard.press("Escape")
-  // Escape stops capture immediately and dismisses the active palette first.
+  // Capture owns the first Escape; the next closes Chat and its root palette.
   expect(await page.evaluate(() => (window as any).dictationAborted)).toBe(true)
   await expect(page.getByRole("button", { name: "Stop dictation" })).toHaveCount(0)
   await expect(input).toBeVisible()
-  await expect(input).toHaveAttribute("aria-expanded", "false")
+  await expect(input).toHaveAttribute("aria-expanded", "true")
   await page.keyboard.press("Escape")
   await expect(input).toBeHidden()
   await expect(page.getByRole("button", { name: "Mode: Dictation", exact: true })).toBeVisible()
 })
 
 
-test("dictation Stop is reachable by Tab and Enter without closing Chat", async ({ page }) => {
+test("dictation Stop is reachable by Shift+Tab and Enter without closing Chat", async ({ page }) => {
   await page.addInitScript(() => {
     (window as any).SpeechRecognition = class {
       onend: any
@@ -95,9 +96,9 @@ test("dictation Stop is reachable by Tab and Enter without closing Chat", async 
   await page.getByRole("button", { name: "Mode: Normal", exact: true }).click()
   await page.getByRole("menuitemradio", { name: "Dictation", exact: true }).click()
   await page.keyboard.press("c")
-  // Chat opens before recognition starts; test Tab once capture offers Stop.
+  // Chat opens before recognition starts; test Shift+Tab once capture offers Stop.
   await expect(page.getByRole("button", { name: "Stop dictation" })).toBeVisible()
-  await page.getByTestId("composer-input").press("Tab")
+  await page.getByTestId("composer-input").press("Shift+Tab")
   await expect(page.getByRole("button", { name: "Stop dictation" })).toBeFocused()
   await page.keyboard.press("Enter")
   await expect(page.getByRole("button", { name: "Stop dictation" })).toHaveCount(0)
@@ -127,6 +128,26 @@ for (const viewport of [{ width: 1280, height: 800 }, { width: 390, height: 844 
     await page.keyboard.press('Escape')
     await page.reload()
     await expect(heading).toBeInViewport()
-    await expect(page.getByRole('button', { name: "Jump to latest" })).toHaveAttribute("data-active", "false")
+    // The inactive control is inert, so it is excluded from the accessibility tree.
+    await expect(page.getByRole('button', { name: "Jump to latest", includeHidden: true })).toHaveAttribute("data-active", "false")
   })
 }
+
+for (const chord of ['Control+k', 'Meta+k']) test(`${chord} opens only the dock, resizes the workspace, and closes to Chat`, async ({ page }) => {
+  await page.goto('/?tutorial')
+  const content = page.locator('.guide-content')
+  const before = (await content.boundingBox())!
+  await page.keyboard.press(chord)
+  const input = page.getByTestId('composer-input')
+  await expect(input).toBeFocused()
+  const dock = page.getByRole('dialog', { name: 'Chat', exact: true })
+  await expect(dock).toHaveAttribute('aria-modal', 'false')
+  const after = (await content.boundingBox())!
+  const dockBox = (await dock.boundingBox())!
+  expect(after.height).toBeLessThan(before.height)
+  expect(after.y + after.height).toBeLessThanOrEqual(dockBox.y)
+  await page.keyboard.press(chord)
+  await expect(input).toBeHidden()
+  await expect(page.getByRole('button', { name: 'Chat', exact: true })).toBeFocused()
+  expect((await content.boundingBox())!.height).toBe(before.height)
+})
