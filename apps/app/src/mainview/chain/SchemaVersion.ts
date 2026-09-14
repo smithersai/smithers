@@ -98,6 +98,7 @@ export const PERSISTED_COLLECTION_IDS: ReadonlyArray<string> = [
   "app-cards",
   "app-card-histories",
   "app-repository-notifications",
+  "app-repository-contexts",
   "app-practice-issues",
   "app-approval-requests",
   "app-transitions",

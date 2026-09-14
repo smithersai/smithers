@@ -255,10 +255,13 @@ describe("a real store across a schema version bump", () => {
     expect(reopened.collections.workingCopies.get(copy.id)?.label).toBe("After")
     await reopened.dispose?.()
 
+    // Reopen may commit boot migrations (including tutorial presentation).
+    // Reset must quarantine the latest durable bytes, not the earlier snapshot.
+    const beforeReset = storage.getItem(ENVELOPE_STORAGE_KEY)!
     const outcome = enforceSchemaVersion(storage, { version: APP_SCHEMA_VERSION + 1, onMismatch: "reset" })
     for (const key of [cardKey, copyKey, ENVELOPE_STORAGE_KEY]) expect(storage.getItem(key)).toBeNull()
     const recovery = outcome.quarantinedKeys.map((key) => storage.getItem(key))
-    expect(recovery).toContain(committed)
+    expect(recovery).toContain(beforeReset)
     expect(recovery).toContain(legacyCard)
     expect(recovery).toContain(legacyCopy)
   })

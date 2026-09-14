@@ -360,12 +360,19 @@ describe("local archive and append-only summary notes", () => {
     const { store, storage, world, ctx } = await fixture(async () => response())
     await signIn(store)
     const before = state(store)
+    const committed = storage.getItem(ENVELOPE_STORAGE_KEY)
     storage.arm()
     expect(await world.clearConversation({ summarize: true })).toContain("archive could not be saved")
     expect(state(store)).toEqual(before)
+    expect(storage.getItem(ENVELOPE_STORAGE_KEY)).toBe(committed)
     storage.heal()
     const reopened = await createAppStore({ kind: "localStorage", storage })
-    expect(state(reopened)).toEqual(before)
+    // Boot deliberately marks a persisted first-time tutorial as started and
+    // paused; every archived projection still equals the pre-failure state.
+    expect(state(reopened)).toEqual({
+      ...before,
+      session: { ...before.session, guide: { ...before.session.guide!, autoPaused: true, completed: ["tutorial.started"] } }
+    })
     expect(await world.clearConversation({ summarize: true })).toBeUndefined()
     ctx.dispose()
   })

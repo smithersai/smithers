@@ -350,7 +350,7 @@ describe("the tabs collection", () => {
     expect(store.collections.tabs.get("t2")?.repoKey).toBeUndefined()
   })
 
-  test("boot drops process tabs and orphaned card tabs, and returns to main", async () => {
+  test("boot retains daemon process tabs, drops orphaned card tabs, and closes transient questions", async () => {
     const storage = memoryStorage()
     const first = await boot(storage)
     await persisted(first, { type: "card.upsert", actor: "user", card: themeCard })
@@ -374,13 +374,14 @@ describe("the tabs collection", () => {
     expect(first.session().activeTabId).toBe("tab-card-gone")
 
     const second = await boot(storage)
-    expect(tabIds(second)).toEqual(["main", "tab-card-theme-picker"])
+    expect(tabIds(second)).toEqual(["main", "tab-a", "tab-card-theme-picker"])
+    expect(second.collections.tabs.get("tab-a")).toMatchObject({ kind: "terminal", sessionId: "a", cwd: "~" })
     // The dead active tab closed like any other: the tab to its left takes over.
     expect(second.session().activeTabId).toBe("tab-card-theme-picker")
     expect(second.session().tabMenuOpen).toBe(false)
     expect(second.session().pendingTabCloseId).toBeNull()
     // Every reconciliation is journaled with the system actor.
     const journal = [...second.collections.transitions.values()]
-    expect(journal.filter((record) => record.type === "tab.closed" && record.actor === "system")).toHaveLength(2)
+    expect(journal.filter((record) => record.type === "tab.closed" && record.actor === "system")).toHaveLength(1)
   })
 })
