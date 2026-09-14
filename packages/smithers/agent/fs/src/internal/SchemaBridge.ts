@@ -174,7 +174,12 @@ const documentOf = (schema: Schema.Top): {
   readonly root: JsonSchema
   readonly definitions: JsonSchema
 } => {
-  const document = Schema.toJsonSchemaDocument(schema)
+  // Objects are advertised closed. Effect's default (`"ignore"`) leaves every
+  // struct open, which `objectFor` would project as `catchall(unknown)`; an
+  // unknown flag or nested key would then pass the projection and be dropped
+  // by the authoritative decoder instead of refused. Index signatures keep
+  // their typed `additionalProperties` either way.
+  const document = Schema.toJsonSchemaDocument(schema, { onExcessProperty: "error" })
   return {
     root: document.schema,
     definitions: document.definitions

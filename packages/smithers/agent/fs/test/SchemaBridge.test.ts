@@ -343,6 +343,30 @@ describe("SchemaBridge", () => {
     ).toBe("decode_failed")
   })
 
+  it("advertises structs closed and refuses an unknown flag or nested key instead of dropping it", async () => {
+    // Effect's default JSON Schema leaves structs open, and the authoritative
+    // decoder ignores excess keys, so an open projection would let a mistyped
+    // flag through and invoke the flow without it.
+    const command = await Effect.runPromise(SchemaBridge.toCommandSchema(
+      moduleRef,
+      Schema.Struct({ nested: Schema.Struct({ mode: Schema.String }) })
+    ))
+    const advertised = z.toJSONSchema(command.options!, { unrepresentable: "any" })
+    expect(advertised.additionalProperties).toBe(false)
+    expect(advertised.properties?.nested).toMatchObject({ additionalProperties: false })
+    expect(await Effect.runPromise(command.decode(command.assemble([], { nested: { mode: "fast" } })))).toEqual({
+      nested: { mode: "fast" }
+    })
+    for (
+      const options of [
+        { nested: { mode: "fast" }, mdoe: "slow" },
+        { nested: { mode: "fast", extra: true } }
+      ]
+    ) {
+      expect((await failure(command.decode(command.assemble([], options)))).code).toBe("decode_failed")
+    }
+  })
+
   it("turns document-generation errors into sanitized typed unsupported_schema failures", async () => {
     const error = await failure(SchemaBridge.toCommandSchema(
       moduleRef,

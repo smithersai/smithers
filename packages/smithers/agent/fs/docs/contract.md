@@ -73,7 +73,10 @@ tool list describe the input the flow accepts. Unions and nullable fields keep
 every branch. Nested objects retain their properties, required keys, and
 additional-property schemas; arrays retain their element types, and tuples
 retain their positional types and rest elements. Arrays without an element
-schema advertise unconstrained items. A literal set is advertised as its exact
+schema advertise unconstrained items. A struct is advertised closed at every
+depth, so an unknown flag or nested key is refused with `decode_failed` rather
+than dropped, while a `Schema.Record` keeps its typed additional properties.
+A literal set is advertised as its exact
 values, so
 `Schema.Number`, which Effect renders as `number | "Infinity" | "-Infinity" |
 "NaN"`, is published with that shape rather than as an untyped value. Building
