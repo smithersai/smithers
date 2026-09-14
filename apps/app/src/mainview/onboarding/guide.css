@@ -709,6 +709,11 @@
   opacity: 0;
   transition: opacity var(--dur) var(--ease-current), visibility 0s var(--dur);
 }
+/* Dark: --g-ink inverts to near-white, so the same 20% read as a milky sage
+   haze over the dark UI. Dim with the theme's own ground instead. */
+.guide-shell[data-theme="dark"] .guide-composer-dock {
+  background: color-mix(in srgb, var(--g-bg) 60%, transparent);
+}
 .guide-composer-dock::backdrop { background: transparent; }
 .guide-shell[data-conversation-open="true"] .guide-composer-dock {
   visibility: visible;
