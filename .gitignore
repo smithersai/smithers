@@ -164,3 +164,6 @@ apps/app/WHITESPACE*.md
 
 # apps/app/e2e root-level *.mjs are throwaway screenshot/probe scripts (hardcoded ports, temp paths)
 apps/app/e2e/*.mjs
+
+# Review reports and ledgers stay on disk (Will 2026-09-04: review evidence is never committed)
+docs/reviews/
