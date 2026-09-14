@@ -41,6 +41,7 @@ import { catalogRepositoryOf } from "./state/RepoContext"
 import { ConfirmDialog } from "./SurfaceChrome"
 import { TabBodies } from "./tabs/TabBodies"
 import { ToastStack } from "./ToastStack"
+import { visibleToasts } from "./state/Toasts"
 import { useCardRows, useWorkflowCatalogRows } from "./state/useCardRows"
 import { chatEntryIds, InTutorial, tutorialTranscript, workspaceTranscript } from "./onboarding/transcriptScope"
 import { WorldSurface } from "./WorldSurface"
@@ -72,9 +73,7 @@ const handoffRank = (entry: TranscriptEntry, repo: string | undefined): number =
   return card.kind === "repo-onboarding" && card.payload.stage === "welcome" ? 1 : 2
 }
 
-
-
-function App() {
+function AppContent() {
   const controller = useController()
   const { collections } = controller.store
   /*
@@ -128,9 +127,6 @@ function App() {
   const cardRows = useCardRows(collections.cards)
   const workflowCatalogs = useWorkflowCatalogRows(collections.cards)
   const { data: identityRows } = useLiveQuery(collections.identitySessions)
-  const { data: toastRows } = useLiveQuery((q) =>
-    q.from({ toast: collections.toasts }).orderBy(({ toast }) => toast.createdAt)
-  )
   const { data: harnessRows } = useLiveQuery(collections.harnesses)
   const { data: connectorRows } = useLiveQuery(collections.connectors)
   const { data: repoRows } = useLiveQuery(collections.repos)
@@ -193,7 +189,6 @@ function App() {
   const activeTabId = session.activeTabId ?? MAIN_TAB_ID
   const streamingMessageId = typing ? messages[messages.length - 1]?.id : undefined
   const identity = identityRows[0]
-  const toasts = toastRows
 
   /*
    * Outside-pointer dismissal belongs to the shell that owns both menus.
@@ -669,25 +664,25 @@ function App() {
         }}
         onCancel={() => controller.runCommand("admin.reset.cancel")}
       />
-
-      {/*
-       * The one shared toast stack: every background flow past 300ms reports
-       * here. Inside the guide shell the guide's own stack is the toast
-       * surface — this one is confined to the app layer's stacking context
-       * (invisible during the lessons, covered by the floating chrome at the
-       * workspace) and would duplicate every notification.
-       */}
-      {composerHost === undefined ?
-        (
-          <ToastStack
-            toasts={toasts}
-            onDismiss={(id) => controller.runCommand("toast.dismiss", id)}
-            onAction={action => controller.runCommand(action.flow, action.args)}
-          />
-        ) :
-        null}
     </div>
   )
+}
+
+function App({ guided = false }: { guided?: boolean }) {
+  const controller = useController()
+  const { data: toasts } = useLiveQuery(controller.store.collections.toasts)
+  const { data: sessions } = useLiveQuery(q => q.from({ session: controller.store.collections.sessions })
+    .select(({ session }) => ({ guide: session.guide })))
+  const inTutorial = useContext(InTutorial)
+  const content = useMemo(() => guided ? <GuideShell><AppContent /></GuideShell> : <AppContent />, [guided])
+  // Outside GuideShell, this single mount survives the tutorial-to-workspace handoff
+  // and serves the bare app too; its portal owns placement above any native modal.
+  return <>
+    {content}
+    <ToastStack toasts={visibleToasts(toasts, guided || inTutorial ? sessions[0]?.guide : undefined)}
+      onDismiss={id => controller.runCommand("toast.dismiss", id)}
+      onAction={action => controller.runCommand(action.flow, action.args)} />
+  </>
 }
 
 /*
@@ -697,12 +692,12 @@ function App() {
  * full-screen and Command-K summons the composer.
  */
 export default App
-export function GuidedApp() { return <GuideShell><App /></GuideShell> }
+export function GuidedApp() { return <App guided /> }
 
 /** Repository pages can remount the guide through the same persisted /tut door. */
 export function RepositoryApp() {
   const controller = useController()
   const { data: sessions } = useLiveQuery(controller.store.collections.sessions)
   const guide = sessions[0]?.guide ?? controller.store.session().guide
-  return (guide?.playthrough ?? 0) > 0 && !guide?.finished ? <GuidedApp /> : <App />
+  return <App guided={(guide?.playthrough ?? 0) > 0 && !guide?.finished} />
 }

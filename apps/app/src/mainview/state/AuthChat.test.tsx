@@ -388,18 +388,18 @@ describe("auth is a conversation state — the chat is the only page", () => {
         }),
       toastDebounceMs: 0
     })
-    const { host } = mount(controller)
+    mount(controller)
     const pending = controller.refreshBalance()
     await settled()
     flushSync(() => {})
-    const stack = host.querySelector(".toast-stack")
+    const stack = document.querySelector(".toast-stack")
     expect(stack).not.toBeNull()
     expect(stack?.textContent).toContain("Refreshing your balance…")
     release(json(503, { status: "error" }))
     await pending
     await settled()
     flushSync(() => {})
-    expect(host.querySelector(".toast-stack")?.textContent).toContain(
+    expect(document.querySelector(".toast-stack")?.textContent).toContain(
       "Your balance couldn't be refreshed right now."
     )
   })
@@ -477,8 +477,8 @@ for (const guide of [false, true]) {
     await settled()
     flushSync(() => {})
     expect(host.querySelectorAll('.message-cta[data-flow="auth.sign-in"]').length).toBe(0)
-    expect(host.querySelectorAll('.toast-action[data-flow="auth.sign-in"]').length).toBe(0)
-    expect(host.querySelector('.toast-stack, .guide-toasts')?.textContent).toContain("Signed in with GitHub as @codeplanesmithers.")
+    expect(document.querySelectorAll('.toast-action[data-flow="auth.sign-in"]').length).toBe(0)
+    expect(document.querySelector('.toast-stack')?.textContent).toContain("Signed in with GitHub as @codeplanesmithers.")
     expect(host.textContent).toContain("Signed in with GitHub as @codeplanesmithers.")
     expect(host.textContent).toContain(prompt.text)
     expect(store.collections.messages.get(prompt.id)?.text).toBe(prompt.text)

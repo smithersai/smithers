@@ -125,11 +125,16 @@ export const createLibrarianRunsController = (ctx: ControllerContext, runs: Libr
       const abort = new AbortController()
       let timer: ReturnType<typeof setTimeout> | undefined
       try {
+        // The preparing notice is visible before saveIntent finishes persisting.
+        // Count that time too, and never provision an already expired intent.
+        const remainingMs = intent.startedAt + librarianLaunchTiming.deadlineMs - Date.now()
+        const deadlineFailure = "Workspace preparation took longer than 3 minutes. Try again."
+        if (remainingMs <= 0) return refuse(kind, deadlineFailure, intent)
         const expired = new Promise<string>(resolve => {
           timer = setTimeout(() => {
-            resolve("Workspace preparation took longer than 3 minutes. Try again.")
+            resolve(deadlineFailure)
             abort.abort()
-          }, librarianLaunchTiming.deadlineMs)
+          }, remainingMs)
         })
         const provisioned = await Promise.race([runs.provisionWorkspace(repo, undefined, abort.signal), expired])
         if (timer !== undefined) clearTimeout(timer)

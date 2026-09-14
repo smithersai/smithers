@@ -12,8 +12,14 @@ test.describe("landscape touch guidance", () => {
     await page.route("**/api/bootstrap", route => route.fulfill({ json: {
       apiVersion: 1, host: "cloud", version: "test", buildSha: "test", capabilities: [], authFlow: "none", sandbox: null,
     } }))
-    await page.clock.install()
+    // Boot/network time must not consume an instruction's measured dwell.
+    await page.clock.install({ time: 0 })
+    await page.clock.pauseAt(0)
     await page.goto("/smithersai/smithers/?tutorial")
+    await expect.poll(async () => {
+      await page.clock.runFor(50)
+      return page.locator(".guide-shell").count()
+    }).toBe(1)
     await expect(page.locator(".guide-shell")).toHaveAttribute("data-stage", "1")
     const help = page.getByRole("note", { name: "Help" })
     await page.clock.runFor(4_000)
@@ -55,7 +61,7 @@ for (const width of [1280, 390]) {
     const lesson = GUIDE_STAGES[1]!
     await expect(page.getByRole("button", { name: "Review changes", exact: true })).toBeVisible()
     await expect(help.locator(".guidance-text-visual")).toHaveText(lesson.kind === "do" ? lesson.help!.introduction![0]!.content : "")
-    await expect(page.locator(".guide-toasts .guide-tip")).toHaveCount(0)
+    await expect(page.locator(".toast-stack .guide-tip")).toHaveCount(0)
     await expect(target).toHaveAttribute("aria-describedby", "guide-instruction-1 guide-help-1")
     await expect(page.locator("[data-help-pulse]")).toHaveCount(0)
     await expect(help.locator(".guidance-text-visual > span").last()).toHaveCSS("opacity", "1")

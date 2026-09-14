@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test"
+import { describe, expect, test, spyOn } from "bun:test"
 import { createAppStore } from "../AppStore"
 import { initialGuide, type Card } from "../AppState"
 import type { ControllerContext } from "./context"
@@ -202,6 +202,35 @@ test("preparation has a deadline, persists its failure, and ignores a late ready
     const reloaded = await createAppStore({ kind: "localStorage", storage: f.storage })
     expect(reloaded.session().guide?.noticeDetail).toContain("3 minutes")
   } finally { librarianLaunchTiming.deadlineMs = previous }
+})
+test("preparation's deadline includes saving the visible launch intent", async () => {
+  const f = await fixture()
+  let release!: () => void
+  const saving = new Promise<void>(resolve => { release = resolve })
+  const store = { ...f.store, dispatch: (transition: Parameters<typeof f.store.dispatch>[0]) => {
+    const transaction = f.store.dispatch(transition)
+    if (transition.type !== "guide.changed" || transition.guide.librarianLaunches?.at(-1)?.phase !== "preparing") return transaction
+    return new Proxy(transaction, { get(target, key, receiver) {
+      if (key === "isPersisted") return { ...target.isPersisted, promise: target.isPersisted.promise.then(() => saving) }
+      return Reflect.get(target, key, receiver)
+    } })
+  } }
+  let provisions = 0
+  const host = { ...f.runs, provisionWorkspace: async () => { provisions++; return true as const } }
+  const startedAt = Date.now()
+  const now = spyOn(Date, "now").mockReturnValue(startedAt)
+  try {
+    const controller = createLibrarianRunsController({ ...f.ctx, store }, host)
+    const result = controller.createWiki("will/demo")
+    expect(store.session().guide?.notice).toContain("Preparing your")
+    now.mockReturnValue(startedAt + librarianLaunchTiming.deadlineMs + 1)
+    release()
+    expect(await result).toContain("Workspace preparation took longer than 3 minutes. Try again.")
+    expect(provisions).toBe(0)
+    expect(f.launches).toEqual([])
+    const reloaded = await createAppStore({ kind: "localStorage", storage: f.storage })
+    expect(reloaded.session().guide?.noticeDetail).toContain("3 minutes")
+  } finally { release(); now.mockRestore(); f.dispose() }
 })
 test("reload during preparation reports the interrupted launch instead of losing it", async () => {
   const f = await fixture()

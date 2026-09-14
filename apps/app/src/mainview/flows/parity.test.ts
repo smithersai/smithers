@@ -205,7 +205,7 @@ describe("launch-law parity: every affordance is a command", () => {
         .filter(([, count]) => count > 0)
     )
     expect(counts).toEqual({
-      "../onboarding/GuideShell.tsx": 12, // Includes skip/secondary actions and the footer/dialog dictation controls.
+      "../onboarding/GuideShell.tsx": 11, // Toast dismissal is owned by ToastStack; includes dock Close and dictation controls.
       // The optional capability reel after the last lesson: its launch pill and its Back.
       "../onboarding/Reel.tsx": 4, // Delegates to the shared onboarding and existing app flows; the Command-K overlay is the summoned composer with no chrome of its own. The sidebar lists Wiki and Mythical history only — no Library entry.
       /*

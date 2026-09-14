@@ -873,58 +873,6 @@
   background: var(--g-panel);
   border-top: 1px solid var(--g-line);
 }
-.guide-toasts {
-  position: fixed;
-  bottom: 76px;
-  right: var(--sp-6);
-  width: min(360px, calc(100vw - 40px));
-  z-index: 90;
-  display: grid;
-  gap: var(--sp-2);
-  max-height: calc(100dvh - 100px);
-  overflow-y: auto;
-}
-.guide-toast {
-  display: flex;
-  align-items: flex-start;
-  gap: var(--sp-2);
-  border: 1px solid var(--g-line);
-  border-radius: var(--r-3);
-  padding: var(--sp-4);
-  background: var(--g-bg);
-  backdrop-filter: blur(20px);
-  box-shadow: var(--shadow-2);
-  animation: guide-rise 0.35s both;
-}
-.guide-toast > svg {
-  color: var(--g-gold);
-  flex-shrink: 0;
-  margin-top: 2px;
-}
-.guide-toast > div { flex: 1; min-width: 0; }
-.guide-toast strong {
-  font-size: var(--fs-small);
-  font-weight: 500;
-}
-.guide-toast p {
-  font-size: var(--fs-caption);
-  color: var(--g-muted);
-  line-height: 1.7;
-  margin-top: 7px;
-}
-.guide-toast > button {
-  background: none;
-  border: 0;
-  align-self: flex-start;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-  width: 24px;
-  height: 24px;
-  padding: 0;
-  margin-left: auto;
-}
 @keyframes guide-logo-arrive {
   0%,
   35% {

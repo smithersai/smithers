@@ -532,33 +532,55 @@
 }
 
 /*
- * Top-right, never bottom-right: anchored at the bottom the stack sat on the
- * composer's send button, and a failure toast (which stays until dismissed
- * by design) then swallowed every click on Send — one failed request made
- * the whole conversation unsendable until the human found the tiny dismiss.
+ * Top-right below the session strip normally. ModalPopover measures any active
+ * modal and places this same stack beside, below or above its content. An
+ * overlay is allowed only in space without interactive controls: persistent
+ * failure toasts must never swallow the click needed to continue a dialog.
  */
 .toast-stack {
+	--toast-gap: 16px;
 	position: fixed;
+	inset: auto;
+	margin: 0;
+	border: 0;
+	padding: 0;
+	background: transparent;
+	color: inherit;
+	overflow: visible;
 	right: var(--sp-4);
-	top: var(--sp-4);
-	/* Several failures stack; the column stops well above the composer and scrolls instead of covering it. */
-	max-height: calc(100vh - 240px);
-	overflow-y: auto;
+	top: var(--toast-y, calc(var(--session-strip, 44px) + var(--sp-4)));
+	left: var(--toast-x, auto);
 	pointer-events: none;
-	z-index: 40;
+	z-index: 90;
 	display: flex;
 	flex-direction: column;
 	gap: var(--sp-2);
 	width: min(320px, calc(100vw - 32px));
 }
 
+/* A crowded modal can lend a shorter, scrollable control-free region. */
+.toast-stack[data-modal-placement] {
+	max-height: var(--toast-height);
+	overflow-y: auto;
+}
+.toast-stack[data-no-toast-space] { visibility: hidden; }
+/* The measured modal region must contain the entire toast from its first frame. */
+.toast-stack[data-modal-placement] .toast { animation: none; }
+
+/* One notification keeps its full height. Multiple notifications may scroll. */
+.toast-stack:has(.toast + .toast) {
+	max-height: var(--toast-height, calc(100dvh - var(--session-strip, 44px) - 2 * var(--sp-4)));
+	overflow-y: auto;
+}
+
 .toast-stack .toast {
+	flex-shrink: 0;
 	pointer-events: auto;
 	display: flex;
 	align-items: flex-start;
 	gap: var(--sp-2);
 	/* The house overlay anatomy: glass, hairline, r-3, shadow-2 — the same
-	   recipe as the composer, the palette and the guide's toasts. */
+	   recipe as the composer and the palette. */
 	border: 1px solid var(--border);
 	border-radius: var(--r-3);
 	background: var(--surface-glass-strong);
@@ -567,7 +589,7 @@
 	animation: view-in var(--dur) var(--ease-current);
 }
 
-.toast-stack .toast-spinner {
+.toast-stack .toast-icon {
 	flex: none;
 	margin-top: 2px;
 }

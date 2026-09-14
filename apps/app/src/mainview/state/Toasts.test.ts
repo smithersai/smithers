@@ -1,4 +1,6 @@
 import { describe, expect, test } from "bun:test"
+import { visibleToasts } from "./Toasts"
+import { initialGuide, type GuideState, type Toast } from "./AppState"
 import { scopedControllers } from "./ControllerTestScope"
 import { createAppStore } from "./AppStore"
 import { memoryStorage, settled, silentAgent, unavailableRepositories } from "./TestFixtures"
@@ -175,5 +177,29 @@ describe("the 300ms toast law", () => {
     expect(reopened.collections.toasts.size).toBe(0)
     const journal = [...reopened.collections.transitions.values()]
     expect(journal.some((record) => record.type === "toast.dismissed" && record.actor === "system")).toBe(true)
+  })
+})
+
+
+describe("tutorial toast selection", () => {
+  const toast = (key: string, detail = "error"): Toast => ({
+    id: key, key, detail, title: key, status: "failed", createdAt: 1, updatedAt: 1
+  })
+  test("only tutorial tips are hidden outside the librarian lesson; the workspace keeps normal notifications", () => {
+    const rows = [toast("guide-tip-old"), toast("storage.failed")]
+    expect(visibleToasts(rows, initialGuide())).toEqual([rows[1]!])
+    expect(visibleToasts(rows)).toBe(rows)
+    expect(visibleToasts(rows, { ...initialGuide(), finished: true })).toBe(rows)
+  })
+  for (const kind of ["wiki", "history"] as const) test(`inline ${kind} failures suppress only matching notification data`, () => {
+    const command = kind === "wiki" ? "wiki.create" : "history.bootstrap"
+    const rows = [toast(`command.failed.${command}`), toast(`command.failed.${command}`, "another error"), toast("flow.provision.acme/app.1")]
+    const guide: GuideState = { ...initialGuide(), step: 12, repo: "acme/app", librarianLaunches: [{
+      kind, repo: "acme/app", scope: JSON.stringify([null, null, null, null, null, 0]), phase: "failed", reason: "error", startedAt: 1
+    }] }
+    expect(visibleToasts(rows, guide)).toEqual(rows.slice(1))
+    expect(visibleToasts(rows, { ...guide, librarianLaunches: [{ ...guide.librarianLaunches![0]!, phase: "preparing" }] })).toEqual(rows.slice(0, 2))
+    expect(visibleToasts(rows, { ...guide, librarianLaunches: [], notice: `Create ${kind === "wiki" ? "Wiki" : "Mythical history"} didn't start: error` })).toEqual([rows[1]!])
+    expect(visibleToasts(rows, { ...guide, step: 11 })).toEqual(rows)
   })
 })

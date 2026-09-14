@@ -260,7 +260,7 @@ test("the whole tutorial walks every beat, keyboard first, through asynchronous 
   await expect(card(page, "file")).toContainText('name || "world"')
   await page.locator('.guide-actions [aria-keyshortcuts="o"]').click()
   await atStage(page, 9)
-  await expect(page.locator('.guide-toast[data-toast-status="failed"]')).toHaveCount(0)
+  await expect(page.locator('.toast-stack .toast[data-toast-status="failed"]')).toHaveCount(0)
   await page.keyboard.press("1")
   await until(page, picker.locator('[data-pick-row="1"][data-picked="false"]'), "row 1 unchecks")
   await shoot(page, 9)
@@ -463,7 +463,7 @@ test.describe("escape hatches", () => {
     await atStage(page, 3)
     await doBeat(page, 3, "e")
     await atStage(page, 4)
-    await expect(page.locator('.guide-toast').filter({ hasText: "didn't run" })).toHaveCount(0)
+    await expect(page.locator('.toast-stack .toast').filter({ hasText: "didn't run" })).toHaveCount(0)
   })
 
   test("Skip at beat 1 and Back never visit undone practice beats", async ({ page, baseURL }) => {
@@ -484,7 +484,7 @@ test.describe("escape hatches", () => {
     await atStage(page, 2)
     await expect(card(page, "issue-list")).toBeVisible()
     expect(host.live).toHaveLength(0)
-    await expect(page.locator('.guide-toast').filter({ hasText: "didn't run" })).toHaveCount(0)
+    await expect(page.locator('.toast-stack .toast').filter({ hasText: "didn't run" })).toHaveCount(0)
   })
 
   test("Not now (X) at login skips beats 11 and 12; the workspace stays on hello-server", async ({ page, baseURL }) => {

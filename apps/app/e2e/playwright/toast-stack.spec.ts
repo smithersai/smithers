@@ -1,0 +1,258 @@
+import { expect, test, type Page } from "@playwright/test"
+import { mkdir, writeFile } from "node:fs/promises"
+import { join } from "node:path"
+
+/** Exercise the real failed-storage toast using only this browser profile. */
+const boot = async (page: Page) => {
+  await page.addInitScript(() => {
+    localStorage.setItem("smithers-mvp.persistenceBackend", "opfs")
+    window.Worker = class extends Worker {
+      constructor(url: string | URL, options?: WorkerOptions) {
+        super(url, options)
+        this.terminate()
+        throw new DOMException("Storage unavailable for notification layout test", "NotAllowedError")
+      }
+    }
+  })
+  await page.route("**/api/**", route => route.fulfill({ status: 404, json: { error: "Not part of the notification fixture" } }))
+  await page.route("**/api/bootstrap", route => route.fulfill({ json: {
+    apiVersion: 1, host: "cloud", version: "test", buildSha: "test",
+    capabilities: ["identity", "cloud", "agent"], authFlow: "redirect", sandbox: null,
+  } }))
+  await page.route("**/api/auth/session", route => route.fulfill({ json: { status: "signed-out" } }))
+  await page.route("**/api/public/repos", route => route.fulfill({ json: { repos: [{ name: "smithersai/smithers" }] } }))
+  await page.route("**/api/repos/smithersai/smithers", route => route.fulfill({ json: { default_bookmark: "main" } }))
+  await page.route("**/api/repos/smithersai/smithers/contents/.smithers/home.json", route => route.fulfill({ json: {
+    content: JSON.stringify({ blocks: [{ type: "text", text: "Repository home" }] }),
+  } }))
+  await page.goto("/")
+  await expect(page.locator('.toast-stack .toast[data-toast-status="failed"]')).toContainText("This session will not be saved")
+  await expect(page.getByRole("button", { name: "Chat", exact: true })).toBeVisible()
+}
+
+const oneStack = async (page: Page) => {
+  const stack = page.locator(".toast-stack")
+  await expect(stack).toHaveCount(1)
+  await expect(stack).toBeVisible()
+  await expect(page.locator(".guide-shell .toast:not([data-modal-popover] .toast)")).toHaveCount(0)
+  await expect(stack).toHaveJSProperty("popover", "manual")
+  await expect.poll(() => stack.evaluate(node => node.matches(":popover-open"))).toBe(true)
+  // The whole single toast is visible, below the session's Sign in strip.
+  expect(await stack.evaluate(node => {
+    const rect = node.getBoundingClientRect()
+    const header = document.querySelector(".session-navigation")!.getBoundingClientRect()
+    return rect.top >= header.bottom && rect.bottom <= innerHeight && rect.left >= 0 && rect.right <= innerWidth
+      && node.scrollHeight <= node.clientHeight + 1
+  })).toBe(true)
+  return stack
+}
+
+const viewports = [{ width: 1280, height: 800 }, { width: 390, height: 844 }, { width: 860, height: 480 }]
+
+const modalOverlaps = (page: Page, selector = "dialog:modal") => page.evaluate(selector => {
+  const modal = document.activeElement?.closest(selector) ?? document.querySelector(selector)!
+  const controls = [...modal.querySelectorAll<HTMLElement>("button, textarea, input")]
+    .filter(control => !control.closest("[data-modal-popover]") && control.checkVisibility())
+  return [...document.querySelectorAll<HTMLElement>(".toast")].filter(toast => toast.checkVisibility()).flatMap(toast => {
+    const t = toast.getBoundingClientRect()
+    return controls.flatMap(control => {
+      const c = control.getBoundingClientRect()
+      return t.left < c.right && t.right > c.left && t.top < c.bottom && t.bottom > c.top
+        ? [{ control: control.getAttribute("aria-label") ?? control.dataset.testid ?? control.textContent,
+            toast: t.toJSON(), rect: c.toJSON() }] : []
+    })
+  })
+}, selector)
+
+for (const viewport of viewports) {
+  test(`failed toast clears modal controls and a real Send click at ${viewport.width}x${viewport.height}`, async ({ page }) => {
+    await page.setViewportSize(viewport)
+    await page.emulateMedia({ reducedMotion: "reduce" })
+    await boot(page)
+    await page.getByRole("button", { name: "Chat", exact: true }).click()
+    await page.getByTestId("composer-input").fill("/repo.home smithersai/smithers")
+    // Chat is now a nonmodal bottom dock; it must still leave Send reachable.
+    await expect(page.getByRole("dialog", { name: "Chat", exact: true })).toBeVisible()
+    await expect(page.locator('.toast[data-toast-status="failed"]')).toBeVisible()
+    await expect.poll(() => modalOverlaps(page, '[role="dialog"][aria-label="Chat"]')).toEqual([])
+    await expect(page.locator('.toast[data-toast-status="failed"]')).toBeVisible()
+    const send = page.getByTestId("composer-send")
+    await expect(send).toBeEnabled()
+    // PressActions activates on release; observe the trusted mouse gesture at
+    // Send, then assert its normal submission completed.
+    await send.evaluate(button => button.addEventListener("pointerdown", event => {
+      button.setAttribute("data-real-pointer", String(event.isTrusted))
+    }, { once: true }))
+    const rect = (await send.boundingBox())!
+    await page.mouse.click(rect.x + rect.width / 2, rect.y + rect.height / 2)
+    await expect(send).toHaveAttribute("data-real-pointer", "true")
+    await expect(page.getByTestId("composer-input")).toHaveValue("")
+
+    // Exercise the same guarantee for a native modal, independently of Chat.
+    await page.evaluate(() => {
+      const dialog = document.createElement("dialog")
+      dialog.id = "send-modal"
+      dialog.style.cssText = "position:fixed;inset:0;width:100vw;height:100vh;max-width:none;max-height:none;margin:0;padding:0;border:0"
+      dialog.innerHTML = '<form style="position:absolute;top:96px;left:12px;width:calc(100% - 24px);height:200px;display:flex;flex-direction:column"><textarea aria-label="Modal draft" style="flex:1"></textarea><button>Send modal</button></form>'
+      dialog.querySelector("form")!.addEventListener("submit", event => {
+        event.preventDefault()
+        dialog.dataset.sent = String(event.isTrusted)
+      })
+      document.body.append(dialog)
+      dialog.showModal()
+    })
+    await expect(page.locator("#send-modal .toast-stack")).toHaveCount(1)
+    await oneStack(page)
+    await expect.poll(() => modalOverlaps(page)).toEqual([])
+    const modalSend = page.getByRole("button", { name: "Send modal", exact: true })
+    const modalRect = (await modalSend.boundingBox())!
+    await page.mouse.click(modalRect.x + modalRect.width / 2, modalRect.y + modalRect.height / 2)
+    await expect(page.locator("#send-modal")).toHaveAttribute("data-sent", "true")
+  })
+
+  test(`one shared, unclipped toast stack at ${viewport.width}x${viewport.height}`, async ({ page }, testInfo) => {
+    await page.setViewportSize(viewport)
+    await page.emulateMedia({ reducedMotion: "reduce", colorScheme: "light" })
+    await boot(page)
+    const screenshot = async (name: string) => {
+      const directory = process.env.SMITHERS_TOAST_SHOTS ?? testInfo.outputPath("screenshots")
+      await mkdir(directory, { recursive: true })
+      await page.screenshot({ path: join(directory, `${name}-${viewport.width}x${viewport.height}.png`) })
+      await writeFile(join(directory, `${name}-${viewport.width}x${viewport.height}.json`), JSON.stringify(await page.evaluate(() => ({
+        toasts: [...document.querySelectorAll(".toast")].map(node => node.getBoundingClientRect().toJSON()),
+        content: document.querySelector("dialog:modal > :not([data-modal-popover])")?.getBoundingClientRect().toJSON(),
+        send: document.querySelector('[data-testid="composer-send"]')?.getBoundingClientRect().toJSON(),
+      })), null, 2))
+    }
+    let stack = await oneStack(page)
+    await expect(page.locator("dialog .toast-stack")).toHaveCount(0)
+    const original = await stack.elementHandle()
+    await screenshot("tutorial-closed")
+
+    await page.getByRole("button", { name: "Chat", exact: true }).click()
+    await page.getByTestId("composer-input").fill("Ready to work.")
+    stack = await oneStack(page)
+    await expect(page.locator("dialog .toast-stack")).toHaveCount(0)
+    await screenshot("tutorial-open")
+    await expect.poll(() => modalOverlaps(page, '[role="dialog"][aria-label="Chat"]')).toEqual([])
+
+    // A real dispatch while Chat is open updates the same mounted stack.
+    // Requirement refusals now belong in the transcript. A seam failure still
+    // uses an actionable toast, even if identity did not know it needed auth.
+    await page.route("**/api/repos/smithersai/smithers/contents/.smithers/home.json", route => route.fulfill({
+      status: 403, json: { message: "Use /auth.sign-in to read this repository." },
+    }))
+    await page.getByTestId("composer-input").fill("/repo.home smithersai/smithers")
+    await page.getByTestId("composer-input").press("Enter")
+    await expect(stack.locator(".toast")).toHaveCount(2)
+    expect(await original!.evaluate(node => node === document.querySelector(".toast-stack"))).toBe(true)
+    await stack.locator('.toast:has([data-flow="auth.sign-in"]) [data-flow="toast.dismiss"]').click()
+    await expect(stack.locator(".toast")).toHaveCount(1)
+
+    await page.route("**/api/repos/smithersai/smithers/contents/.smithers/home.json", route => route.fulfill({ json: {
+      content: JSON.stringify({ blocks: [{ type: "text", text: "Repository home" }] }),
+    } }))
+
+    await page.getByTestId("composer-input").fill("/onboarding.act finish")
+    await page.getByTestId("composer-input").press("Enter")
+    await expect(page.locator(".guide-shell")).toHaveCount(0)
+    stack = await oneStack(page)
+    await screenshot("workspace-finished")
+    expect(await original!.evaluate(node => node === document.querySelector(".toast-stack"))).toBe(true)
+    await stack.getByRole("button", { name: "Dismiss: This session will not be saved", exact: true }).click()
+    await expect(stack.getByText("This session will not be saved", { exact: true })).toHaveCount(0)
+  })
+}
+
+test("the same stack follows any modal, including dialogs opened out of DOM order in one task", async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: "no-preference" })
+  await boot(page)
+  const stack = await oneStack(page)
+  const original = await stack.elementHandle()
+  // Hold the entrance mid-motion: reparenting must not clip the toast inside
+  // the measured modal region, even before an animation would normally end.
+  await page.addStyleTag({ content: ".toast-stack .toast { animation-duration: 60s; }" })
+  await stack.locator(".toast").evaluate(toast => {
+    for (const animation of toast.getAnimations()) {
+      animation.currentTime = 0
+      animation.pause()
+    }
+  })
+  await page.evaluate(() => {
+    for (const id of ["first-modal", "second-modal"]) {
+      const dialog = document.createElement("dialog")
+      dialog.id = id
+      dialog.innerHTML = "<button>Modal control</button>"
+      // A small, filtered modal must not capture or clip the fixed toast.
+      dialog.style.cssText = "width:160px;height:100px;overflow:hidden;backdrop-filter:blur(6px)"
+      document.body.append(dialog)
+    }
+    document.querySelector<HTMLDialogElement>("#second-modal")!.showModal()
+    document.querySelector<HTMLDialogElement>("#first-modal")!.showModal()
+  })
+  await expect(page.locator("#first-modal .toast-stack")).toHaveCount(1)
+  await oneStack(page)
+  await page.evaluate(() => document.querySelector<HTMLDialogElement>("#first-modal")!.close())
+  await expect(page.locator("#second-modal .toast-stack")).toHaveCount(1)
+  expect(await original!.evaluate(node => node === document.querySelector(".toast-stack"))).toBe(true)
+  await stack.getByRole("button", { name: "Dismiss: This session will not be saved", exact: true }).click()
+  await expect(stack).toHaveCount(0)
+  await page.evaluate(() => document.querySelector<HTMLDialogElement>("#second-modal")!.close())
+})
+
+test("modal content and viewport resizes remeasure placement without rescanning streamed DOM updates", async ({ page }) => {
+  await page.setViewportSize({ width: 1000, height: 700 })
+  await page.emulateMedia({ reducedMotion: "reduce" })
+  await boot(page)
+  await page.evaluate(() => {
+    const dialog = document.createElement("dialog")
+    dialog.id = "geometry-modal"
+    dialog.style.cssText = "position:fixed;inset:0;width:100vw;height:100vh;max-width:none;max-height:none;margin:0;padding:0;border:0"
+    dialog.innerHTML = '<section style="position:absolute;left:100px;top:100px;width:500px;height:200px"><button>Modal control</button><textarea aria-label="Modal input"></textarea></section>'
+    // Appending a wrapper containing a dialog also has to be detected.
+    const wrapper = document.createElement("div")
+    wrapper.append(dialog)
+    document.body.append(wrapper)
+    dialog.showModal()
+  })
+  const stack = page.locator(".toast-stack")
+  const panel = page.locator("#geometry-modal > section")
+  await expect(page.locator("#geometry-modal .toast-stack")).toHaveCount(1)
+  const relation = () => stack.evaluate(node => {
+    const t = node.getBoundingClientRect()
+    const m = document.querySelector("#geometry-modal > section")!.getBoundingClientRect()
+    return t.left >= m.right ? "right" : t.top >= m.bottom ? "below" : t.bottom <= m.top ? "above" : "overlay"
+  })
+  await expect.poll(relation).toBe("right")
+  await panel.evaluate(node => { (node as HTMLElement).style.width = "800px" })
+  await expect.poll(relation).toBe("below")
+  await panel.evaluate(node => { (node as HTMLElement).style.top = "400px" })
+  await expect.poll(relation).toBe("above")
+  await expect.poll(() => modalOverlaps(page)).toEqual([])
+  await page.setViewportSize({ width: 390, height: 844 })
+  await panel.evaluate(node => { (node as HTMLElement).style.cssText = "position:absolute;left:12px;top:56px;width:366px;height:240px" })
+  await expect.poll(relation).toBe("below")
+  await oneStack(page)
+  await expect.poll(() => modalOverlaps(page)).toEqual([])
+  const scans = await page.evaluate(async () => {
+    const query = document.querySelectorAll.bind(document)
+    let scans = 0
+    document.querySelectorAll = ((selector: string) => {
+      if (selector === "dialog:modal") scans++
+      return query(selector)
+    }) as typeof document.querySelectorAll
+    try {
+      for (let token = 0; token < 20; token++) {
+        document.querySelector("#geometry-modal > section")!.append(document.createTextNode("token "))
+        document.querySelector(".guide-transcript")!.append(document.createElement("span"))
+        await new Promise(resolve => setTimeout(resolve, 0))
+      }
+      return scans
+    } finally { document.querySelectorAll = query }
+  })
+  expect(scans).toBe(0)
+  await page.evaluate(() => document.querySelector("#geometry-modal")!.parentElement!.remove())
+  await expect(page.locator("body > [data-modal-popover] .toast-stack")).toHaveCount(1)
+  await expect.poll(() => stack.evaluate(node => node.getBoundingClientRect().top)).toBe(60)
+  await oneStack(page)
+})

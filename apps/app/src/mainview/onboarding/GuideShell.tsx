@@ -2,7 +2,7 @@ import { flowAction } from "../flows/FlowAction"
 import { REEL_BUTTON } from "./reel.ts"
 import { scrollToGuideRead } from "./transcriptScroll"
 import { TranscriptMessage } from "../TranscriptMessage"
-import { Button, ChatMessage, Spinner } from "@smthrs/ui"
+import { Button, ChatMessage } from "@smthrs/ui"
 import {
   GUIDE_BRIDGE, GUIDE_LAST_STEP, GUIDE_STAGES,
   lessonMessage, lessonText, lessonVisible, type GoalCheckpoint, type GuideAction,
@@ -31,10 +31,9 @@ import { guideTranscriptEntries, InTutorial, tutorialTranscript } from "./transc
 import { HelpBubble } from "../HelpBubble"
 import { GuidanceText } from "../GuidanceText"
 import { useCoarsePointer } from "../runtime/PointerMode"
-import { legacyLibrarianFailure, librarianFailureMessage, librarianLaunchFor } from "../state/LibrarianLaunch"
+import { legacyLibrarianFailure, librarianFailureMessage } from "../state/LibrarianLaunch"
 import { LibrarianRunChips } from "./LibrarianRunChips"
 import { guideActionState } from "./actionState"
-import { ToastActionButton, toastActionShortcut } from "../ToastAction"
 
 /** An original, short opt-in interval; no autoplay or copyrighted game audio. */
 function chime() {
@@ -82,21 +81,6 @@ export function GuideShell({ children, clock = guideClock }: { children: ReactNo
   const touch = useCoarsePointer()
   const { data: sessions } = useLiveQuery(controller.store.collections.sessions)
   const { data: messageRows } = useLiveQuery(controller.store.collections.messages)
-  const { data: storedToasts } = useLiveQuery(controller.store.collections.toasts)
-  // Old persisted tutorial tips are superseded by the action-anchored guidance.
-  const toasts = storedToasts.filter(toast => {
-    if (toast.key.startsWith("guide-tip-")) return false
-    const guide = sessions[0]?.guide
-    if (guide?.step !== 12) return true
-    const legacy = legacyLibrarianFailure(guide)
-    if (legacy && toast.key === `command.failed.${legacy.kind === "wiki" ? "wiki.create" : "history.bootstrap"}` && toast.detail === legacy.error) return false
-    if (legacy && toast.key.startsWith(`flow.provision.${guide.repo}.`) && toast.detail === legacy.error) return false
-    const launches = { wiki: librarianLaunchFor(guide, "wiki"), history: librarianLaunchFor(guide, "history") }
-    const inlineFailure = toast.key === "command.failed.wiki.create" ? launches?.wiki : toast.key === "command.failed.history.bootstrap" ? launches?.history : undefined
-    if (inlineFailure?.phase === "failed" && toast.detail === inlineFailure.reason) return false
-    const preparing = Object.values(launches ?? {}).some(launch => launch && launch.repo === guide.repo && (launch.phase === "preparing" || launch.phase === "launching"))
-    return !(preparing && toast.key.startsWith(`flow.provision.${guide.repo}.`))
-  })
   const cards = useCardRows(controller.store.collections.cards)
   const { data: worldDocuments } = useLiveQuery(controller.store.collections.worldDocuments)
   const session = sessions[0] ?? controller.store.session()
@@ -281,8 +265,6 @@ export function GuideShell({ children, clock = guideClock }: { children: ReactNo
   inputHandlers.current = {
     enabled: () => !guide.finished && guide.reelIndex === undefined && guide.introSlides === undefined && !document.querySelector(".input-mode-menu"),
     resolve: (event) => {
-      const toastAction = toastActionShortcut(event, document)
-      if (toastAction) return toastAction
       const key = event.key.toLowerCase()
       const action = (activate: () => void, shortcut = key): PressAction => ({
         element: Array.from(document.querySelectorAll<HTMLElement>('.session-shell [aria-keyshortcuts], .guide-shell [aria-keyshortcuts]'))
@@ -337,29 +319,6 @@ export function GuideShell({ children, clock = guideClock }: { children: ReactNo
       controller.store.dispatch({ type: "guide.visibility.changed", actor: "system", visible: false })
     }
   }, [controller, stage, guide.playthrough, guide.reelIndex])
-  const notifications = toasts.length > 0 && (
-    <aside className="guide-toasts" aria-label="Notifications">
-      {[...toasts].sort((a, b) => b.createdAt - a.createdAt).map((toast) => (
-        <div className="guide-toast" key={toast.id} data-toast-status={toast.status} role={toast.status === "failed" ? "alert" : "status"}>
-          {toast.status === "running" ? <Spinner size="sm" aria-label="Working" /> : toast.status === "ok" ? <Check size={17} aria-hidden="true" /> : <X size={17} aria-hidden="true" />}
-          <div>
-            <strong>{toast.title}</strong>
-            {toast.detail && <p>{toast.detail}</p>}
-            <ToastActionButton toast={toast} onAction={action => {
-              controller.runCommand("toast.dismiss", toast.id)
-              controller.runCommand(action.flow, action.args)
-            }} />
-          </div>
-          <button
-            aria-label={`Dismiss ${toast.title}`}
-            {...flowAction(controller.runCommand, "toast.dismiss", toast.id)}
-          >
-            <X size={14} />
-          </button>
-        </div>
-      ))}
-    </aside>
-  )
   if (guide.finished) return <>{children}</>
   return (
     <GuideComposerHost.Provider value={composerHost}>
@@ -664,7 +623,6 @@ export function GuideShell({ children, clock = guideClock }: { children: ReactNo
           </GuideButton>
         )}
       </footer>
-      {notifications}
     </div>
     </InTutorial>
     </GuideComposerHost.Provider>

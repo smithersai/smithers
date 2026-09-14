@@ -1,7 +1,8 @@
 import { Alert, AlertDescription, AlertTitle, Button, Spinner } from "@smthrs/ui"
-import { X } from "lucide-react"
+import { Check, X } from "lucide-react"
+import { ModalPopover } from "./ModalPopover"
 import type { Toast } from "./state/AppState"
-import { ToastActionButton, type ToastAction } from "./ToastAction"
+import { bindToastShortcut, ToastActionButton, type ToastAction } from "./ToastAction"
 
 /*
  * The one shared toast surface (the 300ms law): a corner stack over the chat,
@@ -21,8 +22,8 @@ export function ToastStack({
 }) {
   if (toasts.length === 0) return null
   return (
-    <div className="toast-stack" aria-label="Notifications">
-      {toasts.map((toast) => (
+    <ModalPopover className="toast-stack" label="Notifications" onMount={bindToastShortcut}>
+      {[...toasts].sort((a, b) => b.createdAt - a.createdAt).map((toast) => (
         <Alert
           key={toast.id}
           className="toast"
@@ -36,7 +37,9 @@ export function ToastStack({
            */
           role={toast.status === "failed" ? "alert" : "status"}
         >
-          {toast.status === "running" ? <Spinner size="sm" className="toast-spinner" aria-label="Working" /> : null}
+          {toast.status === "running" ? <Spinner size="sm" className="toast-icon" aria-label="Working" />
+            : toast.status === "ok" ? <Check size={17} className="toast-icon" aria-hidden="true" />
+            : <X size={17} className="toast-icon" aria-hidden="true" />}
           <div className="toast-body">
             <AlertTitle className="toast-title">{toast.title}</AlertTitle>
             {toast.detail !== "" ? <AlertDescription className="toast-detail">{toast.detail}</AlertDescription> : null}
@@ -59,6 +62,6 @@ export function ToastStack({
             null}
         </Alert>
       ))}
-    </div>
+    </ModalPopover>
   )
 }

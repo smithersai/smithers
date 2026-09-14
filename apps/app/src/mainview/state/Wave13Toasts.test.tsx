@@ -40,16 +40,16 @@ const toast = (id: string, status: Toast["status"]): Toast => ({
   updatedAt: 1
 })
 
-const renderToasts = (toasts: ReadonlyArray<Toast>): HTMLElement => {
+const renderToasts = (toasts: ReadonlyArray<Toast>, onDismiss = (_id: string) => {}): HTMLElement => {
   const host = document.createElement("div")
   document.body.append(host)
   const root = createRoot(host)
-  flushSync(() => root.render(<ToastStack toasts={toasts} onDismiss={() => {}} onAction={() => {}} />))
+  flushSync(() => root.render(<ToastStack toasts={toasts} onDismiss={onDismiss} onAction={() => {}} />))
   mounted.push(() => {
     flushSync(() => root.unmount())
     host.remove()
   })
-  return host
+  return document.body
 }
 
 describe("wave 13 B-6 — a notification is a status, never an alert", () => {
@@ -63,5 +63,17 @@ describe("wave 13 B-6 — a notification is a status, never an alert", () => {
     const host = renderToasts([toast("t1", "ok"), toast("t2", "failed")])
     expect(host.querySelectorAll(".toast[role=\"status\"]").length).toBe(1)
     expect(host.querySelectorAll(".toast[role=\"alert\"]").length).toBe(1)
+  })
+
+  test("every status has an icon and only failures offer dismissal", () => {
+    const dismissed: string[] = []
+    const host = renderToasts([toast("t1", "running"), toast("t2", "ok"), toast("t3", "failed")], id => dismissed.push(id))
+    expect(host.querySelector('[aria-label="Working"]')).not.toBeNull()
+    expect(host.querySelectorAll('.toast-icon').length).toBe(3)
+    const buttons = host.querySelectorAll<HTMLButtonElement>('[data-flow="toast.dismiss"]')
+    expect(buttons.length).toBe(1)
+    expect(buttons[0]!.closest('.toast')?.getAttribute('data-toast-status')).toBe('failed')
+    buttons[0]!.click()
+    expect(dismissed).toEqual(["t3"])
   })
 })

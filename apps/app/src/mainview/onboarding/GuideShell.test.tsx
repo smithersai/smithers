@@ -6,7 +6,7 @@ import { createRoot } from "react-dom/client"
 import { ControllerTestProvider } from "../ControllerContext"
 import type { NativeRepositories } from "../native/NativeBridge"
 import type { AgentPort } from "../runtime/AgentPort"
-import { createAppController } from "../state/AppController"
+import { scopedControllers } from "../state/ControllerTestScope"
 import { initialGuide, type Card } from "../state/AppState"
 import { createAppStore } from "../state/AppStore"
 import { PRACTICE_CARD, PRACTICE_REPO, practiceChange, practicePicker, practiceStack } from "../state/practice/PracticeRepository"
@@ -33,6 +33,9 @@ const mounted: Array<() => void> = []
 afterEach(() => {
   while (mounted.length > 0) mounted.pop()?.()
 }, 5_000)
+
+// Unmount before releasing each controller's subscriptions, timers and live collections.
+const createAppController = scopedControllers()
 
 const memoryStorage = (): StorageApi => {
   const data = new Map<string, string>()
@@ -134,19 +137,45 @@ test("the installation beat owns its chooser, including a reused workspace form"
   })
 }, 10_000)
 
-for (const trigger of ["click", "shortcut"] as const) test(`an actionable seam notice starts sign-in by ${trigger}`, async () => {
+for (const state of ["tutorial closed", "tutorial open", "finished workspace"]) test(`one shared toast stack in ${state}`, async () => {
   let controller!: ReturnType<typeof createAppController>
-  const host = await mountGuide(1, still, {}, async c => {
+  const conversationOpen = state === "tutorial open"
+  const finished = state === "finished workspace"
+  const host = await mountGuide(1, still, { conversationOpen, finished }, async c => {
+    controller = c
+    for (const key of ["storage.failed", "guide-tip-old"]) {
+      await c.store.dispatch({ type: "toast.shown", actor: "system", key, title: key }).isPersisted.promise
+      await c.store.dispatch({ type: "toast.resolved", actor: "system", key, status: "failed", detail: "" }).isPersisted.promise
+    }
+  }, <App />)
+  try {
+    expect(document.querySelectorAll(".toast-stack").length).toBe(1)
+    // A modal may host the shared portal; GuideShell never renders a toast.
+    expect(host.querySelectorAll(".guide-shell .toast:not([data-modal-popover] .toast)").length).toBe(0)
+    expect(host.querySelector(".guide-toasts")).toBeNull()
+    const stack = document.querySelector(".toast-stack")!
+    expect(stack.querySelectorAll('.toast[role="alert"]').length).toBe(finished ? 2 : 1)
+    expect(stack.textContent).toContain("storage.failed")
+    if (!finished) expect(stack.textContent).not.toContain("guide-tip-old")
+    const dismiss = stack.querySelector<HTMLButtonElement>('[aria-label="Dismiss: storage.failed"]')!
+    dismiss.click()
+    expect([...controller.store.collections.toasts.values()].map(toast => toast.key)).toEqual(["guide-tip-old"])
+  } finally { mounted.pop()?.() }
+}, 2_000)
+
+for (const conversationOpen of [false, true]) for (const trigger of ["click", "shortcut"] as const) test(`an actionable seam notice starts sign-in by ${trigger} with conversation ${conversationOpen ? "open" : "closed"}`, async () => {
+  let controller!: ReturnType<typeof createAppController>
+  const host = await mountGuide(1, still, { conversationOpen }, async c => {
     controller = c
     c.store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-out", login: null,
       allowlisted: false, admin: false, scopesPlain: null })
     await c.store.dispatch({ type: "toast.shown", actor: "system", key: "seam.sign-in", title: "Sign in with GitHub" }).isPersisted.promise
     await c.store.dispatch({ type: "toast.resolved", actor: "system", key: "seam.sign-in", status: "failed", detail: "Sign in to continue.",
       action: { flow: "auth.sign-in", label: "Sign in with GitHub" } }).isPersisted.promise
-  })
+  }, <App />)
   const run = spyOn(controller, "runCommand").mockReturnValue(true)
   try {
-    const button = host.querySelector<HTMLButtonElement>('.guide-toasts [data-flow="auth.sign-in"]')!
+    const button = document.querySelector<HTMLButtonElement>('.toast-stack [data-flow="auth.sign-in"]')!
     expect(button !== null).toBe(true)
     expect(button.textContent).toContain("Sign in with GitHub")
     expect(button.getAttribute("aria-keyshortcuts")).toContain("Control+Shift+G")
@@ -154,14 +183,14 @@ for (const trigger of ["click", "shortcut"] as const) test(`an actionable seam n
     else {
       // The recovery chord still works while text editing owns focus.
       const input = document.createElement("textarea")
-      host.append(input)
+      ;(button.closest("dialog") ?? host).append(input)
       input.focus()
       input.dispatchEvent(new KeyboardEvent("keydown", { key: "G", ctrlKey: true, shiftKey: true, bubbles: true, cancelable: true }))
       expect(run).not.toHaveBeenCalled()
       input.dispatchEvent(new KeyboardEvent("keyup", { key: "G", ctrlKey: true, shiftKey: true, bubbles: true, cancelable: true }))
     }
     expect(run.mock.calls).toEqual([["toast.dismiss", "toast-seam.sign-in"], ["auth.sign-in", undefined]])
-  } finally { run.mockRestore(); controller.dispose() }
+  } finally { run.mockRestore() }
 }, 5_000)
 const settle = async () => {
   await new Promise(resolve => setTimeout(resolve, 0))
@@ -477,19 +506,17 @@ test("held input survives an incidental tutorial state render", async () => {
 }, 5_000)
 
 test("first practice help describes the suggested action without emitting a notification", async () => {
-  let controller!: ReturnType<typeof createAppController>
-  const host = await mountGuide(1, still, {}, c => { controller = c })
+  const host = await mountGuide(1, still)
   const target = host.querySelector<HTMLButtonElement>('.guide-actions [data-flow="issues.list"]')!
   expect(text(host.querySelector('#guide-help-1'))).toContain("Smithers makes suggestions")
   expect(target.getAttribute('aria-describedby')).toContain('guide-help-1')
-  expect(host.querySelector('.guide-toasts .guide-tip') === null).toBe(true)
+  expect(host.querySelector('.toast-stack .guide-tip') === null).toBe(true)
   const dismiss = host.querySelector<HTMLButtonElement>('[aria-label="Dismiss help"]')!
   dismiss.focus()
   flushSync(() => dismiss.click())
   expect(host.querySelector('[role="note"]') === null).toBe(true)
   expect(document.activeElement === target).toBe(true)
   expect(target.getAttribute('aria-describedby')).toBe('guide-instruction-1')
-  await controller.store.dispose?.()
 }, 5_000)
 
 test("each introduction waits for Next or Enter before the next one", async () => {

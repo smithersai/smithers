@@ -7,7 +7,6 @@ import { bindPressActions } from "./runtime/PressActions"
 import { KeyboardNavigation } from "./KeyboardNavigation"
 import { GUIDE_KEYS } from "./onboarding/GuideButton"
 import { ChromeBar } from "./tabs/ChromeBar"
-import { toastActionShortcut } from "./ToastAction"
 
 const Mark = () => <pre aria-hidden="true">{WORDMARK.map((line, i) => <span key={i} style={{ "--row": i } as CSSProperties}>{line}{"\n"}</span>)}</pre>
 export const SessionNavigationFallback = () => <header className="session-navigation" aria-label="Smithers"><h1 className="guide-wordmark" aria-label="Smithers" style={{ margin: 0 }}><Mark /></h1></header>
@@ -37,8 +36,6 @@ export function SessionNavigation() {
     return bindPressActions({ root,
       enabled: () => !doc.querySelector('.guide-shell, .input-mode-menu'),
       resolveShortcut: event => {
-        const toastAction = toastActionShortcut(event, root)
-        if (toastAction) return toastAction
         const key = event.key.toLowerCase()
         const action = (activate: () => void, shortcut = key) => ({
           element: [...root.querySelectorAll<HTMLElement>('[aria-keyshortcuts]')].find(button => button.getAttribute('aria-keyshortcuts')?.toLowerCase().split(' ').includes(shortcut)), activate,
