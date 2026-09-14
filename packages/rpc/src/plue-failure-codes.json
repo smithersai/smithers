@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "digest": "sha256:c05fc4c92082ffdc285604aabb4b3e1ffeb1c4437e172b54eba87ef79f59b8f4",
+  "digest": "sha256:bfb9d552dfd58163a6c338f2a87c18afa94a23e1730ac8a0b0221220e35150ce",
   "faults": [
     "user",
     "wait",
@@ -185,6 +185,13 @@
       "doc": "An exec is already running in this sandbox and the endpoint serializes them."
     },
     {
+      "code": "feature_not_enabled",
+      "fault": "infra",
+      "status": 503,
+      "retry_after": 0,
+      "doc": "The endpoint's storage is not provisioned on this deployment, so the feature is switched off here. Retrying does not help until the deployment is migrated."
+    },
+    {
       "code": "focus_terminal",
       "fault": "user",
       "status": 409,
@@ -227,6 +234,13 @@
       "doc": "An import for this repository is already running."
     },
     {
+      "code": "github_import_too_large",
+      "fault": "user",
+      "status": 413,
+      "retry_after": 0,
+      "doc": "The GitHub repository is larger than plue's import limit. It is refused before the clone, so nothing was written."
+    },
+    {
       "code": "github_pull_diff_too_large",
       "fault": "dependency",
       "status": 502,
@@ -248,6 +262,13 @@
       "doc": "The GitHub grant is dead in a way no server-side refresh can repair; the person has to re-authorize the GitHub App."
     },
     {
+      "code": "github_unavailable",
+      "fault": "dependency",
+      "status": 502,
+      "retry_after": 0,
+      "doc": "plue could not complete a call it made to GitHub on the caller's behalf: the request failed, or GitHub answered with something plue could not read."
+    },
+    {
       "code": "guest_not_ready",
       "fault": "wait",
       "status": 503,
@@ -260,6 +281,13 @@
       "status": 400,
       "retry_after": 0,
       "doc": "The exec request did not name the guest user to run as."
+    },
+    {
+      "code": "host_lease_lost",
+      "fault": "infra",
+      "status": 503,
+      "retry_after": 0,
+      "doc": "The controller's lease on a sandbox host has expired, so the host is no longer the controller's to act on."
     },
     {
       "code": "idempotency_conflict",
@@ -444,6 +472,13 @@
       "doc": "The caller sent more requests, or held more live connections, than the endpoint's budget allows."
     },
     {
+      "code": "rate_limiter_unavailable",
+      "fault": "infra",
+      "status": 503,
+      "retry_after": 1,
+      "doc": "plue's rate-limit store is not answering and the endpoint fails closed rather than let a budget go unenforced."
+    },
+    {
       "code": "repository_provisioning_rollout",
       "fault": "infra",
       "status": 503,
@@ -487,10 +522,10 @@
     },
     {
       "code": "runtime_error",
-      "fault": "bug",
+      "fault": "infra",
       "status": 500,
       "retry_after": 0,
-      "doc": "The worker's runtime driver failed."
+      "doc": "The worker's runtime driver failed: a VMM, a snapshot restore, or a guest transport on one machine. Another worker may well succeed."
     },
     {
       "code": "secret_delivery_unavailable",
@@ -526,6 +561,13 @@
       "status": 413,
       "retry_after": 0,
       "doc": "The snapshot upload exceeds the worker's limit."
+    },
+    {
+      "code": "sse_unavailable",
+      "fault": "infra",
+      "status": 503,
+      "retry_after": 1,
+      "doc": "plue's event-stream tier could not open the stream: the LISTEN backing it failed, or the broker refused the subscription. The stream was never established."
     },
     {
       "code": "stale_generation",

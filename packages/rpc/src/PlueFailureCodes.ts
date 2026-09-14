@@ -35,7 +35,7 @@ export const PLUE_FAILURE_SCHEMA_VERSION = 1
  * @since 1.0.0
  * @category constants
  */
-export const PLUE_FAILURE_DIGEST = "sha256:c05fc4c92082ffdc285604aabb4b3e1ffeb1c4437e172b54eba87ef79f59b8f4"
+export const PLUE_FAILURE_DIGEST = "sha256:bfb9d552dfd58163a6c338f2a87c18afa94a23e1730ac8a0b0221220e35150ce"
 
 /**
  * Whose problem a failure is — plue's own word, and the only question the app
@@ -92,17 +92,21 @@ export const PLUE_FAILURE_CODES = [
   "desktop_tools_unavailable",
   "egress_proxy_unavailable",
   "exec_in_progress",
+  "feature_not_enabled",
   "focus_terminal",
   "forbidden",
   "frame_changed",
   "gateway_timeout",
   "generation_required",
   "github_import_already_active",
+  "github_import_too_large",
   "github_pull_diff_too_large",
   "github_rate_limited",
   "github_reconnect_required",
+  "github_unavailable",
   "guest_not_ready",
   "guest_user_required",
+  "host_lease_lost",
   "idempotency_conflict",
   "idempotency_key_required",
   "image_required",
@@ -129,6 +133,7 @@ export const PLUE_FAILURE_CODES = [
   "quiesce_failed",
   "quota_exceeded",
   "rate_limit_exceeded",
+  "rate_limiter_unavailable",
   "repository_provisioning_rollout",
   "request_entity_too_large",
   "request_too_large",
@@ -141,6 +146,7 @@ export const PLUE_FAILURE_CODES = [
   "snapshot_in_use",
   "snapshot_not_found",
   "snapshot_too_large",
+  "sse_unavailable",
   "stale_generation",
   "token_generation_failed",
   "unauthorized",
@@ -243,6 +249,8 @@ export const PLUE_FAILURES = {
   "egress_proxy_unavailable": { fault: "infra", status: 503, retryAfter: 0 },
   /** An exec is already running in this sandbox and the endpoint serializes them. */
   "exec_in_progress": { fault: "user", status: 409, retryAfter: 0 },
+  /** The endpoint's storage is not provisioned on this deployment, so the feature is switched off here. Retrying does not help until the deployment is migrated. */
+  "feature_not_enabled": { fault: "infra", status: 503, retryAfter: 0 },
   /** The focused window is a terminal and the caller did not set allow_terminal, so the keystroke was refused. */
   "focus_terminal": { fault: "user", status: 409, retryAfter: 0 },
   /** The credential is valid but is not allowed to perform this operation. */
@@ -255,16 +263,22 @@ export const PLUE_FAILURES = {
   "generation_required": { fault: "user", status: 400, retryAfter: 0 },
   /** An import for this repository is already running. */
   "github_import_already_active": { fault: "user", status: 409, retryAfter: 0 },
+  /** The GitHub repository is larger than plue's import limit. It is refused before the clone, so nothing was written. */
+  "github_import_too_large": { fault: "user", status: 413, retryAfter: 0 },
   /** GitHub's diff for this pull request is larger than plue will buffer. */
   "github_pull_diff_too_large": { fault: "dependency", status: 502, retryAfter: 0 },
   /** GitHub rate-limited the call plue made on the caller's behalf. */
   "github_rate_limited": { fault: "dependency", status: 429, retryAfter: 0 },
   /** The GitHub grant is dead in a way no server-side refresh can repair; the person has to re-authorize the GitHub App. */
   "github_reconnect_required": { fault: "user", status: 401, retryAfter: 0 },
+  /** plue could not complete a call it made to GitHub on the caller's behalf: the request failed, or GitHub answered with something plue could not read. */
+  "github_unavailable": { fault: "dependency", status: 502, retryAfter: 0 },
   /** The guest is reachable but activation has not finished exposing its login shell. */
   "guest_not_ready": { fault: "wait", status: 503, retryAfter: 3 },
   /** The exec request did not name the guest user to run as. */
   "guest_user_required": { fault: "user", status: 400, retryAfter: 0 },
+  /** The controller's lease on a sandbox host has expired, so the host is no longer the controller's to act on. */
+  "host_lease_lost": { fault: "infra", status: 503, retryAfter: 0 },
   /** The idempotency key was reused with a different request body. */
   "idempotency_conflict": { fault: "user", status: 409, retryAfter: 0 },
   /** The operation requires an idempotency key and the request carried none. */
@@ -317,6 +331,8 @@ export const PLUE_FAILURES = {
   "quota_exceeded": { fault: "user", status: 429, retryAfter: 0 },
   /** The caller sent more requests, or held more live connections, than the endpoint's budget allows. */
   "rate_limit_exceeded": { fault: "user", status: 429, retryAfter: 0 },
+  /** plue's rate-limit store is not answering and the endpoint fails closed rather than let a budget go unenforced. */
+  "rate_limiter_unavailable": { fault: "infra", status: 503, retryAfter: 1 },
   /** Repository provisioning is mid-rollout on this deployment and is not accepting new work. */
   "repository_provisioning_rollout": { fault: "infra", status: 503, retryAfter: 0 },
   /** The request body is larger than the endpoint accepts. */
@@ -329,8 +345,8 @@ export const PLUE_FAILURES = {
   "retained_runtime_not_running": { fault: "user", status: 409, retryAfter: 0 },
   /** The retained runtime is still running, and the operation needs it stopped. */
   "retained_runtime_not_stopped": { fault: "user", status: 409, retryAfter: 0 },
-  /** The worker's runtime driver failed. */
-  "runtime_error": { fault: "bug", status: 500, retryAfter: 0 },
+  /** The worker's runtime driver failed: a VMM, a snapshot restore, or a guest transport on one machine. Another worker may well succeed. */
+  "runtime_error": { fault: "infra", status: 500, retryAfter: 0 },
   /** This worker build cannot deliver secrets into a guest. */
   "secret_delivery_unavailable": { fault: "infra", status: 501, retryAfter: 0 },
   /** plue is up but a component it needs is not answering. */
@@ -341,6 +357,8 @@ export const PLUE_FAILURES = {
   "snapshot_not_found": { fault: "user", status: 404, retryAfter: 0 },
   /** The snapshot upload exceeds the worker's limit. */
   "snapshot_too_large": { fault: "user", status: 413, retryAfter: 0 },
+  /** plue's event-stream tier could not open the stream: the LISTEN backing it failed, or the broker refused the subscription. The stream was never established. */
+  "sse_unavailable": { fault: "infra", status: 503, retryAfter: 1 },
   /** The request carries an older placement generation than the one the worker holds; another actor moved the VM. */
   "stale_generation": { fault: "user", status: 409, retryAfter: 0 },
   /** The controller could not mint the token the operation needs. */
