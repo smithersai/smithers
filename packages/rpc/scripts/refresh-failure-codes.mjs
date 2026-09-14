@@ -1,0 +1,217 @@
+/*
+ * Refresh the vendored copy of plue's failure-code registry.
+ *
+ *   node scripts/refresh-failure-codes.mjs --from ~/plue
+ *   node scripts/refresh-failure-codes.mjs --from https://smithers.sh
+ *   node scripts/refresh-failure-codes.mjs --check
+ *
+ * plue owns the taxonomy: `go run ./cmd/failurecodes > docs/failure-codes.json`
+ * renders it there, and `GET /api/meta/failure-codes` serves the same bytes so
+ * a running deployment can be asked what it believes. This script copies those
+ * bytes into src/plue-failure-codes.json UNCHANGED — the digest inside them
+ * only verifies against the exact payload plue hashed — and regenerates
+ * src/PlueFailureCodes.ts from them, which is where the codes become types.
+ *
+ * Run it in the same change that picks up a new plue release. Without the
+ * regeneration a new code has no row, and `satisfies Record<PlueFailureCode,
+ * PlueFailureEntry>` in the generated file makes that a compile error rather
+ * than a refusal the app renders as a shrug. `--check` fails instead of
+ * writing, which is what the drift test and CI want.
+ */
+import { readFileSync, writeFileSync } from "node:fs"
+import { createHash } from "node:crypto"
+import { dirname, join, resolve } from "node:path"
+import { fileURLToPath } from "node:url"
+
+const here = dirname(fileURLToPath(import.meta.url))
+const jsonPath = join(here, "..", "src", "plue-failure-codes.json")
+const tsPath = join(here, "..", "src", "PlueFailureCodes.ts")
+
+/**
+ * The digest plue computes: sha256 over `json.Marshal(records)` — Go's compact
+ * encoding of the code rows in the document's own order, with Go's default
+ * HTML escaping. Reproducing it here rather than trusting the field is the
+ * whole point of the drift test: a hand-edited row changes the payload and
+ * stops matching.
+ */
+export const digestOf = (codes) => {
+  const escape = (text) =>
+    text.replace(new RegExp("[<>&\\u2028\\u2029]", "g"), (c) => "\\u" + c.charCodeAt(0).toString(16).padStart(4, "0"))
+  const rows = codes.map((row) =>
+    escape(
+      JSON.stringify({ code: row.code, fault: row.fault, status: row.status, retry_after: row.retry_after, doc: row.doc })
+    )
+  )
+  return "sha256:" + createHash("sha256").update(`[${rows.join(",")}]`).digest("hex")
+}
+
+const quote = (text) => JSON.stringify(text)
+
+const render = (document) => {
+  const faults = document.faults.map(quote).join(", ")
+  const codes = document.codes.map((row) => `  ${quote(row.code)}`).join(",\n")
+  const entries = document.codes
+    .map((row) =>
+      `  /** ${row.doc.replace(/\*\//gu, "*\\/")} */\n  ${quote(row.code)}: { fault: ${quote(row.fault)}, status: ${row.status}, retryAfter: ${row.retry_after} }`
+    )
+    .join(",\n")
+  return `/**
+ * plue's failure taxonomy, vendored as types.
+ *
+ * GENERATED FILE — do not edit. Regenerate with:
+ *
+ *   node packages/rpc/scripts/refresh-failure-codes.mjs --from <plue checkout or deployment>
+ *
+ * Source: plue docs/failure-codes.json, rendered by its cmd/failurecodes and
+ * served at GET /api/meta/failure-codes. WHICH revision is the digest below,
+ * not a path — a local checkout's location is not provenance, and putting one
+ * here would rewrite this file on every machine that regenerated it.
+ *
+ * plue's closed failure taxonomy (pkg/errors/registry.go), vendored so the
+ * codes are TYPES here and not strings. Everything downstream — the fault a
+ * refusal carries, the copy the app puts in front of it, whether the app may
+ * retry on its own — is derived from this table, so a code plue adds and this
+ * file has not picked up is a compile error at the table below, never a
+ * refusal the user is shown with no verdict on it.
+ *
+ * @since 1.0.0
+ */
+
+/**
+ * The document schema version plue stamps; a bump means the shape changed, not just the rows.
+ *
+ * @since 1.0.0
+ * @category constants
+ */
+export const PLUE_FAILURE_SCHEMA_VERSION = ${document.schema_version}
+
+/**
+ * plue's digest over the code rows. The drift test recomputes it from the
+ * vendored JSON, so this constant and that file cannot disagree silently.
+ *
+ * @since 1.0.0
+ * @category constants
+ */
+export const PLUE_FAILURE_DIGEST = ${quote(document.digest)}
+
+/**
+ * Whose problem a failure is — plue's own word, and the only question the app
+ * actually needs answered to know what to say.
+ *
+ * - \`user\` the request has to change; retrying it unchanged fails the same way.
+ * - \`wait\` nothing is wrong, it is not ready yet, and the server said how long.
+ * - \`infra\` Smithers' own fleet failed the caller. Not their fault.
+ * - \`dependency\` something Smithers depends on failed or throttled us.
+ * - \`bug\` Smithers is defective here.
+ *
+ * @since 1.0.0
+ * @category constants
+ */
+export const PLUE_FAULTS = [${faults}] as const
+
+/**
+ * Whose problem a failure is.
+ *
+ * @since 1.0.0
+ * @category models
+ */
+export type PlueFault = (typeof PLUE_FAULTS)[number]
+
+/**
+ * Every code plue may put on the wire, in the artifact's own sorted order.
+ *
+ * @since 1.0.0
+ * @category constants
+ */
+export const PLUE_FAILURE_CODES = [
+${codes}
+] as const
+
+/**
+ * One of plue's failure codes.
+ *
+ * @since 1.0.0
+ * @category models
+ */
+export type PlueFailureCode = (typeof PLUE_FAILURE_CODES)[number]
+
+/**
+ * One row: the verdict, the status plue answers with, and the pacing it states (0 = none).
+ *
+ * @since 1.0.0
+ * @category models
+ */
+export interface PlueFailureEntry {
+  readonly fault: PlueFault
+  readonly status: number
+  readonly retryAfter: number
+}
+
+/**
+ * The registry itself. \`satisfies Record<PlueFailureCode, PlueFailureEntry>\`
+ * is the exhaustiveness gate: a code in the union with no row here, or a row
+ * here for a code not in the union, does not compile.
+ *
+ * @since 1.0.0
+ * @category constants
+ */
+export const PLUE_FAILURES = {
+${entries}
+} satisfies Record<PlueFailureCode, PlueFailureEntry>
+`
+}
+
+const load = async (from) => {
+  if (from.startsWith("http://") || from.startsWith("https://")) {
+    const url = `${from.replace(/\/+$/u, "")}/api/meta/failure-codes`
+    const response = await fetch(url)
+    if (!response.ok) throw new Error(`${url} answered ${response.status}`)
+    return { text: await response.text(), source: url }
+  }
+  const path = resolve(from.replace(/^~(?=\/|$)/u, process.env.HOME ?? "~"))
+  const file = path.endsWith(".json") ? path : join(path, "docs", "failure-codes.json")
+  /*
+   * The generated header records WHICH artifact, never whose disk: a local
+   * checkout path would rewrite the file for every machine that regenerates
+   * it and turn a no-op refresh into a diff.
+   */
+  return { text: readFileSync(file, "utf8"), source: "plue docs/failure-codes.json" }
+}
+
+const main = async () => {
+  const args = process.argv.slice(2)
+  const check = args.includes("--check")
+  const fromIndex = args.indexOf("--from")
+  const from = fromIndex < 0 ? null : args[fromIndex + 1]
+  if (from === null && !check) {
+    console.error("usage: refresh-failure-codes.mjs --from <plue checkout | https://deployment> [--check]")
+    process.exit(2)
+  }
+  const { text, source } = from === null
+    ? { text: readFileSync(jsonPath, "utf8"), source: jsonPath }
+    : await load(from)
+  const document = JSON.parse(text)
+  const recomputed = digestOf(document.codes)
+  if (recomputed !== document.digest) {
+    console.error(`refresh-failure-codes: ${source} carries ${document.digest} but its rows hash to ${recomputed}`)
+    process.exit(1)
+  }
+  const rendered = render(document)
+  if (check) {
+    const stale = [
+      ...(from === null ? [] : readFileSync(jsonPath, "utf8") === text ? [] : [jsonPath]),
+      readFileSync(tsPath, "utf8") === rendered ? null : tsPath
+    ].filter((path) => path !== null)
+    if (stale.length > 0) {
+      console.error(`refresh-failure-codes: stale against ${source}:\n  ${stale.join("\n  ")}`)
+      process.exit(1)
+    }
+    console.log(`refresh-failure-codes: fresh against ${source} (${document.codes.length} codes, ${document.digest})`)
+    return
+  }
+  if (from !== null) writeFileSync(jsonPath, text)
+  writeFileSync(tsPath, rendered)
+  console.log(`refresh-failure-codes: wrote ${document.codes.length} codes from ${source} (${document.digest})`)
+}
+
+if (process.argv[1] !== undefined && import.meta.url === `file://${resolve(process.argv[1])}`) await main()

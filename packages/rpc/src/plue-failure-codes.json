@@ -1,0 +1,678 @@
+{
+  "schema_version": 1,
+  "digest": "sha256:c05fc4c92082ffdc285604aabb4b3e1ffeb1c4437e172b54eba87ef79f59b8f4",
+  "faults": [
+    "user",
+    "wait",
+    "infra",
+    "dependency",
+    "bug"
+  ],
+  "codes": [
+    {
+      "code": "FORBIDDEN_ACTION",
+      "fault": "user",
+      "status": 403,
+      "retry_after": 0,
+      "doc": "The GitHub proxy refuses this action for the caller's grant. Legacy SCREAMING_CASE spelling kept for the clients that already branch on it."
+    },
+    {
+      "code": "NOT_ON_WAITLIST",
+      "fault": "user",
+      "status": 403,
+      "retry_after": 0,
+      "doc": "The signed-in account is not on the alpha waitlist yet. Legacy SCREAMING_CASE spelling; the OAuth callback matches it to redirect to the waitlist page."
+    },
+    {
+      "code": "access_denied",
+      "fault": "user",
+      "status": 403,
+      "retry_after": 0,
+      "doc": "The access grant presented to the controller does not cover this sandbox."
+    },
+    {
+      "code": "access_not_granted",
+      "fault": "user",
+      "status": 403,
+      "retry_after": 0,
+      "doc": "The OAuth2 authorization was not granted to this client."
+    },
+    {
+      "code": "authentication_not_configured",
+      "fault": "infra",
+      "status": 503,
+      "retry_after": 0,
+      "doc": "The controller has no authentication material configured, so it refuses every authenticated call."
+    },
+    {
+      "code": "bad_gateway",
+      "fault": "dependency",
+      "status": 502,
+      "retry_after": 0,
+      "doc": "An upstream service plue depends on answered in a way plue could not use."
+    },
+    {
+      "code": "bad_request",
+      "fault": "user",
+      "status": 400,
+      "retry_after": 0,
+      "doc": "The request was malformed or carried a value the endpoint cannot accept."
+    },
+    {
+      "code": "branch_lock_held",
+      "fault": "user",
+      "status": 409,
+      "retry_after": 0,
+      "doc": "Another person or agent holds the branch lock; details carry the holder and whether the caller may ask to join."
+    },
+    {
+      "code": "coding_guest_failure",
+      "fault": "bug",
+      "status": 503,
+      "retry_after": 0,
+      "doc": "The guest's coding helper failed. The guest's own sentence is logged server-side, never returned."
+    },
+    {
+      "code": "coding_host_unavailable",
+      "fault": "user",
+      "status": 409,
+      "retry_after": 0,
+      "doc": "The repository's configured coding host has not registered its native capability."
+    },
+    {
+      "code": "coding_invalid_request",
+      "fault": "user",
+      "status": 400,
+      "retry_after": 0,
+      "doc": "The guest refused the coding request as malformed."
+    },
+    {
+      "code": "coding_outcome_unknown",
+      "fault": "wait",
+      "status": 503,
+      "retry_after": 1,
+      "doc": "The transport to the box was interrupted before its receipt came back; the identical request recovers it."
+    },
+    {
+      "code": "coding_provenance_pending",
+      "fault": "wait",
+      "status": 503,
+      "retry_after": 1,
+      "doc": "The mutation is saved in the box but its provenance projection has not landed; the identical request finishes it."
+    },
+    {
+      "code": "coding_reporter_upgrade_required",
+      "fault": "infra",
+      "status": 503,
+      "retry_after": 0,
+      "doc": "The box's reporter is older than the operation requires; it upgrades on the next boot."
+    },
+    {
+      "code": "coding_unsupported_jj",
+      "fault": "infra",
+      "status": 503,
+      "retry_after": 0,
+      "doc": "The box's jj is too old for the requested operation."
+    },
+    {
+      "code": "coding_workspace_busy",
+      "fault": "wait",
+      "status": 503,
+      "retry_after": 1,
+      "doc": "Another coding operation holds the box's reporter lock."
+    },
+    {
+      "code": "conflict",
+      "fault": "user",
+      "status": 409,
+      "retry_after": 0,
+      "doc": "The resource is in a state that refuses this operation right now."
+    },
+    {
+      "code": "desktop_act_repeated",
+      "fault": "user",
+      "status": 409,
+      "retry_after": 0,
+      "doc": "This act_id already ran on this box; the guest replayed its verdict instead of acting twice."
+    },
+    {
+      "code": "desktop_busy",
+      "fault": "wait",
+      "status": 409,
+      "retry_after": 1,
+      "doc": "Another action holds this box's desktop lock. Nothing was injected; retry once the other action returns."
+    },
+    {
+      "code": "desktop_input_out_of_bounds",
+      "fault": "user",
+      "status": 422,
+      "retry_after": 0,
+      "doc": "A positioned action fell outside the live framebuffer. Earlier actions in the same plan may already have run."
+    },
+    {
+      "code": "desktop_not_ready",
+      "fault": "wait",
+      "status": 503,
+      "retry_after": 2,
+      "doc": "The box is up but its desktop helpers have not finished linking; the same request works seconds later."
+    },
+    {
+      "code": "desktop_not_running",
+      "fault": "user",
+      "status": 409,
+      "retry_after": 0,
+      "doc": "The box is suspended, failed, or has no VM. Observe and input never auto-resume: the caller asks for a resume first."
+    },
+    {
+      "code": "desktop_tools_unavailable",
+      "fault": "user",
+      "status": 409,
+      "retry_after": 0,
+      "doc": "The box booted from an image older than the one shipping the desktop helpers. It is terminal for that box."
+    },
+    {
+      "code": "egress_proxy_unavailable",
+      "fault": "infra",
+      "status": 503,
+      "retry_after": 0,
+      "doc": "The box's egress proxy is not answering, so the box would have had no outbound network."
+    },
+    {
+      "code": "exec_in_progress",
+      "fault": "user",
+      "status": 409,
+      "retry_after": 0,
+      "doc": "An exec is already running in this sandbox and the endpoint serializes them."
+    },
+    {
+      "code": "focus_terminal",
+      "fault": "user",
+      "status": 409,
+      "retry_after": 0,
+      "doc": "The focused window is a terminal and the caller did not set allow_terminal, so the keystroke was refused."
+    },
+    {
+      "code": "forbidden",
+      "fault": "user",
+      "status": 403,
+      "retry_after": 0,
+      "doc": "The credential is valid but is not allowed to perform this operation."
+    },
+    {
+      "code": "frame_changed",
+      "fault": "user",
+      "status": 409,
+      "retry_after": 0,
+      "doc": "The framebuffer geometry moved between the observation the plan was aimed at and the injection. Nothing was injected."
+    },
+    {
+      "code": "gateway_timeout",
+      "fault": "bug",
+      "status": 504,
+      "retry_after": 0,
+      "doc": "plue gave up waiting for an upstream call it made on the caller's behalf."
+    },
+    {
+      "code": "generation_required",
+      "fault": "user",
+      "status": 400,
+      "retry_after": 0,
+      "doc": "The worker request omitted the placement generation that fences it."
+    },
+    {
+      "code": "github_import_already_active",
+      "fault": "user",
+      "status": 409,
+      "retry_after": 0,
+      "doc": "An import for this repository is already running."
+    },
+    {
+      "code": "github_pull_diff_too_large",
+      "fault": "dependency",
+      "status": 502,
+      "retry_after": 0,
+      "doc": "GitHub's diff for this pull request is larger than plue will buffer."
+    },
+    {
+      "code": "github_rate_limited",
+      "fault": "dependency",
+      "status": 429,
+      "retry_after": 0,
+      "doc": "GitHub rate-limited the call plue made on the caller's behalf."
+    },
+    {
+      "code": "github_reconnect_required",
+      "fault": "user",
+      "status": 401,
+      "retry_after": 0,
+      "doc": "The GitHub grant is dead in a way no server-side refresh can repair; the person has to re-authorize the GitHub App."
+    },
+    {
+      "code": "guest_not_ready",
+      "fault": "wait",
+      "status": 503,
+      "retry_after": 3,
+      "doc": "The guest is reachable but activation has not finished exposing its login shell."
+    },
+    {
+      "code": "guest_user_required",
+      "fault": "user",
+      "status": 400,
+      "retry_after": 0,
+      "doc": "The exec request did not name the guest user to run as."
+    },
+    {
+      "code": "idempotency_conflict",
+      "fault": "user",
+      "status": 409,
+      "retry_after": 0,
+      "doc": "The idempotency key was reused with a different request body."
+    },
+    {
+      "code": "idempotency_key_required",
+      "fault": "user",
+      "status": 400,
+      "retry_after": 0,
+      "doc": "The operation requires an idempotency key and the request carried none."
+    },
+    {
+      "code": "image_required",
+      "fault": "user",
+      "status": 400,
+      "retry_after": 0,
+      "doc": "The sandbox create request named neither an image nor a snapshot."
+    },
+    {
+      "code": "internal",
+      "fault": "bug",
+      "status": 500,
+      "retry_after": 0,
+      "doc": "plue failed in a way it does not have a name for. It is a defect, not a condition the caller can fix."
+    },
+    {
+      "code": "internal_error",
+      "fault": "bug",
+      "status": 500,
+      "retry_after": 0,
+      "doc": "A sandbox control operation failed in a way the controller does not have a name for."
+    },
+    {
+      "code": "invalid_egress_audit_batch",
+      "fault": "user",
+      "status": 400,
+      "retry_after": 0,
+      "doc": "The egress audit batch is malformed or larger than the controller accepts."
+    },
+    {
+      "code": "invalid_json",
+      "fault": "user",
+      "status": 400,
+      "retry_after": 0,
+      "doc": "The sandbox request body is not the JSON the endpoint expects."
+    },
+    {
+      "code": "invalid_path",
+      "fault": "user",
+      "status": 400,
+      "retry_after": 0,
+      "doc": "The guest file path is absent, relative, or escapes the sandbox root."
+    },
+    {
+      "code": "invalid_placement",
+      "fault": "user",
+      "status": 400,
+      "retry_after": 0,
+      "doc": "The placement the controller handed the worker does not describe a runnable VM."
+    },
+    {
+      "code": "invalid_request",
+      "fault": "user",
+      "status": 400,
+      "retry_after": 0,
+      "doc": "The sandbox request is missing a required field or carries an impossible combination."
+    },
+    {
+      "code": "invalid_resource_link",
+      "fault": "user",
+      "status": 400,
+      "retry_after": 0,
+      "doc": "The resource link on the request does not name a resource this controller owns."
+    },
+    {
+      "code": "invalid_worker",
+      "fault": "user",
+      "status": 400,
+      "retry_after": 0,
+      "doc": "The worker identity on the request is not one the controller knows."
+    },
+    {
+      "code": "landing_blocked",
+      "fault": "user",
+      "status": 422,
+      "retry_after": 0,
+      "doc": "The landing request cannot proceed as asked; details name what is blocking it."
+    },
+    {
+      "code": "language_server_missing",
+      "fault": "user",
+      "status": 409,
+      "retry_after": 0,
+      "doc": "The box has no binary for the session's language. The message is the install line, verbatim."
+    },
+    {
+      "code": "listing_secret_detected",
+      "fault": "user",
+      "status": 400,
+      "retry_after": 0,
+      "doc": "The share listing contains something that scans as a credential; it was not published."
+    },
+    {
+      "code": "no_capacity",
+      "fault": "infra",
+      "status": 503,
+      "retry_after": 30,
+      "doc": "No worker in the pool has free CPU, memory or VM slots for the box, at placement or at resume. The box and its disk are untouched."
+    },
+    {
+      "code": "non_replayable_operation",
+      "fault": "user",
+      "status": 409,
+      "retry_after": 0,
+      "doc": "The recorded operation for this idempotency key cannot be replayed."
+    },
+    {
+      "code": "not_found",
+      "fault": "user",
+      "status": 404,
+      "retry_after": 0,
+      "doc": "The addressed resource does not exist, or the caller may not see that it does."
+    },
+    {
+      "code": "not_implemented",
+      "fault": "bug",
+      "status": 501,
+      "retry_after": 0,
+      "doc": "The route exists but its implementation does not."
+    },
+    {
+      "code": "operation_in_progress",
+      "fault": "wait",
+      "status": 409,
+      "retry_after": 1,
+      "doc": "Another operation on this sandbox is still running; the same request works once it settles."
+    },
+    {
+      "code": "peer_identity_denied",
+      "fault": "user",
+      "status": 403,
+      "retry_after": 0,
+      "doc": "The calling peer's mTLS identity is not one this worker accepts."
+    },
+    {
+      "code": "preview_unavailable",
+      "fault": "infra",
+      "status": 503,
+      "retry_after": 0,
+      "doc": "The preview gateway could not reach the port the box is serving."
+    },
+    {
+      "code": "provisioning_failed",
+      "fault": "bug",
+      "status": 500,
+      "retry_after": 0,
+      "doc": "Provisioning a box failed for a reason plue has no specific code for. Persisted on the workspace row as failure_code."
+    },
+    {
+      "code": "quiesce_failed",
+      "fault": "wait",
+      "status": 409,
+      "retry_after": 1,
+      "doc": "The worker could not quiesce the guest in time to take the action; retrying usually succeeds."
+    },
+    {
+      "code": "quota_exceeded",
+      "fault": "user",
+      "status": 429,
+      "retry_after": 0,
+      "doc": "The account is at a per-resource cap, such as the number of boxes it may keep running."
+    },
+    {
+      "code": "rate_limit_exceeded",
+      "fault": "user",
+      "status": 429,
+      "retry_after": 0,
+      "doc": "The caller sent more requests, or held more live connections, than the endpoint's budget allows."
+    },
+    {
+      "code": "repository_provisioning_rollout",
+      "fault": "infra",
+      "status": 503,
+      "retry_after": 0,
+      "doc": "Repository provisioning is mid-rollout on this deployment and is not accepting new work."
+    },
+    {
+      "code": "request_entity_too_large",
+      "fault": "user",
+      "status": 413,
+      "retry_after": 0,
+      "doc": "The request body is larger than the endpoint accepts."
+    },
+    {
+      "code": "request_too_large",
+      "fault": "user",
+      "status": 413,
+      "retry_after": 0,
+      "doc": "The sandbox request body exceeds the controller's limit."
+    },
+    {
+      "code": "retained_runtime_not_found",
+      "fault": "user",
+      "status": 409,
+      "retry_after": 0,
+      "doc": "The worker holds no retained runtime under that id."
+    },
+    {
+      "code": "retained_runtime_not_running",
+      "fault": "user",
+      "status": 409,
+      "retry_after": 0,
+      "doc": "The retained runtime exists but is not running, and the operation needs it running."
+    },
+    {
+      "code": "retained_runtime_not_stopped",
+      "fault": "user",
+      "status": 409,
+      "retry_after": 0,
+      "doc": "The retained runtime is still running, and the operation needs it stopped."
+    },
+    {
+      "code": "runtime_error",
+      "fault": "bug",
+      "status": 500,
+      "retry_after": 0,
+      "doc": "The worker's runtime driver failed."
+    },
+    {
+      "code": "secret_delivery_unavailable",
+      "fault": "infra",
+      "status": 501,
+      "retry_after": 0,
+      "doc": "This worker build cannot deliver secrets into a guest."
+    },
+    {
+      "code": "service_unavailable",
+      "fault": "infra",
+      "status": 503,
+      "retry_after": 0,
+      "doc": "plue is up but a component it needs is not answering."
+    },
+    {
+      "code": "snapshot_in_use",
+      "fault": "user",
+      "status": 409,
+      "retry_after": 0,
+      "doc": "The snapshot backs a live sandbox and cannot be changed or deleted."
+    },
+    {
+      "code": "snapshot_not_found",
+      "fault": "user",
+      "status": 404,
+      "retry_after": 0,
+      "doc": "The named sandbox snapshot does not exist. Distinct from not_found so a bad golden snapshot is diagnosable."
+    },
+    {
+      "code": "snapshot_too_large",
+      "fault": "user",
+      "status": 413,
+      "retry_after": 0,
+      "doc": "The snapshot upload exceeds the worker's limit."
+    },
+    {
+      "code": "stale_generation",
+      "fault": "user",
+      "status": 409,
+      "retry_after": 0,
+      "doc": "The request carries an older placement generation than the one the worker holds; another actor moved the VM."
+    },
+    {
+      "code": "token_generation_failed",
+      "fault": "bug",
+      "status": 500,
+      "retry_after": 0,
+      "doc": "The controller could not mint the token the operation needs."
+    },
+    {
+      "code": "unauthorized",
+      "fault": "user",
+      "status": 401,
+      "retry_after": 0,
+      "doc": "The request carried no credential, or one the server could not verify."
+    },
+    {
+      "code": "unprocessable_entity",
+      "fault": "user",
+      "status": 422,
+      "retry_after": 0,
+      "doc": "The request parsed but its meaning cannot be acted on."
+    },
+    {
+      "code": "unsupported_media_type",
+      "fault": "user",
+      "status": 415,
+      "retry_after": 0,
+      "doc": "The request's Content-Type is not one this endpoint reads."
+    },
+    {
+      "code": "validation_failed",
+      "fault": "user",
+      "status": 422,
+      "retry_after": 0,
+      "doc": "One or more fields failed validation; the errors array names each one."
+    },
+    {
+      "code": "wiki_unavailable",
+      "fault": "infra",
+      "status": 503,
+      "retry_after": 1,
+      "doc": "The wiki's collaboration backend is not answering."
+    },
+    {
+      "code": "worker_draining",
+      "fault": "infra",
+      "status": 503,
+      "retry_after": 0,
+      "doc": "The worker is draining and takes no new placements."
+    },
+    {
+      "code": "worker_error",
+      "fault": "infra",
+      "status": 502,
+      "retry_after": 0,
+      "doc": "A Microsandbox worker failed an operation and the controller has no more specific code for it."
+    },
+    {
+      "code": "worker_fenced",
+      "fault": "user",
+      "status": 409,
+      "retry_after": 0,
+      "doc": "The request targets a different worker than the one holding the placement, or the worker lost its controller authorization."
+    },
+    {
+      "code": "worker_identity_conflict",
+      "fault": "user",
+      "status": 403,
+      "retry_after": 0,
+      "doc": "Two workers claim the same id with different identity keys."
+    },
+    {
+      "code": "worker_identity_denied",
+      "fault": "user",
+      "status": 403,
+      "retry_after": 0,
+      "doc": "The worker's identity key is not the one the controller registered."
+    },
+    {
+      "code": "worker_identity_expired",
+      "fault": "user",
+      "status": 403,
+      "retry_after": 0,
+      "doc": "The worker's identity assertion is past its validity window."
+    },
+    {
+      "code": "worker_identity_invalid",
+      "fault": "user",
+      "status": 403,
+      "retry_after": 0,
+      "doc": "The worker heartbeat's identity key is malformed."
+    },
+    {
+      "code": "worker_identity_stale",
+      "fault": "user",
+      "status": 403,
+      "retry_after": 0,
+      "doc": "The worker heartbeat's identity was superseded by a newer registration."
+    },
+    {
+      "code": "worker_registration_conflict",
+      "fault": "user",
+      "status": 403,
+      "retry_after": 0,
+      "doc": "The worker's registration conflicts with a live one under the same id."
+    },
+    {
+      "code": "workspace_session_kind_mismatch",
+      "fault": "user",
+      "status": 409,
+      "retry_after": 0,
+      "doc": "A session of one kind was opened on the other kind's stream route."
+    },
+    {
+      "code": "workspace_session_pending",
+      "fault": "wait",
+      "status": 425,
+      "retry_after": 2,
+      "doc": "The session row exists but its box is still provisioning; the same open succeeds once it is running."
+    },
+    {
+      "code": "workspace_source_invalid_ack",
+      "fault": "infra",
+      "status": 503,
+      "retry_after": 0,
+      "doc": "The box acknowledged a different revision than the one requested."
+    },
+    {
+      "code": "workspace_source_missing",
+      "fault": "user",
+      "status": 404,
+      "retry_after": 0,
+      "doc": "The original source is not retained in this box."
+    },
+    {
+      "code": "workspace_source_unavailable",
+      "fault": "infra",
+      "status": 503,
+      "retry_after": 0,
+      "doc": "plue could not verify the box's native source."
+    }
+  ]
+}

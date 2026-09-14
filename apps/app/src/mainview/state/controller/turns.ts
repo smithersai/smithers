@@ -3,7 +3,9 @@ import { AGENT_RUNTIME_CONTEXT_VERSION, composeAgentInstructions, renderAgentRun
 import type { AgentRuntimeContext } from "@smthrs/rpc/AgentContext"
 import type { AgentChatMessage, AgentTurnFrame, TurnRefusal } from "@smthrs/rpc/NativeAgent"
 import { hasCapability } from "@smthrs/rpc/AppBootstrap"
-import { agentVisibleCatalog } from "../../flows/agentTools"
+import { agentFailureText, agentVisibleCatalog } from "../../flows/agentTools"
+import { clientRefusal } from "@smthrs/rpc/Refusal"
+import { agentRefusalText } from "@smthrs/rpc/RefusalCopy"
 import type { CommandOutcome } from "../../flows/Commands"
 import { parseSubmit } from "../../flows/registry"
 import { boundToolResult, boundTurnRequest } from "../AgentTurnPolicy"
@@ -596,8 +598,15 @@ export const createTurnController = (
     turn.toolLegs += 1
     // The registry selects fixed smithers bindings for the same flow
     // definitions used by buttons and slash commands.
+    /*
+     * A throw here is a request that never got an answer — a fetch that died
+     * before any server judged it. It used to reach the model as
+     * `failed: <message>`, a sentence with no verdict in it, which the model
+     * read as the user's mistake and apologised for. It is infra by
+     * construction, and now says so.
+     */
     const result = await ctx.commands.executeForAgent({ name: call.name, arguments: call.args }).catch((error: unknown) =>
-      `failed: ${error instanceof Error ? error.message : String(error)}`
+      agentFailureText(agentRefusalText(clientRefusal(error)))
     )
     if (ctx.activeTurn !== turn) return
     /*

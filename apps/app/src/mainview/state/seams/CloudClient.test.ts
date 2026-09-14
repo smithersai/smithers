@@ -45,10 +45,48 @@ describe("cloud transport", () => {
       error: "Guest is starting",
       code: "guest_not_ready",
       status: 503,
-      retryAfterSeconds: 3
+      retryAfterSeconds: 3,
+      /* …and the verdict, which none of the four facts above could supply. */
+      refusal: {
+        code: "guest_not_ready",
+        rawCode: "guest_not_ready",
+        fault: "wait",
+        message: "Guest is starting",
+        retryAfter: 3,
+        status: 503,
+        origin: "plue"
+      }
     })
     expect(await cloudFailure(Response.json({ error: { message: "x".repeat(300) } }, { status: 409 }), "fallback"))
-      .toEqual({ error: "x".repeat(240), code: null, status: 409, retryAfterSeconds: null })
+      .toEqual({
+        error: "x".repeat(240),
+        code: null,
+        status: 409,
+        retryAfterSeconds: null,
+        refusal: {
+          code: null,
+          rawCode: null,
+          fault: "user",
+          message: "x".repeat(240),
+          retryAfter: null,
+          status: 409,
+          origin: "worker"
+        }
+      })
+  })
+
+  test("a full fleet is classified as infra, and an account at its own cap is not", async () => {
+    // The Worker passes plue's `code` and `retry_after` through but not its
+    // `fault` (apps/server proxies.ts), so both of these arrive with the code
+    // and nothing else — and the vendored registry is what keeps them apart.
+    const full = await cloudFailure(
+      Response.json({ code: "no_capacity", retry_after: 30 }, { status: 503 }),
+      "fallback"
+    )
+    expect(full.refusal.fault).toBe("infra")
+    expect(full.refusal.retryAfter).toBe(30)
+    const capped = await cloudFailure(Response.json({ code: "quota_exceeded" }, { status: 429 }), "fallback")
+    expect(capped.refusal.fault).toBe("user")
   })
 
   test("distinguishes network failures from HTTP errors without inventing status zero", async () => {
@@ -62,7 +100,21 @@ describe("cloud transport", () => {
       error: "Could not reach Smithers Cloud: offline",
       status: null,
       code: null,
-      retryAfterSeconds: null
+      retryAfterSeconds: null,
+      /*
+       * Nothing answered, so nothing judged the request — which makes it
+       * infra-class by construction and certainly not the user's fault. This
+       * is the case that used to reach the chat model as a bare string.
+       */
+      refusal: {
+        code: null,
+        rawCode: null,
+        fault: "infra",
+        message: "Could not reach Smithers Cloud: offline",
+        retryAfter: null,
+        status: null,
+        origin: "client"
+      }
     })
     expect(await client.send("POST", "/repos")).toEqual(await client.get("/repos"))
   })

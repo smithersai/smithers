@@ -1,14 +1,25 @@
-import { isRecord } from "@smthrs/canonical/Record"
 import { CLOUD_ROUTE_PREFIX } from "@smthrs/rpc/LocalApp"
+import { clientRefusal, refusalOf, retryAfterHeader } from "@smthrs/rpc/Refusal"
+import type { Refusal } from "@smthrs/rpc/Refusal"
 import { errorMessage } from "./SeamContext"
 import type { SeamContext } from "./SeamContext"
 
-/** A transport failure has no HTTP status; response metadata stays available to domain policy. */
+/**
+ * A transport failure has no HTTP status; response metadata stays available to
+ * domain policy.
+ *
+ * Every failure now also carries its `refusal` — the one shape the whole app
+ * renders, retries on and hands to the chat model (`@smthrs/rpc/Refusal`).
+ * The flat fields beside it are the same facts, kept because a dozen call
+ * sites read them; `refusal` is the one that also answers whose FAULT it was,
+ * which none of them could previously tell.
+ */
 export interface CloudFailure {
   readonly error: string
   readonly code: string | null
   readonly status: number | null
   readonly retryAfterSeconds: number | null
+  readonly refusal: Refusal
 }
 
 export type CloudResult =
@@ -16,21 +27,38 @@ export type CloudResult =
   | CloudFailure
 
 /** Cloud currently supplies delta-seconds, not HTTP dates. */
-export const retryAfterSecondsOf = (response: Response): number | null => {
-  const header = response.headers.get("retry-after")
-  if (header === null) return null
-  const seconds = Number(header.trim())
-  return Number.isInteger(seconds) && seconds >= 0 ? seconds : null
-}
+export const retryAfterSecondsOf = (response: Response): number | null => retryAfterHeader(response.headers)
 
 export const cloudFailure = async (response: Response, fallback: string): Promise<CloudFailure> => {
   const body: unknown = await response.json().catch(() => null)
-  return {
-    error: errorMessage(body, fallback),
-    code: isRecord(body) && typeof body.code === "string" && body.code !== "" ? body.code : null,
+  /*
+   * plue states `code` and `fault`, and the Worker's pass-through preserves
+   * `code` and `retry_after` but not `fault` (apps/server proxies.ts), so the
+   * verdict is finished here against the vendored registry rather than left
+   * for each surface to infer from the sentence.
+   */
+  const refusal = refusalOf({
+    body,
     status: response.status,
-    retryAfterSeconds: retryAfterSecondsOf(response)
+    message: errorMessage(body, fallback),
+    retryAfterSeconds: retryAfterHeader(response.headers)
+  })
+  return {
+    error: refusal.message,
+    code: refusal.rawCode,
+    status: refusal.status,
+    retryAfterSeconds: refusal.retryAfter,
+    refusal
   }
+}
+
+/** A request that never reached Smithers Cloud: infra-class, because nothing judged it. */
+export const cloudUnreachable = (error: unknown): CloudFailure => {
+  const refusal = clientRefusal(
+    error,
+    `Could not reach Smithers Cloud: ${error instanceof Error ? error.message : String(error)}`
+  )
+  return { error: refusal.message, code: null, status: null, retryAfterSeconds: null, refusal }
 }
 
 /** Domain seams share transport; authorization, DTOs, and retry decisions remain in the seam. */
@@ -52,12 +80,7 @@ export const createCloudClient = (ctx: Pick<SeamContext, "http" | "baseUrl">) =>
         }
       )
     } catch (error) {
-      return {
-        error: `Could not reach Smithers Cloud: ${error instanceof Error ? error.message : String(error)}`,
-        code: null,
-        status: null,
-        retryAfterSeconds: null
-      }
+      return cloudUnreachable(error)
     }
     if (!response.ok) {
       return cloudFailure(

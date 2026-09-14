@@ -10,6 +10,7 @@
  * string below is what the continuation turn posts back to the model.
  */
 import type { AgentToolSpec } from "@smthrs/rpc/NativeAgent"
+import { agentFaultNote } from "@smthrs/rpc/RefusalCopy"
 import { canonicalCommandName } from "./CommandName"
 import type { CommandRegistry } from "./Commands"
 import type { CatalogItem, FlowEntry } from "./registry"
@@ -91,8 +92,22 @@ const CLOUD_SIGN_IN_INSTRUCTION = /(\bsign in\b[^.]*?)\/cloud\.sign-in\b/giu
  * button, so the failure text names it (agent-parity.md: the model ran
  * `/auth.prompt`, the wrong prompt, because nothing named the right one).
  */
-export const agentFailureText = (error: string): string =>
-  error.replace(CLOUD_SIGN_IN_INSTRUCTION, "$1cloud.prompt (it renders the Smithers Cloud sign-in button in the chat)")
+export const agentFailureText = (error: string): string => {
+  const worded = error.replace(
+    CLOUD_SIGN_IN_INSTRUCTION,
+    "$1cloud.prompt (it renders the Smithers Cloud sign-in button in the chat)"
+  )
+  /*
+   * …and the fault class, when the app itself coded this refusal. Without it
+   * the model reads "service unavailable" and picks a story: it has apologised
+   * for a full fleet as though the user had asked for too much, and told a
+   * user at their own quota that Smithers was broken. `agentFaultNote` only
+   * fires on a code the app wrote at the front of the string, looked up in
+   * plue's closed registry — never on the English.
+   */
+  const note = agentFaultNote(worded)
+  return note === null ? worded : `${worded} ${note}`
+}
 
 /** The one tool the chat model gets. */
 export const commandsToolSpec: AgentToolSpec = {

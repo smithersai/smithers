@@ -4,6 +4,7 @@
  * @since 1.0.0
  */
 import { z } from "zod"
+import { PLUE_FAULTS } from "./PlueFailureCodes.ts"
 import { StatusRollupSchema } from "./Health.ts"
 import { AgentRoleIdSchema, AgentRoleModelSchema } from "./AgentRoles.ts"
 import {
@@ -434,7 +435,16 @@ export const SessionRefusalSchema = z.object({
   /** plue's machine-readable code; null when the refusal carried none. */
   code: z.string().nullable().optional(),
   /** The `Retry-After` header's seconds, when the refusal carried one. */
-  retryAfterSeconds: z.number().int().nonnegative().nullable().optional()
+  retryAfterSeconds: z.number().int().nonnegative().nullable().optional(),
+  /**
+   * Whose fault this was, in plue's own vocabulary — the one fact the status
+   * and the sentence together cannot supply, and the one the card's lead line
+   * is chosen by. Optional because cards persisted before the failure registry
+   * landed carry none; `refusalFromStored` re-derives it from the code.
+   */
+  fault: z.enum(PLUE_FAULTS).optional(),
+  /** Which party refused: plue, the Worker in front of it, or this app's own transport. */
+  origin: z.enum(["plue", "worker", "client"]).optional()
 })
 /**
  * The decoded value accepted by {@link SessionRefusalSchema}.

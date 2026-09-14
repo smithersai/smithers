@@ -5,6 +5,7 @@ import { flushSync } from "react-dom"
 import { createRoot } from "react-dom/client"
 import type { AppBootstrap } from "@smthrs/rpc/AppBootstrap"
 import { cloudCapabilities, localCapabilities } from "@smthrs/rpc/HostCapabilities"
+import { INFRA_NOT_YOUR_FAULT } from "@smthrs/rpc/RefusalCopy"
 import { ControllerTestProvider } from "../ControllerContext"
 import type { NativeRepositories } from "../native/NativeBridge"
 import type { AgentPort } from "../runtime/AgentPort"
@@ -692,6 +693,76 @@ describe("the workspace card's desktop facet", () => {
     expect(host.querySelector("iframe")).toBeNull()
     host.remove()
     dropDesktopStream()
+  })
+
+  /*
+   * The product ruling, on the surface: an infra failure says plainly that it
+   * is not the user's fault and that the fix is more infra, by name. A user
+   * fault — their own quota, a bad bookmark — never does, because saying it
+   * there would be a lie that also stops them fixing the thing they can fix.
+   */
+  test("a full fleet says it is not your fault and names @fucory, with plue's own words kept underneath", () => {
+    dropDesktopStream()
+    const { host } = render(
+      desktopCard({
+        facet: "desktop",
+        status: "running",
+        desktopRefusal: {
+          status: 503,
+          message: "no sandbox slots are free",
+          code: "no_capacity",
+          fault: "infra",
+          origin: "plue",
+          retryAfterSeconds: 30
+        }
+      })
+    )
+    expect(host.textContent).toContain(INFRA_NOT_YOUR_FAULT)
+    expect(host.textContent).toContain("@fucory")
+    /* Verbatim, underneath — never replaced by the lead line. */
+    expect(host.textContent).toContain("no_capacity — no sandbox slots are free")
+    /* An infra refusal is not a wait: no clock is offered, because no clock will empty the fleet. */
+    expect(host.textContent).not.toContain("the server asked for 30s")
+    expect(host.querySelector("[data-refusal-fault=\"infra\"]")).not.toBeNull()
+    host.remove()
+  })
+
+  test("an account at its own cap gets NO infra line — that one is theirs to clear", () => {
+    dropDesktopStream()
+    const { host } = render(
+      desktopCard({
+        facet: "desktop",
+        status: "running",
+        desktopRefusal: {
+          status: 429,
+          message: "you already have 5 boxes running",
+          code: "quota_exceeded",
+          fault: "user",
+          origin: "plue",
+          retryAfterSeconds: null
+        }
+      })
+    )
+    expect(host.textContent).not.toContain("@fucory")
+    expect(host.textContent).not.toContain(INFRA_NOT_YOUR_FAULT)
+    expect(host.textContent).toContain("Your account is at its cap")
+    expect(host.textContent).toContain("you already have 5 boxes running")
+    expect(host.querySelector("[data-refusal-fault=\"user\"]")).not.toBeNull()
+    host.remove()
+  })
+
+  test("a card persisted before the registry landed still gets a verdict, from its code", () => {
+    dropDesktopStream()
+    /* No `fault` and no `origin` on the row — re-derived from `no_capacity`. */
+    const { host } = render(
+      desktopCard({
+        facet: "desktop",
+        status: "running",
+        desktopRefusal: { status: 503, message: "no sandbox slots are free", code: "no_capacity" }
+      })
+    )
+    expect(host.textContent).toContain(INFRA_NOT_YOUR_FAULT)
+    host.remove()
   })
 
   test("a 409 reads the server's own words and offers Resume", () => {

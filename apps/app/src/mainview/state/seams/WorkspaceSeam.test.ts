@@ -8,6 +8,7 @@ import type { CloudWorkspaceInput } from "../AppState"
 import { dropDesktopStream, readDesktopStream } from "./DesktopStream"
 import { createWorkspaceSeam, DEGRADED_WORKSPACE_REFUSAL, desktopBoxWait, desktopSessionRetry, terminalSessionRetry } from "./WorkspaceSeam"
 import type { SeamContext } from "./SeamContext"
+import { INFRA_NOT_YOUR_FAULT } from "@smthrs/rpc/RefusalCopy"
 import { USER_WORKSPACE_ROW } from "./fixtures/UserWorkspaceRow"
 
 /*
@@ -637,7 +638,7 @@ describe("workspace seam acts", () => {
     })
     await seedWorkspace(store)
     const refusal = await seam.suspendWorkspace("ws-1")
-    expect(refusal).toBe("driver exploded")
+    expect(refusal).toBe("driver exploded. That's a bug in Smithers, not something you did.")
     expect(payloadOf(store)?.error).toBe("driver exploded")
     expect(workspacesOf(store)[0]?.status).toBe("running")
   })
@@ -885,12 +886,14 @@ describe("workspace seam terminal", () => {
       expect(posts).toBe(2)
       /* One retry, and it waited the second the header asked for — not the app's own default. */
       expect(Date.now() - startedAt).toBeGreaterThanOrEqual(900)
-      expect(refusal).toBe("service unavailable")
+      expect(refusal).toBe("guest_not_ready — service unavailable. Not ready yet — nothing is wrong.")
       expect(payloadOf(store)?.terminalRefusal).toEqual({
         status: 503,
         message: "service unavailable",
         code: "guest_not_ready",
-        retryAfterSeconds: 1
+        retryAfterSeconds: 1,
+        fault: "wait",
+        origin: "plue"
       })
       expect(payloadOf(store)?.facet).toBe("terminal")
       expect(tabsOf(store)).toEqual([])
@@ -912,12 +915,14 @@ describe("workspace seam terminal", () => {
     const refusal = await seam.openTerminal("ws-1")
 
     expect(posts).toBe(1)
-    expect(refusal).toBe("workspace is not running")
+    expect(refusal).toBe("workspace is not running. Smithers can't do that as asked.")
     expect(payloadOf(store)?.terminalRefusal).toEqual({
       status: 409,
       message: "workspace is not running",
       code: null,
-      retryAfterSeconds: null
+      retryAfterSeconds: null,
+      fault: "user",
+      origin: "worker"
     })
   })
 
@@ -1487,7 +1492,7 @@ describe("workspace seam egress_proxy_unavailable", () => {
       })
     })
     const refusal = await seam.openWorkspace("main", "will/smithers")
-    expect(refusal).toBe("egress_proxy_unavailable — service unavailable")
+    expect(refusal).toBe("egress_proxy_unavailable — service unavailable. " + INFRA_NOT_YOUR_FAULT)
   })
 
   test("the same refusal on an act with a card puts the code on the card beside the server's words", async () => {
@@ -1498,7 +1503,7 @@ describe("workspace seam egress_proxy_unavailable", () => {
       })
     })
     await seedWorkspace(store, { ...wsRow, status: "suspended" })
-    expect(await seam.resumeWorkspace("ws-1")).toBe("egress_proxy_unavailable — service unavailable")
+    expect(await seam.resumeWorkspace("ws-1")).toBe(`egress_proxy_unavailable — service unavailable. ${INFRA_NOT_YOUR_FAULT}`)
     expect(payloadOf(store)?.egressProxyUnavailable).toBe(true)
     expect(payloadOf(store)?.error).toBe("service unavailable")
   })
@@ -1508,7 +1513,7 @@ describe("workspace seam egress_proxy_unavailable", () => {
       "POST api/repos/will/smithers/workspaces/ws-1/resume": json(409, { code: "operation_in_progress", message: "already resuming" })
     })
     await seedWorkspace(store, { ...wsRow, status: "suspended" })
-    expect(await seam.resumeWorkspace("ws-1")).toBe("already resuming")
+    expect(await seam.resumeWorkspace("ws-1")).toBe("operation_in_progress — already resuming. Not ready yet — nothing is wrong.")
     expect(payloadOf(store)?.egressProxyUnavailable).toBeUndefined()
   })
 })
@@ -1666,12 +1671,14 @@ describe("workspace seam desktop session", () => {
     })
     await seedWorkspace(store, { ...wsRow, kind: "desktop", status: "suspended" })
     const refusal = await seam.openDesktop("ws-1")
-    expect(refusal).toBe("workspace is suspended; resume it before opening the desktop")
+    expect(refusal).toBe("workspace is suspended; resume it before opening the desktop. Smithers can't do that as asked.")
     expect(payloadOf(store)?.desktopRefusal).toEqual({
       status: 409,
       message: "workspace is suspended; resume it before opening the desktop",
       code: null,
-      retryAfterSeconds: null
+      retryAfterSeconds: null,
+      fault: "user",
+      origin: "worker"
     })
     expect(readDesktopStream("ws-1")).toBeNull()
   })
@@ -1686,12 +1693,14 @@ describe("workspace seam desktop session", () => {
     })
     await seedWorkspace(store)
     const refusal = await seam.openDesktop("ws-1")
-    expect(refusal).toBe("workspace kind container has no desktop")
+    expect(refusal).toBe("workspace kind container has no desktop. Smithers can't do that as asked.")
     expect(payloadOf(store)?.desktopRefusal).toEqual({
       status: 400,
       message: "workspace kind container has no desktop",
       code: null,
-      retryAfterSeconds: null
+      retryAfterSeconds: null,
+      fault: "user",
+      origin: "worker"
     })
   })
 
@@ -1755,18 +1764,76 @@ describe("workspace seam desktop session", () => {
       expect(mints).toBe(2)
       /* One retry, and it waited the second the header asked for — not the app's own default. */
       expect(Date.now() - startedAt).toBeGreaterThanOrEqual(900)
-      expect(refusal).toBe("service unavailable")
+      expect(refusal).toBe("desktop_not_ready — service unavailable. Not ready yet — nothing is wrong.")
       expect(payloadOf(store)?.desktopRefusal).toEqual({
         status: 503,
         message: "service unavailable",
         code: "desktop_not_ready",
-        retryAfterSeconds: 1
+        retryAfterSeconds: 1,
+        fault: "wait",
+        origin: "plue"
       })
       expect(payloadOf(store)?.facet).toBe("desktop")
       expect(readDesktopStream("ws-1")).toBeNull()
     } finally {
       Object.assign(desktopSessionRetry, previous)
     }
+  })
+
+  /*
+   * The auto-retry gate is the FAULT, not the presence of a number. no_capacity
+   * states `retry_after: 30` in plue's own registry and sends it on the wire,
+   * so a rule keyed on "did the server state a pacing" would loop on a full
+   * fleet — thirty times, for two and a half minutes, hiding the one fact the
+   * user needs, which is that somebody has to buy more infra.
+   */
+  test("a full fleet is answered ONCE, even though it states a retry_after, and says whose fault it is", async () => {
+    dropDesktopStream()
+    let mints = 0
+    const { store, seam } = await harness({
+      "POST api/repos/will/smithers/workspaces/ws-1/desktop/session": () => {
+        mints += 1
+        return json(503, { code: "no_capacity", fault: "infra", message: "no sandbox slots are free", retry_after: 30 }, {
+          "retry-after": "30"
+        })
+      },
+      "api/repos/will/smithers/workspaces/ws-1": json(200, WS_DESKTOP)
+    })
+    await seedWorkspace(store, { ...wsRow, kind: "desktop" })
+
+    const refusal = await seam.openDesktop("ws-1")
+
+    expect(mints).toBe(1)
+    expect(refusal).toBe(`no_capacity — no sandbox slots are free. ${INFRA_NOT_YOUR_FAULT}`)
+    expect(payloadOf(store)?.desktopRefusal).toEqual({
+      status: 503,
+      message: "no sandbox slots are free",
+      code: "no_capacity",
+      retryAfterSeconds: 30,
+      fault: "infra",
+      origin: "plue"
+    })
+    expect(readDesktopStream("ws-1")).toBeNull()
+  })
+
+  test("an account at its own cap is answered once and never gets the infra line", async () => {
+    dropDesktopStream()
+    let mints = 0
+    const { store, seam } = await harness({
+      "POST api/repos/will/smithers/workspaces/ws-1/desktop/session": () => {
+        mints += 1
+        return json(429, { code: "quota_exceeded", fault: "user", message: "you already have 5 boxes running" })
+      },
+      "api/repos/will/smithers/workspaces/ws-1": json(200, WS_DESKTOP)
+    })
+    await seedWorkspace(store, { ...wsRow, kind: "desktop" })
+
+    const refusal = await seam.openDesktop("ws-1")
+
+    expect(mints).toBe(1)
+    expect(refusal).not.toContain("@fucory")
+    expect(refusal).toContain("Your account is at its cap")
+    expect(payloadOf(store)?.desktopRefusal).toMatchObject({ code: "quota_exceeded", fault: "user" })
   })
 
   test("any other 5xx is answered once — a code the server did not ask to be retried is not retried", async () => {
@@ -1784,12 +1851,14 @@ describe("workspace seam desktop session", () => {
     const refusal = await seam.openDesktop("ws-1")
 
     expect(mints).toBe(1)
-    expect(refusal).toBe("internal server error")
+    expect(refusal).toBe("internal server error. That's a bug in Smithers, not something you did.")
     expect(payloadOf(store)?.desktopRefusal).toEqual({
       status: 500,
       message: "internal server error",
       code: null,
-      retryAfterSeconds: null
+      retryAfterSeconds: null,
+      fault: "bug",
+      origin: "worker"
     })
   })
 
@@ -2224,7 +2293,8 @@ describe("workspace seam create refusals", () => {
     })
     await seedWorkspace(store, { ...wsRow, status: "failed" })
     await seedCard(store)
-    expect(await seam.openWorkspace("main", "will/smithers", "desktop")).toBe(message)
+    /* The card keeps plue's words verbatim; the answer adds the one line that says whose fault it was. */
+    expect(await seam.openWorkspace("main", "will/smithers", "desktop")).toBe(`${message}. Smithers can't do that as asked.`)
     expect(payloadOf(store)?.error).toBe(message)
   })
 
@@ -2235,7 +2305,8 @@ describe("workspace seam create refusals", () => {
     })
     await seedWorkspace(store)
     await seedCard(store)
-    expect(await seam.openWorkspace("main", "will/smithers", "desktop")).toBe(message)
+    /* The card keeps plue's words verbatim; the answer adds the one line that says whose fault it was. */
+    expect(await seam.openWorkspace("main", "will/smithers", "desktop")).toBe(`${message}. Smithers can't do that as asked.`)
     expect(payloadOf(store)?.error).toBeUndefined()
   })
 })
@@ -2602,7 +2673,7 @@ describe("the one-command desktop open", () => {
       "POST api/repos/will/smithers/workspaces": json(409, { message: "no NixOS environment image is registered for kind desktop" })
     })
     try {
-      expect(await seam.openDesktopBox()).toBe("no NixOS environment image is registered for kind desktop")
+      expect(await seam.openDesktopBox()).toBe("no NixOS environment image is registered for kind desktop. Smithers can't do that as asked.")
       expect(requests).toEqual(["POST api/repos/will/smithers/workspaces"])
     } finally {
       seam.dispose()

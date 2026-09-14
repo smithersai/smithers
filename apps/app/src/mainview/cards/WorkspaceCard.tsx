@@ -32,7 +32,8 @@ import { Camera, Copy, Globe, Monitor, Play, RefreshCw, Server, Square, Terminal
 import { useController } from "../ControllerContext"
 import type { Card } from "../state/AppState"
 import { readDesktopStream, subscribeDesktopStream } from "../state/seams/DesktopStream"
-import { DESKTOP_NOT_READY, GUEST_NOT_READY } from "../state/seams/WorkspaceSeam"
+import { refusalFromStored } from "@smthrs/rpc/Refusal"
+import { refusalDoors, refusalLead } from "@smthrs/rpc/RefusalCopy"
 import { dayLabel, timeLabel } from "../Timestamps"
 import { shortId } from "../state/ids"
 import { FileListCardBody } from "./FileCards"
@@ -191,33 +192,39 @@ const WorkspaceDesktopBody = ({
     () => null
   )
   if (stream === null) {
-    const refusal = payload.desktopRefusal ?? null
+    const stored = payload.desktopRefusal ?? null
+    const refusal = stored === null ? null : refusalFromStored(stored)
     const stage = payload.desktopStage ?? null
     if (refusal === null && stage === null) return null
     /*
-     * plue's own words, verbatim — never a spinner in their place. A 409, and
-     * only a 409, means the computer is not running and offers Resume. Every
-     * refusal offers Retry, which runs the same mint again; a
-     * `desktop_not_ready` 503 (plue#496) is ALSO retried by the seam on the
-     * server's own `Retry-After`, so the button is the human's way to stop
-     * waiting for that clock, not the only way forward.
+     * The lead line, then plue's own words verbatim underneath — never a
+     * spinner in their place, and never a rewrite of them. The lead is chosen
+     * by FAULT from the one copy table (`@smthrs/rpc/RefusalCopy`), because
+     * "service unavailable" reads identically whether the caller asked for
+     * something they may not have, whether the box simply is not up yet, or
+     * whether the whole fleet is full — and only the last of those is the one
+     * where a person needs to be told, plainly, that it is not their fault.
      *
      * plue sanitizes a 5xx message to the status text but keeps `code`, so
      * the code is printed beside the message: without it "service
      * unavailable" would be the whole of what a person is told.
      */
+    const doors = refusal === null ? [] : refusalDoors(refusal)
     return (
       <div className="world-card-list">
         {/* The one-command open's own line: where the box got to, and the way out of the wait. */}
         {stage === null ? null : <p className="world-card-path">{DESKTOP_STAGE_LINE[stage]}</p>}
         {refusal === null ? null : (
-          <p className="world-card-empty">
-            {refusal.code != null ? `${refusal.code} — ` : ""}
-            {refusal.message}
-          </p>
+          <>
+            <p className="world-card-empty" data-refusal-fault={refusal.fault}>{refusalLead(refusal)}</p>
+            <p className="world-card-path">
+              {refusal.rawCode != null ? `${refusal.rawCode} — ` : ""}
+              {refusal.message}
+            </p>
+          </>
         )}
-        {refusal?.code === DESKTOP_NOT_READY && refusal.retryAfterSeconds != null ?
-          <p className="world-card-path">{`the server asked for ${refusal.retryAfterSeconds}s`}</p> :
+        {refusal !== null && refusal.fault === "wait" && refusal.retryAfter != null ?
+          <p className="world-card-path">{`the server asked for ${refusal.retryAfter}s`}</p> :
           null}
         {stage === null ? null : (
           <Button
@@ -230,7 +237,7 @@ const WorkspaceDesktopBody = ({
             Stop waiting
           </Button>
         )}
-        {refusal?.status === 409 ?
+        {doors.includes("resume") ?
           (
             <Button
               size="sm"
@@ -243,17 +250,27 @@ const WorkspaceDesktopBody = ({
             </Button>
           ) :
           null}
-        {refusal === null ? null : (
-          <Button
-            size="sm"
-            variant="outline"
-            data-flow="workspace.desktop"
-            aria-label="Try the desktop session again"
-            onClick={() => onRunCommand("workspace.desktop", payload.workspaceId)}
-          >
-            <RefreshCw size={12} aria-hidden="true" /> Retry
-          </Button>
-        )}
+        {doors.includes("retry") ?
+          (
+            <Button
+              size="sm"
+              variant="outline"
+              data-flow="workspace.desktop"
+              aria-label="Try the desktop session again"
+              onClick={() => onRunCommand("workspace.desktop", payload.workspaceId)}
+            >
+              <RefreshCw size={12} aria-hidden="true" /> Retry
+            </Button>
+          ) :
+          null}
+        {/*
+         * THE SEAM for a "Tell @fucory" door. `doors` already carries
+         * `report` for every infra and bug refusal in the app; nothing renders
+         * it because whether that door FILES something or merely says
+         * something is the product owner's call and has not been made. When it
+         * is, one case here — and the same case on the terminal facet — gives
+         * every such refusal the affordance at once.
+         */}
       </div>
     )
   }
@@ -448,7 +465,8 @@ const WorkspaceFacetBody = ({
     )
   }
   /* The terminal facet: the attachment, then every session the workspace holds. */
-  const terminalRefusal = payload.terminalRefusal ?? null
+  const storedTerminalRefusal = payload.terminalRefusal ?? null
+  const terminalRefusal = storedTerminalRefusal === null ? null : refusalFromStored(storedTerminalRefusal)
   return (
     <div className="world-card-list">
       {payload.terminalSessionId !== undefined ?
@@ -460,23 +478,26 @@ const WorkspaceFacetBody = ({
         ) :
         <p className="world-card-empty">No terminal attached.</p>}
       {/*
-       * plue's own words for a refused session POST, verbatim (plue#504).
-       * plue sanitizes a 5xx message to the status text but keeps `code`, so
-       * the code is printed beside it: without it "service unavailable" would
-       * be the whole of what a person is told. A `guest_not_ready` 503 is ALSO
-       * retried by the seam on the server's own `Retry-After`, so the button
-       * is the human's way to stop waiting for that clock, not the only way
-       * forward.
+       * The lead line for this fault, then plue's own words for a refused
+       * session POST, verbatim (plue#504). plue sanitizes a 5xx message to the
+       * status text but keeps `code`, so the code is printed beside it:
+       * without it "service unavailable" would be the whole of what a person
+       * is told. A `wait` fault — `guest_not_ready` is one — is ALSO retried
+       * by the seam on the server's own pacing, so the button is the human's
+       * way to stop waiting for that clock, not the only way forward. (The
+       * `report` door for an infra refusal has no control yet; see the desktop
+       * facet's seam note.)
        */}
       {terminalRefusal !== null ?
         (
           <>
-            <p className="world-card-empty">
-              {terminalRefusal.code != null ? `${terminalRefusal.code} — ` : ""}
+            <p className="world-card-empty" data-refusal-fault={terminalRefusal.fault}>{refusalLead(terminalRefusal)}</p>
+            <p className="world-card-path">
+              {terminalRefusal.rawCode != null ? `${terminalRefusal.rawCode} — ` : ""}
               {terminalRefusal.message}
             </p>
-            {terminalRefusal.code === GUEST_NOT_READY && terminalRefusal.retryAfterSeconds != null ?
-              <p className="world-card-path">{`the server asked for ${terminalRefusal.retryAfterSeconds}s`}</p> :
+            {terminalRefusal.fault === "wait" && terminalRefusal.retryAfter != null ?
+              <p className="world-card-path">{`the server asked for ${terminalRefusal.retryAfter}s`}</p> :
               null}
           </>
         ) :

@@ -63,7 +63,10 @@ import { dropDesktopStream, holdDesktopStream } from "./DesktopStream"
 import type { DesktopStream } from "./DesktopStream"
 import { loadEgressPage, workspaceEgressPath } from "./EgressSeam"
 import { workspaceCardFacts } from "../WorkspaceViews"
-import { createCloudClient, cloudFailure as failed } from "./CloudClient"
+import { cloudFailure as failed, cloudUnreachable, createCloudClient } from "./CloudClient"
+import { mayAutoRetry, statedRetryDelayMs, storedRefusal } from "@smthrs/rpc/Refusal"
+import type { Refusal, StoredRefusal } from "@smthrs/rpc/Refusal"
+import { refusalSentence } from "@smthrs/rpc/RefusalCopy"
 import type { SeamContext } from "./SeamContext"
 
 export const DEGRADED_WORKSPACE_REFUSAL =
@@ -256,36 +259,24 @@ interface CardAux {
   /** plue refused an act with `egress_proxy_unavailable`; the card names the code. */
   readonly egressProxyUnavailable?: boolean | undefined
   /**
-   * How the desktop session POST refused: plue's status beside its own words,
-   * its machine-readable `code` (which survives the 5xx message sanitizer)
-   * and the `Retry-After` seconds it asked for (lane L3b; plue#496).
+   * How the desktop session POST refused, as the one `Refusal` shape the app
+   * renders: plue's status beside its own words, its machine-readable `code`
+   * (which survives the 5xx message sanitizer), the `Retry-After` seconds it
+   * asked for (lane L3b; plue#496), and — since the failure registry landed —
+   * whose FAULT it was and which party said so.
    */
-  readonly desktopRefusal?:
-    | {
-      readonly status: number
-      readonly message: string
-      readonly code?: string | null
-      readonly retryAfterSeconds?: number | null
-    }
-    | undefined
+  readonly desktopRefusal?: StoredRefusal | undefined
   /**
    * How far `/desktop` has got. An explicit null clears the line — the wait
    * ended, whether it streamed, failed, or the human stopped it.
    */
   readonly desktopStage?: DesktopStage | null | undefined
   /**
-   * How the terminal session POST refused: the same four facts, on the
-   * terminal facet (plue#504). `guest_not_ready` is the one the seam retries
-   * on its own, because the server asked it to.
+   * How the terminal session POST refused: the same shape, on the terminal
+   * facet (plue#504). A `wait` fault — `guest_not_ready` is one — is the only
+   * kind the seam retries on its own, because the server asked it to.
    */
-  readonly terminalRefusal?:
-    | {
-      readonly status: number
-      readonly message: string
-      readonly code?: string | null
-      readonly retryAfterSeconds?: number | null
-    }
-    | undefined
+  readonly terminalRefusal?: StoredRefusal | undefined
 }
 
 const UNSETTLED: ReadonlySet<string> = new Set(["pending", "starting"])
@@ -924,12 +915,19 @@ export const createWorkspaceSeam = (ctx: SeamContext, deps: WorkspaceSeamDeps = 
    */
   const failOnCard = (
     workspace: CloudWorkspaceInput,
-    refusal: string | { readonly error: string; readonly code: string | null }
+    refusal: string | { readonly error: string; readonly code: string | null; readonly refusal?: Refusal }
   ): string => {
     const error = typeof refusal === "string" ? refusal : refusal.error
     const proxyGone = typeof refusal !== "string" && refusal.code === EGRESS_PROXY_UNAVAILABLE
     renderWorkspace(workspace, { error, ...(proxyGone ? { egressProxyUnavailable: true } : {}) })
-    return proxyGone ? `${EGRESS_PROXY_UNAVAILABLE} — ${error}` : error
+    /*
+     * The line that goes back to the transcript, the toast and the model: the
+     * code first (the anchor the agent boundary reads), then plue's own words,
+     * then the one sentence saying whose fault it was. A bare string caller
+     * has no refusal to classify and keeps its sentence unchanged.
+     */
+    const classified = typeof refusal === "string" ? undefined : refusal.refusal
+    return classified === undefined ? error : refusalSentence(classified)
   }
 
   /* ---- the list load (listWorkspaces, delete's aftermath, a 404 mid-watch) ---- */
@@ -1162,9 +1160,8 @@ export const createWorkspaceSeam = (ctx: SeamContext, deps: WorkspaceSeamDeps = 
         if (ctx.store.collections.cards.get(cardIdOf(row.id)) === undefined) continue
         renderWorkspace(row, { error: created.error })
       }
-      return created.code === EGRESS_PROXY_UNAVAILABLE
-        ? `${EGRESS_PROXY_UNAVAILABLE} — ${created.error}`
-        : created.error
+      /* One sentence for every refusal: the code, plue's own words, then whose fault it was. */
+      return refusalSentence(created.refusal)
     }
     const workspace = parseWorkspaceWire(created.body, target.repo)
     if (workspace === null) return `Smithers Cloud's answer for the new workspace on ${target.repo} was malformed.`
@@ -1318,9 +1315,8 @@ export const createWorkspaceSeam = (ctx: SeamContext, deps: WorkspaceSeamDeps = 
     if ("error" in resolved) return resolved.error
     const created = await sendJson("POST", repoPath(resolved.repo, "/workspaces"), { snapshot_id: snapshotId })
     if ("error" in created) {
-      return created.code === EGRESS_PROXY_UNAVAILABLE
-        ? `${EGRESS_PROXY_UNAVAILABLE} — ${created.error}`
-        : created.error
+      /* One sentence for every refusal: the code, plue's own words, then whose fault it was. */
+      return refusalSentence(created.refusal)
     }
     const workspace = parseWorkspaceWire(created.body, resolved.repo)
     if (workspace === null) return `Smithers Cloud's answer for the workspace from snapshot ${snapshotId} was malformed.`
@@ -1682,11 +1678,19 @@ export const createWorkspaceSeam = (ctx: SeamContext, deps: WorkspaceSeamDeps = 
         })
       } catch (error) {
         if (!current()) return
-        return `Could not reach Smithers Cloud: ${error instanceof Error ? error.message : String(error)}`
+        /* Nothing answered, so nothing judged the request: infra, and the card says so rather than a bare sentence. */
+        const unreachable = cloudUnreachable(error)
+        dropDesktopStream(workspace.id)
+        renderWorkspace(workspace, {
+          facet: "desktop",
+          desktopStage: null,
+          desktopRefusal: storedRefusal(unreachable.refusal)
+        })
+        return unreachable.error
       }
       if (!current()) return
       if (!response.ok) {
-        const { code, error: message, retryAfterSeconds: after } = await failed(
+        const { refusal: sessionRefusal } = await failed(
           response,
           `The desktop session on ${workspace.id} was refused (${response.status}).`
         )
@@ -1696,16 +1700,23 @@ export const createWorkspaceSeam = (ctx: SeamContext, deps: WorkspaceSeamDeps = 
           facet: "desktop",
           /* The mint owns the card from here: the one-command open's stage line has done its work. */
           desktopStage: null,
-          desktopRefusal: {
-            status: response.status,
-            message,
-            code,
-            retryAfterSeconds: after
-          }
+          desktopRefusal: storedRefusal(sessionRefusal)
         })
         attempt += 1
-        if (code !== DESKTOP_NOT_READY || attempt >= desktopSessionRetry.maxAttempts) return message
-        if (!await sleep(after === null ? desktopSessionRetry.defaultDelayMs : after * 1_000, workspace.id)) return
+        /*
+         * The auto-retry is the SERVER'S instruction and nothing else: only a
+         * `wait` fault, only on a pacing it stated (its header, its body, or
+         * the registry row for its code). It used to key off the single code
+         * `desktop_not_ready`, which meant every other 503 that plue could
+         * have asked us to wait on was given up on, and — worse — any code
+         * later spelled that way would have been retried without anyone
+         * checking whose fault it was. An infra 503 is never retried here: a
+         * full fleet does not empty because a client asked thirty more times.
+         */
+        if (!mayAutoRetry(sessionRefusal) || attempt >= desktopSessionRetry.maxAttempts) {
+          return refusalSentence(sessionRefusal)
+        }
+        if (!await sleep(statedRetryDelayMs(sessionRefusal) ?? desktopSessionRetry.defaultDelayMs, workspace.id)) return
         if (!current()) return
         continue
       }
@@ -1817,9 +1828,8 @@ export const createWorkspaceSeam = (ctx: SeamContext, deps: WorkspaceSeamDeps = 
       kind: "desktop"
     })
     if ("error" in created) {
-      return created.code === EGRESS_PROXY_UNAVAILABLE
-        ? `${EGRESS_PROXY_UNAVAILABLE} — ${created.error}`
-        : created.error
+      /* One sentence for every refusal: the code, plue's own words, then whose fault it was. */
+      return refusalSentence(created.refusal)
     }
     const opened = parseWorkspaceWire(created.body, target.repo)
     if (opened === null) return `Smithers Cloud's answer for the desktop box on ${target.repo} was malformed.`
@@ -2015,11 +2025,13 @@ export const createWorkspaceSeam = (ctx: SeamContext, deps: WorkspaceSeamDeps = 
     /*
      * The session POST, and — plue#504 — the 503 it may answer while a vm or
      * desktop guest finishes its NixOS activation. The auto-retry is the
-     * server's instruction, not this app's optimism: it runs ONLY for
-     * `guest_not_ready`, waits exactly the `Retry-After` the refusal named,
-     * gives up after `terminalSessionRetry.maxAttempts`, and leaves plue's own
-     * words on the terminal facet the whole time. A later open on the same
-     * workspace supersedes it. Every other refusal is answered once.
+     * server's instruction, not this app's optimism: it runs ONLY for a `wait`
+     * fault (plue's own word for "nothing is wrong, it is not ready yet",
+     * which is what `guest_not_ready` is), waits exactly the pacing the
+     * refusal stated, gives up after `terminalSessionRetry.maxAttempts`, and
+     * leaves plue's own words on the terminal facet the whole time. A later
+     * open on the same workspace supersedes it. Every other refusal —
+     * user, infra, dependency, bug — is answered once.
      */
     let created: { readonly body: unknown }
     for (let attempt = 1;; attempt += 1) {
@@ -2040,17 +2052,12 @@ export const createWorkspaceSeam = (ctx: SeamContext, deps: WorkspaceSeamDeps = 
       renderWorkspace(workspace, {
         facet: "terminal",
         ...(proxyGone ? { egressProxyUnavailable: true } : {}),
-        terminalRefusal: {
-          status: answer.status,
-          message: answer.error,
-          code: answer.code,
-          retryAfterSeconds: answer.retryAfterSeconds
-        }
+        terminalRefusal: storedRefusal(answer.refusal)
       })
-      if (answer.code !== GUEST_NOT_READY || attempt >= terminalSessionRetry.maxAttempts) {
-        return proxyGone ? `${EGRESS_PROXY_UNAVAILABLE} — ${answer.error}` : answer.error
+      if (!mayAutoRetry(answer.refusal) || attempt >= terminalSessionRetry.maxAttempts) {
+        return refusalSentence(answer.refusal)
       }
-      if (!await sleep(answer.retryAfterSeconds === null ? terminalSessionRetry.defaultDelayMs : answer.retryAfterSeconds * 1_000, workspace.id)) return
+      if (!await sleep(statedRetryDelayMs(answer.refusal) ?? terminalSessionRetry.defaultDelayMs, workspace.id)) return
       if (!current()) return
     }
     const session = parseSession(created.body)
