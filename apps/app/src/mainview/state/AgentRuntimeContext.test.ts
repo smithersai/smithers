@@ -375,3 +375,54 @@ test("direct tutorial entry and replay initialize hidden repository context with
   expect(store.session().guide).toMatchObject({ step: 1, playthrough: 1, completed: ["tutorial.started"] })
   expect(requests[1]?.context?.repositoryUpdate).toMatchObject({ repo: "practice:smithersai/hello-server", openIssues: 2, openPrs: 1 })
 })
+
+
+test("practice chat composes the displayed issue list and issue body without sign-in or network reads", async () => {
+  const { PRACTICE_REPO, practiceIssue } = await import("./practice/PracticeRepository")
+  const store = await webStore()
+  const requests: StartAgentTurnRequest[] = []
+  const reads: string[] = []
+  const controller = createAppController(store, unavailableRepositories, recordingAgent(requests), {
+    fetchImpl: async input => { reads.push(String(input)); return Response.json({}, { status: 404 }) },
+  })
+  store.dispatch({ type: "guide.changed", actor: "user", guide: initialGuide() })
+  store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-out", login: null, allowlisted: false, admin: false, scopesPlain: null })
+  store.dispatch({ type: "repositories.loaded", actor: "system", repositories: [
+    { id: "smithersai/smithers", org: "smithersai", name: "smithers", ownerKind: "user", head: null, catalog: true },
+    { id: PRACTICE_REPO, org: "practice:smithersai", name: "hello-server", ownerKind: "user", head: null },
+  ] })
+  store.dispatch({ type: "repo.selected", actor: "user", id: "smithersai/smithers" })
+  await settled()
+  reads.length = 0
+  await controller.commands.run("issues.list", `open ${PRACTICE_REPO}`)
+  expect(reads).toEqual([])
+  controller.send("What is issue 3 about?")
+  await settled()
+  expect(requests).toHaveLength(1)
+  expect(requests[0]?.context?.activeRepository).toBe("smithersai/smithers")
+  expect(requests[0]?.context?.capabilities.join(" ")).toContain(PRACTICE_REPO)
+  const composed = requests[0]!.messages.map(message => "content" in message ? message.content : "").join("\n")
+  expect(composed).toContain("Add a /time endpoint")
+  expect(JSON.parse(composed.split("Practice card data:\n")[1]!.split("\nWhat is issue")[0]!).issue3.issueBody).toBe(practiceIssue(3)!.issueBody)
+  expect(composed).toContain("no sign-in")
+  expect(composed).not.toContain("data:image")
+  reads.length = 0
+  const read = await controller.commands.executeForAgent({ name: "commands", arguments: JSON.stringify({ action: "execute", name: "issues.view", args: `3 ${PRACTICE_REPO}` }) })
+  expect(read).toContain(practiceIssue(3)!.issueBody)
+  expect([...store.collections.messages.values()].some(message => message.action?.flow === "auth.sign-in")).toBe(false)
+  expect(reads).toEqual([])
+  // Advancing out of practice must drop the fixture context, even with its cards persisted.
+  store.dispatch({ type: "guide.changed", actor: "user", guide: { ...initialGuide(), step: 10 } })
+  controller.send("What repository now?")
+  await settled()
+  expect(requests[1]?.context?.activeRepository).toBe("smithersai/smithers")
+  expect(JSON.stringify(requests[1]?.messages)).not.toContain("Add a /time endpoint")
+  // Selecting the practice key itself also supplies context after the guide.
+  // A persisted practice selection is also a context source outside the guide.
+  store.collections.sessions.update(store.session().id, draft => { draft.activeRepoKey = PRACTICE_REPO })
+  controller.send("Read the practice repository")
+  await settled()
+  expect(requests[2]?.context?.capabilities.join(" ")).toContain(PRACTICE_REPO)
+  expect(JSON.stringify(requests[2]?.messages)).toContain("Expected: Hello, world!")
+  expect(JSON.stringify(requests[2]?.messages)).not.toContain("Add a /time endpoint") // The detail card replaced the list.
+})

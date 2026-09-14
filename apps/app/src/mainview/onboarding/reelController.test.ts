@@ -8,7 +8,7 @@ const setup = () => {
   const session: { theme: "light" | "dark"; guide: GuideState & ReelState } = { theme: "light", guide: { ...initialGuide(), step: 14 } }
   const events: Record<string, unknown>[] = []
   let wait = () => {}, dispose = () => {}
-  const ctx = { store: { session: () => session, dispatch: (event: Record<string, unknown>) => {
+  const ctx = { store: { collections: { toasts: new Map() }, session: () => session, dispatch: (event: Record<string, unknown>) => {
     events.push(event)
     if (event.type === "guide.changed") session.guide = event.guide as GuideState & ReelState
     if (event.type === "theme.changed") session.theme = event.theme as "light" | "dark"
@@ -72,4 +72,20 @@ test("finishing the wait demo does not advance or dismiss its example", async ()
   expect(h.session.guide.reelIndex).toBe(4)
   expect(h.session.guide.finished).not.toBe(true)
   h.dispose()
+})
+
+
+test("exiting the notification demo clears its toast and preserves unrelated notifications", async () => {
+  const { createAppStore } = await import("../state/AppStore")
+  const { memoryStorage } = await import("../state/TestFixtures")
+  const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
+  store.dispatch({ type: "guide.changed", actor: "user", guide: { ...initialGuide(), step: 14 } })
+  const act = createReelController({ store } as ControllerContext)
+  store.dispatch({ type: "toast.shown", actor: "system", key: "real-run", title: "Real run" })
+  await act("reel-start", "")
+  await act("reel-next", "1:0")
+  await act("reel-demo", "notify")
+  expect([...store.collections.toasts.values()].some(toast => toast.detail === "This is a tutorial notification.")).toBe(true)
+  await act("reel-exit", "")
+  expect([...store.collections.toasts.values()].map(toast => toast.key)).toEqual(["real-run"])
 })

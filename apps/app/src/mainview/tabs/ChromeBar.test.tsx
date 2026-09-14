@@ -1526,7 +1526,7 @@ describe("the chrome-actions footer's Account button", () => {
     expect(card).not.toBeNull()
     expect(card?.getAttribute("aria-label")).toBe("Account · @will")
     expect(card?.querySelector('table[aria-label="GitHub App permissions"]')).not.toBeNull()
-    expect(card?.querySelector('table[aria-label="GitHub OAuth scopes"]')?.textContent).toContain("read:user")
+    expect(card?.querySelector('table[aria-label="GitHub scopes"]')?.textContent).toContain("read:user")
     expect(card?.querySelector("[data-testid=account-login]")?.textContent).toBe("GitHubConnected as @will")
     expect(card?.querySelector("[data-testid=account-access]")?.textContent).toBe("AccessAllowed")
     expect(card?.querySelector('[data-testid="account-scope-contents"]')?.textContent).toBe("contentsRead and write repository contents.")
@@ -1576,7 +1576,7 @@ describe("the chrome-actions footer's Account button", () => {
     expect(card?.querySelector("[data-testid=account-access]")?.textContent).toBe("AccessRequested, waiting on an answer")
     expect(card?.querySelectorAll("tbody tr")).toHaveLength(3)
     expect(card?.textContent).not.toContain("GitHub App permissions")
-    expect(card?.textContent).toContain("GitHub OAuth scopes")
+    expect(card?.textContent).toContain("GitHub scopes")
     expect(card?.textContent).not.toContain("Boxes")
   })
 

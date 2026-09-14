@@ -60,7 +60,7 @@ test("gates name the requested flow summary, with a plain fallback", async () =>
   expect(prompts.at(-1)?.text).toBe(`Sign in with GitHub to ${summary[0]!.toLowerCase()}${summary.slice(1).replace(/[.!?]$/, "")}.`)
   await controller.commands.runForAgent("flow.run", "unpublished smithersai/smithers")
   prompts = [...store.collections.messages.values()].filter(message => message.action?.flow === "auth.sign-in")
-  expect(prompts.at(-1)?.text).toBe("Sign in with GitHub to continue.")
+  expect(prompts.at(-1)?.text).toBe("Sign in with GitHub to run unpublished on smithersai/smithers.")
 })
 
 test("a repository launch names its human summary and repository for both actors", async () => {

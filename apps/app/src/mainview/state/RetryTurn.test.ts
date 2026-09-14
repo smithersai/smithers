@@ -110,8 +110,10 @@ describe("/retry re-runs the last turn", () => {
     await settled()
     expect(store.collections.messages.get(`message-${turnId}-smithers`)).toBeUndefined()
     const retried = launches[1]
+    // A retry composes fresh practice facts before the unchanged conversation.
+    expect(JSON.stringify(retried?.messages[0])).toContain("practice:smithersai/hello-server")
     expect(
-      retried?.messages.map((message) => ("content" in message ? message.content : message.type))
+      retried?.messages.slice(1).map((message) => ("content" in message ? message.content : message.type))
     ).toEqual(["what is my balance?"])
   })
 

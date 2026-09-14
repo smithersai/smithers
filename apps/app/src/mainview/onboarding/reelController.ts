@@ -41,6 +41,11 @@ export function createReelController(ctx: ControllerContext, clock: GuideClock =
         guide.demoRun = { ...guide.demoRun, status: "interrupted", finishedAt: Date.now() }
         ctx.store.dispatch({ type: "toast.resolved", actor: "system", key, status: "failed", title: "Example wait interrupted", detail: "You left the reel before the example flow finished." })
       }
+      for (const toast of ctx.store.collections.toasts.values()) {
+        if (toast.key.startsWith("reel-notify-") || toast.key.startsWith("reel-wait-")) {
+          ctx.store.dispatch({ type: "toast.dismissed", actor: "system", id: toast.id })
+        }
+      }
       delete guide.reelIndex
       guide.step = GUIDE_LAST_STEP
     }

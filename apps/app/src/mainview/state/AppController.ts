@@ -1315,7 +1315,8 @@ export const createAppController = (
       const [flow, explicit] = asked.args?.trim().split(/\s+/) ?? []
       const repo = explicit ?? activeRepositoryId(store)
       const declared = repo ? store.collections.repositoryFlows.get(repo)?.flows.find(row => row.id === flow)?.summary : undefined
-      summary = declared ? `${declared.replace(/[.!?]$/, "")} on ${repo}` : undefined
+      summary = declared ? `${declared.replace(/[.!?]$/, "")} on ${repo}`
+        : flow ? `run ${flow}${repo ? ` on ${repo}` : ""}` : commands.find(asked.name)?.metadata.summary
     } else if (!summary && asked?.name) summary = commands.find(asked.name)?.metadata.summary
     const purpose = summary?.trim().replace(/[.!?]$/, "")
     store.dispatch({

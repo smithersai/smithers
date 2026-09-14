@@ -36,8 +36,8 @@ export const AccountCardBody = ({
         </tr>
       </tbody>
     </table>
-    <p className="secrets-scope">GitHub OAuth scopes</p>
-    <table className="secrets-table" aria-label="GitHub OAuth scopes">
+    <p className="secrets-scope">GitHub scopes</p>
+    <table className="secrets-table" aria-label="GitHub scopes">
       <tbody><tr><th scope="row">read:user</th><td>See your GitHub profile.</td></tr></tbody>
     </table>
     {card.payload.scopes.length === 0 ? null : (

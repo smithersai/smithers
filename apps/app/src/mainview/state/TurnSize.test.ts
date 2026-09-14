@@ -56,8 +56,11 @@ describe("a long conversation still sends a turn the boundary accepts", () => {
     controller.send("hello")
     await settled()
 
-    expect(requests[0]?.messages).toHaveLength(1)
-    expect(textOf(requests[0]?.messages[0])).toBe("hello")
+    // Practice facts precede the conversation; neither is dropped or called a size notice.
+    expect(requests[0]?.messages).toHaveLength(2)
+    expect(textOf(requests[0]?.messages[0])).toContain("practice:smithersai/hello-server")
+    expect(textOf(requests[0]?.messages[0])).not.toContain("dropped to fit")
+    expect(textOf(requests[0]?.messages[1])).toBe("hello")
   })
 })
 

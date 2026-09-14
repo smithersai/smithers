@@ -97,21 +97,31 @@ test("repository chrome sign-in is keyboard reachable without the sidebar and ca
 test("signed-in repository chrome uses the same slot for Account", async ({ page }) => {
   await signedOutVisitor(page)
   await page.route("**/api/auth/session", route => route.fulfill({ contentType: "application/json", body: JSON.stringify(SCOPED_TEST_USER) }))
+  await page.route("**/api/auth/scopes", route => route.fulfill({ json: { scopes: [{ scope: "contents:write", plain: "Read and write repository contents." }] } }))
   await page.goto("/smithersai/smithers/")
   await expect(page.locator(".session-navigation").getByTestId("chrome-account")).toHaveText(`Account (@${SCOPED_TEST_USER.login})`)
   await expect(page.getByTestId("chrome-sign-in")).toHaveCount(0)
+  await page.getByTestId("chrome-account").click()
+  const account = page.locator('[data-kind="account"]')
+  await expect(account.getByRole("table", { name: "GitHub App permissions", exact: true })).toContainText("contents:write")
+  await expect(account.getByRole("table", { name: "GitHub scopes", exact: true })).toContainText("read:user")
 })
 
 for (const command of ["/flow.run review smithersai/smithers", "/secrets.list", "/account.show", "/issues smithersai/smithers", "/prs smithersai/smithers"]) {
   test(`${command} stays in the repository transcript with a sign-in prompt`, async ({ page }) => {
     await signedOutVisitor(page)
+    // Repository arguments are resolved against the loaded public catalog.
+    await page.route("**/api/public/repos", route => route.fulfill({ json: { repos: [
+      { name: "smithersai/smithers", title: "Smithers", url: "https://github.com/smithersai/smithers", summary: "Smithers.", stats: null },
+    ] } }))
     const redirects: string[] = []
     page.on("request", request => { if (request.url().includes("/api/auth/github/start")) redirects.push(request.url()) })
     await page.goto("/smithersai/smithers/")
     await expect(page.getByTestId("chrome-sign-in")).toBeVisible()
+    await expect(page.locator('[data-kind="repo-onboarding"]')).toBeVisible()
     await slash(page, command)
     const prompt = page.getByRole("article").filter({ has: page.getByRole("button", { name: "Sign in with GitHub", exact: true }) }).last()
-    await expect(prompt).toContainText(command === "/flow.run review smithersai/smithers" ? "Sign in with GitHub to continue."
+    await expect(prompt).toContainText(command === "/flow.run review smithersai/smithers" ? "Sign in with GitHub to run review on smithersai/smithers."
       : command === "/secrets.list" ? "Sign in with GitHub to show the secrets"
       : command === "/account.show" ? "Sign in with GitHub to show the signed-in account"
       : command.startsWith("/issues") ? "Sign in with GitHub to read issues on smithersai/smithers."
@@ -133,7 +143,8 @@ for (const command of ["/flow.run review smithersai/smithers", "/secrets.list", 
 test("unknown repository has one sign-in card and the web wiki has no seeded World page", async ({ page }) => {
   await signedOutVisitor(page)
   await page.route("**/api/public/repos", route => route.fulfill({ json: { repos: [] } }))
-  await page.goto("/unknown/repository/")
+  await page.goto("/nope/nope/")
+  await expect(page.getByRole("article").filter({ has: page.locator('[data-flow="auth.sign-in"]') })).toContainText("nope/nope")
   await expect(page.getByRole("article").filter({ has: page.locator('[data-flow="auth.sign-in"]') })).toHaveCount(1)
   await slash(page, "/wiki")
   await expect(page.locator(".world-card-empty")).toContainText("No Wiki yet")

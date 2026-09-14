@@ -28,6 +28,7 @@ import {
 } from "../RunClaims"
 import { activeCatalogRepositoryId, activeRepositoryId } from "../RepoContext"
 import { WORLD_BODY_BUDGET, worldContextDocuments } from "../WorldContext"
+import { isPracticeContext, practiceContextMessage, PRACTICE_CONTEXT_INSTRUCTION } from "../practice/PracticeContext"
 import { downloadUrlOf } from "./app"
 import type { ActiveTurn, ControllerContext, PendingToolCall } from "./context"
 
@@ -158,14 +159,16 @@ export const createTurnController = (
   }
 
   /** The transcript as the chat contract reads it: no tool-act lines, no empty bubbles. */
-  const contextMessages = (): ReadonlyArray<AgentChatMessage> =>
-    store
+  const contextMessages = (): ReadonlyArray<AgentChatMessage> => {
+    const practice = practiceContextMessage(store)
+    return [...(practice === undefined ? [] : [{ role: "assistant" as const, content: practice }]), ...store
       .agentContextSnapshot()
       .messages.filter((message) => message.act === undefined && message.text.trim() !== "")
       .map((message) => ({
         role: message.role === "user" ? ("user" as const) : ("assistant" as const),
         content: message.text
-      }))
+      }))]
+  }
   ctx.contextMessages = contextMessages
 
   /*
@@ -213,7 +216,8 @@ export const createTurnController = (
      * with a public catalog repository selected, the visitor reads and asks
      * about it; anything that writes is one sign-in away.
      */
-    const exploring = identity?.state === "signed-out" ? activeCatalogRepositoryId(store) : null
+    const practice = isPracticeContext(store)
+    const exploring = !practice && identity?.state === "signed-out" ? activeCatalogRepositoryId(store) : null
     const selected = current.selectedWorldDocumentId === null
       ? undefined
       : store.collections.worldDocuments.get(current.selectedWorldDocumentId)
@@ -335,6 +339,7 @@ export const createTurnController = (
         }
       }),
       capabilities: [
+        ...(practice ? [PRACTICE_CONTEXT_INSTRUCTION] : []),
         "Hold a streaming conversation in this chat and read its visible transcript.",
         ...(snapshot.tabs.length > 1
           ? ["Read any other open tab's recent output (a terminal, a running agent, a card) with the tab.read <tabId> command — the tab ids are listed above."]

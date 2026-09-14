@@ -280,7 +280,7 @@ describe("openRequestedRepo", () => {
     expect(refusal).toBe("someone/else is not in the public repository catalog.")
     expect(store.session().activeRepoKey ?? null).toBeNull()
     expect(store.collections.repositories.size).toBe(0)
-    expect(ran).toEqual(["auth.prompt"])
+    expect(ran).toEqual([]) // The route shell owns the single prompt naming the requested path.
   })
 
   test("an unreachable catalog is a refusal, not a selection", async () => {
@@ -387,3 +387,13 @@ test("opening a public URL records catalog provenance even when private inventor
   await store.dispatch({ type: "repositories.loaded", actor: "system", repositories: [] }).isPersisted.promise
   expect(store.collections.repositories.get("smithersai/smithers")).toMatchObject({ catalog: true, ownerKind: "org" })
 })
+
+for (const search of ["?tutorial", "?tutorial=", "?repo=a/b&tutorial&tab=issues"]) {
+  test(`empty tutorial flag stays bare while cleaning ${search}`, () => {
+    const cleaned = withoutRepoParam({ pathname: "/smithersai/smithers/", search, hash: "#top" })
+    expect(cleaned).toContain("tutorial")
+    expect(cleaned).not.toContain("tutorial=")
+    expect(cleaned).toEndWith("#top")
+    expect(signInReturnTo({ pathname: "/smithersai/smithers/", search })).not.toContain("tutorial=")
+  })
+}

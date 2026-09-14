@@ -78,6 +78,9 @@ export const catalogRepository = (catalog: unknown, requested: string): CatalogR
  */
 const RETURN_TO_MAX_BYTES = 512
 
+/** URLSearchParams adds '=' to flags; keep the tutorial's published bare key. */
+const queryString = (params: URLSearchParams): string => params.toString().replace(/(^|&)tutorial=(?=&|$)/g, "$1tutorial")
+
 /**
  * The page a sign-in started from a repository path returns to: the path and
  * its query, minus the auth markers a previous return spent (`signed-in`,
@@ -89,7 +92,7 @@ export const signInReturnTo = (location: Pick<Location, "pathname" | "search">):
   const params = new URLSearchParams(location.search)
   params.delete(AUTH_SIGNED_IN_PARAM)
   params.delete("auth")
-  const search = params.toString()
+  const search = queryString(params)
   const withSearch = `${location.pathname}${search === "" ? "" : `?${search}`}`
   return new TextEncoder().encode(withSearch).byteLength > RETURN_TO_MAX_BYTES ? location.pathname : withSearch
 }
@@ -98,7 +101,7 @@ export const signInReturnTo = (location: Pick<Location, "pathname" | "search">):
 export const withoutRepoParam = (location: Pick<Location, "pathname" | "search" | "hash">): string => {
   const params = new URLSearchParams(location.search)
   params.delete(REPO_PARAM)
-  const search = params.toString()
+  const search = queryString(params)
   return `${location.pathname}${search === "" ? "" : `?${search}`}${location.hash}`
 }
 
@@ -168,7 +171,7 @@ export const openRequestedRepo = async (
         return
       }
     }
-    controller.runCommand("auth.prompt")
+    // App's route welcome names this path and owns its sign-in door.
     return `${requested} is not in the public repository catalog.`
   }
   const { repositories } = controller.store.collections

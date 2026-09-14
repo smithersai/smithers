@@ -125,3 +125,26 @@ for (const path of ["/", "/smithersai/smithers/"]) {
     await expect(input).toBeHidden()
   })
 }
+
+
+for (const query of ["/", "m"]) for (const height of [800, 600]) test(`practice palette has room for whole rows for ${query} at ${height}px`, async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height })
+  await page.goto("/smithersai/smithers/?tutorial")
+  await expect(page.locator(".guide-shell")).toHaveAttribute("data-stage", "1")
+  expect(new URL(page.url()).search).toBe("?tutorial")
+  await page.keyboard.press("i")
+  await expect(page.locator(".guide-shell")).toHaveAttribute("data-stage", "2")
+  expect(new URL(page.url()).search).toBe("?tutorial")
+  await page.keyboard.press("c")
+  await page.getByTestId("composer-input").fill(query)
+  const palette = page.getByTestId("palette")
+  await expect(palette.getByRole("option").nth(5)).toBeAttached()
+  await expect.poll(() => palette.evaluate(node => {
+    const body = node.querySelector(".slash-menu-body")!.getBoundingClientRect()
+    const rows = [...node.querySelectorAll('[role="option"]')].map(row => row.getBoundingClientRect())
+    return rows.filter(row => row.top >= body.top && row.bottom <= body.bottom).length
+  })).toBeGreaterThanOrEqual(5)
+  const body = palette.locator(".slash-menu-body")
+  expect(await body.evaluate(node => getComputedStyle(node).overflowY)).toBe("auto")
+  await expect(palette.locator(".palette-foot")).toBeInViewport({ ratio: 1 })
+})
