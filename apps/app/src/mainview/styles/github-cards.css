@@ -199,7 +199,7 @@
 .ghc-tab:hover { color: var(--text); }
 .ghc-tab[aria-selected="true"] { border-color: var(--border-strong); border-bottom-color: var(--surface); background: var(--surface); color: var(--text); font-weight: 600; }
 .ghc-tab:focus-visible { outline: 2px solid var(--ring-border); outline-offset: -2px; }
-.ghc-tab-count { padding: 0 6px; border-radius: 999px; background: var(--hover); color: var(--text); font-size: var(--fs-small); font-weight: 500; line-height: 18px; }
+.ghc-tab-count { padding: 0 6px; border-radius: var(--r-full); background: var(--hover); color: var(--text); font-size: var(--fs-small); font-weight: 500; line-height: 18px; }
 .ghc-tab-empty { margin: 0; padding: 24px 12px; color: var(--text-faint); text-align: center; }
 .ghc-diffstat { font-family: var(--font-mono); font-size: var(--fs-small); }
 .ghc-add { color: var(--ghc-open); }
