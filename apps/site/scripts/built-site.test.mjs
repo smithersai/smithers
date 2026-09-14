@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { dirname, join, resolve } from "node:path"
 import test from "node:test"
-import { ASSET_HEADERS, checkAssetHeaders, checkBuiltSite, checkLandingActions, releaseReferences } from "./check-built-site.mjs"
+import { ASSET_HEADERS, checkAssetHeaders, checkBuiltSite, checkLandingActions, checkRepositoryPages, releaseReferences } from "./check-built-site.mjs"
 
 function fixture(t, files) {
   const root = mkdtempSync(join(tmpdir(), "smithers-built-site-"))
@@ -248,4 +248,23 @@ test("the landing page's Start Here opens the tutorial, through Astro's scoped c
   assert.deepEqual(noStart, ["index.html: the landing page has no Start Here action"])
   const noActions = checkLandingActions(fixture(t, { "index.html": `<main><a id="start" href="${app}">x</a></main>` }), app)
   assert.deepEqual(noActions, ["index.html: the landing page has no actions"])
+})
+
+
+test("the build requires every coming-soon page with coming-soon copy and no app island", (t) => {
+  const repos = [{ name: "Effect-TS/effect" }, { name: "withastro/starlight" }]
+  const missing = fixture(t, { "effect-ts/effect/index.html": "<h1>Effect — Coming soon</h1>" })
+  assert.deepEqual(checkRepositoryPages(missing, [], repos), ["withastro/starlight/index.html: missing from the build"])
+  const app = fixture(t, { "effect-ts/effect/index.html": '<astro-island>Coming soon</astro-island>' })
+  assert.deepEqual(checkRepositoryPages(app, [], [repos[0]]), ["effect-ts/effect/index.html: expected a coming-soon site page"])
+  const healthy = fixture(t, Object.fromEntries(repos.map((repo) => [`${repo.name.toLowerCase()}/index.html`, "<h1>Coming soon</h1>"])))
+  assert.deepEqual(checkRepositoryPages(healthy, [], repos), [])
+})
+
+test("built pages reject the retired GitHub App installation URL", (t) => {
+  const page = (slug) => `<a href="https://github.com/apps/${slug}/installations/new">Install Smithers</a>`
+  assert.deepEqual(checkBuiltSite(fixture(t, { "index.html": page("smithers") })).failures, [
+    "index.html: retired GitHub App URL: https://github.com/apps/smithers/installations/new"
+  ])
+  assert.deepEqual(checkBuiltSite(fixture(t, { "index.html": page("smitherspreviewrelease") })).failures, [])
 })

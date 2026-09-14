@@ -7,8 +7,8 @@ import { repoTreeRowId, sharedCopyIdOf } from "./state/AppState"
  * A repository's app lives at `/owner/name` (https://smithers.sh/smithersai/smithers).
  * The landing page's older "Open in Smithers" link lands on `/?repo=owner/name`.
  * The path wins; the parameter is read only at `/`. The name is honoured only
- * when the public catalog (GET /api/public/repos, the same list the landing
- * page renders) carries it: the catalog row enters the repositories collection
+ * when the signed-in inventory or public catalog (GET /api/public/repos)
+ * carries it: a catalog row enters the repositories collection
  * and becomes the active selection, so the first turn is about that
  * repository. The path stays in the address bar, so a reload reselects; the
  * parameter is removed from the URL either way, so a reload does not.
@@ -132,7 +132,7 @@ const defaultBookmarkOf = async (http: FetchLike, repo: string): Promise<string 
 }
 
 /**
- * Select the requested repository when the public catalog carries it. The
+ * Select the requested repository from the signed-in inventory or public catalog. The
  * catalog row joins the repositories collection beside whatever the cloud
  * inventory already loaded, then `repo.select` makes it the active one, and
  * the welcome (`repo.welcome`) opens the transcript unless a reload finds it
@@ -142,7 +142,7 @@ const defaultBookmarkOf = async (http: FetchLike, repo: string): Promise<string 
  * refusal when the request could not be honoured.
  */
 export const openRequestedRepo = async (
-  controller: Pick<AppController, "store" | "selectRepo" | "runCommand">,
+  controller: Pick<AppController, "store" | "selectRepo" | "runCommand" | "loadRepositories">,
   http: FetchLike,
   requested: string
 ): Promise<string | void> => {
@@ -155,7 +155,22 @@ export const openRequestedRepo = async (
     return `The public repository catalog could not be read: ${cause instanceof Error ? cause.message : String(cause)}`
   }
   const repository = catalogRepository(catalog, requested)
-  if (repository === null) return `${requested} is not in the public repository catalog.`
+  if (repository === null) {
+    // A URL grants no access. A signed-in user's inventory is the authority
+    // for repositories outside the public catalog; wait for that read before selecting.
+    if (controller.store.collections.identitySessions.get("identity")?.state === "signed-in") {
+      const failure = await controller.loadRepositories()
+      const own = [...controller.store.collections.repositories.values()].find((repo) => repo.id.toLowerCase() === requested.toLowerCase() && repo.catalog !== true)
+      if (failure === undefined && own !== undefined) {
+        const refusal = await controller.selectRepo(own.id)
+        if (refusal !== undefined) return refusal
+        if (!welcomed(controller, own.id)) controller.runCommand("repo.welcome")
+        return
+      }
+    }
+    controller.runCommand("auth.prompt")
+    return `${requested} is not in the public repository catalog.`
+  }
   const { repositories } = controller.store.collections
   if (repositories.get(repository.id) === undefined) {
     controller.store.dispatch({

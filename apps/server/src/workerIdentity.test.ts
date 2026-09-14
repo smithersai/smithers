@@ -1,8 +1,6 @@
 import { describe, expect, test } from "bun:test"
-import { COMING_SOON_WORKER_FIRST, FRAME_PATH_PREFIX } from "./appDocument"
-import { ROUTED_OWNER_PREFIXES } from "./index"
 import { WORKER_IDENTITY } from "./workerIdentity"
-import { readWranglerConfig, workerFirstPrefix } from "./wranglerConfig"
+import { readWranglerConfig } from "./wranglerConfig"
 
 const bridge = readWranglerConfig()
 
@@ -32,7 +30,10 @@ describe("the Worker identity stays frozen", () => {
   })
 
   test("one zone route claims every apex path, so the app page and its /_astro chunks come from one build", () => {
-    expect(WORKER_IDENTITY.routes).toEqual([{ pattern: "smithers.sh/*", zoneId: "8ebd98d2f0dc7d8db2e61f31ebc19c14" }])
+    expect(WORKER_IDENTITY.routes).toEqual([
+      { pattern: "smithers.sh/*", zoneId: "8ebd98d2f0dc7d8db2e61f31ebc19c14" },
+      { pattern: "www.smithers.sh/*", zoneId: "8ebd98d2f0dc7d8db2e61f31ebc19c14" }
+    ])
   })
 
   test("no workers.dev surface", () => {
@@ -120,33 +121,6 @@ describe("wrangler.jsonc, the adoption bridge, agrees with the identity", () => 
   })
 })
 
-/*
- * `runWorkerFirst` is what lets the router see a path before the assets
- * layer answers it. A prefix the code routes but the identity does not list
- * is dead code on Cloudflare: the assets layer serves a 404 page for the
- * frame path and the raw prerendered page, without isolation headers, for
- * the repository path.
- */
-describe("runWorkerFirst covers every prefix the Worker routes", () => {
-  const prefixes = WORKER_IDENTITY.assets.runWorkerFirst.map(workerFirstPrefix)
-
-  test("every routed owner", () => {
-    for (const owner of ROUTED_OWNER_PREFIXES) expect(prefixes).toContain(owner)
-  })
-
-  test("the frame path prefix", () => {
-    expect(prefixes).toContain(FRAME_PATH_PREFIX)
-  })
-
-  test("the API prefix, so a redirect rule in the site build can never answer an API path", () => {
-    expect(prefixes).toContain("/api/")
-  })
-
-  test("every coming-soon owner, in its GitHub case and in lowercase (the assets layer matches case-sensitively)", () => {
-    for (const entry of COMING_SOON_WORKER_FIRST) expect(WORKER_IDENTITY.assets.runWorkerFirst).toContain(entry)
-  })
-
-  test("every entry is a one-segment prefix wildcard", () => {
-    for (const entry of WORKER_IDENTITY.assets.runWorkerFirst) expect(entry).toMatch(/^\/[A-Za-z0-9-]+\/\*$/)
-  })
+test("all requests reach the Worker before asset navigation for repository slugs, headers, and host redirects", () => {
+  expect(WORKER_IDENTITY.assets.runWorkerFirst).toEqual(["/*"])
 })

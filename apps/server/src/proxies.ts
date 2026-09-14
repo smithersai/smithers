@@ -10,7 +10,7 @@ import { fetchCloudToken } from "./gateway"
 import { fetchWithDeadline, readBoundedBytes, readText } from "./Http"
 import type { Transport } from "./Http"
 import { requireTurnSession } from "./identity"
-import { isPublicRepositoryRead, readPublicRepository } from "./publicRepositoryReads"
+import { cloudReadPath, isPublicRepositoryRead, readPublicRepository } from "./publicRepositoryReads"
 import { json, notFound, readBody, refuse, upstreamProse, upstreamUnreachable, withIsolationHeaders } from "./Responses"
 import { anonymousBucketAddress } from "./turnLimit"
 
@@ -191,7 +191,7 @@ export const handlePlatformProxy = (
     }
     // The path is joined onto the platform's origin and must still be there
     // once parsed: a bearer never leaves for any other host.
-    const target = new URL(url.pathname + url.search, config.cloudApiBaseUrl)
+    const target = new URL((publicRead ? cloudReadPath(url.pathname) : url.pathname) + url.search, config.cloudApiBaseUrl)
     if (target.origin !== new URL(config.cloudApiBaseUrl).origin) return notFound()
     const headers = new Headers({ authorization: `Bearer ${token.token}` })
     const contentType = request.headers.get("content-type")

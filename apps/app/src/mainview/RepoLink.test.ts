@@ -53,6 +53,7 @@ const fixture = async () => {
     controller: {
       store,
       selectRepo: tabs.selectRepo,
+      loadRepositories: async (): Promise<string | void> => {},
       runCommand: (name: string, args?: string) => {
         ran.push(args === undefined ? name : `${name} ${args}`)
         return true
@@ -279,7 +280,7 @@ describe("openRequestedRepo", () => {
     expect(refusal).toBe("someone/else is not in the public repository catalog.")
     expect(store.session().activeRepoKey ?? null).toBeNull()
     expect(store.collections.repositories.size).toBe(0)
-    expect(ran).toEqual([])
+    expect(ran).toEqual(["auth.prompt"])
   })
 
   test("an unreachable catalog is a refusal, not a selection", async () => {
@@ -337,4 +338,30 @@ describe("openRequestedRepo", () => {
     expect(store.collections.repositories.get("acme/widgets")?.ownerKind).toBe("org")
     expect(store.session().activeRepoKey).toBe("smithersai/smithers")
   })
+})
+
+
+test("a signed-in repository URL waits for the user's inventory and selects its row without publishing it", async () => {
+  const { store, controller, ran } = await fixture()
+  store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-in", login: "codeplanesmithers", allowlisted: true, admin: false, scopesPlain: null })
+  let loaded = false
+  controller.loadRepositories = async () => {
+    await Promise.resolve()
+    loaded = true
+    store.dispatch({ type: "repositories.loaded", actor: "system", repositories: [{ id: "codeplanesmithers/canary-sandbox", org: "codeplanesmithers", name: "canary-sandbox", ownerKind: "user", head: null }] })
+  }
+  expect(await openRequestedRepo(controller, async () => jsonResponse(catalog), "CodePlaneSmithers/Canary-Sandbox")).toBeUndefined()
+  expect(loaded).toBe(true)
+  expect(store.session().activeRepoKey).toBe("codeplanesmithers/canary-sandbox")
+  expect(store.collections.repositories.get("codeplanesmithers/canary-sandbox")?.catalog).not.toBe(true)
+  expect(ran).toContain("repo.welcome")
+})
+
+test("a signed-in catalog visitor keeps the public welcome and shared tree without waiting on private inventory", async () => {
+  const { store, controller, ran } = await fixture()
+  store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-in", login: "codeplanesmithers", allowlisted: true, admin: false, scopesPlain: null })
+  controller.loadRepositories = async () => { throw new Error("private inventory unavailable") }
+  expect(await openRequestedRepo(controller, async () => jsonResponse(catalog), "smithersai/smithers")).toBeUndefined()
+  expect(store.session().activeRepoKey).toBe("smithersai/smithers")
+  expect(ran).toEqual(["repo.welcome", "repo.tree shared:smithersai/smithers"])
 })

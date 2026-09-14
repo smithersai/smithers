@@ -14,6 +14,8 @@ import {
 } from "./site-checks.ts"
 import type { Fetcher, Observed } from "./site-checks.ts"
 
+import { COMING_SOON_REPOS } from "../../src/publicRepoCatalog"
+
 const ORIGIN = "https://canary.test"
 
 const html = (status: number, headers: Record<string, string> = {}, body?: string): Observed => ({
@@ -43,6 +45,9 @@ const redirect = (status: number, location: string): Observed => ({ status, head
 
 /** A deployment that answers exactly what the Worker over the site build should. */
 const healthy: Record<string, Observed> = {
+  ...Object.fromEntries(COMING_SOON_REPOS.map((repo) => [`/${repo.name.toLowerCase()}/`, html(200, {}, "Coming soon")])),
+  "/favicon.ico": { status: 200, headers: { "content-type": "image/png" } },
+  "/apple-touch-icon.png": { status: 200, headers: { "content-type": "image/png" } },
   "/": html(200),
   "/docs/": html(200),
   "/nope": html(404),
@@ -80,7 +85,7 @@ describe("the site probe grades a deployment of the Worker over the site build",
     const { fetch, requested } = fakeFetch(healthy)
     const checks = await runSiteChecks(fetch, { origin: ORIGIN, legacyPaths: ["/agents/codex", "/reference/journal"] })
     expect(failures(checks)).toEqual([])
-    expect(tally(checks)).toEqual({ passed: 13, failed: 0 })
+    expect(tally(checks)).toEqual({ passed: 15 + COMING_SOON_REPOS.length, failed: 0 })
     expect(requested).toContain(APP_CHUNK)
     expect(requested).toContain("/docs/guides/model-seats/")
     expect(requested).toContain("/docs/reference/journal/")
@@ -219,4 +224,26 @@ describe("the probe's shell helpers", () => {
       "FAIL     /nope  404       200"
     ])
   })
+})
+
+
+test("the site probe pins every coming-soon page and rejects an app shell in its place", async () => {
+  for (const repo of COMING_SOON_REPOS) {
+    const path = `/${repo.name.toLowerCase()}/`
+    for (const broken of [html(404), isolated]) {
+      const { fetch, requested } = fakeFetch({ ...healthy, [path]: broken })
+      const checks = await runSiteChecks(fetch, { origin: ORIGIN, legacyPaths: [] })
+      expect(requested).toContain(path)
+      expect(checks.find((check) => check.path === path)?.status).toBe("fail")
+    }
+  }
+})
+
+test("the site probe rejects HTML at both icon URLs, even a 200 page", async () => {
+  for (const path of ["/favicon.ico", "/apple-touch-icon.png"]) {
+    const { fetch, requested } = fakeFetch({ ...healthy, [path]: html(200) })
+    const checks = await runSiteChecks(fetch, { origin: ORIGIN, legacyPaths: [] })
+    expect(requested).toContain(path)
+    expect(checks.find((check) => check.path === path)?.status).toBe("fail")
+  }
 })

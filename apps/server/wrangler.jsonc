@@ -25,7 +25,8 @@
 	// /api/*, /assets/*) and deploy; the canary custom domain is untouched either way.
 	"routes": [
 		{ "pattern": "canary.smithers.sh", "custom_domain": true },
-		{ "pattern": "smithers.sh/*", "zone_id": "8ebd98d2f0dc7d8db2e61f31ebc19c14" }
+		{ "pattern": "smithers.sh/*", "zone_id": "8ebd98d2f0dc7d8db2e61f31ebc19c14" },
+		{ "pattern": "www.smithers.sh/*", "zone_id": "8ebd98d2f0dc7d8db2e61f31ebc19c14" }
 	],
 	// The assets are the smithers.sh Astro build in the sibling `apps/site`
 	// package: the landing page, the docs, and the product app prerendered at
@@ -40,35 +41,11 @@
 		// The build carries a 404 page, and the app document is the Worker's to
 		// serve (src/index.ts), so no path falls back to a SPA shell.
 		"not_found_handling": "404-page",
-		// `/smithersai/*` runs the Worker first so a catalog repository page serves
-		// the app document with its isolation headers and any other path under
-		// that owner redirects to the site; `/w/*` so a reload inside the app
-		// (/w/<workspace>/b/<branch>/f/<frame>) serves the app document instead of
-		// the 404 page (src/index.ts, routedRepoPage and isFramePath).
-		// src/workerIdentity.test.ts holds this list to the prefixes the code routes.
-		//
-		// Every COMING_SOON_REPOS owner runs the Worker first too, in the owner's
-		// GitHub case and in lowercase (wrangler matches these patterns
-		// case-sensitively: live, /SmithersAI/Smithers is the 404 page while
-		// /smithersai/Smithers is the app). With the 2026-08-01 compatibility
-		// date a browser navigation to a path the build has no file for is
-		// answered by the assets layer's 404 page before the Worker runs, so
-		// without these entries /effect-ts/effect and /Effect-TS/Effect are the
-		// 404 page and only the canonical /Effect-TS/effect/ is the coming-soon
-		// page (src/appDocument.ts, COMING_SOON_WORKER_FIRST).
-		"run_worker_first": [
-			"/api/*", "/v1/*", "/workflows/*", "/smithersai/*", "/w/*",
-			"/Effect-TS/*", "/effect-ts/*",
-			"/wevm/*",
-			"/bombshell-dev/*",
-			"/jj-vcs/*",
-			"/modelcontextprotocol/*",
-			"/GitoxideLabs/*", "/gitoxidelabs/*",
-			"/TanStack/*", "/tanstack/*",
-			"/xyflow/*",
-			"/blackboardsh/*",
-			"/withastro/*"
-		]
+		// Every request reaches the Worker: repository slugs and their casing
+		// cannot be enumerated by owner, and HTML headers / HTTPS / www redirects
+		// must run even when assets_navigation_prefers_asset_serving is enabled.
+		// The Worker delegates site pages, legacy redirects, and chunks to ASSETS.
+		"run_worker_first": ["/*"]
 	},
 	// Server-side turn kill (B-3): cancellation state per runId lives in this
 	// Durable Object; the cancel route flips it and the streaming turn handler

@@ -19,7 +19,7 @@
  *                 redirects to a path that answers 200 within a few hops
  */
 import { DEFAULT_APP_DOCUMENT_PATH } from "../../src/appDocument.ts"
-import { PUBLIC_REPOS_PATH } from "../../src/publicRepoCatalog.ts"
+import { COMING_SOON_REPOS, PUBLIC_REPOS_PATH } from "../../src/publicRepoCatalog.ts"
 import { BUILD_STAMP_PATH } from "./BuildStamp.ts"
 
 export interface Observed {
@@ -142,6 +142,19 @@ const expectAlias = async (fetch: Fetcher, origin: string, path: string): Promis
   return check(path, "200, or a redirect chain ending in 200", false, `${hops.join(", ")} (more than ${REDIRECT_HOP_LIMIT} hops)`)
 }
 
+const expectComingSoon = async (fetch: Fetcher, origin: string, path: string): Promise<SiteCheck> => {
+  const observed = await fetch(`${origin}${path}`)
+  const ok = observed.status === 200 && (header(observed, "content-type") ?? "").includes("text/html") &&
+    /coming soon/i.test(observed.body ?? "") && header(observed, "cross-origin-embedder-policy") === undefined
+  return check(path, "200 coming-soon page", ok, `${describeStatus(observed)} ${ok ? "coming soon" : "missing coming-soon page"}`)
+}
+
+const expectIcon = async (fetch: Fetcher, origin: string, path: string): Promise<SiteCheck> => {
+  const observed = await fetch(`${origin}${path}`)
+  const type = header(observed, "content-type") ?? "absent"
+  return check(path, "200 image", observed.status === 200 && type.startsWith("image/"), `${describeStatus(observed)} ${type}`)
+}
+
 export interface SiteProbeInput {
   readonly origin: string
   readonly legacyPaths: ReadonlyArray<string>
@@ -151,6 +164,9 @@ export const runSiteChecks = async (fetch: Fetcher, input: SiteProbeInput): Prom
   const { origin } = input
   const appDocument = await fetch(`${origin}${APP_DOCUMENT_CHECK_PATH}`)
   const fixed = await Promise.all([
+    ...COMING_SOON_REPOS.map((repo) => expectComingSoon(fetch, origin, `/${repo.name.toLowerCase()}/`)),
+    expectIcon(fetch, origin, "/favicon.ico"),
+    expectIcon(fetch, origin, "/apple-touch-icon.png"),
     expectStatus(fetch, origin, "/", 200),
     expectStatus(fetch, origin, "/docs/", 200),
     expectStatus(fetch, origin, "/nope", 404),

@@ -1,20 +1,39 @@
 ---
-/* One app page per available catalog repository, prerendered at /<owner>/<repo>. */
+/* Catalog app pages and coming-soon site pages share canonical lowercase URLs. */
 import AppIsland from "../../AppIsland"
 import AppShell from "../../layouts/AppShell.astro"
-import { AVAILABLE_REPOS } from "../../../../server/src/publicRepoCatalog"
+import Base from "../../layouts/Base.astro"
+import RegisterRepo from "../../components/RegisterRepo.astro"
+import { AVAILABLE_REPOS, COMING_SOON_REPOS } from "../../../../server/src/publicRepoCatalog"
 
 interface Props {
   readonly title: string
+  readonly name: string
+  readonly url: string
+  readonly available: boolean
 }
 
 export function getStaticPaths() {
-  return AVAILABLE_REPOS.map((repo) => {
-    const [owner, name] = repo.name.split("/")
-    return { params: { owner, repo: name }, props: { title: repo.title } satisfies Props }
+  return [
+    ...AVAILABLE_REPOS.map((repo) => ({ ...repo, available: true })),
+    ...COMING_SOON_REPOS.map((repo) => ({ ...repo, available: false }))
+  ].map((repo) => {
+    const [owner, name] = repo.name.toLowerCase().split("/")
+    return { params: { owner, repo: name }, props: { title: repo.title, name: repo.name, url: repo.url, available: repo.available } satisfies Props }
   })
 }
-const { title } = Astro.props
+const { title, name, url, available } = Astro.props
 ---
 
-<AppShell title={title}><div id="root"><AppIsland client:only="react" /></div></AppShell>
+{available ? (
+  <AppShell title={title}><div id="root"><AppIsland client:only="react" /></div></AppShell>
+) : (
+  <Base title={`${title} — Coming soon`} description={`${name} — Coming soon`}>
+    <main class="wrap hero">
+      <h1>{title}</h1>
+      <p class="sub">Coming soon</p>
+      <p><a href={url}>{name}</a></p>
+    </main>
+    <RegisterRepo />
+  </Base>
+)}

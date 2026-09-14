@@ -27,13 +27,14 @@ import { APP_API_VERSION, APP_BOOTSTRAP_PATH } from "@smthrs/rpc/AppBootstrap"
 import { cloudCapabilities } from "@smthrs/rpc/HostCapabilities"
 import { CLOUD_ROUTE_PREFIX } from "@smthrs/rpc/LocalApp"
 import { handleAdmin } from "./admin"
-import { catalogDocumentPath, comingSoonDocumentPath, DEFAULT_APP_DOCUMENT_PATH, isFramePath } from "./appDocument"
+import { catalogDocumentPath, comingSoonDocumentPath, DEFAULT_APP_DOCUMENT_PATH, isFramePath, isRepositoryPath } from "./appDocument"
 import { proxyToBilling } from "./billing"
 import { runRequest } from "./Boundary"
 import { ClientErrorLog } from "./clientErrorLog"
-import { DEFAULT_APP_ORIGIN, ServerConfig } from "./Config"
+import { ServerConfig } from "./Config"
 import { Assets, BrowserEgress, DeploymentBindings, ExecutionContext, executionContextFrom, runtimeFor } from "./Environment"
 import type { NativeExecutionContext, RequestServices, WorkerEnv } from "./Environment"
+import { readJsonOrUndefined } from "./Http"
 import { GatewaySessionRegistry } from "./gateway"
 import { handleAuthNavigation, probeAuthSession, proxyToIdentity, requireTurnSession, validateSession } from "./identity"
 import {
@@ -118,43 +119,16 @@ const isCrossOriginRequest = (request: Request, url: URL): boolean => {
   return origin !== null && origin !== url.origin
 }
 
-/*
- * The app under the apex. The product for a repository lives at
- * https://smithers.sh/<owner>/<name>, a page the smithers.sh Astro build
- * (apps/site) prerenders per catalog repository and this Worker serves from
- * that build's dist. The deployment routes only the owner prefixes below to
- * this Worker on the apex and runs it first for them, so this handler, not the
- * assets layer, decides what a repository path answers: a catalog repository's
- * page is the app document with the isolation headers OPFS needs, and every
- * other path under a routed owner is nobody's page, so it leaves for the site
- * instead of a 404 page. The owner list mirrors the `smithers.sh/<owner>/*`
- * routes and the `run_worker_first` entries in src/workerIdentity.ts: a new
- * owner needs all three in one commit (src/workerIdentity.test.ts holds the
- * last two to this list).
- */
-export const ROUTED_OWNER_PREFIXES: ReadonlyArray<string> = ["/smithersai/"]
-
 /** Whether `owner/name` is in the public catalog; GitHub names are case-insensitive. */
 const isCatalogRepository = (name: unknown): boolean =>
   typeof name === "string" && AVAILABLE_REPOS.some((repo) => repo.name.toLowerCase() === name.toLowerCase())
 
-/**
- * What a repository path answers. A coming-soon repository (COMING_SOON_REPOS)
- * has a prerendered site page and no app. The Worker runs first for its owner
- * (COMING_SOON_WORKER_FIRST), so this branch sees the canonical path and the
- * variants the assets have no file for, and `/effect-ts/effect` reaches the
- * same page instead of the 404 page. A catalog repository under a routed owner
- * is the app document; every other path under a routed owner is nobody's page.
- */
-const routedRepoPage = (
-  pathname: string
-): { readonly kind: "app" | "coming-soon"; readonly document: string } | "unknown" | undefined => {
+/** Catalog pages have a canonical lowercase document; other repositories use the shared shell. */
+const routedRepoPage = (pathname: string): { readonly kind: "app" | "coming-soon"; readonly document: string } | undefined => {
   const comingSoon = comingSoonDocumentPath(pathname)
   if (comingSoon !== undefined) return { kind: "coming-soon", document: comingSoon }
-  const lower = pathname.toLowerCase()
-  if (!ROUTED_OWNER_PREFIXES.some((prefix) => lower.startsWith(prefix))) return undefined
   const document = catalogDocumentPath(pathname)
-  return document === undefined ? "unknown" : { kind: "app", document }
+  return document === undefined ? undefined : { kind: "app", document }
 }
 
 /**
@@ -163,11 +137,13 @@ const routedRepoPage = (
  */
 const CANARY_HOSTNAME = "canary.smithers.sh"
 
-const withCanaryRobots = (url: URL, response: Response): Response => {
-  if (url.hostname !== CANARY_HOSTNAME) return response
+const withDocumentHeaders = (url: URL, response: Response): Response => {
   if (!(response.headers.get("content-type") ?? "").toLowerCase().includes("text/html")) return response
   const headers = new Headers(response.headers)
-  headers.set("X-Robots-Tag", "noindex")
+  headers.set("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
+  headers.set("X-Content-Type-Options", "nosniff")
+  headers.set("Referrer-Policy", "strict-origin-when-cross-origin")
+  if (url.hostname === CANARY_HOSTNAME) headers.set("X-Robots-Tag", "noindex")
   return new Response(response.body, { status: response.status, statusText: response.statusText, headers })
 }
 
@@ -238,17 +214,24 @@ const loginBudget = (login: string): Effect.Effect<Response | undefined, never, 
  * W4 relay and stays false until that lane lands, so the Worker never claims a
  * door it has not opened.
  */
-const handleBootstrap: Effect.Effect<Response, never, ServerConfig | BrowserEgress | DeploymentBindings> =
+const handleBootstrap = (request: Request): Effect.Effect<Response, never, ServerConfig | BrowserEgress | DeploymentBindings | Assets> =>
   Effect.gen(function* () {
     const config = yield* ServerConfig
     const bindings = yield* DeploymentBindings
     const egress = yield* BrowserEgress
     const identity = config.identityUpstreamUrl !== undefined
+    // The deployed asset is authoritative; a binding may name an older build.
+    const stamp = yield* Assets.use((assets) => assets.fetch(new Request(new URL("/__build.json", request.url)))).pipe(
+      Effect.flatMap((response) => response.ok ? readJsonOrUndefined(response) : Effect.succeed(undefined)),
+      Effect.catch(() => Effect.succeed(undefined))
+    )
+    const buildSha = typeof stamp === "object" && stamp !== null && "gitSha" in stamp && typeof stamp.gitSha === "string"
+      ? stamp.gitSha : config.buildSha
     return json(200, {
       apiVersion: APP_API_VERSION,
       host: "cloud",
       version: "1.0.0",
-      buildSha: config.buildSha,
+      buildSha,
       capabilities: cloudCapabilities({
         identity,
         cloud: bindings.cloudApi,
@@ -271,6 +254,11 @@ const handleBootstrap: Effect.Effect<Response, never, ServerConfig | BrowserEgre
 export const handleRequest = (request: Request): Effect.Effect<Response, never, RequestServices> =>
   Effect.gen(function* () {
     const url = new URL(request.url)
+    if (url.protocol === "http:" || url.hostname === "www.smithers.sh") {
+      url.protocol = "https:"
+      if (url.hostname === "www.smithers.sh") url.hostname = "smithers.sh"
+      return Response.redirect(url.toString(), 301)
+    }
     // This one curated, read-only catalog is public to the marketing site.
     // Every authenticated API continues through the same-origin guard below.
     if (url.pathname === PUBLIC_REPOS_PATH) return yield* handlePublicRepos(request)
@@ -305,7 +293,7 @@ export const handleRequest = (request: Request): Effect.Effect<Response, never, 
     }
     if (url.pathname === APP_BOOTSTRAP_PATH) {
       if (request.method !== "GET") return methodNotAllowed()
-      return yield* handleBootstrap
+      return yield* handleBootstrap(request)
     }
     if (url.pathname === CANCEL_PATH) {
       if (request.method !== "POST") return methodNotAllowed()
@@ -378,24 +366,28 @@ export const handleRequest = (request: Request): Effect.Effect<Response, never, 
     // admin surface answers non-admins with, so nothing is enumerable.
     if (url.pathname.startsWith("/api/")) return notFound()
     const repoPage = routedRepoPage(url.pathname)
-    if (repoPage === "unknown") {
-      return new Response(null, { status: 302, headers: { location: `${DEFAULT_APP_ORIGIN}/` } })
+    if (repoPage !== undefined) {
+      if (url.pathname !== url.pathname.toLowerCase()) {
+        url.pathname = repoPage.document
+        return Response.redirect(url.toString(), 301)
+      }
+      if (repoPage.kind === "coming-soon") {
+        return yield* serveAsset(new Request(new URL(repoPage.document, url), request))
+      }
+      return yield* serveAppDocument(request, url, repoPage.document)
     }
-    if (repoPage !== undefined && repoPage.kind === "coming-soon") {
-      // A page of the site, served as the assets layer serves every other
-      // page: it loads Google Fonts, which the app's COEP would block.
-      return withCanaryRobots(url, yield* serveAsset(new Request(new URL(repoPage.document, url).toString(), request)))
+    if (isFramePath(url.pathname)) return yield* serveAppDocument(request, url, DEFAULT_APP_DOCUMENT_PATH)
+    const icon = url.pathname === "/favicon.ico" ? "/favicon.png" : url.pathname === "/apple-touch-icon.png" ? "/icon.png" : undefined
+    if (icon !== undefined) return yield* serveAsset(new Request(new URL(icon, url), request))
+    // Existing site documents and legacy redirects retain their addresses.
+    // A valid repository with no static page uses the same app island, whose
+    // boot derives the requested repository from the browser's unchanged URL.
+    const asset = yield* serveAsset(request)
+    if (asset.status === 404 && isRepositoryPath(url.pathname) && (request.method === "GET" || request.method === "HEAD")) {
+      return yield* serveAppDocument(request, url, DEFAULT_APP_DOCUMENT_PATH)
     }
-    if (repoPage !== undefined) return withCanaryRobots(url, yield* serveAppDocument(request, url, repoPage.document))
-    // A reload or a deep link inside the app: the frame path names no file in
-    // the build, so the Worker serves the app document for it.
-    if (isFramePath(url.pathname)) {
-      return withCanaryRobots(url, yield* serveAppDocument(request, url, DEFAULT_APP_DOCUMENT_PATH))
-    }
-    // Everything else is the site build as the assets layer serves it: the
-    // landing page, the docs, the hashed chunks, and its 404 page.
-    return withCanaryRobots(url, yield* serveAsset(request))
-  })
+    return asset
+  }).pipe(Effect.map((response) => withDocumentHeaders(new URL(request.url), response)))
 
 /**
  * The deployed entry: workerd's `fetch(request, env, ctx)` shape over the

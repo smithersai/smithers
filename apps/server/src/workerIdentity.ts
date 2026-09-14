@@ -35,7 +35,10 @@ export const WORKER_IDENTITY = {
   /** The canary custom domain (wrangler: `routes[0]`, `custom_domain: true`). */
   domain: { name: "canary.smithers.sh", zoneId: "8ebd98d2f0dc7d8db2e61f31ebc19c14" },
   /** The apex zone route: one Worker serves every apex path (DEPLOY.md cutover log). */
-  routes: [{ pattern: "smithers.sh/*", zoneId: "8ebd98d2f0dc7d8db2e61f31ebc19c14" }] as ReadonlyArray<{
+  routes: [
+    { pattern: "smithers.sh/*", zoneId: "8ebd98d2f0dc7d8db2e61f31ebc19c14" },
+    { pattern: "www.smithers.sh/*", zoneId: "8ebd98d2f0dc7d8db2e61f31ebc19c14" }
+  ] as ReadonlyArray<{
     readonly pattern: string
     readonly zoneId: string
   }>,
@@ -51,19 +54,7 @@ export const WORKER_IDENTITY = {
      * The paths the Worker sees before the assets layer answers them.
      * src/workerIdentity.test.ts holds this list to the prefixes the code routes.
      */
-    runWorkerFirst: [
-      "/api/*", "/v1/*", "/workflows/*", "/smithersai/*", "/w/*",
-      "/Effect-TS/*", "/effect-ts/*",
-      "/wevm/*",
-      "/bombshell-dev/*",
-      "/jj-vcs/*",
-      "/modelcontextprotocol/*",
-      "/GitoxideLabs/*", "/gitoxidelabs/*",
-      "/TanStack/*", "/tanstack/*",
-      "/xyflow/*",
-      "/blackboardsh/*",
-      "/withastro/*"
-    ] as ReadonlyArray<string>
+    runWorkerFirst: ["/*"] as ReadonlyArray<string>
   },
   /**
    * The five Durable Objects, binding name and class name both frozen. A

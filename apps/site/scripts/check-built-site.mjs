@@ -243,6 +243,9 @@ export function checkBuiltSite(root, requiredReferences = [], appPaths = []) {
       origin + "/"
     )
     for (const reference of references) {
+      if (/^https:\/\/github\.com\/apps\/smithers(?:[/?#]|$)/.test(reference)) {
+        failures.add(`${relative(root, page)}: retired GitHub App URL: ${reference}`)
+      }
       if (siteUrl(reference, base) === undefined) continue
       check(reference, relative(root, page), base)
     }
@@ -254,6 +257,19 @@ export function checkBuiltSite(root, requiredReferences = [], appPaths = []) {
   return { pageCount: pages.size, requiredReferenceCount: requiredReferences.length, failures: [...failures] }
 }
 
+/** The Worker can only serve repository documents actually emitted by Astro. */
+export function checkRepositoryPages(root, available, comingSoon) {
+  return [...available, ...comingSoon].flatMap((repo) => {
+    const file = `${repo.name.toLowerCase()}/index.html`
+    if (!existsSync(join(root, file))) return [`${file}: missing from the build`]
+    if (comingSoon.includes(repo)) {
+      const html = readFileSync(join(root, file), "utf8")
+      if (!/coming soon/i.test(html) || /<astro-island[\s>]/i.test(html)) return [`${file}: expected a coming-soon site page`]
+    }
+    return []
+  })
+}
+
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const root = join(siteRoot, "dist")
   // Keep links indexed by the former Mintlify site working after the cutover.
@@ -263,7 +279,7 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
   // The landing page reads the catalog at the same origin; the app Worker
   // (apps/server) answers it, not this build. Each catalog repository's app
   // page is this build's, so its link is checked like any other.
-  const { AVAILABLE_REPOS, PUBLIC_REPOS_PATH } = await import(
+  const { AVAILABLE_REPOS, COMING_SOON_REPOS, PUBLIC_REPOS_PATH } = await import(
     pathToFileURL(resolve(siteRoot, "../server/src/publicRepoCatalog.ts"))
   )
   const result = checkBuiltSite(
@@ -278,8 +294,8 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
   // app page per available catalog repository, the 404 page the asset
   // host serves for an unknown path, and the build stamp apps/server's canary
   // build probe reads.
-  const repoPages = AVAILABLE_REPOS.map((repo) => `${repo.name}/index.html`)
-  for (const file of [...repoPages, "404.html", "__build.json"]) {
+  result.failures.push(...checkRepositoryPages(root, AVAILABLE_REPOS, COMING_SOON_REPOS))
+  for (const file of ["404.html", "__build.json", "favicon.png", "apple-touch-icon.png"]) {
     if (!existsSync(join(root, file))) result.failures.push(`${file}: missing from the build`)
   }
   result.failures.push(...checkAssetHeaders(root))

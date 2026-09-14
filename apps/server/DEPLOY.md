@@ -48,15 +48,14 @@ beside the canary custom domain. It began as three narrow routes
 `8ebd98d2f0dc7d8db2e61f31ebc19c14`) while `smithers.sh` itself was a separate
 assets-only Worker; since this Worker serves the whole site build, one route,
 `smithers.sh/*`, claims every apex path (see the cutover log below).
-`runWorkerFirst` lists `/smithersai/*` so the Worker, not the assets layer,
-answers a repository path: a catalog repository serves the app document and
-any other path under that owner redirects to `https://smithers.sh/`. It also
-lists every coming-soon owner, in GitHub case and in lowercase, so a
-coming-soon path in any repository case serves its prerendered page
-(PUBLIC-REPOSITORIES.md, `COMING_SOON_WORKER_FIRST`). The
-Worker name and the canary domain are unchanged, so Durable Object state is
-unaffected. Rollback is to delete the zone route and deploy;
-`canary.smithers.sh` keeps serving throughout.
+`www.smithers.sh/*` also reaches this Worker and redirects to the apex.
+`runWorkerFirst` claims `/*` so repository slugs, casing, HTML headers, and
+host redirects are handled before asset navigation. Catalog URLs redirect
+mixed case to lowercase; available repositories use the app document and
+coming-soon repositories use their site page. Other GitHub repository slugs
+use the shared app document when no site asset exists. Invalid paths retain
+the site's 404. The Worker name, canary domain, and Durable Object state
+are unchanged; the cutover log records the route rollback.
 
 The second deliberate change is the assets directory. `assets.directory` is
 `../site/dist`, the smithers.sh Astro build, instead of `../ui/dist`, the
@@ -64,8 +63,8 @@ app's own Vite build, and `notFoundHandling` is `404-page` instead of
 `single-page-application`: the app is a prerendered page of that build at
 `/<owner>/<name>/index.html`, so one build is deployed instead of two. The
 Worker fetches that page from the assets layer for a catalog repository path
-and for a frame path (`/w/<workspace>/b/<branch>/f/<frame>`, listed in
-`runWorkerFirst` as `/w/*`) and adds the isolation headers; every other path
+and for a frame path (`/w/<workspace>/b/<branch>/f/<frame>`) and adds
+the isolation headers; every other path
 passes through as the site serves it, and the canary hostname marks HTML
 `noindex`. The `/_astro/*` chunks carry `Cross-Origin-Embedder-Policy:
 require-corp` and `Cross-Origin-Resource-Policy: same-origin` from the build's
@@ -82,6 +81,18 @@ or roll the Worker back to the prior version id from the last receipt (see
 restores the previous build without a rebuild.
 
 ### Cutover log
+
+- Worker routing and headers (2026-09-14, pending release-owner deployment):
+  `run_worker_first` now claims `/*` so any GitHub repository slug, case
+  normalization, HTML security headers, HTTPS, and www redirects reach the
+  Worker before asset navigation. Existing site assets and legacy redirects
+  still resolve through ASSETS; valid repository paths missing an asset use
+  the shared app document. Coming-soon documents are emitted at lowercase
+  paths. `www.smithers.sh/*` joins the apex route; the release owner must add
+  its DNS record and enable Always Use HTTPS on the zone. No Durable Object
+  identity or storage changes. Rollback: restore the prior owner-prefix list
+  and remove the www route together in wrangler.jsonc and workerIdentity.ts,
+  then rebuild and deploy through the release owner.
 
 Every deliberate change to the frozen identity, newest last, with its
 rollback. `src/workerIdentity.test.ts` and `src/index.test.ts` pin the current
@@ -208,10 +219,11 @@ bun x wrangler secret list                         # names only
 | `SMITHERS_GITHUB_APP_ID` | the GitHub App JWT (`src/githubApp.ts`) |
 | `SMITHERS_GITHUB_APP_PRIVATE_KEY` | the GitHub App JWT (PEM, PKCS#1 or PKCS#8) |
 | `GITHUB_TOKEN` | optional override of the App for catalog stats |
+| `TUTORIAL_SERVICE_TOKEN` | authenticating the live tutorial service |
 
 Optional knobs are set the same way (`wrangler secret put`) and kept the same
 way: `UPSTREAM_TIMEOUT_MS`, `BILLING_CHECKOUT_ENABLED`, `CEREBRAS_MODEL`,
-`CEREBRAS_MODEL_LIBRARIAN`, `CEREBRAS_MODEL_FLOWS`. `SMITHERS_BUILD_SHA` is
+`CEREBRAS_MODEL_LIBRARIAN`, `CEREBRAS_MODEL_FLOWS`, `TUTORIAL_SERVICE_URL`. `SMITHERS_BUILD_SHA` is
 not a binding: `scripts/deploy.ts` bakes it into the site build as
 `/__build.json`. The frozen vars (`IDENTITY_UPSTREAM_URL`,
 `BILLING_UPSTREAM_URL`, `SMITHERS_CLOUD_API_BASE_URL`, `SMITHERS_CHAT_URL`,
@@ -224,7 +236,7 @@ Retiring a secret is `wrangler secret delete <NAME>`. An undeclared live
 secret (the legacy `GATEWAY_*` names, `RECO_ADMIN_TOKEN`) feeds nothing the
 Worker reads; the preflight lists it as a warning until it is deleted.
 
-The eleven values above exist only on Cloudflare. They are not in any shell,
+The secret values above exist only on Cloudflare. They are not in any shell,
 repository secret or secret manager, and Cloudflare never reads them back;
 rotating one means minting a new value together with the upstream Worker that
 checks it.

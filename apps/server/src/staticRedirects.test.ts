@@ -2,7 +2,6 @@ import { describe, expect, test } from "bun:test"
 import { readFileSync } from "node:fs"
 import { fileURLToPath } from "node:url"
 import { isFramePath } from "./appDocument"
-import { ROUTED_OWNER_PREFIXES } from "./index"
 
 /*
  * The site build's public/_redirects ships inside this Worker's assets, so its
@@ -47,7 +46,7 @@ const parseRedirects = (text: string): ReadonlyArray<RedirectRule> =>
 const rules = parseRedirects(readFileSync(redirectsPath, "utf8"))
 
 /** The prefixes src/index.ts answers without the assets layer: every path under them, whatever the file. */
-const WORKER_ANSWERED_PREFIXES = ["/api/", ...ROUTED_OWNER_PREFIXES]
+const WORKER_ANSWERED_PREFIXES = ["/api/"]
 
 describe("the site's _redirects leaves the app's paths alone", () => {
   test("the file parsed into rules", () => {

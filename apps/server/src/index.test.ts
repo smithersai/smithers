@@ -6,7 +6,6 @@ import { AppBootstrapSchema } from "@smthrs/rpc/AppBootstrap"
 import { cloudCapabilities } from "@smthrs/rpc/HostCapabilities"
 import { CLOUD_ROUTE_PREFIX } from "@smthrs/rpc/LocalApp"
 import { LOCAL_SESSION_HEADER } from "@smthrs/rpc/LocalSession"
-import { COMING_SOON_WORKER_FIRST } from "./appDocument"
 import {
   CLIENT_ERROR_LOG_MAX_BYTES,
   CLIENT_ERROR_SOURCE_WINDOW_MAX,
@@ -95,8 +94,8 @@ describe("routed repository pages", () => {
     coep: response.headers.get("Cross-Origin-Embedder-Policy")
   })
 
-  test("a catalog repository serves the prerendered app document by its canonical path, whatever the case or trailing slash", async () => {
-    for (const path of ["/smithersai/smithers", "/SmithersAI/Smithers", "/smithersai/smithers/"]) {
+  test("a catalog repository serves the prerendered app document by its canonical path, with or without its trailing slash", async () => {
+    for (const path of ["/smithersai/smithers", "/smithersai/smithers/"]) {
       const { env, served } = siteEnv()
       const response = await worker.fetch(new Request(`https://smithers.sh${path}`), env)
       expect({ path, status: response.status, served }).toEqual({ path, status: 200, served: ["/smithersai/smithers/"] })
@@ -115,7 +114,7 @@ describe("routed repository pages", () => {
   })
 
   test("a path under /w/ that is not a frame path stays with the assets layer", async () => {
-    for (const path of ["/w/ws-1", "/w/ws-1/b/main", "/w/ws-1/b/main/f/frame-1/extra", "/w/"]) {
+    for (const path of ["/w/ws-1/b/main", "/w/ws-1/b/main/f/frame-1/extra", "/w/"]) {
       const { env, served } = siteEnv()
       const response = await worker.fetch(new Request(`https://smithers.sh${path}`), env)
       expect({ path, status: response.status, served }).toEqual({ path, status: 404, served: [path] })
@@ -123,13 +122,11 @@ describe("routed repository pages", () => {
     }
   })
 
-  test("any other path under the routed owner redirects to the site without touching the assets", async () => {
-    for (const path of ["/smithersai/unknown", "/smithersai/smithers/issues/3", "/smithersai/"]) {
+  test("invalid repository paths retain the site's 404", async () => {
+    for (const path of ["/smithersai/smithers/issues/3", "/smithersai/"]) {
       const { env, served } = siteEnv()
       const response = await worker.fetch(new Request(`https://smithers.sh${path}`), env)
-      expect({ path, status: response.status, location: response.headers.get("location"), served }).toEqual({
-        path, status: 302, location: "https://smithers.sh/", served: []
-      })
+      expect({ path, status: response.status, served }).toEqual({ path, status: 404, served: [path] })
     }
   })
 
@@ -137,7 +134,7 @@ describe("routed repository pages", () => {
     // wrangler runs the Worker first for the owner (the test on run_worker_first
     // below), so the Worker sees the canonical path and the variants the assets
     // have no file for, and must not leave the variants to the 404 page.
-    for (const path of ["/wevm/incur", "/WEVM/Incur", "/wevm/incur/"]) {
+    for (const path of ["/wevm/incur", "/wevm/incur/"]) {
       const { env, served } = siteEnv()
       const response = await worker.fetch(new Request(`https://smithers.sh${path}`), env)
       expect({ path, status: response.status, served }).toEqual({ path, status: 200, served: ["/wevm/incur/"] })
@@ -147,7 +144,7 @@ describe("routed repository pages", () => {
   })
 
   test("a path beside a coming-soon repository stays with the assets layer", async () => {
-    for (const path of ["/wevm/incur/issues/3", "/wevm/other", "/wevm/"]) {
+    for (const path of ["/wevm/incur/issues/3", "/wevm/"]) {
       const { env, served } = siteEnv()
       const response = await worker.fetch(new Request(`https://smithers.sh${path}`), env)
       expect({ path, status: response.status, served }).toEqual({ path, status: 404, served: [path] })
@@ -182,30 +179,14 @@ describe("routed repository pages", () => {
     expect(apex.headers.get("X-Robots-Tag")).toBeNull()
   })
 
-  test("wrangler runs the Worker first for every routed owner, every coming-soon owner in its GitHub case and in lowercase, and the frame prefix, and routes the whole apex beside the canary", async () => {
-    // Without the run_worker_first entries the assets layer answers /smithersai/*
-    // and /w/* before this Worker sees them, and the handlers above are dead on
-    // Cloudflare. The coming-soon branch is dead the same way: wrangler matches
-    // the patterns case-sensitively and a navigation to a path the build has no
-    // file for is the 404 page before the Worker runs, so a lowercase
-    // /effect-ts/effect is the 404 page unless its owner is listed both ways.
+  test("wrangler runs all paths through the Worker and claims www beside the apex and canary", async () => {
     const wrangler = await Bun.file(new URL("../wrangler.jsonc", import.meta.url)).text()
-    const config = JSON.parse(wrangler.replace(/^\s*\/\/.*$/gm, "")) as {
-      routes: Array<{ pattern: string; custom_domain?: boolean; zone_id?: string }>
-      assets: { run_worker_first: Array<string> }
-    }
-    expect(config.assets.run_worker_first).toContain("/smithersai/*")
-    expect(config.assets.run_worker_first).toContain("/w/*")
-    expect(COMING_SOON_WORKER_FIRST).toContain("/Effect-TS/*")
-    expect(COMING_SOON_WORKER_FIRST).toContain("/effect-ts/*")
-    expect(COMING_SOON_WORKER_FIRST).toContain("/wevm/*")
-    for (const entry of COMING_SOON_WORKER_FIRST) expect(config.assets.run_worker_first).toContain(entry)
-    // One apex route: the page HTML and its /_astro chunks come from the same
-    // build. Splitting the apex by prefix once served the chunks from the old
-    // assets-only Worker (404), see DEPLOY.md "Cutover log".
+    const config = JSON.parse(wrangler.replace(/^\s*\/\/.*$/gm, ""))
+    expect(config.assets.run_worker_first).toEqual(["/*"])
     expect(config.routes).toEqual([
       { pattern: "canary.smithers.sh", custom_domain: true },
-      { pattern: "smithers.sh/*", zone_id: "8ebd98d2f0dc7d8db2e61f31ebc19c14" }
+      { pattern: "smithers.sh/*", zone_id: "8ebd98d2f0dc7d8db2e61f31ebc19c14" },
+      { pattern: "www.smithers.sh/*", zone_id: "8ebd98d2f0dc7d8db2e61f31ebc19c14" }
     ])
   })
 })
@@ -527,7 +508,7 @@ describe("smithers mvp worker", () => {
       return originalFetch(input as Request, init)
     }) as typeof fetch
     try {
-      const withClientBearer = new Request("http://localhost/api/agent/turn", {
+      const withClientBearer = new Request("https://localhost/api/agent/turn", {
         method: "POST",
         headers: { "content-type": "application/json", authorization: "Bearer client-picked-token" },
         body: JSON.stringify(turnBody)
@@ -5001,14 +4982,9 @@ describe("the public catalog routes at the Worker", () => {
       const { env, served } = siteEnv()
       const response = await worker.fetch(new Request(`https://smithers.sh/${repo.name.toLowerCase()}`), env)
       expect({ name: repo.name, status: response.status, served, coep: response.headers.get("Cross-Origin-Embedder-Policy") })
-        .toEqual({ name: repo.name, status: 200, served: [`/${repo.name}/`], coep: null })
+        .toEqual({ name: repo.name, status: 200, served: [`/${repo.name.toLowerCase()}/`], coep: null })
     }
-    // The routed owner's app page answers only catalog names; a coming-soon name
-    // under that owner leaves like any unknown repository, never as the app.
-    const { env, served } = siteEnv()
-    const response = await worker.fetch(new Request("https://smithers.sh/smithersai/effect"), env)
-    expect({ status: response.status, location: response.headers.get("location"), served })
-      .toEqual({ status: 302, location: "https://smithers.sh/", served: [] })
+
   })
 
   test("the Worker exposes only this catalog across origins, while write routes remain gated", async () => {
