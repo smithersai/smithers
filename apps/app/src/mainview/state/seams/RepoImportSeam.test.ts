@@ -554,3 +554,26 @@ describe("repo import — the tracking fence", () => {
     expect(importUpserts(store).some((entry) => entry.payload.detail === "job-1 gave up")).toBe(false)
   })
 })
+
+
+test("a GitHub-signed-in import opens issues without requesting a separate cloud sign-in", async () => {
+  const backend = importBackend(() => json(202, jobBody("ready")))
+  const requests: string[] = []
+  const { store, controller } = await readyStore({ fetchImpl: async (input, init) => {
+    const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url
+    const path = new URL(url, "https://app.test").pathname
+    requests.push(path)
+    if (path === "/api/repos/will/flows/issues") return json(200, [])
+    if (path === "/api/user/github-repos/will/flows/issues") return json(200, { issues: [] })
+    return backend.fetchImpl!(input, init)
+  } })
+  expect(store.collections.cloudSessions.get("cloud")?.state).not.toBe("signed-in")
+  expect((await controller.commands.run("repos.import", "will/flows")).status).toBe("executed")
+  expect(importCard(store)?.payload.phase).toBe("done")
+  expect((await controller.commands.run("issues.list", "will/flows")).status).toBe("executed")
+  const issues = [...store.collections.cards.values()].find(card => card.kind === "issue-list")
+  expect(issues).toMatchObject({ kind: "issue-list", payload: { repo: "will/flows" } })
+  expect(store.collections.cloudSessions.get("cloud")?.state).not.toBe("signed-in")
+  expect(requests).toContain("/api/repos/will/flows/issues")
+  expect(requests.some(path => /workspaces|cloud.*sign-in/.test(path))).toBe(false)
+})

@@ -3,8 +3,8 @@
  * done | failed. The frame's StatusPill wears the coarse state; the body
  * names the exact phase, the live stage detail, the job's own progress
  * counts when the wire carries them, and — on a failure — one retry act
- * (repos.import.retry when the job id is known). The done state links the
- * workspace the import created; a refused GitHub call's rate-limit line
+ * (repos.import.retry when the job id is known). The done state opens the
+ * repository's issues through the same product session; a refused GitHub call's rate-limit line
  * follows ADR 0005.
  */
 import { Badge, Button } from "@smthrs/ui"
@@ -27,7 +27,7 @@ export const RepoImportCardBody = ({
   readonly card: Extract<Card, { kind: "repo-import" }>
   readonly onRunCommand: RunCommand
 }) => {
-  const { repo, jobId, phase, detail, stage, counts, repository, workspaceId, rateLimit } = card.payload
+  const { repo, jobId, phase, detail, stage, counts, repository, rateLimit } = card.payload
   /* A refused GitHub call holds Try again until the reset, with the time on it (ADR 0005 "Rate limits"). */
   const heldUntil = useRetryHold(rateLimit)
   return (
@@ -53,16 +53,16 @@ export const RepoImportCardBody = ({
       {phase === "done" && repository != null ?
         <p className="world-card-path">{`${repository.owner}/${repository.name}`}</p> :
         null}
-      {phase === "done" && workspaceId != null ?
+      {phase === "done" ?
         (
           <div className="world-card-row">
             <Button
               size="sm"
               variant="outline"
-              data-flow="workspace.view"
-              onClick={() => onRunCommand("workspace.view", workspaceId)}
+              data-flow="issues.list"
+              onClick={() => onRunCommand("issues.list", repository ? `${repository.owner}/${repository.name}` : repo)}
             >
-              Open the workspace
+              Show issues
             </Button>
           </div>
         ) :

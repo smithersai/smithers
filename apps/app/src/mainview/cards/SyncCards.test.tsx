@@ -630,7 +630,7 @@ describe("RepoImportCardBody — the job card (ADR 0005 \"Import a GitHub reposi
     expect(commands).toEqual([{ name: "repos.import.retry", args: "job-1" }])
   })
 
-  test("a done import links the repository and the workspace it created", () => {
+  test("a done import opens repository issues through the product session", () => {
     const commands: Array<{ name: string; args?: string }> = []
     const { host } = render(
       <RepoImportCardBody
@@ -645,9 +645,18 @@ describe("RepoImportCardBody — the job card (ADR 0005 \"Import a GitHub reposi
     )
 
     expect(host.textContent).toContain("acme/web")
-    click(host, "Open the workspace")
-    expect(commands).toEqual([{ name: "workspace.view", args: "ws-9" }])
+    click(host, "Show issues")
+    expect(commands).toEqual([{ name: "issues.list", args: "acme/web" }])
   })
+})
+
+test("a completed import without a workspace receipt still offers the next repository action", () => {
+  const commands: Array<{ name: string; args?: string }> = []
+  const { host } = render(<RepoImportCardBody card={{ id: "repo-import-acme/web", kind: "repo-import", title: "Import", status: "acted", createdAt: 0, ordinal: 0,
+    payload: { repo: "acme/web", jobId: "job-1", phase: "done", detail: null } }}
+    onRunCommand={(name, args) => commands.push({ name, args })} />)
+  click(host, "Show issues")
+  expect(commands).toEqual([{ name: "issues.list", args: "acme/web" }])
 })
 
 describe("RepoImportCardBody — the rate-limited retry", () => {
