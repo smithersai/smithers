@@ -67,6 +67,32 @@ requests, and prevents late responses or browser opens from changing the store.
 A repeated sign-in click while its start request is pending reports preparation;
 it reopens the browser only after the handoff URL exists.
 
+## Answered sign-in steps
+
+A successful `identity.session.loaded` or usable `cloud.session.loaded`
+observation answers outstanding sign-in actions in the same durable transaction.
+The message keeps its original text, id, timestamp, and position. Its action
+moves to `answeredAction`, with the sign-in result and observation time; both
+the transcript and guide render that answer instead of a button. This is a
+historical receipt, not a claim that a parked command ran successfully.
+Unavailable sessions and degraded Cloud scopes leave their steps pending.
+Web Cloud actions carry `signInRequirement: "cloud"` because their GitHub
+button alone does not identify which session must become usable. Older actions
+without that field use their door (`auth.sign-in` or `cloud.sign-in`). Boot
+waits for an observed session; it does not infer a new success from cached state.
+Restoring a conversation captured before a later successful session observation
+also answers its live projection. The recorded archive stays unchanged; a
+reauthentication prompt newer than that observation remains pending.
+
+This covers explicit identity/Cloud prompts, required seam prompts, chat refusals,
+OAuth retry messages, and repository onboarding. Failure toasts answer their
+sign-in actions too; normal command resumption still replaces the ephemeral
+requirement toast with its continuation notice. The anonymous-limit card uses
+its persisted `acted` status, and the connector card updates its existing GitHub
+connection state. The web opening message is a live projection, never persisted;
+the guide login lesson already records its own completion. Account removal
+continues to apply the existing privacy cleanup to the whole transcript.
+
 ## Controller request bounds
 
 `controller/context.ts` bounds non-streaming requests, including target listing,

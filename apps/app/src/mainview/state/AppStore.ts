@@ -1083,6 +1083,54 @@ const forgetAccountState = (collections: StoredCollections): void => {
   }
 }
 
+/**
+ * A successful session observation answers the requirement in the same durable
+ * transaction. Keep the prompt, order, and original action as history; sign-out
+ * cannot resurrect it. Older stored actions infer their requirement from the
+ * door. Never infer success from a persisted session at boot or a mere click.
+ */
+const answerSignInPrompts = (
+  collections: Pick<StoredCollections, "messages" | "cards"> & Partial<Pick<StoredCollections, "toasts">>,
+  requirement: "identity" | "cloud",
+  login: string | null,
+  answeredAt: number
+): void => {
+  const answer = `${requirement === "identity" ? "Signed in with GitHub" : "Signed in to Smithers Cloud"}${login ? ` as @${login}` : ""}.`
+  const matches = (action: Message["action"]): boolean => {
+    if (!action || (action.flow !== "auth.sign-in" && action.flow !== "cloud.sign-in")) return false
+    return (action.signInRequirement ?? (action.flow === "cloud.sign-in" ? "cloud" : "identity")) === requirement
+  }
+  for (const message of collections.messages.values()) {
+    if (!matches(message.action)) continue
+    const answeredAction = { ...message.action!, answer, answeredAt }
+    collections.messages.update(message.id, draft => {
+      draft.answeredAction = answeredAction
+      draft.action = undefined
+    })
+  }
+  for (const toast of collections.toasts?.values() ?? []) {
+    if (!matches(toast.action)) continue
+    const answeredAction = { ...toast.action!, answer, answeredAt }
+    collections.toasts!.update(toast.id, draft => {
+      draft.answeredAction = answeredAction
+      draft.action = undefined
+      draft.updatedAt = answeredAt
+      // The requirement succeeded; the attempted command may still have failed.
+    })
+  }
+  if (requirement === "identity") {
+    for (const card of collections.cards.values()) {
+      if (card.kind === "anonymous-ceiling" && card.status !== "acted") {
+        collections.cards.update(card.id, draft => { draft.status = "acted" })
+      } else if (card.kind === "connect" && (!card.payload.github.connected || card.payload.github.login !== login)) {
+        collections.cards.update(card.id, draft => {
+          if (draft.kind === "connect") draft.payload.github = { connected: true, login }
+        })
+      }
+    }
+  }
+}
+
 const nextOrdinal = (collections: Pick<StoredCollections, "messages" | "cards">): number => {
   let highest = -1
   for (const message of collections.messages.values()) highest = Math.max(highest, message.ordinal)
@@ -1319,6 +1367,19 @@ const initializeAppStore = async (resolved: ResolvedPersistence, options: { read
             ? saved.selectedWorldDocumentId
             : saved.worldDocuments[0]?.id ?? null
         })
+        // Restoring an older conversation cannot undo a later observed login.
+        // Answer only the restored projection, leaving the recorded snapshot
+        // untouched. The revision check excludes a newer reauthentication step;
+        // current toasts are not part of this historical projection either.
+        const restored = { messages: collections.messages, cards: collections.cards }
+        const identity = collections.identitySessions.get("identity")
+        if (identity?.state === "signed-in" && identity.sessionObservation && identity.sessionObservation.revision > saved.revision) {
+          answerSignInPrompts(restored, "identity", identity.login, identity.sessionObservation.at)
+        }
+        const cloud = collections.cloudSessions.get("cloud")
+        if (cloud?.state === "signed-in" && cloud.scopes !== "degraded" && cloud.revision > saved.revision) {
+          answerSignInPrompts(restored, "cloud", cloud.username, cloud.updatedAt)
+        }
       }
       /*
        * The conversation every row written by this dispatch belongs to
@@ -2409,6 +2470,7 @@ const initializeAppStore = async (resolved: ResolvedPersistence, options: { read
               : transition.state === "signed-out" ? null : owner
             draft.state = transition.state
             draft.login = transition.login
+            draft.sessionObservation = { at: createdAt, revision }
             draft.allowlisted = transition.allowlisted
             draft.admin = transition.admin
             if (transition.scopesPlain !== null) draft.scopesPlain = transition.scopesPlain
@@ -2417,6 +2479,7 @@ const initializeAppStore = async (resolved: ResolvedPersistence, options: { read
             draft.updatedAt = createdAt
             draft.revision = revision
           })
+          if (transition.state === "signed-in") answerSignInPrompts(collections, "identity", transition.login, createdAt)
           break
         }
 
@@ -2495,6 +2558,7 @@ const initializeAppStore = async (resolved: ResolvedPersistence, options: { read
             status: "running",
             detail: "",
             action: undefined,
+            answeredAction: undefined,
             createdAt: existing?.createdAt ?? createdAt,
             updatedAt: createdAt
           }
@@ -2516,6 +2580,7 @@ const initializeAppStore = async (resolved: ResolvedPersistence, options: { read
             if (transition.title !== undefined) draft.title = transition.title
             draft.detail = transition.detail
             draft.action = transition.action
+            draft.answeredAction = undefined
             draft.updatedAt = createdAt
           })
           break
@@ -2919,6 +2984,9 @@ const initializeAppStore = async (resolved: ResolvedPersistence, options: { read
           }
           // Signed out, no workspace terminal can attach: its tabs close with the session, in this transaction.
           if (transition.state === "signed-out") closeTabRows(collections, workspaceTabIds(collections), revision)
+          if (transition.state === "signed-in" && transition.scopes !== "degraded") {
+            answerSignInPrompts(collections, "cloud", transition.username, createdAt)
+          }
           break
         }
         /*

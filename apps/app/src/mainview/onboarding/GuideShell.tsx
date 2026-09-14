@@ -14,7 +14,7 @@ import { Fragment, useCallback, useRef, useState, type ReactNode, type CSSProper
 import { flushSync } from "react-dom"
 import { Check, Mic, Volume2, VolumeX, X } from "lucide-react"
 import { useController } from "../ControllerContext"
-import { initialGuide, conversationTabIdOf, inConversation, type Card } from "../state/AppState"
+import { initialGuide, conversationTabIdOf, inConversation, type Card, type Message } from "../state/AppState"
 import { useCardRows } from "../state/useCardRows"
 import { CardView } from "../ChatCards"
 import { cardActions } from "../cards/CardActions"
@@ -98,7 +98,9 @@ export function GuideShell({ children, clock = guideClock }: { children: ReactNo
   const { data: worldDocuments } = useLiveQuery(controller.store.collections.worldDocuments)
   const session = sessions[0] ?? controller.store.session()
   const conversation = conversationTabIdOf(session)
-  const signInPrompts = messageRows.filter(message => inConversation(message, conversation) && message.action?.flow === "auth.sign-in")
+  const isIdentityPrompt = (message: Message) =>
+    (message.action ?? message.answeredAction)?.flow === "auth.sign-in"
+  const signInPrompts = messageRows.filter(message => inConversation(message, conversation) && isIdentityPrompt(message))
     .sort((a, b) => a.ordinal - b.ordinal)
   const guide = session.guide ?? initialGuide()
   // The palette transition is synchronous; guide progression may await a reel act.
@@ -118,7 +120,7 @@ export function GuideShell({ children, clock = guideClock }: { children: ReactNo
     chatEntryIds(guide.transcript))
     .filter(card => guide.transcript?.[card.id]?.source === "chat" || (showPractice && !skipped) || !cardRepo(card)?.startsWith("practice:"))
     .sort((a, b) => a.ordinal - b.ordinal)
-  const messages = messageRows.filter(message => inConversation(message, conversation) && message.action?.flow !== "auth.sign-in")
+  const messages = messageRows.filter(message => inConversation(message, conversation) && !isIdentityPrompt(message))
   const entries = guideTranscriptEntries(lessonCards.filter(card => stage < GUIDE_LAST_STEP || guide.transcript?.[card.id]?.source === "chat"), messages, guide)
   const typing = session.phase === "responding"
   const streamingMessageId = typing ? messages.at(-1)?.id : undefined
@@ -524,9 +526,10 @@ export function GuideShell({ children, clock = guideClock }: { children: ReactNo
             {signInPrompts.map(message => (
               <article key={message.id} className="message" data-testid="auth-prompt" data-chat-message-id={message.id}>
                 <p>{message.text}</p>
+                {message.answeredAction ? <p role="status">{message.answeredAction.answer}</p> :
                 <Button className="message-cta" data-flow="auth.sign-in" onClick={() => controller.runCommand("auth.sign-in", message.action?.args)}>
                   {message.action?.label}
-                </Button>
+                </Button>}
               </article>
             ))}
           </div>

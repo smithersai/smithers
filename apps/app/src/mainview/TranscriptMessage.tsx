@@ -121,6 +121,7 @@ export function TranscriptMessage({ entry, streamingMessageId }: { entry: { kind
         ) :
         null}
       {/* The synthetic auth message has no clock time to tell. */}
+      {entry.message.answeredAction && <p role="status">{entry.message.answeredAction.answer}</p>}
       {entry.message.createdAt > 0 ?
         (
           <time

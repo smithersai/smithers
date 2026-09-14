@@ -451,7 +451,7 @@ export interface AppController extends TutorialChangeController, IssueFlowsContr
   /** Render the full visible-flow catalog into the chat (the /chat.commands answer). */
   readonly showCommandCatalog: () => void
   /** Render the sign-in step into the chat (auth.prompt — the agent's door to login). */
-  readonly promptSignIn: (required?: boolean, request?: { readonly name?: string; readonly args?: string | null; readonly summary?: string }) => void
+  readonly promptSignIn: (required?: boolean, request?: { readonly name?: string; readonly args?: string | null; readonly summary?: string; readonly signInRequirement?: "cloud" }) => void
   /** Render the Smithers Cloud sign-in step into the chat (cloud.prompt — the agent's door to the cloud session). */
   readonly promptCloudSignIn: () => void
   /** Reload the app window — the /reload affordance (dev loop, stuck states). */
@@ -1323,7 +1323,8 @@ export const createAppController = (
       type: "message.appended",
       actor: "system",
       text: purpose ? `Sign in with GitHub to ${purpose[0]!.toLowerCase()}${purpose.slice(1)}.` : "Sign in with GitHub to continue.",
-      action: { flow: "auth.sign-in", label: "Sign in with GitHub" }
+      action: { flow: "auth.sign-in", label: "Sign in with GitHub",
+        ...(request?.signInRequirement === undefined ? {} : { signInRequirement: request.signInRequirement }) }
     })
   }
 
@@ -1347,7 +1348,9 @@ export const createAppController = (
       return
     }
     if (commands.find("cloud.sign-in") === undefined) {
-      promptSignIn(required || cloud?.scopes === "degraded")
+      // Identity alone does not answer this prompt: the Cloud exchange may
+      // still be signed out, unavailable, or missing workspace scopes.
+      promptSignIn(true, { signInRequirement: "cloud" })
       return
     }
     store.dispatch({

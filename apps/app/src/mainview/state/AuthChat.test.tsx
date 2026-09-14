@@ -9,6 +9,8 @@ import { ControllerTestProvider } from "../ControllerContext"
 import { scopedControllers } from "./ControllerTestScope"
 import type { AppController as AppControllerType } from "./AppController"
 import { createAppStore } from "./AppStore"
+import { initialGuide } from "./AppState"
+import { GuideShell } from "../onboarding/GuideShell"
 import { backend, json, memoryStorage, settled, silentAgent, unavailableRepositories } from "./TestFixtures"
 
 const createAppController = scopedControllers()
@@ -37,14 +39,14 @@ afterEach(() => {
   window.history.replaceState(null, "", "/")
 })
 
-const mount = (controller: AppControllerType): { host: HTMLElement; markup: () => string } => {
+const mount = (controller: AppControllerType, guide = false): { host: HTMLElement; markup: () => string } => {
   const host = document.createElement("div")
   document.body.append(host)
   const root = createRoot(host)
   flushSync(() =>
     root.render(
       <ControllerTestProvider controller={controller}>
-        <App />
+        {guide ? <GuideShell><div /></GuideShell> : <App />}
       </ControllerTestProvider>
     )
   )
@@ -449,4 +451,55 @@ test("the expanded empty wiki carries the current repository through Create Wiki
   host.querySelector<HTMLButtonElement>('.world-surface [data-flow="wiki.create"]')?.click()
   await settled()
   expect(store.session().pendingCommand).toMatchObject({ name: "wiki.create", args: "smithersai/smithers" })
+})
+
+for (const guide of [false, true]) {
+  test(`${guide ? "guide and login lesson" : "transcript"}: the persisted sign-in step visibly answers and loses its button`, async () => {
+    const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
+    let signedIn = false
+    const controller = createAppController(store, unavailableRepositories, silentAgent, {
+      fetchImpl: async input => String(input).endsWith("/auth/session")
+        ? Response.json(signedIn ? { state: "signed-in", login: "codeplanesmithers", allowlisted: true, admin: false }
+          : { state: "signed-out", login: null, allowlisted: false, admin: false })
+        : Response.json({}, { status: 404 })
+    })
+    await controller.loadSession()
+    if (guide) await store.dispatch({ type: "guide.changed", actor: "user", guide: { ...initialGuide(), step: 10 } }).isPersisted.promise
+    controller.deferCommand("secrets.list", null, "signed-in")
+    await store.dispatch({ type: "command.deferral.cleared", actor: "system" }).isPersisted.promise
+    await controller.commands.runForAgent("auth.prompt")
+    await settled()
+    const prompt = [...store.collections.messages.values()].at(-1)!
+    const { host } = mount(controller, guide)
+    expect(host.querySelector('[data-flow="auth.sign-in"]')).not.toBeNull()
+    signedIn = true
+    await controller.loadSession()
+    await settled()
+    flushSync(() => {})
+    expect(host.querySelectorAll('.message-cta[data-flow="auth.sign-in"]').length).toBe(0)
+    expect(host.querySelectorAll('.toast-action[data-flow="auth.sign-in"]').length).toBe(0)
+    expect(host.querySelector('.toast-stack, .guide-toasts')?.textContent).toContain("Signed in with GitHub as @codeplanesmithers.")
+    expect(host.textContent).toContain("Signed in with GitHub as @codeplanesmithers.")
+    expect(host.textContent).toContain(prompt.text)
+    expect(store.collections.messages.get(prompt.id)?.text).toBe(prompt.text)
+    if (guide) {
+      expect(host.querySelectorAll('.guide-actions [data-flow="auth.sign-in"]').length).toBe(0)
+      expect(store.session().guide?.completed).toContain("identity.signed-in")
+    }
+  })
+}
+
+test("the derived web opening sign-in door closes when its identity requirement is met", async () => {
+  const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
+  const controller = createAppController(store, unavailableRepositories, silentAgent, { bootstrap: WEB,
+    fetchImpl: async () => Response.json({}, { status: 404 }) })
+  await controller.adoptSession({ state: "signed-out", login: null, allowlisted: false, admin: false })
+  const { host } = mount(controller)
+  expect(host.querySelector('.message-cta[data-flow="auth.sign-in"]')).not.toBeNull()
+  await controller.adoptSession({ state: "signed-in", login: "codeplanesmithers", allowlisted: true, admin: false })
+  await settled()
+  flushSync(() => {})
+  expect(host.querySelectorAll('.message-cta[data-flow="auth.sign-in"]').length).toBe(0)
+  // This opening is a live projection, never an appended transcript row.
+  expect(store.collections.messages.get("auth-state")).toBeUndefined()
 })

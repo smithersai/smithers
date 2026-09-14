@@ -9,6 +9,7 @@ export function ToastActionButton({ toast, onAction }: {
   toast: Toast
   onAction: (action: ToastAction) => void
 }) {
+  if (toast.answeredAction) return <p role="status">{toast.answeredAction.answer}</p>
   const action = toast.action
   if (!action) return null
   const signIn = action.flow === "auth.sign-in" || action.flow === "cloud.sign-in"

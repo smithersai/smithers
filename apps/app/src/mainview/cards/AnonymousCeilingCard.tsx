@@ -39,9 +39,10 @@ export const AnonymousCeilingCardBody = ({
     <p data-testid="anonymous-ceiling-message">{card.payload.message}</p>
     <p className="smithers-card-note" data-testid="anonymous-ceiling-reset">{resetLine(card.payload.retryAt)}</p>
     <div className="flow-run-actions">
+      {card.status === "acted" ? <p role="status">Signed in with GitHub.</p> :
       <Button size="sm" data-flow="auth.sign-in" onClick={() => onConnectGitHub()}>
         Sign in with GitHub
-      </Button>
+      </Button>}
     </div>
   </div>
 )
@@ -50,6 +51,6 @@ export const anonymousCeilingCardFamily: CardFamily<"anonymous-ceiling"> = {
   "anonymous-ceiling": {
     render: (card, actions) => <AnonymousCeilingCardBody card={card} onConnectGitHub={actions.onConnectGitHub} />,
     /* A refusal is a pause, not a failure: the turn was never sent. */
-    pill: () => "paused"
+    pill: card => card.status === "acted" ? "signed in" : "paused"
   }
 }

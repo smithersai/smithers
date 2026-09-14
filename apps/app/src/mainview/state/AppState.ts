@@ -465,6 +465,13 @@ export const parseRepoSelection = (
 export const ActorSchema = z.enum(["user", "smithers", "system"])
 export type Actor = z.infer<typeof ActorSchema>
 
+const MessageActionSchema = z.object({
+  flow: z.string(), args: z.string().optional(), label: z.string(),
+  /** Web Cloud login uses auth.sign-in too; its requirement is still Cloud access. */
+  signInRequirement: z.enum(["identity", "cloud"]).optional()
+})
+const AnsweredActionSchema = MessageActionSchema.extend({ answer: z.string(), answeredAt: z.number() })
+
 export const MessageSchema = z.object({
   id: z.string(),
   role: z.enum(["user", "smithers"]),
@@ -473,7 +480,9 @@ export const MessageSchema = z.object({
   status: z.enum(["complete", "failed", "interrupted"]),
   statusDetail: z.string().optional(),
   /** A message-ridden action (sign-in rides the opening message; retry rides the failed-OAuth one). */
-  action: z.object({ flow: z.string(), args: z.string().optional(), label: z.string() }).optional(),
+  action: MessageActionSchema.optional(),
+  /** The answered step retains its original prose and identity, but no executable action. */
+  answeredAction: AnsweredActionSchema.optional(),
   /** A one-line visible tool act ("Smithers ran /world.new-note") renders as a marker row, not a bubble. */
   act: z.string().optional(),
   createdAt: z.number(),
@@ -555,7 +564,8 @@ export const ToastSchema = z.object({
   title: z.string(),
   status: z.enum(["running", "ok", "failed"]),
   detail: z.string(),
-  action: z.object({ flow: z.enum(FLOW_NAMES), args: z.string().optional(), label: z.string() }).optional(),
+  action: MessageActionSchema.extend({ flow: z.enum(FLOW_NAMES) }).optional(),
+  answeredAction: AnsweredActionSchema.optional(),
   createdAt: z.number(),
   updatedAt: z.number()
 })
@@ -1081,6 +1091,8 @@ export const IdentitySessionSchema = z.object({
   login: z.string().nullable(),
   /** Owner of retained account data, even while identity is unavailable. Missing only on legacy rows. */
   accountOwnerLogin: z.string().nullable().optional(),
+  /** Session evidence has its own clock: access-request updates are not a new sign-in. */
+  sessionObservation: z.object({ at: z.number(), revision: z.number().int().nonnegative() }).optional(),
   allowlisted: z.boolean(),
   admin: z.boolean(),
   accessRequested: z.boolean(),
@@ -1540,7 +1552,7 @@ export type AppTransition =
     actor: "system" | "user" | "smithers"
     text: string
     /** The action that rides the message (sign-in, request access, retry, a confirm flow). */
-    action?: { flow: string; args?: string; label: string }
+    action?: Message["action"]
   }
   /* The local-app tabs (docs/LOCAL-APP.md "Tabs"). */
   | { type: "tab.opened"; actor: Actor; tab: Tab }

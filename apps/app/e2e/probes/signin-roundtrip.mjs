@@ -76,8 +76,11 @@ if (!landed.startsWith(base)) await fail(`OAuth did not return to ${base}`);
 const final = new URL(landed);
 if (final.pathname !== repoPath) await fail(`the door returned to ${final.pathname}, not ${repoPath}`);
 if (final.searchParams.has("signed-in")) await fail("the app left the signed-in marker in the query");
-const text = await page.evaluate(() => document.body.innerText);
-if (/sign in with github/i.test(text)) await fail("repository page still shows the sign-in door");
+// Answered transcript steps retain their original sign-in prose. The dead door
+// is an executable action, not a historical sentence.
+if (await page.locator('button[data-flow="auth.sign-in"], button[data-flow="cloud.sign-in"], [data-testid=chrome-sign-in]').count()) {
+  await fail("repository page still shows the sign-in door");
+}
 const acct = page.locator("[data-testid=chrome-account]").or(page.getByRole("button", { name: /^account$/i })).first();
 if (!(await acct.count())) await fail("no Account chrome button");
 await acct.click(); await page.waitForTimeout(3000);

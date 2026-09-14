@@ -79,3 +79,17 @@ describe("the anonymous ceiling card", () => {
     expect(anonymousCeilingCardFamily["anonymous-ceiling"].pill(card({ message: PER_ADDRESS, retryAt: null }))).toBe("paused")
   })
 })
+
+test("the answered ceiling keeps its history and no longer renders a sign-in button", () => {
+  const host = document.createElement("div")
+  const root = createRoot(host)
+  const before = card({ message: PER_ADDRESS, retryAt: null })
+  try {
+    flushSync(() => root.render(<AnonymousCeilingCardBody card={before} onConnectGitHub={() => {}} />))
+    expect(host.querySelectorAll('[data-flow="auth.sign-in"]').length).toBe(1)
+    flushSync(() => root.render(<AnonymousCeilingCardBody card={{ ...before, status: "acted" }} onConnectGitHub={() => {}} />))
+    expect(host.querySelectorAll('[data-flow="auth.sign-in"]').length).toBe(0)
+    expect(host.textContent).toContain(PER_ADDRESS)
+    expect(host.textContent).toContain("Signed in with GitHub.")
+  } finally { flushSync(() => root.unmount()) }
+})

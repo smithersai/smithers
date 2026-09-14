@@ -157,3 +157,16 @@ describe("every other refused turn keeps today's failure line", () => {
     expect(store.session().phase).toBe("idle")
   })
 })
+
+test("sign-in answers the anonymous ceiling's persisted sign-in card", async () => {
+  const { store, ceilingCards } = await sendRefused("signed-out", {
+    status: "error", message: PER_ADDRESS,
+    refusal: { code: "turn_rate_limited", message: PER_ADDRESS, retryAt: null }
+  })
+  const before = ceilingCards[0]!
+  expect(before.status).toBe("active")
+  await store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-in",
+    login: "codeplanesmithers", allowlisted: false, admin: false, scopesPlain: null }).isPersisted.promise
+  expect(store.collections.cards.get(before.id)).toMatchObject({ id: before.id, payload: before.payload,
+    ordinal: before.ordinal, createdAt: before.createdAt, status: "acted" })
+})
