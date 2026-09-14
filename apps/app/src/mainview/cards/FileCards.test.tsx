@@ -29,12 +29,13 @@ GlobalRegistrator.register()
  * test file bun runs next in the same process (seen: FilesSeam.test.ts
  * failing with "window is not defined" right after this file).
  */
-const mounted: Array<{ readonly root: Root; readonly host: HTMLElement }> = []
+const mounted: Array<{ readonly root: Root; readonly host: HTMLElement; readonly dispose?: () => Promise<void> }> = []
 
-afterEach(() => {
-  for (const { root, host } of mounted.splice(0)) {
+afterEach(async () => {
+  for (const { root, host, dispose } of mounted.splice(0)) {
     flushSync(() => root.unmount())
     host.remove()
+    await dispose?.()
   }
 })
 
@@ -77,12 +78,20 @@ describe("the file card", () => {
     expect(contentKey("abc")).toBe(contentKey("abc"))
   })
 
-  test("a markdown file renders through the read-only editor boundary, not a fenced block", () => {
-    const host = render(fileCard("README.md", "# Smithers\n\nDurable agent workflows.\n"))
-    expect(host.querySelector("pre")).toBeNull()
+  test("a markdown file renders through the read-only editor boundary, not a fenced block", async () => {
+    const content = "# Smithers\n\nDurable agent workflows.\n"
+    // The surface reads the session's input mode, just as it does under the app provider.
+    const { host } = await renderOn(NATIVE, fileCard("README.md", content))
+    // Wait for the lazy surface: checking only its loading state can hide a failed adapter.
+    for (let tick = 0; tick < 200 && host.querySelector('[data-testid="markdown-editor"]') === null; tick += 1) {
+      await wait(10)
+    }
+    const editor = host.querySelector<HTMLTextAreaElement>('textarea[data-testid="markdown-editor"]')
+    expect(editor?.value).toBe(content)
+    expect(editor?.readOnly).toBe(true)
+    expect(host.querySelector("pre") === null).toBe(true)
     const doc = host.querySelector("[data-file-markdown]")
     expect(doc).not.toBeNull()
-    // The heavy adapter is lazy: the boundary's fallback (or the mounted editor) is what renders synchronously.
     expect(host.textContent).toContain("smithersai/smithers · README.md")
   })
 
@@ -99,12 +108,12 @@ describe("the file card", () => {
    * itself is the .world-card-panel rule (styles/Layout.test.ts pins it);
    * what this holds is that the file body IS that panel — both renderings.
    */
-  test("a file body is the scrolling panel, markdown and fenced alike", () => {
+  test("a file body is the scrolling panel, markdown and fenced alike", async () => {
     const fenced = render(fileCard("src/main.ts", "export {}\n"))
     expect(fenced.querySelector(".world-card-panel")).not.toBeNull()
     expect(fenced.querySelector(".world-card-panel")?.contains(fenced.querySelector("pre"))).toBe(true)
 
-    const markdown = render(fileCard("README.md", "# Title\n"))
+    const { host: markdown } = await renderOn(NATIVE, fileCard("README.md", "# Title\n"))
     const panel = markdown.querySelector(".world-card-panel")
     expect(panel).not.toBeNull()
     expect(panel?.querySelector("[data-file-markdown]")).not.toBeNull()
@@ -408,7 +417,7 @@ const renderOn = async (bootstrap: AppBootstrap, card: Extract<Card, { kind: "fi
   const host = document.createElement("div")
   document.body.appendChild(host)
   const root = createRoot(host)
-  mounted.push({ root, host })
+  mounted.push({ root, host, dispose: () => controller.dispose() })
   flushSync(() =>
     root.render(
       <ControllerTestProvider controller={controller}>
