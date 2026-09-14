@@ -163,11 +163,11 @@ export const CARD_RENDERERS: CardFamily<Card["kind"]> = {
 export const cardRenderer = <K extends Card["kind"]>(kind: K): CardFamilyEntry<K> => CARD_RENDERERS[kind]
 
 /**
- * The header's status word. An error card wears "failed" whatever its kind;
+ * The header's status word. Forms keep refusals in their body; other error cards wear "failed";
  * otherwise the family that owns the kind answers.
  */
 export const pillStatus = (card: Card): string => {
-  if (card.status === "error") return "failed"
+  if (card.status === "error" && card.kind !== "flow-form") return "failed"
   return cardRenderer(card.kind).pill(card)
 }
 

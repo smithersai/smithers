@@ -2043,9 +2043,28 @@
 	content: " *";
 }
 .flow-form-row > input:not([type="checkbox"]),
+.flow-form-row > textarea,
 .flow-form-row > select {
 	flex: 1;
 	min-width: 0;
+	padding: var(--sp-2) var(--sp-3);
+	border: 1px solid var(--border-strong);
+	border-radius: var(--r-sm);
+	background: var(--surface);
+	color: var(--text);
+	font: inherit;
+	font-size: var(--fs-small);
+}
+.flow-form-row > :is(input:not([type="checkbox"]), textarea, select):focus-visible {
+	outline: 2px solid var(--ring);
+	outline-offset: 2px;
+	border-color: var(--ring-border);
+}
+.flow-form-row > :is(input, textarea)::placeholder {
+	color: var(--text-placeholder);
+}
+.flow-form-row > textarea {
+	resize: vertical;
 }
 .flow-form-row > select {
 	font-family: var(--font-mono);

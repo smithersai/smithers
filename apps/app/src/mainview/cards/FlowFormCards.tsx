@@ -8,9 +8,9 @@ import { flowArgs } from "../flows/FlowArgs"
  * THE FORM LAW (apps/app/AGENTS.md; docs/workbench-lanes/flow-forms.md): the
  * one form card every flow shares. Its fields derive from the flow's input
  * schema, its options come from the seams (controller/forms.ts), and its
- * draft IS the card payload: a field commits through `form.set` when the
- * pointer or Enter leaves it (the DOM holds keystrokes in flight, never
- * React state), Submit is `form.submit` (the controller assembles the line
+ * draft IS the card payload: a field commits through `form.set` on every
+ * input event (the DOM keeps in-flight editing and focus, never React
+ * state), Submit is `form.submit` (the controller assembles the line
  * and runs the flow as whoever asked for it), Cancel is `card.dismiss`.
  * Every act names its flow through onRunCommand. An option the human cannot
  * pick is disabled and carries its reason.
@@ -19,11 +19,11 @@ import { flowArgs } from "../flows/FlowArgs"
 type FlowFormCard = Extract<Card, { kind: "flow-form" }>
 type FlowFormField = FlowFormCard["payload"]["fields"][number]
 
-/** Enter commits the field the way leaving it does. */
-const blurOnEnter = (event: KeyboardEvent<HTMLInputElement>): void => {
-  if (event.key === "Enter") {
+/** A single-line Enter uses the same submission as the button, without interrupting IME input. */
+const submitOnEnter = (event: KeyboardEvent<HTMLInputElement>): void => {
+  if (event.key === "Enter" && !event.nativeEvent.isComposing && event.keyCode !== 229) {
     event.preventDefault()
-    event.currentTarget.blur()
+    event.currentTarget.form?.requestSubmit()
   }
 }
 
@@ -47,7 +47,10 @@ export const FlowFormCardBody = ({
   const commit = (field: string, value: string): void => onRunCommand("form.set", flowArgs("form.set", { cardId: card.id, field, value }))
   const complete = unfilled(card.payload).length === 0
   return (
-    <div className="flow-form" data-flow-name={flow} data-via={card.payload.via}>
+    <form className="flow-form" data-flow-name={flow} data-via={card.payload.via} onSubmit={(event) => {
+      event.preventDefault()
+      if (complete && !busy && !settled) onRunCommand("form.submit", card.id)
+    }}>
       {fields.map((field) => {
         const value = draft[field.name]
         const text = value === undefined ? "" : String(value)
@@ -77,9 +80,9 @@ export const FlowFormCardBody = ({
                 </select>
               ) :
               field.kind === "textarea" ?
-              <textarea key={`${field.name}:${text}`} className="flow-run-steer-input" aria-label={field.label}
-                data-testid={testId} defaultValue={text} rows={12} required={field.required} disabled={settled || busy}
-                onBlur={event => { if (event.currentTarget.value !== text) commit(field.name, event.currentTarget.value) }} /> :
+              <textarea aria-label={field.label}
+                data-testid={testId} defaultValue={text} placeholder={field.placeholder} rows={12} required={field.required} disabled={settled || busy}
+                onInput={event => commit(field.name, event.currentTarget.value)} /> :
               field.kind === "boolean" ?
               (
                 <input
@@ -94,9 +97,8 @@ export const FlowFormCardBody = ({
               (
                 <>
                   <input
-                    key={`${field.name}:${text}`}
                     type={field.kind === "number" ? "number" : "text"}
-                    className="flow-run-steer-input"
+                    step={field.kind === "number" ? "any" : undefined}
                     aria-label={field.label}
                     data-testid={testId}
                     defaultValue={text}
@@ -104,10 +106,8 @@ export const FlowFormCardBody = ({
                     required={field.required}
                     disabled={settled || busy}
                     list={options.length > 0 ? listId : undefined}
-                    onBlur={(event) => {
-                      if (event.currentTarget.value !== text) commit(field.name, event.currentTarget.value)
-                    }}
-                    onKeyDown={blurOnEnter}
+                    onInput={(event) => commit(field.name, event.currentTarget.value)}
+                    onKeyDown={submitOnEnter}
                   />
                   {options.length > 0 ?
                     (
@@ -126,7 +126,7 @@ export const FlowFormCardBody = ({
           <Button variant="ghost" size="sm" data-flow="card.dismiss" data-testid="flow-form-cancel" disabled={busy} onClick={() => onRunCommand("card.dismiss", card.id)}>
             Cancel
           </Button>
-          <Button size="sm" data-flow="form.submit" data-testid="flow-form-submit" disabled={!complete || busy} onClick={() => onRunCommand("form.submit", card.id)}>
+          <Button type="submit" size="sm" data-flow="form.submit" data-testid="flow-form-submit" disabled={!complete || busy}>
             {card.payload.submitLabel ?? "Submit"}
           </Button>
         </div>
@@ -138,14 +138,14 @@ export const FlowFormCardBody = ({
           </p>
         ) :
         null}
-    </div>
+    </form>
   )
 }
 
 export const flowFormCardFamily: CardFamily<"flow-form"> = {
   "flow-form": {
     render: (card, actions) => <FlowFormCardBody card={card} onRunCommand={actions.onRunCommand} />,
-    /* THE FORM LAW: a form waits on the human until it is submitted (acted) or its submit was refused (error). */
-    pill: (card) => (card.status === "acted" ? "done" : "pending")
+    /* A form asks for input; a refusal belongs in its body, never a machine status pill. */
+    pill: () => ""
   }
 }

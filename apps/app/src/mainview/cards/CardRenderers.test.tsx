@@ -90,8 +90,9 @@ describe("CardRenderers", () => {
       status: "active",
       payload: { flow: "repo.open", via: "user", fields: [], draft: {}, given: {} }
     }
-    expect(pillStatus(form)).toBe("pending")
-    expect(pillStatus({ ...form, status: "acted" })).toBe("done")
+    expect(pillStatus(form)).toBe("")
+    expect(pillStatus({ ...form, status: "acted" })).toBe("")
+    expect(pillStatus({ ...form, status: "error", payload: { ...form.payload, error: "Practice repositories can't take new flows yet." } })).toBe("")
 
     const halfway: Card = { ...base, kind: "status", status: "active", payload: { progress: 0.5 } }
     expect(pillStatus(halfway)).toBe("running")

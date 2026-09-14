@@ -138,7 +138,7 @@ describe("THE FORM LAW — the agent door", () => {
     expect(result).not.toContain("/agent.create ")
     const form = formOf(store, "agent.create")
     expect(form?.payload).toMatchObject({ flow: "agent.create", via: "agent", draft: {}, given: {} })
-    expect(form?.title).toBe("/agent.create")
+    expect(form?.title).toBe("Create an agent: an id, the harness that runs it, the model id that harness accepts, and its purpose")
     expect(form?.payload.fields.map((field) => [field.name, field.kind, field.required])).toEqual([
       ["id", "text", true],
       ["harness", "select", true],

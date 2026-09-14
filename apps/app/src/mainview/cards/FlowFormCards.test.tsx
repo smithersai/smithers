@@ -1,9 +1,10 @@
 import { GlobalRegistrator } from "@happy-dom/global-registrator"
-import { afterAll, describe, expect, test } from "bun:test"
+import { afterAll, afterEach, describe, expect, test } from "bun:test"
 import { flushSync } from "react-dom"
 import { createRoot } from "react-dom/client"
 import type { Card } from "../state/AppState"
 import { FlowFormCardBody } from "./FlowFormCards"
+import { payloadFor } from "../flows/SlashPayload"
 
 /*
  * THE FORM LAW (flow-forms.md): the generic form card. One control per
@@ -14,6 +15,8 @@ import { FlowFormCardBody } from "./FlowFormCards"
  */
 
 GlobalRegistrator.register()
+const cleanups: Array<() => void> = []
+afterEach(() => { while (cleanups.length) cleanups.pop()!() })
 
 afterAll(async () => {
   for (let tick = 0; tick < 3; tick += 1) await new Promise((resolve) => setTimeout(resolve, 0))
@@ -68,8 +71,10 @@ const formCard = (payload: Partial<FlowFormCard["payload"]> = {}, status: Card["
 const mount = (node: React.ReactNode): HTMLElement => {
   const host = document.createElement("div")
   document.body.append(host)
+  const root = createRoot(host)
+  cleanups.push(() => { flushSync(() => root.unmount()); host.remove() })
   flushSync(() => {
-    createRoot(host).render(node)
+    root.render(node)
   })
   return host
 }
@@ -79,11 +84,11 @@ const recorder = () => {
   return { calls, onRunCommand: (name: string, args?: string) => void calls.push([name, args]) }
 }
 
-const blur = (host: HTMLElement, testId: string, value: string): void => {
+const input = (host: HTMLElement, testId: string, value: string): void => {
   const input = host.querySelector<HTMLInputElement>(`[data-testid=${testId}]`)
   if (input === null) throw new Error(`no field ${testId}`)
   input.value = value
-  input.dispatchEvent(new FocusEvent("focusout", { bubbles: true }))
+  flushSync(() => input.dispatchEvent(new InputEvent("input", { bubbles: true })))
 }
 
 describe("the flow form card", () => {
@@ -94,7 +99,7 @@ describe("the flow form card", () => {
       draft: { text: "Goal\nEvidence" }, submitLabel: "Copy brief"
     })} onRunCommand={(name, args) => recorder.calls.push([name, args])} />)
     expect(host.querySelector("textarea")?.value).toBe("Goal\nEvidence")
-    blur(host, "flow-form-text", "Goal\nEvidence\nNext step")
+    input(host, "flow-form-text", "Goal\nEvidence\nNext step")
     expect(recorder.calls[0]).toEqual(["form.set", "form-agent.create text Goal\nEvidence\nNext step"])
     const copy = [...host.querySelectorAll("button")].find(button => button.textContent === "Copy brief")
     copy?.click()
@@ -142,19 +147,19 @@ describe("the flow form card", () => {
   test("every field commits through form.set with the card id; a blank commit clears; Cancel is card.dismiss", () => {
     const { calls, onRunCommand } = recorder()
     const host = mount(<FlowFormCardBody card={formCard({ draft: { purpose: "old" } })} onRunCommand={onRunCommand} />)
-    blur(host, "flow-form-id", "reviewer")
+    input(host, "flow-form-id", "reviewer")
     const harness = host.querySelector<HTMLSelectElement>("[data-testid=flow-form-harness]")
     if (harness === null) throw new Error("no harness select")
     harness.value = "codex"
     harness.dispatchEvent(new Event("change", { bubbles: true }))
-    blur(host, "flow-form-model", "gpt-5.6-terra")
-    blur(host, "flow-form-seq", "3")
+    input(host, "flow-form-model", "gpt-5.6-terra")
+    input(host, "flow-form-seq", "3")
     const follow = host.querySelector<HTMLInputElement>("[data-testid=flow-form-follow]")
     if (follow === null) throw new Error("no checkbox")
     follow.click()
-    blur(host, "flow-form-purpose", "")
-    // A field left as the draft holds it commits nothing.
-    blur(host, "flow-form-purpose", "old")
+    input(host, "flow-form-purpose", "")
+    // Returning to the rendered value still commits, even before the previous edit re-renders.
+    input(host, "flow-form-purpose", "old")
     host.querySelector<HTMLButtonElement>("[data-testid=flow-form-cancel]")?.click()
     expect(calls).toEqual([
       ["form.set", "form-agent.create id reviewer"],
@@ -163,9 +168,75 @@ describe("the flow form card", () => {
       ["form.set", "form-agent.create seq 3"],
       ["form.set", "form-agent.create follow true"],
       ["form.set", "form-agent.create purpose"],
+      ["form.set", "form-agent.create purpose old"],
       ["card.dismiss", "form-agent.create"]
     ])
     expect(host.querySelector("[data-testid=flow-form-cancel]")?.getAttribute("data-flow")).toBe("card.dismiss")
+  })
+
+  test("input commits the live draft, enables Submit without blur, and preserves focus and spaces across updates", () => {
+    let card = formCard({ fields: [{ name: "description", label: "What should this issue flow do?", kind: "text", required: true }] })
+    const calls: Array<[string, string | undefined]> = []
+    const host = document.createElement("div")
+    document.body.append(host)
+    const root = createRoot(host)
+    cleanups.push(() => { flushSync(() => root.unmount()); host.remove() })
+    const render = () => root.render(<FlowFormCardBody card={card} onRunCommand={(name, args) => {
+      calls.push([name, args])
+      if (name !== "form.set") return
+      const parsed = payloadFor(name, args)
+      if (!("payload" in parsed)) throw new Error("field commit did not parse")
+      card = { ...card, payload: { ...card.payload, draft: { description: String(parsed.payload.value) } } }
+      render()
+    }} />)
+    flushSync(render)
+    const field = host.querySelector<HTMLInputElement>("input")!
+    const submit = host.querySelector<HTMLButtonElement>("[data-testid=flow-form-submit]")!
+    expect(submit.disabled).toBe(true)
+    field.focus()
+    for (const value of ["Research", "Research ", "Research errors"]) {
+      input(host, "flow-form-description", value)
+      expect(host.querySelector("input")).toBe(field)
+      expect(document.activeElement).toBe(field)
+      expect(field.value).toBe(value)
+      expect(submit.disabled).toBe(false)
+    }
+    submit.click()
+    expect(calls.at(-1)).toEqual(["form.submit", card.id])
+    input(host, "flow-form-description", "")
+    expect(submit.disabled).toBe(true)
+  })
+
+  test("Enter submits a complete single-line field once, without blurring; composition and incomplete or busy forms do not submit", () => {
+    for (const state of ["ready", "composing", "empty", "busy", "acted"] as const) {
+      const { calls, onRunCommand } = recorder()
+      const host = mount(<FlowFormCardBody card={formCard({
+        fields: [{ name: "id", label: "Id", kind: "text", required: true }],
+        draft: state === "empty" ? {} : { id: "reviewer" }, submitting: state === "busy"
+      }, state === "acted" ? "acted" : "active")} onRunCommand={onRunCommand} />)
+      const field = host.querySelector<HTMLInputElement>("input")!
+      field.focus()
+      flushSync(() => field.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true, isComposing: state === "composing" })))
+      expect(calls).toEqual(state === "ready" ? [["form.submit", "form-agent.create"]] : [])
+      if (state === "ready") expect(document.activeElement).toBe(field)
+    }
+  })
+
+  test("Enter in a multiline field leaves newline editing to the control", () => {
+    const { calls, onRunCommand } = recorder()
+    const host = mount(<FlowFormCardBody card={formCard({ fields: [{ name: "text", label: "Brief", kind: "textarea", required: true }], draft: { text: "Goal" } })} onRunCommand={onRunCommand} />)
+    const event = new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true })
+    host.querySelector("textarea")!.dispatchEvent(event)
+    expect(event.defaultPrevented).toBe(false)
+    expect(calls).toEqual([])
+  })
+
+  test("a number field accepts fractional values on the form submission path", () => {
+    const { calls, onRunCommand } = recorder()
+    const host = mount(<FlowFormCardBody card={formCard({ fields: [{ name: "amount", label: "Amount", kind: "number", required: true }], draft: { amount: 0.5 } })} onRunCommand={onRunCommand} />)
+    expect(host.querySelector<HTMLInputElement>("input")!.checkValidity()).toBe(true)
+    host.querySelector<HTMLButtonElement>("[data-testid=flow-form-submit]")!.click()
+    expect(calls).toEqual([["form.submit", "form-agent.create"]])
   })
 
   test("Submit is form.submit, disabled until every required field is filled; a boolean never blocks it", () => {

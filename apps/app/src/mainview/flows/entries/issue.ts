@@ -19,7 +19,7 @@ export const issueFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> =>
       ? actions.suggestTutorialChange(repo, `Implement issue #${number}; research its context, then plan the fix before changing code.`)
       : actions.runIssueImplementation(number, repo) }),
   flow({ name: "issue.add-flow", summary: "Add a flow to the issue namespace", runtimeAny: ["cloud", "practice"],
-    form: { args: payload => JSON.stringify(payload), fields: { description: { label: "What should this issue flow do?" } } },
+    form: { args: payload => JSON.stringify(payload), fields: { description: { label: "What should this issue flow do?", placeholder: "Describe the flow to add" } } },
     input: Schema.Struct({ number: Schema.Number, repo: Schema.optional(Schema.String), description: Schema.String }),
     handler: ({ number, repo, description }) => isPracticeRepo(repo)
       ? "Practice repositories can't take new flows yet."
