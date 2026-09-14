@@ -89,15 +89,12 @@
   white-space: nowrap;
 }
 .guidance-text-visual > span {
-  opacity: 0;
-  /*
-   * A 1ms step-end effect with a delay past one second can finish just below
-   * progress 1 in Chromium and WebKit, leaving later characters invisible.
-   * A linear effect avoids the step-end rounding edge.
-   */
-  animation: guidance-character 1ms linear var(--character-delay) forwards;
+  /* Finished text is ordinary visible content. A forward-filled 1ms effect can
+     settle fractionally below 100% after long delays and leave letters hidden. */
+  opacity: 1;
+  animation: guidance-character 1ms step-end var(--character-delay) backwards;
 }
-@keyframes guidance-character { to { opacity: 1; } }
+@keyframes guidance-character { from { opacity: 0; } to { opacity: 1; } }
 @media (prefers-reduced-motion: reduce) {
   .guidance-text-visual > span { opacity: 1; animation: none; }
 }

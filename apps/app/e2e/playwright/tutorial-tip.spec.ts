@@ -92,6 +92,10 @@ test("only the final instruction pulses, and holding its key yields to pressed f
   await expect(target).toHaveCSS("animation-name", "help-target-glow")
   await expect(target.locator("kbd")).toHaveCSS("animation-name", "help-target-glow")
   await expect(target).toHaveCSS("animation-iteration-count", "infinite")
+  // Text content also includes invisible letters: verify the last character
+  // actually finishes revealing after delays greater than one second.
+  const finalCharacter = page.locator(".guidance-text-visual > span").last()
+  await expect(finalCharacter).toHaveCSS("opacity", "1")
   await page.keyboard.down("i")
   await expect(target).toHaveCSS("animation-name", "none")
   await expect(page.locator(".guide-shell")).toHaveAttribute("data-stage", "1")
