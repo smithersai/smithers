@@ -599,7 +599,39 @@
 	color: var(--bubble-meta, var(--text));
 }
 
-.app-chat-controls { flex: none; display: flex; align-items: center; justify-content: flex-end; gap: 16px; min-height: 52px; padding: 8px 20px; }
-.app-chat-controls button { display: inline-flex; align-items: center; gap: 8px; border: 0; background: transparent; color: var(--muted-foreground); font: inherit; cursor: pointer; }
-.app-chat-controls button:focus-visible { outline: 2px solid var(--ring); outline-offset: 4px; }
-.app-chat-controls kbd { border: 1px solid var(--border); border-radius: 4px; padding: 2px 6px; font-size: var(--fs-small); }
+.app-chat-controls { flex: none; display: flex; align-items: center; justify-content: flex-end; gap: var(--sp-4); min-height: 52px; padding: var(--sp-2) var(--sp-5); }
+/*
+ * The bottom bar is GuideButton chrome OUTSIDE the guide shell, where the
+ * --g-* tokens do not exist: keep the polish session's quiet text-button
+ * look, but make it deliberate — app tokens, a real hover, and the same
+ * keycap recipe as the guide (bordered chip, keycap lip, 20px geometry).
+ */
+.app-chat-controls .guide-button {
+	min-height: var(--ctl-h-sm);
+	padding: var(--sp-1) var(--sp-2);
+	border: 0;
+	background: transparent;
+	box-shadow: none;
+	color: var(--text-muted);
+	font-size: var(--fs-small);
+	border-radius: var(--r-sm);
+}
+.app-chat-controls .guide-button:hover:not(:disabled) {
+	background: var(--hover-subtle);
+	color: var(--text);
+}
+.app-chat-controls .guide-button .guide-button-key {
+	min-width: 20px;
+	min-height: 20px;
+	padding: 0 var(--sp-2);
+	border: 1px solid var(--border);
+	border-radius: 4px;
+	background: var(--surface);
+	box-shadow: 0 1px 0 color-mix(in srgb, var(--text) 12%, transparent);
+	color: var(--text-muted);
+	font-size: var(--fs-caption);
+}
+.app-chat-controls .guide-button:focus-visible {
+	outline: 2px solid var(--brand);
+	outline-offset: 2px;
+}
