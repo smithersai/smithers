@@ -575,6 +575,7 @@ describe("command registry bindings", () => {
       "appearance.dark-mode",
       "chat.surfaces",
       "debug.verbose",
+      "debug.errors",
       "system.recommend",
       "chat",
       "chat.open",

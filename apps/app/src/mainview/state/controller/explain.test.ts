@@ -78,6 +78,7 @@ const streamingController = (start: AgentPort["startTurn"] = async () => ({ stat
   const listeners = new Set<(frame: AgentTurnFrame) => void>()
   const cancelled: string[] = []
   const timers: ReturnType<typeof setTimeout>[] = []
+  const identityListeners = new Set<() => void>()
   const agent: AgentPort = {
     available: true,
     subscribe: (listener) => {
@@ -91,6 +92,14 @@ const streamingController = (start: AgentPort["startTurn"] = async () => ({ stat
     cancelTurn: async (runId) => { cancelled.push(runId) }
   }
   const ctx = createControllerContext({
+    // The network diagnostics ring scopes observations to the current identity.
+    collections: { identitySessions: {
+      get: () => undefined,
+      subscribeChanges: (listener: () => void) => {
+        identityListeners.add(listener)
+        return { unsubscribe: () => { identityListeners.delete(listener) } }
+      }
+    } },
     dispatch: (action: (typeof dispatches)[number]) => { dispatches.push(action) }
   } as unknown as ControllerContext["store"], {
     available: false,
@@ -100,12 +109,12 @@ const streamingController = (start: AgentPort["startTurn"] = async () => ({ stat
     ...ctx,
     unref: (timer) => { timers.push(timer); ctx.unref(timer) }
   })
-  return { ctx, controller, launches, dispatches, listeners, cancelled, timers }
+  return { ctx, controller, launches, dispatches, listeners, identityListeners, cancelled, timers }
 }
 
 describe("explanations belong to the controller disposal scope", () => {
   test("dispose releases every active listener and timer, cancels turns, and suppresses queued frames", async () => {
-    const { ctx, controller, launches, dispatches, listeners, cancelled, timers } = streamingController()
+    const { ctx, controller, launches, dispatches, listeners, identityListeners, cancelled, timers } = streamingController()
     const clear = spyOn(globalThis, "clearTimeout")
     let time = Date.now()
     const now = spyOn(Date, "now").mockImplementation(() => time++)
@@ -113,10 +122,12 @@ describe("explanations belong to the controller disposal scope", () => {
       await controller.explain("Why did this fail?")
       await controller.explain("What should I do next?")
       expect(listeners.size).toBe(2)
+      expect(identityListeners.size).toBe(1)
       expect(timers).toHaveLength(2)
       const queued = [...listeners]
       const before = dispatches.length
       await ctx.dispose()
+      expect(identityListeners.size).toBe(0)
       const listenersAfterDispose = listeners.size
       for (const listener of queued) {
         listener({ runId: launches[0]!.runId, type: "delta", kind: "text", text: "late answer" })
