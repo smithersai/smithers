@@ -439,6 +439,32 @@ describe("env card persistence", () => {
 const gatewayWorkspaceId = "6f1b9c2e-6a4a-4c0e-9f52-2c1a7f0b39d1"
 const rateLimit = { limit: 5000, remaining: 42, resetAt: "2026-09-05T10:00:00Z" }
 
+/*
+ * A complete StatusRollup (Health.ts): the observation a health host attaches
+ * to a run or a session. It is optional wherever it appears, so it belongs in
+ * `full` only, stated whole (`reason` and `provenance` included) because the
+ * field audit reads top-level keys and would miss a nested field left out.
+ */
+const statusRollup = (subjectId: string, state: string, activity: string) => ({
+  subjectId,
+  state,
+  activity,
+  health: "healthy",
+  attention: "none",
+  freshness: "fresh",
+  reason: "ok",
+  provenance: {
+    checkerId: "checker-1",
+    monitorId: "monitor-1",
+    observedAt: 1_757_000_000_000,
+    expiresAt: 1_757_000_030_000,
+    evidenceSeq: 7,
+    incarnation: "inc-1",
+    version: 1
+  },
+  updatedAt: 1_757_000_000_000
+})
+
 type KindFixtures = {
   /** Only the fields the schema requires: what a card persisted before every later lane carries. */
   readonly minimal: Record<string, unknown>
@@ -562,6 +588,7 @@ const FIXTURES: Record<Card["kind"], KindFixtures> = {
       lastSeq: 0
     },
     full: {
+      statusRollup: statusRollup("run:run-1", "running", "working"),
       repo: "smithersai/smithers",
       workspaceId: gatewayWorkspaceId,
       gatewayBindingVersion: 1,
@@ -596,7 +623,12 @@ const FIXTURES: Record<Card["kind"], KindFixtures> = {
       repo: "smithersai/smithers",
       workspaceId: gatewayWorkspaceId,
       gatewayBindingVersion: 1,
-      workflows: [{ key: "issue.repro", description: "Research an issue", prompt: "Read and reproduce the issue." }],
+      workflows: [{
+        key: "issue.repro",
+        description: "Research an issue",
+        prompt: "Read and reproduce the issue.",
+        inputSchema: { type: "object", properties: { number: { type: "integer" } }, required: ["number"] }
+      }],
       issueContext: { number: 3, title: "Fix greeting" },
       research: "Reproduced the missing-name case."
     }
@@ -646,11 +678,15 @@ const FIXTURES: Record<Card["kind"], KindFixtures> = {
       status: "running",
       flow: "review",
       lineage: "lin-1",
+      approvals: [{ runId: "run-1", requestId: "gate-1", title: "POST https://api.github.com" }],
+      observationError: "the runs projection refused (500)",
+      observedAt: 1_757_000_000_000,
       runs: [{
         runId: "run-1",
         flowId: "review",
         status: "running",
         waiting: "approval",
+        statusRollup: statusRollup("run:run-1", "running", "working"),
         createdAt: 1_757_000_000_000,
         turns: 3,
         calls: 12
@@ -727,6 +763,8 @@ const FIXTURES: Record<Card["kind"], KindFixtures> = {
       state: "closed",
       author: "will",
       issueBody: "shard-3 wedges on sqlite",
+      source: "github",
+      htmlUrl: "https://github.com/smithersai/smithers/issues/1634",
       labels: ["ci", "flaky"],
       linear: { identifier: "ENG-482", url: "https://linear.app/smithers/issue/ENG-482" },
       comments: [{ author: null, commentBody: "reproduced", createdAt: "2026-09-05T09:00:00Z" }],
@@ -761,6 +799,7 @@ const FIXTURES: Record<Card["kind"], KindFixtures> = {
       checks: []
     },
     full: {
+      tab: "files",
       repo: "smithersai/smithers",
       number: 12,
       title: "Serve repository files",
@@ -1634,6 +1673,7 @@ const FIXTURES: Record<Card["kind"], KindFixtures> = {
       exitCode: null
     },
     full: {
+      statusRollup: statusRollup("session:pty-1", "exited", "idle"),
       harnessId: "codex",
       displayName: "Reviewer · GPT-6 Astra",
       roleId: "reviewer",
@@ -1692,6 +1732,9 @@ const FIXTURES: Record<Card["kind"], KindFixtures> = {
       draft: { id: "reviewer", retries: 2, verbose: true },
       given: { id: "reviewer" },
       submitting: true,
+      submitLabel: "Run flow",
+      payloadField: "input",
+      inputSchema: { type: "object", properties: { id: { type: "string" } }, required: ["id"] },
       error: "the submit refused (500)"
     }
   },
