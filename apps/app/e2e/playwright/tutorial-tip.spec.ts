@@ -3,6 +3,45 @@ import { GUIDE_STAGES } from "../../src/mainview/onboarding/lessons"
 
 test.use({ contextOptions: { reducedMotion: "reduce" } })
 
+test.describe("landscape touch guidance", () => {
+  test.use({ hasTouch: true, isMobile: true, deviceScaleFactor: 3, viewport: { width: 844, height: 390 } })
+
+  test("Chat help stays inside the viewport and clears every action pill throughout its dwell", async ({ page }) => {
+    // Practice guidance has no backend dependency; this also runs on Astro preview.
+    await page.route("**/api/bootstrap", route => route.fulfill({ json: {
+      apiVersion: 1, host: "cloud", version: "test", buildSha: "test", capabilities: [], authFlow: "none", sandbox: null,
+    } }))
+    await page.clock.install()
+    await page.goto("/smithersai/smithers/?tutorial")
+    await expect(page.locator(".guide-shell")).toHaveAttribute("data-stage", "1")
+    const help = page.getByRole("note", { name: "Help" })
+    await page.clock.runFor(3800)
+    for (let sample = 0; sample < 4; sample++) {
+      await expect(help.locator(".guidance-text-visual")).toHaveText("Tap Chat anytime to open Chat and commands.")
+      const bubble = (await help.boundingBox())!
+      expect(bubble.x).toBeGreaterThanOrEqual(0)
+      expect(bubble.y).toBeGreaterThanOrEqual(0)
+      expect(bubble.x + bubble.width).toBeLessThanOrEqual(844)
+      expect(bubble.y + bubble.height).toBeLessThanOrEqual(390)
+      const actions = page.locator(".guide-actions button.guide-primary")
+      await expect(actions).toHaveCount(2)
+      for (const action of await actions.all()) {
+        const pill = (await action.boundingBox())!
+        expect(bubble.x >= pill.x + pill.width || bubble.x + bubble.width <= pill.x || bubble.y >= pill.y + pill.height || bubble.y + bubble.height <= pill.y).toBe(true)
+        expect(await action.evaluate(element => {
+          const rect = element.getBoundingClientRect()
+          return element.contains(document.elementFromPoint(rect.x + rect.width / 2, rect.y + rect.height / 2))
+        })).toBe(true)
+      }
+      if (sample < 3) await page.clock.runFor(700)
+    }
+    await page.screenshot({ path: test.info().outputPath("landscape-chat-guidance.png") })
+    const review = (await page.getByRole("button", { name: "Review changes", exact: true }).boundingBox())!
+    await page.touchscreen.tap(review.x + review.width / 2, review.y + review.height / 2)
+    await expect(page.locator('.guide-transcript [data-kind="pr-list"]')).toBeVisible()
+  })
+})
+
 for (const width of [1280, 390]) {
   test(`tutorial help points at Show issues without covering it at ${width}px`, async ({ page }) => {
     await page.setViewportSize({ width, height: 844 })

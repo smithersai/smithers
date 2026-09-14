@@ -35,6 +35,10 @@ const githubHref = "https://github.com/smithersai/smithers"
         <span>Start Here</span>
         <kbd class="start-key" aria-hidden="true">s</kbd>
       </a>
+      <div id="start-error" hidden>
+        <p role="alert">Smithers couldn't load. Reload to try again.</p>
+        <button id="start-reload" class="start ready" type="button">Reload</button>
+      </div>
     </div>
   </main>
 </Base>
@@ -56,6 +60,9 @@ const githubHref = "https://github.com/smithersai/smithers"
   type Sheet = HTMLLinkElement | HTMLStyleElement
 
   const start = document.getElementById("start") as HTMLAnchorElement | null
+  const failure = document.getElementById("start-error")!
+  const reload = document.getElementById("start-reload")!
+  reload.addEventListener("click", () => window.location.reload())
   const reduced = matchMedia("(prefers-reduced-motion: reduce)")
   const TRANSITION_STYLE_ID = "smithers-enter-app"
   const MARK_NAME = "smithers-wordmark"
@@ -202,10 +209,15 @@ const githubHref = "https://github.com/smithersai/smithers"
       try {
         mount = await load()
       } catch {
-        // The chunk did not arrive (offline, a deploy replaced it): Start Here stays and can be pressed again.
-        entering = false
+        // Failed imports can remain cached for this document. Offer a fresh
+        // document instead of returning to an apparently idle Start Here.
+        stopPress()
         start.classList.remove("pending")
         start.removeAttribute("aria-busy")
+        start.hidden = true
+        failure.hidden = false
+        document.documentElement.classList.remove("entering")
+        if (!instant) reload.focus({ preventScroll: true })
         return
       }
       try {
@@ -384,7 +396,12 @@ const githubHref = "https://github.com/smithersai/smithers"
     touch-action: manipulation;
     -webkit-tap-highlight-color: transparent;
     transition: background-color 160ms var(--ease), transform 180ms cubic-bezier(0.2, 0.8, 0.2, 1), box-shadow 180ms var(--ease);
+    border: 0;
+    font-family: inherit;
+    cursor: pointer;
   }
+  .start[hidden] { display: none; }
+  #start-error p { margin: 0 0 1rem; }
   @media (hover: hover) {
     .start:hover {
       background: var(--home-accent-hover);
@@ -435,6 +452,9 @@ const githubHref = "https://github.com/smithersai/smithers"
   .start.pending .start-key {
     transform: translateY(1px);
     box-shadow: inset 0 1px 2px rgb(var(--shadow-rgb) / 16%);
+  }
+  @media (hover: none), (max-width: 640px), (pointer: coarse) {
+    .start-key { display: none; }
   }
   @media (max-width: 480px) {
     .start {

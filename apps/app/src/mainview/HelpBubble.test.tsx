@@ -1,5 +1,5 @@
 import { GlobalRegistrator } from "@happy-dom/global-registrator"
-import { afterAll, afterEach, expect, test } from "bun:test"
+import { afterAll, afterEach, expect, spyOn, test } from "bun:test"
 import { useState } from "react"
 import { flushSync } from "react-dom"
 import { createRoot } from "react-dom/client"
@@ -29,6 +29,34 @@ function mount() {
   cleanups.push(() => { flushSync(() => root.unmount()); host.remove() })
   return { host, activations: () => activations, target: host.querySelector<HTMLButtonElement>(".help-anchor-target button")! }
 }
+
+test("floating help clears nearby actions and caps its height at the viewport edge", () => {
+  const viewport = Object.getOwnPropertyDescriptor(document.documentElement, "clientWidth")
+  Object.defineProperty(document.documentElement, "clientWidth", { configurable: true, value: 844 })
+  cleanups.push(() => { if (viewport) Object.defineProperty(document.documentElement, "clientWidth", viewport); else Reflect.deleteProperty(document.documentElement, "clientWidth") })
+  const bounds = spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (this: HTMLElement) {
+    const [x, y, width, height] = this.matches(".help-anchor") ? [600, 340, 60, 44]
+      : this.matches(".help-bubble") ? [460, 260, 340, 80]
+      : this.matches("footer") ? [0, 330, 844, 60]
+      : this.matches("#nearby-actions") ? [400, 274, 200, 44]
+      : [0, 0, 0, 0]
+    return DOMRect.fromRect({ x, y, width, height })
+  })
+  cleanups.push(() => bounds.mockRestore())
+  const host = document.createElement("div")
+  document.body.append(host)
+  const root = createRoot(host)
+  cleanups.push(() => { flushSync(() => root.unmount()); host.remove() })
+  flushSync(() => root.render(<>
+    <div id="nearby-actions"><button>Review changes</button></div>
+    <footer><HelpBubble id="chat-help" open placement="above" avoid="#nearby-actions"
+      content="Tap Chat anytime to open Chat and commands." onDismiss={() => {}}><button>Chat</button></HelpBubble></footer>
+  </>))
+  const bubble = host.querySelector<HTMLElement>(".help-bubble")!
+  // The footer alone needs 10px; the actions need 66px above the target.
+  expect(bubble.style.bottom).toBe("calc(100% + 66px)")
+  expect(parseFloat(bubble.style.maxHeight)).toBeLessThanOrEqual(274 - 16)
+})
 
 test("guidance does not steal focus, trap Tab, or activate its target", () => {
   const previous = document.createElement("button")

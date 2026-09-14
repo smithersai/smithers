@@ -591,7 +591,7 @@ export function GuideShell({ children, clock = guideClock }: { children: ReactNo
         </div>
         {stage >= 1 && (
           <div className="guide-chat-controls">
-            <HelpBubble id={`guide-chat-help-${stage}`} placement="above" open={chatHelpOpen}
+            <HelpBubble id={`guide-chat-help-${stage}`} placement="above" avoid=".guide-actions" open={chatHelpOpen}
               content={guidanceContent} onDismiss={() => setDismissedHelp(helpKey)}>
             <GuideButton ref={opener} shortcut={GUIDE_KEYS.chat} data-flow="chat.open" data-pulse={lesson?.kind === "do" && lesson.completion === "palette.opened" && !done(stage)}
               aria-describedby={chatHelpOpen ? `guide-chat-help-${stage}` : undefined}
