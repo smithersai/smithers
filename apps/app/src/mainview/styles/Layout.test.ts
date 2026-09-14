@@ -141,12 +141,10 @@ describe("the shared card frame fits the phone column", () => {
     expect(header).toContain("min-width: 0;")
   })
 
-  test("the title truncates and the meta gives way before the status pill", () => {
+  test("the title truncates before the status pill", () => {
     const title = /\.smithers-card-title\s*\{\s*flex: 0 1 auto;[^}]*\}/.exec(cards)?.[0] ?? ""
     expect(title).toContain("min-width: 0;")
     expect(title).toContain("text-overflow: ellipsis;")
-    const meta = /\.smithers-card-meta\s*\{\s*flex: 0 1 auto;[^}]*\}/.exec(cards)?.[0] ?? ""
-    expect(meta).toContain("min-width: 0;")
   })
 
   test("a run's action pills wrap instead of running past the card edge", () => {

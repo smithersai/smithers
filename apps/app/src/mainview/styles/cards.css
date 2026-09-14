@@ -73,14 +73,6 @@
 	font-variant-numeric: tabular-nums;
 }
 
-.smithers-card-meta {
-	margin-left: auto;
-	color: var(--text-faint);
-	font-family: var(--font-mono);
-	font-size: var(--fs-caption);
-	white-space: nowrap;
-}
-
 .smithers-card-body .sui-plan {
 	border: 0;
 	border-radius: 0;
@@ -1490,12 +1482,6 @@
 .smithers-card-header > .sui-badge,
 .smithers-card-header > .card-maximize-btn {
 	flex: 0 0 auto;
-}
-/* The kind/time meta is the next to give way, and disappears before the pill. */
-.smithers-card-meta {
-	flex: 0 1 auto;
-	min-width: 0;
-	overflow: hidden;
 }
 
 /* A maximized card fits the viewport (§7.2). `.smithers-card` sets
