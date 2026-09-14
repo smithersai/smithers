@@ -130,25 +130,18 @@ compositions do not enable compaction. Enabling it requires a queue-aware
 retention or checkpoint policy first.
 
 A synthetic SQLite fixture with 100,005 `control.engine.event` rows exercises
-both the closure query and a full cold admission. The earlier 500-row benchmark
-and query-only timings did not establish whole-admission latency. The regression
-measures a separate cold queue using the former unfiltered fold, rolls that
-measurement's admission back, and compares a fresh production queue with the
-new filter. It also verifies one closure page per steer, and retained typed
-refusal after the final empty receipt. Measurements are local diagnostics, not
-a production latency promise. Final local runs recorded:
+both the closure query and a full cold admission. The regression verifies that
+volume in SQL, observes the real queue and closure reads, and requires their
+event filters before decoding a page. A cold admission reads zero old rows and
+then its one newly committed notification. The complete scenario bounds queue
+reads and decoded rows by notification count, verifies one closure page per
+steer, drains the five exact messages, and retains typed refusal after the final
+empty receipt. Timings are local diagnostics, not a production latency promise.
 
-| Runtime | Prior cold admission with unfiltered queue fold | Cold admission with both filters |
-| --- | ---: | ---: |
-| Node | 14,675 ms | 5.9 ms |
-| Bun | 7,117 ms | 40.3 ms |
-
-Both baseline folds actually read 200,011 rows across their pre/post-write reads.
-The prior-path measurement includes the same closure policy and rolls back its
-admission; the production measurement commits. Concurrent compilation/coverage
-load varied between runs, so the row counts and index plans are the stronger
-scaling evidence. The tests assert correctness and bounded reads, not a latency
-threshold.
+The regression no longer executes the obsolete unfiltered queue as a timing
+baseline. That artificial admission decoded 200,011 rows across 392 pages and
+could exhaust the test's 60-second budget. Checking filters and read counts
+directly catches the same regression without repeating that historical scan.
 
 **New public error channel: `Control.steer` preserves `NotificationError`.**
 The existing notification error schema gains stable `notification_closed` and
