@@ -13,6 +13,8 @@ const release = process.argv[2]
 if (!release || !/^[a-z0-9][a-z0-9.-]{1,60}$/.test(release)) throw new Error("Provide a unique lowercase release tag")
 const registry = "us-central1-docker.pkg.dev/plue-prod-1771780303/smithers"
 const coordinatorOnly = process.argv.includes("--coordinator-only")
+const reuseImage = process.argv.includes("--reuse-image")
+if (reuseImage && !coordinatorOnly) throw new Error("Image reuse requires a coordinator-only release")
 const currentDeployment = coordinatorOnly ? JSON.parse(run("kubectl", ["get", "deployment", "tutorial-coordinator", "-n", "smithers", "-o", "json"], { quiet: true })) : undefined
 const executorImage = coordinatorOnly
   ? currentDeployment.spec.template.spec.containers.find((container: any) => container.name === "coordinator").env.find((value: any) => value.name === "TUTORIAL_EXECUTOR_IMAGE")?.value
@@ -21,17 +23,26 @@ if (!executorImage) throw new Error("Existing executor image is missing")
 const coordinatorImage = `${registry}/smithers-tutorial-coordinator:${release}`
 const directory = mkdtempSync(join(tmpdir(), "smithers-tutorial-release-"))
 try {
-  run("gcloud", ["auth", "configure-docker", "us-central1-docker.pkg.dev", "--quiet"])
-  if (!coordinatorOnly) run("docker", ["buildx", "build", "--platform", "linux/amd64", "-f", "apps/tutorial-executor/Dockerfile", "-t", executorImage, "--push", "."])
-  copyFileSync("dist/tutorial-coordinator/server.mjs", join(directory, "server.mjs"))
-  copyFileSync("apps/tutorial-executor/infra/coordinator.Dockerfile", join(directory, "Dockerfile"))
-  run("docker", ["buildx", "build", "--platform", "linux/amd64", "-t", coordinatorImage, "--push", directory])
+  if (reuseImage) {
+    // Resume after a post-push failure only when the exact release exists.
+    run("gcloud", ["artifacts", "docker", "images", "describe", coordinatorImage, "--format=value(image_summary.digest)"], { quiet: true })
+  } else {
+    run("gcloud", ["auth", "configure-docker", "us-central1-docker.pkg.dev", "--quiet"])
+    if (!coordinatorOnly) run("docker", ["buildx", "build", "--platform", "linux/amd64", "-f", "apps/tutorial-executor/Dockerfile", "-t", executorImage, "--push", "."])
+    copyFileSync("dist/tutorial-coordinator/server.mjs", join(directory, "server.mjs"))
+    copyFileSync("apps/tutorial-executor/infra/coordinator.Dockerfile", join(directory, "Dockerfile"))
+    run("docker", ["buildx", "build", "--platform", "linux/amd64", "-t", coordinatorImage, "--push", directory])
+  }
   // Never print credential-bearing objects. Keep the service token stable across
   // releases, so a rolling Worker release never loses its authenticated link.
   let old: any = undefined
   try { old = JSON.parse(run("kubectl", ["get", "secret", "tutorial-coordinator-secrets", "-n", "smithers", "-o", "json"], { quiet: true })) } catch {}
-  const provider = process.env.TUTORIAL_PROVIDER ?? "chatgpt"
-  const model = process.env.TUTORIAL_MODEL ?? (provider === "chatgpt" ? "gpt-5.6-luna" : undefined)
+  // A runtime fix must preserve the live provider unless an operator selects
+  // another one. Otherwise a coordinator-only release silently changes auth.
+  const previousProvider = old?.data?.TUTORIAL_PROVIDER === undefined ? undefined : Buffer.from(old.data.TUTORIAL_PROVIDER, "base64").toString()
+  const provider = process.env.TUTORIAL_PROVIDER ?? (coordinatorOnly ? previousProvider : undefined) ?? "chatgpt"
+  const previousModel = provider === previousProvider && old?.data?.TUTORIAL_MODEL !== undefined ? Buffer.from(old.data.TUTORIAL_MODEL, "base64").toString() : undefined
+  const model = process.env.TUTORIAL_MODEL ?? (coordinatorOnly ? previousModel : undefined) ?? (provider === "chatgpt" ? "gpt-5.6-luna" : undefined)
   if (!["chatgpt", "gemini", "openai"].includes(provider) || !model) throw new Error("Configure tutorial provider and model")
   const credentialData: Record<string, string> = {}
   if (provider === "chatgpt") {
