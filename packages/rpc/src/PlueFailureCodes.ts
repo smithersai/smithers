@@ -35,7 +35,7 @@ export const PLUE_FAILURE_SCHEMA_VERSION = 1
  * @since 1.0.0
  * @category constants
  */
-export const PLUE_FAILURE_DIGEST = "sha256:e94c0c22f49a440667bffc84a8a337b14208a0380c3231eb44b24ed0213966b8"
+export const PLUE_FAILURE_DIGEST = "sha256:634f265e0847fbbd573a3ada67f237f155556a943fec7268bbccabda51da8722"
 
 /**
  * Whose problem a failure is — plue's own word, and the only question the app
@@ -92,6 +92,7 @@ export const PLUE_FAILURE_CODES = [
   "desktop_not_running",
   "desktop_tools_unavailable",
   "egress_proxy_unavailable",
+  "environment_image_unavailable",
   "exec_in_progress",
   "feature_not_enabled",
   "focus_terminal",
@@ -246,10 +247,12 @@ export const PLUE_FAILURES = {
   "desktop_not_ready": { fault: "wait", status: 503, retryAfter: 2 },
   /** The box is suspended, failed, or has no VM. Observe and input never auto-resume: the caller asks for a resume first. */
   "desktop_not_running": { fault: "user", status: 409, retryAfter: 0 },
-  /** The box booted from an image older than the one shipping the desktop helpers. It is terminal for that box. */
-  "desktop_tools_unavailable": { fault: "user", status: 409, retryAfter: 0 },
+  /** The box booted from an image older than the one shipping the desktop helpers. It is terminal for that box, and it is plue's rollout lag rather than anything the caller did. */
+  "desktop_tools_unavailable": { fault: "infra", status: 409, retryAfter: 0 },
   /** The box's egress proxy is not answering, so the box would have had no outbound network. */
   "egress_proxy_unavailable": { fault: "infra", status: 503, retryAfter: 0 },
+  /** No NixOS environment image is registered for this workspace kind on this deployment, so no box of that kind can boot until plue builds and registers one. */
+  "environment_image_unavailable": { fault: "infra", status: 409, retryAfter: 0 },
   /** An exec is already running in this sandbox and the endpoint serializes them. */
   "exec_in_progress": { fault: "user", status: 409, retryAfter: 0 },
   /** The endpoint's storage is not provisioned on this deployment, so the feature is switched off here. Retrying does not help until the deployment is migrated. */

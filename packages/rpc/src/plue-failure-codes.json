@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "digest": "sha256:e94c0c22f49a440667bffc84a8a337b14208a0380c3231eb44b24ed0213966b8",
+  "digest": "sha256:634f265e0847fbbd573a3ada67f237f155556a943fec7268bbccabda51da8722",
   "faults": [
     "user",
     "wait",
@@ -172,10 +172,10 @@
     },
     {
       "code": "desktop_tools_unavailable",
-      "fault": "user",
+      "fault": "infra",
       "status": 409,
       "retry_after": 0,
-      "doc": "The box booted from an image older than the one shipping the desktop helpers. It is terminal for that box."
+      "doc": "The box booted from an image older than the one shipping the desktop helpers. It is terminal for that box, and it is plue's rollout lag rather than anything the caller did."
     },
     {
       "code": "egress_proxy_unavailable",
@@ -183,6 +183,13 @@
       "status": 503,
       "retry_after": 0,
       "doc": "The box's egress proxy is not answering, so the box would have had no outbound network."
+    },
+    {
+      "code": "environment_image_unavailable",
+      "fault": "infra",
+      "status": 409,
+      "retry_after": 0,
+      "doc": "No NixOS environment image is registered for this workspace kind on this deployment, so no box of that kind can boot until plue builds and registers one."
     },
     {
       "code": "exec_in_progress",

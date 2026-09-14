@@ -86,10 +86,45 @@ describe("the infra line", () => {
     expect(agentRefusalText(refusal)).toContain("Never tell them it is not their fault")
   })
 
-  test("appears for every infra code in the registry and for no code outside it", () => {
+  /*
+   * This used to read "@fucory appears iff the fault is infra", which quietly
+   * required every infra code to claim a capacity shortage. Most of them are
+   * one; `desktop_tools_unavailable` is not — nothing is full, an image is
+   * old — and the iff forced that refusal to say we ran out. The half of the
+   * ruling that is always true is kept and now checked on EVERY infra lead:
+   * say plainly whose fault it is. The claim about the fleet is checked in the
+   * other direction, so no refusal outside a real shortage can borrow it.
+   */
+  test("every infra lead says plainly it is not the reader's fault", () => {
     for (const code of Object.keys(PLUE_FAILURES) as ReadonlyArray<PlueFailureCode>) {
-      const carriesInfraLine = refusalLead(forCode(code)).includes("@fucory")
-      expect(carriesInfraLine, code).toBe(PLUE_FAILURES[code].fault === "infra")
+      if (PLUE_FAILURES[code].fault !== "infra") continue
+      expect(refusalLead(forCode(code)).toLowerCase(), code).toContain("not your fault")
+    }
+  })
+
+  test("no code outside infra claims we ran out", () => {
+    for (const code of Object.keys(PLUE_FAILURES) as ReadonlyArray<PlueFailureCode>) {
+      if (PLUE_FAILURES[code].fault === "infra") continue
+      const lead = refusalLead(forCode(code))
+      expect(lead, code).not.toContain("@fucory")
+      expect(lead, code).not.toContain("ran out")
+    }
+  })
+
+  /*
+   * The two refusals that are ours and are NOT a shortage: a box whose image
+   * predates the desktop helpers, and a deployment with no image registered
+   * for a kind. Both are plue's rollout lag (both answer 409 `infra` since
+   * plue a695bed7), and both were told, by the iff above, to say we ran out.
+   */
+  test("does NOT appear for our own rollout lag — nothing is full, an image is old", () => {
+    for (const code of ["desktop_tools_unavailable", "environment_image_unavailable"] as const) {
+      expect(PLUE_FAILURES[code].fault, code).toBe("infra")
+      const lead = refusalLead(forCode(code))
+      expect(lead, code).not.toContain("@fucory")
+      expect(lead, code).not.toContain("ran out")
+      expect(lead, code).not.toBe(INFRA_NOT_YOUR_FAULT)
+      expect(lead.toLowerCase(), code).toContain("not your fault")
     }
   })
 
@@ -187,6 +222,19 @@ describe("doors", () => {
     expect(refusalDoors(forCode("internal"))).toContain("report")
     expect(refusalDoors(forCode("quota_exceeded"))).not.toContain("report")
   })
+
+  /*
+   * plue calls this one terminal for that box: the helpers are missing from
+   * the image it booted, so the identical request fails identically forever.
+   * A Retry is therefore a door onto a wall. The door that works is a new box,
+   * which boots the current image.
+   */
+  test("a box with no desktop tools offers a new box, never a retry", () => {
+    const doors = refusalDoors(forCode("desktop_tools_unavailable"))
+    expect(doors).toContain("new-box")
+    expect(doors).not.toContain("retry")
+    expect(doors).not.toContain("resume")
+  })
 })
 
 describe("the agent's tool result", () => {
@@ -221,5 +269,21 @@ describe("the agent's tool result", () => {
   test("every fault produces a distinct instruction to the model", () => {
     const sentences = PLUE_FAULTS.map((fault) => REFUSAL_COPY[fault].agent)
     expect(new Set(sentences).size).toBe(PLUE_FAULTS.length)
+  })
+
+  /*
+   * The model gets the same correction the reader does. Left to the fault's
+   * own sentence it would tell the user to yell for more infra about a box
+   * whose image is simply old, and would have nothing to offer them.
+   */
+  test("the model is told a missing desktop tool is our rollout, not a shortage", () => {
+    const text = agentRefusalText(forCode("desktop_tools_unavailable", "this box's image has no desktop tools"))
+    expect(text).toContain("fault=infra")
+    expect(text).toContain("code=desktop_tools_unavailable")
+    expect(text).not.toContain("@fucory")
+    /* The correction is explicit, the way deployment_not_configured's is. */
+    expect(text).toContain("nothing is full")
+    expect(text).toContain("do NOT say Smithers ran out of infra")
+    expect(text).toContain("open a new box")
   })
 })

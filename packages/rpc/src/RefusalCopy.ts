@@ -88,6 +88,11 @@ export type RefusalDoor =
   | "resume"
   /** The session is the problem, not the request. */
   | "sign-in"
+  /**
+   * This box cannot do it and never will; a new one, on the current image,
+   * can. The only door for a refusal plue calls terminal for that box.
+   */
+  | "new-box"
   /*
    * Somebody at Smithers needs to know. NOT YET A CONTROL: no surface renders
    * a button for this door, because whether "Tell @fucory" files something or
@@ -188,6 +193,34 @@ const BY_CODE: Partial<Record<PlueFailureCode, Partial<RefusalCopyRow>>> = {
     doors: []
   },
   rate_limit_exceeded: { lead: "You're going faster than Smithers allows. Give it a minute.", doors: ["retry"] },
+  /*
+   * `infra`, like a full fleet, and it must NOT read like one. This box booted
+   * an image from before the desktop helpers shipped, and it is still healthy:
+   * nothing is full, nothing is down, and telling a reader to yell for more
+   * infra points them at a problem that does not exist. What IS true is that
+   * we have not rebuilt and re-registered that image yet, so it is ours and
+   * not theirs — and that plue calls it terminal for this box, which makes a
+   * Retry a door onto a wall. A new box boots the current image and has them.
+   */
+  desktop_tools_unavailable: {
+    lead:
+      "This box predates Smithers' desktop tools. Not your fault — and no retry adds them to it. A new box comes with them.",
+    agent:
+      "fault=infra: this BOX booted an image older than the desktop tools, because Smithers has not rebuilt and re-registered that image yet. Not the user's fault and not their request's, and nothing is full, so do NOT say Smithers ran out of infra and do NOT tell them to ask for more of it. Retrying fails identically on this box forever — tell them to open a new box, which boots the current image and has the tools.",
+    doors: ["new-box", "report"]
+  },
+  /*
+   * The same rollout lag one step earlier: no image is registered for the kind
+   * at all, so no box of it can boot here. There is no box to open and nothing
+   * the reader can do from their side, which is the part the sentence carries.
+   */
+  environment_image_unavailable: {
+    lead:
+      "Smithers has no image built for this kind of box yet. Not your fault, and not something you can fix from here.",
+    agent:
+      "fault=infra: this DEPLOYMENT has no registered image for the kind of box being opened, so none can boot here until Smithers builds and registers one. Not the user's fault and not their request's, and nothing is full, so do NOT say Smithers ran out of infra and do NOT tell them to ask for more of it. Do not retry it and do not suggest they change what they asked for.",
+    doors: ["report"]
+  },
   /* The 409 the desktop facet has always offered Resume for: the box is stopped, not broken. */
   desktop_not_running: { lead: "That box isn't running.", doors: ["resume", "retry"] },
   retained_runtime_not_running: { lead: "That box isn't running.", doors: ["resume", "retry"] },

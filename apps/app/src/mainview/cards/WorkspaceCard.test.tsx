@@ -765,6 +765,42 @@ describe("the workspace card's desktop facet", () => {
     host.remove()
   })
 
+  /*
+   * The other 409 on this facet, and the opposite verdict: the box is running
+   * fine, its IMAGE predates the desktop helpers, and plue calls that terminal
+   * for this box. So the reader is not told they asked wrongly, not told the
+   * fleet is full, and not handed a Retry that fails the same way forever. The
+   * door is the one act that works — a new box, on the current image.
+   */
+  test("a box whose image predates the desktop tools offers a new box, not a Retry, and blames nobody", () => {
+    dropDesktopStream()
+    const { host, commands } = render(
+      desktopCard({
+        facet: "desktop",
+        status: "running",
+        desktopRefusal: {
+          status: 409,
+          message: "this box's image has no desktop tools; open a new box to get them",
+          code: "desktop_tools_unavailable",
+          fault: "infra",
+          origin: "plue",
+          retryAfterSeconds: null
+        }
+      })
+    )
+    expect(host.textContent).toContain("Not your fault")
+    expect(host.textContent).not.toContain("@fucory")
+    expect(host.textContent).not.toContain(INFRA_NOT_YOUR_FAULT)
+    /* plue's own words, verbatim, underneath. */
+    expect(host.textContent).toContain("desktop_tools_unavailable — this box's image has no desktop tools; open a new box to get them")
+    const labels = [...host.querySelectorAll("button")].map((button) => button.getAttribute("aria-label"))
+    expect(labels).not.toContain("Try the desktop session again")
+    expect(labels).not.toContain("Resume the workspace and open its desktop")
+    click(host, "Open a new desktop box with the current image")
+    expect(commands[0]).toEqual({ name: "workspace.open", args: "main will/smithers --kind desktop" })
+    host.remove()
+  })
+
   test("a 409 reads the server's own words and offers Resume", () => {
     dropDesktopStream()
     const { host, commands } = render(

@@ -286,8 +286,11 @@ describe("launch-law parity: every affordance is a command", () => {
        * the 409's Resume. The create affordance's three kind buttons share one
        * handler, and so does the facet strip (the Desktop tab mints through
        * workspace.desktop, every other tab switches through workspace.facet).
+       * 20 = 19 + the Desktop facet's "Open a new box": the only door for a
+       * box whose image predates the desktop tools, where a Retry is a door
+       * onto a wall.
        */
-      "../cards/WorkspaceCard.tsx": 19,
+      "../cards/WorkspaceCard.tsx": 20,
       /*
        * The target-graph cards: the graph drawer's close/copy/open/run acts
        * (4), the timeline row's log toggle (1), the history row's replay

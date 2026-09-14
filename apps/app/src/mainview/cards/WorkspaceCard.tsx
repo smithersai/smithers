@@ -264,6 +264,33 @@ const WorkspaceDesktopBody = ({
           ) :
           null}
         {/*
+         * The door for a refusal plue calls terminal for THIS box — today,
+         * `desktop_tools_unavailable`, a box whose image predates the desktop
+         * helpers. Neither Retry nor Resume can ever satisfy it: the tools are
+         * not in the closure it booted. Opening a new box is the same act the
+         * failed-provisioning row offers, on the same kind, so the current
+         * image comes with it.
+         */}
+        {doors.includes("new-box") ?
+          (
+            <Button
+              size="sm"
+              variant="outline"
+              data-flow="workspace.open"
+              aria-label="Open a new desktop box with the current image"
+              onClick={() =>
+                onRunCommand(
+                  "workspace.open",
+                  `${
+                    payload.targetBookmark === null ? payload.repo : `${payload.targetBookmark} ${payload.repo}`
+                  } --kind desktop`
+                )}
+            >
+              <Play size={12} aria-hidden="true" /> Open a new box
+            </Button>
+          ) :
+          null}
+        {/*
          * THE SEAM for a "Tell @fucory" door. `doors` already carries
          * `report` for every infra and bug refusal in the app; nothing renders
          * it because whether that door FILES something or merely says
