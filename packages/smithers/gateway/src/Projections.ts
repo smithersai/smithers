@@ -18,9 +18,9 @@
  * recomputation is the only delta that cannot disagree with a fresh snapshot.
  * The two append-only projections, `run-events` and `transcript`, are the
  * exception: their rows never change once folded, so a delta carries only the
- * rows one event appended. The events are accumulated in the stream rather
- * than re-read, so following a run never re-reads history after reconciling
- * the initial cutoff.
+ * rows one event appended. Events accumulate in the stream, so each delta
+ * folds without re-reading history. Resuming a historical run summary first
+ * rebuilds its compacted health prefix once through durable follow replay.
  *
  * A workspace subscription follows every journal partition without a cursor.
  * The follower stores each retained run's last position and drops replay
@@ -228,7 +228,8 @@ const decodedEvent = (
 const appendEvent = (
   state: EventBuffer,
   candidate: unknown,
-  message: string
+  message: string,
+  run: ControlSchema.RunSummary
 ): Effect.Effect<EventBuffer, GatewayError> =>
   Effect.flatMap(decodedEvent(candidate, message), (event) => {
     if (state.seen && event.sequence < state.lastPosition.value) {
@@ -242,7 +243,13 @@ const appendEvent = (
     let keep = true
     if (state.compactHealth && event.kind === Health.statusObservedEventType) {
       const decoded = Schema.decodeUnknownOption(Health.HealthObservation)(event.payload)
-      if (decoded._tag === "None" || decoded.value.outcome === "discarded") keep = false
+      // Match the subject before incarnation precedence or eviction, as the
+      // authoritative health fold does. Foreign evidence must not displace
+      // this run's reading, but its raw journal position still advances below.
+      if (
+        decoded._tag === "None" || decoded.value.outcome === "discarded" ||
+        decoded.value.subjectId !== `run:${run.runId}`
+      ) keep = false
       else {
         const same = state.events.findIndex((old) =>
           old.kind === Health.statusObservedEventType &&
@@ -256,10 +263,16 @@ const appendEvent = (
           if (prior.evidenceSeq > decoded.value.evidenceSeq) keep = false
           else removedBytes += textEncoder.encode(JSON.stringify(state.events.splice(same, 1)[0])).byteLength + 1
         }
-        // Retain only recent opaque incarnations. Unknown old owners cannot color current state.
+        // Pin the authoritative incarnation's strongest reading. Late former
+        // owners must not evict it and let weaker evidence replace it later.
+        // The other slots retain recent opaque incarnations within the same cap.
         const healthEntries = state.events.filter((old) => old.kind === Health.statusObservedEventType)
         if (keep && healthEntries.length >= 16) {
-          const oldest = state.events.indexOf(healthEntries[0]!)
+          const incarnation = Health.runIncarnation(run)
+          // There is at most one entry per incarnation, so an unprotected entry exists.
+          const oldest = state.events.indexOf(
+            healthEntries.find((old) => (old.payload as { readonly incarnation: string }).incarnation !== incarnation)!
+          )
           removedBytes += textEncoder.encode(JSON.stringify(state.events.splice(oldest, 1)[0])).byteLength + 1
         }
       }
@@ -289,10 +302,11 @@ const appendEvent = (
 const bufferOf = (
   events: ReadonlyArray<ControlSchema.ControlEvent>,
   message: string,
-  compactHealth = false
+  compactHealth: boolean,
+  run: ControlSchema.RunSummary
 ): Effect.Effect<EventBuffer, GatewayError> =>
   events.reduce(
-    (state, event) => Effect.flatMap(state, (buffer) => appendEvent(buffer, event, message)),
+    (state, event) => Effect.flatMap(state, (buffer) => appendEvent(buffer, event, message, run)),
     Effect.succeed(emptyEventBuffer(compactHealth)) as Effect.Effect<EventBuffer, GatewayError>
   )
 
@@ -485,7 +499,11 @@ const cursorPositionOf = (source: Source): CursorPosition =>
 /** Implements a read path after its construction settings have been admitted. */
 const makeService = (control: ControlService, heartbeatMillis: number, now: () => number): Service => {
   /** Every committed event of one run, oldest first. */
-  const eventsOf = (runId: string, compactHealth: boolean): Effect.Effect<EventBuffer, GatewayError> => {
+  const eventsOf = (
+    run: ControlSchema.RunSummary,
+    compactHealth: boolean
+  ): Effect.Effect<EventBuffer, GatewayError> => {
+    const runId = run.runId
     const message = `Reading the events of ${runId} failed`
     return Stream.runFoldEffect(
       control.watch({ runId, follow: false }).pipe(
@@ -493,7 +511,7 @@ const makeService = (control: ControlService, heartbeatMillis: number, now: () =
         Stream.mapError((cause) => unavailable(message, cause))
       ),
       () => emptyEventBuffer(compactHealth),
-      (buffer, event) => appendEvent(buffer, event, `${message}: the control plane returned an invalid event`)
+      (buffer, event) => appendEvent(buffer, event, `${message}: the control plane returned an invalid event`, run)
     )
   }
 
@@ -564,7 +582,7 @@ const makeService = (control: ControlService, heartbeatMillis: number, now: () =
     compactHealth = true
   ): Effect.Effect<RunSource, GatewayError> =>
     Effect.gen(function*() {
-      const buffer = yield* eventsOf(before.runId, compactHealth)
+      const buffer = yield* eventsOf(before, compactHealth)
       const run = yield* runOf(before.runId)
       if (JSON.stringify(before) === JSON.stringify(run)) return { run, ...buffer }
       if (attempts === 1) return yield* Effect.fail(unavailable("Run changed throughout the snapshot read", undefined))
@@ -645,9 +663,9 @@ const makeService = (control: ControlService, heartbeatMillis: number, now: () =
    * its delta is the rows that event appended, numbered after the turns the
    * follower has already counted. Every other selector answers a full
    * replacement folded from the accumulated events, because recomputation is
-   * the only delta that cannot disagree with a fresh snapshot. Only the two
-   * selectors whose rows read the run row re-read it: a fenced status write
-   * does not always journal an event, so their status would otherwise lag.
+   * the only delta that cannot disagree with a fresh snapshot. The caller
+   * refreshes authoritative rows before compaction so retention and rendering
+   * use the same owner even when a fenced status write journals no event.
    */
   const deltaRows = (
     selector: GatewaySchema.ProjectionSelector,
@@ -658,9 +676,6 @@ const makeService = (control: ControlService, heartbeatMillis: number, now: () =
   ): Effect.Effect<ReadonlyArray<unknown>, GatewayError> => {
     if (selector._tag === "run-events") return Effect.succeed([event])
     if (selector._tag === "transcript") return Effect.succeed(transcriptAppend(event, turnsBefore))
-    if (selector._tag === "run-summary" || selector._tag === "run-tree") {
-      return Effect.map(runOf(run.runId), (fresh) => rowsOfRun(selector, { run: fresh, events }, now()))
-    }
     return Effect.succeed(rowsOfRun(selector, { run, events }, now()))
   }
 
@@ -672,6 +687,7 @@ const makeService = (control: ControlService, heartbeatMillis: number, now: () =
   }
 
   interface RunDelta {
+    readonly run: ControlSchema.RunSummary
     readonly event: ControlSchema.ControlEvent
     readonly events: ReadonlyArray<ControlSchema.ControlEvent>
     readonly position: CursorPosition
@@ -682,9 +698,10 @@ const makeService = (control: ControlService, heartbeatMillis: number, now: () =
    * Deltas for one run, following from `from` and folding over the events the
    * caller already read plus each event that arrives.
    *
-   * Nothing here re-reads the journal. Re-reading the history for every event
-   * made a subscription quadratic in run length and re-sent the whole log on
-   * each frame, which is the opposite of what a follower asked for.
+   * A historical run summary rebuilds its health prefix once from the follow
+   * replay. Later deltas only append: re-reading history for every event would
+   * make a subscription quadratic in run length and resend the whole log on
+   * each frame.
    */
   const runDeltaFrames = (
     selector: GatewaySchema.ProjectionSelector,
@@ -693,10 +710,16 @@ const makeService = (control: ControlService, heartbeatMillis: number, now: () =
   ): Stream.Stream<GatewaySchema.GatewayFrame, GatewayError> => {
     const runId = source.run.runId
     const message = `Following ${runId} failed`
+    // The final compacted buffer cannot seed an earlier health cursor: a
+    // later reading may have replaced the stronger observation held there.
+    // Rebuild that prefix in the same bounded fold from the follow replay.
+    const replayHealth = selector._tag === "run-summary" && comparePosition(from, source.lastPosition) < 0
     const seedEvents = positionedEvents(source.events)
       .filter(({ position }) => comparePosition(position, from) <= 0)
       .map(({ event }) => event)
-    const seed = comparePosition(from, source.lastPosition) === 0
+    const seed = replayHealth ?
+      Effect.succeed(emptyEventBuffer(true)) :
+      comparePosition(from, source.lastPosition) === 0
       ? Effect.succeed<EventBuffer>({
         compactHealth: source.compactHealth,
         seen: source.seen,
@@ -704,12 +727,12 @@ const makeService = (control: ControlService, heartbeatMillis: number, now: () =
         encodedBytes: source.encodedBytes,
         lastPosition: source.lastPosition
       })
-      : bufferOf(seedEvents, `${message}: the cursor seed is invalid`, source.compactHealth)
+      : bufferOf(seedEvents, `${message}: the cursor seed is invalid`, source.compactHealth, source.run)
     return Stream.unwrap(Effect.map(seed, (initial) =>
       control.watch({
         runId,
         // Sequence zero also needs replay for empty seeds and derived offsets.
-        ...(from.value === 0 ? {} : { afterSequence: from.value - 1 }),
+        ...(from.value === 0 || replayHealth ? {} : { afterSequence: from.value - 1 }),
         follow: true
       }).pipe(
         Stream.tapError((cause) => logReadFailure("follow-run", cause)),
@@ -736,27 +759,41 @@ const makeService = (control: ControlService, heartbeatMillis: number, now: () =
                 }
                 const nextState: RunFollowState = { ...state, observed: position }
                 if (
-                  (seedEvents.length > 0 || from.value > 0 || from.offset > 0) && comparePosition(position, from) <= 0
+                  (replayHealth || seedEvents.length > 0 || from.value > 0 || from.offset > 0) &&
+                  comparePosition(position, from) <= 0
                 ) {
-                  return Effect.succeed([nextState, [] as ReadonlyArray<RunDelta>] as const)
+                  return replayHealth
+                    ? Effect.map(
+                      appendEvent(state.buffer, event, `${message}: cursor history is invalid`, source.run),
+                      (buffer) => [{ ...nextState, buffer }, [] as ReadonlyArray<RunDelta>] as const
+                    )
+                    : Effect.succeed([nextState, [] as ReadonlyArray<RunDelta>] as const)
                 }
                 const turnsBefore = state.turns
                 const turns = selector._tag === "transcript"
                   ? transcriptAppend(event, turnsBefore).at(-1)?.turn ?? turnsBefore
                   : 0
-                return Effect.map(
-                  appendEvent(state.buffer, event, `${message}: event history is invalid`),
-                  (buffer) =>
-                    [
-                      { buffer, observed: position, turns } satisfies RunFollowState,
-                      [{ event, events: buffer.events, position, turnsBefore }] satisfies ReadonlyArray<RunDelta>
-                    ] as const
+                return Effect.flatMap(
+                  selector._tag === "run-summary" || selector._tag === "run-tree"
+                    ? runOf(runId)
+                    : Effect.succeed(source.run),
+                  (run) =>
+                    Effect.map(
+                      appendEvent(state.buffer, event, `${message}: event history is invalid`, run),
+                      (buffer) =>
+                        [
+                          { buffer, observed: position, turns } satisfies RunFollowState,
+                          [{ run, event, events: buffer.events, position, turnsBefore }] satisfies ReadonlyArray<
+                            RunDelta
+                          >
+                        ] as const
+                    )
                 )
               }
             )
         ),
-        Stream.mapEffect(({ event, events, position, turnsBefore }) =>
-          Effect.flatMap(deltaRows(selector, source.run, event, events, turnsBefore), (rows) =>
+        Stream.mapEffect(({ run, event, events, position, turnsBefore }) =>
+          Effect.flatMap(deltaRows(selector, run, event, events, turnsBefore), (rows) =>
             Effect.flatMap(boundedRows(selector, rows), (delta) =>
               frameOf({
                 _tag: "delta",
@@ -839,7 +876,10 @@ const makeService = (control: ControlService, heartbeatMillis: number, now: () =
        * whose row must be re-read before its rows are refolded.
        */
       type Admission = "unchanged" | "fresh" | "stale"
-      const admit = (event: ControlSchema.ControlEvent): Effect.Effect<Admission, GatewayError> =>
+      const admit = (
+        event: ControlSchema.ControlEvent,
+        refreshed: Set<string>
+      ): Effect.Effect<Admission, GatewayError> =>
         Effect.gen(function*() {
           const runId = event.runId
           if (runId === undefined) return "unchanged"
@@ -858,7 +898,16 @@ const makeService = (control: ControlService, heartbeatMillis: number, now: () =
             if (
               current.source.events.length > 0 && comparePosition(position, current.source.lastPosition) <= 0
             ) return "unchanged"
-            const buffer = yield* appendEvent(current.source, event, `${message}: event history is invalid`)
+            if (!refreshed.has(runId)) {
+              current.source = { ...current.source, run: yield* runOf(runId) }
+              refreshed.add(runId)
+            }
+            const buffer = yield* appendEvent(
+              current.source,
+              event,
+              `${message}: event history is invalid`,
+              current.source.run
+            )
             current.source = { run: current.source.run, ...buffer }
             return "stale"
           }
@@ -874,7 +923,7 @@ const makeService = (control: ControlService, heartbeatMillis: number, now: () =
               const admitted = source.events.length > 0 && comparePosition(position, source.lastPosition) <= 0
                 ? Effect.succeed(source)
                 : Effect.map(
-                  appendEvent(source, event, `${message}: event history is invalid`),
+                  appendEvent(source, event, `${message}: event history is invalid`, source.run),
                   (buffer): RunSource => ({ run: source.run, ...buffer })
                 )
               return Effect.map(admitted, (complete): Admission => {
@@ -897,16 +946,14 @@ const makeService = (control: ControlService, heartbeatMillis: number, now: () =
             )
           )
         })
-      /** Re-read one grown run's row, then refold its rows or exclude it. */
+      /** Refold one grown run using the row refreshed before its batch's compaction, or exclude it. */
       const refresh = (runId: string): Effect.Effect<void, GatewayError> =>
         Effect.gen(function*() {
           const current = sources.get(runId)
           /* v8 ignore next -- only runs still followed after the batch are refreshed. */
           if (current === undefined || current.observed === undefined) return
-          const fresh = yield* runOf(runId)
-          const source: RunSource = { ...current.source, run: fresh }
+          const source = current.source
           if (eligibleForWorkspace(selector, source)) {
-            current.source = source
             current.rows = rowsOfSource(source)
           } else {
             sources.delete(runId)
@@ -920,10 +967,11 @@ const makeService = (control: ControlService, heartbeatMillis: number, now: () =
         Stream.mapEffect((batch) =>
           Effect.gen(function*() {
             const stale = new Set<string>()
+            const refreshed = new Set<string>()
             let changed = false
             for (const candidate of batch) {
               const event = yield* decodedEvent(candidate, `${message}: the control plane returned an invalid event`)
-              const admission = yield* admit(event)
+              const admission = yield* admit(event, refreshed)
               if (admission === "unchanged") continue
               changed = true
               if (admission === "stale" && event.runId !== undefined) stale.add(event.runId)
