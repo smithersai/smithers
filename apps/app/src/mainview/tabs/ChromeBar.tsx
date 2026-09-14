@@ -43,7 +43,7 @@ interface TreeRepo {
   readonly copies: ReadonlyArray<WorkingCopy>
 }
 
-export function ChromeBar() {
+export function ChromeBar({ identityInHeader = false }: { readonly identityInHeader?: boolean }) {
   const controller = useController()
   const { collections } = controller.store
   const { data: tabRows } = useLiveQuery((q) => q.from({ tab: collections.tabs }).orderBy(({ tab }) => tab.ordinal))
@@ -635,7 +635,7 @@ export function ChromeBar() {
       <div className="chrome-actions" data-testid="chrome-actions">
         {/* The repository lives at the top of the composer (its selector and origin), not here. */}
         {/* Sign-in is an option, never a gate (docs/LOCAL-APP.md); the door closes once signed in. */}
-        {!canSignIn || identity?.state === "signed-in" ? null : (
+        {identityInHeader || !canSignIn || identity?.state === "signed-in" ? null : (
           <button
             type="button"
             className="chrome-action"
@@ -743,7 +743,7 @@ export function ChromeBar() {
               type="button"
               className="chrome-action chrome-action-account"
               data-flow="account.show"
-              data-testid="chrome-account"
+              data-testid={identityInHeader ? "sidebar-account" : "chrome-account"}
               onClick={() => controller.runCommand("account.show")}
             >
               <UserRound size={14} aria-hidden="true" />

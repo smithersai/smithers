@@ -1,5 +1,5 @@
 import { readRepositoryDetail } from "../RepositoryReadReceipts"
-import { practiceViewLanding, tutorialRepositoryRead, type RepositoryForm } from "./tutorial2-issues_prs"
+import { practiceViewLanding, tutorialRepositoryRead, readRepositoryListError, type RepositoryForm } from "./tutorial2-issues_prs"
 import { publishRepoView, repoPaneCard } from "../EmbeddedHistory"
 import { isPracticeRepo } from "../practice/PracticeRepository"
 /*
@@ -421,7 +421,7 @@ export const createLandingsSeam = (ctx: SeamContext, renderRepositoryForm?: Repo
         return `Pull requests for ${repo} couldn't be listed — the platform didn't answer.`
       }
       if (!response.ok) {
-        return readErrorMessage(response, `Pull requests for ${repo} couldn't be listed.`)
+        return readRepositoryListError(response, `Pull requests for ${repo} couldn't be listed.`)
       }
       const body: unknown = await response.json().catch(() => undefined)
       if (!Array.isArray(body)) {

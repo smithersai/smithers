@@ -10,7 +10,7 @@ import type { CommandActions } from "./Declare"
 /** The `auth` namespace row: the slash tree lists it in registry.ts NAMESPACES order. */
 export const namespace: Namespace = { id: "auth", label: "Sign in", summary: "Sign in and out" }
 
-/** The requirements `auth.sign-in` fulfills; registry.ts flowRequirements aggregates them. */
+/** Unmet identity requirements render auth.prompt; only its human button starts OAuth. */
 export const requirements: ReadonlyArray<FlowRequirement> = [
   {
     id: "signed-in",
@@ -18,7 +18,7 @@ export const requirements: ReadonlyArray<FlowRequirement> = [
     // identity never blocks a command (the seam discipline: gate on
     // answers, not on silence).
     satisfied: (state) => !state.signedOut,
-    fulfill: "auth.sign-in",
+    fulfill: "auth.prompt",
     reason: "Sign in with GitHub first"
   },
   {
@@ -31,7 +31,7 @@ export const requirements: ReadonlyArray<FlowRequirement> = [
      */
     id: "repo-source",
     satisfied: (state) => !state.signedOut || state.hasOpenRepos === true || state.publicRepo === true,
-    fulfill: "auth.sign-in",
+    fulfill: "auth.prompt",
     reason: "Sign in with GitHub, or open a local repository first"
   }
 ]

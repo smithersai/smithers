@@ -215,9 +215,9 @@ describe("history seam: the empty state", () => {
    * Spec 03 §6 as amended 2026-09-07: signed out, the empty state is exactly
    * the one sentence and the bootstrap door, and that door is the sign-in
    * door: history.bootstrap parks behind the signed-in requirement and
-   * auth.sign-in runs in its place. The write doors never run signed out.
+   * auth.prompt renders the human's sign-in button in its place. The write doors never run signed out.
    */
-  test("signed out, the bootstrap door parks behind sign-in and runs auth.sign-in in its place; amend and fold the same", async () => {
+  test("signed out, the bootstrap door parks behind sign-in and renders auth.prompt in its place; amend and fold the same", async () => {
     const seen: Array<string> = []
     const { store, controller } = await ready(
       backend({
@@ -227,7 +227,7 @@ describe("history seam: the empty state", () => {
     )
     expect(store.collections.identitySessions.get("identity")?.state).toBe("signed-out")
     for (const door of ["history.amend", "history.fold"]) {
-      // The outcome is the fulfilling flow's (auth.sign-in), never the door's own refusal: the door has not run.
+      // The outcome is the fulfilling flow's (auth.prompt), never the door's own refusal: the door has not run.
       await controller.commands.run(door)
       const parked = store.session().pendingCommand
       expect([parked?.name, parked?.args, parked?.requirement]).toEqual([door, null, "signed-in"])
@@ -238,7 +238,7 @@ describe("history seam: the empty state", () => {
     const invoked = [...store.collections.transitions.values()]
       .filter((row) => row.type === "flow.invoked")
       .map((row) => (JSON.parse(row.payload) as { readonly name?: unknown }).name)
-    expect(invoked.filter((name) => name === "auth.sign-in").length).toBe(2)
+    expect(invoked.filter((name) => name === "auth.prompt").length).toBe(2)
     expect(store.collections.cards.get("history-will/flows")).toBeUndefined()
   })
 

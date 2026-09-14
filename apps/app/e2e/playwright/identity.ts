@@ -34,3 +34,14 @@ export const SCOPED_TEST_USER_CLOUD_SESSION = {
   username: SCOPED_TEST_USER.login,
   expiresAt: "2027-01-01T00:00:00.000Z"
 } as const
+
+/** A signed-out cloud visitor; unauthenticated tracker reads are refusals. */
+export async function signedOutVisitor(page: import("@playwright/test").Page) {
+  const json = (body: unknown, status = 200) => ({ status, contentType: "application/json", body: JSON.stringify(body) })
+  await page.route("**/api/**", route => route.fulfill(json({ message: "Unavailable test route" }, 404)))
+  await page.route("**/api/bootstrap", route => route.fulfill(json({ apiVersion: 1, host: "cloud", version: "test", buildSha: "test", capabilities: ["identity", "cloud", "agent"], authFlow: "redirect", sandbox: null })))
+  await page.route("**/api/auth/session", route => route.fulfill(json({ status: "signed-out" })))
+  await page.route("**/api/auth/scopes", route => route.fulfill(json({ scopes: [] })))
+  await page.route("**/api/user/repos", route => route.fulfill(json({ repos: [] })))
+  await page.route(/\/api\/.*(?:issues|landings)(?:\?|$)/, route => route.fulfill(json({ message: "Sign in to read this repository" }, 401)))
+}

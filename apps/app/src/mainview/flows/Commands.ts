@@ -46,6 +46,7 @@ import {
 import type { Parsed } from "./SlashPayload"
 import { payloadFor } from "./SlashPayload"
 import { namesPractice } from "../state/practice/PracticeRepository"
+import { formFieldsFor } from "./FlowForms"
 
 export type { CommandActions, CommandResult } from "./Flows"
 
@@ -465,7 +466,7 @@ export const createCommandRegistry = (actions: CommandActions, agentActions: Com
          * about auth.prompt sometimes writes the name as prose instead of
          * invoking it, and prose is not a button.
          */
-        if (unmet.id === "signed-in") {
+        if (unmet.fulfill === "auth.prompt") {
           acting.promptSignIn()
           return {
             status: "failed",
@@ -498,7 +499,10 @@ export const createCommandRegistry = (actions: CommandActions, agentActions: Com
     const parsed: Parsed = named === undefined
       ? payloadFor(nameOf(target), args, target.metadata.grammar, actions.knownRepositories())
       : { payload: named }
-    if ("error" in parsed) {
+    // JSON can parse successfully while omitting a required schema field.
+    // Let the form collect it before the binding can produce an input error.
+    const fields = formFieldsFor(target.input, target.metadata.form)
+    if ("error" in parsed || fields.some(field => field.required && parsed.payload[field.name] === undefined)) {
       /*
        * THE FORM LAW: a line without the flow's required input renders the
        * flow's form — derived from its input schema, prefilled with what the
@@ -514,7 +518,7 @@ export const createCommandRegistry = (actions: CommandActions, agentActions: Com
         input: target.input,
         ...(target.metadata.form === undefined ? {} : { hints: target.metadata.form })
       })
-      if (rendered === undefined) return { status: "failed", error: parsed.error }
+      if (rendered === undefined) return { status: "failed", error: "error" in parsed ? parsed.error : "Required input is missing" }
       return { status: "form", flow: nameOf(target), cardId: rendered.cardId, fields: rendered.missing }
     }
     /*

@@ -59,11 +59,11 @@ export const createFailureController = (ctx: ControllerContext): FailureControll
       ...(outcome.title === undefined ? {} : { title: outcome.title }),
       detail: outcome.detail
     })
-    if (outcome.status !== "ok") return
+    if (outcome.status !== "ok" && outcome.autoDismissMs === undefined) return
     const resolvedAt = ctx.store.collections.toasts.get(id)?.updatedAt
     const dismiss = setTimeout(() => {
       const current = ctx.store.collections.toasts.get(id)
-      if (current === undefined || current.status !== "ok" || current.updatedAt !== resolvedAt) return
+      if (current === undefined || current.status !== outcome.status || current.updatedAt !== resolvedAt) return
       ctx.store.dispatch({ type: "toast.dismissed", actor: "system", id })
     }, outcome.autoDismissMs ?? ctx.toastAutoDismissMs)
     ctx.unref(dismiss)
@@ -183,7 +183,7 @@ export const createFailureController = (ctx: ControllerContext): FailureControll
     if (outcome.error === ZERO_BALANCE_EXHAUSTED_TEXT) return
     const key = `command.failed.${name}`
     ctx.store.dispatch({ type: "toast.shown", actor: "system", key, title: `/${name} didn't run` })
-    ctx.store.dispatch({ type: "toast.resolved", actor: "system", key, status: "failed", detail: outcome.error })
+    resolveToast(key, { status: "failed", detail: outcome.error, autoDismissMs: ctx.toastAutoDismissMs })
   }
 
   return { withToast, resolveToast, dismissToast, surfaceCommandFailure }

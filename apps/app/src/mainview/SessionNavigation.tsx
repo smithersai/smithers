@@ -18,6 +18,8 @@ export const sidebarShortcut = (event: KeyboardEvent): boolean => !event.repeat 
 export function SessionNavigation() {
   const controller = useController()
   const { data: sessions } = useLiveQuery(controller.store.collections.sessions)
+  const { data: identities } = useLiveQuery(controller.store.collections.identitySessions)
+  const identity = identities[0]
   const open = sessions[0]?.sidebarOpen === true
   const mount = useCallback((node: HTMLElement | null) => {
     if (!node) return
@@ -53,8 +55,12 @@ export function SessionNavigation() {
   return <>
     <header className="session-navigation" ref={mount} data-sidebar-open={open}>
       <button type="button" className="guide-wordmark" aria-label="Smithers" aria-expanded={open} aria-controls="session-sidebar" aria-keyshortcuts="W" data-flow="sidebar.toggle" onClick={() => controller.runCommand("sidebar.toggle")}><Mark /></button>
-
+      <div className="session-identity">
+        {identity?.state === "signed-in" ?
+          controller.commands.find("account.show") !== undefined && <button type="button" className="chrome-action" data-testid="chrome-account" data-flow="account.show" onClick={() => controller.runCommand("account.show")}>Account (@{identity.login})</button> :
+          controller.commands.find("auth.sign-in") !== undefined && <button type="button" className="chrome-action" data-testid="chrome-sign-in" data-flow="auth.sign-in" onClick={() => controller.runCommand("auth.sign-in")}>Sign in with GitHub</button>}
+      </div>
     </header>
-    {open && <div id="session-sidebar" className="session-sidebar"><ChromeBar /></div>}
+    {open && <div id="session-sidebar" className="session-sidebar"><ChromeBar identityInHeader /></div>}
   </>
 }

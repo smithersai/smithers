@@ -1,4 +1,4 @@
-import { Spinner } from "@smthrs/ui"
+import { Button, Spinner } from "@smthrs/ui"
 import {
   GUIDE_BRIDGE, GUIDE_LAST_STEP, GUIDE_STAGES,
   lessonMessage, lessonText, lessonVisible, type GoalCheckpoint, type GuideAction,
@@ -76,8 +76,11 @@ export function GuideShell({ children, clock = guideClock }: { children: ReactNo
   const toasts = storedToasts.filter(toast => !toast.key.startsWith("guide-tip-"))
   const cards = useCardRows(controller.store.collections.cards)
   const { data: worldDocuments } = useLiveQuery(controller.store.collections.worldDocuments)
+  const { data: messages } = useLiveQuery(controller.store.collections.messages)
   const session = sessions[0] ?? controller.store.session()
   const conversation = conversationTabIdOf(session)
+  const signInPrompts = messages.filter(message => inConversation(message, conversation) && message.action?.flow === "auth.sign-in")
+    .sort((a, b) => a.ordinal - b.ordinal)
   const guide = session.guide ?? initialGuide()
   const stage = guide.step
   const showPractice = stage <= GUIDE_BRIDGE
@@ -429,6 +432,14 @@ export function GuideShell({ children, clock = guideClock }: { children: ReactNo
                 ))}
               </div>
             )}
+            {signInPrompts.map(message => (
+              <article key={message.id} className="message" data-testid="auth-prompt">
+                <p>{message.text}</p>
+                <Button className="message-cta" data-flow="auth.sign-in" onClick={() => controller.runCommand("auth.sign-in", message.action?.args)}>
+                  {message.action?.label}
+                </Button>
+              </article>
+            ))}
           </div>
           <div className="guide-actions" data-help-sequence={lesson?.kind === "do" && lesson.help?.introduction !== undefined || undefined}>
             {lesson?.kind === "do" && lesson.actions.map(suggestion => {

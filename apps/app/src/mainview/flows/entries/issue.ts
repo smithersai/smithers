@@ -2,6 +2,7 @@ import { Schema } from "effect"
 import { flow, NumberedTarget } from "./Declare"
 import type { CommandActions } from "./Declare"
 import type { FlowEntry, Namespace } from "../registry"
+import { isPracticeRepo } from "../../state/practice/PracticeRepository"
 
 export const namespace: Namespace = { id: "issue", label: "Issue flows", summary: "Research, reproduce, and implement an issue" }
 
@@ -18,5 +19,7 @@ export const issueFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> =>
   flow({ name: "issue.add-flow", summary: "Add a flow to the issue namespace", runtimeAny: ["cloud", "practice"],
     form: { args: payload => JSON.stringify(payload), fields: { description: { label: "What should this issue flow do?" } } },
     input: Schema.Struct({ number: Schema.Number, repo: Schema.optional(Schema.String), description: Schema.String }),
-    handler: ({ number, repo, description }) => actions.createWorkflow(`Create a flow under issue. for issue #${number}: ${description}`, repo) }),
+    handler: ({ number, repo, description }) => isPracticeRepo(repo)
+      ? "Practice repositories can't take new flows yet."
+      : actions.createWorkflow(`Create a flow under issue. for issue #${number}: ${description}`, repo) }),
 ]

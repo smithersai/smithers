@@ -48,3 +48,44 @@ test("both local empty cards explain the absence of a hosted tracker", () => {
   expect(renderToStaticMarkup(<IssueListCardBody card={{ ...common, kind: "issue-list", payload: { repo: "/tmp/play", filter: "open", issues: [] } }} onRunCommand={() => {}} />)).toContain("local-only repository")
   expect(renderToStaticMarkup(<LandingListCardBody card={{ ...common, kind: "pr-list", payload: { repo: "/tmp/play", landings: [] } }} onRunCommand={() => {}} />)).toContain("local-only repository")
 })
+
+test("practice Add flow opens the shared form with its issue and repo; submit refuses inside the card", async () => {
+  const { createAppController } = await import("../state/AppController")
+  const { memoryStorage, settle, unavailableAgent, unavailableRepositories } = await import("../state/TestFixtures")
+  const { PRACTICE_REPO } = await import("../state/practice/PracticeRepository")
+  const { IssueCardBody } = await import("./IssueCards")
+  const { CardView } = await import("../ChatCards")
+  const { cardActions } = await import("./CardActions")
+  const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
+  const controller = createAppController(store, unavailableRepositories, unavailableAgent)
+  const host = document.createElement("div")
+  document.body.append(host)
+  const root = createRoot(host)
+  try {
+    await store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-out", login: null, allowlisted: false, admin: false, scopesPlain: null }).isPersisted.promise
+    await controller.commands.run("issues.view", `3 ${PRACTICE_REPO}`)
+    const issue = [...store.collections.cards.values()].find(card => card.kind === "issue")!
+    if (issue.kind !== "issue") throw new Error("Missing issue")
+    flushSync(() => root.render(<IssueCardBody card={issue} onRunCommand={controller.runCommand} />))
+    const chip = host.querySelector<HTMLButtonElement>('[data-flow="issue.add-flow"]')!
+    chip.focus()
+    expect(document.activeElement).toBe(chip)
+    chip.click()
+    await settle()
+    const form = store.collections.cards.get("form-issue.add-flow")
+    expect(form?.kind).toBe("flow-form")
+    if (form?.kind !== "flow-form") throw new Error("Missing Add flow form")
+    expect(form.payload.given).toMatchObject({ number: 3, repo: PRACTICE_REPO })
+    expect(form.payload.fields.find(field => field.name === "description")?.label).toBe("What should this issue flow do?")
+    expect([...store.collections.toasts.values()].filter(toast => toast.status === "failed")).toEqual([])
+    await controller.commands.run("form.set", `${form.id} description Research errors`)
+    await controller.commands.run("form.submit", form.id)
+    const refused = store.collections.cards.get(form.id)!
+    expect(refused.status).toBe("error")
+    flushSync(() => root.render(<CardView card={refused} maximized={false} worldDocuments={[]} {...cardActions(controller)} />))
+    expect(host.textContent).toContain("Practice repositories can't take new flows yet.")
+    expect([...store.collections.toasts.values()].filter(toast => toast.status === "failed")).toEqual([])
+  } finally {
+    flushSync(() => root.unmount()); host.remove(); await controller.dispose()
+  }
+})

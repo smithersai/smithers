@@ -134,11 +134,12 @@ describe("requirement axis — the pure model", () => {
 })
 
 describe("requirement axis — the run path", () => {
-  test("a user-invoked command with an unmet requirement parks durably and runs the fulfilling command", async () => {
+  test("a user-invoked command with an unmet requirement parks durably and renders the sign-in prompt", async () => {
     const { store, controller } = await freshController()
     await signedOut(store)
     const outcome = await controller.commands.run("flow.list")
-    // auth.sign-in ran in its place (a no-op redirect outside a browser).
+    // A sign-in message offers the human OAuth; the unmet flow never redirects.
+    expect([...store.collections.messages.values()].some(message => message.action?.flow === "auth.sign-in")).toBe(true)
     expect(outcome.status).toBe("executed")
     await settled()
     const pending = store.session().pendingCommand

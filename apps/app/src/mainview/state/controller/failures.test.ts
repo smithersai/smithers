@@ -153,3 +153,12 @@ describe("toast slot ownership across three overlapping runs", () => {
     expect(done?.title).toBe("Done")
   })
 })
+
+test("a refused command's notice dismisses itself after stating the refusal", async () => {
+  const { ctx, store } = await fakeContext()
+  const failures = createFailureController(ctx)
+  failures.surfaceCommandFailure("prs.list", { status: "failed", error: "The read was refused." })
+  expect(store.collections.toasts.get("toast-command.failed.prs.list")?.detail).toBe("The read was refused.")
+  await settled()
+  expect(store.collections.toasts.get("toast-command.failed.prs.list")).toBeUndefined()
+})

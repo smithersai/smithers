@@ -1,7 +1,7 @@
 import { readRepositoryDetail } from "../RepositoryReadReceipts"
 import { publishIssueView, publishRepoView } from "../EmbeddedHistory"
 import { isPracticeRepo } from "../practice/PracticeRepository"
-import { mutatePracticeIssue, finishIssueLesson, practiceViewIssue, tutorialRepositoryRead, type RepositoryForm } from "./tutorial2-issues_prs"
+import { mutatePracticeIssue, finishIssueLesson, practiceViewIssue, tutorialRepositoryRead, readRepositoryListError, type RepositoryForm } from "./tutorial2-issues_prs"
 /*
  * The issues seam: /api/repos/{owner}/{repo}/issues* through the product
  * Worker's platform proxy. List and detail render as cards ("issue-list",
@@ -207,7 +207,7 @@ export const createIssuesSeam = (ctx: SeamContext, renderRepositoryForm?: Reposi
       refusal: null as string | null
     }
     if (!response.ok) {
-      return { issues: [], meta: { ...meta, refusal: await readErrorMessage(response, `GitHub issues answered ${response.status}`) } }
+      return { issues: [], meta: { ...meta, refusal: await readRepositoryListError(response, `GitHub issues answered ${response.status}`) } }
     }
     const body: unknown = await response.json().catch(() => null)
     if (!Array.isArray(body)) return { issues: [], meta: { ...meta, refusal: "GitHub issues answered an unreadable payload" } }
@@ -233,7 +233,7 @@ export const createIssuesSeam = (ctx: SeamContext, renderRepositoryForm?: Reposi
     }
     // A source 404 too: the repo is nowhere — the plain honest error, no card.
     if (!response.ok) {
-      return readErrorMessage(response, `Listing issues for ${repo} failed (${response.status})`)
+      return readRepositoryListError(response, `Listing issues for ${repo} failed (${response.status})`)
     }
     const body: unknown = await response.json().catch(() => null)
     if (!Array.isArray(body)) {
@@ -358,7 +358,7 @@ export const createIssuesSeam = (ctx: SeamContext, renderRepositoryForm?: Reposi
         // The imported namespace 404s ⇔ the repo isn't imported: degrade to
         // the GitHub-source list instead of surfacing a broken 404.
         if (response.status === 404) return listFromGithubSource(repo, filter)
-        return readErrorMessage(response, `Listing issues for ${repo} failed (${response.status})`)
+        return readRepositoryListError(response, `Listing issues for ${repo} failed (${response.status})`)
       }
       const body: unknown = await response.json().catch(() => null)
       if (!Array.isArray(body)) {

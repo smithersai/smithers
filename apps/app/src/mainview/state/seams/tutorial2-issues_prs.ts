@@ -4,7 +4,16 @@ import { isPracticeRepo, PRACTICE_CARD, PRACTICE_NAME, practiceIssue, practiceIs
 import { activeRepositoryId, resolveOpenRepo, resolveTargetRepo } from "../RepoContext"
 import type { FormsController } from "../controller/forms"
 import type { SeamContext } from "./SeamContext"
-import { readResult } from "./SeamContext"
+import { readErrorMessage, readResult } from "./SeamContext"
+
+class RepositorySignInRequired extends Error {}
+
+/** Stop an unauthorized list before it can publish rows or complete a lesson. */
+export async function readRepositoryListError(response: Response, fallback: string): Promise<string> {
+  const message = await readErrorMessage(response, fallback)
+  if (response.status === 401) throw new RepositorySignInRequired(message)
+  return message
+}
 
 export type RepositoryForm = FormsController["renderFlowForm"]
 
@@ -117,7 +126,16 @@ export async function tutorialRepositoryRead(
       ? { ...common, kind: "issue-list", payload: { repo, filter, issues: [] } }
       : { ...common, kind: "pr-list", payload: { repo, landings: [] } } }).isPersisted.promise
     result = readResult(body)
-  } else result = await read(repo)
+  } else {
+    try {
+      result = await read(repo)
+    } catch (error) {
+      if (!(error instanceof RepositorySignInRequired)) throw error
+      if (ctx.promptSignIn === undefined) return error.message
+      ctx.promptSignIn()
+      return readResult("The sign-in step is rendered in the chat.")
+    }
+  }
   const current = ctx.store.session()
   const currentIdentity = ctx.store.collections.identitySessions.get("identity")
   /* The list may be the repository pane's current location rather than a card of its own. */

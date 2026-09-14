@@ -445,7 +445,7 @@ export interface AppController extends TutorialChangeController, IssueFlowsContr
   /** Render the full visible-flow catalog into the chat (the /chat.commands answer). */
   readonly showCommandCatalog: () => void
   /** Render the sign-in step into the chat (auth.prompt — the agent's door to login). */
-  readonly promptSignIn: () => void
+  readonly promptSignIn: (required?: boolean) => void
   /** Render the Smithers Cloud sign-in step into the chat (cloud.prompt — the agent's door to the cloud session). */
   readonly promptCloudSignIn: () => void
   /** Reload the app window — the /reload affordance (dev loop, stuck states). */
@@ -752,7 +752,8 @@ export const createAppController = (
     store,
     dispatch: store.dispatch,
     actor: () => ctx.commandActor,
-    nextOrdinal: store.nextOrdinal
+    nextOrdinal: store.nextOrdinal,
+    promptSignIn: () => promptSignIn(true)
   }
   const repositoryFlowsSeam = createRepositoryFlowsSeam(seamCtx)
   const repositoryFlows = (): RepositoryFlowCatalog | undefined => {
@@ -1236,10 +1237,11 @@ export const createAppController = (
    * is user-only — a model must not yank the page mid-turn), but it CAN
    * hand the step over: one message whose action IS the sign-in button.
    * Every identity state answers honestly, including a build with no seam.
+   * A 401 read requires the door even while identity is being rechecked.
    */
-  const promptSignIn = (): void => {
+  const promptSignIn = (required = false): void => {
     const identity = store.collections.identitySessions.get("identity")
-    if (identity?.state === "signed-in") {
+    if (!required && identity?.state === "signed-in") {
       store.dispatch({
         type: "message.appended",
         actor: "system",
@@ -1247,7 +1249,7 @@ export const createAppController = (
       })
       return
     }
-    if (identity === undefined || identity.state === "unavailable") {
+    if (!required && (identity === undefined || identity.state === "unavailable")) {
       store.dispatch({
         type: "message.appended",
         actor: "system",

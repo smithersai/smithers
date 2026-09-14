@@ -52,7 +52,7 @@ test.describe("boot with the identity seam hanging", () => {
     })
     try {
       await page.goto(`${origin}/`, { waitUntil: "domcontentloaded" })
-      await expect(page.locator(".session-shell > .guide-wordmark")).toBeVisible()
+      await expect(page.locator(".session-navigation > .guide-wordmark")).toBeVisible()
       releaseChunk()
       /*
        * Before the fix this never resolved: boot awaited the identity session
@@ -66,3 +66,62 @@ test.describe("boot with the identity seam hanging", () => {
     }
   })
 })
+
+import { signedOutVisitor, SCOPED_TEST_USER } from "./identity"
+
+const slash = async (page: import("@playwright/test").Page, command: string) => {
+  if (!await page.getByTestId("composer-input").isVisible()) await page.keyboard.press("Control+k")
+  await page.getByTestId("composer-input").fill(command)
+  await page.getByTestId("composer-input").press("Enter")
+}
+
+test("repository chrome sign-in is keyboard reachable without the sidebar and carries return_to", async ({ page }) => {
+  await signedOutVisitor(page)
+  await page.goto("/smithersai/smithers/")
+  const door = page.getByTestId("chrome-sign-in")
+  await expect(door).toBeVisible()
+  await expect(page.locator(".session-sidebar")).toHaveCount(0)
+  // Reach it from the wordmark in the native tab order, then activate with Enter.
+  await page.getByRole("button", { name: "Smithers", exact: true }).focus()
+  await page.keyboard.press("Tab")
+  await expect(door).toBeFocused()
+  const bounds = await door.boundingBox()
+  expect(bounds!.x).toBeGreaterThan(page.viewportSize()!.width / 2)
+  expect(bounds!.y + bounds!.height).toBeLessThanOrEqual(44)
+  await page.route("**/api/auth/github**", route => route.fulfill({ body: "Sign-in handoff" }))
+  const request = page.waitForRequest(request => new URL(request.url()).pathname === "/api/auth/github/start")
+  await page.keyboard.press("Enter")
+  expect(new URL((await request).url()).searchParams.get("return_to")).toBe("/smithersai/smithers/")
+})
+
+test("signed-in repository chrome uses the same slot for Account", async ({ page }) => {
+  await signedOutVisitor(page)
+  await page.route("**/api/auth/session", route => route.fulfill({ contentType: "application/json", body: JSON.stringify(SCOPED_TEST_USER) }))
+  await page.goto("/smithersai/smithers/")
+  await expect(page.locator(".session-navigation").getByTestId("chrome-account")).toHaveText(`Account (@${SCOPED_TEST_USER.login})`)
+  await expect(page.getByTestId("chrome-sign-in")).toHaveCount(0)
+})
+
+for (const command of ["/flow.run review smithersai/smithers", "/secrets.list", "/issues smithersai/smithers", "/prs smithersai/smithers"]) {
+  test(`${command} stays in the repository transcript with a sign-in prompt`, async ({ page }) => {
+    await signedOutVisitor(page)
+    const redirects: string[] = []
+    page.on("request", request => { if (request.url().includes("/api/auth/github/start")) redirects.push(request.url()) })
+    await page.goto("/smithersai/smithers/")
+    await expect(page.getByTestId("chrome-sign-in")).toBeVisible()
+    await slash(page, command)
+    const prompt = page.getByRole("article").filter({ has: page.getByRole("button", { name: "Sign in with GitHub", exact: true }) }).last()
+    await expect(prompt).toContainText("One step connects GitHub")
+    await expect(prompt.getByRole("button", { name: "Sign in with GitHub", exact: true })).toBeVisible()
+    await expect(page.getByText(/0 Open|No open issues in/)).toHaveCount(0)
+    await expect(page.locator('[data-testid^="toast-"]')).toHaveCount(0)
+    expect(new URL(page.url()).pathname).toMatch(/^\/smithersai\/smithers\/?$/)
+    expect(redirects).toEqual([])
+    if (command === "/secrets.list") {
+      await page.route("**/api/auth/github/start**", route => route.fulfill({ body: "Sign-in handoff" }))
+      const request = page.waitForRequest(request => new URL(request.url()).pathname === "/api/auth/github/start")
+      await prompt.getByRole("button", { name: "Sign in with GitHub", exact: true }).click()
+      expect(new URL((await request).url()).searchParams.get("return_to")).toBe("/smithersai/smithers/")
+    }
+  })
+}
