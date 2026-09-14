@@ -217,7 +217,7 @@ describe("egress.session", () => {
 
   test("a signed-out session refuses with the sign-in step; a degraded one with the enable wording", async () => {
     const signedOut = await harness({}, { signedIn: false })
-    expect(await signedOut.seam.listSessionEgress("as-1")).toBe("Sign in to Smithers Cloud first — /cloud.sign-in.")
+    expect(await signedOut.seam.listSessionEgress("as-1")).toBe("Sign in to Smithers Cloud to continue.")
     const degraded = await harness({}, { degraded: true })
     expect(await degraded.seam.listSessionEgress("as-1")).toBe(DEGRADED_EGRESS_REFUSAL)
     expect(DEGRADED_EGRESS_REFUSAL).toContain("sign in again to enable")

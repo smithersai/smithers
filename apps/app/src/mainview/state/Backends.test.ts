@@ -1,3 +1,5 @@
+import { cloudCapabilities } from "@smthrs/rpc/HostCapabilities"
+import { CLOUD_AUTH_SESSION_PATH } from "@smthrs/rpc/LocalApp"
 import { describe, expect, test } from "bun:test"
 import type { AgentTurnFrame } from "@smthrs/rpc/NativeAgent"
 import type { AgentPort } from "../runtime/AgentPort"
@@ -642,3 +644,37 @@ describe("turn cost + stop discipline", () => {
     expect(store.session().phase).toBe("idle")
   })
 })
+
+for (const state of ["signed-in", "signed-out", "degraded"] as const) {
+  test(`web identity refresh also loads Cloud before returning: ${state}`, async () => {
+    const store = await webStore()
+    const requests: string[] = []
+    let signedOut = state === "signed-out"
+    const controller = createAppController(store, unavailableRepositories, silentAgent, {
+      bootstrap: {
+        apiVersion: 1, host: "cloud", version: "test", buildSha: "test", authFlow: "redirect", sandbox: null,
+        capabilities: cloudCapabilities({ identity: true, cloud: true, agent: false, checkout: false, terminal: true })
+      },
+      fetchImpl: async input => {
+        const path = new URL(String(input), "https://web.test").pathname
+        requests.push(path)
+        if (path === "/api/auth/session") return json(200, signedOut ? { status: "signed-out" } : { login: "will", allowlisted: true })
+        if (path === "/api/auth/scopes") return json(200, { scopes: [] })
+        if (path === CLOUD_AUTH_SESSION_PATH) return json(200, {
+          state: signedOut ? "signed-out" : "signed-in", username: signedOut ? null : "will", expiresAt: null,
+          ...(!signedOut && state === "degraded" ? { scopes: "degraded" } : {})
+        })
+        return json(200, [])
+      }
+    })
+    await controller.loadSession()
+    expect(requests).toContain(CLOUD_AUTH_SESSION_PATH)
+    expect(store.collections.cloudSessions.get("cloud")).toMatchObject({
+      state: signedOut ? "signed-out" : "signed-in", username: signedOut ? null : "will",
+      scopes: state === "degraded" ? "degraded" : null
+    })
+    signedOut = true
+    await controller.loadSession()
+    expect(store.collections.cloudSessions.get("cloud")).toMatchObject({ state: "signed-out", username: null, scopes: null })
+  })
+}

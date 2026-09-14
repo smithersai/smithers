@@ -409,17 +409,37 @@ describe("the three-door law", () => {
     expect(messages(store).at(-1)?.text).toBe("Smithers Cloud is already signed in as will.")
   })
 
-  test("a cloud flow refused for the missing session names cloud.prompt to the agent, and /cloud.sign-in to the human", async () => {
+  test("a cloud refusal offers the current host sign-in button and names cloud.prompt to the agent", async () => {
     const { store, controller } = await boot()
     cloudSession(store, "signed-out", null)
     await settle(2)
     const agent = await execute(controller, "workspace.terminal")
-    expect(agent).toStartWith("failed: Sign in to Smithers Cloud first")
+    expect(agent).toStartWith("failed: Sign in to Smithers Cloud to continue")
     expect(agent).toContain("cloud.prompt")
     expect(agent).not.toContain("/cloud.sign-in")
     const human = await controller.commands.run("workspace.terminal")
-    expect(human).toEqual({ status: "failed", error: "Sign in to Smithers Cloud first — /cloud.sign-in." })
+    expect(human).toEqual({ status: "failed", error: "Sign in to Smithers Cloud to continue." })
   })
+
+  for (const host of [EVERYTHING, WEB]) {
+    test(`missing Cloud session renders only a registered sign-in door on ${host.host}`, async () => {
+      const { store, controller } = await boot(host)
+      cloudSession(store, "signed-out", null)
+      const flow = host.host === "cloud" ? "auth.sign-in" : "cloud.sign-in"
+      try {
+        for (const name of ["workspace.terminal", "change.view"] as const) {
+          const outcome = await controller.commands.run(name, name === "change.view" ? "change-1" : undefined)
+          expect(outcome).toEqual({ status: "failed", error: "Sign in to Smithers Cloud to continue." })
+          const step = messages(store).at(-1)
+          expect(step?.action?.flow).toBe(flow)
+          expect(controller.commands.find(step!.action!.flow)).toBeDefined()
+          expect(step?.text).not.toContain("/cloud.sign-in")
+        }
+        expect(await execute(controller, "workspace.terminal")).toContain("cloud.prompt")
+        expect(messages(store).at(-1)?.action?.flow).toBe(flow)
+      } finally { controller.dispose() }
+    })
+  }
 
   test("a user-only refusal quotes the registry's reason and the agent's door", async () => {
     const { controller } = await boot()

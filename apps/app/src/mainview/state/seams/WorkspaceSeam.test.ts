@@ -285,9 +285,9 @@ const wait = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(
 describe("workspace seam gates", () => {
   test("a signed-out session refuses every act with the sign-in step", async () => {
     const { seam } = await harness({}, { signedIn: false })
-    expect(await seam.listWorkspaces()).toBe("Sign in to Smithers Cloud first — /cloud.sign-in.")
-    expect(await seam.openWorkspace("main", "will/smithers")).toBe("Sign in to Smithers Cloud first — /cloud.sign-in.")
-    expect(await seam.openTerminal("ws-1")).toBe("Sign in to Smithers Cloud first — /cloud.sign-in.")
+    expect(await seam.listWorkspaces()).toBe("Sign in to Smithers Cloud to continue.")
+    expect(await seam.openWorkspace("main", "will/smithers")).toBe("Sign in to Smithers Cloud to continue.")
+    expect(await seam.openTerminal("ws-1")).toBe("Sign in to Smithers Cloud to continue.")
   })
 
   test("a degraded sign-in refuses every act with the enable wording", async () => {
@@ -2018,8 +2018,8 @@ describe("workspace seam desktop session", () => {
   test("a signed-out session mints nothing, and a degraded one refuses with the enable wording", async () => {
     dropDesktopStream()
     const signedOut = await harness({}, { signedIn: false })
-    expect(await signedOut.seam.openDesktop("ws-1")).toBe("Sign in to Smithers Cloud first — /cloud.sign-in.")
-    expect(await signedOut.seam.rotateDesktop("ws-1")).toBe("Sign in to Smithers Cloud first — /cloud.sign-in.")
+    expect(await signedOut.seam.openDesktop("ws-1")).toBe("Sign in to Smithers Cloud to continue.")
+    expect(await signedOut.seam.rotateDesktop("ws-1")).toBe("Sign in to Smithers Cloud to continue.")
     const degraded = await harness({}, { degraded: true })
     await seedWorkspace(degraded.store, { ...wsRow, kind: "desktop" })
     expect(await degraded.seam.openDesktop("ws-1")).toBe(DEGRADED_WORKSPACE_REFUSAL)
@@ -2695,7 +2695,7 @@ describe("the one-command desktop open", () => {
   test("signed out, the one-command open refuses before it reaches plue", async () => {
     const { seam, requests } = await harness({}, { signedIn: false })
     try {
-      expect(await seam.openDesktopBox()).toBe("Sign in to Smithers Cloud first — /cloud.sign-in.")
+      expect(await seam.openDesktopBox()).toBe("Sign in to Smithers Cloud to continue.")
       expect(requests).toEqual([])
     } finally {
       seam.dispose()

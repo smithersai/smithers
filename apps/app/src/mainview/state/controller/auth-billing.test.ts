@@ -382,3 +382,27 @@ describe("a balance refresh the account outlives", () => {
     expect(store.collections.toasts.get("toast-billing.balance.refresh")).toBeUndefined()
   })
 })
+
+for (const entry of ["load", "adopt"] as const) {
+  test(`${entry} waits for the web Cloud session before resuming a parked act`, async () => {
+    const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
+    const ctx = createControllerContext(store, repositories, agent, {
+      fetchImpl: async () => Response.json(signedIn)
+    })
+    ctx.withToast = async (_key, _title, _done, work) => work()
+    const calls: string[] = []
+    let release!: () => void
+    const cloud = new Promise<void>(resolve => { release = resolve })
+    ctx.resumeDeferredCommand = () => calls.push("resume")
+    const controller = createAuthBillingController(ctx, () => 0, async () => {
+      calls.push("cloud")
+      await cloud
+    })
+    const loading = entry === "load" ? controller.loadSession() : controller.adoptSession(signedIn)
+    await new Promise(resolve => setTimeout(resolve, 0))
+    expect(calls).toEqual(["cloud"])
+    release()
+    await loading
+    expect(calls).toEqual(["cloud", "resume"])
+  })
+}

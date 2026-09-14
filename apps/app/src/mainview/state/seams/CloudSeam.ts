@@ -2,7 +2,9 @@
  * The Smithers Cloud session seam (lane piper step 1b, ADR 0001): the renderer's
  * half of the CLI browser login. The Bun side holds the token (memory + OS
  * keychain) and answers only `{ state, username, expiresAt, scopes? }`; this
- * seam mirrors THAT answer into the `cloudSessions` row and runs the sign-in
+ * seam mirrors THAT answer into the `cloudSessions` row. The web Worker
+ * serves the same contract from the GitHub session and its Cloud exchange.
+ * Only the native host runs the separate sign-in
  * act: POST /api/cloud-auth/start answers the login URL, the native
  * `openExternal` door opens it in the system browser, and the seam polls the
  * session until the callback lands (the Bun side gives up after five
@@ -18,7 +20,7 @@ import {
 import type { SeamContext } from "./SeamContext"
 
 export interface CloudSeam {
-  /** Mirror the Bun-side session answer into the store (actor: system). */
+  /** Mirror the serving host's session answer into the store (actor: system). */
   readonly loadSession: () => Promise<void>
   /** The cloud.sign-in flow: open the login URL, then wait for the callback. */
   readonly signIn: () => Promise<string | void>
@@ -27,6 +29,8 @@ export interface CloudSeam {
 }
 
 export interface CloudSeamDeps {
+  /** Invalidate an outstanding read when app identity changes or signs out. */
+  readonly sessionEpoch?: () => number
   /** The native system-browser door; absent in a plain browser (window.open falls back). */
   readonly openExternal?: (url: string) => Promise<boolean>
   /** The session poll cadence while the login is out in the browser; tests shorten it. */
@@ -40,6 +44,7 @@ const wait = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(
 export const createCloudSeam = (ctx: SeamContext, deps: CloudSeamDeps = {}): CloudSeam => {
   const pollMs = deps.pollMs ?? 2000
   const timeoutMs = deps.timeoutMs ?? 5 * 60 * 1000
+  let readGeneration = 0
 
   const readSession = async (): Promise<ReturnType<typeof CloudSessionSchema.parse> | null> => {
     let response: Response
@@ -74,9 +79,11 @@ export const createCloudSeam = (ctx: SeamContext, deps: CloudSeamDeps = {}): Clo
 
   return {
     loadSession: async () => {
+      const generation = ++readGeneration
+      const epoch = deps.sessionEpoch?.()
       const session = await readSession()
       // The seam discipline: only definitive answers change the record.
-      if (session !== null) mirror(session)
+      if (session !== null && generation === readGeneration && epoch === deps.sessionEpoch?.()) mirror(session)
     },
     signIn: async () => {
       const current = await readSession()
@@ -118,6 +125,7 @@ export const createCloudSeam = (ctx: SeamContext, deps: CloudSeamDeps = {}): Clo
       }
     },
     signOut: async () => {
+      readGeneration += 1
       try {
         const response = await ctx.http(`${ctx.baseUrl}${CLOUD_AUTH_SIGN_OUT_PATH}`, {
           method: "POST",

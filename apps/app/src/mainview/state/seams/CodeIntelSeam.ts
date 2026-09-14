@@ -1,3 +1,4 @@
+import { refuseCloudSignIn } from "./CloudSignIn"
 import { actorSharedState } from "../ActorBindings"
 /*
  * The code-intel seam (docs/code-intel/PLAN.md §4): `code.hover`,
@@ -78,7 +79,6 @@ export interface CodeIntelSeamOptions {
 
 /** The web host until the W4 relay: no tunnel, so no workspace language server can be reached from here. */
 const CLOUD_TUNNEL_ABSENT = "Hover and definitions on a cloud repository need the native app; this host has no cloud tunnel yet."
-const SIGN_OUT_REFUSAL = "Sign in to Smithers Cloud first — /cloud.sign-in."
 
 type FilePayload = Extract<Card, { kind: "file" }>["payload"]
 type Intel = NonNullable<FilePayload["intel"]>
@@ -292,7 +292,7 @@ export const createCodeIntelSeam = (ctx: SeamContext, options: CodeIntelSeamOpti
       patch(id, { intel: { state: "unavailable", note: CLOUD_TUNNEL_ABSENT } })
       return CLOUD_TUNNEL_ABSENT
     }
-    if (ctx.store.collections.cloudSessions.get("cloud")?.state !== "signed-in") return SIGN_OUT_REFUSAL
+    if (ctx.store.collections.cloudSessions.get("cloud")?.state !== "signed-in") return refuseCloudSignIn(ctx)
     const found = workspaceFor(repo)
     if ("refusal" in found) {
       patch(id, { intel: { state: "unavailable", note: found.refusal } })

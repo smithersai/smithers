@@ -560,3 +560,33 @@ deliberately not automated.
 6. Confirm the canary serves N again and re-run the probe.
 7. Write the drill up in an `apps/WAVE*-RECEIPT.md` note with both version ids
    and the timestamps, so the next person can see it was really done.
+
+### Web Cloud session (2026-09-14)
+
+`GET /api/cloud-auth/session` is served by both the native host and this
+Worker. On the web, GitHub OAuth is the Cloud sign-in: `validateSession`
+validates the app cookie, `fetchCloudToken` exchanges that login through
+`/api/identity/cloud-token`, and a server-side `GET /api/user/workspaces`
+checks the Cloud token's scope. Only `{ state, username, expiresAt, scopes? }`
+reaches the renderer. An insufficient-scope 403 is a signed-in session with
+`scopes: "degraded"`; identity/exchange/probe outages remain failures, never
+signed-out answers or invented full-scope sessions.
+
+The renderer keeps one host-independent Cloud session contract. Reading
+`/api/auth/session` as though it were the native Cloud session would lose the
+Cloud PAT scope verdict: its GitHub scopes are not workspace/agent scopes.
+Web identity refreshes load the Cloud row before resuming deferred commands;
+native boot independently loads its PAT session. Account epochs discard stale
+reads after an identity change.
+
+Cloud gate refusals render the controller's registered sign-in button:
+`auth.sign-in` on web, `cloud.sign-in` on native. The agent is directed to
+`cloud.prompt`. The same rule covers changes, workspaces, code intelligence,
+egress, GitHub and Linear. The retained transcript sign-in prompt is a separate
+presentation issue: `TranscriptMessage.tsx` and `onboarding/GuideShell.tsx`
+render persisted `auth.sign-in` messages independently of the current identity.
+
+Deploy the Worker **and site assets** through `bun apps/server/scripts/deploy.ts`;
+this change needs both the route and the web identity refresh wiring. The
+real-router regression lives in `apps/app/src/mainview/state/seams/CloudSeam.test.ts`;
+`apps/server/src/cloudSession.test.ts` covers exchange and scope failures.

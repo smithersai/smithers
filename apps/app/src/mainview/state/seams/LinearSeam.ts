@@ -1,3 +1,4 @@
+import { refuseCloudSignIn } from "./CloudSignIn"
 import { actorSharedState } from "../ActorBindings"
 /*
  * The Linear seam (lane sync, ADR 0005; lane L5 against the live routes),
@@ -44,7 +45,7 @@ import { createCloudClient } from "./CloudClient"
 import { createRunEpochs } from "./RunEpochs"
 import type { SeamContext } from "./SeamContext"
 
-export const SIGN_OUT_REFUSAL = "Sign in to Smithers Cloud first — /cloud.sign-in."
+export { SIGN_OUT_REFUSAL } from "./CloudSignIn"
 
 /** ADR 0005: an expired setup key reads this under step 1, never a silent retry. */
 export const SETUP_EXPIRED_NOTE = "authorization expired · Open Linear again"
@@ -314,7 +315,7 @@ export const createLinearSeam = (ctx: SeamContext, deps: LinearSeamDeps = {}): L
 
   const gate = (): string | void => {
     const session = ctx.store.collections.cloudSessions.get("cloud")
-    if (session?.state !== "signed-in") return SIGN_OUT_REFUSAL
+    if (session?.state !== "signed-in") return refuseCloudSignIn(ctx)
   }
 
   /* ---- the card ---- */

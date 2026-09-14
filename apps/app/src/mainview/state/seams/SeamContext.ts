@@ -28,6 +28,8 @@ export interface SeamContext {
   readonly nextOrdinal: () => number
   /** A rejected repository read uses the same transcript door as an unmet requirement. */
   readonly promptSignIn?: (summary?: string) => void
+  /** Offer the Cloud sign-in button this host actually registers, including reauthentication. */
+  readonly promptCloudSignIn?: () => void
 }
 
 /** A bounded model-readable answer; the card retains the full parsed payload. */

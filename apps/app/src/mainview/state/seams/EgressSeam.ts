@@ -1,3 +1,4 @@
+import { refuseCloudSignIn } from "./CloudSignIn"
 /*
  * The sandbox egress audit (lane L3): what a cloud computer called, and with
  * which secret NAMES the per-sandbox egress proxy swapped in. Two routes, one
@@ -24,7 +25,6 @@ import type { SeamContext } from "./SeamContext"
 export const DEGRADED_EGRESS_REFUSAL =
   "This Smithers Cloud sign-in can't read the egress audit — sign in again to enable it."
 
-const SIGN_OUT_REFUSAL = "Sign in to Smithers Cloud first — /cloud.sign-in."
 
 /** plue's own default page size for the audit (routes/pagination.go parsePagination). */
 export const EGRESS_PAGE_LIMIT = 30
@@ -168,7 +168,7 @@ export interface EgressSeam {
 export const createEgressSeam = (ctx: SeamContext): EgressSeam => {
   const gate = (): string | void => {
     const session = ctx.store.collections.cloudSessions.get("cloud")
-    if (session?.state !== "signed-in") return SIGN_OUT_REFUSAL
+    if (session?.state !== "signed-in") return refuseCloudSignIn(ctx)
     if (session.scopes === "degraded") return DEGRADED_EGRESS_REFUSAL
   }
 

@@ -49,7 +49,8 @@ export interface ResolvedSession {
 
 export const createAuthBillingController = (
   ctx: ControllerContext,
-  nextTranscriptOrdinal: () => number
+  nextTranscriptOrdinal: () => number,
+  refreshCloudSession?: () => Promise<void>
 ): AuthBillingController => {
   const { store, services, baseUrl, boundedFetch: http, errorMessageOf, unref } = ctx
   // Only a session validated during this controller lifetime can complete login.
@@ -134,6 +135,7 @@ export const createAuthBillingController = (
       admin: false,
       scopesPlain
     })
+    await refreshCloudSession?.()
   }
 
   const dispatchUnavailable = (): void => {
@@ -148,10 +150,10 @@ export const createAuthBillingController = (
     })
   }
 
-  const finishSignedInSession = (
+  const finishSignedInSession = async (
     session: Pick<ResolvedSession, "login" | "allowlisted" | "admin">,
     previous: ReturnType<typeof store.collections.identitySessions.get>
-  ): void => {
+  ): Promise<void> => {
     const epoch = ctx.accountEpoch
     const persisted = store.dispatch({
       type: "identity.session.loaded",
@@ -172,6 +174,10 @@ export const createAuthBillingController = (
     // boot: signed out it could only come back 401 — the expected state,
     // logged by the browser as a console error anyway.
     void refreshBalance()
+    // On the web GitHub OAuth is also the Cloud login. Recheck its scope
+    // verdict before a parked workspace act resumes, including tab refreshes.
+    await refreshCloudSession?.()
+    if (disposed || ctx.accountEpoch !== epoch) return
     if (session.allowlisted) {
       // Wave 11: a live run card's event pump resumes from its lastSeq.
       resumeWorkflowRuns()
@@ -187,7 +193,7 @@ export const createAuthBillingController = (
     const epoch = ++ctx.accountEpoch
     const previous = store.collections.identitySessions.get("identity")
     if (session.state === "signed-in" && typeof session.login === "string" && session.login.trim() !== "") {
-      finishSignedInSession(session, previous)
+      await finishSignedInSession(session, previous)
       return
     }
     if (session.state === "signed-out") {
@@ -247,7 +253,7 @@ export const createAuthBillingController = (
       dispatchUnavailable()
       return
     }
-    finishSignedInSession(
+    await finishSignedInSession(
       { login: body.login, allowlisted: body.allowlisted === true, admin: body.admin === true },
       previous
     )

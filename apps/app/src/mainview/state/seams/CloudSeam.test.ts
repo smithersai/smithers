@@ -1,6 +1,14 @@
+import * as Effect from "effect/Effect"
+import * as Layer from "effect/Layer"
+import { handleRequest } from "smithers-server/index"
+import { layersFromEnv, ExecutionContext, executionContextFrom } from "smithers-server/Environment"
+import type { WorkerEnv } from "smithers-server/Environment"
+import { transportLayer } from "smithers-server/Http"
+import { createWorkspaceSeam, DEGRADED_WORKSPACE_REFUSAL } from "./WorkspaceSeam"
 import type { StorageApi } from "@tanstack/db"
 import { describe, expect, test } from "bun:test"
 import {
+  CLOUD_ROUTE_PREFIX,
   CLOUD_AUTH_SESSION_PATH,
   CLOUD_AUTH_SIGN_OUT_PATH,
   CLOUD_AUTH_START_PATH
@@ -55,7 +63,7 @@ const harness = async (route: (path: string, init?: RequestInit) => Response | P
     pollMs: 5,
     timeoutMs
   })
-  return { store, seam, requests, opened }
+  return { store, seam, requests, opened, ctx }
 }
 
 const sessionRow = (store: AppStore) => store.collections.cloudSessions.get("cloud")
@@ -166,4 +174,74 @@ describe("cloud session seam", () => {
     expect(sessionRow(store)?.state).toBe("signed-out")
     expect(requests).toEqual([{ method: "POST", url: CLOUD_AUTH_SIGN_OUT_PATH }])
   })
+})
+
+// Renderer -> actual Worker router -> injected identity/Cloud boundaries.
+// The route is never stubbed: a renderer/native-only path must fail this test.
+for (const state of ["signed-in", "signed-out", "degraded"] as const) {
+  test(`web app session reaches the Cloud row and workspace gate: ${state}`, async () => {
+    const upstream: Request[] = []
+    const env = {
+      IDENTITY_UPSTREAM_URL: "https://identity.test",
+      IDENTITY_SERVICE_TOKEN: "fixture-service",
+      SMITHERS_CLOUD_API_BASE_URL: "https://cloud.test",
+      ASSETS: { fetch: async () => new Response("", { status: 404 }) }
+    } as unknown as WorkerEnv
+    const transport = transportLayer(async (input, init) => {
+      const request = new Request(input, init)
+      upstream.push(request)
+      const path = new URL(request.url).pathname
+      if (path === "/api/identity/validate") return state === "signed-out"
+        ? json(401, {}) : json(200, { login: "will", allowlisted: true, admin: false })
+      if (path === "/api/identity/cloud-token") return json(200, { found: true, token: TOKEN })
+      if (path === "/api/repos/will/smithers/workspaces" && request.method === "POST") return json(409, { message: "fixture desktop create reached Cloud" })
+      if (path === "/api/user/workspaces") return state === "degraded"
+        ? json(403, { message: "Insufficient scope: read:workspace" }) : json(200, [])
+      return json(404, {})
+    })
+    const { store, seam, ctx, requests } = await harness((path, init) => Effect.runPromise(
+      handleRequest(new Request(`https://web.test${path}`, { ...init, headers: { ...init?.headers, cookie: "session=fixture" } })).pipe(
+        Effect.provide(Layer.merge(layersFromEnv(env), transport)),
+        Effect.provideService(ExecutionContext, executionContextFrom(undefined))
+      )
+    ))
+    await seam.loadSession()
+    expect(requests).toEqual([{ method: "GET", url: CLOUD_AUTH_SESSION_PATH }])
+    expect(sessionRow(store)).toMatchObject({
+      state: state === "signed-out" ? "signed-out" : "signed-in",
+      username: state === "signed-out" ? null : "will",
+      scopes: state === "degraded" ? "degraded" : null
+    })
+    expect(JSON.stringify(sessionRow(store))).not.toContain(TOKEN)
+    const workspace = createWorkspaceSeam(ctx)
+    try {
+      const result = await workspace.listWorkspaces()
+      if (state === "signed-in") {
+        expect(result).toEqual({ value: "No cloud workspaces." })
+        expect(await workspace.openDesktopBox("main", "will/smithers")).toContain("fixture desktop create reached Cloud")
+        expect(upstream.some(request => request.method === "POST" && new URL(request.url).pathname === "/api/repos/will/smithers/workspaces")).toBe(true)
+        expect(requests.some(request => request.url.startsWith(`${CLOUD_ROUTE_PREFIX}api/user/workspaces`))).toBe(true)
+        expect(upstream.filter(request => new URL(request.url).hostname === "cloud.test").every(
+          request => request.headers.get("authorization") === `Bearer ${TOKEN}`
+        )).toBe(true)
+      } else {
+        expect(result).toBe(state === "degraded" ? DEGRADED_WORKSPACE_REFUSAL : "Sign in to Smithers Cloud to continue.")
+        expect(requests).toHaveLength(1)
+      }
+    } finally { workspace.dispose() }
+  })
+}
+
+test("an outstanding Cloud read cannot restore the account after app sign-out", async () => {
+  const { ctx, store } = await harness(() => json(404, {}))
+  let epoch = 1
+  let resolve!: (response: Response) => void
+  const response = new Promise<Response>(done => { resolve = done })
+  const seam = createCloudSeam({ ...ctx, http: () => response }, { sessionEpoch: () => epoch })
+  const pending = seam.loadSession()
+  epoch += 1
+  store.dispatch({ type: "cloud.session.loaded", actor: "system", state: "signed-out", username: null, expiresAt: null, scopes: null })
+  resolve(json(200, { state: "signed-in", username: "old-account", expiresAt: null }))
+  await pending
+  expect(sessionRow(store)).toMatchObject({ state: "signed-out", username: null })
 })

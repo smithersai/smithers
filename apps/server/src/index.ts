@@ -25,7 +25,8 @@ import {
 } from "@smthrs/rpc/AgentApiRoutes"
 import { APP_API_VERSION, APP_BOOTSTRAP_PATH } from "@smthrs/rpc/AppBootstrap"
 import { cloudCapabilities } from "@smthrs/rpc/HostCapabilities"
-import { CLOUD_ROUTE_PREFIX } from "@smthrs/rpc/LocalApp"
+import { CLOUD_AUTH_SESSION_PATH, CLOUD_ROUTE_PREFIX } from "@smthrs/rpc/LocalApp"
+import { probeCloudSession } from "./cloudSession"
 import { handleAdmin } from "./admin"
 import { catalogDocumentPath, comingSoonDocumentPath, DEFAULT_APP_DOCUMENT_PATH, isFramePath, isRepositoryPath } from "./appDocument"
 import { proxyToBilling } from "./billing"
@@ -353,6 +354,10 @@ export const handleRequest = (request: Request): Effect.Effect<Response, never, 
       return yield* handleAuthNavigation(request, url.pathname === AUTH_SIGN_IN_PATH ? "start" : "callback")
     }
     if (url.pathname === AUTH_SESSION_PATH && request.method === "GET") return yield* probeAuthSession(request)
+    if (url.pathname === CLOUD_AUTH_SESSION_PATH) {
+      if (request.method !== "GET") return methodNotAllowed()
+      return yield* probeCloudSession(request)
+    }
     if (url.pathname.startsWith(AUTH_ROUTE_PREFIX) || url.pathname.startsWith(IDENTITY_ROUTE_PREFIX)) {
       return yield* proxyToIdentity(request)
     }

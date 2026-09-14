@@ -117,8 +117,9 @@ const bootProgram = (options: ControllerBootOptions = {}) =>
       // Agents as data (custom-agents.md): the app-agents mirror loads beside the harness list.
       yield* Effect.sync(() => void controller.loadAgents())
     }
-    // Lane piper: the Smithers Cloud session mirrors into the store; a signed-in answer pulls the inventory.
-    if (hasCapability(bootstrap, "cloud.pat")) {
+    // Web identity loads its Cloud session before resuming parked commands.
+    // The native PAT is independent of GitHub and still needs its own read.
+    if (bootstrap.host === "local" && hasCapability(bootstrap, "cloud")) {
       yield* Effect.sync(() => void controller.loadCloudSession())
     }
     // Both URL rewrites keep the entry's state: on a repository path the

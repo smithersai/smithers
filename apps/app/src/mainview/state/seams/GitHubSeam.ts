@@ -1,3 +1,4 @@
+import { refuseCloudSignIn } from "./CloudSignIn"
 import { formFieldsFor } from "../../flows/FlowForms"
 import { GitHubInstallationInput, GitHubInstallationForm } from "../../flows/entries/github"
 import { lessonCompletion } from "../../onboarding/completion"
@@ -53,7 +54,7 @@ import { createRunEpochs } from "./RunEpochs"
 import { readGitHubRefusal, trustedHttpsUrl, unreachableSentence } from "./SeamContext"
 import type { GitHubRefusal, SeamContext } from "./SeamContext"
 
-export const SIGN_OUT_REFUSAL = "Sign in to Smithers Cloud first — /cloud.sign-in."
+export { SIGN_OUT_REFUSAL } from "./CloudSignIn"
 
 /**
  * The mirror run poll: one read every `delayMs`, at most `maxAttempts`
@@ -213,7 +214,7 @@ export const createGitHubSeam = (ctx: SeamContext, deps: GitHubSeamDeps = {}): G
 
   const gate = (): string | void => {
     const session = ctx.store.collections.cloudSessions.get("cloud")
-    if (session?.state !== "signed-in") return SIGN_OUT_REFUSAL
+    if (session?.state !== "signed-in") return refuseCloudSignIn(ctx)
   }
 
   const repoPath = (repo: string, suffix: string): string => {

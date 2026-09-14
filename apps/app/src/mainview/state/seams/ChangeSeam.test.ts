@@ -681,7 +681,7 @@ describe("createChangeSeam", () => {
 
   test("change.view requires a signed-in session", async () => {
     const { seam, requests } = await harness({}, { signedIn: false })
-    expect(textOf(await seam.viewChange("qupxosqw"))).toBe("Sign in to Smithers Cloud first — /cloud.sign-in.")
+    expect(textOf(await seam.viewChange("qupxosqw"))).toBe("Sign in to Smithers Cloud to continue.")
     expect(requests).toEqual([])
   })
 

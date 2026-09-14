@@ -12,6 +12,7 @@ import type { CommandActions } from "../flows/Flows"
 import { createActorBindings } from "./ActorBindings"
 import type { FetchLike } from "@smthrs/rpc/NativeAgent"
 import type { AppBootstrap } from "@smthrs/rpc/AppBootstrap"
+import { hasCapability } from "@smthrs/rpc/AppBootstrap"
 import type { RepositoryAccess } from "@smthrs/rpc/NativeRepository"
 import { createCommandRegistry } from "../flows/Commands"
 import type { CommandRegistry } from "../flows/Commands"
@@ -784,7 +785,8 @@ export const createAppController = (
     dispatch: store.dispatch,
     actor: () => ctx.commandActor,
     nextOrdinal: store.nextOrdinal,
-    promptSignIn: (summary) => promptSignIn(true, { summary })
+    promptSignIn: (summary) => promptSignIn(true, { summary }),
+    promptCloudSignIn: () => promptCloudSignIn(true)
   }
   const repositoryFlowsSeam = createRepositoryFlowsSeam(seamCtx)
   const repositoryFlows = (): RepositoryFlowCatalog | undefined => {
@@ -857,6 +859,7 @@ export const createAppController = (
    * when its wait settles.
    */
   const cloudSeam = actors.pair(seamCtx, (context) => createCloudSeam(context, {
+    sessionEpoch: () => ctx.accountEpoch,
     ...(services.openExternal === undefined ? {} : { openExternal: services.openExternal })
   }))
   const repositoriesSeam = actors.pair(seamCtx, (context) => createRepositoriesSeam(context))
@@ -910,7 +913,8 @@ export const createAppController = (
     adminHealth,
     settleTurnBilling,
     watchIdentityAcrossTabs
-  } = actors.pair(ctx, (context) => createAuthBillingController(context, store.nextOrdinal))
+  } = actors.pair(ctx, (context) => createAuthBillingController(context, store.nextOrdinal,
+    services.bootstrap?.host === "cloud" && hasCapability(services.bootstrap, "cloud") ? loadCloudSession : undefined))
   const { showPlugins, installPlugin, removePlugin, listPlugins } = actors.pair(ctx, createPluginsController)
   const { downloadUrl, openDownload, promptDownload, introduce } = actors.pair(ctx, (context) => createAppShellController(context))
   const { storageRecoveryState, promptStorageRecovery, exportStorageRecovery } = actors.pair(ctx, createStorageRecoveryController)
@@ -1331,9 +1335,9 @@ export const createAppController = (
    * (Instructions.ts WEB_HOST_LINE), so that step is the one rendered.
    * Referenced before `commands` initializes; only ever called after.
    */
-  const promptCloudSignIn = (): void => {
+  const promptCloudSignIn = (required = false): void => {
     const cloud = store.collections.cloudSessions.get("cloud")
-    if (cloud?.state === "signed-in") {
+    if (!required && cloud?.state === "signed-in" && cloud.scopes !== "degraded") {
       store.dispatch({
         type: "message.appended",
         actor: "system",
@@ -1342,7 +1346,7 @@ export const createAppController = (
       return
     }
     if (commands.find("cloud.sign-in") === undefined) {
-      promptSignIn()
+      promptSignIn(required || cloud?.scopes === "degraded")
       return
     }
     store.dispatch({

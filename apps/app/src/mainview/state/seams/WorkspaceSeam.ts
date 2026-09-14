@@ -1,3 +1,4 @@
+import { refuseCloudSignIn, SIGN_OUT_REFUSAL } from "./CloudSignIn"
 import { actorSharedState } from "../ActorBindings"
 /*
  * The workspaces seam (lane citc, ADR 0002): the persistent cloud computers
@@ -72,7 +73,6 @@ import type { SeamContext } from "./SeamContext"
 export const DEGRADED_WORKSPACE_REFUSAL =
   "This Smithers Cloud sign-in can't use workspaces — sign in again to enable them."
 
-const SIGN_OUT_REFUSAL = "Sign in to Smithers Cloud first — /cloud.sign-in."
 
 /*
  * plue's contract code for a worker that could not start the per-sandbox
@@ -714,8 +714,8 @@ export const createWorkspaceSeam = (ctx: SeamContext, deps: WorkspaceSeamDeps = 
   const gate = (): string | void => {
     if (lifecycle.disposed) return "The workspace controller is disposed."
     const session = ctx.store.collections.cloudSessions.get("cloud")
-    if (session?.state !== "signed-in") return SIGN_OUT_REFUSAL
-    if (session.scopes === "degraded") return DEGRADED_WORKSPACE_REFUSAL
+    if (session?.state !== "signed-in") return refuseCloudSignIn(ctx)
+    if (session.scopes === "degraded") return refuseCloudSignIn(ctx, DEGRADED_WORKSPACE_REFUSAL)
   }
 
   /*

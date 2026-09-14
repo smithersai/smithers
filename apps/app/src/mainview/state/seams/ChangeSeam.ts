@@ -1,3 +1,4 @@
+import { refuseCloudSignIn } from "./CloudSignIn"
 /*
  * The changes seam (lane change, ADR 0003 — the change is the unit; lane L1
  * — the live plue routes), behind the `/api/cloud/*` proxy:
@@ -58,7 +59,6 @@ import { DEGRADED_WORKSPACE_REFUSAL } from "./WorkspaceSeam"
 export const DEGRADED_CHANGE_REFUSAL =
   "This Smithers Cloud sign-in can't dispatch agents — sign in again to enable them."
 
-const SIGN_OUT_REFUSAL = "Sign in to Smithers Cloud first — /cloud.sign-in."
 
 /** The honest refusals for the acts that have no route (lane L1 REPORT names each). */
 export const NO_SPLIT_REFUSAL =
@@ -814,7 +814,7 @@ export const createChangeSeam = (ctx: SeamContext, deps: ChangeSeamDeps = {}): C
   /* Reads need only the legacy token's read:repository — a definitive signed-in answer is the gate. */
   const gate = (): string | void => {
     const session = ctx.store.collections.cloudSessions.get("cloud")
-    if (session?.state !== "signed-in") return SIGN_OUT_REFUSAL
+    if (session?.state !== "signed-in") return refuseCloudSignIn(ctx)
   }
   const degraded = (): boolean => ctx.store.collections.cloudSessions.get("cloud")?.scopes === "degraded"
   const username = (): string | null => ctx.store.collections.cloudSessions.get("cloud")?.username ?? null
@@ -1324,7 +1324,7 @@ export const createChangeSeam = (ctx: SeamContext, deps: ChangeSeamDeps = {}): C
     const resolved = resolveRepo(changeId, repo)
     if ("error" in resolved) return resolved.error
     const me = username()
-    if (me === null) return "The signed-in Smithers Cloud user isn't known — /cloud.sign-in again."
+    if (me === null) return refuseCloudSignIn(ctx, "The signed-in Smithers Cloud user isn't known. Sign in again to continue.")
     const loaded = await loadChange(resolved.repo, changeId)
     if ("error" in loaded) return loaded.error
     const mine = (loaded.detail.reviews ?? []).find((review) => review.reviewer === me && review.reviewerKind !== "agent")
@@ -1536,7 +1536,7 @@ export const createChangeSeam = (ctx: SeamContext, deps: ChangeSeamDeps = {}): C
   const resolveConflict: ChangeSeam["resolveConflict"] = async (changeId, path, repo) => {
     const refusal = gate()
     if (refusal !== undefined) return refusal
-    if (degraded()) return DEGRADED_CHANGE_REFUSAL
+    if (degraded()) return refuseCloudSignIn(ctx, DEGRADED_CHANGE_REFUSAL)
     if (path.trim() === "") return "change.resolve needs the conflicted file's path: /change.resolve <changeId> <path>"
     const resolved = resolveRepo(changeId, repo)
     if ("error" in resolved) return resolved.error
@@ -1624,7 +1624,7 @@ export const createChangeSeam = (ctx: SeamContext, deps: ChangeSeamDeps = {}): C
   const pleaseFix: ChangeSeam["pleaseFix"] = async (changeId, findingId, repo) => {
     const refusal = gate()
     if (refusal !== undefined) return refusal
-    if (degraded()) return DEGRADED_CHANGE_REFUSAL
+    if (degraded()) return refuseCloudSignIn(ctx, DEGRADED_CHANGE_REFUSAL)
     if (!Number.isInteger(findingId) || findingId <= 0) {
       return "findings.please-fix needs a finding id: /findings.please-fix <changeId> <findingId>"
     }
@@ -1727,7 +1727,7 @@ export const createChangeSeam = (ctx: SeamContext, deps: ChangeSeamDeps = {}): C
   const openComputer: ChangeSeam["openComputer"] = async (changeId, snapshotId, repo) => {
     const refusal = gate()
     if (refusal !== undefined) return refusal
-    if (degraded()) return DEGRADED_WORKSPACE_REFUSAL
+    if (degraded()) return refuseCloudSignIn(ctx, DEGRADED_WORKSPACE_REFUSAL)
     if (snapshotId.trim() === "") return "change.open-computer needs the revision's snapshot id: /change.open-computer <changeId> <snapshotId>"
     const resolved = resolveRepo(changeId, repo)
     if ("error" in resolved) return resolved.error

@@ -492,7 +492,7 @@ describe("code-intel seam — a cloud repository (lane L6)", () => {
     seedCloudCard(signedOut.store)
     expect(await signedOut.controller.commands.run("code.hover", "src/x.ts:1:14 will/flows")).toEqual({
       status: "failed",
-      error: "Sign in to Smithers Cloud first — /cloud.sign-in."
+      error: "Sign in to Smithers Cloud to continue."
     })
     expect(plue.posts).toEqual([])
   }, 30_000)
