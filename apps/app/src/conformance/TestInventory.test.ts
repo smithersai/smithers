@@ -5,7 +5,9 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { fileURLToPath } from "node:url"
 import ts from "typescript"
+import type { PlaywrightTestConfig } from "@playwright/test"
 import playwright from "../../playwright.config"
+import playwrightSite from "../../playwright.site.config"
 
 const app = fileURLToPath(new URL("../../", import.meta.url))
 const root = fileURLToPath(new URL("../../../../", import.meta.url))
@@ -48,15 +50,18 @@ const packaged = packagedTests()
 const matches = (path: string, patterns: string | RegExp | readonly (string | RegExp)[]): boolean =>
   (Array.isArray(patterns) ? patterns : [patterns]).some((pattern) =>
     typeof pattern === "string" ? new Bun.Glob(pattern).match(path) : pattern.test(path))
-const playwrightOwns = (path: string): boolean => selected(path, [playwright.testDir!]) &&
-  matches(path, playwright.testMatch ?? /\.(spec|test)\.[cm]?[jt]sx?$/) &&
-  !matches(path, playwright.testIgnore ?? [])
+const playwrightOwns = (path: string, config: PlaywrightTestConfig): boolean =>
+  (config.projects ?? [{}]).some(project =>
+    selected(path, [project.testDir ?? config.testDir!]) &&
+    matches(path, project.testMatch ?? config.testMatch ?? /\.(spec|test)\.[cm]?[jt]sx?$/) &&
+    !matches(path, project.testIgnore ?? config.testIgnore ?? []))
 
 const owners = (path: string): string[] => {
   const result: string[] = []
   if (selected(path, bunPaths(scripts.test))) result.push("unit")
   if (selected(path, bunPaths(scripts["test:e2e:auth"]))) result.push("browser OAuth")
-  if (scripts["test:e2e"] === "playwright test" && playwrightOwns(path)) result.push("Playwright")
+  if (scripts["test:e2e"] === "playwright test" && playwrightOwns(path, playwright)) result.push("Playwright")
+  if (scripts["test:e2e:site"] === "playwright test --config playwright.site.config.ts" && playwrightOwns(path, playwrightSite)) result.push("Playwright site")
   if (scripts["test:e2e:packaged"] === "bun e2e/packaged/run.ts" && packaged.includes(path)) result.push("packaged native")
   return result
 }
@@ -67,6 +72,10 @@ test("every app test belongs to an executable runner", () => {
   expect(owners("e2e/native/CloudAuthFragment.test.ts")).toEqual(["browser OAuth"])
   expect(owners("scripts/canary-restoration.test.ts")).toContain("unit")
   expect(owners("scripts/headless-page.test.ts")).toContain("unit")
+  expect(owners("e2e/site/landing-start.spec.ts")).toEqual(["Playwright site"])
+  expect(owners("e2e/playwright/tutorial-tip.spec.ts")).toContain("Playwright site")
+  expect(owners("e2e/site/Unassigned.test.ts")).toEqual([])
+  expect(owners("e2e/Unassigned.spec.ts")).toEqual([])
   expect(owners("e2e/native/Unassigned.test.ts")).toEqual([])
   expect(owners("e2e/packaged/Unassigned.test.ts")).toEqual([])
   expect(owners("e2e/playwright/native/Unassigned.spec.ts")).toEqual([])
@@ -100,7 +109,7 @@ test("unit inputs include inspected sources, harnesses and configs", () => {
   `)
   for (const path of [
     "scripts/canary-restoration.ts", "scripts/run-pr-e2e.mjs", "scripts/README.md", "e2e/native/Probe.ts",
-    "PACKAGE.ts", "package.json", "tsconfig.json", "vite.config.ts", "playwright.config.ts",
+    "PACKAGE.ts", "package.json", "tsconfig.json", "vite.config.ts", "playwright.config.ts", "playwright.site.config.ts",
     "electrobun.config.ts", "hutch.config.ts", "postcss.config.js", "tailwind.config.js"
   ]) expect(inputs).toContain(`apps/app/${path}`)
   for (const path of ["package.json", "pnpm-lock.yaml", "packages/rpc/src/Cards.ts", "packages/rpc/fixtures/force/graph.json",
