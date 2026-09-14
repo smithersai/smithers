@@ -98,8 +98,7 @@
 }
 
 .help-anchor[data-help-open] .help-anchor-target > button {
-  outline: 2px solid var(--g-accent, #286447);
-  outline-offset: 4px;
+  box-shadow: 0 0 16px 4px color-mix(in srgb, var(--g-accent, #286447) 24%, transparent);
 }
 
 /* Only the action we are waiting for pulses; explanatory tips stay quiet. */
@@ -119,6 +118,6 @@
   .help-anchor[data-help-pulse] .help-anchor-target > button,
   .help-anchor[data-help-pulse] .guide-button-key {
     animation: none;
-    box-shadow: 0 0 0 3px color-mix(in srgb, var(--g-accent, #286447) 18%, transparent);
+    box-shadow: 0 0 16px 4px color-mix(in srgb, var(--g-accent, #286447) 18%, transparent);
   }
 }

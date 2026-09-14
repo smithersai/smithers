@@ -8,6 +8,7 @@ test('mode persists without opening Chat; only the next Chat gesture starts dict
   const store = await createAppStore({ kind: 'localStorage', storage })
   let opens = 0, starts = 0, cancels = 0
   const modes = createInputModeController(store, {
+    dictationAvailable: () => true,
     actor: () => 'user', openChat: async () => { opens++; store.dispatch({ type: 'palette.toggled', actor: 'user', open: true }) },
     startDictation: () => { starts++; store.dispatch({ type: 'dictation.changed', actor: 'user', listening: true }) },
     cancelDictation: () => { cancels++; store.dispatch({ type: 'dictation.changed', actor: 'user', listening: false }) },
@@ -34,6 +35,7 @@ test('closing Chat while its open persists cannot start the microphone later', a
   let finish!: () => void, starts = 0
   const pending = new Promise<void>(resolve => { finish = resolve })
   const modes = createInputModeController(store, {
+    dictationAvailable: () => true,
     actor: () => 'user', cancelDictation: () => {}, startDictation: () => { starts++ },
     openChat: async () => { store.dispatch({ type: 'palette.toggled', actor: 'user', open: true }); await pending },
   })
@@ -41,6 +43,21 @@ test('closing Chat while its open persists cannot start the microphone later', a
   const opening = modes.openChat()
   store.dispatch({ type: 'palette.toggled', actor: 'user', open: false })
   finish(); await opening
+  expect(starts).toBe(0)
+  await store.dispose?.()
+})
+
+test('an unavailable persisted Dictation preference falls back to Normal and never fails Chat', async () => {
+  const store = await createAppStore({ kind: 'localStorage', storage: { getItem: () => null, setItem: () => {}, removeItem: () => {} } })
+  let starts = 0
+  const modes = createInputModeController(store, {
+    actor: () => 'user', cancelDictation: () => {}, startDictation: () => { starts++; return 'unavailable' },
+    openChat: async () => { store.dispatch({ type: 'palette.toggled', actor: 'user', open: true }) },
+  })
+  await store.dispatch({ type: 'input.mode.changed', actor: 'user', mode: 'dictation' }).isPersisted.promise
+  expect(await modes.openChat()).toBeUndefined()
+  expect(store.session().inputMode).toBe('normal')
+  expect(store.session().paletteOpen).toBe(true)
   expect(starts).toBe(0)
   await store.dispose?.()
 })

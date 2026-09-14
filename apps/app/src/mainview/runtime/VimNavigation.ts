@@ -5,7 +5,7 @@ export function vimFocusAction(root: HTMLElement, key: string): PressAction | un
   if (!['h', 'j', 'k', 'l'].includes(key)) return
   const doc = root.ownerDocument
   if ((doc.activeElement as Element | null)?.closest('input,textarea,select,[contenteditable]:not([contenteditable="false"])')) return
-  const candidates = [...root.querySelectorAll<HTMLElement>('button,a[href],input,textarea,select,[tabindex]')]
+  const candidates = [...root.querySelectorAll<HTMLElement>('button,a[href],[role="button"],[role="link"]')]
     .filter(node => node.tabIndex >= 0 && !node.closest('[inert],[hidden],[aria-hidden="true"]') && !node.matches(':disabled,[aria-disabled="true"]'))
     .filter(node => { const rect = node.getBoundingClientRect(); return rect.width > 0 && rect.height > 0 && getComputedStyle(node).visibility !== 'hidden' })
   const current = candidates.find(node => node === doc.activeElement)

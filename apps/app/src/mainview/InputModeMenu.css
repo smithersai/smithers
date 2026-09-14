@@ -10,5 +10,8 @@
   min-height: 36px; padding: 8px 10px; border: 0; border-radius: 7px; color: inherit; background: transparent; text-align: left;
 }
 .input-mode-menu [role="menuitemradio"]:is(:hover,:focus-visible,[data-pressed]) { background: color-mix(in srgb, var(--g-accent, #3a756b) 14%, transparent); outline: none; }
-/* Keep mode selection reachable while Chat is open, including to stop capture. */
-.guide-shell[data-conversation-open="true"] .guide-footer { z-index: 81; }
+/* Mode stays within the modal focus boundary while Chat is open. */
+.guide-composer-layer > .input-mode-control { align-self: flex-end; }
+.guide-composer-layer .input-mode-menu { position: static; margin-top: 8px; }
+.input-mode-reason { max-width: 220px; padding: 8px 10px; font-size: 12px; }
+.input-mode-menu [aria-disabled="true"] { opacity: .65; cursor: default; }

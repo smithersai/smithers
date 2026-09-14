@@ -25,9 +25,9 @@ export type GuideLesson = {
   /** The terminal line after an escape hatch: login declined, or install declined. */
   variants?: { readonly login: string; readonly install: string }
 } | {
-  kind: "do"; message: string; completion: string
+  kind: "do"; message: string; touchMessage?: string; completion: string
   /** Optional guidance anchored to one action, never sent as a notification. */
-  help?: { actionKey: string; content: string; introduction?: ReadonlyArray<{ target: "action" | "chat"; content: string }> }
+  help?: { actionKey: string; content: string; touchContent?: string; introduction?: ReadonlyArray<{ target: "action" | "chat"; content: string; touchContent?: string }> }
   /** Screen-reader description of the pill (aria-describedby); never rendered as numbered steps. */
   instruction: string
   actions: readonly GuideAction[]
@@ -51,9 +51,10 @@ export const GUIDE_STAGES: readonly GuideLesson[] = [
     actions: [] },
   /* 1 */ { kind: "do", practice: true, message: "", completion: "issues.opened", skippable: false,
     help: { actionKey: "i", content: "Start with the practice repository’s issues. Click Show issues or press i.",
+      touchContent: "Start with the practice repository’s issues. Tap Show issues.",
       introduction: [
         { target: "action", content: "Smithers makes suggestions as to what we should do next as you use it." },
-        { target: "chat", content: "You can also talk to Smithers anytime by pressing C." },
+        { target: "chat", content: "You can also talk to Smithers anytime by pressing C.", touchContent: "You can also talk to Smithers anytime by tapping Chat." },
       ] },
     instruction: "Lists the practice repository's open issues.",
     actions: [
@@ -97,6 +98,7 @@ export const GUIDE_STAGES: readonly GuideLesson[] = [
     actions: [{ label: "Create Wiki for {repo}", key: "u", flow: "wiki.create", args: "{repo}" },
       { label: "Create Mythical history", key: "y", flow: "history.bootstrap", args: "{repo}", subtitle: "On its own branch. Your branches stay untouched." }] },
   /* 13 */ { kind: "do", message: "If you ever need to just chat with me rather than using the fast controls or UI to interact you can press C to open Chat. From there you can type any message.\n\nPress M to choose Normal, Vim, or Dictation mode. Vim uses H/J/K/L to move focus. Dictation starts when you next open Chat; review the text before sending.", completion: "palette.opened", skippable: false,
+    touchMessage: "If you ever need to just chat with me rather than using the fast controls or UI to interact you can tap Chat to open Chat. From there you can type any message.\n\nTap Mode to choose Normal, Vim, or Dictation mode. Dictation starts when you next open Chat; review the text before sending.",
     instruction: "Opens Chat. Escape closes it.", success: "Type a message here. Choose Dictation from Mode before opening Chat to speak. Escape closes Chat.",
     actions: [{ label: "Chat", key: "c", flow: "chat.open" }] },
   /* 14 */ { kind: "say", terminal: true, optionalAction: REEL_BUTTON,
@@ -116,7 +118,7 @@ export const GUIDE_RESERVED_KEYS = ["s", "c", "m", "h", "j", "k", "l", "b", "w",
 type GuideContext = { readonly repo?: string; readonly declined?: ReadonlyArray<string>; readonly completed?: ReadonlyArray<string>; readonly step?: number }
 /** `{repo}` becomes the user's repository; the terminal line follows the escape hatch taken. */
 export const lessonText = (text: string, guide: GuideContext): string => text.replaceAll("{repo}", guide.repo ?? "your repository")
-export const lessonMessage = (step: number, guide: GuideContext): string => {
+export const lessonMessage = (step: number, guide: GuideContext, touch = false): string => {
   const lesson = GUIDE_STAGES[step]
   if (lesson === undefined) return ""
   if (step === GUIDE_BRIDGE && guide.declined?.includes("practice")) return "Bring your own repository to Smithers. First, log in to GitHub."
@@ -124,7 +126,7 @@ export const lessonMessage = (step: number, guide: GuideContext): string => {
     if (guide.declined?.includes("login")) return lesson.variants.login
     if (guide.declined?.includes("install")) return lesson.variants.install
   }
-  return lessonText(lesson.message, guide)
+  return lessonText(touch && lesson.kind === "do" ? lesson.touchMessage ?? lesson.message : lesson.message, guide)
 }
 
 /** A jump past declined lessons must not invent transcript messages for them. */

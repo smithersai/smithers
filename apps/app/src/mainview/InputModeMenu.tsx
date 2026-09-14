@@ -3,6 +3,7 @@ import { Check } from 'lucide-react'
 import { GuideButton, GUIDE_KEYS } from './onboarding/GuideButton'
 import { INPUT_MODES, inputModeLabel, type InputMode } from './state/InputMode'
 import { bindPressActions, type PressAction } from './runtime/PressActions'
+import { dictationAvailable, DICTATION_UNAVAILABLE } from './state/controller/dictation'
 import './InputModeMenu.css'
 
 export function InputModeMenu({ mode, onChange, placement = 'above' }: {
@@ -11,6 +12,7 @@ export function InputModeMenu({ mode, onChange, placement = 'above' }: {
   const [open, setOpen] = useState(false)
   const trigger = useRef<HTMLButtonElement>(null)
   const id = useId()
+  const speechSupported = dictationAvailable()
   const latest = useRef({ mode, onChange })
   latest.current = { mode, onChange }
   const close = useCallback((restore = true) => {
@@ -43,10 +45,13 @@ export function InputModeMenu({ mode, onChange, placement = 'above' }: {
     <GuideButton ref={trigger} shortcut={GUIDE_KEYS.mode} aria-haspopup="menu" aria-expanded={open} aria-controls={open ? id : undefined}
       onClick={() => open ? close() : setOpen(true)}>Mode: {inputModeLabel(mode)}</GuideButton>
     {open && <div id={id} ref={mount} className="input-mode-menu" role="menu" aria-label="Input mode">
-      {INPUT_MODES.map(value => <button key={value} type="button" role="menuitemradio" aria-checked={mode === value} data-flow="input.mode"
-        onClick={() => { latest.current.onChange(value); close() }}>
+      {INPUT_MODES.map(value => <button key={value} type="button" role="menuitemradio" aria-checked={mode === value}
+        aria-disabled={value === 'dictation' && !speechSupported || undefined}
+        aria-describedby={value === 'dictation' && !speechSupported ? `${id}-dictation-reason` : undefined} data-flow="input.mode"
+        onClick={() => { if (value === 'dictation' && !speechSupported) return; latest.current.onChange(value); close() }}>
         <span>{inputModeLabel(value)}</span>{mode === value && <Check size={14} aria-hidden="true" />}
       </button>)}
+      {!speechSupported && <p id={`${id}-dictation-reason`} className="input-mode-reason">{DICTATION_UNAVAILABLE}</p>}
     </div>}
   </div>
 }

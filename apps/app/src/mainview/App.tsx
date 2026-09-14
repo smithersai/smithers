@@ -1,5 +1,6 @@
 import { GuideButton, GUIDE_KEYS } from "./onboarding/GuideButton"
 import { InputModeMenu } from "./InputModeMenu"
+import { GUIDE_LAST_STEP } from "./onboarding/lessons"
 import { GuideShell } from "./onboarding/GuideShell"
 import { GuideComposerHost } from "./onboarding/GuideComposerHost"
 import {
@@ -128,6 +129,7 @@ function App() {
       paletteOpen: session.paletteOpen,
       dictating: session.dictating,
       inputMode: session.inputMode,
+      guideStep: session.guide?.step,
       paletteLastQuery: session.paletteLastQuery,
       resetConfirmOpen: session.resetConfirmOpen,
       verbose: session.verbose,
@@ -413,6 +415,12 @@ function App() {
       </SuggestionGroup> : null}
     </div>
   )
+
+  // The tutorial owns the visible cards until the workspace beat. Keep only
+  // the composer mounted here, so labels, landmarks and frame ids exist once.
+  if (inTutorial && (sessionRows[0]?.guideStep ?? controller.store.session().guide?.step ?? 1) < GUIDE_LAST_STEP) {
+    return <div className="app-shell"><SmithersUiStyles />{composerHost ? createPortal(composerWrap, composerHost) : composerWrap}</div>
+  }
 
   return (
     // data-flows is the live registry manifest (visible AND hidden names):

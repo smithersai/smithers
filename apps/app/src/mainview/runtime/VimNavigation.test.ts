@@ -31,3 +31,15 @@ test('Vim moves spatial focus only on activation and leaves editable text alone'
   expect(vimFocusAction(root, 'j')).toBeUndefined()
   root.remove()
 })
+
+test('Vim skips text fields, code and transcript stops when navigating tutorial controls', () => {
+  const root = document.createElement('div')
+  document.body.append(root)
+  root.innerHTML = '<button>Start</button><textarea></textarea><input><pre tabindex="0">Code</pre><div role="log" tabindex="0"></div><a href="#next">Next</a>'
+  const nodes = [...root.children] as HTMLElement[]
+  nodes.forEach((node, index) => { node.getBoundingClientRect = () => ({ x: 0, y: index * 50, width: 40, height: 30 }) as DOMRect })
+  nodes[0]!.focus()
+  vimFocusAction(root, 'j')!.activate()
+  expect(document.activeElement?.tagName).toBe('A')
+  root.remove()
+})

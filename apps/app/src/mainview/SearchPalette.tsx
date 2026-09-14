@@ -16,7 +16,7 @@
 import type { SearchAction, SearchItem } from "@smthrs/rpc/Cards"
 import type { CatalogItem } from "./flows/Commands"
 import { Sparkles } from "lucide-react"
-import { Fragment } from "react"
+import { Fragment, useId } from "react"
 import type { SlashRow } from "./flows/registry"
 import { actionForKey, prefixRow } from "./flows/SearchQuery"
 import type { PrefixRow } from "./flows/SearchQuery"
@@ -174,6 +174,7 @@ export const paletteKey = (input: PaletteKeyInput): PaletteDecision => {
 }
 
 export interface PaletteOverlayProps {
+  readonly id?: string
   readonly answer: PaletteAnswer
   readonly rows: PaletteRows
   readonly highlighted: number
@@ -191,13 +192,15 @@ const roleWord = (role: SearchAction["role"]): string => (role === "open" ? "Ent
  * the draft sits in the composer right beside the overlay, so a bare ⌘K
  * prints no banner and never echoes "(none)".
  */
-export function PaletteOverlay({ answer, rows, highlighted, slashBranch, onHighlight, onChoose }: PaletteOverlayProps) {
+export function PaletteOverlay({ id, answer, rows, highlighted, slashBranch, onHighlight, onChoose }: PaletteOverlayProps) {
+  const generatedId = useId()
+  const listboxId = id ?? generatedId
   const { parsed } = answer
   const chip = parsed.mode === "flows" ? "/" : prefixRow(parsed.mode).label
   const groupAt = new Map(rows.groups.map((group) => [group.start, group.label]))
   const showHead = rows.actionsFor !== undefined || (parsed.mode !== "all" && parsed.mode !== "flows")
   return (
-    <div className="slash-menu" role="listbox" aria-label="Search palette" data-branch={slashBranch} data-mode={parsed.mode} data-testid="palette">
+    <div id={listboxId} className="slash-menu" role="listbox" aria-label="Search palette" data-branch={slashBranch} data-mode={parsed.mode} data-testid="palette">
       {showHead ? (
         <div className="palette-head">
           <span className="palette-chip" data-testid="palette-chip">{rows.actionsFor === undefined ? chip : "actions"}</span>
@@ -212,6 +215,8 @@ export function PaletteOverlay({ answer, rows, highlighted, slashBranch, onHighl
           const common = {
             type: "button" as const,
             role: "option",
+            id: `${listboxId}-option-${index}`,
+            tabIndex: -1,
             "aria-selected": highlightedRow,
             "data-highlighted": highlightedRow ? "true" : "false",
             onMouseEnter: () => onHighlight(index)

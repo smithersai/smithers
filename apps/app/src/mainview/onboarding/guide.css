@@ -687,6 +687,15 @@
  * resized) behind a soft scrim; clicking the scrim or Escape dismisses it.
  */
 .guide-composer-dock {
+  /* A native modal escapes the guide's stacking context and inerts the header too. */
+  margin: 0;
+  border: 0;
+  width: 100%;
+  height: 100%;
+  max-width: none;
+  max-height: none;
+  box-sizing: border-box;
+  color: inherit;
   position: fixed;
   inset: 0;
   z-index: 80;
@@ -700,6 +709,7 @@
   opacity: 0;
   transition: opacity var(--dur) var(--ease-current), visibility 0s var(--dur);
 }
+.guide-composer-dock::backdrop { background: transparent; }
 .guide-shell[data-conversation-open="true"] .guide-composer-dock {
   visibility: visible;
   opacity: 1;
@@ -714,7 +724,7 @@
  */
 @media (min-width: 601px) {
   .session-shell:has(.session-sidebar) .guide-composer-dock {
-    left: 240px;
+    padding-left: 256px;
   }
 }
 .guide-composer-clip {
@@ -724,6 +734,7 @@
   display: flex;
 }
 .guide-composer-layer {
+  flex-direction: column;
   width: 100%;
   display: flex;
   max-height: 70dvh;
@@ -1209,11 +1220,11 @@
   margin: -10px;
   scrollbar-width: thin;
   scrollbar-color: var(--g-line) transparent;
-  /* A passive log, not a control: focusable for arrow-key scrolling, never ringed. */
+  /* Keyboard scrolling keeps a visible focus indicator. */
   outline: none;
 }
 /* Outranks the app-wide :focus-visible ring (base.css) for the transcript. */
-.guide-shell .guide-transcript:focus-visible { outline: none; }
+.guide-shell .guide-transcript:focus-visible { outline: 2px solid var(--g-accent); outline-offset: -2px; }
 /*
  * A new message OPENS its place: the wrapper's grid track grows 0fr → 1fr, so
  * the messages above shift up while the actions below move down as one stable
@@ -1626,5 +1637,9 @@
 
 /* Key hints answer a physical keyboard; touch and small screens have none. */
 @media (hover: none), (max-width: 640px) {
-  .guide-shell .guide-button-key { display: none; }
+  .guide-button-key { display: none; }
+}
+
+@media (pointer: coarse) {
+  .guide-button-key { display: none; }
 }

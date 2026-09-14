@@ -17,7 +17,7 @@ import {
   Server,
   Workflow
 } from "lucide-react"
-import { useRef, useState } from "react"
+import { useId, useRef, useState } from "react"
 import type { KeyboardEvent, ReactNode, RefObject } from "react"
 import { roleMenuEntries } from "./AgentRoleMenu"
 import { useController } from "./ControllerContext"
@@ -934,6 +934,7 @@ export function Composer({
   readonly placeholder: string
 }) {
   const controller = useController()
+  const paletteId = useId()
   const { collections } = controller.store
   const { data: draftRows } = useLiveQuery((q) =>
     q
@@ -1091,6 +1092,13 @@ export function Composer({
   const onComposerKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>): void => {
     if (event.nativeEvent.isComposing) return
     if (event.key === "Enter" && event.shiftKey) return
+    // Dictation has a real Tab stop even while the palette owns ordinary Tab navigation.
+    if (event.key === "Tab" && controller.store.session().dictating) {
+      const stop = event.currentTarget.closest(".guide-composer-layer")?.querySelector<HTMLButtonElement>(".guide-dictation-stop")
+      if (stop) { event.preventDefault(); stop.focus(); return }
+    }
+    // Release capture while preserving the palette's two-step Escape dismissal.
+    if (event.key === "Escape" && controller.store.session().dictating) controller.cancelDictation()
     // Input can arrive before the live-query render catches up. Keyboard
     // decisions must use the text under the caret, never the previous menu.
     const inputDraft = event.currentTarget.value
@@ -1147,6 +1155,7 @@ export function Composer({
       {slashOpen && answer !== undefined && rows !== undefined ?
         (
           <PaletteOverlay
+            id={paletteId}
             answer={answer}
             rows={rows}
             highlighted={slashHighlighted}
@@ -1174,7 +1183,12 @@ export function Composer({
         lifecycleStatus={typing ? "submitted" : "ready"}
         submitProps={COMPOSER_SEND_PROPS}
         stopProps={COMPOSER_STOP_PROPS}
-        textareaProps={{ ref: inputRef, autoFocus, onKeyDown: onComposerKeyDown, ...COMPOSER_INPUT_TEST_ID }}
+        textareaProps={{ ref: inputRef, autoFocus, onKeyDown: onComposerKeyDown, ...COMPOSER_INPUT_TEST_ID,
+          role: "combobox", "aria-autocomplete": "list", "aria-haspopup": "listbox",
+          "aria-expanded": slashOpen,
+          "aria-controls": slashOpen ? paletteId : undefined,
+          "aria-activedescendant": slashOpen && rows?.rows[slashHighlighted] ? `${paletteId}-option-${slashHighlighted}` : undefined,
+        }}
         actions={minimal ? undefined :
           <div className="composer-actions">
             <ComposerAdd open={addMenuOpen} triggerRef={addTriggerRef} />

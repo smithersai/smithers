@@ -63,9 +63,39 @@ test("dictation opens chat, appends recognized speech, and Escape releases the m
   await page.evaluate(() => (window as any).dictation.onresult({ resultIndex: 0, results: [{ isFinal: true, 0: { transcript: "the issue" } }] }))
   await expect(input).toHaveValue("Please check the issue")
   await expect(page.getByRole("dialog", { name: "Chat", exact: true }).getByRole("button", { name: "Stop dictation" })).toBeVisible()
+  const stop = page.getByRole("button", { name: "Stop dictation" })
+  await expect(stop).toHaveAttribute("aria-keyshortcuts", "Escape")
+  await input.press("Tab")
+  await expect(stop).toBeFocused()
+  await page.keyboard.press("Shift+Tab")
+  await expect(input).toBeFocused()
   await page.screenshot({ path: "/tmp/smithers-dictation.png" })
   await page.keyboard.press("Escape")
   await expect(input).toBeHidden()
   expect(await page.evaluate(() => (window as any).dictationAborted)).toBe(true)
   await expect(page.getByRole("button", { name: "Mode: Dictation", exact: true })).toBeVisible()
+})
+
+
+test("dictation Stop is reachable by Tab and Enter without closing Chat", async ({ page }) => {
+  await page.addInitScript(() => {
+    (window as any).SpeechRecognition = class {
+      onend: any
+      start() {}
+      stop() { this.onend?.() }
+      abort() {}
+    }
+  })
+  await page.goto("/")
+  await page.getByRole("button", { name: "Mode: Normal", exact: true }).click()
+  await page.getByRole("menuitemradio", { name: "Dictation", exact: true }).click()
+  await page.keyboard.press("c")
+  // Chat opens before recognition starts; test Tab once capture offers Stop.
+  await expect(page.getByRole("button", { name: "Stop dictation" })).toBeVisible()
+  await page.getByTestId("composer-input").press("Tab")
+  await expect(page.getByRole("button", { name: "Stop dictation" })).toBeFocused()
+  await page.keyboard.press("Enter")
+  await expect(page.getByRole("button", { name: "Stop dictation" })).toHaveCount(0)
+  await expect(page.getByTestId("composer-input")).toBeFocused()
+  await expect(page.getByRole("dialog", { name: "Chat", exact: true })).toBeVisible()
 })

@@ -25,6 +25,7 @@ import { GuideComposerHost } from "./GuideComposerHost"
 import { InTutorial, tutorialTranscript } from "./transcriptScope"
 import { HelpBubble } from "../HelpBubble"
 import { GuidanceText } from "../GuidanceText"
+import { useCoarsePointer } from "../runtime/PointerMode"
 import { guideActionState } from "./actionState"
 
 /** An original, short opt-in interval; no autoplay or copyrighted game audio. */
@@ -70,6 +71,7 @@ const frameIds = (card: Card | undefined): ReadonlyArray<string> => {
 
 export function GuideShell({ children, clock = guideClock }: { children: ReactNode; clock?: GuideClock }) {
   const controller = useController()
+  const touch = useCoarsePointer()
   const { data: sessions } = useLiveQuery(controller.store.collections.sessions)
   const { data: storedToasts } = useLiveQuery(controller.store.collections.toasts)
   // Old persisted tutorial tips are superseded by the action-anchored guidance.
@@ -118,7 +120,7 @@ export function GuideShell({ children, clock = guideClock }: { children: ReactNo
   const chatHelpOpen = showTutorialHelp && introduction?.target === "chat"
   const guidanceContent = lesson?.kind === "do" && lesson.help ? <GuidanceText
     key={`${helpKey}:${guidanceIndex}`}
-    text={introduction?.content ?? lesson.help.content}
+    text={touch ? introduction?.touchContent ?? introduction?.content ?? lesson.help.touchContent ?? lesson.help.content : introduction?.content ?? lesson.help.content}
     onRead={introduction ? advanceGuidance : undefined}
   /> : null
   const paused = guide.autoPaused === true
@@ -130,12 +132,7 @@ export function GuideShell({ children, clock = guideClock }: { children: ReactNo
   /* Only a message that mounts AT the current stage enters with the open animation. */
   const enteredStep = useRef(-1)
   if (stage > enteredStep.current) enteredStep.current = stage
-  /* The goal fills with a chime when the Change lands (sound is opt-in). */
-  const changeLanded = useRef(goalDone("change"))
-  if (goalDone("change") !== changeLanded.current) {
-    changeLanded.current = goalDone("change")
-    if (changeLanded.current && guide.sound) queueMicrotask(chime)
-  }
+  const sounded = useRef({ playthrough: guide.playthrough, completed: guide.completed ?? [] })
   const opener = useRef<HTMLButtonElement>(null)
   const previousFocus = useRef<HTMLElement | null>(null)
   const picker = cards.find(card => card.id === PRACTICE_CARD.commits)
@@ -143,7 +140,6 @@ export function GuideShell({ children, clock = guideClock }: { children: ReactNo
   const librarianRuns = cards.flatMap(card => card.kind === "run-trace" && typeof card.payload.input?._librarian === "object" ? [card] : [])
   const runCommandGuide = (action: string, value?: string) => {
     controller.runCommand("onboarding.act", `${action}${value === undefined ? "" : ` ${JSON.stringify(value)}`}`)
-    if (guide.sound && !["close", "sound"].includes(action)) chime()
   }
   /*
    * C opens Chat (Cmd/Ctrl-K remains an alias) (SCRIPT v4 "Open decision"): the composer rises
@@ -189,7 +185,6 @@ export function GuideShell({ children, clock = guideClock }: { children: ReactNo
   }
   const runCommandSound = () => {
     runCommandGuide("sound")
-    if (!guide.sound) chime()
   }
   /** ↑/↓ walk the practice run's turns once the trace is open. */
   const moveTrace = (delta: number): boolean => {
@@ -221,6 +216,9 @@ export function GuideShell({ children, clock = guideClock }: { children: ReactNo
       }
       if (event.metaKey || event.ctrlKey || event.altKey || event.shiftKey) return
       if (key === 'escape' && guide.conversationOpen) return action(runCommandClose)
+      if (key === 'escape' && session.inputMode === 'vim' && (event.target as Element | null)?.closest?.('input,textarea,select,[contenteditable]')) {
+        return action(() => document.querySelector<HTMLElement>('.guide-shell')?.focus())
+      }
       if (key === GUIDE_KEYS.mode) return action(() => document.querySelector<HTMLButtonElement>('.guide-shell [aria-haspopup="menu"][aria-keyshortcuts="m"]')?.click())
       if (key === GUIDE_KEYS.chat) return action(() => guide.conversationOpen ? runCommandClose() : runCommandOpen())
       if (session.inputMode === 'vim' && ['h', 'j', 'k', 'l'].includes(key)) {
@@ -244,6 +242,8 @@ export function GuideShell({ children, clock = guideClock }: { children: ReactNo
       if (key === 'n') return action(() => runCommandGuide('notify'))
       if (key === 'arrowright') return action(() => runCommandGuide(guideForwardAction(stage)))
       if (key === GUIDE_KEYS.back && stage > 1) return action(() => runCommandGuide('back'))
+      if (stage === GUIDE_LAST_STEP && key === GUIDE_KEYS.finish) return action(() => runCommandGuide('finish'))
+      if (stage === GUIDE_LAST_STEP && key === GUIDE_KEYS.replay) return action(() => runCommandGuide('restart'))
       if (key === 'e' && stage === GUIDE_LAST_STEP) return action(() => controller.runCommand('tut.more'))
     },
   }
@@ -272,6 +272,11 @@ export function GuideShell({ children, clock = guideClock }: { children: ReactNo
       tabIndex={-1}
       ref={(node) => {
         if (!node) return
+        // Sound follows new completion receipts, never toggles, replay, or Back/Next.
+        const completed = guide.completed ?? []
+        const progress = sounded.current.playthrough === guide.playthrough && completed.some(signal => !sounded.current.completed.includes(signal))
+        sounded.current = { playthrough: guide.playthrough, completed }
+        if (progress && guide.sound) chime()
         if (document.activeElement === document.body) node.focus()
         /*
          * The tutorial presses Next for the reader. A say-beat advances after
@@ -283,7 +288,7 @@ export function GuideShell({ children, clock = guideClock }: { children: ReactNo
         const reduced = globalThis.matchMedia?.("(prefers-reduced-motion: reduce)").matches === true
         const ready = lesson !== undefined && (lesson.kind === "say" ? lesson.terminal !== true : done(stage))
         const token = `${guide.playthrough ?? 0}:${stage}`
-        const spoken = lesson?.kind === "say" ? `${lessonMessage(stage, guide)} ${lesson.more ?? ""}` : ""
+        const spoken = lesson?.kind === "say" ? `${lessonMessage(stage, guide, touch)} ${lesson.more ?? ""}` : ""
         const stopAdvance = !ready ? () => {} : scheduleGuideAdvance({
           target: lesson.kind === "say" ? document : new EventTarget(),
           clock,
@@ -297,7 +302,7 @@ export function GuideShell({ children, clock = guideClock }: { children: ReactNo
         }
       }}
     >
-      <div className="guide-content" ref={bindInputs}>
+      <div className="guide-content" ref={bindInputs} inert={guide.conversationOpen || undefined}>
       {/*
         * The workspace is behind the tutorial chrome (guide.css): while a lesson
         * is running it is not reachable, so it leaves the a11y tree and the tab
@@ -378,7 +383,7 @@ export function GuideShell({ children, clock = guideClock }: { children: ReactNo
           >
             {GUIDE_STAGES.slice(0, stage + 1).map((asked, messageStep) => {
               if (asked.message === "" || !lessonVisible(messageStep, guide)) return null
-              const message = lessonMessage(messageStep, guide)
+              const message = lessonMessage(messageStep, guide, touch)
               const line = lineOf(messageStep)
               const words = (text: string, from = 0) => text.split(" ").map((word, index, all) => {
                 const pauses = all.slice(0, index).filter(part => /[.!?]$/.test(part)).length
@@ -481,8 +486,17 @@ export function GuideShell({ children, clock = guideClock }: { children: ReactNo
         </section>
       </main>
       </div>
-        <div
+        <dialog
           className="guide-composer-dock"
+          role="dialog"
+          aria-label="Chat"
+          aria-modal="true"
+          ref={node => {
+            if (!node) return
+            if (guide.conversationOpen && !node.open) node.showModal()
+            else if (!guide.conversationOpen && node.open) node.close()
+          }}
+          onCancel={event => event.preventDefault()}
           inert={!guide.conversationOpen ? true : undefined}
           aria-hidden={!guide.conversationOpen}
           /* Clicking the scrim (not the palette) dismisses, like a command palette. */
@@ -496,20 +510,29 @@ export function GuideShell({ children, clock = guideClock }: { children: ReactNo
         <div className="guide-composer-clip">
           <section
             className="guide-composer-layer"
-            role="dialog"
-            aria-label="Chat"
           >
             {session.dictating && (
-              <GuideButton className="guide-dictation-stop" data-flow="chat.dictate" shortcut="Tab ↵" onClick={() => controller.runCommand("chat.dictate")}>
+              <GuideButton className="guide-dictation-stop" data-flow="chat.dictate" shortcut="Escape"
+                onKeyDown={event => {
+                  if (event.key === "Tab" && event.shiftKey) {
+                    event.preventDefault()
+                    event.currentTarget.closest(".guide-composer-layer")?.querySelector<HTMLTextAreaElement>("textarea")?.focus()
+                  }
+                }}
+                onClick={() => {
+                  controller.runCommand("chat.dictate")
+                  requestAnimationFrame(() => document.querySelector<HTMLTextAreaElement>(".guide-composer-layer textarea")?.focus())
+                }}>
                 <Mic size={16} /> Stop dictation
               </GuideButton>
             )}
             <div className="guide-composer-host" ref={setComposerHost} />
+            {guide.conversationOpen && <InputModeMenu mode={session.inputMode ?? "normal"} placement="below" onChange={mode => controller.runCommand("input.mode", mode)} />}
           </section>
         </div>
-        </div>
+        </dialog>
       {/* The footer is the shell's last row; the palette overlay floats above it. */}
-      <footer className="guide-footer">
+      <footer className="guide-footer" inert={guide.conversationOpen || undefined}>
         <GuideButton
           data-flow="onboarding.act"
           onClick={runCommandSound}
@@ -545,11 +568,11 @@ export function GuideShell({ children, clock = guideClock }: { children: ReactNo
               <span>Chat</span>
             </GuideButton>
             </HelpBubble>
-            <InputModeMenu mode={session.inputMode ?? "normal"} onChange={mode => controller.runCommand("input.mode", mode)} />
+            {!guide.conversationOpen && <InputModeMenu mode={session.inputMode ?? "normal"} onChange={mode => controller.runCommand("input.mode", mode)} />}
           </div>
         )}
         {stage === GUIDE_LAST_STEP && (
-          <GuideButton data-flow="onboarding.act" shortcut="Tab ↵" onClick={() => runCommandGuide("restart")}>
+          <GuideButton data-flow="onboarding.act" shortcut={GUIDE_KEYS.replay} onClick={() => runCommandGuide("restart")}>
             Replay introduction
           </GuideButton>
         )}

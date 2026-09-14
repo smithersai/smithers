@@ -13,12 +13,17 @@ export interface DictationRecognition {
   stop(): void
   abort(): void
 }
-export const browserRecognition = (): DictationRecognition | undefined => {
+const recognitionConstructor = () => {
   const host = globalThis as typeof globalThis & {
     SpeechRecognition?: new () => DictationRecognition
     webkitSpeechRecognition?: new () => DictationRecognition
   }
-  const Recognition = host.SpeechRecognition ?? host.webkitSpeechRecognition
+  return host.SpeechRecognition ?? host.webkitSpeechRecognition
+}
+export const DICTATION_UNAVAILABLE = "Dictation needs a browser with speech recognition"
+export const dictationAvailable = (): boolean => recognitionConstructor() !== undefined
+export const browserRecognition = (): DictationRecognition | undefined => {
+  const Recognition = recognitionConstructor()
   return Recognition ? new Recognition() : undefined
 }
 

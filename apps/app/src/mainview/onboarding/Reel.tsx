@@ -52,7 +52,7 @@ export function ReelShell({ clock = guideClock }: { clock?: GuideClock }) {
   }, [controller, guide?.reelSeen])
   if (guide?.step !== GUIDE_LAST_STEP) return null
   if (guide.reelIndex !== undefined) return <Reel index={guide.reelIndex} epoch={guide.reelEpoch} demo={guide.reelDemo} dispatch={dispatch} clock={clock} />
-  return <><GuideButton className="guide-primary" data-flow="onboarding.act" shortcut="Tab ↵" onClick={() => dispatch("finish")}>Finish tutorial</GuideButton>
+  return <><GuideButton className="guide-primary" data-flow="onboarding.act" shortcut={GUIDE_KEYS.finish} onClick={() => dispatch("finish")}>Finish tutorial</GuideButton>
   <GuideButton ref={launchRef} className="guide-primary" style={{ border: "1px solid currentColor", borderRadius: 999 }} data-flow="tut.more" shortcut={REEL_BUTTON.key} onClick={() => controller.runCommand(REEL_BUTTON.command)}>
     {REEL_BUTTON.label}
   </GuideButton></>

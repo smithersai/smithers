@@ -401,6 +401,9 @@ test("Back and Chat compete on release; Wiki keeps its own key", async () => {
 })
 
 test("Mode opens on release and selecting Dictation does not open Chat", async () => {
+  const descriptor = Object.getOwnPropertyDescriptor(globalThis, 'SpeechRecognition')
+  Object.defineProperty(globalThis, 'SpeechRecognition', { configurable: true, value: class {} })
+  mounted.push(() => { if (descriptor) Object.defineProperty(globalThis, 'SpeechRecognition', descriptor); else Reflect.deleteProperty(globalThis, 'SpeechRecognition') })
   let controller!: ReturnType<typeof createAppController>
   const host = await mountGuide(1, still, {}, c => { controller = c })
   const key = (type: string, key: string) => flushSync(() => (document.activeElement ?? document).dispatchEvent(new KeyboardEvent(type, { key, bubbles: true, cancelable: true })))

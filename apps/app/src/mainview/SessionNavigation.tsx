@@ -54,7 +54,7 @@ export function SessionNavigation() {
   }, [controller])
   return <>
     <header className="session-navigation" ref={mount} data-sidebar-open={open}>
-      <button type="button" className="guide-wordmark" aria-label="Smithers" aria-expanded={open} aria-controls="session-sidebar" aria-keyshortcuts="W" data-flow="sidebar.toggle" onClick={() => controller.runCommand("sidebar.toggle")}><Mark /></button>
+      <button type="button" className="guide-wordmark" aria-label="Smithers" aria-expanded={open} aria-controls={open ? "session-sidebar" : undefined} aria-keyshortcuts="W" data-flow="sidebar.toggle" onClick={() => controller.runCommand("sidebar.toggle")}><Mark /></button>
       <div className="session-identity">
         {identity?.state === "signed-in" ?
           controller.commands.find("account.show") !== undefined && <button type="button" className="chrome-action" data-testid="chrome-account" data-flow="account.show" onClick={() => controller.runCommand("account.show")}>Account (@{identity.login})</button> :
