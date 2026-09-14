@@ -13,9 +13,11 @@ import { GuideShell } from './GuideShell'
 import { PRACTICE_REPO } from '../state/practice/PracticeRepository'
 
 GlobalRegistrator.register()
+// Assert DOM presence/identity as scalars: dumping a live DOM on failure can
+// block Bun's timeout while it formats the entire React/store object graph.
 const cleanups: Array<() => void | Promise<void>> = []
-afterEach(async () => { while (cleanups.length) await cleanups.pop()?.() })
-afterAll(async () => { await settle(); await GlobalRegistrator.unregister() })
+afterEach(async () => { while (cleanups.length) await cleanups.pop()?.() }, 2_000)
+afterAll(async () => { await settle(); await GlobalRegistrator.unregister() }, 2_000)
 const settle = async () => { for (let i = 0; i < 4; i++) { await new Promise(resolve => setTimeout(resolve, 0)); flushSync(() => {}) } }
 const press = async (key: string, target: EventTarget = document) => {
   for (const type of ['keydown', 'keyup']) flushSync(() => (type === 'keyup' && target !== document ? document.activeElement ?? target : target).dispatchEvent(new KeyboardEvent(type, { key, bubbles: true, cancelable: true })))
@@ -62,7 +64,7 @@ test('unsupported Dictation is explained and cannot be selected; Chat opens norm
   await press('c')
   expect(store.session().paletteOpen).toBe(true)
   expect([...store.collections.toasts.values()].some(toast => toast.title.includes("didn't run"))).toBe(false)
-})
+}, 2_000)
 
 test('dictation Tab reaches Stop, Shift+Tab returns to the composer, and Escape releases capture before closing Chat', async () => {
   const aborted = speech()
@@ -81,31 +83,67 @@ test('dictation Tab reaches Stop, Shift+Tab returns to the composer, and Escape 
   await press('Escape', input)
   expect(aborted()).toBe(1)
   expect(store.session().dictating).toBe(false)
-  expect(host.querySelector('[role="listbox"]')).toBeNull()
+  expect(host.querySelector('[role="listbox"]') !== null).toBe(true)
   expect(store.session().guide?.conversationOpen).toBe(true)
   expect(host.querySelector('dialog')!.open).toBe(true)
   await press('Escape', input)
   expect(aborted()).toBe(1)
   expect(store.session().guide?.conversationOpen).toBe(false)
-})
+}, 2_000)
 
-test('Escape dismisses the root palette before Chat and preserves the draft through both presses', async () => {
+for (const draft of ['', 'hello from a phone']) test(`Escape dismisses Chat together with its root palette and preserves ${JSON.stringify(draft)}`, async () => {
   const { host, store, controller } = await mount()
   await press('c')
-  controller.changeDraft('hello from a phone')
+  controller.changeDraft(draft)
   await settle()
   const input = host.querySelector<HTMLTextAreaElement>('[data-testid="composer-input"]')!
   input.focus()
   await press('Escape', input)
-  expect(host.querySelector('[role="listbox"]')).toBeNull()
-  expect(store.session().guide?.conversationOpen).toBe(true)
-  expect(host.querySelector('dialog')!.open).toBe(true)
-  expect(store.session().draft).toBe('hello from a phone')
-  await press('Escape', input)
+  expect(host.querySelector('[role="listbox"]') === null).toBe(true)
   expect(store.session().guide?.conversationOpen).toBe(false)
   expect(host.querySelector('dialog')!.open).toBe(false)
-  expect(store.session().draft).toBe('hello from a phone')
-})
+  expect(store.session().draft).toBe(draft)
+  await press('c')
+  expect(input.value).toBe(draft)
+  expect(document.activeElement === input).toBe(true)
+}, 2_000)
+
+for (const draft of ['/issues', '/issues.']) test(`Escape dismisses the nested slash menu for ${draft} before Chat`, async () => {
+  const { host, store, controller } = await mount()
+  await press('c')
+  controller.changeDraft(draft)
+  await settle()
+  const input = host.querySelector<HTMLTextAreaElement>('[data-testid="composer-input"]')!
+  await press('Escape', input)
+  expect(host.querySelector('[role="listbox"]') === null).toBe(true)
+  expect(host.querySelector('dialog')!.open).toBe(true)
+  expect(store.session().guide?.conversationOpen).toBe(true)
+  expect(store.session().draft).toBe(draft)
+  expect(document.activeElement === input).toBe(true)
+  await press('Escape', input)
+  expect(host.querySelector('dialog')!.open).toBe(false)
+  expect(store.session().draft).toBe(draft)
+}, 2_000)
+
+test('Escape on dictation Stop releases only capture and restores composer focus', async () => {
+  const aborted = speech()
+  const { host, store, controller } = await mount()
+  controller.runCommand('input.mode', 'dictation')
+  await settle()
+  await press('c')
+  const input = host.querySelector<HTMLTextAreaElement>('[data-testid="composer-input"]')!
+  await press('Tab', input)
+  const stop = host.querySelector<HTMLButtonElement>('.guide-dictation-stop')!
+  expect(document.activeElement === stop).toBe(true)
+  await press('Escape', stop)
+  expect(aborted()).toBe(1)
+  expect(store.session().dictating).toBe(false)
+  expect(host.querySelector('dialog')!.open).toBe(true)
+  expect(host.querySelector('[role="listbox"]') !== null).toBe(true)
+  expect(document.activeElement === input).toBe(true)
+  await press('Escape', input)
+  expect(host.querySelector('dialog')!.open).toBe(false)
+}, 2_000)
 
 test('Chat has a modal boundary and makes the tutorial and footer inert; Mode remains inside', async () => {
   const { host } = await mount()
@@ -115,10 +153,10 @@ test('Chat has a modal boundary and makes the tutorial and footer inert; Mode re
   expect(dialog.closest('dialog')!.open).toBe(true)
   expect(host.querySelector('.guide-content')?.hasAttribute('inert')).toBe(true)
   expect(host.querySelector('.guide-footer')?.hasAttribute('inert')).toBe(true)
-  expect(dialog.querySelector('[aria-haspopup="menu"]')).not.toBeNull()
+  expect(dialog.querySelector('[aria-haspopup="menu"]') !== null).toBe(true)
   await press('Escape')
   expect(host.querySelector('.guide-content')?.hasAttribute('inert')).toBe(false)
-})
+}, 2_000)
 
 test('Enter on dictation Stop ends capture and returns focus to the open Chat composer', async () => {
   speech()
@@ -130,14 +168,16 @@ test('Enter on dictation Stop ends capture and returns focus to the open Chat co
   expect(store.session().dictating).toBe(true)
   await press('Tab', input)
   const stop = host.querySelector<HTMLButtonElement>('.guide-dictation-stop')!
-  expect(document.activeElement).toBe(stop)
+  expect(document.activeElement === stop).toBe(true)
+  // Focus must not depend on a frame firing (background tabs can suspend them).
+  const frame = spyOn(globalThis, 'requestAnimationFrame').mockImplementation(() => 1)
+  cleanups.push(() => frame.mockRestore())
   await press('Enter', stop)
-  await new Promise<void>(resolve => requestAnimationFrame(() => resolve()))
   expect(store.session().dictating).toBe(false)
-  expect(host.querySelector('.guide-dictation-stop')).toBeNull()
+  expect(host.querySelector('.guide-dictation-stop') === null).toBe(true)
   expect(store.session().guide?.conversationOpen).toBe(true)
-  expect(document.activeElement).toBe(input)
-})
+  expect(document.activeElement === input).toBe(true)
+}, 2_000)
 
 test('composer exposes the palette and its moving selection to assistive technology', async () => {
   const { host } = await mount()
@@ -153,7 +193,7 @@ test('composer exposes the palette and its moving selection to assistive technol
   expect(input.getAttribute('aria-activedescendant')).not.toBe(before)
   expect(input.getAttribute('aria-activedescendant')).toBe(list.querySelector('[aria-selected="true"]')!.id)
   expect([...list.querySelectorAll<HTMLElement>('[role="option"]')].every(option => option.tabIndex === -1)).toBe(true)
-})
+}, 2_000)
 
 test('practice issue has one projection and wordmark references only an existing sidebar', async () => {
   const { host, controller } = await mount(3)
@@ -167,23 +207,23 @@ test('practice issue has one projection and wordmark references only an existing
   expect(ids.length).toBe(new Set(ids).size)
   expect(host.querySelectorAll('nav[aria-label="Frame history"]').length).toBe(1)
   expect(host.querySelectorAll('aside[aria-label="Issue #3 details"]').length).toBe(1)
-  for (const node of host.querySelectorAll('[aria-controls]')) expect(document.getElementById(node.getAttribute('aria-controls')!)).not.toBeNull()
+  for (const node of host.querySelectorAll('[aria-controls]')) expect(document.getElementById(node.getAttribute('aria-controls')!) !== null).toBe(true)
   await press('w')
-  expect(host.querySelector('[aria-controls="session-sidebar"]')).not.toBeNull()
-  expect(host.querySelector('#session-sidebar')).not.toBeNull()
+  expect(host.querySelector('[aria-controls="session-sidebar"]') !== null).toBe(true)
+  expect(host.querySelector('#session-sidebar') !== null).toBe(true)
   controller.runCommand('input.mode', 'vim')
   await settle()
   const comment = fields[0] as HTMLTextAreaElement
   comment.focus()
   await press('Escape', comment)
-  expect(document.activeElement).toBe(comment)
+  expect(document.activeElement === comment).toBe(true)
   expect(comment.getAttribute('data-vim-mode')).toBe('normal')
   await press('m', comment)
-  expect(host.querySelector('[role="menu"]')).toBeNull()
+  expect(host.querySelector('[role="menu"]') === null).toBe(true)
   comment.blur()
   await press('m')
-  expect(host.querySelector('[role="menu"]')).not.toBeNull()
-})
+  expect(host.querySelector('[role="menu"]') !== null).toBe(true)
+}, 2_000)
 
 test('tutorial sounds report new completions once, including goal ticks, and stay quiet on navigation and toggles', async () => {
   let chimes = 0
@@ -203,7 +243,7 @@ test('tutorial sounds report new completions once, including goal ticks, and sta
   expect(chimes).toBe(2)
   await press('b'); await press('s')
   expect(chimes).toBe(2)
-})
+}, 2_000)
 
 for (const [label, action] of [['Finish tutorial', 'finish'], ['Replay introduction', 'restart']]) {
   test(`${label} advertises a distinct shortcut that runs its action`, async () => {
@@ -220,7 +260,7 @@ for (const [label, action] of [['Finish tutorial', 'finish'], ['Replay introduct
     await press(button.getAttribute('aria-keyshortcuts')!)
     expect(calls).toContainEqual(['onboarding.act', action])
     spy.mockRestore()
-  })
+  }, 2_000)
 }
 
 test('touch tutorial copy names the controls instead of physical keys', async () => {
@@ -231,7 +271,7 @@ test('touch tutorial copy names the controls instead of physical keys', async ()
   expect(message).toContain('tap Chat')
   expect(message).toContain('Tap Mode')
   expect(message).not.toMatch(/press|H\/J\/K\/L/i)
-})
+}, 2_000)
 
 test('the keyboard-scrollable transcript has an explicit visible focus outline', async () => {
   const style = document.createElement('style')
@@ -245,4 +285,4 @@ test('the keyboard-scrollable transcript has an explicit visible focus outline',
   style.textContent = style.textContent.replaceAll('.guide-transcript:focus-visible', '.guide-transcript:focus')
   expect(getComputedStyle(log).outlineStyle).toBe('solid')
   expect(getComputedStyle(log).outlineWidth).toBe('2px')
-})
+}, 2_000)

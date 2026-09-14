@@ -1,5 +1,8 @@
 import { expect, test } from "@playwright/test"
 
+test.use({ actionTimeout: 3_000, navigationTimeout: 10_000 })
+test.setTimeout(30_000)
+
 /*
  * M0 chat (LOCAL-APP.md): a turn typed into the composer is POSTed to the
  * local origin's /api/chat/turn and the streamed reply lands as an
@@ -34,7 +37,7 @@ test(`tutorial chat sends and displays the stub reply at ${viewport.width}px (${
   }))
   expect(colours.text).not.toBe(colours.background)
   const assistant = page.locator(".guide-transcript .smithers-chat-message[data-role=\"assistant\"]", { hasText: "stub: say ok" })
-  await expect(assistant).toContainText("stub: say ok", { timeout: 15_000 })
+  await expect(assistant).toContainText("stub: say ok", { timeout: 5_000 })
   await expect(assistant).toBeInViewport()
   await expect(input).toBeVisible()
   await expect(page.locator('.guide-shell')).toHaveAttribute('data-conversation-open', 'true')
@@ -54,7 +57,7 @@ test("typing 'say ok' and sending renders the stub reply", async ({ page }) => {
   // The user's own bubble first, then the assistant's streamed text.
   await expect(page.locator(".smithers-chat-message[data-role=\"user\"]")).toContainText("say ok")
   const assistant = page.locator(".smithers-chat-message[data-role=\"assistant\"]", { hasText: "stub: say ok" })
-  await expect(assistant).toContainText("stub: say ok", { timeout: 15_000 })
+  await expect(assistant).toContainText("stub: say ok", { timeout: 5_000 })
 })
 
 for (const path of ["/", "/smithersai/smithers/"]) {
@@ -67,7 +70,6 @@ for (const path of ["/", "/smithersai/smithers/"]) {
       await expect(input).toHaveValue(draft)
       await expect(page.locator('.session-sidebar')).toHaveCount(0)
       await input.fill('')
-      await page.keyboard.press('Escape')
       await page.keyboard.press('Escape')
       await expect(input).toBeHidden()
     }
@@ -102,27 +104,45 @@ for (const path of ["/", "/smithersai/smithers/"]) {
 
     const draft = "What does this repository do? Answer in two sentences."
     await input.fill(draft)
-    const turn = page.waitForRequest(request => request.method() === "POST" && /\/api\/(?:agent|chat)\/turn(?:\?|$)/.test(request.url()))
+    const turn = page.waitForRequest(request => request.method() === "POST" && /\/api\/(?:agent|chat)\/turn(?:\?|$)/.test(request.url()), { timeout: 5_000 })
     await input.press("Enter")
     await turn
     const reply = page.locator('.smithers-chat-message[data-role="assistant"]', { hasText: `stub: ${draft}` })
-    await expect(reply).toContainText(`stub: ${draft}`, { timeout: 15_000 })
+    await expect(reply).toContainText(`stub: ${draft}`, { timeout: 5_000 })
     await expect(page.locator('.smithers-chat-message[data-role="user"]', { hasText: draft })).toBeInViewport({ ratio: 1 })
     await expect(reply).toBeInViewport({ ratio: 1 })
   })
 
-  test(`Escape closes the slash menu before Chat: ${path}`, async ({ page }) => {
+  test(`Escape closes Chat and its root palette and restores the draft on reopen: ${path}`, async ({ page }) => {
+    await page.goto(path)
+    const chat = page.getByRole('button', { name: 'Chat', exact: true })
+    await chat.click()
+    const input = page.getByTestId('composer-input')
+    await input.fill('keep this draft')
+    await expect(page.getByTestId('palette')).toBeVisible()
+    await input.press('Escape')
+    await expect(input).toBeHidden()
+    await expect(page.getByTestId('palette')).toBeHidden()
+    await chat.click()
+    await expect(input).toBeFocused()
+    await expect(input).toHaveValue('keep this draft')
+  })
+
+  for (const draft of ['/issues', '/issues.']) test(`Escape closes the slash menu for ${draft} before Chat: ${path}`, async ({ page }) => {
     await page.goto(path)
     await expect(page.getByRole("button", { name: "Mode: Normal", exact: true })).toBeVisible()
     await page.keyboard.press("c")
     const input = page.getByTestId("composer-input")
-    await input.fill("/issues")
+    await input.fill(draft)
     await expect(page.getByTestId("palette")).toBeVisible()
     await input.press("Escape")
     await expect(page.getByTestId("palette")).toBeHidden()
     await expect(input).toBeFocused()
+    await expect(input).toHaveValue(draft)
     await input.press("Escape")
     await expect(input).toBeHidden()
+    await page.getByRole('button', { name: 'Chat', exact: true }).click()
+    await expect(input).toHaveValue(draft)
   })
 }
 

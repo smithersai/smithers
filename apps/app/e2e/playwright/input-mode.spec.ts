@@ -1,6 +1,7 @@
 import { expect, test } from '@playwright/test'
 
-test.use({ contextOptions: { reducedMotion: 'reduce' } })
+test.use({ contextOptions: { reducedMotion: 'reduce' }, actionTimeout: 3_000, navigationTimeout: 10_000 })
+test.setTimeout(30_000)
 
 test('Chat Tab reaches Send and Mode and cycles inside the dialog', async ({ page }) => {
   await page.goto('/')
@@ -58,8 +59,8 @@ test('Mode selects on release, dismisses accessibly, persists, and Vim navigates
   const changes = page.getByRole('button', { name: 'Review changes', exact: true })
   await issues.focus()
   await page.keyboard.down('l')
-  await expect(issues).toBeFocused()
-  await expect(changes).toHaveAttribute('data-pressed', '')
+  await expect(changes).toBeFocused()
+  await expect(changes).not.toHaveAttribute('data-pressed', '')
   await page.keyboard.up('l')
   await expect(changes).toBeFocused()
   await expect(page.locator('.guide-shell')).toHaveAttribute('data-stage', '1')
@@ -109,6 +110,39 @@ test('switching away from Dictation stops capture without reopening Chat', async
   await expect.poll(() => page.evaluate(() => (window as any).starts)).toBe(1)
 })
 
+for (const key of ['Enter', 'Escape']) test(`${key} on dictation Stop releases capture before Chat`, async ({ page }) => {
+  await page.addInitScript(() => {
+    const host = window as any
+    host.SpeechRecognition = class {
+      onend: any
+      start() {}
+      stop() { this.onend?.() }
+      abort() { host.aborts = (host.aborts ?? 0) + 1 }
+    }
+  })
+  await page.goto('/')
+  await page.getByRole('button', { name: 'Mode: Normal', exact: true }).click()
+  await page.getByRole('menuitemradio', { name: 'Dictation', exact: true }).click()
+  await page.keyboard.press('c')
+  const input = page.getByTestId('composer-input')
+  const stop = page.getByRole('button', { name: 'Stop dictation', exact: true })
+  await expect(stop).toBeVisible()
+  await input.fill('keep this dictation draft')
+  await input.press('Tab')
+  await expect(stop).toBeFocused()
+  await stop.press('Shift+Tab')
+  await expect(input).toBeFocused()
+  await input.press('Tab')
+  await stop.press(key)
+  await expect(stop).toHaveCount(0)
+  await expect(input).toBeFocused()
+  await expect(input).toHaveValue('keep this dictation draft')
+  await expect(page.getByTestId('palette')).toBeVisible()
+  await input.press('Escape')
+  await expect(input).toBeHidden()
+  if (key === 'Escape') expect(await page.evaluate(() => (window as any).aborts)).toBe(1)
+})
+
 test('repository pages share Chat and Mode without duplicating tutorial controls', async ({ page }) => {
   await page.goto('/smithersai/smithers/')
   await expect(page.locator('.guide-shell')).toHaveCount(0)
@@ -138,7 +172,7 @@ test('unsupported Dictation is disabled with a reason and Chat stays in Normal m
   await expect(page.getByText("/chat.open didn't run", { exact: true })).toHaveCount(0)
 })
 
-test('Vim walks only controls through the practice issue; Escape exits a manually opened field', async ({ page }) => {
+test('Vim navigates the practice issue and Escape keeps a field in normal mode', async ({ page }) => {
   await page.goto('/smithersai/smithers/?tutorial')
   await page.getByRole('button', { name: 'Mode: Normal', exact: true }).click()
   await page.getByRole('menuitemradio', { name: 'Vim', exact: true }).click()
@@ -154,20 +188,31 @@ test('Vim walks only controls through the practice issue; Escape exits a manuall
   })).toBe(true)
   await expect(page.locator('nav[aria-label="Frame history"]')).toHaveCount(1)
   await expect(page.locator('aside[aria-label="Issue #3 details"]')).toHaveCount(1)
-  await page.getByRole('button', { name: 'View issue flows', exact: true }).focus()
-  for (const key of ['k', 'k', 'k', 'j', 'j', 'j', 'h', 'l']) {
-    await page.keyboard.press(key)
-    expect(await page.evaluate(() => document.activeElement?.matches('button,a[href],[role="button"],[role="link"]'))).toBe(true)
-  }
-  await expect(comment).toHaveValue('')
+  const issueFlows = page.getByRole('button', { name: 'Issue flows', exact: true })
+  await issueFlows.focus()
+  await page.keyboard.press('l')
+  await expect(page.getByRole('button', { name: 'Research / repro', exact: true })).toBeFocused()
+  await page.keyboard.press('h')
+  await expect(issueFlows).toBeFocused()
   await comment.focus()
   await page.keyboard.press('Escape')
+  await expect(comment).toBeFocused()
+  await expect(comment).toHaveAttribute('data-vim-mode', 'normal')
+  await page.keyboard.press('m')
+  await expect(page.getByRole('menu', { name: 'Input mode' })).toHaveCount(0)
+  await expect(comment).toHaveValue('')
+  await page.keyboard.press('Control+b')
+  await page.keyboard.press('q')
+  const controlsPane = page.locator('.keyboard-pane-number').filter({ hasText: 'Tutorial controls' })
+  await page.keyboard.press((await controlsPane.locator('kbd').textContent())!)
   await page.keyboard.press('m')
   await expect(page.getByRole('menu', { name: 'Input mode' })).toBeVisible()
 })
 
 test('touch guidance and repository footer use taps without key chips', async ({ browser, baseURL }) => {
   const context = await browser.newContext({ baseURL, viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, reducedMotion: 'reduce' })
+  context.setDefaultTimeout(3_000)
+  context.setDefaultNavigationTimeout(10_000)
   const page = await context.newPage()
   await page.goto('/smithersai/smithers/?tutorial')
   await expect(page.getByRole('button', { name: 'Show issues', exact: true })).toBeVisible()

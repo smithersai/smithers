@@ -280,7 +280,10 @@ export function GuideShell({ children, clock = guideClock }: { children: ReactNo
         return action(() => conversationOpen ? runCommandClose() : runCommandOpen(), event.metaKey ? 'meta+k' : 'control+k')
       }
       if (event.metaKey || event.ctrlKey || event.altKey || event.shiftKey) return
-      if (key === 'escape' && conversationOpen) return action(runCommandClose)
+      if (key === 'escape' && conversationOpen) return action(controller.store.session().dictating ? () => {
+        controller.cancelDictation()
+        document.querySelector<HTMLTextAreaElement>('.guide-composer-layer textarea')?.focus()
+      } : runCommandClose)
       if (key === GUIDE_KEYS.mode) return action(() => document.querySelector<HTMLButtonElement>('.guide-shell [aria-haspopup="menu"][aria-keyshortcuts="m"]')?.click())
       if (key === GUIDE_KEYS.chat) return action(() => conversationOpen ? runCommandClose() : runCommandOpen())
       if (key === 'w') return action(() => controller.runCommand('sidebar.toggle'))
@@ -527,7 +530,7 @@ export function GuideShell({ children, clock = guideClock }: { children: ReactNo
               </article>
             ))}
           </div>
-          <div className="guide-actions" data-help-sequence={lesson?.kind === "do" && lesson.help?.introduction !== undefined || undefined}>
+          <div className="guide-actions" data-keyboard-pane="Lesson actions" data-help-sequence={lesson?.kind === "do" && lesson.help?.introduction !== undefined || undefined}>
             {lesson?.kind === "do" && lesson.actions.map(suggestion => {
               const action = guideActionState(suggestion, lessonCards, guide)
               const guidedAction = lesson.help?.actionKey === action.key
@@ -628,7 +631,7 @@ export function GuideShell({ children, clock = guideClock }: { children: ReactNo
                 }}
                 onClick={() => {
                   controller.runCommand("chat.dictate")
-                  requestAnimationFrame(() => document.querySelector<HTMLTextAreaElement>(".guide-composer-layer textarea")?.focus())
+                  document.querySelector<HTMLTextAreaElement>(".guide-composer-layer textarea")?.focus()
                 }}>
                 <Mic size={16} /> Stop dictation
               </GuideButton>

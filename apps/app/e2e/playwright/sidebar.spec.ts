@@ -1,16 +1,23 @@
 import { expect, test } from "@playwright/test"
 
+test.use({ actionTimeout: 3_000, navigationTimeout: 10_000 })
+test.setTimeout(30_000)
+
 for (const viewport of [{ width: 1365, height: 900 }, { width: 390, height: 844 }]) test(`global sidebar and tutorial finish at ${viewport.width}px`, async ({ page }) => {
   await page.setViewportSize(viewport)
+  // Finish now hands off to the public repository; supply its catalog entry.
+  await page.route("**/api/public/repos", route => route.fulfill({ json: { repos: [{ name: "smithersai/smithers" }] } }))
+  await page.route("**/api/repos/smithersai/smithers", route => route.fulfill({ json: { default_bookmark: "main" } }))
   await page.addInitScript(() => {
+    const capture = { starts: 0, aborts: 0 }
     class Recognition {
       continuous = false; interimResults = false; lang = "en-US"
       onresult: ((event: unknown) => void) | null = null
       onerror: ((event: unknown) => void) | null = null
       onend: (() => void) | null = null
-      start() {} stop() { this.onend?.() } abort() { this.onend?.() }
+      start() { capture.starts++ } stop() { this.onend?.() } abort() { capture.aborts++; this.onend?.() }
     }
-    Object.assign(window, { SpeechRecognition: Recognition })
+    Object.assign(window, { SpeechRecognition: Recognition, sidebarCapture: capture })
   })
   await page.goto("/")
   const logo = page.getByRole("button", { name: "Smithers", exact: true })
@@ -38,6 +45,7 @@ for (const viewport of [{ width: 1365, height: 900 }, { width: 390, height: 844 
   await expect(logo).toHaveAttribute("aria-expanded", "false")
   await input.fill("")
   await page.keyboard.press("Escape")
+  await expect(input).toBeHidden()
   await expect(page.locator(".guide-shell")).toHaveAttribute("data-stage", "1")
   await page.keyboard.press("q")
   await expect(page.locator(".guide-shell")).toHaveAttribute("data-stage", "10")
@@ -47,6 +55,7 @@ for (const viewport of [{ width: 1365, height: 900 }, { width: 390, height: 844 
   await page.keyboard.press("Control+k")
   await expect(page.locator(".guide-shell")).toHaveAttribute("data-stage", "14")
   await page.keyboard.press("Escape")
+  await expect(input).toBeHidden()
   await expect(page.getByRole("button", { name: "Finish tutorial", exact: true })).toBeVisible()
   await page.getByRole("button", { name: "Finish tutorial", exact: true }).click()
   await expect(page.locator(".guide-shell")).toHaveCount(0)
@@ -54,16 +63,20 @@ for (const viewport of [{ width: 1365, height: 900 }, { width: 390, height: 844 
   await expect(page.locator("#session-sidebar")).toBeVisible()
   await page.screenshot({ path: `/tmp/smithers-sidebar-${viewport.width}.png`, fullPage: true })
   await logo.click()
-  const chat = page.locator('.app-chat-controls [data-flow="palette.open"]')
-  const dictate = page.locator('.app-chat-controls [data-flow="chat.dictate"]')
+  const footer = page.locator('.app-chat-controls')
+  const chat = footer.getByRole('button', { name: 'Chat', exact: true })
+  const mode = footer.getByRole('button', { name: 'Mode: Normal', exact: true })
   await expect(chat).toBeVisible()
-  await expect(dictate).toBeVisible()
+  await expect(mode).toBeVisible()
   await expect(page.locator('.guide-chat-controls')).toHaveCount(0)
-  await dictate.click()
-  await expect(dictate).toHaveAttribute("aria-pressed", "true")
+  await mode.click()
+  await page.getByRole('menuitemradio', { name: 'Dictation', exact: true }).click()
+  await chat.click()
+  await expect.poll(() => page.evaluate(() => (window as any).sidebarCapture.starts)).toBe(1)
   await expect(input).toBeVisible()
-  await dictate.click()
-  await expect(dictate).toHaveAttribute("aria-pressed", "false")
+  await footer.getByRole('button', { name: 'Mode: Dictation', exact: true }).click()
+  await page.getByRole('menuitemradio', { name: 'Normal', exact: true }).click()
+  await expect.poll(() => page.evaluate(() => (window as any).sidebarCapture.aborts)).toBe(1)
   await page.keyboard.press("Escape")
   await chat.click()
   await expect(input).toBeVisible()
@@ -74,6 +87,10 @@ for (const viewport of [{ width: 1365, height: 900 }, { width: 390, height: 844 
   await expect(input).toBeVisible()
   await input.fill("Hello Smithers")
   await input.press("Enter")
+  await expect(page.locator('.smithers-chat-message[data-role="user"]', { hasText: 'Hello Smithers' })).toBeVisible()
+  await expect(input).toHaveValue("")
+  await expect(input).toBeVisible()
+  await input.press("Escape")
   await expect(input).toBeHidden()
   await page.reload()
   await expect(page.locator(".guide-shell")).toHaveCount(0)

@@ -21,6 +21,7 @@ import { createAppController } from "./state/AppController"
 import type { AppController as AppControllerType } from "./state/AppController"
 import { createAppStore } from "./state/AppStore"
 import type { AppStore } from "./state/AppStore"
+import { initialGuide } from "./state/AppState"
 
 GlobalRegistrator.register()
 
@@ -315,13 +316,23 @@ describe("§3 the keyboard contract", () => {
     // Files (both prefix matches, in listing order), the run (contains), then the flow whose summary says "compose".
     expect(rows(view.host)).toEqual(["", "src/Composer.tsx", "src/Compose.css", runSearchRef("run-compose", "runs-1"), "chat.send"])
     await press(view, "Escape")
-    expect(view.store.session().paletteOpen).toBe(true)
+    expect(view.store.session().paletteOpen).toBe(false)
     expect(palette(view.host)).toBeNull()
     expect(view.store.session().draft).toBe("Compose")
-    // A second Esc mid-query still finds the draft intact (story 10).
+    expect(view.host.querySelector<HTMLElement>(".composer-wrap")?.hidden).toBe(true)
+  })
+
+  for (const finished of [false, true]) test(`an unmounted guide does not own the repository composer's Escape (finished=${finished})`, async () => {
+    const view = await mount()
+    await view.act(() => {
+      view.store.dispatch({ type: "guide.changed", actor: "user", guide: { ...initialGuide(), finished, conversationOpen: true } })
+      view.controller.changeDraft("keep this draft")
+    })
+    await press(view, "k", { meta: true })
     await press(view, "Escape")
-    expect(view.store.session().draft).toBe("Compose")
     expect(view.store.session().paletteOpen).toBe(false)
+    expect(view.host.querySelector<HTMLElement>(".composer-wrap")?.hidden).toBe(true)
+    expect(view.store.session().draft).toBe("keep this draft")
   })
 
   test("the arrows move and wrap; Tab and Shift+Tab keep native control navigation", async () => {
@@ -343,6 +354,23 @@ describe("§3 the keyboard contract", () => {
       expect(event.defaultPrevented).toBe(false)
       expect(highlighted(view.host)?.dataset["ref"]).toBe("src/Compose.css")
     }
+  })
+
+  test("Escape closes nested actions before closing Chat with its root palette", async () => {
+    const view = await mount()
+    await view.act(() => view.controller.changeDraft("run:compose"))
+    await press(view, "k", { meta: true })
+    await press(view, "ArrowRight")
+    expect(view.store.session().paletteActionsRef).toBe(runSearchRef("run-compose", "runs-1"))
+    await press(view, "Escape")
+    expect(view.store.session().paletteActionsRef).toBeNull()
+    expect(view.store.session().paletteOpen).toBe(true)
+    expect(palette(view.host)?.dataset["mode"]).toBe("runs")
+    expect(view.store.session().draft).toBe("run:compose")
+    await press(view, "Escape")
+    expect(view.store.session().paletteOpen).toBe(false)
+    expect(view.host.querySelector<HTMLElement>(".composer-wrap")?.hidden).toBe(true)
+    expect(view.store.session().draft).toBe("run:compose")
   })
 
   test("→ opens the item's actions (registered flows), ← walks back, Enter on an action runs it", async () => {

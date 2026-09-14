@@ -1109,8 +1109,12 @@ export function Composer({
       const stop = event.currentTarget.closest(".guide-composer-layer")?.querySelector<HTMLButtonElement>(".guide-dictation-stop")
       if (stop) { event.preventDefault(); stop.focus(); return }
     }
-    // Release microphone capture before the palette or Chat handles Escape.
-    if (event.key === "Escape" && controller.store.session().dictating) controller.cancelDictation()
+    // Capture owns this Escape; leave the palette and Chat available below it.
+    if (event.key === "Escape" && controller.store.session().dictating) {
+      event.preventDefault()
+      controller.cancelDictation()
+      return
+    }
     // Input can arrive before the live-query render catches up. Keyboard
     // decisions must use the text under the caret, never the previous menu.
     const inputDraft = event.currentTarget.value
@@ -1143,6 +1147,12 @@ export function Composer({
     })
     const performed = perform(decision, inputDraft)
     if (performed) {
+      // Chat and its root palette are one dialog. The guide closes both on
+      // release; slash and action menus own their dismissal before Chat.
+      if (event.key === "Escape" && decision.kind === "close" && inputAnswer.parsed.mode !== "flows") {
+        if (event.currentTarget.closest(".guide-composer-layer")) return
+        controller.closePalette(inputDraft)
+      }
       event.preventDefault()
       return
     }

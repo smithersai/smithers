@@ -144,8 +144,6 @@ for (const device of [
       expect((await mode.boundingBox())!.y).toBeGreaterThanOrEqual(listBox.y + listBox.height)
       await input.fill("hello from a phone")
       await page.keyboard.press("Escape")
-      await expect(input).toBeFocused()
-      await page.keyboard.press("Escape")
       await expect(page.getByRole("dialog", { name: "Chat", exact: true })).toBeHidden()
       await expect(page.locator(".guide-shell")).toHaveAttribute("data-conversation-open", "false")
       await page.getByRole("button", { name: "Chat", exact: true }).tap()

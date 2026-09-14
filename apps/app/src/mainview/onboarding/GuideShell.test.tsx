@@ -24,13 +24,13 @@ afterAll(async () => {
     await new Promise((resolve) => setTimeout(resolve, 0))
   }
   await GlobalRegistrator.unregister()
-})
+}, 2_000)
 
 const mounted: Array<() => void> = []
 
 afterEach(() => {
   while (mounted.length > 0) mounted.pop()?.()
-})
+}, 2_000)
 
 const memoryStorage = (): StorageApi => {
   const data = new Map<string, string>()
@@ -97,7 +97,7 @@ for (const trigger of ["click", "shortcut"] as const) test(`the requirement toas
   const run = spyOn(controller, "runCommand").mockReturnValue(true)
   try {
     const button = host.querySelector<HTMLButtonElement>('.guide-toasts [data-flow="auth.sign-in"]')!
-    expect(button).not.toBeNull()
+    expect(button !== null).toBe(true)
     expect(button.textContent).toContain("Sign in with GitHub")
     expect(button.getAttribute("aria-keyshortcuts")).toContain("Control+Shift+G")
     if (trigger === "click") button.click()
@@ -113,7 +113,7 @@ for (const trigger of ["click", "shortcut"] as const) test(`the requirement toas
     expect(run.mock.calls).toEqual([["toast.dismiss", "toast-command.requirement"], ["auth.sign-in", undefined]])
     expect(controller.store.session().pendingCommand?.name).toBe("flow.list")
   } finally { run.mockRestore(); controller.dispose() }
-})
+}, 2_000)
 const settle = async () => {
   await new Promise(resolve => setTimeout(resolve, 0))
   flushSync(() => {})
@@ -136,7 +136,7 @@ test("Chat button focuses the input before another keydown, including reopening"
     }
     await settle()
   }
-})
+}, 2_000)
 
 test("tutorial slash Escape dismisses just the menu, then Chat, preserving the draft", async () => {
   let controller!: ReturnType<typeof createAppController>
@@ -153,13 +153,13 @@ test("tutorial slash Escape dismisses just the menu, then Chat, preserving the d
   })
   escape()
   await settle()
-  expect(host.querySelector('[data-testid="palette"]')).toBeNull()
+  expect(host.querySelector('[data-testid="palette"]') === null).toBe(true)
   expect(controller.store.session().guide?.conversationOpen).toBe(true)
   expect(controller.store.session().draft).toBe('/')
   escape()
   await settle()
   expect(controller.store.session().guide?.conversationOpen).toBe(false)
-})
+}, 2_000)
 
 test("Tab wraps from Mode to the input and Shift+Tab wraps back inside Chat", async () => {
   let controller!: ReturnType<typeof createAppController>
@@ -180,7 +180,7 @@ test("Tab wraps from Mode to the input and Shift+Tab wraps back inside Chat", as
   flushSync(() => input.dispatchEvent(back))
   expect(back.defaultPrevented).toBe(true)
   expect(document.activeElement === mode).toBe(true)
-})
+}, 2_000)
 
 test("completed pills and their keys advance after Back, including the live approval", async () => {
   for (const step of [2, 6, 7, 8]) {
@@ -200,7 +200,7 @@ test("completed pills and their keys advance after Back, including the live appr
     expect(calls).toEqual([["onboarding.act", "next"], ["onboarding.act", "next"]])
     mounted.pop()?.()
   }
-})
+}, 2_000)
 
 /* Beat 13's key is the reserved C: it must still open Chat, and the rewound lesson moves on. */
 test("Chat still opens at a completed beat 13, and pressing it again resumes the lesson", async () => {
@@ -224,21 +224,21 @@ test("Chat still opens at a completed beat 13, and pressing it again resumes the
     expect(controller.store.session().guide?.step).toBe(14)
     mounted.pop()?.()
   }
-})
+}, 2_000)
 
 test("every beat has keyboard navigation, one pill shape, and no numbered instruction rows", async () => {
   for (let step = 1; step <= GUIDE_LAST_STEP; step++) {
     const host = await mountGuide(step, still, { repo: "acme/api" })
     if (step > 1 && step < GUIDE_LAST_STEP) {
       const back = host.querySelector('[aria-keyshortcuts="b"]')
-      expect(back).not.toBeNull()
+      expect(back !== null).toBe(true)
       expect(text(back)).toBe("Back b")
     }
     // SCRIPT v4 principle 1: the pill is the instruction; numbered "Click X" rows are gone.
-    expect(host.querySelector(".guide-steps")).toBeNull()
+    expect(host.querySelector(".guide-steps") === null).toBe(true)
     for (const button of host.querySelectorAll<HTMLButtonElement>(".guide-navigation button[data-flow], .guide-actions button[data-flow]")) {
       expect(button.getAttribute("aria-keyshortcuts")).toBeTruthy()
-      expect(button.querySelector("kbd")?.closest("button")).toBe(button)
+      expect(button.querySelector("kbd")?.closest("button") === button).toBe(true)
     }
     const lesson = GUIDE_STAGES[step]!
     if (lesson.kind === "do") {
@@ -261,7 +261,7 @@ test("every beat has keyboard navigation, one pill shape, and no numbered instru
     expect(host.querySelector(".guide-goal") !== null).toBe(step > 0 && step <= GUIDE_BRIDGE)
     mounted.pop()?.()
   }
-})
+}, 5_000)
 
 for (const { step, declined, visible, goalState } of [
   { step: 10, declined: [], visible: true, goalState: "complete" },
@@ -291,7 +291,7 @@ for (const { step, declined, visible, goalState } of [
     }
     // Stepping aside only changes the projection; the card survives reloads.
     expect(controller.store.collections.cards.get(PRACTICE_CARD.commits)?.kind).toBe("change")
-  })
+  }, 2_000)
 }
 
 test("a real persisted completion shows the check and the follow-up line before advancing", async () => {
@@ -299,10 +299,10 @@ test("a real persisted completion shows the check and the follow-up line before 
   const host = await mountGuide(6, still, {}, c => { controller = c })
   await controller.guideAct("signal", "commits.made")
   await settle()
-  expect(host.querySelector('[data-message-step="6"] [aria-label="Done"]')).not.toBeNull()
+  expect(host.querySelector('[data-message-step="6"] [aria-label="Done"]') !== null).toBe(true)
   expect(text(host.querySelector('[data-message-step="6"] [data-followup]'))).toBe("The implementation is ready to review.")
   expect(controller.store.session().guide?.step).toBe(6)
-})
+}, 2_000)
 
 test("lesson shortcuts share the button dispatch and preserve keyboard guards", async () => {
   const calls: string[] = []
@@ -327,7 +327,7 @@ test("lesson shortcuts share the button dispatch and preserve keyboard guards", 
   await settle()
   press()
   expect(calls).toHaveLength(2)
-})
+}, 2_000)
 
 test("every pill click and its letter dispatch the same flow and arguments", async () => {
   for (let step = 1; step < GUIDE_LAST_STEP; step++) {
@@ -351,7 +351,7 @@ test("every pill click and its letter dispatch the same flow and arguments", asy
     }
     mounted.pop()?.()
   }
-})
+}, 5_000)
 
 test("Not now at login skips the repository beats; Later at install skips the background runs", async () => {
   let controller!: ReturnType<typeof createAppController>
@@ -365,7 +365,7 @@ test("Not now at login skips the repository beats; Later at install skips the ba
   await controller.guideAct("decline", "install")
   expect(controller.store.session().guide?.step).toBe(13)
   expect(controller.store.session().guide?.declined).toEqual(["install"])
-})
+}, 2_000)
 
 test("Skip practice lands on an honest bridge without narrating unreached lessons", async () => {
   let controller!: ReturnType<typeof createAppController>
@@ -376,9 +376,9 @@ test("Skip practice lands on an honest bridge without narrating unreached lesson
   expect(host.querySelector(".guide-goal")?.getAttribute("data-goal-state")).toBe("skipped")
   expect(text(host)).toContain("Bring your own repository")
   expect(text(host)).not.toContain("Everything you just did")
-  expect(host.querySelector('[data-message-step="4"]')).not.toBeNull()
-  for (let step = 5; step <= 9; step++) expect(host.querySelector(`[data-message-step="${step}"]`)).toBeNull()
-})
+  expect(host.querySelector('[data-message-step="4"]') !== null).toBe(true)
+  for (let step = 5; step <= 9; step++) expect(host.querySelector(`[data-message-step="${step}"]`) === null).toBe(true)
+}, 2_000)
 
 
 test("overlapping tutorial shortcuts highlight together and only the final release dispatches", async () => {
@@ -406,7 +406,7 @@ test("overlapping tutorial shortcuts highlight together and only the final relea
   expect(calls).toHaveLength(1)
   key('keyup', 'i')
   expect(calls).toEqual([['onboarding.act', 'sound'], ['issues.list', 'open practice:smithersai/hello-server']])
-})
+}, 2_000)
 
 test("held input survives an incidental tutorial state render", async () => {
   let controller!: ReturnType<typeof createAppController>
@@ -422,7 +422,7 @@ test("held input survives an incidental tutorial state render", async () => {
   expect(calls).toEqual([])
   document.dispatchEvent(new KeyboardEvent('keyup', { key: 'i', bubbles: true, cancelable: true }))
   expect(calls).toEqual([['issues.list', 'open practice:smithersai/hello-server']])
-})
+}, 2_000)
 
 test("first practice help describes the suggested action without emitting a notification", async () => {
   let controller!: ReturnType<typeof createAppController>
@@ -430,24 +430,24 @@ test("first practice help describes the suggested action without emitting a noti
   const target = host.querySelector<HTMLButtonElement>('.guide-actions [data-flow="issues.list"]')!
   expect(text(host.querySelector('#guide-help-1'))).toContain("Smithers makes suggestions")
   expect(target.getAttribute('aria-describedby')).toContain('guide-help-1')
-  expect(host.querySelector('.guide-toasts .guide-tip')).toBeNull()
+  expect(host.querySelector('.guide-toasts .guide-tip') === null).toBe(true)
   const dismiss = host.querySelector<HTMLButtonElement>('[aria-label="Dismiss help"]')!
   dismiss.focus()
   flushSync(() => dismiss.click())
-  expect(host.querySelector('[role="note"]')).toBeNull()
-  expect(document.activeElement).toBe(target)
+  expect(host.querySelector('[role="note"]') === null).toBe(true)
+  expect(document.activeElement === target).toBe(true)
   expect(target.getAttribute('aria-describedby')).toBe('guide-instruction-1')
   await controller.store.dispose?.()
-})
+}, 2_000)
 
 test("completion removes the help before the next lesson advances", async () => {
   let controller!: ReturnType<typeof createAppController>
   const host = await mountGuide(1, still, {}, c => { controller = c })
-  expect(host.querySelector('#guide-help-1')).not.toBeNull()
+  expect(host.querySelector('#guide-help-1') !== null).toBe(true)
   await controller.guideAct('signal', 'issues.opened')
   await settle()
-  expect(host.querySelector('#guide-help-1')).toBeNull()
-})
+  expect(host.querySelector('#guide-help-1') === null).toBe(true)
+}, 2_000)
 
 
 test("lesson keys cannot collide with Back, Mode, Sound, or Vim navigation", () => {
@@ -459,21 +459,21 @@ test("lesson keys cannot collide with Back, Mode, Sound, or Vim navigation", () 
     expect(keys.some(key => reserved.includes(key as typeof reserved[number]))).toBe(false)
   }
   expect(GUIDE_STAGES.flatMap(lesson => lesson.kind === 'do' ? lesson.actions : []).find(action => action.flow === 'wiki.create')?.key).toBe('u')
-})
+}, 2_000)
 
 test("Show issues, Chat, Sound, and Mode share a keycap control; Back starts at the next lesson", async () => {
   const host = await mountGuide(1, still)
   for (const shortcut of ['i', 'c Meta+K Control+K', 's', 'm']) {
     const button = host.querySelector<HTMLButtonElement>(`button[aria-keyshortcuts="${shortcut}"]`)!
-    expect(button).not.toBeNull()
+    expect(button !== null).toBe(true)
     expect(button.classList.contains('guide-button')).toBe(true)
-    expect(button.querySelector(':scope > .guide-button-content')).not.toBeNull()
-    expect(button.querySelector(':scope > .guide-button-key')).not.toBeNull()
+    expect(button.querySelector(':scope > .guide-button-content') !== null).toBe(true)
+    expect(button.querySelector(':scope > .guide-button-key') !== null).toBe(true)
   }
-  expect(host.querySelector('[aria-keyshortcuts="b"]')).toBeNull()
+  expect(host.querySelector('[aria-keyshortcuts="b"]') === null).toBe(true)
   const next = await mountGuide(2, still)
   expect(text(next.querySelector('[aria-keyshortcuts="b"]'))).toBe('Back b')
-})
+}, 2_000)
 
 test("Back and Chat compete on release; Wiki keeps its own key", async () => {
   const calls: Array<[string, string?]> = []
@@ -491,7 +491,7 @@ test("Back and Chat compete on release; Wiki keeps its own key", async () => {
   expect(calls[1]).toEqual(['wiki.create', 'acme/api'])
   key('keydown', 'b'); key('keyup', 'b')
   expect(calls[2]).toEqual(['onboarding.act', 'back'])
-})
+}, 2_000)
 
 test("Mode opens on release and selecting Dictation does not open Chat", async () => {
   const descriptor = Object.getOwnPropertyDescriptor(globalThis, 'SpeechRecognition')
@@ -502,16 +502,16 @@ test("Mode opens on release and selecting Dictation does not open Chat", async (
   const key = (type: string, key: string) => flushSync(() => (document.activeElement ?? document).dispatchEvent(new KeyboardEvent(type, { key, bubbles: true, cancelable: true })))
   key('keydown', 'm')
   expect(host.querySelector('[aria-keyshortcuts="m"]')!.hasAttribute('data-pressed')).toBe(true)
-  expect(host.querySelector('[role="menu"]')).toBeNull()
+  expect(host.querySelector('[role="menu"]') === null).toBe(true)
   key('keyup', 'm')
-  expect(host.querySelector('[role="menu"]')).not.toBeNull()
+  expect(host.querySelector('[role="menu"]') !== null).toBe(true)
   const options = host.querySelectorAll<HTMLButtonElement>('[role="menuitemradio"]')
-  expect(document.activeElement).toBe(options[0])
+  expect(document.activeElement === options[0]).toBe(true)
   key('keydown', 'ArrowDown')
-  expect(document.activeElement).toBe(options[0])
+  expect(document.activeElement === options[0]).toBe(true)
   key('keyup', 'ArrowDown')
   key('keydown', 'ArrowDown'); key('keyup', 'ArrowDown')
-  expect(document.activeElement).toBe(options[2])
+  expect(document.activeElement === options[2]).toBe(true)
   key('keydown', 'Enter')
   expect(controller.store.session().inputMode).toBe('normal')
   key('keyup', 'Enter')
@@ -522,9 +522,9 @@ test("Mode opens on release and selecting Dictation does not open Chat", async (
   expect(text(host.querySelector('[aria-keyshortcuts="m"]'))).toBe('Mode: Dictation m')
   key('keydown', 'm'); key('keyup', 'm')
   key('keydown', 'Escape'); key('keyup', 'Escape')
-  expect(host.querySelector('[role="menu"]')).toBeNull()
-  expect(document.activeElement).toBe(host.querySelector('[aria-keyshortcuts="m"]'))
-})
+  expect(host.querySelector('[role="menu"]') === null).toBe(true)
+  expect(document.activeElement === host.querySelector('[aria-keyshortcuts="m"]')).toBe(true)
+}, 2_000)
 
 
 test("a running tutorial suggestion cannot dispatch through a click or shortcut", async () => {
@@ -546,7 +546,7 @@ test("a running tutorial suggestion cannot dispatch through a click or shortcut"
   shell.dispatchEvent(new KeyboardEvent("keydown", { key: "r", bubbles: true }))
   shell.dispatchEvent(new KeyboardEvent("keyup", { key: "r", bubbles: true }))
   expect(calls).not.toContain("issue.repro")
-})
+}, 2_000)
 
 for (const declined of [[], ["login"], ["install"]]) {
   test(`terminal message and ordinary keyed actions survive ${JSON.stringify(declined)}`, async () => {
@@ -566,7 +566,7 @@ for (const declined of [[], ["login"], ["install"]]) {
       document.dispatchEvent(new KeyboardEvent('keyup', { key, bubbles: true }))
     }
     expect(calls).toEqual([["onboarding.act", "finish"], ["tut.more", undefined]])
-  })
+  }, 2_000)
 }
 
 test("a chat turn arriving at beat 2 is visible in the tutorial, including its pending bubble", async () => {
@@ -575,7 +575,7 @@ test("a chat turn arriving at beat 2 is visible in the tutorial, including its p
   await controller.store.dispatch({ type: "message.submitted", actor: "user", turnId: "tutorial-chat", text: "Explain this issue" }).isPersisted.promise
   await settle()
   expect(text(host.querySelector('.guide-transcript .smithers-chat-message[data-role="user"]'))).toContain("Explain this issue")
-  expect(host.querySelector('.guide-transcript .sui-chat-bubble-pending')).not.toBeNull()
+  expect(host.querySelector('.guide-transcript .sui-chat-bubble-pending') !== null).toBe(true)
   await controller.store.dispatch({ type: "message.response.delta", actor: "smithers", turnId: "tutorial-chat", channel: "text", delta: "The default name is missing." }).isPersisted.promise
   await settle()
   expect(text(host.querySelector('.guide-transcript .smithers-chat-message[data-role="assistant"]'))).toContain("The default name is missing.")
@@ -587,14 +587,14 @@ test("a chat turn arriving at beat 2 is visible in the tutorial, including its p
   await settle()
   const reply = host.querySelector('.guide-transcript .smithers-chat-message[data-role="assistant"]')!
   const card = host.querySelector('.guide-transcript [data-testid="card-chat-home"]')!
-  expect(card).not.toBeNull()
+  expect(card !== null).toBe(true)
   expect(reply.compareDocumentPosition(card) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
   await controller.store.dispatch({ type: "guide.changed", actor: "system", guide: { ...controller.store.session().guide!, step: 3 } }).isPersisted.promise
   await settle()
   const user = host.querySelector('.guide-transcript [data-role="user"]')!
   const next = host.querySelector('[data-message-step="3"]')!
   expect(user.compareDocumentPosition(next) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
-})
+}, 2_000)
 
 
 for (const transition of ["card.upsert", "card.navigated"] as const) test(`a picker replaced through ${transition} lands below the current Smithers line`, async () => {
@@ -627,7 +627,7 @@ for (const transition of ["card.upsert", "card.navigated"] as const) test(`a pic
   const change = host.querySelector(`[data-testid="card-${PRACTICE_CARD.commits}"]`)!
   expect(change.closest('[data-entry-step]')?.getAttribute('data-entry-step')).toBe('9')
   expect(host.querySelector('[data-message-step="9"]')!.compareDocumentPosition(change) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
-})
+}, 2_000)
 
 test("chat cards still join their reply at the terminal beat", async () => {
   let controller!: ReturnType<typeof createAppController>
@@ -638,9 +638,9 @@ test("chat cards still join their reply at the terminal beat", async () => {
     payload: { repo: "acme/api", path: ".smithers/home.json", blocks: [{ type: "text", text: "This is the repository overview." }], featuredFlows: null },
   } }).isPersisted.promise
   await settle()
-  expect(host.querySelector('.guide-transcript [data-testid="card-terminal-chat-home"]')).not.toBeNull()
-  expect(host.querySelectorAll('[data-testid="card-terminal-chat-home"]')).toHaveLength(1)
-})
+  expect(host.querySelector('.guide-transcript [data-testid="card-terminal-chat-home"]') !== null).toBe(true)
+  expect(host.querySelectorAll('[data-testid="card-terminal-chat-home"]').length).toBe(1)
+}, 2_000)
 
 test("chat can show a practice card after the practice lessons have been skipped", async () => {
   let controller!: ReturnType<typeof createAppController>
@@ -651,8 +651,8 @@ test("chat can show a practice card after the practice lessons have been skipped
     payload: { repo: PRACTICE_REPO, path: ".smithers/home.json", blocks: [], featuredFlows: null },
   } }).isPersisted.promise
   await settle()
-  expect(host.querySelector('.guide-transcript [data-testid="card-practice-chat-home"]')).not.toBeNull()
-})
+  expect(host.querySelector('.guide-transcript [data-testid="card-practice-chat-home"]') !== null).toBe(true)
+}, 2_000)
 
 test("a Home card requested again in chat follows the user bubble", async () => {
   let controller!: ReturnType<typeof createAppController>
@@ -664,15 +664,15 @@ test("a Home card requested again in chat follows the user bubble", async () => 
     controller = c
     await c.store.dispatch({ type: "card.upsert", actor: "system", card: home }).isPersisted.promise
   })
-  expect(host.querySelector('[data-testid="card-entry-home"]')).toBeNull()
+  expect(host.querySelector('[data-testid="card-entry-home"]') === null).toBe(true)
   await controller.store.dispatch({ type: "message.submitted", actor: "user", turnId: "home-again", text: "Show Home" }).isPersisted.promise
   await controller.store.dispatch({ type: "card.upsert", actor: "smithers", card: home }).isPersisted.promise
   await settle()
   const card = host.querySelector('.guide-transcript [data-testid="card-entry-home"]')
-  expect(card).not.toBeNull()
+  expect(card !== null).toBe(true)
   const user = host.querySelector('.guide-transcript [data-role="user"]')!
   expect(user.compareDocumentPosition(card!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
-})
+}, 2_000)
 
 
 test("optional background setup can be deferred without a launch receipt", async () => {
@@ -687,7 +687,7 @@ test("optional background setup can be deferred without a launch receipt", async
   expect(guide.completed).not.toContain("librarian.runs.launched")
   expect(guide.notice).toBeUndefined()
   expect(guide.noticeDetail).toBeUndefined()
-})
+}, 2_000)
 
 
 test("saved raw setup errors become one concise action-row message with closed technical details", async () => {
@@ -699,7 +699,7 @@ test("saved raw setup errors become one concise action-row message with closed t
   expect(text(notice.querySelector("pre"))).toBe(raw)
   expect(host.querySelectorAll("[data-notice]").length).toBe(1)
   expect(text(host.querySelector('.guide-actions [data-flow="wiki.create"]'))).toContain("Retry Wiki")
-})
+}, 2_000)
 
 test("a sign-in answer scrolls into the tutorial read without changing the lesson", async () => {
   let controller!: ReturnType<typeof createAppController>
@@ -723,7 +723,13 @@ test("a sign-in answer scrolls into the tutorial read without changing the lesso
       action: { flow: "auth.sign-in", label: "Sign in with GitHub" },
     }).isPersisted.promise
     await settle()
-    await new Promise(resolve => requestAnimationFrame(resolve))
+    await new Promise<void>((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        cancelAnimationFrame(frame)
+        reject(new Error('Guide scroll frame did not run within 500 ms'))
+      }, 500)
+      const frame = requestAnimationFrame(() => { clearTimeout(timeout); resolve() })
+    })
     expect(moves.at(-1)).toBe(740)
     expect(controller.store.session().guide?.step).toBe(3)
     viewport.scrollTop = 200
@@ -733,7 +739,7 @@ test("a sign-in answer scrolls into the tutorial read without changing the lesso
   } finally {
     geometry.mockRestore()
   }
-})
+}, 2_000)
 
 
 test("ArrowRight on an incomplete lesson gives quiet guidance without a flow-name toast", async () => {
@@ -745,7 +751,7 @@ test("ArrowRight on an incomplete lesson gives quiet guidance without a flow-nam
   expect(controller.store.session().guide?.step).toBe(4)
   expect(text(host.querySelector("[data-notice]"))).toBe("Finish this step first.")
   expect([...controller.store.collections.toasts.values()]).toEqual([])
-})
+}, 2_000)
 
 test("Finish projects Home first, omits practice frames, and retains the working replay door", async () => {
   const host = await mountGuide(14, still, { finished: true }, async controller => {
@@ -760,13 +766,13 @@ test("Finish projects Home first, omits practice frames, and retains the working
       payload: { repo: "other/repo", path: "README.md", content: "Real work stays", truncated: false } } }).isPersisted.promise
   }, <App />)
   await settle()
-  expect(host.querySelector(".guide-shell")).toBeNull()
+  expect(host.querySelector(".guide-shell") === null).toBe(true)
   expect(host.querySelector('.smithers-card')?.getAttribute("data-kind")).toBe("repo-home")
   expect(host.textContent).not.toContain("Issue #3 · Flows")
-  expect(host.querySelector('[data-testid="card-real-read"]')).not.toBeNull()
+  expect(host.querySelector('[data-testid="card-real-read"]') !== null).toBe(true)
   const replay = host.querySelector<HTMLButtonElement>('[data-flow="tut"]')!
   expect(text(replay)).toBe("Replay introduction")
   replay.click()
   for (let tick = 0; tick < 30 && !host.querySelector('.guide-shell[data-stage="1"]'); tick++) await settle()
-  expect(host.querySelector('.guide-shell[data-stage="1"]')).not.toBeNull()
-})
+  expect(host.querySelector('.guide-shell[data-stage="1"]') !== null).toBe(true)
+}, 2_000)
