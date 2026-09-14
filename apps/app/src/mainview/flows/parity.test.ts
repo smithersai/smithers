@@ -70,7 +70,6 @@ const PRESENTATION_ONLY = [
   "setSelectedPath", // world card doc selection: which note the embedded editor shows — local presentation state
   "onDismissDrawer(", // graph card detail drawer close: local presentation state (which node is focused)
   "setOpenLog(", // run timeline log panel: which row's log is open — local presentation state
-  "setPrTab(", // PR card tab bar: which section (conversation, commits, checks, files) shows — local presentation state; the acts ride prs.land / prs.review
   "setDeleteDraft", // workspace card delete: the typed-confirm row's open state and its draft — local presentation state; the act itself rides workspace.delete
   "setDisconnectArmed", // connector-setup card disconnect: the confirm row's open state — local presentation state; the act itself rides linear.disconnect
   "onRunCommand(", // delegated: App.tsx binds it to the registry's runCommand
@@ -86,8 +85,8 @@ const PRESENTATION_ONLY = [
   "openNamespace", // slash-menu tree: opening a namespace rewrites the draft to `/ns.` — a draft edit, never a command
   "openMenu", // dispatches runCommand("chat.surfaces") — the /chat.surfaces command
   "closeMenu", // dispatches runCommand("chat.surfaces"); the entry itself runs its own command
-  "onCopy(", // delegated: App.tsx binds it to runCommand("chat.copy-message", ...)
-  "onDownload}", // delegated: App.tsx binds StorageRecoveryButton to storage.recovery.export
+  "onCopy(", // delegated: TranscriptMessage.tsx binds it to runCommand("chat.copy-message", ...)
+  "onDownload}", // delegated: TranscriptMessage.tsx binds StorageRecoveryButton to storage.recovery.export
   "onDecideApproval(", // delegated: App.tsx binds it to approval.approve / approval.deny
   "onRecoAction(", // delegated: App.tsx binds it to reco.accept / reco.edit / reco.dismiss
   "onGrantConfirm(", // delegated: App.tsx binds it to admin.grant.confirm
@@ -137,6 +136,7 @@ describe("launch-law parity: every affordance is a command", () => {
     expect(Object.keys(files)).toEqual(
       expect.arrayContaining([
         "../App.tsx",
+        "../TranscriptMessage.tsx",
         "../ChatCards.tsx",
         "../ConnectorsSurface.tsx",
         "../SurfaceChrome.tsx"
@@ -184,7 +184,7 @@ describe("launch-law parity: every affordance is a command", () => {
         .filter(([, count]) => count > 0)
     )
     expect(counts).toEqual({
-      "../onboarding/GuideShell.tsx": 10, // Includes skip/secondary actions and the footer/dialog dictation controls.
+      "../onboarding/GuideShell.tsx": 11, // Includes skip/secondary actions and the footer/dialog dictation controls.
       // The optional capability reel after the last lesson: its launch pill and its Back.
       "../onboarding/Reel.tsx": 4, // Delegates to the shared onboarding and existing app flows; the Command-K overlay is the summoned composer with no chrome of its own. The sidebar lists Wiki and Mythical history only — no Library entry.
       /*
@@ -199,13 +199,15 @@ describe("launch-law parity: every affordance is a command", () => {
       // +1: the Flows pane's Triggers button, the button door of triggers.list.
       // +1: the Wiki pane's Factory button, the button door of factory.show.
       // +1 (Librarian L5): the Wiki pane's Graph button, the button door of wiki.graph.
-      "../App.tsx": 8,
+      "../App.tsx": 4,
+      // Shared by the workspace and tutorial: copy, message CTA, retry, and explain.
+      "../TranscriptMessage.tsx": 4,
       "../StorageRecoveryButton.tsx": 1,
       "../FlowsSurface.tsx": 2,
       "../WorldSurface.tsx": 8,
       "../HelpBubble.tsx": 1,
       "../InputModeMenu.tsx": 2,
-      "../SessionNavigation.tsx": 1,
+      "../SessionNavigation.tsx": 3,
       "../cards/CodingVibeCard.tsx": 1,
       "../cards/LiveTutorialRunBody.tsx": 7,
       "../cards/RepositoryUpdateCard.tsx": 3,
@@ -230,7 +232,7 @@ describe("launch-law parity: every affordance is a command", () => {
        * Restore and Maximize. Every card body lives in its family file under
        * cards/ and is pinned there.
        */
-      "../ChatCards.tsx": 9,
+      "../ChatCards.tsx": 10,
       /* The turn's approval card: approve and deny. */
       "../cards/ApprovalCard.tsx": 2,
       /* The admin grant confirm: Post the grant and Cancel. */
@@ -251,7 +253,7 @@ describe("launch-law parity: every affordance is a command", () => {
       /* The multi-parity domain cards: every handler routes through onRunCommand. */
       /* 3 = 2 + the issue card's Link to Linear…, the door onto issues.link-linear's form (lane sync). */
       "../cards/IssueCards.tsx": 9, // + the detail's comment box submit (issues.comment)
-      "../cards/LandingCards.tsx": 5, // + the PR detail's tab bar (setPrTab, presentation only)
+      "../cards/LandingCards.tsx": 5, // Includes the durable PR tab flow.
       "../cards/FileCards.tsx": 3,
       /* Mark-all-read. */
       "../cards/NotificationsCard.tsx": 1,
@@ -301,14 +303,14 @@ describe("launch-law parity: every affordance is a command", () => {
        * breadcrumbs, the tree rows, the timeline bars and the recorded child
        * link. Every button enters onRunCommand and persists in the same card.
        */
-      "../cards/RunTraceCard.tsx": 10,
+      "../cards/RunTraceCard.tsx": 11,
       /*
        * Lane runs: the run inbox's Open per row, its All/status filter chips,
        * and the Stop-all footer (all through onRunCommand), plus the
        * approvals inbox's two decision acts (approval.approve / approval.deny
        * through the delegated onDecideApproval).
        */
-      "../cards/RunsCards.tsx": 6,
+      "../cards/RunsCards.tsx": 10,
       "../cards/SearchResultsCard.tsx": 2,
       "../cards/RunHistoryCard.tsx": 1,
       "../cards/AffectedCard.tsx": 1,
@@ -342,7 +344,7 @@ describe("launch-law parity: every affordance is a command", () => {
        * rows' Diff to current, and the diff card's re-read — all through
        * onRunCommand with data-flow set.
        */
-      "../cards/ChangeCards.tsx": 22,
+      "../cards/ChangeCards.tsx": 24,
       /*
        * The plan inside a run card: Inspect review feedback and Inspect failed
        * execution (runs.trace.select), Vibe this change (flow.run), Check
@@ -400,10 +402,14 @@ describe("launch-law parity: every affordance is a command", () => {
 
   test("delegated props are bound to commands at their call sites", () => {
     const app = files["../App.tsx"]
-    expect(app).toMatch(/onDownload=\{\(\) => \{\s*controller\.runCommand\(STORAGE_RECOVERY_EXPORT\)/)
-    expect(app).toContain("runCommand(\"chat.copy-message\"")
+    const message = files["../TranscriptMessage.tsx"]
+    expect(app).toContain("<TranscriptMessage")
+    expect(files["../onboarding/GuideShell.tsx"]).toContain("<TranscriptMessage")
+    expect(message).toMatch(/onDownload=\{\(\) => \{\s*controller\.runCommand\(STORAGE_RECOVERY_EXPORT\)/)
+    expect(message).toContain("runCommand(\"chat.copy-message\"")
+    expect(message).toContain("runCommand(\"chat.retry\"")
+    expect(message).toMatch(/runCommand\(\s*"agent\.explain"/)
     expect(app).toContain("runCommand(\"toast.dismiss\"")
-    expect(app).toContain("runCommand(\n")
     const connectors = files["../ConnectorsSurface.tsx"]
     expect(connectors).toContain("runCommand(\"connector.downgrade\"")
     expect(connectors).toContain("runCommand(\"connector.remove\"")

@@ -361,6 +361,11 @@ test('Chat dims and blocks the top header too, with a modal focus boundary and v
   await page.locator('.guide-wordmark').evaluate((node: HTMLElement) => node.focus())
   await expect(input).toBeFocused()
   await page.keyboard.press('Escape')
+  // The active palette closes first; the modal boundary remains until Chat closes.
+  await expect(input).toHaveAttribute('aria-expanded', 'false')
+  await expect(dialog).toBeVisible()
+  await expect(page.locator('.guide-content')).toHaveAttribute('inert', '')
+  await page.keyboard.press('Escape')
   await expect(dialog).toBeHidden()
   await expect(page.locator('.guide-content')).not.toHaveAttribute('inert', '')
 })

@@ -71,8 +71,13 @@ test("dictation opens chat, appends recognized speech, and Escape releases the m
   await expect(input).toBeFocused()
   await page.screenshot({ path: "/tmp/smithers-dictation.png" })
   await page.keyboard.press("Escape")
-  await expect(input).toBeHidden()
+  // Escape stops capture immediately and dismisses the active palette first.
   expect(await page.evaluate(() => (window as any).dictationAborted)).toBe(true)
+  await expect(page.getByRole("button", { name: "Stop dictation" })).toHaveCount(0)
+  await expect(input).toBeVisible()
+  await expect(input).toHaveAttribute("aria-expanded", "false")
+  await page.keyboard.press("Escape")
+  await expect(input).toBeHidden()
   await expect(page.getByRole("button", { name: "Mode: Dictation", exact: true })).toBeVisible()
 })
 

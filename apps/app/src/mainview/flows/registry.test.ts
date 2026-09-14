@@ -593,6 +593,8 @@ describe("command registry bindings", () => {
       "triggers.list",
       "triggers.register",
       "factory.show",
+      "runs.handoff",
+      "runs.attention",
       "runs.list",
       "runs.open",
       "runs.resume",
@@ -876,6 +878,9 @@ describe("command registry bindings", () => {
       "onboarding.act"
     ])
 
+    // This assertion covers the normal workspace pane; onboarding projects a card.
+    const guide = store.session().guide
+    if (guide) store.dispatch({ type: "guide.changed", actor: "user", guide: { ...guide, finished: true } })
     expect((await controller.commands.run("connect")).status).toBe("executed")
     expect(store.session().surface).toBe("connectors")
     // Toggles toggle (§2c): invoking the open pane's command returns to chat.
