@@ -283,6 +283,14 @@ describe("createWebAgent", () => {
     expect(prose.status === "error" ? prose.message : "").toContain("Too many requests")
   })
 
+  test("only a coded sign-in 401 becomes a sign-in refusal", async () => {
+    for (const [status, code, expected] of [[401, "sign_in_required", true], [401, "upstream_unavailable", false], [429, "sign_in_required", false]] as const) {
+      const agent = createWebAgent({ fetchImpl: async () => new Response(JSON.stringify({ code, message: "Sign in to run a Smithers turn." }), { status }) })
+      const result = await agent.startTurn(request)
+      expect(result.status === "error" ? result.refusal : undefined).toEqual(expected ? { code: "sign_in_required", message: "Sign in to run a Smithers turn.", retryAt: null } : undefined)
+    }
+  })
+
   test("rejects a duplicate runId while a turn is active", async () => {
     const agent = createWebAgent({
       fetchImpl: async () => new Response(new ReadableStream<Uint8Array>({ start: () => {} }), { status: 200 })

@@ -112,15 +112,16 @@ export type StartAgentTurnResult =
 /**
  * A turn the boundary refused BEFORE it reached a model, stated by code so a
  * client can branch on what happened rather than on the sentence. Today the
- * one code is the turn ceiling (`429 turn_rate_limited`, apps/server
- * turnLimit.ts): `message` is the refusal sentence the server wrote for a
- * person, and `retryAt` is its ISO reset time when the body carried one.
+ * codes are sign-in (`401 sign_in_required`) and the turn ceiling
+ * (`429 turn_rate_limited`, apps/server turnLimit.ts): `message` is the refusal
+ * sentence the server wrote for a person, and `retryAt` is its ISO reset time
+ * when the body carried one.
  *
  * @since 1.0.0
  * @category models
  */
 export interface TurnRefusal {
-  readonly code: "turn_rate_limited"
+  readonly code: "turn_rate_limited" | "sign_in_required"
   readonly message: string
   readonly retryAt: string | null
 }

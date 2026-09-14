@@ -79,6 +79,26 @@ export const createTurnController = (
   const { settleTurnBilling, nextOrdinal, surfaceCommandFailure, forwardApprovalDecision, forwardInboxApprovalDecision } =
     dependencies
 
+  // The cloud host authenticates ordinary turns; its public catalog is the
+  // explicit anonymous exception. Local hosts can still run local chat.
+  const chatNeedsSignIn = (): boolean => ctx.services.bootstrap?.host === "cloud"
+    && hasCapability(ctx.services.bootstrap, "identity")
+    && store.collections.identitySessions.get("identity")?.state === "signed-out"
+    && activeCatalogRepositoryId(store) === null
+
+  const offerChatSignIn = (draft: string): void => {
+    // A refused request can return after the human has started another draft.
+    if (store.session().draft === "" && draft !== "") {
+      store.dispatch({ type: "composer.changed", actor: "user", draft })
+    }
+    store.dispatch({
+      type: "message.appended", actor: "system",
+      text: "Sign in with GitHub to send this message. Your text is still here. You can keep using the controls and commands without sending a message."
+        + (store.session().guide && !store.session().guide?.finished ? " Close Chat to continue or finish the tutorial." : ""),
+      action: { flow: "auth.sign-in", label: "Sign in with GitHub" },
+    })
+  }
+
   /*
    * The anonymous turn ceiling (apps/server turnLimit.ts; factory mock 22):
    * a signed-out visitor's refused turn is its own card, never the generic
@@ -511,7 +531,11 @@ export const createTurnController = (
         // §1: a leg that never started still ends a turn that launched a
         // run, and a claim streamed before the launch is already on screen.
         settleRunClaims(turn)
-        if (result.refusal === undefined || !refuseAnonymousTurn(turnId, result.refusal)) {
+        if (result.refusal?.code === "sign_in_required") {
+          const draft = store.collections.messages.get(`message-${turnId}-user`)?.text ?? ""
+          store.dispatch({ type: "message.response.completed", actor: "smithers", turnId })
+          offerChatSignIn(draft)
+        } else if (result.refusal === undefined || !refuseAnonymousTurn(turnId, result.refusal)) {
           store.dispatch({
             type: "message.response.failed",
             actor: "system",
@@ -946,10 +970,10 @@ export const createTurnController = (
       }
       return
     }
-    /*
-     * No auth gate: the local app chats anonymously through the local
-     * origin (LOCAL-APP.md). Sign-in stays a command, never a precondition.
-     */
+    if (chatNeedsSignIn()) {
+      offerChatSignIn(text)
+      return
+    }
     const turnId = crypto.randomUUID()
     ctx.activeTurn = {
       id: turnId,
@@ -1175,6 +1199,10 @@ export const createTurnController = (
       .sort((left, right) => right.ordinal - left.ordinal)[0]
     const turnId = last?.id.match(/^message-(.+)-user$/)?.[1]
     if (turnId === undefined) return "Nothing to retry yet — send a message first."
+    if (chatNeedsSignIn()) {
+      offerChatSignIn(last?.text ?? "")
+      return
+    }
     store.dispatch({ type: "message.retried", actor: "user", turnId })
     if (store.session().phase !== "responding") return
     ctx.activeTurn = {

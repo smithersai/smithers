@@ -77,15 +77,17 @@ const errorDetail = (status: number, body: string): string => {
  * The Worker's own turn ceiling (apps/server turnLimit.ts) answers 429 with
  * `{ code: "turn_rate_limited", message, retryAt }`. That is the one refusal
  * the app renders as its own card rather than a failure line, so it is
- * recognised by its code, never by its sentence: a provider's 429 carries no
- * such code and stays a classified failure.
+ * recognised by its code, never by its sentence. Sign-in refusals also carry
+ * their code so the composer can preserve the draft and offer sign-in.
+ * A provider's 429 carries no such code and stays a classified failure.
  */
 const turnRefusal = (status: number, body: string): TurnRefusal | undefined => {
-  if (status !== 429) return undefined
+  if (status !== 429 && status !== 401) return undefined
   try {
     const parsed: unknown = JSON.parse(body)
     if (
-      typeof parsed !== "object" || parsed === null || !("code" in parsed) || parsed.code !== "turn_rate_limited" ||
+      typeof parsed !== "object" || parsed === null || !("code" in parsed) ||
+      (status === 429 ? parsed.code !== "turn_rate_limited" : parsed.code !== "sign_in_required") ||
       !("message" in parsed) || typeof parsed.message !== "string" || parsed.message === ""
     ) {
       return undefined
@@ -93,7 +95,7 @@ const turnRefusal = (status: number, body: string): TurnRefusal | undefined => {
     const retryAt = "retryAt" in parsed && typeof parsed.retryAt === "string" && !Number.isNaN(Date.parse(parsed.retryAt))
       ? parsed.retryAt
       : null
-    return { code: "turn_rate_limited", message: parsed.message, retryAt }
+    return { code: status === 401 ? "sign_in_required" : "turn_rate_limited", message: parsed.message, retryAt }
   } catch {
     return undefined
   }
