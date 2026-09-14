@@ -3,7 +3,7 @@ import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem"
 import { describe, expect, it } from "@effect/vitest"
 import * as ContainedSpawner from "@smthrs/kernel/ContainedSpawner"
 import * as ProcessLedger from "@smthrs/kernel/ProcessLedger"
-import { Cause, Effect, Exit, Layer, Stream } from "effect"
+import { Cause, Deferred, Effect, Exit, Fiber, Layer, Stream } from "effect"
 import * as Path from "effect/Path"
 import * as ChildProcess from "effect/unstable/process/ChildProcess"
 import { ChildProcessSpawner, make as makeSpawner } from "effect/unstable/process/ChildProcessSpawner"
@@ -13,9 +13,10 @@ import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { fileURLToPath } from "node:url"
+import { vi } from "vitest"
 import * as PipedProcess from "../src/internal/PipedProcess.ts"
 import { policy } from "../src/internal/ProcessCleanup.ts"
-import { prepare, targetPidOf } from "../src/internal/ProcessSupervisor.ts"
+import { Control, prepare, targetPidOf } from "../src/internal/ProcessSupervisor.ts"
 import * as ProcessReaper from "../src/ProcessReaper.ts"
 import { waitForExit } from "./helpers/waitForExit.ts"
 
@@ -169,7 +170,10 @@ describe.skipIf(process.platform === "win32")("prepared POSIX process contract",
     }).pipe(Effect.provide(layers), Effect.scoped))
 
   for (const unknown of ["unavailable", "own-group"] as const) {
-    it.live(`retains a record when post-exit cleanup observation is ${unknown}`, () =>
+    // The native owner exits even with it.effect's frozen caller clock. A
+    // failed observation must still reach its bounded refusal and retain the
+    // real ledger record, rather than freezing an uninterruptible finalizer.
+    it.effect(`retains a record when post-exit cleanup observation is ${unknown}`, () =>
       Effect.gen(function*() {
         const ledger = yield* ProcessLedger.makeMemory({ hostId: "unverified-owner", ownerPid: process.pid })
         let observations = 0
@@ -324,6 +328,107 @@ describe.skipIf(process.platform === "win32")("prepared POSIX process contract",
       expect(yield* prepared.settled).toBe(true)
     }).pipe(Effect.provide(layers), Effect.scoped))
 
+  it.live("retains buffered target status when the first stop arrives after owner exit", () =>
+    Effect.gen(function*() {
+      const attempted = yield* Deferred.make<void>()
+      const ledger = yield* ProcessLedger.makeMemory({ hostId: "late-stop", ownerPid: process.pid })
+      let ownerExit: Effect.Effect<void> = Effect.die("the owner was not spawned")
+      let control: Control | undefined
+      const original = Control.prototype.write
+      const writes = vi.spyOn(Control.prototype, "write").mockImplementation(function(this: Control, message) {
+        control = this
+        const sent = original.call(this, message)
+        return typeof message === "object" && message !== null && "type" in message && message.type === "stop"
+          ? sent.finally(() => {
+            Effect.runSync(Deferred.succeed(attempted, undefined))
+          })
+          : sent
+      })
+      const supervised = ContainedSpawner.layer({}, (command, spawn) =>
+        ProcessReaper.processLifecycle(command, (owner) =>
+          spawn(owner).pipe(Effect.tap((handle) =>
+            Effect.sync(() => {
+              ownerExit = Effect.asVoid(Effect.exit(handle.exitCode))
+            })
+          )))).pipe(Layer.provide(layers))
+      try {
+        yield* Effect.gen(function*() {
+          const spawner = yield* ChildProcessSpawner
+          const handle = yield* spawner.spawn(ChildProcess.make("/bin/sh", ["-c", "read answer; exit 23"], {
+            forceKillAfter: 50
+          }))
+          // Pause only the status reader. Stdin releases the real target, and
+          // its native owner's exit is the barrier before the first stop write.
+          // The old duplex channel discarded both buffered receipts on EPIPE.
+          control!.socket!.pause()
+          yield* Stream.run(text("exit\n"), handle.stdin)
+          yield* Stream.runDrain(handle.stdout)
+          yield* ownerExit
+          expect(control!.targetDone).toBe(false)
+          expect(yield* ledger.live).toHaveLength(1)
+          const closing = yield* handle.kill().pipe(Effect.forkChild)
+          yield* Deferred.await(attempted)
+          expect(control!.socket!.destroyed).toBe(false)
+          control!.socket!.resume()
+          yield* Fiber.join(closing)
+          expect(yield* handle.exitCode).toBe(23)
+          expect(control!.cleanupAcknowledged).toBe(true)
+        }).pipe(Effect.provide(supervised), Effect.provideService(ProcessLedger.ProcessLedger, ledger), Effect.scoped)
+        expect(yield* ledger.live).toEqual([])
+      } finally {
+        control?.socket?.resume()
+        writes.mockRestore()
+      }
+    }))
+
+  it.live("drains the cleanup receipt when target exit follows an explicit stop", () =>
+    Effect.gen(function*() {
+      const stopped = yield* Deferred.make<void>()
+      const ledger = yield* ProcessLedger.makeMemory({ hostId: "stop-receipt", ownerPid: process.pid })
+      const requests: Array<unknown> = []
+      let control: Control | undefined
+      const original = Control.prototype.write
+      // Observe real socket writes. The target's stdin barrier keeps it alive
+      // until the explicit stop is on the wire; no cleanup outcome is replaced.
+      const writes = vi.spyOn(Control.prototype, "write").mockImplementation(function(this: Control, message) {
+        control = this
+        if (typeof message === "object" && message !== null && "type" in message && message.type === "stop") {
+          requests.push(message)
+          return original.call(this, message).then(() => {
+            Effect.runSync(Deferred.succeed(stopped, undefined))
+          })
+        }
+        return original.call(this, message)
+      })
+      try {
+        yield* Effect.gen(function*() {
+          const spawner = yield* ChildProcessSpawner
+          const handle = yield* spawner.spawn(ChildProcess.make("/bin/sh", ["-c", "read answer; exit 23"]))
+          expect(yield* ledger.live).toHaveLength(1)
+          const closing = yield* handle.kill({ killSignal: "SIGCONT" }).pipe(Effect.forkChild)
+          yield* Deferred.await(stopped)
+          yield* Stream.run(text("exit\n"), handle.stdin)
+          expect(yield* handle.exitCode).toBe(23)
+          yield* Fiber.join(closing)
+          expect(control!.cleanupAcknowledged).toBe(true)
+          expect(control!.fault).toBeUndefined()
+        }).pipe(
+          Effect.provide(contained),
+          Effect.provideService(ProcessLedger.ProcessLedger, ledger),
+          Effect.scoped
+        )
+        expect(requests).toEqual([{
+          type: "stop",
+          explicit: true,
+          killSignal: "SIGCONT",
+          graceMs: 2000
+        }])
+        expect(yield* ledger.live).toEqual([])
+      } finally {
+        writes.mockRestore()
+      }
+    }))
+
   it.live("records an actual target signal without inventing an exit code", () =>
     Effect.gen(function*() {
       const raw = yield* ChildProcessSpawner
@@ -338,6 +443,109 @@ describe.skipIf(process.platform === "win32")("prepared POSIX process contract",
       yield* prepared.handle.kill()
       expect(yield* prepared.settled).toBe(true)
     }).pipe(Effect.provide(layers), Effect.scoped))
+
+  for (const escaped of [true, false]) {
+    it.live(`honors explicit TERM and its grace when the live target ${escaped ? "calls setsid" : "stays in its group"}`, () =>
+      Effect.gen(function*() {
+        const directory = yield* fixture
+        const token = randomUUID()
+        const marker = join(directory, "term")
+        const signalLog = join(directory, "signals.jsonl")
+        const graceMs = 1200
+        // The native target changes its own session, without a replacement
+        // child or mocked group snapshot. Readiness follows handler setup.
+        // It has no normal exit path, so stdout EOF observes forced termination.
+        const program = [
+          "import os, signal",
+          ...(escaped ? ["os.setsid()"] : []),
+          `signal.signal(signal.SIGTERM, lambda *_: open(${JSON.stringify(marker)}, 'w').write('TERM'))`,
+          "print('ready', flush=True)",
+          "while True: signal.pause()"
+        ].join("\n")
+        const ready = yield* Deferred.make<void>()
+        const requests: Array<unknown> = []
+        const original = Control.prototype.write
+        // Observe the real wire policy without replacing delivery or outcomes.
+        const writes = vi.spyOn(Control.prototype, "write").mockImplementation(function(this: Control, message) {
+          if (typeof message === "object" && message !== null && "type" in message && message.type === "stop") {
+            requests.push(message)
+          }
+          return original.call(this, message)
+        })
+        let target: number | undefined
+        try {
+          const raw = yield* ChildProcessSpawner
+          const prepared = yield* ProcessReaper.processLifecycle(
+            ChildProcess.make("/usr/bin/python3", ["-c", program, token], { forceKillAfter: 0 }),
+            (owner) => {
+              const args = [...owner.args]
+              const programIndex = args.indexOf("-e") + 1
+              // Trace native signal calls inside the real helper, forwarding
+              // every call unchanged. Group KILL can end the helper before its
+              // target-exit callback runs, so exitCode is not a signal trace.
+              args[programIndex] = `const nativeKill = process.kill;
+                process.kill = function(pid, signal) {
+                  require('node:fs').appendFileSync(${JSON.stringify(signalLog)},
+                    JSON.stringify({pid, signal, at: process.hrtime.bigint().toString()}) + '\\n');
+                  return nativeKill.call(this, pid, signal);
+                };\n${args[programIndex]}`
+              return raw.spawn(ChildProcess.make(owner.command, args, owner.options))
+            }
+          )
+          yield* prepared.activate
+          target = targetPidOf(prepared.handle)!
+          const ended = yield* prepared.handle.stdout.pipe(
+            Stream.decodeText(),
+            Stream.splitLines,
+            Stream.runForEach((line) =>
+              Effect.sync(() => {
+                expect(line).toBe("ready")
+                Effect.runSync(Deferred.succeed(ready, undefined))
+              })
+            ),
+            Effect.andThen(Effect.sync(() => performance.now())),
+            Effect.forkChild
+          )
+          yield* Deferred.await(ready).pipe(Effect.timeout("5 seconds"))
+          expect(group(target)).toBe(escaped ? target : prepared.handle.pid)
+          expect(yield* prepared.handle.isRunning).toBe(true)
+          const signalStart = process.hrtime.bigint()
+          const start = performance.now()
+          yield* prepared.handle.kill({ killSignal: "SIGTERM", forceKillAfter: graceMs })
+          const elapsedMs = performance.now() - start
+          const exitAfterMs = (yield* Fiber.join(ended)) - start
+          const termSeen = existsSync(marker) && readFileSync(marker, "utf8") === "TERM"
+          expect({ termSeen, requests, elapsedMs, exitAfterMs }).toMatchObject({
+            termSeen: true,
+            requests: [{ type: "stop", explicit: true, killSignal: "SIGTERM", graceMs }]
+          })
+          expect(exitAfterMs).toBeGreaterThanOrEqual(graceMs)
+          expect(elapsedMs).toBeGreaterThanOrEqual(graceMs)
+          expect(yield* prepared.settled).toBe(true)
+          const status = spawnSync("/bin/ps", ["-o", "stat=", "-p", String(target)], {
+            encoding: "utf8",
+            timeout: 2000
+          })
+          expect(status.error).toBeUndefined()
+          expect(status.status !== 0 || status.stdout.trim().startsWith("Z"), status.stdout).toBe(true)
+          const signals = readFileSync(signalLog, "utf8").trim().split("\n")
+            .map((line) => JSON.parse(line) as { pid: number; signal: string; at: string })
+            .filter((call) => call.pid === (escaped ? target : -prepared.handle.pid))
+          expect(signals.map((call) => call.signal)).toEqual(["SIGTERM", "SIGKILL"])
+          const forcedAfterMs = Number(BigInt(signals[1]!.at) - signalStart) / 1_000_000
+          expect(forcedAfterMs).toBeGreaterThanOrEqual(graceMs)
+        } finally {
+          writes.mockRestore()
+          if (target !== undefined && commandOf(target).includes(token)) {
+            try {
+              process.kill(target, "SIGKILL")
+            } catch (error) {
+              if ((error as NodeJS.ErrnoException).code !== "ESRCH") throw error
+            }
+          }
+        }
+      }).pipe(Effect.provide(layers), Effect.scoped))
+  }
 
   it.live("keeps an escaped child's escalation deadline after its live target exits on TERM", () =>
     Effect.gen(function*() {

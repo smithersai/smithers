@@ -12,10 +12,14 @@ const cp = require('node:child_process');
 const [socketPath, mode] = process.argv.slice(-2);
 const grouped = mode === 'group';
 const control = net.connect(socketPath);
+// A request write racing our exit may get EPIPE. Keep status on its own
+// connection so the host still receives the exit and cleanup already sent.
+const requests = net.connect(socketPath.replace(/\/s$/, '/r'));
 let config;
 let target;
 let targetDone = false;
 let stopping = false;
+let explicitStop = false;
 let killing = false;
 let buffer = '';
 let timer;
@@ -110,15 +114,18 @@ const force = () => {
   complete();
 };
 const stop = (options = {}) => {
+  // The first explicit stop owns its signal and deadline, including after EOF
+  // or target exit. Only natural cleanup can accept the host's fast shortcut.
+  if (stopping && (explicitStop || !options.fast)) return;
   const signal = options.killSignal ?? config?.killSignal ?? 'SIGTERM';
   // A target's exit cannot shorten a captured escaped child's grace period.
   if (options.fast && escaped.size !== 0) return;
-  if (options.explicit && grouped && !targetDone && target?.pid !== undefined && !stopping) {
+  if (options.explicit && grouped && !targetDone && target?.pid !== undefined) {
     try { captureEscaped(); } catch (error) { cleanupError(error); }
   }
-  if (signal === 'SIGKILL' || target?.pid === undefined || (!grouped && targetDone)) return force();
-  if (stopping) return;
   stopping = true;
+  explicitStop = options.explicit === true;
+  if (signal === 'SIGKILL' || target?.pid === undefined || (!grouped && targetDone)) return force();
   if (signal === 'SIGSTOP') return force();
   // Keep the group owner alive to enforce escalation, including when the caller
   // chooses a catchable signal other than TERM/INT. SIGSTOP is refused by host.
@@ -140,10 +147,12 @@ process.on('uncaughtException', (error) => {
   finally { force(); }
 });
 process.on('unhandledRejection', (error) => { throw error; });
-control.on('end', () => stop());
-control.on('error', () => stop());
-control.setEncoding('utf8');
-control.on('data', (data) => {
+control.on('end', () => stop({ explicit: true }));
+control.on('error', () => stop({ explicit: true }));
+requests.on('end', () => stop({ explicit: true }));
+requests.on('error', () => stop({ explicit: true }));
+requests.setEncoding('utf8');
+requests.on('data', (data) => {
   buffer += data;
   if (Buffer.byteLength(buffer) > 4 * 1024 * 1024) throw new Error('Control frame too large');
   for (;;) {

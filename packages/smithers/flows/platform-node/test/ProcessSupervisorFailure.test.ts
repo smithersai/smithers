@@ -59,6 +59,7 @@ const fixture = (settings: Settings = {}) => {
   const owner = promise<ExitCode>()
   const accepted = promise<void>()
   let peer: Net.Socket | undefined
+  let requestPeer: Net.Socket | undefined
   let ownerDone = false
   let ownerEndedAt = 0
   let referenced = true
@@ -95,6 +96,7 @@ const fixture = (settings: Settings = {}) => {
         Effect.sync(() => {
           rawFinalizerReferenced = referenced
           peer?.destroy()
+          requestPeer?.destroy()
           endOwner()
         })
       )
@@ -104,8 +106,16 @@ const fixture = (settings: Settings = {}) => {
           try: async () => {
             peer = Net.createConnection(path)
             peer.on("error", () => {})
+            requestPeer = Net.createConnection(path.replace(/\/s$/, "/r"))
+            requestPeer.on("error", () => {})
+            requestPeer.once("close", () => {
+              if (settings.endOnDisconnect !== false) {
+                endOwner()
+                peer?.end()
+              }
+            })
             let buffer = ""
-            peer.on("data", (data) => {
+            requestPeer.on("data", (data) => {
               buffer += String(data)
               for (;;) {
                 const end = buffer.indexOf("\n")
@@ -127,7 +137,7 @@ const fixture = (settings: Settings = {}) => {
             peer.once("close", () => {
               if (settings.endOnDisconnect !== false) endOwner()
             })
-            await bounded(once(peer, "connect"))
+            await bounded(Promise.all([once(peer, "connect"), once(requestPeer, "connect")]))
             if (settings.readiness === "malformed") peer.write("{invalid}\n")
             else if (settings.readiness !== "silent") {
               send({ type: "ready", version: 1, pid: settings.readiness === "wrong" ? 900_005 : 900_001 })
@@ -181,10 +191,12 @@ const fixture = (settings: Settings = {}) => {
       await bounded(accepted.promise)
       const closed = once(peer!, "close")
       peer!.destroy()
+      requestPeer?.destroy()
       await bounded(closed)
     },
     dispose: () => {
       peer?.destroy()
+      requestPeer?.destroy()
       endOwner()
     }
   }
@@ -334,7 +346,7 @@ describe("failed process preparation", () => {
     }
   })
 
-  for (const step of ["directory", "permissions", "server", "listening"] as const) {
+  for (const step of ["directory", "permissions", "server", "request-server", "listening"] as const) {
     it(`maps a ${step} failure into the typed channel and removes any owned directory`, async () => {
       const cause = Object.assign(new Error(`${step} denied`), { code: "EACCES" })
       if (step === "directory") {
@@ -347,7 +359,10 @@ describe("failed process preparation", () => {
           throw cause
         })
       }
-      if (step === "server") {
+      if (step === "request-server") {
+        vi.mocked(Net.createServer).mockImplementationOnce(vi.mocked(Net.createServer).getMockImplementation()!)
+      }
+      if (step === "server" || step === "request-server") {
         vi.mocked(Net.createServer).mockImplementationOnce(() => {
           throw cause
         })

@@ -57,9 +57,10 @@ describe.skipIf(process.platform === "win32")("waitForExit", () => {
     const zombie = await unreapedChild()
     try {
       const deadline = Date.now() + 5000
-      while (stat(zombie.pid) !== "Z" && Date.now() < deadline) await new Promise((r) => setTimeout(r, 10))
+      // BSD ps appends flag suffixes, such as N for reduced scheduling priority (ZN).
+      while (stat(zombie.pid)[0] !== "Z" && Date.now() < deadline) await new Promise((r) => setTimeout(r, 10))
       // The fixture only proves anything while the entry is really unreaped.
-      expect(stat(zombie.pid), `pid ${zombie.pid} never became a zombie`).toBe("Z")
+      expect(stat(zombie.pid)[0], `pid ${zombie.pid} never became a zombie`).toBe("Z")
       // Signal 0 still succeeds here, which is why it cannot be the criterion.
       expect(() => process.kill(zombie.pid, 0)).not.toThrow()
       const started = Date.now()

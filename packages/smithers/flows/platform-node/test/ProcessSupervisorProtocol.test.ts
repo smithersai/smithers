@@ -18,8 +18,8 @@ const bounded = async <A>(promise: Promise<A>): Promise<A> => {
   }
 }
 
-const connected = async (control: Control): Promise<Socket> => {
-  const socket = createConnection(control.path)
+const connected = async (control: Control, requests = false): Promise<Socket> => {
+  const socket = createConnection(requests ? control.requestPath : control.path)
   // Protocol-refusal tests deliberately destroy the other end of this socket.
   socket.on("error", () => {})
   await bounded(once(socket, "connect"))
@@ -34,15 +34,19 @@ const send = (socket: Socket, ...values: ReadonlyArray<unknown>): Promise<void> 
     })
   )
 
-const session = async (use: (control: Control, socket: Socket) => Promise<void>): Promise<void> => {
+const session = async (use: (control: Control, socket: Socket, requests: Socket) => Promise<void>): Promise<void> => {
   const control = new Control()
   let socket: Socket | undefined
+  let requests: Socket | undefined
   try {
     await bounded(control.listening)
     socket = await connected(control)
-    await use(control, socket)
+    requests = await connected(control, true)
+    await bounded(control.requestsReady.promise)
+    await use(control, socket, requests)
   } finally {
     socket?.destroy()
+    requests?.destroy()
     control.dispose()
   }
 }
@@ -53,7 +57,7 @@ const exited = { type: "exit", code: 0, signal: null }
 
 describe("private process lifetime protocol", () => {
   it("stores an early READY and withdraws the owned socket before activation", () =>
-    session(async (control, socket) => {
+    session(async (control, socket, requests) => {
       expect(statSync(control.directory).mode & 0o777).toBe(0o700)
       await send(socket, ready)
       expect(await bounded(control.ready.promise)).toBe(4242)
@@ -63,8 +67,9 @@ describe("private process lifetime protocol", () => {
       // it must still succeed, and an accepted connection remains usable.
       control.withdraw(4242, 4242)
       expect(existsSync(control.path)).toBe(false)
+      expect(existsSync(control.requestPath)).toBe(false)
       expect(existsSync(control.directory)).toBe(false)
-      const received = once(socket, "data")
+      const received = once(requests, "data")
       await control.write({ type: "configure", command: "literal", args: ["a b"] })
       expect(String((await bounded(received))[0])).toBe(
         "{\"type\":\"configure\",\"command\":\"literal\",\"args\":[\"a b\"]}\n"
@@ -111,6 +116,36 @@ describe("private process lifetime protocol", () => {
       }
     }))
 
+  it("rejects a second request connection without displacing the accepted owner", () =>
+    session(async (control, _socket, requests) => {
+      const second = await connected(control, true)
+      try {
+        await bounded(once(second, "close"))
+        const received = once(requests, "data")
+        await control.write({ type: "stop" })
+        expect(String((await bounded(received))[0])).toBe("{\"type\":\"stop\"}\n")
+      } finally {
+        second.destroy()
+      }
+    }))
+
+  it("keeps receiving exit and cleanup after the request channel closes", () =>
+    session(async (control, socket, requests) => {
+      control.activationSent = true
+      await send(socket, ready, spawned)
+      await bounded(control.started.promise)
+      const closed = once(control.requestSocket!, "close")
+      requests.end()
+      await bounded(closed)
+      await expect(control.write({ type: "stop" })).rejects.toThrow("channel closed")
+      expect(control.socket!.destroyed).toBe(false)
+      await send(socket, exited, { type: "cleanup" })
+      socket.end()
+      expect(await bounded(control.exited.promise)).toBe(0)
+      await bounded(control.ended.promise)
+      expect(control.cleanupAcknowledged).toBe(true)
+    }))
+
   it("settles every pending outcome when the raw owner exits before connecting", async () => {
     const control = new Control()
     try {
@@ -126,6 +161,21 @@ describe("private process lifetime protocol", () => {
       control.dispose()
     }
   })
+
+  it("preserves a native status socket failure for pending readers", () =>
+    session(async (control, socket) => {
+      control.activationSent = true
+      await send(socket, ready, spawned)
+      await bounded(control.started.promise)
+      const failure = Object.assign(new Error("status connection reset"), { code: "ECONNRESET" })
+      control.socket!.destroy(failure)
+      await bounded(control.ended.promise)
+      await expect(control.exited.promise).rejects.toBe(failure)
+      await expect(control.lost.promise).rejects.toBe(failure)
+      expect(control.fault).toBe(failure)
+      expect(control.requestSocket!.destroyed).toBe(true)
+      expect(control.cleanupAcknowledged).toBe(false)
+    }))
 
   it("rejects unreported outcomes when an accepted channel closes", () =>
     session(async (control, socket) => {
@@ -310,12 +360,12 @@ describe("private process lifetime protocol", () => {
   }
 
   it("rejects excessive configuration locally while preserving the usable channel", () =>
-    session(async (control, socket) => {
+    session(async (control, socket, requests) => {
       await send(socket, ready)
       await bounded(control.ready.promise)
       await expect(control.write({ type: "configure", command: "x".repeat(4 * 1024 * 1024) }))
         .rejects.toThrow("configuration exceeds")
-      const received = once(socket, "data")
+      const received = once(requests, "data")
       await control.write({ type: "stop" })
       expect(String((await bounded(received))[0])).toBe("{\"type\":\"stop\"}\n")
     }))

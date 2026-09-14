@@ -43,6 +43,22 @@ grouped target additionally attempts a revalidated positive-PID sweep of
 escaped descendants, with ordinary POSIX PID races remaining. Natural exit
 does not promise cleanup of deliberately escaped sessions.
 
+An explicit stop owns its deadline until cleanup is acknowledged. A target exit
+received during that stop does not send another request. The helper preserves
+the accepted signal and grace period across target exit and either socket's
+closure, even when its configured default is `SIGKILL`. A still-live target
+receives that policy even after calling `setsid()` to leave the supervisor's
+group. Group membership selects the descendant sweep, not the target's signal
+or grace period. Only an unactivated owner or verified natural completion can
+use the host's immediate cleanup shortcut. Requests and lifetime
+status use separate private sockets, so an EPIPE on a late request cannot discard
+a buffered target exit or cleanup receipt. The host drains that receipt and
+verifies the process group before retiring the ledger record.
+
+Delivery deadlines and verification retries use the platform clock. Freezing
+the caller's Effect clock does not freeze native process cleanup or turn an
+unverifiable group into an unbounded scope finalizer.
+
 `jj` goes through that same spawner rather than around it. `NodeJj.layer`
 spawns its own children, which is right for a host that has no spawner to
 offer; under containment it would mean a `jj` invocation that leads no recorded

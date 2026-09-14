@@ -1,10 +1,11 @@
 /**
  * Private parent connection for a POSIX process owner. Effect retains ownership
- * of the caller's streams; the socket carries only launch and lifetime control.
+ * of the caller's streams; separate sockets carry requests and lifetime status.
  * @since 1.0.0
  */
 import type { Lifecycle } from "@smthrs/kernel/ContainedSpawner"
 import * as Channel from "effect/Channel"
+import * as Clock from "effect/Clock"
 import * as Effect from "effect/Effect"
 import * as PlatformError from "effect/PlatformError"
 import * as Sink from "effect/Sink"
@@ -25,6 +26,9 @@ const exitAllowanceMs = 2500
 // an unclean exit; an unknown observation still never counts as success.
 const verificationMs = 2500
 const targets = new WeakMap<ChildProcessHandle, Control>()
+// Native owners and sockets keep running when the caller freezes its Clock.
+// Their delivery bounds and cleanup retries must keep running with them.
+const processClock = Clock.Clock.defaultValue()
 
 /**
  * Actual service pid, distinct from the owner recorded by the host.
@@ -82,10 +86,13 @@ const wait = <A>(value: Promise<A>, method: string, command: string) =>
   Effect.tryPromise({ try: () => value, catch: (cause) => failure(method, command, cause) })
 
 const bounded = <A, E, R>(effect: Effect.Effect<A, E, R>, millis: number, method: string, command: string) =>
-  effect.pipe(Effect.timeoutOrElse({
-    duration: millis,
-    orElse: () => Effect.fail(failure(method, command, new Error(`Process supervisor ${method} timed out`)))
-  }))
+  effect.pipe(
+    Effect.timeoutOrElse({
+      duration: millis,
+      orElse: () => Effect.fail(failure(method, command, new Error(`Process supervisor ${method} timed out`)))
+    }),
+    Effect.provideService(Clock.Clock, processClock)
+  )
 
 /**
  * Standalone application executables do not implement the runtime's eval CLI.
@@ -116,11 +123,15 @@ export class Control {
   readonly exited = promise<ExitCode>()
   readonly lost = promise<never>()
   readonly ended = promise<void>()
+  readonly requestsReady = promise<void>()
   readonly directory: string
   readonly path: string
+  readonly requestPath: string
   readonly server
+  readonly requestServer
   readonly listening: Promise<void>
   socket: Socket | undefined
+  requestSocket: Socket | undefined
   targetDone = false
   targetPid: number | undefined
   ownerDone = false
@@ -138,14 +149,26 @@ export class Control {
   constructor() {
     this.directory = mkdtempSync("/tmp/sm-p-")
     this.path = `${this.directory}/s`
+    this.requestPath = `${this.directory}/r`
+    const servers: Array<ReturnType<typeof createServer>> = []
     try {
       chmodSync(this.directory, 0o700)
       this.server = createServer((socket) => this.accept(socket))
-      this.listening = new Promise<void>((resolve, reject) => {
-        this.server.once("error", reject)
-        this.server.listen(this.path, resolve)
-      })
+      servers.push(this.server)
+      this.requestServer = createServer((socket) => this.acceptRequests(socket))
+      servers.push(this.requestServer)
+      this.listening = Promise.all([
+        new Promise<void>((resolve, reject) => {
+          this.server.once("error", reject)
+          this.server.listen(this.path, resolve)
+        }),
+        new Promise<void>((resolve, reject) => {
+          this.requestServer.once("error", reject)
+          this.requestServer.listen(this.requestPath, resolve)
+        })
+      ]).then(() => {})
     } catch (cause) {
+      for (const server of servers) server.close()
       rmSync(this.directory, { recursive: true, force: true })
       throw cause
     }
@@ -156,20 +179,25 @@ export class Control {
     if (pid !== actual) throw new Error("Wrong supervisor identity")
     this.server.close()
     this.server.unref()
+    this.requestServer.close()
+    this.requestServer.unref()
     // Node may unlink the owned socket synchronously inside server.close().
     rmSync(this.path, { force: true })
+    rmSync(this.requestPath, { force: true })
     rmdirSync(this.directory)
     this.withdrawn = true
   }
 
-  /** EOF is itself a cleanup request, including a failed/partial stop write. */
+  /** Request EOF asks for cleanup; leave its independent status reader intact. */
   disconnect(): void {
-    this.socket?.destroy()
+    this.requestSocket?.destroy()
   }
 
   dispose(): void {
     this.disconnect()
+    this.socket?.destroy()
     this.server.close()
+    this.requestServer.close()
     if (!this.withdrawn) rmSync(this.directory, { recursive: true, force: true })
   }
 
@@ -182,7 +210,7 @@ export class Control {
 
   write(message: unknown): Promise<void> {
     return new Promise((resolve, reject) => {
-      const socket = this.socket
+      const socket = this.requestSocket
       if (socket === undefined || socket.destroyed || !socket.writable) {
         reject(new Error("Private process control channel closed"))
         return
@@ -197,12 +225,28 @@ export class Control {
   }
 
   private closed(): void {
+    this.disconnect()
     const cause = this.fault ?? new Error("Process supervisor closed before reporting its outcome")
     if (this.activationSent && !this.targetDone && !this.spawnFailed) this.lost.reject(cause)
     this.ready.reject(cause)
+    this.requestsReady.reject(cause)
     this.started.reject(cause)
     this.exited.reject(cause)
     this.ended.resolve()
+  }
+
+  private acceptRequests(socket: Socket): void {
+    if (this.requestSocket !== undefined) {
+      socket.destroy()
+      return
+    }
+    this.requestSocket = socket
+    // A late write may fail after the owner has sent its last status frames.
+    // Destroying this socket must never discard those frames on the reader.
+    socket.on("error", (cause) => {
+      this.fault = cause
+    })
+    this.requestsReady.resolve()
   }
 
   private accept(socket: Socket): void {
@@ -364,9 +408,9 @@ export const prepare = (
     // This observation only shortens the owner's deadline. The live owner makes
     // the signal, so neither a stale observation nor a reused pid grants a kill.
     control.onTargetExit = () => {
-      // Target exit is reported once. This distinct fast request must still be
-      // sent after an explicit TERM request; the helper keeps any escaped-child
-      // deadline when that extra explicit-stop work remains.
+      // An explicit stop already owns its deadline and escaped-child sweep.
+      // Natural exit must not replace that policy with a second fast stop.
+      if (control.closeSent) return
       if (!alone()) return
       control.closeSent = true
       void control.write({ type: "stop", killSignal: "SIGKILL", fast: true }).catch(() => control.disconnect())
@@ -402,7 +446,7 @@ export const prepare = (
             )
           )
         }
-        yield* Effect.sleep(10)
+        yield* Effect.sleep(10).pipe(Effect.provideService(Clock.Clock, processClock))
       }
     }))
     const kill = (options: ChildProcess.KillOptions = {}) =>
@@ -410,6 +454,7 @@ export const prepare = (
         const requested = yield* policy(options, command.options)
         if (!referenced) {
           control.socket?.ref()
+          control.requestSocket?.ref()
           yield* reref
           referenced = true
         }
@@ -426,7 +471,10 @@ export const prepare = (
                 type: "stop",
                 explicit: true,
                 ...requested,
-                killSignal: alone() ? "SIGKILL" : requested.killSignal
+                // A live target can move out of this group with setsid().
+                // Only an owner whose target was never activated can replace
+                // the requested signal; natural exit has its own fast path.
+                killSignal: !control.activationSent && alone() ? "SIGKILL" : requested.killSignal
               }),
               "kill",
               command.command
@@ -457,6 +505,7 @@ export const prepare = (
       "spawn",
       command.command
     )
+    yield* bounded(wait(control.requestsReady.promise, "spawn", command.command), startupMs, "spawn", command.command)
     yield* Effect.try({
       try: () => control.withdraw(ready, raw.pid),
       catch: (cause) => failure("spawn", command.command, cause)
@@ -503,11 +552,13 @@ export const prepare = (
       if (referenced) {
         reref = yield* raw.unref
         control.socket?.unref()
+        control.requestSocket?.unref()
         referenced = false
       }
       return Effect.gen(function*() {
         if (!referenced) {
           control.socket?.ref()
+          control.requestSocket?.ref()
           yield* reref
           referenced = true
         }

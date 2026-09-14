@@ -1,5 +1,9 @@
 import { describe, expect, it } from "@effect/vitest"
+import { Jj } from "@smthrs/jj"
+import { ProcessLedger } from "@smthrs/kernel"
+import { Effect, Layer } from "effect"
 import { readFileSync } from "node:fs"
+import * as NodeHost from "../src/NodeHost.ts"
 
 const installation = readFileSync(new URL("../docs/installation.md", import.meta.url), "utf8")
 const quickstart = readFileSync(new URL("../docs/quickstart.md", import.meta.url), "utf8")
@@ -40,3 +44,34 @@ describe("NodeHost prerequisite documentation", () => {
     }
   })
 })
+
+it.live("refuses a contained host before spawning when jj cannot be resolved", () =>
+  Effect.gen(function*() {
+    const ledger = yield* ProcessLedger.makeMemory({ hostId: "missing-jj", ownerPid: process.pid })
+    const previousPath = process.env.PATH
+    const previousOverride = process.env.SMITHERS_JJ_PATH
+    // Resolution returns a typed failure before constructing a command runner.
+    // Neither an installed binary nor an executable fixture is invoked here.
+    process.env.PATH = ""
+    delete process.env.SMITHERS_JJ_PATH
+    try {
+      for (const options of [undefined, { graceMs: 25 }]) {
+        const error = yield* Effect.flip(
+          Effect.provide(
+            Jj,
+            NodeHost.layerContained(options).pipe(
+              Layer.provide(Layer.succeed(ProcessLedger.ProcessLedger)(ledger))
+            )
+          )
+        )
+        expect(error).toMatchObject({ code: "not_installed", method: "version", cause: { code: "ENOENT" } })
+        expect(error.message).toContain("No jj on PATH")
+        expect(yield* ledger.live).toEqual([])
+      }
+    } finally {
+      if (previousPath === undefined) delete process.env.PATH
+      else process.env.PATH = previousPath
+      if (previousOverride === undefined) delete process.env.SMITHERS_JJ_PATH
+      else process.env.SMITHERS_JJ_PATH = previousOverride
+    }
+  }))
