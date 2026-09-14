@@ -9,6 +9,7 @@ import { Journal, JournalEvent } from "@smthrs/journal"
 import { NotificationQueue } from "@smthrs/notifications"
 import * as SteerPayload from "@smthrs/notifications/SteerPayload"
 import { Registry } from "@smthrs/registry"
+import { inputDocument } from "@smthrs/registry/Descriptor"
 import { Cause, Effect, Exit, Layer, Option, Schema, Semaphore, Stream } from "effect"
 import * as Cancellation from "./Cancellation.ts"
 import {
@@ -792,7 +793,8 @@ export const layer: Layer.Layer<
           const available = registered.length > 0
             ? registered.map((descriptor) => ({
               flowId: descriptor.name,
-              description: descriptor.description
+              description: descriptor.description,
+              ...(inputDocument(descriptor.input) === undefined ? {} : { inputSchema: inputDocument(descriptor.input)! })
             }))
             : yield* runtime.listFlows
           const result = page(available, bounds)

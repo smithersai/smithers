@@ -33,8 +33,12 @@ import { completeGuide } from "../../onboarding/completion"
 import { canCompleteTutorialTrace, tutorialTraceScopeFor, type TutorialTraceScope } from "./tutorial2-turn_trace"
 import { activeRepositoryId, gatewayBindingFor, gatewayRunContextFor } from "../RepoContext"
 import { isPracticeRepo, practiceTranscript } from "../practice/PracticeRepository"
+import type { FormsController } from "./forms"
+import { runHandoff } from "../../cards/RunHandoff"
+import { framePath } from "../../runtime/FrameHistory"
 
 export interface RunsController {
+  readonly prepareRunHandoff: (runId: string, sourceCard?: string) => CommandResult
   readonly listRuns: (args: {
     readonly status?: string
     readonly flow?: string
@@ -79,11 +83,30 @@ export const createRunsController = (
   ctx: ControllerContext,
   nextTranscriptOrdinal: () => number,
   workflows: WorkflowController,
-  tutorialTraceScope: (runId: string) => TutorialTraceScope | undefined = runId => tutorialTraceScopeFor(ctx.store, runId)
+  tutorialTraceScope: (runId: string) => TutorialTraceScope | undefined = runId => tutorialTraceScopeFor(ctx.store, runId),
+  renderFlowForm?: FormsController["renderFlowForm"]
 ): RunsController => {
   const { store, gateway } = ctx
 
   const runCardFor = (scope: RunScope) => runCardInScope(store, scope)
+  const prepareRunHandoff: RunsController["prepareRunHandoff"] = (runId, sourceCard) => {
+    const source = sourceCard === undefined ? undefined : store.collections.cards.get(sourceCard)
+    const target = resolveRun(runId, sourceCard)
+    if ("error" in target) return target.error
+    const card = source?.kind === "run-trace" ? source : runCardFor(target)
+    if (card === undefined) return "Open this run's card before preparing its handoff."
+    const cardId = `handoff-${card.id}`
+    const existing = store.collections.cards.get(cardId)
+    if (existing?.kind === "flow-form" && existing.status !== "acted") return { value: "The editable handoff is already open; your draft is preserved." }
+    const frame = [...store.collections.frames.values()].find(frame => frame.cardId === card.id)
+    const origin = ctx.baseUrl || (typeof location === "undefined" ? "" : location.origin)
+    const sourceHref = frame === undefined ? undefined : `${origin}${framePath({ workspaceId: frame.workspaceId, branchId: frame.branchId, frameId: frame.id })}`
+    const rendered = renderFlowForm?.({
+      name: "chat.copy-message", args: runHandoff(card, sourceHref), via: "user", cardId, title: `Handoff — ${card.title}`,
+      hints: { fields: { text: { kind: "textarea", label: "Handoff brief" } }, submitLabel: "Copy brief" }
+    })
+    return rendered === undefined ? "The handoff form could not be rendered." : { value: "Prepared an editable handoff brief. Review the recorded evidence, fill in remaining work, then copy it." }
+  }
   const patchRunCard = (scope: RunScope, patch: Partial<Extract<Card, { kind: "run-trace" }>["payload"]>): void => {
     const card = runCardFor(scope)
     if (card === undefined) return
@@ -157,11 +180,19 @@ export const createRunsController = (
     }
     const provisioned = await workflows.provisionWorkspace(repo, binding)
     if (provisioned !== true) return provisioned
-    const listed = await gateway.workspaceRuns(repo, binding)
-    if (listed.status !== "ok") return listed.message
-    const rows = listed.value
+    const attention = args.status === "attention"
+    const [listed, inbox] = await Promise.all([
+      gateway.workspaceRuns(repo, binding),
+      attention ? gateway.approvalsInbox(repo, binding) : undefined
+    ])
+    if (listed.status !== "ok" && !attention) return listed.message
+    const observed = listed.status === "ok" ? listed.value : []
+    const pending = inbox?.status === "ok" ? inbox.value.filter(row => row.status === "pending") : []
+    const errors = [listed.status === "error" ? listed.message : undefined, inbox?.status === "error" ? inbox.message : undefined]
+      .filter((error): error is string => error !== undefined)
+    const rows = observed
       .filter((row) =>
-        (args.status === undefined || row.status === args.status) &&
+        (args.status === undefined || (attention ? ["parked", "failed", "waiting-approval"].includes(row.status) : row.status === args.status)) &&
         (args.flow === undefined || row.flowId === args.flow) &&
         (args.lineage === undefined || row.lineageId === args.lineage)
       )
@@ -171,7 +202,7 @@ export const createRunsController = (
     const card: Card = {
       id: cardId,
       kind: "run-list",
-      title: `Runs — ${repo}`,
+      title: `${attention ? "Needs attention" : "Runs"} — ${repo}`,
       status: "active",
       createdAt: existing?.createdAt ?? Date.now(),
       ordinal: existing?.ordinal ?? nextTranscriptOrdinal(),
@@ -180,8 +211,11 @@ export const createRunsController = (
         ...(args.status === undefined ? {} : { status: args.status }),
         ...(args.flow === undefined ? {} : { flow: args.flow }),
         ...(args.lineage === undefined ? {} : { lineage: args.lineage }),
+        ...(attention ? { approvals: pending.map(({ runId, requestId, title }) => ({ runId, requestId, title })) } : {}),
+        observedAt: Date.now(),
+        ...(errors.length === 0 ? {} : { observationError: errors.join(" · ") }),
         // Every status the UNFILTERED workspace carries, so the filter chips (and "All") survive a single-status filter.
-        statuses: [...new Set(listed.value.map((row) => row.status))].sort(),
+        statuses: [...new Set(observed.map((row) => row.status))].sort(),
         runs: rows.map((row) => ({
           runId: row.runId,
           flowId: row.flowId,
@@ -196,7 +230,7 @@ export const createRunsController = (
     }
     store.dispatch({ type: "card.upsert", actor: ctx.commandActor, card })
     return {
-      value: rows.length === 0
+      value: attention ? `${pending.length} pending approvals and ${rows.length} parked, failed or approval-waiting runs on ${repo}.${errors.length ? ` Some state could not be read: ${errors.join(" · ")}` : ""}` : rows.length === 0
         ? `No runs on ${repo} match.`
         : `${rows.length} run${rows.length === 1 ? "" : "s"} on ${repo}.`
     }
@@ -670,6 +704,7 @@ export const createRunsController = (
   }
 
   return {
+    prepareRunHandoff,
     listRuns,
     openRun,
     resumeRun,

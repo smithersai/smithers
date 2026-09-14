@@ -76,6 +76,10 @@ export const FlowFormCardBody = ({
                   ))}
                 </select>
               ) :
+              field.kind === "textarea" ?
+              <textarea key={`${field.name}:${text}`} className="flow-run-steer-input" aria-label={field.label}
+                data-testid={testId} defaultValue={text} rows={12} required={field.required} disabled={settled || busy}
+                onBlur={event => { if (event.currentTarget.value !== text) commit(field.name, event.currentTarget.value) }} /> :
               field.kind === "boolean" ?
               (
                 <input
@@ -123,7 +127,7 @@ export const FlowFormCardBody = ({
             Cancel
           </Button>
           <Button size="sm" data-flow="form.submit" data-testid="flow-form-submit" disabled={!complete || busy} onClick={() => onRunCommand("form.submit", card.id)}>
-            Submit
+            {card.payload.submitLabel ?? "Submit"}
           </Button>
         </div>
       )}

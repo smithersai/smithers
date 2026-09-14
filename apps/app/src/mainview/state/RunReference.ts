@@ -19,7 +19,8 @@ export const cardContainsRun = (card: Card, runId: string, allowChild = false): 
       runId: card.payload.runId, flowId: card.payload.workflow, status: card.payload.phase
     }, card.payload.events ?? []).rows.some((row) => row.detail.childRunId === runId))
     case "approval": return card.payload.runId === runId
-    case "run-list": return card.payload.runs.some((row) => row.runId === runId)
+    case "run-list": return card.payload.runs.some((row) => row.runId === runId) ||
+      (card.payload.approvals?.some((row) => row.runId === runId) ?? false)
     case "approvals-inbox": return card.payload.approvals.some((row) => row.runId === runId)
     default: return false
   }

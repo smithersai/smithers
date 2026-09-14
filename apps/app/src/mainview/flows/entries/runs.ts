@@ -18,6 +18,22 @@ export const namespace: Namespace = {
 
 /** The `runs` flows registered as one aggregator block. */
 export const runsFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> => [
+  flow({
+    name: "runs.handoff",
+    summary: "Prepare an editable handoff brief from a recorded run or plan; the human copies it",
+    args: "[sourceCard=id] <runId>",
+    input: Schema.Struct({ runId: Schema.String, sourceCard: Schema.optional(Schema.String) }),
+    handler: ({ runId, sourceCard }) => actions.prepareRunHandoff(runId, sourceCard)
+  }),
+  flow({
+    name: "runs.attention",
+    summary: "Show pending approvals and parked or failed runs on this repository",
+    runtime: ["cloud"],
+    requires: ["signed-in"],
+    args: "[sourceCard=id] [owner/repo]",
+    input: Schema.Struct({ repo: Schema.optional(Schema.String), sourceCard: Schema.optional(Schema.String) }),
+    handler: (payload) => actions.listRuns({ ...payload, status: "attention" })
+  }),
   /*
    * Lane runs — the run lifecycle beyond launch.
    *

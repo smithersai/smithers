@@ -15,6 +15,7 @@
  */
 import type { Action, FlowRuntime } from "@smthrs/flow"
 import * as Discovery from "@smthrs/registry/Discovery"
+import { inputDocument } from "@smthrs/registry/Descriptor"
 import * as Factory from "@smthrs/targets/Factory"
 import * as FlowCatalog from "@smthrs/targets/FlowCatalog"
 import * as GeneratedFile from "@smthrs/targets/GeneratedFile"
@@ -85,7 +86,8 @@ export const discoverFlows = (
         path: posix(NodePath.relative(workspaceRoot, descriptor.body.path)),
         capabilities: descriptor.capabilities,
         model: Option.getOrNull(descriptor.model),
-        modelInvocable: descriptor.modelInvocable
+        modelInvocable: descriptor.modelInvocable,
+        ...(inputDocument(descriptor.input) === undefined ? {} : { inputSchema: inputDocument(descriptor.input)! })
       })
     }
     return flows

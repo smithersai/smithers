@@ -125,6 +125,7 @@ export const chatCopyFlows = (_actions: CommandActions): ReadonlyArray<FlowEntry
       }
       try {
         await clipboard.writeText(text)
+        return { value: "Copied to clipboard." }
       } catch (cause) {
         return cause instanceof Error && cause.name === "NotAllowedError"
           ? "The browser refused the clipboard — it only allows a copy while the page has focus."

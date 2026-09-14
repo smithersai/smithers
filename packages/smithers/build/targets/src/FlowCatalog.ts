@@ -52,7 +52,8 @@ export const DiscoveredFlow = Schema.Struct({
   path: Schema.NonEmptyString,
   capabilities: Schema.Array(Schema.String),
   model: Schema.NullOr(Schema.String),
-  modelInvocable: Schema.Boolean
+  modelInvocable: Schema.Boolean,
+  inputSchema: Schema.optional(Schema.Json)
 })
 
 /**
@@ -81,7 +82,8 @@ export const Row = Schema.Struct({
   path: Schema.NonEmptyString,
   capabilities: Schema.Array(Schema.String),
   model: Schema.NullOr(Schema.String),
-  modelInvocable: Schema.Boolean
+  modelInvocable: Schema.Boolean,
+  inputSchema: Schema.optional(Schema.Json)
 })
 
 /**
@@ -156,7 +158,8 @@ export const rows = (
     path: flow.path,
     capabilities: flow.capabilities,
     model: flow.model,
-    modelInvocable: flow.modelInvocable
+    modelInvocable: flow.modelInvocable,
+    ...(flow.inputSchema === undefined ? {} : { inputSchema: flow.inputSchema })
   })
   const featured: Array<Row> = []
   const declaredOnly: Array<Row> = []

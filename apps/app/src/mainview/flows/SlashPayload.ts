@@ -220,6 +220,8 @@ const GRAMMAR: Readonly<Record<string, Grammar>> = {
    * any order: `by=`/`lineage=` name theirs, a trailing owner/repo names the
    * workspace, and the remaining positionals are [status] [flow].
    */
+  "runs.attention": (args) => repoOnly("runs.attention", args),
+  "runs.handoff": (args) => required("runId", args, "Choose a run to prepare its handoff"),
   "runs.list": (args, known) => {
     const { rest, repo } = splitTrailingRepo(args, known)
     const payload: Record<string, string> = {}

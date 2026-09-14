@@ -245,6 +245,7 @@ export interface AppController extends TutorialChangeController, IssueFlowsContr
   readonly resumeWorkflowRuns: () => void
   /* Lane runs — the run lifecycle beyond launch (see controller/runs.ts). */
   readonly listRuns: RunsController["listRuns"]
+  readonly prepareRunHandoff: RunsController["prepareRunHandoff"]
   readonly openRun: RunsController["openRun"]
   readonly resumeRun: RunsController["resumeRun"]
   readonly rerunRun: RunsController["rerunRun"]
@@ -1032,7 +1033,7 @@ export const createAppController = (
     resumeWorkflowRuns
   } = createWorkflowPumpController(ctx, store.nextOrdinal)
 
-  const workflowController: WorkflowController = actors.pair(ctx, (context) => createWorkflowController(context, store.nextOrdinal, pumpWorkflowRun))
+  const workflowController: WorkflowController = actors.pair(ctx, (context, select) => createWorkflowController(context, store.nextOrdinal, pumpWorkflowRun, select(renderFlowForm)))
   const liveTutorial = actors.pair(ctx, context => createLiveTutorialController(context, store.nextOrdinal))
   const tutorialChange = actors.pair(ctx, (context, select) => {
     const original = createTutorialChangeController(context, select(workflowController), store.nextOrdinal, select(renderFlowForm))
@@ -1066,7 +1067,7 @@ export const createAppController = (
     forwardInboxApprovalDecision
   } = workflowController
   const { listTriggers, registerTrigger } = triggersSeam
-  const runs = actors.pair(ctx, (context, select) => createRunsController(context, store.nextOrdinal, select(workflowController)))
+  const runs = actors.pair(ctx, (context, select) => createRunsController(context, store.nextOrdinal, select(workflowController), undefined, select(renderFlowForm)))
   const librarianRuns = actors.pair(ctx, (context, select) => createLibrarianRunsController(context, select(workflowController)))
   /*
    * Stage 6 completes when both generated runs have actually been read: the
@@ -1468,6 +1469,7 @@ export const createAppController = (
     createWiki: librarianRuns.createWiki,
     bootstrapHistory: librarianRuns.bootstrapHistory,
     listRuns: monitoredRuns.listRuns,
+    prepareRunHandoff: runs.prepareRunHandoff,
     openRun: monitoredRuns.openRun,
     resumeRun: runs.resumeRun,
     rerunRun: runs.rerunRun,

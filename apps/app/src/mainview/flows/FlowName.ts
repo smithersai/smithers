@@ -214,6 +214,8 @@ export const FLOW_NAMES = [
   "runs.coding.select",
   "runs.events",
   "runs.list",
+  "runs.attention",
+  "runs.handoff",
   "runs.logs",
   "runs.open",
   "runs.rerun",

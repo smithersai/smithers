@@ -48,6 +48,7 @@ export type RunStatus = RunSummaryRow["status"]
 export interface FlowSummary {
   readonly flowId: string
   readonly description: string | null
+  readonly inputSchema?: unknown
 }
 
 export type { ApprovalRow, ControlEvent, NodeOutputRow, RunSummaryRow, TranscriptRow }
@@ -207,7 +208,8 @@ export const createGatewaySeam = (transport: GatewayTransport) => {
             flowId: entry.flowId as string,
             description: typeof entry.description === "string" && entry.description.trim() !== ""
               ? entry.description
-              : null
+              : null,
+            ...(entry.inputSchema === undefined ? {} : { inputSchema: entry.inputSchema })
           }))
       }),
 

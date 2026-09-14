@@ -6,6 +6,7 @@
 import { Journal } from "@smthrs/journal"
 import { NotificationQueue } from "@smthrs/notifications"
 import { Registry } from "@smthrs/registry"
+import { SchemaRefMarkdownArgs } from "@smthrs/registry/Descriptor"
 import { Deferred, Effect, Fiber, Layer, Stream } from "effect"
 import { describe, expect, it } from "vitest"
 import { Control } from "../src/Control.ts"
@@ -160,6 +161,17 @@ describe("ControlLive listings", () => {
     })
     expect(observed.first).toMatchObject({ nextCursor: "1" })
     expect(items(observed.first)).toEqual(["review/pull-request"])
+  })
+
+  it("lists declared markdown inputs without evaluating a flow module", async () => {
+    const listed = await run(Effect.flatMap(Control, control => control.list({ _tag: "flows" })), live({
+      registry: Registry.layerNoop({ list: () => Effect.succeed([
+        { ...descriptor("review", "Review the working copy"), input: new SchemaRefMarkdownArgs({}) }
+      ]) })
+    }))
+    expect(listed).toMatchObject({ _tag: "flows", items: [{ flowId: "review",
+      inputSchema: { schema: { properties: { args: { type: "string" } }, required: ["args"] } }
+    }] })
   })
 
   it("carries registry discovery warnings beside every flow page", async () => {

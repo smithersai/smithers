@@ -79,7 +79,8 @@ export const RepositoryFlowSchema = z.object({
   description: z.string(),
   summary: z.string().nullable(),
   featured: z.boolean(),
-  modelInvocable: z.boolean()
+  modelInvocable: z.boolean(),
+  inputSchema: z.unknown().optional()
 })
 export type RepositoryFlow = z.infer<typeof RepositoryFlowSchema>
 export const RepositoryFlowsRowSchema = z.object({

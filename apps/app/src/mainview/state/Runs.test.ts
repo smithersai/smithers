@@ -14,6 +14,7 @@ import { approvalActionId } from "./ApprovalReference"
 import { CODING_PLAN } from "../cards/fixtures/CodingPlan"
 import { preparedCodingJournal } from "../cards/fixtures/CodingJournal"
 import { describe, expect, test } from "bun:test"
+import { Schema } from "effect"
 import type { Card } from "@smthrs/rpc/Cards"
 import { runCardInScope, approvalCardIdFor } from "./RunReference"
 import { gatewayRunContextFor } from "./RepoContext"
@@ -92,6 +93,7 @@ const relay = (options: {
   >
   readonly events?: ReadonlyArray<Record<string, unknown>>
   readonly refusals?: Readonly<Record<string, string>>
+  readonly projectionRefusals?: Readonly<Record<string, string>>
 } = {}) => {
   const calls: Array<{ path: string; method: string; body: unknown }> = []
   const state = {
@@ -156,6 +158,8 @@ const relay = (options: {
       }
       case "Projection.Snapshot": {
         const selector = (payload.selector ?? {}) as { _tag?: string; runId?: string }
+        const refusal = options.projectionRefusals?.[selector._tag ?? ""]
+        if (refusal !== undefined) return json(200, { ok: false, error: { message: refusal } })
         switch (selector._tag) {
           case "workspace-runs":
             return rowsAnswer("workspace-runs", (options.runs ?? []).map(summaryRow))
@@ -254,6 +258,130 @@ const inboxCard = (
   const card = store.collections.cards.get(`approvals-inbox-${REPO}`)
   return card?.kind === "approvals-inbox" ? card : undefined
 }
+
+test("attention combines explicit blockers and pending gates, and refresh removes cleared work", async () => {
+  const store = await webStore()
+  const runs = [
+    { runId: "failed", flowId: "review-pr", status: "failed" },
+    { runId: "parked", flowId: "review-pr", status: "parked" },
+    { runId: "healthy", flowId: "review-pr", status: "running" }
+  ]
+  const approvals = [approvalRow("uncarded", "gate-1", "Review this request")]
+  const double = relay({ runs, approvals })
+  const controller = createAppController(store, unavailableRepositories, silentAgent, double.services)
+  await signIn(store)
+  await controller.commands.run("runs.attention")
+  expect(runListCard(store)?.payload.runs.map(row => row.runId)).toEqual(["failed", "parked"])
+  expect(runListCard(store)?.payload.approvals).toEqual([{ runId: "uncarded", requestId: "gate-1", title: "Review this request" }])
+  expect(double.state.submitted).toEqual([])
+  approvals.splice(0)
+  runs.splice(0, 2)
+  await controller.commands.run("runs.attention", `sourceCard=run-list-${REPO} ${REPO}`)
+  expect(runListCard(store)?.payload.runs).toEqual([])
+  expect(runListCard(store)?.payload.approvals).toEqual([])
+})
+
+test("attention reports unreadable observations instead of claiming the inbox is clear", async () => {
+  const store = await webStore()
+  const double = relay({ refusals: { "Projection.Snapshot": "Gateway unreachable" } })
+  const controller = createAppController(store, unavailableRepositories, silentAgent, double.services)
+  await signIn(store)
+  await controller.commands.run("runs.attention")
+  expect(runListCard(store)?.payload.observationError).toContain("Gateway unreachable")
+})
+
+test("attention retains pending approvals when the run inventory cannot be read", async () => {
+  const store = await webStore()
+  const double = relay({ approvals: [approvalRow("uncarded", "gate", "Review deployment")],
+    projectionRefusals: { "workspace-runs": "Run inventory unavailable" } })
+  const controller = createAppController(store, unavailableRepositories, silentAgent, double.services)
+  await signIn(store)
+  await controller.commands.run("runs.attention")
+  expect(runListCard(store)?.payload.approvals?.[0]?.requestId).toBe("gate")
+  expect(runListCard(store)?.payload.observationError).toContain("Run inventory unavailable")
+  await controller.commands.run("approvals.open", `sourceCard=run-list-${REPO} uncarded`)
+  expect([...store.collections.cards.values()].some(card => card.kind === "approval" && card.payload.runId === "uncarded")).toBe(true)
+})
+
+test("handoff drafts preserve edits across reopening and reload, without copying launch secrets", async () => {
+  const storage = memoryStorage()
+  const store = await createAppStore({ kind: "localStorage", storage })
+  const double = relay({ runs: [{ runId: "run-handoff", flowId: "review-pr", status: "completed" }] })
+  const controller = createAppController(store, unavailableRepositories, silentAgent, double.services)
+  await signIn(store)
+  await controller.commands.run("runs.open", "run-handoff")
+  const run = [...store.collections.cards.values()].find(card => card.kind === "run-trace")!
+  store.dispatch({ type: "card.updated", actor: "system", id: run.id, patch: { payload: {
+    ...run.payload, input: { prompt: "Fix retries", apiKey: "secret-that-must-not-be-copied" }
+  } } })
+  await controller.commands.run("runs.handoff", `sourceCard=${run.id} run-handoff`)
+  const id = `handoff-${run.id}`
+  const draft = store.collections.cards.get(id)
+  expect(draft?.kind).toBe("flow-form")
+  if (draft?.kind !== "flow-form") throw new Error("handoff missing")
+  expect(draft.payload.draft.text).toContain("Fix retries")
+  expect(draft.payload.draft.text).not.toContain("secret-that-must-not-be-copied")
+  expect(draft.payload.draft.text).toContain("does not establish human acceptance")
+  const copyByAgent = await controller.commands.runForAgent("form.submit", id)
+  expect(said(copyByAgent)).toContain("user")
+  expect(store.collections.cards.get(id)?.status).not.toBe("acted")
+  await controller.commands.run("form.set", `${id} text Remaining: verify retries\nNext: run the integration suite`)
+  await controller.commands.run("runs.handoff", `sourceCard=${run.id} run-handoff`)
+  await settle()
+  controller.dispose()
+  await store.dispose?.()
+  const restored = await createAppStore({ kind: "localStorage", storage })
+  const saved = restored.collections.cards.get(id)
+  expect(saved?.kind === "flow-form" && saved.payload.draft.text).toBe("Remaining: verify retries\nNext: run the integration suite")
+  await restored.dispose?.()
+})
+
+test("declared flow inputs reuse persisted forms and the existing named launch path", async () => {
+  const store = await webStore()
+  const double = relay()
+  const controller = createAppController(store, unavailableRepositories, silentAgent, double.services)
+  await signIn(store)
+  store.dispatch({ type: "repository-flows.loaded", actor: "system", repo: REPO, flows: [{
+    id: "review-pr", description: "Review selected paths", summary: null, featured: true, modelInvocable: true,
+    inputSchema: Schema.toJsonSchemaDocument(Schema.Struct({
+      path: Schema.String, attempts: Schema.Number, mode: Schema.Literals(["quick", "thorough"]), draft: Schema.Boolean
+    }))
+  }] })
+  await controller.commands.run("review-pr", '{"path":"src/retries.ts"}')
+  expect(double.state.launched).toEqual([])
+  const form = [...store.collections.cards.values()].find(card => card.kind === "flow-form")
+  if (form?.kind !== "flow-form") throw new Error("input form missing")
+  expect(form.payload.fields.map(field => [field.name, field.kind])).toEqual([
+    ["path", "text"], ["attempts", "number"], ["mode", "select"], ["draft", "boolean"]
+  ])
+  expect(form.payload.draft.path).toBe("src/retries.ts")
+  await controller.commands.run("form.set", `${form.id} attempts 2`)
+  await controller.commands.run("form.set", `${form.id} mode thorough`)
+  await controller.commands.run("form.submit", form.id)
+  expect(double.state.launched).toEqual([{ workflow: "review-pr", repo: REPO,
+    input: { path: "src/retries.ts", attempts: 2, mode: "thorough", draft: false } }])
+})
+
+test("optional flow inputs are offered before launch, while an empty schema can run directly", async () => {
+  const store = await webStore()
+  const double = relay()
+  const controller = createAppController(store, unavailableRepositories, silentAgent, double.services)
+  await signIn(store)
+  const declare = (input: Schema.Top) => store.dispatch({ type: "repository-flows.loaded", actor: "system", repo: REPO, flows: [{
+    id: "review-pr", description: "Review", summary: null, featured: true, modelInvocable: true,
+    inputSchema: Schema.toJsonSchemaDocument(input)
+  }] })
+  declare(Schema.Struct({ path: Schema.optional(Schema.String) }))
+  await controller.commands.run("flow.run", "review-pr")
+  expect(double.state.launched).toHaveLength(0)
+  const form = [...store.collections.cards.values()].find(card => card.kind === "flow-form")!
+  await controller.commands.run("form.submit", form.id)
+  expect(double.state.launched).toHaveLength(1)
+  expect(double.state.launched[0]?.input).toEqual({})
+  declare(Schema.Struct({}))
+  await controller.commands.run("flow.run", "review-pr")
+  expect(double.state.launched).toHaveLength(2)
+})
 
 describe("runs.list — the run inbox", () => {
   test("lists the workspace's runs as a card, filtered and sorted newest first", async () => {

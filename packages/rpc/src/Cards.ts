@@ -1012,7 +1012,7 @@ const CurrentCardSchema = z.discriminatedUnion("kind", [
       issueContext: z.object({ number: z.number(), title: z.string() }).optional(),
       research: z.string().optional(),
       workflows: z.array(
-        z.object({ key: z.string(), description: z.string().nullable(), prompt: z.string().optional() })
+        z.object({ key: z.string(), description: z.string().nullable(), prompt: z.string().optional(), inputSchema: z.unknown().optional() })
       )
     })
   }),
@@ -1106,6 +1106,10 @@ const CurrentCardSchema = z.discriminatedUnion("kind", [
       status: z.string().optional(),
       flow: z.string().optional(),
       lineage: z.string().optional(),
+      /** Pending gates in the attention view; decisions still open the authoritative approval cards. */
+      approvals: z.array(z.object({ runId: z.string(), requestId: z.string(), title: z.string() })).optional(),
+      observationError: z.string().optional(),
+      observedAt: z.number().optional(),
       runs: z.array(
         z.object({
           runId: z.string(),
@@ -2281,7 +2285,7 @@ const CurrentCardSchema = z.discriminatedUnion("kind", [
         z.object({
           name: z.string(),
           label: z.string(),
-          kind: z.enum(["text", "number", "boolean", "select"]),
+          kind: z.enum(["text", "textarea", "number", "boolean", "select"]),
           required: z.boolean(),
           placeholder: z.string().optional(),
           options: z.array(
@@ -2299,6 +2303,10 @@ const CurrentCardSchema = z.discriminatedUnion("kind", [
       given: z.record(z.string(), z.unknown()),
       /** A submission holds the form until its invocation settles. */
       submitting: z.boolean().optional(),
+      submitLabel: z.string().optional(),
+      /** A nested input uses the same form editor and submits under this named property. */
+      payloadField: z.string().optional(),
+      inputSchema: z.unknown().optional(),
       /** The last submit's honest refusal, kept on the card. */
       error: z.string().optional()
     })

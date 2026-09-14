@@ -16,6 +16,7 @@ import { approvalActionId, approvalRowKey } from "../state/ApprovalReference"
 import { timeLabel as clockLabel } from "../Timestamps"
 import type { CardFamily, RunCommand } from "./CardFamily"
 import { settledPill } from "./CardFamily"
+import { flowArgs } from "../flows/FlowArgs"
 
 /** Why a run is not moving, in words: the control plane's reason, translated. */
 const waitingWords = (waiting: string): string =>
@@ -31,7 +32,8 @@ export const RunListCardBody = ({
   readonly card: Extract<Card, { kind: "run-list" }>
   readonly onRunCommand: RunCommand
 }) => {
-  const { repo, runs } = card.payload
+  const { repo, runs, approvals = [], observationError } = card.payload
+  const attention = card.payload.status === "attention"
   /*
    * The header's mono count line: one clause per status present, in the
    * order a reader triages — live first, settled last.
@@ -45,16 +47,34 @@ export const RunListCardBody = ({
   /* The filter chips: every status the unfiltered workspace could carry, each re-invoking runs.list with its argument. */
   const chips = [...new Set([...(card.payload.statuses ?? []), ...runs.map((run) => run.status)])].sort()
   const listArgs = (status?: string): string =>
-    [status, card.payload.flow, card.payload.lineage === undefined ? undefined : `lineage=${card.payload.lineage}`, `sourceCard=${card.id}`, repo]
-      .filter((part) => part !== undefined)
-      .join(" ")
+    flowArgs("runs.list", { status, flow: card.payload.flow, lineage: card.payload.lineage, sourceCard: card.id, repo })
   const liveCount = runs.filter((run) => LIVE_STATUSES.has(run.status)).length
   return (
     <div className="world-card-list">
+      <div className="flow-run-actions">
+        <Button size="sm" variant={attention ? "default" : "outline"} data-flow="runs.attention"
+          onClick={() => onRunCommand("runs.attention", flowArgs("runs.attention", { sourceCard: card.id, repo }))}>Needs attention</Button>
+        <Button size="sm" variant="outline" data-flow="runs.list"
+          onClick={() => onRunCommand("runs.list", listArgs(card.payload.status))}>Refresh</Button>
+        {attention ? <Button size="sm" variant="outline" data-flow="runs.list"
+          onClick={() => onRunCommand("runs.list", listArgs())}>All runs</Button> : null}
+      </div>
+      {observationError === undefined ? null : <p className="sui-approval-error" role="alert">Some state could not be read: {observationError}</p>}
+      {attention && card.payload.observedAt !== undefined ? <p className="smithers-card-note">{repo} · checked {clockLabel(card.payload.observedAt)}</p> : null}
+      {attention && approvals.length > 0 ? <ul className="world-card-list" aria-label="Pending approvals">
+        {approvals.map(approval => <li key={`${approval.runId}:${approval.requestId}`} className="world-card-row">
+          <span className="world-card-title">{approval.title}</span>
+          <span className="world-card-path">run {approval.runId} · approval required</span>
+          <Button size="sm" variant="outline" data-flow="approvals.open"
+            onClick={() => onRunCommand("approvals.open", flowArgs("approvals.open", { runId: approval.runId, sourceCard: card.id }))}>Review request</Button>
+        </li>)}
+      </ul> : null}
       <p className="smithers-card-note" data-testid="run-list-counts">
-        {runs.length === 0 ? "No runs match." : `${runs.length} ${runs.length === 1 ? "run" : "runs"} · ${countLine}`}
+        {runs.length === 0 ? attention
+          ? observationError !== undefined ? "Run state is incomplete." : approvals.length === 0 ? "No pending approvals or parked or failed runs were recorded." : "No other parked or failed runs were recorded."
+          : "No runs match." : `${runs.length} ${runs.length === 1 ? "run" : "runs"} · ${countLine}`}
       </p>
-      {chips.length > 1 ?
+      {!attention && chips.length > 1 ?
         (
           <div className="flow-run-actions" role="group" aria-label="Filter by status">
             <Button
@@ -101,7 +121,7 @@ export const RunListCardBody = ({
                   variant="outline"
                   data-flow="runs.open"
                   data-testid={`runs-open-${run.runId}`}
-                  onClick={() => onRunCommand("runs.open", `sourceCard=${card.id} ${run.runId}`)}
+                  onClick={() => onRunCommand("runs.open", flowArgs("runs.open", { sourceCard: card.id, runId: run.runId }))}
                 >
                   Open
                 </Button>

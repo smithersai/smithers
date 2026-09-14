@@ -87,6 +87,19 @@ const blur = (host: HTMLElement, testId: string, value: string): void => {
 }
 
 describe("the flow form card", () => {
+  test("a multiline handoff is editable through form.set and uses the clipboard submit label", () => {
+    const recorder = { calls: [] as Array<[string, string | undefined]> }
+    const host = mount(<FlowFormCardBody card={formCard({
+      fields: [{ name: "text", label: "Handoff brief", kind: "textarea", required: true }],
+      draft: { text: "Goal\nEvidence" }, submitLabel: "Copy brief"
+    })} onRunCommand={(name, args) => recorder.calls.push([name, args])} />)
+    expect(host.querySelector("textarea")?.value).toBe("Goal\nEvidence")
+    blur(host, "flow-form-text", "Goal\nEvidence\nNext step")
+    expect(recorder.calls[0]).toEqual(["form.set", "form-agent.create text Goal\nEvidence\nNext step"])
+    const copy = [...host.querySelectorAll("button")].find(button => button.textContent === "Copy brief")
+    copy?.click()
+    expect(recorder.calls[1]).toEqual(["form.submit", "form-agent.create"])
+  })
   test("renders one control per field kind: text, select, text with a datalist, number, checkbox", () => {
     const host = mount(<FlowFormCardBody card={formCard()} onRunCommand={() => {}} />)
     expect(host.querySelector("[data-testid=flow-form-id]")?.getAttribute("type")).toBe("text")

@@ -12,9 +12,18 @@
  * and holds the draft in the card's payload.
  */
 import { splitRunSource } from "./RunCommand"
-import type { Schema, SchemaAST } from "effect"
+import { SchemaRepresentation } from "effect"
+import type { JsonSchema, Schema, SchemaAST } from "effect"
 
-export type FieldKind = "text" | "number" | "boolean" | "select"
+/** Reuse Effect's importer; unsupported declarations keep their existing JSON launch path. */
+export const declaredInput = (document: unknown): Schema.Top | undefined => {
+  if (document === null || typeof document !== "object") return undefined
+  try {
+    return SchemaRepresentation.fromJsonSchemaDocument(document as JsonSchema.Document<"draft-2020-12">)
+  } catch { return undefined }
+}
+
+export type FieldKind = "text" | "textarea" | "number" | "boolean" | "select"
 
 /**
  * The seams a select may draw its options from (NO INVENTION: an option is a
@@ -65,6 +74,7 @@ export interface FieldHint {
 
 /** A flow's `form` declaration: per-field hints, and the two grammar inverses when the positional default is wrong. */
 export interface FormHints {
+  readonly submitLabel?: string
   readonly fields?: Readonly<Record<string, FieldHint>>
   /** The filled payload back to the one slash line the flow's grammar parses. */
   readonly args?: (payload: Readonly<Record<string, unknown>>) => string
@@ -132,6 +142,12 @@ const literalOptions = (ast: SchemaAST.AST): ReadonlyArray<FieldOption> | undefi
 }
 
 const controlOf = (ast: SchemaAST.AST): Pick<FormField, "kind" | "options"> => {
+  // Effect's JSON representation of Number also names non-finite values as
+  // strings. A JSON launch can send only the finite numeric branch.
+  const numeric = (node: SchemaAST.AST): boolean => node._tag === "Number" ||
+    (node._tag === "Literal" && ["Infinity", "-Infinity", "NaN"].includes(String(node.literal))) ||
+    (node._tag === "Union" && node.types.every(numeric))
+  if (ast._tag === "Union" && ast.types.some(type => type._tag === "Number") && numeric(ast)) return { kind: "number" }
   switch (ast._tag) {
     case "Number":
       return { kind: "number" }
@@ -327,7 +343,7 @@ const coerce = (field: FormField, value: unknown): FieldValue | undefined => {
 export const draftFrom = (fields: ReadonlyArray<FormField>, given: Readonly<Record<string, unknown>>): FormDraft => {
   const draft: Record<string, FieldValue> = {}
   for (const field of fields) {
-    const value = coerce(field, given[field.name])
+    const value = coerce(field, given[field.name] ?? (field.kind === "boolean" && field.required ? false : undefined))
     if (value !== undefined) draft[field.name] = value
   }
   return draft

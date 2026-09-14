@@ -2,11 +2,11 @@ import { HarnessModelsResponseSchema, orderedAgentRoles } from "@smthrs/rpc/Agen
 import type { HarnessModelsResponse } from "@smthrs/rpc/AgentRoles"
 import { HARNESS_IDS } from "@smthrs/rpc/LocalApp"
 import type { Harness } from "@smthrs/rpc/LocalApp"
-import type { Schema } from "effect"
+import { Schema } from "effect"
 import { roleMenuEntries } from "../../AgentRoleMenu"
 import type { AgentInvocation } from "../../flows/AgentInvocation"
 import type { CommandOutcome } from "../../flows/Commands"
-import { assembleArgs, draftFrom, formFieldsFor, missingFields, partialPayload, submissionPayload } from "../../flows/FlowForms"
+import { assembleArgs, declaredInput, draftFrom, formFieldsFor, missingFields, partialPayload, submissionPayload } from "../../flows/FlowForms"
 import type { FieldOption, FieldValue, FormDraft, FormField, FormHints, OptionProvider } from "../../flows/FlowForms"
 import { payloadFor } from "../../flows/SlashPayload"
 import { manifests } from "../../plugins/catalog"
@@ -34,6 +34,10 @@ type FlowFormCard = Extract<Card, { kind: "flow-form" }>
 type HarnessId = Harness["id"]
 
 export interface FormRenderRequest {
+  /** Edit this property of the registered flow's payload using its declared schema. */
+  readonly payloadField?: string
+  readonly cardId?: string
+  readonly title?: string
   readonly name: string
   readonly args: string | undefined
   readonly via: "user" | "agent"
@@ -277,10 +281,16 @@ export const createFormsController = (ctx: ControllerContext, deps: FormsControl
       fields = fields.filter(field => missing.includes(field.name))
     }
     const tutorialRun = request.name === "runs.steps" ? tutorialTraceScopeFor(store)?.runId : undefined
-    const draft = draftFrom(fields, tutorialRun === undefined ? given : { runId: tutorialRun, ...given })
+    const nested = request.payloadField === undefined ? undefined : given[request.payloadField]
+    const draft = draftFrom(fields, request.payloadField === undefined
+      ? tutorialRun === undefined ? given : { runId: tutorialRun, ...given }
+      : nested !== null && typeof nested === "object" ? nested as Record<string, unknown> : {})
+    const nestedPayload = request.payloadField === undefined ? {} : {
+      payloadField: request.payloadField, inputSchema: Schema.toJsonSchemaDocument(input)
+    }
     const resolved = withOptions(fields, draft)
     const parseError = "error" in parsed && missingFields(resolved, draft).length === 0 ? { error: parsed.error } : {}
-    const cardId = formCardId(request.name)
+    const cardId = request.cardId ?? formCardId(request.name)
     // A human's menu action now continues in the form. Release the menu's
     // backdrop through the same transitions used by its close gestures.
     // Agent-created forms do not dismiss chrome the human is using.
@@ -307,17 +317,19 @@ export const createFormsController = (ctx: ControllerContext, deps: FormsControl
       card: {
         id: cardId,
         kind: "flow-form",
-        title: `/${request.name}`,
+        title: request.title ?? `/${request.name}`,
         status: "active",
         createdAt: existing?.createdAt ?? Date.now(),
         ordinal: deps.nextOrdinal(),
-        payload: { flow: request.name, via: request.via, fields: resolved, draft, given, ...parseError }
+        payload: { flow: request.name, via: request.via, fields: resolved, draft, given, ...parseError, ...nestedPayload,
+          ...(hints?.submitLabel === undefined ? {} : { submitLabel: hints.submitLabel }) }
       }
     })
     if (request.invocation !== undefined) {
       continuations.set(cardId, {
         invocation: request.invocation,
-        payload: JSON.stringify({ flow: request.name, via: request.via, fields: resolved, draft, given, ...parseError })
+        payload: JSON.stringify({ flow: request.name, via: request.via, fields: resolved, draft, given, ...parseError, ...nestedPayload,
+          ...(hints?.submitLabel === undefined ? {} : { submitLabel: hints.submitLabel }) })
       })
     }
     void refreshModelList(cardId)
@@ -413,14 +425,27 @@ export const createFormsController = (ctx: ControllerContext, deps: FormsControl
      * into it. The assembled line is display copy — the card's echo, the
      * trace, and the confirmation message — and nothing parses it back.
      */
-    const submission = submissionPayload(entry.input, card.payload.fields, card.payload.given, card.payload.draft)
+    const nestedField = card.payload.payloadField
+    const input = nestedField === undefined ? entry.input : declaredInput(card.payload.inputSchema)
+    if (input === undefined) return "This form's input declaration is unavailable. Reopen the flow to refresh it."
+    const nestedGiven = nestedField === undefined ? card.payload.given : card.payload.given[nestedField]
+    const submission = submissionPayload(input, card.payload.fields,
+      nestedGiven !== null && typeof nestedGiven === "object" ? nestedGiven as Record<string, unknown> : {}, card.payload.draft)
     if ("error" in submission) {
       patch(card, { ...card.payload, error: submission.error }, "error")
       return submission.error
     }
+    if (nestedField !== undefined && !Schema.is(input)(submission.payload)) {
+      const error = "These inputs do not match the flow's declaration. Check the field values before running."
+      patch(card, { ...card.payload, error }, "error")
+      return error
+    }
     const represented = new Set(card.payload.fields.map((field) => field.name))
     const unrepresented = Object.fromEntries(Object.entries(card.payload.given).filter(([name]) => !represented.has(name)))
-    const args = assembleArgs(card.payload.fields, entry.metadata.form, { ...unrepresented, ...card.payload.draft })
+    const payload = nestedField === undefined ? submission.payload : { ...card.payload.given, [nestedField]: submission.payload }
+    const args = nestedField === undefined
+      ? assembleArgs(card.payload.fields, entry.metadata.form, { ...unrepresented, ...card.payload.draft })
+      : assembleArgs(formFieldsFor(entry.input, entry.metadata.form), entry.metadata.form, payload)
     const actor = ctx.commandActor
     /*
      * The continuation keeps the asker's actor: an agent-rendered form runs
@@ -435,7 +460,7 @@ export const createFormsController = (ctx: ControllerContext, deps: FormsControl
     try {
       outcome = await ctx.commands.submit({
         name: flow,
-        payload: submission.payload,
+        payload,
         actor: asAgent ? "agent" : "user",
         ...(args === "" ? {} : { display: args }),
         ...(asAgent && continuation !== undefined ? { invocation: continuation } : {})

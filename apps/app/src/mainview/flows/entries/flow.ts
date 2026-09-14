@@ -4,9 +4,9 @@
  * the aggregator order.
  */
 import { Schema } from "effect"
-import { flow, NoPayload, RepoTarget, CardTarget } from "./Declare"
+import { flow, NoPayload, CardTarget } from "./Declare"
 import type { FlowEntry, Namespace } from "../registry"
-import { flowRunParts, repoTargetGrammar } from "../SlashPayload"
+import { flowRunParts, payloadFor } from "../SlashPayload"
 import { line, text } from "../FlowForms"
 import type { RepositoryFlow } from "../../state/AppState"
 import type { CommandActions } from "./Declare"
@@ -186,14 +186,14 @@ export const repositoryFlowLeaves = (
         runtime: ["cloud"],
         requires: ["signed-in"],
         capabilities: ["outbound:launch"],
-        args: "[owner/repo]",
-        grammar: repoTargetGrammar(name),
+        args: "[owner/repo] [JSON object]",
+        grammar: (args) => payloadFor("flow.run", line(row.id, args)),
         form: { fields: { repo: { optionsFrom: "cloud-repos", kind: "text" } } },
         ...(row.modelInvocable
           ? {}
           : { userOnly: true, userOnlyReason: `${repo} declares ${row.id} is not for a model to start (.smithers/FACTORY.ts)` }),
-        input: RepoTarget,
-        handler: ({ repo: target }) => actions.runWorkflow(row.id, target ?? repo)
+        input: Schema.Struct({ repo: Schema.optional(Schema.String), input: Schema.optional(Schema.Record(Schema.String, Schema.Json)) }),
+        handler: ({ repo: target, input }) => actions.runWorkflow(row.id, target ?? repo, input)
       })
     ]
   })

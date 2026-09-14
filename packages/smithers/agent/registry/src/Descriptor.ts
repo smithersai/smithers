@@ -137,6 +137,16 @@ export class SchemaRefInline extends Schema.TaggedClass<SchemaRefInline>("flows/
 ) {}
 
 /**
+ * Input metadata available without evaluating a repository module.
+ * @category accessors
+ * @since 1.0.0
+ */
+export const inputDocument = (ref: SchemaRef | undefined): Schema.Json | undefined =>
+  ref?._tag === "Inline" ? ref.document : ref?._tag === "MarkdownArgs"
+    ? Schema.decodeUnknownSync(Schema.Json)(Schema.toJsonSchemaDocument(Schema.Struct({ args: Schema.String })))
+    : undefined
+
+/**
  * A serializable locator for a flow input or output schema.
  *
  * @category models

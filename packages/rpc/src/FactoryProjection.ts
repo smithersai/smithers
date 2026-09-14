@@ -71,7 +71,8 @@ export const FactoryFlowSchema = z.object({
   path: z.string().min(1),
   capabilities: z.array(z.string()),
   model: z.string().nullable(),
-  modelInvocable: z.boolean()
+  modelInvocable: z.boolean(),
+  inputSchema: z.unknown().optional()
 })
 
 /**

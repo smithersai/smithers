@@ -13,7 +13,23 @@
         "proc:spawn:*"
       ],
       "model": "openai:gpt-5.6-sol",
-      "modelInvocable": true
+      "modelInvocable": true,
+      "inputSchema": {
+        "dialect": "draft-2020-12",
+        "schema": {
+          "type": "object",
+          "properties": {
+            "args": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "args"
+          ],
+          "additionalProperties": true
+        },
+        "definitions": {}
+      }
     },
     {
       "id": "lint",
@@ -28,7 +44,23 @@
         "proc:spawn:*"
       ],
       "model": "openai:gpt-5.6-sol",
-      "modelInvocable": true
+      "modelInvocable": true,
+      "inputSchema": {
+        "dialect": "draft-2020-12",
+        "schema": {
+          "type": "object",
+          "properties": {
+            "args": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "args"
+          ],
+          "additionalProperties": true
+        },
+        "definitions": {}
+      }
     },
     {
       "id": "pr-triage",
@@ -43,7 +75,23 @@
         "proc:spawn:rg *"
       ],
       "model": "openai:gpt-5.6-sol",
-      "modelInvocable": true
+      "modelInvocable": true,
+      "inputSchema": {
+        "dialect": "draft-2020-12",
+        "schema": {
+          "type": "object",
+          "properties": {
+            "args": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "args"
+          ],
+          "additionalProperties": true
+        },
+        "definitions": {}
+      }
     },
     {
       "id": "issue-triage",
@@ -62,7 +110,23 @@
         "proc:spawn:pnpm exec vitest *"
       ],
       "model": "openai:gpt-5.6-sol",
-      "modelInvocable": true
+      "modelInvocable": true,
+      "inputSchema": {
+        "dialect": "draft-2020-12",
+        "schema": {
+          "type": "object",
+          "properties": {
+            "args": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "args"
+          ],
+          "additionalProperties": true
+        },
+        "definitions": {}
+      }
     },
     {
       "id": "release-notes",
@@ -76,7 +140,23 @@
         "proc:spawn:*"
       ],
       "model": "openai:gpt-5.6-sol",
-      "modelInvocable": true
+      "modelInvocable": true,
+      "inputSchema": {
+        "dialect": "draft-2020-12",
+        "schema": {
+          "type": "object",
+          "properties": {
+            "args": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "args"
+          ],
+          "additionalProperties": true
+        },
+        "definitions": {}
+      }
     },
     {
       "id": "checks/bundle",
@@ -89,7 +169,23 @@
         "*"
       ],
       "model": null,
-      "modelInvocable": true
+      "modelInvocable": true,
+      "inputSchema": {
+        "dialect": "draft-2020-12",
+        "schema": {
+          "type": "object",
+          "properties": {
+            "args": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "args"
+          ],
+          "additionalProperties": true
+        },
+        "definitions": {}
+      }
     },
     {
       "id": "checks/bundle-bun",
@@ -102,7 +198,23 @@
         "*"
       ],
       "model": null,
-      "modelInvocable": true
+      "modelInvocable": true,
+      "inputSchema": {
+        "dialect": "draft-2020-12",
+        "schema": {
+          "type": "object",
+          "properties": {
+            "args": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "args"
+          ],
+          "additionalProperties": true
+        },
+        "definitions": {}
+      }
     },
     {
       "id": "checks/native",
@@ -115,7 +227,23 @@
         "*"
       ],
       "model": null,
-      "modelInvocable": true
+      "modelInvocable": true,
+      "inputSchema": {
+        "dialect": "draft-2020-12",
+        "schema": {
+          "type": "object",
+          "properties": {
+            "args": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "args"
+          ],
+          "additionalProperties": true
+        },
+        "definitions": {}
+      }
     },
     {
       "id": "checks/native-bun",
@@ -128,7 +256,23 @@
         "*"
       ],
       "model": null,
-      "modelInvocable": true
+      "modelInvocable": true,
+      "inputSchema": {
+        "dialect": "draft-2020-12",
+        "schema": {
+          "type": "object",
+          "properties": {
+            "args": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "args"
+          ],
+          "additionalProperties": true
+        },
+        "definitions": {}
+      }
     },
     {
       "id": "checks/policy",
@@ -141,7 +285,23 @@
         "*"
       ],
       "model": null,
-      "modelInvocable": true
+      "modelInvocable": true,
+      "inputSchema": {
+        "dialect": "draft-2020-12",
+        "schema": {
+          "type": "object",
+          "properties": {
+            "args": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "args"
+          ],
+          "additionalProperties": true
+        },
+        "definitions": {}
+      }
     },
     {
       "id": "checks/runtime",
@@ -154,7 +314,23 @@
         "*"
       ],
       "model": null,
-      "modelInvocable": true
+      "modelInvocable": true,
+      "inputSchema": {
+        "dialect": "draft-2020-12",
+        "schema": {
+          "type": "object",
+          "properties": {
+            "args": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "args"
+          ],
+          "additionalProperties": true
+        },
+        "definitions": {}
+      }
     },
     {
       "id": "checks/wiki",
@@ -230,7 +406,23 @@
       "path": "flows/create-flow/clarify/flow.mdx",
       "capabilities": [],
       "model": null,
-      "modelInvocable": true
+      "modelInvocable": true,
+      "inputSchema": {
+        "dialect": "draft-2020-12",
+        "schema": {
+          "type": "object",
+          "properties": {
+            "args": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "args"
+          ],
+          "additionalProperties": true
+        },
+        "definitions": {}
+      }
     },
     {
       "id": "create-flow/design",
@@ -241,7 +433,23 @@
       "path": "flows/create-flow/design/flow.mdx",
       "capabilities": [],
       "model": null,
-      "modelInvocable": true
+      "modelInvocable": true,
+      "inputSchema": {
+        "dialect": "draft-2020-12",
+        "schema": {
+          "type": "object",
+          "properties": {
+            "args": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "args"
+          ],
+          "additionalProperties": true
+        },
+        "definitions": {}
+      }
     },
     {
       "id": "create-flow/document",
@@ -255,7 +463,23 @@
         "fs:write:**"
       ],
       "model": null,
-      "modelInvocable": true
+      "modelInvocable": true,
+      "inputSchema": {
+        "dialect": "draft-2020-12",
+        "schema": {
+          "type": "object",
+          "properties": {
+            "args": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "args"
+          ],
+          "additionalProperties": true
+        },
+        "definitions": {}
+      }
     },
     {
       "id": "create-flow/fix",
@@ -270,7 +494,23 @@
         "proc:spawn:*"
       ],
       "model": null,
-      "modelInvocable": true
+      "modelInvocable": true,
+      "inputSchema": {
+        "dialect": "draft-2020-12",
+        "schema": {
+          "type": "object",
+          "properties": {
+            "args": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "args"
+          ],
+          "additionalProperties": true
+        },
+        "definitions": {}
+      }
     },
     {
       "id": "create-flow/provision",
@@ -284,7 +524,23 @@
         "proc:spawn:*"
       ],
       "model": null,
-      "modelInvocable": true
+      "modelInvocable": true,
+      "inputSchema": {
+        "dialect": "draft-2020-12",
+        "schema": {
+          "type": "object",
+          "properties": {
+            "args": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "args"
+          ],
+          "additionalProperties": true
+        },
+        "definitions": {}
+      }
     },
     {
       "id": "create-flow/scaffold",
@@ -299,7 +555,23 @@
         "proc:spawn:*"
       ],
       "model": null,
-      "modelInvocable": true
+      "modelInvocable": true,
+      "inputSchema": {
+        "dialect": "draft-2020-12",
+        "schema": {
+          "type": "object",
+          "properties": {
+            "args": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "args"
+          ],
+          "additionalProperties": true
+        },
+        "definitions": {}
+      }
     },
     {
       "id": "create-skill/clarify",
@@ -310,7 +582,23 @@
       "path": "flows/create-skill/clarify/flow.mdx",
       "capabilities": [],
       "model": null,
-      "modelInvocable": true
+      "modelInvocable": true,
+      "inputSchema": {
+        "dialect": "draft-2020-12",
+        "schema": {
+          "type": "object",
+          "properties": {
+            "args": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "args"
+          ],
+          "additionalProperties": true
+        },
+        "definitions": {}
+      }
     },
     {
       "id": "create-skill/design",
@@ -321,7 +609,23 @@
       "path": "flows/create-skill/design/flow.mdx",
       "capabilities": [],
       "model": null,
-      "modelInvocable": true
+      "modelInvocable": true,
+      "inputSchema": {
+        "dialect": "draft-2020-12",
+        "schema": {
+          "type": "object",
+          "properties": {
+            "args": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "args"
+          ],
+          "additionalProperties": true
+        },
+        "definitions": {}
+      }
     },
     {
       "id": "create-skill/document",
@@ -332,7 +636,23 @@
       "path": "flows/create-skill/document/flow.mdx",
       "capabilities": [],
       "model": null,
-      "modelInvocable": true
+      "modelInvocable": true,
+      "inputSchema": {
+        "dialect": "draft-2020-12",
+        "schema": {
+          "type": "object",
+          "properties": {
+            "args": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "args"
+          ],
+          "additionalProperties": true
+        },
+        "definitions": {}
+      }
     },
     {
       "id": "create-skill/scaffold",
@@ -346,7 +666,88 @@
         "fs:write:**"
       ],
       "model": null,
-      "modelInvocable": true
+      "modelInvocable": true,
+      "inputSchema": {
+        "dialect": "draft-2020-12",
+        "schema": {
+          "type": "object",
+          "properties": {
+            "args": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "args"
+          ],
+          "additionalProperties": true
+        },
+        "definitions": {}
+      }
+    },
+    {
+      "id": "issue/poc",
+      "description": "Build a small proof of concept for an issue.",
+      "summary": null,
+      "featured": false,
+      "kind": "mdx",
+      "path": "flows/issue/poc/flow.mdx",
+      "capabilities": [
+        "fs:read:**",
+        "fs:write:**",
+        "proc:spawn:rg *",
+        "proc:spawn:pnpm test *",
+        "proc:spawn:npm test *"
+      ],
+      "model": "openai:gpt-5.6-sol",
+      "modelInvocable": true,
+      "inputSchema": {
+        "dialect": "draft-2020-12",
+        "schema": {
+          "type": "object",
+          "properties": {
+            "args": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "args"
+          ],
+          "additionalProperties": true
+        },
+        "definitions": {}
+      }
+    },
+    {
+      "id": "issue/repro",
+      "description": "Research and reproduce an issue before implementation.",
+      "summary": null,
+      "featured": false,
+      "kind": "mdx",
+      "path": "flows/issue/repro/flow.mdx",
+      "capabilities": [
+        "fs:read:**",
+        "proc:spawn:rg *",
+        "proc:spawn:pnpm test *",
+        "proc:spawn:npm test *"
+      ],
+      "model": "openai:gpt-5.6-sol",
+      "modelInvocable": true,
+      "inputSchema": {
+        "dialect": "draft-2020-12",
+        "schema": {
+          "type": "object",
+          "properties": {
+            "args": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "args"
+          ],
+          "additionalProperties": true
+        },
+        "definitions": {}
+      }
     },
     {
       "id": "release",
@@ -368,6 +769,19 @@
       "featured": false,
       "kind": "ts",
       "path": "flows/release-content/flow.ts",
+      "capabilities": [
+        "*"
+      ],
+      "model": null,
+      "modelInvocable": true
+    },
+    {
+      "id": "tutorial-change",
+      "description": "Execute the reviewed tutorial plan through coding/RunPlan. Re-read HEAD before any writes; refuse if it differs from plan.base.commitId. Require exactly one change and one atom. Do not push. Return the exact coding result; never invent revision evidence.",
+      "summary": null,
+      "featured": false,
+      "kind": "ts",
+      "path": "flows/tutorial-change/flow.ts",
       "capabilities": [
         "*"
       ],

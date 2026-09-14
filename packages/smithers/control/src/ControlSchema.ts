@@ -968,7 +968,7 @@ export type ListRequest = typeof ListRequest.Type
  */
 export const ListResponse = Schema.Union([
   Schema.TaggedStruct("flows", {
-    items: Schema.Array(Schema.Struct({ flowId: FlowId, description: Schema.String })),
+    items: Schema.Array(Schema.Struct({ flowId: FlowId, description: Schema.String, inputSchema: Schema.optional(Schema.Json) })),
     warnings: Schema.optional(Schema.Array(DiscoveryWarning)),
     nextCursor: Schema.optional(Schema.String)
   }),

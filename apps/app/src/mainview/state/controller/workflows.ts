@@ -7,6 +7,10 @@ import { isFlowNotFound, type GatewayWorkspaceBinding } from "./gateway"
 import { runCardIdFor, runScopeFromCard } from "../RunReference"
 import { gatewayBindingFor, resolveTargetRepo } from "../RepoContext"
 import { ZERO_BALANCE_EXHAUSTED_TEXT } from "./failures"
+import { Schema } from "effect"
+import { declaredInput, formFieldsFor, draftFrom, missingFields } from "../../flows/FlowForms"
+import type { FormsController } from "./forms"
+import { flowArgs } from "../../flows/FlowArgs"
 
 /**
  * A launch the workspace refused, in the wire's own words and shape: the
@@ -72,7 +76,8 @@ export interface WorkflowController {
 export const createWorkflowController = (
   ctx: ControllerContext,
   nextTranscriptOrdinal: () => number,
-  pumpWorkflowRun: (cardId: string) => Promise<void>
+  pumpWorkflowRun: (cardId: string) => Promise<void>,
+  renderFlowForm?: FormsController["renderFlowForm"]
 ): WorkflowController => {
   const { store, baseUrl, boundedFetch, errorMessageOf, gateway, unref, workflowPollMs, withToast } = ctx
   const RUN_POLL_MS = workflowPollMs
@@ -435,7 +440,8 @@ export const createWorkflowController = (
     if (provisioned !== true) return provisioned
     const list = await gateway.listFlows(repo, binding)
     if (list.status !== "ok") return list.message
-    const workflows = list.value.map((flow) => ({ key: flow.flowId, description: flow.description }))
+    const workflows = list.value.map((flow) => ({ key: flow.flowId, description: flow.description,
+      ...(flow.inputSchema === undefined ? {} : { inputSchema: flow.inputSchema }) }))
     const id = binding.workspaceId === undefined ? `workflow-list-${repo}`
       : `workflow-list@${encodeURIComponent(repo)}@${encodeURIComponent(binding.workspaceId)}`
     const existing = store.collections.cards.get(id)
@@ -476,7 +482,8 @@ export const createWorkflowController = (
     return listWorkspaceWorkflows()
   }
 
-  const runWorkflow = async (name: string, repoArg?: string, input: Record<string, unknown> = {}, sourceCard?: string): Promise<string | void | { readonly value: string }> => {
+  const runWorkflow = async (name: string, repoArg?: string, inputArg?: Record<string, unknown>, sourceCard?: string): Promise<string | void | { readonly value: string }> => {
+    const input = inputArg ?? {}
     const guard = workflowIdentityGuard()
     if (guard !== undefined) return guard
     const balanceGuard = zeroBalanceGuard()
@@ -484,6 +491,23 @@ export const createWorkflowController = (
     const target = workflowScope(repoArg, sourceCard)
     if ("error" in target) return target.error
     const { repo, binding } = target
+    const source = sourceCard === undefined ? undefined : store.collections.cards.get(sourceCard)
+    const declaration = source?.kind === "workflow-list"
+      ? source.payload.workflows.find(flow => flow.key === name)?.inputSchema
+      : sourceCard === undefined ? store.collections.repositoryFlows.get(repo)?.flows.find(flow => flow.id === name)?.inputSchema : undefined
+    const schema = declaredInput(declaration)
+    const fields = schema === undefined ? [] : formFieldsFor(schema, undefined)
+    if (schema !== undefined && ((inputArg === undefined && fields.length > 0) || !Schema.is(schema)(input))) {
+      if (fields.length > 0 && renderFlowForm !== undefined) {
+        const rendered = renderFlowForm({ name: "flow.run", input: schema, payloadField: "input",
+          args: flowArgs("flow.run", { name, repo, input, sourceCard }),
+          via: ctx.commandActor === "smithers" ? "agent" : "user",
+          cardId: `form-flow-run-${sourceCard ?? repo}-${name}`, title: `${name} — ${repo}`,
+          hints: { submitLabel: "Run flow" } })
+        if (rendered !== undefined) return { value: `Prepared ${name}'s input form${missingFields(fields, draftFrom(fields, input)).length > 0 ? "; fill in the missing fields" : "; correct the inputs before running"}.` }
+      }
+      return `The inputs do not match ${name}'s declared schema.`
+    }
     const provisioned = await provisionWorkspace(repo, binding)
     if (provisioned !== true) return provisioned
     // Launch first (the gateway's registry is lazy — see createWorkflow); a

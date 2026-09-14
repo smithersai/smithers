@@ -214,6 +214,18 @@ const renderDiff = (card: Extract<Card, { kind: "diff" }>) => {
   return { host, commands }
 }
 
+test("review evidence labels outdated checks and unread findings and opens the existing facet", () => {
+  const { host, commands } = renderChange(liveCard({ checksAt: 1, findings: null,
+    unread: { findings: "Analyzer unavailable" } }))
+  const evidence = host.querySelector('[aria-label="Review evidence"]')!
+  expect(evidence.textContent).toContain("rev 1 · not current")
+  expect(evidence.textContent).toContain("Not read: Analyzer unavailable")
+  expect(evidence.textContent).toContain("1 open · 1 awaiting acknowledgment")
+  const inspect = [...evidence.querySelectorAll("button")].find(button => button.textContent === "Inspect checks")!
+  inspect.click()
+  expect(commands).toEqual([{ name: "change.facet", args: "qupxosqw checks" }])
+})
+
 const click = (host: HTMLElement, testIdOrText: string): void => {
   const button = [...host.querySelectorAll("button")].find((candidate) =>
     candidate.textContent?.includes(testIdOrText) || candidate.getAttribute("aria-label") === testIdOrText)

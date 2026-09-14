@@ -47,11 +47,13 @@ export const repositoryFlowsOf = (
     readonly summary: string | null
     readonly featured: boolean
     readonly modelInvocable: boolean
+    readonly inputSchema?: unknown
   }>
 ): Array<RepositoryFlow> =>
   [...flows]
     .sort((left, right) => Number(right.featured) - Number(left.featured))
-    .map(({ id, description, summary, featured, modelInvocable }) => ({ id, description, summary, featured, modelInvocable }))
+    .map(({ id, description, summary, featured, modelInvocable, inputSchema }) => ({ id, description, summary, featured, modelInvocable,
+      ...(inputSchema === undefined ? {} : { inputSchema }) }))
 
 export const createRepositoryFlowsSeam = (ctx: SeamContext): RepositoryFlowsSeam => {
   /** Repositories read this session, in flight or landed: one background read each. */

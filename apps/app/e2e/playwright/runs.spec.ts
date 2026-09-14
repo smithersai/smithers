@@ -6,6 +6,7 @@ import { CODING_PLAN } from "../../src/mainview/cards/fixtures/CodingPlan"
 import { blockedCodingJournal, codingDecision, earlyCodingJournal } from "../../src/mainview/cards/fixtures/CodingJournal"
 import { installCloudFixture } from "./cloudFixture.ts"
 import type { StatusRollup } from "@smthrs/rpc/Health"
+import { Schema } from "effect"
 import { prepareHealthPage, sendHealthCommand } from "./healthFixture"
 
 /*
@@ -53,6 +54,8 @@ const json = (body: unknown, status = 200) => ({
 const serve = async (page: Page, journal: ReadonlyArray<Record<string, unknown>> = [], options: {
   readonly completedRequest?: boolean
   readonly health?: () => StatusRollup
+  readonly inputSchema?: unknown
+  readonly attention?: boolean
 } = {}): Promise<{ rpc: Array<RpcCall> }> => {
   const rpc: Array<RpcCall> = []
   let planned: { flowId: string; input: unknown } | undefined
@@ -71,7 +74,7 @@ const serve = async (page: Page, journal: ReadonlyArray<Record<string, unknown>>
         return route.fulfill(json({
           ok: true,
           payload: { _tag: "flows", items: options.completedRequest ? [{ flowId: "coding/vibe", description: "Finalize validated changes" }]
-            : [{ flowId: "review-pr", description: "Review a PR" }] }
+            : [{ flowId: "review-pr", description: "Review a PR", ...(options.inputSchema === undefined ? {} : { inputSchema: options.inputSchema }) }] }
         }))
       case "Plan":
         planned = { flowId: String(call.payload.flowId), input: call.payload.input }
@@ -104,7 +107,7 @@ const serve = async (page: Page, journal: ReadonlyArray<Record<string, unknown>>
         const selector = (call.payload.selector ?? {}) as { _tag?: string; runId?: string }
         switch (selector._tag) {
           case "workspace-runs":
-            return rows("workspace-runs", [{ ...summaryRow("running"), steeringPending }])
+            return rows("workspace-runs", [{ ...summaryRow(options.attention ? "failed" : "running"), steeringPending }])
           case "run-summary":
             return rows("run-summary", [{ ...summaryRow(options.health?.().state ?? (options.completedRequest && selector.runId !== "vibe-e2e" ? "completed" : "running")),
               ...(options.health === undefined ? {} : { statusRollup: options.health() }),
@@ -156,11 +159,64 @@ test.beforeEach(async ({ page }) => {
   // A persisted store from an earlier test must not carry state across tests.
   await page.addInitScript(() => {
     try {
-      window.localStorage.clear()
+      if (!window.sessionStorage.getItem("runs-spec-initialized")) {
+        window.localStorage.clear()
+        window.sessionStorage.setItem("runs-spec-initialized", "yes")
+      }
     } catch {
       // Storage the browser refuses is the empty store already.
     }
   })
+})
+
+test("quick wins: attention, declared inputs and an editable handoff work by keyboard and survive reload", async ({ page, context }) => {
+  await context.grantPermissions(["clipboard-read", "clipboard-write"])
+  const { rpc } = await serve(page, [], { attention: true, inputSchema: Schema.toJsonSchemaDocument(Schema.Struct({ args: Schema.String })) })
+  await page.goto("/")
+  await expect(page.locator(".guide-shell")).toBeVisible()
+  const command = async (text: string) => {
+    if (!await page.getByTestId("composer-input").isVisible()) await page.keyboard.press("Control+k")
+    await page.getByTestId("composer-input").fill(text)
+    await page.getByTestId("composer-input").press("Enter")
+  }
+  await command("/onboarding.act finish")
+  await expect(page.getByTestId("composer-input")).toBeHidden()
+  await command(`/runs.attention ${REPO}`)
+  const attention = page.getByTestId(`card-run-list-${REPO}`)
+  await expect(attention).toContainText("Needs attention")
+  await expect(attention).toContainText(RUN_ID)
+  await attention.getByRole("button", { name: "Refresh", exact: true }).press("Enter")
+  await command(`/flow.list ${REPO}`)
+  const catalogId = `workflow-list-${REPO}`
+  const catalog = page.getByTestId(`card-${catalogId}`)
+  await expect(catalog).toContainText("review-pr")
+  await catalog.getByRole("button", { name: "Run", exact: true }).press("Enter")
+  const formId = `form-flow-run-${catalogId}-review-pr`
+  const form = page.getByTestId(`card-${formId}`)
+  await expect(form).toBeVisible()
+  expect(rpc.some(call => call.procedure === "Run")).toBe(false)
+  await form.getByTestId("flow-form-args").fill("Review retry handling in src/retries.ts")
+  await form.getByTestId("flow-form-args").press("Tab")
+  await page.reload()
+  await expect(form.getByTestId("flow-form-args")).toHaveValue("Review retry handling in src/retries.ts")
+  await form.getByRole("button", { name: "Run flow", exact: true }).press("Enter")
+  await expect.poll(() => rpc.find(call => call.procedure === "Plan")?.payload.input).toEqual({ args: "Review retry handling in src/retries.ts" })
+  const runId = `flow-run-${RUN_ID}`
+  const run = page.getByTestId(`card-${runId}`)
+  await expect(run).toBeVisible()
+  await run.getByRole("button", { name: "Prepare handoff", exact: true }).press("Enter")
+  const briefId = `handoff-${runId}`
+  const brief = page.getByTestId(`card-${briefId}`)
+  await expect(brief.getByRole("textbox", { name: "Handoff brief" })).toContainText("human acceptance")
+  const text = "Goal: fix retries\nEvidence: source run\nNext: verify integration tests"
+  await brief.getByRole("textbox", { name: "Handoff brief" }).fill(text)
+  await brief.getByRole("textbox", { name: "Handoff brief" }).press("Tab")
+  await brief.getByTestId(`card-maximize-${briefId}`).press("Enter")
+  await expect(brief).toHaveAttribute("data-maximized", "true")
+  await page.reload()
+  await expect(brief.getByRole("textbox", { name: "Handoff brief" })).toHaveValue(text)
+  await brief.getByRole("button", { name: "Copy brief", exact: true }).press("Enter")
+  await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe(text)
 })
 
 test("T1: launch a fixture flow, steer it, stop it, and see it in the run inbox", async ({ page }) => {

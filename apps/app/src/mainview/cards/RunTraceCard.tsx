@@ -26,7 +26,7 @@
  * the outcome line reads the run's phase, never a child span's status.
  */
 import { runSourceCommand } from "../flows/RunCommand"
-import { Markdown, StatusPill } from "@smthrs/ui"
+import { Button, Markdown, StatusPill } from "@smthrs/ui"
 import { CodingPlanBody } from "./CodingPlanCard"
 import { CodingPocBody } from "./CodingPocCard"
 import { CodingVibeBody } from "./CodingVibeCard"
@@ -200,6 +200,8 @@ export const RunTraceBody = ({
   )
   return (
     <div className="run-trace" data-testid={`run-trace-${runId}`} data-kind={kind} data-view={planOnly ? "plan" : view}>
+      <Button size="sm" variant="outline" data-flow="runs.handoff"
+        onClick={() => onRunCommand("runs.handoff", runId)}>Prepare handoff</Button>
       {kind === "prototype" ?
         (
           <p className="run-trace-banner" data-testid={`run-trace-banner-${runId}`}>
