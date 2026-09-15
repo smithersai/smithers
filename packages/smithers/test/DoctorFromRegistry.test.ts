@@ -1,0 +1,106 @@
+/**
+ * `smthrs doctor` on a local project, straight off the discovery snapshot.
+ *
+ * `Cli.ts` takes `fromRegistry` for every local invocation, and the one suite
+ * that reaches that branch, `UnifiedRootCommands.test.ts`, replaces the module
+ * with a stub, so nothing executed the function itself. Two promises are worth
+ * pinning: the report is built from the registry's own snapshot, descriptors
+ * and warnings alike, and reading it opens no execution database, which is the
+ * whole reason local diagnostics take this path instead of `fromControl`.
+ */
+import type * as Descriptor from "@smthrs/registry/Descriptor"
+import * as Registry from "@smthrs/registry/Registry"
+import { Effect } from "effect"
+import { existsSync, mkdtempSync, rmSync } from "node:fs"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
+import { afterEach, describe, expect, it } from "vitest"
+import * as DoctorCmd from "../src/commands/Doctor.ts"
+import type * as Doctor from "../src/Doctor.ts"
+import * as Project from "../src/Project.ts"
+
+const staged: Array<string> = []
+
+afterEach(() => {
+  while (staged.length > 0) rmSync(staged.pop()!, { recursive: true, force: true })
+})
+
+const project = (): string => {
+  const root = mkdtempSync(join(tmpdir(), "smithers-doctor-registry-"))
+  staged.push(root)
+  return root
+}
+
+/**
+ * `fromRegistry` projects a descriptor onto `{ flowId, description }` and reads
+ * nothing else, so the discovery metadata a real scan carries is left out on
+ * purpose. This is the same shape `control/test/TestStack.ts` hands `ControlLive`.
+ */
+const descriptor = (name: string, description: string): Descriptor.FlowDescriptor =>
+  ({ name, description }) as unknown as Descriptor.FlowDescriptor
+
+const warning = (
+  path: string,
+  code: Descriptor.DiscoveryWarningCode,
+  message: string
+): Descriptor.DiscoveryWarning => ({ path, code, message }) as unknown as Descriptor.DiscoveryWarning
+
+const check = (report: Doctor.Report, name: string) => report.checks.find((entry) => entry.name === name)
+
+const run = (
+  root: string,
+  descriptors: ReadonlyArray<Descriptor.FlowDescriptor>,
+  warnings: ReadonlyArray<Descriptor.DiscoveryWarning>
+): Promise<Doctor.Report> =>
+  Effect.runPromise(
+    DoctorCmd.fromRegistry({ environment: {} }).pipe(
+      Effect.provide(
+        Registry.layerNoop({ list: () => Effect.succeed(descriptors), warnings: () => Effect.succeed(warnings) })
+      ),
+      Effect.provideService(Project.ProjectRoot, root),
+      Effect.provideService(Project.LegacyState, [])
+    )
+  )
+
+describe("local diagnostics off the registry snapshot", () => {
+  it("counts the discovered flows and leaves the reserved ones out", async () => {
+    const root = project()
+    const report = await run(root, [
+      descriptor("review", "Review the working copy"),
+      descriptor("release", "Cut a release"),
+      // Reserved flows have no body, so counting one would report a flow that
+      // can never run. `report` drops them before `Doctor.inspect` sees them.
+      descriptor("system/steer", "Reserved")
+    ], [])
+    expect(check(report, "registry")).toMatchObject({ level: "ok", detail: "2 flows discovered" })
+    // The snapshot is authoritative: no filesystem fallback ran against a root
+    // that holds no `flows/` directory at all.
+    expect(existsSync(Project.flowsDirectory(root))).toBe(false)
+  })
+
+  it("warns when the snapshot is empty rather than walking the project", async () => {
+    const root = project()
+    const report = await run(root, [], [])
+    expect(check(report, "registry")).toMatchObject({
+      level: "warn",
+      detail: `${Project.flowsDirectory(root)} yielded no discovered flows; discovery finds nothing`
+    })
+  })
+
+  it("carries each discovery warning into its own check", async () => {
+    const root = project()
+    const report = await run(root, [descriptor("review", "Review the working copy")], [
+      warning("flows/broken/flow.mdx", "missing_description", "A flow needs a description")
+    ])
+    expect(check(report, "registry flows/broken/flow.mdx")).toMatchObject({
+      level: "warn",
+      detail: "missing_description: A flow needs a description"
+    })
+  })
+
+  it("opens no execution database", async () => {
+    const root = project()
+    await run(root, [descriptor("review", "Review the working copy")], [])
+    expect(existsSync(join(root, ".flows"))).toBe(false)
+  })
+})
