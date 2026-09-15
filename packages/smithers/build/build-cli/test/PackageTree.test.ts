@@ -53,6 +53,34 @@ afterEach(async () => {
 
 const sha256 = (bytes: string): string => createHash("sha256").update(bytes).digest("hex")
 
+describe("git capture stays inside the requested workspace", () => {
+  it("refuses an ancestor repository when the workspace has no local .git", async () => {
+    ChildProcess.execFileSync("git", ["init", "--quiet", "."], { cwd: NodePath.dirname(root), stdio: "ignore" })
+    await Fs.mkdir(NodePath.join(root, ".jj"))
+    await expect(PackageTree.runGit(root, ["status", "--porcelain", "-z", "--untracked-files=all"]))
+      .rejects.toThrow(/workspace has no local .git/)
+  })
+
+  it("captures valid output beyond the former 256 MiB execFile ceiling", async () => {
+    ChildProcess.execFileSync("git", ["init", "--quiet", "."], { cwd: root, stdio: "ignore" })
+    await Fs.writeFile(
+      NodePath.join(root, "emit.cjs"),
+      `const chunk = Buffer.alloc(1024 * 1024, "x");
+async function main() {
+  for (let i = 0; i < 257; i++) {
+    if (!process.stdout.write(chunk)) await new Promise(resolve => process.stdout.once("drain", resolve));
+  }
+  process.stdout.write("終\\0");
+}
+main();
+`
+    )
+    const output = await PackageTree.runGit(root, ["-c", "alias.large=!node emit.cjs", "large"])
+    expect(output.length).toBe(257 * 1024 * 1024 + 2)
+    expect(output.endsWith("終\0")).toBe(true)
+  })
+})
+
 describe("resolveChangedPath", () => {
   it("admits a two-dot-prefixed child and refuses a genuine escape", () => {
     const workspace = NodeFs.realpathSync(NodeFs.mkdtempSync(NodePath.join(root, "changed-")))

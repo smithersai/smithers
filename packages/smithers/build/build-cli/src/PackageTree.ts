@@ -197,7 +197,7 @@ export const probeCommand = (
 /**
  * Runs git in a workspace and returns stdout, throwing on a non-zero exit.
  *
- * Output is captured as bytes and decoded fatally, exactly as `Workspace`
+ * Output is streamed and decoded fatally, exactly as `Workspace`
  * decodes its own git output. A path is bytes on POSIX, and git prints those
  * bytes verbatim under `-z`. Decoding them leniently substitutes U+FFFD for
  * every byte that is not valid UTF-8, which silently renames the path: the
@@ -206,33 +206,68 @@ export const probeCommand = (
  * The real write stays in the tree while the node fails claiming otherwise.
  * A path this decoder cannot read is a loud failure instead.
  *
+ * A local Git marker is required. Otherwise Git can walk out of a jj-only
+ * workspace and census an unrelated ancestor checkout. Large valid inventories
+ * are not limited by execFile's former 256 MiB capture ceiling; callers still
+ * retain the returned text, and ignored-file stashes keep their own limits.
+ *
  * @category git
  * @since 0.1.0
  */
 export const runGit = (root: string, args: ReadonlyArray<string>): Promise<string> =>
   new Promise((resolve, reject) => {
-    NodeChildProcess.execFile(
+    if (!NodeFs.existsSync(NodePath.join(root, ".git"))) {
+      reject(new Error(`git ${args[0]} failed: workspace has no local .git; refusing ancestor repository discovery`))
+      return
+    }
+    const child = NodeChildProcess.spawn(
       "git",
       ["-C", root, ...args],
-      { encoding: "buffer", maxBuffer: 256 * 1024 * 1024 },
-      (error, stdout) => {
-        if (error !== null) {
-          reject(new Error(`git ${args[0]} failed: ${error.message}`))
-          return
-        }
-        try {
-          resolve(new TextDecoder("utf-8", { fatal: true }).decode(stdout))
-        } catch {
-          reject(new Error(`git ${args[0]} returned stdout that is not valid UTF-8`))
-        }
-      }
+      { stdio: ["ignore", "pipe", "pipe"], env: { ...process.env, GIT_CEILING_DIRECTORIES: NodePath.dirname(root) } }
     )
+    const decoder = new TextDecoder("utf-8", { fatal: true })
+    const chunks: Array<string> = []
+    let stderr = ""
+    let failure: Error | undefined
+    const invalidUtf8 = (): void => {
+      failure = new Error(`git ${args[0]} returned stdout that is not valid UTF-8`)
+      child.kill()
+    }
+    child.stdout.on("data", (bytes: Buffer) => {
+      try {
+        chunks.push(decoder.decode(bytes, { stream: true }))
+      } catch {
+        invalidUtf8()
+      }
+    })
+    child.stderr.on("data", (bytes: Buffer) => {
+      stderr = (stderr + bytes.toString("utf8")).slice(0, 16 * 1024)
+    })
+    child.once("error", (error) => {
+      failure = new Error(`git ${args[0]} failed: ${error.message}`)
+    })
+    child.once("close", (code, signal) => {
+      if (failure !== undefined) {
+        reject(failure)
+        return
+      }
+      if (code !== 0) {
+        reject(new Error(`git ${args[0]} failed: ${stderr.trim() || signal || `exit ${code}`}`))
+        return
+      }
+      try {
+        chunks.push(decoder.decode())
+        resolve(chunks.join(""))
+      } catch {
+        reject(new Error(`git ${args[0]} returned stdout that is not valid UTF-8`))
+      }
+    })
   })
 
 /**
  * Runs a resolved tool once at plan time and returns its stdout, throwing on
- * a non-zero exit with what the tool wrote to stderr. The same bounded shape
- * as {@link runGit}, for a tool that is not git: a planner asking `forge` or
+ * a non-zero exit with what the tool wrote to stderr. Unlike Git inventories,
+ * these planner probes have a bounded capture: a planner asking `forge` or
  * `go` what it would do.
  *
  * @category planning
