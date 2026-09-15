@@ -6,6 +6,7 @@ import { resolve } from "node:path"
 import { parseArgs } from "node:util"
 import * as Serve from "../../packages/smithers/src/Serve.ts"
 import { packageVersion } from "../../packages/smithers/src/Version.ts"
+import { configured, fromEnvironment } from "./seats.ts"
 import { layer } from "./host.ts"
 import { persistWiki } from "./wiki-persistence.ts"
 const parsed = parseArgs({ args: process.argv.slice(2), allowPositionals: true, options: {
@@ -17,6 +18,8 @@ if (parsed.values.version) console.log(packageVersion)
 else if (parsed.values.help) console.log("smithers-product-host serve --root <workspace> --host <host> --port <port> --listen\nRequires SMITHERS_API_KEY, SMITHERS_GATEWAY_ID, SMITHERS_REPO, SMITHERS_PRODUCT_API_URL.")
 else {
   if (parsed.positionals.length !== 1 || parsed.positionals[0] !== "serve") throw new Error("Expected serve command")
+  const seats = fromEnvironment(process.env)
+  configured(seats)
   const root = resolve(parsed.values.root ?? process.cwd())
   const port = Number(parsed.values.port)
   if (!Number.isInteger(port) || port < 0 || port > 65535) throw new Error("Invalid port")
@@ -29,7 +32,7 @@ else {
   // Git subprocesses must never inherit the gateway operator credential.
   delete process.env.SMITHERS_API_KEY
   const artifactDigest = createHash("sha256").update(await readFile(process.argv[1]!)).digest("hex")
-  const options = { root, repo, credential, gatewayId: process.env.SMITHERS_GATEWAY_ID ?? "", artifactDigest, persistWiki: publish }
+  const options = { ...seats, root, repo, credential, gatewayId: process.env.SMITHERS_GATEWAY_ID ?? "", artifactDigest, persistWiki: publish }
   if ("Bun" in globalThis) {
     const [{ platform }, runtime] = await Promise.all([import("../../packages/smithers/src/internal/BunControl.ts"), import("@effect/platform-bun/BunRuntime")])
     runtime.runMain(Serve.host(bind, root).pipe(Effect.provide(layer(platform, options))))

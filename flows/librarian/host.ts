@@ -6,12 +6,18 @@ import { Effect, Layer, Option, Schema } from "effect"
 import * as Descriptor from "@smthrs/registry/Descriptor"
 import * as Executable from "@smthrs/registry/Executable"
 import * as Registry from "@smthrs/registry/Registry"
+import * as SeatResolver from "@smthrs/agent/SeatResolver"
+import * as NativeEquipment from "../../packages/smithers/src/internal/NativeEquipment.ts"
+import { agentRuntime } from "./runtime.ts"
+import { configured, roleResolver, type Options as SeatOptions } from "./seats.ts"
 import * as NativeControl from "../../packages/smithers/src/internal/NativeControl.ts"
 import * as Serve from "../../packages/smithers/src/Serve.ts"
 import wiki, { Wiki, registration as wikiRegistration, type WikiReceipt } from "./wiki/flow.ts"
 import history, { History, registration as historyRegistration } from "./history/flow.ts"
 
-export interface Options {
+export { roleResolver } from "./seats.ts"
+
+export interface Options extends SeatOptions {
   readonly root: string
   readonly repo: string
   readonly gatewayId: string
@@ -37,7 +43,7 @@ export const catalog = async (options: Options) => {
       body: new Descriptor.BodyRefModule({ path, contentDigest: sha(source) }),
       input: new Descriptor.SchemaRefInline({ document: JSON.parse(JSON.stringify(Schema.toJsonSchemaDocument(declaration.input!))) }),
       output: new Descriptor.SchemaRefInline({ document: JSON.parse(JSON.stringify(Schema.toJsonSchemaDocument(declaration.output!))) }),
-      model: Option.none(), flows: Schema.decodeUnknownSync(Schema.Array(Schema.String))(declaration.flows), capabilities: declaration.capabilities,
+      model: Option.some(configured(options)), flows: Schema.decodeUnknownSync(Schema.Array(Schema.String))(declaration.flows), capabilities: declaration.capabilities,
       effects: Schema.decodeUnknownSync(Descriptor.EffectDeclaration)(declaration.effects), placement: Option.none(), modelInvocable: true, frontmatter: {},
       provenance: new Descriptor.Provenance({ source: "product", root: directory })
     })
@@ -45,11 +51,14 @@ export const catalog = async (options: Options) => {
   }))
 }
 
-export const layer = (platform: NativeControl.Platform, options: Options) => {
+export const layer = (platform: NativeControl.Platform, options: Options, suppliedSeats?: SeatResolver.Service) => {
+  const model = configured(options)
   if (!/^[\w.-]+\/[\w.-]+$/.test(options.repo)) throw new Error("SMITHERS_REPO must identify the owning repository")
   if (!options.credential.trim() || !options.gatewayId.trim()) throw new Error("Product host requires its gateway identity and bearer credential")
   if (!/^[a-f0-9]{64}$/.test(options.artifactDigest)) throw new Error("Product host requires its immutable artifact digest")
-  const native = NativeControl.make(platform)
+  const native = NativeControl.make(platform, environment => Layer.effect(SeatResolver.SeatResolver)(
+    Effect.map(SeatResolver.SeatResolver, base => roleResolver(base, model, options))
+  ).pipe(Layer.provide(suppliedSeats === undefined ? NativeEquipment.layerSeatResolver(environment) : SeatResolver.layer(suppliedSeats))))
   return Layer.unwrap(Effect.promise(() => catalog(options)).pipe(Effect.map(entries => {
     const registry = Registry.layerFromDescriptors(entries.map(entry => entry.descriptor)).pipe(Layer.provide(platform.host))
     const modules = Executable.layer({ delegates: [Wiki, History], load: path => {
@@ -58,7 +67,7 @@ export const layer = (platform: NativeControl.Platform, options: Options) => {
     } }).pipe(
       Layer.provideMerge(wikiRegistration(options.root, options.persistWiki, options.repo)),
       Layer.provideMerge(historyRegistration(options.root, options.repo)),
-      Layer.provide(registry), Layer.orDie
+      agentRuntime, Layer.provide(registry), Layer.orDie
     )
     const host = native.layerHost({ root: options.root, credential: options.credential,
       approvalAuthority: native.gatewayApprovalAuthority }, modules, registry)
