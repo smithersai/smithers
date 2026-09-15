@@ -57,6 +57,7 @@ const requireWorkflowSession = (request: Request): Effect.Effect<ValidatedIdenti
 
 /** The typed, non-gateway answers a gateway call can produce, in one place. */
 const gatewayCallResponse = (call: Exclude<GatewayCallOutcome, { readonly status: "ok" }>): Response => {
+  if (call.status === "plan_limit_exceeded") return json(402, { ...call.refusal, code: "plan_limit_exceeded", fault: "user", message: call.detail })
   if (call.status === "provisioning") return json(200, { status: "provisioning", message: call.detail })
   if (call.status === "no_capacity") return json(200, { status: "no-capacity", message: call.detail })
   // The user's own box cap, not the fleet's: a separate wire state so the
@@ -103,6 +104,8 @@ export const handleWorkflowProvision = (request: Request): Effect.Effect<Respons
           ...(outcome.record.workspaceId === undefined ? {} : { workspaceId: outcome.record.workspaceId }),
           expiresAt: new Date(outcome.record.expiresAt).toISOString()
         })
+      case "plan_limit_exceeded":
+        return json(402, { ...outcome.refusal, code: "plan_limit_exceeded", fault: "user", message: outcome.detail })
       case "provisioning":
         return json(200, { status: "provisioning", message: outcome.detail })
       case "no_capacity":

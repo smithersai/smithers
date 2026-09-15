@@ -88,9 +88,13 @@ export type RefusalOrigin = (typeof REFUSAL_ORIGINS)[number]
  * @category models
  */
 export interface Refusal {
+  readonly plan_key?: string | null | undefined
+  readonly limit_kind?: string | null | undefined
+  readonly upgrade_plan_key?: string | null | undefined
+
   /** The code, narrowed to one of the three registries; null when the wire named none or one this build predates. */
   readonly code: RefusalCode | null
-  /** What the wire actually spelled. Shown verbatim, never branched on — a code newer than this build still reaches the user. */
+  /** What the wire actually spelled. Also supports contracted codes arriving before the next vendored registry refresh. */
   readonly rawCode: string | null
   readonly fault: PlueFault
   /** The refusing party's own words. Rendered verbatim; this app never rewrites them. */
@@ -261,6 +265,9 @@ export const refusalOf = (input: RefusalInput): Refusal => {
     rawCode,
     fault,
     message: input.message,
+    ...(textOf(record.plan_key) === null ? {} : { plan_key: textOf(record.plan_key) }),
+    ...(textOf(record.limit_kind) === null ? {} : { limit_kind: textOf(record.limit_kind) }),
+    ...(textOf(record.upgrade_plan_key) === null ? {} : { upgrade_plan_key: textOf(record.upgrade_plan_key) }),
     /* The header wins, then the body plue now always writes. What this response said, and nothing inferred. */
     retryAfter: input.retryAfterSeconds ?? secondsOf(record.retry_after) ?? null,
     status: input.status,
@@ -359,6 +366,10 @@ export const clientRefusal = (error: unknown, message?: string): Refusal => ({
  * @category models
  */
 export interface StoredRefusal {
+  readonly plan_key?: string | null | undefined
+  readonly limit_kind?: string | null | undefined
+  readonly upgrade_plan_key?: string | null | undefined
+
   readonly status: number
   readonly message: string
   readonly code?: string | null | undefined
@@ -374,6 +385,9 @@ export interface StoredRefusal {
  * @category constants
  */
 export const storedRefusal = (refusal: Refusal): StoredRefusal => ({
+  ...(refusal.plan_key == null ? {} : { plan_key: refusal.plan_key }),
+  ...(refusal.limit_kind == null ? {} : { limit_kind: refusal.limit_kind }),
+  ...(refusal.upgrade_plan_key == null ? {} : { upgrade_plan_key: refusal.upgrade_plan_key }),
   status: refusal.status ?? 0,
   message: refusal.message,
   code: refusal.rawCode,
@@ -399,6 +413,9 @@ export const refusalFromStored = (stored: StoredRefusal): Refusal => {
     rawCode: stored.code ?? null,
     fault: stored.fault ?? refusalEntry(code)?.fault ?? faultOfStatus(status),
     message: stored.message,
+    ...(stored.plan_key == null ? {} : { plan_key: stored.plan_key }),
+    ...(stored.limit_kind == null ? {} : { limit_kind: stored.limit_kind }),
+    ...(stored.upgrade_plan_key == null ? {} : { upgrade_plan_key: stored.upgrade_plan_key }),
     retryAfter: secondsOf(stored.retryAfterSeconds) ?? null,
     status,
     origin: stored.origin ??

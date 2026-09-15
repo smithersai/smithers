@@ -57,6 +57,7 @@ export const FLOW_NAMES = [
   "auth.sign-in",
   "auth.sign-out",
   "billing.balance",
+  "billing.plans",
   "billing.portal",
   "billing.upgrade",
   "branches.list",

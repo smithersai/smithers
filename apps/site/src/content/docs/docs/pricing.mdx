@@ -1,56 +1,31 @@
 ---
 title: "Pricing"
-description: "The hosted Smithers alpha is free for selected public repositories. Compare hosted access with running the open-source tools yourself."
+description: "Free, Pro, and Max plans with sandbox capacity for your work. Model tokens are bring-your-own-key."
 ---
 
-Smithers is free to use in the hosted private alpha for selected public repositories. Start by exploring [the Smithers repository](https://smithers.sh/smithersai/smithers).
+Choose a plan by the sandbox capacity you need. Model tokens are bring-your-own-key.
 
-## Hosted alpha
+## Plans
 
-**Free for selected public repositories.** Smithers builds these factories in public and covers their hosted inference during the alpha.
+| | Free | Pro | Max |
+| --- | --- | --- | --- |
+| Price | $0 | $50 per month | $500 per month |
+| Running sandboxes | 1 | 3 | 20 |
+| Idle sleep | 30 minutes | 4 hours | Never sleeps |
+| Sandbox-hours per day | 4 | Unlimited | Unlimited |
 
-You can explore an available repository without signing in. Contributing, running flows, and using a box require GitHub sign-in and approved access. The alpha is not unrestricted self-service hosting for every repository.
+Sandbox-hours measure the time your sandboxes are awake, added together across running sandboxes. Daily usage resets at midnight UTC.
 
-To add another project, sign in with GitHub on [smithers.sh](https://smithers.sh/smithersai/smithers) and install the [Smithers GitHub App](https://github.com/apps/smitherspreviewrelease/installations/new) on the repository. Installing the app registers the repository. It does not guarantee alpha access or an opening date. See [Open a repository](/docs/app/repositories/) for the full path.
+Subscriptions are flat rates for sandbox capacity. There is no per-VM-hour charge. Stripe confirms the charge at checkout.
+
+## Choose or manage a plan
+
+Sign in to [Smithers](https://smithers.sh/smithersai/smithers) and run `/billing.plans` to see your current plan, sandbox usage, and available upgrades in the conversation. `/billing.portal` opens subscription management when billing is available.
+
+Checkout is not open yet on deployments where payments are disabled. The plans card shows availability before you choose an upgrade.
 
 ## Open-source tools
 
-**MIT-licensed software, with no Smithers license fee.** Run the CLI and libraries in your own environment. You are responsible for your model-provider usage and the infrastructure you use.
+The CLI and libraries are MIT-licensed, with no Smithers license fee. Run them in your own environment and pay your providers for model usage and infrastructure.
 
-For setup and the release candidate's supported platforms, see [CLI and libraries](/docs/developers/).
-
-## Compare the options
-
-Choose the option that fits where you want to work:
-
-| Feature | Hosted alpha | Run it yourself |
-| --- | --- | --- |
-| Main interface | The app at smithers.sh | Your terminal and code |
-| Smithers software fee | Free during the alpha | No license fee |
-| Model and infrastructure costs | Covered for selected hosted alpha factories | Paid by you to your providers |
-| Repository access | Selected public repositories | Repositories you can access in your environment |
-| Getting started | [Open the app](https://smithers.sh/smithersai/smithers) | [Install the CLI](/docs/installation/) |
-
-## Paid plans
-
-Paid contributor seats and multiplayer boxes are planned. Prices, included usage, and launch dates have not been announced. There is no paid plan to choose from on this page.
-
-The alpha's **Account** card shows identity and access. It does not offer subscription management or a usage meter.
-
-## Access and billing questions
-
-### Do I need my own model API key for the hosted alpha?
-
-No. Smithers provides inference for the selected hosted alpha factories. The app does not ask you to configure a personal model API key.
-
-### Does signing in give me alpha access?
-
-Signing in establishes your GitHub identity. Access is a separate approval. Open **Account** to check whether your account is allowed or waiting on an access request.
-
-### Can I use the CLI without hosted access?
-
-Yes. The CLI and libraries run in your environment and use the credentials you configure there. Follow the [CLI quickstart](/docs/cli-quickstart/) for that path.
-
-### Where do I manage a subscription?
-
-The hosted alpha has no subscription-management screen. For identity, access, and sign-out, use [Account](/docs/app/account/).
+See [CLI and libraries](/docs/developers/) for setup and supported platforms.

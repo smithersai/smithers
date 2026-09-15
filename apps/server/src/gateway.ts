@@ -1,3 +1,4 @@
+import { machineReadableRefusal } from "@smthrs/rpc/UpstreamProse"
 import * as Clock from "effect/Clock"
 import * as Context from "effect/Context"
 import * as Deferred from "effect/Deferred"
@@ -491,6 +492,7 @@ export type ProvisionOutcome =
    * at their limit that the infrastructure failed them.
    */
   | { readonly status: "quota_exceeded"; readonly detail: string }
+  | { readonly status: "plan_limit_exceeded"; readonly detail: string; readonly refusal: ReturnType<typeof machineReadableRefusal> }
   | { readonly status: "unavailable"; readonly detail: string }
   | { readonly status: "no_cloud_token"; readonly detail: string }
   /*
@@ -599,6 +601,9 @@ const provisionGateway = (
        * whichever status it picks. Reading the code is right for both.
        */
       const code = refusalCode(detail)
+      if (code === "plan_limit_exceeded") {
+        return { status: "plan_limit_exceeded", detail: upstreamProse(detail) ?? "Your plan is at its sandbox limit.", refusal: machineReadableRefusal(detail) } as const
+      }
       if (code === "quota_exceeded") {
         /*
          * The account's own cap, in Cloud's words: only Cloud knows what the
@@ -747,6 +752,7 @@ export type GatewayCallOutcome =
   | { readonly status: "provisioning"; readonly detail: string }
   | { readonly status: "no_capacity"; readonly detail: string }
   | { readonly status: "quota_exceeded"; readonly detail: string }
+  | { readonly status: "plan_limit_exceeded"; readonly detail: string; readonly refusal: ReturnType<typeof machineReadableRefusal> }
   | { readonly status: "no_cloud_token"; readonly detail: string }
   | { readonly status: "no_cloud_repo"; readonly detail: string }
   | { readonly status: "unavailable"; readonly detail: string }

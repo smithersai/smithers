@@ -28,6 +28,7 @@ export interface SeamContext {
    * is absent.
    */
   readonly stream?: SeamFetch
+  readonly checkout?: boolean
   readonly baseUrl: string
   readonly store: AppStore
   readonly dispatch: AppStore["dispatch"]

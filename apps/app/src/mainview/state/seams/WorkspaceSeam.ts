@@ -1,3 +1,4 @@
+import { renderPlanLimit } from "./BillingSeam"
 import { Effect, Exit, Fiber, FiberMap, Layer, ManagedRuntime, Schedule, Scope } from "effect"
 import { preparedView, type ViewAction } from "../PreparedView"
 import { refuseCloudSignIn, SIGN_OUT_REFUSAL } from "./CloudSignIn"
@@ -918,6 +919,9 @@ export const createWorkspaceSeam = (ctx: SeamContext, deps: WorkspaceSeamDeps = 
     workspace: CloudWorkspaceInput,
     refusal: string | { readonly error: string; readonly code: string | null; readonly refusal?: Refusal }
   ): string => {
+    if (typeof refusal !== "string" && refusal.refusal?.rawCode === "plan_limit_exceeded") {
+      return renderPlanLimit(ctx.store, refusal.refusal, ctx.checkout ?? true, ctx.actor())
+    }
     const error = typeof refusal === "string" ? refusal : refusal.error
     const proxyGone = typeof refusal !== "string" && refusal.code === EGRESS_PROXY_UNAVAILABLE
     renderWorkspace(workspace, { error, ...(proxyGone ? { egressProxyUnavailable: true } : {}) })
@@ -1138,6 +1142,7 @@ export const createWorkspaceSeam = (ctx: SeamContext, deps: WorkspaceSeamDeps = 
      * reads as plue wrote it.
      */
     if ("error" in created) {
+      if (created.refusal.rawCode === "plan_limit_exceeded") return renderPlanLimit(ctx.store, created.refusal, ctx.checkout ?? true, ctx.actor())
       for (const row of ctx.store.collections.cloudWorkspaces.values()) {
         if (row.repoId !== target.repo || row.status !== "failed") continue
         if (ctx.store.collections.cards.get(cardIdOf(row.id)) === undefined) continue
@@ -1298,6 +1303,7 @@ export const createWorkspaceSeam = (ctx: SeamContext, deps: WorkspaceSeamDeps = 
     if ("error" in resolved) return resolved.error
     const created = await sendJson("POST", repoPath(resolved.repo, "/workspaces"), { snapshot_id: snapshotId })
     if ("error" in created) {
+      if (created.refusal.rawCode === "plan_limit_exceeded") return renderPlanLimit(ctx.store, created.refusal, ctx.checkout ?? true, ctx.actor())
       /* One sentence for every refusal: the code, plue's own words, then whose fault it was. */
       return refusalSentence(created.refusal)
     }
@@ -1688,6 +1694,7 @@ export const createWorkspaceSeam = (ctx: SeamContext, deps: WorkspaceSeamDeps = 
         )
         if (!current()) return
         dropDesktopStream(workspace.id)
+        if (sessionRefusal.rawCode === "plan_limit_exceeded") return renderPlanLimit(ctx.store, sessionRefusal, ctx.checkout ?? true, ctx.actor())
         renderWorkspace(workspace, {
           facet: "desktop",
           /* The mint owns the card from here: the one-command open's stage line has done its work. */
@@ -1820,6 +1827,7 @@ export const createWorkspaceSeam = (ctx: SeamContext, deps: WorkspaceSeamDeps = 
       kind: "desktop"
     })
     if ("error" in created) {
+      if (created.refusal.rawCode === "plan_limit_exceeded") return renderPlanLimit(ctx.store, created.refusal, ctx.checkout ?? true, ctx.actor())
       /* One sentence for every refusal: the code, plue's own words, then whose fault it was. */
       return refusalSentence(created.refusal)
     }
@@ -2039,6 +2047,7 @@ export const createWorkspaceSeam = (ctx: SeamContext, deps: WorkspaceSeamDeps = 
       }
       /* No HTTP answer at all: there is no status or code to render, only the reach failure. */
       if (answer.status === null) return failOnCard(workspace, answer)
+      if (answer.refusal.rawCode === "plan_limit_exceeded") return renderPlanLimit(ctx.store, answer.refusal, ctx.checkout ?? true, ctx.actor())
       /* The worker's own credential-boundary refusal keeps the card-level marker it always had. */
       const proxyGone = answer.code === EGRESS_PROXY_UNAVAILABLE
       renderWorkspace(workspace, {

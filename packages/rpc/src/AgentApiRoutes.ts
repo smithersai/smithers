@@ -333,3 +333,7 @@ export const CHAT_CANCEL_PATH = "/api/chat/cancel"
  * @category constants
  */
 export const HEALTH_PATH = "/api/health"
+
+/** Billing overview and user-owned plan catalog. */
+export const BILLING_OVERVIEW_PATH = "/api/billing"
+export const BILLING_PLANS_PATH = "/api/billing/plans"

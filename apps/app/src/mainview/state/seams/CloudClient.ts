@@ -34,6 +34,8 @@ export const cloudFailure = async (response: Response, fallback: string): Promis
   /*
    * plue states `code` and `fault`, and the Worker's pass-through preserves
    * `code` and `retry_after` but not `fault` (apps/server proxies.ts), so the
+   * The shared refusalOf also preserves plan_key, limit_kind, and
+   * upgrade_plan_key for sandbox-limit cards and their upgrade door. The
    * verdict is finished here against the vendored registry rather than left
    * for each surface to infer from the sentence.
    */

@@ -1,3 +1,4 @@
+import * as AgentApiRoutes from "@smthrs/rpc/AgentApiRoutes"
 /*
  * The host parity matrix (docs/web-mode/PLAN.md §6).
  *
@@ -241,6 +242,10 @@ const API_HEADS = "repos|user|orgs|integrations|linear|notifications|github|admi
 const upstreamPaths = (seamFile: string): ReadonlySet<string> => {
   const source = uncommented(read(`../state/seams/${seamFile}.ts`))
   const paths = new Set<string>()
+  // Shared route constants are paths too; the seam need not duplicate their literals.
+  for (const [name, path] of Object.entries(AgentApiRoutes)) {
+    if (typeof path === "string" && path.startsWith("/api/") && source.includes("${" + name + "}")) paths.add(path)
+  }
   const pattern = new RegExp(
     "[`\"'](?:\\$\\{ctx\\.baseUrl\\})?(?:/api)?/((?:" + API_HEADS + ")(?:/[a-z0-9-]+)*/?)",
     "g"

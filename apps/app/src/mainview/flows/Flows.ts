@@ -150,6 +150,7 @@ export const baseFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> => 
   ...cloudFlows(actions),
   ...toastFlows(actions),
   ...billingBalanceFlows(actions),
+  ...billingPlanFlows(actions),
   ...reposImportFlows(actions),
   ...issuesFlows(actions),
   ...prsFlows(actions),
@@ -207,7 +208,6 @@ export const baseFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> => 
  */
 export const adminFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> => [
   ...adminResetFlows(actions),
-  ...billingPlanFlows(actions),
   ...adminToolFlows(actions),
   ...debugFlows(actions),
   ...adminOperatorFlows(actions)

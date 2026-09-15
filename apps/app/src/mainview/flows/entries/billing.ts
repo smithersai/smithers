@@ -11,7 +11,7 @@ import type { CommandActions } from "./Declare"
 /** The `billing` namespace row: the slash tree lists it in registry.ts NAMESPACES order. */
 export const namespace: Namespace = { id: "billing", label: "Billing", summary: "Balance and plan" }
 
-/** `billing.balance`, the one billing flow every session registers. */
+/** The balance read remains available beside plan and sandbox usage. */
 export const billingBalanceFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> => [
   flow({
     name: "billing.balance",
@@ -23,20 +23,16 @@ export const billingBalanceFlows = (actions: CommandActions): ReadonlyArray<Flow
   })
 ]
 
-/** The checkout and portal flows, registered in the admin plugin only (§17.4). */
+/** Plan reads and human checkout doors for every signed-in account. */
 export const billingPlanFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> => [
   flow({
-    /*
-     * §17.4: no top-up or checkout flow is exposed to an MVP account. Every
-     * alpha account IS an MVP account, so these two register in the admin
-     * plugin only — absent from the registry for everyone else, not hidden,
-     * so the slash menu never advertises "opens Stripe checkout" to a user
-     * who has no checkout. Payment is the human's act alone: user-only, like
-     * sign-in.
-     */
+    name: "billing.plans", summary: "Show plans and sandbox usage", runtime: ["identity"],
+    requires: ["signed-in"], input: NoPayload, handler: () => actions.showBillingPlans()
+  }),
+  flow({
     name: "billing.upgrade",
     summary: "Upgrade your plan (opens Stripe checkout)",
-    runtime: ["billing.checkout"],
+    runtime: ["identity"],
     userOnly: true,
     userOnlyReason: "external checkout with real money; the human clicks",
     args: "[plan]",
@@ -47,7 +43,7 @@ export const billingPlanFlows = (actions: CommandActions): ReadonlyArray<FlowEnt
   flow({
     name: "billing.portal",
     summary: "Manage billing (opens the Stripe portal)",
-    runtime: ["billing.checkout"],
+    runtime: ["identity"],
     userOnly: true,
     userOnlyReason: "the external billing portal; the human clicks",
     requires: ["signed-in"],

@@ -1,3 +1,4 @@
+import { BILLING_OVERVIEW_PATH, BILLING_PLANS_PATH } from "@smthrs/rpc/AgentApiRoutes"
 import * as Effect from "effect/Effect"
 import * as Option from "effect/Option"
 import * as Result from "effect/Result"
@@ -26,9 +27,9 @@ import { anonymousBucketAddress } from "./turnLimit"
  * user's own Smithers Cloud token (the same per-user door the gateway seam
  * uses), and forwards with that bearer. An ALLOWLIST, never a wildcard —
  * every proxied family is one the product ships commands for. Note
- * /api/billing/checkout|portal are EXACT matches routed to the platform's
- * Stripe seam; the rest of /api/billing/* stays with the product billing
- * worker.
+ * Billing overview, plans, checkout, and portal are exact platform routes.
+ * Other /api/billing/* routes, including balance, stay with the product
+ * billing worker.
  *
  * Exported for the host parity matrix (apps/app/docs/web-mode/PLAN.md §6):
  * every cloud-present flow whose seam calls `/api/*` or `/api/cloud/*` must
@@ -61,6 +62,8 @@ export const PLATFORM_PROXY_RULES: ReadonlyArray<{
   { prefix: "/api/integrations/", methods: ["GET", "DELETE"] },
   { prefix: "/api/linear", methods: ["GET", "POST"] },
   { prefix: "/api/notifications/", methods: ["GET", "PUT"] },
+  { exact: BILLING_OVERVIEW_PATH, methods: ["GET"] },
+  { exact: BILLING_PLANS_PATH, methods: ["GET"] },
   { exact: "/api/billing/checkout", methods: ["POST"] },
   { exact: "/api/billing/portal", methods: ["POST"] }
 ]

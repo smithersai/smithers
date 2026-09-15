@@ -1,3 +1,4 @@
+import { BillingPlanSchema, SandboxEntitlementSchema } from "./BillingPlans.ts"
 /**
  * Cards rendered from agent, code-intelligence, and repository events.
  *
@@ -435,6 +436,9 @@ export type SandboxEgressRow = z.infer<typeof SandboxEgressRowSchema>
  * @category schemas
  */
 export const SessionRefusalSchema = z.object({
+  plan_key: z.string().nullable().optional(),
+  limit_kind: z.string().nullable().optional(),
+  upgrade_plan_key: z.string().nullable().optional(),
   status: z.number().int(),
   message: z.string(),
   /** plue's machine-readable code; null when the refusal carried none. */
@@ -799,6 +803,17 @@ const CurrentCardSchema = z.discriminatedUnion("kind", [
       background: z.boolean().optional(),
       /** The parked call's flow name; with `capability` it reconstructs the ask after a reload. */
       flow: z.string().optional()
+    })
+  }),
+  z.object({
+    ...cardBaseShape,
+    kind: z.literal("billing-plans"),
+    payload: z.object({
+      planKey: z.string().nullable(),
+      sandbox: SandboxEntitlementSchema.nullable(),
+      plans: z.array(BillingPlanSchema),
+      checkout: z.boolean(),
+      refusal: SessionRefusalSchema.optional()
     })
   }),
   z.object({

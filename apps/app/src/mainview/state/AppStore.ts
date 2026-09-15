@@ -1251,6 +1251,9 @@ const forgetAccountState = (collections: StoredCollections): void => {
     collections.billingAccounts.insert(reset)
   } else {
     collections.billingAccounts.update("billing", (draft) => {
+      draft.planKey = reset.planKey
+      draft.sandbox = reset.sandbox
+      draft.plans = reset.plans
       draft.state = reset.state
       draft.totalUsd = reset.totalUsd
       draft.allowedToStartWork = reset.allowedToStartWork
@@ -2886,6 +2889,16 @@ const initializeAppStore = async (resolved: ResolvedPersistence, options: AppSto
             draft.lifetimeChargedUsd = transition.lifetimeChargedUsd
             draft.chargeCount = transition.chargeCount
             draft.refreshedAt = createdAt
+            draft.revision = revision
+          })
+          break
+        }
+
+        case "billing.plans.loaded": {
+          collections.billingAccounts.update("billing", (draft) => {
+            draft.planKey = transition.planKey
+            draft.sandbox = transition.sandbox
+            draft.plans = transition.plans
             draft.revision = revision
           })
           break

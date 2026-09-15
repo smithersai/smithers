@@ -416,6 +416,14 @@ describe("wave 11 — provision-or-resume (§5)", () => {
     expect(outcome.detail.length).toBeLessThanOrEqual("Provisioning the workspace answered HTTP 500: ".length + 240)
   })
 
+  test("402 plan limit preserves upgrade metadata and never retries provisioning", async () => {
+    const refusal = { code: "plan_limit_exceeded", plan_key: "free", limit_kind: "concurrent_sandboxes", upgrade_plan_key: "pro" }
+    const { calls, fetch } = relay({ provision: () => json(402, { ...refusal, message: "Upgrade or suspend a sandbox." }) })
+    const outcome = await run(ensureGateway("will", "will/mvp").pipe(Effect.provide(seam(fetch))))
+    expect(outcome).toEqual({ status: "plan_limit_exceeded", detail: "Upgrade or suspend a sandbox.", refusal })
+    expect(calls.filter(call => call.url.includes("/gateway"))).toHaveLength(1)
+  })
+
   test("429 quota_exceeded is the USER's own cap, a state of its own — not the fleet being full", async () => {
     // Caught live on canary while verifying wave 12: `429
     // {"code":"quota_exceeded","message":"concurrent sandboxes limit

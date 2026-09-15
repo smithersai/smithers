@@ -4303,6 +4303,17 @@ describe("wave 11 — the /api/workflow/* routes", () => {
     )
   })
 
+  test("the browser receives plan-limit 402 and the upgrade target from provisioning", async () => {
+    const refusal = { code: "plan_limit_exceeded", fault: "user", message: "Upgrade or suspend one sandbox.", plan_key: "free", limit_kind: "concurrent_sandboxes", upgrade_plan_key: "pro" }
+    await withRelay({ provision: () => json(402, refusal) }, async () => {
+      const response = await worker.fetch(
+        signedIn("/api/workflow/provision", { method: "POST", body: JSON.stringify({ repo: "will/mvp" }) }), env()
+      )
+      expect(response.status).toBe(402)
+      expect(await response.json()).toEqual(refusal)
+    })
+  })
+
   test("the user's own box cap is its own state on the wire, never the fleet's no-capacity", async () => {
     await withRelay(
       { provision: () => json(429, { code: "quota_exceeded", message: "concurrent sandboxes limit reached" }) },

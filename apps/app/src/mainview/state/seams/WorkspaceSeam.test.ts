@@ -2731,3 +2731,29 @@ describe("the one-command desktop open", () => {
     }
   })
 })
+
+describe("plan sandbox limits embed an upgrade refusal", () => {
+  const limit = () => json(402, { code: "plan_limit_exceeded", fault: "user", message: "Suspend one sandbox or upgrade.", plan_key: "free", limit_kind: "concurrent_sandboxes", upgrade_plan_key: "pro" })
+  const paths = [
+    ["open", "POST api/repos/will/smithers/workspaces"],
+    ["fork", "POST api/repos/will/smithers/workspaces/ws-1/fork"],
+    ["resume", "POST api/repos/will/smithers/workspaces/ws-1/resume"],
+    ["desktop-box", "POST api/repos/will/smithers/workspaces"],
+    ["desktop", "POST api/repos/will/smithers/workspaces/ws-1/desktop/session"]
+  ] as const
+  for (const [act, path] of paths) test(`${act} preserves the refusal and upgrade target in the transcript card`, async () => {
+    dropDesktopStream()
+    const { store, seam, requests } = await harness({ [path]: limit, "api/repos/will/smithers/workspaces/ws-1": json(200, WS_DESKTOP) })
+    await seedWorkspace(store, { ...wsRow, kind: "desktop" })
+    const answer = act === "open" ? await seam.openWorkspace(undefined, "will/smithers")
+      : act === "fork" ? await seam.forkWorkspace("ws-1")
+      : act === "resume" ? await seam.resumeWorkspace("ws-1")
+      : act === "desktop-box" ? await seam.openDesktopBox(undefined, "will/smithers")
+      : await seam.openDesktop("ws-1")
+    expect(answer).toContain("Your plan is at its sandbox limit.")
+    const card = store.collections.cards.get("billing-plan-limit")
+    expect(card?.kind).toBe("billing-plans")
+    if (card?.kind === "billing-plans") expect(card.payload.refusal).toMatchObject({ code: "plan_limit_exceeded", upgrade_plan_key: "pro", limit_kind: "concurrent_sandboxes", plan_key: "free" })
+    expect(requests.filter(request => request === path)).toHaveLength(1)
+  })
+})

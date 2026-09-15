@@ -17,6 +17,7 @@
 
 /** The typed input of every flow a card raises with structured values. */
 export interface FlowInput {
+  readonly "billing.upgrade": { readonly plan: string }
   readonly "runs.list": { readonly repo?: string; readonly status?: string; readonly flow?: string; readonly lineage?: string; readonly sourceCard?: string }
   readonly "runs.attention": { readonly repo?: string; readonly sourceCard?: string }
   readonly "runs.open": { readonly runId: string; readonly repo?: string; readonly sourceCard?: string }
@@ -108,6 +109,7 @@ const line = (...parts: ReadonlyArray<string | undefined>): string =>
  * of the line.
  */
 const ENCODERS: { readonly [N in FlowWithInput]: (payload: Payload) => string } = {
+  "billing.upgrade": (payload) => line(token(payload, "plan")),
   "runs.list": (payload) => line(token(payload, "status"), token(payload, "flow"), keyed(payload, "lineage"), keyed(payload, "sourceCard"), token(payload, "repo")),
   "runs.attention": (payload) => line(keyed(payload, "sourceCard"), token(payload, "repo")),
   "runs.open": (payload) => line(keyed(payload, "sourceCard"), token(payload, "runId"), token(payload, "repo")),

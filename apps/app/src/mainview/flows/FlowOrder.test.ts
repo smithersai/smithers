@@ -90,6 +90,9 @@ const PRE_SPLIT_BASE: ReadonlyArray<string> = [
   "cloud.sign-out",
   "toast.dismiss",
   "billing.balance",
+  "billing.plans",
+  "billing.upgrade",
+  "billing.portal",
   "repos.import",
   "issues.list",
   "issues.view",
@@ -236,8 +239,6 @@ const PRE_SPLIT_BASE: ReadonlyArray<string> = [
 const PRE_SPLIT_ADMIN: ReadonlyArray<string> = [
   "admin.reset.ask",
   "admin.reset.cancel",
-  "billing.upgrade",
-  "billing.portal",
   "admin.reset",
   "admin.devtools",
   "debug.backend",

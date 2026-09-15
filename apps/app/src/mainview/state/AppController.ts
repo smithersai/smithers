@@ -504,6 +504,7 @@ export interface AppController extends TutorialChangeController, IssueFlowsContr
   readonly createLanding: LandingsSeam["createLanding"]
   readonly landLanding: LandingsSeam["landLanding"]
   readonly reviewLanding: LandingsSeam["reviewLanding"]
+  readonly showBillingPlans: BillingSeam["showBillingPlans"]
   readonly startCheckout: BillingSeam["startCheckout"]
   readonly openBillingPortal: BillingSeam["openBillingPortal"]
   readonly listNotifications: NotificationsSeam["listNotifications"]
@@ -816,7 +817,8 @@ export const createAppController = (
     actor: () => ctx.commandActor,
     nextOrdinal: store.nextOrdinal,
     promptSignIn: (summary) => promptSignIn(true, { summary }),
-    promptCloudSignIn: () => promptCloudSignIn(true)
+    promptCloudSignIn: () => promptCloudSignIn(true),
+    checkout: services.bootstrap?.capabilities.includes("billing.checkout") ?? true
   }
   const repositoryFlowsSeam = createRepositoryFlowsSeam(seamCtx)
   const repositoryFlows = (): RepositoryFlowCatalog | undefined => {
@@ -839,7 +841,7 @@ export const createAppController = (
       } }).isPersisted.promise
     }
   }))
-  const billingSeam = actors.pair(seamCtx, (context) => createBillingSeam(context))
+  const billingSeam = actors.pair(seamCtx, (context) => createBillingSeam(context, services.bootstrap?.capabilities.includes("billing.checkout") ?? true))
   const repositoryUpdate = actors.pair(seamCtx, createRepositoryUpdate)
   const notificationsSeam = actors.pair(seamCtx, (context) => createNotificationsSeam(context))
   const environmentSeam = actors.pair(seamCtx, (context) => createEnvironmentSeam(context))
@@ -1721,6 +1723,7 @@ export const createAppController = (
     createLanding: landingsSeam.createLanding,
     landLanding: landingsSeam.landLanding,
     reviewLanding: landingsSeam.reviewLanding,
+    showBillingPlans: billingSeam.showBillingPlans,
     startCheckout: billingSeam.startCheckout,
     openBillingPortal: billingSeam.openBillingPortal,
     ...repositoryUpdate,

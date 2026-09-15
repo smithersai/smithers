@@ -1,3 +1,4 @@
+import type { Refusal } from "@smthrs/rpc/Refusal"
 import { ViewSkeleton } from "../ViewSkeleton"
 import { flowAction } from "../flows/FlowAction"
 import { fileArgs, parseFileArgs } from "../flows/FileArgs"
@@ -42,6 +43,16 @@ import { FileListCardBody } from "./FileCards"
 import type { CardFamily, RunCommand } from "./CardFamily"
 import { settledPill } from "./CardFamily"
 import { flowArgs } from "../flows/FlowArgs"
+
+/** THE SEAM: the upgrade door uses the same typed flow as the plans card. */
+export const UpgradeDoor = ({ refusal, onRunCommand, disabled = false }: {
+  readonly refusal: Refusal; readonly onRunCommand: RunCommand; readonly disabled?: boolean
+}) => refusalDoors(refusal).includes("upgrade") && refusal.upgrade_plan_key ? (
+  <Button size="sm" variant="outline" disabled={disabled}
+    {...flowAction(onRunCommand, "billing.upgrade", flowArgs("billing.upgrade", { plan: refusal.upgrade_plan_key }))}>
+    Upgrade
+  </Button>
+) : null
 
 export interface WorkspaceCardActions {
   readonly onRunCommand: RunCommand
@@ -238,6 +249,7 @@ const WorkspaceDesktopBody = ({
             Stop waiting
           </Button>
         )}
+        {refusal === null ? null : <UpgradeDoor refusal={refusal} onRunCommand={onRunCommand} />}
         {doors.includes("resume") ?
           (
             <Button
@@ -507,6 +519,7 @@ const WorkspaceFacetBody = ({
       {terminalRefusal !== null ?
         (
           <>
+            <UpgradeDoor refusal={terminalRefusal} onRunCommand={onRunCommand} />
             <p className="world-card-empty" data-refusal-fault={terminalRefusal.fault}>{refusalLead(terminalRefusal)}</p>
             <p className="world-card-path">
               {terminalRefusal.rawCode != null ? `${terminalRefusal.rawCode} — ` : ""}

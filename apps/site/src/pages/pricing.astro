@@ -7,10 +7,10 @@ const entry = await getEntry("docs", "docs/pricing")
 if (!entry) throw new Error("The pricing documentation is missing")
 const { Content } = await render(entry)
 ---
-<Base title="Pricing · Smithers" description={entry.data.description ?? "Pricing for the Smithers hosted alpha and open-source tools."}>
+<Base title="Pricing · Smithers" description={entry.data.description ?? "Free, Pro, and Max sandbox plans."}>
   <main class="pricing wrap">
     <p class="eyebrow">Smithers / Pricing</p>
-    <h1>Start with a public repo.</h1>
+    <h1>Choose your sandbox capacity.</h1>
     <div class="pricing-copy"><Content /></div>
     <a class="btn primary" href="/smithersai/smithers">Open Smithers <span aria-hidden="true">↗</span></a>
   </main>

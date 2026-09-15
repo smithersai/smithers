@@ -266,7 +266,7 @@ describe("launch-law parity: every affordance is a command", () => {
        */
       "../cards/ApprovalAnswer.tsx": 4,
       /* The admin grant confirm: Post the grant and Cancel. */
-      "../cards/BillingCards.tsx": 2,
+      "../cards/BillingCards.tsx": 3,
       /* The access-request queue's Approve. */
       "../cards/AdminCards.tsx": 1,
       /*
@@ -321,7 +321,7 @@ describe("launch-law parity: every affordance is a command", () => {
        * box whose image predates the desktop tools, where a Retry is a door
        * onto a wall.
        */
-      "../cards/WorkspaceCard.tsx": 20,
+      "../cards/WorkspaceCard.tsx": 21,
       /*
        * The target-graph cards: the graph drawer's close/copy/open/run acts
        * (4), the timeline row's log toggle (1), the history row's replay

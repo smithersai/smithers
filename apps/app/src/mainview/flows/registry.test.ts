@@ -452,8 +452,8 @@ describe("command registry pure model", () => {
   })
 })
 
-describe("§17.4 — no checkout is exposed to an MVP account", () => {
-  test("an MVP session has no billing.upgrade or billing.portal at all", async () => {
+describe("billing plans are available to every signed-in account", () => {
+  test("a non-admin session has plans, upgrade, and portal", async () => {
     const { store, controller } = await freshController()
     store.dispatch({
       type: "identity.session.loaded",
@@ -465,10 +465,9 @@ describe("§17.4 — no checkout is exposed to an MVP account", () => {
       scopesPlain: null
     })
     const names = controller.commands.all().map((command) => command.name)
-    expect(names).not.toContain("billing.upgrade")
-    expect(names).not.toContain("billing.portal")
-    // Absent, not hidden: invoking by name resolves exactly like a typo.
-    expect((await controller.commands.run("billing.upgrade", "pro")).status).toBe("unknown-command")
+    expect(names).toContain("billing.upgrade")
+    expect(names).toContain("billing.portal")
+    expect(names).toContain("billing.plans")
     // The balance READ stays — knowing what you have is not a checkout.
     expect(names).toContain("billing.balance")
   })
@@ -666,6 +665,9 @@ describe("command registry bindings", () => {
       "cloud.sign-out",
       "toast.dismiss",
       "billing.balance",
+      "billing.plans",
+      "billing.upgrade",
+      "billing.portal",
       "repos.import",
       "issue.flows",
       "issue.repro",
@@ -693,8 +695,6 @@ describe("command registry bindings", () => {
       "repo.explore",
       "repo.home",
       "feature.prototype",
-      // §17.4: billing.upgrade / billing.portal register in the ADMIN plugin
-      // only — no checkout is exposed to an MVP account.
       "notifications.read-update",
       "notifications.tag",
       "notifications.list",

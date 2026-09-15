@@ -51,15 +51,15 @@ export const upstreamProse = (body: string): string | undefined => {
  * `code` names WHICH refusal this is — `no_capacity` (the fleet is full,
  * nobody's fault) reads nothing like `quota_exceeded` (this account is at its
  * own cap), and a client that only gets a sentence cannot tell them apart
- * without matching on English. `retry_after` says when to come back. Both are
- * facts a caller acts on and neither can be re-derived from a message, so they
- * pass through as they arrived — only these two fields, and only at their
+ * without matching on English. `retry_after` says when to come back. Plan-limit
+ * metadata names the current plan, exhausted limit, and upgrade target. These
+ * facts cannot be re-derived from prose, so they pass through at their
  * documented types.
  *
  * @since 1.0.0
  * @category constants
  */
-export const machineReadableRefusal = (body: string): { readonly code?: string; readonly retry_after?: number } => {
+export const machineReadableRefusal = (body: string): { readonly code?: string; readonly retry_after?: number; readonly plan_key?: string; readonly limit_kind?: string; readonly upgrade_plan_key?: string } => {
   let parsed: unknown
   try {
     parsed = JSON.parse(body)
@@ -67,9 +67,12 @@ export const machineReadableRefusal = (body: string): { readonly code?: string; 
     return {}
   }
   if (typeof parsed !== "object" || parsed === null) return {}
-  const record = parsed as { code?: unknown; retry_after?: unknown }
+  const record = parsed as { code?: unknown; retry_after?: unknown; plan_key?: unknown; limit_kind?: unknown; upgrade_plan_key?: unknown }
   return {
     ...(typeof record.code === "string" && record.code.trim() !== "" ? { code: record.code.trim().slice(0, 64) } : {}),
+    ...(typeof record.plan_key === "string" ? { plan_key: record.plan_key } : {}),
+    ...(typeof record.limit_kind === "string" ? { limit_kind: record.limit_kind } : {}),
+    ...(typeof record.upgrade_plan_key === "string" ? { upgrade_plan_key: record.upgrade_plan_key } : {}),
     ...(typeof record.retry_after === "number" && Number.isFinite(record.retry_after)
       ? { retry_after: record.retry_after }
       : {})

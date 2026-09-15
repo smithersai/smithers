@@ -34,6 +34,7 @@ const said = (outcome: { status: string; value?: string; error?: string }): stri
 /** The same relay double wave 11 proved against, with the states §3/§4 need. */
 const relay = (options: {
   readonly provision?: () => unknown
+  readonly provisionStatus?: number
   readonly flows?: ReadonlyArray<{ flowId: string }>
 } = {}) => {
   const calls: Array<{ path: string; method: string; body: unknown }> = []
@@ -123,7 +124,7 @@ const relay = (options: {
       const body = typeof init?.body === "string" ? JSON.parse(init.body) : undefined
       calls.push({ path: absolute.pathname + absolute.search, method: init?.method ?? "GET", body })
       if (absolute.pathname === "/api/workflow/provision") {
-        return json(200, options.provision?.() ?? { status: "ready", repo: body?.repo, gatewayId: "gw-1" })
+        return json(options.provisionStatus ?? 200, options.provision?.() ?? { status: "ready", repo: body?.repo, gatewayId: "gw-1" })
       }
       if (absolute.pathname === "/api/workflow/rpc") {
         return procedure(String(body.repo), String(body.procedure), (body.payload ?? {}) as Record<string, unknown>)
@@ -647,6 +648,21 @@ describe("wave 12 §3 — a run the workspace never finishes", () => {
 })
 
 describe("wave 12 §4 — the residuals", () => {
+  test("a workflow plan limit embeds its upgrade door and stops provisioning", async () => {
+    const store = await webStore()
+    const double = relay({ provisionStatus: 402, provision: () => ({
+      code: "plan_limit_exceeded", fault: "user", message: "Suspend one sandbox or upgrade.",
+      plan_key: "free", limit_kind: "concurrent_sandboxes", upgrade_plan_key: "pro"
+    }) })
+    const controller = createAppController(store, unavailableRepositories, silentAgent, double.services)
+    await signIn(store)
+    const outcome = await controller.commands.run("flow.create", "summarize my issues")
+    expect(said(outcome)).toContain("Your plan is at its sandbox limit.")
+    expect(store.collections.cards.get("billing-plan-limit")).toMatchObject({ kind: "billing-plans", payload: { refusal: { upgrade_plan_key: "pro" } } })
+    expect(double.calls.filter(call => call.path === "/api/workflow/provision")).toHaveLength(1)
+    expect(double.state.launched).toHaveLength(0)
+  })
+
   test("a watched repo with no Smithers Cloud counterpart gets its own honest line", async () => {
     const store = await webStore()
     const double = relay({

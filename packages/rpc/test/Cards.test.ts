@@ -522,6 +522,7 @@ const FIXTURES: Record<Card["kind"], KindFixtures> = {
     minimal: { capability: "network" },
     full: {
       capability: "network",
+      question: { kind: "confirm", prompt: "Continue?" },
       detail: "POST https://api.github.com",
       runId: "run-1",
       requestId: "gate-1",
@@ -536,6 +537,17 @@ const FIXTURES: Record<Card["kind"], KindFixtures> = {
       chain: true,
       background: false,
       flow: "review.land"
+    }
+  },
+  "billing-plans": {
+    minimal: { planKey: null, sandbox: null, plans: [], checkout: false },
+    full: {
+      planKey: "free", checkout: true,
+      sandbox: { concurrentSandboxes: 1, concurrentInUse: 1, idleTimeoutSecs: 1800, hoursPerDay: 4, secondsUsedToday: 3600, dayResetsAt: "2026-09-16T00:00:00Z" },
+      plans: [{ key: "pro", display_name: "Pro", price_cents: 5000, interval: "monthly", checkout_available: true, limits: {
+        concurrent_sandboxes: 3, idle_timeout_secs: 14400, hours_per_day: -1, private_repos: -1, storage_bytes: -1, ci_minutes: -1, agent_runs: -1, seats: 1
+      } }],
+      refusal: { status: 402, code: "plan_limit_exceeded", message: "Upgrade or suspend a sandbox.", plan_key: "free", limit_kind: "concurrent_sandboxes", upgrade_plan_key: "pro" }
     }
   },
   balance: {
@@ -1983,7 +1995,7 @@ const payloadFields = (kind: string): Record<string, z.ZodType> | null => {
 /** True when the schema accepts the field's absence — the "optional so older cards parse" promise. */
 const optional = (schema: z.ZodType): boolean => schema.safeParse(undefined).success
 
-/** repo-onboarding is the one union payload; its stages are covered one by one below. */
+/** Union payloads have variant coverage; object payloads participate in the field audit. */
 const objectKinds = kinds.filter((kind) => payloadFields(kind) !== null)
 
 describe("every persisted card kind", () => {
@@ -1991,8 +2003,8 @@ describe("every persisted card kind", () => {
     expect(Object.keys(FIXTURES).sort()).toEqual([...kinds].sort())
   })
 
-  test("only repo-onboarding carries a union payload; a second one would escape the field audit below", () => {
-    expect(kinds.filter((kind) => payloadFields(kind) === null)).toEqual(["repo-onboarding"])
+  test("agent and repo-onboarding carry union payloads; other kinds participate in the field audit", () => {
+    expect(kinds.filter((kind) => payloadFields(kind) === null)).toEqual(["agent", "repo-onboarding"])
   })
 
   test.each(objectKinds)("%s: the fixtures name every field the payload declares, and no more", (kind) => {

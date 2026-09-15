@@ -1,3 +1,5 @@
+import { cloudFailure } from "../seams/CloudClient"
+import { renderPlanLimit } from "../seams/BillingSeam"
 import { preparedView, type ViewAction } from "../PreparedView"
 import { WORKFLOW_PROVISION_PATH } from "@smthrs/rpc/AgentApiRoutes"
 import type { Card } from "../AppState"
@@ -81,7 +83,7 @@ export const createWorkflowController = (
   pumpWorkflowRun: (cardId: string) => Promise<void>,
   renderFlowForm?: FormsController["renderFlowForm"]
 ): WorkflowController => {
-  const { store, baseUrl, boundedFetch, errorMessageOf, gateway, unref, workflowPollMs, withToast } = ctx
+  const { store, baseUrl, boundedFetch, gateway, unref, workflowPollMs, withToast } = ctx
   const RUN_POLL_MS = workflowPollMs
   const waitMs = (ms: number): Promise<void> =>
     new Promise((resolve) => {
@@ -187,7 +189,11 @@ export const createWorkflowController = (
           signal
         })
         if (!response.ok) {
-          return await errorMessageOf(response, "The workspace couldn't be prepared.")
+          const failure = await cloudFailure(response, "The workspace couldn't be prepared.")
+          if (failure.refusal.rawCode === "plan_limit_exceeded") {
+            return renderPlanLimit(store, failure.refusal, ctx.services.bootstrap?.capabilities.includes("billing.checkout") ?? true, ctx.commandActor)
+          }
+          return failure.error
         }
         body = (await response.json().catch(() => undefined)) as typeof body
       } catch {
