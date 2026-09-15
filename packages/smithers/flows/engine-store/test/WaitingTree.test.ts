@@ -63,12 +63,18 @@ const insertRun = (options: {
   readonly parent?: string | undefined
   readonly createdAtMs: number
   readonly status?: string | undefined
+  readonly onParentExit?: "cancel" | "detach" | undefined
   readonly waiting?: { readonly reason: string; readonly token?: string; readonly request?: string } | undefined
 }) =>
   Effect.gen(function*() {
     const sql = yield* Effect.service(SqlClient.SqlClient)
     const writer = yield* DurableWriter.DurableWriter
-    const stateJson = JSON.stringify({ version: 1, flowName: TestFlow._tag, payload: {} })
+    const stateJson = JSON.stringify({
+      version: 1,
+      flowName: TestFlow._tag,
+      payload: {},
+      ...(options.onParentExit === undefined ? {} : { onParentExit: options.onParentExit })
+    })
     yield* writer.write(sql`
       INSERT INTO flows_runs (run_id, status, created_at_ms, waiting_reason, waiting_token, waiting_request, state_json)
       VALUES (
@@ -158,6 +164,34 @@ describe("waitingTree", () => {
       })
     ))
 
+  it.effect("stops at a detached child, whose question its parent is not waiting on", () =>
+    withState((state) =>
+      Effect.gen(function*() {
+        // `.child()` records `cancel`: the parent is waiting for the value, so
+        // its question is the parent's too. A fire-and-forget spawn records
+        // `detach` and outlives the run that started it, so reporting its
+        // question upward would say a run that can proceed cannot.
+        yield* insertRun({ runId: "root", createdAtMs: 1 })
+        yield* insertRun({
+          runId: "attached",
+          parent: "root",
+          createdAtMs: 2,
+          waiting: { reason: "approval", token: "attached-token" }
+        })
+        yield* insertRun({ runId: "detached", parent: "root", createdAtMs: 3, onParentExit: "detach" })
+        yield* insertRun({
+          runId: "under-detached",
+          parent: "detached",
+          createdAtMs: 4,
+          waiting: { reason: "approval", token: "hidden-token" }
+        })
+
+        expect((yield* state.waitingTree("root")).map((row) => row.runId)).toEqual(["attached"])
+        // The detached run still owns its own subtree's question.
+        expect((yield* state.waitingTree("detached")).map((row) => row.runId)).toEqual(["under-detached"])
+      })
+    ))
+
   it.effect("keeps a sibling tree's waits out of the answer", () =>
     withState((state) =>
       Effect.gen(function*() {
@@ -209,14 +243,16 @@ describe("waitingTree", () => {
 })
 
 describe("waitingTree, in memory", () => {
-  const memory = () => DurableEngineState.makeMemory()
+  const memory = (
+    runs?: (runId: string) => Option.Option<DurableEngineState.MemoryRunView>
+  ) => DurableEngineState.makeMemory(runs === undefined ? {} : { runs })
   const owner = { hostId: "waiting-tree", pid: 1, nonce: "n" }
 
   it.effect("walks the same edges the durable recursion walks", () =>
     Effect.gen(function*() {
       const state = memory()
-      yield* state.recordRunParent("child", "root", 1)
-      yield* state.recordRunParent("grandchild", "child", 2)
+      yield* state.recordRunParent("child", "root")
+      yield* state.recordRunParent("grandchild", "child")
       yield* state.park("grandchild", { reason: "approval", token: "t", request: clarification }, owner)
 
       const tree = yield* state.waitingTree("root")
@@ -225,5 +261,22 @@ describe("waitingTree, in memory", () => {
       expect(yield* state.waitingTree("child")).toHaveLength(1)
       expect(yield* state.waitingTree("grandchild")).toHaveLength(1)
       expect(yield* state.waitingTree("elsewhere")).toEqual([])
+    }))
+
+  it.effect("stops at a detached child, as the durable walk does", () =>
+    Effect.gen(function*() {
+      // Owned by the parking owner: `park` is owner-fenced, as in SQL.
+      const view: DurableEngineState.MemoryRunView = { status: "running", owner }
+      const state = memory((runId) =>
+        Option.some(runId === "detached" ? { ...view, onParentExit: "detach" as const } : view)
+      )
+      yield* state.recordRunParent("attached", "root")
+      yield* state.recordRunParent("detached", "root")
+      yield* state.recordRunParent("under-detached", "detached")
+      yield* state.park("attached", { reason: "approval", token: "attached-token" }, owner)
+      yield* state.park("under-detached", { reason: "approval", token: "hidden-token" }, owner)
+
+      expect((yield* state.waitingTree("root")).map((row) => row.runId)).toEqual(["attached"])
+      expect((yield* state.waitingTree("detached")).map((row) => row.runId)).toEqual(["under-detached"])
     }))
 })

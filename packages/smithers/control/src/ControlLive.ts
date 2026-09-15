@@ -315,6 +315,13 @@ export const layer: Layer.Layer<
       yield* Effect.serviceOption(DispatchReader.DispatchReader),
       DispatchReader.makeNone
     )
+    /**
+     * Whether this composition has an executor that can be asked about a run.
+     *
+     * Read once: the executor is captured when the layer is built, so the
+     * answer cannot change between two listings of one page.
+     */
+    const observing = Option.isSome(executor) && executor.value.readExecution !== undefined
     const observe = (run: RunSummary): Effect.Effect<RunSummary, PersistenceError> =>
       Effect.gen(function*() {
         if (Option.isNone(executor) || executor.value.readExecution === undefined) return run
@@ -327,7 +334,14 @@ export const layer: Layer.Layer<
           waitingReason: observed.waitingReason,
           parentRunId: observed.parentRunId,
           lineageId: observed.lineageId,
-          roundOrdinal: observed.roundOrdinal
+          roundOrdinal: observed.roundOrdinal,
+          // The executor's answer replaces this plane's copy here as it does
+          // for every other observed field. It has to: a control plane over
+          // its own coordination database cannot see the executions a flow
+          // spawned, so a nested `HumanTask` park is a fact only the executor
+          // holds. Where the two share one database the runtime computes the
+          // same rows itself and the observation reproduces them.
+          pendingWaits: observed.pendingWaits
         }
       })
     const getRun = (runId: string) => runtime.getRun(runId).pipe(Effect.flatMap(observe))
@@ -874,15 +888,54 @@ export const layer: Layer.Layer<
           if (filters.lineageId !== undefined) runs = runs.filter((run) => run.lineageId === filters.lineageId)
           return { _tag: "runs", items: yield* withSteering(runs) }
         }
-        const result = yield* runtime.queryRuns({ filters, cursor, limit: bounds.size })
-        const observed = yield* Effect.forEach(result.items, observe)
-        const items = yield* withSteering(observed)
-        return result.nextCursor === undefined
+        // A status filter has to select on the status a caller will READ.
+        // `observe` replaces this plane's copy with the executor's, so a run
+        // the engine has parked on a human wait answers `waiting-approval`
+        // while the coordination row still says whatever it last recorded —
+        // and the adapter's own filter dropped it before anybody looked. That
+        // is what left workspace 6f2733a3's run-1 out of every
+        // `status: "waiting-approval"` page while the run tree was waiting on
+        // a person. The exact-lookup branch above has always filtered on the
+        // observed summary; this makes the paged branch agree.
+        //
+        // The source therefore selects without the status and the page is
+        // filled from observed rows, asking for only as many as are still
+        // needed so a page never over-delivers rows its cursor has passed. A
+        // filter the source cannot evaluate costs a walk, which is why the
+        // walk stops at a full page or at the end of the runs.
+        const postFiltered = observing && filters?.status !== undefined
+        const sourceFilters = postFiltered && filters !== undefined
+          ? Object.fromEntries(Object.entries(filters).filter(([key]) => key !== "status"))
+          : filters
+        const collected: Array<RunSummary> = []
+        let sourceCursor = cursor
+        let sourceNext: Awaited<ReturnType<typeof runtime.queryRuns>> extends never ? never : undefined | {
+          readonly source: 0 | 1
+          readonly sequence: number
+          readonly createdAt: number
+          readonly runId: string
+        }
+        while (true) {
+          const result = yield* runtime.queryRuns({
+            filters: sourceFilters,
+            cursor: sourceCursor,
+            limit: bounds.size - collected.length
+          })
+          const observed = yield* Effect.forEach(result.items, observe)
+          for (const run of observed) {
+            if (!postFiltered || run.status === filters?.status) collected.push(run)
+          }
+          sourceNext = result.nextCursor
+          if (!postFiltered || sourceNext === undefined || collected.length >= bounds.size) break
+          sourceCursor = { version: 1, filters: fingerprint, ...sourceNext }
+        }
+        const items = yield* withSteering(collected)
+        return sourceNext === undefined
           ? { _tag: "runs", items }
           : {
             _tag: "runs",
             items,
-            nextCursor: JSON.stringify({ version: 1, filters: fingerprint, ...result.nextCursor })
+            nextCursor: JSON.stringify({ version: 1, filters: fingerprint, ...sourceNext })
           }
       })
 

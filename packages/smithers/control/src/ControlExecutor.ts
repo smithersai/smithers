@@ -8,7 +8,7 @@
 import { Context, Effect, Layer } from "effect"
 import type { LaunchFailed, PersistenceError } from "./ControlError.ts"
 import type { StoredPlan } from "./ControlRuntime.ts"
-import type { RunId, RunSummary, SignalPayload } from "./ControlSchema.ts"
+import type { PendingWait, RunId, RunSummary, SignalPayload } from "./ControlSchema.ts"
 
 /**
  * One stored plan and the run summary it is being started as.
@@ -159,7 +159,96 @@ export type ExecutionObservation =
     readonly parentRunId?: string | undefined
     readonly lineageId?: string | undefined
     readonly roundOrdinal?: number | undefined
+    /**
+     * Open human waits anywhere in this execution's tree.
+     *
+     * The control plane cannot compute these. It keeps its own coordination
+     * copy of `flows_runs`, and the executions a flow spawns — where a nested
+     * `HumanTask` actually parks — exist only in the executor's database, with
+     * the edges that link them. `readExecution` is the one place that reads
+     * both, so it is where a run tree's open questions become visible to
+     * anything else.
+     *
+     * Absent when nothing in the tree is waiting on a person. `status` rolls
+     * up with them: an execution parked while a descendant holds a human wait
+     * is observed as `waiting-approval`.
+     */
+    readonly pendingWaits?: ReadonlyArray<PendingWait> | undefined
   }
+
+/**
+ * The waiting reason a human wait parks under.
+ *
+ * `HumanTask` and the agent's own `ask` both declare it
+ * (`@smthrs/flow` `FlowRuntime.annotateWaiting({ reason: "approval" })`), so
+ * it is the one value that separates "somebody has to answer this" from every
+ * other park.
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export const humanWaitReason = "approval"
+
+/**
+ * The wait point a durable token addresses, as a person reads it.
+ *
+ * A `HumanTask` attempt is its own wait point named `WaitFor/<task>#<attempt>`
+ * (`@smthrs/flow` `HumanTask`), and a plain `WaitFor` gate is `WaitFor/<name>`.
+ * Splitting the two out of the token is what lets a client address an answer by
+ * the name a person was asked under rather than by a base64 blob, and lets an
+ * inbox say which of three attempts is open.
+ *
+ * A token this plane cannot parse names nothing extra; the token itself still
+ * travels, so the wait stays answerable.
+ */
+const waitPointOf = (token: string): { readonly name?: string; readonly attempt?: number } => {
+  let decoded: unknown
+  try {
+    decoded = JSON.parse(globalThis.atob(token))
+  } catch {
+    return {}
+  }
+  const deferredName = Array.isArray(decoded) && typeof decoded[2] === "string" ? decoded[2] : undefined
+  if (deferredName === undefined || !deferredName.startsWith("WaitFor/")) return {}
+  const point = deferredName.slice("WaitFor/".length)
+  const marker = point.lastIndexOf("#")
+  if (marker < 0) return { name: point }
+  const attempt = Number(point.slice(marker + 1))
+  return Number.isSafeInteger(attempt) && attempt > 0
+    ? { name: point.slice(0, marker), attempt }
+    : { name: point }
+}
+
+/**
+ * One parked execution as a {@link PendingWait}, or nothing when it is not a
+ * wait a person can end.
+ *
+ * Shared by the two readers that produce these rows — the control plane's own
+ * SQL runtime, when it shares a database with the engine, and the executor's
+ * observation port, when it does not — so a wait reads the same either way.
+ *
+ * @category constructors
+ * @since 1.0.0
+ */
+export const pendingWaitOf = (row: {
+  readonly runId: string
+  readonly flowId?: string | undefined
+  readonly reason: string
+  readonly token: string | null | undefined
+  readonly request?: unknown
+  readonly createdAt: number
+}): PendingWait | undefined => {
+  if (row.reason !== humanWaitReason || row.token === null || row.token === undefined) return undefined
+  return {
+    runId: row.runId,
+    reason: row.reason,
+    token: row.token,
+    createdAt: row.createdAt,
+    ...(row.flowId === undefined ? {} : { flowId: row.flowId }),
+    ...waitPointOf(row.token),
+    ...(row.request === undefined ? {} : { request: row.request as PendingWait["request"] })
+  }
+}
 
 /**
  * The executor port: the control plane hands work over to a real run executor

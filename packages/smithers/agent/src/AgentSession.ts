@@ -905,6 +905,27 @@ export const readExecution = (
       const waiting = yield* state.waiting(row.value.runId)
       const reason = Option.isSome(waiting) ? waiting.value.reason : undefined
       const current = row.value
+      // Every open human wait in the TREE, not just this row's own.
+      //
+      // A flow that calls another flow parks the child execution, and those
+      // executions exist only here: the control plane keeps a separate
+      // coordination database and has never seen them. So a `HumanTask`
+      // several `.child()` boundaries down was invisible to everything outside
+      // this process — the run an operator opened reported `parked` on an
+      // `event` and the approvals inbox was empty, which is how run-1 of
+      // workspace 6f2733a3 parked on `coding-clarification` with no way to
+      // answer it. This port is the only reader of both databases, so it is
+      // where the tree's open questions become visible.
+      const pendingWaits = (yield* state.waitingTree(current.runId))
+        .flatMap((wait) =>
+          ControlExecutor.pendingWaitOf({
+            runId: wait.runId,
+            reason: wait.reason,
+            token: wait.token,
+            createdAt: current.createdAtMs,
+            ...(wait.request === undefined ? {} : { request: wait.request })
+          }) ?? []
+        )
       const identity = current.runId === runId ? current : yield* runs.get(runId).pipe(
         Effect.mapError((cause) =>
           new PersistenceError({
@@ -916,12 +937,21 @@ export const readExecution = (
       )
       return {
         _tag: "Observed",
+        // An execution whose tree holds an open human wait is waiting on a
+        // human, however nested the row that holds it and whether or not its
+        // own row has flipped to `suspended` yet: a parent awaiting a
+        // `.child()` is blocked on that child's question either way. Only
+        // ATTACHED waits reach here — `waitingTree` skips a detached subtree,
+        // whose whole point is to outlive the run that spawned it.
         status: current.status === "pending"
           ? "accepted"
           : current.status === "suspended"
-          ? reason === "approval" ? "waiting-approval" : "parked"
+          ? reason === ControlExecutor.humanWaitReason || pendingWaits.length > 0 ? "waiting-approval" : "parked"
+          : current.status === "running" && pendingWaits.length > 0
+          ? "waiting-approval"
           : current.status,
         waitingReason: current.status === "suspended" ? reason : undefined,
+        ...(pendingWaits.length === 0 ? {} : { pendingWaits }),
         parentRunId: identity.parentRunId ?? (yield* state.runParents(identity.runId))[0]?.parentId,
         lineageId: identity.lineageId ?? current.lineageId ?? undefined,
         // Older lineage roots have null columns; membership was established by

@@ -218,7 +218,7 @@ describe("a human wait parked on a nested execution", () => {
     expect(observed.status).toBe("completed")
   })
 
-  it("does not claim a RUNNING ancestor is waiting, only a parked one", async () => {
+  it("reports the wait on the execution holding it and on every ancestor", async () => {
     const observed = await run(Effect.gen(function*() {
       const runtime = yield* ControlRuntime
       const store = yield* RunStore.RunStore
@@ -231,10 +231,10 @@ describe("a human wait parked on a nested execution", () => {
       }
     }))
 
-    // Both the root and the execution holding the wait are parked, so both
-    // roll up. A run still running would carry the waits and keep its status:
-    // a `detach` spawn outlives its parent, and a parent that is not blocked
-    // on the question must not be listed as owing an answer.
+    // Both the root and the execution holding the wait report it. Only
+    // ATTACHED waits travel: `.child()` means the ancestor is waiting for that
+    // child's value, while a `detach` spawn outlives the run that started it
+    // and its question stops at its own execution.
     expect(observed.rootRow).toBe("suspended")
     expect(observed.root.status).toBe("waiting-approval")
     expect(observed.holder.status).toBe("waiting-approval")

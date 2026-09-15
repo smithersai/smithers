@@ -24,6 +24,7 @@ import * as Semaphore from "effect/Semaphore"
 import * as SqlClient from "effect/unstable/sql/SqlClient"
 import * as EngineStateSchema from "./internal/EngineStateSchema.ts"
 import { compareText } from "./internal/Ordering.ts"
+import type { OnParentExit } from "./RunState.ts"
 
 /** JSON text carrying an arbitrary decoded value. */
 const UnknownFromJsonString = Schema.fromJsonString(Schema.Unknown)
@@ -479,6 +480,13 @@ export interface Service {
    * included and comes first; the rest follow in creation order. Rows of a
    * settled execution are never listed — a wait a finished execution left
    * behind is not one a person can answer.
+   *
+   * A DETACHED child and everything under it are skipped. `onParentExit:
+   * "detach"` is a fire-and-forget spawn whose whole point is to outlive the
+   * run that started it, so its question is not one the run that started it is
+   * waiting on, and reporting it here would tell a reader that a run which can
+   * proceed cannot. Every other edge is attached: the run is waiting for that
+   * child's value, whether its own row has flipped to `suspended` yet or not.
    */
   readonly waitingTree: (runId: string) => Effect.Effect<ReadonlyArray<WaitingRow>>
   /**
@@ -1395,6 +1403,7 @@ export const make: Effect.Effect<Service, never, DurableWriter | SqlClient.SqlCl
         FROM flows_runs child
         JOIN tree ON child.execution_parent_id = tree.run_id
         WHERE tree.depth < ${waitingTreeMaxDepth}
+          AND COALESCE(json_extract(child.state_json, '$.onParentExit'), 'cancel') <> 'detach'
       )
       SELECT
         parked.run_id AS "runId",
@@ -1778,6 +1787,13 @@ export interface MemoryRunView {
    * `waitingRuns({ cancelRequested: true })` query (issue #68).
    */
   readonly cancelRequestedAtMs?: number | null | undefined
+  /**
+   * What this run does when the run that spawned it ends, mirroring
+   * `RunState.onParentExit`. `undefined` reads as `cancel`, the default and
+   * the shape a `.child()` boundary takes, so a view that does not record it
+   * describes an attached child.
+   */
+  readonly onParentExit?: OnParentExit | undefined
 }
 
 /**
@@ -2100,6 +2116,11 @@ export const makeMemory = (options: MemoryOptions = {}): Service => {
             if (row !== undefined && isLive(current)) found.push(snapshotWaiting(row))
             for (const [childId, parents] of parentEdges) {
               if (!parents.has(current) || seen.has(childId)) continue
+              // The SQL walk skips a detached subtree; so does this one, for a
+              // view that records the policy. A view that does not describes an
+              // attached child, which is the default.
+              const view = options.runs?.(childId)
+              if (view !== undefined && Option.isSome(view) && view.value.onParentExit === "detach") continue
               seen.add(childId)
               next.push(childId)
             }

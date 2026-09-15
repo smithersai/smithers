@@ -1123,3 +1123,78 @@ describe("ControlLive trigger listings", () => {
     }
   })
 })
+
+describe("a status filter over an executor's observation", () => {
+  /**
+   * The status a caller reads is the EXECUTOR's: `observe` replaces this
+   * plane's copy with it. A control plane that filtered on its own copy
+   * therefore answered `[]` for `waiting-approval` while the run it was hiding
+   * reported exactly that when listed unfiltered — the shape workspace
+   * 6f2733a3's run-1 was in, parked by an engine on a nested human wait that
+   * the control database has no row for.
+   *
+   * The filter is applied after observing, and the page is filled by walking
+   * the source, because a filter the source cannot evaluate cannot bound the
+   * read for free.
+   */
+  const observing = (waiting: ReadonlySet<string>): ControlExecutor.Service =>
+    ControlExecutor.makeNoop({
+      readExecution: (runId) =>
+        Effect.succeed(
+          waiting.has(runId)
+            ? { _tag: "Observed", status: "waiting-approval", waitingReason: "event" } as const
+            : { _tag: "Observed", status: "running" } as const
+        )
+    })
+
+  it("finds a run only the executor calls waiting-approval", async () => {
+    const stack = (waiting: ReadonlySet<string>) =>
+      live({ runtime: memoryRuntime({ flows }), executor: observing(waiting) })
+    const observed = await Effect.runPromise(
+      Effect.gen(function*() {
+        const control = yield* Control
+        const first = yield* start("system/test", "observed-a")
+        const second = yield* start("system/test", "observed-b")
+        const third = yield* start("system/test", "observed-c")
+        return {
+          third: third.runId,
+          // One per page, so filling the page has to walk past the two runs
+          // the executor reports as running.
+          filtered: yield* control.list({
+            _tag: "runs",
+            filters: { status: "waiting-approval" },
+            limit: 1
+          }),
+          unfiltered: yield* control.list({ _tag: "runs" }),
+          first: first.runId,
+          second: second.runId
+        }
+      }).pipe(Effect.provide(stack(new Set(["run-3"]))), Effect.scoped, Effect.orDie)
+    )
+
+    expect(observed.third).toBe("run-3")
+    expect(items(observed.filtered)).toEqual(["run-3"])
+    // The unfiltered listing always reported it; only the filter disagreed.
+    expect(items(observed.unfiltered)).toContain("run-3")
+  })
+
+  it("answers an exhausted source with no rows and no cursor", async () => {
+    const observed = await Effect.runPromise(
+      Effect.gen(function*() {
+        const control = yield* Control
+        yield* start("system/test", "none-a")
+        yield* start("system/test", "none-b")
+        return yield* control.list({ _tag: "runs", filters: { status: "waiting-approval" }, limit: 1 })
+      }).pipe(
+        Effect.provide(live({ runtime: memoryRuntime({ flows }), executor: observing(new Set()) })),
+        Effect.scoped,
+        Effect.orDie
+      )
+    )
+
+    // An empty page WITH a cursor would stop a client that reads "no rows
+    // added" as "nothing left", which is what the gateway's inbox does.
+    expect(items(observed)).toEqual([])
+    expect(observed._tag === "runs" ? observed.nextCursor : "unread").toBeUndefined()
+  })
+})
