@@ -417,29 +417,36 @@ test("slash browser.open exposes the real service rejection for a loopback targe
     response.request().method() === "POST" && new URL(response.url()).pathname === "/api/tools/browser-fetch")
   await command(page, "/browser.open https://127.0.0.1/")
   const response = await fetching
-  expect(response.status()).toBeGreaterThanOrEqual(400)
-  const body = await response.json() as { readonly message?: unknown }
-  expect(typeof body.message).toBe("string")
+  expect(response.status()).toBe(422)
+  expect(response.request().postDataJSON()).toEqual({ url: "https://127.0.0.1/" })
+  const body = await response.json() as { readonly status?: unknown; readonly message?: unknown }
+  expect(body).toEqual({
+    status: "error",
+    message: "That address points at a private host, which the browser tool never reads."
+  })
   const card = transcript(page).locator('.smithers-card[data-kind="browser"]')
   await expect(card).toBeVisible()
-  await expect(card.getByRole("alert")).toBeVisible()
+  await expect(card.getByRole("alert")).toHaveText(body.message as string)
+  await expect(card.locator("iframe")).toHaveCount(0)
+  await expect(card.getByRole("link", { name: "Open in a new tab", exact: true })).toHaveCount(0)
   await attachJson(testInfo, "private-browser-fetch-evidence", { status: response.status(), body })
 })
 
 authenticatedTest("production recommendations come from the live recommender and clicking one reports its outcome", scenario("chat.production-recommendation-outcome", {
   capabilities: ["agent", "cloud", "identity"],
-  coverage: ["action:chat.send", "action:system.recommend", "host:production", "path:success", "door:button", "dimension:recommendations", "dimension:network", "evidence:recommend-answer-and-outcome"],
-  description: "On smithers.sh, complete a real turn, match rendered pills to the live recommendation answer, and verify the chosen outcome request."
+  coverage: ["action:chat.send", "action:system.recommend", "host:production", "path:success", "door:button", "dimension:recommendations", "dimension:network", "dimension:admin-audit-readback", "evidence:recommend-answer-and-durable-outcome"],
+  description: "On smithers.sh, complete a real turn, match rendered pills to the live recommendation answer, and verify the chosen outcome request and its durable server log row."
 }), async ({ page, request }, testInfo) => {
   await bootWorkspace(page)
   const sessionResponse = await realApi(page, request, "GET", "/api/auth/session")
   expect(sessionResponse.status()).toBe(200)
-  const identity = await sessionResponse.json() as { readonly login?: unknown; readonly allowlisted?: unknown }
+  const identity = await sessionResponse.json() as { readonly login?: unknown; readonly allowlisted?: unknown; readonly admin?: unknown }
   expect(identity.login,
     "Live recommendation success requires a real signed-in production browser session; anonymous refusal is not coverage.")
     .toEqual(expect.any(String))
   expect((identity.login as string).trim()).not.toBe("")
   expect(identity.allowlisted, "The real identity must have access to production chat.").toBe(true)
+  expect(identity.admin, "The durable outcome audit requires the real admin canary profile.").toBe(true)
   const bootstrapResponse = await realApi(page, request, "GET", "/api/bootstrap")
   expect(bootstrapResponse.status()).toBe(200)
   const bootstrap = await bootstrapResponse.json() as { readonly host?: unknown; readonly buildSha?: unknown }
@@ -449,9 +456,13 @@ authenticatedTest("production recommendations come from the live recommender and
   const marker = `RECOMMEND_${Date.now()}`
   const recommendation = page.waitForResponse((response) => {
     if (response.request().method() !== "POST" || new URL(response.url()).pathname !== "/api/recommend") return false
-    return response.request().postData()?.includes(marker) === true
+    const submitted = response.request().postDataJSON() as { readonly tail?: ReadonlyArray<{ readonly role?: unknown; readonly text?: unknown }> }
+    return submitted.tail?.some((entry) => entry.role === "assistant" && entry.text === marker) === true
   }, { timeout: 120_000 })
-  await command(page, `Reply with exactly ${marker}`)
+  await command(page, `I am only browsing this repository and want to read its documentation, issues, or command catalog. Reply with exactly ${marker}`)
+  // Opening the composer is itself an outcome-reporting action. Open it
+  // while the real turn is running, before its completed-answer recommendation.
+  await openComposer(page)
   await completedAssistantContaining(page, marker)
   const response = await recommendation
   expect(response.status()).toBe(200)
@@ -460,22 +471,43 @@ authenticatedTest("production recommendations come from the live recommender and
   expect(typeof answer.model).toBe("string")
   expect(Array.isArray(answer.commands) && answer.commands.length > 0).toBe(true)
 
-  await openComposer(page)
-  const offered = await page.locator(".smithers-suggestion").evaluateAll((nodes) =>
+  const readOffered = () => page.locator(".smithers-suggestion:visible").evaluateAll((nodes) =>
     nodes.map((node) => node.getAttribute("data-flow")).filter((flow): flow is string => flow !== null))
-  expect(offered.length).toBeGreaterThan(0)
-  const safeActions = new Set(["wiki", "chat.commands", "chat.surfaces", "appearance.theme", "search.open", "auth.prompt", "cloud.prompt"])
-  const recommended = answer.commands!.find((entry): entry is string => typeof entry === "string" && safeActions.has(entry.replace(/^\/+/, "")) && offered.includes(entry.replace(/^\/+/, "")))
-  expect(typeof recommended).toBe("string")
+  const named = answer.commands!.filter((entry): entry is string => typeof entry === "string").map((entry) => entry.replace(/^\/+/, ""))
+  // The client may omit duplicate, unknown, or current-surface suggestions.
+  // Every rendered pill must still come from this completed-answer response.
+  await expect.poll(async () => {
+    const current = await readOffered()
+    return current.length > 0 && current.every((flow) => named.includes(flow))
+  }).toBe(true)
+  const offered = await readOffered()
+  // These doors only read state or open local UI. Remote mutation flows are
+  // not eligible for the recommendation-click fixture.
+  const safeActions = new Set([
+    "wiki", "chat.commands", "chat.surfaces", "appearance.theme", "search.open", "auth.prompt", "cloud.prompt",
+    "issues.list", "prs.list", "flow.list", "runs.list", "approvals.list", "repo.welcome", "plugins", "connect", "account.show"
+  ])
+  const recommended = named.find((entry) => safeActions.has(entry) && offered.includes(entry))
+  await attachJson(testInfo, "recommendation-before-click", { bootstrap, answer, offered, eligible: recommended })
+  expect(typeof recommended, "The real recommender must offer a read-only or local-UI action for this fixture.").toBe("string")
   const flow = recommended!.replace(/^\/+/, "")
   const outcome = page.waitForResponse((candidate) =>
     candidate.request().method() === "POST" && new URL(candidate.url()).pathname === "/api/recommend/outcome")
   await page.locator(`.smithers-suggestion[data-flow="${flow}"]`).click()
   const outcomeResponse = await outcome
-  expect(outcomeResponse.status()).toBe(200)
+  expect(outcomeResponse.status()).toBe(204)
   const outcomeRequest = outcomeResponse.request().postDataJSON() as { readonly id?: unknown; readonly command?: unknown }
   expect(outcomeRequest).toEqual({ id: answer.id, command: flow })
-  await attachJson(testInfo, "recommendation-evidence", { bootstrap, answer, offered, outcomeRequest })
+  const audit = await realApi(page, request, "GET", "/api/admin/recommend/log?limit=200")
+  expect(audit.status()).toBe(200)
+  const log = await audit.json() as { readonly status?: unknown; readonly rows?: ReadonlyArray<{
+    readonly id?: unknown; readonly commands?: unknown; readonly model?: unknown; readonly outcome?: { readonly command?: unknown }
+  }> }
+  expect(log.status).toBe("ok")
+  const ownRows = log.rows?.filter((row) => row.id === answer.id)
+  expect(ownRows).toHaveLength(1)
+  expect(ownRows![0]).toMatchObject({ id: answer.id, commands: answer.commands, model: answer.model, outcome: { command: flow } })
+  await attachJson(testInfo, "recommendation-evidence", { bootstrap, answer, offered, outcomeRequest, ownedLogRow: ownRows![0] })
 })
 
 test("files.add explains the unavailable attachment capability through its slash action", scenario("chat.attachment-unavailable", {
