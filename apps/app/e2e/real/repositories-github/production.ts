@@ -126,7 +126,9 @@ export const createOwnedGitHubRepository = async (
     // From this point onward cleanup treats the exact full name as possibly
     // existing, even if navigation or a later assertion fails.
     submitted = true
-    await create.click()
+    await create.focus()
+    await expect(create).toBeFocused()
+    await create.press("Enter")
     await github.waitForURL((candidate) => candidate.origin === "https://github.com" && candidate.pathname.replace(/\/$/, "") === `/${fullName}`, {
       timeout: 60_000
     })
@@ -180,11 +182,11 @@ export const deleteOwnedGitHubRepository = async (owned: OwnedGitHubRepository):
   if (await intent.isVisible().catch(() => false)) await intent.click()
   const effects = github.getByRole("button", { name: /^I have read and understand these effects$/ }).last()
   if (await effects.isVisible().catch(() => false)) await effects.click()
-  const confirmation = github.locator([
+  const confirmation = github.getByRole("textbox", { name: /To confirm, type/ }).or(github.locator([
     'input[aria-label*="confirm"]:visible',
     'input[aria-label*="repository name"]:visible',
     'input[name="verify"]:visible'
-  ].join(", ")).last()
+  ].join(", "))).last()
   await expect(confirmation).toBeVisible({ timeout: 30_000 })
   await confirmation.fill(owned.fullName)
   const finalDelete = github.getByRole("button", { name: /^Delete this repository$/ }).last()
