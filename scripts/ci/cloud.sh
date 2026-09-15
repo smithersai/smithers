@@ -29,7 +29,68 @@ export CI=true
 tools_dir="$PWD/.flows/cloud-tools"
 export PATH="$tools_dir/bin:$PATH"
 
+# Pinned Node for the Cloud runner. The image is Debian bookworm, whose distro
+# nodejs is 18 with npm 9.2.0, so ensure_js's certified npm refused to install
+# and every grouped task died in ~2 minutes before a single gate ran (run
+# 11701, 2026-09-15):
+#
+#   npm ERR! code EBADENGINE
+#   npm ERR! notsup Required: {"node":"^20.17.0 || >=22.9.0"}
+#   npm ERR! notsup Actual:   {"npm":"9.2.0","node":"v18.19.0"}
+#
+# So bootstrap the official tarball first. Checksums are the linux entries of
+# https://nodejs.org/dist/v24.21.0/SHASUMS256.txt (Node 24 Krypton LTS); bump
+# the version and both digests together.
+node_version=24.21.0
+node_sha256_x64=fd8e59d5a511510f6a298afb548f18c7d2b1be404d8b4a27d94fbe49f56cb2d6
+node_sha256_arm64=6ad1325edbdb5649c379b75a237147a666c95d4f9ae8d340fef2d1575d289ad2
+
+# The major the repo needs, from package.json engines.node. Parsed with sed
+# because the Node that would parse it is exactly what may be missing here.
+node_required_major() {
+  local range major
+  range="$(sed -n 's/.*"node"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' package.json | head -n 1)"
+  major="$(printf '%s' "$range" | grep -oE '[0-9]+' | head -n 1 || true)"
+  if [ -n "$major" ]; then printf '%s\n' "$major"; else printf '24\n'; fi
+}
+
+ensure_node() {
+  # Only the Cloud runner ships an unusable Node; the tarball is Linux-only and
+  # developers reproducing a gate elsewhere use their own toolchain.
+  if [ "$(uname -s)" != Linux ]; then
+    echo "Skipping Node bootstrap on $(uname -s): $(node --version 2>/dev/null || echo 'no node')" >&2
+    return 0
+  fi
+  local required have
+  required="$(node_required_major)"
+  have="$(node --version 2>/dev/null || true)"
+  have="${have#v}"
+  have="${have%%.*}"
+  if [[ "$have" =~ ^[0-9]+$ ]] && [ "$have" -ge "$required" ]; then
+    echo "Node v$have satisfies engines.node >=$required; keeping it" >&2
+    return 0
+  fi
+  echo "Node ${have:-none} does not satisfy engines.node >=$required; installing v$node_version" >&2
+  apt_install xz-utils ca-certificates curl
+  local arch sha
+  case "$(uname -m)" in
+    x86_64) arch=x64; sha="$node_sha256_x64" ;;
+    aarch64|arm64) arch=arm64; sha="$node_sha256_arm64" ;;
+    *) echo 'Unsupported Node architecture' >&2; exit 1 ;;
+  esac
+  local tarball="$tools_dir/node-v$node_version-linux-$arch.tar.xz"
+  mkdir -p "$tools_dir/node"
+  download "https://nodejs.org/dist/v$node_version/node-v$node_version-linux-$arch.tar.xz" "$tarball"
+  echo "$sha  $tarball" | sha256sum -c -
+  tar -xJf "$tarball" -C "$tools_dir/node" --strip-components=1
+  # The global prefix stays ahead of the tarball's bundled npm so the certified
+  # npm below still wins, while `node` now resolves to the version just added.
+  export PATH="$tools_dir/bin:$tools_dir/node/bin:$PATH"
+  hash -r
+}
+
 ensure_js() {
+  ensure_node
   local package_manager
   package_manager="$(node -p 'require("./package.json").packageManager')"
   if [[ ! "$package_manager" =~ ^pnpm@[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
@@ -41,6 +102,8 @@ ensure_js() {
   hash -r
   npm install --global --prefix "$tools_dir" "$package_manager" --ignore-scripts --no-audit --no-fund
   pnpm install --frozen-lockfile --ignore-scripts
+  # Log what actually ran: EBADENGINE was invisible until someone read the tail.
+  echo "Bootstrapped node $(node --version) npm $(npm --version)"
 }
 
 apt_install() {
