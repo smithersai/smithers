@@ -7,6 +7,7 @@ import { createTurnController } from "./controller/turns"
 import { createWorkflowController } from "./controller/workflows"
 import type { AppStore } from "./AppStore"
 import { memoryStorage } from "./TestFixtures"
+import { retiredLineageKey } from "../chain/LineageRetirement"
 
 /** Each test gets its own storage so cases never observe another case's writes. */
 describe("createAppStore with the localStorage fallback backend", () => {
@@ -642,4 +643,76 @@ test("web boot leaves the wiki empty and removes only the untouched legacy World
   await edited.dispatch({ type: "world.document.upserted", actor: "user", document: { ...edited.collections.worldDocuments.get("world-home")!, body: "# World\n\nMy notes" } }).isPersisted.promise
   const retained = await createAppStore(backend, { seedWiki: false })
   expect(retained.collections.worldDocuments.get("world-home")?.body).toContain("My notes")
+})
+
+/*
+ * Retention on write (docs/persistence.md "Retention"). The store that could
+ * not boot — "prepare runtime and persisted state: Invalid string length"
+ * against 890415370 bytes of OPFS fileSystem usage, smithers.sh build
+ * 8e55636b, 2026-09-15 — got there because nothing bounded what a day of run
+ * events wrote. These cases use a tiny journal budget; the product's is the one
+ * 64 MiB constant the loader also honours.
+ */
+describe("the run-event journal is bounded oldest-lineage-first", () => {
+  const appendEvents = async (store: AppStore, lineageId: string, count: number): Promise<void> => {
+    for (let seq = 0; seq < count; seq += 1) {
+      await store.dispatch({
+        type: "chain.event.appended",
+        actor: "system",
+        lineageId,
+        seq,
+        event: { kind: "step", note: "n".repeat(64) }
+      }).isPersisted.promise
+    }
+  }
+  const lineagesOf = (store: AppStore): ReadonlyArray<string> =>
+    [...new Set([...store.collections.chainEvents.values()].map((record) => record.lineageId))].sort()
+  /* Eviction orders lineages by when each last ran, so the fixtures are apart. */
+  const aMomentLater = () => new Promise((resolve) => setTimeout(resolve, 4))
+
+  test("writing past the budget evicts the oldest lineage and tombstones it", async () => {
+    const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() }, { journalBudgetBytes: 700 })
+    await appendEvents(store, "old", 3)
+    await aMomentLater()
+    await appendEvents(store, "middle", 3)
+    expect(lineagesOf(store)).toEqual(["middle", "old"])
+    await aMomentLater()
+    await appendEvents(store, "live", 3)
+
+    // The oldest lineage goes first; the one being appended to always stays.
+    expect(lineagesOf(store)).toContain("live")
+    expect(lineagesOf(store)).not.toContain("old")
+    expect(store.collections.retiredChainLineages.has(retiredLineageKey("old"))).toBe(true)
+    // An evicted lineage is a durable refusal, not a lineage that looks new.
+    expect(store.collections.retiredChainLineages.has(retiredLineageKey("live"))).toBe(false)
+    // Every surviving lineage keeps its whole prefix: 0, 1, 2 with no hole.
+    for (const lineageId of lineagesOf(store)) {
+      const seqs = [...store.collections.chainEvents.values()]
+        .filter((record) => record.lineageId === lineageId)
+        .map((record) => record.seq)
+        .sort((left, right) => left - right)
+      expect(seqs).toEqual([...seqs.keys()])
+    }
+  })
+
+  test("a journal inside its budget keeps every lineage and retires none", async () => {
+    const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() }, { journalBudgetBytes: 64 * 1024 })
+    await appendEvents(store, "one", 3)
+    await appendEvents(store, "two", 3)
+    expect(lineagesOf(store)).toEqual(["one", "two"])
+    expect(store.collections.retiredChainLineages.size).toBe(0)
+  })
+
+  test("compaction leaves drafts, settings and notes alone", async () => {
+    const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() }, { journalBudgetBytes: 700 })
+    await store.dispatch({ type: "composer.changed", actor: "user", draft: "keep me" }).isPersisted.promise
+    const notes = store.collections.worldDocuments.size
+    await appendEvents(store, "old", 3)
+    await aMomentLater()
+    await appendEvents(store, "live", 6)
+    expect(store.collections.retiredChainLineages.size).toBeGreaterThan(0)
+    expect(store.session().draft).toBe("keep me")
+    expect(store.session().theme).toBeDefined()
+    expect(store.collections.worldDocuments.size).toBe(notes)
+  })
 })

@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import { Database } from "bun:sqlite"
 import { z } from "zod"
+import { PERSISTED_COLLECTION_BUDGET_BYTES, PERSISTED_LOAD_CHUNK_ROWS } from "./PersistenceBudget"
 import {
   FutureSqliteSchemaError,
   METADATA_TABLE_NAME,
@@ -37,6 +38,77 @@ const wire = (rows: Record<string, { readonly versionKey: string; readonly data:
   JSON.stringify(rows)
 
 describe("normalized SQLite row storage", () => {
+  /*
+   * The defect this bounds: a profile with 890415370 bytes of OPFS SQLite
+   * could not boot at all, because loading meant serializing a collection into
+   * one string past V8's ~512 MiB ceiling — "prepare runtime and persisted
+   * state: Invalid string length" (smithers.sh build 8e55636b, 2026-09-15).
+   */
+  test("a store past its budget loads the recent rows, reports the skipped ones, and deletes none", async () => {
+    const db = database()
+    const seeded = await openSqliteRowStorage(db.host, { collections, schemaVersion: 9 })
+    for (let index = 0; index < 40; index += 1) {
+      seeded.applyRows("notes", [{
+        key: `s:note-${String(index).padStart(3, "0")}`,
+        versionKey: `v${index}`,
+        data: { id: `note-${String(index).padStart(3, "0")}`, body: "b".repeat(200) }
+      }])
+    }
+    await seeded.flush()
+
+    const stored = db.sqlite.query(
+      `SELECT row_key, value FROM ${ROW_TABLE_NAME} ORDER BY rowid DESC`
+    ).all() as Array<{ row_key: string; value: string }>
+    expect(stored.length).toBe(40)
+    const size = (row: { row_key: string; value: string }): number => row.row_key.length + row.value.length
+    // Exactly the three newest rows fit; the fourth crosses the line.
+    const budgetBytes = size(stored[0]!) + size(stored[1]!) + size(stored[2]!)
+
+    const bounded = await openSqliteRowStorage(db.host, { collections, schemaVersion: 9, budgetBytes })
+    expect(bounded.loadReport.loaded).toBe(3)
+    expect(bounded.loadReport.skipped).toBe(37)
+    expect(bounded.loadReport.budgetBytes).toBe(budgetBytes)
+    expect(bounded.loadReport.collections).toEqual([
+      { collectionId: "notes", loaded: 3, skipped: 37, loadedBytes: budgetBytes, skippedBytes: expect.any(Number) }
+    ])
+    // The recent part, newest first, and nothing older.
+    expect([...bounded.readRows("notes").keys()].sort()).toEqual(["s:note-037", "s:note-038", "s:note-039"])
+    // The whole-collection string view now fits, because it holds only those.
+    expect(Object.keys(JSON.parse(bounded.storage.getItem("smithers-mvp.notes")!)).sort())
+      .toEqual(["s:note-037", "s:note-038", "s:note-039"])
+    // Skipped rows stay on disk, unparsed and undeleted: recovery still reaches them.
+    expect(db.sqlite.query(`SELECT COUNT(*) AS n FROM ${ROW_TABLE_NAME}`).get()).toEqual({ n: 40 })
+    expect(db.sqlite.query(`SELECT COUNT(*) AS n FROM ${QUARANTINE_TABLE_NAME}`).get()).toEqual({ n: 0 })
+    await bounded.close()
+  })
+
+  test("a whole store inside its budget loads completely and reports nothing skipped", async () => {
+    const db = database()
+    const storage = await openSqliteRowStorage(db.host, { collections, schemaVersion: 9 })
+    storage.applyRows("widgets", [{ key: "s:a", versionKey: "v1", data: { id: "a", label: "A" } }])
+    await storage.flush()
+    const reopened = await openSqliteRowStorage(db.host, { collections, schemaVersion: 9 })
+    expect(reopened.loadReport).toEqual({ loaded: 1, skipped: 0, budgetBytes: PERSISTED_COLLECTION_BUDGET_BYTES, collections: [] })
+    expect([...reopened.readRows("widgets").keys()]).toEqual(["s:a"])
+    await reopened.close()
+  })
+
+  test("the chunked read spans more rows than one chunk holds", async () => {
+    const db = database()
+    const storage = await openSqliteRowStorage(db.host, { collections, schemaVersion: 9 })
+    const total = PERSISTED_LOAD_CHUNK_ROWS + 7
+    storage.beginBatch()
+    for (let index = 0; index < total; index += 1) {
+      storage.applyRows("widgets", [{ key: `s:w-${index}`, versionKey: "v1", data: { id: `w-${index}`, label: "L" } }])
+    }
+    storage.commitBatch()
+    await storage.flush()
+    const reopened = await openSqliteRowStorage(db.host, { collections, schemaVersion: 9 })
+    expect(reopened.loadReport.loaded).toBe(total)
+    expect(reopened.readRows("widgets").size).toBe(total)
+    await reopened.close()
+  })
+
   test("a rolled-back write prevents queued deltas from committing against its missing rows", async () => {
     const db = database()
     const storage = await openSqliteRowStorage(db.host, { collections, schemaVersion: 9 })

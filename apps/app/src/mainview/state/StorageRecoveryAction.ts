@@ -114,10 +114,15 @@ export const createStorageRecoveryAction = (host: StorageRecoveryHost, actor: "u
     if (disposed) return Promise.resolve(CANCELED)
     if (resetting !== undefined) return resetting
     const erase = host.reset
-    if (erase === undefined) return Promise.resolve(RECOVERY_RESET_FAILED)
     resetting = (async () => {
       await state.preload()
       if (disposed) return CANCELED
+      if (erase === undefined) {
+        // A human pressed a button. A host that cannot erase says so on the
+        // panel; it does not arm a second press that would do nothing either.
+        await dispatch("failed", RECOVERY_RESET_FAILED, "reset")
+        return RECOVERY_RESET_FAILED
+      }
       if (state.get("reset")?.phase !== "armed") {
         await dispatch("armed", RECOVERY_RESET_ARMED, "reset")
         return

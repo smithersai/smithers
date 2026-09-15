@@ -1277,9 +1277,19 @@ const nextOrdinal = (collections: Pick<StoredCollections, "messages" | "cards">)
  * of its own kind; a resolution (from `resolvePersistence` with an injected
  * host) carries its mode and degraded flag, so a memory launch boots as one.
  */
+export interface AppStoreOptions {
+  readonly seedWiki?: boolean | Promise<boolean>
+  /**
+   * Bytes the run-event journal may occupy before compaction evicts its oldest
+   * lineages (MAX_CHAIN_EVENT_BYTES). Tests pass a small one; the product uses
+   * the single documented budget.
+   */
+  readonly journalBudgetBytes?: number
+}
+
 export const createAppStore = async (
   persistence?: PersistenceBackend | ResolvedPersistence,
-  options: { readonly seedWiki?: boolean | Promise<boolean> } = {}
+  options: AppStoreOptions = {}
 ): Promise<AppStore> => {
   const resolved: ResolvedPersistence = persistence === undefined
     ? await resolvePersistence()
@@ -1300,7 +1310,7 @@ export const createAppStore = async (
 }
 
 /** Ownership transfers to the returned store only after every boot step succeeds. */
-const initializeAppStore = async (resolved: ResolvedPersistence, options: { readonly seedWiki?: boolean | Promise<boolean> }): Promise<AppStore> => {
+const initializeAppStore = async (resolved: ResolvedPersistence, options: AppStoreOptions): Promise<AppStore> => {
   let resolvedBackend = resolved.backend
   const draftRecoveryStorage = resolved.mode === "memory" ? undefined : bootRecordStorage()
   const draftRecovery = readDraftRecovery(draftRecoveryStorage)
@@ -1438,6 +1448,7 @@ const initializeAppStore = async (resolved: ResolvedPersistence, options: { read
    * and keeps the common append O(1).
    */
   let journalBytes: number | undefined
+  const journalBudget = options.journalBudgetBytes ?? MAX_CHAIN_EVENT_BYTES
 
   const scanJournalBytes = (): number => {
     let total = 0
@@ -1453,22 +1464,32 @@ const initializeAppStore = async (resolved: ResolvedPersistence, options: { read
       const appended = collections.chainEvents.get(`chain-${appendedLineageId}-${appendedSeq}`)
       journalBytes += appended === undefined ? 0 : chainEventBytes(appended)
     }
-    if (journalBytes <= MAX_CHAIN_EVENT_BYTES) return
+    if (journalBytes <= journalBudget) return
     journalBytes = scanJournalBytes()
-    if (journalBytes <= MAX_CHAIN_EVENT_BYTES) return
-    const lineages = new Map<string, { newest: number; bytes: number; ids: Array<string> }>()
+    if (journalBytes <= journalBudget) return
+    const lineages = new Map<string, { newest: number; oldest: number; bytes: number; ids: Array<string> }>()
     for (const record of collections.chainEvents.values()) {
-      const entry = lineages.get(record.lineageId) ?? { newest: -1, bytes: 0, ids: [] }
+      const entry = lineages.get(record.lineageId) ??
+        { newest: record.createdAt, oldest: record.createdAt, bytes: 0, ids: [] }
       entry.newest = Math.max(entry.newest, record.createdAt)
+      entry.oldest = Math.min(entry.oldest, record.createdAt)
       entry.bytes += chainEventBytes(record)
       entry.ids.push(record.id)
       lineages.set(record.lineageId, entry)
     }
+    /*
+     * Oldest first by last activity, then by when the lineage started. The
+     * collection iterates by key, not by arrival, so it offers no better age
+     * signal; two lineages whose whole lifetimes fall in the same millisecond
+     * are the same age and the remaining order between them is arbitrary.
+     */
     const evictable = [...lineages]
       .filter(([lineageId]) => lineageId !== appendedLineageId)
-      .sort((left, right) => left[1].newest - right[1].newest || left[0].localeCompare(right[0]))
+      .sort((left, right) =>
+        left[1].newest - right[1].newest || left[1].oldest - right[1].oldest || left[0].localeCompare(right[0])
+      )
     for (const [lineageId, entry] of evictable) {
-      if (journalBytes <= MAX_CHAIN_EVENT_BYTES) break
+      if (journalBytes <= journalBudget) break
       collections.chainEvents.delete(entry.ids)
       journalBytes -= entry.bytes
       // The durable pointer: a lineage whose events are gone must refuse
@@ -1476,11 +1497,11 @@ const initializeAppStore = async (resolved: ResolvedPersistence, options: { read
       const tombstone = retiredLineageKey(lineageId)
       if (!collections.retiredChainLineages.has(tombstone)) collections.retiredChainLineages.insert({ id: tombstone })
     }
-    if (journalBytes > MAX_CHAIN_EVENT_BYTES) {
+    if (journalBytes > journalBudget) {
       // Only the live lineage is left and it alone is over budget. Say so
       // rather than evict the run that is still appending to it.
       console.warn("Smithers: the live run's journal alone exceeds the persisted budget.", {
-        budgetBytes: MAX_CHAIN_EVENT_BYTES,
+        budgetBytes: journalBudget,
         journalBytes
       })
     }
