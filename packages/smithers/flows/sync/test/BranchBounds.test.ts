@@ -9,6 +9,7 @@ import { describe, expect, it } from "@effect/vitest"
 import { Journal } from "@smthrs/journal"
 import * as TestJournal from "@smthrs/journal/test/TestJournal"
 import { Deferred, Effect, Fiber, Layer, Redacted } from "effect"
+import type * as Scope from "effect/Scope"
 import { TestClock } from "effect/testing"
 import * as BranchCommands from "../src/BranchCommands.ts"
 import * as BranchPresence from "../src/BranchPresence.ts"
@@ -32,8 +33,9 @@ const capabilityFor = (target: BranchProtocol.BranchId) =>
     (share) => share.mint({ branchId: target, capabilityId: `cap-${target}`, access: "write", ttlMs: 600_000 })
   )
 
-const durable = <A, E>(effect: Effect.Effect<A, E, Journal.Journal | BranchShare.BranchShare>) =>
+const durable = <A, E>(effect: Effect.Effect<A, E, Journal.Journal | BranchShare.BranchShare | Scope.Scope>) =>
   effect.pipe(
+    Effect.scoped,
     Effect.provide(Layer.mergeAll(TestJournal.layer(), shareLayer)),
     Effect.provide(TestClock.layer())
   )

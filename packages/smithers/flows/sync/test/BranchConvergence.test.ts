@@ -9,6 +9,7 @@ import { describe, expect, it } from "@effect/vitest"
 import { Journal } from "@smthrs/journal"
 import * as TestJournal from "@smthrs/journal/test/TestJournal"
 import { Effect, Layer, Redacted, Stream } from "effect"
+import type * as Scope from "effect/Scope"
 import { TestClock } from "effect/testing"
 import * as BranchCommands from "../src/BranchCommands.ts"
 import * as BranchProjection from "../src/BranchProjection.ts"
@@ -35,8 +36,8 @@ const layer = Layer.mergeAll(
 )
 
 const run = <A, E>(
-  effect: Effect.Effect<A, E, Journal.Journal | BranchShare.BranchShare | RunCatalog.RunCatalog>
-) => effect.pipe(Effect.provide(layer), Effect.provide(TestClock.layer()))
+  effect: Effect.Effect<A, E, Journal.Journal | BranchShare.BranchShare | RunCatalog.RunCatalog | Scope.Scope>
+) => effect.pipe(Effect.scoped, Effect.provide(layer), Effect.provide(TestClock.layer()))
 
 /**
  * One browser client: its own cursor state over a shared server, which is what

@@ -2,6 +2,7 @@ import { describe, expect, it } from "@effect/vitest"
 import { Journal, JournalEvent } from "@smthrs/journal"
 import * as TestJournal from "@smthrs/journal/test/TestJournal"
 import { Effect, Layer, Redacted, Stream } from "effect"
+import type * as Scope from "effect/Scope"
 import { TestClock } from "effect/testing"
 import * as BranchCommands from "../src/BranchCommands.ts"
 import * as BranchProtocol from "../src/BranchProtocol.ts"
@@ -27,8 +28,9 @@ const capabilityFor = (target: BranchProtocol.BranchId, access: BranchProtocol.A
     (share) => share.mint({ branchId: target, capabilityId: `cap-${target}`, access, ttlMs: 600_000 })
   )
 
-const durable = <A, E>(effect: Effect.Effect<A, E, Journal.Journal | BranchShare.BranchShare>) =>
+const durable = <A, E>(effect: Effect.Effect<A, E, Journal.Journal | BranchShare.BranchShare | Scope.Scope>) =>
   effect.pipe(
+    Effect.scoped,
     Effect.provide(Layer.mergeAll(TestJournal.layer(), shareLayer)),
     Effect.provide(TestClock.layer())
   )

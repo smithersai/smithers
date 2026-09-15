@@ -22,10 +22,11 @@
  */
 import { Journal } from "@smthrs/journal"
 import * as JournalEvent from "@smthrs/journal/JournalEvent"
-import * as Clock from "effect/Clock"
 import * as Context from "effect/Context"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
+import * as RcMap from "effect/RcMap"
+import type * as Scope from "effect/Scope"
 import * as Semaphore from "effect/Semaphore"
 import {
   type BranchId,
@@ -132,7 +133,7 @@ export const defaultLedgerCapacity = 4096
 export const defaultMaxCommandBytes = 1024 * 1024
 
 /**
- * Milliseconds a branch may go untouched before its in-memory state is
+ * Milliseconds a branch may have no active submissions before its in-memory state is
  * dropped.
  *
  * The receipt ledger is bounded per branch; this bounds the branches. A
@@ -210,7 +211,7 @@ export interface Options {
    */
   readonly hydrationLimit?: number | undefined
   /**
-   * Milliseconds a branch may go untouched before its in-memory state is
+   * Milliseconds a branch may have no active submissions before its in-memory state is
    * dropped. Defaults to {@link defaultBranchIdleMs}.
    */
   readonly branchIdleMs?: number | undefined
@@ -225,10 +226,6 @@ interface BranchState {
   receipts: Map<CommandId, CommandReceipt>
   cursor: JournalEvent.Seq | undefined
   hydrated: boolean
-  touchedMs: number
-  // Submissions holding or waiting on `permit`; a branch with any is never
-  // dropped, so two permits can never exist for one branch.
-  inFlight: number
 }
 
 /** The ledger over an already-validated policy. */
@@ -240,42 +237,23 @@ const makeWith = (
     readonly hydrationLimit: number
     readonly branchIdleMs: number
   }
-): Effect.Effect<Service, never, Journal.Journal | BranchShare.BranchShare> =>
+): Effect.Effect<Service, never, Journal.Journal | BranchShare.BranchShare | Scope.Scope> =>
   Effect.gen(
     function*() {
       const journal = yield* Journal.Journal
       const share = yield* BranchShare.BranchShare
-      // Keyed by branch, never by a concatenated `${branchId} ${commandId}`:
-      // that collides for valid branded strings, so `("a", "b c")` and
-      // `("a b", "c")` shared a slot and one branch's receipt answered another
-      // branch's command. Held in least-recently-touched order, so the idle
-      // sweep stops at the first branch still inside the window.
-      const branches = new Map<BranchId, BranchState>()
       const { branchIdleMs, hydrationLimit, ledgerCapacity, maxCommandBytes, maxFrameBytes } = resolved
-
-      /** Drops every idle branch no submission is holding. */
-      const sweep = (nowMs: number): void => {
-        for (const [branchId, state] of branches) {
-          if (nowMs - state.touchedMs <= branchIdleMs) break
-          if (state.inFlight === 0) branches.delete(branchId)
-        }
-      }
-
-      /** The branch's state, created cold on first touch and moved to the back. */
-      const stateFor = (branchId: BranchId, nowMs: number): BranchState => {
-        const state = branches.get(branchId) ?? {
-          permit: Semaphore.makeUnsafe(1),
-          receipts: new Map(),
-          cursor: undefined,
-          hydrated: false,
-          touchedMs: nowMs,
-          inFlight: 0
-        }
-        branches.delete(branchId)
-        branches.set(branchId, state)
-        state.touchedMs = nowMs
-        return state
-      }
+      // Active submissions share one state; its idle lifetime starts at release.
+      const branches = yield* RcMap.make({
+        idleTimeToLive: branchIdleMs,
+        lookup: (_branchId: BranchId) =>
+          Effect.sync((): BranchState => ({
+            permit: Semaphore.makeUnsafe(1),
+            receipts: new Map(),
+            cursor: undefined,
+            hydrated: false
+          }))
+      })
 
       /**
        * Records one receipt, evicting the branch's oldest once the branch is
@@ -561,14 +539,9 @@ const makeWith = (
         // The permit is taken AFTER authorization so an unauthorized caller
         // cannot serialize (and therefore stall) legitimate collaborators,
         // and it is this BRANCH's permit so a slow branch stalls only itself.
-        const nowMs = yield* Clock.currentTimeMillis
-        sweep(nowMs)
-        const state = stateFor(request.submission.branchId, nowMs)
-        state.inFlight += 1
-        return yield* state.permit.withPermits(1)(admit(request, state)).pipe(
-          Effect.ensuring(Effect.sync(() => {
-            state.inFlight -= 1
-          }))
+        return yield* RcMap.get(branches, request.submission.branchId).pipe(
+          Effect.flatMap((state) => state.permit.withPermit(admit(request, state))),
+          Effect.scoped
         )
       })
 
@@ -586,7 +559,7 @@ const defaults = {
 
 /**
  * Constructs the journal-backed branch command ledger under an explicit
- * policy.
+ * policy. The caller scope owns cached states and their idle-expiration timers.
  *
  * A submission whose encoded form exceeds the command ceiling is refused with
  * `frame_too_large` before anything is appended, so one oversized `args`
@@ -606,7 +579,7 @@ const defaults = {
  */
 export const makeLiveWith = (
   options: Options = {}
-): Effect.Effect<Service, SyncError, Journal.Journal | BranchShare.BranchShare> =>
+): Effect.Effect<Service, SyncError, Journal.Journal | BranchShare.BranchShare | Scope.Scope> =>
   Effect.flatMap(
     Effect.all({
       maxFrameBytes: positiveInt(
@@ -640,11 +613,13 @@ export const makeLiveWith = (
 
 /**
  * Constructs the journal-backed branch command ledger with default policy.
+ * The caller scope owns cached states and their idle-expiration timers.
  *
  * @category constructors
  * @since 0.1.0
  */
-export const makeLive: Effect.Effect<Service, never, Journal.Journal | BranchShare.BranchShare> = makeWith(defaults)
+export const makeLive: Effect.Effect<Service, never, Journal.Journal | BranchShare.BranchShare | Scope.Scope> =
+  makeWith(defaults)
 
 /**
  * Provides the journal-backed branch command ledger.
