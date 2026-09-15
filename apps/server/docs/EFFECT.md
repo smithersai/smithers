@@ -103,6 +103,7 @@ handler declares what it needs in its `R`:
 | --- | --- | --- | --- |
 | `ServerConfig` | `src/Config.ts` | `configLayer(env)` | vars and `Redacted` secrets, read once |
 | `Transport` | `src/Http.ts` | `TransportLive`, `transportLayer(fetch)` | outbound fetch with a header-only deadline |
+| `TerminalSockets` | `src/terminalRelay.ts` | `terminalSocketsLayer` | workerd WebSocketPair and upgrade response; relay listeners live until either peer closes |
 | `Assets`, `BrowserEgress` | `src/Environment.ts` | `assetsLayer`, `browserEgressLayer` | the `ASSETS` and `BROWSER_EGRESS` fetchers |
 | `TurnCancels`, `GatewaySessions`, `TurnLimits`, `ClientErrors`, `RecommendLogStore` | their modules | `<x>Layer(namespace \| undefined)` | one Durable Object namespace each |
 | `EdgeCache`, `GithubAppAuth` | `src/githubApp.ts` | `edgeCacheLayer(cache)`, `githubAppAuthLayer` | the Cache API and the single-flight App mint |

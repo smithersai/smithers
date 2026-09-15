@@ -243,7 +243,7 @@ describe("smithers mvp worker", () => {
       host: "cloud",
       version: "1.0.0",
       buildSha: "build-abc",
-      capabilities: ["agent", "identity", "cloud", "billing.checkout"],
+      capabilities: ["agent", "identity", "cloud", "billing.checkout", "cloud.terminal"],
       authFlow: "redirect",
       sandbox: null
     })
@@ -3263,7 +3263,7 @@ describe("the /api/cloud bridge", () => {
     expect(await bridged.json()).toEqual(await direct.json())
   })
 
-  test("bootstrap capabilities are cloudCapabilities(...) for every env shape, and the Worker claims no cloud door yet", async () => {
+  test("bootstrap capabilities are cloudCapabilities(...) for every env shape, and the Worker advertises its terminal relay", async () => {
     const agentShapes: ReadonlyArray<readonly [Partial<WorkerEnv>, boolean]> = [
       [{}, false],
       [{ SMITHERS_CHAT_AUTH_TOKEN: "chat" }, true],
@@ -3284,9 +3284,9 @@ describe("the /api/cloud bridge", () => {
             const response = await worker.fetch(new Request("https://mvp.test/api/bootstrap"), env)
             const body = AppBootstrapSchema.parse(await response.json())
             expect(body.capabilities).toEqual(
-              cloudCapabilities({ identity, cloud, agent, checkout: checkout === "1", terminal: false })
+              cloudCapabilities({ identity, cloud, agent, checkout: checkout === "1", terminal: true })
             )
-            expect(body.capabilities).not.toContain("cloud.terminal")
+            expect(body.capabilities).toContain("cloud.terminal")
             expect(body.capabilities).not.toContain("cloud.pat")
           }
         }

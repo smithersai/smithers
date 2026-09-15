@@ -18,6 +18,7 @@ import type { EdgeCache, GithubAppAuth } from "./githubApp"
 import { gatewaySessionsLayer } from "./gateway"
 import type { GatewaySessions } from "./gateway"
 import { TransportLive } from "./Http"
+import { TerminalSockets, terminalSocketsLayer } from "./terminalRelay"
 import type { Transport } from "./Http"
 import { recommendLogLayer } from "./recommend"
 import type { RecommendLogStore } from "./recommend"
@@ -228,6 +229,7 @@ export const executionContextFrom = (ctx: NativeExecutionContext | undefined): E
 export type AllServices =
   | ServerConfig
   | Transport
+  | TerminalSockets
   | Assets
   | BrowserEgress
   | DeploymentBindings
@@ -251,6 +253,7 @@ export const layersFromEnv = (env: WorkerEnv): Layer.Layer<AllServices> => {
   const base = Layer.mergeAll(configLayer(env), TransportLive, edgeCacheLayer(platformEdgeCache()))
   return Layer.mergeAll(
     base,
+    terminalSocketsLayer,
     assetsLayer(env.ASSETS),
     browserEgressLayer(env.BROWSER_EGRESS),
     deploymentBindingsLayer(env),

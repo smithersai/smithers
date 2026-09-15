@@ -2,9 +2,10 @@ import { CLOUD_WS_ROUTE_PREFIX } from "@smthrs/rpc/LocalApp"
 
 /*
  * The cloud-workspace terminal transport (lane citc): one WebSocket per
- * workspace session, through the Bun tunnel at `/api/cloud-ws/` (the local
- * session capability rides the subprotocol, the bearer never reaches the
- * renderer), to plue's terminal socket — binary frames are stdin/stdout,
+ * workspace session, through the same-origin tunnel at `/api/cloud-ws/`.
+ * Native authenticates with its local-session subprotocol; web uses its
+ * cookie. The cloud bearer stays in the host. On plue's terminal socket,
+ * binary frames are stdin/stdout,
  * a text JSON frame resizes. Mirrors PtyClient's stance: keystrokes and the
  * terminal's fit sent before the socket opens are queued, and the socket reconnects while
  * attachments exist — and only while they exist: detaching the last one
@@ -29,8 +30,10 @@ export interface CloudTerminalClient {
 export interface CloudTerminalClientOptions {
   /** The tunnel URL for one session; undefined where no socket can exist (tests, server render). */
   readonly socketUrl: (repo: string, sessionId: string) => string | undefined
-  /** The local-session capability subprotocol; undefined means no socket opens. */
-  readonly socketProtocol: () => string | undefined
+  /** Native uses its local capability; the web host authenticates the same-origin cookie. */
+  readonly auth: "subprotocol" | "cookie"
+  /** The local-session capability; required only in subprotocol mode. */
+  readonly socketProtocol?: () => string | undefined
   /** The first reconnect delay; every later one doubles, up to maxReconnectMs. */
   readonly reconnectMs?: number
   readonly maxReconnectMs?: number
@@ -202,9 +205,9 @@ export const createCloudTerminalClient = (options: CloudTerminalClientOptions): 
     const { conn } = entry
     if (disposed || conn.socket !== undefined) return
     const url = options.socketUrl(entry.repo, sessionId)
-    const protocol = options.socketProtocol()
-    if (url === undefined || protocol === undefined) return
-    const opened = new WebSocket(url, [protocol])
+    const protocol = options.auth === "subprotocol" ? options.socketProtocol?.() : undefined
+    if (url === undefined || (options.auth === "subprotocol" && protocol === undefined)) return
+    const opened = protocol === undefined ? new WebSocket(url) : new WebSocket(url, [protocol])
     // PTY frames are arbitrary byte chunks, not complete UTF-8 strings.
     // One decoder belongs to this socket so partial characters survive a
     // frame boundary without leaking into another session or reconnect.

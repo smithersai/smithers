@@ -1001,6 +1001,7 @@ export const createAppController = (
   ctx.onDispose(pty.dispose)
   /* Lane citc: the cloud-workspace terminal transport, one socket per session. */
   const cloudTerminal = createCloudTerminalClient({
+    auth: services.bootstrap?.host === "cloud" ? "cookie" : "subprotocol",
     socketUrl: services.cloudSocketUrl ?? pageCloudSocketUrl,
     socketProtocol: () => socketProtocols()[0]
   })

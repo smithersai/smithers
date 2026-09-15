@@ -161,8 +161,8 @@ const localBootstrap = (capabilities: ReadonlyArray<RuntimeCapability>): AppBoot
   sandbox: { platform: "darwin", mode: "enforced" }
 })
 
-/** The Worker with everything it can configure today (the W4 relay still off). */
-const WEB = cloudBootstrap(cloudCapabilities({ identity: true, cloud: true, agent: true, checkout: true, terminal: false, browser: true }))
+/** The Worker with every supported capability, including the W4 terminal relay. */
+const WEB = cloudBootstrap(cloudCapabilities({ identity: true, cloud: true, agent: true, checkout: true, terminal: true, browser: true }))
 /** The Bun server with a cloud upstream, the agent, identity and manual paths. */
 const NATIVE = localBootstrap(localCapabilities({ agent: true, identity: true, cloud: true, pathEntry: true, browser: true }))
 

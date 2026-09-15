@@ -15,7 +15,7 @@ import type { RuntimeCapability } from "./AppBootstrap.ts"
  * emission order; a row is kept only when its flag is on.
  */
 
-/** What the Worker has configured. `terminal` is the W4 relay; it stays false until that lane lands.
+/** What the Worker has configured. `terminal` names the same-origin workspace terminal relay.
  * @since 1.0.0
  * @category models
  */

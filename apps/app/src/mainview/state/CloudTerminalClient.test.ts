@@ -111,6 +111,7 @@ const client = (
   extra: { readonly maxReconnectMs?: number; readonly maxReconnectsPerMinute?: number; readonly earlyExitMs?: number } = {}
 ) =>
   track(createCloudTerminalClient({
+    auth: "subprotocol",
     socketUrl: () => server.url,
     socketProtocol: () => "smithers.local.test",
     reconnectMs,
@@ -142,6 +143,37 @@ test("output reaches every attachment; input goes out binary; resize goes out as
   expect(first).toEqual(["total 0\r\n"])
   expect(second).toEqual(first)
   terminal.dispose()
+})
+
+test("cookie auth opens without a token protocol and preserves input and resize frames", async () => {
+  const server = serve()
+  const terminal = track(createCloudTerminalClient({
+    auth: "cookie",
+    socketUrl: () => server.url,
+    socketProtocol: () => { throw new Error("cookie mode must never read the local capability") }
+  }))
+  const output: string[] = []
+  terminal.attach("will/smithers", "sess-cookie", { onOutput: (data) => output.push(data) })
+  terminal.input("sess-cookie", "pwd\r")
+  terminal.resize("sess-cookie", 80, 24)
+  await until(() => server.seen.length === 2)
+  expect(server.protocols).toEqual([null])
+  expect(typeof server.seen[0]).not.toBe("string")
+  expect(text(server.seen[0]!)).toBe("pwd\r")
+  expect(server.seen[1]).toBe(JSON.stringify({ type: "resize", cols: 80, rows: 24 }))
+  server.output("/workspace\r\n")
+  await until(() => output.length > 0)
+  expect(output.join("")).toBe("/workspace\r\n")
+})
+
+test("subprotocol auth does not dial without its local capability", async () => {
+  const server = serve()
+  const terminal = track(createCloudTerminalClient({
+    auth: "subprotocol", socketUrl: () => server.url, socketProtocol: () => undefined
+  }))
+  terminal.attach("will/smithers", "sess-native", { onOutput: () => {} })
+  await Bun.sleep(30)
+  expect(server.protocols).toEqual([])
 })
 
 test("keystrokes sent before the socket opens flush on open", async () => {
@@ -195,6 +227,7 @@ test("a closed socket reconnects while an attachment lives", async () => {
   const first = serve()
   let url = first.url
   const terminal = track(createCloudTerminalClient({
+    auth: "subprotocol",
     socketUrl: () => url,
     socketProtocol: () => "smithers.local.test",
     reconnectMs: 20

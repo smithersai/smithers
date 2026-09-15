@@ -56,8 +56,7 @@ afterAll(async () => {
 /*
  * The card reads the live registry for the one act whose door is the host's
  * (the terminal rides the origin's tunnel), so it renders under a controller:
- * the native app with its cloud upstream, and the Worker as it is today, its
- * terminal relay still off (docs/web-mode/PLAN.md lane W4).
+ * the native app and web hosts with and without the terminal relay.
  */
 const memoryStorage = (): StorageApi => {
   const data = new Map<string, string>()
@@ -155,7 +154,7 @@ const render = (
       </ControllerTestProvider>
     )
   })
-  return { host, commands }
+  return { host, commands, unmount: () => flushSync(() => root.unmount()) }
 }
 
 const click = (host: HTMLElement, testIdOrText: string): void => {
@@ -318,12 +317,29 @@ describe("the workspace card", () => {
   })
 
   /*
-   * The Worker emits no `cloud.terminal` until the W4 relay lands, so
+   * An origin without `cloud.terminal` has no relay, so
    * `workspace.terminal` is not in the web registry (parity-hosts (c)) and a
    * button bound to it would be a dead control: the pointer path drops an
    * unregistered name silently. The card reads the registry and renders the
    * fact instead; the sessions and their destroy act are unaffected.
    */
+  test("the web relay offers the existing terminal flow without unavailable copy", async () => {
+    const controller = await controllerFor({
+      ...WEB_WITHOUT_RELAY.bootstrap!,
+      capabilities: cloudCapabilities({ identity: true, cloud: true, agent: true, checkout: false, terminal: true })
+    })
+    const { host, commands, unmount } = render(workspaceCard({}), { controller })
+    try {
+      expect(host.textContent).not.toContain("Terminals are not on the web yet.")
+      click(host, "Open terminal")
+      expect(commands).toEqual([{ name: "workspace.terminal", args: "ws-1" }])
+    } finally {
+      unmount()
+      host.remove()
+      controller.dispose()
+    }
+  })
+
   test("on an origin without the terminal relay the terminal facet offers no Open terminal control and says so", () => {
     expect(WEB_WITHOUT_RELAY.commands.find("workspace.terminal")).toBeUndefined()
     const { host, commands } = render(

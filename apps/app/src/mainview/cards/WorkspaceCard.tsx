@@ -349,12 +349,14 @@ const WorkspaceFacetBody = ({
   card,
   facet,
   canTerminal,
+  terminalUnavailableOnWeb,
   onRunCommand
 }: {
   readonly card: WorkspaceCard
   readonly facet: (typeof FACETS)[number]
   /** Whether this host registers `workspace.terminal` (its tunnel is open); false renders the fact, not a button. */
   readonly canTerminal: boolean
+  readonly terminalUnavailableOnWeb: boolean
   readonly onRunCommand: WorkspaceCardActions["onRunCommand"]
 }) => {
   const { payload } = card
@@ -526,7 +528,7 @@ const WorkspaceFacetBody = ({
             {terminalRefusal === null ? "Open terminal" : <><RefreshCw size={12} aria-hidden="true" /> Retry</>}
           </Button>
         ) :
-        <p className="world-card-empty">Terminals are not on the web yet.</p>}
+        terminalUnavailableOnWeb ? <p className="world-card-empty">Terminals are not on the web yet.</p> : null}
       {payload.sessions.length === 0 ?
         null :
         (
@@ -559,7 +561,10 @@ export const WorkspaceCardBody = ({
   const { payload } = card
   const facet = payload.facet ?? "terminal"
   /* The registry is the truth about the terminal door: the Worker registers workspace.terminal only once its relay is on. */
-  const canTerminal = useController().commands.find("workspace.terminal") !== undefined
+  const controller = useController()
+  const canTerminal = controller.commands.find("workspace.terminal") !== undefined
+  const terminalUnavailableOnWeb = controller.bootstrap?.host === "cloud"
+    && !controller.bootstrap.capabilities.includes("cloud.terminal")
   /* The delete act's typed confirm: the draft is transient chrome state, never a store fact. */
   const [deleteDraft, setDeleteDraft] = useState<string | null>(null)
   /* Uptime is derived at render from the payload's start time — no lifecycle, no timer, no stored duration. */
@@ -682,7 +687,7 @@ export const WorkspaceCardBody = ({
           </Button>
         ))}
       </div>
-      <WorkspaceFacetBody card={card} facet={facet} canTerminal={canTerminal} onRunCommand={onRunCommand} />
+      <WorkspaceFacetBody card={card} facet={facet} canTerminal={canTerminal} terminalUnavailableOnWeb={terminalUnavailableOnWeb} onRunCommand={onRunCommand} />
       <div className="world-card-row">
         {payload.status === "running" ?
           (

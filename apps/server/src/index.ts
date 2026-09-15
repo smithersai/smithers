@@ -25,7 +25,8 @@ import {
 } from "@smthrs/rpc/AgentApiRoutes"
 import { APP_API_VERSION, APP_BOOTSTRAP_PATH } from "@smthrs/rpc/AppBootstrap"
 import { cloudCapabilities } from "@smthrs/rpc/HostCapabilities"
-import { CLOUD_AUTH_SESSION_PATH, CLOUD_ROUTE_PREFIX } from "@smthrs/rpc/LocalApp"
+import { CLOUD_AUTH_SESSION_PATH, CLOUD_ROUTE_PREFIX, CLOUD_WS_ROUTE_PREFIX } from "@smthrs/rpc/LocalApp"
+import { handleTerminalRelay } from "./terminalRelay"
 import { probeCloudSession } from "./cloudSession"
 import { handleAdmin } from "./admin"
 import { catalogDocumentPath, comingSoonDocumentPath, DEFAULT_APP_DOCUMENT_PATH, isFramePath, isRepositoryPath } from "./appDocument"
@@ -211,9 +212,8 @@ const loginBudget = (login: string): Effect.Effect<Response | undefined, never, 
   )
 
 /*
- * What the app reads first: which doors this deployment has. `terminal` is the
- * W4 relay and stays false until that lane lands, so the Worker never claims a
- * door it has not opened.
+ * What the app reads first: which doors this deployment has. The terminal
+ * relay authenticates the browser cookie and holds the cloud bearer here.
  */
 const handleBootstrap = (request: Request): Effect.Effect<Response, never, ServerConfig | BrowserEgress | DeploymentBindings | Assets> =>
   Effect.gen(function* () {
@@ -238,7 +238,7 @@ const handleBootstrap = (request: Request): Effect.Effect<Response, never, Serve
         cloud: bindings.cloudApi,
         agent: config.chatAuthToken !== undefined || config.chatProductServiceToken !== undefined,
         checkout: config.billingCheckoutEnabled,
-        terminal: false,
+        terminal: true,
         browser: Option.isSome(egress)
       }),
       authFlow: identity ? "redirect" : "none",
@@ -362,6 +362,7 @@ export const handleRequest = (request: Request): Effect.Effect<Response, never, 
       return yield* proxyToIdentity(request)
     }
     if (url.pathname === CLIENT_ERRORS_PATH && request.method === "POST") return yield* handleClientError(request)
+    if (url.pathname.startsWith(CLOUD_WS_ROUTE_PREFIX)) return yield* handleTerminalRelay(request, url)
     if (url.pathname.startsWith(CLOUD_ROUTE_PREFIX)) return yield* handleCloudProxy(request, url)
     if (platformProxyMatch(url.pathname, request.method)) return yield* handlePlatformProxy(request, url)
     if (url.pathname.startsWith(BILLING_ROUTE_PREFIX)) return yield* proxyToBilling(request)
