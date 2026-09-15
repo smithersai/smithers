@@ -287,7 +287,8 @@
   /* The transcript's -10px bottom margin leaves a 12px visual gap. */
   margin-top: var(--sp-6);
 }
-.guide-actions[data-help-sequence] { padding-top: 100px; }
+/* Room for a two-line tip plus its Next button, so the tip never scrolls. */
+.guide-actions[data-help-sequence] { padding-top: 132px; }
 /* Sizing for the lesson's primary actions lives with the shared control
    system at the end of this file (.guide-button.guide-primary). */
 .guide-button-key {

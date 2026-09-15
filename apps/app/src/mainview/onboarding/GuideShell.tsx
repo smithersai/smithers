@@ -155,11 +155,14 @@ export function GuideShell({ children, clock = guideClock }: { children: ReactNo
   const showTutorialHelp = lesson?.kind === "do" && lesson.help !== undefined && !done(stage)
     && dismissedHelp !== helpKey && !conversationOpen
   const chatHelpOpen = showTutorialHelp && introduction?.target === "chat"
-  const guidanceContent = lesson?.kind === "do" && lesson.help ? <GuidanceText
-    key={`${helpKey}:${guidanceIndex}`}
-    text={touch ? introduction?.touchContent ?? introduction?.content ?? lesson.help.touchContent ?? lesson.help.content : introduction?.content ?? lesson.help.content}
-    onRead={introduction ? advanceGuidance : undefined}
-  /> : null
+  /* An introduction stays until the reader presses Next or Enter; only the final instruction waits on the action. */
+  const guidanceContent = lesson?.kind === "do" && lesson.help ? <>
+    <GuidanceText
+      key={`${helpKey}:${guidanceIndex}`}
+      text={touch ? introduction?.touchContent ?? introduction?.content ?? lesson.help.touchContent ?? lesson.help.content : introduction?.content ?? lesson.help.content}
+    />
+    {introduction && <GuideButton className="help-bubble-next" data-guidance-next="" shortcut="Enter" onClick={advanceGuidance}>Next</GuideButton>}
+  </> : null
   const paused = guide.autoPaused === true
   const showNext = lesson === undefined || (lesson.kind === "say" ? paused : lesson.skippable)
   const transcriptRef = useRef<HTMLDivElement>(null)
@@ -292,6 +295,7 @@ export function GuideShell({ children, clock = guideClock }: { children: ReactNo
       if (key === GUIDE_KEYS.chat) return action(() => conversationOpen ? runCommandClose() : runCommandOpen())
       if (key === 'w') return action(() => controller.runCommand('sidebar.toggle'))
       if (conversationOpen) return
+      if (key === 'enter' && introduction !== undefined && showTutorialHelp) return action(advanceGuidance)
       const lessonAction = lesson?.kind === 'do'
         ? [...lesson.actions, ...(lesson.secondary === undefined ? [] : [lesson.secondary])].find(candidate => candidate.key.toLowerCase() === key)
         : undefined
@@ -542,7 +546,8 @@ export function GuideShell({ children, clock = guideClock }: { children: ReactNo
               </article>
             ))}
           </div>
-          <div className="guide-actions" data-keyboard-pane="Lesson actions" data-help-sequence={showTutorialHelp && !chatHelpOpen && lesson?.kind === "do" && lesson.help?.introduction !== undefined || undefined}>
+          {/* The reserved tip space holds for the whole help sequence, so the pills stay put while a tip moves to Chat. */}
+          <div className="guide-actions" data-keyboard-pane="Lesson actions" data-help-sequence={showTutorialHelp && lesson?.kind === "do" && lesson.help?.introduction !== undefined || undefined}>
             {lesson?.kind === "do" && lesson.actions.map(suggestion => {
               const action = guideActionState(suggestion, lessonCards, guide)
               const guidedAction = lesson.help?.actionKey === action.key

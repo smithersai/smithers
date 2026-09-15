@@ -489,6 +489,42 @@ test("first practice help describes the suggested action without emitting a noti
   await controller.store.dispose?.()
 }, 5_000)
 
+test("each introduction waits for Next or Enter before the next one", async () => {
+  let controller!: ReturnType<typeof createAppController>
+  const host = await mountGuide(1, still, {}, c => { controller = c })
+  const lesson = GUIDE_STAGES[1]
+  const [suggests, chat] = lesson?.kind === "do" ? lesson.help!.introduction! : []
+  const helpText = () => text(host.querySelector('[role="note"] .guidance-text-accessible'))
+  expect(helpText()).toBe(suggests!.content)
+  await new Promise(resolve => setTimeout(resolve, 50))
+  expect(helpText()).toBe(suggests!.content)
+  const key = (type: string) => document.dispatchEvent(new KeyboardEvent(type, { key: "Enter", bubbles: true, cancelable: true }))
+  key("keydown")
+  key("keyup")
+  await settle()
+  expect(helpText()).toBe(chat!.content)
+  expect(host.querySelector("#guide-chat-help-1")).not.toBeNull()
+  const next = host.querySelector<HTMLButtonElement>('[role="note"] [data-guidance-next]')!
+  expect(next.getAttribute("aria-keyshortcuts")).toBe("Enter")
+  flushSync(() => next.click())
+  expect(helpText()).toBe(lesson?.kind === "do" ? lesson.help!.content : "")
+  expect(host.querySelector('[role="note"] [data-guidance-next]')).toBeNull()
+  // The final instruction waits on the action; Enter no longer advances anything.
+  key("keydown")
+  key("keyup")
+  await settle()
+  expect(helpText()).toBe(lesson?.kind === "do" ? lesson.help!.content : "")
+  expect(controller.store.session().guide?.step).toBe(1)
+})
+
+test("the issue list lesson explains in-chat UI and its recommended actions", async () => {
+  const host = await mountGuide(2, still)
+  expect(text(host.querySelector("#guide-help-2"))).toContain("rich UI right in the chat, like these issue tabs, along with recommended actions")
+  expect(host.querySelector<HTMLButtonElement>('.guide-actions [data-flow="issues.view"]')!.getAttribute("aria-describedby")).toBe("guide-instruction-2 guide-help-2")
+  flushSync(() => host.querySelector<HTMLButtonElement>('[role="note"] [data-guidance-next]')!.click())
+  expect(text(host.querySelector("#guide-help-2"))).toContain("Click Read issue #3 or press r.")
+})
+
 test("completion removes the help before the next lesson advances", async () => {
   let controller!: ReturnType<typeof createAppController>
   const host = await mountGuide(1, still, {}, c => { controller = c })

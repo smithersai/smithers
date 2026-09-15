@@ -5,6 +5,7 @@ export const GUIDE_KEYS = { back: "b", mode: "m", sound: "s", chat: "c", finish:
 
 export function guideShortcut(shortcut: string): string | undefined {
   if (shortcut.toLowerCase() === "escape") return "Escape"
+  if (shortcut.toLowerCase() === "enter") return "Enter"
   if (shortcut === "c") return "c Meta+K Control+K"
   if (shortcut === "⌘K") return "Meta+K Control+K"
   if (shortcut === "Tab ↵") return undefined

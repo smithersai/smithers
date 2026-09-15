@@ -123,3 +123,11 @@
     box-shadow: 0 0 16px 4px color-mix(in srgb, var(--g-accent, #286447) 18%, transparent);
   }
 }
+
+/* An introduction's explicit acknowledgement; the sentence stays until it is pressed. */
+.help-bubble .help-bubble-content .help-bubble-next {
+  display: flex;
+  min-height: 28px;
+  margin: 6px 0 0 auto;
+  padding: 2px 10px;
+}

@@ -28,7 +28,7 @@ export type GuideLesson = {
   variants?: { readonly login: string; readonly install: string; readonly background: string }
 } | {
   kind: "do"; message: string; touchMessage?: string; completion: string
-  /** Optional guidance anchored to one action, never sent as a notification. */
+  /** Optional guidance anchored to one action, never sent as a notification. Each introduction waits for Next or Enter. */
   help?: { actionKey: string; content: string; touchContent?: string; introduction?: ReadonlyArray<{ target: "action" | "chat"; content: string; touchContent?: string }> }
   /** Screen-reader description of the pill (aria-describedby); never rendered as numbered steps. */
   instruction: string
@@ -64,6 +64,11 @@ export const GUIDE_STAGES: readonly GuideLesson[] = [
       { label: "Review changes", key: "r", flow: "prs.list", args: PRACTICE_REPO },
     ] },
   /* 2 */ { kind: "do", practice: true, goal: "issue", message: "", completion: "issue.opened", skippable: false,
+    help: { actionKey: "r", content: "Issue #3 is the bug we’ll fix. Click Read issue #3 or press r.",
+      touchContent: "Issue #3 is the bug we’ll fix. Tap Read issue #3.",
+      introduction: [
+        { target: "action", content: "Smithers often builds rich UI right in the chat, like these issue tabs, along with recommended actions to take next." },
+      ] },
     instruction: "Opens issue #3 with its body.",
     actions: [{ label: "Read issue #3", key: "r", flow: "issues.view", args: `3 ${PRACTICE_REPO}` }] },
   /* 3 */ { kind: "do", practice: true, message: "Issue flows handle repeatable tasks. Let's inspect repro before running it.", completion: "issue.flows.opened", skippable: false,

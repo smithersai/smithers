@@ -7,6 +7,7 @@ test.describe("landscape touch guidance", () => {
   test.use({ hasTouch: true, isMobile: true, deviceScaleFactor: 3, viewport: { width: 844, height: 390 } })
 
   test("Chat help stays inside the viewport and clears every action pill throughout its dwell", async ({ page }) => {
+    test.setTimeout(120_000)
     // Practice guidance has no backend dependency; this also runs on Astro preview.
     await page.route("**/api/bootstrap", route => route.fulfill({ json: {
       apiVersion: 1, host: "cloud", version: "test", buildSha: "test", capabilities: [], authFlow: "none", sandbox: null,
@@ -15,7 +16,8 @@ test.describe("landscape touch guidance", () => {
     await page.goto("/smithersai/smithers/?tutorial")
     await expect(page.locator(".guide-shell")).toHaveAttribute("data-stage", "1")
     const help = page.getByRole("note", { name: "Help" })
-    await page.clock.runFor(3800)
+    await page.clock.runFor(4_000)
+    await help.getByRole("button", { name: "Next" }).tap()
     for (let sample = 0; sample < 4; sample++) {
       await expect(help.locator(".guidance-text-visual")).toHaveText("Tap Chat anytime to open Chat and commands.")
       const bubble = (await help.boundingBox())!
@@ -44,6 +46,7 @@ test.describe("landscape touch guidance", () => {
 
 for (const width of [1280, 390]) {
   test(`tutorial help points at Show issues without covering it at ${width}px`, async ({ page }) => {
+    test.setTimeout(120_000)
     await page.setViewportSize({ width, height: 844 })
     await page.clock.install()
     await page.goto("/")
@@ -57,7 +60,10 @@ for (const width of [1280, 390]) {
     await expect(page.locator("[data-help-pulse]")).toHaveCount(0)
     await expect(help.locator(".guidance-text-visual > span").last()).toHaveCSS("opacity", "1")
     const initialButton = await target.boundingBox()
-    await page.clock.runFor(3800)
+    // The introduction never times out: it waits for Enter.
+    await page.clock.runFor(4_000)
+    await expect(help.locator(".guidance-text-visual")).toHaveText(lesson.kind === "do" ? lesson.help!.introduction![0]!.content : "")
+    await page.keyboard.press("Enter")
     await expect(help.locator(".guidance-text-visual")).toHaveText("Press C anytime to open Chat and commands.")
     const chat = page.getByRole("button", { name: "Chat", exact: true })
     await expect(chat).toHaveAttribute("aria-describedby", "guide-chat-help-1")
@@ -72,7 +78,9 @@ for (const width of [1280, 390]) {
     expect(steadyButton!.x).toBeCloseTo(initialButton!.x, 0)
     expect(steadyButton!.y).toBeCloseTo(initialButton!.y, 0)
     await page.screenshot({ path: `/tmp/smithers-chat-guidance-${width}.png` })
-    await page.clock.runFor(3800)
+    await page.clock.runFor(4_000)
+    await expect(help.locator(".guidance-text-visual")).toHaveText("Press C anytime to open Chat and commands.")
+    await help.getByRole("button", { name: "Next" }).click()
     await expect(help.locator(".guidance-text-visual")).toHaveText(lesson.kind === "do" ? lesson.help!.content : "")
     await expect(help).toBeVisible()
     await expect(page.locator("[data-help-pulse]")).toHaveCount(1)
@@ -124,10 +132,10 @@ test("only the final instruction pulses, and holding its key yields to pressed f
   const target = page.getByRole("button", { name: "Show issues", exact: true })
   await expect(target).toBeVisible()
   await expect(page.locator("[data-help-pulse]")).toHaveCount(0)
-  await page.clock.runFor(5800)
+  await page.keyboard.press("Enter")
   await expect(page.getByRole("button", { name: "Chat", exact: true })).toHaveAttribute("aria-describedby", "guide-chat-help-1")
   await expect(page.locator("[data-help-pulse]")).toHaveCount(0)
-  await page.clock.runFor(5500)
+  await page.keyboard.press("Enter")
   await expect(target).toHaveCSS("animation-name", "help-target-glow")
   await expect(target.locator("kbd")).toHaveCSS("animation-name", "help-target-glow")
   await expect(target).toHaveCSS("animation-iteration-count", "infinite")
@@ -151,6 +159,9 @@ test("typewriter paints every character of both instructions with motion enabled
     const letters = [...node.children]
     return letters.length ? letters.filter(letter => getComputedStyle(letter).opacity === '1').map(letter => letter.textContent).join('') : node.textContent
   })
+  await expect.poll(painted, { timeout: 15_000 }).toBe("Smithers makes suggestions as to what we should do next as you use it.")
+  await page.keyboard.press("Enter")
   await expect.poll(painted, { timeout: 15_000 }).toBe("Press C anytime to open Chat and commands.")
+  await page.keyboard.press("Enter")
   await expect.poll(painted, { timeout: 15_000 }).toBe("Start with the practice repository’s issues. Click Show issues or press i.")
 })
