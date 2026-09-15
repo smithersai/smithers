@@ -25,9 +25,13 @@ it.effect("gates a launch on a plan approval and ends a durable wait with a sign
     expect(summary.plan.deniedLaunch).toBe("/control/PlanDenied")
 
     // The first drive parked INSIDE the run, on the token the clearance step
-    // registered for itself. `approval` rather than `event`: the run is waiting
-    // for a person, not for a fact to arrive.
-    expect(summary.run.firstPark).toBe("parked")
+    // registered for itself. A park that a person has to answer reports
+    // `waiting-approval`, not the bare `parked` of every other wait: the
+    // human-wait rollup narrows the status to "this run owes somebody an
+    // answer" so the approvals inbox filter and the summary it returns agree
+    // (`ControlExecutor.ExecutionObservation.pendingWaits`). `waitingFor` says
+    // the same thing one level down: a person, not a fact to arrive.
+    expect(summary.run.firstPark).toBe("waiting-approval")
     expect(summary.run.firstWaitingFor).toBe("approval")
 
     // The step ran twice and read the token both times: unresolved on the
@@ -35,7 +39,9 @@ it.effect("gates a launch on a plan approval and ends a durable wait with a sign
     // did not run a third time, because by then its result was recorded.
     expect(summary.run.clearanceReads).toEqual(["Pending", "Approved"])
 
-    // The run parked again after the gate opened, this time on its signal.
+    // The run parked again after the gate opened, this time on its signal. An
+    // event wait is nobody's question, so the status stays the bare `parked`
+    // the approval park above narrowed away from.
     expect(summary.run.parked).toBe("parked")
     expect(summary.run.waitingFor).toBe("event")
 
