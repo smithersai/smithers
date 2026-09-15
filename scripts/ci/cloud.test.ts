@@ -110,25 +110,29 @@ describe("Smithers Cloud CI", () => {
 
   describe("node bootstrap", () => {
     // Debian bookworm's distro node is 18 and npm@11 rejects it with
-    // EBADENGINE, so ensure_js has to install a supported Node first.
+    // EBADENGINE, so ensure_js has to install a supported Node first. The
+    // runner is an unprivileged container: no root, no sudo, no apt, no xz.
     const probe = new URL("cloud.node-probe.tmp.sh", import.meta.url)
     const marker = 'if [ "${1:-}" = group ]; then'
-    const stubs = (nodeVersion: string, machine: string) => [
+    type Probe = { node: string, machine?: string, realApt?: boolean, extra?: string[] }
+    const stubs = ({ node, machine = "x86_64", realApt = false, extra = [] }: Probe) => [
       `uname() { case "$1" in -m) echo ${machine} ;; *) echo Linux ;; esac; }`,
-      `node() { echo ${nodeVersion}; }`,
-      'apt_install() { echo "APT $*"; }',
+      `node() { echo ${node}; }`,
+      // Kept real when the probe is about apt_install's own elevation check.
+      ...(realApt ? [] : ['apt_install() { echo "APT $*"; }']),
       'download() { echo "DOWNLOAD $1 -> $2"; }',
       'sha256sum() { cat > /dev/null; echo "SHA256SUM $*"; }',
       'tar() { echo "TAR $*"; }',
       'mkdir() { echo "MKDIR $*"; }',
+      ...extra,
       "ensure_node",
       'echo "PATH=$PATH"',
       "exit 0",
       ""
     ].join("\n")
     afterAll(() => rmSync(probe, { force: true }))
-    const run = (nodeVersion: string, machine = "x86_64") => {
-      writeFileSync(probe, shell.replace(marker, `${stubs(nodeVersion, machine)}${marker}`))
+    const run = (options: Probe) => {
+      writeFileSync(probe, shell.replace(marker, `${stubs(options)}${marker}`))
       const result = spawnSync("bash", ["scripts/ci/cloud.node-probe.tmp.sh"], { cwd: root, encoding: "utf8" })
       expect(result.error).toBeUndefined()
       expect(result.status).toBe(0)
@@ -136,6 +140,7 @@ describe("Smithers Cloud CI", () => {
     }
     const pinned = shell.match(/^node_version=(\S+)$/m)?.[1]
     const tools = ".flows/cloud-tools"
+    const ensureNode = shell.slice(shell.indexOf("ensure_node() {"), shell.indexOf("ensure_js() {"))
 
     test("pins an exact Node version whose digests come from that release", () => {
       expect(pinned).toMatch(/^\d+\.\d+\.\d+$/)
@@ -149,13 +154,20 @@ describe("Smithers Cloud CI", () => {
       expect(js).toContain("$(node --version) npm $(npm --version)")
     })
 
+    test("takes the gzip tarball so it needs neither xz nor apt", () => {
+      // xz-utils is not installable on the runner, so .tar.xz is unusable.
+      expect(shell).not.toContain(".tar.xz")
+      expect(ensureNode).toContain("tar -xzf")
+      expect(ensureNode).not.toContain("apt_install")
+    })
+
     test("downloads and verifies the pinned tarball when node is too old", () => {
-      const result = run("v18.19.0")
+      const result = run({ node: "v18.19.0" })
       expect(result.stdout).toContain(
-        `DOWNLOAD https://nodejs.org/dist/v${pinned}/node-v${pinned}-linux-x64.tar.xz -> `)
+        `DOWNLOAD https://nodejs.org/dist/v${pinned}/node-v${pinned}-linux-x64.tar.gz -> `)
       expect(result.stdout).toContain("SHA256SUM -c -")
-      expect(result.stdout).toContain("TAR -xJf")
-      expect(result.stdout).toContain("APT xz-utils ca-certificates curl")
+      expect(result.stdout).toContain("TAR -xzf")
+      expect(result.stdout).not.toContain("APT")
       expect(result.stderr).toContain("does not satisfy engines.node")
       // node/bin goes on the front of PATH, behind only the npm global prefix.
       const path = result.stdout.match(/^PATH=(.*)$/m)?.[1]
@@ -163,18 +175,36 @@ describe("Smithers Cloud CI", () => {
     })
 
     test("picks the arm64 tarball on arm64 runners", () => {
-      const result = run("v18.19.0", "aarch64")
-      expect(result.stdout).toContain(`node-v${pinned}-linux-arm64.tar.xz`)
+      const result = run({ node: "v18.19.0", machine: "aarch64" })
+      expect(result.stdout).toContain(`node-v${pinned}-linux-arm64.tar.gz`)
       expect(result.stdout).not.toContain("linux-x64")
     })
 
     test("installs nothing when node already satisfies engines.node", () => {
-      const result = run("v24.0.0")
-      for (const absent of ["DOWNLOAD", "TAR ", "APT ", "SHA256SUM"]) {
+      const result = run({ node: "v24.0.0" })
+      for (const absent of ["DOWNLOAD", "TAR ", "APT", "SHA256SUM"]) {
         expect(result.stdout).not.toContain(absent)
       }
       expect(result.stderr).toContain("satisfies engines.node")
       expect(result.stdout).not.toContain(`${tools}/node/bin`)
+    })
+
+    test("bootstraps as a non-root user with no sudo, and apt skips instead of dying", () => {
+      // Run 11706 died at `sudo: command not found` (127) on every task.
+      const result = run({
+        node: "v18.19.0",
+        realApt: true,
+        extra: [
+          "id() { echo 1000; }",
+          'apt-get() { echo "APT-GET $*"; }',
+          'command() { case "${1:-} ${2:-}" in "-v sudo") return 1 ;; "-v apt-get") echo apt-get; return 0 ;; esac; builtin command "$@"; }',
+          "apt_install xz-utils ca-certificates curl"
+        ]
+      })
+      expect(result.stderr).toContain("Skipping apt packages: not root and no sudo")
+      expect(result.stdout).not.toContain("APT-GET")
+      expect(result.stdout).toContain(`node-v${pinned}-linux-x64.tar.gz`)
+      expect(result.stdout).toContain("TAR -xzf")
     })
   })
 

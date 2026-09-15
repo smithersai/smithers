@@ -38,12 +38,13 @@ export PATH="$tools_dir/bin:$PATH"
 #   npm ERR! notsup Required: {"node":"^20.17.0 || >=22.9.0"}
 #   npm ERR! notsup Actual:   {"npm":"9.2.0","node":"v18.19.0"}
 #
-# So bootstrap the official tarball first. Checksums are the linux entries of
-# https://nodejs.org/dist/v24.21.0/SHASUMS256.txt (Node 24 Krypton LTS); bump
-# the version and both digests together.
+# So bootstrap the official tarball first. The .tar.gz artifact is the one to
+# take: the runner has no xz and cannot install one. Checksums are the
+# linux .tar.gz entries of https://nodejs.org/dist/v24.21.0/SHASUMS256.txt
+# (Node 24 Krypton LTS); bump the version and both digests together.
 node_version=24.21.0
-node_sha256_x64=fd8e59d5a511510f6a298afb548f18c7d2b1be404d8b4a27d94fbe49f56cb2d6
-node_sha256_arm64=6ad1325edbdb5649c379b75a237147a666c95d4f9ae8d340fef2d1575d289ad2
+node_sha256_x64=6e1db87ef58b8819e5d5402eff1536491b18edd8eb7bee5ef7897876e88dc5ff
+node_sha256_arm64=724282c3b43aec998aa9527380465b45d229e021b58035f5f4f63095eabfe5d5
 
 # The major the repo needs, from package.json engines.node. Parsed with sed
 # because the Node that would parse it is exactly what may be missing here.
@@ -71,18 +72,19 @@ ensure_node() {
     return 0
   fi
   echo "Node ${have:-none} does not satisfy engines.node >=$required; installing v$node_version" >&2
-  apt_install xz-utils ca-certificates curl
+  # No apt here: the runner is an unprivileged container with no sudo, and the
+  # gzip tarball needs only the curl and tar the image already ships.
   local arch sha
   case "$(uname -m)" in
     x86_64) arch=x64; sha="$node_sha256_x64" ;;
     aarch64|arm64) arch=arm64; sha="$node_sha256_arm64" ;;
     *) echo 'Unsupported Node architecture' >&2; exit 1 ;;
   esac
-  local tarball="$tools_dir/node-v$node_version-linux-$arch.tar.xz"
+  local tarball="$tools_dir/node-v$node_version-linux-$arch.tar.gz"
   mkdir -p "$tools_dir/node"
-  download "https://nodejs.org/dist/v$node_version/node-v$node_version-linux-$arch.tar.xz" "$tarball"
+  download "https://nodejs.org/dist/v$node_version/node-v$node_version-linux-$arch.tar.gz" "$tarball"
   echo "$sha  $tarball" | sha256sum -c -
-  tar -xJf "$tarball" -C "$tools_dir/node" --strip-components=1
+  tar -xzf "$tarball" -C "$tools_dir/node" --strip-components=1
   # The global prefix stays ahead of the tarball's bundled npm so the certified
   # npm below still wins, while `node` now resolves to the version just added.
   export PATH="$tools_dir/bin:$tools_dir/node/bin:$PATH"
@@ -114,7 +116,16 @@ apt_install() {
     return 0
   fi
   local elevate=()
-  if [ "$(id -u)" -ne 0 ]; then elevate=(sudo); fi
+  if [ "$(id -u)" -ne 0 ]; then
+    # Cloud runs each task as an unprivileged user in a container with no sudo
+    # and no apt egress. Exiting 127 here killed every task in run 11706; skip
+    # instead and let the gate fail on the tool it actually needs, if any.
+    if ! command -v sudo >/dev/null 2>&1; then
+      echo "Skipping apt packages: not root and no sudo: $*" >&2
+      return 0
+    fi
+    elevate=(sudo)
+  fi
   "${elevate[@]}" apt-get update -qq
   "${elevate[@]}" env DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends "$@"
 }
