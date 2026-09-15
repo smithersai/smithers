@@ -46,7 +46,8 @@ test(
     await page.getByTestId("composer-input").fill("draft survives immediate reload")
     await page.reload()
     await expect(page.getByTestId("composer-input")).toBeHidden()
-    await openComposer(page)
+    await page.getByRole("button", { name: "Chat", exact: true }).click()
+    await expect(page.getByTestId("composer-input")).toBeVisible()
     await expect(page.getByTestId("composer-input")).toHaveValue("draft survives immediate reload")
   }
 )
@@ -68,7 +69,8 @@ test(
     await page.getByTestId("composer-input").fill(draft)
     await page.reload()
     await expect(page.getByTestId("composer-input")).toBeHidden()
-    await openComposer(page)
+    await page.getByRole("button", { name: "Chat", exact: true }).click()
+    await expect(page.getByTestId("composer-input")).toBeVisible()
     await expect(page.getByTestId("composer-input")).toHaveValue(draft)
   }
 )
@@ -90,13 +92,15 @@ test(
     await page.waitForFunction(() => localStorage.getItem("smithers-mvp.composer-draft-recovery") === null)
     await page.reload()
     await expect(page.getByTestId("composer-input")).toBeHidden()
-    await openComposer(page)
+    await page.getByRole("button", { name: "Chat", exact: true }).click()
+    await expect(page.getByTestId("composer-input")).toBeVisible()
     await expect(page.getByTestId("composer-input")).toHaveValue("durable baseline")
 
     await page.getByTestId("composer-input").fill("")
     await page.reload()
     await expect(page.getByTestId("composer-input")).toBeHidden()
-    await openComposer(page)
+    await page.getByRole("button", { name: "Chat", exact: true }).click()
+    await expect(page.getByTestId("composer-input")).toBeVisible()
     await expect(page.getByTestId("composer-input")).toHaveValue("")
   }
 )
