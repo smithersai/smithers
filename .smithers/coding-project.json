@@ -1,0 +1,86 @@
+{
+  "wikiOutput": "../smithers-coding-wiki",
+  "reviewer": "smithers-public-engineering-v1",
+  "implementation": "coding/implementation",
+  "pages": [
+    {
+      "id": "packages",
+      "title": "Smithers runtime packages",
+      "purpose": "Explain packages/smithers: the CLI host, durable flow runtime, agent composition, and build targets.",
+      "kind": "current",
+      "document": "packages/smithers/README.md",
+      "inputs": [
+        "packages/smithers/package.json",
+        "packages/smithers/src/Application.ts",
+        "packages/smithers/flows/src/Runtime.ts",
+        "packages/smithers/agent/README.md",
+        "packages/smithers/build/README.md"
+      ],
+      "related": ["app", "server", "flows"]
+    },
+    {
+      "id": "app",
+      "title": "Smithers application",
+      "purpose": "Describe apps/app's React renderer, Electrobun desktop host, and workspace coding interactions.",
+      "kind": "current",
+      "document": "apps/app/README.md",
+      "inputs": [
+        "apps/app/package.json",
+        "apps/app/docs/LOCAL-APP.md",
+        "apps/app/src/mainview/cards/CodingPlan.ts"
+      ],
+      "related": ["packages", "server", "flows"]
+    },
+    {
+      "id": "server",
+      "title": "Cloud Worker and gateway",
+      "purpose": "Explain apps/server's Cloudflare Worker entrypoint, Effect services, and gateway boundaries.",
+      "kind": "current",
+      "document": "apps/server/docs/EFFECT.md",
+      "inputs": [
+        "apps/server/src/index.ts",
+        "apps/server/src/Environment.ts",
+        "apps/server/src/Boundary.ts"
+      ],
+      "related": ["app", "packages", "flows"]
+    },
+    {
+      "id": "flows",
+      "title": "Repository flows and coding host",
+      "purpose": "Describe flows, the workspace-bound coding/request host, registered checks, and declared acceptance targets.",
+      "kind": "current",
+      "document": "flows/coding/host.md",
+      "inputs": [
+        "flows/README.md",
+        "flows/PACKAGE.ts",
+        "flows/coding/serve.ts",
+        "flows/coding/request/flow.ts",
+        ".smithers/factory.json"
+      ],
+      "related": ["packages", "app", "server", "docs"]
+    },
+    {
+      "id": "docs",
+      "title": "Design documentation",
+      "purpose": "Track docs/design's agent and flow health contract and distinguish intended behavior from implementation evidence.",
+      "kind": "intent",
+      "document": "docs/design/agent-flow-health.md",
+      "inputs": [
+        "packages/smithers/control/src/Health.ts",
+        "apps/app/src/bun/SessionMonitor.ts"
+      ],
+      "related": ["packages", "app", "flows"]
+    }
+  ],
+  "checks": [
+    { "id": "policy", "target": "flows", "flow": "checks/policy", "tier": "fast", "required": true },
+    { "id": "runtime", "target": "flows", "flow": "checks/runtime", "tier": "fast", "required": true },
+    { "id": "native", "target": "flows", "flow": "checks/native", "tier": "slow", "required": true },
+    { "id": "native-bun", "target": "flows", "flow": "checks/native-bun", "tier": "slow", "required": true },
+    { "id": "bundle", "target": "flows", "flow": "checks/bundle", "tier": "slow", "required": true },
+    { "id": "bundle-bun", "target": "flows", "flow": "checks/bundle-bun", "tier": "slow", "required": true },
+    { "id": "wiki", "target": ".", "flow": "checks/wiki", "tier": "slow", "required": false }
+  ],
+  "historyLimit": 100,
+  "maxMemoryBytes": 49152
+}

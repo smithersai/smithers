@@ -102,6 +102,17 @@ const codingSources = [sources, Smithers.glob("//flows/**/*.mjs"), Smithers.glob
   Smithers.pnpmWorkspace("//pnpm-workspace.yaml"),
   Smithers.file("//pnpm-lock.yaml"), Smithers.file("//flows/tsconfig.json")]
 const codingDependencies = [...codingBackend, codingScripts]
+// The repository config test reads the public page documents and evidence too.
+// Declare them so both runtime targets track changes outside their TS sources.
+const codingProjectSources = [
+  ".smithers/coding-project.json", ".smithers/factory.json",
+  "packages/smithers/README.md", "packages/smithers/agent/README.md", "packages/smithers/build/README.md",
+  "apps/app/README.md", "apps/app/package.json", "apps/app/docs/LOCAL-APP.md",
+  "apps/app/src/mainview/cards/CodingPlan.ts", "apps/app/src/bun/SessionMonitor.ts",
+  "apps/server/docs/EFFECT.md", "apps/server/src/index.ts", "apps/server/src/Environment.ts", "apps/server/src/Boundary.ts",
+  "flows/README.md", "docs/design/agent-flow-health.md"
+].map(path => Smithers.file(`//${path}`))
+const codingProjectInputs = [...codingProjectSources, Smithers.glob("//flows/checks/**/flow.mdx")]
 const node = Smithers.Runtime.Node({ version: ">=22.19.0" })
 const bun = Smithers.Runtime.Bun({ version: ">=1.4.0" })
 
@@ -124,7 +135,7 @@ const codingRuntime = Smithers.NodeTest({
     Smithers.file("//flows/test/coding-vibe-evidence.test.ts"), Smithers.file("//flows/test/coding-vibe-admission.test.ts"),
     Smithers.file("//flows/test/coding-landing.test.ts"), Smithers.file("//flows/test/coding-landing-config.test.ts"), Smithers.file("//flows/test/coding-vibe-landing.test.ts"),
     Smithers.file("//flows/test/coding-source-publication.test.ts")]),
-  srcs: codingSources, deps: codingDependencies, cwd
+  srcs: [...codingSources, ...codingProjectInputs], deps: codingDependencies, cwd
 })
 const codingConfigBun = Smithers.NodeTest({
   runtime: bun,
@@ -132,7 +143,7 @@ const codingConfigBun = Smithers.NodeTest({
     Smithers.file("//flows/test/coding-vibe-evidence.test.ts"), Smithers.file("//flows/test/coding-vibe-admission.test.ts"),
     Smithers.file("//flows/test/coding-landing.test.ts"), Smithers.file("//flows/test/coding-landing-config.test.ts"), Smithers.file("//flows/test/coding-vibe-landing.test.ts"),
     Smithers.file("//flows/test/coding-source-publication.test.ts")]),
-  srcs: codingSources, deps: codingDependencies, cwd
+  srcs: [...codingSources, ...codingProjectInputs], deps: codingDependencies, cwd
 })
 
 // Explicit slow gates: preflight refuses missing native tools instead of letting

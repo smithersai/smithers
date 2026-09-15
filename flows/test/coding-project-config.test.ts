@@ -1,8 +1,8 @@
 import assert from "node:assert/strict"
 import { spawnSync } from "node:child_process"
-import { mkdtemp, realpath, rm, writeFile } from "node:fs/promises"
+import { access, mkdtemp, readFile, realpath, rm, stat, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
-import { join } from "node:path"
+import { isAbsolute, join, relative, resolve, sep } from "node:path"
 import { test } from "node:test"
 import { fileURLToPath } from "node:url"
 import { NodeServices } from "@effect/platform-node"
@@ -14,6 +14,39 @@ const valid = () => ({ wikiOutput: "../wiki", implementation: "coding/implementa
     inputs: ["src/runtime.ts"], related: [] }],
   checks: [{ id: "types", target: "types", flow: "checks/types", tier: "fast", required: true }],
   historyLimit: 100, maxMemoryBytes: 48 * 1024 })
+
+test("repository coding project decodes with registered flows, real source paths, and a separate wiki", async () => {
+  const root = await realpath(fileURLToPath(new URL("../../", import.meta.url)))
+  const platform = process.versions.bun
+    ? (await import("@effect/platform-bun/BunServices")).layer : NodeServices.layer
+  const project = await Effect.runPromise(loadProject(root, ".smithers/coding-project.json").pipe(Effect.provide(platform)))
+  assert.ok(project)
+  assert.equal(project.implementation, "coding/implementation")
+  const factory = JSON.parse(await readFile(join(root, ".smithers/factory.json"), "utf8")) as {
+    flows: { id: string; path: string }[]
+  }
+  const flows = new Map(factory.flows.map(flow => [flow.id, flow.path]))
+  assert.ok(flows.has(project.implementation), "implementation must be registered")
+  assert.ok(project.checks.length > 0)
+  for (const check of project.checks) {
+    const entry = flows.get(check.flow)
+    assert.ok(entry, `Unregistered check flow: ${check.flow}`)
+    assert.ok(entry.startsWith("flows/checks/"), `Check must use an existing check flow: ${check.flow}`)
+    await access(resolve(root, entry))
+    await access(resolve(root, check.target))
+  }
+  assert.ok(project.pages.length >= 3 && project.pages.length <= 6)
+  for (const page of project.pages) {
+    assert.ok(page.inputs.length > 0, `Page needs source evidence: ${page.id}`)
+    for (const input of [page.document, ...page.inputs]) {
+      assert.ok((await stat(resolve(root, input))).isFile(), `Wiki source must be a file: ${input}`)
+    }
+  }
+  const output = relative(root, project.wikiOutput)
+  assert.ok(isAbsolute(project.wikiOutput))
+  assert.ok(output === ".." || output.startsWith(`..${sep}`) || isAbsolute(output),
+    "wikiOutput must resolve outside the repository")
+})
 
 test("explicit operator JSON uses existing schemas and the injected Node/Bun filesystem", async t => {
   const directory = await mkdtemp(join(tmpdir(), "coding-project-config-"))
