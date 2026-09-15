@@ -1736,3 +1736,20 @@ test("bookmark deduplication picks the newest workspace when an inventory lists 
   expect(host.querySelectorAll('.chrome-bar [data-testid="copy-workspace:z-new"]')).toHaveLength(1)
   expect(host.querySelectorAll('.chrome-bar [data-testid="copy-workspace:a-old"]')).toHaveLength(0)
 })
+
+
+test("practice hides the host repository tree and restores it when the guide leaves", async () => {
+  const previousUrl = window.location.href
+  window.history.replaceState(null, "", "/")
+  mounted.push(() => window.history.replaceState(null, "", previousUrl))
+  const { initialGuide } = await import("../state/AppState")
+  const { store, controller } = await cloudHarness()
+  await store.dispatch({ type: "repositories.loaded", actor: "system", repositories: [{ id: "host/repository", org: "host", name: "repository", ownerKind: "user", head: null }] }).isPersisted.promise
+  await store.dispatch({ type: "guide.changed", actor: "user", guide: { ...initialGuide(), step: 2, completed: ["tutorial.started"] } }).isPersisted.promise
+  await store.dispatch({ type: "guide.visibility.changed", actor: "system", visible: true }).isPersisted.promise
+  const { host, act } = mount(controller)
+  expect(host.querySelector('[data-testid="repo-host/repository"]')).toBeNull()
+  expect(host.querySelector('.chrome-bar')?.textContent ?? host.textContent).not.toContain("host/")
+  await act(() => { store.dispatch({ type: "guide.visibility.changed", actor: "system", visible: false }) })
+  expect([...host.querySelectorAll(".chrome-bar .repo-name")].map(node => node.textContent)).toContain("repository")
+})

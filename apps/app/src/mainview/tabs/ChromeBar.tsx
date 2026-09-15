@@ -1,4 +1,5 @@
 import { flowAction } from "../flows/FlowAction"
+import { isPracticeContext } from "../state/practice/PracticeContext"
 import { useLiveQuery } from "@tanstack/react-db"
 import { StatusDetails } from "../StatusDetails"
 import { BookOpen, ChevronRight, Download, FolderGit2, History, KeyRound, Moon, Pencil, Plus, RotateCcw, Sun, Timer, UserRound, Volume2, VolumeX, Workflow, X } from "lucide-react"
@@ -56,6 +57,7 @@ export function ChromeBar({ identityInHeader = false }: { readonly identityInHea
       tabMenuOpen: session.tabMenuOpen,
       theme: session.theme,
       guide: session.guide,
+      guideVisible: session.guideVisible,
       activeRepoKey: session.activeRepoKey,
       workspaceName: session.workspaceName,
       workspaceRenameOpen: session.workspaceRenameOpen
@@ -161,7 +163,7 @@ export function ChromeBar({ identityInHeader = false }: { readonly identityInHea
       copies
     }))
     .sort((left, right) => left.name.localeCompare(right.name))
-  const groups = [...tree, ...standalone].filter(repo =>
+  const groups = isPracticeContext(controller.store) ? [] : [...tree, ...standalone].filter(repo =>
     controller.repositoryApp === null ||
     repo.repoId.toLowerCase() === controller.repositoryApp.toLowerCase() ||
     repo.copies.some(copy => copy.id === activeCopyId)

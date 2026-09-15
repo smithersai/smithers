@@ -475,3 +475,25 @@ describe("§6 the flow doors", () => {
     expect(value.items.map((item) => [item.ref, item.count])).toEqual([["a.ts", 2], ["run-1", 1]])
   })
 })
+
+
+test("practice file search ignores the host tree and opens bundled paths in the practice repository", async () => {
+  const { initialGuide } = await import("../AppState")
+  const { PRACTICE_REPO, practiceFilePaths } = await import("../practice/PracticeRepository")
+  const { store, controller } = await ready()
+  await store.dispatch({ type: "repo-tree.loaded", actor: "system", copyId: "host", path: "", entries: [{ name: "main-host.ts", kind: "file" }], truncated: false }).isPersisted.promise
+  await store.dispatch({ type: "guide.changed", actor: "user", guide: { ...initialGuide(), step: 2, completed: ["tutorial.started"] } }).isPersisted.promise
+  await store.dispatch({ type: "guide.visibility.changed", actor: "system", visible: true }).isPersisted.promise
+  try {
+    const rows = controller.searchPalette("src/").groups.flatMap(group => group.items.map(row => row.item))
+    expect(rows.length).toBeGreaterThan(0)
+    expect(rows.every(row => row.subtitle === PRACTICE_REPO && practiceFilePaths().includes(row.ref))).toBe(true)
+    const file = rows.find(row => row.ref === "src/hello.ts")!
+    const open = file.actions.find(action => action.role === "open")!
+    await controller.commands.run(open.flow, open.args)
+    expect([...store.collections.cards.values()].some(card => card.kind === "file" && card.payload.repo === PRACTICE_REPO && card.payload.path === "src/hello.ts")).toBe(true)
+    expect(controller.searchPalette("main-host").groups.flatMap(group => group.items).length).toBe(0)
+    await store.dispatch({ type: "guide.visibility.changed", actor: "system", visible: false }).isPersisted.promise
+    expect(controller.searchPalette("main-host").groups.flatMap(group => group.items).some(row => row.item.ref === "main-host.ts")).toBe(true)
+  } finally { controller.dispose() }
+})

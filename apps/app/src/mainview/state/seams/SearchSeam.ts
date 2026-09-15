@@ -19,6 +19,8 @@
  * NO INVENTION: a mode whose index does not exist yet (symbols, text, people,
  * the Librarian's ask) refuses with the exact reason, never with rows.
  */
+import { isPracticeContext } from "../practice/PracticeContext"
+import { PRACTICE_REPO, practiceFilePaths } from "../practice/PracticeRepository"
 import type { SearchAction, SearchItem } from "@smthrs/rpc/Cards"
 import type { SearchArgs } from "../../flows/entries/search"
 import { actionsFor, itemsValue, parseQuery, prefixRow, PREFIXES, rankItems } from "../../flows/SearchQuery"
@@ -142,6 +144,10 @@ export const createSearchSeam = (ctx: SeamContext, deps: SearchSeamDeps): Search
 
   /** Files the app has listed: the sidebar's loaded directories and the file and listing cards. Box files open in the box. */
   const fileItems = (): ReadonlyArray<Fact> => {
+    if (isPracticeContext(ctx.store)) return practiceFilePaths().map(path => ({
+      kind: "file", ref: path, title: path, subtitle: PRACTICE_REPO,
+      open: { flow: "files.read", args: `${path} ${PRACTICE_REPO}`, label: "Read a file from a repository", role: "open" },
+    }))
     const seen = new Map<string, Fact>()
     const add = (ref: string, subtitle: string, open?: SearchAction): void => {
       if (seen.has(ref)) return
