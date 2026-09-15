@@ -211,6 +211,7 @@ test("open in sidebar shares unfinished wiki state and persists both the session
     "action:card.maximize",
     "action:tab.card",
     "action:tab.select",
+    "action:sidebar.toggle",
     "host:local",
     "host:production",
     "path:success",
@@ -241,6 +242,11 @@ test("open in sidebar shares unfinished wiki state and persists both the session
 
   await tabCard.getByTestId("flow-form-path").fill(second)
   await page.reload()
+  // Navigation chrome deliberately starts closed on each launch. Reopen it
+  // through its real button before checking the durable tab and shared form.
+  const sidebarToggle = page.getByRole("button", { name: "Smithers", exact: true })
+  await expect(sidebarToggle).toHaveAttribute("aria-expanded", "false")
+  await sidebarToggle.click()
   await expect(tab).toHaveAttribute("data-active", "true")
   await expect(tabCard.getByTestId("flow-form-path")).toHaveValue(second)
 
