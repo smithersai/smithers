@@ -7395,6 +7395,7 @@
     ],
     "outputs": [
       "apps/site/src/content/docs/docs/migration/1.0.mdx",
+      "apps/site/src/content/docs/docs/reference/cli/index.mdx",
       "apps/site/src/data/cli-commands.json",
       "apps/site/src/data/help/**",
       "apps/site/src/data/removed-commands.json",
@@ -28248,12 +28249,14 @@
       {
         "kind": "file",
         "path": "scripts/ci-inventory.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "scripts/ci-planner.mjs"
       }
     ],
     "outputs": [],
-    "dependencies": [
-      "//apps/site:build"
-    ],
+    "dependencies": [],
     "source": {
       "file": "scripts/repo-contract/PACKAGE.ts"
     }

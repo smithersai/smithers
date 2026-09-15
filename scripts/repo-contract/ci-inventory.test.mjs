@@ -1,11 +1,17 @@
 import assert from "node:assert/strict"
+import { spawn } from "node:child_process"
+import { once } from "node:events"
+import { createPlanner, requestPlan } from "../ci-planner.mjs"
 import { readFileSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { basename, join } from "node:path"
 import { test } from "node:test"
-import { planned, resolveInventory, root, runnerFor, targetInvocation } from "../ci-inventory.mjs"
+import { planned, plannedInProcess, resolveInventory, root, runnerFor, targetInvocation } from "../ci-inventory.mjs"
 import { openPackageIndex } from "@smthrs/build-cli/Cli"
 import * as Target from "@smthrs/targets/Target"
+import * as Exec from "@smthrs/targets/Exec"
+import { parseWorkflow } from "../release-rehearsal.mjs"
+import * as PackageExec from "@smthrs/build-cli/PackageExec"
 
 test("CI command discovery retains diagnostic options and refuses unknown selection syntax", () => {
   for (const options of ["--jobs 2 --verbose", "--verbose --jobs 2"]) {
@@ -41,6 +47,101 @@ test("UI typecheck plans strict devkit preparation as an uncached prerequisite",
   ], "the CI prerequisite must use Node and strict preparation, without --soft")
 })
 
+test("CI inventory plans without building packages or the site", async () => {
+  const plan = planned("test", "//scripts/repo-contract:ciInventory")
+  assert.deepEqual(plan.roots, ["//scripts/repo-contract:ciInventory"])
+  assert.deepEqual(plan.targets.map((target) => target.label), plan.roots)
+  assert.equal(plan.targets[0].cacheable, false, "inventory always executes fresh planner checks")
+  assert.deepEqual(await plannedInProcess("test", "//scripts/repo-contract:ciInventory"), plan,
+    "the serial CLI host emits the same complete plan as the source executable")
+  const planner = createPlanner()
+  try {
+    for (let selection = 0; selection < 2; selection++)
+      assert.deepEqual(await planner.plan("test", "//scripts/repo-contract:ciInventory", root), plan,
+        "the supervised persistent child emits the same complete plan on reuse")
+  } finally { await planner.close() }
+})
+
+test("CI planning hard-kills a child that ignores SIGTERM and blocks synchronously", async (t) => {
+  const child = spawn(process.execPath, ["--input-type=module", "--eval", `
+    process.on("SIGTERM", () => process.send("ignored", () => {
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0)
+    }))
+    process.on("message", () => {
+      process.send("planning")
+    })
+    process.send("ready")
+  `], { stdio: ["ignore", "ignore", "inherit", "ipc"] })
+  t.after(async () => {
+    if (child.exitCode !== null || child.signalCode !== null) return
+    const exited = once(child, "exit")
+    child.kill("SIGKILL")
+    await exited
+  })
+  assert.equal((await once(child, "message"))[0], "ready")
+  const timers = new Map()
+  const result = requestPlan(child, { verb: "test", pattern: "//:stubborn" }, {
+    setTimer: (callback, ms) => { timers.set(ms, callback); return ms },
+    clearTimer: (timer) => { timers.delete(timer) }
+  })
+  const rejected = assert.rejects(result, /Planning test \/\/:stubborn timed out after 120000ms/)
+  assert.equal((await once(child, "message"))[0], "planning")
+  const ignored = once(child, "message")
+  timers.get(120_000)()
+  assert.equal((await ignored)[0], "ignored", "SIGTERM reaches the real child first")
+  assert.ok(timers.has(1_000), "a separate grace timer must enforce SIGKILL")
+  const exited = once(child, "exit")
+  timers.get(1_000)()
+  assert.deepEqual(await exited, [null, "SIGKILL"])
+  await rejected
+  assert.equal(timers.size, 0, "completion releases both timers")
+})
+
+test("CI planning cancels the hard deadline after cooperative SIGTERM completion", async (t) => {
+  const child = spawn(process.execPath, ["--input-type=module", "--eval", `
+    process.on("SIGTERM", () => process.send({ type: "plan", value: null }))
+    process.on("message", () => process.send("planning"))
+    process.send("ready")
+  `], { stdio: ["ignore", "ignore", "inherit", "ipc"] })
+  t.after(async () => {
+    if (child.exitCode !== null || child.signalCode !== null) return
+    const exited = once(child, "exit")
+    child.kill("SIGKILL")
+    await exited
+  })
+  assert.equal((await once(child, "message"))[0], "ready")
+  const timers = new Map()
+  const result = requestPlan(child, { verb: "lint", pattern: "//:cooperative" }, {
+    setTimer: (callback, ms) => { timers.set(ms, callback); return ms },
+    clearTimer: (timer) => { timers.delete(timer) }
+  })
+  const rejected = assert.rejects(result, /timed out after 120000ms/)
+  assert.equal((await once(child, "message"))[0], "planning")
+  timers.get(120_000)()
+  await rejected
+  assert.equal(timers.size, 0, "cooperative completion clears the grace timer")
+  assert.equal(child.signalCode, null, "cooperative completion does not need SIGKILL")
+})
+
+test("release smoke retains packing, fresh execution and its measured Exec deadline", async () => {
+  const index = await openPackageIndex({ workspace: root })
+  const plan = await PackageExec.plan({
+    index, verb: "test", pattern: "//scripts:releaseSmoke", cacheDirectory: index.workspace.cache.directory
+  })
+  const smoke = plan.nodes.get("//scripts:releaseSmoke")
+  assert.ok(smoke)
+  const declaration = index.targets().find((target) => target.label === smoke.label)
+  assert.ok(declaration)
+  const call = Target.plan(declaration.target, smoke.attrs).ast
+  assert.equal(call._tag, "ActionCall", "the smoke plans its actual Exec invocation")
+  assert.equal(call.action, "smithers-build/exec")
+  assert.equal(Exec.Payload.make(call.payload).timeoutMs, 1_800_000,
+    "the inner Exec must receive the declared 30m bound, not its 10m default")
+  assert.equal(smoke.timeoutMs, 1_800_000, "the outer executor must honor the 30m deadline too")
+  assert.equal(smoke.cacheable, false, "a successful receipt never substitutes for a fresh smoke")
+  assert.ok(smoke.dependencies.includes("//scripts:releasePack"), "source qualification still rebuilds candidate bytes")
+})
+
 test("required CI resolves package, app, script, evaluation and fault suites to real runners", async () => {
   const inventory = await resolveInventory()
   const artifact = process.env.SMITHERS_CI_INVENTORY ?? join(tmpdir(), `smithers-ci-inventory-${process.pid}.json`)
@@ -64,6 +165,9 @@ test("required CI resolves package, app, script, evaluation and fault suites to 
     ["//scripts:webBundleContract", "browser"],
     ["//packages/smithers/gateway:test", "test"], ["//packages/smithers/flows/jj:test", "packages"]
   ]) assert.ok(selected(label, job).length, `${label} must be a required root of ${job}`)
+  const inventoryRunner = selected("//scripts/repo-contract:ciInventory", "test")[0].runner
+  assert.equal(basename(inventoryRunner[0]), "node")
+  assert.deepEqual(inventoryRunner.slice(1), ["--test", "scripts/repo-contract/ci-inventory.test.mjs"])
   const uiUnits = inventory.rows.filter((row) => row.label === "//apps/app:unitTests" && row.required && row.selectedRoot)
   assert.equal(uiUnits.length, 1, "the UI unit tier runs once in required CI")
   assert.deepEqual(uiUnits[0].runner, ["bun", "test", "src", "e2e/contracts", "scripts"])
@@ -83,7 +187,11 @@ test("required CI resolves package, app, script, evaluation and fault suites to 
   assert.deepEqual(native[0].runner.slice(1), ["test", "--workspace", "--locked"])
   assert.equal(native[0].cwd, ".")
   assert.ok(native[0].inputs.some((input) => input.path === "//Cargo.lock"))
+  const nodeRelease = readFileSync(join(root, ".node-version"), "utf8").trim()
+  const jobs = workflowJobs(".github/workflows/ci.yml")
   for (const row of inventory.rows) {
+    if (jobs[row.job].steps.some((step) => step.with?.["node-version-file"] === ".node-version"))
+      assert.ok(row.runtimes.includes(`Node ${nodeRelease}`), row.job + " must report the pinned Node release")
     const name = row.label.split(":").at(-1)
     if (/^browser|^e2e|faults$/i.test(name)) {
       assert.ok(name === "browserE2e" || name === "faults", `${row.label}: classify and verify this suite's E2E runner`)
@@ -139,25 +247,33 @@ test("public project copy keeps the support contract out of the short descriptio
   }
 })
 
-// The generated ci.yml quotes its job ids (`  "cache-publish":`) while the
-// hand-written release.yml does not, so both spellings have to split; a pattern
-// for bare ids alone found no block and threw on the null rather than failing
-// with something a reader could act on.
-const jobBlocks = (workflow) => {
-  const body = readFileSync(join(root, workflow), "utf8").split(/^jobs:\n/m)[1]
-  return Object.fromEntries(body.split(/^(?= {2}"?[\w-]+"?:\n)/m).map((block) => [block.match(/^ {2}"?([\w-]+)"?:/)[1], block]))
+// Read workflow semantics through the same YAML parser as release rehearsal.
+// Generated CI quotes keys and values; the hand-written release workflow need not.
+const workflowJobs = (workflow) => {
+  const { jobs } = parseWorkflow(readFileSync(join(root, workflow), "utf8"))
+  assert.ok(jobs && Object.keys(jobs).length > 0, workflow + " must declare jobs")
+  return jobs
 }
 
 test("every CI job and the release publish job bound their runtime below GitHub's six-hour default", () => {
-  for (const [id, block] of Object.entries(jobBlocks(".github/workflows/ci.yml")))
-    assert.match(block, /^ {4}timeout-minutes: \d+$/m, `ci.yml job ${id} declares no timeout-minutes`)
-  assert.match(jobBlocks(".github/workflows/release.yml").publish, /^ {4}timeout-minutes: \d+$/m)
+  const jobs = [...Object.entries(workflowJobs(".github/workflows/ci.yml")),
+    ["release.publish", workflowJobs(".github/workflows/release.yml").publish]]
+  for (const [id, job] of jobs) {
+    const timeout = job["timeout-minutes"]
+    assert.ok(Number.isInteger(timeout) && timeout > 0 && timeout < 360,
+      id + " must declare a positive timeout-minutes below the six-hour default")
+  }
 })
 
 test("jobs that install the workspace restore the pnpm store", () => {
-  for (const [id, block] of Object.entries(jobBlocks(".github/workflows/ci.yml")))
-    if (block.includes("pnpm install --frozen-lockfile"))
-      assert.match(block, /"node-version-file": "\.node-version"\n {10}"cache": "pnpm"$/m, `ci.yml job ${id} installs the workspace from a cold store`)
+  for (const [id, job] of Object.entries(workflowJobs(".github/workflows/ci.yml"))) {
+    if (job.steps.some((step) => step.run?.includes("pnpm install --frozen-lockfile"))) {
+      const setup = job.steps.find((step) => step.uses?.startsWith("actions/setup-node@"))
+      assert.ok(setup, id + " must set up Node before installing the workspace")
+      assert.equal(setup.with?.["node-version-file"], ".node-version", id + " must use the pinned Node release")
+      assert.equal(setup.with?.cache, "pnpm", id + " installs the workspace from a cold store")
+    }
+  }
 })
 
 test("the root TypeScript project includes every PACKAGE.ts outside packages/", () => {

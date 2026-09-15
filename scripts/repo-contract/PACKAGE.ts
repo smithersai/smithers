@@ -1,7 +1,7 @@
 /**
  * Targets for the repository-contract gates.
  *
- * They live in their own directory, and their own BUILD file, because they are
+ * They live in their own directory, and their own PACKAGE.ts file, because they are
  * about the workspace rather than about any package in it: the version line,
  * the publishable surface, the barrels, and the fault matrix's own discipline.
  * `//scripts/...` is recursive, so the whole set stays under the one pattern the
@@ -200,14 +200,17 @@ const cliVerbs = Smithers.NodeTest({
 })
 /**
  * Actual planner selection, runtime policy, sentinels and cache behavior.
- * Finish the script graph's in-tree builds before starting fresh discovery:
- * replacing a dist directory during its confined read correctly refuses it.
- * These are execution dependencies, so clean checkouts need no existing dist.
+ * This only plans commands; distribution outputs are not declaration inputs.
+ * Keep it independent of builds so inventory can run beside a release gate.
+ * Reuse metadata from identical earlier plans rather than rebuilding the
+ * same native plan for each CLI selection, and host CLI invocations serially
+ * in a persistent child without reloading its modules. The parent enforces
+ * SIGTERM then SIGKILL deadlines. The NodeTest stays uncached.
  */
 const ciInventory = Smithers.NodeTest({
   runner: Smithers.testRunner([Smithers.file("//scripts/repo-contract/ci-inventory.test.mjs")]),
-  srcs: [sources, Smithers.file("//scripts/ci-inventory.mjs")],
-  deps: [Smithers.Target.subtree("//packages/...", "lib"), sitePackage.build]
+  srcs: [sources, Smithers.file("//scripts/ci-inventory.mjs"), Smithers.file("//scripts/ci-planner.mjs")],
+  deps: []
 })
 
 export const Package = Smithers.Package({
