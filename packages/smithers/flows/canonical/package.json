@@ -26,7 +26,8 @@
     "./index": "./src/index.ts",
     "./Record": "./src/Record.ts",
     "./BoundedJson": "./src/BoundedJson.ts",
-    "./IssuePath": "./src/IssuePath.ts"
+    "./IssuePath": "./src/IssuePath.ts",
+    "./ReadonlyMap": "./src/ReadonlyMap.ts"
   },
   "files": [
     "src/**/*.ts",
@@ -100,6 +101,16 @@
         "require": {
           "types": "./dist/cjs/IssuePath.d.ts",
           "default": "./dist/cjs/IssuePath.js"
+        }
+      },
+      "./ReadonlyMap": {
+        "import": {
+          "types": "./dist/esm/ReadonlyMap.d.ts",
+          "default": "./dist/esm/ReadonlyMap.js"
+        },
+        "require": {
+          "types": "./dist/cjs/ReadonlyMap.d.ts",
+          "default": "./dist/cjs/ReadonlyMap.js"
         }
       }
     }

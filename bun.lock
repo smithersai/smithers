@@ -1289,6 +1289,7 @@
       "name": "@smthrs/fs",
       "version": "0.1.0",
       "dependencies": {
+        "@smthrs/canonical": "1.0.0-rc.0",
         "@smthrs/core": "workspace:*",
         "@smthrs/registry": "workspace:*",
         "effect": "4.0.0-rc.115",
@@ -1460,6 +1461,7 @@
       "name": "@smthrs/plugin",
       "version": "1.0.0-rc.0",
       "dependencies": {
+        "@smthrs/canonical": "1.0.0-rc.0",
         "@smthrs/flow": "1.0.0-rc.0",
       },
       "devDependencies": {

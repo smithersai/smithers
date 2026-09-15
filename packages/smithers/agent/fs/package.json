@@ -80,6 +80,7 @@
     "coverage": "vitest --coverage"
   },
   "dependencies": {
+    "@smthrs/canonical": "1.0.0-rc.0",
     "@smthrs/core": "workspace:*",
     "@smthrs/registry": "workspace:*",
     "effect": "4.0.0-rc.115",

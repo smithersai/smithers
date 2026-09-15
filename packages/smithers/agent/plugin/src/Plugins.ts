@@ -14,6 +14,7 @@
  *
  * @since 1.0.0-rc.0
  */
+import * as ImmutableMap from "@smthrs/canonical/ReadonlyMap"
 import type * as Cause from "effect/Cause"
 import * as Context from "effect/Context"
 import * as Effect from "effect/Effect"
@@ -22,7 +23,6 @@ import * as Option from "effect/Option"
 import type { ArgsOf, ContextOf, HookKind, KeysOfKind, SuccessOf } from "./Hooks.ts"
 import { engineHooks } from "./Hooks.ts"
 import type { FlowsHooks } from "./index.ts"
-import * as ImmutableMap from "./internal/ReadonlyMap.ts"
 import { PluginError } from "./PluginError.ts"
 import { defaultParallelConcurrency, type HandlerRecord, type Resolved } from "./Resolve.ts"
 

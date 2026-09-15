@@ -22,6 +22,13 @@ import * as Flow from "./Flow.ts"
 import * as skillFrontmatter from "./internal/skillFrontmatter.ts"
 import * as Placement from "./Placement.ts"
 
+/**
+ * Separates leading YAML frontmatter from the markdown body without parsing it.
+ * @category parsing
+ * @since 1.0.0
+ */
+export { split as splitFrontmatter } from "./internal/skillFrontmatter.ts"
+
 const input = Schema.Struct({ args: Schema.String })
 const output = Schema.String
 

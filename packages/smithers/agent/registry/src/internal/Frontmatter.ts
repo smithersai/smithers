@@ -5,12 +5,12 @@
  *
  * @since 0.1.0
  */
+import { splitFrontmatter as split } from "@smthrs/core/Markdown"
 import type * as Schema from "effect/Schema"
 import * as Yaml from "yaml"
 import type { DiscoveryWarning } from "../Descriptor.ts"
 
 const openingFence = /^(?:\uFEFF)?---(?:\r?\n|$)/
-const closingFence = /^---[ \t]*(?=\r?\n|$)/m
 const maximumParseIssues = 3
 
 const emptyFields = (): Record<string, Schema.Json> => Object.freeze(Object.create(null) as Record<string, Schema.Json>)
@@ -21,24 +21,7 @@ const emptyFields = (): Record<string, Schema.Json> => Object.freeze(Object.crea
  * @since 0.1.0
  * @category parsing
  */
-export const split = (text: string): { readonly frontmatter: string | undefined; readonly body: string } => {
-  const opening = openingFence.exec(text)
-  if (opening === null) {
-    return { frontmatter: undefined, body: text }
-  }
-
-  const rest = text.slice(opening[0].length)
-  const closing = closingFence.exec(rest)
-  if (closing === null) {
-    return { frontmatter: undefined, body: text }
-  }
-
-  const body = rest.slice(closing.index + closing[0].length)
-  return {
-    frontmatter: rest.slice(0, closing.index),
-    body: body.replace(/^\r?\n/, "")
-  }
-}
+export { splitFrontmatter as split } from "@smthrs/core/Markdown"
 
 /**
  * Returns whether a source prefix contains all leading frontmatter metadata.
@@ -58,7 +41,7 @@ export const isMetadataComplete = (text: string): boolean => {
   if (opening === null) {
     return source.includes("\n")
   }
-  return closingFence.test(source.slice(opening[0].length))
+  return split(source).frontmatter !== undefined
 }
 
 /**

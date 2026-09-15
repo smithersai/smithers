@@ -6,6 +6,7 @@
  *
  * @since 1.0.0-rc.0
  */
+import * as ImmutableMap from "@smthrs/canonical/ReadonlyMap"
 import type { Action } from "@smthrs/flow"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
@@ -16,7 +17,6 @@ import { engineHooks, handlerOf, orderOf } from "./Hooks.ts"
 import type { FlowsHooks } from "./index.ts"
 import * as Boundary from "./internal/Boundary.ts"
 import { mergePluginLayers } from "./internal/mergePluginLayers.ts"
-import * as ImmutableMap from "./internal/ReadonlyMap.ts"
 import { snapshotCacheEnvironment } from "./internal/snapshotCacheEnvironment.ts"
 import type { Apply, FlowsPlugin, PluginInput } from "./Plugin.ts"
 import { PluginError, type PluginErrorCode } from "./PluginError.ts"

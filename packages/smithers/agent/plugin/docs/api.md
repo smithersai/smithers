@@ -498,5 +498,5 @@ What to change for each code is in [Troubleshooting](./troubleshooting.md).
 The shipped hook catalog is the Smithers agent loop in
 [`@smthrs/agent`](/api/agent), which augments `FlowsHooks` with three
 waterfalls. `Action.CacheEnvironment` comes from
-[`@smthrs/flow`](/api/flow), the one other runtime dependency this package
-has.
+[`@smthrs/flow`](/api/flow). The other runtime dependency,
+[`@smthrs/canonical`](/api/canonical), supplies immutable catalog maps.

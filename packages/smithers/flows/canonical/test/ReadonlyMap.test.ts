@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest"
-import * as ReadonlyMap from "../src/internal/ReadonlyMap.ts"
+import * as ReadonlyMap from "../src/ReadonlyMap.ts"
 
 describe("the immutable map facade", () => {
   it("supports every read operation without exposing mutation", () => {

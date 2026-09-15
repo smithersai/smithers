@@ -1,15 +1,14 @@
 /**
  * Immutable facade over a private map.
  *
- * @private
- * @since 0.1.0
+ * @since 1.0.0
  */
 
 /**
  * Copies entries behind a facade that exposes no mutation methods.
  *
- * @private
- * @since 0.1.0
+ * @category constructors
+ * @since 1.0.0
  */
 export const make = <K, V>(entries: Iterable<readonly [K, V]> = []): ReadonlyMap<K, V> => {
   const values = new Map(entries)

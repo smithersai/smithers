@@ -3,12 +3,12 @@
  *
  * @since 0.1.0
  */
+import * as ReadonlyMap from "@smthrs/canonical/ReadonlyMap"
 import * as Effect from "effect/Effect"
 import * as Option from "effect/Option"
 import { FsError } from "./FsError.ts"
 import * as Boundary from "./internal/Boundary.ts"
 import * as CommandLine from "./internal/CommandLine.ts"
-import * as ReadonlyMap from "./internal/ReadonlyMap.ts"
 import * as Route from "./Route.ts"
 
 /**

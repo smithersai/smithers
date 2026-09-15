@@ -83,16 +83,7 @@ const dangerousKeys = new Set(["__proto__", "constructor", "prototype"])
  * @private
  * @since 0.1.0
  */
-export const isWellFormedText = (value: string): boolean => {
-  for (let index = 0; index < value.length; index++) {
-    const unit = value.charCodeAt(index)
-    if (unit >= 0xd800 && unit <= 0xdbff) {
-      const low = value.charCodeAt(++index)
-      if (!(low >= 0xdc00 && low <= 0xdfff)) return false
-    } else if (unit >= 0xdc00 && unit <= 0xdfff) return false
-  }
-  return true
-}
+export const isWellFormedText = (value: string): boolean => value.isWellFormed()
 
 const childPath = (path: string, key: string): string =>
   /^[A-Za-z_$][A-Za-z0-9_$]*$/.test(key) ? `${path}.${key}` : `${path}[${JSON.stringify(key)}]`

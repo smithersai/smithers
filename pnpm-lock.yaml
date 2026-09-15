@@ -2496,6 +2496,9 @@ importers:
 
   packages/smithers/agent/fs:
     dependencies:
+      '@smthrs/canonical':
+        specifier: 1.0.0-rc.0
+        version: link:../../flows/canonical
       '@smthrs/core':
         specifier: workspace:*
         version: link:../../flows/core
@@ -2873,6 +2876,9 @@ importers:
 
   packages/smithers/agent/plugin:
     dependencies:
+      '@smthrs/canonical':
+        specifier: 1.0.0-rc.0
+        version: link:../../flows/canonical
       '@smthrs/flow':
         specifier: 1.0.0-rc.0
         version: link:../../flows/flow
