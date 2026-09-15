@@ -2228,20 +2228,6 @@ const CurrentCardSchema = z.discriminatedUnion("kind", [
    * tab, and its transcript rows append off the session's SSE stream instead
    * of a PTY tab. `cloud: true` discriminates it; a local card never carries
    * the key.
-   * plan facts and an optional live run overlay, one run's timeline with its
-   * critical path, the run history with replay, the diff-affected set, and
-   * the generated CI matrix.
-   */
-  z.object({ ...cardBaseShape, kind: z.literal("graph"), payload: GraphCardPayloadSchema }),
-  z.object({ ...cardBaseShape, kind: z.literal("run-timeline"), payload: RunTimelineCardPayloadSchema }),
-  z.object({ ...cardBaseShape, kind: z.literal("run-history"), payload: RunHistoryCardPayloadSchema }),
-  z.object({ ...cardBaseShape, kind: z.literal("affected"), payload: AffectedCardPayloadSchema }),
-  z.object({ ...cardBaseShape, kind: z.literal("ci-matrix"), payload: CiMatrixCardPayloadSchema }),
-  /*
-   * An agent launched from the `+` menu as a subagent of the conversation
-   * (LOCAL-APP.md "Tabs"): the harness runs in its own tab, and this card is
-   * the conversation's record of it — which harness, where, whether it is
-   * still running, and the way back to its tab.
    */
   z.object({
     ...cardBaseShape,
