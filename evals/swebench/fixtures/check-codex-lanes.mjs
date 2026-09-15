@@ -298,6 +298,12 @@ switch (args[0]) {
         SWB_CODEX_NETWORK: "on",
         SWB_CODEX_EFFORT: "high",
         SWB_FLOWS_OPENAI_AUTH: "api-key",
+        // The flows arm refuses to start an agent until its lane opts into the
+        // unconfined host shell (`run-instance.sh`). This fixture IS a lane, and
+        // its agent is a stub, so it opts in like the real ones do; the refusal
+        // itself is covered by `check-prompts.mjs`. Without this every `flows`
+        // scenario below exits 2 before the runner does anything it asserts on.
+        SWB_FLOWS_HOST_SHELL: "allowed",
         FIXTURE_DIR: dir,
         FIXTURE_SCENARIO: scenario
       }
