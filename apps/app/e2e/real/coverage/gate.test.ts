@@ -31,6 +31,37 @@ describe("real E2E coverage gate", () => {
     expect(declaredFlowNames(flows)).toEqual(["chat.send", "repo.open"])
   })
 
+  test("inventories literal search factory actions returned by the actual registry", () => {
+    const { root, real, flows } = fixture()
+    const entries = join(root, "entries")
+    mkdirSync(entries)
+    writeFileSync(join(entries, "search.ts"), `
+const unrelated = search(actions, "search.unregistered", "not returned")
+export const searchFlows = (actions) => [
+  flow({ name: "search.open" }),
+  search(actions, "search.files", "path"),
+  search(actions, "search.wiki", "wiki")
+]
+`)
+    expect(declaredFlowNames(flows)).toEqual(["chat.send", "repo.open", "search.files", "search.wiki"])
+    writeFileSync(join(real, "search.spec.ts"), valid.replace("repo.open.success", "search.files.success").replace("action:repo.open", "action:search.files"))
+    const report = checkRealE2E({ realDir: real, flowNameFile: flows })
+    expect(report.ok).toBe(true)
+    expect(report.gaps).toContainEqual({ kind: "action", value: "search.wiki" })
+    expect(report.declaredActions).not.toContain("search.unregistered")
+  })
+
+  test("fails closed when a search factory no longer exposes literal action names", () => {
+    const { root, flows } = fixture()
+    const entries = join(root, "entries")
+    mkdirSync(entries)
+    const file = join(entries, "search.ts")
+    writeFileSync(file, `export const searchFlows = (actions) => [search(actions, dynamicName, "path")]`)
+    expect(() => declaredFlowNames(flows)).toThrow("requires an explicit built-in name")
+    writeFileSync(file, `export const searchFlows = (actions) => registerSomeOtherWay(actions)`)
+    expect(() => declaredFlowNames(flows)).toThrow("Cannot inventory generated search actions")
+  })
+
   test("accepts structured metadata but keeps unexecuted and uncovered cells visible", () => {
     const { real, flows } = fixture()
     writeFileSync(join(real, "repo.spec.ts"), valid)

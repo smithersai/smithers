@@ -86,7 +86,33 @@ export const declaredFlowNames = (flowNameFile: string): readonly string[] => {
   }
   visit(source)
   if (!result?.length) throw new Error(`Could not read FLOW_NAMES from ${flowNameFile}`)
-  return [...new Set(result)].sort()
+  return [...new Set([...result, ...generatedSearchFlowNames(flowNameFile)])].sort()
+}
+
+/** Search factories are built-in actions even though FlowName.ts widens them at runtime. */
+const generatedSearchFlowNames = (flowNameFile: string): readonly string[] => {
+  const file = join(dirname(flowNameFile), "entries", "search.ts")
+  if (!existsSync(file)) return []
+  const source = sourceFile(file)
+  let declaration: ts.VariableDeclaration | undefined
+  const find = (node: ts.Node): void => {
+    if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name) && node.name.text === "searchFlows") declaration = node
+    ts.forEachChild(node, find)
+  }
+  find(source)
+  const initializer = declaration?.initializer
+  if (!initializer || !ts.isArrowFunction(initializer) || !ts.isArrayLiteralExpression(initializer.body)) {
+    throw new Error(`Cannot inventory generated search actions from ${file}; searchFlows must expose its returned declarations`)
+  }
+  const names: string[] = []
+  for (const item of initializer.body.elements) {
+    if (!ts.isCallExpression(item) || !ts.isIdentifier(item.expression) || item.expression.text !== "search") continue
+    const name = literal(item.arguments[1])
+    if (!name || !/^search\.[a-z][a-z-]*$/.test(name)) throw new Error(`Generated search action in ${file} requires an explicit built-in name`)
+    names.push(name)
+  }
+  if (!names.length) throw new Error(`No generated search actions inventoried from ${file}; review the registry factory before accepting coverage`)
+  return names
 }
 
 const resolveImport = (from: string, specifier: string): string | undefined => {
@@ -382,7 +408,7 @@ export const formatGateReport = (report: GateReport, root: string): string => {
   const reviews = report.findings.filter((finding) => finding.severity === "review")
   const lines = [
     `real E2E quality gate: ${report.ok ? "PASS" : "FAIL"}`,
-    `${report.declaredActions.length} static actions; ${report.scenarios.length} scenarios; ${report.runs.filter((run) => run.status === "passed").length} executed passes; ${report.gaps.length} visible gaps`,
+    `${report.declaredActions.length} built-in actions; ${report.scenarios.length} scenarios; ${report.runs.filter((run) => run.status === "passed").length} executed passes; ${report.gaps.length} visible gaps`,
     `${errors.length} errors; ${reviews.length} manual-review findings`
   ]
   for (const finding of report.findings) lines.push(`${finding.severity.toUpperCase()} ${finding.code} ${relative(root, finding.file)}:${finding.line} ${finding.message}`)

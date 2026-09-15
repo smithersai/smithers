@@ -22,8 +22,11 @@ details containing `real-*` annotations. `test.use({ realScenario: metadata })`
 is supported for suite defaults, but cannot replace unique per-test ids. The
 gate rejects every `test(...)` without its own `scenario(...)` details.
 
-Action tokens refer to the current `FLOW_NAMES` source declaration. The one
-exception, `action:repository-flow:*`, records runtime repository flow leaves;
+Action tokens refer to the current `FLOW_NAMES` source declaration plus the
+literal search factory names returned by `entries/search.ts`. Those generated
+search actions are built-in UI features and receive individual missing-action
+and execution checks, even though they are absent from the static union.
+The one family marker, `action:repository-flow:*`, records runtime repository flow leaves;
 it does not stand in for static actions. Hosts are `local` (production build
 against owned local services), `production` (deployed canary), and `native`
 (packaged app). Critical paths are success, permission, error, persistence,
