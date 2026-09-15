@@ -11,7 +11,7 @@
  *
  * @since 0.1.0
  */
-import { Cause, Context, Effect, Exit, Layer, Option, Schema } from "effect"
+import { Cause, Context, Effect, Exit, Layer, Option, Schema, Semaphore } from "effect"
 import * as SqlClient from "effect/unstable/sql/SqlClient"
 import * as SqlError from "effect/unstable/sql/SqlError"
 import * as CommitScope from "./internal/CommitScope.ts"
@@ -84,6 +84,15 @@ export interface Service {
  * contract with its single-writer transaction lock; a PostgreSQL-backed
  * implementation must run write transactions at `SERIALIZABLE` (and retry
  * `40001`) — plain READ COMMITTED does not satisfy this contract.
+ *
+ * **Acquisition.** Outermost writes sharing this service queue for one permit
+ * BEFORE entering Effect SQL's masked connection acquisition, and they queue at
+ * the caller's own interruptibility. An interruptible caller can therefore be
+ * interrupted or time out while queued, and acquires nothing when it is: no
+ * transaction is opened and the holder's permit is untouched. A caller that
+ * masked interruption keeps waiting, which is what a cleanup write running in
+ * a finalizer needs. The permit spans the whole retry loop and is released
+ * after SQL finishes, before commit publication can start another write.
  *
  * **Nesting.** A `write` inside the client's open transaction joins it as a
  * savepoint and does not retry: a transient conflict dooms the enclosing
@@ -207,8 +216,9 @@ export const affectedRows = (raw: unknown): Effect.Effect<number, DatabaseError>
  * @category constructors
  * @since 0.1.0
  */
-export const make = (sql: SqlClient.SqlClient, options?: WriteRetryOptions | undefined): Service =>
-  DurableWriter.of({
+export const make = (sql: SqlClient.SqlClient, options?: WriteRetryOptions | undefined): Service => {
+  const gate = Semaphore.makeUnsafe(1)
+  return DurableWriter.of({
     write: Effect.fn("DurableWriter.write")(<A, E, R>(
       effect: Effect.Effect<A, E, R>
     ): Effect.Effect<A, Exclude<E, SqlError.SqlError> | DatabaseError, R> =>
@@ -258,8 +268,18 @@ export const make = (sql: SqlClient.SqlClient, options?: WriteRetryOptions | und
             Effect.map((value) => ({ value, effects }))
           )
         })
-        return yield* Effect.uninterruptibleMask((restore) =>
-          restore(nested ? attempt : WriteRetry.withWriteRetry(attempt, options)).pipe(
+        return yield* Effect.uninterruptibleMask((restore) => {
+          // Only an outer write queues for the permit; a savepoint already owns
+          // the connection. The permit is taken at the CALLER's interruptibility
+          // and BEFORE Effect SQL masks its connection acquisition, so a queued
+          // caller's interruption or deadline still lands, and a cancelled
+          // waiter acquires nothing: it neither opens a transaction nor
+          // releases the holder. A caller that masked itself keeps waiting, so
+          // a shutdown finalizer's write is queued rather than dropped.
+          const transaction = restore(
+            nested ? attempt : gate.withPermit(WriteRetry.withWriteRetry(attempt, options))
+          )
+          return transaction.pipe(
             Effect.catchCause((cause) => Effect.failCause(normalizeSqlErrors(cause))),
             Effect.flatMap(({ value, effects }) =>
               (nested
@@ -273,10 +293,11 @@ export const make = (sql: SqlClient.SqlClient, options?: WriteRetryOptions | und
                 )).pipe(Effect.as(value))
             )
           )
-        )
+        })
       })
     )
   })
+}
 
 /**
  * Provides the durable writer over the context's SQL client.

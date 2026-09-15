@@ -51,6 +51,11 @@ Two guarantees are contract rather than implementation detail:
 - **Serialization.** Two concurrent `write` transactions are mutually
   serialized. They may not both commit results computed from snapshots that
   exclude each other's writes.
+- **Acquisition.** Outermost writes sharing one writer queue for its permit
+  before entering SQL, at the caller's own interruptibility. An interruptible
+  caller cancelled or timed out while queued acquires nothing; a caller that
+  masked interruption keeps waiting, so a finalizer's cleanup write still
+  commits.
 - **Nesting.** A `write` inside the client's open transaction joins it as a
   savepoint and does not retry. Only the outermost `write` retries, replaying
   the whole transaction body verbatim against committed state. Its

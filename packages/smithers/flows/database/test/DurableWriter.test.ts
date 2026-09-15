@@ -1,5 +1,5 @@
 import { describe, expect, it } from "@effect/vitest"
-import { Cause, Effect, Exit, Fiber, Random, Result } from "effect"
+import { Cause, Deferred, Effect, Exit, Fiber, Option, Random, Result } from "effect"
 import { TestClock } from "effect/testing"
 import * as SqlClient from "effect/unstable/sql/SqlClient"
 import * as SqlError from "effect/unstable/sql/SqlError"
@@ -39,6 +39,187 @@ const retrySql = {
 const publicRetryOptions: WriteRetryOptions = { baseDelayMs: 1, maxDelayMs: 1, maxAttempts: 3 }
 
 describe("DurableWriter", () => {
+  it.effect("commits an uncontended finalizer write after its caller is interrupted", () =>
+    Effect.scoped(Effect.gen(function*() {
+      const sql = yield* SqlClient.SqlClient
+      const writer = yield* DurableWriter.DurableWriter
+      yield* sql`CREATE TABLE cleanup_writes (value INTEGER NOT NULL)`
+      const started = yield* Deferred.make<void>()
+      const caller = yield* Deferred.succeed(started, undefined).pipe(
+        Effect.andThen(Effect.never),
+        Effect.ensuring(writer.write(sql`INSERT INTO cleanup_writes VALUES (1)`).pipe(Effect.orDie)),
+        Effect.forkChild({ startImmediately: true })
+      )
+      yield* Deferred.await(started)
+      yield* Fiber.interrupt(caller)
+      expect(yield* sql`SELECT value FROM cleanup_writes`).toEqual([{ value: 1 }])
+    })).pipe(Effect.provide(TestDatabase.layer)))
+
+  it.effect("commits a contended finalizer write after its caller is interrupted", () =>
+    Effect.scoped(Effect.gen(function*() {
+      const sql = yield* SqlClient.SqlClient
+      const writer = yield* DurableWriter.DurableWriter
+      yield* sql`CREATE TABLE contended_cleanup (value TEXT NOT NULL)`
+      const held = yield* Deferred.make<void>()
+      const release = yield* Deferred.make<void>()
+      const started = yield* Deferred.make<void>()
+      const holder = yield* writer.write(
+        Deferred.succeed(held, undefined).pipe(
+          Effect.andThen(Deferred.await(release)),
+          Effect.andThen(sql`INSERT INTO contended_cleanup VALUES ('holder')`)
+        )
+      ).pipe(Effect.forkChild({ startImmediately: true }))
+      yield* Deferred.await(held)
+      // The settlement paths in the engine store write from `onExit` and
+      // `ensuring` finalizers precisely so cancellation cannot strand a row.
+      // Queueing behind another writer must not turn that write into a
+      // dropped one.
+      const caller = yield* Deferred.succeed(started, undefined).pipe(
+        Effect.andThen(Effect.never),
+        Effect.ensuring(writer.write(sql`INSERT INTO contended_cleanup VALUES ('cleanup')`).pipe(Effect.orDie)),
+        Effect.forkChild({ startImmediately: true })
+      )
+      yield* Deferred.await(started)
+      caller.interruptUnsafe()
+      yield* TestClock.adjust(0)
+      expect(caller.pollUnsafe()).toBeUndefined()
+      yield* Deferred.succeed(release, undefined)
+      yield* Fiber.join(holder)
+      const exit = yield* Fiber.await(caller)
+      expect(Exit.isFailure(exit) && Cause.hasInterrupts(exit.cause)).toBe(true)
+      expect(yield* sql`SELECT value FROM contended_cleanup ORDER BY rowid`).toEqual([
+        { value: "holder" },
+        { value: "cleanup" }
+      ])
+    })).pipe(Effect.provide(TestDatabase.layer)))
+
+  it.effect("releases the writer before commit publication opens a transaction on another fiber", () =>
+    Effect.scoped(Effect.gen(function*() {
+      const sql = yield* SqlClient.SqlClient
+      const writer = yield* DurableWriter.DurableWriter
+      yield* sql`CREATE TABLE published_writes (value INTEGER NOT NULL)`
+      yield* writer.write(Effect.gen(function*() {
+        yield* sql`INSERT INTO published_writes VALUES (1)`
+        expect(
+          yield* DurableWriter.afterCommit(
+            writer.write(sql`INSERT INTO published_writes SELECT value + 1 FROM published_writes`).pipe(
+              Effect.forkChild({ startImmediately: true }),
+              Effect.flatMap(Fiber.join),
+              Effect.orDie,
+              Effect.asVoid
+            ),
+            sql
+          )
+        ).toBe(true)
+      }))
+      expect(yield* sql`SELECT value FROM published_writes ORDER BY value`).toEqual([{ value: 1 }, { value: 2 }])
+    })).pipe(Effect.provide(TestDatabase.layer)))
+
+  for (const boundary of ["caller interruption", "deadline"] as const) {
+    it.effect(`acquires nothing on queued ${boundary}`, () =>
+      Effect.scoped(Effect.gen(function*() {
+        const sql = yield* SqlClient.SqlClient
+        let transactions = 0
+        const writer = DurableWriter.make(
+          new Proxy(sql, {
+            get(target, key, receiver) {
+              if (key === "withTransaction") {
+                return <A, E, R>(effect: Effect.Effect<A, E, R>) =>
+                  Effect.suspend(() => {
+                    transactions++
+                    return sql.withTransaction(effect)
+                  })
+              }
+              return Reflect.get(target, key, receiver)
+            }
+          })
+        )
+        yield* sql`CREATE TABLE queued_writes (value TEXT NOT NULL)`
+        const acquired = yield* Deferred.make<void>()
+        const release = yield* Deferred.make<void>()
+        const holder = yield* writer.write(Effect.gen(function*() {
+          yield* sql`INSERT INTO queued_writes VALUES ('holder')`
+          yield* Deferred.succeed(acquired, undefined)
+          yield* Deferred.await(release)
+          yield* sql`INSERT INTO queued_writes VALUES ('holder committed')`
+        })).pipe(Effect.forkChild({ startImmediately: true }))
+        yield* Deferred.await(acquired)
+        let entered = false
+        const write = writer.write(Effect.gen(function*() {
+          entered = true
+          yield* sql`INSERT INTO queued_writes VALUES ('cancelled')`
+        }))
+        const caller = yield* (boundary === "deadline" ? write.pipe(Effect.timeoutOption("1 second")) : write)
+          .pipe(Effect.forkChild({ startImmediately: true }))
+        yield* TestClock.adjust(0)
+        if (boundary === "caller interruption") caller.interruptUnsafe()
+        yield* TestClock.adjust("1 second")
+        const beforeRelease = caller.pollUnsafe()
+        const transactionsBeforeRelease = transactions
+        const next = yield* writer.write(sql`INSERT INTO queued_writes VALUES ('next')`).pipe(
+          Effect.forkChild({ startImmediately: true })
+        )
+        yield* TestClock.adjust(0)
+        const nextBeforeRelease = next.pollUnsafe()
+        // Release even on the broken implementation so the failure can be
+        // reported without leaving its masked SQL acquisition hung.
+        yield* Deferred.succeed(release, undefined)
+        yield* Fiber.join(holder)
+        const exit = yield* Fiber.await(caller)
+        yield* Fiber.join(next)
+        expect(beforeRelease).toBeDefined()
+        expect(transactionsBeforeRelease).toBe(1)
+        expect(nextBeforeRelease).toBeUndefined()
+        expect(entered).toBe(false)
+        expect(transactions).toBe(2)
+        if (boundary === "deadline") {
+          expect(exit).toEqual(Exit.succeed(Option.none()))
+        } else {
+          expect(Exit.isFailure(exit) && Cause.hasInterrupts(exit.cause)).toBe(true)
+        }
+        expect(yield* sql`SELECT value FROM queued_writes ORDER BY rowid`).toEqual([
+          { value: "holder" },
+          { value: "holder committed" },
+          { value: "next" }
+        ])
+      })).pipe(Effect.provide(TestDatabase.layer)))
+  }
+
+  it.effect("keeps a queued write that masked interruption, and commits it after the holder", () =>
+    Effect.scoped(Effect.gen(function*() {
+      const sql = yield* SqlClient.SqlClient
+      const writer = yield* DurableWriter.DurableWriter
+      yield* sql`CREATE TABLE masked_writes (value TEXT NOT NULL)`
+      const acquired = yield* Deferred.make<void>()
+      const release = yield* Deferred.make<void>()
+      const holder = yield* writer.write(
+        Deferred.succeed(acquired, undefined).pipe(
+          Effect.andThen(Deferred.await(release)),
+          Effect.andThen(sql`INSERT INTO masked_writes VALUES ('holder')`)
+        )
+      ).pipe(Effect.forkChild({ startImmediately: true }))
+      yield* Deferred.await(acquired)
+      // The permit inherits the caller's interruptibility rather than forcing
+      // its own. A caller that masked interruption asked for this write to
+      // happen, so queueing must not turn it into a dropped write.
+      const caller = yield* writer.write(sql`INSERT INTO masked_writes VALUES ('masked')`).pipe(
+        Effect.uninterruptible,
+        Effect.forkChild({ startImmediately: true })
+      )
+      yield* TestClock.adjust(0)
+      caller.interruptUnsafe()
+      yield* TestClock.adjust("1 second")
+      expect(caller.pollUnsafe()).toBeUndefined()
+      yield* Deferred.succeed(release, undefined)
+      yield* Fiber.join(holder)
+      const exit = yield* Fiber.await(caller)
+      expect(Exit.isFailure(exit) && Cause.hasInterrupts(exit.cause)).toBe(true)
+      expect(yield* sql`SELECT value FROM masked_writes ORDER BY rowid`).toEqual([
+        { value: "holder" },
+        { value: "masked" }
+      ])
+    })).pipe(Effect.provide(TestDatabase.layer)))
+
   it.effect("opens, queries, and commits a transaction through TestDatabase", () =>
     Effect.gen(function*() {
       const result = yield* (
