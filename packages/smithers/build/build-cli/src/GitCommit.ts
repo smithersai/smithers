@@ -22,7 +22,9 @@
 import * as Exec from "@smthrs/targets/Exec"
 import * as GitTarget from "@smthrs/targets/GitTarget"
 import type * as Target from "@smthrs/targets/Target"
-import * as NodeChildProcess from "node:child_process"
+import * as PlatformError from "effect/PlatformError"
+import * as Diagnostic from "./Diagnostic.ts"
+import * as ContainedProcess from "./internal/ContainedProcess.ts"
 
 /**
  * The refusal codes one commit invocation can fail with.
@@ -147,61 +149,55 @@ interface GitOutput {
   readonly stderr: string
 }
 
-/**
- * Runs one git command with no shell, capturing bounded output.
- *
- * Node reports a spawn-level failure with a *string* `code`: `ENOENT` when git
- * is not installed, `ERR_CHILD_PROCESS_STDIO_MAXBUFFER` when the output
- * exceeds `maxBuffer`. Collapsing those to a synthetic exit 1 with empty
- * output made a host without git report `not_a_git_repository` — sending an
- * operator to check the repository rather than the toolchain — and made an
- * oversized `git diff --cached` report an exit 1 with no stderr and no mention
- * of the limit. They raise `spawn_failed` naming the code instead.
- */
-const git = (options: CommitOptions, args: ReadonlyArray<string>): Promise<GitOutput> =>
-  new Promise((resolve, reject) => {
-    NodeChildProcess.execFile(
-      "git",
-      [...args],
-      {
-        cwd: options.root,
-        maxBuffer: 8 * 1024 * 1024,
-        signal: options.signal,
-        timeout: options.timeoutMs ?? 60_000,
-        env: {
-          ...Exec.toolEnvironment(
-            Object.fromEntries(
-              Object.entries(options.environment ?? process.env).filter(
-                (entry): entry is [string, string] => entry[1] !== undefined
-              )
-            ),
-            options.sensitiveNames ?? []
-          ),
-          GIT_TERMINAL_PROMPT: "0",
-          GIT_EDITOR: "true"
-        }
-      },
-      (error, stdout, stderr) => {
-        const code: unknown = error === null ? undefined : (error as NodeJS.ErrnoException & { code?: unknown }).code
-        if (typeof code === "string") {
-          reject(
-            new GitCommitError(
-              "spawn_failed",
-              `git ${args.join(" ")} could not run: ${code}${stderr.trim() === "" ? "" : `: ${stderr.trim()}`}`
+/** Runs git with bounded output and the shared process-tree owner. */
+const git = async (options: CommitOptions, args: ReadonlyArray<string>): Promise<GitOutput> => {
+  let stdout = ""
+  let stderr = ""
+  try {
+    const exitCode = await ContainedProcess.run({
+      command: "git",
+      args,
+      cwd: options.root,
+      maxOutputBytes: 8 * 1024 * 1024,
+      signal: options.signal,
+      timeoutMs: options.timeoutMs ?? 60_000,
+      environment: {
+        ...Exec.toolEnvironment(
+          Object.fromEntries(
+            Object.entries(options.environment ?? process.env).filter(
+              (entry): entry is [string, string] => entry[1] !== undefined
             )
-          )
-          return
-        }
-        if (error?.killed) {
-          reject(
-            new GitCommitError("spawn_failed", `git ${args.join(" ")} timed out after ${options.timeoutMs ?? 60_000}ms`)
-          )
-          return
-        }
-        resolve({ exitCode: typeof code === "number" ? code : error === null ? 0 : 1, stdout, stderr })
+          ),
+          options.sensitiveNames ?? []
+        ),
+        GIT_TERMINAL_PROMPT: "0",
+        GIT_EDITOR: "true"
+      },
+      stdout: (text) => {
+        stdout += text
+      },
+      stderr: (text) => {
+        stderr += text
       }
+    })
+    return { exitCode, stdout, stderr }
+  } catch (cause) {
+    if (!(cause instanceof ContainedProcess.ProcessError)) throw cause
+    const detail = cause.code === "cancelled" ?
+      "ABORT_ERR"
+      : cause.code === "output_limit" ?
+      "ERR_CHILD_PROCESS_STDIO_MAXBUFFER"
+      : cause.code === "process_failed" ?
+      cause.cause instanceof PlatformError.PlatformError && cause.cause.reason._tag === "NotFound"
+        ? "ENOENT"
+        : Diagnostic.describe(cause.cause, cause.message)
+      : cause.message
+    throw new GitCommitError(
+      "spawn_failed",
+      `git ${args.join(" ")} could not run: ${detail}${stderr.trim() === "" ? "" : `: ${stderr.trim()}`}`
     )
-  })
+  }
+}
 
 /** Runs one git command that must succeed. */
 const gitOk = async (options: CommitOptions, args: ReadonlyArray<string>): Promise<GitOutput> => {

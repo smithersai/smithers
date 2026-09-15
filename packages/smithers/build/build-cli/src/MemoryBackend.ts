@@ -19,10 +19,10 @@ import * as Exec from "@smthrs/targets/Exec"
 import * as MemoryTarget from "@smthrs/targets/MemoryTarget"
 import type * as Target from "@smthrs/targets/Target"
 import type * as WorkspaceDeclaration from "@smthrs/targets/WorkspaceDeclaration"
-import * as NodeChildProcess from "node:child_process"
 import * as Fs from "node:fs/promises"
 import * as NodePath from "node:path"
 import * as Environment from "./Environment.ts"
+import * as ContainedProcess from "./internal/ContainedProcess.ts"
 
 /**
  * The memory backend is not available on this host or in this workspace.
@@ -267,40 +267,41 @@ const subprocessTimeout = (options: SpawnCliOptions): number => {
  * @since 0.1.0
  */
 export const spawnCli = (options: SpawnCliOptions = {}): MemoryCli => ({
-  run: (binary, args, cwd) =>
-    new Promise((resolve, reject) => {
-      const timeout = subprocessTimeout(options)
-      NodeChildProcess.execFile(
-        binary,
-        [...args],
-        {
-          cwd,
-          maxBuffer: 8 * 1024 * 1024,
-          signal: options.signal,
-          timeout,
-          env: subprocessEnvironment(options)
+  run: async (binary, args, cwd) => {
+    const timeout = subprocessTimeout(options)
+    let stdout = ""
+    let stderr = ""
+    try {
+      const exitCode = await ContainedProcess.run({
+        command: binary,
+        args,
+        cwd,
+        maxOutputBytes: 8 * 1024 * 1024,
+        signal: options.signal,
+        timeoutMs: timeout,
+        environment: subprocessEnvironment(options),
+        stdout: (text) => {
+          stdout += text
         },
-        (error, stdout, stderr) => {
-          if (error?.code === "ABORT_ERR") {
-            reject(error)
-            return
-          }
-          const exitCode = error === null
-            ? 0
-            : typeof (error as { code?: unknown }).code === "number"
-            ? (error as { code: number }).code
-            : 1
-          const killed = error !== null && error.killed === true && typeof error.code !== "string"
-          resolve({
-            exitCode,
-            stdout,
-            stderr: killed
-              ? `${stderr}\nsmithers memory timed out after ${timeout}ms`.trim()
-              : stderr
-          })
+        stderr: (text) => {
+          stderr += text
         }
-      )
-    })
+      })
+      return { exitCode, stdout, stderr }
+    } catch (cause) {
+      if (!(cause instanceof ContainedProcess.ProcessError) || cause.code === "cleanup_failed") throw cause
+      if (cause.code === "cancelled") {
+        throw Object.assign(new Error("memory subprocess aborted", { cause }), { code: "ABORT_ERR" })
+      }
+      return {
+        exitCode: 1,
+        stdout,
+        stderr: cause.code === "timed_out"
+          ? `${stderr}\nsmithers memory timed out after ${timeout}ms`.trim()
+          : stderr || cause.message
+      }
+    }
+  }
 })
 
 /**
@@ -349,31 +350,36 @@ export interface RetainResult {
 }
 
 /** Resolves one git ref to its commit sha, readably failing otherwise. */
-const gitResolveSource = (root: string, ref: string, options: SpawnCliOptions): Promise<string> =>
-  new Promise((resolve, reject) => {
-    const timeout = subprocessTimeout(options)
-    NodeChildProcess.execFile(
-      "git",
-      ["rev-parse", "--verify", `${ref}^{commit}`],
-      {
-        cwd: root,
-        maxBuffer: 1024 * 1024,
-        signal: options.signal,
-        timeout,
-        env: { ...subprocessEnvironment(options), GIT_TERMINAL_PROMPT: "0", GIT_EDITOR: "true" }
+const gitResolveSource = async (root: string, ref: string, options: SpawnCliOptions): Promise<string> => {
+  let stdout = ""
+  let stderr = ""
+  try {
+    const exitCode = await ContainedProcess.run({
+      command: "git",
+      args: ["rev-parse", "--verify", `${ref}^{commit}`],
+      cwd: root,
+      maxOutputBytes: 1024 * 1024,
+      signal: options.signal,
+      timeoutMs: subprocessTimeout(options),
+      environment: { ...subprocessEnvironment(options), GIT_TERMINAL_PROMPT: "0", GIT_EDITOR: "true" },
+      stdout: (text) => {
+        stdout += text
       },
-      (error, stdout, stderr) => {
-        if (error !== null) {
-          const detail = error.killed && typeof error.code !== "string"
-            ? `timed out after ${timeout}ms`
-            : stderr.trim() || error.message
-          reject(new Error(`cannot resolve ${ref} to a commit in ${root}: ${detail}`))
-          return
-        }
-        resolve(stdout.trim())
+      stderr: (text) => {
+        stderr += text
       }
-    )
-  })
+    })
+    if (exitCode !== 0) throw new Error(stderr.trim() || `git exited ${exitCode}`)
+    return stdout.trim()
+  } catch (cause) {
+    const detail = cause instanceof ContainedProcess.ProcessError && cause.code === "cancelled"
+      ? "git subprocess aborted" :
+      cause instanceof Error
+      ? cause.message
+      : stderr.trim()
+    throw new Error(`cannot resolve ${ref} to a commit in ${root}: ${detail}`, { cause })
+  }
+}
 
 /**
  * Retains the referenced commit in the declared Smithers Cloud banks.

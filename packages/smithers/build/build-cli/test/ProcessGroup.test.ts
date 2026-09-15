@@ -1,5 +1,5 @@
 import * as ScopedProcess from "@smthrs/platform-node/ScopedProcess"
-import { Effect, PlatformError, Sink, Stream } from "effect"
+import { Deferred, Effect, Fiber, PlatformError, Sink, Stream } from "effect"
 import { ExitCode, makeHandle, ProcessId } from "effect/unstable/process/ChildProcessSpawner"
 import { afterEach, expect, it, vi } from "vitest"
 import * as ContainedProcess from "../src/internal/ContainedProcess.ts"
@@ -36,6 +36,34 @@ const fixture = (
     stderr: () => {}
   }
 }
+
+it.skipIf(process.platform === "win32")(
+  "joins process cleanup on native fiber interruption",
+  () =>
+    Effect.runPromise(Effect.scoped(Effect.gen(function*() {
+      const killing = yield* Deferred.make<void>()
+      const release = yield* Deferred.make<void>()
+      const options = fixture(() =>
+        Deferred.succeed(killing, undefined).pipe(
+          Effect.andThen(Deferred.await(release))
+        ), Effect.never)
+      const process = yield* ContainedProcess.runEffect(options).pipe(Effect.forkScoped({ startImmediately: true }))
+      let closed = false
+      const closing = yield* Fiber.interrupt(process).pipe(
+        Effect.tap(() =>
+          Effect.sync(() => {
+            closed = true
+          })
+        ),
+        Effect.forkScoped({ startImmediately: true })
+      )
+      yield* Deferred.await(killing)
+      expect(closed).toBe(false)
+      yield* Deferred.succeed(release, undefined)
+      yield* Fiber.join(closing)
+      expect(closed).toBe(true)
+    })))
+)
 
 it.skipIf(process.platform === "win32")(
   "awaits the owner's declared stop contract even after the target exits",

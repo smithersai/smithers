@@ -5,6 +5,7 @@ import * as Fs from "node:fs/promises"
 import * as Os from "node:os"
 import * as NodePath from "node:path"
 import { afterAll, afterEach, describe, expect, it, vi } from "vitest"
+import * as ContainedProcess from "../src/internal/ContainedProcess.ts"
 import * as MemoryBackend from "../src/MemoryBackend.ts"
 import * as PackageDiscovery from "../src/PackageDiscovery.ts"
 import { PackageIndex } from "../src/PackageIndex.ts"
@@ -311,9 +312,9 @@ esac
   })
 })
 
-vi.mock("node:child_process", async (importOriginal) => {
-  const actual = await importOriginal<typeof NodeChildProcess>()
-  return { ...actual, execFile: vi.fn(actual.execFile) }
+vi.mock("../src/internal/ContainedProcess.ts", async (importOriginal) => {
+  const actual = await importOriginal<typeof ContainedProcess>()
+  return { ...actual, run: vi.fn(actual.run) }
 })
 afterEach(() => {
   vi.restoreAllMocks()
@@ -341,24 +342,16 @@ describe("subprocess boundaries", () => {
 
   it.each(["git", "cli"] as const)("aborts a hung memory %s subprocess", async (kind) => {
     const controller = new AbortController()
-    const actual = await vi.importActual<typeof NodeChildProcess>("node:child_process")
-    vi.mocked(NodeChildProcess.execFile).mockImplementationOnce(
-      ((
-        file: string,
-        args: ReadonlyArray<string>,
-        options: NodeChildProcess.ExecFileOptionsWithStringEncoding,
-        callback: (error: NodeChildProcess.ExecFileException | null, stdout: string, stderr: string) => void
-      ) => {
-        const child = actual.execFile(
-          process.execPath,
-          ["-e", "setTimeout(() => process.exit(9), 1500)"],
-          options,
-          callback
-        )
-        setTimeout(() => controller.abort(), 20)
-        return child
-      }) as typeof NodeChildProcess.execFile
-    )
+    const actual = await vi.importActual<typeof ContainedProcess>("../src/internal/ContainedProcess.ts")
+    vi.mocked(ContainedProcess.run).mockImplementationOnce((options) => {
+      const pending = actual.run({
+        ...options,
+        command: process.execPath,
+        args: ["-e", "setTimeout(() => process.exit(9), 1500)"]
+      })
+      setTimeout(() => controller.abort(), 20)
+      return pending
+    })
     await expect(MemoryBackend.retain({
       root: Os.tmpdir(),
       target: retainTarget(),
@@ -371,20 +364,13 @@ describe("subprocess boundaries", () => {
   })
 
   it.each(["git", "cli"] as const)("bounds a hung memory %s subprocess with a timeout", async (kind) => {
-    const actual = await vi.importActual<typeof NodeChildProcess>("node:child_process")
-    vi.mocked(NodeChildProcess.execFile).mockImplementationOnce(
-      ((
-        file: string,
-        args: ReadonlyArray<string>,
-        options: NodeChildProcess.ExecFileOptionsWithStringEncoding,
-        callback: (error: NodeChildProcess.ExecFileException | null, stdout: string, stderr: string) => void
-      ) =>
-        actual.execFile(
-          process.execPath,
-          ["-e", "setTimeout(() => process.exit(9), 1500)"],
-          options,
-          callback
-        )) as typeof NodeChildProcess.execFile
+    const actual = await vi.importActual<typeof ContainedProcess>("../src/internal/ContainedProcess.ts")
+    vi.mocked(ContainedProcess.run).mockImplementationOnce((options) =>
+      actual.run({
+        ...options,
+        command: process.execPath,
+        args: ["-e", "setTimeout(() => process.exit(9), 1500)"]
+      })
     )
     await expect(MemoryBackend.retain({
       root: Os.tmpdir(),

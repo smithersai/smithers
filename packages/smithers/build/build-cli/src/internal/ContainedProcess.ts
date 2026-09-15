@@ -56,11 +56,11 @@ const spawn = (options: ScopedProcess.Options) => {
   }).pipe(Effect.provide(windowsLayer))
 }
 
-/** Spawns through the Node service and releases only after the owned group is gone.
- * @category execution
+/** One bounded process invocation.
+ * @category models
  * @since 1.0.0-rc.0
  */
-export const run = async (options: {
+export interface Options {
   readonly command: string
   readonly args: ReadonlyArray<string>
   readonly cwd: string
@@ -71,77 +71,101 @@ export const run = async (options: {
   readonly fatalUtf8?: boolean | undefined
   readonly stdout: (text: string) => void
   readonly stderr: (text: string) => void
-}): Promise<number> => {
-  let cleanupFailure: unknown
-  const program = Effect.gen(function*() {
-    const handle = yield* Effect.uninterruptibleMask(() =>
-      Effect.gen(function*() {
-        const handle = yield* spawn({
-          command: options.command,
-          args: options.args,
-          cwd: options.cwd,
-          env: options.environment,
-          stdin: "ignore",
-          killSignal: "SIGTERM",
-          forceKillAfter: graceMs
-        })
-        // Registered after spawn: this runs BEFORE the service releases its handle.
-        // Leader exit is insufficient: descendants may have closed all inherited pipes.
-        yield* Effect.addFinalizer(() =>
-          handle.kill({ killSignal: "SIGTERM", forceKillAfter: graceMs }).pipe(
-            Effect.tapCause((cause) =>
-              Effect.sync(() => {
-                cleanupFailure = Cause.squash(cause)
-              })
-            ),
-            Effect.orDie
+}
+
+const processError = (cause: unknown): ProcessError =>
+  cause instanceof ProcessError ? cause : new ProcessError("process_failed", "process execution failed", cause)
+
+/** Executes a command and joins its owned process tree before releasing its scope.
+ * @category execution
+ * @since 1.0.0-rc.0
+ */
+export const runEffect = (options: Omit<Options, "signal">): Effect.Effect<number, ProcessError> =>
+  Effect.suspend(() => {
+    let cleanupFailure: unknown
+    const program = Effect.gen(function*() {
+      const handle = yield* Effect.uninterruptibleMask(() =>
+        Effect.gen(function*() {
+          const handle = yield* spawn({
+            command: options.command,
+            args: options.args,
+            cwd: options.cwd,
+            env: options.environment,
+            stdin: "ignore",
+            killSignal: "SIGTERM",
+            forceKillAfter: graceMs
+          })
+          // Registered after spawn: this runs BEFORE the service releases its handle.
+          // Leader exit is insufficient: descendants may have closed all inherited pipes.
+          yield* Effect.addFinalizer(() =>
+            handle.kill({ killSignal: "SIGTERM", forceKillAfter: graceMs }).pipe(
+              Effect.tapCause((cause) =>
+                Effect.sync(() => {
+                  cleanupFailure = Cause.squash(cause)
+                })
+              ),
+              Effect.orDie
+            )
           )
-        )
-        return handle
+          return handle
+        })
+      )
+      const consume = (stream: typeof handle.stdout, write: (text: string) => void) => {
+        let size = 0
+        const decoder = new TextDecoder("utf-8", { fatal: options.fatalUtf8 ?? false })
+        return Stream.runForEach(stream, (chunk) =>
+          Effect.try({
+            try: () => {
+              size += chunk.byteLength
+              if (options.maxOutputBytes !== undefined && size > options.maxOutputBytes) {
+                throw new ProcessError("output_limit", `process output exceeds ${options.maxOutputBytes} bytes`)
+              }
+              write(decoder.decode(chunk, { stream: true }))
+            },
+            catch: (cause) => cause
+          })).pipe(Effect.andThen(Effect.try({
+            try: () => {
+              const tail = decoder.decode()
+              if (tail !== "") write(tail)
+            },
+            catch: (cause) => cause
+          })))
+      }
+      const [code] = yield* Effect.all([
+        process.platform === "win32"
+          ? handle.exitCode.pipe(Effect.catch(() => Effect.succeed(1)))
+          : ScopedProcess.status(handle).pipe(Effect.map((status) => status.code ?? 1)),
+        consume(handle.stdout, options.stdout),
+        consume(handle.stderr, options.stderr)
+      ], { concurrency: "unbounded" })
+      return code
+    })
+    const bounded = options.timeoutMs === undefined ? program : program.pipe(Effect.timeoutOrElse({
+      duration: options.timeoutMs,
+      orElse: () => Effect.fail(new ProcessError("timed_out", `process timed out after ${options.timeoutMs}ms`))
+    }))
+    return Effect.uninterruptibleMask((restore) =>
+      Effect.gen(function*() {
+        const result = yield* Effect.exit(restore(Effect.scoped(bounded)))
+        if (cleanupFailure !== undefined) {
+          return yield* Effect.fail(new ProcessError("cleanup_failed", "process cleanup failed", cleanupFailure))
+        }
+        if (Exit.isSuccess(result)) return result.value
+        if (Cause.hasInterrupts(result.cause)) return yield* Effect.failCause(Cause.map(result.cause, processError))
+        return yield* Effect.fail(processError(Cause.squash(result.cause)))
       })
     )
-    const consume = (stream: typeof handle.stdout, write: (text: string) => void) => {
-      let size = 0
-      const decoder = new TextDecoder("utf-8", { fatal: options.fatalUtf8 ?? false })
-      return Stream.runForEach(stream, (chunk) =>
-        Effect.try({
-          try: () => {
-            size += chunk.byteLength
-            if (options.maxOutputBytes !== undefined && size > options.maxOutputBytes) {
-              throw new ProcessError("output_limit", `process output exceeds ${options.maxOutputBytes} bytes`)
-            }
-            write(decoder.decode(chunk, { stream: true }))
-          },
-          catch: (cause) => cause
-        })).pipe(Effect.andThen(Effect.try({
-          try: () => {
-            const tail = decoder.decode()
-            if (tail !== "") write(tail)
-          },
-          catch: (cause) => cause
-        })))
-    }
-    const [code] = yield* Effect.all([
-      process.platform === "win32"
-        ? handle.exitCode.pipe(Effect.catch(() => Effect.succeed(1)))
-        : ScopedProcess.status(handle).pipe(Effect.map((status) => status.code ?? 1)),
-      consume(handle.stdout, options.stdout),
-      consume(handle.stderr, options.stderr)
-    ], { concurrency: "unbounded" })
-    return code
   })
-  const bounded = options.timeoutMs === undefined ? program : program.pipe(Effect.timeoutOrElse({
-    duration: options.timeoutMs,
-    orElse: () => Effect.fail(new ProcessError("timed_out", `process timed out after ${options.timeoutMs}ms`))
-  }))
-  const result = await Effect.runPromiseExit(bounded.pipe(Effect.scoped), {
-    signal: options.signal
-  })
-  if (cleanupFailure !== undefined) {
-    throw new ProcessError("cleanup_failed", "process cleanup failed", cleanupFailure)
-  }
+
+/** Promise boundary for command APIs that accept an AbortSignal.
+ * @category execution
+ * @since 1.0.0-rc.0
+ */
+export const run = async (options: Options): Promise<number> => {
+  const result = await Effect.runPromiseExit(runEffect(options), { signal: options.signal })
   if (Exit.isSuccess(result)) return result.value
+  const cause = processError(Cause.squash(result.cause))
+  if (cause.code === "cleanup_failed") throw cause
   if (options.signal?.aborted) throw new ProcessError("cancelled", "process cancelled", options.signal.reason)
-  const cause = Cause.squash(result.cause)
-  throw cause instanceof ProcessError ? cause : new ProcessError("process_failed", "process execution failed", cause)
+  throw cause
 }
