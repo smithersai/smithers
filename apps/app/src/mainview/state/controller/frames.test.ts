@@ -81,6 +81,7 @@ describe("durable frame navigation", () => {
     controller.forkFrame()
     await settle()
     const forkLocation = history.value()!
+    expect([...store.collections.toasts.values()]).toContainEqual(expect.objectContaining({ title: "Created Fork 1", status: "ok" }))
     await store.dispatch({ type: "message.submitted", actor: "user", turnId: "fork-turn", text: "Fork message" }).isPersisted.promise
     await store.dispatch({ type: "message.response.completed", actor: "smithers", turnId: "fork-turn" }).isPersisted.promise
     await store.dispatch({ type: "card.updated", actor: "user", id: card.id, patch: { title: "Fork only" } }).isPersisted.promise

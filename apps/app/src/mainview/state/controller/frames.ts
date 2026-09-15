@@ -144,6 +144,9 @@ export const createFramesController = (
       }
     ctx.store.dispatch({ type: "frame.forked", actor: "user", branch, rootFrame, selectedFrame })
     history?.push({ workspaceId: source.workspaceId, branchId: id, frameId: selectedFrame.id })
+    const key = "frame.fork"
+    ctx.store.dispatch({ type: "toast.shown", actor: "system", key, title: `Created ${branch.title}` })
+    ctx.resolveToast(key, { status: "ok", detail: "" })
   }
 
   return {

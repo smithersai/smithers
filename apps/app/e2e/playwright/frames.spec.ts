@@ -30,6 +30,8 @@ test("a tutorial Issue maximizes in place with one header, a viewport backdrop, 
   const node = await card.elementHandle()
   await card.getByRole("button", { name: "Maximize card", exact: true }).click()
   await expect(card).toHaveAttribute("data-maximized", "true")
+  await card.getByRole("button", { name: "Fork frame", exact: true }).click()
+  await expect(page.locator(".toast-stack")).toContainText("Created Fork 1")
   await expect(page.locator(".card-maximize-backdrop:visible")).toHaveCount(1)
   await expect(card.locator(".smithers-card-header")).toHaveCount(1)
   await expect(card.getByRole("button", { name: "Back in frame", exact: true })).toHaveCount(1)

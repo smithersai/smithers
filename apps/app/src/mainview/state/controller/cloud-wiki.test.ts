@@ -128,6 +128,10 @@ const fixture = async (storage = memory()) => {
         throw new Error(`Unexpected Wiki request ${url}`)
       }
     })
+    // Forking announces itself through the toast law; a bare context has no failure controller.
+    ctx.resolveToast = (key, outcome) => {
+      store.dispatch({ type: "toast.resolved", actor: "system", key, ...outcome })
+    }
     const wiki = createCloudWikiController(ctx, () => 1)
     cleanup.push(() => {
       ctx.dispose()
