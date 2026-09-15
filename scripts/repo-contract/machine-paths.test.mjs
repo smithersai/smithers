@@ -13,7 +13,7 @@
  *
  * So the gate is a class, not one file. Every tracked file under `evals/`,
  * `scripts/` and every package's `test/faults` tree is read, and any absolute
- * home-directory path in it fails. `git ls-files` is the file list, because the
+ * home-directory path in it fails. The local VCS supplies the file list, because the
  * untracked working files a wave leaves behind — pinned subjects, extracted
  * testbeds, virtualenvs — legitimately hold absolute paths and are gitignored
  * for exactly that reason.
@@ -28,7 +28,8 @@
  */
 import assert from "node:assert/strict"
 import { spawnSync } from "node:child_process"
-import { readFileSync } from "node:fs"
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from "node:fs"
+import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { describe, it } from "node:test"
 
@@ -51,10 +52,17 @@ const homePath = /(?:\/Users|\/home)\/[A-Za-z0-9._-]+\//
 const scanned = ["evals", "scripts", "packages/*/test/faults/*"]
 
 /** Every tracked file under {@link scanned}, as repository-relative paths. */
-const tracked = () => {
-  const result = spawnSync("git", ["ls-files", "--", ...scanned], { cwd: root, encoding: "utf8" })
-  assert.equal(result.status, 0, `git ls-files failed: ${result.stderr}`)
-  return result.stdout.split("\n").filter((line) => line.length > 0)
+const tracked = (repositoryRoot = root, run = spawnSync) => {
+  const git = existsSync(join(repositoryRoot, ".git"))
+  const command = git ? "git" : "jj"
+  // A hygiene check reads the last tracked inventory; it must not snapshot
+  // edits or integrate concurrent jj operations just to enumerate paths.
+  const args = git ? ["ls-files", "--", ...scanned] : ["file", "list", "--ignore-working-copy"]
+  const result = run(command, args, { cwd: repositoryRoot, encoding: "utf8", maxBuffer: 16 * 1024 * 1024 })
+  assert.equal(result.status, 0, `${command} inventory failed: ${result.error?.message ?? result.stderr}`)
+  return result.stdout.split("\n").filter((path) =>
+    path.startsWith("evals/") || path.startsWith("scripts/") || /^packages\/.+\/test\/faults\/.+/.test(path)
+  )
 }
 
 /**
@@ -75,7 +83,7 @@ const isRecorded = (path) =>
 
 describe("the rigs and gates outside the packages", () => {
   it("has files to check", () => {
-    assert.ok(tracked().length > 0, `git ls-files found no tracked file under ${scanned.join(", ")}`)
+    assert.ok(tracked().length > 0, `VCS inventory found no tracked file under ${scanned.join(", ")}`)
   })
 
   it("names no machine's home directory in a file the rig reads", () => {
@@ -100,4 +108,27 @@ describe("the rigs and gates outside the packages", () => {
         + offenders.join("\n  ")
     )
   })
+})
+
+// Inventory selection must stop at this workspace, even when an unrelated
+// ancestor has a Git repository. Only the local marker selects Git.
+it("uses the jj inventory without a local .git and keeps the same scan boundary", () => {
+  const fixture = mkdtempSync(join(tmpdir(), "machine-path-inventory-"))
+  try {
+    mkdirSync(join(fixture, ".jj"))
+    const files = tracked(fixture, (command, args, options) => {
+      assert.equal(command, "jj")
+      assert.deepEqual(args, ["file", "list", "--ignore-working-copy"])
+      assert.equal(options.cwd, fixture)
+      return { status: 0, stdout: "scripts/probe.mjs\nevals/rig.ts\npackages/product/nested/test/faults/probe.ts\npackages/product/src/index.ts\napps/site/index.ts\n", stderr: "" }
+    })
+    assert.deepEqual(files, ["scripts/probe.mjs", "evals/rig.ts", "packages/product/nested/test/faults/probe.ts"])
+    mkdirSync(join(fixture, ".git"))
+    assert.deepEqual(tracked(fixture, (command, args) => {
+      assert.equal(command, "git")
+      assert.deepEqual(args, ["ls-files", "--", ...scanned])
+      return { status: 0, stdout: "scripts/probe.mjs\n", stderr: "" }
+    }), ["scripts/probe.mjs"])
+    assert.throws(() => tracked(fixture, () => ({ status: 1, stdout: "", stderr: "inventory unavailable" })), /inventory unavailable/)
+  } finally { rmSync(fixture, { recursive: true, force: true }) }
 })
