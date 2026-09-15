@@ -1871,9 +1871,6 @@ importers:
       '@effect/vitest':
         specifier: 4.0.0-rc.115
         version: 4.0.0-rc.115(effect@4.0.0-rc.115)(vitest@5.0.0)
-      '@smthrs/jj':
-        specifier: workspace:*
-        version: link:../packages/smithers/flows/jj
       '@smthrs/testing':
         specifier: workspace:*
         version: link:../packages/testing
@@ -4293,12 +4290,12 @@ importers:
 
   packages/smithers/flows/engine-store:
     dependencies:
-      '@smthrs/canonical':
-        specifier: 1.0.0-rc.0
-        version: link:../canonical
       '@smthrs/artifacts':
         specifier: 1.0.0-rc.0
         version: link:../artifacts
+      '@smthrs/canonical':
+        specifier: 1.0.0-rc.0
+        version: link:../canonical
       '@smthrs/crypto':
         specifier: 1.0.0-rc.0
         version: link:../crypto
