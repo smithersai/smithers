@@ -151,14 +151,27 @@ Account-state removal also clears archived snapshots.
 
 ## Composer drafts
 
-`composer.changed` keystrokes share one durable commit. The draft is visible
-at once; the commit lands 250 ms after the last keystroke, at most 1 s after
-the first unsaved one, or earlier on the next other dispatch, `pagehide` or
-`store.dispose()`. Every keystroke in that window returns the same receipt,
-and the journal holds one `composer.changed` record with the final draft.
-A localStorage commit rewrites the whole envelope, so one commit per keystroke
-copied every saved collection per character. A crash inside the window loses
-at most those keystrokes.
+With the normal OPFS/SQLite backend, every `composer.changed` edit starts its
+durable transaction in the input event. The same event writes a versioned
+draft-recovery record synchronously to localStorage. The record is a temporary
+write-ahead slot, not app-state authority: boot compares its revision with the
+SQLite session, replays it through a TanStackDB transaction only when SQLite is
+older, and removes it after the matching SQLite transaction is durable. An
+older acknowledgement cannot remove a newer draft record.
+
+The composer overlay remains transient and closed after reload, while reopening
+it reads the independently recovered draft from the session collection. A
+departing page cannot rely on `pagehide` to finish an asynchronous worker write,
+so SQLite draft commits are never deliberately delayed.
+
+The localStorage fallback still coalesces keystrokes because each commit
+rewrites the whole saved envelope. Its draft is visible at once; the commit
+lands 250 ms after the last keystroke, at most 1 s after the first unsaved one,
+or earlier on the next other dispatch, `pagehide` or `store.dispose()`. Every
+keystroke in that window returns the same receipt, and the journal holds one
+`composer.changed` record with the final draft. The synchronous draft-recovery
+record also bridges that batching window and is reconciled into the envelope
+on boot.
 
 ## Clearing and recovering a conversation
 

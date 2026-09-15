@@ -6,6 +6,7 @@ import { openSqliteRowStorage, ROW_TABLE_NAME } from "../chain/SqliteRowStorage"
 import { ENVELOPE_STORAGE_KEY } from "../chain/TransactionalStorage"
 import type { ChainEventRecord, ToolCallRecord, TransitionRecord } from "./AppState"
 import { createAppStore, MAX_TOOL_CALL_RECORDS, MAX_TRANSITION_RECORDS } from "./AppStore"
+import { DRAFT_RECOVERY_STORAGE_KEY, readDraftRecovery } from "./DraftRecovery"
 import { memoryStorage } from "./TestFixtures"
 
 /*
@@ -145,6 +146,31 @@ const countingStorage = (): StorageApi & { readonly commits: () => number } => {
 }
 
 describe("composer drafts", () => {
+  test("the fallback recovery slot follows every edit in a coalesced batch", async () => {
+    const recovery = memoryStorage()
+    ;(globalThis as unknown as { window?: { readonly localStorage: StorageApi; readonly matchMedia: () => { readonly matches: boolean } } }).window = {
+      localStorage: recovery,
+      matchMedia: () => ({ matches: false })
+    }
+    try {
+      const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
+      const receipt = store.dispatch({ type: "composer.changed", actor: "user", draft: "first" }).isPersisted.promise
+      expect(readDraftRecovery(recovery)?.draft).toBe("first")
+
+      store.dispatch({ type: "composer.changed", actor: "user", draft: "first line\nsecond line" })
+      expect(readDraftRecovery(recovery)?.draft).toBe("first line\nsecond line")
+      store.dispatch({ type: "composer.changed", actor: "user", draft: "first line\nsecond line" })
+      expect(readDraftRecovery(recovery)?.draft).toBe("first line\nsecond line")
+      store.dispatch({ type: "composer.changed", actor: "user", draft: "" })
+      expect(readDraftRecovery(recovery)?.draft).toBe("")
+
+      await receipt
+      expect(recovery.getItem(DRAFT_RECOVERY_STORAGE_KEY)).toBeNull()
+    } finally {
+      delete (globalThis as unknown as { window?: unknown }).window
+    }
+  })
+
   test("a burst of keystrokes commits one envelope and journals only the final draft", async () => {
     const host = countingStorage()
     const store = await createAppStore({ kind: "localStorage", storage: host })

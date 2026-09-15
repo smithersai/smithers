@@ -34,6 +34,12 @@ import type { CollectionPersistence } from "../chain/DurableCollection"
 import { ENVELOPE_STORAGE_KEY, STAGED_ENVELOPE_STORAGE_KEY, matchesStoredStringId, openTransactionalStorage } from "../chain/TransactionalStorage"
 import type { TransactionalStorage } from "../chain/TransactionalStorage"
 import { PALETTE_MIRROR_KEY, rememberAppearance, THEME_MIRROR_KEY } from "./Appearance"
+import {
+  clearDraftRecovery,
+  DRAFT_RECOVERY_STORAGE_KEY,
+  readDraftRecovery,
+  writeDraftRecovery
+} from "./DraftRecovery"
 import { archiveNotice, conversationNotes } from "./ConversationArchive"
 import { createWorkspaceViews, projectWorkspaceCard, snapshotCard } from "./WorkspaceViews"
 import { framePath } from "../runtime/FrameHistory"
@@ -133,9 +139,9 @@ export const MAX_TRANSITION_RECORDS = 500
 export const MAX_TOOL_CALL_RECORDS = 250
 
 /*
- * Composer keystrokes share one durable commit (docs/persistence.md "Composer
- * drafts"). It lands after this pause in typing, and never later than the
- * second bound after the first unsaved keystroke.
+ * localStorage-fallback composer keystrokes share one durable envelope commit
+ * (docs/persistence.md "Composer drafts"). It lands after this pause in
+ * typing, and never later than the second bound after the first unsaved edit.
  */
 const DRAFT_COMMIT_IDLE_MS = 250
 const DRAFT_COMMIT_MAX_MS = 1_000
@@ -393,6 +399,7 @@ const hasLegacyLocalState = (storage: StorageApi): boolean => {
       const key = scannable.key(index)
       if (key !== null && key.startsWith(PERSISTED_KEY_PREFIX) && key !== SCHEMA_VERSION_STORAGE_KEY &&
         key !== PERSISTENCE_BACKEND_STORAGE_KEY && key !== THEME_MIRROR_KEY && key !== PALETTE_MIRROR_KEY &&
+        key !== DRAFT_RECOVERY_STORAGE_KEY &&
         storage.getItem(key) !== null) return true
     }
   }
@@ -646,10 +653,10 @@ export interface AppStore {
    * at once; an impossible request (a conversation id already in use) throws
    * here. A failed commit rejects the receipt and rolls the change back, with
    * any queued transition derived from it. After `app.reset`, every dispatch
-   * returns the reset's receipt and changes nothing. Consecutive
-   * `composer.changed` keystrokes share one receipt, which resolves when the
-   * draft commits: after a pause in typing, the next other dispatch, page hide
-   * or `dispose`.
+   * returns the reset's receipt and changes nothing. OPFS-backed
+   * `composer.changed` edits start separate SQLite commits immediately;
+   * localStorage-backed keystrokes share one receipt, which resolves after a
+   * pause in typing, the next other dispatch, page hide or `dispose`.
    */
   readonly dispatch: (transition: AppTransition) => Transaction
   /** Immutable runtime request; legacy model-authored cards have no authority. */
@@ -1170,6 +1177,8 @@ export const createAppStore = async (
 /** Ownership transfers to the returned store only after every boot step succeeds. */
 const initializeAppStore = async (resolved: ResolvedPersistence, options: { readonly seedWiki?: boolean | Promise<boolean> }): Promise<AppStore> => {
   let resolvedBackend = resolved.backend
+  const draftRecoveryStorage = resolved.mode === "memory" ? undefined : bootRecordStorage()
+  const draftRecovery = readDraftRecovery(draftRecoveryStorage)
   /* Validate persisted rows before creating collections. Compatible older
    * rows migrate; a newer store stays untouched. Only a successful open
    * advances the version stamp. */
@@ -1263,13 +1272,19 @@ const initializeAppStore = async (resolved: ResolvedPersistence, options: { read
   let resetTransaction: Transaction | undefined
 
   /*
-   * The draft commit still open to keystrokes. A localStorage commit rewrites
-   * the whole envelope, so one commit per keystroke copied every saved
-   * collection per character. The draft is live at once; its commit waits for
-   * a pause in typing, the next dispatch, page hide or dispose. The journal
-   * keeps one record per commit, carrying the final draft.
+   * Only the localStorage fallback keeps a draft transaction open across
+   * keystrokes. It rewrites the whole envelope, so one commit per character
+   * would copy every saved collection. OPFS/SQLite transactions start their
+   * commit in the input event: pagehide cannot make a deferred asynchronous
+   * worker write durable once an immediate reload is already departing.
    */
-  let pendingDraft: { readonly transaction: Transaction; readonly revision: number; readonly deadline: number } | undefined
+  const batchesDraftCommits = resolvedBackend.kind !== "opfs"
+  let pendingDraft: {
+    readonly transaction: Transaction
+    readonly revision: number
+    readonly deadline: number
+    recoveryRaw: string | undefined
+  } | undefined
   let draftTimer: ReturnType<typeof setTimeout> | undefined
   const commitDraft = (): void => {
     clearTimeout(draftTimer)
@@ -1290,6 +1305,8 @@ const initializeAppStore = async (resolved: ResolvedPersistence, options: { read
       const { transaction, revision, deadline } = pendingDraft
       const text = transition.draft
       const payload = transitionPayload(transition)
+      const recoveryRaw = writeDraftRecovery(draftRecoveryStorage, revision, text)
+      if (recoveryRaw !== undefined) pendingDraft.recoveryRaw = recoveryRaw
       transaction.mutate(() => {
         collections.sessions.update(SESSION_ID, (draft) => { draft.draft = text })
         collections.transitions.update(`transition-${revision}`, (record) => { record.payload = payload })
@@ -1310,9 +1327,12 @@ const initializeAppStore = async (resolved: ResolvedPersistence, options: { read
     const current = session()
     const revision = current.revision + 1
     const createdAt = Date.now()
+    const recoveredDraftRaw = transition.type === "composer.changed"
+      ? writeDraftRecovery(draftRecoveryStorage, revision, transition.draft)
+      : undefined
     const transaction = createTransaction({
       id: `app-transition-${revision}`,
-      autoCommit: transition.type !== "composer.changed",
+      autoCommit: transition.type !== "composer.changed" || !batchesDraftCommits,
       metadata: { actor: transition.actor, type: transition.type },
       mutationFn: ({ transaction }) => persist(transaction)
     })
@@ -3384,11 +3404,31 @@ const initializeAppStore = async (resolved: ResolvedPersistence, options: { read
     if (transition.type === "app.reset") {
       void transaction.isPersisted.promise.catch(() => { resetTransaction = undefined })
     }
-    if (transition.type === "composer.changed") {
-      pendingDraft = { transaction, revision, deadline: createdAt + DRAFT_COMMIT_MAX_MS }
+    if (recoveredDraftRaw !== undefined && !batchesDraftCommits) {
+      void transaction.isPersisted.promise.then(() => {
+        clearDraftRecovery(draftRecoveryStorage, recoveredDraftRaw)
+      }, () => {})
+    }
+    if (transition.type === "composer.changed" && batchesDraftCommits) {
+      const pending = { transaction, revision, deadline: createdAt + DRAFT_COMMIT_MAX_MS, recoveryRaw: recoveredDraftRaw }
+      pendingDraft = pending
+      void transaction.isPersisted.promise.then(() => {
+        if (pending.recoveryRaw !== undefined) clearDraftRecovery(draftRecoveryStorage, pending.recoveryRaw)
+      }, () => {})
       awaitTypingPause(pendingDraft.deadline)
     }
     return transaction
+  }
+
+  if (draftRecovery !== undefined) {
+    const durable = session()
+    if (draftRecovery.revision > durable.revision) {
+      await dispatch({ type: "composer.changed", actor: "system", draft: draftRecovery.draft }).isPersisted.promise
+    } else {
+      // SQLite already contains this revision (or something newer). A record
+      // left by a page that died before its acknowledgement is no longer needed.
+      clearDraftRecovery(draftRecoveryStorage, draftRecovery.raw)
+    }
   }
 
   // A lost controller cannot finish an in-flight submission. Preserve the
@@ -3453,6 +3493,13 @@ const initializeAppStore = async (resolved: ResolvedPersistence, options: { read
    */
   if (collections.sessions.get(SESSION_ID)?.pendingWorldDeleteId != null) {
     await dispatch({ type: "world.delete.asked", actor: "system", id: null }).isPersisted.promise
+  }
+
+  // The composer overlay is presentation state. Preserve its independently
+  // persisted draft, but never reopen the overlay merely because a page died
+  // or reloaded while it was visible.
+  if (collections.sessions.get(SESSION_ID)?.paletteOpen === true) {
+    await dispatch({ type: "palette.toggled", actor: "system", open: false }).isPersisted.promise
   }
 
   // Boot reconciliation: toasts are notifications, not state — a toast left

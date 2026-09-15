@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test"
+import { DRAFT_RECOVERY_STORAGE_KEY } from "../../src/mainview/state/DraftRecovery"
 
 test("the split SQLite worker boots with OPFS and preserves a composer draft across reload", async ({ page }) => {
   const errors: string[] = []
@@ -22,4 +23,20 @@ test("the split SQLite worker boots with OPFS and preserves a composer draft acr
   await expect(page.getByTestId("composer-input")).toHaveValue("A durable cold-load draft")
   expect(await page.evaluate(() => localStorage.getItem("smithers-mvp.persistenceBackend"))).toBe("opfs")
   expect(errors).toEqual([])
+})
+
+test("an OPFS-backed multiline composer draft survives an immediate reload while the overlay stays closed on boot", async ({ page }) => {
+  const draft = "first line\nsecond line"
+  await page.goto("/")
+  await expect(page.locator(".guide-shell")).toBeVisible()
+  expect(await page.evaluate(() => localStorage.getItem("smithers-mvp.persistenceBackend"))).toBe("opfs")
+
+  await page.keyboard.press("ControlOrMeta+k")
+  await page.getByTestId("composer-input").fill(draft)
+  await page.reload()
+
+  await expect(page.getByTestId("composer-input")).toBeHidden()
+  await page.keyboard.press("ControlOrMeta+k")
+  await expect(page.getByTestId("composer-input")).toHaveValue(draft)
+  expect(await page.evaluate((key) => localStorage.getItem(key), DRAFT_RECOVERY_STORAGE_KEY)).toBeNull()
 })

@@ -50,3 +50,53 @@ test(
     await expect(page.getByTestId("composer-input")).toHaveValue("draft survives immediate reload")
   }
 )
+
+test(
+  "multiline composer draft survives an immediate reload while the overlay stays closed",
+  scenario("local-composer-multiline-draft-immediate-reload", {
+    capabilities: [],
+    coverage: [
+      "host:local", "host:production", "door:user-only", "path:persistence", "action:palette.open",
+      "dimension:composer-draft", "dimension:multiline", "dimension:immediate-reload",
+      "evidence:persisted-multiline-draft-after-reload"
+    ]
+  }),
+  async ({ page }) => {
+    const draft = "first line\nsecond line"
+    await boot(page)
+    await openComposer(page)
+    await page.getByTestId("composer-input").fill(draft)
+    await page.reload()
+    await expect(page.getByTestId("composer-input")).toBeHidden()
+    await openComposer(page)
+    await expect(page.getByTestId("composer-input")).toHaveValue(draft)
+  }
+)
+
+test(
+  "clearing a durable composer draft survives an immediate reload while the overlay stays closed",
+  scenario("local-composer-clear-immediate-reload", {
+    capabilities: [],
+    coverage: [
+      "host:local", "host:production", "door:user-only", "path:persistence", "action:palette.open",
+      "dimension:composer-draft", "dimension:clear-to-empty", "dimension:immediate-reload",
+      "evidence:persisted-empty-draft-after-reload"
+    ]
+  }),
+  async ({ page }) => {
+    await boot(page)
+    await openComposer(page)
+    await page.getByTestId("composer-input").fill("durable baseline")
+    await page.waitForFunction(() => localStorage.getItem("smithers-mvp.composer-draft-recovery") === null)
+    await page.reload()
+    await expect(page.getByTestId("composer-input")).toBeHidden()
+    await openComposer(page)
+    await expect(page.getByTestId("composer-input")).toHaveValue("durable baseline")
+
+    await page.getByTestId("composer-input").fill("")
+    await page.reload()
+    await expect(page.getByTestId("composer-input")).toBeHidden()
+    await openComposer(page)
+    await expect(page.getByTestId("composer-input")).toHaveValue("")
+  }
+)
