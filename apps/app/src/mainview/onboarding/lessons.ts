@@ -100,7 +100,7 @@ export const GUIDE_STAGES: readonly GuideLesson[] = [
     instruction: "Opens GitHub's install page, where you choose repositories.",
     actions: [{ label: "Install the GitHub App", key: "a", flow: "github.app.open" }],
     secondary: { label: "Later", key: "z", flow: "onboarding.act", args: "decline install" } },
-  /* 12 */ { kind: "do", requires: "installed", message: "I can study {repo} in the background. Start a Wiki that explains the code, and a Mythical history of how it got here.", completion: "librarian.runs.launched", skippable: false,
+  /* 12 */ { kind: "do", requires: "installed", message: "I can index {repo} in the background. Start a Wiki that lists its files by folder, and a Mythical history snapshot on its own branch.", completion: "librarian.runs.launched", skippable: false,
     instruction: "Starts both background flows on your repository.", success: "Both are running. I'll tell you when they're done.",
     actions: [{ label: "Create Wiki for {repo}", key: "u", flow: "wiki.create", args: "{repo}" },
       { label: "Create Mythical history", key: "y", flow: "history.bootstrap", args: "{repo}", subtitle: "On its own branch. Your branches stay untouched." }],

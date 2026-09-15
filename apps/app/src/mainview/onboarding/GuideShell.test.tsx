@@ -394,7 +394,10 @@ test("every pill click and its letter dispatch the same flow and arguments", asy
       document.dispatchEvent(new KeyboardEvent("keyup", { key: action.key.toLowerCase(), bubbles: true }))
       const args = action.args?.replaceAll("{repo}", "acme/api")
       const expected: [string, string?] = args === undefined ? [action.flow] : [action.flow, args]
-      expect(calls).toEqual([expected, expected])
+      /* Beat 12's launches also open their illustrated introduction. */
+      const intro: [string, string?] | undefined = step === 12 && (action.flow === "wiki.create" || action.flow === "history.bootstrap")
+        ? ["onboarding.act", `intro-open ${JSON.stringify(action.flow === "wiki.create" ? "wiki" : "history")}`] : undefined
+      expect(calls).toEqual(intro ? [expected, intro, expected, intro] : [expected, expected])
     }
     mounted.pop()?.()
   }
@@ -574,8 +577,9 @@ test("Back and Chat compete on release; Wiki keeps its own key", async () => {
   expect(calls).toEqual([['chat.open', undefined]])
   key('keydown', 'u'); key('keyup', 'u')
   expect(calls[1]).toEqual(['wiki.create', 'acme/api'])
+  expect(calls[2]).toEqual(['onboarding.act', 'intro-open "wiki"'])
   key('keydown', 'b'); key('keyup', 'b')
-  expect(calls[2]).toEqual(['onboarding.act', 'back'])
+  expect(calls[3]).toEqual(['onboarding.act', 'back'])
 }, 5_000)
 
 test("Mode opens on release and selecting Dictation does not open Chat", async () => {

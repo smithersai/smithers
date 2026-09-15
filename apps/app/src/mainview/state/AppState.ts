@@ -706,6 +706,13 @@ export const GuideSchema = z.object({
   reelDemo: z.enum(["theme", "notify", "sound", "profile", "wait", "create-flow", "composer", "prototype", "revision", "plan", "review"]).optional(),
   reelTheme: z.enum(["light", "dark"]).optional(),
   /*
+   * Beat 12's illustrated introductions (onboarding/introScript.ts): which
+   * slideshow is open and its slide, plus the kinds already shown, so each
+   * launch presents its introduction once and a retry does not replay it.
+   */
+  introSlides: z.object({ kind: z.enum(["wiki", "history"]), index: z.number().int().min(0).max(3) }).optional(),
+  introSeen: z.array(z.enum(["wiki", "history"])).optional(),
+  /*
    * Version 1 persisted the 16-lesson introduction, where the light lesson
    * stood alone at step 2 and the scale ran to 15. Version 2 folds it into
    * the theme lesson, so every later lesson moved one down. Version 3 moves the Library opening to step 1. Older shapes stay

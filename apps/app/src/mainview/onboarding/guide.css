@@ -1645,3 +1645,284 @@
 
 /* Mode and Close share the dock's controls row, including on touch screens. */
 .guide-composer-close { flex-shrink: 0; }
+
+/*
+ * Beat 12's illustrated introductions (IntroSlides.tsx). Each slideshow owns
+ * an accent palette — Wiki a deep blue/teal, Mythical history a warm
+ * amber/violet — distinct from the guide's green chrome. Both themes
+ * re-resolve every token, the way --g-muted-strong does above.
+ */
+.guide-shell {
+  --intro-wiki-accent: #166b87;
+  --intro-wiki-accent-2: #4f9ab5;
+  --intro-wiki-on-accent: #ffffff;
+  --intro-history-accent: #a86a12;
+  --intro-history-accent-2: #6b46c1;
+  --intro-history-on-accent: #2a1c05;
+}
+.guide-shell[data-theme="dark"] {
+  --intro-wiki-accent: #7ec8de;
+  --intro-wiki-accent-2: #3f88a8;
+  --intro-wiki-on-accent: #0d2129;
+  --intro-history-accent: #e3b778;
+  --intro-history-accent-2: #a58ae0;
+  --intro-history-on-accent: #2a1c05;
+}
+.guide-intro-dock {
+  /* A native modal escapes the guide's stacking context, like the composer. */
+  margin: 0;
+  border: 0;
+  width: 100%;
+  height: 100%;
+  max-width: none;
+  max-height: none;
+  box-sizing: border-box;
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: clamp(12px, 3vw, 32px);
+  color: var(--g-ink);
+  backdrop-filter: blur(8px);
+}
+.guide-intro-dock::backdrop { background: transparent; }
+.guide-intro-dock[data-intro="wiki"] {
+  --intro-accent: var(--intro-wiki-accent);
+  --intro-accent-2: var(--intro-wiki-accent-2);
+  --intro-on-accent: var(--intro-wiki-on-accent);
+  background:
+    radial-gradient(ellipse at 50% 28%, color-mix(in srgb, var(--intro-accent) 16%, transparent), transparent 62%),
+    color-mix(in srgb, var(--g-bg) 62%, transparent);
+}
+.guide-intro-dock[data-intro="history"] {
+  --intro-accent: var(--intro-history-accent);
+  --intro-accent-2: var(--intro-history-accent-2);
+  --intro-on-accent: var(--intro-history-on-accent);
+  background:
+    radial-gradient(ellipse at 50% 28%, color-mix(in srgb, var(--intro-accent) 14%, transparent), transparent 62%),
+    color-mix(in srgb, var(--g-bg) 62%, transparent);
+}
+.guide-intro-card {
+  box-sizing: border-box;
+  width: min(560px, 100%);
+  max-height: 100%;
+  overflow-y: auto;
+  overflow-x: hidden;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: clamp(8px, 1.7dvh, 18px);
+  padding: clamp(14px, 2.6dvh, 28px) clamp(16px, 4vw, 40px);
+  border-radius: 22px;
+  border: 1px solid color-mix(in srgb, var(--intro-accent) 35%, var(--g-line));
+  background: color-mix(in srgb, var(--g-bg) 93%, var(--intro-accent));
+  box-shadow: 0 24px 70px color-mix(in srgb, var(--intro-accent) 24%, transparent),
+    0 4px 14px color-mix(in srgb, var(--g-ink) 10%, transparent);
+  text-align: center;
+  animation: intro-rise .4s var(--ease-current) both;
+}
+.guide-intro-head {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.guide-intro-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: .4rem;
+  padding: .15rem .6rem;
+  border-radius: var(--r-full);
+  font-size: var(--fs-small);
+  font-weight: 500;
+  color: var(--intro-accent);
+  background: color-mix(in srgb, var(--intro-accent) 12%, transparent);
+}
+.guide-intro-chip::before {
+  content: "";
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: currentColor;
+}
+.guide-intro-chip[data-phase="building"]::before { animation: intro-pulse 1.6s ease-in-out infinite; }
+.guide-intro-chip[data-phase="failed"] {
+  color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 12%, transparent);
+}
+.guide-intro-figure {
+  display: flex;
+  justify-content: center;
+  width: 100%;
+  animation: intro-rise .45s var(--ease-current) both;
+}
+.guide-intro-art {
+  width: min(100%, 330px);
+  height: auto;
+  max-height: 34dvh;
+  color: var(--intro-accent);
+  overflow: visible;
+}
+.guide-intro-heading {
+  margin: 0;
+  font-size: clamp(1.45rem, 2.4vw + 1rem, 2.05rem);
+  line-height: 1.15;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+  color: var(--intro-accent);
+}
+.guide-intro-caption {
+  margin: 0;
+  color: var(--g-muted-strong);
+  font-size: clamp(.95rem, .4vw + .85rem, 1.05rem);
+}
+.guide-intro-dots { display: flex; gap: 8px; }
+.guide-intro-dots span {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--intro-accent) 25%, transparent);
+  transition: background 200ms ease, transform 200ms ease;
+}
+.guide-intro-dots span[data-current] {
+  background: var(--intro-accent);
+  transform: scale(1.3);
+}
+.guide-intro-controls {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 10px;
+  margin-top: 2px;
+}
+.guide-intro-card .guide-button:focus-visible { outline-color: var(--intro-accent); }
+.guide-intro-card .guide-button[data-pressed] { outline-color: var(--intro-accent); }
+@media (hover: hover) {
+  .guide-intro-card .guide-button:hover:not(:disabled) {
+    border-color: color-mix(in srgb, var(--intro-accent) 50%, var(--g-line));
+  }
+}
+.guide-intro-card .guide-intro-next,
+.guide-intro-card .guide-intro-next:hover:not(:disabled) {
+  background: var(--intro-accent);
+  border-color: transparent;
+  color: var(--intro-on-accent);
+  font-weight: 600;
+}
+.guide-intro-card .guide-intro-next .guide-button-key { color: inherit; }
+
+/* The scenes animate with CSS only; every moving part honours reduced motion. */
+.guide-intro-art .art-sheet {
+  fill: color-mix(in srgb, var(--intro-accent) 7%, var(--g-bg));
+  stroke: currentColor;
+  stroke-width: 2.5;
+}
+.guide-intro-art .art-back { opacity: .4; }
+.guide-intro-art .art-line { fill: currentColor; opacity: .55; stroke: none; }
+.guide-intro-art .art-strong { opacity: .95; }
+.guide-intro-art .art-fade { opacity: .35; }
+.guide-intro-art .art-accent-2 { fill: var(--intro-accent-2); opacity: .85; }
+.guide-intro-art .art-page-fill { fill: color-mix(in srgb, var(--intro-accent) 16%, var(--g-bg)); }
+/* Text lines drawn on a filled page. */
+.guide-intro-art .art-on-fill { fill: var(--g-bg); opacity: .85; }
+.guide-intro-art .art-scan {
+  fill: var(--intro-accent-2);
+  animation: intro-scan 2.8s ease-in-out infinite;
+}
+.guide-intro-art .art-check circle { fill: var(--intro-accent); }
+.guide-intro-art .art-check path {
+  fill: none;
+  stroke: var(--g-bg);
+  stroke-width: 2.4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.guide-intro-art .art-check { animation: intro-pop .5s var(--d, 0s) both; }
+.guide-intro-art .art-page { animation: intro-pop .55s var(--d, 0s) both; }
+.guide-intro-art .art-link {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-dasharray: 3 4;
+}
+.guide-intro-art .art-knot { fill: currentColor; }
+.guide-intro-art .art-arrow {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.guide-intro-art .art-edge {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  opacity: .3;
+}
+.guide-intro-art .art-node {
+  fill: var(--g-bg);
+  stroke: currentColor;
+  stroke-width: 2.5;
+  animation: intro-pulse 3.2s var(--d, 0s) ease-in-out infinite;
+}
+.guide-intro-art .art-hub { fill: currentColor; animation: none; }
+.guide-intro-art .art-ring {
+  fill: none;
+  stroke: var(--intro-accent-2);
+  stroke-width: 2;
+  animation: intro-ring 2.6s ease-out infinite;
+}
+.guide-intro-art .art-trail {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.5;
+  stroke-linecap: round;
+}
+.guide-intro-art .art-commit {
+  fill: var(--g-bg);
+  stroke: currentColor;
+  stroke-width: 2.5;
+  animation: intro-pop .5s var(--d, 0s) both;
+}
+.guide-intro-art .art-myth {
+  fill: none;
+  stroke: var(--intro-accent-2);
+  stroke-width: 2.5;
+  stroke-linecap: round;
+  stroke-dasharray: 300;
+  stroke-dashoffset: 300;
+  animation: intro-draw 1.4s .25s ease-out both;
+}
+.guide-intro-art .art-star {
+  fill: var(--intro-accent-2);
+  animation: intro-pop .55s var(--d, 0s) both;
+}
+.guide-intro-art .art-node,
+.guide-intro-art .art-check,
+.guide-intro-art .art-star,
+.guide-intro-art .art-commit,
+.guide-intro-art .art-page,
+.guide-intro-art .art-ring {
+  transform-box: fill-box;
+  transform-origin: center;
+}
+@keyframes intro-scan { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(136px); } }
+@keyframes intro-pop { from { opacity: 0; transform: scale(.35); } }
+@keyframes intro-pulse { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: .55; transform: scale(1.18); } }
+@keyframes intro-draw { to { stroke-dashoffset: 0; } }
+@keyframes intro-ring { from { opacity: .9; transform: scale(1); } to { opacity: 0; transform: scale(2.1); } }
+@keyframes intro-rise { from { opacity: 0; transform: translateY(14px); } }
+@media (prefers-reduced-motion: reduce) {
+  .guide-intro-card,
+  .guide-intro-figure,
+  .guide-intro-dots span,
+  .guide-intro-art,
+  .guide-intro-art * {
+    animation: none !important;
+    transition: none;
+  }
+  .guide-intro-art .art-myth { stroke-dashoffset: 0; }
+}

@@ -74,10 +74,14 @@ test("an App-connected repository missing from Cloud reports under the lesson an
   await page.reload()
   await stage(page, 12)
   await expect(notice).toContainText("isn't on Smithers Cloud yet")
+  /* The persisted Wiki introduction reopens after reload; dismiss it before the retry key. */
+  await page.keyboard.press("Escape")
   await page.route("**/api/workflow/provision", route => route.fulfill({ json: { status: "ready" } }))
   await page.keyboard.press("u")
   await expect.poll(() => launchedFlows(host).length).toBe(1)
   await page.keyboard.press("y")
+  await expect(page.locator('.guide-intro-dock[data-intro="history"]')).toBeVisible()
+  await page.keyboard.press("Escape")
   await stage(page, 13)
 })
 
@@ -127,7 +131,11 @@ test("both failed launches explain themselves and preparation uses a neutral col
       return matches
     })
     expect(await usesDanger()).toBe(false)
+    /* The Wiki introduction is modal; close it so Y reaches the lesson. */
+    await page.keyboard.press("Escape")
     await page.keyboard.press("y")
+    await expect(page.locator('.guide-intro-dock[data-intro="history"]')).toBeVisible()
+    await page.keyboard.press("Escape")
     release()
     await expect(notice.locator("p")).toContainText("Create Wiki didn't start:")
     await expect(notice.locator("p")).toContainText("Create Mythical history didn't start:")
@@ -159,7 +167,11 @@ test("an accepted history run that fails keeps beat 12 open and its keyboard Ret
   await expect(notice.locator("p")).toContainText("Not your fault")
   await expect(notice.locator("p")).not.toContainText("git exited")
   await expect(notice.locator("details")).not.toHaveAttribute("open")
+  /* Dismiss the Mythical history introduction so U reaches the lesson, and likewise the Wiki one. */
+  await page.keyboard.press("Escape")
   await page.keyboard.press("u")
+  await expect(page.locator('.guide-intro-dock[data-intro="wiki"]')).toBeVisible()
+  await page.keyboard.press("Escape")
   await expect.poll(() => launchedFlows(host).length).toBe(2)
   await stage(page, 12)
   const retry = page.locator('.guide-actions [data-flow="history.bootstrap"]')
@@ -176,7 +188,10 @@ test("a failure after advancing removes the running promise and offers a persist
   await failRun(page, () => failed)
   await page.keyboard.press("u")
   await expect.poll(() => launchedFlows(host).length).toBe(1)
+  await page.keyboard.press("Escape")
   await page.keyboard.press("y")
+  await expect(page.locator('.guide-intro-dock[data-intro="history"]')).toBeVisible()
+  await page.keyboard.press("Escape")
   await stage(page, 13)
   failed = "librarian-run-2"
   const retry = page.getByRole("button", { name: "Retry Mythical history", exact: true })
@@ -207,10 +222,18 @@ test("completed Wiki survives reload without Retry or repeated chips, and only f
     } } })
   })
   await page.keyboard.press("u")
+  /* The Wiki introduction is modal; close it so Y reaches the lesson. */
+  await expect(page.locator('.guide-intro-dock[data-intro="wiki"]')).toBeVisible()
+  await page.keyboard.press("Escape")
+  await expect(page.locator(".guide-intro-dock")).toHaveCount(0)
   const wiki = page.locator('.guide-actions [data-flow="wiki.create"]')
   await expect(wiki).toContainText("Wiki ready")
   await expect(wiki).toBeDisabled()
   await page.keyboard.press("y")
+  /* Close the Mythical history introduction before reading the notice beneath it. */
+  await expect(page.locator('.guide-intro-dock[data-intro="history"]')).toBeVisible()
+  await page.keyboard.press("Escape")
+  await expect(page.locator(".guide-intro-dock")).toHaveCount(0)
   const notice = page.locator('.guide-actions [data-notice]')
   await expect(notice.locator("p")).toContainText("Create Mythical history didn't start:")
   await expect(notice.locator("p")).not.toContainText("Wiki")

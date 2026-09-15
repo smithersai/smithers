@@ -1,8 +1,10 @@
 import { activeRepositoryId } from "../RepoContext"
 import { REEL_STAGES } from "../../onboarding/reel.ts"
+import { INTRO_SLIDES } from "../../onboarding/introScript.ts"
 import { GUIDE_BRIDGE, GUIDE_LAST_STEP, GUIDE_STAGES } from "../../onboarding/lessons"
 import { createReelController } from "../../onboarding/reelController"
 import { guideBackwardStep, guideForwardStep } from "../../onboarding/navigation"
+import { LIBRARIAN_SIGNAL } from "./librarianRuns"
 import { conversationTabIdOf, inConversation, initialGuide } from "../AppState"
 import type { GuideState } from "../AppState"
 import { PRACTICE_BRANCH, PRACTICE_CARD, PRACTICE_REPO, practicePicker } from "../practice/PracticeRepository"
@@ -187,7 +189,7 @@ export function createGuideController(ctx: ControllerContext, onStart?: () => Pr
       }
       case "restart": {
         const playthrough = (guide.playthrough ?? 0) + 1
-        for (const field of ["finished", "acceptedPracticeTitle", "responseId", "demoRun", "said", "declined", "practiceSkippedFrom", "repo", "pick", "notice", "noticeDetail", "librarianLaunches"] as const) delete guide[field]
+        for (const field of ["finished", "acceptedPracticeTitle", "responseId", "demoRun", "said", "declined", "practiceSkippedFrom", "repo", "pick", "notice", "noticeDetail", "librarianLaunches", "introSlides", "introSeen"] as const) delete guide[field]
         Object.assign(guide, initialGuide(), { playthrough, completed: ["tutorial.started"] })
         break
       }
@@ -214,6 +216,40 @@ export function createGuideController(ctx: ControllerContext, onStart?: () => Pr
       case "sound":
         guide.sound = !guide.sound
         break
+      /*
+       * Beat 12's illustrated introductions: opening is a consequence of the
+       * lesson's launch pills (GuideShell runLessonAction), each kind presents
+       * once, and the last slide's Next closes back into the tutorial.
+       */
+      case "intro-open": {
+        if (value !== "wiki" && value !== "history") return "Intro takes wiki or history."
+        const stage = GUIDE_STAGES[guide.step]
+        if (guide.finished || stage?.kind !== "do" || stage.completion !== LIBRARIAN_SIGNAL) {
+          return "There is no background introduction here."
+        }
+        if (guide.introSlides !== undefined || guide.introSeen?.includes(value)) break
+        guide.introSlides = { kind: value, index: 0 }
+        guide.introSeen = [...(guide.introSeen ?? []), value]
+        break
+      }
+      case "intro-next": {
+        const slides = guide.introSlides
+        if (slides === undefined) return
+        if (slides.index + 1 >= INTRO_SLIDES[slides.kind].length) delete guide.introSlides
+        else guide.introSlides = { kind: slides.kind, index: slides.index + 1 }
+        break
+      }
+      case "intro-back": {
+        const slides = guide.introSlides
+        if (slides === undefined || slides.index === 0) return
+        guide.introSlides = { kind: slides.kind, index: slides.index - 1 }
+        break
+      }
+      case "intro-close": {
+        if (guide.introSlides === undefined) return
+        delete guide.introSlides
+        break
+      }
       case "notify": {
         /* Every press sends its own notification — a fresh key per press, not the shared slot. */
         const key = `guide-hello-${crypto.randomUUID()}`

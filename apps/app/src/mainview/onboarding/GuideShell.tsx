@@ -9,6 +9,7 @@ import {
 } from "./lessons"
 import { guideClock, readPause, scheduleGuideAdvance, type GuideClock } from "./advance"
 import { ReelShell } from "./Reel.tsx"
+import { IntroSlidesShell } from "./IntroSlides"
 import { guideForwardAction } from "./navigation"
 import { useLiveQuery } from "@tanstack/react-db"
 import { Fragment, useCallback, useRef, useState, type ReactNode, type CSSProperties } from "react"
@@ -253,6 +254,10 @@ export function GuideShell({ children, clock = guideClock }: { children: ReactNo
     const args = argsOf(action)
     if (args === undefined) controller.runCommand(action.flow)
     else controller.runCommand(action.flow, args)
+    /* Beat 12's launches open their illustrated introduction while the run builds. */
+    if (stage === 12 && (action.flow === "wiki.create" || action.flow === "history.bootstrap")) {
+      runCommandGuide("intro-open", action.flow === "wiki.create" ? "wiki" : "history")
+    }
   }
   const runCommandSound = () => {
     runCommandGuide("sound")
@@ -274,7 +279,7 @@ export function GuideShell({ children, clock = guideClock }: { children: ReactNo
   }
   const inputHandlers = useRef<{ resolve: (event: KeyboardEvent) => PressAction | undefined; enabled: () => boolean }>(null!)
   inputHandlers.current = {
-    enabled: () => !guide.finished && guide.reelIndex === undefined && !document.querySelector(".input-mode-menu"),
+    enabled: () => !guide.finished && guide.reelIndex === undefined && guide.introSlides === undefined && !document.querySelector(".input-mode-menu"),
     resolve: (event) => {
       const toastAction = toastActionShortcut(event, document)
       if (toastAction) return toastAction
@@ -628,6 +633,8 @@ export function GuideShell({ children, clock = guideClock }: { children: ReactNo
           </section>
         </div>
         </section>
+      {/* Beat 12's illustrated introductions overlay the shell while a background run builds. */}
+      <IntroSlidesShell />
       {/* The footer shares the shell's column with the dock. */}
       <footer data-keyboard-pane="Tutorial controls" className="guide-footer">
         {stage >= GUIDE_BRIDGE && <LibrarianRunChips key={`${guide.playthrough ?? 0}:${stage}`} cards={cards} clock={clock} />}

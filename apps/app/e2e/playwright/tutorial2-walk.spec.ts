@@ -321,8 +321,14 @@ test("the whole tutorial walks every beat, keyboard first, through asynchronous 
   await expectBeat(page, 12, { repo: INSTALLED_REPO })
   await expect(page.locator(".guide-primary-subtitle")).toHaveText("On its own branch. Your branches stay untouched.")
   await page.keyboard.press("u")
+  await until(page, page.locator('.guide-intro-dock[data-intro="wiki"]'), "the Wiki introduction")
+  await page.keyboard.press("Escape")
+  await gone(page, page.locator(".guide-intro-dock"), "Escape closes the Wiki introduction")
   await until(page, page.locator('[data-run-chip="wiki"]'), "the Wiki run chip")
   await page.keyboard.press("y")
+  await until(page, page.locator('.guide-intro-dock[data-intro="history"]'), "the Mythical history introduction")
+  await page.keyboard.press("Escape")
+  await gone(page, page.locator(".guide-intro-dock"), "Escape closes the Mythical history introduction")
   await until(page, page.locator('[data-run-chip="history"]'), "the history run chip")
   await until(page, followup(page, 12), "both runs launched")
   await expect(followup(page, 12)).toContainText("Both are running. I'll tell you when they're done.")
@@ -568,7 +574,11 @@ test("@live beats 10–12 cross the real login, install check and background lau
     if (await followup(page, 11).count() === 1) {
       await atStage(page, 12)
       await page.keyboard.press("u")
+      await page.locator('.guide-intro-dock[data-intro="wiki"]').waitFor()
+      await page.keyboard.press("Escape")
       await page.keyboard.press("y")
+      await page.locator('.guide-intro-dock[data-intro="history"]').waitFor()
+      await page.keyboard.press("Escape")
       await expect(page.locator("[data-run-chip]").or(page.locator("[data-tutorial-cards] .smithers-card")).first()).toBeVisible({ timeout: 120_000 })
     }
   } finally {
