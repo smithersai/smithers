@@ -88,6 +88,15 @@ describe("pattern declaration execution", () => {
       shards: ["c", "a", "b"]
     })).toEqual([0, 1, 2])
 
+    // Cross the lexical "shard-10"/"shard-2" boundary both within one batch
+    // and across batches; the reducer always receives ordinal shard order.
+    const many = Array.from({ length: 15 }, (_, index) => index)
+    for (const concurrency of [4, 15]) {
+      expect(evaluate(MapReduce.make({ map, reduce, concurrency, onEmpty: "reduce" }), {
+        shards: many
+      })).toEqual(many)
+    }
+
     const land = flow("land", (input) => (input as { readonly id: string }).id)
     expect(evaluate(
       MergeQueue.make({

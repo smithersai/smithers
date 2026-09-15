@@ -9,6 +9,7 @@
 import { Flow, Node } from "@smthrs/core"
 import * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
+import * as Bounded from "./Bounded.ts"
 import * as Compose from "./internal/Compose.ts"
 import { PatternError } from "./PatternError.ts"
 
@@ -67,8 +68,8 @@ export interface RuntimeOptions<I, Shard, Mapped, Reduced, E, R, E2, R2> {
  *
  * The flow input must be a literal `{ shards }` available while planning.
  * Each shard becomes its own map call.
- * Batches are sequenced to enforce the declared concurrency bound, while
- * members inside a batch fan out with `Node.all`.
+ * `Bounded.all` sequences map batches to enforce the declared concurrency
+ * bound. The reducer receives values in shard order.
  *
  * @category constructors
  * @since 0.1.0
@@ -113,33 +114,23 @@ export const make = (options: MakeOptions): Flow.Flow<typeof Schema.Unknown, typ
           ? Node.succeed([])
           : Compose.call(stages.reduce, { input, mapped: [] })
       }
-      let mapped: Node.Node<ReadonlyArray<unknown>, unknown> = Node.succeed([])
-      for (let offset = 0; offset < shards.length; offset += concurrency) {
-        const members: Record<string, Node.Node<unknown, unknown>> = {}
-        const batch = shards.slice(offset, offset + concurrency)
-        batch.forEach((shard, batchIndex) => {
-          const index = offset + batchIndex
-          members[`shard-${index}`] = Compose.call(stages.map, { shard, index, input })
-        })
-        mapped = Node.andThen(
-          mapped,
-          Node.capture({ offset }, (previous) =>
-            Node.map(
-              Node.all(members),
-              Node.capture({ offset }, (values) => [
-                ...previous,
-                ...Object.keys(values).sort((left, right) => Number(left.slice(6)) - Number(right.slice(6))).map((
-                  key
-                ) => values[key])
-              ])
-            ))
-        )
-      }
+      const shardCount = shards.length
+      const mapped = Bounded.all(
+        Object.fromEntries(shards.map((shard, index) => [
+          `shard-${index}`,
+          Compose.call(stages.map, { shard, index, input })
+        ])),
+        { concurrency }
+      )
       return Node.andThen(
         mapped,
         Node.capture(
-          { concurrency, onEmpty },
-          (values) => Compose.call(stages.reduce, { input, mapped: values })
+          { concurrency, onEmpty, shardCount },
+          (values) =>
+            Compose.call(stages.reduce, {
+              input,
+              mapped: Array.from({ length: shardCount }, (_, index) => values[`shard-${index}`])
+            })
         )
       )
     })
