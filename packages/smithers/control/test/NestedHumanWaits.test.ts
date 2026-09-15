@@ -218,6 +218,29 @@ describe("a human wait parked on a nested execution", () => {
     expect(observed.status).toBe("completed")
   })
 
+  it("does not claim a RUNNING ancestor is waiting, only a parked one", async () => {
+    const observed = await run(Effect.gen(function*() {
+      const runtime = yield* ControlRuntime
+      const store = yield* RunStore.RunStore
+      yield* Request.execute({}, { executionId: "run-6", discard: true })
+      const parked = yield* parkedBelow("run-6")
+      return {
+        root: yield* runtime.getRun("run-6"),
+        rootRow: (yield* store.get("run-6")).status,
+        holder: yield* runtime.getRun(parked.runId)
+      }
+    }))
+
+    // Both the root and the execution holding the wait are parked, so both
+    // roll up. A run still running would carry the waits and keep its status:
+    // a `detach` spawn outlives its parent, and a parent that is not blocked
+    // on the question must not be listed as owing an answer.
+    expect(observed.rootRow).toBe("suspended")
+    expect(observed.root.status).toBe("waiting-approval")
+    expect(observed.holder.status).toBe("waiting-approval")
+    expect((observed.holder.pendingWaits ?? []).map((wait) => wait.runId)).toEqual([observed.holder.runId])
+  })
+
   it("still refuses a signal that names no open wait in the tree", async () => {
     const failure = await run(Effect.gen(function*() {
       const control = yield* Control

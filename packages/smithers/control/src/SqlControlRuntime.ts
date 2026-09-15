@@ -650,14 +650,21 @@ const makeRuntime = (
         const pendingWaits = ancestry.humanWaits.get(row.runId)
         return {
           ...base,
-          // A run tree with an open human wait is waiting on a human, however
-          // the row that holds the wait is nested. Rolling the status up here
+          // A PARKED run whose tree holds an open human wait is waiting on a
+          // human, however nested the row that holds it. Rolling the status up
           // is what lets every existing `status: "waiting-approval"` filter —
           // the gateway inbox, `smithers approvals list`, the diagnosis card —
           // find a `HumanTask` parked on a descendant.
-          ...(pendingWaits === undefined || terminal(base.status)
+          //
+          // Only a parked run. A `detach` spawn outlives the run that started
+          // it (`@smthrs/engine-store` `RunState.onParentExit`), so an ancestor
+          // that is still running is not blocked on that child's question and
+          // must not be listed as owing an answer. The waits are reported
+          // either way; the STATUS is the claim that the run cannot proceed.
+          ...(pendingWaits === undefined ? {} : { pendingWaits }),
+          ...(pendingWaits === undefined || base.status !== "parked"
             ? {}
-            : { status: "waiting-approval" as const, pendingWaits }),
+            : { status: "waiting-approval" as const }),
           ...(pendingResume === undefined ? {} : { pendingResume }),
           ...(parentRunId === undefined ? {} : { parentRunId }),
           ...(lineageId === undefined ? {} : { lineageId }),
@@ -1184,7 +1191,7 @@ const makeRuntime = (
       // run-3 stayed invisible while parked on `coding-clarification`.
       const status = includeWaitRollup
         ? sql`CASE
-          WHEN runs.status NOT IN ('completed', 'failed', 'cancelled')
+          WHEN ${ownStatus} = 'parked'
             AND runs.run_id IN (SELECT ancestorId FROM human_wait_ancestry)
           THEN 'waiting-approval' ELSE ${ownStatus} END`
         : ownStatus
