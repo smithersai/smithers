@@ -413,56 +413,12 @@ export const actionlintImages: Readonly<Record<CiToolchain.ActionlintRelease, st
  */
 const controlCharacter = /[\u0000-\u0008\u000B-\u001F\u007F]/
 
-/**
- * Characters a plain (unquoted) YAML scalar may carry here. `'` is included
- * because a single quote is only an indicator as the FIRST character, which the
- * leading `[A-Za-z0-9]` already excludes; flow indicators (`[`, `]`, `{`, `}`,
- * `,`), `#`, and everything else force quoting.
- */
-const plainScalar = /^[A-Za-z0-9][A-Za-z0-9 ._/@:+'-]*$/
-
-/**
- * Plain scalars a YAML parser resolves to something that is not a string.
- *
- * Every attribute rendered through `scalar` is declared a `string`, so a value
- * that resolves to a boolean, null, a number, or a timestamp is a value the
- * workflow no longer carries: a workflow named `true` becomes the boolean
- * `true`, a branch `null` becomes an empty entry, a runner `false` becomes a
- * boolean `runs-on` GitHub rejects, and a numeric-looking job name becomes a
- * number. The YAML 1.2 core schema resolves the booleans, `null`, and the
- * numbers; GitHub's parser also accepts YAML 1.1 spellings (`yes`, `off`, `~`,
- * octal, sexagesimal, timestamps), so those are quoted too. The list is
- * deliberately wider than any one parser: quoting a string that did not need it
- * is invisible, resolving one that did is a silently different workflow.
- */
-const yamlBoolean = /^(?:y|Y|yes|Yes|YES|n|N|no|No|NO|true|True|TRUE|false|False|FALSE|on|On|ON|off|Off|OFF)$/
-const yamlNull = /^(?:~|null|Null|NULL)$/
-const yamlNumber =
-  /^[-+]?(?:0b[01_]+|0o[0-7_]+|0x[0-9a-fA-F_]+|0[0-7_]+|[0-9][0-9_]*(?::[0-5]?[0-9])+(?:\.[0-9_]*)?|(?:[0-9][0-9_]*)?\.[0-9_]*(?:[eE][-+]?[0-9]+)?|[0-9][0-9_]*(?:\.[0-9_]*)?(?:[eE][-+]?[0-9]+)?)$/
-const yamlInfinity = /^[-+]?\.(?:inf|Inf|INF|nan|NaN|NAN)$/
-const yamlTimestamp = /^[0-9]{4}-[0-9]{1,2}-[0-9]{1,2}(?:[Tt ].*)?$/
-
-/** Whether a plain scalar would resolve to something other than a string. */
-const resolvesToNonString = (value: string): boolean =>
-  yamlBoolean.test(value) || yamlNull.test(value) || yamlNumber.test(value) ||
-  yamlInfinity.test(value) || yamlTimestamp.test(value)
-
-/**
- * Quotes a scalar unless YAML reads it back as exactly the declared string.
- *
- * `JSON.stringify` emits a YAML double-quoted scalar, whose escape set agrees
- * with JSON's for every character that can appear here, so the quoted form
- * always reads back byte-identical.
- */
+/** Quote string scalars consistently so YAML cannot reinterpret their type. */
 const scalar = (value: string): string => {
   if (controlCharacter.test(value)) {
     throw new Error(`GithubCiGen: ${JSON.stringify(value)} contains a control character`)
   }
-  return plainScalar.test(value) &&
-      !value.includes(": ") && !value.endsWith(":") && !/\s$/.test(value) &&
-      !resolvesToNonString(value)
-    ? value
-    : JSON.stringify(value)
+  return JSON.stringify(value)
 }
 
 /**
@@ -1074,7 +1030,7 @@ const validateJobRunners = (job: Job): void => {
   }
   const platforms = new Set<string>()
   for (const row of job.matrix) {
-    if (!runnerLabel.test(row.os) || resolvesToNonString(row.os)) {
+    if (!runnerLabel.test(row.os)) {
       throw new Error(
         `GithubCiGen: ${JSON.stringify(row.os)} is not a runner label; use one label per matrix row`
       )

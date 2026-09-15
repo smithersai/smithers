@@ -1,25 +1,47 @@
+import * as Yaml from "yaml"
 import assert from "node:assert/strict"
 import { readFileSync } from "node:fs"
 import { join } from "node:path"
 import { describe, it } from "node:test"
 import { readWorkspaceInventory } from "../readWorkspaceInventory.ts"
 
+/** The workflow fields whose values form the CI contract. */
+interface CiStep {
+  readonly name?: string
+  readonly run?: string
+  readonly uses?: string
+  readonly if?: string
+  readonly env?: Readonly<Record<string, string>>
+  readonly with?: Readonly<Record<string, string>>
+}
+interface CiJob {
+  readonly name?: string
+  readonly if?: string
+  readonly steps: ReadonlyArray<CiStep>
+  readonly strategy?: unknown
+  readonly "runs-on"?: string
+  readonly "timeout-minutes"?: number
+  readonly "continue-on-error"?: boolean | string
+}
+const readCi = (): { readonly on: Readonly<Record<string, unknown>>; readonly jobs: Readonly<Record<string, CiJob>> } =>
+  Yaml.parse(readFileSync(new URL("../../.github/workflows/ci.yml", import.meta.url), "utf8"))
+
 describe("ci conformance", () => {
   it("keeps cache write credentials out of every pull-request job", () => {
-    const ci = readFileSync(new URL("../../.github/workflows/ci.yml", import.meta.url), "utf8")
-    assert.doesNotMatch(ci, /secrets\.SMITHERS_CACHE_TOKEN\b/)
-    const jobs = ci.split("\njobs:\n")[1]!.split(/\n(?= {2}\S)/)
-    const publishers = jobs.filter((job) => job.includes("secrets.SMITHERS_CACHE_WRITE_TOKEN"))
+    const ci = readCi()
+    assert.doesNotMatch(JSON.stringify(ci), /secrets\.SMITHERS_CACHE_TOKEN\b/)
+    const publishers = Object.entries(ci.jobs).filter(([, job]) =>
+      JSON.stringify(job).includes("secrets.SMITHERS_CACHE_WRITE_TOKEN"))
     assert.equal(publishers.length, 1)
-    assert.match(publishers[0]!, /^ {2}cache-publish:/)
-    assert.match(publishers[0]!, /^ {4}if: \$\{\{ github.event_name == 'push' && github.ref == 'refs\/heads\/main' \}\}$/m)
-    for (const job of jobs) {
-      for (const step of job.split(/\n(?= {6}- )/).slice(1)) {
-        if (!step.includes("run: pnpm exec smthrs")) continue
-        assert.match(step, /SMITHERS_CACHE_READ_TOKEN: "\$\{\{ secrets\.SMITHERS_CACHE_READ_TOKEN \}\}"/)
-        if (job === publishers[0]) continue
-        assert.doesNotMatch(step, /SMITHERS_CACHE_WRITE_TOKEN|SMITHERS_CACHE_TOKEN/)
-        assert.match(step, /SMITHERS_CACHE_NAMESPACE: "\$\{\{ github.event_name == 'pull_request' && format\('pr-\{0\}', github.event.pull_request.number\) \|\| '' \}\}"/)
+    assert.equal(publishers[0]![0], "cache-publish")
+    assert.equal(publishers[0]![1].if, "${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}")
+    for (const [id, job] of Object.entries(ci.jobs)) {
+      for (const step of job.steps) {
+        if (!step.run?.startsWith("pnpm exec smthrs")) continue
+        assert.equal(step.env?.SMITHERS_CACHE_READ_TOKEN, "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}")
+        if (id === "cache-publish") continue
+        assert.doesNotMatch(JSON.stringify(step), /SMITHERS_CACHE_WRITE_TOKEN|SMITHERS_CACHE_TOKEN/)
+        assert.equal(step.env?.SMITHERS_CACHE_NAMESPACE, "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}")
       }
     }
     const release = readFileSync(new URL("../../.github/workflows/release.yml", import.meta.url), "utf8")
@@ -222,6 +244,8 @@ describe("ci conformance", () => {
       "docs:deploy": "pnpm --filter \"@smithers/docs-*\" --filter \"!@smithers/docs-shared\" -r run deploy",
       "docs:sync": "node apps/docs/shared/sync-content.mjs --all",
       dev: "pnpm --filter smithers-app run start",
+      commit: "node scripts/commit.mjs",
+      deploy: "pnpm --filter smithers-server run deploy",
       lint: "pnpm --recursive --if-present run lint",
       "lint:jsdoc":
         "eslint --config eslint.config.js \"packages/*/src/**/*.ts\" \"packages/*/*/src/**/*.ts\" \"packages/*/*/*/src/**/*.ts\" --max-warnings=0",
@@ -243,119 +267,56 @@ describe("ci conformance", () => {
   })
 
   it("pins the CI steps that reach the target graph and the jj install (issue #166)", () => {
-    // The yml is the last unpinned hop: a step that stops running the package
-    // graph (or drops the jj install the real-binary host suite requires, issue
-    // #163) skips enforcement with every conformance cell green. Source-text
-    // pins, matching the config-source approach used across this suite.
-    //
-    // The gates used to be `pnpm run check`, `pnpm run lint`, `pnpm run
-    // circular`, `pnpm run browser`, and `pnpm test` — five recursive scripts
-    // named as raw strings in PACKAGE.ts. They are targets now, so what is pinned
-    // is the verb-and-pattern invocation that plans them: `smthrs ci` over the
-    // package graph covers lib, check, test, lint, fmt, docs, and circular for
-    // every package, and the browser contract is its own labelled target.
-    const ci = readFileSync(join(packagesDir, "..", ".github", "workflows", "ci.yml"), "utf8")
-    assert.match(ci, /^\s*- uses: pnpm\/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86$/m)
-    assert.match(ci, /^\s*- run: pnpm install --frozen-lockfile --ignore-scripts$/m)
-    assert.match(ci, /^\s*run: pnpm exec smthrs ci '\/\/packages\/\.\.\.' --jobs 2 --verbose$/m)
-    assert.match(ci, /^\s*run: pnpm exec smthrs test '\/\/scripts\/\.\.\.' --verbose$/m)
-    // Browser support is a hard requirement met through layers; the browser
-    // contract target is the only thing that proves it, so CI has to run it
-    // (REVIEW.md blocker 7).
-    assert.match(ci, /^\s*run: pnpm exec smthrs test '\/\/scripts:webBundleContract' --verbose$/m)
-    assert.match(ci, /^\s*run: pnpm exec smthrs test '\/\/packages\/\.\.\.' --jobs 2 --verbose$/m)
-    // The Bun compatibility matrix. It used to be `//ci/...`, a directory whose
-    // only content was one Vitest target per package, declared from outside the
-    // package it re-ran, and then a dedicated `bun` job running
-    // `//packages/...:bunTest`. Both are gone: a `bunTest` is a `test`-kind
-    // target inside its own package, so the two pins above --
-    // `ci '//packages/...'` and `test '//packages/...'` -- already plan every
-    // Bun suite. What has to stay pinned is that those two jobs install Bun,
-    // because dropping the runtime from either toolchain would make the suites
-    // fail to run rather than silently skip.
-    assert.ok(!ci.includes("//ci/..."))
-    const bunSetup = ci.split(/^  (?=\S)/m).filter((job) =>
-      job.includes("oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6")
-    )
-    assert.ok(bunSetup.length >= 2)
-    assert.equal(bunSetup.some((job) => job.startsWith("test:")), true)
-    assert.equal(bunSetup.some((job) => job.startsWith("packages:")), true)
-    // The fault matrix. Until release gate B6 it ran under no gate at all:
-    // `//packages/...` did not reach `e2e/`, `e2e` was not a workspace member,
-    // and `//e2e:faults` failed in 262 ms with `Command "vitest" not found`.
-    // There is no `e2e/` any more: each case lives in the package it asserts
-    // about and `//packages/...:faults` selects every one of them, so the
-    // separate typecheck step is gone too — the `ci '//packages/...'` pin above
-    // covers it, because each package's `check` reads its own `test/**`.
-    // `--jobs 1` is part of the contract rather than a throughput choice: two
-    // packages' fault suites cannot share a machine any more than two files
-    // inside one of them can. The job is required now that the redaction
-    // deliverable landed: case 22's terminal-log half was the one gate red by
-    // design, the redacting logger closed it, and the matrix is 67 of 67.
-    assert.ok(!ci.includes("//e2e:"))
-    assert.match(ci, /^\s*run: pnpm exec smthrs test '\/\/packages\/\.\.\.:faults' --jobs 1 --verbose$/m)
-    // And it gates. `continue-on-error: true` is the single line that makes a
-    // lane advisory, so a matrix that runs but cannot fail the pipeline is
-    // exactly the state this deliverable left behind, and it would read as
-    // green from every other pin in this file. Slice the job out by its own
-    // key rather than searching the whole document, because two other lanes
-    // legitimately carry the line.
-    const faultsJob = ci.slice(ci.indexOf("\n  e2e-faults:") + 1).split(/\n {2}(?=\S)/)[0]!
-    assert.ok(faultsJob.includes("//packages/...:faults"))
-    assert.ok(!faultsJob.includes("continue-on-error"))
-    assert.match(ci, /tool: jj-cli@\d+\.\d+\.\d+/)
-    assert.match(ci, /^\s*run: jj git init --colocate$/m)
+    const ci = readCi()
+    const steps = Object.values(ci.jobs).flatMap((job) => job.steps)
+    const commands = steps.map((step) => step.run)
+    assert.ok(steps.some((step) => step.uses === "pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86"))
+    for (const command of [
+      "pnpm install --frozen-lockfile --ignore-scripts",
+      "pnpm exec smthrs ci '//packages/...' --jobs 2 --verbose",
+      "pnpm exec smthrs test '//scripts/...' --verbose",
+      "pnpm exec smthrs test '//scripts:webBundleContract' --verbose",
+      "pnpm exec smthrs test '//packages/...' --jobs 2 --verbose",
+      "pnpm exec smthrs test '//packages/...:faults' --jobs 1 --verbose",
+      "jj git init --colocate"
+    ]) assert.ok(commands.includes(command), command)
+    assert.doesNotMatch(JSON.stringify(ci), /\/\/(?:ci\/|e2e:)/)
+    for (const id of ["test", "packages"]) {
+      assert.ok(ci.jobs[id]!.steps.some((step) => step.uses === "oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6"))
+    }
+    const faults = ci.jobs["e2e-faults"]!
+    assert.ok(faults.steps.some((step) => step.run?.includes("//packages/...:faults")))
+    assert.doesNotMatch(JSON.stringify(faults), /continue-on-error/)
+    assert.ok(steps.some((step) => /^jj-cli@\d+\.\d+\.\d+$/.test(step.with?.tool ?? "")))
   })
 
   it("runs the package suites on every platform as one matrix, with the advisory bit as data", () => {
-    // The package suites used to be a required ubuntu job plus two
-    // copy-pasted advisory jobs, `node-macos` and `node-windows`, free to
-    // drift into running different steps. One matrix runs the same step
-    // everywhere. What is pinned is the shape that makes a platform's status
-    // legible without an `if:` key: the platform list, one `include:` row per
-    // platform carrying its own advisory bit, and a `continue-on-error` that
-    // reads that bit rather than excusing every row at once.
-    //
-    // macOS and Windows are advisory ONLY until the matrix proves them green.
-    // Promoting one flips its boolean in PACKAGE.ts and moves the `advisory:
-    // true` line below; leaving a promoted platform advisory here is the drift
-    // this cell exists to force into review.
-    const ci = readFileSync(join(packagesDir, "..", ".github", "workflows", "ci.yml"), "utf8")
-    assert.ok(ci.includes(`  packages:
-    name: "package suites (\${{ matrix.os }})"
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
-        include:
-          - os: ubuntu-latest
-            advisory: false
-          - os: macos-latest
-            advisory: true
-          - os: windows-latest
-            advisory: true
-    runs-on: \${{ matrix.os }}
-    timeout-minutes: 60
-    continue-on-error: \${{ matrix.advisory }}
-`))
-    // One rendering of the step, shared by every platform.
-    assert.equal(ci.split("run: pnpm exec smthrs test '//packages/...'").length - 1, 1)
-    // The lanes the matrix replaced are gone, not renamed alongside it.
-    assert.ok(!ci.includes("node-macos"))
-    assert.ok(!ci.includes("node-windows"))
-    // A red platform must not cancel the platforms still running: the matrix
-    // exists to answer which platforms are green.
-    assert.match(ci, /^ {6}fail-fast: false$/m)
+    const ci = readCi()
+    const job = ci.jobs.packages!
+    assert.equal(job.name, "package suites (${{ matrix.os }})")
+    assert.deepEqual(job.strategy, {
+      "fail-fast": false,
+      matrix: {
+        os: ["ubuntu-latest", "macos-latest", "windows-latest"],
+        include: [
+          { os: "ubuntu-latest", advisory: false },
+          { os: "macos-latest", advisory: true },
+          { os: "windows-latest", advisory: true }
+        ]
+      }
+    })
+    assert.equal(job["runs-on"], "${{ matrix.os }}")
+    assert.equal(job["timeout-minutes"], 60)
+    assert.equal(job["continue-on-error"], "${{ matrix.advisory }}")
+    assert.equal(Object.values(ci.jobs).flatMap((row) => row.steps)
+      .filter((step) => step.run?.startsWith("pnpm exec smthrs test '//packages/...'")).length, 1)
+    assert.ok(!Object.hasOwn(ci.jobs, "node-macos"))
+    assert.ok(!Object.hasOwn(ci.jobs, "node-windows"))
   })
 
   it("keeps every CI step a target invocation, never a hand-written command", () => {
-    // The rule this pins: a PACKAGE.ts file declares targets, and the argv a
-    // target runs is rendered inside its implementation. A `run:` line in the
-    // generated workflow that is not a target invocation, an install, or a
-    // toolchain step derived from a declaration would mean someone reopened the
-    // free-form step surface that `GithubCiGen` deleted.
-    const ci = readFileSync(join(packagesDir, "..", ".github", "workflows", "ci.yml"), "utf8")
-    const commands = [...ci.matchAll(/^\s*(?:- )?run: (?!\|)(.+)$/gm)].map((match) => match[1]!)
+    const commands = Object.values(readCi().jobs).flatMap((job) => job.steps)
+      .flatMap((step) => step.run === undefined || step.run.includes("\n") ? [] : [step.run])
     assert.ok(commands.length > 0)
     const derived = [
       /^pnpm exec smthrs (?:build|test|lint|docs|review|ci) '\/\/[^']*'( --jobs \d+)? --verbose$/,
@@ -364,34 +325,20 @@ describe("ci conformance", () => {
       /^jj git init --colocate$/
     ]
     assert.deepEqual(commands.filter((command) => !derived.some((shape) => shape.test(command))), [])
-    // No recursive pnpm script survives as a gate: those are what the target
-    // graph replaced.
-    assert.doesNotMatch(ci, /^\s*run: pnpm run /m)
-    assert.doesNotMatch(ci, /^\s*run: node --test /m)
   })
 
   it("pins the CI triggers and forbids step conditions on enforcement (issue #176)", () => {
-    // The #166 pins cover the run commands but not the two cheapest silent
-    // disables: deleting `pull_request:` from the `on:` block (CI stops
-    // gating PRs while every run-line regex still matches), or adding an
-    // `if:` condition to a named step (its separate `run:` line matches
-    // verbatim regardless). Pin the trigger block exactly, and assert the
-    // enforcement jobs contain no `if:` key. The separate cache publisher
-    // is guarded to main pushes and cannot satisfy a required PR gate.
-    const ci = readFileSync(join(packagesDir, "..", ".github", "workflows", "ci.yml"), "utf8")
-    assert.match(ci, /^on:\n {2}push:\n {4}branches: \[main\]\n {2}pull_request:$/m)
-    // Evidence collection must run after a failed gate too. Only these named
-    // artifact steps may be unconditional finalizers; enforcement steps still
-    // cannot add an `if` that makes the required work disappear.
-    const enforcement = ci.replace(
-      /^ {6}- name: (?:Collect|Upload) (?:ci-test-tier-evidence|apps-e2e-artifacts)\n {8}if: always\(\)$/gm,
-      ""
-    )
-    for (const job of enforcement.split("\njobs:\n")[1]!.split(/\n(?= {2}\S)/)) {
-      const checked = job.startsWith("  cache-publish:")
-        ? job.replace(/^ {4}if: \$\{\{ github.event_name == 'push' && github.ref == 'refs\/heads\/main' \}\}$/m, "")
-        : job
-      assert.doesNotMatch(checked, /^\s*if:/m)
+    const ci = readCi()
+    assert.deepEqual(ci.on.push, { branches: ["main"] })
+    assert.ok(Object.hasOwn(ci.on, "pull_request"))
+    for (const [id, job] of Object.entries(ci.jobs)) {
+      assert.equal(job.if, id === "cache-publish"
+        ? "${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}"
+        : undefined)
+      for (const step of job.steps) {
+        const artifact = /^(?:Collect|Upload) (?:ci-test-tier-evidence|apps-e2e-artifacts)$/.test(step.name ?? "")
+        assert.equal(step.if, artifact ? "always()" : undefined)
+      }
     }
   })
 })

@@ -1,28 +1,28 @@
-name: CI
+name: "CI"
 on:
   push:
-    branches: [main]
+    branches: ["main"]
   pull_request:
 concurrency:
   group: ci-${{ github.event.pull_request.number || github.sha }}
   cancel-in-progress: true
 jobs:
-  cache-publish:
-    name: Publish reviewed workspace results to the cache
-    runs-on: ubuntu-latest
+  "cache-publish":
+    name: "Publish reviewed workspace results to the cache"
+    runs-on: "ubuntu-latest"
     if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
     timeout-minutes: 120
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
-      - name: Install Go
-        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff
+      - uses: "actions/checkout@11d5960a326750d5838078e36cf38b85af677262"
+      - name: "Install Go"
+        uses: "actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff"
         with:
-          go-version: 1.26.0
-      - name: Install Foundry
-        uses: foundry-rs/foundry-toolchain@908c540300062bd5a7e473851cdb4282204cee09
+          "go-version": "1.26.0"
+      - name: "Install Foundry"
+        uses: "foundry-rs/foundry-toolchain@908c540300062bd5a7e473851cdb4282204cee09"
         with:
-          version: v1.8.1
-      - name: Enable the containerd image store
+          "version": "v1.8.1"
+      - name: "Enable the containerd image store"
         run: |
           if command -v docker >/dev/null 2>&1 && [ "$(uname -s)" = Linux ] \
             && [ "$(docker info --format '{{.Driver}}' 2>/dev/null)" != overlayfs ]; then
@@ -35,32 +35,32 @@ jobs:
             sudo systemctl restart docker
             docker info --format 'docker storage driver: {{.Driver}}'
           fi
-        shell: bash
-      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        shell: "bash"
+      - uses: "pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86"
+      - uses: "actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020"
         with:
-          node-version: 22.19.0
-          cache: pnpm
-      - name: Install certified npm
+          "node-version": "22.19.0"
+          "cache": "pnpm"
+      - name: "Install certified npm"
         run: |
           npm install --global 'npm@11.16.0' --ignore-scripts --no-audit --no-fund
           test "$(npm --version)" = '11.16.0'
-        shell: bash
-      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6
+        shell: "bash"
+      - uses: "oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6"
         with:
-          bun-version: 1.4.1
-      - run: pnpm install --frozen-lockfile --ignore-scripts
-      - name: Install jj
-        uses: taiki-e/install-action@e67fa11c4b9316fa714ddf0abed07a0c3143b95b
+          "bun-version": "1.4.1"
+      - run: "pnpm install --frozen-lockfile --ignore-scripts"
+      - name: "Install jj"
+        uses: "taiki-e/install-action@e67fa11c4b9316fa714ddf0abed07a0c3143b95b"
         with:
-          tool: jj-cli@0.39.0
-      - name: Initialize colocated jj repository
-        run: jj git init --colocate
-      - name: Install ripgrep
-        uses: taiki-e/install-action@e67fa11c4b9316fa714ddf0abed07a0c3143b95b
+          "tool": "jj-cli@0.39.0"
+      - name: "Initialize colocated jj repository"
+        run: "jj git init --colocate"
+      - name: "Install ripgrep"
+        uses: "taiki-e/install-action@e67fa11c4b9316fa714ddf0abed07a0c3143b95b"
         with:
-          tool: ripgrep@14.1.1
-      - name: Install system packages
+          "tool": "ripgrep@14.1.1"
+      - name: "Install system packages"
         run: |
           if command -v apt-get >/dev/null 2>&1; then
             sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends 'bubblewrap'
@@ -68,32 +68,32 @@ jobs:
               sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
             fi
           fi
-        shell: bash
-      - name: Workspace targets
-        run: pnpm exec smthrs ci '//packages/...' --jobs 2 --verbose
+        shell: "bash"
+      - name: "Workspace targets"
+        run: "pnpm exec smthrs ci '//packages/...' --jobs 2 --verbose"
         env:
-          SMITHERS_CACHE_URL: "${{ secrets.SMITHERS_CACHE_URL }}"
-          SMITHERS_CACHE_READ_TOKEN: "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
-          SMITHERS_CACHE_WRITE_TOKEN: "${{ secrets.SMITHERS_CACHE_WRITE_TOKEN }}"
-  test:
+          "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
+          "SMITHERS_CACHE_READ_TOKEN": "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
+          "SMITHERS_CACHE_WRITE_TOKEN": "${{ secrets.SMITHERS_CACHE_WRITE_TOKEN }}"
+  "test":
     name: "workspace graph (coverage gates enforced)"
-    runs-on: ubuntu-latest
+    runs-on: "ubuntu-latest"
     timeout-minutes: 120
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
-      - name: Validate GitHub Actions workflows
-        uses: docker://rhysd/actionlint@sha256:6f03470d0152251d7f07f7c4dc019dbe7024c72cd952f839544c7798843efa8f
+      - uses: "actions/checkout@11d5960a326750d5838078e36cf38b85af677262"
+      - name: "Validate GitHub Actions workflows"
+        uses: "docker://rhysd/actionlint@sha256:6f03470d0152251d7f07f7c4dc019dbe7024c72cd952f839544c7798843efa8f"
         with:
-          args: ".github/workflows/ci.yml .github/workflows/release.yml .github/workflows/release-auth.yml .github/workflows/apps-deploy.yml .github/workflows/canary.yml .github/workflows/pr-review.yml .github/workflows/reliability.yml .github/workflows/mirror-sync.yml"
-      - name: Install Go
-        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff
+          "args": ".github/workflows/ci.yml .github/workflows/release.yml .github/workflows/release-auth.yml .github/workflows/apps-deploy.yml .github/workflows/canary.yml .github/workflows/pr-review.yml .github/workflows/reliability.yml .github/workflows/mirror-sync.yml"
+      - name: "Install Go"
+        uses: "actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff"
         with:
-          go-version: 1.26.0
-      - name: Install Foundry
-        uses: foundry-rs/foundry-toolchain@908c540300062bd5a7e473851cdb4282204cee09
+          "go-version": "1.26.0"
+      - name: "Install Foundry"
+        uses: "foundry-rs/foundry-toolchain@908c540300062bd5a7e473851cdb4282204cee09"
         with:
-          version: v1.8.1
-      - name: Enable the containerd image store
+          "version": "v1.8.1"
+      - name: "Enable the containerd image store"
         run: |
           if command -v docker >/dev/null 2>&1 && [ "$(uname -s)" = Linux ] \
             && [ "$(docker info --format '{{.Driver}}' 2>/dev/null)" != overlayfs ]; then
@@ -106,32 +106,32 @@ jobs:
             sudo systemctl restart docker
             docker info --format 'docker storage driver: {{.Driver}}'
           fi
-        shell: bash
-      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        shell: "bash"
+      - uses: "pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86"
+      - uses: "actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020"
         with:
-          node-version: 22.19.0
-          cache: pnpm
-      - name: Install certified npm
+          "node-version": "22.19.0"
+          "cache": "pnpm"
+      - name: "Install certified npm"
         run: |
           npm install --global 'npm@11.16.0' --ignore-scripts --no-audit --no-fund
           test "$(npm --version)" = '11.16.0'
-        shell: bash
-      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6
+        shell: "bash"
+      - uses: "oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6"
         with:
-          bun-version: 1.4.1
-      - run: pnpm install --frozen-lockfile --ignore-scripts
-      - name: Install jj
-        uses: taiki-e/install-action@e67fa11c4b9316fa714ddf0abed07a0c3143b95b
+          "bun-version": "1.4.1"
+      - run: "pnpm install --frozen-lockfile --ignore-scripts"
+      - name: "Install jj"
+        uses: "taiki-e/install-action@e67fa11c4b9316fa714ddf0abed07a0c3143b95b"
         with:
-          tool: jj-cli@0.39.0
-      - name: Initialize colocated jj repository
-        run: jj git init --colocate
-      - name: Install ripgrep
-        uses: taiki-e/install-action@e67fa11c4b9316fa714ddf0abed07a0c3143b95b
+          "tool": "jj-cli@0.39.0"
+      - name: "Initialize colocated jj repository"
+        run: "jj git init --colocate"
+      - name: "Install ripgrep"
+        uses: "taiki-e/install-action@e67fa11c4b9316fa714ddf0abed07a0c3143b95b"
         with:
-          tool: ripgrep@14.1.1
-      - name: Install system packages
+          "tool": "ripgrep@14.1.1"
+      - name: "Install system packages"
         run: |
           if command -v apt-get >/dev/null 2>&1; then
             sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends 'bubblewrap'
@@ -139,176 +139,176 @@ jobs:
               sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
             fi
           fi
-        shell: bash
-      - name: Examples
-        run: pnpm exec smthrs ci '//examples/...' --verbose
+        shell: "bash"
+      - name: "Examples"
+        run: "pnpm exec smthrs ci '//examples/...' --verbose"
         env:
-          SMITHERS_CACHE_URL: "${{ secrets.SMITHERS_CACHE_URL }}"
-          SMITHERS_CACHE_READ_TOKEN: "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
-          SMITHERS_CACHE_NAMESPACE: "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
-      - name: Workspace targets
-        run: pnpm exec smthrs ci '//packages/...' --jobs 2 --verbose
+          "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
+          "SMITHERS_CACHE_READ_TOKEN": "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
+          "SMITHERS_CACHE_NAMESPACE": "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
+      - name: "Workspace targets"
+        run: "pnpm exec smthrs ci '//packages/...' --jobs 2 --verbose"
         env:
-          SMITHERS_CACHE_URL: "${{ secrets.SMITHERS_CACHE_URL }}"
-          SMITHERS_CACHE_READ_TOKEN: "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
-          SMITHERS_CACHE_NAMESPACE: "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
-      - name: Script gates
-        run: pnpm exec smthrs test '//scripts/...' --verbose
+          "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
+          "SMITHERS_CACHE_READ_TOKEN": "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
+          "SMITHERS_CACHE_NAMESPACE": "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
+      - name: "Script gates"
+        run: "pnpm exec smthrs test '//scripts/...' --verbose"
         env:
-          SMITHERS_CACHE_URL: "${{ secrets.SMITHERS_CACHE_URL }}"
-          SMITHERS_CACHE_READ_TOKEN: "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
-          SMITHERS_CACHE_NAMESPACE: "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
-      - name: Repository flows
-        run: pnpm exec smthrs test '//flows:pack' --verbose
+          "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
+          "SMITHERS_CACHE_READ_TOKEN": "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
+          "SMITHERS_CACHE_NAMESPACE": "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
+      - name: "Repository flows"
+        run: "pnpm exec smthrs test '//flows:pack' --verbose"
         env:
-          SMITHERS_CACHE_URL: "${{ secrets.SMITHERS_CACHE_URL }}"
-          SMITHERS_CACHE_READ_TOKEN: "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
-          SMITHERS_CACHE_NAMESPACE: "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
-      - name: Public export JSDoc
-        run: pnpm exec smthrs lint '//:jsdocTree' --verbose
+          "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
+          "SMITHERS_CACHE_READ_TOKEN": "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
+          "SMITHERS_CACHE_NAMESPACE": "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
+      - name: "Public export JSDoc"
+        run: "pnpm exec smthrs lint '//:jsdocTree' --verbose"
         env:
-          SMITHERS_CACHE_URL: "${{ secrets.SMITHERS_CACHE_URL }}"
-          SMITHERS_CACHE_READ_TOKEN: "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
-          SMITHERS_CACHE_NAMESPACE: "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
-      - name: Script lint
-        run: pnpm exec smthrs lint '//scripts:lint' --verbose
+          "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
+          "SMITHERS_CACHE_READ_TOKEN": "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
+          "SMITHERS_CACHE_NAMESPACE": "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
+      - name: "Script lint"
+        run: "pnpm exec smthrs lint '//scripts:lint' --verbose"
         env:
-          SMITHERS_CACHE_URL: "${{ secrets.SMITHERS_CACHE_URL }}"
-          SMITHERS_CACHE_READ_TOKEN: "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
-          SMITHERS_CACHE_NAMESPACE: "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
-      - name: JSDoc rule harness
-        run: pnpm exec smthrs test '//:jsdocRules' --verbose
+          "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
+          "SMITHERS_CACHE_READ_TOKEN": "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
+          "SMITHERS_CACHE_NAMESPACE": "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
+      - name: "JSDoc rule harness"
+        run: "pnpm exec smthrs test '//:jsdocRules' --verbose"
         env:
-          SMITHERS_CACHE_URL: "${{ secrets.SMITHERS_CACHE_URL }}"
-          SMITHERS_CACHE_READ_TOKEN: "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
-          SMITHERS_CACHE_NAMESPACE: "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
-      - name: Factory harness
-        run: pnpm exec smthrs test '//:factoryHarness' --verbose
+          "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
+          "SMITHERS_CACHE_READ_TOKEN": "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
+          "SMITHERS_CACHE_NAMESPACE": "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
+      - name: "Factory harness"
+        run: "pnpm exec smthrs test '//:factoryHarness' --verbose"
         env:
-          SMITHERS_CACHE_URL: "${{ secrets.SMITHERS_CACHE_URL }}"
-          SMITHERS_CACHE_READ_TOKEN: "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
-          SMITHERS_CACHE_NAMESPACE: "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
+          "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
+          "SMITHERS_CACHE_READ_TOKEN": "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
+          "SMITHERS_CACHE_NAMESPACE": "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
       - name: "Agent eval suite (offline, baseline-gated)"
-        run: pnpm exec smthrs test '//evals/agent:test' --verbose
+        run: "pnpm exec smthrs test '//evals/agent:test' --verbose"
         env:
-          SMITHERS_CACHE_URL: "${{ secrets.SMITHERS_CACHE_URL }}"
-          SMITHERS_CACHE_READ_TOKEN: "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
-          SMITHERS_CACHE_NAMESPACE: "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
-      - name: Agent eval typecheck
-        run: pnpm exec smthrs build '//evals/agent:check' --verbose
+          "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
+          "SMITHERS_CACHE_READ_TOKEN": "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
+          "SMITHERS_CACHE_NAMESPACE": "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
+      - name: "Agent eval typecheck"
+        run: "pnpm exec smthrs build '//evals/agent:check' --verbose"
         env:
-          SMITHERS_CACHE_URL: "${{ secrets.SMITHERS_CACHE_URL }}"
-          SMITHERS_CACHE_READ_TOKEN: "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
-          SMITHERS_CACHE_NAMESPACE: "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
+          "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
+          "SMITHERS_CACHE_READ_TOKEN": "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
+          "SMITHERS_CACHE_NAMESPACE": "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
       - name: "Authoring eval dataset (offline)"
-        run: pnpm exec smthrs test '//evals/authoring:test' --verbose
+        run: "pnpm exec smthrs test '//evals/authoring:test' --verbose"
         env:
-          SMITHERS_CACHE_URL: "${{ secrets.SMITHERS_CACHE_URL }}"
-          SMITHERS_CACHE_READ_TOKEN: "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
-          SMITHERS_CACHE_NAMESPACE: "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
-      - name: Authoring eval typecheck
-        run: pnpm exec smthrs build '//evals/authoring:check' --verbose
+          "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
+          "SMITHERS_CACHE_READ_TOKEN": "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
+          "SMITHERS_CACHE_NAMESPACE": "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
+      - name: "Authoring eval typecheck"
+        run: "pnpm exec smthrs build '//evals/authoring:check' --verbose"
         env:
-          SMITHERS_CACHE_URL: "${{ secrets.SMITHERS_CACHE_URL }}"
-          SMITHERS_CACHE_READ_TOKEN: "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
-          SMITHERS_CACHE_NAMESPACE: "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
-      - name: SWE-bench offline fixtures
-        run: pnpm exec smthrs test '//evals/swebench:offline' --jobs 1 --verbose
+          "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
+          "SMITHERS_CACHE_READ_TOKEN": "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
+          "SMITHERS_CACHE_NAMESPACE": "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
+      - name: "SWE-bench offline fixtures"
+        run: "pnpm exec smthrs test '//evals/swebench:offline' --jobs 1 --verbose"
         env:
-          SMITHERS_CACHE_URL: "${{ secrets.SMITHERS_CACHE_URL }}"
-          SMITHERS_CACHE_READ_TOKEN: "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
-          SMITHERS_CACHE_NAMESPACE: "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
-      - name: SWE-bench rig typecheck
-        run: pnpm exec smthrs build '//evals/swebench:check' --verbose
+          "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
+          "SMITHERS_CACHE_READ_TOKEN": "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
+          "SMITHERS_CACHE_NAMESPACE": "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
+      - name: "SWE-bench rig typecheck"
+        run: "pnpm exec smthrs build '//evals/swebench:check' --verbose"
         env:
-          SMITHERS_CACHE_URL: "${{ secrets.SMITHERS_CACHE_URL }}"
-          SMITHERS_CACHE_READ_TOKEN: "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
-          SMITHERS_CACHE_NAMESPACE: "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
-      - name: Server typecheck and tests
-        run: pnpm exec smthrs ci '//apps/server/...' --verbose
+          "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
+          "SMITHERS_CACHE_READ_TOKEN": "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
+          "SMITHERS_CACHE_NAMESPACE": "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
+      - name: "Server typecheck and tests"
+        run: "pnpm exec smthrs ci '//apps/server/...' --verbose"
         env:
-          SMITHERS_CACHE_URL: "${{ secrets.SMITHERS_CACHE_URL }}"
-          SMITHERS_CACHE_READ_TOKEN: "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
-          SMITHERS_CACHE_NAMESPACE: "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
-      - name: Review app and workers
-        run: pnpm exec smthrs ci '//apps/review/...' --verbose
+          "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
+          "SMITHERS_CACHE_READ_TOKEN": "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
+          "SMITHERS_CACHE_NAMESPACE": "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
+      - name: "Review app and workers"
+        run: "pnpm exec smthrs ci '//apps/review/...' --verbose"
         env:
-          SMITHERS_CACHE_URL: "${{ secrets.SMITHERS_CACHE_URL }}"
-          SMITHERS_CACHE_READ_TOKEN: "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
-          SMITHERS_CACHE_NAMESPACE: "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
-      - name: Bug worker
-        run: pnpm exec smthrs ci '//apps/bug-worker/...' --verbose
+          "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
+          "SMITHERS_CACHE_READ_TOKEN": "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
+          "SMITHERS_CACHE_NAMESPACE": "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
+      - name: "Bug worker"
+        run: "pnpm exec smthrs ci '//apps/bug-worker/...' --verbose"
         env:
-          SMITHERS_CACHE_URL: "${{ secrets.SMITHERS_CACHE_URL }}"
-          SMITHERS_CACHE_READ_TOKEN: "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
-          SMITHERS_CACHE_NAMESPACE: "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
-      - name: Status site
-        run: pnpm exec smthrs ci '//apps/status-site/...' --verbose
+          "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
+          "SMITHERS_CACHE_READ_TOKEN": "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
+          "SMITHERS_CACHE_NAMESPACE": "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
+      - name: "Status site"
+        run: "pnpm exec smthrs ci '//apps/status-site/...' --verbose"
         env:
-          SMITHERS_CACHE_URL: "${{ secrets.SMITHERS_CACHE_URL }}"
-          SMITHERS_CACHE_READ_TOKEN: "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
-          SMITHERS_CACHE_NAMESPACE: "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
-      - name: Project copy drift
-        run: pnpm exec smthrs lint '//:projectCopy' --verbose
+          "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
+          "SMITHERS_CACHE_READ_TOKEN": "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
+          "SMITHERS_CACHE_NAMESPACE": "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
+      - name: "Project copy drift"
+        run: "pnpm exec smthrs lint '//:projectCopy' --verbose"
         env:
-          SMITHERS_CACHE_URL: "${{ secrets.SMITHERS_CACHE_URL }}"
-          SMITHERS_CACHE_READ_TOKEN: "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
-          SMITHERS_CACHE_NAMESPACE: "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
-      - name: Site
-        run: pnpm exec smthrs ci '//apps/site/...' --verbose
+          "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
+          "SMITHERS_CACHE_READ_TOKEN": "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
+          "SMITHERS_CACHE_NAMESPACE": "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
+      - name: "Site"
+        run: "pnpm exec smthrs ci '//apps/site/...' --verbose"
         env:
-          SMITHERS_CACHE_URL: "${{ secrets.SMITHERS_CACHE_URL }}"
-          SMITHERS_CACHE_READ_TOKEN: "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
-          SMITHERS_CACHE_NAMESPACE: "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
-      - name: Package docs sites
-        run: pnpm exec smthrs ci '//apps/docs/...' --verbose
+          "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
+          "SMITHERS_CACHE_READ_TOKEN": "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
+          "SMITHERS_CACHE_NAMESPACE": "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
+      - name: "Package docs sites"
+        run: "pnpm exec smthrs ci '//apps/docs/...' --verbose"
         env:
-          SMITHERS_CACHE_URL: "${{ secrets.SMITHERS_CACHE_URL }}"
-          SMITHERS_CACHE_READ_TOKEN: "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
-          SMITHERS_CACHE_NAMESPACE: "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
+          "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
+          "SMITHERS_CACHE_READ_TOKEN": "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
+          "SMITHERS_CACHE_NAMESPACE": "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
       - name: "Review eval suite (offline, baseline-gated)"
-        run: pnpm exec smthrs test '//evals/review-seeded-bugs/...' --verbose
+        run: "pnpm exec smthrs test '//evals/review-seeded-bugs/...' --verbose"
         env:
-          SMITHERS_CACHE_URL: "${{ secrets.SMITHERS_CACHE_URL }}"
-          SMITHERS_CACHE_READ_TOKEN: "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
-          SMITHERS_CACHE_NAMESPACE: "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
-      - name: Review eval typecheck
-        run: pnpm exec smthrs build '//evals/review-seeded-bugs:check' --verbose
+          "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
+          "SMITHERS_CACHE_READ_TOKEN": "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
+          "SMITHERS_CACHE_NAMESPACE": "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
+      - name: "Review eval typecheck"
+        run: "pnpm exec smthrs build '//evals/review-seeded-bugs:check' --verbose"
         env:
-          SMITHERS_CACHE_URL: "${{ secrets.SMITHERS_CACHE_URL }}"
-          SMITHERS_CACHE_READ_TOKEN: "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
-          SMITHERS_CACHE_NAMESPACE: "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
+          "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
+          "SMITHERS_CACHE_READ_TOKEN": "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
+          "SMITHERS_CACHE_NAMESPACE": "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
       - name: "Recommend eval suite (offline, baseline-gated)"
-        run: pnpm exec smthrs test '//evals/recommend/...' --verbose
+        run: "pnpm exec smthrs test '//evals/recommend/...' --verbose"
         env:
-          SMITHERS_CACHE_URL: "${{ secrets.SMITHERS_CACHE_URL }}"
-          SMITHERS_CACHE_READ_TOKEN: "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
-          SMITHERS_CACHE_NAMESPACE: "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
-      - name: Recommend eval typecheck
-        run: pnpm exec smthrs build '//evals/recommend:check' --verbose
+          "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
+          "SMITHERS_CACHE_READ_TOKEN": "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
+          "SMITHERS_CACHE_NAMESPACE": "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
+      - name: "Recommend eval typecheck"
+        run: "pnpm exec smthrs build '//evals/recommend:check' --verbose"
         env:
-          SMITHERS_CACHE_URL: "${{ secrets.SMITHERS_CACHE_URL }}"
-          SMITHERS_CACHE_READ_TOKEN: "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
-          SMITHERS_CACHE_NAMESPACE: "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
-      - name: Generated workflow drift
-        run: pnpm exec smthrs lint '//:ci' --verbose
+          "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
+          "SMITHERS_CACHE_READ_TOKEN": "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
+          "SMITHERS_CACHE_NAMESPACE": "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
+      - name: "Generated workflow drift"
+        run: "pnpm exec smthrs lint '//:ci' --verbose"
         env:
-          SMITHERS_CACHE_URL: "${{ secrets.SMITHERS_CACHE_URL }}"
-          SMITHERS_CACHE_READ_TOKEN: "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
-          SMITHERS_CACHE_NAMESPACE: "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
-      - name: Factory projection drift
-        run: pnpm exec smthrs lint '//:factoryProjection' --verbose
+          "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
+          "SMITHERS_CACHE_READ_TOKEN": "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
+          "SMITHERS_CACHE_NAMESPACE": "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
+      - name: "Factory projection drift"
+        run: "pnpm exec smthrs lint '//:factoryProjection' --verbose"
         env:
-          SMITHERS_CACHE_URL: "${{ secrets.SMITHERS_CACHE_URL }}"
-          SMITHERS_CACHE_READ_TOKEN: "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
-          SMITHERS_CACHE_NAMESPACE: "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
-      - name: Target index drift
-        run: pnpm exec smthrs lint '//:targetIndex' --verbose
+          "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
+          "SMITHERS_CACHE_READ_TOKEN": "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
+          "SMITHERS_CACHE_NAMESPACE": "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
+      - name: "Target index drift"
+        run: "pnpm exec smthrs lint '//:targetIndex' --verbose"
         env:
-          SMITHERS_CACHE_URL: "${{ secrets.SMITHERS_CACHE_URL }}"
-          SMITHERS_CACHE_READ_TOKEN: "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
-          SMITHERS_CACHE_NAMESPACE: "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
-      - name: Collect ci-test-tier-evidence
+          "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
+          "SMITHERS_CACHE_READ_TOKEN": "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
+          "SMITHERS_CACHE_NAMESPACE": "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
+      - name: "Collect ci-test-tier-evidence"
         if: always()
         run: |
           mkdir -p "$RUNNER_TEMP/ci-test-tier-evidence"
@@ -317,44 +317,44 @@ jobs:
           for f in '/tmp/smithers-benchmark-'*''; do if [ -e "$f" ]; then cp -R -- "$f" "$RUNNER_TEMP/ci-test-tier-evidence"; fi; done
           for f in '/tmp/smithers-runner-'*'.log'; do if [ -e "$f" ]; then cp -R -- "$f" "$RUNNER_TEMP/ci-test-tier-evidence"; fi; done
           for f in '/tmp/smithers-runner-'*'.json'; do if [ -e "$f" ]; then cp -R -- "$f" "$RUNNER_TEMP/ci-test-tier-evidence"; fi; done
-      - name: Upload ci-test-tier-evidence
+      - name: "Upload ci-test-tier-evidence"
         if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        uses: "actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02"
         with:
-          name: ci-test-tier-evidence
-          path: "${{ runner.temp }}/ci-test-tier-evidence"
-          if-no-files-found: ignore
-  apps-e2e:
+          "name": "ci-test-tier-evidence"
+          "path": "${{ runner.temp }}/ci-test-tier-evidence"
+          "if-no-files-found": "ignore"
+  "apps-e2e":
     name: "apps e2e (Playwright T1)"
-    runs-on: ubuntu-latest
+    runs-on: "ubuntu-latest"
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
-      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+      - uses: "actions/checkout@11d5960a326750d5838078e36cf38b85af677262"
+      - uses: "pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86"
+      - uses: "actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020"
         with:
-          node-version: 22.19.0
-          cache: pnpm
-      - name: Install certified npm
+          "node-version": "22.19.0"
+          "cache": "pnpm"
+      - name: "Install certified npm"
         run: |
           npm install --global 'npm@11.16.0' --ignore-scripts --no-audit --no-fund
           test "$(npm --version)" = '11.16.0'
-        shell: bash
-      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6
+        shell: "bash"
+      - uses: "oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6"
         with:
-          bun-version: 1.4.1
-      - run: pnpm install --frozen-lockfile --ignore-scripts
-      - name: Install jj
-        uses: taiki-e/install-action@e67fa11c4b9316fa714ddf0abed07a0c3143b95b
+          "bun-version": "1.4.1"
+      - run: "pnpm install --frozen-lockfile --ignore-scripts"
+      - name: "Install jj"
+        uses: "taiki-e/install-action@e67fa11c4b9316fa714ddf0abed07a0c3143b95b"
         with:
-          tool: jj-cli@0.39.0
-      - name: Initialize colocated jj repository
-        run: jj git init --colocate
-      - name: Install ripgrep
-        uses: taiki-e/install-action@e67fa11c4b9316fa714ddf0abed07a0c3143b95b
+          "tool": "jj-cli@0.39.0"
+      - name: "Initialize colocated jj repository"
+        run: "jj git init --colocate"
+      - name: "Install ripgrep"
+        uses: "taiki-e/install-action@e67fa11c4b9316fa714ddf0abed07a0c3143b95b"
         with:
-          tool: ripgrep@14.1.1
-      - name: Install system packages
+          "tool": "ripgrep@14.1.1"
+      - name: "Install system packages"
         run: |
           if command -v apt-get >/dev/null 2>&1; then
             sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends 'bubblewrap'
@@ -362,26 +362,26 @@ jobs:
               sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
             fi
           fi
-        shell: bash
-      - name: UI typecheck
-        run: pnpm exec smthrs build '//apps/app:check' --verbose
+        shell: "bash"
+      - name: "UI typecheck"
+        run: "pnpm exec smthrs build '//apps/app:check' --verbose"
         env:
-          SMITHERS_CACHE_URL: "${{ secrets.SMITHERS_CACHE_URL }}"
-          SMITHERS_CACHE_READ_TOKEN: "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
-          SMITHERS_CACHE_NAMESPACE: "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
-      - name: UI unit tests
-        run: pnpm exec smthrs test '//apps/app:unitTests' --verbose
+          "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
+          "SMITHERS_CACHE_READ_TOKEN": "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
+          "SMITHERS_CACHE_NAMESPACE": "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
+      - name: "UI unit tests"
+        run: "pnpm exec smthrs test '//apps/app:unitTests' --verbose"
         env:
-          SMITHERS_CACHE_URL: "${{ secrets.SMITHERS_CACHE_URL }}"
-          SMITHERS_CACHE_READ_TOKEN: "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
-          SMITHERS_CACHE_NAMESPACE: "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
-      - name: UI browser end-to-end suite
-        run: pnpm exec smthrs test '//apps/app:browserE2e' --verbose
+          "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
+          "SMITHERS_CACHE_READ_TOKEN": "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
+          "SMITHERS_CACHE_NAMESPACE": "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
+      - name: "UI browser end-to-end suite"
+        run: "pnpm exec smthrs test '//apps/app:browserE2e' --verbose"
         env:
-          SMITHERS_CACHE_URL: "${{ secrets.SMITHERS_CACHE_URL }}"
-          SMITHERS_CACHE_READ_TOKEN: "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
-          SMITHERS_CACHE_NAMESPACE: "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
-      - name: Collect apps-e2e-artifacts
+          "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
+          "SMITHERS_CACHE_READ_TOKEN": "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
+          "SMITHERS_CACHE_NAMESPACE": "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
+      - name: "Collect apps-e2e-artifacts"
         if: always()
         run: |
           mkdir -p "$RUNNER_TEMP/apps-e2e-artifacts"
@@ -389,161 +389,161 @@ jobs:
           if [ -e 'apps/reports' ]; then cp -R -- 'apps/reports' "$RUNNER_TEMP/apps-e2e-artifacts/reports"; fi
           if [ -e 'apps/app/test-results' ]; then cp -R -- 'apps/app/test-results' "$RUNNER_TEMP/apps-e2e-artifacts/playwright-test-results"; fi
           if [ -e 'apps/app/playwright-report' ]; then cp -R -- 'apps/app/playwright-report' "$RUNNER_TEMP/apps-e2e-artifacts/playwright-report"; fi
-      - name: Upload apps-e2e-artifacts
+      - name: "Upload apps-e2e-artifacts"
         if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        uses: "actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02"
         with:
-          name: apps-e2e-artifacts
-          path: "${{ runner.temp }}/apps-e2e-artifacts"
-          if-no-files-found: ignore
-  rust:
-    name: rust fmt + clippy + test
-    runs-on: ubuntu-latest
+          "name": "apps-e2e-artifacts"
+          "path": "${{ runner.temp }}/apps-e2e-artifacts"
+          "if-no-files-found": "ignore"
+  "rust":
+    name: "rust fmt + clippy + test"
+    runs-on: "ubuntu-latest"
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
-      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+      - uses: "actions/checkout@11d5960a326750d5838078e36cf38b85af677262"
+      - uses: "pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86"
+      - uses: "actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020"
         with:
-          node-version: 22.19.0
-          cache: pnpm
-      - name: Install certified npm
+          "node-version": "22.19.0"
+          "cache": "pnpm"
+      - name: "Install certified npm"
         run: |
           npm install --global 'npm@11.16.0' --ignore-scripts --no-audit --no-fund
           test "$(npm --version)" = '11.16.0'
-        shell: bash
-      - run: pnpm install --frozen-lockfile --ignore-scripts
-      - name: Install pinned Rust toolchain
-        run: rustup toolchain install
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6
-      - name: Cargo lint gates
-        run: pnpm exec smthrs lint '//crates/flows-jj/...' --verbose
+        shell: "bash"
+      - run: "pnpm install --frozen-lockfile --ignore-scripts"
+      - name: "Install pinned Rust toolchain"
+        run: "rustup toolchain install"
+      - uses: "Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6"
+      - name: "Cargo lint gates"
+        run: "pnpm exec smthrs lint '//crates/flows-jj/...' --verbose"
         env:
-          SMITHERS_CACHE_URL: "${{ secrets.SMITHERS_CACHE_URL }}"
-          SMITHERS_CACHE_READ_TOKEN: "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
-          SMITHERS_CACHE_NAMESPACE: "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
-      - name: Third-party notices
-        run: pnpm exec smthrs test '//scripts:thirdPartyNotices' --verbose
+          "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
+          "SMITHERS_CACHE_READ_TOKEN": "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
+          "SMITHERS_CACHE_NAMESPACE": "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
+      - name: "Third-party notices"
+        run: "pnpm exec smthrs test '//scripts:thirdPartyNotices' --verbose"
         env:
-          SMITHERS_CACHE_URL: "${{ secrets.SMITHERS_CACHE_URL }}"
-          SMITHERS_CACHE_READ_TOKEN: "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
-          SMITHERS_CACHE_NAMESPACE: "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
-      - name: Cargo test suite
-        run: pnpm exec smthrs test '//crates/flows-jj:cargoTest' --verbose
+          "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
+          "SMITHERS_CACHE_READ_TOKEN": "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
+          "SMITHERS_CACHE_NAMESPACE": "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
+      - name: "Cargo test suite"
+        run: "pnpm exec smthrs test '//crates/flows-jj:cargoTest' --verbose"
         env:
-          SMITHERS_CACHE_URL: "${{ secrets.SMITHERS_CACHE_URL }}"
-          SMITHERS_CACHE_READ_TOKEN: "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
-          SMITHERS_CACHE_NAMESPACE: "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
-  wasm-repro:
-    name: wasm reproducibility
-    runs-on: ubuntu-latest
+          "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
+          "SMITHERS_CACHE_READ_TOKEN": "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
+          "SMITHERS_CACHE_NAMESPACE": "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
+  "wasm-repro":
+    name: "wasm reproducibility"
+    runs-on: "ubuntu-latest"
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
-      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+      - uses: "actions/checkout@11d5960a326750d5838078e36cf38b85af677262"
+      - uses: "pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86"
+      - uses: "actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020"
         with:
-          node-version: 22.19.0
-          cache: pnpm
-      - name: Install certified npm
+          "node-version": "22.19.0"
+          "cache": "pnpm"
+      - name: "Install certified npm"
         run: |
           npm install --global 'npm@11.16.0' --ignore-scripts --no-audit --no-fund
           test "$(npm --version)" = '11.16.0'
-        shell: bash
-      - run: pnpm install --frozen-lockfile --ignore-scripts
-      - name: Install pinned Rust toolchain
-        run: rustup toolchain install
-      - name: Build-script unit tests
-        run: pnpm exec smthrs test '//crates/flows-jj:buildScript' --verbose
+        shell: "bash"
+      - run: "pnpm install --frozen-lockfile --ignore-scripts"
+      - name: "Install pinned Rust toolchain"
+        run: "rustup toolchain install"
+      - name: "Build-script unit tests"
+        run: "pnpm exec smthrs test '//crates/flows-jj:buildScript' --verbose"
         env:
-          SMITHERS_CACHE_URL: "${{ secrets.SMITHERS_CACHE_URL }}"
-          SMITHERS_CACHE_READ_TOKEN: "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
-          SMITHERS_CACHE_NAMESPACE: "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
-      - name: Rebuild and byte-compare flows_jj.wasm
-        run: pnpm exec smthrs test '//crates/flows-jj:wasmReproducibility' --verbose
+          "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
+          "SMITHERS_CACHE_READ_TOKEN": "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
+          "SMITHERS_CACHE_NAMESPACE": "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
+      - name: "Rebuild and byte-compare flows_jj.wasm"
+        run: "pnpm exec smthrs test '//crates/flows-jj:wasmReproducibility' --verbose"
         env:
-          SMITHERS_CACHE_URL: "${{ secrets.SMITHERS_CACHE_URL }}"
-          SMITHERS_CACHE_READ_TOKEN: "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
-          SMITHERS_CACHE_NAMESPACE: "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
-  e2e-faults:
-    name: fault-injection matrix
-    runs-on: ubuntu-latest
+          "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
+          "SMITHERS_CACHE_READ_TOKEN": "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
+          "SMITHERS_CACHE_NAMESPACE": "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
+  "e2e-faults":
+    name: "fault-injection matrix"
+    runs-on: "ubuntu-latest"
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
-      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+      - uses: "actions/checkout@11d5960a326750d5838078e36cf38b85af677262"
+      - uses: "pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86"
+      - uses: "actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020"
         with:
-          node-version: 22.19.0
-          cache: pnpm
-      - name: Install certified npm
+          "node-version": "22.19.0"
+          "cache": "pnpm"
+      - name: "Install certified npm"
         run: |
           npm install --global 'npm@11.16.0' --ignore-scripts --no-audit --no-fund
           test "$(npm --version)" = '11.16.0'
-        shell: bash
-      - run: pnpm install --frozen-lockfile --ignore-scripts
-      - name: Install jj
-        uses: taiki-e/install-action@e67fa11c4b9316fa714ddf0abed07a0c3143b95b
+        shell: "bash"
+      - run: "pnpm install --frozen-lockfile --ignore-scripts"
+      - name: "Install jj"
+        uses: "taiki-e/install-action@e67fa11c4b9316fa714ddf0abed07a0c3143b95b"
         with:
-          tool: jj-cli@0.39.0
-      - name: Initialize colocated jj repository
-        run: jj git init --colocate
-      - name: Exclusive fault matrix
-        run: pnpm exec smthrs test '//packages/...:faults' --jobs 1 --verbose
+          "tool": "jj-cli@0.39.0"
+      - name: "Initialize colocated jj repository"
+        run: "jj git init --colocate"
+      - name: "Exclusive fault matrix"
+        run: "pnpm exec smthrs test '//packages/...:faults' --jobs 1 --verbose"
         env:
-          SMITHERS_CACHE_URL: "${{ secrets.SMITHERS_CACHE_URL }}"
-          SMITHERS_CACHE_READ_TOKEN: "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
-          SMITHERS_CACHE_NAMESPACE: "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
-  browser:
-    name: web bundle compatibility
-    runs-on: ubuntu-latest
+          "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
+          "SMITHERS_CACHE_READ_TOKEN": "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
+          "SMITHERS_CACHE_NAMESPACE": "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
+  "browser":
+    name: "web bundle compatibility"
+    runs-on: "ubuntu-latest"
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
-      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+      - uses: "actions/checkout@11d5960a326750d5838078e36cf38b85af677262"
+      - uses: "pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86"
+      - uses: "actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020"
         with:
-          node-version: 22.19.0
-          cache: pnpm
-      - name: Install certified npm
+          "node-version": "22.19.0"
+          "cache": "pnpm"
+      - name: "Install certified npm"
         run: |
           npm install --global 'npm@11.16.0' --ignore-scripts --no-audit --no-fund
           test "$(npm --version)" = '11.16.0'
-        shell: bash
-      - run: pnpm install --frozen-lockfile --ignore-scripts
-      - name: Web bundle compilation guard
-        run: pnpm exec smthrs test '//scripts:webBundleContract' --verbose
+        shell: "bash"
+      - run: "pnpm install --frozen-lockfile --ignore-scripts"
+      - name: "Web bundle compilation guard"
+        run: "pnpm exec smthrs test '//scripts:webBundleContract' --verbose"
         env:
-          SMITHERS_CACHE_URL: "${{ secrets.SMITHERS_CACHE_URL }}"
-          SMITHERS_CACHE_READ_TOKEN: "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
-          SMITHERS_CACHE_NAMESPACE: "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
-  packages:
+          "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
+          "SMITHERS_CACHE_READ_TOKEN": "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
+          "SMITHERS_CACHE_NAMESPACE": "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
+  "packages":
     name: "package suites (${{ matrix.os }})"
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
+        os: ["ubuntu-latest", "macos-latest", "windows-latest"]
         include:
-          - os: ubuntu-latest
+          - os: "ubuntu-latest"
             advisory: false
-          - os: macos-latest
+          - os: "macos-latest"
             advisory: true
-          - os: windows-latest
+          - os: "windows-latest"
             advisory: true
     runs-on: ${{ matrix.os }}
     timeout-minutes: 60
     continue-on-error: ${{ matrix.advisory }}
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
-      - name: Install Go
-        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff
+      - uses: "actions/checkout@11d5960a326750d5838078e36cf38b85af677262"
+      - name: "Install Go"
+        uses: "actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff"
         with:
-          go-version: 1.26.0
-      - name: Install Foundry
-        uses: foundry-rs/foundry-toolchain@908c540300062bd5a7e473851cdb4282204cee09
+          "go-version": "1.26.0"
+      - name: "Install Foundry"
+        uses: "foundry-rs/foundry-toolchain@908c540300062bd5a7e473851cdb4282204cee09"
         with:
-          version: v1.8.1
-      - name: Enable the containerd image store
+          "version": "v1.8.1"
+      - name: "Enable the containerd image store"
         run: |
           if command -v docker >/dev/null 2>&1 && [ "$(uname -s)" = Linux ] \
             && [ "$(docker info --format '{{.Driver}}' 2>/dev/null)" != overlayfs ]; then
@@ -556,32 +556,32 @@ jobs:
             sudo systemctl restart docker
             docker info --format 'docker storage driver: {{.Driver}}'
           fi
-        shell: bash
-      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        shell: "bash"
+      - uses: "pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86"
+      - uses: "actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020"
         with:
-          node-version: 22.19.0
-          cache: pnpm
-      - name: Install certified npm
+          "node-version": "22.19.0"
+          "cache": "pnpm"
+      - name: "Install certified npm"
         run: |
           npm install --global 'npm@11.16.0' --ignore-scripts --no-audit --no-fund
           test "$(npm --version)" = '11.16.0'
-        shell: bash
-      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6
+        shell: "bash"
+      - uses: "oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6"
         with:
-          bun-version: 1.4.1
-      - run: pnpm install --frozen-lockfile --ignore-scripts
-      - name: Install jj
-        uses: taiki-e/install-action@e67fa11c4b9316fa714ddf0abed07a0c3143b95b
+          "bun-version": "1.4.1"
+      - run: "pnpm install --frozen-lockfile --ignore-scripts"
+      - name: "Install jj"
+        uses: "taiki-e/install-action@e67fa11c4b9316fa714ddf0abed07a0c3143b95b"
         with:
-          tool: jj-cli@0.39.0
-      - name: Initialize colocated jj repository
-        run: jj git init --colocate
-      - name: Install ripgrep
-        uses: taiki-e/install-action@e67fa11c4b9316fa714ddf0abed07a0c3143b95b
+          "tool": "jj-cli@0.39.0"
+      - name: "Initialize colocated jj repository"
+        run: "jj git init --colocate"
+      - name: "Install ripgrep"
+        uses: "taiki-e/install-action@e67fa11c4b9316fa714ddf0abed07a0c3143b95b"
         with:
-          tool: ripgrep@14.1.1
-      - name: Install system packages
+          "tool": "ripgrep@14.1.1"
+      - name: "Install system packages"
         run: |
           if command -v apt-get >/dev/null 2>&1; then
             sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends 'bubblewrap'
@@ -589,36 +589,36 @@ jobs:
               sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
             fi
           fi
-        shell: bash
-      - name: Package test targets
-        run: pnpm exec smthrs test '//packages/...' --jobs 2 --verbose
+        shell: "bash"
+      - name: "Package test targets"
+        run: "pnpm exec smthrs test '//packages/...' --jobs 2 --verbose"
         env:
-          SMITHERS_CACHE_URL: "${{ secrets.SMITHERS_CACHE_URL }}"
-          SMITHERS_CACHE_READ_TOKEN: "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
-          SMITHERS_CACHE_NAMESPACE: "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
-  review-lints:
+          "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
+          "SMITHERS_CACHE_READ_TOKEN": "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
+          "SMITHERS_CACHE_NAMESPACE": "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
+  "review-lints":
     name: "model reviews (advisory)"
-    runs-on: ubuntu-latest
+    runs-on: "ubuntu-latest"
     timeout-minutes: 30
     continue-on-error: true
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: "actions/checkout@11d5960a326750d5838078e36cf38b85af677262"
         with:
-          fetch-depth: "0"
-      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+          "fetch-depth": "0"
+      - uses: "pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86"
+      - uses: "actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020"
         with:
-          node-version: 22.19.0
-          cache: pnpm
-      - name: Install certified npm
+          "node-version": "22.19.0"
+          "cache": "pnpm"
+      - name: "Install certified npm"
         run: |
           npm install --global 'npm@11.16.0' --ignore-scripts --no-audit --no-fund
           test "$(npm --version)" = '11.16.0'
-        shell: bash
-      - run: pnpm install --frozen-lockfile --ignore-scripts
-      - name: Review lints
-        run: pnpm exec smthrs review '//...' --verbose
+        shell: "bash"
+      - run: "pnpm install --frozen-lockfile --ignore-scripts"
+      - name: "Review lints"
+        run: "pnpm exec smthrs review '//...' --verbose"
         env:
-          SMITHERS_CACHE_URL: "${{ secrets.SMITHERS_CACHE_URL }}"
-          SMITHERS_CACHE_READ_TOKEN: "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
-          SMITHERS_CACHE_NAMESPACE: "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
+          "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
+          "SMITHERS_CACHE_READ_TOKEN": "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
+          "SMITHERS_CACHE_NAMESPACE": "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"

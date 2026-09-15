@@ -129,37 +129,12 @@ export interface CiRender {
 /** Control characters a rendered value may not carry. */
 const controlCharacter = /[\u0000-\u0008\u000B-\u001F\u007F]/
 
-/** Characters a plain (unquoted) YAML scalar may carry here. */
-const plainScalar = /^[A-Za-z0-9][A-Za-z0-9 ._/@:+'-]*$/
-
-const yamlBoolean = /^(?:y|Y|yes|Yes|YES|n|N|no|No|NO|true|True|TRUE|false|False|FALSE|on|On|ON|off|Off|OFF)$/
-const yamlNull = /^(?:~|null|Null|NULL)$/
-const yamlNumber =
-  /^[-+]?(?:0b[01_]+|0o[0-7_]+|0x[0-9a-fA-F_]+|0[0-7_]+|[0-9][0-9_]*(?::[0-5]?[0-9])+(?:\.[0-9_]*)?|(?:[0-9][0-9_]*)?\.[0-9_]*(?:[eE][-+]?[0-9]+)?|[0-9][0-9_]*(?:\.[0-9_]*)?(?:[eE][-+]?[0-9]+)?)$/
-const yamlInfinity = /^[-+]?\.(?:inf|Inf|INF|nan|NaN|NAN)$/
-const yamlTimestamp = /^[0-9]{4}-[0-9]{1,2}-[0-9]{1,2}(?:[Tt ].*)?$/
-
-/** Whether a plain scalar would resolve to something other than a string. */
-const resolvesToNonString = (value: string): boolean =>
-  yamlBoolean.test(value) || yamlNull.test(value) || yamlNumber.test(value) ||
-  yamlInfinity.test(value) || yamlTimestamp.test(value)
-
-/**
- * Quotes a scalar unless YAML reads it back as exactly the declared string.
- *
- * `JSON.stringify` emits a YAML double-quoted scalar whose escape set agrees
- * with JSON's for every character that can appear here, so the quoted form
- * always reads back byte-identical.
- */
+/** Quote string scalars consistently so YAML cannot reinterpret their type. */
 const scalar = (value: string): string => {
   if (controlCharacter.test(value)) {
     throw new GithubRenderError("invalid_path", `${JSON.stringify(value)} contains a control character`)
   }
-  return plainScalar.test(value) &&
-      !value.includes(": ") && !value.endsWith(":") && !/\s$/.test(value) &&
-      !resolvesToNonString(value)
-    ? value
-    : JSON.stringify(value)
+  return JSON.stringify(value)
 }
 
 /** Renders a `with:` map, keys and values both through {@link scalar}. */

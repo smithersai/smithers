@@ -110,71 +110,71 @@ const goldenAttrs = {
   mode: "write" as const
 }
 
-const golden = `name: CI
+const golden = `name: "CI"
 on:
   push:
-    branches: [main]
+    branches: ["main"]
   pull_request:
   workflow_dispatch:
 concurrency:
   group: ci-\${{ github.event.pull_request.number || github.sha }}
   cancel-in-progress: true
 jobs:
-  test:
-    name: workspace graph
-    runs-on: ubuntu-latest
+  "test":
+    name: "workspace graph"
+    runs-on: "ubuntu-latest"
     steps:
-      - uses: ${actions.checkout}
-      - name: Validate GitHub Actions workflows
-        uses: ${actionlintImages["1.7.11"]}
+      - uses: "${actions.checkout}"
+      - name: "Validate GitHub Actions workflows"
+        uses: "${actionlintImages["1.7.11"]}"
         with:
-          args: ".github/workflows/ci.yml"
-      - uses: ${actions.setupPnpm}
-      - uses: ${actions.setupNode}
+          "args": ".github/workflows/ci.yml"
+      - uses: "${actions.setupPnpm}"
+      - uses: "${actions.setupNode}"
         with:
-          node-version: 22.19.0
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile --ignore-scripts
-      - name: Install jj
-        uses: ${actions.installTool}
+          "node-version": "22.19.0"
+          "cache": "pnpm"
+      - run: "pnpm install --frozen-lockfile --ignore-scripts"
+      - name: "Install jj"
+        uses: "${actions.installTool}"
         with:
-          tool: jj-cli@0.39.0
-      - name: Initialize colocated jj repository
-        run: jj git init --colocate
-      - name: Workspace targets
-        run: pnpm exec smthrs ci '//packages/...' --jobs 2 --verbose
-      - name: Script gates
-        run: pnpm exec smthrs test '//scripts/...' --verbose
-  browser:
-    runs-on: ubuntu-latest
+          "tool": "jj-cli@0.39.0"
+      - name: "Initialize colocated jj repository"
+        run: "jj git init --colocate"
+      - name: "Workspace targets"
+        run: "pnpm exec smthrs ci '//packages/...' --jobs 2 --verbose"
+      - name: "Script gates"
+        run: "pnpm exec smthrs test '//scripts/...' --verbose"
+  "browser":
+    runs-on: "ubuntu-latest"
     timeout-minutes: 10
     steps:
-      - uses: ${actions.checkout}
-      - uses: ${actions.setupPnpm}
-      - uses: ${actions.setupNode}
+      - uses: "${actions.checkout}"
+      - uses: "${actions.setupPnpm}"
+      - uses: "${actions.setupNode}"
         with:
-          node-version: 22.19.0
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile --ignore-scripts
-      - name: Browser bundle guard
-        run: pnpm exec smthrs test '//scripts:browserContract' --verbose
-  rust:
-    runs-on: ubuntu-latest
+          "node-version": "22.19.0"
+          "cache": "pnpm"
+      - run: "pnpm install --frozen-lockfile --ignore-scripts"
+      - name: "Browser bundle guard"
+        run: "pnpm exec smthrs test '//scripts:browserContract' --verbose"
+  "rust":
+    runs-on: "ubuntu-latest"
     continue-on-error: false
     steps:
-      - uses: ${actions.checkout}
+      - uses: "${actions.checkout}"
         with:
-          submodules: recursive
-      - uses: ${actions.setupPnpm}
-      - uses: ${actions.setupNode}
+          "submodules": "recursive"
+      - uses: "${actions.setupPnpm}"
+      - uses: "${actions.setupNode}"
         with:
-          node-version: 22.19.0
-      - run: pnpm install --frozen-lockfile --ignore-scripts
-      - name: Install pinned Rust toolchain
-        run: rustup toolchain install
-      - uses: ${actions.rustCache}
-      - name: Cargo gates
-        run: pnpm exec smthrs lint '//crates/flows-jj' --verbose
+          "node-version": "22.19.0"
+      - run: "pnpm install --frozen-lockfile --ignore-scripts"
+      - name: "Install pinned Rust toolchain"
+        run: "rustup toolchain install"
+      - uses: "${actions.rustCache}"
+      - name: "Cargo gates"
+        run: "pnpm exec smthrs lint '//crates/flows-jj' --verbose"
 `
 
 const attrsOf = (input: unknown): never => GithubCiGen(input as typeof goldenAttrs)[Target.TargetTypeId].attrs as never
@@ -336,7 +336,7 @@ describe("renderStep", () => {
     // has to follow it there too: emitted last, the script would land under
     // `shell:` and YAML would read an empty `run` and a three-line `shell`.
     const lines = renderStep({ run: "a\nb", shell: "bash" }, "      ")
-    expect(lines).toEqual(["      - run: |", "          a", "          b", "        shell: bash"])
+    expect(lines).toEqual(["      - run: |", "          a", "          b", "        shell: \"bash\""])
     const steps = parseWorkflow(["jobs:", "  probe:", "    runs-on: ubuntu-latest", "    steps:", ...lines].join("\n"))
       .jobs[0]!.steps
     expect(steps.map((step) => [step.run, step.shell])).toEqual([["a\nb", "bash"]])
@@ -345,11 +345,11 @@ describe("renderStep", () => {
   it("keeps a named multi-line script under its own key", () => {
     const lines = renderStep({ name: "Probe", run: "a\nb", shell: "bash" }, "      ")
     expect(lines).toEqual([
-      "      - name: Probe",
+      "      - name: \"Probe\"",
       "        run: |",
       "          a",
       "          b",
-      "        shell: bash"
+      "        shell: \"bash\""
     ])
     const steps = parseWorkflow(["jobs:", "  probe:", "    runs-on: ubuntu-latest", "    steps:", ...lines].join("\n"))
       .jobs[0]!.steps
@@ -368,7 +368,7 @@ describe("render", () => {
   })
 
   it("derives the install from the declared package manager, never from an attr", () => {
-    expect(golden).toContain("      - run: pnpm install --frozen-lockfile --ignore-scripts\n")
+    expect(golden).toContain("      - run: \"pnpm install --frozen-lockfile --ignore-scripts\"\n")
     // Every job that runs a target installs first, because the workspace binary
     // is what runs the target.
     for (const job of parseWorkflow(golden).jobs) {
@@ -388,13 +388,14 @@ describe("render", () => {
       ...goldenAttrs,
       packageManager: { name: "bun", version: ">=1.4.0", executable: "bun", runtime: bunRuntime }
     }))
-    expect(rendered).toContain("      - run: bun install --frozen-lockfile --ignore-scripts\n")
-    expect(rendered).toContain("        run: bun x smthrs test '//scripts/...' --verbose\n")
+    expect(rendered).toContain("      - run: \"bun install --frozen-lockfile --ignore-scripts\"\n")
+    expect(rendered).toContain("        run: \"bun x smthrs test '//scripts/...' --verbose\"\n")
     // Bun installs itself; a second manager-setup action would install the same
     // program twice.
     expect(rendered).not.toContain("pnpm/action-setup")
-    expect(rendered).toContain(`      - uses: ${actions.setupNode}\n`)
-    expect(rendered).not.toContain("cache: pnpm")
+    expect(rendered).toContain(`      - uses: "${actions.setupNode}"
+`)
+    expect(rendered).not.toContain("\"cache\": \"pnpm\"")
     expect(rendered).not.toMatch(/^\s+cache:/m)
   })
 
@@ -597,7 +598,7 @@ describe("render", () => {
       jobs: goldenAttrs.jobs.map((job) => job.id !== "rust" ? job : { ...job, runsOn: "${{ matrix.os }}" })
     }))
     expect(rendered).toContain("name: \"CI: main\"\n")
-    expect(rendered).toContain("    branches: [main, \"release: next\"]\n")
+    expect(rendered).toContain("    branches: [\"main\", \"release: next\"]\n")
     expect(rendered).toContain("    runs-on: \"${{ matrix.os }}\"\n")
     expect(parseWorkflow(rendered).name).toBe("CI: main")
     // A label set is a YAML sequence GitHub reads, so it is not quoted into one
@@ -607,7 +608,7 @@ describe("render", () => {
         ...goldenAttrs,
         jobs: goldenAttrs.jobs.map((job) => job.id !== "rust" ? job : { ...job, runsOn: "[self-hosted, linux]" })
       }))
-    ).toContain("    runs-on: [self-hosted, linux]\n")
+    ).toContain("    runs-on: [\"self-hosted\", \"linux\"]\n")
   })
 
   it("keeps every declared string a YAML string", () => {
@@ -641,7 +642,7 @@ describe("render", () => {
         ...goldenAttrs,
         jobs: goldenAttrs.jobs.map((job) => job.id !== "rust" ? job : { ...job, runsOn: "[self-hosted, null]" })
       }))
-    ).toContain("    runs-on: [self-hosted, \"null\"]\n")
+    ).toContain("    runs-on: [\"self-hosted\", \"null\"]\n")
   })
 
   it("refuses a runs-on collection it cannot render as the label set it declares", () => {
@@ -659,7 +660,7 @@ describe("render", () => {
     for (const runsOn of ["[self-hosted, my label]", "{group: ubuntu, labels: [x]}", "[self-hosted,]", "[]"]) {
       expect(() => render(withRunner(runsOn))).toThrow(/is not a runner label set/)
     }
-    expect(render(withRunner("[self-hosted, linux]"))).toContain("    runs-on: [self-hosted, linux]\n")
+    expect(render(withRunner("[self-hosted, linux]"))).toContain("    runs-on: [\"self-hosted\", \"linux\"]\n")
   })
 
   /**
@@ -743,7 +744,8 @@ describe("render", () => {
           steps: [{ verb: Verb.Test, pattern }]
         }]
       }))
-      expect(rendered).toContain(`      - run: pnpm exec smthrs test '${pattern}' --verbose\n`)
+      expect(rendered).toContain(`      - run: "pnpm exec smthrs test '${pattern}' --verbose"
+`)
       expect(parseWorkflow(rendered).jobs[0]!.steps.map((step) => step.run))
         .toContain(`pnpm exec smthrs test '${pattern}' --verbose`)
     }
@@ -834,9 +836,12 @@ describe("render", () => {
       }]
     }))
     expect(withDepth).toContain(
-      `      - uses: ${actions.checkout}\n        with:\n          fetch-depth: "0"\n`
+      `      - uses: "${actions.checkout}"
+        with:
+          "fetch-depth": "0"
+`
     )
-    expect(withDepth).toContain("        run: pnpm exec smthrs review '//...' --verbose\n")
+    expect(withDepth).toContain("        run: \"pnpm exec smthrs review '//...' --verbose\"\n")
 
     const both = render(attrsOf({
       ...goldenAttrs,
@@ -849,7 +854,11 @@ describe("render", () => {
       }]
     }))
     expect(both).toContain(
-      `      - uses: ${actions.checkout}\n        with:\n          submodules: recursive\n          fetch-depth: "50"\n`
+      `      - uses: "${actions.checkout}"
+        with:
+          "submodules": "recursive"
+          "fetch-depth": "50"
+`
     )
 
     const bare = render(attrsOf({
@@ -863,7 +872,9 @@ describe("render", () => {
       }]
     }))
     expect(bare).not.toContain("fetch-depth")
-    expect(bare).toContain(`      - uses: ${actions.checkout}\n      - uses: ${actions.setupPnpm}\n`)
+    expect(bare).toContain(`      - uses: "${actions.checkout}"
+      - uses: "${actions.setupPnpm}"
+`)
   })
 
   it("does not let a ci step satisfy a review gate", () => {
@@ -931,7 +942,7 @@ describe("render", () => {
     )
     expect(rendered).not.toContain("cp -R -- '/tmp/shot-'*'.png'")
     expect(rendered).not.toContain("2>/dev/null || true")
-    expect(rendered).toContain("          if-no-files-found: ignore\n")
+    expect(rendered).toContain("          \"if-no-files-found\": \"ignore\"\n")
     const steps = parseWorkflow(rendered).jobs.find((job) => job.id === "e2e")!.steps
     expect(steps.filter((step) => step.condition !== undefined).map((step) => [step.name, step.condition])).toEqual([
       ["Collect e2e-artifacts", "always()"],
@@ -1029,7 +1040,7 @@ describe("render", () => {
         steps: [{ verb: Verb.Test, pattern: "//apps/app" }]
       }]
     }))
-    expect(rendered).toContain("if-no-files-found: error")
+    expect(rendered).toContain("\"if-no-files-found\": \"error\"")
     expect(rendered).toContain("Required artifact source is missing: reports/results.xml")
     const steps = parseWorkflow(rendered).jobs.find((job) => job.id === "evidence")!.steps
     expect(steps.filter((step) => step.name?.includes("test-evidence")).map((step) => step.condition))
@@ -1141,8 +1152,8 @@ describe("render", () => {
       cacheTokenSecret: Secret("PROJECT_CACHE_TOKEN")
     }))
     expect(rendered).toContain(
-      "          REMOTE_CACHE_URL: \"${{ secrets.REMOTE_CACHE_URL }}\"\n" +
-        "          PROJECT_CACHE_TOKEN: \"${{ secrets.PROJECT_CACHE_TOKEN }}\""
+      "          \"REMOTE_CACHE_URL\": \"${{ secrets.REMOTE_CACHE_URL }}\"\n" +
+        "          \"PROJECT_CACHE_TOKEN\": \"${{ secrets.PROJECT_CACHE_TOKEN }}\""
     )
   })
 })
@@ -1173,16 +1184,16 @@ describe("the split cache credential", () => {
 
   it("renders the write credential and its guard only into the publishing job", () => {
     const rendered = render(attrsOf(splitAttrs))
-    const readerBlock = rendered.slice(rendered.indexOf("  reader:"), rendered.indexOf("  publish:"))
-    const publishBlock = rendered.slice(rendered.indexOf("  publish:"))
+    const readerBlock = rendered.slice(rendered.indexOf("  \"reader\":"), rendered.indexOf("  \"publish\":"))
+    const publishBlock = rendered.slice(rendered.indexOf("  \"publish\":"))
     expect(publishBlock).toContain(
       "    if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}"
     )
-    expect(publishBlock).toContain("          CACHE_READ_TOKEN: \"${{ secrets.CACHE_READ_TOKEN }}\"")
-    expect(publishBlock).toContain("          CACHE_WRITE_TOKEN: \"${{ secrets.CACHE_WRITE_TOKEN }}\"")
+    expect(publishBlock).toContain("          \"CACHE_READ_TOKEN\": \"${{ secrets.CACHE_READ_TOKEN }}\"")
+    expect(publishBlock).toContain("          \"CACHE_WRITE_TOKEN\": \"${{ secrets.CACHE_WRITE_TOKEN }}\"")
     // The reader pulls at full speed and can publish nothing: read entries
     // only, no write entry, no guard.
-    expect(readerBlock).toContain("          CACHE_READ_TOKEN: \"${{ secrets.CACHE_READ_TOKEN }}\"")
+    expect(readerBlock).toContain("          \"CACHE_READ_TOKEN\": \"${{ secrets.CACHE_READ_TOKEN }}\"")
     expect(readerBlock).not.toContain("CACHE_WRITE_TOKEN")
     expect(readerBlock).not.toContain("    if:")
     expect(() => parseWorkflow(rendered)).not.toThrow()
@@ -1192,12 +1203,12 @@ describe("the split cache credential", () => {
     for (const attrs of [splitAttrs, { ...goldenAttrs, cacheTokenSecret: Secret("LEGACY_TOKEN") }]) {
       const rendered = render(attrsOf(attrs))
       expect(rendered).toContain(
-        "SMITHERS_CACHE_NAMESPACE: \"${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}\""
+        "\"SMITHERS_CACHE_NAMESPACE\": \"${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}\""
       )
       expect(render(attrsOf({ ...attrs, pullRequest: false }))).not.toContain("SMITHERS_CACHE_NAMESPACE")
     }
     const rendered = render(attrsOf(splitAttrs))
-    expect(rendered.slice(rendered.indexOf("  publish:"))).not.toContain("SMITHERS_CACHE_NAMESPACE")
+    expect(rendered.slice(rendered.indexOf("  \"publish\":"))).not.toContain("SMITHERS_CACHE_NAMESPACE")
     expect(render(goldenAttrs)).not.toContain("SMITHERS_CACHE_NAMESPACE")
   })
 
@@ -1328,24 +1339,7 @@ describe("a platform matrix", () => {
   it("renders one job over every declared platform, with the advisory bit as data", () => {
     const rendered = render(withMatrixJob(matrixJob, ["packages"]))
     expect(rendered).toContain(
-      `  packages:
-    name: "package suites (\${{ matrix.os }})"
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
-        include:
-          - os: ubuntu-latest
-            advisory: false
-          - os: macos-latest
-            advisory: true
-          - os: windows-latest
-            advisory: true
-    runs-on: \${{ matrix.os }}
-    timeout-minutes: 60
-    continue-on-error: \${{ matrix.advisory }}
-    steps:
-`
+      "  \"packages\":\n    name: \"package suites (${{ matrix.os }})\"\n    strategy:\n      fail-fast: false\n      matrix:\n        os: [\"ubuntu-latest\", \"macos-latest\", \"windows-latest\"]\n        include:\n          - os: \"ubuntu-latest\"\n            advisory: false\n          - os: \"macos-latest\"\n            advisory: true\n          - os: \"windows-latest\"\n            advisory: true\n    runs-on: ${{ matrix.os }}\n    timeout-minutes: 60\n    continue-on-error: ${{ matrix.advisory }}\n    steps:\n"
     )
     // Every row runs the same steps, rendered once.
     expect(rendered.split("smthrs test '//packages/...'").length - 1).toBe(1)
@@ -1371,13 +1365,20 @@ describe("a platform matrix", () => {
   })
 
   it("refuses a matrix row that is not one runner label", () => {
-    for (const os of ["[self-hosted, linux]", "${{ matrix.os }}", "ubuntu latest", "false", "on"]) {
+    for (const os of ["[self-hosted, linux]", "${{ matrix.os }}", "ubuntu latest"]) {
       expect(() => render(withMatrixJob({ ...matrixJob, matrix: [{ os, advisory: false }] })))
         .toThrow(/is not a runner label; use one label per matrix row/)
     }
     // The schema refuses an empty label before `render` ever sees it.
     expect(() => withMatrixJob({ ...matrixJob, matrix: [{ os: "", advisory: false }] }))
       .toThrow(/length of at least 1/)
+  })
+
+  it("quotes matrix labels that resemble YAML scalars", () => {
+    for (const os of ["false", "on", "123"]) {
+      const source = render(withMatrixJob({ ...matrixJob, matrix: [{ os, advisory: false }] }))
+      expect(source).toContain(`os: [${JSON.stringify(os)}]`)
+    }
   })
 
   it("refuses an empty matrix and a repeated platform", () => {
@@ -1492,8 +1493,8 @@ describe("system packages", () => {
       }],
       gates: []
     })
-    expect(rendered).toContain("- name: Install system packages")
-    expect(rendered).toContain("shell: bash")
+    expect(rendered).toContain("- name: \"Install system packages\"")
+    expect(rendered).toContain("shell: \"bash\"")
     expect(rendered).toContain("if command -v apt-get >/dev/null 2>&1; then")
     expect(rendered).toContain("sudo apt-get install -y -qq --no-install-recommends 'bubblewrap' 'iproute2'")
     expect(rendered).not.toContain("if: ")
@@ -1511,8 +1512,8 @@ describe("system packages", () => {
       }],
       gates: []
     })
-    expect(rendered).toContain("- name: Enable the containerd image store")
-    expect(rendered).toContain("shell: bash")
+    expect(rendered).toContain("- name: \"Enable the containerd image store\"")
+    expect(rendered).toContain("shell: \"bash\"")
     expect(rendered).toContain("containerd-snapshotter")
     expect(rendered).toContain("sudo systemctl restart docker")
     expect(rendered).not.toContain("if: ")

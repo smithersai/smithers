@@ -1,4 +1,5 @@
 import { Smithers as S } from "@smthrs/targets"
+import { parseWorkflow } from "@smthrs/targets/GithubWorkflow"
 import type * as Target from "@smthrs/targets/Target"
 import * as NodeChildProcess from "node:child_process"
 import * as Fs from "node:fs/promises"
@@ -490,7 +491,7 @@ describe("triggers", () => {
     const nightly = rendered.files.find((file) => file.path === "workflows/nightly.yml")
     expect(nightly).toBeDefined()
     expect(nightly!.content).toContain(
-      "on:\n  schedule:\n    - cron: \"0 6 * * *\"\n  release:\n    types:\n      - published\n  workflow_dispatch:\n"
+      "on:\n  schedule:\n    - cron: \"0 6 * * *\"\n  release:\n    types:\n      - \"published\"\n  workflow_dispatch:\n"
     )
   })
 
@@ -563,26 +564,28 @@ describe("triggers", () => {
     const content = rendered.files.find((file) => file.path === "workflows/coordinate.yml")!.content
 
     expect(content).toContain(
-      "  pull_request:\n    types:\n      - opened\n      - ready_for_review\n" +
-        "  pull_request_target:\n    types:\n      - opened\n      - synchronize\n" +
-        "  issues:\n    types:\n      - opened\n      - labeled\n"
+      "  pull_request:\n    types:\n      - \"opened\"\n      - \"ready_for_review\"\n" +
+        "  pull_request_target:\n    types:\n      - \"opened\"\n      - \"synchronize\"\n" +
+        "  issues:\n    types:\n      - \"opened\"\n      - \"labeled\"\n"
     )
     expect(content).toContain(
-      "  workflow_dispatch:\n    inputs:\n      force_publish:\n" +
-        "        description: Publish even when unchanged\n        required: true\n" +
+      "  workflow_dispatch:\n    inputs:\n      \"force_publish\":\n" +
+        "        description: \"Publish even when unchanged\"\n        required: true\n" +
         "        default: false\n        type: boolean\n"
     )
-    expect(content).toContain("permissions:\n  contents: read\n  pull-requests: write\n  issues: read\n")
-    expect(content).toContain("env:\n  CARGO_TERM_COLOR: always\n")
     expect(content).toContain(
-      "  coordinate:\n    name: Coordinate\n" +
+      "permissions:\n  \"contents\": \"read\"\n  \"pull-requests\": \"write\"\n  \"issues\": \"read\"\n"
+    )
+    expect(content).toContain("env:\n  \"CARGO_TERM_COLOR\": \"always\"\n")
+    expect(content).toContain(
+      "  coordinate:\n    name: \"Coordinate\"\n" +
         "    if: \"github.event_name != 'pull_request' || github.event.pull_request.state == 'open'\"\n" +
-        "    runs-on: blacksmith-4vcpu-ubuntu-2404\n    environment: prod\n"
+        "    runs-on: \"blacksmith-4vcpu-ubuntu-2404\"\n    environment: \"prod\"\n"
     )
     expect(content).toContain(
-      "      - name: Coordinate\n        id: coordinate\n        if: inputs.force_publish\n        run: |\n" +
-        "          echo first\n          echo second\n        shell: bash\n" +
-        "        working-directory: \".smithers\"\n        env:\n          GH_TOKEN: \"${{ github.token }}\"\n"
+      "      - name: \"Coordinate\"\n        id: \"coordinate\"\n        if: \"inputs.force_publish\"\n        run: |\n" +
+        "          echo first\n          echo second\n        shell: \"bash\"\n" +
+        "        working-directory: \".smithers\"\n        env:\n          \"GH_TOKEN\": \"${{ github.token }}\"\n"
     )
     expect(content.indexOf("  coordinate:\n")).toBeLessThan(content.indexOf("  verify:\n"))
   })
@@ -757,11 +760,11 @@ describe("design-partner workflow originals", () => {
     })
     const content = rendered.files.find((file) => file.path === "workflows/coordinate.yml")!.content
     expect(content).toContain(
-      "  pull_request:\n    types:\n      - opened\n      - ready_for_review\n      - labeled\n"
+      "  pull_request:\n    types:\n      - \"opened\"\n      - \"ready_for_review\"\n      - \"labeled\"\n"
     )
-    expect(content).toContain("  issues:\n    types:\n      - opened\n      - labeled\n")
+    expect(content).toContain("  issues:\n    types:\n      - \"opened\"\n      - \"labeled\"\n")
     expect(content).toContain(
-      "  workflow_dispatch:\n    inputs:\n      force_publish:\n        description: Publish even when unchanged\n" +
+      "  workflow_dispatch:\n    inputs:\n      \"force_publish\":\n        description: \"Publish even when unchanged\"\n" +
         "        required: true\n        default: false\n        type: boolean\n"
     )
   })
@@ -794,15 +797,17 @@ describe("design-partner workflow originals", () => {
       packageDir: ".github"
     })
     const content = rendered.files.find((file) => file.path === "workflows/coordinate.yml")!.content
-    expect(content).toContain("permissions:\n  contents: read\n  pull-requests: write\n  issues: read\n")
-    expect(content).toContain("env:\n  CARGO_TERM_COLOR: always\n")
-    expect(content).toContain("    name: Coordinate\n")
-    expect(content).toContain("    environment: prod\n")
-    expect(content).toContain("    runs-on: blacksmith-4vcpu-ubuntu-2404\n")
-    expect(content).toContain("      - uses: actions/checkout@v4\n        with:\n")
-    expect(content).toContain("          repository: aomi-labs/aomi-scrum\n")
+    expect(content).toContain(
+      "permissions:\n  \"contents\": \"read\"\n  \"pull-requests\": \"write\"\n  \"issues\": \"read\"\n"
+    )
+    expect(content).toContain("env:\n  \"CARGO_TERM_COLOR\": \"always\"\n")
+    expect(content).toContain("    name: \"Coordinate\"\n")
+    expect(content).toContain("    environment: \"prod\"\n")
+    expect(content).toContain("    runs-on: \"blacksmith-4vcpu-ubuntu-2404\"\n")
+    expect(content).toContain("      - uses: \"actions/checkout@v4\"\n        with:\n")
+    expect(content).toContain("          \"repository\": \"aomi-labs/aomi-scrum\"\n")
     expect(content).toContain("        working-directory: \".smithers\"\n")
-    expect(content).toContain("        env:\n          GH_TOKEN: \"${{ github.token }}\"\n")
+    expect(content).toContain("        env:\n          \"GH_TOKEN\": \"${{ github.token }}\"\n")
   })
 })
 
@@ -826,7 +831,7 @@ describe("toolchain variants", () => {
     })
     const action = rendered.files.find((file) => file.path === "actions/setup/action.yml")!
     expect(action.content).toContain("actions/setup-go@v6")
-    expect(action.content).toContain("go-version-file: go.mod")
+    expect(action.content).toContain("\"go-version-file\": \"go.mod\"")
     expect(action.content).not.toContain("setup-node")
     expect(action.content).not.toContain("pnpm install")
   })
@@ -844,8 +849,8 @@ describe("toolchain variants", () => {
     const action = rendered.files.find((file) => file.path === "actions/setup/action.yml")
     expect(action).toBeDefined()
     expect(action!.content).toContain("pnpm/action-setup@v4")
-    expect(action!.content).toContain("version: 11.21.0")
-    expect(action!.content).toContain("node-version: \"26\"")
+    expect(action!.content).toContain("\"version\": \"11.21.0\"")
+    expect(action!.content).toContain("\"node-version\": \"26\"")
     expect(action!.content).toContain("pnpm-store-${{ hashFiles('pnpm-lock.yaml') }}")
     expect(action!.content).toContain("pnpm install --frozen-lockfile")
     // No secrets declared: no inputs block and no env-export step.
@@ -877,8 +882,8 @@ describe("toolchain variants", () => {
     const action = rendered.files.find((file) => file.path === "actions/setup/action.yml")
     expect(action).toBeDefined()
     expect(action!.content).toContain("pnpm/action-setup@v4")
-    expect(action!.content).toContain("version: \"8\"")
-    expect(action!.content).toContain("node-version: \"26\"")
+    expect(action!.content).toContain("\"version\": \"8\"")
+    expect(action!.content).toContain("\"node-version\": \"26\"")
     expect(action!.content).toContain("pnpm-store-${{ hashFiles('pnpm-lock.yaml') }}")
     expect(action!.content).toContain("pnpm install --frozen-lockfile")
   })
@@ -907,9 +912,9 @@ describe("toolchain variants", () => {
     expect(action).toBeDefined()
     // No declared pin: pnpm/action-setup reads the manifest's packageManager field.
     expect(action!.content).toContain("pnpm/action-setup@v4")
-    expect(action!.content).not.toContain("version: \"8\"")
+    expect(action!.content).not.toContain("\"version\": \"8\"")
     // The workspace runtime arrives as the manifest-derived node-version-file.
-    expect(action!.content).toContain("node-version-file: package.json")
+    expect(action!.content).toContain("\"node-version-file\": \"package.json\"")
   })
 
   it.each(["//:test'quote", "//pack'age:test", "//:test;echo", "//:test\n"])(
@@ -966,9 +971,9 @@ describe("toolchain variants", () => {
 
     const root = await parseableWorkspace()
 
-    const commands = ci.content.split("\n")
-      .filter((line) => line.trimStart().startsWith("- run: "))
-      .map((line) => line.trimStart().slice("- run: ".length))
+    const commands = parseWorkflow(ci.content).jobs.flatMap((job) =>
+      job.steps.flatMap((step) => step.run === undefined ? [] : [step.run])
+    )
     expect(commands).toHaveLength(1)
     for (const command of commands) {
       // Drop the package-manager exec prefix the workflow uses to reach the
