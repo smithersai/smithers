@@ -693,21 +693,20 @@ describe("the Node host composition", () => {
    * Catalog, never, never>(options, registerFlows)` would compile, and the
    * layer it returned would CLAIM to provide `Catalog` while providing
    * nothing — a service-not-found defect discovered when the layer builds,
-   * hours from the call that caused it. With overloads the registry type
-   * parameters exist only on the signature that also takes the argument, so
-   * the mismatch is unspellable. Every assertion below is a compile-time
+   * hours from the call that caused it. The conditional argument tuple requires a registry layer whenever
+   * its type parameters name a service, so the mismatch is unspellable. Every assertion below is a compile-time
    * one: the `layerHost` call declares a layer and never builds it, and the
    * two `Parameters` reads never run anything at all.
    */
   it("cannot name a registry service without supplying its layer", () => {
-    // @ts-expect-error the registry-typed overload requires the registry layer
+    // @ts-expect-error a declared registry service requires the registry layer
     const declared = NodeRuntime.layerHost<never, never, never, Catalog, never, never>(
       { filename: hostFile, workspaceRoot: directory, owner: { hostId: "registry-arity-host" }, signals: [] },
       Layer.empty
     )
     expect(declared).toBeDefined()
 
-    // `layer` and `make` carry the same overload pair, and their boundary and
+    // `layer` and `make` use the same conditional argument tuple, and their boundary and
     // sandbox arguments make an explicit instantiation unreadable. Their
     // signature is what the assertion reads instead: once a registry type is
     // named, the only applicable signature is the five-argument one, so the

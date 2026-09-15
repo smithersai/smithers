@@ -75,6 +75,35 @@ type _BunCompositionRootsAreComplete = [
   Expect<Complete<ReturnType<typeof BunRuntime.layerHost<never, never, never>>>>
 ]
 
+/** Additional services distinguish registry-provided and still-required dependencies. */
+interface RegisteredService {
+  readonly registeredService: unique symbol
+}
+interface ExternalService {
+  readonly externalService: unique symbol
+}
+
+/** Registry wiring removes its outputs and Scope while retaining external dependencies. */
+type _NativeRegistryRequirements = Expect<
+  LayerRequirementsAre<
+    ReturnType<
+      typeof NodeRuntime.layer<
+        "boundary-failed",
+        Scope.Scope,
+        "sandbox-failed",
+        Scope.Scope,
+        never,
+        "registration-failed",
+        RegisteredService | ExternalService | Scope.Scope,
+        RegisteredService,
+        "registry-failed",
+        ExternalService | Scope.Scope
+      >
+    >,
+    Crypto.Crypto | FileSystem.FileSystem | KernelJj.Jj | ExternalService
+  >
+>
+
 /**
  * The two runtime entry points publish exactly these type names. The
  * assertions above are deliberately absent: a compile-time guard is checking

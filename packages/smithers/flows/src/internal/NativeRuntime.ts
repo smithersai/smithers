@@ -13,7 +13,7 @@ import * as ProcessLedger from "@smthrs/kernel/ProcessLedger"
 import * as HostLiveness from "@smthrs/platform-node/HostLiveness"
 import type * as NodeHost from "@smthrs/platform-node/NodeHost"
 import type * as ProcessReaper from "@smthrs/platform-node/ProcessReaper"
-import type { Ownership, RunStore } from "@smthrs/run-store"
+import type { Ownership } from "@smthrs/run-store"
 import type * as Crypto from "effect/Crypto"
 import * as Effect from "effect/Effect"
 import * as Exit from "effect/Exit"
@@ -26,7 +26,8 @@ import type * as SqlClient from "effect/unstable/sql/SqlClient"
 import { constants } from "node:os"
 import { dirname, resolve } from "node:path"
 import * as Runtime from "../Runtime.ts"
-import type { NativeRuntimeApi } from "./NativeRuntimeApi.ts"
+import { type RegistryArgs, registryLayer } from "./RegistryArgs.ts"
+import { decodeField as decodeRuntimeField, validate as validateRuntime } from "./RuntimeOptions.ts"
 
 /** Native process and host configuration.
  * @since 1.0.0
@@ -60,51 +61,22 @@ type RuntimeConfigurationError = Runtime.RuntimeConfigurationError
  * @since 1.0.0
  * @category layers
  */
-export const makeNative = (platform: NativePlatform): NativeRuntimeApi => {
+export const makeNative = (platform: NativePlatform) => {
   const invalidConfiguration = (field: string, message: string): RuntimeConfigurationError =>
     new RuntimeConfigurationError({ code: "invalid_runtime_configuration", field, message })
 
-  const decodeField = <A>(field: string, schema: Schema.Codec<A>, value: unknown, expectation: string): A => {
-    try {
-      return Schema.decodeUnknownSync(schema)(value)
-    } catch {
-      throw invalidConfiguration(field, `${platform.name} ${field} ${expectation}`)
-    }
-  }
+  const decodeField = <A>(field: string, schema: Schema.Codec<A>, value: unknown, expectation: string): A =>
+    decodeRuntimeField(field, schema, value, expectation, platform.name)
 
   const nonEmpty = "must be a non-empty string"
 
-  interface ValidatedOptions {
-    readonly filename: string
-    readonly workspaceRoot: string
-    readonly owner: Readonly<{ readonly hostId: string }>
-    readonly isAlive: Ownership.LivenessCheck
-    readonly canExecute?: ((row: RunStore.RunRow) => Effect.Effect<boolean>) | undefined
-  }
-
-  const validate = (options: Options): ValidatedOptions => {
-    const filename = decodeField("filename", Schema.NonEmptyString, options.filename, nonEmpty)
-    const workspaceRoot = decodeField("workspaceRoot", Schema.NonEmptyString, options.workspaceRoot, nonEmpty)
-    // A JavaScript caller can omit `owner` entirely, so the field is read off a
-    // possibly-absent record rather than dereferenced.
-    const owner = options.owner as { readonly hostId?: unknown } | undefined
-    const hostId = decodeField("owner.hostId", Schema.NonEmptyString, owner?.hostId, nonEmpty)
-    const isAlive = options.isAlive
-    if (typeof isAlive !== "function") {
-      throw invalidConfiguration("isAlive", `${platform.name} isAlive must be a function`)
+  const validate = (options: Options): Options => {
+    const configured = validateRuntime(options, platform.name)
+    return {
+      ...configured,
+      filename: resolve(configured.filename),
+      workspaceRoot: resolve(configured.workspaceRoot)
     }
-    const canExecute = options.canExecute
-    if (canExecute !== undefined && typeof canExecute !== "function") {
-      throw invalidConfiguration("canExecute", `${platform.name} canExecute must be a function when supplied`)
-    }
-    const absoluteFilename = resolve(filename)
-    return Object.freeze({
-      filename: absoluteFilename,
-      workspaceRoot: resolve(workspaceRoot),
-      owner: Object.freeze({ hostId }),
-      isAlive,
-      canExecute
-    })
   }
 
   const databaseLayer = (filename: string) =>
@@ -125,7 +97,7 @@ export const makeNative = (platform: NativePlatform): NativeRuntimeApi => {
     )
   }
 
-  const composition = <
+  const layer = <
     BoundaryError,
     BoundaryRequirements,
     SandboxError,
@@ -133,24 +105,24 @@ export const makeNative = (platform: NativePlatform): NativeRuntimeApi => {
     Registered,
     RegistrationError,
     RegistrationRequirements,
-    RegistryOut,
-    RegistryError,
-    RegistryRequirements
+    RegistryOut = never,
+    RegistryError = never,
+    RegistryRequirements = never
   >(
     options: Options,
     stepBoundary: Layer.Layer<StepBoundary.Service, BoundaryError, BoundaryRequirements>,
     workspaceSandbox: Layer.Layer<WorkspaceSandbox.Service, SandboxError, SandboxRequirements>,
     registerFlows: Layer.Layer<Registered, RegistrationError, RegistrationRequirements>,
-    registry: Layer.Layer<RegistryOut, RegistryError, RegistryRequirements>
+    ...registry: RegistryArgs<RegistryOut, RegistryError, RegistryRequirements>
   ) => {
     const validated = validate(options)
-    return Runtime.layer(validated, stepBoundary, workspaceSandbox, registerFlows, registry).pipe(
+    return Runtime.layer(validated, stepBoundary, workspaceSandbox, registerFlows, ...registry).pipe(
       Layer.provideMerge(databaseLayer(validated.filename)),
       Layer.provide(Path.layer)
     )
   }
 
-  const makeWithRegistry = <
+  const make = <
     BoundaryError,
     BoundaryRequirements,
     SandboxError,
@@ -158,54 +130,16 @@ export const makeNative = (platform: NativePlatform): NativeRuntimeApi => {
     Registered,
     RegistrationError,
     RegistrationRequirements,
-    RegistryOut,
-    RegistryError,
-    RegistryRequirements
+    RegistryOut = never,
+    RegistryError = never,
+    RegistryRequirements = never
   >(
     options: Options,
     stepBoundary: Layer.Layer<StepBoundary.Service, BoundaryError, BoundaryRequirements>,
     workspaceSandbox: Layer.Layer<WorkspaceSandbox.Service, SandboxError, SandboxRequirements>,
     registerFlows: Layer.Layer<Registered, RegistrationError, RegistrationRequirements>,
-    registry: Layer.Layer<RegistryOut, RegistryError, RegistryRequirements>
-  ) => Layer.build(composition(options, stepBoundary, workspaceSandbox, registerFlows, registry))
-
-  const make: NativeRuntimeApi["make"] = (
-    options: Options,
-    stepBoundary: Layer.Layer<StepBoundary.Service, any, any>,
-    workspaceSandbox: Layer.Layer<WorkspaceSandbox.Service, any, any>,
-    registerFlows: Layer.Layer<any, any, any>,
-    registry?: Layer.Layer<any, any, any>
-  ) => makeWithRegistry(options, stepBoundary, workspaceSandbox, registerFlows, registry ?? Layer.empty)
-
-  const layerWithRegistry = <
-    BoundaryError,
-    BoundaryRequirements,
-    SandboxError,
-    SandboxRequirements,
-    Registered,
-    RegistrationError,
-    RegistrationRequirements,
-    RegistryOut,
-    RegistryError,
-    RegistryRequirements
-  >(
-    options: Options,
-    stepBoundary: Layer.Layer<StepBoundary.Service, BoundaryError, BoundaryRequirements>,
-    workspaceSandbox: Layer.Layer<WorkspaceSandbox.Service, SandboxError, SandboxRequirements>,
-    registerFlows: Layer.Layer<Registered, RegistrationError, RegistrationRequirements>,
-    registry: Layer.Layer<RegistryOut, RegistryError, RegistryRequirements>
-  ) =>
-    Layer.effectContext(
-      makeWithRegistry(options, stepBoundary, workspaceSandbox, registerFlows, registry)
-    )
-
-  const layer: NativeRuntimeApi["layer"] = (
-    options: Options,
-    stepBoundary: Layer.Layer<StepBoundary.Service, any, any>,
-    workspaceSandbox: Layer.Layer<WorkspaceSandbox.Service, any, any>,
-    registerFlows: Layer.Layer<any, any, any>,
-    registry?: Layer.Layer<any, any, any>
-  ) => layerWithRegistry(options, stepBoundary, workspaceSandbox, registerFlows, registry ?? Layer.empty)
+    ...registry: RegistryArgs<RegistryOut, RegistryError, RegistryRequirements>
+  ) => Layer.build(layer(options, stepBoundary, workspaceSandbox, registerFlows, ...registry))
 
   const defaultSignals: ReadonlyArray<NodeJS.Signals> = Object.freeze(["SIGINT", "SIGTERM"])
 
@@ -306,7 +240,7 @@ export const makeNative = (platform: NativePlatform): NativeRuntimeApi => {
     })
   }
 
-  interface ValidatedHostOptions extends ValidatedOptions {
+  interface ValidatedHostOptions extends Options {
     readonly rules: GrantStore.MakeOptions["rules"]
     readonly signals: ReadonlyArray<NodeJS.Signals>
     readonly shutdownTimeoutMs: number
@@ -381,17 +315,17 @@ export const makeNative = (platform: NativePlatform): NativeRuntimeApi => {
       }
     })
 
-  const layerHostWithRegistry = <
+  const layerHost = <
     Registered,
     RegistrationError,
     RegistrationRequirements,
-    RegistryOut,
-    RegistryError,
-    RegistryRequirements
+    RegistryOut = never,
+    RegistryError = never,
+    RegistryRequirements = never
   >(
     options: HostOptions,
     registerFlows: Layer.Layer<Registered, RegistrationError, RegistrationRequirements>,
-    registry: Layer.Layer<RegistryOut, RegistryError, RegistryRequirements>
+    ...registry: RegistryArgs<RegistryOut, RegistryError, RegistryRequirements>
   ) => {
     const validated = validateHost(options)
     const workspaceRoot = validated.workspaceRoot
@@ -431,7 +365,7 @@ export const makeNative = (platform: NativePlatform): NativeRuntimeApi => {
     // registered. The registry sits directly beneath it, so a registration built
     // from a discovered catalog reads the catalog on the guarded host this
     // composition already built.
-    const composed = registerFlows.pipe(Layer.provideMerge(registry), Layer.provideMerge(engine))
+    const composed = registerFlows.pipe(Layer.provideMerge(registryLayer(registry)), Layer.provideMerge(engine))
     return Layer.effectContext(Effect.gen(function*() {
       const parent = yield* Scope.Scope
       // The composition is built into a scope this module can close, because a
@@ -449,11 +383,13 @@ export const makeNative = (platform: NativePlatform): NativeRuntimeApi => {
     }))
   }
 
-  const layerHost: NativeRuntimeApi["layerHost"] = (
-    options: HostOptions,
-    registerFlows: Layer.Layer<any, any, any>,
-    registry?: Layer.Layer<any, any, any>
-  ) => layerHostWithRegistry(options, registerFlows, registry ?? Layer.empty)
-
-  return { storage, make, layer, layerHost, signalExitCode, defaultShutdownTimeoutMs, maximumShutdownTimeoutMs }
+  return {
+    storage,
+    make,
+    layer,
+    layerHost,
+    signalExitCode,
+    defaultShutdownTimeoutMs,
+    maximumShutdownTimeoutMs
+  } as const
 }
