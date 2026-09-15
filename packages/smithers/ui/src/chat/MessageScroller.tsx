@@ -579,11 +579,24 @@ function MessageScrollerProviderImpl({
     previousRequestIdRef.current = readAnchorRef.current?.requestId;
   }, [measure, remember, setFollowing, setJumpTracking]);
 
+  // Downward input at the bottom cannot move the viewport, so no subsequent
+  // scroll event will restore follow if we cancel it here.
+  const isAtBottomBoundary = useCallback(() => {
+    const viewport = viewportRef.current;
+    return viewport !== null && viewport.scrollHeight - viewport.clientHeight - viewport.scrollTop <= 1;
+  }, []);
+
+  const onViewportWheel = useCallback((event: WheelEvent) => {
+    if (event.deltaY === 0 || (event.deltaY > 0 && isAtBottomBoundary())) return;
+    cancelProgrammaticScroll();
+  }, [cancelProgrammaticScroll, isAtBottomBoundary]);
+
   const onViewportKeyDown = useCallback(
     (event: KeyboardEvent) => {
+      if (["ArrowDown", "PageDown", "End"].includes(event.key) && isAtBottomBoundary()) return;
       if (SCROLL_KEYS.has(event.key)) cancelProgrammaticScroll();
     },
-    [cancelProgrammaticScroll],
+    [cancelProgrammaticScroll, isAtBottomBoundary],
   );
 
   /**
@@ -605,7 +618,7 @@ function MessageScrollerProviderImpl({
       const previous = viewportRef.current;
       if (previous && previous !== el) {
         previous.removeEventListener("click", requestUserRead, true);
-        previous.removeEventListener("wheel", cancelProgrammaticScroll);
+        previous.removeEventListener("wheel", onViewportWheel);
         previous.removeEventListener("touchmove", cancelProgrammaticScroll);
         previous.removeEventListener("keydown", onViewportKeyDown);
         previous.removeEventListener("scrollend", onViewportScrollEnd);
@@ -614,13 +627,13 @@ function MessageScrollerProviderImpl({
       setViewportElement(el);
       if (el) {
         el.addEventListener("click", requestUserRead, true);
-        el.addEventListener("wheel", cancelProgrammaticScroll, { passive: true });
+        el.addEventListener("wheel", onViewportWheel, { passive: true });
         el.addEventListener("touchmove", cancelProgrammaticScroll, { passive: true });
         el.addEventListener("keydown", onViewportKeyDown);
         el.addEventListener("scrollend", onViewportScrollEnd);
       }
     },
-    [cancelProgrammaticScroll, onViewportKeyDown, onViewportScrollEnd, requestUserRead],
+    [cancelProgrammaticScroll, onViewportWheel, onViewportKeyDown, onViewportScrollEnd, requestUserRead],
   );
 
   const handleScroll = useCallback(() => {

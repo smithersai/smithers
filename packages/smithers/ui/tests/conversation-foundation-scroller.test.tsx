@@ -1404,6 +1404,35 @@ test("a slash request waits for its new card before resuming follow", async () =
   expect(getViewport().scrollTop).toBe(700);
 });
 
+test.each(["wheel", "ArrowDown", "PageDown", "End"])("%s at the bottom keeps following new messages", async (input) => {
+  const view = (id: string) => <MessageScrollerProvider scrollAnchor="bottom" readAnchor={{ messageId: id }}>
+    <MessageScrollerViewport><MessageScrollerContent>
+      <MessageScrollerItem messageId={id}>Reply</MessageScrollerItem>
+    </MessageScrollerContent></MessageScrollerViewport>
+  </MessageScrollerProvider>;
+  geometryByMessageId.set("reply", { top: 1000, height: 100 });
+  await render(view("reply"), { scrollHeight: 1100, clientHeight: 600, scrollTop: 0 });
+  expect(getViewport().scrollTop).toBe(500);
+  await act(async () => getViewport().dispatchEvent(input === "wheel"
+    ? new WheelEvent("wheel", { deltaY: 100, bubbles: true })
+    : new KeyboardEvent("keydown", { key: input, bubbles: true })));
+  // A gesture against the bottom boundary produces no scroll event.
+  geometryByMessageId.set("reply", { top: 1000, height: 200 });
+  metrics().scrollHeight = 1200;
+  const content = container!.querySelector('[data-slot="message-scroller-content"]')!;
+  await act(async () => resizeCallbacks.get(content)!([], {} as ResizeObserver));
+  expect(getViewport().scrollTop).toBe(600);
+  geometryByMessageId.set("next", { top: 1200, height: 100 });
+  metrics().scrollHeight = 1300;
+  await act(async () => root!.render(view("next")));
+  expect(getViewport().scrollTop).toBe(700);
+  // Upward intent must still release follow before its scroll event arrives.
+  await act(async () => getViewport().dispatchEvent(new WheelEvent("wheel", { deltaY: -100, bubbles: true })));
+  metrics().scrollHeight = 1400;
+  await act(async () => resizeCallbacks.get(content)!([], {} as ResizeObserver));
+  expect(getViewport().scrollTop).toBe(700);
+});
+
 test("late Home hydration respects a scroll-up after Welcome was painted", async () => {
   const view = (id: string) => <MessageScrollerProvider scrollAnchor="bottom"
     readAnchor={{ messageId: id, actor: "arrival" }}>
