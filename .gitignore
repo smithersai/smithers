@@ -170,3 +170,6 @@ apps/app/e2e/*.mjs
 
 # Review reports and ledgers stay on disk (Will 2026-09-04: review evidence is never committed)
 docs/reviews/
+
+# disposable one-off probe scripts (apps/app/.impl13.tmp.mjs style)
+.*.tmp.mjs
