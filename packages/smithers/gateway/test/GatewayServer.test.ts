@@ -379,29 +379,42 @@ describe("submitting an answer rather than a grant", () => {
    * the record carries the wait point's name and the words the person typed,
    * which a grant has nowhere to put.
    */
+  /**
+   * The durable wait token the approvals projection publishes as the target's
+   * digest: base64 of `[flowName, executionId, deferredName]`. It is what tells
+   * a decision that this gate asks a question rather than for a grant, so the
+   * fixture carries a real one.
+   */
+  const waitToken = Buffer.from(
+    JSON.stringify(["coding/PreparePlan", "execution-1", "WaitFor/coding-clarification#1"])
+  ).toString("base64")
+
+  const answerRequest = (runId: string, answer?: string, decision: "approve" | "deny" = "approve") =>
+    JSON.stringify({
+      _tag: "Request",
+      id: 1,
+      tag: "Approval.Submit",
+      payload: {
+        target: {
+          _tag: "Node",
+          runId,
+          requestId: "coding-clarification#1",
+          digest: waitToken,
+          envelope: { capabilities: [], flows: [], budget: {} }
+        },
+        scope: "once",
+        idempotencyKey: `answer:${runId}:coding-clarification#1`,
+        decision,
+        ...(answer === undefined ? {} : { answer })
+      },
+      headers: []
+    }) + "\n"
+
   test("routes it to the signal command, not to the grant", () =>
     Effect.gen(function*() {
       const url = yield* baseUrl
       const runId = yield* launched
-      const request = JSON.stringify({
-        _tag: "Request",
-        id: 1,
-        tag: "Approval.Submit",
-        payload: {
-          target: {
-            _tag: "Node",
-            runId,
-            requestId: "coding-clarification#1",
-            digest: "wait-token",
-            envelope: { capabilities: [], flows: [], budget: {} }
-          },
-          scope: "once",
-          idempotencyKey: `answer:${runId}:coding-clarification#1`,
-          decision: "approve",
-          answer: "the scheduler owns it"
-        },
-        headers: []
-      }) + "\n"
+      const request = answerRequest(runId, "the scheduler owns it")
       const body = yield* Effect.promise(async () => {
         const response = await fetch(`${url}/projections`, {
           method: "POST",
@@ -420,6 +433,54 @@ describe("submitting an answer rather than a grant", () => {
       // No grant was taken for the answer: the only one is the plan grant that
       // launched the run, so an answer decided nothing about capabilities.
       expect((yield* runtime.grants).map((grant) => grant.tokenId)).toEqual(["plan-1"])
+    }).pipe(Effect.provide(served(
+      { host: "127.0.0.1", port: 0, credential: "edge-secret" },
+      delegatedBearer
+    ))))
+
+  /**
+   * A question submitted with no answer is refused for the reason it is
+   * refused.
+   *
+   * It used to fall through to `Control.approve`, which looked for a registered
+   * approval token, found none — a `HumanTask` parks itself on a durable wait
+   * and never registers one — and reported `/control/RunNotFound` for a run
+   * that was listed, rendered and waiting. That is the error the app showed an
+   * operator as "Approval submission failed" (workspace 4bb93306, run-1).
+   */
+  test("refuses an answerless question without claiming the run is gone", () =>
+    Effect.gen(function*() {
+      const url = yield* baseUrl
+      const runId = yield* launched
+      const body = yield* Effect.promise(async () => {
+        const response = await fetch(`${url}/projections`, {
+          method: "POST",
+          body: answerRequest(runId),
+          headers: { authorization: "Bearer edge-secret", "content-type": "application/json" }
+        })
+        expect(response.status).toBe(200)
+        return response.text()
+      })
+
+      expect(body).toContain("/control/InvalidInput")
+      expect(body).toContain("coding-clarification#1")
+      expect(body).not.toContain("RunNotFound")
+      // Nothing was recorded: a refused submission decides and delivers nothing.
+      expect(yield* (yield* ControlRuntime).deliveredSignals(runId)).toEqual([])
+
+      // A denial is refused the same way. Nothing it could mean reaches the
+      // run: it is parked on a value, and withholding one leaves it parked
+      // until its own attempt budget or deadline ends it.
+      const denied = yield* Effect.promise(async () => {
+        const response = await fetch(`${url}/projections`, {
+          method: "POST",
+          body: answerRequest(runId, undefined, "deny"),
+          headers: { authorization: "Bearer edge-secret", "content-type": "application/json" }
+        })
+        return response.text()
+      })
+      expect(denied).toContain("/control/InvalidInput")
+      expect(denied).not.toContain("RunNotFound")
     }).pipe(Effect.provide(served(
       { host: "127.0.0.1", port: 0, credential: "edge-secret" },
       delegatedBearer

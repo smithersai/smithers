@@ -24,7 +24,8 @@
  * @since 1.0.0
  */
 import { Control } from "@smthrs/control/Control"
-import type * as ControlError from "@smthrs/control/ControlError"
+import * as ControlError from "@smthrs/control/ControlError"
+import * as ControlExecutor from "@smthrs/control/ControlExecutor"
 import { ControlPrincipal } from "@smthrs/control/ControlRpcs"
 import type * as ControlSchema from "@smthrs/control/ControlSchema"
 import * as ControlServer from "@smthrs/control/ControlServer"
@@ -102,17 +103,38 @@ export const layerHandlers = GatewayRpcs.toLayer(
             idempotencyKey: input.idempotencyKey,
             principal
           }
-          // A gate that asked a question is answered, not granted. The row the
-          // client submits carries the answer, `target.runId` is the run the
-          // person opened, and `target.requestId` is the wait point's own name
-          // — which `Control.signal` routes into the run tree, to whichever
-          // execution is holding it. Without this the answer had nowhere to go:
-          // a nested `HumanTask` has no registered approval token, so
-          // `Control.approve` would refuse a gate that is genuinely open.
-          if (input.answer !== undefined && input.decision === "approve" && input.target._tag === "Node") {
+          // A gate that asked a question is answered, not granted, and the
+          // PAYLOAD says which kind it is: a human wait carries its durable
+          // wait token as the target's digest, and nothing else does. Reading
+          // it here rather than trusting the client to have sent `answer` is
+          // the difference between a clear refusal and the one an operator
+          // actually saw — a client that forgot the answer fell through to
+          // `Control.approve`, which looked for a registered approval token,
+          // found none, and reported `/control/RunNotFound` for a run that was
+          // listed, rendered, and waiting (workspace 4bb93306, run-1).
+          //
+          // `target.runId` is the run the person opened and `wait.name` the
+          // wait point's own name; `Control.signal` routes the pair into the
+          // run tree, to whichever execution is holding it.
+          const wait = ControlExecutor.answerableWait(input.target)
+          if (wait !== undefined && input.target._tag === "Node") {
+            // Neither half of a grant answers a question. A denial has nowhere
+            // to go — the run is parked on a value, and refusing to supply one
+            // leaves it parked until its own attempt budget or deadline ends
+            // it — and an approval with no value supplies none.
+            if (input.decision === "deny") {
+              return yield* new ControlError.InvalidInput({
+                issue: `decision: "${wait.name}" asks a question, which is answered rather than denied`
+              })
+            }
+            if (input.answer === undefined) {
+              return yield* new ControlError.InvalidInput({
+                issue: `answer: "${wait.name}" asks a question, so a decision alone does not answer it`
+              })
+            }
             const decision = yield* control.signal({
               runId: input.target.runId,
-              signal: { name: input.target.requestId, payload: input.answer },
+              signal: { name: wait.name, payload: input.answer },
               idempotencyKey: input.idempotencyKey,
               principal
             })

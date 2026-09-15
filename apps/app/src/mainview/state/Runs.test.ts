@@ -87,7 +87,17 @@ const approvalRow = (runId: string, requestId: string, title: string) => ({
 /** A relay double that speaks every selector and procedure the lane rides. */
 const relay = (options: {
   readonly runs?: ReadonlyArray<SummarySpec>
-  readonly approvals?: ReadonlyArray<ReturnType<typeof approvalRow>>
+  /**
+   * The rows the approvals projection serves. `request` is the whole journaled
+   * request payload for a capability gate and the declared question for a
+   * human wait, so it is as loose here as it is on the wire.
+   */
+  readonly approvals?: ReadonlyArray<
+    Omit<ReturnType<typeof approvalRow>, "request"> & {
+      readonly request: Record<string, unknown>
+      readonly waitRunId?: string
+    }
+  >
   readonly transcriptLines?: ReadonlyArray<
     { runId: string; sequence: number; turn: number; at: number; kind: string; text: string }
   >
@@ -806,6 +816,73 @@ describe("the approvals inbox — list, open, and the row decision", () => {
     const card = inboxCard(store)
     expect(card?.payload.approvals[0]?.decision).toBe("approved")
     expect(card?.payload.approvals[0]?.decisionError).toBeUndefined()
+  })
+
+  /**
+   * A gate that asks a QUESTION is answered, not granted.
+   *
+   * The per-run approval card renders the same answer box the inbox row does,
+   * and its decision goes through a different forwarder. That forwarder
+   * dropped the value, so the workspace received an ordinary approve, looked
+   * for an approval token a HumanTask never registers, and answered
+   * `/control/RunNotFound` for a run that was open on screen — which the card
+   * showed as "Approval submission failed" (workspace 4bb93306, run-1).
+   */
+  const askRow = (runId: string, requestId: string) => {
+    const { request: _grantRequest, ...row } = approvalRow(runId, requestId, "Which service owns the retry budget?")
+    return {
+      ...row,
+      // `waitRunId` is the gateway's marker that this gate is a human wait
+      // rolled up from an execution below the run.
+      waitRunId: `${runId}-prepare-plan`,
+      request: {
+        task: "human",
+        name: "coding-clarification",
+        kind: "ask",
+        prompt: "Which service owns the retry budget?",
+        attempt: 1,
+        maxAttempts: 3
+      }
+    }
+  }
+
+  test("a per-run approval card sends the answer with the decision", async () => {
+    const store = await webStore()
+    const row = askRow("run-a", "coding-clarification#1")
+    const double = relay({ approvals: [row], runs: [{ runId: "run-a", flowId: "coding/request", status: "waiting-approval" }] })
+    const controller = createAppController(store, unavailableRepositories, silentAgent, double.services)
+    await signIn(store)
+    await controller.commands.run("approvals.open", "run-a")
+    await settle(4)
+
+    const card = [...store.collections.cards.values()].find((entry) => entry.kind === "approval")
+    expect(card).toBeDefined()
+    // The card carries the question, which is what puts the box on screen.
+    expect(card?.kind === "approval" ? card.payload.question?.kind : undefined).toBe("ask")
+
+    controller.answerApproval(card!.id, "the scheduler owns it")
+    await settle(4)
+
+    expect(double.state.submitted).toHaveLength(1)
+    expect(double.state.submitted[0]?.decision).toBe("approve")
+    // The value the person typed reached the workspace with the envelope.
+    expect((double.state.submitted[0]?.approval as { answer?: unknown }).answer).toBe("the scheduler owns it")
+  })
+
+  test("an inbox row sends the answer with the decision", async () => {
+    const store = await webStore()
+    const row = askRow("run-a", "coding-clarification#1")
+    const double = relay({ approvals: [row] })
+    const controller = createAppController(store, unavailableRepositories, silentAgent, double.services)
+    await signIn(store)
+    await controller.commands.run("approvals.list")
+    const id = inboxCard(store)!.id
+    expect(inboxCard(store)?.payload.approvals[0]?.question?.prompt).toBe("Which service owns the retry budget?")
+
+    controller.answerApproval(approvalActionId(id, row), "the scheduler owns it")
+    await settle(4)
+
+    expect((double.state.submitted[0]?.approval as { answer?: unknown }).answer).toBe("the scheduler owns it")
   })
 
   test("two runs with the same request ID have independent actions, pending state and refresh receipts", async () => {

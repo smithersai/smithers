@@ -35,7 +35,8 @@ export interface WorkflowController {
   readonly chooseWorkflowRepo: (fullName: string) => Promise<string | void | { readonly value: string }>
   readonly forwardApprovalDecision: (
     card: Extract<Card, { kind: "approval" }>,
-    decision: "approved" | "denied"
+    decision: "approved" | "denied",
+    answer?: unknown
   ) => Promise<void>
   /*
    * Lane runs shares the workflow lane's launch path: the run inbox's open,
@@ -556,7 +557,8 @@ export const createWorkflowController = (
    */
   const forwardApprovalDecision = async (
     card: Extract<Card, { kind: "approval" }>,
-    decision: "approved" | "denied"
+    decision: "approved" | "denied",
+    answer?: unknown
   ): Promise<void> => {
     const trusted = store.approvalRequest(card.id)
     if (trusted?.kind !== "approval") return
@@ -576,7 +578,8 @@ export const createWorkflowController = (
       repo,
       approval as Parameters<typeof gateway.submitApproval>[1],
       decision === "approved" ? "approve" : "deny",
-      binding
+      binding,
+      answer
     )
     if (submitted.status !== "ok" || submitted.value.decision._tag === "Terminal") {
       if (trusted.payload.runId !== undefined) {

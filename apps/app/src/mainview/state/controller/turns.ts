@@ -52,7 +52,8 @@ export interface TurnControllerDependencies {
   readonly surfaceCommandFailure: (name: string, outcome: CommandOutcome) => void
   readonly forwardApprovalDecision: (
     card: Extract<Card, { kind: "approval" }>,
-    decision: "approved" | "denied"
+    decision: "approved" | "denied",
+    answer?: unknown
   ) => Promise<void>
   /** A decision clicked on the workspace approvals inbox, bound to its run and request. */
   readonly forwardInboxApprovalDecision: (
@@ -1134,7 +1135,13 @@ export const createTurnController = (
       return
     }
     store.dispatch({ type: "card.approval.decision.pending", actor: "user", id })
-    void forwardApprovalDecision(card, decision)
+    // The answer travels with the decision here too. A per-run approval card
+    // renders the same answer box the inbox row does, and dropping the value
+    // here sent the gate down the GRANT path: the workspace looked for an
+    // approval token a HumanTask never registers and answered
+    // `/control/RunNotFound` for a run that was open on screen (workspace
+    // 4bb93306, run-1).
+    void forwardApprovalDecision(card, decision, answer)
   }
 
   /*

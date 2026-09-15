@@ -78,3 +78,44 @@ describe("pendingWaitOf", () => {
       .toBeUndefined()
   })
 })
+
+describe("answerableWait", () => {
+  const envelope = { capabilities: [], flows: [], budget: {} }
+
+  it("reads a human wait out of the payload the projection published", () => {
+    // The projection publishes the durable wait token as the digest and the
+    // wait point's own name as the request id, which is all a decision needs
+    // to tell a question from a grant.
+    expect(ControlExecutor.answerableWait({
+      _tag: "Node",
+      runId: "run-1",
+      requestId: "coding-clarification#1",
+      digest: token("WaitFor/coding-clarification#1"),
+      envelope
+    })).toEqual({ name: "coding-clarification#1", token: token("WaitFor/coding-clarification#1") })
+  })
+
+  it("is not a question when the digest is an ordinary request digest", () => {
+    // A capability gate: the run asked the control plane for permission, and a
+    // registered approval token decides it.
+    for (
+      const digest of [
+        "9829dcfa757bfd57477cac4b52b51a1377da9d31e1d6adb6de9e76f22784ed8a",
+        globalThis.btoa("not json"),
+        token("DurableQueue/items")
+      ]
+    ) {
+      expect(ControlExecutor.answerableWait({ _tag: "Node", runId: "run-1", requestId: "gate", digest, envelope }))
+        .toBeUndefined()
+    }
+  })
+
+  it("is not a question when the target is a plan", () => {
+    expect(ControlExecutor.answerableWait({
+      _tag: "Plan",
+      planId: "plan-1",
+      digest: token("WaitFor/coding-clarification#1"),
+      envelope
+    })).toBeUndefined()
+  })
+})

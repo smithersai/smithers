@@ -26,6 +26,7 @@ import * as AgentSession from "@smthrs/agent/AgentSession"
 import { Control } from "@smthrs/control/Control"
 import * as ControlExecutor from "@smthrs/control/ControlExecutor"
 import * as ControlLive from "@smthrs/control/ControlLive"
+import { layerNoopAuth } from "@smthrs/control/ControlRpcs"
 import type { PlanCard } from "@smthrs/control/ControlSchema"
 import type { DurableFlow } from "@smthrs/control/SqlControlRuntime"
 import * as SqlControlRuntime from "@smthrs/control/SqlControlRuntime"
@@ -37,6 +38,8 @@ import * as OwnerIdentity from "@smthrs/engine-store/OwnerIdentity"
 import * as StepBoundary from "@smthrs/engine-store/StepBoundary"
 import { Action, Flow, HumanTask, Interpreter } from "@smthrs/flow"
 import * as GatewayProjection from "@smthrs/gateway/GatewayProjection"
+import { GatewayRpcs } from "@smthrs/gateway/GatewayRpcs"
+import * as GatewayServer from "@smthrs/gateway/GatewayServer"
 import * as Projections from "@smthrs/gateway/Projections"
 import * as JournalMigrations from "@smthrs/journal/Migrations"
 import * as SqlJournal from "@smthrs/journal/SqlJournal"
@@ -48,6 +51,7 @@ import * as RunStoreMigrations from "@smthrs/run-store/Migrations"
 import * as RunStore from "@smthrs/run-store/RunStore"
 import * as CacheStore from "@smthrs/step-cache/CacheStore"
 import { Context, Effect, Layer, Schema } from "effect"
+import { RpcTest } from "effect/unstable/rpc"
 import { describe, expect, it } from "vitest"
 
 const prompt = "Which service owns the retry budget?"
@@ -131,12 +135,22 @@ class Engine extends Context.Service<Engine, {
   readonly deliverSignal: (input: ControlExecutor.Signal) => Effect.Effect<ControlExecutor.SignalDelivery>
   /** Polls until an execution BELOW `runId` is parked on a human wait. */
   readonly parkedBelow: (runId: string) => Effect.Effect<DurableEngineState.WaitingRow>
+  /** Polls until the execution reaches a terminal status, and reports it. */
+  readonly settled: (runId: string) => Effect.Effect<string>
 }>()("smithers/test/NestedEngine") {}
 
 const engineLayer = Layer.effect(Engine)(
   Effect.gen(function*() {
     const state = yield* DurableEngineState.DurableEngineState
+    const runs = yield* RunStore.RunStore
     const services = yield* Effect.context<Effect.Services<ReturnType<typeof Request.execute>>>()
+    const settled = (runId: string, attempts = 4_000): Effect.Effect<string> =>
+      Effect.gen(function*() {
+        const row = yield* Effect.orDie(runs.get(runId))
+        if (!["suspended", "running", "pending"].includes(row.status) || attempts <= 0) return row.status
+        yield* Effect.yieldNow
+        return yield* settled(runId, attempts - 1)
+      })
     const parkedBelow = (
       runId: string,
       attempts = 4_000
@@ -161,7 +175,8 @@ const engineLayer = Layer.effect(Engine)(
         >,
       deliverSignal: (input: ControlExecutor.Signal) =>
         Effect.orDie(AgentSession.deliverSignal(input)) as Effect.Effect<ControlExecutor.SignalDelivery>,
-      parkedBelow
+      parkedBelow,
+      settled
     }
   })
 ).pipe(
@@ -211,18 +226,28 @@ const executor = Layer.effect(ControlExecutor.ControlExecutor)(
   })
 )
 
-const stack = Projections.layerWith({}).pipe(
-  Layer.provideMerge(ControlLive.layer),
-  Layer.provideMerge(
-    Layer.mergeAll(
-      SqlControlRuntime.layer({ flows: [durableFlow] }).pipe(Layer.orDie),
-      NotificationQueue.layer,
-      Registry.layerNoop(),
-      executor
-    ).pipe(Layer.provideMerge(controlDatabase))
-  ),
-  Layer.provideMerge(engineLayer)
-)
+/**
+ * The mount a card submits through, over the same control plane.
+ *
+ * `ControlPrincipal` is what the shared auth middleware supplies in a served
+ * composition; here the suite names the operator directly, which is what a
+ * local decision is journaled as.
+ */
+const stack = Layer.merge(GatewayServer.layerHandlers, layerNoopAuth({ id: "local", kind: "operator", stampedAt: 0 }))
+  .pipe(
+    Layer.provideMerge(Projections.layerWith({}))
+  ).pipe(
+    Layer.provideMerge(ControlLive.layer),
+    Layer.provideMerge(
+      Layer.mergeAll(
+        SqlControlRuntime.layer({ flows: [durableFlow] }).pipe(Layer.orDie),
+        NotificationQueue.layer,
+        Registry.layerNoop(),
+        executor
+      ).pipe(Layer.provideMerge(controlDatabase))
+    ),
+    Layer.provideMerge(engineLayer)
+  )
 
 const run = <A, E, R>(body: Effect.Effect<A, E, R>): Promise<A> =>
   Effect.runPromise(Effect.provide(body, stack as unknown as Layer.Layer<R>).pipe(Effect.scoped, Effect.orDie))
@@ -302,6 +327,66 @@ describe("a host whose control plane and engine keep separate databases", () => 
       request: { kind: "ask", maxAttempts: 3 }
     })
     expect(rows[0]?.waitRunId).not.toBe(rows[0]?.runId)
+  })
+
+  /**
+   * The act a person actually performs: Send answer on the card.
+   *
+   * The card submits `Approval.Submit` with the row's payload and the value
+   * typed into it, which is a different path from `Signal`. Submitted as an
+   * ordinary approval it reached `Control.approve`, which looks for a
+   * registered approval token — a `HumanTask` parks itself on a durable wait
+   * and never registers one — and answered `/control/RunNotFound` naming a run
+   * that was listed, rendered and waiting (workspace 4bb93306, run-1).
+   */
+  it("clears the wait and resumes the flow when the answer is submitted as an approval", async () => {
+    const observed = await run(Effect.gen(function*() {
+      const projections = yield* Projections.Projections
+      const engine = yield* Engine
+      const { runId } = yield* parked
+      const rows = (yield* projections.snapshot({ _tag: "approvals", runId })).rows as ReadonlyArray<
+        GatewayProjection.ApprovalRow
+      >
+      const gate = rows[0]!
+
+      // Exactly what the card sends: the published payload, unchanged, plus
+      // the value the person typed.
+      const rpc = yield* RpcTest.makeClient(GatewayRpcs)
+      const submitted = yield* rpc["Approval.Submit"]({
+        ...gate.payload,
+        decision: "approve",
+        answer: "the scheduler owns it"
+      })
+
+      return {
+        runId,
+        submitted,
+        settled: yield* engine.settled(runId),
+        observation: yield* engine.observe(runId)
+      }
+    }))
+
+    expect(observed.submitted.decision._tag).toBe("Accepted")
+    // The wait is gone and the flow ran on: the planner settled with the answer.
+    expect(observed.settled).toBe("completed")
+    expect(
+      observed.observation._tag === "Observed" ? observed.observation.pendingWaits : ["unread"]
+    ).toBeUndefined()
+  })
+
+  it("refuses the same submission with no answer, without claiming the run is gone", async () => {
+    const failure = await run(Effect.gen(function*() {
+      const projections = yield* Projections.Projections
+      const { runId } = yield* parked
+      const rows = (yield* projections.snapshot({ _tag: "approvals", runId })).rows as ReadonlyArray<
+        GatewayProjection.ApprovalRow
+      >
+      const rpc = yield* RpcTest.makeClient(GatewayRpcs)
+      return yield* Effect.flip(rpc["Approval.Submit"]({ ...rows[0]!.payload, decision: "approve" }))
+    }))
+
+    expect(failure._tag).toBe("/control/InvalidInput")
+    expect(String((failure as { issue?: string }).issue)).toContain("coding-clarification#1")
   })
 
   it("answers the nested wait from a signal addressed to the root run", async () => {

@@ -8,7 +8,7 @@
 import { Context, Effect, Layer } from "effect"
 import type { LaunchFailed, PersistenceError } from "./ControlError.ts"
 import type { StoredPlan } from "./ControlRuntime.ts"
-import type { PendingWait, RunId, RunSummary, SignalPayload } from "./ControlSchema.ts"
+import type { ApprovalTarget, PendingWait, RunId, RunSummary, SignalPayload } from "./ControlSchema.ts"
 
 /**
  * One stored plan and the run summary it is being started as.
@@ -248,6 +248,38 @@ export const pendingWaitOf = (row: {
     ...waitPointOf(row.token),
     ...(row.request === undefined ? {} : { request: row.request as PendingWait["request"] })
   }
+}
+
+/**
+ * The wait a `Node` approval target addresses, when it addresses one.
+ *
+ * Most gates are a capability the run wants allowed: the target's `digest` is
+ * the request's own digest, a decision grants or refuses it, and the control
+ * plane holds a registered token for it. A `HumanTask` gate has no such token
+ * — nothing registers one, because the run parked itself on a durable wait
+ * rather than asking the control plane for permission — and `lookupApproval`
+ * answers a target with no token by reporting the RUN as missing. That is what
+ * an operator saw when the app submitted an answer as an ordinary approval:
+ * `/control/RunNotFound` naming a run that was listed, rendered, and waiting
+ * (workspace 4bb93306, run-1).
+ *
+ * So a decision has to be able to tell the two apart from the payload alone.
+ * The approvals projection publishes a human wait with the durable wait token
+ * as the `digest` and the wait point's own name as the `requestId`, and a
+ * durable deferred token is self-describing: it decodes to a flow, an
+ * execution, and a deferred name under `WaitFor/`. Nothing else produces one,
+ * so a target carrying one is a question, and the name it answers is right
+ * there.
+ *
+ * @category constructors
+ * @since 1.0.0
+ */
+export const answerableWait = (
+  target: ApprovalTarget
+): { readonly name: string; readonly token: string } | undefined => {
+  if (target._tag !== "Node") return undefined
+  const point = waitPointOf(target.digest)
+  return point.name === undefined ? undefined : { name: target.requestId, token: target.digest }
 }
 
 /**
