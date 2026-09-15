@@ -292,7 +292,33 @@ const payload = async (value: string): Promise<string> =>
   value.startsWith("@") ? readFile(value.slice(1), "utf8") : value
 
 /**
+ * What a human wait asks, read off the run summary rather than the journal.
+ *
+ * A `HumanTask` journals nothing: it parks its own execution and declares the
+ * question on the parked row, which the control plane rolls onto the root run
+ * as `pendingWaits`. A digest of the root's events therefore has no parked
+ * question at all for one — `smthrs approvals list` printed a run and no
+ * question beside it (run-3, `coding-clarification`).
+ */
+const declaredQuestion = (run: ControlSchema.RunSummary): string | undefined => {
+  for (const wait of run.pendingWaits ?? []) {
+    const request = wait.request
+    const prompt = typeof request === "object" && request !== null && !Array.isArray(request)
+      ? (request as Record<string, unknown>)["prompt"]
+      : undefined
+    if (typeof prompt === "string") return prompt
+    if (wait.name !== undefined) return `Answer needed — ${wait.name}`
+  }
+  return undefined
+}
+
+/**
  * Pending in-run approvals, including pages beyond the first.
+ *
+ * A run whose whole TREE is waiting on a person is one of these: the control
+ * plane rolls a nested `HumanTask` park up to `waiting-approval`, so the
+ * filter finds the root, and `waits` names the open questions beneath it.
+ *
  * @category constructors
  * @since 1.0.0
  */
@@ -318,11 +344,23 @@ export const pendingApprovals = (runId?: string) =>
           subject: run.runId
         })
         const digest = Forensics.digest(events)
+        const waits = run.pendingWaits ?? []
         return {
           runId: run.runId,
           flowId: run.flowId,
-          question: digest.parkedQuestion,
-          approval: digest.parkedApproval
+          question: digest.parkedQuestion ?? declaredQuestion(run),
+          approval: digest.parkedApproval,
+          // The open human waits in this run's tree, each naming the execution
+          // holding it and the wait point a signal addresses.
+          ...(waits.length === 0 ? {} : {
+            waits: waits.map((wait) => ({
+              runId: wait.runId,
+              ...(wait.flowId === undefined ? {} : { flowId: wait.flowId }),
+              ...(wait.name === undefined ? {} : { name: wait.name }),
+              ...(wait.attempt === undefined ? {} : { attempt: wait.attempt }),
+              ...(wait.request === undefined ? {} : { request: wait.request })
+            }))
+          })
         }
       }))
   })

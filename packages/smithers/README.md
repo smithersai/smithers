@@ -43,7 +43,7 @@ The dependency install applies after publication; before then, use the [source c
 
 `init` creates workspace and target declarations plus `flows/hello/flow.mdx`, preserving existing files. `flow plan` compiles without execution; `flow start` plans, approves, and starts the flow. Use `flow execute <payload>` to execute a separately approved plan. Top-level `run <pattern>` executes run-kind targets, while `runs` manages durable flow execution records.
 
-When a run parks, `approvals list` returns its exact approval payload; submit it to `approvals approve`, then use `runs resume <run-id>`. A launch without a configured provider key is refused with the missing variable named.
+When a run parks, `approvals list` returns its exact approval payload; submit it to `approvals approve`, then use `runs resume <run-id>`. A run parked on a QUESTION is listed the same way, including when a nested execution several `.child()` boundaries down is the one holding it: the entry names the open wait and what it asked. Answer it with `signal <run-id> '{"name":"<the question>","payload":...}'`, which the control plane routes to the execution holding the wait. A launch without a configured provider key is refused with the missing variable named.
 
 ## Command groups
 
