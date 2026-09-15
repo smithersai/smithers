@@ -19,6 +19,7 @@ import * as Schema from "effect/Schema"
 import * as Exec from "./Exec.ts"
 import * as Input from "./Input.ts"
 import * as Runtime from "./Runtime.ts"
+import * as Shell from "./Shell.ts"
 import * as Target from "./Target.ts"
 
 /**
@@ -180,6 +181,8 @@ export const entrypoint = (entry: Input.File, args: ReadonlyArray<string> = []):
 export const Attrs = Schema.Struct({
   runtime: Schema.optional(Runtime.Runtime),
   runner: Runner,
+  /** Explicit deadline for a measured long-running gate; omitted targets retain Exec's ten-minute default. */
+  timeout: Schema.optional(Schema.NonEmptyString.check(Schema.isPattern(/^[1-9]\d*(?:ms|s|m|h)$/))),
   srcs: Schema.Array(Input.Declared),
   deps: Schema.Array(Target.Dependency),
   env: Schema.Record(Schema.String, Schema.String).pipe(
@@ -235,5 +238,11 @@ export const NodeTest = Target.make("NodeTest", {
   kinds: ["test"],
   success: Exec.Result,
   error: Exec.ExecError,
-  implementation: (attrs) => Exec.runTool({ cwd: attrs.cwd, argv: runArgv(attrs), env: attrs.env })
+  implementation: (attrs) =>
+    Exec.runTool({
+      cwd: attrs.cwd,
+      argv: runArgv(attrs),
+      env: attrs.env,
+      ...(attrs.timeout === undefined ? {} : { timeoutMs: Shell.durationMs(attrs.timeout) })
+    })
 })

@@ -248,6 +248,9 @@ const releasePack = Smithers.NodeBinary({
  * @category test
  */
 const releaseSmoke = Smithers.NodeTest({
+  // See smoke-release.mjs for the measured 1110.40 s Node 24 baseline.
+  // Keep this gate uncached and allow its complete installed-consumer matrix.
+  timeout: "30m",
   runner: Smithers.entrypoint(Smithers.file("//scripts/smoke-release.mjs"), [packDirectory]),
   srcs: sources,
   deps: [releasePack]

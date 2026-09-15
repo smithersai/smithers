@@ -18,6 +18,20 @@
  * against the same tarballs before a successful smoke receipt is written.
  * Requires npm >=11.16.0 on PATH, including under Node 22.19.0. Its bundled
  * npm 10.9.3 crashes in Arborist when resolving the testing optional peers.
+ * Installs prefer cached metadata and package bytes. Every pnpm consumer uses
+ * the workspace's store, with cache reuse reported beside command timings.
+ * First-party bytes always come from the supplied candidate tarballs.
+ *
+ * Measured on 2026-09-14, Node 24.18.0, clean d2cc7a56 candidate, 49 packs:
+ * `/usr/bin/time -p node scripts/smoke-release.mjs <packs>` took 1110.40 s.
+ * Phase logs accounted for 1107.63 s: pack verification 2.05 s, main install
+ * plus peers 74.84 s, isolated imports 111.39 s, CLI containment 310.27 s,
+ * consumer matrix 505.79 s (npm installs 199.42 s; pnpm installs 77.45 s).
+ * 105/133 pnpm progress lines reported downloaded 0. All 26 profiles and
+ * both incompatible-peer refusals passed. The 600 s default cannot cover
+ * this work even after removing duplicate containment CLI startups. The
+ * releaseSmoke NodeTest therefore declares a 30m bound, retaining every
+ * profile and uncached execution. Subsequent runs emit the same phase logs.
  *
  * usage: node scripts/smoke-release.mjs <pack-directory>
  */
@@ -27,12 +41,12 @@ import { mkdtemp, readFile, readdir, rm, stat, writeFile } from "node:fs/promise
 import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
 import { peerRangesOf } from "./release-peer-ranges.mjs"
-import { captureProcess as runQuietly } from "./release-process.mjs"
+import { captureProcess } from "./release-process.mjs"
 import { releaseRegistry } from "./release-registry.mjs"
 import { recordSmokeSuccess, verifyLocalCandidate } from "./publish-release.mjs"
 import { assertNodeSupport } from "./release-node-support.mjs"
 import { assertSmokeNpmSupport } from "./release-npm-support.mjs"
-import { adapterProfiles, migrationProfiles, minimalProfiles, releasePackageManager, runConsumerMatrix, templateProfile } from "./release-consumers.mjs"
+import { adapterProfiles, consumerCacheFlags, migrationProfiles, minimalProfiles, releasePackageManager, runConsumerMatrix, templateProfile } from "./release-consumers.mjs"
 import { repoRoot } from "./workspace-packages.mjs"
 
 /**
@@ -44,7 +58,20 @@ import { repoRoot } from "./workspace-packages.mjs"
 const noticeOnly = new Set(["smthrs"])
 const noticeFirstLine = "smthrs 1.0 is a migration notice, not a runtime."
 
-const run = (command, args, cwd) =>
+// Phase records include cleanup and non-command work, so their wall time can
+// be reconciled with `/usr/bin/time -p node scripts/smoke-release.mjs <packs>`.
+const phase = async (name, work) => {
+  const started = performance.now()
+  console.log(JSON.stringify({ smokePhase: name, event: "start", at: new Date().toISOString() }))
+  try { return await work() }
+  finally {
+    console.log(JSON.stringify({ smokePhase: name, event: "end", at: new Date().toISOString(), durationMs: performance.now() - started }))
+  }
+}
+const runQuietly = (command, args, cwd) => phase(
+  `probe: ${[command, ...args].join(" ")}`, () => captureProcess(command, args, cwd))
+
+const run = (command, args, cwd) => phase(`command: ${[command, ...args].join(" ")}`, () =>
   new Promise((resolveRun, reject) => {
     const started = Date.now()
     const child = spawn(command, args, { cwd, stdio: "inherit" })
@@ -57,7 +84,7 @@ const run = (command, args, cwd) =>
         reject(new Error(`${command} exited with ${code ?? signal ?? "unknown status"}`))
       }
     })
-  })
+  }))
 
 const packDirectory = process.argv[2]
 if (packDirectory === undefined) {
@@ -67,8 +94,11 @@ if (packDirectory === undefined) {
 const absolutePackDirectory = resolve(packDirectory)
 // A failed rerun must not leave the prior successful receipt available to publish.
 await rm(join(absolutePackDirectory, "smoke-evidence.json"), { force: true })
-const candidate = JSON.parse(await readFile(join(absolutePackDirectory, "release-manifest.json"), "utf8"))
-await verifyLocalCandidate(absolutePackDirectory, candidate)
+const candidate = await phase("pack read and integrity", async () => {
+  const manifest = JSON.parse(await readFile(join(absolutePackDirectory, "release-manifest.json"), "utf8"))
+  await verifyLocalCandidate(absolutePackDirectory, manifest)
+  return manifest
+})
 const npmVersion = await runQuietly("npm", ["--version"], repoRoot)
 if (!npmVersion.ok) throw new Error(`npm --version failed: ${npmVersion.output}`)
 assertSmokeNpmSupport(npmVersion.output.trim())
@@ -85,10 +115,14 @@ if (tarballs.length !== expected.size || tarballs.some((filename) => !expected.h
   throw new Error("release pack directory does not match manifest.json")
 }
 
+// Reuse downloaded dependencies across the main smoke and every isolated
+// profile. Keep first-party resolution on the loopback registry of these exact
+// candidate tarballs; a warm store never substitutes workspace source packages.
+const cacheFlags = await phase("pnpm store resolution", () => consumerCacheFlags("pnpm"))
 const smokeRoot = await mkdtemp(join(tmpdir(), "smthrs-release-smoke-"))
 let registry
 try {
-  registry = await releaseRegistry(absolutePackDirectory, packManifest)
+  registry = await phase("registry startup", () => releaseRegistry(absolutePackDirectory, packManifest))
   await writeFile(join(smokeRoot, ".npmrc"), `@smthrs:registry=${registry.url}\n`)
   const releaseDependencies = Object.fromEntries(
     packManifest.map((entry) => [entry.name, entry.name.startsWith("@smthrs/")
@@ -120,6 +154,7 @@ try {
       smokeRoot,
       "install",
       "--ignore-scripts",
+      ...cacheFlags,
     ],
     repoRoot
   )
@@ -136,7 +171,7 @@ try {
     .filter(([name]) => installed.every((manifest) => manifest.name !== name))
     .map(([name, range]) => `${name}@${range}`)
   if (peers.length > 0) {
-    await run("pnpm", ["--dir", smokeRoot, "add", "--ignore-scripts", ...peers], repoRoot)
+    await run("pnpm", ["--dir", smokeRoot, "add", "--ignore-scripts", ...cacheFlags, ...peers], repoRoot)
   }
   await run("pnpm", ["--dir", smokeRoot, "peers", "check"], repoRoot)
 
@@ -194,9 +229,11 @@ try {
       join(repoRoot, "packages/smithers/test/faults/fixtures", source)
     ))
   }
-  await writeFile(join(smokeRoot, "consumer-boundary.mjs"), await readFile(
-    join(repoRoot, "scripts/fixtures/installed-consumer/consumer-boundary.mjs")
-  ))
+  for (const filename of ["consumer-boundary.mjs", "process-state.mjs"]) {
+    await writeFile(join(smokeRoot, filename), await readFile(
+      join(repoRoot, "scripts/fixtures/installed-consumer", filename)
+    ))
+  }
   for (const fixture of ["release-public-api.mjs", "release-history-workspace.mjs", "installed-consumer/release-cli-containment.mjs"]) {
     const filename = fixture.split("/").at(-1)
     await writeFile(
@@ -301,15 +338,17 @@ try {
   // All-peers imports alone can conceal an unrelated adapter forced into a
   // library's default install. Certify independent profiles on both managers
   // against these same candidate bytes before issuing the success receipt.
-  await runConsumerMatrix(absolutePackDirectory, packManifest, {
+  await phase("consumer matrix", () => runConsumerMatrix(absolutePackDirectory, packManifest, {
     profiles: [...minimalProfiles(packManifest), ...adapterProfiles(packManifest), ...migrationProfiles(packManifest), templateProfile(absolutePackDirectory, packManifest)], runtime: true
-  })
-  await recordSmokeSuccess(absolutePackDirectory, candidate)
+  }))
+  await phase("success receipt", () => recordSmokeSuccess(absolutePackDirectory, candidate))
   console.log(
     `\nrelease smoke holds: ${packManifest.length} tarballs install, import, and typecheck` +
       ` on node ${process.versions.node}.`
   )
 } finally {
-  await registry?.close()
-  await rm(smokeRoot, { recursive: true, force: true })
+  await phase("cleanup", async () => {
+    await registry?.close()
+    await rm(smokeRoot, { recursive: true, force: true })
+  })
 }

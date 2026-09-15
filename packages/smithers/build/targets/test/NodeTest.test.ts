@@ -3,16 +3,18 @@
  * verb each one participates in.
  *
  * These replaced the `node --test …` and `node scripts/….mjs` strings a
- * PACKAGE.ts file used to carry. The assertions that matter are the argv ones:
- * the interpreter comes from the declared runtime, so a workspace that switches
- * interpreters gets different argv from the same declaration.
+ * PACKAGE.ts file used to carry. The interpreter comes from the declared runtime,
+ * so switching interpreters changes argv. Explicit deadlines reach Exec without
+ * changing the default budget or making the test cacheable.
  */
 import { describe, expect, it } from "vitest"
+import * as Exec from "../src/Exec.ts"
 import * as Input from "../src/Input.ts"
 import * as NodeBinary from "../src/NodeBinary.ts"
 import * as NodeTest from "../src/NodeTest.ts"
 import * as Runtime from "../src/Runtime.ts"
 import * as Target from "../src/Target.ts"
+import { plannedCalls } from "../test-support/plan.ts"
 import { packageManager, runtime } from "./toolchain.ts"
 
 const bun = Runtime.Bun({ version: ">=1.4.0" })
@@ -79,6 +81,34 @@ describe("NodeTest", () => {
       deps: []
     }))
     expect(NodeTest.runArgv(attrs)).toEqual(["node", "scripts/smoke-release.mjs", "dist/release-packs"])
+  })
+
+  it("bounds long-running entrypoints explicitly while keeping the default and fresh execution", () => {
+    for (const [timeout, milliseconds] of [[undefined, 600_000], ["30m", 1_800_000], ["125ms", 125]] as const) {
+      const target = NodeTest.NodeTest({
+        runtime,
+        runner: NodeTest.entrypoint(Input.file("scripts/smoke-release.mjs")),
+        srcs: [],
+        deps: [],
+        ...(timeout === undefined ? {} : { timeout })
+      })
+      expect(Exec.Payload.make(plannedCalls(target)[0]!.payload as never).timeoutMs).toBe(milliseconds)
+      expect(Target.metadata(target).cacheable).toBe(false)
+    }
+  })
+
+  it("refuses invalid or unbounded entrypoint deadlines", () => {
+    for (const timeout of ["unbounded", "0ms", "-1s", "1.5m", "never"]) {
+      expect(() =>
+        NodeTest.NodeTest({
+          runtime,
+          runner: NodeTest.entrypoint(Input.file("scripts/smoke-release.mjs")),
+          srcs: [],
+          deps: [],
+          timeout
+        })
+      ).toThrow()
+    }
   })
 
   it("keeps a package-relative entry point relative to its cwd", () => {
