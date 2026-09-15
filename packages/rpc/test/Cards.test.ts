@@ -284,6 +284,13 @@ describe("the agent cards", () => {
     }
     const card = CardSchema.parse({ ...base, kind: "agent", payload })
     if (card.kind !== "agent") return
+    // The agent payload is a union: the local tab card and the Smithers Cloud
+    // session card that `cloud: true` marks. A subagent launched from the `+`
+    // menu is the local variant, so pin that before reading the role fields —
+    // narrowing alone would let a card that parsed as the cloud variant pass
+    // this test without ever asserting a role.
+    expect("cloud" in card.payload).toBe(false)
+    if ("cloud" in card.payload) return
     expect(card.payload.roleId).toBe("reviewer")
     expect(card.payload.purpose).toBe("Reviews diffs.")
     const { roleId: _roleId, purpose: _purpose, ...bare } = payload

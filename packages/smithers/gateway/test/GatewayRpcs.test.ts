@@ -81,7 +81,7 @@ const test = <E>(title: string, body: () => Effect.Effect<void, E, Scope.Scope>)
  * error union by schema identity. Each member is the very class schema
  * `@smthrs/control` exports, so identity, not a decoded sample, names it.
  */
-const declaredFailures = (name: "Approve" | "Deny" | "Approval.Submit"): ReadonlyArray<string> => {
+const declaredFailures = (name: "Approve" | "Deny" | "Signal" | "Approval.Submit"): ReadonlyArray<string> => {
   const byAst = new Map<unknown, string>(
     Object.entries(ControlError).flatMap(([exported, value]) =>
       typeof value === "function" && "ast" in value ? [[value.ast, exported] as const] : []
@@ -425,7 +425,7 @@ describe("Approval.Submit", () => {
    */
   it("declares exactly the failures ControlRpcs declares for Approve, Deny, and Signal, once each", () => {
     const submit = declaredFailures("Approval.Submit")
-    const answered = (command: string) =>
+    const answered = (command: "Approve" | "Deny") =>
       [...new Set([...declaredFailures(command), ...declaredFailures("Signal")])].sort()
     expect(new Set(submit).size).toBe(submit.length)
     expect([...submit].sort()).toEqual(answered("Approve"))
