@@ -1,5 +1,5 @@
 import { flowAction } from "./flows/FlowAction"
-import { AVAILABLE_REPOS } from "../../../server/src/publicRepoCatalog"
+import { AVAILABLE_REPOS } from "smithers-server/publicRepoCatalog"
 import { pathRepo } from "./RepoLink"
 import { TranscriptMessage } from "./TranscriptMessage"
 import { GuideButton, GUIDE_KEYS } from "./onboarding/GuideButton"
