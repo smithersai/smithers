@@ -519,17 +519,17 @@
 	background: var(--rail-fill);
 }
 
-/* Sign-in uses the same green action token as the shell. */
+/* Sign-in uses the same brand token as sign-in cards. */
 .chrome-action[data-flow="auth.sign-in"] {
-	background: color-mix(in srgb, var(--g-accent) 10%, var(--surface));
-	color: var(--g-accent);
+	background: color-mix(in srgb, var(--brand) 10%, var(--surface));
+	color: var(--brand);
 	font-weight: 500;
 }
 
 .chrome-action[data-flow="auth.sign-in"]:hover,
 .chrome-action[data-flow="auth.sign-in"]:focus-visible {
-	background: color-mix(in srgb, var(--g-accent) 16%, var(--surface));
-	color: var(--g-accent);
+	background: color-mix(in srgb, var(--brand) 16%, var(--surface));
+	color: var(--brand);
 }
 
 .chrome-corner {

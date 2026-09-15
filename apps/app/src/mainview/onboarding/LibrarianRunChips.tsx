@@ -1,20 +1,28 @@
 import { useCallback, useState } from "react"
-import type { Card } from "../state/AppState"
+import type { Card, GuideState } from "../state/AppState"
 import { librarianRunCards, librarianRunKey, librarianRunMetadata, type LibrarianRunCard } from "../state/LibrarianLaunch"
 import { useController } from "../ControllerContext"
 import { readPause, type GuideClock } from "./advance"
 
 const terminal = (run: LibrarianRunCard) => ["completed", "failed", "cancelled", "stopped"].includes(run.payload.phase)
 const outcomeKey = (run: LibrarianRunCard) => `${librarianRunKey(run)}:${run.payload.phase}`
+/** A receipt from another repository or an earlier playthrough is that context's news; an unreadable scope stays visible. */
+const belongsTo = (guide: Pick<GuideState, "repo" | "playthrough">, run: LibrarianRunCard): boolean => {
+  if (guide.repo && run.payload.repo !== guide.repo) return false
+  try {
+    const playthrough: unknown = JSON.parse(librarianRunMetadata(run)!.scope)[5]
+    return typeof playthrough !== "number" || playthrough === (guide.playthrough ?? 0)
+  } catch { return true }
+}
 
 /** Notification dismissal is transient chrome; persisted run cards retain the outcome. */
-export function LibrarianRunChips({ cards, clock }: { cards: readonly Card[]; clock: GuideClock }) {
+export function LibrarianRunChips({ cards, clock, guide }: { cards: readonly Card[]; clock: GuideClock; guide: Pick<GuideState, "repo" | "playthrough"> }) {
   const controller = useController()
   // A reload or a new beat starts with old outcomes already read. Read the hydrated
   // collection directly: the live query may still return [] on its first render.
   const [read, setRead] = useState(() => new Set(librarianRunCards([...controller.store.collections.cards.values()]).filter(terminal).map(outcomeKey)))
   const onRead = useCallback((key: string) => setRead(previous => new Set([...previous, key])), [])
-  const runs = librarianRunCards(cards).filter(run => !read.has(outcomeKey(run)))
+  const runs = librarianRunCards(cards).filter(run => belongsTo(guide, run) && !read.has(outcomeKey(run)))
   if (!runs.length) return null
   return <span className="guide-run-chips" aria-label="Background runs">
     {runs.map(run => <RunChip key={librarianRunKey(run)} run={run} clock={clock} onRead={onRead} />)}

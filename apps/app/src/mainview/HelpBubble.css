@@ -9,7 +9,7 @@
 
 .help-bubble {
   --help-tip-border: color-mix(in srgb, var(--g-accent, #286447) 28%, transparent);
-  --help-tip-background: color-mix(in srgb, var(--g-panel, #fff) 92%, var(--g-accent, #286447));
+  --help-tip-background: var(--g-bg, var(--surface, #fff));
   position: relative;
   display: flex;
   align-items: flex-start;

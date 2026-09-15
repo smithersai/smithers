@@ -91,6 +91,8 @@ test("a quota refusal explains that nothing started and offers the existing skip
   const calls: unknown[] = []
   try {
     flushSync(() => root.render(<InTutorial value={true}><LiveTutorialRunBody card={card} onRunCommand={(...args) => { calls.push(args) }} /></InTutorial>))
+    expect(host.querySelector('[role="status"]')?.textContent).toContain("did not start")
+    expect(host.querySelector('[role="alert"]')).toBeNull()
     expect(host.textContent).toContain("did not start")
     expect(host.textContent).toContain("Return to practice after")
     expect(host.textContent).not.toContain("Old sign-in copy")

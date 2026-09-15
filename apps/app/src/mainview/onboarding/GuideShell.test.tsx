@@ -892,15 +892,21 @@ test("closing Chat keeps its answer anchored independently of the composer", asy
   } finally { geometry.mockRestore(); controller.dispose() }
 }, 2_000)
 
-for (const kind of ["wiki", "history"] as const) test(`${kind} launch receipt uses the pill's name without internal ids`, async () => {
-  const host = await mountGuide(12, still, { repo: "will/demo" }, async controller => {
-    await controller.store.dispatch({ type: "card.upsert", actor: "system", card: {
-      id: `launch-${kind}`, kind: "run-trace", title: "Background run", status: "active", ordinal: 100, createdAt: 100,
-      payload: { repo: "will/demo", runId: "run-7", workflow: `librarian/${kind}`, phase: "running",
-        steps: [`Started librarian/${kind} on will/demo (run run-7).`], result: null, lastSeq: 0,
-        input: { _librarian: { kind, scope: "test", inspected: false } } },
-    } }).isPersisted.promise
+for (const kind of ["wiki", "history"] as const) test(`${kind} launch receipts show only the current repository and playthrough`, async () => {
+  const scope = JSON.stringify(["will/demo", "repo", "workspace", "branch", "will", 2])
+  const host = await mountGuide(12, still, { repo: "will/demo", playthrough: 2,
+    librarianLaunches: [{ kind, repo: "will/demo", scope, phase: "started", startedAt: 100, runId: "run-7" }],
+  }, async controller => {
+    for (const [id, repo, runScope] of [["current", "will/demo", scope], ["old", "will/demo", JSON.stringify(["will/demo", "repo", "workspace", "branch", "will", 1])], ["other", "will/other", scope]]) {
+      await controller.store.dispatch({ type: "card.upsert", actor: "system", card: {
+        id: `launch-${id}`, kind: "run-trace", title: "Background run", status: "active", ordinal: 100, createdAt: 100,
+        payload: { repo: repo!, runId: id === "current" ? "run-7" : id!, workflow: `librarian/${kind}`, phase: "running",
+          steps: [`Started librarian/${kind} (run run-7).`], result: null, lastSeq: 0,
+          input: { _librarian: { kind, scope: runScope, inspected: false } } },
+      } }).isPersisted.promise
+    }
   })
+  expect(host.querySelectorAll("[data-run-chip]").length).toBe(1)
   expect(text(host.querySelector(`[data-run-chip="${kind}"]`))).toBe(`${kind === "wiki" ? "Wiki" : "Mythical history"} started on will/demo`)
 }, 2_000)
 

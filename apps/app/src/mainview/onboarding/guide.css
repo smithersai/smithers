@@ -1386,8 +1386,9 @@
 .guide-notice pre { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 12rem; overflow: auto; }
 .guide-primary-label { display: inline-flex; flex-direction: column; align-items: flex-start; }
 .guide-primary-subtitle { font-size: var(--fs-small); opacity: .75; font-weight: 400; }
-.guide-run-chips { display: inline-flex; gap: .4rem; margin-inline-start: .75rem; flex-wrap: wrap; }
-.guide-run-chip { padding: .1rem .5rem; border-radius: var(--r-full); font-size: var(--fs-small); background: color-mix(in srgb, currentColor 8%, transparent); }
+.guide-run-chips { display: inline-flex; gap: .4rem; margin-inline-start: .75rem; flex: 1 1 0; min-width: 0; overflow: hidden; }
+.guide-chat-controls { flex-shrink: 0; }
+.guide-run-chip { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: .1rem .5rem; border-radius: var(--r-full); font-size: var(--fs-small); background: color-mix(in srgb, currentColor 8%, transparent); }
 .guide-footer [data-pulse="true"] { animation: guide-pulse 1.4s ease-in-out infinite; }
 @keyframes guide-pulse { 50% { box-shadow: 0 0 0 4px color-mix(in srgb, var(--g-accent) 30%, transparent); } }
 

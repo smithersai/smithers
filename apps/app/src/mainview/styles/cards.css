@@ -413,7 +413,7 @@
 	}
 }
 
-.message-action {
+.message-actions .message-action {
 	width: 22px;
 	height: 22px;
 	min-height: 22px;
@@ -2843,3 +2843,16 @@
 .view-skeleton > span:last-child { width: 80%; }
 @keyframes view-loading { to { opacity: .45; } }
 @media (prefers-reduced-motion: reduce) { .view-skeleton > span { animation: none; } }
+
+/* These links must also survive an unlayered host-page anchor reset. */
+.repo-home-link {
+  color: var(--brand);
+  text-decoration-line: underline;
+  text-underline-offset: 2px;
+}
+
+/* Independent account tables use the same label column. */
+.smithers-card[data-kind="account"] .secrets-table { table-layout: fixed; }
+.smithers-card[data-kind="account"] .secrets-table th { width: 35%; overflow-wrap: anywhere; }
+.smithers-card[data-kind="account"] .secrets-table td { overflow-wrap: anywhere; }
+.live-tutorial-limit { color: var(--warning); }

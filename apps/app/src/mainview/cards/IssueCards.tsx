@@ -276,7 +276,7 @@ export const IssueCardBody = ({
               ) :
               (
                 <Button
-                  variant="ghost"
+                  variant="outline"
                   size="sm"
                   {...flowAction(onRunCommand, "issues.link-linear", String(number))}
                 >

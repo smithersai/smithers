@@ -1306,3 +1306,8 @@
 	color: var(--muted-foreground);
 	font-size: var(--fs-small);
 }
+
+/* The unknown-repository arrival is a single opening notice. */
+.app-shell .smithers-transcript[data-repository-missing] .sui-chat-messages > :first-child { margin-top: 0; }
+/* Lesson lines are centered; conversation bubbles retain normal reading alignment. */
+.guide-transcript .smithers-chat-message { text-align: start; }

@@ -224,6 +224,7 @@ describe("auth is a conversation state — the chat is the only page", () => {
       await settled()
       const { host } = mount(controller)
       const message = host.querySelector(".smithers-chat-message")
+      expect(host.querySelector('[data-testid="transcript"]')?.hasAttribute("data-repository-missing")).toBe(true)
       expect(message?.textContent).toContain(`${repo} isn't on Smithers yet. Sign in with GitHub to open your own repositories, or pick one below.`)
       expect(message?.querySelector('a[href="/smithersai/smithers/"]')?.textContent).toBe("smithersai/smithers")
       expect(message?.querySelector<HTMLButtonElement>(".message-cta")?.dataset.flow).toBe("auth.sign-in")

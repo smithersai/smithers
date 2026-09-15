@@ -597,7 +597,7 @@ export function GuideShell({ children, clock = guideClock }: { children: ReactNo
       <IntroSlidesShell />
       {/* The footer shares the shell's column with the dock. */}
       <footer data-keyboard-pane="Tutorial controls" className="guide-footer">
-        {stage >= GUIDE_BRIDGE && <LibrarianRunChips key={`${guide.playthrough ?? 0}:${stage}`} cards={cards} clock={clock} />}
+        {stage >= GUIDE_BRIDGE && <LibrarianRunChips key={`${guide.playthrough ?? 0}:${stage}`} cards={cards} clock={clock} guide={guide} />}
         <div className="guide-progress" aria-label={`Lesson ${stage} of ${GUIDE_LAST_STEP}`}>
           {Array.from({ length: GUIDE_LAST_STEP }, (_, i) => (
             <span key={i} data-passed={i + 1 <= stage} />
