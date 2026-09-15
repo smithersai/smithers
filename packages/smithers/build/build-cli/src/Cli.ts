@@ -702,7 +702,10 @@ const runCi = async (
       warnings: []
     })))
     if (flags.plan) return { verb: "ci", pattern, ...merged, targets: merged.targets.map(plannedTarget) }
-    const nodes = new Map(merged.targets.map((target) => [target.label, target as PackageExec.PackageNode]))
+    // Services and key-only dependencies are planned but never scheduled.
+    // Keep them available to consumers when merging the runnable CI graph.
+    const nodes = new Map(packagePlans.flatMap(({ plan }) => [...plan.nodes]))
+    for (const target of merged.targets) nodes.set(target.label, target as PackageExec.PackageNode)
     const closures = new Map(packagePlans.flatMap(({ plan }) => [...plan.closures]))
     return PackageExec.execute(
       {
@@ -885,11 +888,13 @@ const runSelected = async (
       }
     }
   }
-  const nodes = new Map<string, PackageExec.PackageNode>()
-  for (const plan of plans) for (const node of plan.workList) if (!nodes.has(node.label)) nodes.set(node.label, node)
+  const nodes = new Map(plans.flatMap((plan) => [...plan.nodes]))
+  const work = new Map<string, PackageExec.PackageNode>()
+  for (const plan of plans) for (const node of plan.workList) if (!work.has(node.label)) work.set(node.label, node)
+  for (const [label, node] of work) nodes.set(label, node)
   const combined: PackageExec.PackagePlan = {
     roots: [...new Set(plans.flatMap((plan) => plan.roots))],
-    workList: [...nodes.values()],
+    workList: [...work.values()],
     nodes,
     closures: new Map(plans.flatMap((plan) => [...plan.closures]))
   }

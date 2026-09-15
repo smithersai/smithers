@@ -155,6 +155,11 @@ deduplicated. When keys differ, the lint view takes priority regardless of
 plan order; conflicting non-lint views are rejected. A generator selected by
 both `build` and `lint` therefore uses its non-mutating lint form.
 
+The merge retains planned services and key-only dependencies for lookup.
+Services are acquired by their consumers after readiness succeeds and released
+when those consumers finish; they are not scheduled as ordinary CI targets.
+The same rule applies to `affected ci` selections.
+
 `review` and `run` are absent for the same reason. Planning a review on a
 shallow pull-request checkout kills the aggregate before any target runs, and
 executing one needs a binary and a credential no hosted runner has. `run`
