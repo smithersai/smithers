@@ -1,3 +1,4 @@
+import * as Yaml from "yaml"
 import assert from "node:assert/strict"
 import { readFileSync } from "node:fs"
 import { join } from "node:path"
@@ -23,18 +24,17 @@ describe("publication conformance", () => {
         const manifest = JSON.parse(readFileSync(join(packagesDir, name, "package.json"), "utf8")) as {
           readonly private?: boolean
           readonly smthrs?: { readonly group?: string }
-          readonly exports?: Record<string, string | Record<string, string> | null>
+          readonly exports?: Record<string, unknown>
           readonly publishConfig?: {
-            readonly exports?: Record<string, string | Record<string, string> | null>
+            readonly exports?: Record<string, unknown>
           }
         }
         assert.equal(manifest.exports?.["."], "./src/index.ts")
         if (noticeOnlyPackages.has(name)) {
           assert.equal(manifest.exports?.["./*"], undefined)
           assert.deepEqual(manifest.publishConfig?.exports?.["."], {
-            types: "./dist/esm/index.d.ts",
-            import: "./dist/esm/index.js",
-            require: "./dist/cjs/index.js"
+            import: { types: "./dist/esm/index.d.ts", default: "./dist/esm/index.js" },
+            require: { types: "./dist/cjs/index.d.ts", default: "./dist/cjs/index.js" }
           })
           return
         }
@@ -70,20 +70,22 @@ describe("publication conformance", () => {
         assert.deepEqual(Object.keys(publication ?? {}).sort(), Object.keys(manifest.exports ?? {}).sort())
         for (const subpath of [".", ...(manifest.exports?.["./*"] === undefined ? [] : ["./*"])]) {
           const target = publication?.[subpath]
-          // Database publishes distinct declaration trees for each module format.
-          // Pin both branches so CJS cannot silently resolve the ESM declarations.
+          // The shared published-library builder emits declarations for
+          // each module format. Private source workspaces retain their old
+          // unpublished map; making one public must require both branches
+          // so a CommonJS consumer cannot resolve ESM declarations.
           const module = subpath === "." ? "index" : "*"
           assert.deepEqual(
             target,
-            name === "smithers/flows/database" ?
-              {
-                import: { types: `./dist/esm/${module}.d.ts`, default: `./dist/esm/${module}.js` },
-                require: { types: `./dist/cjs/${module}.d.ts`, default: `./dist/cjs/${module}.js` }
-              } :
-              {
+            manifest.private === true
+              ? {
                 types: `./dist/esm/${module}.d.ts`,
                 import: `./dist/esm/${module}.js`,
                 require: `./dist/cjs/${module}.js`
+              }
+              : {
+                import: { types: `./dist/esm/${module}.d.ts`, default: `./dist/esm/${module}.js` },
+                require: { types: `./dist/cjs/${module}.d.ts`, default: `./dist/cjs/${module}.js` }
               }
           )
         }
@@ -105,8 +107,16 @@ describe("publication conformance", () => {
     }
     assert.match(root.packageManager!, /^pnpm@\d+\.\d+\.\d+$/)
     assert.match(release, /^\s*- uses: pnpm\/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86$/m)
-    const ci = readFileSync(join(packagesDir, "..", ".github", "workflows", "ci.yml"), "utf8")
-    assert.match(ci, /^\s*- uses: pnpm\/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86$/m)
+    // release.yml is hand-written, so its own pin is read as text. ci.yml is
+    // generated and quotes every scalar, so the same pin is read out of the
+    // parsed step: the action a job runs is the contract, not its spelling.
+    const ci = Yaml.parse(readFileSync(join(packagesDir, "..", ".github", "workflows", "ci.yml"), "utf8")) as {
+      readonly jobs: Readonly<Record<string, { readonly steps: ReadonlyArray<{ readonly uses?: string }> }>>
+    }
+    assert.ok(
+      Object.values(ci.jobs).flatMap((job) => job.steps)
+        .some((step) => step.uses === "pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86")
+    )
     assert.ok(release.includes("node scripts/publish-release.mjs \"$PACK_DIR\""))
     const restore = release.indexOf("Restore and verify archived release candidate")
     assert.ok(restore > smoke)

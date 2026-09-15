@@ -13,6 +13,16 @@
       "reason": "Shared bounded explicit-column process-table probes for real-process tests; a separate Node-only subpath keeps browser test hosts independent of child_process."
     },
     {
+      "name": "@smthrs/control",
+      "subpath": "./Health",
+      "development": "./src/Health.ts",
+      "published": {
+        "import": { "types": "./dist/esm/Health.d.ts", "default": "./dist/esm/Health.js" },
+        "require": { "types": "./dist/cjs/Health.d.ts", "default": "./dist/cjs/Health.js" }
+      },
+      "reason": "Documented public Health namespace for Effect checks, bounded observation policies, provenance and shared status rollup, re-exported by control/src/index.ts and consumed by gateway. This adds the public contract without exposing private projection state or changing prior runtime entries."
+    },
+    {
       "name": "@smthrs/platform-node",
       "subpath": "./ScopedProcess",
       "development": "./src/ScopedProcess.ts",
