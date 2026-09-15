@@ -13,9 +13,14 @@ import * as ControlDatabase from "./ControlDatabase.ts"
 import * as ControlFileSystem from "./ControlFileSystem.ts"
 import * as NativeControl from "./NativeControl.ts"
 
-/** Respect the workspace's egress proxy without changing unproxied Node hosts. */
+/**
+ * Respect the supplied environment's egress proxy without changing unproxied Node hosts.
+ *
+ * @category constructors
+ * @since 1.0.0
+ */
 export const environmentDispatcher = (
-  environment: Readonly<Record<string, string | undefined>> = process.env
+  environment: Readonly<Record<string, string | undefined>>
 ): Effect.Effect<Undici.Dispatcher, never, Scope.Scope> =>
   Effect.suspend(() => {
     const httpProxy = environment.http_proxy ?? environment.HTTP_PROXY ?? ""
@@ -48,7 +53,7 @@ export const environmentDispatcher = (
  * and owned the same way.
  *
  * `acquire` is a parameter so a test can hand it a scripted dispatcher; the
- * production caller passes `environmentDispatcher()`.
+ * production caller passes `environmentDispatcher(process.env)`.
  *
  * @category constructors
  * @since 0.1.0
@@ -76,7 +81,7 @@ export const rebuildableTransport = (
 
 /** The production executor: an Undici agent the run may replace. */
 const rebuildableUndici: Effect.Effect<RequestExecutor.RequestExecutor, never, Scope.Scope> = Effect.flatMap(
-  rebuildableTransport(environmentDispatcher()),
+  rebuildableTransport(environmentDispatcher(process.env)),
   RequestExecutor.makeWith
 )
 
@@ -92,7 +97,6 @@ const layerRequestExecutor: Layer.Layer<RequestExecutor.RequestExecutor> = Layer
  */
 export const platform: NativeControl.Platform = {
   host: Layer.provideMerge(ControlFileSystem.layer(), NodeServices.layer),
-  crypto: NodeCrypto.layer,
   database: (file) => ControlDatabase.layer(file).pipe(Layer.orDie),
   runtime: NodeFlowsRuntime.layer,
   jj: NodeJj.layerAt,
