@@ -1,13 +1,8 @@
 {
   "extends": "./tsconfig.json",
   "compilerOptions": {
-    // The guarded-spawn gate in `test/ExecContainment.test.ts` reads the same
-    // parser as the tree-wide gate, from `packages/smithers/flows/test`, so that this
-    // package's check can never be narrower than the repository's. One reader
-    // means one file, and one file outside this package means the root of the
-    // program is the workspace. `packages/smithers/build/targets/tsconfig.test.json` does the
-    // same for the same reason. Nothing is emitted from this config.
-    "rootDir": "../..",
+    // Tests share the process-table probe in packages/testing; this config emits nothing.
+    "rootDir": "../../..",
     "noEmit": true,
     "declaration": false,
     "declarationMap": false,

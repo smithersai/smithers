@@ -59,6 +59,15 @@ the run executes against.
 Every module, every export, and the contract of each is at
 <https://testing.smithers.sh/reference/api/>.
 
+## Inspect real processes
+
+`@smthrs/testing/ProcessTable` queries explicit POSIX `ps` columns with a
+64 MiB buffer. Select a PID for resident-size and state probes, or scan the
+table for containment checks. Use `comm` for executable names and `args`
+when a script marker must be distinguished from its interpreter. Spawn
+failures throw; an absent selected PID returns empty text. This Node-only
+helper stays off the main barrel so browser test hosts remain portable.
+
 ## Certify an engine in fifteen lines
 
 ```ts

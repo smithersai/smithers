@@ -5,6 +5,7 @@ import * as Fs from "node:fs/promises"
 import * as Os from "node:os"
 import * as NodePath from "node:path"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
+import * as ProcessTable from "../../../../testing/src/ProcessTable.ts"
 import * as Input from "../src/Input.ts"
 import * as LlmLint from "../src/LlmLint.ts"
 import * as Target from "../src/Target.ts"
@@ -102,13 +103,13 @@ const processIsAlive = (pid: number): boolean => {
 
 /**
  * Whether the pid's work has ended. A killed orphan lingers as a zombie until
- * pid 1 reaps it — longer than any polite wait on a loaded machine — and a
+ * pid 1 reaps it, longer than any polite wait on a loaded machine, and a
  * zombie's work is over, so `Z` counts as ended while a live state is a real
  * survivor.
  */
 const processHasEnded = (pid: number): boolean => {
   if (!processIsAlive(pid)) return true
-  const state = spawnSync("ps", ["-o", "state=", "-p", String(pid)]).stdout?.toString().trim() ?? ""
+  const state = ProcessTable.query({ pid, columns: ["stat"] }).trim()
   return state === "" || state.startsWith("Z")
 }
 
@@ -1217,18 +1218,8 @@ describe("LlmLint.promptEngine protocol boundary", () => {
         }
       }
       const identity = (pid: number): string => {
-        const result = spawnSync("/bin/ps", ["-ww", "-o", "pid=,stat=,lstart=,command=", "-p", String(pid)], {
-          encoding: "utf8",
-          timeout: 2000,
-          env: { LC_ALL: "C", PATH: "/usr/bin:/bin" }
-        })
-        if (result.status === 1 && result.stdout.trim() === "") return "gone"
-        if (result.status !== 0 || result.stdout.trim() === "") {
-          throw new Error(
-            `ps failed: ${result.error ?? result.stderr}`
-          )
-        }
-        return result.stdout.trim()
+        const row = ProcessTable.query({ pid, columns: ["pid", "stat", "lstart", "args"], timeoutMs: 2000 }).trim()
+        return row === "" ? "gone" : row
       }
       const executable = await scriptCli("natural-exit-model", body)
       try {

@@ -13,10 +13,10 @@ import { Effect, Fiber, Layer } from "effect"
 import * as FileSystem from "effect/FileSystem"
 import * as ChildProcess from "effect/unstable/process/ChildProcess"
 import { ChildProcessSpawner } from "effect/unstable/process/ChildProcessSpawner"
-import { execFileSync } from "node:child_process"
 import { chmodSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
+import * as ProcessTable from "../../../../testing/src/ProcessTable.ts"
 import * as NodeHost from "../src/NodeHost.ts"
 
 const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms))
@@ -34,16 +34,9 @@ const waitForExit = async (pid: number, budgetMs: number): Promise<boolean> => {
   }
 }
 
-/**
- * Every process on this machine whose command line names `path`.
- *
- * The buffer is sized rather than left at `execFileSync`'s 1 MiB default: this
- * lists EVERY process with its full argument vector, and on a loaded machine
- * that is more than a megabyte, at which point the call throws `ENOBUFS` and
- * the assertion below reads as a containment failure it is not.
- */
+/** Every process on this machine whose command line names `path`. */
 const survivors = (path: string): ReadonlyArray<string> =>
-  execFileSync("ps", ["-A", "-o", "pid=,ppid=,args="], { encoding: "utf8", maxBuffer: 64 * 1024 * 1024 })
+  ProcessTable.query({ columns: ["pid", "ppid", "args"] })
     .split("\n")
     .filter((line) => line.includes(path))
 

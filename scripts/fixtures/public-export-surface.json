@@ -2,6 +2,17 @@
   "version": 1,
   "added": [
     {
+      "name": "@smthrs/testing",
+      "subpath": "./ProcessTable",
+      "development": "./src/ProcessTable.ts",
+      "published": {
+        "types": "./dist/esm/ProcessTable.d.ts",
+        "import": "./dist/esm/ProcessTable.js",
+        "require": "./dist/cjs/ProcessTable.js"
+      },
+      "reason": "Shared bounded explicit-column process-table probes for real-process tests; a separate Node-only subpath keeps browser test hosts independent of child_process."
+    },
+    {
       "name": "@smthrs/platform-node",
       "subpath": "./ScopedProcess",
       "development": "./src/ScopedProcess.ts",

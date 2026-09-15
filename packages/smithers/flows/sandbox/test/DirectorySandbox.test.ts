@@ -10,6 +10,7 @@ import { mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterAll } from "vitest"
+import * as ProcessTable from "../../../../testing/src/ProcessTable.ts"
 import * as DirectorySandbox from "../src/DirectorySandbox/index.ts"
 import type { RemoteProcess } from "../src/RemoteChildProcessSpawner/Provider.ts"
 import { ProviderError } from "../src/RemoteChildProcessSpawner/ProviderError.ts"
@@ -32,13 +33,13 @@ const processIsAlive = (pid: number): boolean => {
 
 /**
  * Whether the pid's work has ended. A killed orphan lingers as a zombie until
- * pid 1 reaps it — longer than any polite wait on a loaded machine — and a
+ * pid 1 reaps it, longer than any polite wait on a loaded machine, and a
  * zombie's work is over, so `Z` counts as ended while a live state is a real
  * survivor.
  */
 const processHasEnded = (pid: number): boolean => {
   if (!processIsAlive(pid)) return true
-  const state = spawnSync("ps", ["-o", "state=", "-p", String(pid)]).stdout?.toString().trim() ?? ""
+  const state = ProcessTable.query({ pid, columns: ["stat"] }).trim()
   return state === "" || state.startsWith("Z")
 }
 
@@ -357,7 +358,7 @@ describe("DirectorySandbox", () => {
         // from the spawner cannot reach either. Each fixture prints its own pid
         // and then the pid of the process that must not survive it; the
         // durations are distinctive so a stray host `sleep` cannot be mistaken
-        // for the leak — and none is 3607, the duration
+        // for the leak, and none is 3607, the duration
         // `posixCommands.survivor` greps for, so a concurrent conformance run
         // cannot mistake these fixtures for its own leak either.
         //
@@ -366,7 +367,7 @@ describe("DirectorySandbox", () => {
         // both could: POSIX `wait` with no operands reports 0 once every child
         // is gone, and a pipeline reports its last member's status, so a loaded
         // runner that let the shell reap the descendant this kill signals first
-        // — in the window before the shell's own signal landed — watched the
+        // (in the window before the shell's own signal landed) watched the
         // wrapper exit 0. Every wrapper below ends on `cat gate` instead, a
         // fifo nothing ever opens for writing, so it is parked in `open` and a
         // signal is the only thing that can end it.
@@ -508,16 +509,8 @@ describe("DirectorySandbox", () => {
           }
         }
         const identity = (pid: number): string => {
-          const result = spawnSync("/bin/ps", ["-ww", "-o", "pid=,stat=,lstart=,command=", "-p", String(pid)], {
-            encoding: "utf8",
-            timeout: 2000,
-            env: { LC_ALL: "C", PATH: "/usr/bin:/bin" }
-          })
-          if (result.status === 1 && result.stdout.trim() === "") return "gone"
-          if (result.status !== 0 || result.stdout.trim() === "") {
-            throw new Error(`ps failed: ${result.error ?? result.stderr}`)
-          }
-          return result.stdout.trim()
+          const row = ProcessTable.query({ pid, columns: ["pid", "stat", "lstart", "args"], timeoutMs: 2000 }).trim()
+          return row === "" ? "gone" : row
         }
         try {
           const directory = yield* provider

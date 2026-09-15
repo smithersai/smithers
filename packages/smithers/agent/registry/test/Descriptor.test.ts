@@ -2,6 +2,35 @@ import { Option, Schema } from "effect"
 import { describe, expect, it } from "vitest"
 import * as Descriptor from "../src/Descriptor.ts"
 
+describe("inputDocument", () => {
+  it("returns the inline document without interpreting or replacing it", () => {
+    const document = { type: "object", properties: { command: { type: "string" } }, required: ["command"] }
+    expect(Descriptor.inputDocument(new Descriptor.SchemaRefInline({ document }))).toBe(document)
+  })
+
+  it("describes markdown input as one required string argument", () => {
+    expect(Descriptor.inputDocument(new Descriptor.SchemaRefMarkdownArgs({}))).toMatchObject({
+      schema: {
+        type: "object",
+        properties: { args: { type: "string" } },
+        required: ["args"],
+        // Effect's input projection permits excess properties, just as decoding does.
+        additionalProperties: true
+      }
+    })
+  })
+
+  it.each([
+    undefined,
+    new Descriptor.SchemaRefNone({}),
+    new Descriptor.SchemaRefMarkdownOutput({}),
+    new Descriptor.SchemaRefModule({ path: "/not-evaluated.ts", field: "input" })
+  ])("leaves unavailable input metadata undefined (%s)", (ref) => {
+    // A locator is not a JSON Schema, and reading input metadata never loads it.
+    expect(Descriptor.inputDocument(ref)).toBeUndefined()
+  })
+})
+
 describe("FlowDescriptor", () => {
   it("round-trips every descriptor field", () => {
     const descriptor = new Descriptor.FlowDescriptor({

@@ -4,7 +4,7 @@
  * `packages/smithers/agent/std`'s `ExecContainment` suite pins the same two shapes directly
  * against a spawner. This one asks the question the release policy actually
  * words: after `smithers cancel`, does the machine still carry anything the
- * run started. So everything here is the production composition —
+ * run started. So everything here is the production composition:
  * `NodeRuntime.layerHost` over a real SQLite file, a flow body reaching the
  * GUARDED spawner, and a second driver over the same file writing the
  * cancellation request the owner picks up on its heartbeat.
@@ -44,11 +44,11 @@ import * as Layer from "effect/Layer"
 import * as Schema from "effect/Schema"
 import { ChildProcess } from "effect/unstable/process"
 import { ChildProcessSpawner } from "effect/unstable/process/ChildProcessSpawner"
-import { execFileSync } from "node:child_process"
 import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { DatabaseSync } from "node:sqlite"
+import * as ProcessTable from "../../../testing/src/ProcessTable.ts"
 import { Action, Flow, FlowRuntime, Interpreter, RunStore as RunStorePackage } from "../src/index.ts"
 import * as NodeRuntime from "../src/NodeRuntime.ts"
 
@@ -82,7 +82,7 @@ const sleeper = (label: string): string => {
 
 /** Every process on this machine whose command line names `path`. */
 const survivors = (path: string): ReadonlyArray<string> =>
-  execFileSync("ps", ["-A", "-o", "pid=,ppid=,args="], { encoding: "utf8" })
+  ProcessTable.query({ columns: ["pid", "ppid", "args"] })
     .split("\n")
     .filter((line) => line.includes(path))
 
@@ -234,8 +234,8 @@ const cancelFromAnotherDriver = (options: {
 
       // Measured from the durable cancel REQUEST, which is the row the second
       // driver wrote and the earliest instant the owner could have started
-      // killing anything. The obvious clock to start — the moment the row
-      // reads `cancelled` — makes the bound vacuous: the owner writes that
+      // killing anything. The obvious clock to start, the moment the row
+      // reads `cancelled`, makes the bound vacuous: the owner writes that
       // status after the action's scope has closed, and the scope does not
       // close until the escalation has landed, so the group is always already
       // gone and any budget holds. Same process, so both timestamps come off
@@ -289,7 +289,7 @@ describe.skipIf(process.platform === "win32")("a cancelled run", () => {
     // honoured `SIGTERM` would be gone within a tick, well before the grace
     // expired. The upper bound is the contract's `forceKillAfter` plus one
     // second, widened by the one heartbeat tick an owner may take to notice a
-    // cancel another process wrote — the difference between this case and the
+    // cancel another process wrote, the difference between this case and the
     // Exec-level one, where the interrupt is delivered in-process.
     expect(outcome.clearedMs).toBeGreaterThanOrEqual(graceMs)
     expect(outcome.clearedMs).toBeLessThan(graceMs + heartbeatMs + 1_000)

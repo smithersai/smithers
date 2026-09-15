@@ -9,7 +9,7 @@ import { spawnSync } from "node:child_process"
 import * as NodeFs from "node:fs"
 import * as NodeOs from "node:os"
 import * as NodePath from "node:path"
-import { describe, expect, it } from "vitest"
+import { describe, expect, it, vi } from "vitest"
 import * as ExecSandbox from "../src/ExecSandbox.ts"
 import { Sandbox } from "../src/WorkspaceDeclaration.ts"
 
@@ -425,19 +425,95 @@ describe("plan", () => {
         uid: 501,
         gid: 20
       }
-      const started = performance.now()
-      const plan = planned(facts, { reads: relative, writes: [], writeFiles: [], readOnly: [] })
-      const elapsed = performance.now() - started
+      let operations = 0
+      const visit = () => {
+        operations += 1
+        if (operations > count * 100) throw new Error("path collapse exceeded its linear collection budget")
+      }
+      const counted = <T extends Iterator<unknown>>(iterator: T): T => {
+        const next = iterator.next.bind(iterator)
+        iterator.next = () => {
+          const entry = next()
+          if (!entry.done) visit()
+          return entry
+        }
+        return iterator
+      }
+      // Observe lookups and every visited entry, including spreads, values,
+      // entries and forEach. A kept-set scan spends the same budget whether
+      // its predicate uses startsWith, slice, a regex or another primitive.
+      class CountingSet<T> extends Set<T> {
+        override has(value: T): boolean {
+          visit()
+          return super.has(value)
+        }
+        override [Symbol.iterator]() {
+          return counted(super[Symbol.iterator]())
+        }
+        override values() {
+          return counted(super.values())
+        }
+        override keys() {
+          return counted(super.keys())
+        }
+        override entries() {
+          return counted(super.entries())
+        }
+        override forEach(callback: (value: T, key: T, set: Set<T>) => void, thisArg?: unknown): void {
+          super.forEach((value, key, set) => {
+            visit()
+            callback.call(thisArg, value, key, set)
+          })
+        }
+      }
+      class CountingMap<K, V> extends Map<K, V> {
+        override has(key: K): boolean {
+          visit()
+          return super.has(key)
+        }
+        override get(key: K): V | undefined {
+          visit()
+          return super.get(key)
+        }
+        override [Symbol.iterator]() {
+          return counted(super[Symbol.iterator]())
+        }
+        override values() {
+          return counted(super.values())
+        }
+        override keys() {
+          return counted(super.keys())
+        }
+        override entries() {
+          return counted(super.entries())
+        }
+        override forEach(callback: (value: V, key: K, map: Map<K, V>) => void, thisArg?: unknown): void {
+          super.forEach((value, key, map) => {
+            visit()
+            callback.call(thisArg, value, key, map)
+          })
+        }
+      }
+      let plan: ExecSandbox.Plan
+      vi.stubGlobal("Set", CountingSet)
+      vi.stubGlobal("Map", CountingMap)
+      try {
+        plan = planned(facts, { reads: relative, writes: [], writeFiles: [], readOnly: [] })
+      } finally {
+        vi.unstubAllGlobals()
+      }
       expect(plan.reads).toHaveLength(count)
-      return elapsed
+      expect(new Set(plan.reads)).toEqual(present)
+      return operations
     }
     const small = collapsing(2_500)
     const large = collapsing(10_000)
-    // Four times the paths costs about four times the work once the sweep is
-    // linear; the ancestor scan cost about sixteen. The ratio, not an absolute
-    // bound, is what survives a loaded machine.
-    expect(large).toBeLessThan(Math.max(small, 10) * 8)
-    expect(large).toBeLessThan(5_000)
+    // Count collection work, including the planner's other probes.
+    // A kept-set scan costs sixteen times as much for four times the paths;
+    // the sorted sweep scales linearly regardless of host scheduling.
+    expect(small).toBeGreaterThan(0)
+    expect(large).toBeLessThan(small * 8)
+    expect(large).toBeLessThan(10_000 * 100)
   })
 
   it("records where a read that links out of the workspace really lives, and nothing for the rest", () => {

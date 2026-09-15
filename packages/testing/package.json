@@ -67,7 +67,8 @@
     "./pins/Identity": "./src/pins/Identity.ts",
     "./pins/Interrupt": "./src/pins/Interrupt.ts",
     "./pins/Race": "./src/pins/Race.ts",
-    "./pins/Replay": "./src/pins/Replay.ts"
+    "./pins/Replay": "./src/pins/Replay.ts",
+    "./ProcessTable": "./src/ProcessTable.ts"
   },
   "files": [
     "src/**/*.ts",
@@ -370,6 +371,16 @@
         "require": {
           "types": "./dist/cjs/pins/Replay.d.ts",
           "default": "./dist/cjs/pins/Replay.js"
+        }
+      },
+      "./ProcessTable": {
+        "import": {
+          "types": "./dist/esm/ProcessTable.d.ts",
+          "default": "./dist/esm/ProcessTable.js"
+        },
+        "require": {
+          "types": "./dist/cjs/ProcessTable.d.ts",
+          "default": "./dist/cjs/ProcessTable.js"
         }
       }
     }

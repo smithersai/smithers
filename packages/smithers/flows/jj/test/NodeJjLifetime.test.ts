@@ -6,7 +6,7 @@
  * to account for: a child outside the spawner is outside the host's kill
  * policy and outside its `ProcessLedger`. The layer is still the right default
  * for a program that has no spawner to offer, so what has to be true of it is
- * narrower and provable — a cancelled invocation leaves no `jj` behind.
+ * narrower and provable: a cancelled invocation leaves no `jj` behind.
  *
  * `jj` is short-lived and starts no long-lived children of its own, which is
  * why signalling the process the layer holds is enough here: every command
@@ -22,10 +22,10 @@
 import { describe, expect, it } from "@effect/vitest"
 import * as Effect from "effect/Effect"
 import * as Fiber from "effect/Fiber"
-import { execFileSync } from "node:child_process"
 import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
+import * as ProcessTable from "../../../../testing/src/ProcessTable.ts"
 import { Jj } from "../src/Jj.ts"
 import * as NodeJj from "../src/node/NodeJj.ts"
 
@@ -52,16 +52,9 @@ process.on("exit", () => rmSync(directory, { recursive: true, force: true }))
 
 const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms))
 
-/**
- * Every process on this machine whose command line names the shim.
- *
- * `maxBuffer` is raised well past `execFileSync`'s one-mebibyte default: this
- * lists the WHOLE process table with full command lines, which on a loaded
- * developer machine or a busy CI runner exceeds that default and turns the
- * containment assertion into `spawnSync ps ENOBUFS`.
- */
+/** Every process on this machine whose command line names the shim. */
 const survivors = (): ReadonlyArray<string> =>
-  execFileSync("ps", ["-A", "-o", "pid=,ppid=,args="], { encoding: "utf8", maxBuffer: 64 * 1024 * 1024 })
+  ProcessTable.query({ columns: ["pid", "ppid", "args"] })
     .split("\n")
     .filter((line) => line.includes(marker))
 

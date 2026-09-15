@@ -8,10 +8,7 @@
  *
  * @since 1.0.0
  */
-import { execFile } from "node:child_process"
-import { promisify } from "node:util"
-
-const run = promisify(execFile)
+import * as ProcessTable from "../../../../testing/src/ProcessTable.ts"
 
 /**
  * Resident bytes for `pid`.
@@ -24,7 +21,7 @@ const run = promisify(execFile)
  * @category getters
  */
 export const residentBytes = async (pid: number): Promise<number> => {
-  const { stdout } = await run("ps", ["-o", "rss=", "-p", String(pid)])
+  const stdout = ProcessTable.query({ pid, columns: ["rss"] })
   const kibibytes = Number.parseInt(stdout.trim(), 10)
   if (!Number.isFinite(kibibytes)) {
     throw new Error(`ps reported no resident set for pid ${pid}: ${JSON.stringify(stdout)}`)

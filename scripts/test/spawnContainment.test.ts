@@ -88,6 +88,10 @@ describe("child-process containment conformance", () => {
       + "this boundary; the package export map denies direct access to internal modules."
     ],
     [
+      "testing/src/ProcessTable.ts",
+      "Test-support process-table probe; spawns only `ps` with fixed arguments and a bounded 64 MiB maxBuffer."
+    ],
+    [
       "testing/src/Faults.ts",
       "The fault tier's process primitives. `execFileSync` of `ps -o ppid=` reads the process "
       + "TABLE. The other exports signal pids the test already owns. This test-only diagnostic "

@@ -3,8 +3,8 @@
  *
  * `Exec` is the buffered shell every std flow runs a command through, and it
  * owns no process policy of its own: it resolves `ChildProcessSpawner` from
- * the context and spawns. That is the whole design — the host decides
- * containment once and every guarded path inherits it — which also means the
+ * the context and spawns. The host decides
+ * containment once and every guarded path inherits it, which also means the
  * only way to know a cancelled `exec` leaves nothing behind is to run one
  * against a real spawner and look at the operating system afterwards.
  *
@@ -40,11 +40,11 @@ import * as Layer from "effect/Layer"
 import * as Option from "effect/Option"
 import * as Path from "effect/Path"
 import type { ChildProcessSpawner } from "effect/unstable/process/ChildProcessSpawner"
-import { execFileSync } from "node:child_process"
 import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
+import * as ProcessTable from "../../../../testing/src/ProcessTable.ts"
 import * as ProcessReaper from "../../../flows/platform-node/src/ProcessReaper.ts"
 import { collectSources, fileBindsSpawningModule } from "../../../flows/test/SpawnSpecifiers.ts"
 import * as Exec from "../src/internal/Exec.ts"
@@ -69,7 +69,7 @@ const sleeper = (label: string): string => {
 
 /** Every process on this machine whose command line names `path`. */
 const survivors = (path: string): ReadonlyArray<string> =>
-  execFileSync("ps", ["-A", "-o", "pid=,ppid=,args="], { encoding: "utf8" })
+  ProcessTable.query({ columns: ["pid", "ppid", "args"] })
     .split("\n")
     .filter((line) => line.includes(path))
 
