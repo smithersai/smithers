@@ -110,22 +110,15 @@ const parseSession = (status: number, body: SessionBody | undefined): Authentica
   return { login: body.login, allowlisted: body.allowlisted, admin: body.admin }
 }
 
-export const readAuthenticatedSession = async (page: Page): Promise<AuthenticatedSession | undefined> => {
-  if (page.isClosed()) throw new Error("Cannot read the authenticated session from a closed page.")
-  const response = await page.context().request.get(new URL("/api/auth/session", page.url()).toString())
+const readSessionAtOrigin = async (context: BrowserContext, origin: string): Promise<AuthenticatedSession | undefined> => {
+  const response = await context.request.get(new URL("/api/auth/session", origin).toString())
   const body = await response.json().catch(() => undefined) as SessionBody | undefined
   return parseSession(response.status(), body)
 }
 
-/** Browser-side session read for fixture setup, preserving browser cookie semantics. */
-const readBrowserSession = async (page: Page): Promise<AuthenticatedSession | undefined> => {
-  const response = await page.evaluate(async () => {
-    const result = await fetch("/api/auth/session", { credentials: "include" })
-    return { status: result.status, text: await result.text() }
-  })
-  let body: SessionBody | undefined
-  try { body = JSON.parse(response.text) as SessionBody } catch { body = undefined }
-  return parseSession(response.status, body)
+export const readAuthenticatedSession = async (page: Page): Promise<AuthenticatedSession | undefined> => {
+  if (page.isClosed()) throw new Error("Cannot read the authenticated session from a closed page.")
+  return readSessionAtOrigin(page.context(), new URL(page.url()).origin)
 }
 
 const safeLocation = (page: Page): string => {
@@ -155,7 +148,10 @@ export const restoreAuthenticatedSession = async (page: Page, baseURL: string): 
     if (page.isClosed()) throw new Error("Cannot restore authentication after the credentialed page was closed.")
     await page.goto(new URL(appEntryPath(), origin).toString(), { waitUntil: "domcontentloaded" })
   }
-  let session = await readBrowserSession(page)
+  // The context request uses the live browser cookie jar. Keep its target
+  // origin fixed while OAuth redirects replace the page's execution context.
+  const readSession = () => readSessionAtOrigin(page.context(), origin)
+  let session = await readSession()
   if (session !== undefined) return session
 
   await page.goto(new URL(appEntryPath(), origin).toString(), { waitUntil: "domcontentloaded" })
@@ -164,8 +160,10 @@ export const restoreAuthenticatedSession = async (page: Page, baseURL: string): 
   await door.click()
   await finishGitHubOAuth(page, origin)
   await page.waitForLoadState("domcontentloaded")
-  await expect.poll(() => readBrowserSession(page), { timeout: 30_000 }).not.toBeUndefined()
-  session = await readBrowserSession(page)
+  await expect.poll(readSession, { timeout: 30_000 }).not.toBeUndefined()
+  await page.waitForURL((url) => url.origin === origin, { timeout: 30_000 })
+  await page.waitForLoadState("domcontentloaded")
+  session = await readSession()
   if (session === undefined) throw new Error("The real OAuth round trip returned without an authenticated Smithers session.")
   return session
 }
