@@ -19,7 +19,11 @@
  *
  * @since 0.1.0
  */
+import * as Context from "effect/Context"
 import * as Effect from "effect/Effect"
+import * as Layer from "effect/Layer"
+import * as RcMap from "effect/RcMap"
+import * as Scope from "effect/Scope"
 import * as Semaphore from "effect/Semaphore"
 
 /**
@@ -55,23 +59,17 @@ export interface Service {
  * @category constructors
  */
 export const makeUnsafe = (): Service => {
-  const gates = new Map<string, { readonly semaphore: Semaphore.Semaphore; waiters: number }>()
+  // One layer identity per incarnation; each operation borrows its owner
+  // through a shared memo map, so the last operation releases the RcMap.
+  const Locks = Context.Service<RcMap.RcMap<string, Semaphore.Semaphore>>("AttemptAdmission/Locks")
+  const layer = Layer.effect(Locks, RcMap.make({ lookup: (_key: string) => Semaphore.make(1) }))
+  const owners = Layer.makeMemoMapUnsafe()
   return {
     withPermit: (key) => (effect) =>
-      Effect.suspend(() => {
-        let gate = gates.get(key)
-        if (gate === undefined) {
-          gate = { semaphore: Semaphore.makeUnsafe(1), waiters: 0 }
-          gates.set(key, gate)
-        }
-        const held = gate
-        held.waiters++
-        return Semaphore.withPermit(held.semaphore)(effect).pipe(
-          Effect.ensuring(Effect.sync(() => {
-            held.waiters--
-            if (held.waiters === 0) gates.delete(key)
-          }))
-        )
-      })
+      Effect.scoped(Effect.gen(function*() {
+        const services = yield* Layer.buildWithMemoMap(layer, owners, yield* Scope.Scope)
+        const lock = yield* RcMap.get(Context.get(services, Locks), key)
+        return yield* lock.withPermit(effect)
+      }))
   }
 }

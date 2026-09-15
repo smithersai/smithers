@@ -85,7 +85,8 @@ const program = Effect.gen(function*() {
 
   const vectorStore = RecallSemantic.makeSqlVectorStore({ sql, write: writer.write })
   const options = { vectorStore }
-  const decorated = RecallSemantic.decorateStore(store, RecallSemantic.makeProjector(options), embedding)
+  const projector = yield* RecallSemantic.makeProjector(options)
+  const decorated = RecallSemantic.decorateStore(store, projector, embedding)
 
   yield* decorated.putNote({
     namespace: "flow-bank",
@@ -98,7 +99,8 @@ const program = Effect.gen(function*() {
   return yield* RecallSemantic.recall({ banks: ["flow-bank"], query: "semantic" }, options)
 }).pipe(
   Effect.provide(Embedding.layerInProcess),
-  Effect.provide(TestMemory.layerWithDatabase)
+  Effect.provide(TestMemory.layerWithDatabase),
+  Effect.scoped
 )
 ```
 

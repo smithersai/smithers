@@ -17,6 +17,8 @@ import type * as Duration from "effect/Duration"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
 import * as Option from "effect/Option"
+import * as RcMap from "effect/RcMap"
+import type * as Scope from "effect/Scope"
 import * as Semaphore from "effect/Semaphore"
 import * as Stream from "effect/Stream"
 import type { DatabaseService } from "./Database.ts"
@@ -413,59 +415,62 @@ export interface Projector {
 }
 
 /**
- * Constructs the bounded-lifetime semantic projection coordinator.
+ * Constructs the semantic projection coordinator in its owner scope.
+ * Keep that scope open until all projection calls have finished.
  *
  * @category constructors
  * @since 0.1.0
  */
-export const makeProjector = (options: Options): Projector => {
-  const locks = new Map<string, { readonly lock: Semaphore.Semaphore; users: number }>()
-  const project = (row: ProjectionInput) =>
-    Effect.suspend(() => {
-      const model = options.model ?? defaultModel
-      const snapshot = Object.freeze({
-        bank: row.bank,
-        recordKind: row.recordKind,
-        recordId: row.recordId,
-        text: row.text,
-        updatedAtMs: row.updatedAtMs
-      })
-      const task = Effect.gen(function*() {
-        const embedding = yield* Embedding.Embedding
-        const response = yield* embedding.embed(snapshot.text)
-        yield* options.vectorStore.upsert({
-          bank: snapshot.bank,
-          recordKind: snapshot.recordKind,
-          recordId: snapshot.recordId,
-          model,
-          contentDigest: digest(snapshot.text),
-          dimensions: response.vector.length,
-          vector: response.vector,
-          updatedAtMs: snapshot.updatedAtMs
-        })
-      }).pipe(
-        Effect.retry({ times: 1 }),
-        Effect.timeout(options.projectionTimeout ?? defaultProjectionTimeout),
-        Effect.catch((cause) => Effect.logWarning(`memory semantic projection failed: ${String(cause)}`)),
-        Effect.asVoid
-      )
-      const identity = `${model}\u0000${snapshot.bank}\u0000${snapshot.recordKind}\u0000${snapshot.recordId}`
-      let entry = locks.get(identity)
-      if (entry === undefined) {
-        entry = { lock: Semaphore.makeUnsafe(1), users: 0 }
-        locks.set(identity, entry)
-      }
-      entry.users += 1
-      const current = entry
-      return current.lock.withPermit(task).pipe(
-        Effect.ensuring(Effect.sync(() => {
-          current.users -= 1
-          if (current.users === 0 && locks.get(identity) === current) locks.delete(identity)
-        }))
-      )
+export const makeProjector = (options: Options): Effect.Effect<Projector, never, Scope.Scope> =>
+  Effect.gen(function*() {
+    let active = 0
+    const locks = yield* RcMap.make({
+      lookup: (_key: string) =>
+        Effect.acquireRelease(
+          Effect.sync(() => {
+            active++
+            return Semaphore.makeUnsafe(1)
+          }),
+          () =>
+            Effect.sync(() => {
+              active--
+            })
+        )
     })
-  return { project, activeKeys: () => locks.size }
-}
+    const project = (row: ProjectionInput) =>
+      Effect.suspend(() => {
+        const model = options.model ?? defaultModel
+        const snapshot = Object.freeze({
+          bank: row.bank,
+          recordKind: row.recordKind,
+          recordId: row.recordId,
+          text: row.text,
+          updatedAtMs: row.updatedAtMs
+        })
+        const task = Effect.gen(function*() {
+          const embedding = yield* Embedding.Embedding
+          const response = yield* embedding.embed(snapshot.text)
+          yield* options.vectorStore.upsert({
+            bank: snapshot.bank,
+            recordKind: snapshot.recordKind,
+            recordId: snapshot.recordId,
+            model,
+            contentDigest: digest(snapshot.text),
+            dimensions: response.vector.length,
+            vector: response.vector,
+            updatedAtMs: snapshot.updatedAtMs
+          })
+        }).pipe(
+          Effect.retry({ times: 1 }),
+          Effect.timeout(options.projectionTimeout ?? defaultProjectionTimeout),
+          Effect.catch((cause) => Effect.logWarning(`memory semantic projection failed: ${String(cause)}`)),
+          Effect.asVoid
+        )
+        const identity = `${model}\u0000${snapshot.bank}\u0000${snapshot.recordKind}\u0000${snapshot.recordId}`
+        return Effect.scoped(Effect.flatMap(RcMap.get(locks, identity), (lock) => lock.withPermit(task)))
+      })
+    return { project, activeKeys: () => active }
+  })
 
 /**
  * Decorates authoritative fact and note writes with an after-commit semantic

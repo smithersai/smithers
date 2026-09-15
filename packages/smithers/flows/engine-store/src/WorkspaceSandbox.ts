@@ -51,9 +51,11 @@ import * as FileSystem from "effect/FileSystem"
 import * as Layer from "effect/Layer"
 import * as Metric from "effect/Metric"
 import * as PlatformError from "effect/PlatformError"
+import * as RcMap from "effect/RcMap"
 import * as Ref from "effect/Ref"
 import * as Result from "effect/Result"
 import * as Schema from "effect/Schema"
+import * as Scope from "effect/Scope"
 import * as Semaphore from "effect/Semaphore"
 import * as EngineStoreMetrics from "./EngineStoreMetrics.ts"
 import * as FileBoundarySnapshot from "./internal/FileBoundarySnapshot.ts"
@@ -1199,29 +1201,25 @@ export interface FileSystemOptions {
 
 // Shared across separately constructed sandboxes. Entries live only while a
 // commit is running or waiting, so short-lived workspace roots do not leak.
-const commitCoordinators = new Map<string, { semaphore: Semaphore.Semaphore; users: number }>()
+const CommitLocks = Context.Service<RcMap.RcMap<string, Semaphore.Semaphore>>(
+  "@smthrs/engine-store/WorkspaceSandbox/CommitLocks"
+)
+const locksLayer = Layer.effect(CommitLocks, RcMap.make({ lookup: (_root: string) => Semaphore.make(1) }))
+// The memo map shares the layer across active operations, including operations
+// from different store instances. Their scopes release the final owner.
+const lockOwners = Layer.makeMemoMapUnsafe()
+
+const coordinateCommit = <A, E, R>(root: string, write: Effect.Effect<A, E, R>): Effect.Effect<A, E, R> =>
+  Effect.scoped(Effect.gen(function*() {
+    const services = yield* Layer.buildWithMemoMap(locksLayer, lockOwners, yield* Scope.Scope)
+    const lock = yield* RcMap.get(Context.get(services, CommitLocks), root)
+    return yield* lock.withPermit(write)
+  }))
+
 const commitLockName = ".smithers-workspace-lock"
 // The conventional engine state directory: the SQLite store, its WAL/SHM
 // siblings, and the artifact objects. A step body must never replace them.
 const engineStateName = ".flows"
-
-const coordinateCommit = <A, E, R>(root: string, effect: Effect.Effect<A, E, R>): Effect.Effect<A, E, R> =>
-  Effect.acquireUseRelease(
-    Effect.sync(() => {
-      let entry = commitCoordinators.get(root)
-      if (entry === undefined) {
-        entry = { semaphore: Semaphore.makeUnsafe(1), users: 0 }
-        commitCoordinators.set(root, entry)
-      }
-      entry.users++
-      return entry
-    }),
-    (entry) => entry.semaphore.withPermits(1)(effect),
-    (entry) =>
-      Effect.sync(() => {
-        if (--entry.users === 0) commitCoordinators.delete(root)
-      })
-  )
 
 const defaultMaxInlineBytes = 1024 * 1024
 

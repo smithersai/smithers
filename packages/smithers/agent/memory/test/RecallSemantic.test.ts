@@ -1,8 +1,8 @@
 import { DurableWriter } from "@smthrs/database/DurableWriter"
-import { Cause, Deferred, Effect, Fiber, Stream } from "effect"
+import { Cause, Deferred, Effect, Exit, Fiber, Scope, Stream } from "effect"
 import { TestClock } from "effect/testing"
 import * as SqlClient from "effect/unstable/sql/SqlClient"
-import { describe, expect, it } from "vitest"
+import { afterAll, describe, expect, it } from "vitest"
 import type { DatabaseService } from "../src/Database.ts"
 import * as Embedding from "../src/Embedding.ts"
 import { digest } from "../src/internal/Digest.ts"
@@ -11,6 +11,12 @@ import * as MemoryStore from "../src/MemoryStore.ts"
 import * as Recall from "../src/Recall.ts"
 import * as Semantic from "../src/RecallSemantic.ts"
 import * as TestMemory from "../src/test/TestMemory.ts"
+
+// Tests keep the constructor's owner alive through every projection assertion.
+const projectorScope = Scope.makeUnsafe()
+afterAll(() => Effect.runPromise(Scope.close(projectorScope, Exit.void)))
+const makeProjector = (options: Semantic.Options): Semantic.Projector =>
+  Effect.runSync(Semantic.makeProjector(options).pipe(Scope.provide(projectorScope)))
 
 const searchRow = (overrides: Partial<MemoryStore.SearchRow>): MemoryStore.SearchRow => ({
   id: "id",
@@ -157,7 +163,7 @@ describe("RecallSemantic", () => {
 
   it("logs projection failures without failing the committed write path", async () => {
     const embedding = Embedding.make(() => Effect.succeed([[1]]))
-    const projector = Semantic.makeProjector({
+    const projector = makeProjector({
       vectorStore: {
         scan: () => Stream.empty,
         upsert: () => Effect.fail(new (class extends Error {})()) as never
@@ -189,7 +195,7 @@ describe("RecallSemantic", () => {
         return inputs.map(() => [1])
       })
     )
-    const projector = Semantic.makeProjector({
+    const projector = makeProjector({
       vectorStore: {
         scan: () => Stream.empty,
         upsert: (vector) =>
@@ -232,7 +238,7 @@ describe("RecallSemantic", () => {
   it("releases the record key when a blocked projection is interrupted", async () => {
     const entered = Deferred.makeUnsafe<void>()
     const embedding = Embedding.make(() => Deferred.succeed(entered, undefined).pipe(Effect.andThen(Effect.never)))
-    const projector = Semantic.makeProjector({
+    const projector = makeProjector({
       vectorStore: { scan: () => Stream.empty, upsert: () => Effect.void }
     })
     const row: Semantic.ProjectionInput = {
@@ -259,7 +265,7 @@ describe("RecallSemantic", () => {
 
   it("drops a projection whose provider exceeds the projection timeout", async () => {
     let writes = 0
-    const projector = Semantic.makeProjector({
+    const projector = makeProjector({
       projectionTimeout: "20 millis",
       vectorStore: {
         scan: () => Stream.empty,
@@ -290,7 +296,7 @@ describe("RecallSemantic", () => {
         const vectorStore = Semantic.makeSqlVectorStore({ sql, write: writer.write })
         const decorated = Semantic.decorateStore(
           store,
-          Semantic.makeProjector({ vectorStore, projectionTimeout: "20 millis" }),
+          makeProjector({ vectorStore, projectionTimeout: "20 millis" }),
           Embedding.make(() => Effect.never)
         )
         yield* decorated.putFact({ namespace, key: "k", value: { content: "v" }, provenance: {} }).pipe(
@@ -320,8 +326,8 @@ describe("RecallSemantic", () => {
           )
         )
         const fast = Embedding.makeInProcess()
-        const writerOne = Semantic.decorateStore(store, Semantic.makeProjector({ vectorStore }), slow)
-        const writerTwo = Semantic.decorateStore(store, Semantic.makeProjector({ vectorStore }), fast)
+        const writerOne = Semantic.decorateStore(store, makeProjector({ vectorStore }), slow)
+        const writerTwo = Semantic.decorateStore(store, makeProjector({ vectorStore }), fast)
 
         const first = yield* Effect.forkChild(
           writerOne.putFact({ namespace, key: "k", value: { content: "first" }, provenance: {} }),
@@ -350,7 +356,7 @@ describe("RecallSemantic", () => {
 
   it("propagates projection interruption", async () => {
     const embedding = Embedding.make(() => Effect.interrupt)
-    const projector = Semantic.makeProjector({
+    const projector = makeProjector({
       vectorStore: {
         scan: () => Stream.empty,
         upsert: () => Effect.void
@@ -480,7 +486,7 @@ describe("RecallSemantic", () => {
           })
       }
     }
-    const projector = Semantic.makeProjector({ vectorStore })
+    const projector = makeProjector({ vectorStore })
     const store = MemoryStore.MemoryStore.of({
       searchRows: () => Effect.sync(() => [searchRow({ id: "row", key: "row", text: currentText })])
     } as unknown as MemoryStore.Service)
@@ -904,7 +910,7 @@ describe("RecallSemantic", () => {
 
   it("names the projected model and digest a committed row", async () => {
     const upserted: Array<Semantic.Vector> = []
-    const projector = Semantic.makeProjector({
+    const projector = makeProjector({
       model: "test-model",
       vectorStore: {
         scan: () => Stream.empty,
@@ -966,7 +972,7 @@ describe("RecallSemantic", () => {
         return inputs.map(() => [1])
       })
     )
-    const projector = Semantic.makeProjector({
+    const projector = makeProjector({
       model: "test",
       vectorStore: {
         scan: () => Stream.empty,
@@ -999,7 +1005,7 @@ describe("RecallSemantic", () => {
         const embedding = yield* Embedding.Embedding
         const vectorStore = Semantic.makeSqlVectorStore({ sql, write: writer.write })
         const options = { vectorStore, model, halfLifeMs: 1_000 }
-        const decorated = Semantic.decorateStore(authoritative, Semantic.makeProjector(options), embedding)
+        const decorated = Semantic.decorateStore(authoritative, makeProjector(options), embedding)
         const namespace = { kind: "flow", id: "semantic-e2e" } as const
 
         yield* decorated.putNote({

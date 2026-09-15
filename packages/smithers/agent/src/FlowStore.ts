@@ -22,7 +22,9 @@ import * as Exit from "effect/Exit"
 import * as FileSystem from "effect/FileSystem"
 import * as Layer from "effect/Layer"
 import * as Path from "effect/Path"
+import * as RcMap from "effect/RcMap"
 import * as Schema from "effect/Schema"
+import * as Scope from "effect/Scope"
 import * as Semaphore from "effect/Semaphore"
 
 /**
@@ -346,25 +348,18 @@ const publish = (
   ))
 
 /** Active saves share a root lock even when hosts construct separate store instances. */
-const activeWrites = new Map<string, { readonly semaphore: Semaphore.Semaphore; users: number }>()
+const WriteLocks = Context.Service<RcMap.RcMap<string, Semaphore.Semaphore>>("@smthrs/agent/FlowStore/WriteLocks")
+const locksLayer = Layer.effect(WriteLocks, RcMap.make({ lookup: (_root: string) => Semaphore.make(1) }))
+// The memo map shares the layer across active operations, including operations
+// from different store instances. Their scopes release the final owner.
+const lockOwners = Layer.makeMemoMapUnsafe()
 
 const serializeWrite = <A, E>(root: string, write: Effect.Effect<A, E>): Effect.Effect<A, E> =>
-  Effect.acquireUseRelease(
-    Effect.sync(() => {
-      let guard = activeWrites.get(root)
-      if (guard === undefined) {
-        guard = { semaphore: Semaphore.makeUnsafe(1), users: 0 }
-        activeWrites.set(root, guard)
-      }
-      guard.users++
-      return guard
-    }),
-    (guard) => guard.semaphore.withPermits(1)(write),
-    (guard) =>
-      Effect.sync(() => {
-        if (--guard.users === 0) activeWrites.delete(root)
-      })
-  )
+  Effect.scoped(Effect.gen(function*() {
+    const services = yield* Layer.buildWithMemoMap(locksLayer, lockOwners, yield* Scope.Scope)
+    const lock = yield* RcMap.get(Context.get(services, WriteLocks), root)
+    return yield* lock.withPermit(write)
+  }))
 
 /**
  * Constructs a store over a directory on the host filesystem.
