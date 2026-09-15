@@ -29,6 +29,38 @@ export CI=true
 tools_dir="$PWD/.flows/cloud-tools"
 export PATH="$tools_dir/bin:$PATH"
 
+# A Cloud sandbox carries no user configuration, so jj and git have no author to
+# name. Run 11727's `//evals/swebench:offline` warned "Name and email not
+# configured. Until configured, your commits will be created with the empty
+# identity", and its wave-11 predicate check then read a tree those commits
+# could not produce. The identity is environment rather than a written-out user
+# config file: no gate inherits state this script left on the host, and a
+# developer reproducing a gate keeps whatever identity they already export.
+export JJ_USER="${JJ_USER:-Smithers CI}"
+export JJ_EMAIL="${JJ_EMAIL:-ci@smithers.sh}"
+export GIT_AUTHOR_NAME="${GIT_AUTHOR_NAME:-$JJ_USER}"
+export GIT_AUTHOR_EMAIL="${GIT_AUTHOR_EMAIL:-$JJ_EMAIL}"
+export GIT_COMMITTER_NAME="${GIT_COMMITTER_NAME:-$JJ_USER}"
+export GIT_COMMITTER_EMAIL="${GIT_COMMITTER_EMAIL:-$JJ_EMAIL}"
+
+# The status a gate exits with when it was never attempted, kept distinct from
+# both success and failure so one task's report can say which it was. 75 is
+# sysexits.h's EX_TEMPFAIL, which no gate command returns on its own.
+gate_skipped=75
+
+# Declares that a gate cannot run here and why, in the same `::gate` vocabulary
+# the ok and fail markers use, so a reader of one task's log never has to infer
+# a missing result from a gate that printed nothing.
+skip_gate() {
+  printf '::gate %s skipped (%s)\n' "$1" "$2"
+  return "$gate_skipped"
+}
+
+# Whether this is a Cloud runner rather than a developer's machine. ci.tsx sets
+# it on every task command; a single-gate local repro has root, a desktop and a
+# package manager, so nothing below skips there.
+on_cloud() { [ "${SMITHERS_CLOUD_CI:-}" = 1 ]; }
+
 # Pinned Node for the Cloud runner. The image is Debian bookworm, whose distro
 # nodejs is 18 with npm 9.2.0, so ensure_js's certified npm refused to install
 # and every grouped task died in ~2 minutes before a single gate ran (run
@@ -172,7 +204,13 @@ ensure_foundry() {
 ensure_rust() {
   # The image has no Rust. Cargo metadata is also needed by the script suite.
   apt_install ca-certificates curl build-essential pkg-config libssl-dev
-  export CARGO_HOME="$tools_dir/cargo" RUSTUP_HOME="$tools_dir/rustup"
+  # Install into whatever homes the environment already names. The Cloud image
+  # exports CARGO_HOME=/workspace/.cargo and RUSTUP_HOME=/workspace/.rustup and
+  # its gates resolve the toolchain against those; overriding them here put the
+  # bootstrap's toolchain somewhere the gates never looked, so run 11727's rust
+  # gates re-downloaded channel 1.89.0 at gate time and timed out against
+  # static.rust-lang.org. A task-local pair is the fallback, not the rule.
+  export CARGO_HOME="${CARGO_HOME:-$tools_dir/cargo}" RUSTUP_HOME="${RUSTUP_HOME:-$tools_dir/rustup}"
   export PATH="$CARGO_HOME/bin:$PATH"
   if [ ! -x "$CARGO_HOME/bin/rustup" ]; then
     local arch
@@ -364,7 +402,17 @@ run_gate() {
       pnpm exec smthrs test '//apps/app:unitTests' --verbose
       ;;
     ui-browser)
-      pnpm exec smthrs test '//apps/app:browserE2e' --verbose
+      # Playwright installs the browsers' own system libraries through the
+      # distribution package manager as root. A Cloud task is an unprivileged
+      # user in a container with no sudo, so run 11727 got "Switching to root
+      # user to install dependencies... Authentication failure" and "Failed to
+      # install browsers" before a single test ran. No amount of allowlisting
+      # fixes that; the gate needs a host this tier does not offer.
+      if on_cloud; then
+        skip_gate ui-browser 'Playwright browser system dependencies need root, which Cloud runners do not have'
+      else
+        pnpm exec smthrs test '//apps/app:browserE2e' --verbose
+      fi
       ;;
     rust-lint)
       pnpm exec smthrs lint '//crates/flows-jj/...' --verbose
@@ -399,7 +447,7 @@ run_gate() {
 
 # One task, many gates: bootstrap once, then report every gate's result.
 run_group() {
-  local gate failed=''
+  local gate status failed=''
   if [ "$#" -eq 0 ]; then
     echo 'Unknown Cloud CI gate: missing' >&2
     exit 2
@@ -414,12 +462,17 @@ run_group() {
   for gate in "$@"; do
     printf '::gate %s start\n' "$gate"
     # A subshell keeps one gate's cwd and shell state out of the next one.
-    if (run_gate "$gate"); then
-      printf '::gate %s ok\n' "$gate"
-    else
-      printf '::gate %s fail\n' "$gate"
-      failed="$failed $gate"
-    fi
+    status=0
+    (run_gate "$gate") || status=$?
+    case "$status" in
+      0) printf '::gate %s ok\n' "$gate" ;;
+      # skip_gate already printed the marker and the reason for it.
+      "$gate_skipped") ;;
+      *)
+        printf '::gate %s fail\n' "$gate"
+        failed="$failed $gate"
+        ;;
+    esac
   done
   if [ -n "$failed" ]; then
     printf 'GATE-FAIL%s\n' "$failed" >&2
@@ -438,5 +491,8 @@ if ! gate_tools "${1:-}" >/dev/null; then
   exit 2
 fi
 bootstrap_for "$1"
-run_gate "$1"
+gate_status=0
+run_gate "$1" || gate_status=$?
+if [ "$gate_status" -eq "$gate_skipped" ]; then exit 0; fi
+if [ "$gate_status" -ne 0 ]; then exit "$gate_status"; fi
 printf 'GATE-OK %s\n' "$1"

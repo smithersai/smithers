@@ -23,17 +23,22 @@ import { Workflow, Task, Parallel, on } from "@smithers-ai/workflow";
 //   evals     the offline eval/check pairs
 //   checks    JS-only lint, drift and contract gates
 //
+// SMITHERS_CLOUD_CI=1 tells cloud.sh it is on a Cloud runner rather than a
+// developer's machine, which is what lets a gate that cannot run on this tier
+// print `::gate <name> skipped (<reason>)` instead of failing, while the same
+// gate still runs for anyone reproducing it locally.
+//
 // scripts/ci/cloud.test.ts asserts these groups partition cloud.sh's gates:
 // every gate appears in exactly one task, and no task names a missing gate.
 export default () => (
   <Workflow name="CI" triggers={[on.push({ branches: ["main"] }), on.manualDispatch({})]}>
     <Parallel>
-      <Task id="packages" secrets={[]}>{`bash scripts/ci/cloud.sh group workspace packages faults`}</Task>
-      <Task id="rust" secrets={[]}>{`bash scripts/ci/cloud.sh group rust-lint wasm-build-script third-party-notices rust-test scripts`}</Task>
-      <Task id="ui" secrets={[]}>{`bash scripts/ci/cloud.sh group ui-check ui-tests examples factory-harness ui-browser`}</Task>
-      <Task id="apps" secrets={[]}>{`bash scripts/ci/cloud.sh group flows bug-worker status-site review-app docs site server`}</Task>
-      <Task id="evals" secrets={[]}>{`bash scripts/ci/cloud.sh group agent-check authoring-check swebench-check review-check recommend-check agent-eval authoring-eval review-eval recommend-eval swebench`}</Task>
-      <Task id="checks" secrets={[]}>{`bash scripts/ci/cloud.sh group script-lint jsdoc-rules jsdoc project-copy target-index factory-drift workflow-drift web-bundle cloud-contract`}</Task>
+      <Task id="packages" secrets={[]}>{`SMITHERS_CLOUD_CI=1 bash scripts/ci/cloud.sh group workspace packages faults`}</Task>
+      <Task id="rust" secrets={[]}>{`SMITHERS_CLOUD_CI=1 bash scripts/ci/cloud.sh group rust-lint wasm-build-script third-party-notices rust-test scripts`}</Task>
+      <Task id="ui" secrets={[]}>{`SMITHERS_CLOUD_CI=1 bash scripts/ci/cloud.sh group ui-check ui-tests examples factory-harness ui-browser`}</Task>
+      <Task id="apps" secrets={[]}>{`SMITHERS_CLOUD_CI=1 bash scripts/ci/cloud.sh group flows bug-worker status-site review-app docs site server`}</Task>
+      <Task id="evals" secrets={[]}>{`SMITHERS_CLOUD_CI=1 bash scripts/ci/cloud.sh group agent-check authoring-check swebench-check review-check recommend-check agent-eval authoring-eval review-eval recommend-eval swebench`}</Task>
+      <Task id="checks" secrets={[]}>{`SMITHERS_CLOUD_CI=1 bash scripts/ci/cloud.sh group script-lint jsdoc-rules jsdoc project-copy target-index factory-drift workflow-drift web-bundle cloud-contract`}</Task>
     </Parallel>
   </Workflow>
 );

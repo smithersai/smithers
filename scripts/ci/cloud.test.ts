@@ -20,7 +20,8 @@ const gates = Array.from(dispatch.matchAll(/^ {4}([a-z][a-z0-9-]*)\)\n([\s\S]*?)
 const groups = Array.from(workflow.matchAll(/<Task\b([^>]*?)>([\s\S]*?)<\/Task>/g), ([, props, body]) => ({
   props: props!,
   id: props!.match(/\bid="([^"]+)"/)?.[1],
-  gates: body!.trim().match(/^\{`bash scripts\/ci\/cloud\.sh group ([a-z][a-z0-9- ]*)`\}$/)?.[1]?.split(" ")
+  gates: body!.trim().match(/^\{`SMITHERS_CLOUD_CI=1 bash scripts\/ci\/cloud\.sh group ([a-z][a-z0-9- ]*)`\}$/)?.[1]
+    ?.split(" ")
 }))
 
 describe("Smithers Cloud CI", () => {
@@ -65,7 +66,7 @@ describe("Smithers Cloud CI", () => {
       if (name === "cloud-contract") {
         expect(body).toContain("bun test scripts/ci/cloud.test.ts")
       } else {
-        const commands = Array.from(body.matchAll(/^ {6}(pnpm exec .+)$/gm), ([, command]) => command!)
+        const commands = Array.from(body.matchAll(/^ {6,8}(pnpm exec .+)$/gm), ([, command]) => command!)
         expect(commands.length).toBe(1)
         expect(github).toContain(`run: "${commands[0]}"`)
       }
@@ -88,6 +89,43 @@ describe("Smithers Cloud CI", () => {
     const commands = Array.from(github.matchAll(/run: "(pnpm exec [^"]+)"/g), ([, command]) => command!)
     for (const command of new Set(commands)) {
       if (!excluded.has(command)) expect(dispatch).toContain(command)
+    }
+  })
+
+  test("gives jj and git a CI identity, because a Cloud sandbox configures none", () => {
+    // Run 11727: `//evals/swebench:offline` warned "Name and email not
+    // configured" and then failed on a predicate over the trees it committed.
+    for (const name of ["JJ_USER", "JJ_EMAIL", "GIT_AUTHOR_NAME", "GIT_AUTHOR_EMAIL", "GIT_COMMITTER_NAME",
+      "GIT_COMMITTER_EMAIL"]) {
+      expect(shell).toMatch(new RegExp(`^export ${name}="\\$\\{${name}:-`, "m"))
+    }
+    // Environment, not a config file some later gate would inherit.
+    expect(shell).not.toContain("git config --global")
+  })
+
+  test("installs Rust into the homes the environment already names", () => {
+    // Overriding them put the bootstrap's toolchain where no gate looked, so
+    // run 11727's rust gates re-resolved channel 1.89.0 and timed out.
+    const rust = section("ensure_rust() {", "# Toolchains each gate needs")
+    expect(rust).toContain('export CARGO_HOME="${CARGO_HOME:-$tools_dir/cargo}"')
+    expect(rust).toContain('RUSTUP_HOME="${RUSTUP_HOME:-$tools_dir/rustup}"')
+  })
+
+  test("every task marks itself as a Cloud runner, which is what enables the skips", () => {
+    for (const { props } of groups) expect(props).toBeDefined()
+    expect(workflow.match(/SMITHERS_CLOUD_CI=1 bash scripts\/ci\/cloud\.sh group /g)?.length).toBe(groups.length)
+    expect(shell).toContain('on_cloud() { [ "${SMITHERS_CLOUD_CI:-}" = 1 ]; }')
+  })
+
+  test("a gate that cannot run on this tier skips explicitly, and only on a Cloud runner", () => {
+    // Playwright installs browser system libraries as root; a Cloud task has
+    // no sudo, so run 11727 got an authentication failure before any test ran.
+    const skipped = gates.filter(({ body }) => body.includes("skip_gate"))
+    expect(skipped.map(({ name }) => name)).toEqual(["ui-browser"])
+    for (const { body } of skipped) {
+      expect(body).toContain("if on_cloud; then")
+      // The reason is not optional: a bare skip is an unexplained hole.
+      expect(body).toMatch(/skip_gate [a-z-]+ '[^']+'/)
     }
   })
 
