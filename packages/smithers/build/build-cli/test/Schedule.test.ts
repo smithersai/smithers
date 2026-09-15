@@ -5,8 +5,9 @@
  * test settles, so dependency order, the concurrency bound, and the failure
  * path are all observed at exact points rather than after a sleep.
  */
+import { Effect, Fiber } from "effect"
 import { describe, expect, it } from "vitest"
-import { resolveJobs, schedule } from "../src/Executor.ts"
+import { resolveJobs, schedule, scheduleEffect } from "../src/Executor.ts"
 import type * as Planner from "../src/Planner.ts"
 
 /** A planned target reduced to the two fields the scheduler reads. */
@@ -20,17 +21,25 @@ interface Controlled {
   readonly runOne: (label: string) => Promise<void>
   readonly settle: (label: string, cause?: unknown) => void
   readonly running: () => ReadonlyArray<string>
+  readonly waitForStart: (label: string) => Promise<void>
 }
 
 /** A `runOne` whose every call is settled by the test, one label at a time. */
 const controlled = (): Controlled => {
   const started: Array<string> = []
+  const starts = new Map<string, ReturnType<typeof Promise.withResolvers<void>>>()
+  const start = (label: string) => {
+    if (!starts.has(label)) starts.set(label, Promise.withResolvers<void>())
+    return starts.get(label)!
+  }
   const pending = new Map<string, { resolve: () => void; reject: (cause: unknown) => void }>()
   return {
     started,
+    waitForStart: (label) => start(label).promise,
     running: () => [...pending.keys()],
     runOne: (label) => {
       started.push(label)
+      start(label).resolve()
       return new Promise<void>((resolve, reject) => {
         pending.set(label, { resolve, reject })
       })
@@ -45,10 +54,8 @@ const controlled = (): Controlled => {
   }
 }
 
-/** Yields to the microtask queue so a settled promise's handlers have run. */
-const tick = async (): Promise<void> => {
-  for (let index = 0; index < 8; index += 1) await Promise.resolve()
-}
+/** Yields an event-loop turn so Promise handlers and Effect's completion queue drain. */
+const tick = (): Promise<void> => new Promise((resolve) => setImmediate(resolve))
 
 describe("resolveJobs", () => {
   it("defaults to at least one job", () => {
@@ -71,6 +78,40 @@ describe("resolveJobs", () => {
 })
 
 describe("schedule", () => {
+  it("joins interrupted Effect workers and their finalizers before returning", async () => {
+    const released = Promise.withResolvers<void>()
+    const started: Array<string> = []
+    let finalized = 0
+    const fiber = Effect.runFork(scheduleEffect(
+      [target("//:a"), target("//:b"), target("//:c")],
+      2,
+      (label) =>
+        Effect.sync(() => started.push(label)).pipe(
+          Effect.andThen(Effect.never),
+          Effect.ensuring(
+            Effect.promise(() => released.promise).pipe(
+              Effect.tap(() =>
+                Effect.sync(() => {
+                  finalized++
+                })
+              )
+            )
+          )
+        )
+    ))
+    await tick()
+    let closed = false
+    const done = Effect.runPromise(Fiber.interrupt(fiber)).then(() => {
+      closed = true
+    })
+    await tick()
+    expect(closed).toBe(false)
+    expect(started).toEqual(["//:a", "//:b"])
+    released.resolve()
+    await done
+    expect(finalized).toBe(2)
+  })
+
   it("resolves immediately for an empty work list", async () => {
     await expect(schedule([], 4, () => Promise.reject(new Error("must not run")))).resolves.toBeUndefined()
   })
@@ -82,7 +123,7 @@ describe("schedule", () => {
     await tick()
     expect(work.started).toEqual(["//:a"])
     work.settle("//:a")
-    await tick()
+    await work.waitForStart("//:b")
     expect(work.started).toEqual(["//:a", "//:b"])
     work.settle("//:b")
     await expect(done).resolves.toBeUndefined()
@@ -96,11 +137,11 @@ describe("schedule", () => {
     await tick()
     expect(work.running()).toEqual(["//:a", "//:b"])
     work.settle("//:a")
-    await tick()
+    await work.waitForStart("//:c")
     expect(work.running()).toEqual(["//:b", "//:c"])
     work.settle("//:b")
     work.settle("//:c")
-    await tick()
+    await work.waitForStart("//:d")
     work.settle("//:d")
     await expect(done).resolves.toBeUndefined()
   })

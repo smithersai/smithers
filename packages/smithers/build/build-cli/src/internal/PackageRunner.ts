@@ -70,6 +70,7 @@ import {
 import * as RulePolicy from "./RulePolicy.ts"
 import * as NativeRules from "./rules/NativeRules.ts"
 import { posix, sha256Hex } from "./Text.ts"
+import * as TreeGate from "./TreeGate.ts"
 
 /** Wall-clock cap on one `smithers memory` backend invocation. */
 const memoryBackendTimeoutMs = 60_000
@@ -2619,65 +2620,6 @@ export const execute = async (
     }
   }
 
-  /**
-   * Exclusion between a write-set-enforced node and every other node.
-   *
-   * {@link enforceWriteSet} measures the WHOLE repository before and after the
-   * body it guards: `git status` over every tracked path plus a census of every
-   * gitignored one. It has no way to tell a write this node made from a write
-   * a peer made at the same moment, so every concurrent peer's output reads as
-   * this node writing outside its declared set. Tracked paths were restored
-   * from this node's stash and gitignored paths went through `revertIgnored`,
-   * at the time a recursive removal, so two write nodes deleted each other's
-   * work and a plain build target lost its whole `dist` tree to a write node
-   * beside it.
-   *
-   * The exclusion is against nodes of EVERY mode, not just other write nodes:
-   * the destructive case has a peer that never enters write mode at all. It
-   * cannot instead be a narrower snapshot, because the guard exists to notice
-   * writes outside the declared set, and a snapshot scoped to that set could
-   * no longer see the thing it is looking for. Excluding only the declared
-   * regions of peers in flight would need this same mutual exclusion to
-   * maintain the registry, and would still miss an out-of-set write that
-   * landed inside a peer's region.
-   *
-   * Grants are first come, first served, so a queued write node is never
-   * starved by a stream of arriving readers.
-   */
-  const treeGate = (() => {
-    const queue: Array<{ readonly exclusive: boolean; readonly grant: () => void }> = []
-    let readers = 0
-    let writing = false
-    const pump = (): void => {
-      while (queue.length > 0) {
-        const next = queue[0]!
-        if (next.exclusive) {
-          if (readers > 0 || writing) return
-          queue.shift()
-          writing = true
-          next.grant()
-          return
-        }
-        if (writing) return
-        queue.shift()
-        readers += 1
-        next.grant()
-      }
-    }
-    return {
-      acquire: (exclusive: boolean): Promise<void> =>
-        new Promise((grant) => {
-          queue.push({ exclusive, grant: () => grant() })
-          pump()
-        }),
-      release: (exclusive: boolean): void => {
-        if (exclusive) writing = false
-        else readers -= 1
-        pump()
-      }
-    }
-  })()
-
   /** Settles one node: gate and dependency checks, refusal, then dispatch. */
   const settle = async (node: PackageNode): Promise<Outcome> => {
     // A red gate is a refusal with the gate report attached; a red data or
@@ -2699,31 +2641,6 @@ export const execute = async (
     return dispatch(node, options.signal)
   }
 
-  const runOne = async (label: string): Promise<void> => {
-    const node = byLabel.get(label)!
-    const started = performance.now()
-    if (!node.dependencies.some((dependency) => notGreen.has(dependency))) reporter.targetStarted(label)
-    // Hold the permit across dispatch so every snapshot and restoration has
-    // the same exclusion, including candidate appliers in execute mode.
-    const exclusive = takesExclusiveTreePermit(node)
-    await treeGate.acquire(exclusive)
-    let outcome: Outcome
-    try {
-      outcome = await settle(node)
-    } finally {
-      treeGate.release(exclusive)
-    }
-    if (outcome.status === "failed" || outcome.status === "skipped") notGreen.add(label)
-    report({
-      label,
-      target: node.rule,
-      status: outcome.status,
-      durationMs: outcome.status === "skipped" ? 0 : performance.now() - started,
-      key: keyFor(node),
-      ...(outcome.error === undefined ? {} : { error: outcome.error })
-    })
-  }
-
   reporter.begin({
     verb: options.verb,
     pattern: options.pattern,
@@ -2736,10 +2653,29 @@ export const execute = async (
   const exit = await Effect.runPromiseExit(
     Effect.scoped(Effect.gen(function*() {
       supervisorRef.current = yield* ServiceSupervisor.make
-      yield* Effect.tryPromise({
-        try: () => Executor.schedule(planned.workList, jobs, runOne, options.signal),
-        catch: (cause) => cause
-      })
+      const treeGate = yield* TreeGate.make(jobs)
+      const runOne = (label: string) =>
+        Effect.gen(function*() {
+          const node = byLabel.get(label)!
+          const started = performance.now()
+          if (!node.dependencies.some((dependency) => notGreen.has(dependency))) reporter.targetStarted(label)
+          // Hold the permit across dispatch so every snapshot and restoration has
+          // the same exclusion, including candidate appliers in execute mode.
+          const outcome = yield* treeGate(
+            takesExclusiveTreePermit(node),
+            Effect.tryPromise({ try: () => settle(node), catch: (cause) => cause }).pipe(Effect.uninterruptible)
+          )
+          if (outcome.status === "failed" || outcome.status === "skipped") notGreen.add(label)
+          report({
+            label,
+            target: node.rule,
+            status: outcome.status,
+            durationMs: outcome.status === "skipped" ? 0 : performance.now() - started,
+            key: keyFor(node),
+            ...(outcome.error === undefined ? {} : { error: outcome.error })
+          })
+        })
+      yield* Executor.scheduleEffect(planned.workList, jobs, runOne, options.signal)
     })).pipe(Effect.provideService(ServiceSupervisor.Output, (spec) =>
       OutputStream.make({
         write: (stream, text) => reporter.toolOutput(spec.key, stream, text),

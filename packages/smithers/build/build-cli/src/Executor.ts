@@ -14,7 +14,12 @@
  * @since 0.1.0
  */
 import * as Target from "@smthrs/targets/Target"
+import * as Cause from "effect/Cause"
+import * as Effect from "effect/Effect"
+import * as Exit from "effect/Exit"
+import * as Queue from "effect/Queue"
 import * as SchemaIssue from "effect/SchemaIssue"
+import type * as Scope from "effect/Scope"
 import * as Os from "node:os"
 import * as NodeUtil from "node:util/types"
 import { entryLimit } from "./Cache.ts"
@@ -263,6 +268,91 @@ const validateWorkList = (targets: ReadonlyArray<Planner.PlannedTarget>): string
 }
 
 /**
+ * Runs a dependency frontier with scoped workers. Each worker releases its
+ * resources before its completion can make a dependent ready.
+ * @category execution
+ * @since 1.0.0
+ */
+export const scheduleEffect = <E, R>(
+  targets: ReadonlyArray<Planner.PlannedTarget>,
+  jobs: number,
+  runOne: (label: string) => Effect.Effect<void, E, R>,
+  signal?: AbortSignal | undefined
+): Effect.Effect<void, Error, Exclude<R, Scope.Scope>> =>
+  Effect.scoped(Effect.gen(function*() {
+    if (!Number.isInteger(jobs) || jobs < 1) {
+      return yield* Effect.fail(
+        new TypeError(
+          `jobs must be a positive integer, received ${typeof jobs === "number" ? String(jobs) : typeof jobs}`
+        )
+      )
+    }
+    const invalid = validateWorkList(targets)
+    if (invalid !== undefined) return yield* Effect.fail(new Error(`scheduler refused the work list: ${invalid}`))
+    const exclusiveLabels = new Set(
+      targets.filter((target) => Target.isExclusive(target.attrs)).map((target) => target.label)
+    )
+    const remaining = new Map<string, number>()
+    const dependents = new Map<string, Array<string>>()
+    const ready: Array<string> = []
+    for (const target of targets) {
+      remaining.set(target.label, target.dependencies.length)
+      if (target.dependencies.length === 0) ready.push(target.label)
+      for (const dependency of target.dependencies) {
+        const entry = dependents.get(dependency)
+        if (entry === undefined) dependents.set(dependency, [target.label])
+        else entry.push(target.label)
+      }
+    }
+    const completed = yield* Queue.make<{ readonly label: string; readonly exit: Exit.Exit<void, E> }>({
+      capacity: jobs
+    })
+    let active = 0
+    let exclusiveActive = false
+    let dispatched = 0
+    let failure: Error | undefined
+    while (true) {
+      if (signal?.aborted) failure ??= Diagnostic.error(signal.reason, "execution aborted")
+      while (failure === undefined && !exclusiveActive && active < jobs && ready.length > 0) {
+        const ordinary = ready.findIndex((label) => !exclusiveLabels.has(label))
+        if (ordinary < 0 && active > 0) break
+        const label = ready.splice(ordinary < 0 ? 0 : ordinary, 1)[0]!
+        exclusiveActive = exclusiveLabels.has(label)
+        active += 1
+        dispatched += 1
+        yield* Effect.scoped(Effect.suspend(() => runOne(label))).pipe(
+          Effect.exit,
+          Effect.flatMap((exit) => Queue.offer(completed, { label, exit })),
+          Effect.forkScoped({ startImmediately: true })
+        )
+        if (signal?.aborted) failure ??= Diagnostic.error(signal.reason, "execution aborted")
+      }
+      if (active === 0) {
+        if (failure !== undefined) return yield* Effect.fail(failure)
+        if (dispatched !== targets.length) {
+          return yield* Effect.fail(
+            new Error(`scheduler stalled after dispatching ${dispatched} of ${targets.length} targets`)
+          )
+        }
+        return
+      }
+      const { label, exit } = yield* Queue.take(completed)
+      if (signal?.aborted) failure ??= Diagnostic.error(signal.reason, "execution aborted")
+      active -= 1
+      if (exclusiveLabels.has(label)) exclusiveActive = false
+      if (Exit.isFailure(exit)) {
+        failure ??= Diagnostic.error(Cause.squash(exit.cause), "scheduled target rejected")
+      } else {
+        for (const dependent of dependents.get(label) ?? []) {
+          const left = (remaining.get(dependent) ?? 1) - 1
+          remaining.set(dependent, left)
+          if (left === 0) ready.push(dependent)
+        }
+      }
+    }
+  }))
+
+/**
  * Drains a dependency-ordered work list with at most `jobs` in flight.
  *
  * Targets with `exclusive: true` attrs run alone. Ready ordinary work drains
@@ -300,103 +390,14 @@ export const schedule = (
   jobs: number,
   runOne: (label: string) => Promise<void>,
   signal?: AbortSignal | undefined
-): Promise<void> => {
-  if (!Number.isInteger(jobs) || jobs < 1) {
-    return Promise.reject(
-      new TypeError(
-        `jobs must be a positive integer, received ${typeof jobs === "number" ? String(jobs) : typeof jobs}`
-      )
-    )
-  }
-  const invalid = validateWorkList(targets)
-  if (invalid !== undefined) return Promise.reject(new Error(`scheduler refused the work list: ${invalid}`))
-  const exclusiveLabels = new Set(
-    targets.filter((target) => Target.isExclusive(target.attrs)).map((target) => target.label)
-  )
-  const remaining = new Map<string, number>()
-  const dependents = new Map<string, Array<string>>()
-  const ready: Array<string> = []
-  for (const target of targets) {
-    remaining.set(target.label, target.dependencies.length)
-    if (target.dependencies.length === 0) ready.push(target.label)
-    for (const dependency of target.dependencies) {
-      const entry = dependents.get(dependency)
-      if (entry === undefined) dependents.set(dependency, [target.label])
-      else entry.push(target.label)
-    }
-  }
-  return new Promise((done, fail) => {
-    let active = 0
-    let exclusiveActive = false
-    let dispatched = 0
-    let settled = false
-    let failure: Error | undefined
-    const abortFailure = (): Error => {
-      const reason: unknown = signal?.reason
-      return Diagnostic.error(reason, "execution aborted")
-    }
-    // A synchronous throw from `runOne` must join the ordinary rejection path:
-    // thrown out of a completion handler it would reject nothing anyone
-    // observes and leave the scheduler waiting forever.
-    const dispatch = (label: string): Promise<void> => {
-      try {
-        return Promise.resolve(runOne(label))
-      } catch (cause) {
-        return Promise.reject(cause)
-      }
-    }
-    const pump = (): void => {
-      while (failure === undefined && !exclusiveActive && active < jobs && ready.length > 0) {
-        const ordinary = ready.findIndex((label) => !exclusiveLabels.has(label))
-        if (ordinary < 0 && active > 0) break
-        const label = ready.splice(ordinary < 0 ? 0 : ordinary, 1)[0]!
-        exclusiveActive = exclusiveLabels.has(label)
-        active += 1
-        dispatched += 1
-        dispatch(label).then(() => {
-          active -= 1
-          if (exclusiveLabels.has(label)) exclusiveActive = false
-          for (const dependent of dependents.get(label) ?? []) {
-            const left = (remaining.get(dependent) ?? 1) - 1
-            remaining.set(dependent, left)
-            if (left === 0) ready.push(dependent)
-          }
-          pump()
-        }, (cause: unknown) => {
-          active -= 1
-          if (exclusiveLabels.has(label)) exclusiveActive = false
-          // Keep the first fault: a later one is usually a consequence of it.
-          failure ??= Diagnostic.error(cause, "scheduled target rejected")
-          pump()
-        })
-      }
-      if (settled || active > 0) return
-      if (failure !== undefined) {
-        settled = true
-        signal?.removeEventListener("abort", onAbort)
-        fail(failure)
-        return
-      }
-      if (ready.length === 0) {
-        settled = true
-        signal?.removeEventListener("abort", onAbort)
-        // Validation already proved every target becomes ready, so this only
-        // ever resolves. The alternative branch stays as a backstop: a
-        // scheduler that quietly resolved over undispatched work would report
-        // a green summary for a run that dropped targets.
-        if (dispatched === targets.length) done()
-        else fail(new Error(`scheduler stalled after dispatching ${dispatched} of ${targets.length} targets`))
-      }
-    }
-    const onAbort = (): void => {
-      failure ??= abortFailure()
-      pump()
-    }
-    if (signal?.aborted) failure = abortFailure()
-    else signal?.addEventListener("abort", onAbort, { once: true })
-    pump()
-  })
-}
+): Promise<void> =>
+  Effect.runPromise(scheduleEffect(
+    targets,
+    jobs,
+    // Legacy Promise callers own cancellation of their work; always join it.
+    (label) => Effect.tryPromise({ try: () => runOne(label), catch: (cause) => cause }).pipe(Effect.uninterruptible),
+    signal
+  ))
 
 /** Effect's own rendering of a schema issue tree, built once. */
 const formatSchemaIssue = SchemaIssue.makeFormatterDefault()
