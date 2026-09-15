@@ -11,7 +11,7 @@ import { useController } from "./ControllerContext"
 import { stampFlows } from "./FlowStamp"
 import { WIKI_DISPLAY_NAME, WIKI_GRAPH_ALL_SCOPE } from "./state/AppState"
 import type { WorldDocument } from "./state/AppState"
-import { ConfirmDialog, SurfaceHeader } from "./SurfaceChrome"
+import { SurfaceHeader } from "./SurfaceChrome"
 import { linkGraphOf, linksOf, neighbourhoodOf } from "./wiki/VaultAdapter"
 
 
@@ -20,7 +20,7 @@ import { linkGraphOf, linksOf, neighbourhoodOf } from "./wiki/VaultAdapter"
 
 /*
  * The Wiki pane beside the chat: the notes, the open note's editor and link
- * rail, or the graph mode, and the delete confirm. It reads its own session
+ * rail, or the graph mode. It reads its own session
  * fields, so selecting a note repaints this pane and not the transcript.
  * `documents` is the shell's path-ordered list, the same array the cards read.
  */
@@ -30,19 +30,12 @@ export function WorldSurface({ documents }: { readonly documents: ReadonlyArray<
     q.from({ session: controller.store.collections.sessions }).select(({ session }) => ({
       id: session.id,
       selectedWorldDocumentId: session.selectedWorldDocumentId,
-      pendingWorldDeleteId: session.pendingWorldDeleteId,
       wikiPane: session.wikiPane,
       wikiGraphPath: session.wikiGraphPath
     }))
   )
   const session = sessionRows[0] ?? controller.store.session()
   const canShowFactory = controller.commands.find("factory.show") !== undefined
-  /*
-   * §10.6: the delete question lives in the store, not here — a component is
-   * a projection, never an authority, and the local-state version was
-   * bypassed entirely by `/wiki.delete <id>` typed into the composer.
-   */
-  const pendingDelete = documents.find((document) => document.id === (session.pendingWorldDeleteId ?? null))
   const selected = documents.find((document) => document.id === session.selectedWorldDocumentId) ?? documents[0]
   const selectedPath = selected?.path
   const graphMode = session.wikiPane === "graph"
@@ -225,15 +218,6 @@ export function WorldSurface({ documents }: { readonly documents: ReadonlyArray<
           ) :
           null}
       </div>
-      <ConfirmDialog
-        open={pendingDelete !== undefined}
-        title={`Delete ${pendingDelete?.title ?? "note"}?`}
-        body={`This note leaves the ${WIKI_DISPLAY_NAME}. You can write it again, but Smithers will treat it as new.`}
-        confirmLabel="Delete"
-        destructive
-        onConfirm={() => controller.runCommand("wiki.delete.confirm")}
-        onCancel={() => controller.runCommand("wiki.delete.cancel")}
-      />
     </section>
   )
 }

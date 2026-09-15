@@ -1160,6 +1160,19 @@ export const createAppController = (
     setWikiCardView
   } = actors.pair(ctx, (context, select) => createWorldController(context, { nextOrdinal: store.nextOrdinal, cloudWiki: select(cloudWiki) }))
 
+  const { askWorldDelete } = actors.pair(ctx, (context, select) => ({
+    askWorldDelete: (id: string): string | void => {
+      const refusal = select(removeWorldDocument)(id)
+      const guide = context.store.session().guide
+      if (refusal === undefined && context.commandActor === "user" && guide && !guide.finished && guide.conversationOpen) {
+        // The confirmation is now the top keyboard layer; retire the command
+        // composer without consuming the dialog's own accessible Escape cancel.
+        void select(guideAct)("close")
+      }
+      return refusal
+    }
+  }))
+
   const changeDraft = (draft: string): void => {
     store.dispatch({ type: "composer.changed", actor: "user", draft })
   }
@@ -1493,7 +1506,7 @@ export const createAppController = (
     selectWorldDocument,
     changeWorldDocument,
     createWorldDocument,
-    removeWorldDocument,
+    removeWorldDocument: askWorldDelete,
     confirmWorldDelete,
     cancelWorldDelete,
     openWorldDocument,

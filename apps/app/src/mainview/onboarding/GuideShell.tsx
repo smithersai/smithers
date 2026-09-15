@@ -34,6 +34,7 @@ import { useCoarsePointer } from "../runtime/PointerMode"
 import { legacyLibrarianFailure, librarianFailureMessage } from "../state/LibrarianLaunch"
 import { LibrarianRunChips } from "./LibrarianRunChips"
 import { guideActionState } from "./actionState"
+import { WikiDeleteDialog } from "../WikiDeleteDialog"
 
 /** An original, short opt-in interval; no autoplay or copyrighted game audio. */
 function chime() {
@@ -623,6 +624,7 @@ export function GuideShell({ children, clock = guideClock }: { children: ReactNo
           </GuideButton>
         )}
       </footer>
+      <WikiDeleteDialog />
     </div>
     </InTutorial>
     </GuideComposerHost.Provider>

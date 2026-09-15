@@ -118,7 +118,11 @@ export const openApp = async (page: Page): Promise<void> => {
 /** Open the transient Command-K composer and wait for its real input focus. */
 export const openComposer = async (page: Page): Promise<void> => {
   const input = page.getByTestId("composer-input")
-  if (!(await input.isVisible())) await page.keyboard.press("ControlOrMeta+k")
+  const closed = !(await input.isVisible()) || await input.evaluate((element) => element.closest('[inert], [aria-hidden="true"]') !== null)
+  if (closed) await page.keyboard.press("ControlOrMeta+k")
+  // A visible guide composer can be unfocused after interacting with a card.
+  // Focus its real input; Command-K would instead toggle the guide dock closed.
+  else if (!(await input.evaluate((element) => element === document.activeElement))) await input.click()
   await expect(input).toBeVisible()
   await expect(input).toBeFocused()
 }
@@ -131,11 +135,27 @@ export const command = async (page: Page, text: string): Promise<void> => {
   await input.press("Enter")
 }
 
-/** Dismiss the composer through its keyboard path and verify that it closed. */
+/** Dismiss the composer unless a confirmation dialog already owns keyboard input. */
 export const closeComposer = async (page: Page): Promise<void> => {
   const input = page.getByTestId("composer-input")
-  for (let attempt = 0; attempt < 3 && await input.isVisible(); attempt += 1) {
+  const modal = page.locator('.sui-dialog-content[role="dialog"]:visible').first()
+  const inactive = async (): Promise<boolean> => !(await input.isVisible()) || await modal.isVisible()
+  const waitForInactive = async (): Promise<boolean> => {
+    try {
+      await expect.poll(inactive, { timeout: 750 }).toBe(true)
+      return true
+    } catch {
+      return false
+    }
+  }
+  // Enter closes a command composer itself. Let that state transition and its
+  // dock animation settle before emitting any new physical Escape. A modal
+  // is also an inactive composer: it is now the top keyboard layer, and a
+  // further Escape would correctly cancel that dialog.
+  if (await waitForInactive()) return
+  for (let attempt = 0; attempt < 3; attempt += 1) {
     await page.keyboard.press("Escape")
+    if (await waitForInactive()) return
   }
   await expect(input).toBeHidden()
 }

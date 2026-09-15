@@ -40,6 +40,7 @@ import {
   readDraftRecovery,
   writeDraftRecovery
 } from "./DraftRecovery"
+import { clearWikiRecovery, readWikiRecovery, writeWikiRecovery } from "./WikiRecovery"
 import { archiveNotice, conversationNotes } from "./ConversationArchive"
 import { createWorkspaceViews, projectWorkspaceCard, snapshotCard } from "./WorkspaceViews"
 import { framePath } from "../runtime/FrameHistory"
@@ -1179,6 +1180,7 @@ const initializeAppStore = async (resolved: ResolvedPersistence, options: { read
   let resolvedBackend = resolved.backend
   const draftRecoveryStorage = resolved.mode === "memory" ? undefined : bootRecordStorage()
   const draftRecovery = readDraftRecovery(draftRecoveryStorage)
+  const wikiRecovery = readWikiRecovery(draftRecoveryStorage)
   /* Validate persisted rows before creating collections. Compatible older
    * rows migrate; a newer store stays untouched. Only a successful open
    * advances the version stamp. */
@@ -1330,6 +1332,9 @@ const initializeAppStore = async (resolved: ResolvedPersistence, options: { read
     const recoveredDraftRaw = transition.type === "composer.changed"
       ? writeDraftRecovery(draftRecoveryStorage, revision, transition.draft)
       : undefined
+    const recoveredWikiRaw = transition.type === "world.document.upserted" && transition.actor === "user"
+      ? writeWikiRecovery(draftRecoveryStorage, revision, transition.document)
+      : undefined
     const transaction = createTransaction({
       id: `app-transition-${revision}`,
       autoCommit: transition.type !== "composer.changed" || !batchesDraftCommits,
@@ -1423,7 +1428,10 @@ const initializeAppStore = async (resolved: ResolvedPersistence, options: { read
         && current.guide?.transcript?.[`message-${current.turnId}-user`]?.owned === true
       const recordGuideCard = (card: Card, ordinal?: number) => {
         const fromTurn = transition.actor === "smithers" || ("turnId" in transition && transition.turnId === current.turnId)
-        if (current.phase === "responding" && tutorialTurn && fromTurn) recordGuideEntry(card.id, "chat", ordinal)
+        const explicitWikiOrForm = card.kind === "world" || card.kind === "wiki-links" || card.kind === "wiki-graph" ||
+          (card.kind === "flow-form" && card.payload.via === "user")
+        const explicitChatAct = transition.actor === "user" && current.guide?.conversationOpen === true && explicitWikiOrForm
+        if (explicitChatAct || (current.phase === "responding" && tutorialTurn && fromTurn)) recordGuideEntry(card.id, "chat", ordinal)
         else if (current.guide && isLessonCard(card, current.guide)) recordGuideEntry(card.id, "lesson", ordinal)
       }
       const insertMessage = (row: Message): void => {
@@ -3421,6 +3429,9 @@ const initializeAppStore = async (resolved: ResolvedPersistence, options: { read
         clearDraftRecovery(draftRecoveryStorage, recoveredDraftRaw)
       }, () => {})
     }
+    if (recoveredWikiRaw !== undefined) {
+      void transaction.isPersisted.promise.then(() => clearWikiRecovery(draftRecoveryStorage, recoveredWikiRaw), () => {})
+    }
     if (transition.type === "composer.changed" && batchesDraftCommits) {
       const pending = { transaction, revision, deadline: createdAt + DRAFT_COMMIT_MAX_MS, recoveryRaw: recoveredDraftRaw }
       pendingDraft = pending
@@ -3440,6 +3451,15 @@ const initializeAppStore = async (resolved: ResolvedPersistence, options: { read
       // SQLite already contains this revision (or something newer). A record
       // left by a page that died before its acknowledgement is no longer needed.
       clearDraftRecovery(draftRecoveryStorage, draftRecovery.raw)
+    }
+  }
+
+  if (wikiRecovery !== undefined) {
+    if (wikiRecovery.revision > session().revision) {
+      await dispatch({ type: "world.document.upserted", actor: "system", document: wikiRecovery.document, select: false }).isPersisted.promise
+      clearWikiRecovery(draftRecoveryStorage, wikiRecovery.raw)
+    } else {
+      clearWikiRecovery(draftRecoveryStorage, wikiRecovery.raw)
     }
   }
 

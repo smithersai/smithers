@@ -88,6 +88,8 @@ export type MarkdownEditorError = {
 export type MarkdownEditorModule = {
   readonly Crepe: new(options: { root: HTMLElement; defaultValue: string }) => CrepeInstance;
   readonly replaceAll: (markdown: string, flush?: boolean) => unknown;
+  /** Register a ProseMirror transaction listener before the editor is created. */
+  readonly listenImmediately?: (editor: CrepeInstance, handler: (markdown: string) => void) => void;
 };
 
 export type MarkdownEditorProps = {
@@ -233,7 +235,8 @@ type CrepeListener = {
 };
 
 type CrepeInstance = {
-  editor: { action: (command: unknown) => unknown };
+  editor: { action: (command: unknown) => unknown; use?: (plugin: unknown) => unknown };
+  getMarkdown?: () => string;
   on: (configure: (listener: CrepeListener) => void) => unknown;
   create: () => Promise<unknown>;
   destroy: () => Promise<unknown>;
@@ -293,8 +296,25 @@ const renderedHeadingFor = (host: HTMLElement, markdown: string, line: number): 
 
 /** The default module loader: the two `@milkdown/*` dynamic imports. */
 const loadMilkdown = async (): Promise<MarkdownEditorModule> => {
-  const [{ Crepe }, { replaceAll }] = await Promise.all([import("@milkdown/crepe"), import("@milkdown/kit/utils")]);
-  return { Crepe: Crepe as unknown as MarkdownEditorModule["Crepe"], replaceAll };
+  const [{ Crepe }, { replaceAll, $prose }, { serializerCtx }, { Plugin }] = await Promise.all([
+    import("@milkdown/crepe"),
+    import("@milkdown/kit/utils"),
+    import("@milkdown/kit/core"),
+    import("@milkdown/kit/prose/state"),
+  ]);
+  return {
+    Crepe: Crepe as unknown as MarkdownEditorModule["Crepe"],
+    replaceAll,
+    listenImmediately: (editor, handler) => {
+      editor.editor.use?.($prose((ctx) => new Plugin({
+        view: () => ({
+          update: (view, previous) => {
+            if (!previous.doc.eq(view.state.doc)) handler(ctx.get(serializerCtx)(view.state.doc));
+          },
+        }),
+      })));
+    },
+  };
 };
 
 export const MarkdownEditor = forwardRef<MarkdownEditorHandle, MarkdownEditorProps>(function MarkdownEditor(
@@ -349,10 +369,21 @@ export const MarkdownEditor = forwardRef<MarkdownEditorHandle, MarkdownEditorPro
   }
   const editorState = attempt.state;
 
+  const currentMarkdown = (): string => {
+    const crepe = crepeRef.current;
+    if (!crepe || !readyRef.current || crepe.getMarkdown === undefined) return lastMarkdownRef.current;
+    try {
+      return crepe.getMarkdown();
+    } catch {
+      // A teardown racing pagehide still has the last emitted Markdown.
+      return lastMarkdownRef.current;
+    }
+  };
+
   useImperativeHandle(
     ref,
     () => ({
-      getMarkdown: () => lastMarkdownRef.current,
+      getMarkdown: currentMarkdown,
       setMarkdown: (markdown: string) => {
         if (markdown === lastMarkdownRef.current) return;
         lastMarkdownRef.current = markdown;
@@ -465,7 +496,7 @@ export const MarkdownEditor = forwardRef<MarkdownEditorHandle, MarkdownEditorPro
       }
       if (cancelled) return;
       try {
-        const { Crepe, replaceAll } = modules;
+        const { Crepe, replaceAll, listenImmediately } = modules;
         replaceAllRef.current = replaceAll;
         const editor = new Crepe({ root: host, defaultValue: seed });
         crepe = editor;
@@ -474,6 +505,7 @@ export const MarkdownEditor = forwardRef<MarkdownEditorHandle, MarkdownEditorPro
           if (released) return;
           const updated = (_ctx: unknown, markdown: string): void => {
             if (released || !readyRef.current) return;
+            if (markdown === lastMarkdownRef.current) return;
             lastMarkdownRef.current = markdown;
             if (suppressEchoRef.current > 0) return; // programmatic replaceAll echo
             onChangeRef.current?.(markdown);
@@ -485,6 +517,11 @@ export const MarkdownEditor = forwardRef<MarkdownEditorHandle, MarkdownEditorPro
             if (index >= 0) handlers!.splice(index, 1);
           };
           listener.markdownUpdated(updated);
+        });
+        listenImmediately?.(editor, (markdown) => {
+          if (released || !readyRef.current || suppressEchoRef.current > 0 || markdown === lastMarkdownRef.current) return;
+          lastMarkdownRef.current = markdown;
+          onChangeRef.current?.(markdown);
         });
         creating = Promise.resolve(editor.create());
         await creating;

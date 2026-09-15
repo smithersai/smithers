@@ -45,6 +45,7 @@ import { visibleToasts } from "./state/Toasts"
 import { useCardRows, useWorkflowCatalogRows } from "./state/useCardRows"
 import { chatEntryIds, InTutorial, tutorialTranscript, workspaceTranscript } from "./onboarding/transcriptScope"
 import { WorldSurface } from "./WorldSurface"
+import { WikiDeleteDialog } from "./WikiDeleteDialog"
 
 type TranscriptEntry =
   | { readonly kind: "message"; readonly message: Message }
@@ -664,6 +665,7 @@ function AppContent() {
         }}
         onCancel={() => controller.runCommand("admin.reset.cancel")}
       />
+      {composerHost === undefined ? <WikiDeleteDialog /> : null}
     </div>
   )
 }

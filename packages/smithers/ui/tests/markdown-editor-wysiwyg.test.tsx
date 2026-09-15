@@ -62,6 +62,8 @@ function stubEditor() {
   const readonlyCalls: boolean[] = [];
   const replaced: string[] = [];
   let emit: ((markdown: string) => void) | undefined;
+  let immediate: ((markdown: string) => void) | undefined;
+  let liveMarkdown = "";
 
   const module: MarkdownEditorModule = {
     Crepe: class {
@@ -70,13 +72,18 @@ function stubEditor() {
           // `replaceAll` returns a tagged command; running it re-emits the
           // document exactly as Milkdown does, which is the echo under test.
           const markdown = (command as { markdown: string }).markdown;
+          liveMarkdown = markdown;
           replaced.push(markdown);
           emit?.(markdown);
           return undefined;
         },
       };
       constructor(readonly options: { root: HTMLElement; defaultValue: string }) {
+        liveMarkdown = options.defaultValue;
         created.push(options.defaultValue);
+      }
+      getMarkdown() {
+        return liveMarkdown;
       }
       on(configure: (listener: { markdownUpdated: (handler: (ctx: unknown, md: string) => void) => void }) => void) {
         configure({
@@ -96,6 +103,9 @@ function stubEditor() {
       }
     } as unknown as MarkdownEditorModule["Crepe"],
     replaceAll: (markdown: string) => ({ markdown }),
+    listenImmediately: (_editor, handler) => {
+      immediate = handler;
+    },
   };
 
   return {
@@ -105,7 +115,14 @@ function stubEditor() {
     readonlyCalls,
     replaced,
     load: async () => module,
-    typeInEditor: (markdown: string) => emit?.(markdown),
+    typeInEditor: (markdown: string) => {
+      liveMarkdown = markdown;
+      emit?.(markdown);
+    },
+    changeWithoutEmit: (markdown: string) => {
+      liveMarkdown = markdown;
+      immediate?.(markdown);
+    },
   };
 }
 
@@ -146,6 +163,18 @@ describe("MarkdownEditor (WYSIWYG path)", () => {
     await act(async () => stub.typeInEditor("start and more"));
     expect(changes).toEqual(["start and more"]);
     expect((handle as unknown as MarkdownEditorHandle).getMarkdown()).toBe("start and more");
+  });
+
+  test("publishes a ProseMirror input before Milkdown's debounced callback emits it", async () => {
+    const stub = stubEditor();
+    const changes: string[] = [];
+    await render(<MarkdownEditor value="start" fallback={false} loadEditor={stub.load} onChange={(markdown) => changes.push(markdown)} />);
+
+    stub.changeWithoutEmit("visible before debounce");
+    expect(changes).toEqual(["visible before debounce"]);
+
+    await act(async () => stub.typeInEditor("visible before debounce"));
+    expect(changes).toEqual(["visible before debounce"]);
   });
 
   test("setMarkdown replaces the document and suppresses the resulting echo", async () => {
