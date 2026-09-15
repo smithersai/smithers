@@ -4,8 +4,8 @@
  * Discovery walks the filesystem from the canonical workspace root and never
  * consults git: gitignore status is irrelevant, so a gitignored or generated
  * PACKAGE.ts participates like any other. The walk prunes `.git`,
- * `node_modules`, nested checkouts (any directory carrying its own `.git`),
- * and the resolved cache directory, admits declaration files
+ * `node_modules`, distribution output (`dist`), nested checkouts (any directory
+ * carrying its own `.git`), and the resolved cache directory, admits declaration files
  * through the shared SafeFs policy, and rejects a symlinked declaration file
  * outright.
  *
@@ -212,7 +212,10 @@ const walkDirectory = async (walk: Walk, relative: string): Promise<void> => {
   }
   for (const child of entries) {
     walk.signal?.throwIfAborted()
-    if (child.name === ".git" || child.name === "node_modules") continue
+    // Distribution trees are build products, never package declarations.
+    // Prune before any probes: a concurrent release build can replace them
+    // while unrelated targets are being planned.
+    if (child.name === ".git" || child.name === "node_modules" || child.name === "dist") continue
     const childRelative = relative === "" ? child.name : `${relative}/${child.name}`
     if (walk.repositories.has(childRelative)) continue
     if (pruned(walk, childRelative)) continue

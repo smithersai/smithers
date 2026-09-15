@@ -36,12 +36,19 @@ The walk then lists every `PACKAGE.ts` in the tree. It is ignore-blind: it
 never consults git, so gitignore status is irrelevant and a generated
 `PACKAGE.ts` participates exactly like a committed one.
 
-The walk prunes four things and never descends into them:
+The walk prunes these boundaries and never descends into them:
 
 - `.git`
 - `node_modules`
+- `dist`, the distribution output directory at any depth
 - any directory carrying its own `.git`, that is, a nested checkout
 - the resolved cache directory
+- the fixed `.flows/store` subtree
+
+Distribution output can contain copied fixture declarations and can be replaced
+by a concurrent release build. It is never a declaration source, so discovery
+prunes it before probing or reading its contents. Other generated declarations
+remain discoverable regardless of gitignore status.
 
 No path inside the cache directory is ever listed, so cache contents cannot
 feed input discovery or a digest, and the directory's name never enters a

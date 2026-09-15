@@ -257,6 +257,32 @@ describe("force-spec routing", () => {
 })
 
 describe("ignore-blind discovery", () => {
+  it("prunes distribution output before probing nested declarations", async () => {
+    const root = await temporaryWorkspace()
+    await write(root, "WORKSPACE.ts", workspaceModule)
+    await write(
+      root,
+      "packages/run-store/PACKAGE.ts",
+      `import { Smithers as S } from "@smthrs/targets"
+export const Package = S.Package({ targets: { source: S.Filegroup({ srcs: [] }) } })
+`
+    )
+    // Pack output can contain entire fixture workspaces and obsolete build
+    // declarations. None may become planning input, at the root or below a
+    // package, even while a release replaces its distribution tree.
+    for (const directory of ["dist", "packages/run-store/dist"]) {
+      await write(root, `${directory}/WORKSPACE.ts`, workspaceModule)
+      await write(root, `${directory}/esm/test/BUILD.ts`, "obsolete declaration\n")
+      await write(root, `${directory}/esm/test/PACKAGE.ts`, "invalid declaration\n")
+    }
+    const before = await PackageDiscovery.discover(root)
+    await Fs.rename(NodePath.join(root, "packages/run-store/dist"), NodePath.join(root, "dist/previous"))
+    await write(root, "packages/run-store/dist/esm/test/PACKAGE.ts", "replacement declaration\n")
+    const after = await PackageDiscovery.discover(root)
+    expect(before.packageFiles).toEqual(["packages/run-store/PACKAGE.ts"])
+    expect(after.packageFiles).toEqual(before.packageFiles)
+  })
+
   it("indexes a gitignored PACKAGE.ts like any other, with no git repository at all", async () => {
     const root = await temporaryWorkspace()
     await write(root, ".gitignore", "generated/\n")
