@@ -96,6 +96,9 @@ test("every app test belongs to an executable runner", () => {
   expect(owners("e2e/site/landing-start.spec.ts")).toEqual(["Playwright site"])
   expect(owners("e2e/playwright/tutorial-tip.spec.ts")).toContain("Playwright site")
   expect(owners("e2e/real/chat-tools.spec.ts")).toEqual(["Playwright real"])
+  // The real tier's coverage gate is its own source, tested by Bun rather than
+  // driven by Playwright, so the unit suite owns it.
+  expect(owners("e2e/real/coverage/gate.test.ts")).toEqual(["unit"])
   expect(owners("e2e/real/Unassigned.test.ts")).toEqual([])
   expect(owners("e2e/site/Unassigned.test.ts")).toEqual([])
   expect(owners("e2e/Unassigned.spec.ts")).toEqual([])

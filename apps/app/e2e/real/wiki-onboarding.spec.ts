@@ -1,6 +1,7 @@
 import type { Page } from "@playwright/test"
 import { scenario } from "./coverage/types"
 import { closeComposer, command, expect, openApp, test } from "./support"
+import { fixtureInputText } from "./support/values"
 
 test.setTimeout(90_000)
 
@@ -41,7 +42,8 @@ test(
     await command(page, "/world")
     await closeComposer(page)
     await expect(page.getByRole("region", { name: "Smithers Wiki state" })).toBeVisible()
-    const note = await makeNote(page, `world-alias-${Date.now()}`)
+    const marker = fixtureInputText(`world-alias-${Date.now()}`)
+    const note = await makeNote(page, marker)
 
     await command(page, `/world.select ${note.id}`)
     await closeComposer(page)

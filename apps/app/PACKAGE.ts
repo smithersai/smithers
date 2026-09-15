@@ -105,7 +105,7 @@ const check = Smithers.Typecheck({
 // scripts/repo-contract/README.md for the denominator exception.
 const unitTests = Smithers.NodeTest({
   runtime: Smithers.Runtime.Bun({ version: ">=1.4.0" }),
-  runner: Smithers.testSuite(["src", "e2e/contracts", "scripts"]),
+  runner: Smithers.testSuite(["src", "e2e/contracts", "e2e/real/coverage", "scripts"]),
   // Conformance reads harnesses, configuration and workspace vocabularies.
   // Discovery paths alone do not contribute to the target's input identity.
   srcs: [
