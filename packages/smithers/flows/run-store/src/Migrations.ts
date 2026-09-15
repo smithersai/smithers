@@ -12,6 +12,7 @@ import * as Layer from "effect/Layer"
 import { initial } from "./migrations/0001_initial.ts"
 import { lineage } from "./migrations/0002_lineage.ts"
 import { executionRevisions } from "./migrations/0003_execution_revisions.ts"
+import { waitingRequest } from "./migrations/0004_waiting_request.ts"
 
 /**
  * The run store's namespaced migration set, for composition with the other
@@ -26,7 +27,8 @@ export const set: DatabaseMigrations.MigrationSet = {
   migrations: {
     "0001_initial": initial,
     "0002_lineage": lineage,
-    "0003_execution_revisions": executionRevisions
+    "0003_execution_revisions": executionRevisions,
+    "0004_waiting_request": waitingRequest
   }
 }
 

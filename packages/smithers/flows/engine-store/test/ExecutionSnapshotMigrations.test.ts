@@ -19,7 +19,7 @@ describe("execution snapshot migration ladder", () => {
         ...set,
         migrations: Object.fromEntries(
           Object.entries(set.migrations).filter(([key]) =>
-            !(set.namespace === "run-store" && key === "0003_execution_revisions") &&
+            !(set.namespace === "run-store" && key >= "0003_execution_revisions") &&
             !(set.namespace === "engine-store" && key >= "0006_execution_listing")
           )
         )

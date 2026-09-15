@@ -666,6 +666,17 @@ describe("HumanTask parks", () => {
         token: DurableDeferred.tokenFromExecutionId(HumanTask.deferred("release", 1), {
           flow: Host,
           executionId: "human-park"
+        }),
+        // The question travels with the park. A reader of the parked row can
+        // render the gate without the action payload, which is the whole
+        // reason a nested `HumanTask` used to be unanswerable from an inbox.
+        request: JSON.stringify({
+          task: "human",
+          name: "release",
+          kind: "confirm",
+          prompt: "Ship it?",
+          attempt: 1,
+          maxAttempts: HumanTask.defaultMaxAttempts
         })
       })
     }).pipe(
@@ -691,6 +702,16 @@ describe("HumanTask parks", () => {
           token: DurableDeferred.tokenFromExecutionId(HumanTask.deferred("release", 2), {
             flow: Host,
             executionId: "human-reask"
+          }),
+          // The re-ask declares the attempt it is on, so an inbox can say how
+          // much of the budget a refused answer has already spent.
+          request: JSON.stringify({
+            task: "human",
+            name: "release",
+            kind: "confirm",
+            prompt: "Ship it?",
+            attempt: 2,
+            maxAttempts: HumanTask.defaultMaxAttempts
           })
         })
       }),

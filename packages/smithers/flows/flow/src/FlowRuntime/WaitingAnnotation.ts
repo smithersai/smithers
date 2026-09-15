@@ -17,6 +17,14 @@ import { FlowInstance } from "./FlowInstance.ts"
  * reason), `wakeAt` an absolute deadline, and `token` compare-and-swap
  * material a wake handler matches against.
  *
+ * `request` is what the wait declares ABOUT itself, as JSON text, for a reader
+ * rather than for a matcher: the question a `HumanTask` is parked on, its
+ * kind, and its attempt budget. Nothing routes on it. It exists because `reason` and `token`
+ * say only that a person owes the run an answer and which wait point holds it,
+ * so an approvals inbox reading a parked run could name the gate and never
+ * state the question — which is what left run-3's `coding-clarification`
+ * unanswerable.
+ *
  * @category models
  * @since 0.1.0
  */
@@ -24,6 +32,7 @@ export interface WaitingAnnotation {
   readonly reason: string
   readonly wakeAt?: number | undefined
   readonly token?: string | undefined
+  readonly request?: string | undefined
 }
 
 /**
@@ -37,7 +46,13 @@ export interface WaitingAnnotation {
 export const WaitingAnnotation = Schema.Struct({
   reason: Schema.String,
   wakeAt: Schema.optional(Schema.Number),
-  token: Schema.optional(Schema.String)
+  token: Schema.optional(Schema.String),
+  // JSON TEXT, not a decoded value. `Flow.Park` carries this struct, and a
+  // recursive `Json` schema here pushed `Flow.Outcome`'s inference past
+  // TypeScript's instantiation depth; a string also keeps one spelling of the
+  // question from the declaring flow all the way to the durable column, which
+  // stores exactly this text under a `json_valid` check.
+  request: Schema.optional(Schema.String)
 })
 
 /**

@@ -693,7 +693,7 @@ describe("fence", () => {
     ["engine-store 3008 below the installed plan block", [3008]],
     ["engine-store 3007 below the installed plan block", [3007, 3008]],
     ["engine-store 3006 below the installed plan block", [3006, 3007, 3008]],
-    ["the previous engine and run-store migration sets", [1003, 3006, 3007, 3008]]
+    ["the previous engine and run-store migration sets", [1003, 1004, 3006, 3007, 3008]]
   ]
   for (const [name, omitted] of upgrades) {
     it.effect(`restores, fences, and resumes with ${name}`, () =>

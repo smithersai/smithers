@@ -558,6 +558,35 @@ export const action: Action.Declared<
 /** The payload the action is called with, as its implementation reads it. */
 type Payload = typeof action.payloadSchema.Type
 
+/**
+ * The question a park publishes about itself, as the JSON text the durable
+ * waiting row stores.
+ *
+ * It is the payload's own fields, narrowed to what an interface needs to
+ * render an answer box and refuse a bad answer before a person sends it: the
+ * kind picks the control, the prompt is the question, `options` fills a
+ * select, `schema` validates a JSON answer, and the two attempt numbers say
+ * how much of the budget is left. The answer VALUE never appears here — this
+ * describes the question, not what anybody said.
+ *
+ * @private
+ */
+const declaredQuestion = (
+  payload: Payload,
+  attempt: number,
+  maxAttempts: number
+): string =>
+  JSON.stringify({
+    task: "human",
+    name: payload.name,
+    kind: payload.kind,
+    prompt: payload.prompt,
+    attempt,
+    maxAttempts,
+    ...(payload.options === undefined ? {} : { options: [...payload.options] }),
+    ...(payload.schema === undefined ? {} : { schema: payload.schema })
+  })
+
 /** Builds the failure a task settles with, with the reasons it refused. */
 const failed = (
   payload: Payload,
@@ -817,7 +846,12 @@ export const layer: Layer.Layer<never, never, Crypto.Crypto | FlowRuntime> = act
       })
       // Declared rather than left to a driver's derivation, so the run parks
       // under `approval` carrying the ONE wait point that is currently open.
-      yield* annotateWaiting({ reason: "approval", token })
+      // The question travels with the park for a different reason than the
+      // token does: the token addresses the wait, and the question is what an
+      // inbox has to render for a person to answer it at all. Without it a
+      // parked run carried nothing but a wait name, so run-3's
+      // `coding-clarification` could be listed and never asked.
+      yield* annotateWaiting({ reason: "approval", token, request: declaredQuestion(payload, attempt, maxAttempts) })
       const settled = yield* attemptOnce(payload, attempt, deadline)
       // The attempt is over either way, so the declared park is over too. A
       // raced attempt awaits on a copied instance, so the branch that resolved

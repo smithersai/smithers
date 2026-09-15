@@ -62,7 +62,7 @@ describe("run-store migrations", () => {
       expect(applied).toEqual([[1001, "run-store_initial"], [1002, "run-store_lineage"], [
         1003,
         "run-store_execution_revisions"
-      ]])
+      ], [1004, "run-store_waiting_request"]])
     }))
 
   for (const missing of ["owner_host_id", "owner_pid", "owner_nonce", "heartbeat_at_ms"] as const) {

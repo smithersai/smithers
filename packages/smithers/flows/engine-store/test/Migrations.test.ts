@@ -169,6 +169,7 @@ describe("durable engine migrations", () => {
           "state_json",
           "status",
           "waiting_reason",
+          "waiting_request",
           "waiting_token",
           "waiting_wake_at_ms"
         ],

@@ -4,8 +4,8 @@
  *
  * A parked run keeps the `suspended` status the run store admits; there is
  * no `waiting` status. The waiting taxonomy lives beside it on the run row
- * in the `waiting_reason`, `waiting_wake_at_ms`, and `waiting_token`
- * columns, written by `park` and cleared by `wake`. See
+ * in the `waiting_reason`, `waiting_wake_at_ms`, `waiting_token`, and
+ * `waiting_request` columns, written by `park` and cleared by `wake`. See
  * `docs/concepts/durable-waits.md`.
  *
  * @since 0.1.0
@@ -198,7 +198,19 @@ export type WaitingReason = typeof WaitingReason.Type
 export const Waiting = Schema.Struct({
   reason: WaitingReason,
   wakeAt: Schema.optional(NonNegativeSafeInt),
-  token: Schema.optional(Schema.NonEmptyString)
+  token: Schema.optional(Schema.NonEmptyString),
+  /**
+   * What the wait declared about itself: for a `HumanTask` park, the kind of
+   * answer it wants, the prompt, and the attempt budget.
+   *
+   * `reason` and `token` say that a person owes the run an answer and which
+   * wait point holds it. Neither says what was asked, and the question lives
+   * in an action payload of an execution that has released its owner, so a
+   * reader had nothing to render but the wait's own name. This is the question
+   * itself, as the JSON TEXT the declaring flow wrote, stored and cleared with
+   * the other waiting columns.
+   */
+  request: Schema.optional(Schema.String)
 })
 
 /**
@@ -219,7 +231,9 @@ export const WaitingRow = Schema.Struct({
   runId: Schema.NonEmptyString,
   reason: WaitingReason,
   wakeAt: Schema.NullOr(NonNegativeSafeInt),
-  token: Schema.NullOr(Schema.NonEmptyString)
+  token: Schema.NullOr(Schema.NonEmptyString),
+  /** The question {@link Waiting} declared, absent on a park that declared none. */
+  request: Schema.optionalKey(Schema.Json)
 })
 
 /**
@@ -450,6 +464,24 @@ export interface Service {
    */
   readonly waiting: (runId: string) => Effect.Effect<Option.Option<WaitingRow>>
   /**
+   * Reads the waiting payloads of a run AND of every execution beneath it.
+   *
+   * A flow that calls another flow parks the CHILD execution, not the run an
+   * operator named: `coding/request` sat at `waiting_reason = 'event'` while
+   * the `HumanTask` a person actually had to answer was three executions down,
+   * on `coding/PreparePlan`. Reading one row therefore answered "nothing is
+   * waiting on you" about a run tree that was waiting on a person, which is
+   * how run-3 parked forever with an empty approvals inbox.
+   *
+   * The walk follows `execution_parent_id`, the column the engine's own
+   * spawn triggers maintain from `parent_run_id` and `flows_run_parents`, so
+   * it sees a child, a fork, and a trampoline round alike. The run itself is
+   * included and comes first; the rest follow in creation order. Rows of a
+   * settled execution are never listed — a wait a finished execution left
+   * behind is not one a person can answer.
+   */
+  readonly waitingTree: (runId: string) => Effect.Effect<ReadonlyArray<WaitingRow>>
+  /**
    * Lists parked runs matching an optional reason/due-before filter, ordered
    * for sweeper consumption (earliest wake first, untimed waits last, then
    * run id to break ties).
@@ -618,10 +650,28 @@ const WaitingDatabaseRow = Schema.Struct({
   runId: Schema.NonEmptyString,
   waitingReason: WaitingReason,
   waitingWakeAtMs: Schema.NullOr(NonNegativeSafeInt),
-  waitingToken: Schema.NullOr(Schema.NonEmptyString)
+  waitingToken: Schema.NullOr(Schema.NonEmptyString),
+  /** Absent rather than null on a database written before `0004_waiting_request`. */
+  waitingRequest: Schema.optional(Schema.NullOr(Schema.String))
 })
 
 type WaitingDatabaseRow = typeof WaitingDatabaseRow.Type
+
+/**
+ * The declared question of a waiting row, or absence.
+ *
+ * The column is the wait's own JSON, so text that does not parse is text the
+ * writer never wrote: it is reported as no declared question rather than
+ * failing the read of a park that is otherwise intact.
+ */
+const decodeWaitingRequest = (value: string | null | undefined): { readonly request?: unknown } => {
+  if (value === null || value === undefined) return {}
+  try {
+    return { request: JSON.parse(value) as unknown }
+  } catch {
+    return {}
+  }
+}
 
 const decodeWaitingRow = (input: unknown): Effect.Effect<WaitingRow> => decodeWaitingRowResult(input).pipe(Effect.orDie)
 
@@ -632,8 +682,9 @@ const decodeWaitingRowResult = (input: unknown): Effect.Effect<WaitingRow, unkno
       runId: row.runId,
       reason: row.waitingReason,
       wakeAt: row.waitingWakeAtMs,
-      token: row.waitingToken
-    }))
+      token: row.waitingToken,
+      ...decodeWaitingRequest(row.waitingRequest)
+    } as WaitingRow))
   )
 
 /** @private */
@@ -794,6 +845,20 @@ const deferredAddressRowKey = (row: Record<string, unknown>): string =>
 const runParentRowKey = (row: Record<string, unknown>): string => JSON.stringify([row["childId"], row["parentId"]])
 
 /** The primary key of a parked run's waiting payload, read the same way. */
+/**
+ * The deepest nesting {@link Service.waitingTree} walks.
+ *
+ * A run tree is authored, not generated: `agent/run` → `coding/request` →
+ * `coding/Request` → `coding/PrepareWithWiki` → `coding/PreparePlan` is five,
+ * and the deepest composition in this repository is well inside this. The cap
+ * exists so a tree whose edges were corrupted outside the engine costs a
+ * bounded read rather than the whole table.
+ *
+ * @since 1.0.0
+ * @category constants
+ */
+export const waitingTreeMaxDepth = 64
+
 const waitingRowKey = (row: Record<string, unknown>): string => JSON.stringify([row["runId"]])
 
 /**
@@ -1237,7 +1302,8 @@ export const make: Effect.Effect<Service, never, DurableWriter | SqlClient.SqlCl
         run_id AS "runId",
         waiting_reason AS "waitingReason",
         waiting_wake_at_ms AS "waitingWakeAtMs",
-        waiting_token AS "waitingToken"
+        waiting_token AS "waitingToken",
+        waiting_request AS "waitingRequest"
       FROM flows_runs
       WHERE run_id = ${runId}
         AND waiting_reason IS NOT NULL
@@ -1251,7 +1317,8 @@ export const make: Effect.Effect<Service, never, DurableWriter | SqlClient.SqlCl
           SET
             waiting_reason = ${waiting.reason},
             waiting_wake_at_ms = ${waiting.wakeAt ?? null},
-            waiting_token = ${waiting.token ?? null}
+            waiting_token = ${waiting.token ?? null},
+            waiting_request = ${waiting.request ?? null}
           WHERE run_id = ${runId}
             AND owner_host_id = ${owner.hostId}
             AND owner_pid = ${owner.pid}
@@ -1260,7 +1327,8 @@ export const make: Effect.Effect<Service, never, DurableWriter | SqlClient.SqlCl
             run_id AS "runId",
             waiting_reason AS "waitingReason",
             waiting_wake_at_ms AS "waitingWakeAtMs",
-            waiting_token AS "waitingToken"
+            waiting_token AS "waitingToken",
+            waiting_request AS "waitingRequest"
         `
         if (updated[0] === undefined) {
           return { _tag: "NotFound" as const }
@@ -1286,7 +1354,8 @@ export const make: Effect.Effect<Service, never, DurableWriter | SqlClient.SqlCl
           SET
             waiting_reason = NULL,
             waiting_wake_at_ms = NULL,
-            waiting_token = NULL
+            waiting_token = NULL,
+            waiting_request = NULL
           WHERE run_id = ${runId}
             AND waiting_reason IS NOT NULL
         `
@@ -1306,6 +1375,44 @@ export const make: Effect.Effect<Service, never, DurableWriter | SqlClient.SqlCl
     )
   )
 
+  /**
+   * Every open wait in one run tree, the named run's own first.
+   *
+   * The recursive term walks `execution_parent_id` downwards. It is bounded
+   * twice over: SQLite's recursive CTE visits each row once per distinct path
+   * and the engine refuses a cycle when the edge is written
+   * (`internal/CycleDetection`), so a diamond costs its paths and a cycle
+   * cannot be stored. The depth cap is the last guard, and it is generous
+   * enough that no authored nesting reaches it while still bounding a tree
+   * corrupted outside the engine.
+   */
+  const waitingTree: Service["waitingTree"] = Effect.fn("DurableEngineState.waitingTree")((runId) =>
+    sql<WaitingDatabaseRow>`
+      WITH RECURSIVE tree(run_id, depth) AS (
+        SELECT run_id, 0 FROM flows_runs WHERE run_id = ${runId}
+        UNION
+        SELECT child.run_id, tree.depth + 1
+        FROM flows_runs child
+        JOIN tree ON child.execution_parent_id = tree.run_id
+        WHERE tree.depth < ${waitingTreeMaxDepth}
+      )
+      SELECT
+        parked.run_id AS "runId",
+        parked.waiting_reason AS "waitingReason",
+        parked.waiting_wake_at_ms AS "waitingWakeAtMs",
+        parked.waiting_token AS "waitingToken",
+        parked.waiting_request AS "waitingRequest"
+      FROM tree
+      JOIN flows_runs parked ON parked.run_id = tree.run_id
+      WHERE parked.waiting_reason IS NOT NULL
+        AND parked.status NOT IN ('completed', 'failed', 'cancelled')
+      ORDER BY tree.depth, parked.created_at_ms, parked.run_id
+    `.pipe(
+      Effect.orDie,
+      Effect.flatMap((rows) => decodeSweep(rows, "waiting run", waitingRowKey, decodeWaitingRowResult))
+    )
+  )
+
   const waitingRuns: Service["waitingRuns"] = Effect.fn("DurableEngineState.waitingRuns")((filter) => {
     // `1 = 0` short-circuits the cancel predicate away when the caller did
     // not ask for it, so the reason/wake filters (and the 0004 index) stay
@@ -1317,7 +1424,8 @@ export const make: Effect.Effect<Service, never, DurableWriter | SqlClient.SqlCl
           run_id AS "runId",
           waiting_reason AS "waitingReason",
           waiting_wake_at_ms AS "waitingWakeAtMs",
-          waiting_token AS "waitingToken"
+          waiting_token AS "waitingToken",
+          waiting_request AS "waitingRequest"
         FROM flows_runs
         WHERE waiting_reason = ${filter.reason}
           AND waiting_wake_at_ms IS NOT NULL
@@ -1332,7 +1440,8 @@ export const make: Effect.Effect<Service, never, DurableWriter | SqlClient.SqlCl
           run_id AS "runId",
           waiting_reason AS "waitingReason",
           waiting_wake_at_ms AS "waitingWakeAtMs",
-          waiting_token AS "waitingToken"
+          waiting_token AS "waitingToken",
+          waiting_request AS "waitingRequest"
         FROM flows_runs
         WHERE waiting_reason = ${filter.reason}
           AND (${cancelRequestedOnly} = 0 OR cancel_requested_at_ms IS NOT NULL)
@@ -1345,7 +1454,8 @@ export const make: Effect.Effect<Service, never, DurableWriter | SqlClient.SqlCl
           run_id AS "runId",
           waiting_reason AS "waitingReason",
           waiting_wake_at_ms AS "waitingWakeAtMs",
-          waiting_token AS "waitingToken"
+          waiting_token AS "waitingToken",
+          waiting_request AS "waitingRequest"
         FROM flows_runs
         WHERE waiting_reason IS NOT NULL
           AND waiting_wake_at_ms IS NOT NULL
@@ -1359,7 +1469,8 @@ export const make: Effect.Effect<Service, never, DurableWriter | SqlClient.SqlCl
           run_id AS "runId",
           waiting_reason AS "waitingReason",
           waiting_wake_at_ms AS "waitingWakeAtMs",
-          waiting_token AS "waitingToken"
+          waiting_token AS "waitingToken",
+          waiting_request AS "waitingRequest"
         FROM flows_runs
         WHERE waiting_reason IS NOT NULL
           AND (${cancelRequestedOnly} = 0 OR cancel_requested_at_ms IS NOT NULL)
@@ -1621,6 +1732,7 @@ export const make: Effect.Effect<Service, never, DurableWriter | SqlClient.SqlCl
     park,
     wake,
     waiting,
+    waitingTree,
     waitingRuns,
     staleRunningRuns,
     attemptSurvivors,
@@ -1940,12 +2052,15 @@ export const makeMemory = (options: MemoryOptions = {}): Service => {
         if (!view.exists || !view.owned) {
           return { _tag: "NotFound" as const }
         }
+        // The declared question is stored as JSON TEXT and read back decoded,
+        // exactly as the column and its SELECT do it.
         const row: WaitingRow = {
           runId,
           reason: waitingPayload.reason,
           wakeAt: waitingPayload.wakeAt ?? null,
-          token: waitingPayload.token ?? null
-        }
+          token: waitingPayload.token ?? null,
+          ...decodeWaitingRequest(waitingPayload.request)
+        } as WaitingRow
         waitingRows.set(runId, row)
         return { _tag: "Parked" as const, row: snapshotWaiting(row) }
       })
@@ -1968,6 +2083,30 @@ export const makeMemory = (options: MemoryOptions = {}): Service => {
       Effect.sync(() => {
         const row = waitingRows.get(runId)
         return row === undefined ? Option.none() : Option.some(snapshotWaiting(row))
+      })
+    ),
+    waitingTree: Effect.fn("DurableEngineState.waitingTree")((runId) =>
+      Effect.sync(() => {
+        // Breadth-first over the same edges the SQL recursion walks, so a
+        // memory-backed composition orders a tree the way a durable one does:
+        // the named run first, then each generation beneath it.
+        const found: Array<WaitingRow> = []
+        const seen = new Set<string>([runId])
+        let frontier: ReadonlyArray<string> = [runId]
+        for (let depth = 0; depth <= waitingTreeMaxDepth && frontier.length > 0; depth++) {
+          const next: Array<string> = []
+          for (const current of frontier) {
+            const row = waitingRows.get(current)
+            if (row !== undefined && isLive(current)) found.push(snapshotWaiting(row))
+            for (const [childId, parents] of parentEdges) {
+              if (!parents.has(current) || seen.has(childId)) continue
+              seen.add(childId)
+              next.push(childId)
+            }
+          }
+          frontier = next
+        }
+        return found
       })
     ),
     waitingRuns: Effect.fn("DurableEngineState.waitingRuns")((filter) =>
@@ -2157,6 +2296,7 @@ export const makeMemory = (options: MemoryOptions = {}): Service => {
     park: (runId, waiting, owner) => guard(unguarded.park(runId, waiting, owner)),
     wake: (runId) => guard(unguarded.wake(runId)),
     waiting: (runId) => guard(unguarded.waiting(runId)),
+    waitingTree: (runId) => guard(unguarded.waitingTree(runId)),
     waitingRuns: (filter) => guard(unguarded.waitingRuns(filter)),
     staleRunningRuns: (staleBeforeMs, limit) => guard(unguarded.staleRunningRuns(staleBeforeMs, limit)),
     attemptSurvivors: undefined,
