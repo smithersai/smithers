@@ -81,7 +81,7 @@ export const createOwnedGitHubRepository = async (
       throw new Error("The sanctioned GitHub session cannot reach the repository creation UI.")
     }
     await expect(github.locator("body")).toContainText("Create a new repository")
-    await expect(github.locator("body")).toContainText("codeplanesmithers")
+    await expect(github.getByRole("button", { name: "codeplanesmithers, Owner (Required)", exact: true })).toBeVisible()
 
     const nameInput = github.getByLabel(/Repository name/i)
       .or(github.getByRole("textbox", { name: /Repository name/i }))
@@ -97,7 +97,10 @@ export const createOwnedGitHubRepository = async (
     const privateChoice = github.getByLabel(/^Private/i)
       .or(github.locator('input[type="radio"][value="private"]:visible'))
       .first()
-    if (await privateChoice.isVisible().catch(() => false)) await privateChoice.check()
+    if (await privateChoice.isVisible().catch(() => false)) {
+      await privateChoice.check()
+      await expect(privateChoice).toBeChecked()
+    }
     else {
       const visibility = github.getByRole("button", { name: "Public", exact: true })
       await expect(visibility).toBeVisible()
@@ -111,16 +114,22 @@ export const createOwnedGitHubRepository = async (
       await expect(github.getByRole("button", { name: "Private", exact: true })).toBeVisible()
     }
     const readmeChoice = github.locator('input[name="repository[auto_init]"]:visible').first()
-    if (await readmeChoice.count()) await readmeChoice.check()
+    if (await readmeChoice.count()) {
+      await readmeChoice.check()
+      await expect(readmeChoice).toBeChecked()
+    }
     else {
-      const readmeText = github.getByText(/Add (a )?README/i).first()
-      await expect(readmeText).toBeVisible()
-      const readmeToggle = readmeText.locator("xpath=ancestor::div[.//button][1]").getByRole("button").first()
+      const readmeToggle = github.getByRole("button", { name: "Add README", exact: true })
       await expect(readmeToggle).toBeVisible()
-      await readmeToggle.click()
+      if (await readmeToggle.getAttribute("aria-pressed") !== "true") await readmeToggle.click()
+      await expect(readmeToggle).toHaveAttribute("aria-pressed", "true")
     }
 
-    await expect(github.getByText("Checking availability...", { exact: true })).toHaveCount(0, { timeout: 30_000 })
+    // GitHub renders a Unicode ellipsis while its real availability request is
+    // pending. Waiting for an absent ASCII spelling returned immediately and
+    // submitted before validation, so the form silently stayed on /new.
+    await expect(github.getByText(`${name} is available.`, { exact: true })).toBeVisible({ timeout: 30_000 })
+    await expect(nameInput).toHaveValue(name)
     const create = github.getByRole("button", { name: /^Create repository$/ }).last()
     await expect(create).toBeEnabled({ timeout: 30_000 })
     // From this point onward cleanup treats the exact full name as possibly
@@ -128,12 +137,16 @@ export const createOwnedGitHubRepository = async (
     submitted = true
     await create.focus()
     await expect(create).toBeFocused()
-    await create.press("Enter")
-    await github.waitForURL((candidate) => candidate.origin === "https://github.com" && candidate.pathname.replace(/\/$/, "") === `/${fullName}`, {
-      timeout: 60_000
-    })
+    const [creationResponse] = await Promise.all([
+      github.waitForResponse((response) => new URL(response.url()).origin === "https://github.com" &&
+        new URL(response.url()).pathname === "/repositories" && response.request().method() === "POST", { timeout: 60_000 }),
+      github.waitForURL((candidate) => candidate.origin === "https://github.com" && candidate.pathname.replace(/\/$/, "") === `/${fullName}`, { timeout: 60_000 }),
+      create.press("Enter")
+    ])
+    expect(creationResponse.status(), "GitHub must accept the real repository creation request").toBeLessThan(400)
     await expect(github.locator(`a[href="/codeplanesmithers"]:visible`).first()).toBeVisible()
     await expect(github.getByText("Private", { exact: true }).first()).toBeVisible()
+    await expect(github.getByRole("link", { name: /^README\.md(?:, \(File\))?$/ }).first()).toBeVisible()
     return owned
   } catch (error) {
     const failureUrl = new URL(github.url())
