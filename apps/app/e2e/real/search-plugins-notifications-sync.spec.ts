@@ -8,7 +8,7 @@ const boot = async (page: Page): Promise<void> => {
 }
 
 test("the real palette filters flow rows and keyboard selection runs the same search door", scenario("search.palette-keyboard-real", {
-  capabilities: [], coverage: ["action:palette.open", "action:search.flows", "host:local", "host:production", "path:success", "path:keyboard", "door:user-only", "door:slash", "dimension:palette-filter", "dimension:keyboard-selection", "evidence:palette-option-and-search-card"]
+  capabilities: [], coverage: ["action:palette.open", "action:search.flows", "host:local", "host:production", "path:success", "path:keyboard", "door:user-only", "door:slash", "dimension:keyboard", "dimension:palette-filter", "dimension:keyboard-selection", "evidence:palette-option-and-search-card"]
 }), async ({ page }) => {
   await boot(page); await openComposer(page)
   const input = page.getByTestId("composer-input"); await input.fill("/search.flows chat")
@@ -19,7 +19,7 @@ test("the real palette filters flow rows and keyboard selection runs the same se
 })
 
 test("real search refuses unindexed modes and preserves an honest empty result", scenario("search.unindexed-refusal-real", {
-  capabilities: [], coverage: ["action:search.symbols", "action:search.text", "host:local", "host:production", "path:error", "door:slash", "dimension:unindexed-search", "dimension:empty-result", "evidence:refusal-and-empty-card"]
+  capabilities: [], coverage: ["action:search.symbols", "action:search.text", "host:local", "host:production", "path:error", "door:slash", "dimension:keyboard", "dimension:unindexed-search", "dimension:empty-result", "evidence:refusal-and-empty-card"]
 }), async ({ page }) => {
   await boot(page); await command(page, "/search.symbols Composer"); await closeComposer(page); await expect(page.getByText(/No symbol index exists yet/i).last()).toBeVisible(); await expect(page.locator('.smithers-card[data-kind="search-results"]')).toHaveCount(0)
   await command(page, "/search.text a-query-that-cannot-exist-in-this-real-session"); await closeComposer(page); await expect(page.getByText(/No text index exists yet/i).last()).toBeVisible(); await expect(page.locator('.smithers-card[data-kind="search-results"]')).toHaveCount(0)
@@ -27,7 +27,7 @@ test("real search refuses unindexed modes and preserves an honest empty result",
 })
 
 test("the real Library installs, exposes, removes, and reloads a plugin through the user controls", scenario("plugins.library-install-remove-reload-real", {
-  capabilities: [], coverage: ["action:plugins", "action:plugins.install", "action:plugins.remove", "host:local", "host:production", "path:success", "path:persistence", "path:keyboard", "door:user-only", "door:button", "dimension:plugin-shelf", "dimension:plugin-rail", "dimension:reload", "evidence:installed-shelf-and-rail"]
+  capabilities: [], coverage: ["action:plugins", "action:plugins.install", "action:plugins.remove", "host:local", "host:production", "path:success", "path:persistence", "path:keyboard", "door:user-only", "door:button", "dimension:keyboard", "dimension:plugin-shelf", "dimension:plugin-rail", "dimension:reload", "evidence:installed-shelf-and-rail"]
 }), async ({ page }) => {
   await boot(page); await command(page, "/plugins"); await closeComposer(page)
   const library = page.getByRole("region", { name: "Plugins on your workspace" }); await expect(library).toBeVisible(); const librarian = library.locator('[data-plugin="librarian"]'); await expect(librarian).toHaveAttribute("data-installed", "false")

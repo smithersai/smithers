@@ -109,7 +109,7 @@ workflowTest(
     description: "Drive suspend and resume through the UI's real commands, independently poll each provider state transition, then type the exact workspace name and verify the provider and UI both report deletion.",
     coverage: [
       "action:workspace.suspend", "action:workspace.resume", "action:workspace.delete", "action:workspace.view",
-      "host:production", "path:success", "path:keyboard", "door:slash", "door:button", "dimension:state-transitions",
+      "host:production", "path:success", "path:keyboard", "door:slash", "door:button", "dimension:keyboard", "dimension:state-transitions",
       "dimension:typed-delete-confirmation", "dimension:post-delete-readback", "evidence:provider-status-polls-and-404"
     ]
   }),

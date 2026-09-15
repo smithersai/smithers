@@ -12,7 +12,7 @@ authenticatedTest("admin reset asks for confirmation and cancel preserves the li
   coverage: [
     "action:admin.reset.ask", "action:admin.reset.cancel", "action:admin.devtools", "host:production",
     "path:permission", "path:persistence", "path:keyboard", "door:slash", "door:button", "door:user-only",
-    "dimension:destructive-confirmation", "dimension:reset-cancel", "evidence:transcript-and-session-readback"
+    "dimension:keyboard", "dimension:destructive-confirmation", "dimension:reset-cancel", "evidence:transcript-and-session-readback"
   ],
   description: "An authenticated admin reaches the real destructive reset dialog, verifies its exact warning, cancels by keyboard, and proves the current transcript and session remain present."
 }), async ({ page }) => {
@@ -47,7 +47,7 @@ authenticatedTest("admin grant cancellation never posts a billing mutation", sce
   capabilities: ["identity"],
   coverage: [
     "action:admin.grant", "action:admin.grant.cancel", "host:production", "path:permission", "path:persistence",
-    "path:keyboard", "door:slash", "door:button", "door:user-only", "dimension:grant-confirmation",
+    "path:keyboard", "door:slash", "door:button", "door:user-only", "dimension:keyboard", "dimension:grant-confirmation",
     "dimension:grant-cancel", "dimension:no-write", "evidence:request-observation-and-card-removal"
   ],
   description: "The real admin grant flow creates a confirmation card but canceling it removes the card without sending a billing grant request."
@@ -75,7 +75,7 @@ authenticatedTest("admin grant rejects invalid amount after explicit confirmatio
   capabilities: ["identity"],
   coverage: [
     "action:admin.grant", "action:admin.grant.confirm", "host:production", "path:error", "path:keyboard",
-    "door:slash", "door:button", "door:user-only", "dimension:grant-validation", "dimension:no-credit",
+    "door:slash", "door:button", "door:user-only", "dimension:keyboard", "dimension:grant-validation", "dimension:no-credit",
     "evidence:grant-request-response-and-failed-card"
   ],
   description: "The operator must explicitly confirm a malformed zero-dollar grant; the live admin endpoint refuses it and the card records an error rather than claiming credit."

@@ -1,0 +1,132 @@
+import type { Locator, Page } from "@playwright/test"
+import { scenario } from "./coverage/types"
+import { closeComposer, command, expect, openApp, test } from "./support"
+
+test.setTimeout(90_000)
+test.use({ actionTimeout: 20_000 })
+
+const boot = async (page: Page): Promise<void> => {
+  await openApp(page)
+  await expect(page.getByRole("button", { name: "Chat", exact: true })).toBeVisible()
+}
+
+const createNote = async (page: Page, body: string): Promise<{ readonly id: string; readonly title: string; readonly card: Locator }> => {
+  await command(page, "/wiki.new-note")
+  await closeComposer(page)
+  const card = page.locator('.smithers-card[data-kind="world"]').last()
+  await expect(card).toBeVisible()
+  const testId = await card.getAttribute("data-testid")
+  expect(testId).toMatch(/^card-wiki-open-/)
+  const id = testId!.replace(/^card-wiki-open-/, "")
+  const title = ((await card.locator("h3").textContent()) ?? "").replace(/^#\s*/, "").trim()
+  await command(page, `/wiki.edit ${id} ${JSON.stringify(`# ${title}\n\n${body}`)}`)
+  await closeComposer(page)
+  return { id, title, card: page.getByTestId(testId!) }
+}
+
+test(
+  "Wiki surface selects the same real note after a second page reload",
+  scenario("local-wiki-collaboration-selection-persistence", {
+    capabilities: [],
+    coverage: [
+      "action:wiki.new-note", "action:wiki.edit", "action:wiki.select", "action:wiki", "action:wiki.card.view",
+      "host:local", "host:production", "path:persistence", "door:slash", "door:button",
+      "dimension:shared-browser-context", "dimension:selection-persistence", "evidence:world-document-readback"
+    ]
+  }),
+  async ({ page, context }) => {
+    await boot(page)
+    const first = await createNote(page, `first-note-${Date.now()}`)
+    const second = await createNote(page, `second-note-${Date.now()}`)
+    await page.getByTestId("chrome-wiki").click()
+    const pane = page.getByRole("region", { name: "Smithers Wiki state" })
+    await expect(pane).toBeVisible()
+    await expect(pane.getByRole("button", { name: first.title, exact: true })).toBeVisible()
+    await expect(pane.getByRole("button", { name: second.title, exact: true })).toBeVisible()
+    await pane.getByRole("button", { name: second.title, exact: true }).click()
+    await expect(pane.getByLabel(`Edit ${second.title}`, { exact: true })).toBeVisible()
+    await page.reload()
+    await expect(page.getByRole("region", { name: "Smithers Wiki state" }).getByLabel(`Edit ${second.title}`, { exact: true })).toBeVisible()
+    const restarted = await context.newPage()
+    await boot(restarted)
+    await restarted.getByTestId("chrome-wiki").click()
+    const restartedPane = restarted.getByRole("region", { name: "Smithers Wiki state" })
+    await expect(restartedPane.getByLabel(`Edit ${second.title}`, { exact: true })).toBeVisible()
+    await expect(restartedPane.getByText(`second-note-`, { exact: false })).toBeVisible()
+    await restarted.close()
+  }
+)
+
+test(
+  "Wiki outline is a keyboard accessible heading door and preserves the open note",
+  scenario("local-wiki-heading-selection-keyboard", {
+    capabilities: [],
+    coverage: [
+      "action:wiki.new-note", "action:wiki.edit", "action:wiki.heading", "action:wiki.select",
+      "host:local", "host:production", "path:keyboard", "door:slash", "door:button", "door:user-only",
+      "dimension:keyboard", "dimension:outline-keyboard", "dimension:heading-scroll", "evidence:editor-focus-and-readback"
+    ]
+  }),
+  async ({ page }) => {
+    await boot(page)
+    const note = await createNote(page, "Intro\n\n## Collaboration\n\nShared content")
+    await page.getByTestId("chrome-wiki").click()
+    const pane = page.getByRole("region", { name: "Smithers Wiki state" })
+    const outline = pane.getByRole("tree", { name: "Document outline" })
+    const heading = outline.getByRole("treeitem", { name: "Collaboration", exact: true })
+    await expect(heading).toBeVisible()
+    await heading.focus()
+    await expect(heading).toBeFocused()
+    await heading.press("Enter")
+    await expect(pane.getByLabel(`Edit ${note.title}`, { exact: true })).toBeVisible()
+    await expect(pane.getByRole("treeitem", { name: "Collaboration", exact: true })).toBeVisible()
+    await pane.getByRole("treeitem", { name: "Collaboration", exact: true }).press("Space")
+    await expect(pane.getByLabel(`Edit ${note.title}`, { exact: true })).toBeVisible()
+  }
+)
+
+test(
+  "signed-out Wiki creation refuses without creating a document or launch",
+  scenario("local-wiki-create-refusal-no-side-effects", {
+    capabilities: [],
+    coverage: [
+      "action:wiki.create", "action:wiki", "host:local", "host:production", "path:permission", "door:slash", "door:button",
+      "dimension:signed-out-refusal", "dimension:no-side-effects", "evidence:refusal-card-readback"
+    ]
+  }),
+  async ({ page }) => {
+    await boot(page)
+    await page.getByTestId("chrome-wiki").click()
+    const pane = page.getByRole("region", { name: "Smithers Wiki state" })
+    await expect(pane.getByText("No Wiki yet", { exact: true })).toBeVisible()
+    await pane.getByRole("button", { name: "Create Wiki", exact: true }).click()
+    await closeComposer(page)
+    await expect(page.getByText(/Sign in with GitHub|requires you to sign in|signed in/i).last()).toBeVisible()
+    await expect(pane.locator('.world-sidebar [data-flow="wiki.select"]')).toHaveCount(0)
+    await expect(pane.getByText("No Wiki yet", { exact: true })).toBeVisible()
+  }
+)
+
+test(
+  "cloud Wiki browse and open refuse cleanly when no provider is connected",
+  scenario("local-wiki-cloud-refusal-preserves-local-notes", {
+    capabilities: [],
+    coverage: [
+      "action:wiki.cloud", "action:wiki.cloud.open", "action:wiki.sync", "action:wiki.new-note",
+      "host:local", "host:production", "path:permission", "door:slash", "door:user-only",
+      "dimension:cloud-refusal", "dimension:local-draft-preservation", "evidence:cloud-refusal-readback"
+    ]
+  }),
+  async ({ page }) => {
+    await boot(page)
+    const note = await createNote(page, `local-draft-${Date.now()}`)
+    await command(page, "/wiki.cloud acme/no-such-repository")
+    await closeComposer(page)
+    await expect(page.getByText(/Wiki|repository|sign in|could not reach/i).last()).toBeVisible()
+    await command(page, "/wiki.cloud.open home acme/no-such-repository")
+    await closeComposer(page)
+    await expect(page.getByText(/Wiki|repository|sign in|could not reach/i).last()).toBeVisible()
+    await page.getByTestId("chrome-wiki").click()
+    await expect(page.getByRole("region", { name: "Smithers Wiki state" }).getByLabel(`Edit ${note.title}`, { exact: true })).toBeVisible()
+  }
+)
