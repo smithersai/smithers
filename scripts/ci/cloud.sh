@@ -1,4 +1,27 @@
 #!/usr/bin/env bash
+# Smithers Cloud CI runner.
+#
+# Cloud gives this repo a pool of at most 5 small gVisor runners, and each task
+# runs in its own fresh sandbox. Every task therefore pays the JS bootstrap
+# (npm + pnpm + `pnpm install --frozen-lockfile --ignore-scripts`) from
+# scratch, which alone costs about 11 minutes before a single gate runs. With
+# one task per gate that was 39 tasks x ~12 minutes over 5 runners, so 1.5-2
+# hours per push: run 11697 (2026-09-15) still had 4 tasks running and 35
+# queued after 20 minutes.
+#
+# So .smithers/workflows/ci.tsx batches the 39 gates into 6 tasks, and each
+# task calls the group mode here:
+#
+#   bash scripts/ci/cloud.sh <gate>                  # one gate (unchanged)
+#   bash scripts/ci/cloud.sh group <gate> <gate>...  # bootstrap once, run many
+#
+# Group mode installs the union of its gates' toolchains exactly once, then
+# runs each gate in order and prints `::gate <name> start`, then `::gate <name>
+# ok` or `::gate <name> fail`. A failing gate does not stop the ones after it;
+# the task exits non-zero at the end instead, so a single task still reports
+# every gate's result. Groups are chosen to share toolchains (jj, Foundry,
+# Rust) and to even out wall-clock time; ci.tsx holds the partition.
+#
 # Each Cloud task gets its own checkout. Keep tool installs and caches local.
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/../.."
@@ -21,6 +44,12 @@ ensure_js() {
 }
 
 apt_install() {
+  # Cloud runners are Debian. Developers reproducing a gate on macOS have these
+  # packages already, so skip rather than fail.
+  if [ "$(uname -s)" != Linux ] || ! command -v apt-get >/dev/null 2>&1; then
+    echo "Skipping apt packages on $(uname -s): $*" >&2
+    return 0
+  fi
   local elevate=()
   if [ "$(id -u)" -ne 0 ]; then elevate=(sudo); fi
   "${elevate[@]}" apt-get update -qq
@@ -86,185 +115,254 @@ ensure_rust() {
   rustup toolchain install
 }
 
+# Toolchains each gate needs, one gate per line so the contract test can read
+# them. Every gate needs js; the extras are what makes a group worth batching.
+# An unknown gate returns non-zero here, which is how both modes reject it
+# before any tool is installed.
+gate_tools() {
+  case "$1" in
+    workspace) echo 'js jj foundry' ;;
+    packages) echo 'js jj foundry' ;;
+    examples) echo 'js jj' ;;
+    scripts) echo 'js jj rust' ;;
+    flows) echo 'js' ;;
+    jsdoc) echo 'js' ;;
+    script-lint) echo 'js' ;;
+    jsdoc-rules) echo 'js' ;;
+    factory-harness) echo 'js jj' ;;
+    agent-eval) echo 'js' ;;
+    agent-check) echo 'js' ;;
+    authoring-eval) echo 'js' ;;
+    authoring-check) echo 'js' ;;
+    swebench) echo 'js jj' ;;
+    swebench-check) echo 'js' ;;
+    server) echo 'js jj' ;;
+    review-app) echo 'js' ;;
+    bug-worker) echo 'js' ;;
+    status-site) echo 'js' ;;
+    project-copy) echo 'js' ;;
+    site) echo 'js' ;;
+    docs) echo 'js' ;;
+    review-eval) echo 'js' ;;
+    review-check) echo 'js' ;;
+    recommend-eval) echo 'js' ;;
+    recommend-check) echo 'js' ;;
+    workflow-drift) echo 'js' ;;
+    factory-drift) echo 'js' ;;
+    target-index) echo 'js' ;;
+    ui-check) echo 'js jj' ;;
+    ui-tests) echo 'js jj' ;;
+    ui-browser) echo 'js jj' ;;
+    rust-lint) echo 'js rust' ;;
+    third-party-notices) echo 'js rust' ;;
+    rust-test) echo 'js rust' ;;
+    wasm-build-script) echo 'js' ;;
+    faults) echo 'js jj' ;;
+    web-bundle) echo 'js' ;;
+    cloud-contract) echo 'js' ;;
+    *) return 1 ;;
+  esac
+}
+
+# Installs the union of the toolchains the given gates need, once each, in
+# dependency order. This is the whole point of group mode: ensure_js alone is
+# ~11 minutes on a Cloud runner and it used to run once per gate.
+bootstrap_for() {
+  local gate tool wanted=' '
+  for gate in "$@"; do
+    for tool in $(gate_tools "$gate"); do
+      case "$wanted" in
+        *" $tool "*) ;;
+        *) wanted="$wanted$tool " ;;
+      esac
+    done
+  done
+  for tool in js jj foundry rust; do
+    case "$wanted" in
+      *" $tool "*) ;;
+      *) continue ;;
+    esac
+    case "$tool" in
+      js) ensure_js ;;
+      jj) ensure_jj ;;
+      foundry) ensure_foundry ;;
+      rust) ensure_rust ;;
+    esac
+  done
+}
+
 # Gate commands below are copied from .github/workflows/ci.yml. Remote cache
 # credentials are optional for checks; no task receives publishing credentials.
 # Docker integration cases retain their existing no-daemon skip behavior.
 # Omitted: credentialed cache publishing/model reviews, the macOS/Windows
 # matrix, and wasm byte reproducibility (requires its canonical x86_64 host).
-case "${1:-}" in
-  workspace)
-    ensure_js
-    ensure_jj
-    ensure_foundry
-    pnpm exec smthrs ci '//packages/...' --jobs 2 --verbose
-    ;;
-  examples)
-    ensure_js
-    ensure_jj
-    pnpm exec smthrs ci '//examples/...' --verbose
-    ;;
-  scripts)
-    ensure_js
-    ensure_jj
-    ensure_rust
-    pnpm exec smthrs test '//scripts/...' --verbose
-    ;;
-  flows)
-    ensure_js
-    pnpm exec smthrs test '//flows:pack' --verbose
-    ;;
-  jsdoc)
-    ensure_js
-    pnpm exec smthrs lint '//:jsdocTree' --verbose
-    ;;
-  script-lint)
-    ensure_js
-    pnpm exec smthrs lint '//scripts:lint' --verbose
-    ;;
-  jsdoc-rules)
-    ensure_js
-    pnpm exec smthrs test '//:jsdocRules' --verbose
-    ;;
-  factory-harness)
-    ensure_js
-    ensure_jj
-    pnpm exec smthrs test '//:factoryHarness' --verbose
-    ;;
-  agent-eval)
-    ensure_js
-    pnpm exec smthrs test '//evals/agent:test' --verbose
-    ;;
-  agent-check)
-    ensure_js
-    pnpm exec smthrs build '//evals/agent:check' --verbose
-    ;;
-  authoring-eval)
-    ensure_js
-    pnpm exec smthrs test '//evals/authoring:test' --verbose
-    ;;
-  authoring-check)
-    ensure_js
-    pnpm exec smthrs build '//evals/authoring:check' --verbose
-    ;;
-  swebench)
-    ensure_js
-    ensure_jj
-    pnpm exec smthrs test '//evals/swebench:offline' --jobs 1 --verbose
-    ;;
-  swebench-check)
-    ensure_js
-    pnpm exec smthrs build '//evals/swebench:check' --verbose
-    ;;
-  server)
-    ensure_js
-    ensure_jj
-    pnpm exec smthrs ci '//apps/server/...' --verbose
-    ;;
-  review-app)
-    ensure_js
-    pnpm exec smthrs ci '//apps/review/...' --verbose
-    ;;
-  bug-worker)
-    ensure_js
-    pnpm exec smthrs ci '//apps/bug-worker/...' --verbose
-    ;;
-  status-site)
-    ensure_js
-    pnpm exec smthrs ci '//apps/status-site/...' --verbose
-    ;;
-  project-copy)
-    ensure_js
-    pnpm exec smthrs lint '//:projectCopy' --verbose
-    ;;
-  site)
-    ensure_js
-    pnpm exec smthrs ci '//apps/site/...' --verbose
-    ;;
-  docs)
-    ensure_js
-    pnpm exec smthrs ci '//apps/docs/...' --verbose
-    ;;
-  review-eval)
-    ensure_js
-    pnpm exec smthrs test '//evals/review-seeded-bugs/...' --verbose
-    ;;
-  review-check)
-    ensure_js
-    pnpm exec smthrs build '//evals/review-seeded-bugs:check' --verbose
-    ;;
-  recommend-eval)
-    ensure_js
-    pnpm exec smthrs test '//evals/recommend/...' --verbose
-    ;;
-  recommend-check)
-    ensure_js
-    pnpm exec smthrs build '//evals/recommend:check' --verbose
-    ;;
-  workflow-drift)
-    ensure_js
-    pnpm exec smthrs lint '//:ci' --verbose
-    ;;
-  factory-drift)
-    ensure_js
-    pnpm exec smthrs lint '//:factoryProjection' --verbose
-    ;;
-  target-index)
-    ensure_js
-    pnpm exec smthrs lint '//:targetIndex' --verbose
-    ;;
-  ui-check)
-    ensure_js
-    ensure_jj
-    pnpm exec smthrs build '//apps/app:check' --verbose
-    ;;
-  ui-tests)
-    ensure_js
-    ensure_jj
-    pnpm exec smthrs test '//apps/app:unitTests' --verbose
-    ;;
-  ui-browser)
-    ensure_js
-    ensure_jj
-    pnpm exec smthrs test '//apps/app:browserE2e' --verbose
-    ;;
-  rust-lint)
-    ensure_js
-    ensure_rust
-    pnpm exec smthrs lint '//crates/flows-jj/...' --verbose
-    ;;
-  third-party-notices)
-    ensure_js
-    ensure_rust
-    pnpm exec smthrs test '//scripts:thirdPartyNotices' --verbose
-    ;;
-  rust-test)
-    ensure_js
-    ensure_rust
-    pnpm exec smthrs test '//crates/flows-jj:cargoTest' --verbose
-    ;;
-  wasm-build-script)
-    ensure_js
-    pnpm exec smthrs test '//crates/flows-jj:buildScript' --verbose
-    ;;
-  faults)
-    ensure_js
-    ensure_jj
-    pnpm exec smthrs test '//packages/...:faults' --jobs 1 --verbose
-    ;;
-  web-bundle)
-    ensure_js
-    pnpm exec smthrs test '//scripts:webBundleContract' --verbose
-    ;;
-  packages)
-    ensure_js
-    ensure_jj
-    ensure_foundry
-    pnpm exec smthrs test '//packages/...' --jobs 2 --verbose
-    ;;
-  cloud-contract)
-    ensure_js
-    bun test scripts/ci/cloud.test.ts
-    ;;
-  *) echo "Unknown Cloud CI gate: ${1:-missing}" >&2; exit 2 ;;
-esac
+# Bootstrap belongs to bootstrap_for, so single-gate and group mode share this.
+run_gate() {
+  case "$1" in
+    workspace)
+      pnpm exec smthrs ci '//packages/...' --jobs 2 --verbose
+      ;;
+    examples)
+      pnpm exec smthrs ci '//examples/...' --verbose
+      ;;
+    scripts)
+      pnpm exec smthrs test '//scripts/...' --verbose
+      ;;
+    flows)
+      pnpm exec smthrs test '//flows:pack' --verbose
+      ;;
+    jsdoc)
+      pnpm exec smthrs lint '//:jsdocTree' --verbose
+      ;;
+    script-lint)
+      pnpm exec smthrs lint '//scripts:lint' --verbose
+      ;;
+    jsdoc-rules)
+      pnpm exec smthrs test '//:jsdocRules' --verbose
+      ;;
+    factory-harness)
+      pnpm exec smthrs test '//:factoryHarness' --verbose
+      ;;
+    agent-eval)
+      pnpm exec smthrs test '//evals/agent:test' --verbose
+      ;;
+    agent-check)
+      pnpm exec smthrs build '//evals/agent:check' --verbose
+      ;;
+    authoring-eval)
+      pnpm exec smthrs test '//evals/authoring:test' --verbose
+      ;;
+    authoring-check)
+      pnpm exec smthrs build '//evals/authoring:check' --verbose
+      ;;
+    swebench)
+      pnpm exec smthrs test '//evals/swebench:offline' --jobs 1 --verbose
+      ;;
+    swebench-check)
+      pnpm exec smthrs build '//evals/swebench:check' --verbose
+      ;;
+    server)
+      pnpm exec smthrs ci '//apps/server/...' --verbose
+      ;;
+    review-app)
+      pnpm exec smthrs ci '//apps/review/...' --verbose
+      ;;
+    bug-worker)
+      pnpm exec smthrs ci '//apps/bug-worker/...' --verbose
+      ;;
+    status-site)
+      pnpm exec smthrs ci '//apps/status-site/...' --verbose
+      ;;
+    project-copy)
+      pnpm exec smthrs lint '//:projectCopy' --verbose
+      ;;
+    site)
+      pnpm exec smthrs ci '//apps/site/...' --verbose
+      ;;
+    docs)
+      pnpm exec smthrs ci '//apps/docs/...' --verbose
+      ;;
+    review-eval)
+      pnpm exec smthrs test '//evals/review-seeded-bugs/...' --verbose
+      ;;
+    review-check)
+      pnpm exec smthrs build '//evals/review-seeded-bugs:check' --verbose
+      ;;
+    recommend-eval)
+      pnpm exec smthrs test '//evals/recommend/...' --verbose
+      ;;
+    recommend-check)
+      pnpm exec smthrs build '//evals/recommend:check' --verbose
+      ;;
+    workflow-drift)
+      pnpm exec smthrs lint '//:ci' --verbose
+      ;;
+    factory-drift)
+      pnpm exec smthrs lint '//:factoryProjection' --verbose
+      ;;
+    target-index)
+      pnpm exec smthrs lint '//:targetIndex' --verbose
+      ;;
+    ui-check)
+      pnpm exec smthrs build '//apps/app:check' --verbose
+      ;;
+    ui-tests)
+      pnpm exec smthrs test '//apps/app:unitTests' --verbose
+      ;;
+    ui-browser)
+      pnpm exec smthrs test '//apps/app:browserE2e' --verbose
+      ;;
+    rust-lint)
+      pnpm exec smthrs lint '//crates/flows-jj/...' --verbose
+      ;;
+    third-party-notices)
+      pnpm exec smthrs test '//scripts:thirdPartyNotices' --verbose
+      ;;
+    rust-test)
+      pnpm exec smthrs test '//crates/flows-jj:cargoTest' --verbose
+      ;;
+    wasm-build-script)
+      pnpm exec smthrs test '//crates/flows-jj:buildScript' --verbose
+      ;;
+    faults)
+      pnpm exec smthrs test '//packages/...:faults' --jobs 1 --verbose
+      ;;
+    web-bundle)
+      pnpm exec smthrs test '//scripts:webBundleContract' --verbose
+      ;;
+    packages)
+      pnpm exec smthrs test '//packages/...' --jobs 2 --verbose
+      ;;
+    cloud-contract)
+      bun test scripts/ci/cloud.test.ts
+      ;;
+    *)
+      echo "Unknown Cloud CI gate: $1" >&2
+      return 2
+      ;;
+  esac
+}
+
+# One task, many gates: bootstrap once, then report every gate's result.
+run_group() {
+  local gate failed=''
+  if [ "$#" -eq 0 ]; then
+    echo 'Unknown Cloud CI gate: missing' >&2
+    exit 2
+  fi
+  for gate in "$@"; do
+    if ! gate_tools "$gate" >/dev/null; then
+      echo "Unknown Cloud CI gate: $gate" >&2
+      exit 2
+    fi
+  done
+  bootstrap_for "$@"
+  for gate in "$@"; do
+    printf '::gate %s start\n' "$gate"
+    # A subshell keeps one gate's cwd and shell state out of the next one.
+    if (run_gate "$gate"); then
+      printf '::gate %s ok\n' "$gate"
+    else
+      printf '::gate %s fail\n' "$gate"
+      failed="$failed $gate"
+    fi
+  done
+  if [ -n "$failed" ]; then
+    printf 'GATE-FAIL%s\n' "$failed" >&2
+    return 1
+  fi
+  printf 'GROUP-OK %s\n' "$*"
+}
+
+if [ "${1:-}" = group ]; then
+  shift
+  run_group "$@"
+  exit 0
+fi
+if ! gate_tools "${1:-}" >/dev/null; then
+  echo "Unknown Cloud CI gate: ${1:-missing}" >&2
+  exit 2
+fi
+bootstrap_for "$1"
+run_gate "$1"
 printf 'GATE-OK %s\n' "$1"

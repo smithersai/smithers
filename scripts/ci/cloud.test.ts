@@ -1,15 +1,27 @@
-import { describe, expect, test } from "bun:test"
+import { afterAll, describe, expect, test } from "bun:test"
 import { spawnSync } from "node:child_process"
-import { readFileSync } from "node:fs"
+import { readFileSync, rmSync, writeFileSync } from "node:fs"
 import { fileURLToPath } from "node:url"
 
 const root = fileURLToPath(new URL("../../", import.meta.url))
 const workflow = readFileSync(new URL("../../.smithers/workflows/ci.tsx", import.meta.url), "utf8")
 const shell = readFileSync(new URL("cloud.sh", import.meta.url), "utf8")
 const github = readFileSync(new URL("../../.github/workflows/ci.yml", import.meta.url), "utf8")
-const dispatch = shell.slice(shell.indexOf('case "${1:-}" in'))
-const gates = Array.from(dispatch.matchAll(/^  ([a-z][a-z0-9-]*)\)\n([\s\S]*?)    ;;/gm),
+const section = (from: string, to: string) => shell.slice(shell.indexOf(from), shell.indexOf(to))
+const toolsBlock = section("gate_tools() {", "bootstrap_for() {")
+// Gate -> toolchains, one gate per line in gate_tools.
+const tools = new Map(
+  Array.from(toolsBlock.matchAll(/^ {4}([a-z][a-z0-9-]*)\) echo '([a-z ]+)' ;;$/gm),
+    ([, name, list]) => [name!, list!.split(" ")] as const))
+const dispatch = section("run_gate() {", "run_group() {")
+const gates = Array.from(dispatch.matchAll(/^ {4}([a-z][a-z0-9-]*)\)\n([\s\S]*?)^ {6};;$/gm),
   ([, name, body]) => ({ name: name!, body: body! }))
+// Task id -> the gates that task's group runs.
+const groups = Array.from(workflow.matchAll(/<Task\b([^>]*?)>([\s\S]*?)<\/Task>/g), ([, props, body]) => ({
+  props: props!,
+  id: props!.match(/\bid="([^"]+)"/)?.[1],
+  gates: body!.trim().match(/^\{`bash scripts\/ci\/cloud\.sh group ([a-z][a-z0-9- ]*)`\}$/)?.[1]?.split(" ")
+}))
 
 describe("Smithers Cloud CI", () => {
   test("runs CI on main pushes and manual dispatch in parallel", () => {
@@ -19,38 +31,47 @@ describe("Smithers Cloud CI", () => {
     expect(workflow).toContain("</Parallel>")
   })
 
-  test("every Task invokes exactly one implemented gate, with unique ids", () => {
-    const tasks = Array.from(workflow.matchAll(/<Task\b([^>]*?)>([\s\S]*?)<\/Task>/g))
-    expect(tasks.length).toBeGreaterThan(0)
+  test("batches every gate into a handful of tasks, sized for the 5-runner pool", () => {
     // An unparsed/self-closing Task must not disappear from the inventory.
-    expect(tasks.length).toBe((workflow.match(/<Task\b/g) ?? []).length)
-    const called: string[] = []
-    const ids: string[] = []
-    for (const [, props, body] of tasks) {
-      const id = props!.match(/\bid="([^"]+)"/)?.[1]
-      const call = body!.trim().match(/^\{`bash scripts\/ci\/cloud\.sh ([a-z][a-z0-9-]*)`\}$/)
+    expect(groups.length).toBe((workflow.match(/<Task\b/g) ?? []).length)
+    // Bootstrap is ~11 minutes per sandbox, so stay within one scheduling wave
+    // or a little over it; one task per gate is what this replaced.
+    expect(groups.length).toBeGreaterThanOrEqual(5)
+    expect(groups.length).toBeLessThanOrEqual(7)
+    for (const { props, id, gates: grouped } of groups) {
       expect(id).toBeDefined()
       expect(props).toContain("secrets={[]}")
-      expect(call).not.toBeNull()
-      expect(call![1]).toBe(id)
-      ids.push(id!)
-      called.push(call![1]!)
+      expect(grouped).toBeDefined()
+      expect(grouped!.length).toBeGreaterThan(0)
     }
-    expect(new Set(ids).size).toBe(ids.length)
-    expect(new Set(gates.map(({ name }) => name)).size).toBe(gates.length)
-    expect(called.sort()).toEqual(gates.map(({ name }) => name).sort())
+    expect(new Set(groups.map(({ id }) => id)).size).toBe(groups.length)
   })
 
-  test("each gate bootstraps JS and retains its exact GitHub CI command", () => {
+  test("the groups partition cloud.sh's gates: each gate runs in exactly one task", () => {
+    const declared = gates.map(({ name }) => name)
+    expect(new Set(declared).size).toBe(declared.length)
+    const grouped = groups.flatMap(({ gates: names }) => names ?? [])
+    // Every gate is covered, none twice, and no task names a missing gate.
+    expect(new Set(grouped).size).toBe(grouped.length)
+    expect(grouped.slice().sort()).toEqual(declared.slice().sort())
+  })
+
+  test("every gate declares its toolchains and retains its exact GitHub CI command", () => {
+    expect(Array.from(tools.keys()).sort()).toEqual(gates.map(({ name }) => name).sort())
     for (const { name, body } of gates) {
-      expect(body.trimStart().startsWith("ensure_js\n")).toBe(true)
+      // Bootstrap lives in bootstrap_for now, keyed off gate_tools.
+      expect(tools.get(name)).toContain("js")
+      expect(body).not.toContain("ensure_")
       if (name === "cloud-contract") {
         expect(body).toContain("bun test scripts/ci/cloud.test.ts")
       } else {
-        const commands = Array.from(body.matchAll(/^    (pnpm exec .+)$/gm), ([, command]) => command!)
+        const commands = Array.from(body.matchAll(/^ {6}(pnpm exec .+)$/gm), ([, command]) => command!)
         expect(commands.length).toBe(1)
         expect(github).toContain(`run: "${commands[0]}"`)
       }
+    }
+    for (const toolchain of tools.values()) {
+      for (const tool of toolchain) expect(["js", "jj", "foundry", "rust"]).toContain(tool)
     }
     expect(shell).toContain('require("./package.json").packageManager')
     expect(shell).toContain('"$package_manager" --ignore-scripts')
@@ -78,12 +99,79 @@ describe("Smithers Cloud CI", () => {
   })
 
   test("missing and unknown gates fail before installing tools or reporting success", () => {
-    for (const args of [[], ["not-a-gate"]]) {
+    for (const args of [[], ["not-a-gate"], ["group"], ["group", "script-lint", "not-a-gate"]]) {
       const result = spawnSync("bash", ["scripts/ci/cloud.sh", ...args], { cwd: root, encoding: "utf8" })
       expect(result.error).toBeUndefined()
       expect(result.status).toBe(2)
       expect(result.stderr).toContain("Unknown Cloud CI gate:")
       expect(result.stdout).toBe("")
     }
+  })
+
+  describe("group mode", () => {
+    // The real gate_tools, bootstrap_for, run_gate and run_group run; only the
+    // installers and the gate commands themselves are stubbed out.
+    const probe = new URL("cloud.group-probe.tmp.sh", import.meta.url)
+    const marker = 'if [ "${1:-}" = group ]; then'
+    const stubs = [
+      "ensure_js() { echo BOOTSTRAP-js; }",
+      "ensure_jj() { echo BOOTSTRAP-jj; }",
+      "ensure_foundry() { echo BOOTSTRAP-foundry; }",
+      "ensure_rust() { echo BOOTSTRAP-rust; }",
+      // jsdocTree is the gate that fails in this probe.
+      "pnpm() { echo \"RAN $*\"; case \"$*\" in *jsdocTree*) return 3 ;; esac; }",
+      "bun() { echo \"RAN $*\"; }",
+      ""
+    ].join("\n")
+    expect(shell).toContain(marker)
+    writeFileSync(probe, shell.replace(marker, `${stubs}${marker}`))
+    afterAll(() => rmSync(probe, { force: true }))
+    const run = (...args: string[]) =>
+      spawnSync("bash", ["scripts/ci/cloud.group-probe.tmp.sh", ...args], { cwd: root, encoding: "utf8" })
+
+    test("bootstraps the union of the group's toolchains exactly once", () => {
+      const result = run("group", "workspace", "script-lint", "rust-test", "server")
+      expect(result.error).toBeUndefined()
+      expect(result.status).toBe(0)
+      for (const tool of ["js", "jj", "foundry", "rust"]) {
+        expect(result.stdout.match(new RegExp(`^BOOTSTRAP-${tool}$`, "gm"))?.length).toBe(1)
+      }
+      // JS first: every other installer runs pnpm or needs the checkout ready.
+      expect(result.stdout.indexOf("BOOTSTRAP-js")).toBeLessThan(result.stdout.indexOf("BOOTSTRAP-jj"))
+    })
+
+    test("marks each gate, keeps going past a failure, and fails the task", () => {
+      const result = run("group", "script-lint", "jsdoc", "jsdoc-rules")
+      expect(result.error).toBeUndefined()
+      expect(result.status).toBe(1)
+      const markers = Array.from(result.stdout.matchAll(/^::gate (\S+) (\S+)$/gm), ([, gate, state]) => `${gate} ${state}`)
+      expect(markers).toEqual([
+        "script-lint start",
+        "script-lint ok",
+        "jsdoc start",
+        "jsdoc fail",
+        "jsdoc-rules start",
+        "jsdoc-rules ok"
+      ])
+      expect(result.stderr).toContain("GATE-FAIL jsdoc")
+      expect(result.stdout).not.toContain("GROUP-OK")
+    })
+
+    test("reports the whole group when every gate passes", () => {
+      const result = run("group", "script-lint", "jsdoc-rules")
+      expect(result.status).toBe(0)
+      expect(result.stdout).toContain("::gate script-lint ok")
+      expect(result.stdout).toContain("::gate jsdoc-rules ok")
+      expect(result.stdout).toContain("GROUP-OK script-lint jsdoc-rules")
+    })
+
+    test("single-gate mode still bootstraps and runs one gate", () => {
+      const result = run("script-lint")
+      expect(result.status).toBe(0)
+      expect(result.stdout).toContain("BOOTSTRAP-js")
+      expect(result.stdout).toContain("RAN exec smthrs lint //scripts:lint --verbose")
+      expect(result.stdout.trimEnd().endsWith("GATE-OK script-lint")).toBe(true)
+      expect(result.stdout).not.toContain("::gate")
+    })
   })
 })
