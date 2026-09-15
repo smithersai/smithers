@@ -40,8 +40,8 @@ const run = (effect) => Effect.runPromise(effect.pipe(Effect.provide(platform)))
 /**
  * The prompt bodies under `flows/`, by their path-derived flow name: the ten
  * authoring bodies the migration composes, the repository flows the
- * smithers.sh tape runs, and the `checks/*` bodies that pin a command for
- * `coding/CommandCheck`.
+ * smithers.sh tape runs, the issue research and proof-of-concept bodies,
+ * and the `checks/*` bodies that pin a command for `coding/CommandCheck`.
  */
 const EXPECTED_FLOWS = [
   "checks/bundle",
@@ -61,6 +61,8 @@ const EXPECTED_FLOWS = [
   "create-skill/document",
   "create-skill/scaffold",
   "issue-triage",
+  "issue/poc",
+  "issue/repro",
   "lint",
   "pr-triage",
   "release-notes",
@@ -259,19 +261,21 @@ describe("the capabilities the staged prompt bodies declare", () => {
 
 describe("the binary this lane's suites spawn", () => {
   it("is this working tree's source, not a build sitting beside it", () => {
-    // `packages/smithers/bin/smithers.mjs` prefers `dist/esm/bin.js` and falls back
-    // to `src/bin.ts`, which is right for a published install and wrong for a
-    // suite that asks what the source does. A stale `dist/` from an earlier
-    // commit answered last build's behaviour to every real-CLI assertion in
-    // this lane: the skills install, the hook spawns, and the fixture notices
-    // were all green over code the tree no longer had.
-    const built = join(repoRoot, "packages/smithers/dist/esm/bin.js");
-    assert.ok(
-      !existsSync(built),
-      `${relative(repoRoot, built)} exists, so every spawn in this lane runs that build instead of ` +
-        "packages/smithers/src. Remove packages/smithers/dist before running these suites, or rebuild it from " +
-        "the current source if something else needs it.",
-    );
+    // The shim now detects a checkout and selects source even beside dist.
+    // Observe the real module loader: the presence of release build output
+    // says nothing about which entry these CLI assertions actually execute.
+    const observer = `import { registerHooks } from "node:module";
+      registerHooks({ load(url, context, nextLoad) {
+        if (["/smithers/src/bin.ts", "/smithers/dist/esm/bin.js"].some(path => new URL(url).pathname.endsWith(path)))
+          process.stderr.write("CLI_ENTRY=" + url + "\\n");
+        return nextLoad(url, context);
+      } });`;
+    const result = spawnSync(process.execPath, [
+      "--import", `data:text/javascript,${encodeURIComponent(observer)}`, cli, "--version",
+    ], { cwd: repoRoot, encoding: "utf8", timeout: 180_000 });
+    assert.equal(result.status, 0, result.stderr);
+    assert.ok(result.stderr.includes("CLI_ENTRY=" + new URL("../packages/smithers/src/bin.ts", import.meta.url).href), result.stderr);
+    assert.ok(!result.stderr.includes("/dist/esm/bin.js"), result.stderr);
   });
 });
 
@@ -530,14 +534,20 @@ describe("discovery over the project flows directory", () => {
       }),
     );
 
-    const modules = ["checks/wiki", "coding", "coding/implementation", "coding/request", "coding/vibe", "release", "release-content", "wiki"];
+    const modules = ["checks/wiki", "coding", "coding/implementation", "coding/request", "coding/vibe", "release", "release-content", "tutorial-change", "wiki"];
+    // The librarian host registers these declarations explicitly. Their
+    // aliased Declaration.make defaults are outside static discovery's
+    // Flow.make syntax, so discovery reports them without inventing entries.
+    const registeredModules = ["librarian/history", "librarian/wiki"];
     const [code, message] = DELEGATED.split(": ");
     assert.deepEqual(
       scan.warnings.map((warning) => `${warning.code} at ${relative(flowsRoot, warning.path).split("\\").join("/")}: ${warning.message}`).sort(),
       [
         ...EXPECTED_FLOWS.filter((name) => name.startsWith("checks/")).map((name) => `${code} at ${name}/flow.mdx: ${message}`),
         ...modules.map((name) => `unsupported_module_metadata at ${name}/flow.ts: Flow authority cannot be projected statically; using the conservative wildcard`),
-        ...["checks/wiki", "wiki"].map((name) => `unsupported_module_metadata at ${name}/flow.ts: Effect tier sealed under-classifies declared authority; using irreversible`),
+        ...["checks/wiki", "tutorial-change", "wiki"].map((name) => `unsupported_module_metadata at ${name}/flow.ts: Effect tier sealed under-classifies declared authority; using irreversible`),
+        ...registeredModules.map((name) => `unsupported_module_metadata at ${name}/flow.ts: Could not statically read the default Flow.make or Flow.agent declaration`),
+        ...registeredModules.map((name) => `missing_description at ${name}/flow.ts: Module flows require a literal description in the default Flow.make or Flow.agent value`),
       ].sort(),
     );
     assert.deepEqual([...scan.entries].map((entry) => entry.name).sort(), [...EXPECTED_FLOWS, ...modules].sort());
