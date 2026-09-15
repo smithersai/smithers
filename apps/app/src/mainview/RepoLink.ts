@@ -1,7 +1,7 @@
 import { AUTH_SIGNED_IN_PARAM } from "@smthrs/rpc/AgentApiRoutes"
 import type { FetchLike } from "@smthrs/rpc/NativeAgent"
 import type { AppController } from "./state/AppController"
-import { repoTreeRowId, sharedCopyIdOf } from "./state/AppState"
+import { parseRepoSelection, repoTreeRowId, sharedCopyIdOf } from "./state/AppState"
 
 /*
  * A repository's app lives at `/owner/name` (https://smithers.sh/smithersai/smithers).
@@ -113,6 +113,15 @@ const welcomed = (controller: Pick<AppController, "store">, repo: string): boole
   return false
 }
 
+/** A repository URL must not discard that repository's selected working copy. */
+const selectionForRepo = (controller: Pick<AppController, "store">, repo: string): string => {
+  const key = controller.store.session().activeRepoKey
+  const selected = key == null ? null : parseRepoSelection(key)
+  if (selected && "repoId" in selected && selected.repoId === repo && selected.copyId !== undefined &&
+    controller.store.collections.workingCopies.get(selected.copyId)?.repoId === repo) return key!
+  return repo
+}
+
 /**
  * The repository document's default bookmark, read from the public mirror
  * (`GET /api/repos/{o}/{r}`, a public repository read the Worker forwards
@@ -165,7 +174,7 @@ export const openRequestedRepo = async (
       const failure = await controller.loadRepositories()
       const own = [...controller.store.collections.repositories.values()].find((repo) => repo.id.toLowerCase() === requested.toLowerCase() && repo.catalog !== true)
       if (failure === undefined && own !== undefined) {
-        const refusal = await controller.selectRepo(own.id)
+        const refusal = await controller.selectRepo(selectionForRepo(controller, own.id))
         if (refusal !== undefined) return refusal
         if (!welcomed(controller, own.id)) controller.runCommand("repo.welcome")
         return
@@ -189,7 +198,7 @@ export const openRequestedRepo = async (
       repository: { ...existing, ...repository, ownerKind: existing?.ownerKind ?? "user", head: existing?.head ?? null, catalog: true }
     })
   }
-  const refusal = await controller.selectRepo(repository.id)
+  const refusal = await controller.selectRepo(selectionForRepo(controller, repository.id))
   if (refusal !== undefined) return refusal
   if (!welcomed(controller, repository.id)) controller.runCommand("repo.welcome")
   /*

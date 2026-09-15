@@ -509,6 +509,7 @@ describe("workspace seam open", () => {
     })
     const result = await seam.openWorkspace()
     expect(typeof result).toBe("object")
+    expect(store.session().activeRepoKey).toBe("will/smithers#workspace:ws-1")
     // The create carried the repository's head bookmark as the source.
     expect(requests[0]).toBe("POST api/repos/will/smithers/workspaces")
     const card = cardOf(store)

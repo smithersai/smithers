@@ -1108,6 +1108,7 @@ export const createWorkspaceSeam = (ctx: SeamContext, deps: WorkspaceSeamDeps = 
     const refusal = gate()
     if (refusal !== undefined) return refusal
     const accountCurrent = currentOperation()
+    const requestedSelection = ctx.store.session().activeRepoKey
     const target = resolveTargetRepo(ctx.store, repo)
     if ("error" in target) return target.error
     /*
@@ -1156,6 +1157,11 @@ export const createWorkspaceSeam = (ctx: SeamContext, deps: WorkspaceSeamDeps = 
     const workspace = parseWorkspaceWire(created.body, target.repo)
     if (workspace === null) return `Smithers Cloud's answer for the new workspace on ${target.repo} was malformed.`
     ctx.dispatch({ type: "workspace.updated", actor: "system", workspace })
+    // Opening a computer also makes it the target of subsequent coding runs.
+    // A slow create must not pull the user back after they chose another repo.
+    if (ctx.store.session().activeRepoKey === requestedSelection) {
+      ctx.dispatch({ type: "repo.selected", actor: ctx.actor(), id: `${workspace.repoId}#workspace:${workspace.id}` })
+    }
     if (UNSETTLED.has(workspace.status)) watch(workspace.id)
     const [bookmarkHead, snapshots, sessions] = await Promise.all([
       loadBookmarkHead(workspace.repoId, workspace.targetBookmark),

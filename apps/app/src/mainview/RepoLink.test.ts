@@ -196,6 +196,18 @@ describe("signInReturnTo", () => {
 })
 
 describe("openRequestedRepo", () => {
+  test("reopening the repository URL keeps its selected cloud computer", async () => {
+    const { store, controller } = await fixture()
+    await openRequestedRepo(controller, async () => jsonResponse(catalog), "smithersai/smithers")
+    await store.dispatch({ type: "workspace.updated", actor: "system", workspace: {
+      id: "coding", repoId: "smithersai/smithers", name: "Coding", status: "running", targetBookmark: "main",
+      provisioningStage: null, suspendedAt: null, createdAt: null, head: null
+    } }).isPersisted.promise
+    await controller.selectRepo("smithersai/smithers#workspace:coding")
+    await openRequestedRepo(controller, async () => jsonResponse(catalog), "smithersai/smithers")
+    expect(store.session().activeRepoKey).toBe("smithersai/smithers#workspace:coding")
+  })
+
   test("a catalog repository becomes the active selection, and the welcome opens the transcript", async () => {
     const { store, controller, ran } = await fixture()
     const requests: Array<string> = []
