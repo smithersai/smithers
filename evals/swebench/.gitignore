@@ -44,7 +44,17 @@
 # scoreboard, the driver's logs, and the per-instance archive of patches,
 # journals, timings and evaluator reports. Days of running and gigabytes of
 # journals; none of it is committed.
-/fullbench/
+#
+# The two exceptions are committed prose, not results: the run reports the
+# exclusion list cites by path (`lib/excluded.mjs`) and the codex cost
+# derivation. They were committed with `git add -f` under a blanket
+# `/fullbench/` ignore, and a checkout that materialises only non-ignored
+# paths then dropped them: Cloud CI run 11763's `//evals/swebench:offline`
+# died with ENOENT on `fullbench/reports/rerun-r92.md`. Naming them here keeps
+# them out of the ignore set, so no checkout has to special-case them.
+/fullbench/*
+!/fullbench/reports/
+!/fullbench/codex-none/
 
 # Generated fixture: `./verify.sh` rebuilds it from the committed numbers.
 /fixtures/work/
