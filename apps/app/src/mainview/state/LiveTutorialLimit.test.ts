@@ -15,3 +15,11 @@ test("a limit uses the typed refusal copy and a reset on the viewer's labelled l
     else process.env.TZ = previous
   }
 })
+
+test("a limit names whose budget ran out when the Worker said so", () => {
+  const text = liveTutorialLimitMessage({ kind: "rate-limit", code: "turn_rate_limited", retryAt: Date.parse("2030-01-02T00:00:00Z"),
+    message: "Practice agent runs from this network have reached their daily limit." })
+  expect(text).toContain("nothing was charged")
+  expect(text).toContain("from this network")
+  expect(text).toContain("Jan")
+})

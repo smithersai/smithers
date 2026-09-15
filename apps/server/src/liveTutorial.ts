@@ -5,10 +5,16 @@ import { LiveTutorialStartSchema } from "@smthrs/rpc/LiveTutorial"
 import { ServerConfig } from "./Config"
 import { fetchWithDeadline, readBoundedText } from "./Http"
 import { TurnLimits, anonymousTurnKey, ANONYMOUS_CEILING, ANONYMOUS_ALL_CEILING } from "./turnLimit"
-import type { TurnBudget } from "./turnLimit"
+import type { TurnBudget, TurnCeiling } from "./turnLimit"
 
 const COOKIE = "__Host-smithers-tutorial"
 const lifetime = 60 * 60 * 1000
+/**
+ * One charge receipt per session action, counting the charge and each free
+ * repeat after it: two free repeats, then every repeat spends. It outlives the
+ * session it names.
+ */
+const TUTORIAL_RECEIPT: TurnCeiling = { kind: "anonymous", max: 3, windowMs: lifetime }
 const hex = (bytes: ArrayBuffer) => [...new Uint8Array(bytes)].map(b => b.toString(16).padStart(2,"0")).join("")
 const signingKey = (secret: string) => crypto.subtle.importKey("raw",new TextEncoder().encode(`tutorial-session:${secret}`),{name:"HMAC",hash:"SHA-256"},false,["sign","verify"])
 export const mintTutorialSession = (secret: string, now = Date.now()) => Effect.gen(function*(){
@@ -65,22 +71,38 @@ export const handleLiveTutorial = (request:Request) => Effect.gen(function*(){
     try{parsed=JSON.parse(raw)}catch{return json("request_body_not_json","The tutorial request must be JSON.")}
     const input=LiveTutorialStartSchema.safeParse(parsed)
     if(!input.success) return json("request_invalid","The tutorial request needs an idempotency key and playthrough.")
+    // Retry mints a new idempotency key, and reconnect or reload repeats the
+    // old one, so neither names the action. The signed session, playthrough
+    // and operation do: a charged action may repeat twice for free, which
+    // covers a failed run or a lost response. The Worker never sees whether
+    // the run completed, so the cap is what stops one cookie rerunning a
+    // finished action back to back. The receipt is written only after both
+    // buckets admit the action, so a refused action stays refused on retry.
+    const receipt=(id:string)=>`tutorial:charged:${id}:${input.data.playthrough}:${operation}`
+    let record=false
     // A Change packages an already verified implementation. It starts no
     // model or executor and remains available when agent spending is capped.
     // The signed session and coordinator's commit-ownership gate still apply.
     if(operation!=="change") {
       const limits=yield* TurnLimits
-      const key=yield* anonymousTurnKey(request,token)
-      const local=yield* limits.spend(`tutorial:${key}`,ANONYMOUS_CEILING)
-      if(!local.allowed)return tutorialLimitResponse(local,false)
-      const shared=yield* limits.spend("tutorial:all",ANONYMOUS_ALL_CEILING)
-      if(!shared.allowed)return tutorialLimitResponse(shared,true)
+      const prior=session?yield* limits.peek(receipt(session),TUTORIAL_RECEIPT):undefined
+      const free=prior!==undefined&&prior.allowed&&prior.remaining<TUTORIAL_RECEIPT.max
+      if(!free){
+        const key=yield* anonymousTurnKey(request,token)
+        const local=yield* limits.spend(`tutorial:${key}`,ANONYMOUS_CEILING)
+        if(!local.allowed)return tutorialLimitResponse(local,false)
+        const shared=yield* limits.spend("tutorial:all",ANONYMOUS_ALL_CEILING)
+        if(!shared.allowed)return tutorialLimitResponse(shared,true)
+      }
+      // A spent receipt stays spent until its window closes: nothing to record.
+      record=prior?.allowed!==false
     }
     if(!session){
       const signed=yield* mintTutorialSession(token)
       session=signed.split(".")[0]!
       setCookie=`${COOKIE}=${signed}; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=3600`
     }
+    if(record)yield* (yield* TurnLimits).spend(receipt(session),TUTORIAL_RECEIPT)
     body=JSON.stringify(input.data)
   }
   if(!session)return json("session_expired","This live example session expired. Your saved results remain available; start a new tutorial to run the agent again.")

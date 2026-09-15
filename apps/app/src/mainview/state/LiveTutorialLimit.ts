@@ -8,6 +8,8 @@ export const LiveTutorialLimitSchema = z.object({
   kind: z.literal("rate-limit"),
   code: z.string().optional(),
   retryAt: z.number().finite().optional(),
+  /** The Worker's own refusal, which says whose budget ran out. */
+  message: z.string().max(1000).optional(),
 })
 export type LiveTutorialLimit = z.infer<typeof LiveTutorialLimitSchema>
 
@@ -22,5 +24,6 @@ export function liveTutorialLimitMessage(limit: LiveTutorialLimit): string {
   const retry = limit.retryAt === undefined ? "Try practice again later" :
     `Return to practice after ${new Date(limit.retryAt).toLocaleString(undefined, { year: "numeric", month: "short", day: "numeric", hour: "numeric", minute: "2-digit", timeZoneName: "short" })}`
   const lead = refusalLead(refusalOf({ body: { code: limit.code ?? "turn_rate_limited" }, status: 429, message: "" }))
-  return `${lead} This practice run did not start because agent runs are temporarily limited. ${retry}, or continue without practice.`
+  const reason = limit.message ?? "Agent runs are temporarily limited."
+  return `${lead} This practice run did not start. ${reason} ${retry}, or continue without practice.`
 }

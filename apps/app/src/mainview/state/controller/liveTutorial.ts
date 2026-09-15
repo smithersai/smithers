@@ -128,13 +128,14 @@ export function createLiveTutorialController(ctx: ControllerContext, nextOrdinal
         const { operation, conversation: _, ...body } = request
         const response = await ctx.boundedFetch(`${ctx.baseUrl}${LIVE_TUTORIAL_API}/${operation}`, { method: "POST", credentials: "include", headers: { "content-type": "application/json" }, body: JSON.stringify(body) })
         if (response.status === 429) {
-          const payload = await response.json().catch(() => null) as { retryAt?: unknown; code?: unknown } | null
+          const payload = await response.json().catch(() => null) as { retryAt?: unknown; code?: unknown; message?: unknown } | null
           const at = typeof payload?.retryAt === "string" ? Date.parse(payload.retryAt) : NaN
           const header = response.headers.get("retry-after")
           const seconds = header === null ? NaN : Number(header)
           const fallback = Number.isFinite(seconds) ? Date.now() + Math.max(0, seconds) * 1000 : Date.parse(header ?? "")
           const retryAt = Number.isFinite(at) ? at : fallback
-          throw new TutorialLimitError({ kind: "rate-limit", ...(typeof payload?.code === "string" ? { code: payload.code } : {}), ...(Number.isFinite(retryAt) ? { retryAt } : {}) })
+          throw new TutorialLimitError({ kind: "rate-limit", ...(typeof payload?.code === "string" ? { code: payload.code } : {}),
+            ...(typeof payload?.message === "string" && payload.message.length <= 1000 ? { message: payload.message } : {}), ...(Number.isFinite(retryAt) ? { retryAt } : {}) })
         }
         if (!response.ok) throw Error(await ctx.errorMessageOf(response, "The live tutorial workspace could not start."))
         const run = LiveTutorialRunSchema.parse(await response.json())

@@ -215,6 +215,8 @@ export class TurnRateLimiter {
 export interface TurnLimitsShape {
   /** Spend one turn from `key`'s budget under `ceiling` (the login ceiling by default). */
   readonly spend: (key: string, ceiling?: TurnCeiling) => Effect.Effect<TurnBudget>
+  /** Report `key`'s budget under `ceiling` without spending. */
+  readonly peek: (key: string, ceiling?: TurnCeiling) => Effect.Effect<TurnBudget>
 }
 
 export class TurnLimits extends Context.Service<TurnLimits, TurnLimitsShape>()("smithers-server/TurnLimits") {}
@@ -235,30 +237,33 @@ const isBudget = (value: unknown): value is TurnBudget =>
  * answers something unreadable: our own infrastructure hiccuping must never
  * lock a person out.
  */
-export const turnLimitsLayer = (namespace: NativeNamespace | undefined): Layer.Layer<TurnLimits> =>
-  Layer.succeed(TurnLimits, {
-    spend: Effect.fn("TurnLimits.spend")(function*(key: string, ceiling: TurnCeiling = LOGIN_CEILING) {
+export const turnLimitsLayer = (namespace: NativeNamespace | undefined): Layer.Layer<TurnLimits> => {
+  const call = (path: "spend" | "peek") =>
+    Effect.fn(`TurnLimits.${path}`)(function*(key: string, ceiling: TurnCeiling = LOGIN_CEILING) {
       const open: TurnBudget = { allowed: true, remaining: ceiling.max }
       if (namespace === undefined) return open
       const budget = yield* namespaceCall(
-        "turnLimits.spend",
+        `turnLimits.${path}`,
         namespace,
         key,
-        new Request(`https://turn-limit.internal/spend?max=${ceiling.max}&windowMs=${ceiling.windowMs}`, { method: "POST" })
+        new Request(`https://turn-limit.internal/${path}?max=${ceiling.max}&windowMs=${ceiling.windowMs}`, {
+          method: path === "spend" ? "POST" : "GET"
+        })
       ).pipe(
-        Effect.flatMap((response) => answeredJson("turnLimits.spend", "The turn limiter", response)),
+        Effect.flatMap((response) => answeredJson(`turnLimits.${path}`, "The turn limiter", response)),
         Effect.catch((failure) =>
           Effect.sync(() => {
             // A rejected fetch, a refusal, or an unreadable answer is an
             // infrastructure fault, not a signal about this user: admit the
             // turn and log the cause (a refusal names its status and body).
-            console.error("turn-limit spend failed:", failure.cause)
+            console.error(`turn-limit ${path} failed:`, failure.cause)
             return undefined
           }))
       )
       return isBudget(budget) ? budget : open
     })
-  })
+  return Layer.succeed(TurnLimits, { spend: call("spend"), peek: call("peek") })
+}
 
 /* ------------------------------------------------------------------------ */
 /* The anonymous bucket                                                      */

@@ -25,7 +25,7 @@ it('forwards only a signed scoped session, retains private token, bounds bodies,
  let allowed=true
  const services=Layer.mergeAll(
   testConfigLayer({tutorialServiceUrl:'https://service.invalid/__tutorial',tutorialServiceToken:Redacted.make('private-token')}),
-  Layer.succeed(TurnLimits,{spend:()=>Effect.succeed({allowed,remaining:allowed?19:0,retryAt:Date.now()+10000})}),
+  Layer.succeed(TurnLimits,{spend:()=>Effect.succeed({allowed,remaining:allowed?19:0,retryAt:Date.now()+10000}),peek:()=>Effect.succeed({allowed:true,remaining:1})}),
   transportLayer(async(input,init)=>{calls.push({url:String(input),init});return Response.json({runId:'run'},{headers:{'set-cookie':'bad-cookie=1'}})})
  )
  const run=(request:Request)=>Effect.runPromise(handleLiveTutorial(request).pipe(Effect.provide(services)))
@@ -64,4 +64,50 @@ it('forwards only a signed scoped session, retains private token, bounds bodies,
  const unscopedChange=await run(new Request('https://smithers.sh/api/tutorial/live/change',{method:'POST',body:JSON.stringify({playthrough:0,idempotencyKey:'unscoped'})}))
  expect(unscopedChange.status).toBe(401)
  expect(calls.length).toBe(3)
+})
+
+it('allows two free repeats per session action, then spends, and never frees a refused action',async()=>{
+ const counts=new Map<string,number>()
+ let localMax=20
+ const spends:string[]=[]
+ const budget=(key:string,max:number,spend:boolean)=>{
+  const count=counts.get(key)??0
+  if(count>=max)return {allowed:false,remaining:0,retryAt:Date.now()+10000}
+  if(spend)counts.set(key,count+1)
+  return {allowed:true,remaining:max-count-(spend?1:0)}
+ }
+ const services=Layer.mergeAll(
+  testConfigLayer({tutorialServiceUrl:'https://service.invalid/__tutorial',tutorialServiceToken:Redacted.make('private-token')}),
+  Layer.succeed(TurnLimits,{
+   spend:(key,ceiling)=>Effect.sync(()=>{const max=key.startsWith('tutorial:anonymous:')?localMax:ceiling!.max;const result=budget(key,max,true);if(result.allowed&&!key.startsWith('tutorial:charged:'))spends.push(key);return result}),
+   peek:(key,ceiling)=>Effect.sync(()=>budget(key,ceiling!.max,false))
+  }),
+  transportLayer(async()=>Response.json({runId:'run'}))
+ )
+ const run=(request:Request)=>Effect.runPromise(handleLiveTutorial(request).pipe(Effect.provide(services)))
+ const post=(operation:string,body:Record<string,unknown>,cookie?:string)=>run(new Request(`https://smithers.sh/api/tutorial/live/${operation}`,{method:'POST',headers:{'cf-connecting-ip':'192.0.2.1',...(cookie?{cookie}:{})},body:JSON.stringify(body)}))
+ const local=()=>spends.filter(key=>key.startsWith('tutorial:anonymous:')).length
+ const first=await post('research',{playthrough:0,idempotencyKey:'first'})
+ expect(first.status).toBe(200)
+ const cookie=first.headers.get('set-cookie')!.split(';')[0]!
+ expect(local()).toBe(1)
+ // Retry mints a new idempotency key; reconnect and reload repeat the old one.
+ expect((await post('research',{playthrough:0,idempotencyKey:'retry'},cookie)).status).toBe(200)
+ expect((await post('research',{playthrough:0,idempotencyKey:'first'},cookie)).status).toBe(200)
+ expect(local()).toBe(1)
+ expect(spends.filter(key=>key==='tutorial:all')).toHaveLength(1)
+ // The third repeat spends, and so does every one after it.
+ expect((await post('research',{playthrough:0,idempotencyKey:'third'},cookie)).status).toBe(200)
+ expect(local()).toBe(2)
+ expect((await post('research',{playthrough:0,idempotencyKey:'fourth'},cookie)).status).toBe(200)
+ expect(local()).toBe(3)
+ expect((await post('plan',{playthrough:0,idempotencyKey:'plan'},cookie)).status).toBe(200)
+ expect(local()).toBe(4)
+ expect((await post('research',{playthrough:1,idempotencyKey:'replay'},cookie)).status).toBe(200)
+ expect(local()).toBe(5)
+ // A refused action records no charge, so retrying it is refused again rather than run for free.
+ localMax=5
+ expect((await post('poc',{playthrough:1,idempotencyKey:'refused'},cookie)).status).toBe(429)
+ expect((await post('poc',{playthrough:1,idempotencyKey:'refused-retry'},cookie)).status).toBe(429)
+ expect(local()).toBe(5)
 })

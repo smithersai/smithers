@@ -63,6 +63,19 @@ test("a quota-rejected launch persists its deadline, never reconnects on reload,
   await restored.dispose?.()
 })
 
+test("a quota refusal keeps the Worker's reason for whose budget ran out", async () => {
+  const message = "Practice agent runs for everyone have reached their daily limit."
+  const t = await setup(async () => Response.json({ code: "turn_rate_limited", message, retryAt: new Date(Date.now() + 60_000).toISOString() }, { status: 429 }))
+  await t.step(4)
+  expect(await t.live.research()).toContain("for everyone")
+  const rejected = [...t.store.collections.cards.values()].find(card => card.kind === "run-trace")!
+  expect(rejected.kind === "run-trace" && (rejected.payload.input?.liveTutorialLimit as { message?: string }).message).toBe(message)
+  expect(await t.live.retry(rejected.id)).toContain("for everyone")
+  t.dispose()
+  await t.store.settled?.()
+  await t.store.dispose?.()
+})
+
 test("a limit deadline exposes an explicit retry without automatically spending another turn", async () => {
   let attempts = 0
   const t = await setup(async operation => ++attempts === 1
