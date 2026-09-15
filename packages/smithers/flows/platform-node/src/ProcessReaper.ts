@@ -58,6 +58,7 @@ import { spawnSync } from "node:child_process"
 import { uptime } from "node:os"
 import * as PipedProcess from "./internal/PipedProcess.ts"
 import * as ProcessCleanup from "./internal/ProcessCleanup.ts"
+import * as ProcSnapshot from "./internal/ProcSnapshot.ts"
 
 /**
  * What the operating system can say about a pid.
@@ -201,7 +202,7 @@ const cleanupProbeTimeoutMs = 2000
  * own group together. Only numeric fields and C-locale lstart are read; command
  * text and the caller's PATH never influence signal authority.
  */
-const groupSnapshot = (pgid: number): ProcessCleanup.Snapshot | undefined => {
+const psGroupSnapshot = (pgid: number): ProcessCleanup.Snapshot | undefined => {
   const result = spawnSync(defaultPsExecutable, ["-A", "-o", "pid=,pgid=,stat=,lstart="], {
     encoding: "utf8",
     timeout: cleanupProbeTimeoutMs,
@@ -227,6 +228,27 @@ const groupSnapshot = (pgid: number): ProcessCleanup.Snapshot | undefined => {
 }
 
 /**
+ * The observation the supervisor polls, from the source that platform has.
+ *
+ * Linux publishes the whole process table as files under `/proc`, which is
+ * where `ps` itself reads it, so the kernel is asked directly. That needs no
+ * `procps` in the image, cannot be answered by a planted binary, and costs no
+ * fork on a poll that runs every 10ms. A missing `/bin/ps` is not a
+ * hypothetical: `procps` is not in `debian:bookworm-slim`, and on Cloud CI run
+ * 11727 every spawned target in every task finished its work and then failed
+ * cleanup verification with `Unknown: ChildProcess.kill`, because this
+ * observation could not be made.
+ *
+ * Every other POSIX host keeps the `ps` reading, which is the only portable
+ * spelling of this question off Linux.
+ *
+ * @category constructors
+ * @since 1.0.0
+ */
+export const groupSnapshotFor = (platform: string): (pgid: number) => ProcessCleanup.Snapshot | undefined =>
+  platform === "linux" ? ProcSnapshot.snapshot(ProcSnapshot.defaultProcRoot) : psGroupSnapshot
+
+/**
  * Live cleanup for Node and Bun contained spawners.
  *
  * A trusted supervisor remains the group owner after the target exits. It
@@ -240,7 +262,7 @@ const groupSnapshot = (pgid: number): ProcessCleanup.Snapshot | undefined => {
  */
 export const processLifecycle = ProcessCleanup.lifecycle({
   platform: process.platform,
-  snapshot: groupSnapshot
+  snapshot: groupSnapshotFor(process.platform)
 })
 
 /**
