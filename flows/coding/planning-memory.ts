@@ -9,6 +9,7 @@ import { Effect, FileSystem, Layer, Path, Schema } from "effect"
 import { operations as wikiOperations } from "../wiki/operations.ts"
 import type { PageSpec } from "../wiki/schema.ts"
 import { NativeCoding } from "./native.ts"
+import { collectSources, extractPaths, readmePaths, reader as sourceReader, staleSources } from "./planning-sources.ts"
 import { GatherContext, memoryRevision, PlanningContext, type PlanningInput, sameCode, VerifyContext } from "./planning.ts"
 import { type Check, CodingError } from "./schema.ts"
 
@@ -93,11 +94,21 @@ export const gather = (options: MemoryOptions, input: typeof PlanningInput.Type,
     return { changeId: row.changeId, commitId: row.commitId, treeId: row.treeId,
       operationId: row.operationId, parentCommitIds: row.parentCommitIds, description: row.description ?? "" }
   })
+  // The planner asked humans to paste files it could have read. Attach the
+  // request's own paths, the paths its chosen notes cite, and the repository
+  // README, in that priority order, under the per-file and total caps.
+  const reader = yield* sourceReader(options.repositoryPath, hostFilesystem)
+  const named = extractPaths(input.prompt, input.feedback)
+  const cited = extractPaths(...memory.map(note => note.markdown))
+  const collected = yield* collectSources(reader, [...named, ...cited, ...(yield* readmePaths(reader))])
   const context = {
-    head: before.head, history, memory, ...definitions,
-    memoryRevision: memoryRevision({ wiki: wiki.artifactDigest, history, memory, definitions })
+    head: before.head, history, memory, ...definitions, ...collected,
+    memoryRevision: memoryRevision({ wiki: wiki.artifactDigest, history, memory, definitions,
+      sources: collected.sources.map(({ digest, path }) => ({ path, digest })), missing: collected.missing })
   }
-  if (bytes(context) > 128 * 1024) return yield* failure("Planning context exceeds 128 KiB; narrow the native history or wiki budget")
+  // Attached file text carries its own per-file and total caps, so the budget
+  // here still bounds the native history, the wiki notes and the definitions.
+  if (bytes({ ...context, sources: [] }) > 128 * 1024) return yield* failure("Planning context exceeds 128 KiB; narrow the native history or wiki budget")
   return yield* Schema.decodeUnknownEffect(PlanningContext)(context).pipe(
     Effect.mapError(() => failure("Gathered planning context violates its native or catalog contract"))
   )
@@ -119,6 +130,10 @@ export const memoryLayer = (options: MemoryOptions, hostFilesystem?: FileSystem.
           const actual = current.revisions.find(value => value.changeId === row.changeId)
           return !actual || actual.kind !== "resolved" || !sameCode(row, actual)
         })) return yield* failure("Native code changed during planning or clarification; gather and plan again")
+    // A plan may not be finalized against file text the planner no longer sees.
+    const stale = yield* staleSources(yield* sourceReader(options.repositoryPath, hostFilesystem),
+      { sources: context.sources ?? [], missing: context.missing ?? [] })
+    if (stale.length > 0) return yield* failure(`Attached source files changed during planning or clarification; gather and plan again: ${stale.join(", ")}`)
     yield* wikiOperations({ root: options.repositoryPath, output: options.wikiOutput, fs: hostFilesystem }).check(options.pages, true)
     return context
   }).pipe(Effect.mapError(error => error instanceof CodingError ? error : failure(

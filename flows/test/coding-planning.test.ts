@@ -100,6 +100,7 @@ test("native memory and a real SQLite clarification resume across hosts and reje
   await mkdir(join(root, "src"))
   await writeFile(join(root, ".gitignore"), ".flows/\n")
   await writeFile(join(root, "page.md"), "# Answer\n\nThe answer is 42.\n")
+  await writeFile(join(root, "README.md"), "# Canary\n\nAn existing introduction.\n")
   await writeFile(join(root, "src/answer.ts"), "export const answer = 42\n")
   for (const [name, delegate, body] of [["coding/atoms", "coding/Implement", "Implement the supplied atom."],
     ["checks/fast", "coding/CommandCheck", JSON.stringify({ argv: ["true"], cwd: ".", timeoutMs: 1000 })],
@@ -157,6 +158,17 @@ test("native memory and a real SQLite clarification resume across hosts and reje
     assert.equal(state.value.reason, "approval")
     assert.equal(state.value.token, token(executionId))
   }
+  // The planner is handed the repository README instead of parking the run on
+  // "please provide the full current content of README.md".
+  // Request paths come first, then the files the selected notes cite, then the
+  // repository README, which every prose request may need.
+  const gathered = await host.runPromise(gather(options, input))
+  assert.deepEqual(gathered.sources?.map(source => source.path), ["page.md", "src/answer.ts", "README.md"])
+  const readme = gathered.sources!.find(source => source.path === "README.md")!
+  assert.equal(readme.text, "# Canary\n\nAn existing introduction.\n")
+  assert.equal(readme.truncated, false)
+  assert.match(readme.digest, /^[0-9a-f]{64}$/)
+  assert.deepEqual(gathered.missing, [])
   await park("planning-resume")
   assert.equal(reviewed, 1)
   assert.equal(drafted, 0)
