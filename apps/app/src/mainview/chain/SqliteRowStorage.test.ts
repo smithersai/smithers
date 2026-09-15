@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import { Database } from "bun:sqlite"
 import { z } from "zod"
-import { PERSISTED_COLLECTION_BUDGET_BYTES, PERSISTED_LOAD_CHUNK_ROWS } from "./PersistenceBudget"
+import { PERSISTED_COLLECTION_BUDGET_BYTES, PERSISTED_LOAD_CHUNK_ROWS, PERSISTED_LOAD_PAGE_BYTES } from "./PersistenceBudget"
 import {
   FutureSqliteSchemaError,
   METADATA_TABLE_NAME,
@@ -80,6 +80,71 @@ describe("normalized SQLite row storage", () => {
     expect(db.sqlite.query(`SELECT COUNT(*) AS n FROM ${ROW_TABLE_NAME}`).get()).toEqual({ n: 40 })
     expect(db.sqlite.query(`SELECT COUNT(*) AS n FROM ${QUARANTINE_TABLE_NAME}`).get()).toEqual({ n: 0 })
     await bounded.close()
+  })
+
+  /*
+   * The budget has to bound what the page READS, not only what it keeps.
+   *
+   * The first bounded loader selected every row's `value` and then discarded
+   * the ones over budget, so opening a 567,535,882-byte OPFS profile still
+   * marshalled the whole store out of the wa-sqlite worker before admitting one
+   * budget of it. That launch spent itself inside the load: smithers.sh build
+   * 5136850c (2026-09-15 16:50Z) logged
+   *
+   *   Smithers: the persisted store is larger than one launch loads; older rows
+   *   stayed on disk. {budgetBytes: 67108864, loaded: 260, skipped: 455,
+   *   collections: Array(1)}
+   *
+   * and then rendered nothing but the 384-character entrance wordmark — both
+   * Suspense fallbacks still mounted, no composer, no cards, no error panel,
+   * because nothing had thrown. A fresh profile booted normally.
+   */
+  test("a bounded open reads only the rows it admits, not the whole store", async () => {
+    const db = database()
+    let valueBytesRead = 0
+    const metered: SqliteRowDatabase = {
+      execute: async <TRow>(sql: string, params: ReadonlyArray<unknown> = []) => {
+        const rows = await db.host.execute<TRow>(sql, params)
+        for (const row of rows) {
+          const value = (row as { readonly value?: unknown }).value
+          if (typeof value === "string") valueBytesRead += value.length
+        }
+        return rows
+      }
+    }
+    const seeded = await openSqliteRowStorage(metered, { collections, schemaVersion: 9 })
+    for (let index = 0; index < 100; index += 1) {
+      seeded.applyRows("notes", [{
+        key: `s:note-${String(index).padStart(3, "0")}`,
+        versionKey: `v${index}`,
+        data: { id: `note-${String(index).padStart(3, "0")}`, body: "b".repeat(100_000) }
+      }])
+    }
+    await seeded.flush()
+    const stored = Number(
+      (db.sqlite.query(`SELECT SUM(LENGTH(value)) AS bytes FROM ${ROW_TABLE_NAME}`).get() as { bytes: number }).bytes
+    )
+    expect(stored).toBeGreaterThan(10_000_000)
+
+    valueBytesRead = 0
+    const budgetBytes = 1_000_000
+    const bounded = await openSqliteRowStorage(metered, { collections, schemaVersion: 9, budgetBytes })
+    expect(bounded.loadReport.skipped).toBe(91)
+    // One budget, not ten. The planning pass reads sizes; only admitted rows
+    // hand over their value, so peak memory follows the budget, not the disk.
+    expect(valueBytesRead).toBeLessThanOrEqual(budgetBytes)
+    expect(bounded.readRows("notes").size).toBe(9)
+  })
+
+  test("a single row larger than one read page is still read whole", async () => {
+    const db = database()
+    const seeded = await openSqliteRowStorage(db.host, { collections, schemaVersion: 9 })
+    const body = "b".repeat(PERSISTED_LOAD_PAGE_BYTES + 1_000)
+    seeded.applyRows("notes", [{ key: "s:huge", versionKey: "v1", data: { id: "huge", body } }])
+    await seeded.flush()
+    const reopened = await openSqliteRowStorage(db.host, { collections, schemaVersion: 9 })
+    expect(reopened.loadReport.skipped).toBe(0)
+    expect((reopened.readRows("notes").get("s:huge")?.data as { body: string }).body.length).toBe(body.length)
   })
 
   test("a whole store inside its budget loads completely and reports nothing skipped", async () => {

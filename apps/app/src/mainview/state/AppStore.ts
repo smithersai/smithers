@@ -875,7 +875,7 @@ const COLLECTION_DEFINITIONS = {
   }
 } as const
 
-const PERSISTED_COLLECTION_SPECS = Object.values(COLLECTION_DEFINITIONS).filter((definition) => definition.persisted)
+export const PERSISTED_COLLECTION_SPECS = Object.values(COLLECTION_DEFINITIONS).filter((definition) => definition.persisted)
 
 /** The strip's order: main first, then creation order. */
 const orderedTabs = (collections: Pick<StoredCollections, "tabs">): Array<TabRow> =>

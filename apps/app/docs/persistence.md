@@ -128,13 +128,29 @@ collection as one JSON string. A profile with 890 MB of OPFS SQLite could not
 start at all — `prepare runtime and persisted state: Invalid string length`,
 with a recovery download as the only offered action.
 
-`SqliteRowStorage.ts` therefore reads rows in chunks of 512, newest first
-(descending rowid), and admits at most `PERSISTED_COLLECTION_BUDGET_BYTES`
-(64 MiB) per collection. Rows below that line stay on disk: they are not
-parsed, not deleted, and the recovery download still reaches them. Skipping is
-a size decision, so it never consults the row-recovery policy or the quarantine
-table, and a skipped row still counts as physically present so the legacy
-importer cannot reinsert an older copy underneath it.
+`SqliteRowStorage.ts` therefore loads in two passes. The first reads addressing
+and sizes only — `rowid`, `collection_id`, `row_key`, `LENGTH(value)` — in
+chunks of 512, newest first (descending rowid), and admits at most
+`PERSISTED_COLLECTION_BUDGET_BYTES` (64 MiB) per collection. The second reads
+the values of the admitted rows alone, in pages bounded by
+`PERSISTED_LOAD_PAGE_BYTES` (4 MiB) as well as by row count; a single row larger
+than one page is read alone rather than split.
+
+The budget bounds what the page READS, not only what it keeps. The first
+bounded loader selected every row's value and discarded the ones over budget,
+so opening a 567,535,882-byte profile still marshalled the whole store out of
+the wa-sqlite worker before admitting one budget of it — smithers.sh build
+5136850c (2026-09-15 16:50Z) logged `the persisted store is larger than one
+launch loads` with `{budgetBytes: 67108864, loaded: 260, skipped: 455}` and
+then rendered nothing but the 384-character entrance wordmark: no composer, no
+cards, no error panel, because nothing had thrown. A fresh profile booted
+normally.
+
+Rows below the line stay on disk: they are not parsed, not deleted, and the
+recovery download still reaches them. Skipping is a size decision, so it never
+consults the row-recovery policy or the quarantine table, and a skipped row
+still counts as physically present so the legacy importer cannot reinsert an
+older copy underneath it.
 
 `openSqliteRowStorage` returns a `loadReport` naming the loaded and skipped
 counts per collection. A partial load logs one structured warning (collection

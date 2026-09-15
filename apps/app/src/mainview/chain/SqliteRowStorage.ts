@@ -3,7 +3,8 @@ import type { DurableRowDelta } from "./DurableCollection"
 import {
   EMPTY_PERSISTED_LOAD,
   PERSISTED_COLLECTION_BUDGET_BYTES,
-  PERSISTED_LOAD_CHUNK_ROWS
+  PERSISTED_LOAD_CHUNK_ROWS,
+  PERSISTED_LOAD_PAGE_BYTES
 } from "./PersistenceBudget"
 import type { PersistedCollectionLoad, PersistedLoadReport } from "./PersistenceBudget"
 import { PERSISTED_KEY_PREFIX, SCHEMA_VERSION_STORAGE_KEY } from "./SchemaVersion"
@@ -300,27 +301,40 @@ export const openSqliteRowStorage = async (
       : await readLegacyRows(database, options)
 
     /*
-     * The bounded, chunked load (PersistenceBudget.ts). Rows arrive newest
-     * first (descending rowid is insertion order) in pages, so no statement
-     * result and no decoded value ever approaches the 512 MiB string ceiling.
+     * The bounded load (PersistenceBudget.ts), in two passes.
+     *
+     * The first pass reads addressing and sizes only — never a `value` — so
+     * planning a store costs a few hundred bytes per row however large the
+     * store is. That is the whole point: the budget has to bound what the page
+     * READS, not only what it keeps. A loader that selected every `value` and
+     * then discarded the ones over budget still marshalled the entire store out
+     * of the OPFS worker first, which is how a 567 MB profile spent its whole
+     * boot inside the load and left the app on the entrance wordmark
+     * (smithers.sh build 5136850c, 2026-09-15).
+     *
+     * Rows are admitted newest first (descending rowid is insertion order).
      * A collection that has spent its budget stops admitting the older rows
      * below the cursor: they stay on disk, unparsed and undeleted, reachable
      * through the recovery download. Skipping is a size decision, never a
      * validation one, so it does not consult the row-recovery policy.
+     *
+     * The second pass reads only the admitted rows, in pages bounded by BYTES
+     * as well as by row count, so no statement result and no decoded value ever
+     * approaches the 512 MiB string ceiling.
      */
     const presentRows = new Set<string>()
     const invalid: Array<{ readonly collectionId: string; readonly rowKey: string; readonly raw: string }> = []
     const normalized: Array<{ readonly collectionId: string; readonly rowKey: string; readonly versionKey: string; readonly raw: string; readonly encoded: string }> = []
+    const admitted: Array<{ readonly rid: number; readonly size: number }> = []
     let cursor = Number.MAX_SAFE_INTEGER
     for (;;) {
       const chunk = await database.execute<{
         readonly rid?: unknown
         readonly collection_id?: unknown
         readonly row_key?: unknown
-        readonly version_key?: unknown
-        readonly value?: unknown
+        readonly size?: unknown
       }>(
-        `SELECT rowid AS rid, collection_id, row_key, version_key, value FROM ${ROW_TABLE_NAME}
+        `SELECT rowid AS rid, collection_id, row_key, LENGTH(value) AS size FROM ${ROW_TABLE_NAME}
          WHERE rowid < ? ORDER BY rowid DESC LIMIT ?`,
         [cursor, PERSISTED_LOAD_CHUNK_ROWS]
       )
@@ -328,6 +342,52 @@ export const openSqliteRowStorage = async (
       for (const row of chunk) {
         if (typeof row.rid !== "number" || !Number.isSafeInteger(row.rid)) throw new UnreadableSqliteStateError("normalized row")
         cursor = row.rid
+        if (typeof row.collection_id !== "string") throw new UnreadableSqliteStateError("normalized row")
+        const spec = specs.get(row.collection_id)
+        if (spec === undefined) continue
+        if (typeof row.row_key !== "string" || typeof row.size !== "number" || !Number.isSafeInteger(row.size) || row.size < 0) {
+          assertRowRecoveryPolicy(spec, 1)
+          throw new UnreadableSqliteStateError("normalized row")
+        }
+        // A skipped row is still physically present: the legacy importer must
+        // not reinsert an older copy of it underneath this launch.
+        presentRows.add(JSON.stringify([row.collection_id, row.row_key]))
+        const size = row.row_key.length + row.size
+        const account = accounting(row.collection_id)
+        if (account.loadedBytes + size > budget) {
+          account.skipped += 1
+          account.skippedBytes += size
+          continue
+        }
+        account.loaded += 1
+        account.loadedBytes += size
+        admitted.push({ rid: row.rid, size })
+      }
+      if (chunk.length < PERSISTED_LOAD_CHUNK_ROWS) break
+    }
+
+    for (let index = 0; index < admitted.length;) {
+      const page: Array<number> = []
+      let pageBytes = 0
+      while (
+        index < admitted.length && page.length < PERSISTED_LOAD_CHUNK_ROWS &&
+        (page.length === 0 || pageBytes + admitted[index]!.size <= PERSISTED_LOAD_PAGE_BYTES)
+      ) {
+        pageBytes += admitted[index]!.size
+        page.push(admitted[index]!.rid)
+        index += 1
+      }
+      const chunk = await database.execute<{
+        readonly collection_id?: unknown
+        readonly row_key?: unknown
+        readonly version_key?: unknown
+        readonly value?: unknown
+      }>(
+        `SELECT collection_id, row_key, version_key, value FROM ${ROW_TABLE_NAME}
+         WHERE rowid IN (${page.map(() => "?").join(", ")})`,
+        page
+      )
+      for (const row of chunk) {
         if (typeof row.collection_id !== "string") throw new UnreadableSqliteStateError("normalized row")
         const spec = specs.get(row.collection_id)
         if (spec === undefined) continue
@@ -339,18 +399,6 @@ export const openSqliteRowStorage = async (
           assertRowRecoveryPolicy(spec, 1)
           throw new UnreadableSqliteStateError("normalized row")
         }
-        // A skipped row is still physically present: the legacy importer must
-        // not reinsert an older copy of it underneath this launch.
-        presentRows.add(JSON.stringify([row.collection_id, row.row_key]))
-        const size = row.row_key.length + row.value.length
-        const account = accounting(row.collection_id)
-        if (account.loadedBytes + size > budget) {
-          account.skipped += 1
-          account.skippedBytes += size
-          continue
-        }
-        account.loaded += 1
-        account.loadedBytes += size
         let data: unknown
         try {
           data = JSON.parse(row.value)
@@ -370,7 +418,6 @@ export const openSqliteRowStorage = async (
         byCollection.set(row.collection_id, rows)
         if (decoded.changed) normalized.push({ collectionId: row.collection_id, rowKey: row.row_key, versionKey: row.version_key, raw: row.value, encoded: decoded.encoded })
       }
-      if (chunk.length < PERSISTED_LOAD_CHUNK_ROWS) break
     }
 
     for (const row of [...(legacy?.rejected ?? []), ...invalid]) {

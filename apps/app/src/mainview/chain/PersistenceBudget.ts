@@ -28,6 +28,18 @@ export const PERSISTED_COLLECTION_BUDGET_BYTES = 64 * 1024 * 1024
 /** Rows per chunked read. One statement's result never holds the whole store. */
 export const PERSISTED_LOAD_CHUNK_ROWS = 512
 
+/*
+ * Bytes per chunked read of row VALUES.
+ *
+ * A row bound alone does not bound a statement result: 512 rows of a run
+ * card's event payload is half a gigabyte in one answer, which is the whole
+ * store again. The loader therefore plans the load from sizes only and then
+ * reads the admitted values in pages no larger than this, so what crosses the
+ * OPFS worker boundary at once stays small whatever a single row grew to. A
+ * row larger than this page on its own is still read alone, never split.
+ */
+export const PERSISTED_LOAD_PAGE_BYTES = 4 * 1024 * 1024
+
 /** What one collection's bounded load admitted and what it left on disk. */
 export interface PersistedCollectionLoad {
   readonly collectionId: string
