@@ -9,6 +9,7 @@ import {
   test
 } from "./support/test"
 import { scenario } from "./coverage/types"
+import { authenticatedTest } from "./auth-permissions/profile"
 import { launchFaultHarness } from "./chat-tools/fault-process"
 import {
   assertOwnedFile,
@@ -425,8 +426,8 @@ test("slash browser.open exposes the real service rejection for a loopback targe
   await attachJson(testInfo, "private-browser-fetch-evidence", { status: response.status(), body })
 })
 
-test("production recommendations come from the live recommender and clicking one reports its outcome", scenario("chat.production-recommendation-outcome", {
-  capabilities: ["agent", "cloud"],
+authenticatedTest("production recommendations come from the live recommender and clicking one reports its outcome", scenario("chat.production-recommendation-outcome", {
+  capabilities: ["agent", "cloud", "identity"],
   coverage: ["action:chat.send", "action:system.recommend", "host:production", "path:success", "door:button", "dimension:recommendations", "dimension:network", "evidence:recommend-answer-and-outcome"],
   description: "On smithers.sh, complete a real turn, match rendered pills to the live recommendation answer, and verify the chosen outcome request."
 }), async ({ page, request }, testInfo) => {
