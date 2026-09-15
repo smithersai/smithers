@@ -437,10 +437,24 @@ matches in the retained evidence, not that no failures happened.
 
 Diagnostic compaction is part of the same dispatch as the append. The store
 keeps the newest 500 transition records and 250 tool-call records. Entity
-collections and authoritative `chainEvents` are not time-trimmed. Both active
-and completed chain journals must retain their full prefixes: without them a
-resume can repeat model calls or external effects. Clearing/archiving a chat
-does not delete that execution evidence.
+collections are not time-trimmed.
+
+`chainEvents` is bounded by bytes, not by count, and never row by row. Both
+active and completed chain journals must retain their full prefixes: without
+them a resume can repeat model calls or external effects. So the journal is
+compacted whole-lineage, oldest lineage first, until it is back under
+`MAX_CHAIN_EVENT_BYTES` — the same 64 MiB the loader admits
+(`chain/PersistenceBudget.ts`), so a store the writer accepts is always a store
+the reader can open. Each evicted lineage leaves the durable pointer that keeps
+replay consistent: the retirement tombstone `CollectionJournal.ts` already
+refuses to replay past. The lineage being appended to is never evicted, so the
+live run always keeps its own full prefix; if it alone exceeds the budget the
+store logs that rather than truncating it. Compaction runs inside the appending
+transaction, like the diagnostic logs. Clearing/archiving a chat still does not
+delete execution evidence.
+
+Drafts, settings, notes, the Wiki and every other entity collection are
+untouched by this bound.
 
 Account sign-out, expiry and replacement scrub private journal contents,
 transcript cards and snapshots, composer drafts, deferred commands,

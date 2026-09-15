@@ -25,6 +25,7 @@ import {
 import { openSqliteRowStorage } from "../chain/SqliteRowStorage"
 import {
   EMPTY_PERSISTED_LOAD,
+  PERSISTED_COLLECTION_BUDGET_BYTES,
   PERSISTED_LOAD_TOAST_KEY,
   PERSISTED_LOAD_TOAST_TITLE,
   persistedLoadNotice
@@ -113,6 +114,7 @@ import {
 import type {
   AppTransition,
   Card,
+  ChainEventRecord,
   ChangeRow,
   CloudRepository,
   CloudSessionRow,
@@ -146,6 +148,23 @@ const PALETTE_RECENTS_CAP = 50
  */
 export const MAX_TRANSITION_RECORDS = 500
 export const MAX_TOOL_CALL_RECORDS = 250
+
+/*
+ * The run-event journal is bounded by the same budget the loader honours
+ * (chain/PersistenceBudget.ts), so a store the writer accepts is always a store
+ * the reader can open. Unlike the diagnostic logs above, a journal may not be
+ * trimmed row by row: a lineage with a hole in its sequence cannot be replayed.
+ * Eviction is therefore whole-lineage and oldest-first, and each evicted
+ * lineage leaves the durable pointer CollectionJournal.ts already refuses to
+ * replay past — a retirement tombstone. The lineage being appended to is never
+ * evicted, so the live run always keeps its full prefix.
+ */
+export const MAX_CHAIN_EVENT_BYTES = PERSISTED_COLLECTION_BUDGET_BYTES
+
+/** One journal row's stored size: its addressing plus its encoded event. */
+const chainEventBytes = (record: ChainEventRecord): number =>
+  record.id.length + record.lineageId.length +
+  (typeof record.event === "string" ? record.event.length : JSON.stringify(record.event ?? null).length)
 
 /*
  * localStorage-fallback composer keystrokes share one durable envelope commit
@@ -1325,6 +1344,62 @@ const initializeAppStore = async (resolved: ResolvedPersistence, options: { read
   const awaitTypingPause = (deadline: number): void => {
     clearTimeout(draftTimer)
     draftTimer = setTimeout(commitDraft, Math.max(0, Math.min(DRAFT_COMMIT_IDLE_MS, deadline - Date.now())))
+  }
+
+  /*
+   * The journal's running size. Only `chain.event.appended` inserts a journal
+   * row, so this counter can drift high (an account scrub or a reset deletes
+   * rows) but never low. A total over the budget is therefore rechecked with a
+   * full scan before anything is evicted, which makes the drift self-correcting
+   * and keeps the common append O(1).
+   */
+  let journalBytes: number | undefined
+
+  const scanJournalBytes = (): number => {
+    let total = 0
+    for (const record of collections.chainEvents.values()) total += chainEventBytes(record)
+    return total
+  }
+
+  /** Bring the journal back under MAX_CHAIN_EVENT_BYTES, oldest lineage first. */
+  const compactChainEvents = (appendedLineageId: string, appendedSeq: number): void => {
+    if (journalBytes === undefined) {
+      journalBytes = scanJournalBytes()
+    } else {
+      const appended = collections.chainEvents.get(`chain-${appendedLineageId}-${appendedSeq}`)
+      journalBytes += appended === undefined ? 0 : chainEventBytes(appended)
+    }
+    if (journalBytes <= MAX_CHAIN_EVENT_BYTES) return
+    journalBytes = scanJournalBytes()
+    if (journalBytes <= MAX_CHAIN_EVENT_BYTES) return
+    const lineages = new Map<string, { newest: number; bytes: number; ids: Array<string> }>()
+    for (const record of collections.chainEvents.values()) {
+      const entry = lineages.get(record.lineageId) ?? { newest: -1, bytes: 0, ids: [] }
+      entry.newest = Math.max(entry.newest, record.createdAt)
+      entry.bytes += chainEventBytes(record)
+      entry.ids.push(record.id)
+      lineages.set(record.lineageId, entry)
+    }
+    const evictable = [...lineages]
+      .filter(([lineageId]) => lineageId !== appendedLineageId)
+      .sort((left, right) => left[1].newest - right[1].newest || left[0].localeCompare(right[0]))
+    for (const [lineageId, entry] of evictable) {
+      if (journalBytes <= MAX_CHAIN_EVENT_BYTES) break
+      collections.chainEvents.delete(entry.ids)
+      journalBytes -= entry.bytes
+      // The durable pointer: a lineage whose events are gone must refuse
+      // replay rather than look like a fresh one and repeat its effects.
+      const tombstone = retiredLineageKey(lineageId)
+      if (!collections.retiredChainLineages.has(tombstone)) collections.retiredChainLineages.insert({ id: tombstone })
+    }
+    if (journalBytes > MAX_CHAIN_EVENT_BYTES) {
+      // Only the live lineage is left and it alone is over budget. Say so
+      // rather than evict the run that is still appending to it.
+      console.warn("Smithers: the live run's journal alone exceeds the persisted budget.", {
+        budgetBytes: MAX_CHAIN_EVENT_BYTES,
+        journalBytes
+      })
+    }
   }
 
   const dispatch = (transition: AppTransition): Transaction => {
@@ -3495,9 +3570,16 @@ const initializeAppStore = async (resolved: ResolvedPersistence, options: { read
         (record) => record.createdAt
       )
       if (staleToolCalls.length > 0) collections.toolCalls.delete(staleToolCalls)
-      // chainEvents is execution authority, not a debug tail. Deleting even
-      // a terminal lineage makes replay look new and can repeat its effects.
-      // Retain it until an explicit archive/tombstone protocol exists.
+      /*
+       * chainEvents is execution authority, not a debug tail, so it is never
+       * trimmed row by row: deleting part of a lineage makes replay look new
+       * and can repeat its effects. It is compacted whole-lineage instead,
+       * oldest first, each evicted lineage leaving the retirement tombstone
+       * that refuses its replay (MAX_CHAIN_EVENT_BYTES above). Like the logs
+       * above it runs inside this same transaction, so the bound is part of
+       * the atomic commit.
+       */
+      if (transition.type === "chain.event.appended") compactChainEvents(transition.lineageId, transition.seq)
     })
 
     const recoveredEntities: Array<EntityRecoveryRecord> = []
