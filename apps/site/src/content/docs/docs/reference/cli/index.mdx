@@ -11,28 +11,53 @@ flow is a workflow, and a run is a persisted flow execution.
 
 ## Commands
 
+{/* generated:cli-commands start. Run `node apps/site/scripts/gen-cli-data.mjs`; do not edit. */}
+
 | Command | Purpose |
 | --- | --- |
-| `build/test/lint/docs/review/ci/run <pattern>` | Execute selected target kinds; `ci` combines build, test, lint, and docs. |
-| `target <label>` or `//package:target` | Execute one exact target using its declared kind. |
-| `targets [pattern]` | Discover available targets and summaries. |
-| `index [pattern]` | List selected declarations with their rule, inputs, outputs, dependencies, and source file. |
-| `show target <label>`, `show workspace`, `info` | Inspect target inputs, outputs, dependencies, and workspace configuration. |
-| `query <expression>`, `graph [pattern]`, `owners <paths...>` | Query the graph, render dependencies, and resolve ownership. |
-| `affected <verb> [pattern]` | Select changed work and dependents; `--list` previews the selection. |
-| `watch <verb> [pattern]` | Replan and rerun when files change. |
-| `explain <label>` | Show the planned key and local cache decision. |
-| `flow list/show/plan/start/execute` | Discover workflows, plan them, start them, or execute approved payloads. |
-| `runs list/show/logs/output` | Read durable run state, events, and outputs. |
-| `runs cancel/cancel-all/resume/signal/steer` | Operate existing durable runs. |
-| `runs inspect/replay/fork/rewind` | Inspect historical frames, branch a run, or restore an earlier frame. |
-| `approvals list/approve/deny` | Read pending approvals and submit the exact payload or `@file`. |
-| `init [name]`, `generate app/flow/package/ci` | Set up a workspace or scaffold a resource. |
-| `create-app [directory]` | Scaffold an app from a `@smthrs/create-app` template. |
-| `install`, `git-hooks [--write]` | Apply the workspace's declared installation and hook configuration. |
-| `cache status/prune/clear`, `clean`, `gc` | Maintain local action results, declared cleanup targets, and old runs. |
-| `memory`, `credentials`, `triggers`, `integrations`, `eval` | Operate persistent agent features. |
-| `serve`, `doctor`, `suggest`, `migrate`, `update`, `bug` | Host, diagnose, discover uses, migrate source, check versions, or report a bug. |
+| `affected` | Execute targets affected by changed files, conservatively including ambient inputs |
+| `approvals` | Find and resolve pending approval requests |
+| `bug` | Submit a redacted bug report to the configured endpoint |
+| `build` | Execute the build targets selected by a pattern |
+| `cache` | Inspect and maintain local action-result caches |
+| `ci` | Execute build, test, lint, and documentation targets; wildcards omit exclusive tiers unless --include-exclusive is set |
+| `clean` | Execute only declared Clean targets selected by the pattern |
+| `create-app` | Scaffold a Smithers app from a @smthrs/create-app template |
+| `credentials` | Manage encrypted local credentials without printing secret values |
+| `docs` | Execute the documentation targets selected by a pattern: parity checks, freshness stamps, and Docs.Page writers |
+| `doctor` | Check project discovery, providers, tools, and durable-state compatibility |
+| `eval` | Run fixed evaluation suites and compare committed score baselines |
+| `explain` | Explain a target's actual planned cache key and local cache state |
+| `flow` | Discover, plan, and start durable workflows |
+| `gc` | Collect old terminal runs and compact their journals; separate from target caches |
+| `generate` | Scaffold apps, flows, packages, and CI configuration |
+| `git-hooks` | Check the WORKSPACE.ts gitHooks scripts against .git/hooks, or install them with --write |
+| `graph` | Print the target graph without executing it |
+| `index` | List every target a pattern selects as its declaration states it: rule, kinds, inputs, outputs, dependencies, and the declaring file |
+| `info` | Report workspace and host configuration for diagnosis |
+| `init` | Initialize workspace and target declarations plus a starter flow, preserving existing files |
+| `install` | Plan and execute the install Flow under the toolchain the workspace declares |
+| `integrations` | Inspect configured provider adapters and reconcile declared GitHub webhooks |
+| `lint` | Execute the lint targets selected by a pattern |
+| `mcp` | Register the Smithers MCP server with an agent |
+| `memory` | Durable facts, notes, recall, and conversation history |
+| `migrate` | Inventory, plan, or apply the 0.x-to-1.x source migration |
+| `owners` | Resolve owners, reasons, and the agent policy for paths, or for the paths a diff touches |
+| `query` | List labels or evaluate deps(label), rdeps(label), or owners(label) |
+| `review` | Execute the model-review targets selected by a pattern (needs the engine CLI; skips where it is absent) |
+| `run` | Execute run targets selected by a pattern |
+| `runs` | Inspect and control durable execution records |
+| `serve` | Host the control gateway and durable trigger scheduler |
+| `show` | Inspect targets and workspace configuration |
+| `suggest` | Discover ways Smithers can help; interactively choose one to implement |
+| `target` | Execute one PACKAGE.ts label with its flavor-implied verb (the bare-label form) |
+| `targets` | List available targets with their kinds and summaries |
+| `test` | Execute test targets; wildcards omit exclusive tiers unless --include-exclusive is set |
+| `triggers` | Manage durable schedules and manually queued occurrences |
+| `update` | Check the registry for newer CLI versions; does not install them |
+| `watch` | Replan and rerun a target graph when workspace files change |
+
+{/* generated:cli-commands end */}
 
 Target patterns include `//...`, `//package/...`, and `//package:target`.
 Use `--plan` to preview execution, `--jobs` to bound concurrency, and

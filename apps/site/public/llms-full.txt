@@ -10824,6 +10824,8 @@ const changesetsPublish = S.Changesets.Publish({
 
 ## CI toolchains and workflow generation
 
+`CiToolchain.Node` takes exactly one of `release`, an exact version the job installs, or `versionFile`, a checked-in file the setup action reads at run time. Prefer `versionFile` whenever anything outside the workflow needs the same number: `.node-version` is read by `actions/setup-node`, by fnm, nvm and asdf, and by a shell bootstrap that has no Node to parse JSON with, so one file keeps them from drifting apart.
+
 `CiToolchain.Node` accepts an optional `npmRelease` pin. The generated job installs that npm version after setting up Node; omitting it keeps Node's bundled npm. The release tarball rehearsal requires npm 11.16.0, so its toolchain declares that pin explicitly.
 
 `cachePackageStore` defaults to `true`. Node setup restores the pnpm store when the workspace declares pnpm. For Bun workspaces, Node setup omits the package-store cache because `actions/setup-node` does not cache Bun. Set `cachePackageStore: false` to disable package-store caching.
@@ -10834,7 +10836,7 @@ import { Smithers as S } from "@smthrs/targets"
 const test = S.Shell.Test({ shell: "pnpm test" })
 const lint = S.Shell.Test({ shell: "pnpm lint" })
 
-const node = S.CiToolchain.Node({ release: "22.19.0", npmRelease: "11.16.0" })
+const node = S.CiToolchain.Node({ versionFile: ".node-version", npmRelease: "11.16.0" })
 const bun = S.CiToolchain.Bun({ release: "1.4.1" })
 const ripgrep = S.CiToolchain.Ripgrep({ release: "14.1.1" })
 const apt = S.CiToolchain.Apt({ packages: ["libssl-dev", "pkg-config"] })
@@ -11477,6 +11479,8 @@ otherwise it uses `ignore`, including when `sources` is empty. An optional
 source cannot satisfy a missing required source.
 
 ```ts
+import { Smithers } from "@smthrs/targets"
+
 Smithers.CiToolchain.Artifacts({
   artifact: "test-evidence",
   sources: [
@@ -17898,6 +17902,31 @@ The steer lifecycle as the plane reads it back. See
 | `derive`             | function | `(event: ControlEvent) => ReadonlyArray<ControlEvent>`. One delta per message a promotion named. A promotion that named nothing derives nothing. |
 | `expand`             | function | `(event: ControlEvent) => ReadonlyArray<ControlEvent>`                                                                                           |
 
+## Health
+
+Observational health for flows and native sessions. See
+[Configure observational health](https://control.smithers.sh/guides/observe-health/).
+
+`HealthChecker<C>` accepts a read-only `ProbeContext` and schema-decoded config,
+returning an Effect of `ProbeReport`. `makeRegistry(config, kind)` admits host
+bindings and policies synchronously; `registry.resolve(key)` returns the selected
+`ResolvedCheck`. `evaluate(check, context, stamp)` runs it with a timeout and safe
+failure codes. The host rechecks ownership and commits the `HealthObservation`
+before publication.
+
+`rollup(input)` combines authoritative lifecycle, optional independent base
+health, and the latest `{ observation, sequence }` into `StatusRollup`. The wire
+axes are `state`, `activity`, `health`, `attention`, and `freshness`; provenance
+carries checker/monitor IDs, opaque incarnation, evidence position, durable
+version, observation time, and expiry. `latestObservation` compares only matching
+incarnations and uses journal order for equal evidence. `runIncarnation` derives
+an opaque fingerprint from current run ownership and lifecycle.
+
+`CheckPolicy` configures interval, timeout, TTL, no-progress grace (`stallAfterMs`),
+and failure backoff. `defaultPolicy` uses 5s/2s/20s/120s respectively and caps
+backoff at 60s. Defaults report unknown semantic activity; no checker output grants
+approval or authorizes a remedy.
+
 ## Monitor
 
 Run health over the control plane. See
@@ -18557,18 +18586,76 @@ interface CatchOptions<E, B, E2, Handled = E> {
 ### Node.capture
 
 ```ts
-const capture: <Args extends ReadonlyArray<unknown>, A>(
-  captures: Readonly<Record<string, unknown>>,
-  operation: (...args: Args) => A
+const capture: <C extends Readonly<Record<string, unknown>>, Args extends ReadonlyArray<unknown>, A>(
+  captures: C,
+  operation: (this: Readonly<C>, ...args: Args) => A
 ) => (...args: Args) => A
 ```
 
-Declares the inert values a plan-time function closes over, so its identity
-folds the source text with the canonical capture data instead of a per-process
-nonce. Capture data must be finite, inert, plain data; anything else raises a
-`TypeError` naming the offending path. Accepted data is deeply frozen and
-compared structurally, so aliasing is not identity. Capture composes: capturing
-an already-captured function nests the two capture sets.
+Binds a deeply frozen plain copy of declared data as the callback's `this`
+receiver. The returned function keeps its ordinary arguments. Use a function
+expression when reading captured data; arrow functions retain their lexical
+`this`. Caller objects are never changed or retained by the capture wrapper.
+
+```ts
+const config = { increment: 2 }
+const increment = Node.capture(config, function(value: number) {
+  return value + this.increment
+})
+config.increment = 99
+increment(3) // 5
+```
+
+Admission uses one sequence:
+
+1. Walk the original graph depth first, refusing cycles and nesting beyond 256
+   levels. Side-effect-free intrinsic brand checks reject Map, Set, WeakMap,
+   WeakSet, Date, RegExp, ArrayBuffer, SharedArrayBuffer, views, boxed primitives,
+   WeakRef and FinalizationRegistry even after prototype replacement. These
+   checks never iterate collections, coerce values or read Symbol.toStringTag.
+   Each object must have Object.prototype or null as its prototype; arrays must
+   have Array.prototype. Other prototypes, including Promise.prototype, are
+   refused. Enumerate every own key and read each own descriptor once, including
+   shared references and array length. Refuse accessors without evaluating them.
+   Records support only enumerable string-keyed data; arrays support dense
+   enumerable indices and their standard length. Symbols, functions, bigint,
+   undefined, non-finite numbers and extra array keys are refused. Frozen,
+   sealed and non-extensible states are ignored, so shallow-frozen records,
+   null-prototype records and Immer trees all follow the same path.
+2. Only after that pass succeeds, structured-clone the original objects in
+   reverse discovery order. This refuses every Proxy with a path-bearing
+   TypeError before cloning a parent or earlier object its traps could have
+   changed. Uncloneable built-ins, including a prototype-swapped Promise, are
+   also refused. A built-in revealed by the host clone, such as Error, is
+   refused; the host's clone is discarded. No input getter or collection
+   iterator is called. Proxy reflection traps can run during the structural
+   pass and can have side effects; admission is not a sandbox for those traps.
+   The host clone function is selected before visiting caller data. Like the
+   intrinsic brand checks, it relies on trusted host built-ins.
+   Hosts without structuredClone refuse object capture, including an empty
+   capture record, because they cannot prove the graph Proxy-free.
+3. Build plain objects and arrays solely from the descriptors saved in step 1,
+   preserving shared references and inserting record keys in canonical order.
+   Deep-freeze those copies, encode identity from the copy, and give only the
+   copy to the callback. Drop the admission maps and all original references.
+   No original is re-read or locked after the clone probe.
+
+The digest folds callback source with canonical copy data. Freezing or sealing
+caller data does not change identity. Comparison is structural, so aliasing is
+not identity; callbacks must not use reference equality as semantic input.
+Capturing an already-captured function nests identities and retains the inner
+function's receiver.
+
+Migration from original-object locking: read captured records through `this`
+in a function expression. An existing lexical alias still names the original
+and is outside the snapshot contract, even if that object was declared.
+JavaScript cannot rebind free variables. Callbacks must depend only on the
+snapshot's own data, ordinary arguments and explicitly versioned implementation
+behavior, not mutable aliases, ambient state or inherited behavior. The
+callback itself can retain its lexical aliases; capture neither rewrites its
+source nor claims to erase those bindings. The wrapper's dynamic call receiver
+is ignored in favor of the frozen capture receiver. Raw functions retain
+process-local identity.
 
 ### Node.functionIdentity
 
@@ -20252,6 +20339,11 @@ Two guarantees are contract rather than implementation detail:
 - **Serialization.** Two concurrent `write` transactions are mutually
   serialized. They may not both commit results computed from snapshots that
   exclude each other's writes.
+- **Acquisition.** Outermost writes sharing one writer queue for its permit
+  before entering SQL, at the caller's own interruptibility. An interruptible
+  caller cancelled or timed out while queued acquires nothing; a caller that
+  masked interruption keeps waiting, so a finalizer's cleanup write still
+  commits.
 - **Nesting.** A `write` inside the client's open transaction joins it as a
   savepoint and does not retry. Only the outermost `write` retries, replaying
   the whole transaction body verbatim against committed state. Its
@@ -20691,7 +20783,7 @@ https://smithers.sh/docs/reference/api/engine-store/
 
 > **Source:** [implementation](https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/engine-store/src) · [reference source](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/engine-store/docs/api.md) · [package docs](https://engine-store.smithers.sh)
 
-> **Related APIs:** [`@smthrs/artifacts`](/docs/reference/api/artifacts/) · [`@smthrs/crypto`](/docs/reference/api/crypto/) · [`@smthrs/database`](/docs/reference/api/database/) · [`@smthrs/engine`](/docs/reference/api/engine/) · [`@smthrs/flow`](/docs/reference/api/flow/) · [`@smthrs/journal`](/docs/reference/api/journal/) · [`@smthrs/kernel`](/docs/reference/api/kernel/) · [`@smthrs/keys`](/docs/reference/api/keys/) · [`@smthrs/plan`](/docs/reference/api/plan/) · [`@smthrs/run-store`](/docs/reference/api/run-store/) · [`@smthrs/step-cache`](/docs/reference/api/step-cache/)
+> **Related APIs:** [`@smthrs/artifacts`](/docs/reference/api/artifacts/) · [`@smthrs/canonical`](/docs/reference/api/canonical/) · [`@smthrs/crypto`](/docs/reference/api/crypto/) · [`@smthrs/database`](/docs/reference/api/database/) · [`@smthrs/engine`](/docs/reference/api/engine/) · [`@smthrs/flow`](/docs/reference/api/flow/) · [`@smthrs/journal`](/docs/reference/api/journal/) · [`@smthrs/kernel`](/docs/reference/api/kernel/) · [`@smthrs/keys`](/docs/reference/api/keys/) · [`@smthrs/plan`](/docs/reference/api/plan/) · [`@smthrs/run-store`](/docs/reference/api/run-store/) · [`@smthrs/step-cache`](/docs/reference/api/step-cache/)
 
 The durable `FlowEngine`. It claims a run before driving it, fences every write
 against the current owner, and persists attempts, waits, and terminal results
@@ -20777,7 +20869,7 @@ handoffs; explicit cancellation still cascades to linked children.
 
 ### Required services
 
-`Journal`, `RunStore`, `AttemptStore`, `CacheStore`, Effect's `Crypto`,
+`Journal`, `DurableWriter`, `RunStore`, `AttemptStore`, `CacheStore`, Effect's `Crypto`,
 `DurableEngineState`, kernel `Jj`, `StepBoundary`, `OwnerIdentity`, and a
 `Scope`. A composition failure is an unmet `Requirements` type at compile time,
 so there is no run-time composition error to handle.
@@ -20840,6 +20932,12 @@ Full model: [Ownership and fencing](https://engine-store.smithers.sh/concepts/ow
 Durable deferreds, clocks, waiting rows, and the run parent DAG. A successful
 mutation means the row is durable, so callers may journal and schedule a wake
 only after the mutation returns.
+
+Work that needs both this state and the journal opens `transaction` OUTSIDE
+`Journal.transact`, never the other way around. The SQL implementation shares
+the journal's writer and cannot tell the difference, but `makeMemory` has a
+permit of its own, and taking the journal's writer first while waiting for that
+permit deadlocks against a fiber doing the opposite.
 
 | Export                           | Signature                                                      | Meaning                                                                       |
 | -------------------------------- | -------------------------------------------------------------- | ----------------------------------------------------------------------------- |
@@ -23345,7 +23443,7 @@ https://smithers.sh/docs/reference/api/fs/
 
 > **workspace-private:** `@smthrs/fs` is documented for contributors and is not installable from npm.
 
-> **Related APIs:** [`@smthrs/core`](/docs/reference/api/core/) · [`@smthrs/registry`](/docs/reference/api/registry/)
+> **Related APIs:** [`@smthrs/canonical`](/docs/reference/api/canonical/) · [`@smthrs/core`](/docs/reference/api/core/) · [`@smthrs/registry`](/docs/reference/api/registry/)
 
 The root barrel exposes one namespace per supported module. The same module
 is reachable through its named subpath, for example `@smthrs/fs/Command`.
@@ -24129,23 +24227,31 @@ a store row, a database column, or an engine type.
 
 ### Rows
 
-| Export          | Carries                                                                                                                                                                                                          |
-| --------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `RunSummaryRow` | `runId`, `flowId`, `status`, `createdAt`, `updatedAt`, the optional plan, lineage, waiting, steering, cancellation, and seat fields, the activity and token counters, `verdict`, `diagnosis`, and `finalOutput`. |
-| `RunTreeRow`    | `runId`, `nodeId`, `label`, `status` (`running`, `completed`, `failed`), `seat?`, `startedAt`, `endedAt?`, `parentRunId?`.                                                                                       |
-| `ApprovalRow`   | `runId`, `requestId`, `title`, `request`, `payload` (the `ControlSchema.ApprovalPayload` a client submits back), `requestedAt`, `status`.                                                                        |
-| `NodeOutputRow` | `runId`, `nodeId`, `outcome` (`success` or `failure`), `output`, `settledAt`.                                                                                                                                    |
-| `TranscriptRow` | `runId`, `sequence`, `turn`, `at`, `kind`, `text`. Each `text` is one display line.                                                                                                                              |
+| Export          | Carries                                                                                                                                                                                                                                                                                                                                                               |
+| --------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `RunSummaryRow` | `runId`, `flowId`, `status`, `statusRollup` (the `@smthrs/control` `Health.StatusRollup` a status surface renders; optional on the wire, folded on every row the gateway serves), `createdAt`, `updatedAt`, the optional plan, lineage, waiting, steering, cancellation, and seat fields, the activity and token counters, `verdict`, `diagnosis`, and `finalOutput`. |
+| `RunTreeRow`    | `runId`, `nodeId`, `label`, `status` (`running`, `completed`, `failed`), `seat?`, `startedAt`, `endedAt?`, `parentRunId?`.                                                                                                                                                                                                                                            |
+| `ApprovalRow`   | `runId`, `requestId`, `title`, `request`, `payload` (the `ControlSchema.ApprovalPayload` a client submits back), `requestedAt`, `status`.                                                                                                                                                                                                                             |
+| `NodeOutputRow` | `runId`, `nodeId`, `outcome` (`success` or `failure`), `output`, `settledAt`.                                                                                                                                                                                                                                                                                         |
+| `TranscriptRow` | `runId`, `sequence`, `turn`, `at`, `kind`, `text`. Each `text` is one display line.                                                                                                                                                                                                                                                                                   |
 
 ### Folds
 
-| Export       | Signature                                                              | Notes                                                                                                       |
-| ------------ | ---------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
-| `runSummary` | `(run: ControlSchema.RunSummary, events) => RunSummaryRow`             | Status comes from the run row, everything else from the events.                                             |
-| `runTree`    | `(run: ControlSchema.RunSummary, events) => ReadonlyArray<RunTreeRow>` | Keys each call by the ordinal it opened on; pairs a settlement with the oldest open call of that flow name. |
-| `approvals`  | `(events) => ReadonlyArray<ApprovalRow>`                               | A decision closes the gate its `tokenId` names; one naming neither field closes the oldest pending gate.    |
-| `nodeOutput` | `(events) => ReadonlyArray<NodeOutputRow>`                             | Keyed the way `runTree` keys its rows, so both agree on a node id.                                          |
-| `transcript` | `(events) => ReadonlyArray<TranscriptRow>`                             | One row per `control.run.*`, `control.agent.*`, and approval-request event, numbered by turn.               |
+| Export         | Signature                                                              | Notes                                                                                                                                                                                                                                                                                                                                                                                                           |
+| -------------- | ---------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `runSummary`   | `(run: ControlSchema.RunSummary, events, now?) => RunSummaryRow`       | Status comes from the run row, everything else from the events. `now` expires the health reading; it defaults to the later of the row's `updatedAt` and the last event.                                                                                                                                                                                                                                         |
+| `statusRollup` | `(run: ControlSchema.RunSummary, events, now) => Health.StatusRollup`  | Lifecycle from the run row; activity and observed health from the current incarnation's highest evidence sequence, with durable sequence breaking ties. Freshness also requires a successful reading whose evidence covers later progress and whose lifetime includes `now`. Stale readings retain provenance but cannot establish activity. A malformed observation or one from a former owner colors nothing. |
+| `runTree`      | `(run: ControlSchema.RunSummary, events) => ReadonlyArray<RunTreeRow>` | Keys each call by the ordinal it opened on; pairs a settlement with the oldest open call of that flow name.                                                                                                                                                                                                                                                                                                     |
+| `approvals`    | `(events) => ReadonlyArray<ApprovalRow>`                               | A decision closes the gate its `tokenId` names; one naming neither field closes the oldest pending gate.                                                                                                                                                                                                                                                                                                        |
+| `nodeOutput`   | `(events) => ReadonlyArray<NodeOutputRow>`                             | Keyed the way `runTree` keys its rows, so both agree on a node id.                                                                                                                                                                                                                                                                                                                                              |
+| `transcript`   | `(events) => ReadonlyArray<TranscriptRow>`                             | One row per `control.run.*`, `control.agent.*`, and approval-request event, numbered by turn.                                                                                                                                                                                                                                                                                                                   |
+
+`statusRollup` is an additive optional wire field. Existing Effect decoders
+strip unknown properties by default, and current clients still decode older
+rows without it. The app validates the subject and lifecycle, expires stale
+activity, and falls back to the existing status when the field is absent.
+Clients configured to reject unknown properties must admit this field before
+reading the newer wire shape.
 
 Every fold takes `ReadonlyArray<ControlSchema.ControlEvent>` in run order and is
 total: an unknown kind contributes nothing.
@@ -29424,7 +29530,7 @@ When memory shares a database with the engine or control plane, compose all requ
 | `recall`                   | `(input, options) => Effect<Output, MemoryError, MemoryStore \| Embedding>`       | Cosine similarity decayed by row age. Skips foreign-model and stale rows; a same-model dimension mismatch fails `vector_model_mismatch`.                                 |
 | `ProjectionInput`          | interface                                                                         | One authoritative row submitted for projection after commit: `{ bank, recordKind, recordId, text, updatedAtMs }`.                                                        |
 | `Projector`                | interface                                                                         | `{ project(row), activeKeys() }`: the per-key serialized projection coordinator. There is no callable projector alias.                                                   |
-| `makeProjector`            | `(options: Options) => Projector`                                                 | Constructs the coordinator. Projection retries once, times out after `projectionTimeout`, and logs failures without changing the write result.                           |
+| `makeProjector`            | `(options: Options) => Effect<Projector, never, Scope>`                           | Constructs the coordinator in its owner scope. Projection retries once, times out after `projectionTimeout`, and logs failures without changing the write result.        |
 | `defaultProjectionTimeout` | `"5 seconds"`                                                                     | The projection deadline used when `Options.projectionTimeout` is absent.                                                                                                 |
 | `decorateStore`            | `(store: Service, projector: Projector, embedding: Embedding.Service) => Service` | Adds after-commit projection to `putFact` and `putNote`, keeping the ordinary write signatures.                                                                          |
 | `layer`                    | `(options: Options) => Layer<Recall, never, MemoryStore \| Embedding>`            | Provides semantic recall from the store, the embedding service, and the vector table.                                                                                    |
@@ -31598,7 +31704,7 @@ https://smithers.sh/docs/reference/api/notifications/
 
 > **Source:** [implementation](https://github.com/smithersai/smithers/tree/main/packages/smithers/notifications/src) · [reference source](https://github.com/smithersai/smithers/blob/main/packages/smithers/notifications/docs/api.md) · [package docs](https://notifications.smithers.sh)
 
-> **Related APIs:** [`@smthrs/journal`](/docs/reference/api/journal/)
+> **Related APIs:** [`@smthrs/canonical`](/docs/reference/api/canonical/) · [`@smthrs/crypto`](/docs/reference/api/crypto/) · [`@smthrs/journal`](/docs/reference/api/journal/)
 
 Every module is importable as a namespace from the root entry point and from its
 own subpath:
@@ -32079,7 +32185,33 @@ Installs the OTLP logs, metrics, and traces exporters with the flows resource
 defaults filled in. It requires an Effect `HttpClient`, which is how it stays
 platform-neutral: a Node host may provide Undici, a browser or a test provides
 something else. Both configuration inputs are decoded during acquisition, so
-the returned layer either exports or refuses.
+the returned layer either exports or refuses. Ambient `OTEL_RESOURCE_ATTRIBUTES`
+cannot add unvalidated metadata to these explicit resources.
+
+Requests over `maxRequestBytes` (1 MiB), stalled for ten seconds, or exceeding
+four in-flight requests are discarded locally. Each discard increments
+`flows/observability/otlp/dropped`. A `Warn` diagnostic with code
+`otlp_export_discarded` reports `reason` (`oversized`, `stalled`, or `saturated`),
+`bytes`, `limit`, and cumulative `dropped` at most once per minute per transport.
+It uses the logger set captured before this exporter is installed, so it cannot
+re-enter this exporter. Request bodies, headers, URLs, and ambient log
+annotations are omitted. Keep an ambient sink outside OTLP at level `Warn` or
+lower to observe loss independently; empty or filtered loggers cannot report it.
+
+### Otlp transport constants
+
+```ts
+const maxRequestBytes: number // 1048576 (1 MiB)
+const maximumEnvelopeBytes: number // 8192 (8 KiB)
+const reservedBatchBytes: number // 909312 (888 KiB)
+```
+
+The resource ceiling is 128 KiB. Another 8 KiB covers JSON wrappers and the
+instrumentation scope, which repeats the service name (at most 6 KiB after
+escaping). The remaining 888 KiB gives each record in the upstream 1,000-record
+log or span batch about 909 bytes, several times a bare record. This guarantees
+room for ordinary signal batches, not arbitrary record sizes or metric registry
+cardinality.
 
 ### Otlp.layerFetch
 
@@ -32208,8 +32340,9 @@ Builds the OTLP/HTTP URL one signal is posted to below a decoded endpoint:
 ## Resource
 
 Explicit, validated OpenTelemetry resource metadata. Every public OTEL builder
-in this package decodes the same `Configuration`, and no builder reads an
-environment variable: every attribute is one the caller passed.
+in this package decodes the same `Configuration`. Resource metadata comes from
+the caller and the SDK's fixed telemetry fields. Neither the default exporter
+nor the Node SDK layer merges ambient resource configuration after validation.
 
 ### Resource.Configuration
 
@@ -32235,7 +32368,7 @@ const Attributes: Schema.Record<Schema.String, typeof AttributeValue>
 
 `AttributeValue` accepts a string of at most `maximumAttributeStringLength`
 code units, a finite number, a boolean, or a homogeneous array of one of those
-scalar types. `Attributes` bounds the record at `maximumAttributes` entries
+scalar types, with at most `maximumAttributeArrayLength` elements. `Attributes` bounds the record at `maximumAttributes` entries
 with non-empty, well formed keys of at most `maximumAttributeKeyLength` code
 units. NUL and unpaired UTF-16 surrogates are refused in keys and in values;
 valid astral Unicode is preserved.
@@ -32247,7 +32380,24 @@ const maximumIdentityLength: number // 1024
 const maximumAttributeKeyLength: number // 1024
 const maximumAttributeStringLength: number // 65536
 const maximumAttributes: number // 256
+const maximumAttributeArrayLength: number // 256
+const maximumResourceBytes: number // 131072 (128 KiB)
 ```
+
+The resource byte limit counts the complete OTLP JSON resource, including
+identity, SDK-added `telemetry.sdk.name` and `telemetry.sdk.language`, attribute
+keys, scalar and array wrappers, escaping, and UTF-8. SDK fields are reserved
+even for the default Effect exporter, and caller attributes that the SDK
+overwrites are conservatively counted too.
+Counting stops at the first fragment over budget to bound intermediate
+allocations; the error reports the measured lower bound and byte limit at path
+`attributes`. Array-length errors report the measured element count and limit
+at the attribute path. No rejected attribute values are retained.
+
+All resource-accepting layers and `decode`, `decodeSync`, and
+`configToAttributes` enforce these bounds before exporter acquisition.
+Explicit `serviceName` and `serviceVersion` take precedence over attributes
+with those keys. Admission conservatively counts those redundant attributes.
 
 ### Resource.decode
 
@@ -32631,7 +32781,10 @@ const layerOtel: (options: Options) => Layer.Layer<
 Builds a scoped Node OTLP/HTTP layer for all three signals: a
 `BatchSpanProcessor`, a `BatchLogRecordProcessor`, and a
 `PeriodicExportingMetricReader`, each behind its own OTLP exporter. Exporter
-objects are created only when the layer is built. Closing the scope
+objects are created only when the layer is built. `OTEL_SERVICE_NAME` and
+`OTEL_RESOURCE_ATTRIBUTES` cannot add resource metadata after validation,
+whether supplied by the process environment or an Effect `ConfigProvider`.
+Closing the scope
 force-flushes both batch processors and collects the metric reader once, so
 release rather than the interval is the deterministic flush.
 
@@ -34052,13 +34205,13 @@ Reads the priority a node carries, or `undefined` when it states none and inheri
 ### Node.capture
 
 ```ts
-const capture: <Args extends ReadonlyArray<unknown>, A>(
-  captures: Readonly<Record<string, unknown>>,
-  operation: (...args: Args) => A
+const capture: <C extends Readonly<Record<string, unknown>>, Args extends ReadonlyArray<unknown>, A>(
+  captures: C,
+  operation: (this: Readonly<C>, ...args: Args) => A
 ) => (...args: Args) => A
 ```
 
-Declares the inert values a plan-time function closes over, which gives that function deterministic identity instead of process-local entropy. The capture record is canonicalized into function identity and deeply frozen immediately. Unsupported values, accessors, exotic prototypes, symbols, cycles, and member nesting beyond 256 levels throw a `TypeError` naming the path, instead of producing an identity that cannot describe the function's behavior.
+Declares the inert values a plan-time function closes over, which gives that function deterministic identity instead of process-local entropy. A deeply frozen plain copy is canonicalized into function identity and bound as the callback's `this` receiver. Use a function expression to read that copy; ordinary arguments keep their positions. Caller objects remain unchanged, and mutable lexical aliases must not supply semantic state. Sealed, non-extensible, frozen and Immer ordinary data are supported. Built-in brands and Proxies are refused, and object capture requires `structuredClone`. See the [core admission algorithm](../../core/docs/api.md#nodecapture). Unsupported values, accessors, exotic prototypes, symbols, cycles, and member nesting beyond 256 levels throw a `TypeError` naming the path, instead of producing an identity that cannot describe the function's behavior.
 
 Plan uses the capture and function-identity implementation from `@smthrs/core/Node`. Capturing an already-captured function preserves its original source and folds both capture sets into the identity. Wrappers can be captured and identified interchangeably by either package. A non-function operation throws `TypeError("Node.capture requires a function operation")`.
 
@@ -35365,7 +35518,7 @@ https://smithers.sh/docs/reference/api/plugin/
 
 > **Source:** [implementation](https://github.com/smithersai/smithers/tree/main/packages/smithers/agent/plugin/src) · [reference source](https://github.com/smithersai/smithers/blob/main/packages/smithers/agent/plugin/docs/api.md) · [package docs](https://plugin.smithers.sh)
 
-> **Related APIs:** [`@smthrs/flow`](/docs/reference/api/flow/)
+> **Related APIs:** [`@smthrs/canonical`](/docs/reference/api/canonical/) · [`@smthrs/flow`](/docs/reference/api/flow/)
 
 Import the declarations from the root and the four stateful modules either as
 namespaces from the root or from their own subpaths:
@@ -35862,8 +36015,8 @@ What to change for each code is in [Troubleshooting](https://plugin.smithers.sh/
 The shipped hook catalog is the Smithers agent loop in
 [`@smthrs/agent`](/docs/reference/api/agent/), which augments `FlowsHooks` with three
 waterfalls. `Action.CacheEnvironment` comes from
-[`@smthrs/flow`](/docs/reference/api/flow/), the one other runtime dependency this package
-has.
+[`@smthrs/flow`](/docs/reference/api/flow/). The other runtime dependency,
+[`@smthrs/canonical`](/docs/reference/api/canonical/), supplies immutable catalog maps.
 
 ---
 
@@ -36121,6 +36274,11 @@ discovery can name a schema without evaluating the module that defines it.
 locators; a host that binds a declaration it already holds has the schema
 itself and nothing to locate, and a locator pointing at a synthetic path would
 be unreadable downstream. Use `Inline` when the binding already has the schema in memory.
+
+`Descriptor.inputDocument(ref)` returns an inline document unchanged or the
+JSON Schema document for markdown's required `{ args: string }` input. It
+returns `undefined` for an absent reference, `None`, `MarkdownOutput`, or a
+`Module` locator. Reading this metadata never evaluates a repository module.
 
 ### Descriptor.EffectDeclaration, EffectTier, Placement
 
@@ -47178,26 +47336,47 @@ flow is a workflow, and a run is a persisted flow execution.
 
 | Command | Purpose |
 | --- | --- |
-| `build/test/lint/docs/review/ci/run <pattern>` | Execute selected target kinds; `ci` combines build, test, lint, and docs. |
-| `target <label>` or `//package:target` | Execute one exact target using its declared kind. |
-| `targets [pattern]` | Discover available targets and summaries. |
-| `index [pattern]` | List selected declarations with their rule, inputs, outputs, dependencies, and source file. |
-| `show target <label>`, `show workspace`, `info` | Inspect target inputs, outputs, dependencies, and workspace configuration. |
-| `query <expression>`, `graph [pattern]`, `owners <paths...>` | Query the graph, render dependencies, and resolve ownership. |
-| `affected <verb> [pattern]` | Select changed work and dependents; `--list` previews the selection. |
-| `watch <verb> [pattern]` | Replan and rerun when files change. |
-| `explain <label>` | Show the planned key and local cache decision. |
-| `flow list/show/plan/start/execute` | Discover workflows, plan them, start them, or execute approved payloads. |
-| `runs list/show/logs/output` | Read durable run state, events, and outputs. |
-| `runs cancel/cancel-all/resume/signal/steer` | Operate existing durable runs. |
-| `runs inspect/replay/fork/rewind` | Inspect historical frames, branch a run, or restore an earlier frame. |
-| `approvals list/approve/deny` | Read pending approvals and submit the exact payload or `@file`. |
-| `init [name]`, `generate app/flow/package/ci` | Set up a workspace or scaffold a resource. |
-| `create-app [directory]` | Scaffold an app from a `@smthrs/create-app` template. |
-| `install`, `git-hooks [--write]` | Apply the workspace's declared installation and hook configuration. |
-| `cache status/prune/clear`, `clean`, `gc` | Maintain local action results, declared cleanup targets, and old runs. |
-| `memory`, `credentials`, `triggers`, `integrations`, `eval` | Operate persistent agent features. |
-| `serve`, `doctor`, `suggest`, `migrate`, `update`, `bug` | Host, diagnose, discover uses, migrate source, check versions, or report a bug. |
+| `affected` | Execute targets affected by changed files, conservatively including ambient inputs |
+| `approvals` | Find and resolve pending approval requests |
+| `bug` | Submit a redacted bug report to the configured endpoint |
+| `build` | Execute the build targets selected by a pattern |
+| `cache` | Inspect and maintain local action-result caches |
+| `ci` | Execute build, test, lint, and documentation targets; wildcards omit exclusive tiers unless --include-exclusive is set |
+| `clean` | Execute only declared Clean targets selected by the pattern |
+| `create-app` | Scaffold a Smithers app from a @smthrs/create-app template |
+| `credentials` | Manage encrypted local credentials without printing secret values |
+| `docs` | Execute the documentation targets selected by a pattern: parity checks, freshness stamps, and Docs.Page writers |
+| `doctor` | Check project discovery, providers, tools, and durable-state compatibility |
+| `eval` | Run fixed evaluation suites and compare committed score baselines |
+| `explain` | Explain a target's actual planned cache key and local cache state |
+| `flow` | Discover, plan, and start durable workflows |
+| `gc` | Collect old terminal runs and compact their journals; separate from target caches |
+| `generate` | Scaffold apps, flows, packages, and CI configuration |
+| `git-hooks` | Check the WORKSPACE.ts gitHooks scripts against .git/hooks, or install them with --write |
+| `graph` | Print the target graph without executing it |
+| `index` | List every target a pattern selects as its declaration states it: rule, kinds, inputs, outputs, dependencies, and the declaring file |
+| `info` | Report workspace and host configuration for diagnosis |
+| `init` | Initialize workspace and target declarations plus a starter flow, preserving existing files |
+| `install` | Plan and execute the install Flow under the toolchain the workspace declares |
+| `integrations` | Inspect configured provider adapters and reconcile declared GitHub webhooks |
+| `lint` | Execute the lint targets selected by a pattern |
+| `mcp` | Register the Smithers MCP server with an agent |
+| `memory` | Durable facts, notes, recall, and conversation history |
+| `migrate` | Inventory, plan, or apply the 0.x-to-1.x source migration |
+| `owners` | Resolve owners, reasons, and the agent policy for paths, or for the paths a diff touches |
+| `query` | List labels or evaluate deps(label), rdeps(label), or owners(label) |
+| `review` | Execute the model-review targets selected by a pattern (needs the engine CLI; skips where it is absent) |
+| `run` | Execute run targets selected by a pattern |
+| `runs` | Inspect and control durable execution records |
+| `serve` | Host the control gateway and durable trigger scheduler |
+| `show` | Inspect targets and workspace configuration |
+| `suggest` | Discover ways Smithers can help; interactively choose one to implement |
+| `target` | Execute one PACKAGE.ts label with its flavor-implied verb (the bare-label form) |
+| `targets` | List available targets with their kinds and summaries |
+| `test` | Execute test targets; wildcards omit exclusive tiers unless --include-exclusive is set |
+| `triggers` | Manage durable schedules and manually queued occurrences |
+| `update` | Check the registry for newer CLI versions; does not install them |
+| `watch` | Replan and rerun a target graph when workspace files change |
 
 Target patterns include `//...`, `//package/...`, and `//package:target`.
 Use `--plan` to preview execution, `--jobs` to bound concurrency, and
@@ -48773,6 +48952,7 @@ import * as Layer from "effect/Layer"
 import * as Schema from "effect/Schema"
 import * as SqlClient from "effect/unstable/sql/SqlClient"
 import { durableEngine, requirements } from "./durable-layer.ts"
+import { parkRun } from "./park-run.ts"
 
 /** The declared step the flow's body names; the wait lives in its implementation. */
 export const Post = Action.make("examples/Post", {
@@ -48802,17 +48982,14 @@ const lineageId = FlowEngine.Lineage.root("ledger-1")
 
 /**
  * `TimeTravel.layer` asks only for injectable contracts (the store plus the
- * journal, run, cache, and jj services the engine already provides) so it
- * merges straight onto the engine composition. Building it also resolves any
- * rewind a crash left half-finished, which is why recovery never appears as a
- * call below.
+ * journal, run, cache, and jj services) so it can use storage-only layers
+ * after the execution engine closes. Building it also resolves any rewind a
+ * crash left half-finished, which is why recovery never appears as a call below.
  */
 const layer = (filename: string) =>
-  Layer.mergeAll(Post.toLayer(post), Interpreter.layer(Ledger)).pipe(
-    Layer.provideMerge(Action.layerImplementations),
-    Layer.provideMerge(TimeTravel.layer),
+  TimeTravel.layer.pipe(
     Layer.provideMerge(SqlTimeTravelStore.layer),
-    Layer.provideMerge(durableEngine(filename, "ledger"))
+    Layer.provideMerge(requirements(filename))
   )
 
 export interface Summary {
@@ -48850,9 +49027,13 @@ const runId = "ledger-1" as JournalEvent.RunId
 /** Executes the run, inspects the middle frame, and rewinds to it. */
 const rewindAtMidpoint = (filename: string) =>
   Effect.gen(function*() {
-    // Drive the run until it parks at the deferred. It releases ownership on
-    // the way out, which is the state a rewind requires.
-    yield* Ledger.execute({}, { executionId: "ledger-1", discard: true })
+    // Close the private engine and its admitted retries before reading the
+    // frame. Only storage and time travel remain open during inspection.
+    yield* parkRun("ledger-1", Ledger.execute({}, { executionId: "ledger-1" }),
+      Layer.mergeAll(Post.toLayer(post), Interpreter.layer(Ledger)).pipe(
+        Layer.provideMerge(Action.layerImplementations),
+        Layer.provideMerge(durableEngine(filename, "ledger"))
+      ))
 
     const journal = yield* Journal.Journal
     yield* journal.flush
@@ -49548,6 +49729,7 @@ const seats = (model: Model.Model) =>
       Effect.succeed(
         Seat.make({
           id,
+          modelId: Seat.modelIdOf(id),
           model,
           route: { prepare: () => Effect.succeed(prepared) },
           contextWindowTokens: 200_000
@@ -49698,6 +49880,7 @@ export const liveOpenAiSeats = (apiKey: string) =>
             )
             return Seat.make({
               id,
+              modelId,
               model,
               route: FlowEngineLike.routeResolver(routeConfig),
               contextWindowTokens: SeatResolver.contextWindowTokensFor(modelId)
@@ -49872,6 +50055,7 @@ export const liveLocalSeats = (baseUrl: string) =>
             )
             return Seat.make({
               id,
+              modelId,
               model,
               route: FlowEngineLike.routeResolver(routeConfig),
               contextWindowTokens: SeatResolver.contextWindowTokensFor(modelId)
@@ -50071,6 +50255,7 @@ export const liveGeminiSeats = (baseUrl: string, apiKey: string) =>
             )
             return Seat.make({
               id,
+              modelId,
               model,
               route: FlowEngineLike.routeResolver(routeConfig),
               contextWindowTokens: SeatResolver.contextWindowTokensFor(modelId)
@@ -51940,6 +52125,7 @@ export const main = (filename: string): Effect.Effect<Summary> =>
                       Effect.succeed(
                         Seat.make({
                           id,
+                          modelId: Seat.modelIdOf(id),
                           model: scripted(),
                           route: { prepare: () => Effect.succeed(prepared) },
                           contextWindowTokens: 200_000
@@ -52738,6 +52924,7 @@ export const main = (filename: string): Effect.Effect<Summary> =>
                       Effect.succeed(
                         Seat.make({
                           id,
+                          modelId: Seat.modelIdOf(id),
                           model,
                           route: { prepare: () => Effect.succeed(prepared) },
                           contextWindowTokens: 200_000
@@ -52912,7 +53099,7 @@ const launch = (
 /** The base URL of a listening TCP server. */
 const addressOf = (server: HttpServer.HttpServer["Service"]): string => {
   const address = server.address
-  if (address._tag !== "TcpAddress") throw new Error("expected a TCP control server")
+  if (address._tag !== "InetAddressV4") throw new Error("expected a TCP control server")
   return `http://127.0.0.1:${address.port}`
 }
 
@@ -53133,9 +53320,15 @@ export const main = (root: string): Effect.Effect<Summary> =>
               // Browser WebSocket constructors cannot set Authorization headers.
               Socket.layerWebSocket(`ws://127.0.0.1:${new URL(url).port}/rpc/ws`).pipe(
                 Layer.provide(Layer.succeed(Socket.WebSocketConstructor)(
-                  (url, protocols) => new NodeSocket.NodeWS.WebSocket(url, protocols, {
-                    headers: { authorization: `Bearer ${credential}` }
-                  }) as unknown as globalThis.WebSocket
+                  (url, options) => {
+                    // A constructor receives either a protocol list or Node client options.
+                    const configured = options !== undefined && typeof options !== "string" && !Array.isArray(options) ? options : undefined
+                    const protocols = configured === undefined ? options as string | Array<string> | undefined : undefined
+                    return new NodeSocket.NodeWS.WebSocket(url, protocols, {
+                      ...configured,
+                      headers: { ...configured?.headers, authorization: `Bearer ${credential}` }
+                    }) as unknown as globalThis.WebSocket
+                  }
                 ))
               ),
               RpcSerialization.layerNdjson
@@ -53786,6 +53979,7 @@ export const main = (filename: string): Effect.Effect<Summary> =>
         Effect.succeed(
           Seat.make({
             id,
+            modelId: Seat.modelIdOf(id),
             model: scripted(asked),
             route: { prepare: () => Effect.succeed(prepared) },
             contextWindowTokens: 200_000
@@ -53845,7 +54039,12 @@ export const main = (filename: string): Effect.Effect<Summary> =>
 
         const written = yield* run("notes-1", "record", "the three release-note rules")
         const recalled = yield* run("notes-2", "recall", "release notes")
-        const foreign = yield* run("notes-3", "foreign", "release notes")
+        // Bind the other namespace explicitly. A policy-scoped handler refuses
+        // foreign banks; an empty-bank read must use that bank's own policy.
+        const foreign = yield* run("notes-3", "foreign", "release notes", {
+          ...basePolicy,
+          namespace: { kind: "flow", id: "other-project" }
+        })
         const refused = yield* run("notes-4", "recall", "release notes", {
           ...basePolicy,
           recall: "none"
@@ -54461,7 +54660,7 @@ export const intervene = (options: {
         dryRun: options.dryRun,
         // The declaration named `Read.flow` and `Edit.flow`; execution runs
         // their implementations, `Read.run` and `Edit.run`.
-        read: (job) => Read.run({ path: job.path }),
+        read: ({ input }) => Read.run({ path: input.path }),
         propose: ({ input }) =>
           Effect.succeed({ path: input.path, oldString: input.from, newString: input.to }),
         apply: ({ proposal }) => Edit.run(proposal),
@@ -55728,11 +55927,11 @@ if (Exit.isFailure(exit)) {
 # Monitor and alert
 https://smithers.sh/docs/examples/38-monitor-and-alert/
 
-Observe parked runs and test delayed alert delivery.
+Observe parked runs without mistaking an expected wait for a stalled action.
 
-One run receives its answer and finishes. Another remains parked while a monitor reads its state, records a diagnosis, and attempts opt-in recovery. The alert policy admits a notification after the unhealthy condition lasts long enough.
+One run receives its answer and finishes. Another remains parked while a monitor reads its state and records a diagnosis. The event wait stays healthy even when recovery of stalled or wedged runs is explicitly enabled.
 
-The example compares a positive alert delay with a zero-delay policy. A monitor cannot infer whether an unanswered wait will eventually receive a response, so automatic recovery remains an explicit choice.
+The example compares a positive alert delay with a zero-delay policy. A known event wait is not an unhealthy condition, so neither policy pages about it. A short alert delay must not manufacture a stall.
 
 ## Run the test
 
@@ -55760,7 +55959,8 @@ import { Registry } from "@smthrs/registry"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
 import * as Schema from "effect/Schema"
-import { durableEngine } from "./durable-layer.ts"
+import { durableEngine, requirements } from "./durable-layer.ts"
+import { parkRun } from "./park-run.ts"
 
 /** What the supervision loop concluded. */
 export interface Summary {
@@ -55778,7 +55978,7 @@ export interface Summary {
   readonly quiet: number
   /** The conditions the impatient policy paged about. */
   readonly paged: ReadonlyArray<string>
-  /** Alerts a second tick raised. Zero: a delivered alert is not re-sent. */
+  /** Alerts a second tick raised. The healthy wait still raises none. */
   readonly repaged: number
   /** Coalescing keys pending on the notification queue. */
   readonly pending: ReadonlyArray<string>
@@ -55854,14 +56054,11 @@ const controlPlane = ControlLive.layer.pipe(
 )
 
 /**
- * The engine and the control plane over ONE database.
- *
- * `Layer.provideMerge` builds what it provides privately, so composing the
- * storage twice would give the monitor its own empty copy of the rows it is
- * supposed to be reading.
+ * A private engine for execution. The monitor opens the same SQLite file
+ * through storage-only services after this engine has shut down.
  */
 const stack = (filename: string) =>
-  Layer.merge(controlPlane, registrations).pipe(
+  registrations.pipe(
     Layer.provideMerge(durableEngine(filename, "examples-monitor"))
   )
 
@@ -55882,23 +56079,23 @@ export const main = (
   Effect.gen(function*() {
     const control = yield* Control.Control
 
-    // A run that parks and is then answered. `execute` returns the id while
-    // the run is still parked; the engine rebuilds the awaiting frame from the
-    // journal when the deferred is completed, and the second execute reads the
-    // finished result rather than re-running the body.
-    yield* Supervised.execute({}, { executionId: answeredRunId, discard: true })
-    yield* DurableDeferred.succeed(approval, { token: tokenFor(answeredRunId), value: { approved: true } })
-    const answered = yield* Supervised.execute({}, { executionId: answeredRunId })
+    // Observe the durable park before answering. The next execute rebuilds the
+    // awaiting frame from the journal and reads the completed deferred.
+    yield* parkRun(answeredRunId, Supervised.execute({}, { executionId: answeredRunId }), stack(filename))
+    const answered = yield* Effect.gen(function*() {
+      yield* DurableDeferred.succeed(approval, { token: tokenFor(answeredRunId), value: { approved: true } })
+      return yield* Supervised.execute({}, { executionId: answeredRunId })
+    }).pipe(Effect.provide(stack(filename)))
 
     // A run that parks and is not answered. Nothing is driving it now, which
     // is the situation a monitor exists for.
-    yield* Supervised.execute({}, { executionId: supervisedRunId, discard: true })
+    yield* parkRun(supervisedRunId, Supervised.execute({}, { executionId: supervisedRunId }), stack(filename))
     const listed = yield* control.list({ _tag: "runs", filters: { runId: supervisedRunId } })
     const parked = listed._tag === "runs" ? listed.items[0] : undefined
 
-    // Four beats: three build the stall, the fourth classifies it and resumes.
-    // The resume claims the run back onto the control plane, which is where a
-    // deployment's own executor picks it up.
+    // Observe beyond the stall threshold with recovery explicitly enabled.
+    // Monitor recognizes the durable event wait and leaves it healthy; an
+    // unanswered deferred does not authorize a resume or constitute a wedge.
     const report = yield* Monitor.run({
       runId: supervisedRunId,
       monitorId: "examples-oncall",
@@ -55940,7 +56137,11 @@ export const main = (
           : []
       )
     }
-  }).pipe(Effect.provide(stack(filename)), Effect.scoped, Effect.orDie)
+  }).pipe(
+    Effect.provide(controlPlane.pipe(Layer.provideMerge(requirements(filename)))),
+    Effect.scoped,
+    Effect.orDie
+  )
 ```
 
 ---
@@ -56102,6 +56303,7 @@ const policies = (calls: Array<string>) =>
         Effect.succeed(
           Seat.make({
             id,
+            modelId: Seat.modelIdOf(id),
             model: scripted(calls),
             route: { prepare: () => Effect.succeed(prepared) },
             contextWindowTokens: 200_000
@@ -56263,6 +56465,7 @@ const writeAndCount = ({ contents }: { readonly contents: string }) =>
   Effect.gen(function*() {
     const fs = yield* FileSystem.FileSystem
     const spawner = yield* ChildProcessSpawner
+    yield* fs.makeDirectory("example-40", { recursive: true })
     yield* fs.writeFileString("example-40/placed.txt", contents)
     const printed = yield* spawner.string(ChildProcess.make("wc", ["-c", "example-40/placed.txt"]))
     const count = Number.parseInt(printed.trim(), 10)

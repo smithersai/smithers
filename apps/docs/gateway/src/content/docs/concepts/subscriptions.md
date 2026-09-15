@@ -50,11 +50,11 @@ follower keeps that counter, so an appended row carries the same `turn` a full
 refold would give it. Concatenating a snapshot's rows with every delta after it
 yields exactly the transcript a fresh snapshot would fold.
 
-Recomputing is cheap because nothing re-reads the journal. The events are
-accumulated in the stream, so following a run never re-reads the journal after
-the snapshot cutoff is reconciled. Only `run-summary` and `run-tree` re-read
-anything, and only the run row, because their status comes from the row rather
-than from the journal.
+Events accumulate in the stream, so recomputing each delta does not re-read
+the journal. Resuming a historical `run-summary` first rebuilds its compacted
+health prefix once through durable follow replay, as described below. During
+ordinary run following, only `run-summary` and `run-tree` re-read the run row,
+because their lifecycle status comes from that row.
 
 ## What a delta costs
 
@@ -112,6 +112,21 @@ Pass a cursor as `after` and the subscription skips the snapshot, answering the
 deltas after that cursor alone. The read still happens, because a folded
 projection cannot be recomputed from the events after the cursor alone. What
 the client skips is receiving rows it already has.
+
+A resumed run summary rebuilds its health prefix from the durable subscription
+replay before emitting deltas. The latest compacted buffer may have replaced an
+observation that was current at the older cursor; reusing that buffer could let
+a late, weaker reading displace stronger evidence. Replay uses the same bounded
+compaction as a snapshot and emits nothing at or before the issued cursor.
+
+The bounded fold admits only observations for the run's own subject before
+applying evidence precedence or eviction. Foreign-subject observations still
+advance the raw journal cursor. It retains at most 16 health incarnations and
+protects the authoritative run incarnation's strongest evidence from eviction. Late readings
+from former owners cannot clear that reading or let weaker evidence replace it;
+equal evidence advances only with a later durable sequence. Live run summaries
+refresh the run row before compacting each event, and workspace subscriptions
+refresh it before compacting that run's first new event in a batch.
 
 Every frame of one snapshot carries the same cursor, the position the read
 reached, so a cursor from a row proves nothing about which rows arrived. A

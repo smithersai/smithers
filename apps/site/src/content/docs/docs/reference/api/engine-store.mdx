@@ -8,7 +8,7 @@ editUrl: "https://github.com/smithersai/smithers/edit/main/packages/smithers/flo
 
 > **Source:** [implementation](https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/engine-store/src) · [reference source](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/engine-store/docs/api.md) · [package docs](https://engine-store.smithers.sh)
 
-> **Related APIs:** [`@smthrs/artifacts`](/docs/reference/api/artifacts/) · [`@smthrs/crypto`](/docs/reference/api/crypto/) · [`@smthrs/database`](/docs/reference/api/database/) · [`@smthrs/engine`](/docs/reference/api/engine/) · [`@smthrs/flow`](/docs/reference/api/flow/) · [`@smthrs/journal`](/docs/reference/api/journal/) · [`@smthrs/kernel`](/docs/reference/api/kernel/) · [`@smthrs/keys`](/docs/reference/api/keys/) · [`@smthrs/plan`](/docs/reference/api/plan/) · [`@smthrs/run-store`](/docs/reference/api/run-store/) · [`@smthrs/step-cache`](/docs/reference/api/step-cache/)
+> **Related APIs:** [`@smthrs/artifacts`](/docs/reference/api/artifacts/) · [`@smthrs/canonical`](/docs/reference/api/canonical/) · [`@smthrs/crypto`](/docs/reference/api/crypto/) · [`@smthrs/database`](/docs/reference/api/database/) · [`@smthrs/engine`](/docs/reference/api/engine/) · [`@smthrs/flow`](/docs/reference/api/flow/) · [`@smthrs/journal`](/docs/reference/api/journal/) · [`@smthrs/kernel`](/docs/reference/api/kernel/) · [`@smthrs/keys`](/docs/reference/api/keys/) · [`@smthrs/plan`](/docs/reference/api/plan/) · [`@smthrs/run-store`](/docs/reference/api/run-store/) · [`@smthrs/step-cache`](/docs/reference/api/step-cache/)
 
 The durable `FlowEngine`. It claims a run before driving it, fences every write
 against the current owner, and persists attempts, waits, and terminal results
@@ -94,7 +94,7 @@ handoffs; explicit cancellation still cascades to linked children.
 
 ### Required services
 
-`Journal`, `RunStore`, `AttemptStore`, `CacheStore`, Effect's `Crypto`,
+`Journal`, `DurableWriter`, `RunStore`, `AttemptStore`, `CacheStore`, Effect's `Crypto`,
 `DurableEngineState`, kernel `Jj`, `StepBoundary`, `OwnerIdentity`, and a
 `Scope`. A composition failure is an unmet `Requirements` type at compile time,
 so there is no run-time composition error to handle.
@@ -157,6 +157,12 @@ Full model: [Ownership and fencing](https://engine-store.smithers.sh/concepts/ow
 Durable deferreds, clocks, waiting rows, and the run parent DAG. A successful
 mutation means the row is durable, so callers may journal and schedule a wake
 only after the mutation returns.
+
+Work that needs both this state and the journal opens `transaction` OUTSIDE
+`Journal.transact`, never the other way around. The SQL implementation shares
+the journal's writer and cannot tell the difference, but `makeMemory` has a
+permit of its own, and taking the journal's writer first while waiting for that
+permit deadlocks against a fiber doing the opposite.
 
 | Export                           | Signature                                                      | Meaning                                                                       |
 | -------------------------------- | -------------------------------------------------------------- | ----------------------------------------------------------------------------- |

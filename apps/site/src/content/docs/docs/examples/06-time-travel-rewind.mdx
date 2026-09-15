@@ -42,6 +42,7 @@ import * as Layer from "effect/Layer"
 import * as Schema from "effect/Schema"
 import * as SqlClient from "effect/unstable/sql/SqlClient"
 import { durableEngine, requirements } from "./durable-layer.ts"
+import { parkRun } from "./park-run.ts"
 
 /** The declared step the flow's body names; the wait lives in its implementation. */
 export const Post = Action.make("examples/Post", {
@@ -71,17 +72,14 @@ const lineageId = FlowEngine.Lineage.root("ledger-1")
 
 /**
  * `TimeTravel.layer` asks only for injectable contracts (the store plus the
- * journal, run, cache, and jj services the engine already provides) so it
- * merges straight onto the engine composition. Building it also resolves any
- * rewind a crash left half-finished, which is why recovery never appears as a
- * call below.
+ * journal, run, cache, and jj services) so it can use storage-only layers
+ * after the execution engine closes. Building it also resolves any rewind a
+ * crash left half-finished, which is why recovery never appears as a call below.
  */
 const layer = (filename: string) =>
-  Layer.mergeAll(Post.toLayer(post), Interpreter.layer(Ledger)).pipe(
-    Layer.provideMerge(Action.layerImplementations),
-    Layer.provideMerge(TimeTravel.layer),
+  TimeTravel.layer.pipe(
     Layer.provideMerge(SqlTimeTravelStore.layer),
-    Layer.provideMerge(durableEngine(filename, "ledger"))
+    Layer.provideMerge(requirements(filename))
   )
 
 export interface Summary {
@@ -119,9 +117,13 @@ const runId = "ledger-1" as JournalEvent.RunId
 /** Executes the run, inspects the middle frame, and rewinds to it. */
 const rewindAtMidpoint = (filename: string) =>
   Effect.gen(function*() {
-    // Drive the run until it parks at the deferred. It releases ownership on
-    // the way out, which is the state a rewind requires.
-    yield* Ledger.execute({}, { executionId: "ledger-1", discard: true })
+    // Close the private engine and its admitted retries before reading the
+    // frame. Only storage and time travel remain open during inspection.
+    yield* parkRun("ledger-1", Ledger.execute({}, { executionId: "ledger-1" }),
+      Layer.mergeAll(Post.toLayer(post), Interpreter.layer(Ledger)).pipe(
+        Layer.provideMerge(Action.layerImplementations),
+        Layer.provideMerge(durableEngine(filename, "ledger"))
+      ))
 
     const journal = yield* Journal.Journal
     yield* journal.flush

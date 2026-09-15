@@ -25,6 +25,19 @@ have used the default.
 
 ## Point at a different interpreter
 
+Smithers' Node and Bun control hosts (including the coding host and product
+gateway host) read `SMITHERS_PYTHON3` at startup. Set it to the absolute path of
+a CPython 3 interpreter; for example, on NixOS:
+
+```sh
+export SMITHERS_PYTHON3=/run/current-system/sw/bin/python3
+```
+
+An unset or empty value keeps `/usr/bin/python3`. A relative path fails startup
+with an error naming `SMITHERS_PYTHON3`. The hosts never search `PATH`.
+This variable configures the control hosts; custom library compositions still
+select the interpreter explicitly with `layerWith`:
+
 ```ts
 const filesystem = AtomicFileSystem.layerWith({ executable: "/usr/local/bin/python3" })
 ```

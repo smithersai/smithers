@@ -602,6 +602,31 @@ The steer lifecycle as the plane reads it back. See
 | `derive`             | function | `(event: ControlEvent) => ReadonlyArray<ControlEvent>`. One delta per message a promotion named. A promotion that named nothing derives nothing. |
 | `expand`             | function | `(event: ControlEvent) => ReadonlyArray<ControlEvent>`                                                                                           |
 
+## Health
+
+Observational health for flows and native sessions. See
+[Configure observational health](/guides/observe-health/).
+
+`HealthChecker<C>` accepts a read-only `ProbeContext` and schema-decoded config,
+returning an Effect of `ProbeReport`. `makeRegistry(config, kind)` admits host
+bindings and policies synchronously; `registry.resolve(key)` returns the selected
+`ResolvedCheck`. `evaluate(check, context, stamp)` runs it with a timeout and safe
+failure codes. The host rechecks ownership and commits the `HealthObservation`
+before publication.
+
+`rollup(input)` combines authoritative lifecycle, optional independent base
+health, and the latest `{ observation, sequence }` into `StatusRollup`. The wire
+axes are `state`, `activity`, `health`, `attention`, and `freshness`; provenance
+carries checker/monitor IDs, opaque incarnation, evidence position, durable
+version, observation time, and expiry. `latestObservation` compares only matching
+incarnations and uses journal order for equal evidence. `runIncarnation` derives
+an opaque fingerprint from current run ownership and lifecycle.
+
+`CheckPolicy` configures interval, timeout, TTL, no-progress grace (`stallAfterMs`),
+and failure backoff. `defaultPolicy` uses 5s/2s/20s/120s respectively and caps
+backoff at 60s. Defaults report unknown semantic activity; no checker output grants
+approval or authorizes a remedy.
+
 ## Monitor
 
 Run health over the control plane. See

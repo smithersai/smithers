@@ -66,7 +66,9 @@ closes over:
 import { Node } from "@smthrs/core"
 
 const factor = 3
-const scale = Node.capture({ factor }, (value: number) => value * factor)
+const scale = Node.capture({ factor }, function(value: number) {
+  return value * this.factor
+})
 ```
 
 Read this as a promise: "this function's behavior is determined by its source
@@ -80,9 +82,8 @@ For the procedure and its failure cases, see
 
 ## Capture data must be inert
 
-Capture data is canonicalized before it is hashed, and canonicalization refuses
-anything it cannot hash completely rather than hashing part of it. Rejected, in
-each case with a `TypeError` naming the offending path:
+Capture identity covers declared own data. Unsupported shapes are rejected
+with a `TypeError` naming the offending path:
 
 - `undefined`, `bigint`, `symbol`, and function values.
 - Non-finite numbers: `NaN`, `Infinity`, `-Infinity`.
@@ -90,9 +91,19 @@ each case with a `TypeError` naming the offending path:
 - Objects with a non-plain prototype, symbol keys, or accessor properties.
 - Arrays with holes or with non-index own keys.
 - Nesting deeper than 256 levels.
+- Objects that structuredClone rejects, including every Proxy.
 
-Accepted capture data is deeply frozen, so it cannot change after the promise
-was made. Comparison is structural: two references to one shared object digest
+Accepted ordinary data is copied and deeply frozen. The callback receives
+that copy as its `this` receiver; use a function expression to read it. Caller
+objects remain unchanged, including sealed, non-extensible, frozen and
+null-prototype records. Frozen and mutable twins have the same identity.
+Built-in brand checks reject prototype-swapped Map, Set, Date, buffers and
+other internal-slot objects before structuredClone can traverse them. Proxies
+are refused; hosts without structuredClone refuse object capture. Lexical
+aliases still name original objects and must not supply mutable semantic
+state. See the [capture boundary](/reference/api/#nodecapture).
+
+Comparison is structural: two references to one shared object digest
 identically to two structurally equal copies, so aliasing is not identity.
 
 ## Plan values are read at build time

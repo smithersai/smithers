@@ -240,7 +240,7 @@
 - [Remote cache](https://smithers.sh/docs/examples/35-remote-cache/): Share a sealed step result between engines with separate databases.
 - [Detached children](https://smithers.sh/docs/examples/36-detached-children/): Let a child outlive its parent and collect its output after a restart.
 - [Host containment](https://smithers.sh/docs/examples/37-host-containment/): Recover process cleanup after a host is killed with SIGKILL.
-- [Monitor and alert](https://smithers.sh/docs/examples/38-monitor-and-alert/): Observe parked runs and test delayed alert delivery.
+- [Monitor and alert](https://smithers.sh/docs/examples/38-monitor-and-alert/): Observe parked runs without mistaking an expected wait for a stalled action.
 - [Agent policies](https://smithers.sh/docs/examples/39-agent-policies/): Resume a model-backed action after a rate limit and an invalid structured answer.
 - [Sandbox placement](https://smithers.sh/docs/examples/40-sandbox-placement/): Place an action's host operations in a provisioned session.
 - [Sandboxed flow](https://smithers.sh/docs/examples/41-sandboxed-flow/): Run a child flow's code inside a provisioned environment as one parent action.

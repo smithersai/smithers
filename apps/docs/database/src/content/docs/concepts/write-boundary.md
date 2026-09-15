@@ -36,6 +36,18 @@ client layer has to pass, and runs it both against two `NodeDatabase`
 connections over one file and against the shared in-memory `TestDatabase`
 connection. See [Add a backend driver](/guides/add-a-backend/).
 
+Outermost writes on the shared `DurableWriter` queue for one process-local
+permit, and they queue at the caller's own interruptibility. Effect SQL masks
+connection acquisition, so the permit must be taken before that boundary: an
+interruptible caller that is cancelled or times out while queued returns at
+once, without entering SQL, running the body, or touching the holder's permit.
+A caller that masked interruption keeps waiting, so a cleanup write in a
+shutdown finalizer is queued rather than dropped. Share one writer across
+stores using the same client. Nested writes already own the connection and
+bypass the permit. The outer write holds it through all retries and releases it
+when SQL finishes, before commit publication, which may itself open a new
+write.
+
 ## Nesting joins, and only the outermost transaction retries
 
 A `write` inside the client's open transaction joins it as a savepoint and does

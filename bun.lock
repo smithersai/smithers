@@ -901,6 +901,25 @@
         "wrangler": "^4.129.0",
       },
     },
+    "apps/tutorial-coordinator": {
+      "name": "smithers-tutorial-coordinator",
+      "dependencies": {
+        "@effect/platform-node": "4.0.0-rc.115",
+        "@smthrs/agent": "workspace:*",
+        "@smthrs/cli": "workspace:*",
+        "@smthrs/engine": "workspace:*",
+        "@smthrs/engine-store": "workspace:*",
+        "@smthrs/flow": "workspace:*",
+        "@smthrs/flows": "workspace:*",
+        "@smthrs/kernel": "workspace:*",
+        "@smthrs/model": "workspace:*",
+        "@smthrs/registry": "workspace:*",
+        "@smthrs/rpc": "workspace:*",
+        "@smthrs/run-store": "workspace:*",
+        "effect": "4.0.0-rc.115",
+        "zod": "4.5.4",
+      },
+    },
     "evals/agent": {
       "name": "@smthrs/eval-agent",
       "version": "0.0.0",
@@ -2136,8 +2155,8 @@
       "name": "@smthrs/engine-store",
       "version": "1.0.0-rc.0",
       "dependencies": {
-        "@smthrs/canonical": "1.0.0-rc.0",
         "@smthrs/artifacts": "1.0.0-rc.0",
+        "@smthrs/canonical": "1.0.0-rc.0",
         "@smthrs/crypto": "1.0.0-rc.0",
         "@smthrs/database": "1.0.0-rc.0",
         "@smthrs/engine": "1.0.0-rc.0",
@@ -3013,11 +3032,11 @@
     },
   },
   "patchedDependencies": {
-    "@distilled.cloud/core@1.0.0-rc.8": "patches/@distilled.cloud__core@1.0.0-rc.8.patch",
-    "@alchemy.run/cloudflare-runtime@2.0.0-beta.76": "patches/@alchemy.run__cloudflare-runtime@2.0.0-beta.76.patch",
-    "@distilled.cloud/cloudflare@1.0.0-rc.8": "patches/@distilled.cloud__cloudflare@1.0.0-rc.8.patch",
-    "alchemy@2.0.0-beta.76": "patches/alchemy@2.0.0-beta.76.patch",
     "@distilled.cloud/aws@1.0.0-rc.8": "patches/@distilled.cloud__aws@1.0.0-rc.8.patch",
+    "@distilled.cloud/cloudflare@1.0.0-rc.8": "patches/@distilled.cloud__cloudflare@1.0.0-rc.8.patch",
+    "@distilled.cloud/core@1.0.0-rc.8": "patches/@distilled.cloud__core@1.0.0-rc.8.patch",
+    "alchemy@2.0.0-beta.76": "patches/alchemy@2.0.0-beta.76.patch",
+    "@alchemy.run/cloudflare-runtime@2.0.0-beta.76": "patches/@alchemy.run__cloudflare-runtime@2.0.0-beta.76.patch",
   },
   "overrides": {
     "@effect/opentelemetry": "4.0.0-rc.115",
@@ -6103,6 +6122,8 @@
     "smithers-app": ["smithers-app@workspace:apps/app"],
 
     "smithers-server": ["smithers-server@workspace:apps/server"],
+
+    "smithers-tutorial-coordinator": ["smithers-tutorial-coordinator@workspace:apps/tutorial-coordinator"],
 
     "smol-toml": ["smol-toml@1.8.0", "", {}, "sha512-kCZr2V3ch9i00x8zXRhjUNVcjG9ijES5dDudkXvUVCT5QlJNQWElSJdZqyPemffHoLNUYwOcou0Fy+ojN0uHSQ=="],
 

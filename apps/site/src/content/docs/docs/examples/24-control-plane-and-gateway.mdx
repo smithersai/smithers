@@ -125,7 +125,7 @@ const launch = (
 /** The base URL of a listening TCP server. */
 const addressOf = (server: HttpServer.HttpServer["Service"]): string => {
   const address = server.address
-  if (address._tag !== "TcpAddress") throw new Error("expected a TCP control server")
+  if (address._tag !== "InetAddressV4") throw new Error("expected a TCP control server")
   return `http://127.0.0.1:${address.port}`
 }
 
@@ -346,9 +346,15 @@ export const main = (root: string): Effect.Effect<Summary> =>
               // Browser WebSocket constructors cannot set Authorization headers.
               Socket.layerWebSocket(`ws://127.0.0.1:${new URL(url).port}/rpc/ws`).pipe(
                 Layer.provide(Layer.succeed(Socket.WebSocketConstructor)(
-                  (url, protocols) => new NodeSocket.NodeWS.WebSocket(url, protocols, {
-                    headers: { authorization: `Bearer ${credential}` }
-                  }) as unknown as globalThis.WebSocket
+                  (url, options) => {
+                    // A constructor receives either a protocol list or Node client options.
+                    const configured = options !== undefined && typeof options !== "string" && !Array.isArray(options) ? options : undefined
+                    const protocols = configured === undefined ? options as string | Array<string> | undefined : undefined
+                    return new NodeSocket.NodeWS.WebSocket(url, protocols, {
+                      ...configured,
+                      headers: { ...configured?.headers, authorization: `Bearer ${credential}` }
+                    }) as unknown as globalThis.WebSocket
+                  }
                 ))
               ),
               RpcSerialization.layerNdjson

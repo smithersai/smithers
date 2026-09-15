@@ -18,10 +18,10 @@ your own dependency list at the release the kernel is built against. A different
 `effect` major gives you two copies of the runtime and two sets of service tags.
 
 The package requires Node.js 22.19.0 or later and ships as both ESM and
-CommonJS with TypeScript declarations. Its one other runtime dependency,
-[`@smthrs/flow`](https://flow.smithers.sh/reference/api/), installs with it and supplies the
-`Action.CacheEnvironment` schema that
-[Declare a cache identity](/guides/cache-identity/) uses.
+CommonJS with TypeScript declarations. Its runtime dependencies install with it:
+[`@smthrs/flow`](https://flow.smithers.sh/reference/api/) supplies `Action.CacheEnvironment` for
+[cache identity](/guides/cache-identity/), and
+[`@smthrs/canonical`](https://canonical.smithers.sh/reference/api/) supplies immutable catalog maps.
 
 ## Import forms
 

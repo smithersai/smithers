@@ -104,10 +104,10 @@ Both sit under the `smthrs` command line, [`@smthrs/cli`](https://cli.smithers.s
 and inspects the durable flows a Smithers installation is made of. Start there
 for the whole picture.
 
-You do not need any of that to use this package. The kernel has no Smithers
-dependency beyond [`@smthrs/flow`](https://flow.smithers.sh/reference/api/), which supplies the
-`Action.CacheEnvironment` schema that
-[Declare a cache identity](/guides/cache-identity/) uses.
+The kernel depends on [`@smthrs/flow`](https://flow.smithers.sh/reference/api/) for the
+`Action.CacheEnvironment` schema used to
+[declare a cache identity](/guides/cache-identity/), and
+[`@smthrs/canonical`](https://canonical.smithers.sh/reference/api/) for immutable catalog maps.
 
 ## What this package does not do
 

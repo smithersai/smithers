@@ -87,6 +87,7 @@ export const liveOpenAiSeats = (apiKey: string) =>
             )
             return Seat.make({
               id,
+              modelId,
               model,
               route: FlowEngineLike.routeResolver(routeConfig),
               contextWindowTokens: SeatResolver.contextWindowTokensFor(modelId)

@@ -239,6 +239,7 @@ export const main = (filename: string): Effect.Effect<Summary> =>
         Effect.succeed(
           Seat.make({
             id,
+            modelId: Seat.modelIdOf(id),
             model: scripted(asked),
             route: { prepare: () => Effect.succeed(prepared) },
             contextWindowTokens: 200_000
@@ -298,7 +299,12 @@ export const main = (filename: string): Effect.Effect<Summary> =>
 
         const written = yield* run("notes-1", "record", "the three release-note rules")
         const recalled = yield* run("notes-2", "recall", "release notes")
-        const foreign = yield* run("notes-3", "foreign", "release notes")
+        // Bind the other namespace explicitly. A policy-scoped handler refuses
+        // foreign banks; an empty-bank read must use that bank's own policy.
+        const foreign = yield* run("notes-3", "foreign", "release notes", {
+          ...basePolicy,
+          namespace: { kind: "flow", id: "other-project" }
+        })
         const refused = yield* run("notes-4", "recall", "release notes", {
           ...basePolicy,
           recall: "none"

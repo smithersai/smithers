@@ -66,6 +66,7 @@ const writeAndCount = ({ contents }: { readonly contents: string }) =>
   Effect.gen(function*() {
     const fs = yield* FileSystem.FileSystem
     const spawner = yield* ChildProcessSpawner
+    yield* fs.makeDirectory("example-40", { recursive: true })
     yield* fs.writeFileString("example-40/placed.txt", contents)
     const printed = yield* spawner.string(ChildProcess.make("wc", ["-c", "example-40/placed.txt"]))
     const count = Number.parseInt(printed.trim(), 10)

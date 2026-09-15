@@ -294,6 +294,28 @@ is not in the inbox.
 **Fix** Use the run-scoped form, `{ _tag: "approvals", runId }`, which lists
 that run's gates including the decided ones. That is what a run card renders.
 
+A human wait held by a NESTED execution is no longer one of these cases. A
+flow that calls another flow parks the child, so a `HumanTask` several
+`.child()` boundaries down used to leave the run an operator opened reading
+`waiting · event` with an empty inbox, the shape run-3 of `coding/request`
+parked in, on a gate named `coding-clarification`. The control plane now rolls
+a run tree's open human waits onto the root as
+`ControlSchema.RunSummary.pendingWaits` and rolls its status up with them, and
+the projection turns each into a pending row of that root. A run still showing
+an empty inbox is waiting on a timer, an event, or a quota, and its
+`waitingReason` says which.
+
+### A question in the inbox cannot be answered
+
+**Cause** A `HumanTask` gate asks for a value, and `decision: "approve"` alone
+carries none. The run stays parked on the wait it opened.
+
+**Fix** Submit the value in `Approval.Submit`'s `answer`, shaped for the
+`kind` the row's `request` declares. The mount routes it to `Control.signal`
+addressed to the row's `runId` and naming its `requestId`, and the control
+plane resolves the wait wherever in the tree it is held. `smthrs signal <root
+run> '{"name":"<the question>","payload":…}'` is the same act from a terminal.
+
 ### The workspace listing stops at 500 runs
 
 **Cause** `Projections.maxWorkspaceRuns` is 500, matching

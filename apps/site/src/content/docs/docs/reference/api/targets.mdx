@@ -529,6 +529,8 @@ otherwise it uses `ignore`, including when `sources` is empty. An optional
 source cannot satisfy a missing required source.
 
 ```ts
+import { Smithers } from "@smthrs/targets"
+
 Smithers.CiToolchain.Artifacts({
   artifact: "test-evidence",
   sources: [
