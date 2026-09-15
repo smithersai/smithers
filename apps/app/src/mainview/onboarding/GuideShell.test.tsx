@@ -857,6 +857,38 @@ test("a sign-in answer scrolls into the tutorial read without changing the lesso
   }
 }, 5_000)
 
+test("replay keeps a persisted anonymous ceiling reply in its original playthrough's transcript", async () => {
+  let controller!: ReturnType<typeof createAppController>
+  const host = await mountGuide(4, still, { playthrough: 1, conversationOpen: true }, c => { controller = c })
+  const store = controller.store
+  const turnId = "first-playthrough"
+  const refusal: Card = {
+    id: `anonymous-ceiling-${turnId}`, kind: "anonymous-ceiling", title: "Exploring is paused",
+    status: "active", ordinal: 100, createdAt: 100,
+    payload: { message: "Sign in with GitHub to keep going.", retryAt: null },
+  }
+  await store.dispatch({ type: "message.submitted", actor: "user", turnId, text: "What is issue 3 about?" }).isPersisted.promise
+  await store.dispatch({ type: "card.upsert", actor: "system", card: refusal, turnId }).isPersisted.promise
+  await store.dispatch({ type: "message.response.completed", actor: "smithers", turnId }).isPersisted.promise
+  await settle()
+  const firstTranscript = store.session().guide!.transcript!
+  expect(firstTranscript[refusal.id]).toMatchObject({ source: "chat", owned: true })
+  expect(host.querySelector('.guide-transcript [data-kind="anonymous-ceiling"] [data-flow="auth.sign-in"]')).not.toBeNull()
+
+  // Seed the persisted finished state, then replay through the real controller.
+  await controller.guideAct("skip-practice")
+  await controller.guideAct("decline", "login")
+  await store.dispatch({ type: "guide.changed", actor: "user", guide: { ...store.session().guide!, step: 14, finished: true } }).isPersisted.promise
+  await controller.guideAct("restart")
+  await settle()
+  expect(store.session().guide).toMatchObject({ playthrough: 2, step: 1 })
+  expect(host.querySelector('.guide-shell')?.getAttribute("data-stage")).toBe("1")
+  expect(host.querySelector('.guide-transcript [data-kind="anonymous-ceiling"]') === null).toBe(true)
+  expect(host.querySelector('.guide-transcript [data-role="user"]') === null).toBe(true)
+  expect(store.collections.cards.get(refusal.id)).toMatchObject(refusal)
+  expect(firstTranscript[refusal.id]).toMatchObject({ source: "chat", owned: true })
+}, 5_000)
+
 test("closing Chat keeps its answer anchored independently of the composer", async () => {
   let controller!: ReturnType<typeof createAppController>
   const host = await mountGuide(2, still, { conversationOpen: true }, c => { controller = c })

@@ -190,6 +190,9 @@ export function createGuideController(ctx: ControllerContext, onStart?: () => Pr
       case "restart": {
         const playthrough = (guide.playthrough ?? 0) + 1
         for (const field of ["finished", "acceptedPracticeTitle", "responseId", "demoRun", "said", "declined", "practiceSkippedFrom", "repo", "pick", "notice", "noticeDetail", "librarianLaunches", "introSlides", "introSeen"] as const) delete guide[field]
+        // Persisted replies stay with the transcript that owned their turn.
+        // initialGuide omits this optional map, so Object.assign cannot reset it.
+        delete guide.transcript
         Object.assign(guide, initialGuide(), { playthrough, completed: ["tutorial.started"] })
         break
       }
