@@ -2,11 +2,33 @@ import assert from "node:assert/strict"
 import { execFileSync } from "node:child_process"
 import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
-import { join } from "node:path"
+import { dirname, join } from "node:path"
 import test from "node:test"
 import { EXPECTED_EFFECT_VERSION } from "./check-single-effect-version.mjs"
-import { adapterProfiles, adjacentEffectVersion, candidateVersion, migrationProfiles, minimalProfiles, runConsumerProfile, templateProfile } from "./release-consumers.mjs"
+import { adapterProfiles, adjacentEffectVersion, candidateVersion, consumerCacheFlags, migrationProfiles, minimalProfiles, runConsumerProfile, templateProfile } from "./release-consumers.mjs"
 import { releaseRegistry } from "./release-registry.mjs"
+
+test("external pnpm consumers retain the workspace's configured store and report cache reuse", () => {
+  const root = mkdtempSync(join(tmpdir(), "smithers-release-store-"))
+  const consumer = mkdtempSync(join(tmpdir(), "smithers-release-store-consumer-"))
+  try {
+    const store = join(root, "shared-store")
+    writeFileSync(join(root, "package.json"), JSON.stringify({ private: true }))
+    writeFileSync(join(root, "pnpm-workspace.yaml"), `storeDir: ${JSON.stringify(store)}\n`)
+    const actualStore = execFileSync("pnpm", ["store", "path"], { cwd: root, encoding: "utf8" }).trim()
+    assert.equal(dirname(actualStore), store, "the real manager reads the workspace store override")
+    assert.deepEqual(consumerCacheFlags("pnpm", root), ["--prefer-offline", "--store-dir", actualStore, "--reporter=append-only"])
+    const selectedStore = execFileSync("pnpm", [...consumerCacheFlags("pnpm", root), "store", "path"], {
+      cwd: consumer, encoding: "utf8",
+    }).trim()
+    assert.equal(selectedStore, actualStore, "an external project uses the populated store, including its version suffix")
+    assert.deepEqual(consumerCacheFlags("npm", root), ["--prefer-offline"])
+    assert.throws(() => consumerCacheFlags("unknown", root), /Unsupported release package manager/)
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+    rmSync(consumer, { recursive: true, force: true })
+  }
+})
 
 test("every library, adapter and migration profile selects the supplied candidate version", () => {
   for (const version of ["1.0.0", "1.1.0-rc.7"]) {

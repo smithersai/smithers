@@ -5,13 +5,13 @@ import { createRequire } from "node:module"
 import { existsSync, readFileSync, readdirSync, realpathSync } from "node:fs"
 import { copyFile, mkdtemp, readFile, rename, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
-import { join, relative, resolve } from "node:path"
+import { isAbsolute, join, relative, resolve } from "node:path"
 
 import { releaseRegistry } from "./release-registry.mjs"
 import { EXPECTED_EFFECT_VERSION } from "./check-single-effect-version.mjs"
 import { build as bundle } from "esbuild"
 import { valid } from "semver"
-import { isMain } from "./workspace-packages.mjs"
+import { isMain, repoRoot } from "./workspace-packages.mjs"
 
 // The one Effect pin every published manifest carries; declared once for the whole release line.
 const effect = EXPECTED_EFFECT_VERSION
@@ -29,6 +29,18 @@ export const candidateVersion = (entries) => {
 // Temporary projects must select the same pnpm toolchain as the repository.
 // Otherwise a different pnpm on a Node-version PATH can change command support.
 export const releasePackageManager = JSON.parse(readFileSync(resolve(import.meta.dirname, "../package.json"), "utf8")).packageManager
+const stores = new Map()
+/** Reuse the workspace's package cache from external consumers without linking its dependencies. */
+export const consumerCacheFlags = (manager, workspace = repoRoot) => {
+  if (manager === "npm") return ["--prefer-offline"]
+  if (manager !== "pnpm") throw new Error(`Unsupported release package manager: ${manager}`)
+  if (!stores.has(workspace)) {
+    const store = execFileSync("pnpm", ["store", "path"], { cwd: workspace, encoding: "utf8" }).trim()
+    if (!isAbsolute(store)) throw new Error(`pnpm store path did not return an absolute directory: ${store}`)
+    stores.set(workspace, store)
+  }
+  return ["--prefer-offline", "--store-dir", stores.get(workspace), "--reporter=append-only"]
+}
 const installedConsumerDirectory = resolve(import.meta.dirname, "fixtures/installed-consumer")
 const runners = ["vitest", "@effect/vitest", "@smthrs/testing"]
 const nodeRuntime = ["@smthrs/platform-node", "@effect/platform-node", "@effect/platform-node-shared"]
@@ -206,14 +218,15 @@ export const assertConsumerTree = (consumer, profile) => {
 /** Record actual exit status and exact command, including expected install refusals. */
 export const consumerCommand = (command, args, cwd, options = {}) => new Promise((resolveRun, reject) => {
   const started = Date.now()
+  console.log(JSON.stringify({ command, args, cwd, event: "start", at: new Date(started).toISOString() }))
   const child = spawn(command, args, { cwd, env: options.env ?? process.env, stdio: ["ignore", "pipe", "pipe"] })
   let output = ""
   child.stdout.on("data", (chunk) => { output += chunk })
   child.stderr.on("data", (chunk) => { output += chunk })
   child.once("error", reject)
   child.once("close", (exit, signal) => {
-    console.log(JSON.stringify({ command, args, cwd, node: process.version, exit, signal, durationMs: Date.now() - started }))
-    if (exit !== 0 || command.endsWith("/vitest") || args[0] === "--version") console.log(output)
+    console.log(JSON.stringify({ command, args, cwd, node: process.version, event: "end", at: new Date().toISOString(), exit, signal, durationMs: Date.now() - started }))
+    if (exit !== 0 || command.endsWith("/vitest") || args[0] === "--version" || args.includes("--reporter=append-only")) console.log(output)
     resolveRun({ exit, signal, output })
   })
 })
@@ -276,7 +289,7 @@ export const runConsumerProfile = async (profile, manager, registryUrl, { runtim
       packageManager: releasePackageManager, dependencies: profile.dependencies
     }))
     const managerVersion = (await successful(manager, ["--version"], consumer)).output.trim()
-    const args = ["install", "--ignore-scripts", ...(manager === "npm" ? ["--no-audit", "--no-fund", "--strict-peer-deps"] : ["--strict-peer-dependencies"])]
+    const args = ["install", "--ignore-scripts", ...consumerCacheFlags(manager), ...(manager === "npm" ? ["--no-audit", "--no-fund", "--strict-peer-deps"] : ["--strict-peer-dependencies"])]
     if (profile.omitOptional) args.push(manager === "npm" ? "--omit=optional" : "--no-optional")
     await successful(manager, args, consumer)
     const tree = assertConsumerTree(consumer, profile)
@@ -322,7 +335,7 @@ export const refuseIncompatibleRc = async (manager, registryUrl, entries) => {
       dependencies: { "@smthrs/database": firstParty, effect: adjacentEffectVersion }
     }))
     await successful(manager, ["--version"], consumer)
-    const result = await consumerCommand(manager, ["install", "--ignore-scripts",
+    const result = await consumerCommand(manager, ["install", "--ignore-scripts", ...consumerCacheFlags(manager),
       ...(manager === "npm" ? ["--strict-peer-deps", "--no-audit", "--no-fund"] : ["--strict-peer-dependencies"])], consumer)
     assert.notEqual(result.exit, 0, "incompatible RC must be refused")
     assert.equal(result.signal, null)

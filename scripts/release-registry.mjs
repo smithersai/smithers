@@ -23,11 +23,23 @@ export const releaseRegistry = async (directory, entries) => {
     })
     tarballs.set(`/tarballs/${entry.filename}`, { path, size: (await stat(path)).size })
   }
+  // Cache-preferred installs must never select metadata from an older
+  // candidate when the OS reuses a loopback port. Bind every registry URL to
+  // this exact roster and its tarball bytes, including same-version rebuilds.
+  const registryPath = "/" + createHash("sha256").update(JSON.stringify(
+    [...packages].map(([name, packed]) => [name, packed.filename, packed.integrity])
+      .sort(([left], [right]) => left < right ? -1 : left > right ? 1 : 0)
+  )).digest("hex")
   let url
   const server = createServer((request, response) => {
     let pathname
     try {
-      pathname = decodeURIComponent(new URL(request.url, url).pathname)
+      const requested = new URL(request.url, url).pathname
+      if (!requested.startsWith(registryPath + "/")) {
+        response.writeHead(404).end()
+        return
+      }
+      pathname = decodeURIComponent(requested.slice(registryPath.length))
     } catch {
       response.writeHead(400).end()
       return
@@ -62,7 +74,7 @@ export const releaseRegistry = async (directory, entries) => {
     server.once("error", reject)
     server.listen(0, "127.0.0.1", resolve)
   })
-  url = `http://127.0.0.1:${server.address().port}`
+  url = `http://127.0.0.1:${server.address().port}${registryPath}`
   return {
     url,
     close: () => new Promise((resolve, reject) => {
