@@ -1804,6 +1804,9 @@ importers:
       '@smthrs/harness':
         specifier: workspace:*
         version: link:../packages/smithers/agent/harness
+      '@smthrs/jj':
+        specifier: workspace:*
+        version: link:../packages/smithers/flows/jj
       '@smthrs/journal':
         specifier: workspace:*
         version: link:../packages/smithers/flows/journal
