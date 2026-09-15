@@ -26,7 +26,7 @@ const decodeEnvelope = Schema.decodeUnknownOption(Envelope)
 const decodeAttempt = Schema.decodeUnknownOption(EngineEvent.AttemptPayload, { onExcessProperty: "error" })
 const decodeState = Schema.decodeUnknownOption(EngineEvent.StatePayload, { onExcessProperty: "error" })
 const decodeMarker = Schema.decodeUnknownOption(EngineEvent.CurrentAttempt)
-const stateDecisions = ["created", "transitioned", "handed-off", "lineage-exhausted", "round-invalid", "quarantined", "interrupt-released"] as const
+const stateDecisions = ["created", "resumed", "transitioned", "handed-off", "lineage-exhausted", "round-invalid", "quarantined", "interrupt-released"] as const
 const decodeDecision = Schema.decodeUnknownOption(Schema.Struct({
   decision: Schema.Literals(stateDecisions),
   status: Schema.optionalKey(Schema.Literals(["pending", "running", "suspended", "completed", "failed", "cancelled"])),

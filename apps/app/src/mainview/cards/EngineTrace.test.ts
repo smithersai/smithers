@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test"
 import * as JournalRecords from "../../../../../packages/smithers/flows/engine-store/src/internal/JournalRecords.ts"
 import type { JournalRecord } from "./RunTrace"
 import { traceFromJournal, turnNarratives } from "./RunTrace"
-import { engineProjectionPending } from "./EngineTrace"
+import { engineProjectionPending, engineExecutionEvidence } from "./EngineTrace"
 
 const run = { runId: "control", flowId: "coding", status: "running" }
 const lineage = (id = "native") => ({ kind: "root", runId: id, rootRunId: id, lineageId: id, round: 0, parentRunId: null })
@@ -159,3 +159,19 @@ describe("recorded engine evidence in the run trace", () => {
 })
 
 export { decision, wrap }
+
+
+test("a native resumed decision preserves subsequent blocked coding results", () => {
+  const resumed = JournalRecords.runDecision({ runId: "native", sourceId: "engine", lineageId: "native" }, {
+    decision: "resumed", status: "running",
+    state: { version: 1, flowName: "coding/RunPlan", payload: { target: "typecheck" } }
+  })
+  const blocked = { outcome: { status: "blocked", blocked: { message: "README check failed" } } }
+  const evidence = engineExecutionEvidence([
+    decision(1, "native"), wrap(2, "native", resumed.eventType, resumed.payload),
+    decision(3, "native", "completed", blocked)
+  ])
+  expect(evidence).toHaveLength(1)
+  expect(evidence[0]?.coherent).toBe(true)
+  expect(evidence[0]?.result?.value).toEqual(blocked)
+})
