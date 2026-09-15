@@ -75,6 +75,7 @@ test("practice Add flow opens the shared form with its issue and repo; submit re
     const form = store.collections.cards.get("form-issue.add-flow")
     expect(form?.kind).toBe("flow-form")
     if (form?.kind !== "flow-form") throw new Error("Missing Add flow form")
+    expect(form.title).toBe("Add a flow to issue #3")
     expect(form.payload.given).toMatchObject({ number: 3, repo: PRACTICE_REPO })
     expect(form.payload.fields.find(field => field.name === "description")?.label).toBe("What should this issue flow do?")
     expect([...store.collections.toasts.values()].filter(toast => toast.status === "failed")).toEqual([])

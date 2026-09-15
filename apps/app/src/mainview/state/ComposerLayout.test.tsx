@@ -488,8 +488,9 @@ describe("the optional full composer's + menu and surface pill", () => {
     const pane = view.host.querySelector<HTMLElement>(".flows-surface")
     expect(pane).not.toBeNull()
     const rows = [...(pane?.querySelectorAll<HTMLElement>(".workflow-list-row") ?? [])]
-    expect(rows.map((row) => text(row.querySelector("strong")))).toEqual(["review-pr", "release"])
-    expect(text(rows[0])).toContain("Review an open PR")
+    // A described flow leads with its human name; its key stays visible beside it.
+    expect(rows.map((row) => text(row.querySelector("strong")))).toEqual(["Review an open PR", "release"])
+    expect(text(rows[0])).toContain("review-pr")
     expect(rows.map((row) => row.querySelector("button")?.dataset.flow)).toEqual(["flow.run", "flow.run"])
   })
 })

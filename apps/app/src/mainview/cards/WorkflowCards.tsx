@@ -424,8 +424,8 @@ export const WorkflowListCardBody = ({
         {workflows.map((workflow) => (
           <li key={workflow.key} className="workflow-list-row">
             <div className="workflow-list-text">
-              <strong>{workflow.key.replace(/^issue\//, "issue.")}</strong>
-              {workflow.description !== null ? <span>{workflow.description}</span> : null}
+              <strong>{workflow.description ?? workflow.key.replace(/^issue\//, "issue.")}</strong>
+              {workflow.description !== null ? <span>{workflow.key.replace(/^issue\//, "issue.")}</span> : null}
               {workflow.prompt ? <Markdown className="smithers-card-markdown" content={workflow.prompt} /> : null}
             </div>
             {issueContext && (workflow.key === "issue.repro" || workflow.key === "issue/repro") ?

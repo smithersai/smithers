@@ -26,6 +26,7 @@ test("issue flows expose slash, button and agent doors; Add flow preserves conte
   expect(formFieldsFor(add.input, add.metadata.form).find(field => field.name === "description")).toMatchObject({
     label: "What should this issue flow do?", placeholder: "Describe the flow to add", required: true
   })
+  expect(add.metadata.summary).toBe("Add a flow to an issue")
   const payload = { number: 3, repo: "practice:smithersai/hello-server", description: "Research errors\nwithout losing the issue context" }
   expect(payloadFor("issue.add-flow", add.metadata.form?.args?.(payload))).toEqual({payload})
 })

@@ -324,7 +324,9 @@ export const createFormsController = (ctx: ControllerContext, deps: FormsControl
       card: {
         id: cardId,
         kind: "flow-form",
-        title: request.title ?? (entry ?? ctx.commands.find(request.name))?.metadata.summary ?? request.name,
+        title: request.title ?? (request.name === "issue.add-flow" && typeof given.number === "number"
+          ? `Add a flow to issue #${given.number}`
+          : (entry ?? ctx.commands.find(request.name))?.metadata.summary ?? request.name),
         status: "active",
         createdAt: existing?.createdAt ?? Date.now(),
         ordinal: deps.nextOrdinal(),
