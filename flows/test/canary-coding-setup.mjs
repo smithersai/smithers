@@ -9,7 +9,7 @@ if (!process.argv[2]) throw Error('Pass the directory for the canary setup artif
 const output = resolve(process.argv[2])
 const { build } = createRequire(source + '/package.json')('esbuild')
 await mkdir(output, { recursive: true })
-const bundled = await build({ stdin: { contents: 'export {Flow} from "@smthrs/core"; export {Schema} from "effect"; export * from "./coding/schema.ts";', resolveDir: join(source, 'flows') }, bundle: true, write: false, platform: 'node', format: 'esm', metafile: true, minify: true, target: 'node22.19' })
+const bundled = await build({ stdin: { contents: 'export {Flow} from "@smthrs/core"; export {Schema} from "effect"; export * from "./coding/schema.ts"; export * from "./coding/vibe-schema.ts";', resolveDir: join(source, 'flows') }, bundle: true, write: false, platform: 'node', format: 'esm', metafile: true, minify: true, target: 'node22.19' })
 if (Object.values(bundled.metafile.outputs).some(file => file.imports.length > 0)) throw Error('Coding declarations must bundle every dependency')
 const api = bundled.outputFiles[0].text
 const exports = api.match(/export\{([^}]+)\};?\s*$/)
@@ -17,7 +17,7 @@ if (!exports) throw Error('Expected static bundled exports')
 const names = exports[1].split(',').map(value => value.trim().split(/\s+as\s+/)).map(([local, exported]) => JSON.stringify(exported ?? local) + ':' + local)
 const factory = 'function createCodingApi(){' + api.slice(0, exports.index) + 'return {' + names.join(',') + '}}\n'
 const files = {}
-for (const relative of ['flow.ts', 'implementation/flow.ts', 'request/flow.ts']) {
+for (const relative of ['flow.ts', 'implementation/flow.ts', 'request/flow.ts', 'vibe/flow.ts']) {
   const authored = await readFile(join(source, 'flows/coding', relative), 'utf8')
   const imports = [...authored.matchAll(/^import \{([^}]+)\} from [^\n]+$/gm)].flatMap(match => match[1].split(',').map(s => s.trim()))
   // A hoisted factory keeps metadata first and every dependency in this
