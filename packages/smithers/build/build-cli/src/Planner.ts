@@ -6,6 +6,7 @@
 import * as Input from "@smthrs/targets/Input"
 import * as SafeFs from "@smthrs/targets/SafeFs"
 import * as Target from "@smthrs/targets/Target"
+import * as Effect from "effect/Effect"
 import { createHash } from "node:crypto"
 import * as NodePath from "node:path"
 import { fileURLToPath } from "node:url"
@@ -498,7 +499,7 @@ const digestSource = async (
  * Inspects or digests every candidate with a bounded pool, keeping results
  * indexed by walk position.
  *
- * A worker never rejects: it records the failure at its own index instead, so
+ * Each measurement retains its failure as a result, so
  * one file's error cannot pre-empt an earlier file's error and cannot leave a
  * sibling's rejection unhandled. The caller replays the outcomes in walk order,
  * which is what makes the reported error identical to the one the previous
@@ -506,33 +507,27 @@ const digestSource = async (
  * files after the offending one have already been read by the time it is
  * reported; the fingerprint and the error are unchanged.
  */
-const measureSources = async (
+const measureSources = (
   candidates: ReadonlyArray<SourceCandidate> | ReadonlyArray<AdmittedSource>,
   root: string,
   signal: AbortSignal | undefined,
   phase: "inspect" | "digest"
-): Promise<ReadonlyArray<SourceMeasurement>> => {
-  const measured = new Array<SourceMeasurement>(candidates.length)
-  let next = 0
-  const worker = async (): Promise<void> => {
-    while (next < candidates.length) {
-      const index = next
-      next += 1
-      try {
-        const candidate = candidates[index]!
-        measured[index] = phase === "inspect"
-          ? { ...(await inspectSource(candidate as SourceCandidate, root, signal)), digest: undefined }
-          : await digestSource(candidate as AdmittedSource, root, signal)
-      } catch (cause) {
-        measured[index] = { _tag: "failed", cause }
-      }
-    }
-  }
-  await Promise.all(
-    Array.from({ length: Math.min(sourceDigestConcurrency, candidates.length) }, worker)
-  )
-  return measured
-}
+): Promise<ReadonlyArray<SourceMeasurement>> =>
+  Effect.runPromise(Effect.forEach(
+    candidates,
+    (candidate) =>
+      Effect.tryPromise({
+        try: async () =>
+          phase === "inspect"
+            ? { ...(await inspectSource(candidate as SourceCandidate, root, signal)), digest: undefined }
+            : await digestSource(candidate as AdmittedSource, root, signal),
+        catch: (cause) => cause
+      }).pipe(Effect.match({
+        onFailure: (cause): SourceMeasurement => ({ _tag: "failed", cause }),
+        onSuccess: (value) => value
+      })),
+    { concurrency: sourceDigestConcurrency }
+  ))
 
 /** Refuses names Node may have decoded lossily or which are not one path component. */
 const validateSourceName = (name: string, directory: string): void => {

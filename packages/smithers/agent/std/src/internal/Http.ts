@@ -3,10 +3,14 @@
  *
  * @since 1.0.0
  */
+import * as HttpClient from "@smthrs/kernel/HttpClient"
 import * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
 import * as Stream from "effect/Stream"
+import * as HttpClientRequest from "effect/unstable/http/HttpClientRequest"
 import * as StdError from "../StdError.ts"
+import { MAX_OUTPUT_BYTES, notice, truncateBytes } from "./Text.ts"
+import { parseHttpUrl } from "./Url.ts"
 
 /**
  * Maximum captured response bytes before decoding.
@@ -127,3 +131,60 @@ export const withDeadline = <A, E, R>(
       )
   })
 }
+
+/** Shared response contract for the GET and POST tools.
+ * @since 1.0.0
+ * @private
+ */
+export const Response = Schema.Struct({
+  status: Schema.Number.annotate({ description: "HTTP status code, including error statuses" }),
+  body: Schema.String.annotate({ description: "Response body as text" }),
+  truncated: Schema.Boolean.annotate({ description: "Whether the body exceeded the display budget" }),
+  notice: Schema.optional(Schema.String.annotate({ description: "Truncation disclosure" }))
+})
+
+/** Validate, execute, and render one bounded HTTP request.
+ * @since 1.0.0
+ * @private
+ */
+export const execute = Effect.fn("Http.execute")(function*(
+  input: {
+    readonly url: string
+    readonly headers?: Readonly<Record<string, string>> | undefined
+    readonly timeout?: number | undefined
+  },
+  makeRequest: (url: string) => HttpClientRequest.HttpClientRequest
+): Effect.fn.Return<typeof Response.Type, StdError.StdError, HttpClient.HttpClient> {
+  const url = parseHttpUrl(input.url)
+  if (url === undefined) {
+    return yield* Effect.fail(
+      new StdError.StdError({
+        code: "invalid_input",
+        message: `URL must use http or https without user information: ${input.url}`,
+        path: input.url
+      })
+    )
+  }
+  const client = yield* HttpClient.HttpClient
+  const request = makeRequest(url.toString())
+  const { status, bytes } = yield* withDeadline(
+    Effect.gen(function*() {
+      const response = yield* client.execute(
+        input.headers === undefined ? request : HttpClientRequest.setHeaders(request, input.headers)
+      )
+      const bytes = yield* readBounded(response.stream, input.url)
+      return { status: response.status, bytes }
+    }).pipe(Effect.mapError((error) => requestError(input.url, error))),
+    input.url,
+    input.timeout
+  )
+  const rendered = truncateBytes(new TextDecoder().decode(bytes), MAX_OUTPUT_BYTES, { keep: "head" })
+  return {
+    status,
+    body: rendered.text,
+    truncated: rendered.truncated,
+    ...(rendered.truncated
+      ? { notice: notice("bytes", rendered.keptBytes, rendered.keptBytes + rendered.droppedBytes) }
+      : {})
+  }
+})

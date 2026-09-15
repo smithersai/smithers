@@ -75,17 +75,10 @@ export const runRequest = <R = never>(
   runtime?: ManagedRuntime.ManagedRuntime<R, never>
 ): Promise<Response> => {
   if (signal?.aborted === true) return Promise.resolve(clientDisconnected())
-  const fiber = runtime === undefined
-    ? Effect.runFork(effect as Effect.Effect<Response, never>)
-    : runtime.runFork(effect)
-  const onAbort = () => {
-    fiber.interruptUnsafe()
-  }
-  signal?.addEventListener("abort", onAbort, { once: true })
-  return Effect.runPromise(Fiber.await(fiber)).then((exit) => {
-    signal?.removeEventListener("abort", onAbort)
-    return responseFromExit(exit)
-  })
+  const exit = runtime === undefined
+    ? Effect.runPromiseExit(effect as Effect.Effect<Response, never>, { signal })
+    : runtime.runPromiseExit(effect, { signal })
+  return exit.then(responseFromExit)
 }
 
 /**

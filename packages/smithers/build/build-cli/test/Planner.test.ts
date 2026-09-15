@@ -368,6 +368,29 @@ describe("implementationFingerprint", () => {
     expect(await fingerprintSources([{ name: "x", directory }])).not.toBe(before)
   })
 
+  it("reports the first source failure even when a later concurrent read fails first", async () => {
+    const directory = await scratch()
+    await Fs.writeFile(NodePath.join(directory, "a.ts"), "a", "utf8")
+    await Fs.writeFile(NodePath.join(directory, "b.ts"), "b", "utf8")
+    const later = Promise.withResolvers<void>()
+    const first = new Error("first source")
+    const digest = vi.spyOn(SafeFs, "digestEntry")
+      .mockImplementationOnce(async () => {
+        await later.promise
+        throw first
+      })
+      .mockImplementationOnce(async () => {
+        later.resolve()
+        throw new Error("later source")
+      })
+    try {
+      await expect(fingerprintSources([{ name: "x", directory }])).rejects.toBe(first)
+      expect(digest).toHaveBeenCalledTimes(2)
+    } finally {
+      digest.mockRestore()
+    }
+  })
+
   it("refuses an implementation source file over the scan ceiling", async () => {
     const directory = await scratch()
     const source = NodePath.join(directory, "oversized.ts")

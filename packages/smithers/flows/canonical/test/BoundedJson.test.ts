@@ -80,6 +80,18 @@ describe("bounded JSON admission", () => {
     }
   })
 
+  it("can preserve traversal-order diagnostics without relaxing admission limits", () => {
+    const check = (value: unknown, maxBytes = limits.maxBytes) =>
+      BoundedJson.admit(value, { ...limits, maxMembers: 2, maxNodes: 2, maxBytes }, { preflightObjects: false })
+    expect(check({ a: 0, b: 0, c: 0 }))
+      .toMatchObject({ ok: false, code: "members", path: [] })
+    expect(check({ a: 0, b: 0 }))
+      .toMatchObject({ ok: false, code: "nodes", path: ["b"] })
+    expect(check({ a: 0 })).toMatchObject({ ok: true })
+    expect(check({ a: 0 }, 6))
+      .toMatchObject({ ok: false, code: "bytes", path: ["a"] })
+  })
+
   it("admits objects exactly at their member, node, and encoded byte limits", () => {
     for (const value of [{}, { "": 0 }, { a: 0, b: { "": 0 } }]) {
       const members = Object.keys(value).length

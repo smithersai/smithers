@@ -103,7 +103,11 @@ export const encodedStringBytes = (value: string, maximum = Infinity): number | 
  * @category validation
  * @since 1.0.0-rc.0
  */
-export const admit = (input: unknown, limits: Limits): Result => {
+export const admit = (
+  input: unknown,
+  limits: Limits,
+  options: { readonly preflightObjects?: boolean } = {}
+): Result => {
   let bytes = 0
   let nodes = 0
   let totalMembers = 0
@@ -193,11 +197,17 @@ export const admit = (input: unknown, limits: Limits): Result => {
         if (count > limits.maxMembers || totalMembers + count > (limits.maxTotalMembers ?? Infinity)) {
           return refuse("members", "exceeds the JSON members limit")
         }
-        if (nodes + count > limits.maxNodes) return refuse("nodes", `contains more than ${limits.maxNodes} JSON values`)
-        // Each member needs at least an empty key, a colon, and a one-byte value,
-        // in addition to the object's braces and commas. Charge exact bytes below.
-        const minimumBytes = 2 + (count - 1) + 4 * count
-        if (bytes + minimumBytes > (limits.maxBytes ?? Infinity)) return refuse("bytes", "exceeds the JSON byte limit")
+        if (options.preflightObjects !== false) {
+          if (nodes + count > limits.maxNodes) {
+            return refuse("nodes", `contains more than ${limits.maxNodes} JSON values`)
+          }
+          // Each member needs at least an empty key, a colon, and a one-byte value,
+          // in addition to the object's braces and commas. Charge exact bytes below.
+          const minimumBytes = 2 + (count - 1) + 4 * count
+          if (bytes + minimumBytes > (limits.maxBytes ?? Infinity)) {
+            return refuse("bytes", "exceeds the JSON byte limit")
+          }
+        }
         members.push([key, descriptor.value])
       }
       if (!countMembers(members.length)) return refuse("members", "exceeds the JSON members limit")

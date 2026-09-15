@@ -4,15 +4,11 @@
  * @since 1.0.0
  */
 import * as Flow from "@smthrs/core/Flow"
-import * as HttpClient from "@smthrs/kernel/HttpClient"
 import * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
 import * as HttpClientRequest from "effect/unstable/http/HttpClientRequest"
 import { capability, envelope } from "./internal/Declaration.ts"
-import { readBounded, requestError, Timeout, withDeadline } from "./internal/Http.ts"
-import { MAX_OUTPUT_BYTES, notice, truncateBytes } from "./internal/Text.ts"
-import { parseHttpUrl } from "./internal/Url.ts"
-import * as StdError from "./StdError.ts"
+import { execute, Response, Timeout } from "./internal/Http.ts"
 
 /**
  * Registry name for the fetch flow.
@@ -61,12 +57,7 @@ export type Input = typeof Input.Type
  * @category schemas
  * @since 1.0.0
  */
-export const Output = Schema.Struct({
-  status: Schema.Number.annotate({ description: "HTTP status code, including error statuses" }),
-  body: Schema.String.annotate({ description: "Response body as text" }),
-  truncated: Schema.Boolean.annotate({ description: "Whether the body exceeded the display budget" }),
-  notice: Schema.optional(Schema.String.annotate({ description: "Truncation disclosure" }))
-})
+export const Output = Response
 
 /**
  * Decoded output returned by the `fetch` flow.
@@ -123,44 +114,4 @@ export const flow = Flow.make({ name, description, input: Input, output: Output,
  * @category handlers
  * @since 1.0.0
  */
-export const run = Effect.fn("Fetch.run")(function*(
-  input: typeof Input.Type
-): Effect.fn.Return<typeof Output.Type, StdError.StdError, HttpClient.HttpClient> {
-  const url = parseHttpUrl(input.url)
-  if (url === undefined) {
-    return yield* Effect.fail(
-      new StdError.StdError({
-        code: "invalid_input",
-        message: `URL must use http or https without user information: ${input.url}`,
-        path: input.url
-      })
-    )
-  }
-  const client = yield* HttpClient.HttpClient
-  const request = input.headers === undefined
-    ? HttpClientRequest.get(url.toString())
-    : HttpClientRequest.setHeaders(HttpClientRequest.get(url.toString()), input.headers)
-  const { status, bytes } = yield* withDeadline(
-    Effect.gen(function*() {
-      const response = yield* client.execute(request).pipe(
-        Effect.mapError((error) => requestError(input.url, error))
-      )
-      const bytes = yield* readBounded(response.stream, input.url).pipe(
-        Effect.mapError((error) => requestError(input.url, error))
-      )
-      return { status: response.status, bytes }
-    }),
-    input.url,
-    input.timeout
-  )
-  const text = new TextDecoder().decode(bytes)
-  const rendered = truncateBytes(text, MAX_OUTPUT_BYTES, { keep: "head" })
-  return {
-    status,
-    body: rendered.text,
-    truncated: rendered.truncated,
-    ...(rendered.truncated
-      ? { notice: notice("bytes", rendered.keptBytes, rendered.keptBytes + rendered.droppedBytes) }
-      : {})
-  }
-})
+export const run = Effect.fn("Fetch.run")((input: Input) => execute(input, HttpClientRequest.get))
