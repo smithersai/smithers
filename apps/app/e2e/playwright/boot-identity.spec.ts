@@ -94,17 +94,23 @@ test("repository chrome sign-in is keyboard reachable without the sidebar and ca
   expect(new URL((await request).url()).searchParams.get("return_to")).toBe("/smithersai/smithers/")
 })
 
-test("signed-in repository chrome uses the same slot for Account", async ({ page }) => {
+test("signed-in repository chrome shows no account in the header; the sidebar still opens Account", async ({ page }) => {
   await signedOutVisitor(page)
   await page.route("**/api/auth/session", route => route.fulfill({ contentType: "application/json", body: JSON.stringify(SCOPED_TEST_USER) }))
   await page.route("**/api/auth/scopes", route => route.fulfill({ json: { scopes: [{ scope: "contents:write", plain: "Read and write repository contents." }] } }))
   await page.goto("/smithersai/smithers/")
-  await expect(page.locator(".session-navigation").getByTestId("chrome-account")).toHaveText(`Account (@${SCOPED_TEST_USER.login})`)
-  await expect(page.getByTestId("chrome-sign-in")).toHaveCount(0)
-  await page.getByTestId("chrome-account").click()
+  // Account is the sidebar's door, reached by keyboard from the wordmark.
+  await page.getByRole("button", { name: "Smithers", exact: true }).focus()
+  await page.keyboard.press("Enter")
+  await page.getByTestId("sidebar-account").focus()
+  await page.keyboard.press("Enter")
   const account = page.locator('[data-kind="account"]')
   await expect(account.getByRole("table", { name: "GitHub App permissions", exact: true })).toContainText("contents:write")
   await expect(account.getByRole("table", { name: "GitHub scopes", exact: true })).toContainText("read:user")
+  // Only now is the session known signed in, so the empty header is asserted against the mounted app.
+  await expect(page.getByTestId("chrome-sign-in")).toHaveCount(0)
+  await expect(page.locator(".session-navigation").getByTestId("chrome-account")).toHaveCount(0)
+  await expect(page.locator(".session-navigation")).not.toContainText(SCOPED_TEST_USER.login)
   await page.goto("/smithersai/smithers/?tutorial")
   await expect(page.locator(".guide-shell")).toHaveAttribute("data-stage", "1")
   await expect(page.locator('.guide-transcript [data-kind="account"]')).toHaveCount(0)

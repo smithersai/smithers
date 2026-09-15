@@ -81,8 +81,10 @@ if (final.searchParams.has("signed-in")) await fail("the app left the signed-in 
 if (await page.locator('button[data-flow="auth.sign-in"], button[data-flow="cloud.sign-in"], [data-testid=chrome-sign-in]').count()) {
   await fail("repository page still shows the sign-in door");
 }
-const acct = page.locator("[data-testid=chrome-account]").or(page.getByRole("button", { name: /^account$/i })).first();
-if (!(await acct.count())) await fail("no Account chrome button");
+// Signed in, the header carries no account chrome; Account is the sidebar's button door.
+if (!(await page.locator("[data-testid=sidebar-account]").count())) await page.getByRole("button", { name: "Smithers", exact: true }).click();
+const acct = page.locator("[data-testid=sidebar-account]");
+if (!(await acct.count())) await fail("no Account sidebar button");
 await acct.click(); await page.waitForTimeout(3000);
 const t2 = await page.evaluate(() => document.body.innerText);
 if (!new RegExp(`Account · @${user}`, "i").test(t2)) await fail("Account card does not name the test user");

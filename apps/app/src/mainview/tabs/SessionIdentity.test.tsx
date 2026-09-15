@@ -11,7 +11,7 @@ import { memoryStorage, settle, unavailableAgent, unavailableRepositories } from
 GlobalRegistrator.register()
 afterAll(async () => { await settle(); await GlobalRegistrator.unregister() })
 
-test("closed sidebar exposes a keyboard sign-in door that changes to Account with identity", async () => {
+test("closed sidebar exposes a keyboard sign-in door that leaves the header empty once signed in", async () => {
   const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
   const controller = createAppController(store, unavailableRepositories, unavailableAgent)
   const calls: string[] = []
@@ -34,10 +34,10 @@ test("closed sidebar exposes a keyboard sign-in door that changes to Account wit
     await store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-in", login: "reader", allowlisted: true, admin: false, scopesPlain: null }).isPersisted.promise
     await settle()
     expect(host.querySelector('[data-testid="chrome-sign-in"]')).toBeNull()
-    const account = host.querySelector<HTMLButtonElement>('.session-navigation [data-testid="chrome-account"]')
-    expect(account?.textContent).toBe("Account (@reader)")
-    account!.click()
-    expect(calls).toEqual(["auth.sign-in", "account.show"])
+    expect(host.querySelector('[data-testid="chrome-account"]')).toBeNull()
+    expect(host.querySelector(".session-identity")).toBeNull()
+    expect(host.querySelector(".session-navigation")?.textContent).not.toContain("reader")
+    expect(calls).toEqual(["auth.sign-in"])
   } finally {
     flushSync(() => root.unmount()); host.remove(); await controller.dispose()
   }
