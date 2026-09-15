@@ -29,7 +29,7 @@ interface Result {
 interface Entry {
   readonly plan: (request: Request) => Rule.PlanResult<Rule.Selection & Partial<Rule.SharedFields>>
   readonly cache: "artifacts" | "result"
-  readonly prepare: (node: Rule.PlannedRule, context: Context) => () => Promise<Result>
+  readonly prepare: (node: Rule.PlannedRule, context: Context) => (signal?: AbortSignal) => Promise<Result>
 }
 
 const file: Entry = {
@@ -38,8 +38,8 @@ const file: Entry = {
   cache: "artifacts",
   prepare: (node, context) => {
     if (!NativeFileRule.accepts(node)) throw new Error(`${node.rule} planned no single output file`)
-    return async () => {
-      await NativeFileRule.contract.execute(node, context)
+    return async (signal = context.signal) => {
+      await NativeFileRule.contract.execute(node, { ...context, signal })
       return {}
     }
   }
@@ -51,8 +51,8 @@ const entries: Readonly<Record<string, Entry>> = {
     cache: "artifacts",
     prepare: (node, context) => {
       if (node.family !== "fetch") throw new Error("Fetch planned no single output file")
-      return async () => {
-        const result = await FetchRule.contract.execute(node, context)
+      return async (signal = context.signal) => {
+        const result = await FetchRule.contract.execute(node, { ...context, signal })
         return { note: `fetched ${result.bytes} byte(s)` }
       }
     }
@@ -64,7 +64,7 @@ const entries: Readonly<Record<string, Entry>> = {
     cache: "result",
     prepare: (node, context) => {
       if (!DocsCheckRule.accepts(node)) throw new Error("Docs.Check planned no closure")
-      return () => DocsCheckRule.contract.execute(node, context)
+      return (signal = context.signal) => DocsCheckRule.contract.execute(node, { ...context, signal })
     }
   }
 }

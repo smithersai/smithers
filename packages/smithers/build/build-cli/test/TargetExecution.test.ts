@@ -5,6 +5,7 @@ import { PnpmWorkspace } from "@smthrs/targets/PnpmWorkspaceFile"
 import * as Runtime from "@smthrs/targets/Runtime"
 import * as Target from "@smthrs/targets/Target"
 import * as Cause from "effect/Cause"
+import * as Effect from "effect/Effect"
 import * as Exit from "effect/Exit"
 import * as Schema from "effect/Schema"
 import * as Fs from "node:fs/promises"
@@ -57,7 +58,7 @@ const fixture = async () => {
     }
   }
   const run = (target: Target.AnyTarget, attrs: unknown = Target.metadata(target).attrs) =>
-    runTarget(root, ".flows", target, attrs, "owned-toolchain-target", [])
+    Effect.runPromiseExit(runTarget(root, ".flows", target, attrs, "owned-toolchain-target", []))
   return { root, executable, invocations, run }
 }
 

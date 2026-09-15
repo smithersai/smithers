@@ -22,7 +22,6 @@ import { SyncPackageJsonLive } from "@smthrs/targets/PackageJson"
 import * as Target from "@smthrs/targets/Target"
 import { CaptureOutputsLive } from "@smthrs/targets/ToolBuild"
 import * as Effect from "effect/Effect"
-import type * as Exit from "effect/Exit"
 import * as Layer from "effect/Layer"
 import * as Schema from "effect/Schema"
 import * as NodePath from "node:path"
@@ -52,73 +51,69 @@ export const runTarget = (
   executionId: string,
   sensitiveEnv: ReadonlyArray<string>,
   packageName?: string | undefined,
-  signal?: AbortSignal | undefined,
   nixEnvironment?: Planner.PlannedEnvironment | undefined,
   sandbox?: ExecSandbox.Request | undefined,
   output?: OutputStream.Observer | undefined
-): Promise<Exit.Exit<unknown, unknown>> =>
-  Effect.runPromiseExit(
-    Effect.suspend(() => {
-      // Decode and lower before acquiring services or probing executables. The
-      // exact validated attrs select both the action plan and its tool checks.
-      const validated = Target.metadata(target).attrsSchema.make(attrs, {
-        parseOptions: { onExcessProperty: "error" }
-      })
-      const planned: Node.Node<unknown, unknown, never> = Target.plan(target, validated)
-      if (typeof validated !== "object" || validated === null) throw new TypeError("target attrs must be a record")
-      const flow = Flow.make(target._tag, {
-        payload: {},
-        success: Schema.Unknown,
-        error: Schema.Unknown,
-        body: () => planned
-      })
-      const environment: Exec.ToolEnvironment | undefined = nixEnvironment === undefined
-        ? undefined
-        : { path: nixEnvironment.path.join(NodePath.delimiter), variables: nixEnvironment.variables }
-      const cwd = Exec.resolveWorkspacePath(
-        workspaceRoot,
-        "cwd" in validated && typeof validated.cwd === "string" ? validated.cwd : "."
+): Effect.Effect<unknown, unknown> =>
+  Effect.suspend(() => {
+    // Decode and lower before acquiring services or probing executables. The
+    // exact validated attrs select both the action plan and its tool checks.
+    const validated = Target.metadata(target).attrsSchema.make(attrs, {
+      parseOptions: { onExcessProperty: "error" }
+    })
+    const planned: Node.Node<unknown, unknown, never> = Target.plan(target, validated)
+    if (typeof validated !== "object" || validated === null) throw new TypeError("target attrs must be a record")
+    const flow = Flow.make(target._tag, {
+      payload: {},
+      success: Schema.Unknown,
+      error: Schema.Unknown,
+      body: () => planned
+    })
+    const environment: Exec.ToolEnvironment | undefined = nixEnvironment === undefined
+      ? undefined
+      : { path: nixEnvironment.path.join(NodePath.delimiter), variables: nixEnvironment.variables }
+    const cwd = Exec.resolveWorkspacePath(
+      workspaceRoot,
+      "cwd" in validated && typeof validated.cwd === "string" ? validated.cwd : "."
+    )
+    const declared = targetToolchain(target._tag, validated)
+    const declaredEnvironment = declared.runtime === undefined && declared.packageManager === undefined
+      ? {}
+      : Schema.decodeUnknownSync(Schema.Record(Schema.String, Schema.String))(
+        "env" in validated ? validated.env ?? {} : {}
       )
-      const declared = targetToolchain(target._tag, validated)
-      const declaredEnvironment = declared.runtime === undefined && declared.packageManager === undefined
-        ? {}
-        : Schema.decodeUnknownSync(Schema.Record(Schema.String, Schema.String))(
-          "env" in validated ? validated.env ?? {} : {}
+    const hostEnvironment = Exec.toolEnvironment(declaredEnvironment, sensitiveEnv, {}, environment)
+    const runtime = Layer.mergeAll(
+      layerInstall,
+      Exec.ExecLive({ workspaceRoot, cacheDirectory, sensitiveEnv, environment, sandbox, ...output }),
+      GenerateCheckLive({ workspaceRoot, cacheDirectory, sensitiveEnv, environment }),
+      ExecIrreversibleLive({ workspaceRoot }),
+      CaptureOutputsLive({ workspaceRoot, cacheDirectory }),
+      ExpandFilegroupLive({ workspaceRoot, cacheDirectory }),
+      WriteFileLive({ workspaceRoot }),
+      CheckFileLive({ workspaceRoot }),
+      CheckDocsLive({ workspaceRoot }),
+      FactoryProjectionLive({ workspaceRoot }),
+      LlmReviewLive({ workspaceRoot, sensitiveEnv }),
+      SyncPackageJsonLive({ workspaceRoot, cacheDirectory }),
+      ScaffoldPackageLive({ workspaceRoot, packageName }),
+      Target.layerNotImplemented,
+      Interpreter.layer(flow)
+    ).pipe(
+      Layer.provideMerge(Action.layerImplementations),
+      Layer.provideMerge(FlowEngine.layerMemory),
+      Layer.provideMerge(
+        layerPackageManager(
+          workspaceRoot,
+          declaredToolchain({ runtime: declared.runtime, packageManager: declared.packageManager }),
+          sensitiveEnv,
+          hostEnvironment
         )
-      const hostEnvironment = Exec.toolEnvironment(declaredEnvironment, sensitiveEnv, {}, environment)
-      const runtime = Layer.mergeAll(
-        layerInstall,
-        Exec.ExecLive({ workspaceRoot, cacheDirectory, sensitiveEnv, environment, sandbox, ...output }),
-        GenerateCheckLive({ workspaceRoot, cacheDirectory, sensitiveEnv, environment }),
-        ExecIrreversibleLive({ workspaceRoot }),
-        CaptureOutputsLive({ workspaceRoot, cacheDirectory }),
-        ExpandFilegroupLive({ workspaceRoot, cacheDirectory }),
-        WriteFileLive({ workspaceRoot }),
-        CheckFileLive({ workspaceRoot }),
-        CheckDocsLive({ workspaceRoot }),
-        FactoryProjectionLive({ workspaceRoot }),
-        LlmReviewLive({ workspaceRoot, sensitiveEnv }),
-        SyncPackageJsonLive({ workspaceRoot, cacheDirectory }),
-        ScaffoldPackageLive({ workspaceRoot, packageName }),
-        Target.layerNotImplemented,
-        Interpreter.layer(flow)
-      ).pipe(
-        Layer.provideMerge(Action.layerImplementations),
-        Layer.provideMerge(FlowEngine.layerMemory),
-        Layer.provideMerge(
-          layerPackageManager(
-            workspaceRoot,
-            declaredToolchain({ runtime: declared.runtime, packageManager: declared.packageManager }),
-            sensitiveEnv,
-            hostEnvironment
-          )
-        ),
-        Layer.provideMerge(layerNonInteractiveNodeServices)
-      )
-      return verifyTargetToolchain(declared, cwd, hostEnvironment, sensitiveEnv).pipe(
-        Effect.andThen(flow.execute({}, { executionId })),
-        Effect.provide(runtime)
-      )
-    }),
-    { signal }
-  )
+      ),
+      Layer.provideMerge(layerNonInteractiveNodeServices)
+    )
+    return verifyTargetToolchain(declared, cwd, hostEnvironment, sensitiveEnv).pipe(
+      Effect.andThen(flow.execute({}, { executionId })),
+      Effect.provide(runtime)
+    )
+  })
