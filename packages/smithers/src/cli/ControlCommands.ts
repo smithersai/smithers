@@ -7,6 +7,7 @@ import * as Redaction from "@smthrs/journal/Redaction"
 import { Effect } from "effect"
 import { Cli, z } from "incur"
 import { readFile } from "node:fs/promises"
+import { cancelAll } from "../commands/CancelAll.ts"
 import * as Forensics from "../Forensics.ts"
 import { defaultApprovalScope } from "../internal/ApprovalScope.ts"
 import * as BoundedEvents from "../internal/BoundedEvents.ts"
@@ -136,28 +137,7 @@ export const createFlowCli = (runtime: Bridge.Runtime = {}) =>
  * @category constructors
  * @since 1.0.0
  */
-export const cancelAll = () =>
-  Effect.gen(function*() {
-    const control = yield* Control.Control
-    const ids: Array<string> = []
-    let cursor: string | undefined
-    do {
-      const page = yield* control.list({ _tag: "runs", ...(cursor === undefined ? {} : { cursor }) })
-      if (page._tag !== "runs") throw new Error("Expected durable runs")
-      ids.push(
-        ...page.items.filter((run) => !["completed", "failed", "cancelled"].includes(run.status)).map((run) =>
-          run.runId
-        )
-      )
-      cursor = page.nextCursor
-    } while (cursor !== undefined)
-    const cancelled = yield* Effect.forEach(ids, (runId) =>
-      Effect.map(
-        control.cancel({ runId, idempotencyKey: `cli:cancel:${runId}` }),
-        (receipt) => ({ runId, receipt })
-      ))
-    return { cancelled }
-  })
+export { cancelAll }
 
 /**
  * Canonical commands for existing durable run records.

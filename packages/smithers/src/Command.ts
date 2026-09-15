@@ -20,6 +20,7 @@ import { hostname } from "node:os"
 import { resolve } from "node:path"
 import * as CliError from "./CliError.ts"
 import * as BugCmd from "./commands/Bug.ts"
+import { cancelAll } from "./commands/CancelAll.ts"
 import * as ClaudeCmd from "./commands/Claude.ts"
 import * as DoctorCmd from "./commands/Doctor.ts"
 import * as FlowCatalog from "./commands/FlowCatalog.ts"
@@ -839,9 +840,6 @@ const output = Command.make("output", {
 const down = Command.make("down", {}, () =>
   Effect.gen(function*() {
     yield* guardGlobals
-    // The unified bridge imports this command tree; load its helper only once
-    // the legacy handler runs so the two command surfaces can initialize.
-    const { cancelAll } = yield* Effect.promise(() => import("./cli/ControlCommands.ts"))
     yield* render(yield* cancelAll())
   })).pipe(Command.withDescription(Verb.find("down")!.help))
 
