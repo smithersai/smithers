@@ -8,9 +8,9 @@ import * as NodeFlowsRuntime from "@smthrs/flows/NodeRuntime"
 import * as NodeGateway from "@smthrs/gateway/node/NodeGateway"
 import * as NodeJj from "@smthrs/jj/node/NodeJj"
 import * as RequestExecutor from "@smthrs/model/RequestExecutor"
-import * as AtomicFileSystem from "@smthrs/platform-node/AtomicFileSystem"
 import { Effect, Exit, Layer, Scope, Semaphore } from "effect"
 import * as ControlDatabase from "./ControlDatabase.ts"
+import * as ControlFileSystem from "./ControlFileSystem.ts"
 import * as NativeControl from "./NativeControl.ts"
 
 /** Respect the workspace's egress proxy without changing unproxied Node hosts. */
@@ -91,7 +91,7 @@ const layerRequestExecutor: Layer.Layer<RequestExecutor.RequestExecutor> = Layer
  * @private
  */
 export const platform: NativeControl.Platform = {
-  host: Layer.provideMerge(AtomicFileSystem.layer, NodeServices.layer),
+  host: Layer.provideMerge(ControlFileSystem.layer(), NodeServices.layer),
   crypto: NodeCrypto.layer,
   database: (file) => ControlDatabase.layer(file).pipe(Layer.orDie),
   runtime: NodeFlowsRuntime.layer,

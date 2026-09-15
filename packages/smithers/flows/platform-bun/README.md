@@ -41,6 +41,13 @@ The filesystem slot spawns a CPython 3 helper, so the host also needs a
 `/usr/bin/python3`. A host that keeps it elsewhere builds the layer with
 `BunFileSystem.layerWith({ executable })`. Windows is unsupported.
 
+Smithers' Bun and Node control hosts, including the coding and product gateway
+hosts, accept the operator variable `SMITHERS_PYTHON3` at startup. Set it to an
+absolute CPython 3 path, such as `/run/current-system/sw/bin/python3` on NixOS.
+Unset or empty keeps `/usr/bin/python3`; a relative path fails startup with an
+error naming the variable. This is configuration, never a `PATH` search. Custom
+library compositions continue to use `BunFileSystem.layerWith({ executable })`.
+
 ## Example
 
 ```ts

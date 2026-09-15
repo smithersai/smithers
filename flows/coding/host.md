@@ -94,6 +94,13 @@ The native acceptance fixture uses a scripted model behind the existing `SeatRes
 
 QuickJS's existing single-file variant is bundled. SQLite remains the runtime's native builtin, and process containment programs remain their existing embedded source. Plue separately provisions JJ, Python, the owning coding adapter/configuration and `smithers-jj-export`; these are explicit native dependencies, not files hidden inside the JavaScript artifact. Declared repository modules still resolve their own project dependencies as usual. This artifact is private deployment composition, not another published package or runtime primitive.
 
+The filesystem helper requires CPython 3 at `/usr/bin/python3` by default. Set
+`SMITHERS_PYTHON3=/run/current-system/sw/bin/python3` on NixOS, or to another
+absolute CPython 3 path, before starting the coding host. Both Node and Bun
+control hosts (also used by the product gateway host) honor this variable.
+Unset or empty keeps the default; a relative path fails startup with an error
+naming `SMITHERS_PYTHON3`. The host never searches `PATH` for Python.
+
 The configured executable is staged separately from the general Smithers CLI.
 Plue's existing `SMITHERS_WORKSPACE_CODING_HOST_BINARY` operator option selects
 that artifact; it is installed as `/usr/local/bin/smithers-coding-host`. General

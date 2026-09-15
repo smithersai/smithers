@@ -9,8 +9,8 @@ import * as Runtime from "@smthrs/flows/BunRuntime"
 import * as Gateway from "@smthrs/gateway/bun/BunGateway"
 import * as Jj from "@smthrs/jj/bun/BunJj"
 import * as RequestExecutor from "@smthrs/model/RequestExecutor"
-import * as AtomicFileSystem from "@smthrs/platform-node/AtomicFileSystem"
 import { Layer } from "effect"
+import * as ControlFileSystem from "./ControlFileSystem.ts"
 import * as NativeControl from "./NativeControl.ts"
 import * as NativeControlDatabase from "./NativeControlDatabase.ts"
 
@@ -19,7 +19,7 @@ import * as NativeControlDatabase from "./NativeControlDatabase.ts"
  * @private
  */
 export const platform: NativeControl.Platform = {
-  host: Layer.provideMerge(AtomicFileSystem.layer, BunServices.layer),
+  host: Layer.provideMerge(ControlFileSystem.layer(), BunServices.layer),
   crypto: BunCrypto.layer,
   database: (file) =>
     NativeControlDatabase.make((filename) => Database.layer({ filename }))(file).pipe(

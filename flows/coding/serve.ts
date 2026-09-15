@@ -22,6 +22,7 @@ if (parsed.values.version) {
   process.stdout.write("smithers-coding-host serve --root <workspace> --host <host> --port <port> --listen\n" +
     "Requires SMITHERS_GATEWAY_ID and SMITHERS_CODING_IMPLEMENT_MODEL; SMITHERS_API_KEY authenticates the existing gateway.\n" +
     "SMITHERS_CODING_PROJECT explicitly selects project JSON for the prompt route.\n" +
+    "SMITHERS_PYTHON3 selects an absolute CPython 3 path; unset or empty uses /usr/bin/python3. Relative paths fail startup; PATH is never searched.\n" +
     "Optional SMITHERS_CODING_PLAN_MODEL, SMITHERS_CODING_POC_MODEL and SMITHERS_CODING_WIKI_MODEL select provider:model roles.\n" +
     "The provisioned SMITHERS_JJHUB_TOKEN and SMITHERS_JJHUB_API_URL enable coding/vibe; the token is consumed before any tool starts.\n")
 } else {

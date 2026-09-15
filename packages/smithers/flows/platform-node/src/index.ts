@@ -16,7 +16,11 @@
  *
  * `AtomicFileSystem` is `NodeHost`'s filesystem slot, and it executes its
  * syscalls through a CPython 3 helper, so a POSIX host with `python3` at
- * `/usr/bin/python3` is a prerequisite. The layer BUILDS without one and then
+ * `/usr/bin/python3` is a prerequisite by default. Smithers' Node and Bun control
+ * hosts accept `SMITHERS_PYTHON3` as an absolute CPython 3 path at startup; unset
+ * or empty keeps the default, and relative paths fail startup. They never search
+ * `PATH`. Custom library compositions use `AtomicFileSystem.layerWith({ executable })`.
+ * The layer BUILDS without an installed interpreter and then
  * fails every guarded filesystem call closed with `PermissionDenied`. Windows is
  * unsupported.
  *
