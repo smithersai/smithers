@@ -175,7 +175,8 @@ const cliData = Smithers.Generate({
     "src/data/cli-commands.json",
     "src/data/removed-commands.json",
     "src/data/help/**",
-    "src/content/docs/docs/migration/1.0.mdx"
+    "src/content/docs/docs/migration/1.0.mdx",
+    "src/content/docs/docs/reference/cli/index.mdx"
   ]
 })
 // --- end CLI data ----------------------------------------------------------

@@ -5,6 +5,7 @@
  *   bun apps/site/scripts/gen-cli-data.mjs --check  # fail on drift, write nothing
  *
  * Outputs, all committed:
+ *   apps/site/src/content/docs/docs/reference/cli/index.mdx   canonical command table
  *   apps/site/src/data/versions.json           cli, effect, and node versions from packages/smithers/package.json
  *   apps/site/src/data/cli-commands.json       canonical Incur command/schema manifest
  *   apps/site/src/data/removed-commands.json   remaining historical 0.x verbs and flags
@@ -145,6 +146,30 @@ for (const command of [...commandPaths].sort()) {
   const tokens = command.split(" ")
   outputs.set(join(helpDir, ...tokens.slice(0, -1), `${tokens.at(-1)}.txt`), await help(tokens))
 }
+
+// Keep the reference table tied to the same command identities and help as
+// the binary. Bootstrap the old unmarked table once, then own only the region.
+const indexPage = join(site, "src/content/docs/docs/reference/cli/index.mdx")
+const indexStart = "{/* generated:cli-commands start. Run `node apps/site/scripts/gen-cli-data.mjs`; do not edit. */}"
+const indexEnd = "{/* generated:cli-commands end */}"
+const cell = (text) => text.replaceAll("|", "&#124;").replace(/[\r\n]+/g, " ")
+const commandNames = [...new Set(manifest.commands.map((command) => command.name.split(" ")[0]))].sort()
+const table = [indexStart, "", "| Command | Purpose |", "| --- | --- |"]
+for (const command of commandNames) {
+  const captured = outputs.get(join(helpDir, `${command}.txt`))
+  const description = captured?.split("\n", 1)[0].split(" \u2014 ").slice(1).join(" \u2014 ")
+  if (!description) throw new Error(`No canonical help description for ${command}`)
+  table.push(`| \`${command}\` | ${cell(description)} |`)
+}
+table.push("", indexEnd)
+const indexContents = readFileSync(indexPage, "utf8")
+const existingStart = indexContents.indexOf(indexStart)
+const existingEnd = indexContents.indexOf(indexEnd)
+if ((existingStart === -1) !== (existingEnd === -1)) throw new Error("CLI index has incomplete generated markers")
+const tableStart = existingStart === -1 ? indexContents.indexOf("| Command | Purpose |") : existingStart
+const tableEnd = existingEnd === -1 ? indexContents.indexOf("\n\n", tableStart) : existingEnd + indexEnd.length
+if (tableStart === -1 || tableEnd < tableStart) throw new Error("CLI index has no command table")
+outputs.set(indexPage, indexContents.slice(0, tableStart) + table.join("\n") + indexContents.slice(tableEnd))
 
 // The generated region of the migration page: one `###` per anchor. Reason
 // and spellings come from the source; the "1.0 path" sentence is hand-written
