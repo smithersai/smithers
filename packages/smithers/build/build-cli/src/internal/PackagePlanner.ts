@@ -2658,7 +2658,17 @@ const visit = async (
     return serviceMetadata.target === "Anvil.Fork" &&
       attrMember(serviceMetadata.attrs, "forkBlockNumber") === "latest"
   })
-  const cacheable = refusal === undefined && !movingService &&
+  // `withPlannedMode` flips a declared `check` generator to `write` after the
+  // rule evaluated its own `cache` predicate, so `view.cacheable` still carries
+  // the declaration's answer: `TargetIndex` and `FactoryProjection` both say
+  // "cacheable unless mode is write" and both were planned cacheable anyway.
+  // A replayed verdict writes no file, so the second `--write` on a machine
+  // that had written once was a silent no-op — `smthrs target
+  // '//:targetIndex' --write` reported `hit` and left `.smithers/target-index.json`
+  // stale, which is how run 11763 (main 2722d0e5) could fail `checks` on that
+  // file alone. A planned write is therefore never cacheable.
+  const plannedWrite = mode === "write" && plannedModeRules.has(rule)
+  const cacheable = refusal === undefined && !movingService && !plannedWrite &&
     (view.cacheable || RulePolicy.cacheable(rule, mode, repositoryState?.dirty))
 
   const spawnEnvironment = Exec.toolEnvironment(

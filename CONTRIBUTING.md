@@ -61,10 +61,36 @@ The cost is that one edit lands in several places. If you change:
 | root `package.json` scripts                   | `packages/smithers/flows/test/vitestCoverageIsolation.test.ts` (the aggregator roster)                                                                                                          |
 | root `PACKAGE.ts` CI jobs, steps, or triggers | the generated `.github/workflows/ci.yml` (`pnpm exec smithers-build build '//:ci'` with `mode: "write"`), `packages/smithers/flows/test/vitestCoverageIsolation.test.ts` (source-text pins), and the hand-written `.github/workflows/release.yml`, which copies the required `test` job's toolchain and gate steps verbatim |
 | `.github/workflows/release.yml`               | the same suite, plus `scripts/release-rehearsal.test.mjs` and `scripts/pack-release.test.mjs`, which compares the release workflow's steps against the generated `ci.yml`               |
+| any `PACKAGE.ts` target set — adding, renaming or removing a target, or changing its declared inputs or outputs (a new test file reached by a glob counts) | `.smithers/target-index.json`, with `pnpm run target-index`. Nothing about it is hand-written: the script writes it and `smthrs lint '//:targetIndex'` drift-checks it. See “The target index” |
 | `CHANGELOG.md` release sections               | nothing by hand inside a `<!-- commits:… -->` block — `pnpm exec smithers-build run '//:changelog'` writes it and `lint '//:changelog'` drift-checks it. See “Cutting a release”         |
 
 Miss one and CI reports a generated file as a hand edit, which is exactly
 what it should do — it cannot tell your deliberate change from a stray one.
+
+### The target index
+
+`.smithers/target-index.json` carries one row per labeled target, and the
+planner fills those rows from every loaded `PACKAGE.ts`. So the file is keyed
+on the whole declaration set, not on the package you edited: adding a target,
+renaming one, or widening a glob so it reaches a new test file all re-key it,
+and none of them looks like touching a generated file.
+
+Regenerate it with one word and commit the result:
+
+```bash
+pnpm run target-index
+```
+
+That is `smthrs target '//:targetIndex' --write`. `smthrs lint '//:targetIndex'`
+is the check half, and it is what CI runs.
+
+Running the gate by hand does the repair for you:
+`bash scripts/ci/cloud.sh target-index` regenerates and then verifies when it
+is not on Cloud and not under an inherited `CI`, so the file is already in your
+working tree by the time the gate is green. On Cloud the same gate only checks,
+because repairing there would hide the stale commit it exists to catch — which
+is what happened to run 11763 (main `2722d0e5`), whose `checks` task failed on
+`//:targetIndex` and nothing else, for the third time that day.
 
 ## Root graph rationale
 

@@ -25,6 +25,11 @@
 # Each Cloud task gets its own checkout. Keep tool installs and caches local.
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/../.."
+# Whether the caller was already an automated environment, recorded before this
+# script declares itself one. A gate that may repair a generated file locally
+# reads this rather than `CI`, so running the gate by hand still repairs and
+# running it from any other automation still only checks.
+host_ci="${CI:-}"
 export CI=true
 tools_dir="$PWD/.flows/cloud-tools"
 export PATH="$tools_dir/bin:$PATH"
@@ -467,6 +472,21 @@ run_gate() {
       pnpm exec smthrs lint '//:factoryProjection' --verbose
       ;;
     target-index)
+      # Run 11763 (main 2722d0e5) failed `checks` on this gate alone, the third
+      # time that day: `.smithers/target-index.json` is derived from every
+      # PACKAGE.ts, so any lane that adds a target or changes a target's
+      # declared inputs re-keys it, and a lane that does not regenerate lands a
+      # stale file that only Cloud notices.
+      #
+      # Off Cloud and outside any other automation this gate therefore repairs
+      # first and verifies second, so a developer who runs it before pushing
+      # ends up with the regenerated file in the working tree instead of a red
+      # Cloud run. On Cloud, and under any inherited CI, it stays a pure drift
+      # check: repairing there would hide exactly the stale commit it exists to
+      # catch. `pnpm run target-index` is the same write, on its own.
+      if ! on_cloud && [ "$host_ci" != true ]; then
+        pnpm exec smthrs target '//:targetIndex' --write --verbose
+      fi
       pnpm exec smthrs lint '//:targetIndex' --verbose
       ;;
     ui-check)

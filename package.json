@@ -47,6 +47,7 @@
     "docs:deploy": "pnpm --filter \"@smithers/docs-*\" --filter \"!@smithers/docs-shared\" -r run deploy",
     "docs:sync": "node apps/docs/shared/sync-content.mjs --all",
     "lint": "pnpm --recursive --if-present run lint",
+    "target-index": "pnpm exec smthrs target '//:targetIndex' --write",
     "test": "pnpm --recursive --if-present run test",
     "test:e2e": "bun apps/app/e2e/packaged/run.ts",
     "test:jsdoc": "node --test eslint.jsdoc.test.mjs",

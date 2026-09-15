@@ -217,6 +217,15 @@ describe("ci conformance", () => {
     // Electrobun lane. It builds a stable bundle and drives that bundle with
     // Bun; CI does not invoke it because the package graph has no macOS host.
     //
+    // `target-index` is the operator alias for the write half of
+    // `//:targetIndex`. `.smithers/target-index.json` is derived from every
+    // PACKAGE.ts, so any lane that adds a target or changes a target's
+    // declared inputs re-keys it; run 11763 (main 2722d0e5) failed `checks` on
+    // the stale file alone, the third such run that day. The alias exists so
+    // the repair is one word rather than a remembered label, and is pinned
+    // here so it stays exactly the write half — a second spelling of the drift
+    // check would let a stale commit pass.
+    //
     // `check:npm-dedupe` is the operator alias for `//scripts:npmDedupe`, the
     // same shape as `browser` and `//scripts:browserContract`. The resolution reads
     // registry metadata, so the target is uncacheable and re-runs regardless,
@@ -251,6 +260,7 @@ describe("ci conformance", () => {
       commit: "node scripts/commit.mjs",
       deploy: "pnpm --filter smithers-server run deploy",
       lint: "pnpm --recursive --if-present run lint",
+      "target-index": "pnpm exec smthrs target '//:targetIndex' --write",
       "lint:jsdoc":
         "eslint --config eslint.config.js \"packages/*/src/**/*.ts\" \"packages/*/*/src/**/*.ts\" \"packages/*/*/*/src/**/*.ts\" --max-warnings=0",
       "release:answer": "node --experimental-strip-types flows/release-support/main.ts answer",

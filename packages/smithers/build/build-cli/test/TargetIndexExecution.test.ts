@@ -137,6 +137,34 @@ describe("TargetIndex through the CLI", () => {
     ])
   })
 
+  it("writes the same bytes from two independent runs in two different directories", async () => {
+    // The file is committed, so a generator that varied by host, by absolute
+    // path, or by hash-map iteration order would make every checkout report
+    // drift it cannot fix. Two fixtures with identical declarations under
+    // different temporary roots prove the rows carry no host fact and sort
+    // stably; rewriting the first one proves a write over an existing file is
+    // the same write.
+    const first = await fixture()
+    const second = await fixture()
+    for (const root of [first, second]) {
+      const written = await serve(root, ["target", "//:targetIndex", "--write"])
+      expect(written.exitCode, written.logs).toBe(0)
+    }
+    const bytes = await Fs.readFile(NodePath.join(first, ".smithers/target-index.json"), "utf8")
+    expect(await Fs.readFile(NodePath.join(second, ".smithers/target-index.json"), "utf8")).toBe(bytes)
+
+    // And a write always writes. The rule declares itself cacheable only
+    // outside write mode, but the planner flips the mode after the rule has
+    // answered, so a second `--write` used to replay the first one's verdict
+    // and touch nothing: the repair silently no-opped on every machine that
+    // had run it once, which is how a stale index survives a lane that did
+    // remember to regenerate it.
+    await Fs.writeFile(NodePath.join(first, ".smithers/target-index.json"), "[]\n")
+    const again = await serve(first, ["target", "//:targetIndex", "--write"])
+    expect(again.exitCode, again.logs).toBe(0)
+    expect(await Fs.readFile(NodePath.join(first, ".smithers/target-index.json"), "utf8")).toBe(bytes)
+  })
+
   it("prints the same rows through the index verb", async () => {
     const root = await fixture()
     const listed = await serve(root, ["index", "//..."])
