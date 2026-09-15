@@ -119,7 +119,7 @@ const bun = Smithers.Runtime.Bun({ version: ">=1.4.0" })
 // Existing policy integration uses actual JJ and the Node SQLite fixture.
 const coding = Smithers.NodeTest({
   runtime: node,
-  runner: Smithers.testRunner([Smithers.file("//flows/test/coding.test.ts")]),
+  runner: Smithers.testRunner([Smithers.file("//flows/test/coding.test.ts"), Smithers.file("//flows/test/coding-state.test.ts")]),
   srcs: codingSources, deps: codingDependencies, cwd
 })
 const codingPolicy = Smithers.NodeTest({

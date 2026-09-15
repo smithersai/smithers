@@ -34,6 +34,7 @@ import { bindWikiRegistry } from "./wiki-registry.ts"
 import type { Landing } from "./landing.ts"
 import { cleanupModels } from "./vibe-cleanup.ts"
 import { RunVibe, vibeRegistration } from "./vibe.ts"
+import * as CodingState from "./state.ts"
 
 /** Operator configuration, never accepted from a workflow or gateway request. */
 export interface Options extends NativeOptions {
@@ -52,6 +53,13 @@ export interface Options extends NativeOptions {
   readonly wikiModel?: string | undefined
   /** Deployment-owned landing adapter over the reserved repository credential; enables coding/vibe. */
   readonly landing?: Layer.Layer<Landing> | undefined
+  /**
+   * Where this host keeps `control.db`, `engine.db` and their WAL companions.
+   * Defaults to `CodingState.defaultStateRoot(repositoryPath)`, beside the
+   * served working copy. A path inside the working copy is refused unless
+   * `SMITHERS_CODING_STATE_IN_ROOT` opts in; see `./state.ts`.
+   */
+  readonly stateRoot?: string | undefined
 }
 
 const configured = (options: Options) => {
@@ -90,6 +98,10 @@ export const roleResolver = (base: SeatResolver.Service, implementationModel: st
 /** Both platform entries call this one recipe; no second executor or store. */
 export const layer = (platform: NativeControl.Platform, options: Options, suppliedSeats?: SeatResolver.Service) => {
   configured(options)
+  // Resolved before any layer is built, so an in-root state directory is a
+  // named startup refusal rather than a stale_revision three seconds into the
+  // first plan. The engine writes to this tree on every step.
+  const stateRoot = CodingState.resolveStateRoot({ root: options.repositoryPath, explicit: options.stateRoot, environment: process.env })
   const native = NativeControl.make({ ...platform,
     jj: root => Snapshots.layerAt({ ...options, repositoryPath: root }),
     filesystem: (root, fs, spawner) => fs.realPath(root).pipe(
@@ -149,7 +161,7 @@ export const layer = (platform: NativeControl.Platform, options: Options, suppli
       const binding = yield* Context.get(context, NativeCoding).read()
       if (binding.head.kind !== "resolved") return yield* Effect.die(new Error("Resolve native JJ conflicts before starting the configured coding host"))
     })), Layer.orDie)
-    const host = native.layerHost({ root: options.repositoryPath, credential: options.credential,
+    const host = native.layerHost({ root: options.repositoryPath, stateRoot, credential: options.credential,
       approvalAuthority: options.approvalAuthority ?? native.gatewayApprovalAuthority }, modules, registry)
     return Layer.effect(Serve.GatewayHost)(Effect.map(Serve.GatewayHost, gateway => ({
       launch: (health, bind, root) => gateway.launch({ ...health, gatewayId: options.gatewayId,

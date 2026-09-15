@@ -6,11 +6,14 @@ import * as NativeControl from "../../../packages/smithers/src/internal/NativeCo
 import { ModuleOwner } from "../../../packages/smithers/src/internal/ModuleOwner.ts"
 import { readVibeRequest } from "../../coding/vibe-evidence.ts"
 
-export const observeCompletedRequest = async (platform: NativeControl.Platform, root: string, originalCommitId: string) => {
+export const observeCompletedRequest = async (platform: NativeControl.Platform, root: string, originalCommitId: string,
+  // The host keeps `control.db` and `engine.db` outside the working copy it
+  // serves, so the probe has to read them where the host wrote them.
+  stateRoot: string = root) => {
   const native = NativeControl.make(platform)
   const runtime = process.versions.bun ? await import("@smthrs/flows/BunRuntime") : await import("@smthrs/flows/NodeRuntime")
-  const storage = runtime.storage(native.executionDatabasePath(root), root).pipe(Layer.provide([platform.host, platform.crypto]))
-  const observations = Layer.mergeAll(native.engineDurable(root).runtime,
+  const storage = runtime.storage(native.executionDatabasePath(stateRoot), root).pipe(Layer.provide([platform.host, platform.crypto]))
+  const observations = Layer.mergeAll(native.engineDurable(root, undefined, { stateRoot }).runtime,
     RunCatalogRead.layer.pipe(Layer.provideMerge(storage)))
   const evidence = await Effect.runPromise(Effect.gen(function*() {
     const catalog = yield* RunCatalogRead.RunCatalogRead

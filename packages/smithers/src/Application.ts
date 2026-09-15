@@ -39,6 +39,17 @@ export interface Config {
   readonly principal?: Omit<ControlSchema.Principal, "stampedAt"> | undefined
   /** Execution worktree for a durable fork; database and registry stay under root. */
   readonly executionRoot?: string | undefined
+  /**
+   * Where the durable databases live, when that is not {@link Config.root}.
+   *
+   * The registry, the grant store and every run still work under `root`. Only
+   * `.flows/control.db`, `.flows/engine.db` and their WAL companions move. A
+   * host served over a live JJ or Git working copy sets this outside that
+   * checkout: the engine writes on every step, and inside the checkout those
+   * writes are untracked files that change the working-copy tree digest under
+   * the very code a run is reading.
+   */
+  readonly stateRoot?: string | undefined
   readonly remote?: string | undefined
   readonly credential?: string | undefined
   /**

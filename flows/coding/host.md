@@ -27,6 +27,33 @@ smithers-coding-host serve --root /home/developer/workspace --host 0.0.0.0 --por
 
 `--help` and `--version` work before opening the repository or resolving provider credentials. The same `Serve.refuse` policy requires a credential and explicit `--listen` for a non-loopback bind. The Plue service owns its workspace lifetime lock and process scope.
 
+## Host state directory
+
+`--root` is a live JJ working copy, and the durable layers put `control.db`,
+`engine.db` and their `-wal`/`-shm` companions under a `.flows/` directory of
+whatever root they are given. JJ auto-tracks new files, so an in-root `.flows/`
+made every engine write an edit to the code the host was planning against:
+`jj status` reported `A .flows/control.db`, the working-copy tree digest moved,
+and on 2026-09-15 `coding/PreparePlan` failed three seconds after start with
+`{"_tag":"coding/Error","code":"stale_revision","message":"Native code changed
+during planning or clarification; gather and plan again"}`.
+
+Host state therefore resolves outside the working copy. `--state-dir <path>`, or
+`SMITHERS_CODING_STATE_DIR`, names it; a relative path resolves from `--root`.
+Nothing named means `<parent of root>/.smithers-coding-state/<basename of root>`,
+so `--root /home/developer/workspace` keeps its databases in
+`/home/developer/.smithers-coding-state/workspace/.flows/`. A root with no parent
+of its own falls back to `$XDG_STATE_HOME/smithers/coding/<hash of root>`. The
+directory is created `0700` before any layer opens a database, and the
+provisioner needs no flag change to get the new location.
+
+A state directory that resolves inside `--root` is refused at startup by name,
+including one an operator passes explicitly. `SMITHERS_CODING_STATE_IN_ROOT=1`
+is the documented opt-in back to the pre-fix `<root>/.flows` layout, for a local
+single-repository run whose ignore file already covers `.flows/`. Only the
+databases move: the flow registry, the grant store, checks and every change atom
+still work under `--root`.
+
 Node model requests honor `HTTP_PROXY`, `HTTPS_PROXY` and `NO_PROXY` (lowercase
 forms take precedence), including after a transport pool rebuild. An unconfigured
 host retains its direct Undici agent. Workspace deployments can therefore use

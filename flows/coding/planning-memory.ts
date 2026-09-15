@@ -10,7 +10,7 @@ import { operations as wikiOperations } from "../wiki/operations.ts"
 import type { PageSpec } from "../wiki/schema.ts"
 import { NativeCoding } from "./native.ts"
 import { collectSources, extractPaths, readmePaths, reader as sourceReader, staleSources } from "./planning-sources.ts"
-import { GatherContext, memoryRevision, PlanningContext, type PlanningInput, sameCode, VerifyContext } from "./planning.ts"
+import { changedPaths, driftOf, GatherContext, memoryRevision, type Observed, PlanningContext, type PlanningInput, staleRevisionMessage, VerifyContext } from "./planning.ts"
 import { type Check, CodingError } from "./schema.ts"
 
 export interface MemoryOptions {
@@ -125,11 +125,27 @@ export const memoryLayer = (options: MemoryOptions, hostFilesystem?: FileSystem.
     const jj = yield* Jj.Jj, native = yield* NativeCoding
     yield* jj.snapshot("coding planning freshness")
     const current = yield* native.read(context.history.map(row => row.changeId))
-    if (current.head.kind !== "resolved" || !sameCode(current.head, context.head) ||
-        context.history.some(row => {
-          const actual = current.revisions.find(value => value.changeId === row.changeId)
-          return !actual || actual.kind !== "resolved" || !sameCode(row, actual)
-        })) return yield* failure("Native code changed during planning or clarification; gather and plan again")
+    const headDrift = driftOf(context.head, current.head as Observed)
+    const drift = [
+      ...(headDrift === undefined ? [] : [`head ${headDrift}`]),
+      ...context.history.flatMap(row => {
+        const reason = driftOf(row, current.revisions.find(value => value.changeId === row.changeId) as Observed | undefined)
+        return reason === undefined ? [] : [reason]
+      })
+    ]
+    if (drift.length > 0) {
+      // The paths are the whole diagnosis. The 2026-09-15 workspace failure was
+      // the host's own `.flows/control.db` and `.flows/engine.db-wal` landing
+      // inside the working copy it was planning against, and the run card said
+      // only that native code had changed. `diff` is best effort: a plan must
+      // still be refused when the adapter cannot explain why.
+      const paths = current.head.kind === "resolved" && context.head.commitId !== current.head.commitId
+        ? yield* jj.diff(context.head.commitId, current.head.commitId).pipe(
+          Effect.map(changedPaths), Effect.catch(() => Effect.succeed([] as ReadonlyArray<string>))
+        )
+        : []
+      return yield* failure(staleRevisionMessage(drift, paths))
+    }
     // A plan may not be finalized against file text the planner no longer sees.
     const stale = yield* staleSources(yield* sourceReader(options.repositoryPath, hostFilesystem),
       { sources: context.sources ?? [], missing: context.missing ?? [] })

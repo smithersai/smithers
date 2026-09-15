@@ -1,5 +1,6 @@
 import assert from "node:assert/strict"
 import { execFileSync } from "node:child_process"
+import { existsSync } from "node:fs"
 import { appendFile, cp, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises"
 import { tmpdir, userInfo } from "node:os"
 import { join } from "node:path"
@@ -15,6 +16,7 @@ import * as Registry from "@smthrs/registry/Registry"
 import * as NativeControl from "../../packages/smithers/src/internal/NativeControl.ts"
 import * as Serve from "../../packages/smithers/src/Serve.ts"
 import { layer } from "../coding/host.ts"
+import * as CodingState from "../coding/state.ts"
 import { NativeCoding, nativeLayer } from "../coding/native.ts"
 import type { Revision } from "../coding/schema.ts"
 
@@ -54,8 +56,13 @@ test("configured coding host runs the real AgentAction, guarded file tool and na
   // Declaration imports use this worktree's exact packages. Immutable checks
   // never borrow these dependencies or execute from the editing checkout.
   await symlink(join(authoring, "node_modules"), join(root, "node_modules"), "dir")
-  await writeFile(join(root, ".gitignore"), ".flows/\nnode_modules\n*.tmp\nignored.txt\n")
+  // No `.flows/` rule: the production workspace has none either, and the host
+  // now keeps its control and engine databases outside the working copy.
+  await writeFile(join(root, ".gitignore"), "node_modules\n*.tmp\nignored.txt\n")
   jj("status")
+  const stateRoot = CodingState.resolveStateRoot({ root })
+  assert.equal(stateRoot, join(temporary, ".smithers-coding-state", "repo"))
+  assert.equal(CodingState.inside(root, stateRoot), false)
   const config = join(temporary, "coding.json"), reporter = join(temporary, "reporter"), wrapper = join(temporary, "adapter.py")
   await writeFile(config, JSON.stringify({ version: 1, workspaceId: "host-acceptance", actorId: 42, repositoryPath: root, username: userInfo().username }))
   await writeFile(reporter, 'exec 9>"$op_repo/smithers-coding.lock"')
@@ -143,5 +150,12 @@ test("configured coding host runs the real AgentAction, guarded file tool and na
   assert.equal(await readFile(join(root, "ignored.txt"), "utf8").catch(() => null), null)
   assert.equal(calls.length, 1)
   assert.equal(jj("log", "--no-graph", "-r", "@", "-T", "description").trim(), "✨ feat: add hello")
+  // A whole host startup, plan, cell, guarded write and both check tiers ran.
+  // The only new files JJ sees are the coding flow's own change atoms.
+  assert.equal(existsSync(join(root, ".flows")), false)
+  assert.equal(existsSync(join(stateRoot, ".flows", "control.db")), true)
+  assert.equal(existsSync(join(stateRoot, ".flows", "engine.db")), true)
+  assert.doesNotMatch(jj("status"), /\.flows/)
+  assert.doesNotMatch(jj("diff", "--stat"), /\.flows/)
   passed = true
 })

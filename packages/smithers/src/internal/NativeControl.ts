@@ -128,6 +128,8 @@ export interface ExecutorOptions {
   readonly quotaPolicy?: Layer.Layer<QuotaPolicy.QuotaClassifier> | undefined
   /** The checkout runs execute in, when it is not the project root. */
   readonly executionRoot?: string | undefined
+  /** Where `engine.db` lives, when that is not the project root. */
+  readonly stateRoot?: string | undefined
   /**
    * Trusted native registrations using the existing executable catalog.
    * Built in the engine's registration phase with the guarded host platform;
@@ -440,9 +442,12 @@ export const make = (
   const engineDurable = (
     root: string,
     registry?: Layer.Layer<Registry.Registry> | undefined,
-    authority: Pick<Application.Config, "approvalAuthority" | "principal" | "credential"> = {}
+    authority: Pick<Application.Config, "approvalAuthority" | "principal" | "credential" | "stateRoot"> = {}
   ): EngineDurable => {
-    const file = databasePath(root)
+    // `root` names the project; `stateRoot` names where its databases live. A
+    // host served over a live working copy separates the two so the control
+    // plane's own writes are not edits to the code a run is reading.
+    const file = databasePath(authority.stateRoot ?? root)
     const authorization = {
       principal: authority.principal,
       approvalAuthority: authority.approvalAuthority ??
@@ -523,6 +528,9 @@ export const make = (
       quotaPolicy = QuotaPolicy.layerDefault(),
       requestExecutor = native.requestExecutor
     } = options
+    // Same separation `engineDurable` makes for `control.db`: `engine.db` and
+    // its WAL follow the state root, never the served checkout.
+    const stateRoot = resolve(options.stateRoot ?? root)
     // Every capability this executor equips a run with belongs to the checkout
     // the run executes in, which is the fork's worktree once history resumed one
     // and the project root otherwise. `root` still names the project: its
@@ -716,7 +724,7 @@ export const make = (
     )
     const nativeRuntime = native.runtime(
       {
-        filename: executionDatabasePath(root),
+        filename: executionDatabasePath(stateRoot),
         workspaceRoot,
         // The machine's own name, for the same reason `engineDurable` stamps
         // it: `sameHostPidProbe` compares `hostId` before it trusts a pid, and
@@ -740,7 +748,7 @@ export const make = (
       registration
     ).pipe(
       Layer.provide([platform, native.crypto, engineJj]),
-      Layer.tap(() => secureSqliteFiles(executionDatabasePath(root)).pipe(Effect.provide(native.host))),
+      Layer.tap(() => secureSqliteFiles(executionDatabasePath(stateRoot)).pipe(Effect.provide(native.host))),
       // Failure to open or migrate the local execution engine is a startup
       // defect, just like the control database above: no command can execute
       // honestly without this composition.
@@ -783,6 +791,7 @@ export const make = (
         environment: process.env,
         mcpServers: config.mcpServers ?? [],
         executionRoot: config.executionRoot ?? root,
+        ...(config.stateRoot === undefined ? {} : { stateRoot: config.stateRoot }),
         modules
       }),
       decorateNotifications

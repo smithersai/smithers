@@ -1,5 +1,6 @@
 import assert from "node:assert/strict"
 import { execFileSync } from "node:child_process"
+import { existsSync } from "node:fs"
 import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises"
 import { tmpdir, userInfo } from "node:os"
 import { join } from "node:path"
@@ -20,6 +21,7 @@ import { NativeCoding, nativeLayer } from "../coding/native.ts"
 import { gather, memoryLayer } from "../coding/planning-memory.ts"
 import { DraftPlan, finalize, planningPolicy, PreparePlan, ReviewRequest, type Draft, type PlanningContext } from "../coding/planning.ts"
 import { layerAt } from "../coding/snapshots.ts"
+import * as CodingState from "../coding/state.ts"
 import { admitSource } from "../coding/source-admission.ts"
 import { operations } from "../wiki/operations.ts"
 import type { PageSpec } from "../wiki/schema.ts"
@@ -98,7 +100,12 @@ test("native memory and a real SQLite clarification resume across hosts and reje
   jj("config", "set", "--repo", "user.name", "Planning Acceptance")
   jj("config", "set", "--repo", "user.email", "planning@example.com")
   await mkdir(join(root, "src"))
-  await writeFile(join(root, ".gitignore"), ".flows/\n")
+  // Deliberately no `.gitignore` rule for `.flows/`: the production workspace
+  // has none either, which is why the host's own control and engine databases
+  // showed up as `A .flows/control.db` and failed every planning freshness
+  // check. Host state now resolves outside the working copy instead.
+  const stateRoot = CodingState.resolveStateRoot({ root })
+  assert.equal(CodingState.inside(root, stateRoot), false)
   await writeFile(join(root, "page.md"), "# Answer\n\nThe answer is 42.\n")
   await writeFile(join(root, "README.md"), "# Canary\n\nAn existing introduction.\n")
   await writeFile(join(root, "src/answer.ts"), "export const answer = 42\n")
@@ -111,6 +118,7 @@ test("native memory and a real SQLite clarification resume across hosts and reje
   }
   jj("describe", "-m", "🏗️ chore: stable foundation")
   jj("new", "-m", "✨ feat: current native tip")
+  const clean = jj("status"), unchanged = jj("diff", "--stat")
   const config = join(temporary, "coding.json"), reporter = join(temporary, "reporter"), adapterPath = join(temporary, "coding.py")
   await writeFile(config, JSON.stringify({ version: 1, workspaceId: "planning-acceptance", actorId: 42, repositoryPath: root, username: userInfo().username }))
   await writeFile(reporter, 'exec 9>"$op_repo/smithers-coding.lock"')
@@ -144,7 +152,7 @@ test("native memory and a real SQLite clarification resume across hosts and reje
     }))
   ).pipe(Layer.provideMerge(Action.layerImplementations), Layer.provideMerge(Layer.succeed(Executable.Catalog, { executables, refused: [] })),
     Layer.provideMerge(nativeLayer({ sourcePublication: "local-only", repositoryPath: root, adapterPath })))
-  const make = () => ManagedRuntime.make(runtime.layer({ filename: join(root, ".flows", "engine.db"), workspaceRoot: root,
+  const make = () => ManagedRuntime.make(runtime.layer({ filename: join(stateRoot, ".flows", "engine.db"), workspaceRoot: root,
     owner: { hostId: "planning-acceptance" }, isAlive: Ownership.sameHostPidProbe }, StepBoundary.layer, WorkspaceSandbox.layerFileSystem(), registrations).pipe(
       Layer.provideMerge(layerAt({ repositoryPath: root, adapterPath })), Layer.provideMerge(platform),
       Layer.provide(Layer.succeed(NodeJj.StartupTimeoutMs, 30_000))))
@@ -186,6 +194,13 @@ test("native memory and a real SQLite clarification resume across hosts and reje
   assert.deepEqual(await host.runPromise(admitSource(plan)), plan)
   const { observedHead: _, ...legacyPlan } = plan
   await assert.rejects(host.runPromise(admitSource(legacyPlan)), /observed native source head/)
+  // The wiki refresh and a whole plan cycle have run against this working copy.
+  // Every byte the host wrote went to `stateRoot`, so JJ still sees nothing.
+  assert.equal(jj("status"), clean)
+  assert.equal(jj("diff", "--stat"), unchanged)
+  assert.doesNotMatch(jj("status"), /\.flows/)
+  assert.equal(existsSync(join(stateRoot, ".flows", "engine.db")), true)
+  assert.equal(existsSync(join(root, ".flows")), false)
   const counts = { reviewed, drafted }
   assert.deepEqual(await host.runPromise(PreparePlan.execute(input, { executionId: "planning-resume" })), plan)
   assert.deepEqual({ reviewed, drafted }, counts)
@@ -195,7 +210,10 @@ test("native memory and a real SQLite clarification resume across hosts and reje
   await writeFile(join(root, "unrelated.txt"), "changed while waiting\n")
   host = make()
   await host.runPromise(HumanTask.answer({ token: token("planning-stale"), value: "Preserve 42" }))
-  await assert.rejects(host.runPromise(PreparePlan.execute(input, { executionId: "planning-stale" }), { signal: t.signal }), /Native code changed during planning/)
+  // The refusal names the head that moved and the path that moved it, so the
+  // next occurrence is diagnosable from the run card alone.
+  await assert.rejects(host.runPromise(PreparePlan.execute(input, { executionId: "planning-stale" }), { signal: t.signal }),
+    /Native code changed during planning.*changed: head .*tree [0-9a-f]{12}->[0-9a-f]{12}.*paths: unrelated\.txt/s)
   await assert.rejects(host.runPromise(admitSource(plan)), /Native source changed after this plan/)
   await writeFile(join(root, "src/answer.ts"), "export const answer = 43\n")
   await assert.rejects(host.runPromise(gather(options, input)), /Stale wiki page/)

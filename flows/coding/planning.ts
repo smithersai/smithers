@@ -113,6 +113,84 @@ const invalid = (message: string) => new CodingError({ code: "invalid_plan", mes
 export const sameCode = (left: Revision, right: Revision) =>
   left.changeId === right.changeId && left.commitId === right.commitId && left.treeId === right.treeId &&
   left.parentCommitIds.length === right.parentCommitIds.length && left.parentCommitIds.every((id, i) => id === right.parentCommitIds[i])
+/**
+ * One revision a planning context captured, as the tree now reports it.
+ *
+ * `read` answers resolved and conflicted revisions, and a missing change is
+ * simply absent, so the diagnosis has to cover all three.
+ */
+export interface Observed {
+  readonly kind: string
+  readonly changeId: string
+  readonly commitId: string
+  readonly treeId?: string | undefined
+  readonly parentCommitIds: ReadonlyArray<string>
+}
+
+const short = (id: string) => id.slice(0, 12)
+
+/**
+ * Why a captured revision no longer matches the tree, or `undefined` when it
+ * still does.
+ *
+ * `sameCode` answers a boolean, which is the correct admission decision and a
+ * useless run card: the 2026-09-15 workspace failure reported only "Native code
+ * changed" while the host itself was writing `.flows/engine.db-wal` into the
+ * working copy it was planning against. This names the moved identity instead.
+ *
+ * @category getters
+ */
+export const driftOf = (expected: Revision, actual: Observed | undefined): string | undefined => {
+  if (actual === undefined) return `${expected.changeId} is gone`
+  if (actual.kind !== "resolved") return `${expected.changeId} is conflicted`
+  const moved = [
+    expected.commitId === actual.commitId ? undefined : `commit ${short(expected.commitId)}->${short(actual.commitId)}`,
+    expected.treeId === actual.treeId ? undefined : `tree ${short(expected.treeId)}->${short(actual.treeId ?? "")}`,
+    expected.parentCommitIds.length === actual.parentCommitIds.length &&
+      expected.parentCommitIds.every((id, index) => id === actual.parentCommitIds[index]) ? undefined : "parents differ"
+  ].filter((entry): entry is string => entry !== undefined)
+  return moved.length === 0 ? undefined : `${expected.changeId} ${moved.join(", ")}`
+}
+
+/**
+ * The repository paths a `jj diff --git` body names, bounded.
+ *
+ * The native adapter's `diff` operation is the only path-level `jj status`
+ * equivalent this host has, and its output is unbounded, so the report keeps a
+ * fixed prefix and says that it truncated.
+ *
+ * @category getters
+ */
+export const changedPaths = (diff: string, limit = 10): ReadonlyArray<string> => {
+  const paths: string[] = []
+  for (const line of diff.split("\n")) {
+    const match = /^diff --git a\/(.+?) b\/(.+)$/.exec(line)
+    if (match === null) continue
+    const path = match[1] === match[2] ? match[1]! : `${match[1]} -> ${match[2]}`
+    if (paths.includes(path)) continue
+    if (paths.length === limit) return [...paths, "and more"]
+    paths.push(path)
+  }
+  return paths
+}
+
+/**
+ * The `stale_revision` message a run card has to be diagnosable from.
+ *
+ * @category constructors
+ */
+export const staleRevisionMessage = (
+  drift: ReadonlyArray<string> = [],
+  paths: ReadonlyArray<string> = []
+): string => {
+  const detail = [
+    drift.length === 0 ? undefined : `changed: ${drift.join("; ")}`,
+    paths.length === 0 ? undefined : `paths: ${paths.join(", ")}`
+  ].filter((entry): entry is string => entry !== undefined)
+  return "Native code changed during planning or clarification; gather and plan again" +
+    (detail.length === 0 ? "" : ` (${detail.join("; ")})`)
+}
+
 const filePath = (value: string) => value.length > 0 && value.length <= 4096 && !/[\\\0]/.test(value) &&
   value.split("/").every(part => part !== "" && part !== "." && part !== ".." && !/^\.(git|jj)$/i.test(part))
 

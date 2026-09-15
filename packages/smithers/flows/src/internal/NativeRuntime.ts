@@ -14,6 +14,7 @@ import * as HostLiveness from "@smthrs/platform-node/HostLiveness"
 import type * as NodeHost from "@smthrs/platform-node/NodeHost"
 import type * as ProcessReaper from "@smthrs/platform-node/ProcessReaper"
 import type { Ownership } from "@smthrs/run-store"
+import * as Cause from "effect/Cause"
 import type * as Crypto from "effect/Crypto"
 import * as Effect from "effect/Effect"
 import * as Exit from "effect/Exit"
@@ -23,6 +24,7 @@ import * as Path from "effect/Path"
 import * as Schema from "effect/Schema"
 import * as Scope from "effect/Scope"
 import type * as SqlClient from "effect/unstable/sql/SqlClient"
+import { mkdirSync } from "node:fs"
 import { constants } from "node:os"
 import { dirname, resolve } from "node:path"
 import * as Runtime from "../Runtime.ts"
@@ -81,8 +83,25 @@ export const makeNative = (platform: NativePlatform) => {
 
   const databaseLayer = (filename: string) =>
     Layer.unwrap(Effect.gen(function*() {
+      const directory = dirname(filename)
       const fs = yield* FileSystem.FileSystem
-      yield* fs.makeDirectory(dirname(filename), { recursive: true })
+      // The engine database is host configuration and is never a path a model
+      // can name, so it does not have to live inside the workspace the run is
+      // confined to. A host that serves a live JJ or Git checkout deliberately
+      // keeps `engine.db` outside it, because the engine writes on every step
+      // and inside the checkout those writes are untracked files that move the
+      // working-copy tree digest under the code the run is reading. The
+      // injected filesystem stays the first answer, so a confined workspace
+      // still creates its own directory through the kernel; a path that
+      // filesystem refuses as outside its pinned root falls back to the host's
+      // own mkdir, which reports its own failure rather than hiding this one.
+      yield* fs.makeDirectory(directory, { recursive: true }).pipe(
+        Effect.catchCause((cause) =>
+          Cause.hasInterruptsOnly(cause)
+            ? Effect.failCause(cause)
+            : Effect.sync(() => mkdirSync(directory, { recursive: true }))
+        )
+      )
       return platform.database(filename)
     }))
 

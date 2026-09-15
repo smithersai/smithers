@@ -22,6 +22,7 @@ import { operations } from "../wiki/operations.ts"
 import { policySources } from "../wiki/reuse.ts"
 import type { PageSpec } from "../wiki/schema.ts"
 import { observeCompletedRequest } from "./fixtures/coding-vibe-observe.ts"
+import * as CodingState from "../coding/state.ts"
 
 const source = process.env.PLUE_CODING_ADAPTER_SOURCE
 const exporter = process.env.PLUE_JJ_EXPORT_BINARY
@@ -245,7 +246,7 @@ test("configured request host verifies wiki, prototypes, consumes steering, repl
   if (process.env.SMITHERS_ACCEPTANCE_EVENTS) {
     await cp(join(temporary, "control-events.ndjson"), process.env.SMITHERS_ACCEPTANCE_EVENTS)
   }
-  const retained = await observeCompletedRequest(platform, root, initial.head.commitId)
+  const retained = await observeCompletedRequest(platform, root, initial.head.commitId, CodingState.resolveStateRoot({ root }))
   assert.deepEqual(retained.request, outcomes[0], "cold native read must match the actual completed projected Request")
   passed = true
 })
