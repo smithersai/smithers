@@ -190,6 +190,10 @@ const cardBaseShape = {
   viewKey: z.string().optional(),
   viewRepo: z.string().optional(),
   loading: z.boolean().optional(),
+  navigation: z.object({ index: z.number().int().nonnegative(), length: z.number().int().positive() }).optional(),
+  id: z.string(),
+  title: z.string(),
+  body: z.string().optional(),
   status: z.enum(["active", "acted", "error"]),
   createdAt: z.number(),
   ordinal: z.number().int().nonnegative(),
@@ -2303,6 +2307,7 @@ const CurrentCardSchema = z.discriminatedUnion("kind", [
         error: z.string().optional()
       })
     ])
+  }),
   /*
    * The explainer's answer (AgentRoles.ts "explainer"): `explain <what>` runs
    * a side turn that asks for the explainer role, and this card is where the
