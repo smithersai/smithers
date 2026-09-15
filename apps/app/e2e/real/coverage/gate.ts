@@ -346,6 +346,9 @@ export const checkRealE2E = ({ realDir, flowNameFile, resultsFile, now, requireC
             findings.push({ severity: "error", code: "malformed-run", file: resultsFile, line: 1, message: "Every run requires scenario, verified host, explicit status, exact revision, and timestamps" })
           }
           for (const run of runs) {
+            const declaration = scenarios.find((scenario) => scenario.id === run.scenarioId)
+            if (!declaration) findings.push({ severity: "error", code: "undeclared-run", file: resultsFile, line: 1, message: `Run ${run.scenarioId} does not match a declared scenario` })
+            else if (!declaration.hosts.includes(run.host)) findings.push({ severity: "error", code: "undeclared-run-host", file: resultsFile, line: 1, message: `Run ${run.scenarioId} claims undeclared host ${run.host}` })
             if (!(REAL_HOSTS as readonly string[]).includes(run.host) || !["passed", "failed", "timedOut", "skipped", "interrupted"].includes(run.status)) findings.push({ severity: "error", code: "malformed-run", file: resultsFile, line: 1, message: `Invalid host or verdict for ${run.scenarioId}` })
             if (run.host === "production" && (!run.buildSha || !/^[0-9a-f]{40,64}$/.test(run.buildSha))) findings.push({ severity: "error", code: "missing-production-build", file: resultsFile, line: 1, message: `Production run ${run.scenarioId} requires its deployed build SHA` })
           }
@@ -361,9 +364,13 @@ export const checkRealE2E = ({ realDir, flowNameFile, resultsFile, now, requireC
   const coveredActions = new Set(scenarios.flatMap((scenario) => scenario.actions))
   for (const action of actions) if (!coveredActions.has(action)) gaps.push({ kind: "action", value: action })
   for (const path of CRITICAL_PATHS) if (!scenarios.some((scenario) => scenario.paths.includes(path))) gaps.push({ kind: "critical-path", value: path })
-  for (const host of REAL_HOSTS) if (!scenarios.some((scenario) => scenario.hosts.includes(host))) gaps.push({ kind: "host", value: host })
+  // A host-specific receipt proves only that host. Aggregate reports (no expectedHost)
+  // must still account for every declared host and all three host dimensions.
+  const requiredHosts = expectedHost ? [expectedHost] : REAL_HOSTS
+  for (const host of requiredHosts) if (!scenarios.some((scenario) => scenario.hosts.includes(host))) gaps.push({ kind: "host", value: host })
   for (const door of DOORS) if (!scenarios.some((scenario) => scenario.doors.includes(door))) gaps.push({ kind: "door", value: door })
   for (const scenario of scenarios) for (const host of scenario.hosts) {
+    if (expectedHost && host !== expectedHost) continue
     if (!runs.some((run) => run.scenarioId === scenario.id && run.host === host && run.status === "passed" && (!expectedRevision || run.revision === expectedRevision) && (!expectedHost || run.host === expectedHost))) gaps.push({ kind: "execution", value: host, scenarioId: scenario.id })
   }
   if (requireComplete && gaps.length) findings.push({ severity: "error", code: "incomplete-coverage", file: realDir, line: 1, message: `${gaps.length} declared/action/dimension/execution gaps remain` })

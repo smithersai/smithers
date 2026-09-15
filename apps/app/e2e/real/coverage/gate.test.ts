@@ -81,6 +81,41 @@ describe("real E2E coverage gate", () => {
     expect(codes).toContain("incomplete-coverage")
   })
 
+  test("scopes host receipts without erasing aggregate execution gaps", () => {
+    const { root, real, flows } = fixture()
+    writeFileSync(join(real, "repo.spec.ts"), valid.replace('"host:local"', '"host:local", "host:production"'))
+    const results = join(root, "results.json")
+    writeFileSync(results, JSON.stringify({ suiteStatus: "passed", reporterErrors: [], runs: [{ scenarioId: "repo.open.success", host: "production", status: "passed", revision: "a".repeat(40), buildSha: "b".repeat(40), startedAt: "2026-09-14T00:00:00Z", finishedAt: "2026-09-14T00:00:01Z" }] }))
+    const options = { realDir: real, flowNameFile: flows, resultsFile: results, expectedRevision: "a".repeat(40) }
+    const hostReport = checkRealE2E({ ...options, expectedHost: "production" })
+    expect(hostReport.ok).toBe(true)
+    expect(hostReport.gaps.filter((gap) => gap.kind === "execution" || gap.kind === "host")).toEqual([])
+    expect(hostReport.gaps).toContainEqual({ kind: "action", value: "chat.send" })
+    const aggregate = checkRealE2E(options)
+    expect(aggregate.gaps).toContainEqual({ kind: "execution", value: "local", scenarioId: "repo.open.success" })
+    expect(aggregate.gaps).toContainEqual({ kind: "host", value: "native" })
+  })
+
+  test("does not let a host-specific receipt hide an unexecuted applicable case", () => {
+    const { real, flows } = fixture()
+    writeFileSync(join(real, "repo.spec.ts"), valid.replace('"host:local"', '"host:local", "host:production"'))
+    const report = checkRealE2E({ realDir: real, flowNameFile: flows, expectedHost: "production", requireComplete: true })
+    expect(report.gaps.filter((gap) => gap.kind === "execution")).toEqual([{ kind: "execution", value: "production", scenarioId: "repo.open.success" }])
+    expect(report.ok).toBe(false)
+  })
+
+  test("rejects receipts for an unknown scenario or undeclared host", () => {
+    const { root, real, flows } = fixture()
+    writeFileSync(join(real, "repo.spec.ts"), valid)
+    const results = join(root, "results.json")
+    const run = { scenarioId: "repo.open.success", host: "production", status: "passed", revision: "a".repeat(40), buildSha: "b".repeat(40), startedAt: "2026-09-14T00:00:00Z", finishedAt: "2026-09-14T00:00:01Z" }
+    writeFileSync(results, JSON.stringify({ suiteStatus: "passed", reporterErrors: [], runs: [run, { ...run, scenarioId: "invented.success", host: "local" }] }))
+    const report = checkRealE2E({ realDir: real, flowNameFile: flows, resultsFile: results })
+    expect(report.findings.map((finding) => finding.code)).toContain("undeclared-run-host")
+    expect(report.findings.map((finding) => finding.code)).toContain("undeclared-run")
+    expect(report.gaps).toContainEqual({ kind: "execution", value: "local", scenarioId: "repo.open.success" })
+  })
+
   test("rejects interception and skip constructs in imported executable helpers", () => {
     const { real, flows } = fixture()
     writeFileSync(join(real, "repo.spec.ts"), valid.replace('import { test } from "./support"', 'import { test } from "./support"\nimport "./bad-helper"'))
