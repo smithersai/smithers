@@ -197,7 +197,10 @@ describe("opaque local repositories", () => {
     const second = await serveCli(root, ["//:suite"])
     expect(second.exitCode).toBe(0)
     expect(`${second.stdout}\n${second.stderr}`).toContain("//:childTest  hit")
-  }, 60_000)
+    // Both plans query a cold child CLI; the first run also executes one.
+    // This three-launch case exceeded 60 s in the suite and in isolation
+    // under host contention. Match the adjacent three-launch query budget.
+  }, 240_000)
 
   it("re-executes the child on a second run while its working tree is dirty", async () => {
     const root = await workspace()
@@ -207,9 +210,10 @@ describe("opaque local repositories", () => {
     const second = await serveCli(root, ["//:suite"])
     expect(second.exitCode).toBe(0)
     expect(`${second.stdout}\n${second.stderr}`).toContain("//:childTest  ran")
-    // Two in-process runs like the clean case above, with the budget doubled
-    // because the second run cannot replay the child and pays for it again.
-  }, 120_000)
+    // Both plans query and execute the child: four cold CLI launches. This
+    // exceeded 120 s with host load near 149, then took 92 s in isolation.
+    // Use the same bounded envelope as the other child CLI integration cases.
+  }, 240_000)
 
   it("accepts repository targets through Alias and gates", async () => {
     const root = await workspace()
@@ -245,5 +249,8 @@ describe("opaque local repositories", () => {
     const execution = await serveCli(root, ["//:broken"])
     expect(execution.exitCode).toBe(1)
     expect(`${execution.stdout}\n${execution.stderr}`).toContain("deliberate child workspace refusal")
-  }, 30_000)
+    // The parent query starts healthy and broken child CLIs, then execution
+    // starts the broken child again. The old 30 s budget expired in isolation
+    // on a contended host, like the three-launch metadata case above.
+  }, 240_000)
 })

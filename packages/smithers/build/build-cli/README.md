@@ -61,3 +61,33 @@ The full site is at https://build-cli.smithers.sh, generated from
 The API reference is derived from the JSDoc on the exported declarations in
 `src/`; the package's lint configuration requires a description, a
 `@category`, and a `@since` on each one.
+
+## Testing
+
+Run `pnpm run check`, `pnpm run test --run`, and `pnpm run coverage --run`
+under a supported Node version. The suite uses one Vitest worker by default.
+Append `--fsModuleCache` to reuse transforms between runs. Coverage floors
+remain enabled. Execution tests start real child CLIs and create temporary
+repositories outside this checkout, so cold process startup is part of their
+wall-clock cost.
+
+The Git fixtures require a working `git` executable. Tests that intentionally
+remove other tools from PATH retain only that executable; a forwarding wrapper
+that needs other PATH entries is not sufficient. If a local operator policy
+permits real Git in temporary test repositories, select that test environment
+for the Vitest process without changing the policy or using Git on this checkout.
+
+For macOS cgo verification, put the selected Xcode toolchain's actual `bin`
+directory ahead of `/usr/bin` on the test process's PATH and set `SDKROOT` to
+the selected SDK. Resolve them with `xcrun --find cc` and `xcrun --show-sdk-path`
+before running the suite. Apple's `/usr/bin/cc` launcher tries to cache tool
+discovery in the per-user global temp directory; confinement denies those
+`xcrun_db` writes and can make every compilation repeat expensive Xcode lookup.
+Using the real compiler preserves the sandbox and the existing test deadlines.
+
+Docker integration tests require a responsive daemon, cached Alpine images or
+registry access, and a buildx builder supporting OCI export. `docker info`
+alone does not establish that containers can start within the service readiness
+deadline. Diagnose container startup delays before changing readiness budgets.
+The real Codex envelope smoke is opt-in with `SMTHRS_CODEX_SMOKE=1`; it requires
+an authenticated `codex` CLI and makes a model request.

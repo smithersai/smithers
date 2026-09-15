@@ -152,15 +152,19 @@ describe("diff slice path and byte boundaries", () => {
     for (const file of files) await write(file, "// TODO next\n")
     await write("docs/readme.md", "excluded TODO\n")
     git("add", "src")
+    // These long paths require 47 bounded argv batches, twice under addedLines.
+    // Each batch launches a real supervised Git process. The aggregate 30 s
+    // production deadline expired under host contention, so this argv-boundary
+    // test supplies its own bounded budget through the existing timeout seam.
     const slice = await Effect.runPromise(AgentSession.expandDiffSlice(root, [
       Input.gitDiff({ base: "HEAD", paths: ["src/**"], ...(addedLines === undefined ? {} : { addedLines }) })
-    ]))
+    ], 120_000))
     expect(slice.files).toEqual(files)
     expect(slice.patch.match(/^diff --git /gm)).toHaveLength(files.length)
     expect(slice.patch).not.toContain("excluded TODO")
     expect(slice.patch.indexOf(files[0]!)).toBeLessThan(slice.patch.indexOf(files.at(-1)!))
     expect(slice.digest).toBe(createHash("sha256").update(slice.patch).digest("hex"))
-  })
+  }, 300_000)
 
   it("renders two bases in base order with each patch using its declared base", async () => {
     const diffs = await twoBases()

@@ -6,10 +6,11 @@ export default defineConfig({
   test: {
     environment: "node",
     include: ["test/**/*.test.ts"],
-    // Planner fixtures copy and fingerprint the production implementation
-    // trees. The bounded file pool keeps that work practical, but the root
-    // workspace gate still contends for disk with every package, so retain a
-    // CI-safe budget for both the test and its cleanup hook.
+    // Execution fixtures launch real toolchains, containers, and child CLIs;
+    // planner fixtures copy and fingerprint production implementation trees.
+    // Keep the file pool serial so the package does not multiply host-wide
+    // contention. Test and cleanup budgets still bound external operations.
+    maxWorkers: 1,
     testTimeout: 120_000,
     hookTimeout: 120_000,
     coverage: {
