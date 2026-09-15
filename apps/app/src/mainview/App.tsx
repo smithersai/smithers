@@ -250,8 +250,9 @@ function AppContent() {
   const exploringRepo = identity?.state === "signed-out" && cloudHost
     ? catalogRepositoryOf(session.activeRepoKey, repositoryRows)
     : null
+  const repositoryNotice = missingBootRepository !== null && identity?.state === "signed-out" && cloudHost
   const authMessage: Message | undefined = identity?.state === "signed-out" && cloudHost
-    ? (exploringRepo === null || missingBootRepository !== null) && !messages.some(message => message.action?.flow === "auth.sign-in")
+    ? repositoryNotice || (exploringRepo === null && !messages.some(message => message.action?.flow === "auth.sign-in"))
       ? {
         id: "auth-state",
         role: "smithers",
@@ -374,7 +375,10 @@ function AppContent() {
     ...(openingMessage === undefined ? [] : [{ kind: "init", message: openingMessage } as const]),
     ...(authMessage === undefined ? [] : [{ kind: "message", message: authMessage } as const]),
     ...(composerHost === undefined ? messages.map((message): TranscriptEntry => ({ kind: "message", message })) : []),
-    ...conversationCards.map((card): TranscriptEntry => ({ kind: "card", card }))
+    // A missing URL owns this arrival; retained cards from the last repository
+    // stay stored, but cannot become the requested repository's projection.
+    ...(repositoryNotice ? workspaceTranscript(conversationCards, missingBootRepository) : conversationCards)
+      .map((card): TranscriptEntry => ({ kind: "card", card }))
   ].sort((left, right) => {
     if (session.guideFinished) {
       const rank = handoffRank(left, session.activeRepoKey) - handoffRank(right, session.activeRepoKey)
@@ -390,7 +394,8 @@ function AppContent() {
   // even when this profile has another repository's conversation above it.
   const homeReadId = session.activeRepoKey ? `repo-home-${session.activeRepoKey}` : undefined
   const welcomeReadId = session.activeRepoKey ? `repo-welcome-${session.activeRepoKey}` : undefined
-  const initialReadId = entries.some(entry => entry.kind === "card" && entry.card.id === homeReadId) ? homeReadId : welcomeReadId
+  const initialReadId = repositoryNotice ? authMessage?.id
+    : entries.some(entry => entry.kind === "card" && entry.card.id === homeReadId) ? homeReadId : welcomeReadId
   const showingArrival = latestReadId !== undefined && latestReadId === welcomeReadId
 
   /*
@@ -577,7 +582,7 @@ function AppContent() {
             null}
 
           <div className="sui-chat-transcript smithers-transcript" data-slot="chat-transcript"
-            data-repository-missing={missingBootRepository !== null && entries.length === 1 || undefined}
+            data-repository-missing={repositoryNotice || undefined}
             data-testid="transcript" data-keyboard-pane="Conversation" role="log" aria-label="Conversation" aria-busy={typing}>
           <MessageScrollerProvider key={`${conversationTabId ?? "main"}:${session.activeRepoKey ?? ""}`} scrollAnchor="bottom"
             initialMessageId={initialReadId}
