@@ -478,11 +478,17 @@ try {
     assert.ok(mapped.has(name), `${name} reaches the journal with an empty payload`)
   }
   // The fields themselves: the seat that prices the run, the call's flow and
-  // result, and the frame's own measurement of the tree.
+  // result, and the frame's own measurement of the tree. What matters is that
+  // each one is written OFF THE EVENT; `input`, `value` and `transition` reach
+  // the payload through a bounding wrapper (`tracedField`, `tracedTransition`)
+  // rather than bare, so one call around the event read is allowed. A field
+  // that stopped naming `event.` at all still fails, which is the drift this
+  // guards: journal-facts would read it as absent and every predicate would
+  // quietly go false.
   for (const field of ["seat", "flowName", "input", "outcome", "value", "basis", "mutated", "digest", "transition"]) {
     assert.match(
       session,
-      new RegExp(`\\b${field}: event\\.`, "u"),
+      new RegExp(`\\b${field}: (?:[A-Za-z][A-Za-z0-9]*\\()?event\\.`, "u"),
       `AgentSession no longer writes ${field}, which journal-facts reads`
     )
   }
