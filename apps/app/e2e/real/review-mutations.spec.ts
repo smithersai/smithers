@@ -2,7 +2,7 @@ import { scenario } from "./coverage/types"
 import { authenticatedTest, readAuthenticatedSession } from "./auth-permissions/profile"
 import { command, expect, realApi, test as anonymousTest } from "./support/test"
 import { expectFlowOutcome } from "./repositories-github/local"
-import { enableProductionVerbose } from "./repositories-github/production"
+import { enableVerboseEvidence } from "./repositories-github/production"
 
 const REPO = "smithersai/smithers"
 
@@ -97,7 +97,7 @@ authenticatedTest(
       }
     })
     await openChat(page)
-    await enableProductionVerbose(page)
+    await enableVerboseEvidence(page)
     await command(page, `/change.split-ready ${changeId}`)
     await expectFlowOutcome(page, "change.split-ready", changeId, "failed")
     await expect(page.getByTestId("transcript")).toContainText(/changeset|nothing was split|no route/i)
