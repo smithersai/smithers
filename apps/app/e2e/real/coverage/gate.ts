@@ -188,6 +188,14 @@ const scenarioPathFor = (node: ts.Node): readonly string[] => {
 
 const scanFile = (file: string): readonly GateFinding[] => {
   const source = sourceFile(file)
+  const serverNames = new Set(["startLocalServer"])
+  for (const statement of source.statements) {
+    if (!ts.isImportDeclaration(statement)) continue
+    const bindings = statement.importClause?.namedBindings
+    if (bindings && ts.isNamedImports(bindings)) for (const binding of bindings.elements) {
+      if ((binding.propertyName ?? binding.name).text === "startLocalServer") serverNames.add(binding.name.text)
+    }
+  }
   const findings: GateFinding[] = []
   const add = (severity: GateFinding["severity"], code: string, node: ts.Node, message: string): void => {
     findings.push({ severity, code, file, line: lineOf(source, node), message })
@@ -195,6 +203,20 @@ const scanFile = (file: string): readonly GateFinding[] => {
   const visit = (node: ts.Node): void => {
     if (ts.isCallExpression(node)) {
       const path = callPath(node.expression)
+      if (serverNames.has(path) || path.endsWith(".startLocalServer")) {
+        const options = node.arguments[0]
+        if (!options || !ts.isObjectLiteralExpression(options) || options.properties.some(ts.isSpreadAssignment)) {
+          add("error", "unverified-real-host", node, "Real host options must be explicit so the gate can verify that no built-in service stubs are enabled")
+        } else {
+          const chat = objectProperty(options, "chatStub")
+          if (chat && chat.kind !== ts.SyntaxKind.FalseKeyword) add("error", "forbidden-double", chat, "A real host must explicitly disable chatStub when supplied")
+          if (literal(objectProperty(options, "cloudMode")) !== "hybrid") add("error", "forbidden-double", options, "A real host requires cloudMode: hybrid; the server default disables real upstreams")
+          for (const name of ["identityUpstream", "cloudApi"]) {
+            const upstream = objectProperty(options, name)
+            if (upstream?.kind === ts.SyntaxKind.NullKeyword) add("error", "forbidden-double", upstream, `${name}: null selects a built-in service stub`)
+          }
+        }
+      }
       const reason = forbiddenCalls.get(path)
       if (reason) add("error", "forbidden-double", node, `${path} is ${reason}; real E2E code must use the real boundary`)
       if (ts.isPropertyAccessExpression(node.expression)) {
@@ -320,6 +342,14 @@ const walkSpecs = (dir: string): string[] => readdirSync(dir, { withFileTypes: t
   return entry.isDirectory() ? walkSpecs(path) : SPEC.test(entry.name) ? [path] : []
 })
 
+/** Process/worker entry points need not be imported by their launcher. Scan all
+ * owned suite helpers too; the coverage tool's own parser fixtures are excluded. */
+const walkHelpers = (dir: string): string[] => readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
+  const path = join(dir, entry.name)
+  if (entry.isDirectory()) return entry.name === "coverage" || entry.name === "node_modules" ? [] : walkHelpers(path)
+  return SOURCE.test(entry.name) && !/\.test\.[cm]?[jt]sx?$/.test(entry.name) ? [path] : []
+})
+
 export interface GateOptions {
   readonly realDir: string
   readonly flowNameFile: string
@@ -334,7 +364,7 @@ export const checkRealE2E = ({ realDir, flowNameFile, resultsFile, now, requireC
   const specs = walkSpecs(realDir).filter((file) => !file.includes(`${join("coverage", "fixtures")}`))
   const actions = declaredFlowNames(flowNameFile)
   const scenarios = scenarioDeclarations(specs)
-  const files = executableImportClosure(specs, resolve(realDir, "../.."))
+  const files = executableImportClosure([...specs, ...walkHelpers(realDir)], resolve(realDir, "../.."))
   const findings = [...files.flatMap(scanFile), ...missingPerTestMetadata(specs)]
   const ids = new Set<string>()
   for (const scenario of scenarios) {

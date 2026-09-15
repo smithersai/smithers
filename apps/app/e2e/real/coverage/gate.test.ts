@@ -167,8 +167,39 @@ export const searchFlows = (actions) => [
 
   test("does not scan type-only imports as executable suite code", () => {
     const { real, flows } = fixture()
-    writeFileSync(join(real, "repo.spec.ts"), valid.replace('import { test } from "./support"', 'import { test } from "./support"\nimport type { Fake } from "./types"'))
-    writeFileSync(join(real, "types.ts"), `page.route("**/*", handler)\nexport type Fake = string\n`)
+    mkdirSync(join(real, "coverage"))
+    writeFileSync(join(real, "repo.spec.ts"), valid.replace('import { test } from "./support"', 'import { test } from "./support"\nimport type { Fake } from "./coverage/type-only"'))
+    writeFileSync(join(real, "coverage/type-only.ts"), `page.route("**/*", handler)\nexport type Fake = string\n`)
+    expect(checkRealE2E({ realDir: real, flowNameFile: flows }).ok).toBe(true)
+  })
+
+  test("scans a subprocess entry even when its launcher does not import it", () => {
+    const { real, flows } = fixture()
+    writeFileSync(join(real, "repo.spec.ts"), valid)
+    writeFileSync(join(real, "process-host.ts"), `page.route("**/api/**", handler)`)
+    expect(checkRealE2E({ realDir: real, flowNameFile: flows }).findings.map((finding) => finding.code)).toContain("forbidden-double")
+  })
+
+  test.each([
+    'cloudMode: "hybrid", chatStub: true',
+    'cloudMode: "hybrid", identityUpstream: null',
+    'cloudMode: "hybrid", cloudApi: null',
+    'cloudMode: "offline", chatStub: false',
+    'chatStub: false',
+  ])("rejects built-in host doubles: %s", (options) => {
+    const { real, flows } = fixture()
+    writeFileSync(join(real, "repo.spec.ts"), valid)
+    writeFileSync(join(real, "process-host.ts"), `import { startLocalServer as launch } from "./server"; launch({ ${options} })`)
+    expect(checkRealE2E({ realDir: real, flowNameFile: flows }).findings.map((finding) => finding.code)).toContain("forbidden-double")
+  })
+
+  test("requires reviewable real host configuration and accepts real defaults in hybrid mode", () => {
+    const { real, flows } = fixture()
+    writeFileSync(join(real, "repo.spec.ts"), valid)
+    const host = join(real, "process-host.ts")
+    writeFileSync(host, `startLocalServer({ ...options, cloudMode: "hybrid" })`)
+    expect(checkRealE2E({ realDir: real, flowNameFile: flows }).findings.map((finding) => finding.code)).toContain("unverified-real-host")
+    writeFileSync(host, `startLocalServer({ chatStub: false, cloudMode: "hybrid" })`)
     expect(checkRealE2E({ realDir: real, flowNameFile: flows }).ok).toBe(true)
   })
 
