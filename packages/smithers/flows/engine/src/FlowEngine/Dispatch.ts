@@ -78,10 +78,7 @@ export const makeActionExecute = (options: Encoded) => {
       environment,
       scope
     ))
-    /* v8 ignore next 3 -- defensive typed guard (issue #151): rejected
-       caller identity material always fails the ordinal-scope derivation
-       above first, so this branch is unreachable until the environment or
-       hermetic folding gains fallible material of its own. */
+    // The scope can be valid while this subsequent Crypto digest fails.
     if (Result.isFailure(keyResult)) {
       return uncanonicalKey(action.name, keyResult.failure)
     }

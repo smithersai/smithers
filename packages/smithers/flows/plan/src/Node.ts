@@ -705,36 +705,28 @@ export const catchFilter = (ast: Ast): Schema.Top | undefined => ast._tag === "C
 export const functionIdentity = (operation: unknown): FunctionIdentity => internal.functionIdentity(operation)
 
 /**
- * Declares every semantic value a callback closes over, making its existing
- * source-and-captures identity reproducible across processes.
+ * Binds a frozen plain copy of inert captures as the callback's this receiver.
  *
- * The capture record is canonicalized into function identity and deeply frozen
- * immediately. Unsupported values, accessors, exotic prototypes, symbols,
- * cycles, and member nesting beyond 256 levels are refused instead of
- * producing an identity that cannot describe the function's behavior.
- * Validate application input with its schema before capturing it. This is an
- * author declaration: JavaScript cannot verify closure completeness. Include
- * the version of imported helpers or other implementation behavior that is not
- * present in the callback source. Empty captures are appropriate only when no
- * semantic state exists outside that source. Capturing a snapshot while the
- * callback reads a different mutable object does not make the callback stable.
+ * Use a function expression to read the snapshot while keeping the ordinary
+ * callback arguments: Node.capture({ factor: 3 }, function(value: number) {
+ *   return value * this.factor
+ * }). Caller objects remain unchanged; lexical aliases still name originals
+ * and must not be used as mutable semantic inputs. Nested captures retain the
+ * inner callback's snapshot and compose the two identities.
  *
- * For example, close over the exact frozen record being declared:
+ * Admission walks original descriptors once, rejects built-in brands and
+ * non-plain prototypes without evaluating getters, then uses structuredClone
+ * to refuse Proxies. Hosts without that API refuse object capture. Only the
+ * owned frozen copy enters identity and the wrapper. Sealed, non-extensible,
+ * frozen and Immer ordinary data are supported equally. Unsupported values
+ * raise a TypeError naming the path. See core docs/api.md#nodecapture for the
+ * complete algorithm and the migration from original-object locking.
  *
- * ```ts
- * const config = { increment: 2, implementationVersion: "counter/v1" }
- * const increment = Node.capture(config, (value: number) => value + config.increment)
- * ```
- *
- * The existing `sha256-source-captures/v4` format is unchanged. Changing source,
- * captures, or an explicitly captured version changes identity; it requires a
- * newly planned run rather than silently re-keying an existing execution.
- *
- * @since 0.1.0
  * @category constructors
+ * @since 0.1.0
  * @slop
  */
-export const capture = <Args extends ReadonlyArray<unknown>, A>(
-  captures: Readonly<Record<string, unknown>>,
-  operation: (...args: Args) => A
+export const capture = <C extends Readonly<Record<string, unknown>>, Args extends ReadonlyArray<unknown>, A>(
+  captures: C,
+  operation: (this: Readonly<C>, ...args: Args) => A
 ): (...args: Args) => A => internal.capture(captures, operation)

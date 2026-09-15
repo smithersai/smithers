@@ -18,7 +18,9 @@ Fix that by declaring what the function closes over.
 import { Node } from "@smthrs/core"
 
 const factor = 3
-const scale = Node.capture({ factor }, (value: number) => value * factor)
+const scale = Node.capture({ factor }, function(value: number) {
+  return value * this.factor
+})
 
 const scaled = Node.map(Node.succeed(14), scale)
 ```
@@ -79,14 +81,24 @@ TypeError: Node.capture: capture at $.n is not finite; captures must be finite, 
 
 The full list of refusals is `undefined`, `bigint`, `symbol` and function
 values; `NaN` and the infinities; cycles; non-plain prototypes; symbol keys;
-accessor properties; array holes; non-index own keys on an array; and nesting
-past 256 levels. Passing a non-function as the operation raises
+accessor properties; array holes; non-index own keys on an array; nesting
+past 256 levels; and objects rejected by structuredClone, including every
+Proxy. Freezing alone cannot stop a Proxy from
+answering a later read differently. Passing a non-function as the operation raises
 `TypeError: Node.capture requires a function operation`.
 
-Accepted capture data is deeply frozen, so the values you promised cannot
-change afterwards. Comparison is structural, so two references to one shared
-object digest identically to two structurally equal copies. Aliasing is not
-identity.
+Accepted ordinary data is copied and deeply frozen. The callback receives
+that copy as its `this` receiver; use a function expression to read it. Caller
+objects remain unchanged, including sealed, non-extensible, frozen and
+null-prototype records. Frozen and mutable twins have the same identity.
+Built-in brand checks reject prototype-swapped Map, Set, Date, buffers and
+other internal-slot objects before structuredClone can traverse them. Proxies
+are refused; hosts without structuredClone refuse object capture. Lexical
+aliases still name original objects and must not supply mutable semantic
+state. See the [capture boundary](../api.md#nodecapture).
+
+Comparison is structural, so two references to one shared object digest
+identically to two structurally equal copies. Aliasing is not identity.
 
 ## Capture composes
 

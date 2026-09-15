@@ -669,10 +669,17 @@ describe("internal/node call factories", () => {
     expect(Node.functionIdentity(make(1))).toEqual(Node.functionIdentity(one))
 
     const nested = { threshold: { value: 3 } }
-    Node.capture(nested, (value: number) => value >= nested.threshold.value)
-    expect(Object.isFrozen(nested)).toBe(true)
-    expect(Object.isFrozen(nested.threshold)).toBe(true)
-    expect(() => nested.threshold.value++).toThrow(TypeError)
+    const read = Node.capture(nested, function(value: number) {
+      return value >= this.threshold.value
+    })
+    const copy = Node.capture(nested, function() {
+      return this
+    })()
+    expect(Object.isFrozen(copy)).toBe(true)
+    expect(Object.isFrozen(copy.threshold)).toBe(true)
+    expect(() => copy.threshold.value++).toThrow(TypeError)
+    nested.threshold.value = 99
+    expect(read(3)).toBe(true)
   })
 
   it("preserves inner function identity when captures are nested", () => {
@@ -728,7 +735,12 @@ describe("internal/node call factories", () => {
 
     const shared = { value: 1 }
     Node.capture({ left: shared, right: shared }, operation)
-    expect(Object.isFrozen(shared)).toBe(true)
+    const copy = Node.capture({ left: shared, right: shared }, function() {
+      return this
+    })()
+    expect(copy.left).toBe(copy.right)
+    expect(copy.left).not.toBe(shared)
+    expect(Object.isFrozen(copy.left)).toBe(true)
   })
 
   it("refuses capture material whose behavior cannot be canonically identified", () => {
@@ -739,7 +751,7 @@ describe("internal/node call factories", () => {
     const accessor = Object.defineProperty({}, "value", { enumerable: true, get: () => 1 })
     expect(() => Node.capture(accessor, () => undefined)).toThrow(/capture at \$\.value is an accessor/)
     expect(() => Node.capture({ [Symbol("key")]: 1 }, () => undefined)).toThrow(/has symbol key/)
-    expect(() => Node.capture({ date: new Date(0) }, () => undefined)).toThrow(/non-plain prototype/)
+    expect(() => Node.capture({ date: new Date(0) }, () => undefined)).toThrow(/built-in internal slots/)
     expect(() => Node.capture({ value: Number.NaN }, () => undefined)).toThrow(/is not finite/)
     expect(() => Node.capture({ values: Array(1) }, () => undefined)).toThrow(/is an array hole/)
     for (const value of [undefined, 1n, Symbol("value"), () => undefined]) {

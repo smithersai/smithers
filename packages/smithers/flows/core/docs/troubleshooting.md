@@ -60,17 +60,24 @@ the value you want, or `Node.fail` to re-raise, is the shape.
 TypeError: Node.capture: capture at $.bad has unsupported type function; captures must be finite, inert data
 TypeError: Node.capture: capture at $.cyc.self is cyclic; captures must be finite, inert data
 TypeError: Node.capture: capture at $.n is not finite; captures must be finite, inert data
+TypeError: Node.capture: capture at $.p cannot be structured-cloned (for example, a Proxy); captures must be finite, inert data
 ```
 
-Capture data is canonicalized into a digest, and canonicalization refuses
-anything it cannot hash completely rather than hashing part of it. The message
-names the path inside the capture record.
+Capture canonicalizes declared own data into a digest. A refusal names the
+path inside the capture record and the admission operation that
+failed.
 
 Pass plain, finite, inert data: no `undefined`, `bigint`, `symbol`, or function
 values, no `NaN` or infinities, no cycles, no non-plain prototypes, no symbol
-keys, no accessors, no array holes, and no nesting past 256 levels. A value
-that cannot be reduced to that has to stay outside the capture, which means the
-function keeps process-local identity.
+keys, no accessors, no array holes, and no nesting past 256 levels. Caller-frozen
+ordinary data, including Immer-style trees and null-prototype records, is
+supported, as are sealed and non-extensible plain records. Admission rejects
+built-in brands before the structuredClone probe, including prototype-swapped
+Map, Set, Date and buffers. Proxies are refused. Hosts without structuredClone
+refuse object capture. The callback reads the frozen copy through its `this`
+receiver; caller objects remain unchanged. See the [capture boundary](api.md#nodecapture).
+For a function that depends on unsupported state, leave it unannotated so it
+keeps process-local identity.
 
 `TypeError: Node.capture requires a function operation` means the second
 argument was not a function.

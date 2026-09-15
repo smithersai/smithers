@@ -1,4 +1,3 @@
-import type * as Crypto from "effect/Crypto"
 /**
  * Issue #151: forcing key-schema decoders at the four derivation sites turned
  * a typed canonicalization error into an untyped defect that
@@ -10,9 +9,10 @@ import type * as Crypto from "effect/Crypto"
  * impossible invariant violation instead of discarding it.
  */
 import { describe, expect, it } from "@effect/vitest"
-import { Action, Flow, Interpreter } from "@smthrs/flow"
+import { Action, Flow, FlowRuntime, Interpreter } from "@smthrs/flow"
 import * as StepIdentity from "@smthrs/flow/StepIdentity"
-import { Cause, Effect, Exit, Layer, Schema, SchemaIssue } from "effect"
+import { Node } from "@smthrs/plan"
+import { Cause, Crypto, Effect, Exit, Layer, PlatformError, Schema, SchemaIssue } from "effect"
 import { schemaErrorPath } from "../src/FlowEngine/ActionKey.ts"
 import { FlowEngine } from "../src/index.ts"
 import { invocationKey, runSync, withCrypto } from "./Crypto.ts"
@@ -57,6 +57,79 @@ const runRejected = (tier: "sealed" | "compensable", body: unknown) => {
 }
 
 describe("rejected declaration material surfaces typed, not as fiber death (issue #151)", () => {
+  effect(
+    "reports a second-digest failure after ordinal allocation without executing the action",
+    () =>
+      Effect.gen(function*() {
+        const crypto = yield* Crypto.Crypto
+        const engine = yield* FlowRuntime.FlowRuntime
+        let hashes = 0
+        let allocations = 0
+        let executions = 0
+        let slotsAtSecondDigest = -1
+        const host = Flow.make("Uncanonical/digest-host", {
+          payload: {},
+          success: Schema.Void,
+          body: () => Node.succeed(undefined)
+        })
+        const instance = FlowEngine.makeInstance(host, "digest-run")
+        const action = Action.make({
+          name: "Uncanonical/second-digest",
+          tier: "irreversible",
+          success: Schema.Number,
+          idempotencyKey: { key: 1 },
+          execute: Effect.sync(() => {
+            executions++
+            return 1
+          })
+        })
+        const result = yield* engine.actionExecute(action, 1).pipe(
+          Effect.provideService(FlowRuntime.FlowInstance, {
+            ...instance,
+            actionState: {
+              ...instance.actionState,
+              nextOrdinal(scope) {
+                allocations++
+                return instance.actionState.nextOrdinal(scope)
+              }
+            }
+          }),
+          Effect.provideService(Crypto.Crypto, {
+            ...crypto,
+            digest: (algorithm, data) =>
+              Effect.suspend(() => {
+                hashes++
+                if (hashes === 2) slotsAtSecondDigest = instance.actionState.keylessInFlight.size
+                return hashes === 2
+                  ? Effect.fail(PlatformError.systemError({
+                    _tag: "Unknown",
+                    module: "Crypto",
+                    method: "digest",
+                    description: "injected second digest failure"
+                  }))
+                  : crypto.digest(algorithm, data)
+              })
+          })
+        )
+        expect(hashes).toBe(2)
+        expect(slotsAtSecondDigest).toBe(1)
+        expect(allocations).toBe(1)
+        expect(executions).toBe(0)
+        expect(instance.actionState.keylessInFlight.size).toBe(0)
+        expect(result._tag).toBe("Complete")
+        if (result._tag !== "Complete") throw new Error("expected completion")
+        const defect = dieOf(result.exit)
+        expect(defect).toBeInstanceOf(Action.UncanonicalIdempotencyKey)
+        expect(defect).toMatchObject({
+          code: "uncanonical_idempotency_key",
+          reason: "canonicalize_failed",
+          actionName: action.name,
+          path: "$",
+          message: "[digest_failed] Canonical key material could not be hashed"
+        })
+      }).pipe(Effect.provide(FlowEngine.layerMemory))
+  )
+
   effect("non-JSON object identity fails typed", () =>
     Effect.gen(function*() {
       const outcome = yield* runRejected("sealed", { count: 1n })

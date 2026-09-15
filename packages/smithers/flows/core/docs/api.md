@@ -458,18 +458,76 @@ interface CatchOptions<E, B, E2, Handled = E> {
 ### Node.capture
 
 ```ts
-const capture: <Args extends ReadonlyArray<unknown>, A>(
-  captures: Readonly<Record<string, unknown>>,
-  operation: (...args: Args) => A
+const capture: <C extends Readonly<Record<string, unknown>>, Args extends ReadonlyArray<unknown>, A>(
+  captures: C,
+  operation: (this: Readonly<C>, ...args: Args) => A
 ) => (...args: Args) => A
 ```
 
-Declares the inert values a plan-time function closes over, so its identity
-folds the source text with the canonical capture data instead of a per-process
-nonce. Capture data must be finite, inert, plain data; anything else raises a
-`TypeError` naming the offending path. Accepted data is deeply frozen and
-compared structurally, so aliasing is not identity. Capture composes: capturing
-an already-captured function nests the two capture sets.
+Binds a deeply frozen plain copy of declared data as the callback's `this`
+receiver. The returned function keeps its ordinary arguments. Use a function
+expression when reading captured data; arrow functions retain their lexical
+`this`. Caller objects are never changed or retained by the capture wrapper.
+
+```ts
+const config = { increment: 2 }
+const increment = Node.capture(config, function(value: number) {
+  return value + this.increment
+})
+config.increment = 99
+increment(3) // 5
+```
+
+Admission uses one sequence:
+
+1. Walk the original graph depth first, refusing cycles and nesting beyond 256
+   levels. Side-effect-free intrinsic brand checks reject Map, Set, WeakMap,
+   WeakSet, Date, RegExp, ArrayBuffer, SharedArrayBuffer, views, boxed primitives,
+   WeakRef and FinalizationRegistry even after prototype replacement. These
+   checks never iterate collections, coerce values or read Symbol.toStringTag.
+   Each object must have Object.prototype or null as its prototype; arrays must
+   have Array.prototype. Other prototypes, including Promise.prototype, are
+   refused. Enumerate every own key and read each own descriptor once, including
+   shared references and array length. Refuse accessors without evaluating them.
+   Records support only enumerable string-keyed data; arrays support dense
+   enumerable indices and their standard length. Symbols, functions, bigint,
+   undefined, non-finite numbers and extra array keys are refused. Frozen,
+   sealed and non-extensible states are ignored, so shallow-frozen records,
+   null-prototype records and Immer trees all follow the same path.
+2. Only after that pass succeeds, structured-clone the original objects in
+   reverse discovery order. This refuses every Proxy with a path-bearing
+   TypeError before cloning a parent or earlier object its traps could have
+   changed. Uncloneable built-ins, including a prototype-swapped Promise, are
+   also refused. A built-in revealed by the host clone, such as Error, is
+   refused; the host's clone is discarded. No input getter or collection
+   iterator is called. Proxy reflection traps can run during the structural
+   pass and can have side effects; admission is not a sandbox for those traps.
+   The host clone function is selected before visiting caller data. Like the
+   intrinsic brand checks, it relies on trusted host built-ins.
+   Hosts without structuredClone refuse object capture, including an empty
+   capture record, because they cannot prove the graph Proxy-free.
+3. Build plain objects and arrays solely from the descriptors saved in step 1,
+   preserving shared references and inserting record keys in canonical order.
+   Deep-freeze those copies, encode identity from the copy, and give only the
+   copy to the callback. Drop the admission maps and all original references.
+   No original is re-read or locked after the clone probe.
+
+The digest folds callback source with canonical copy data. Freezing or sealing
+caller data does not change identity. Comparison is structural, so aliasing is
+not identity; callbacks must not use reference equality as semantic input.
+Capturing an already-captured function nests identities and retains the inner
+function's receiver.
+
+Migration from original-object locking: read captured records through `this`
+in a function expression. An existing lexical alias still names the original
+and is outside the snapshot contract, even if that object was declared.
+JavaScript cannot rebind free variables. Callbacks must depend only on the
+snapshot's own data, ordinary arguments and explicitly versioned implementation
+behavior, not mutable aliases, ambient state or inherited behavior. The
+callback itself can retain its lexical aliases; capture neither rewrites its
+source nor claims to erase those bindings. The wrapper's dynamic call receiver
+is ignored in favor of the frozen capture receiver. Raw functions retain
+process-local identity.
 
 ### Node.functionIdentity
 

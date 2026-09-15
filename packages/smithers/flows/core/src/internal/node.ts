@@ -131,16 +131,13 @@ type OperationIdentity = FunctionIdentity & {
 }
 
 /** @private */
-const CapturedTypeId = Symbol.for("@smthrs/core/Node/CapturedFunction")
-
-/** @private */
 interface CapturedMetadata {
   readonly source: string
   readonly captures: string
 }
 
 /** @private */
-type CapturedFunction = { readonly [CapturedTypeId]?: CapturedMetadata }
+const capturedMetadata = new WeakMap<object, CapturedMetadata>()
 
 /** @private */
 const hex = (bytes: Uint8Array): string => [...bytes].map((byte) => byte.toString(16).padStart(2, "0")).join("")
@@ -189,19 +186,64 @@ const captureError = (path: string, reason: string): TypeError =>
 const maximumCaptureDepth = 256
 
 /** @private */
-const canonicalCapture = (input: unknown, path: string, ancestors: WeakSet<object>, depth: number): string => {
+interface CaptureSnapshot {
+  readonly path: string
+  readonly copy: object
+  readonly members: Record<string, PropertyDescriptor>
+}
+
+// These intrinsics inspect brands without reading caller properties, iterating
+// collections, invoking coercion, or consulting Symbol.toStringTag. A plain
+// prototype is insufficient: callers can replace a built-in's prototype.
+const brandToken = {}
+const slotProbes: ReadonlyArray<(input: object) => unknown> = [
+  (input) => Map.prototype.has.call(input, brandToken),
+  (input) => Set.prototype.has.call(input, brandToken),
+  (input) => WeakMap.prototype.has.call(input, brandToken),
+  (input) => WeakSet.prototype.has.call(input, brandToken),
+  (input) => Date.prototype.getTime.call(input),
+  (input) => Object.getOwnPropertyDescriptor(RegExp.prototype, "source")!.get!.call(input),
+  (input) => Object.getOwnPropertyDescriptor(ArrayBuffer.prototype, "byteLength")!.get!.call(input),
+  (input) => Object.getOwnPropertyDescriptor(SharedArrayBuffer.prototype, "byteLength")!.get!.call(input),
+  (input) => Number.prototype.valueOf.call(input),
+  (input) => String.prototype.valueOf.call(input),
+  (input) => Boolean.prototype.valueOf.call(input),
+  (input) => BigInt.prototype.valueOf.call(input),
+  (input) => Symbol.prototype.valueOf.call(input),
+  (input) => WeakRef.prototype.deref.call(input),
+  (input) => FinalizationRegistry.prototype.unregister.call(input, brandToken)
+]
+
+/** @private */
+const hasBuiltinSlots = (input: object): boolean =>
+  ArrayBuffer.isView(input) || slotProbes.some((probe) => {
+    try {
+      probe(input)
+      return true
+    } catch {
+      return false
+    }
+  })
+
+/** @private */
+const snapshotCapture = (
+  input: unknown,
+  path: string,
+  ancestors: WeakSet<object>,
+  depth: number,
+  snapshots: globalThis.Map<object, CaptureSnapshot>
+): void => {
   if (depth > maximumCaptureDepth) {
     throw captureError(path, `exceeds the maximum capture depth of ${maximumCaptureDepth}`)
   }
-  if (input === null) return "null"
+  if (input === null) return
   switch (typeof input) {
     case "boolean":
-      return input ? "true" : "false"
+    case "string":
+      return
     case "number":
       if (!Number.isFinite(input)) throw captureError(path, "is not finite")
-      return Object.is(input, -0) ? "[\"number\",\"-0\"]" : `["number",${JSON.stringify(input)}]`
-    case "string":
-      return `["string",${JSON.stringify(input)}]`
+      return
     case "undefined":
     case "bigint":
     case "symbol":
@@ -210,53 +252,149 @@ const canonicalCapture = (input: unknown, path: string, ancestors: WeakSet<objec
   }
 
   if (ancestors.has(input)) throw captureError(path, "is cyclic")
-  const prototype = Object.getPrototypeOf(input)
-  if (!Array.isArray(input) && prototype !== Object.prototype && prototype !== null) {
-    throw captureError(path, "has a non-plain prototype")
+  let snapshot = snapshots.get(input)
+  if (snapshot === undefined) {
+    if (hasBuiltinSlots(input)) throw captureError(path, "has built-in internal slots")
+    let prototype: object | null
+    let array: boolean
+    let members: Record<string, PropertyDescriptor>
+    try {
+      prototype = Object.getPrototypeOf(input)
+      array = Array.isArray(input)
+    } catch {
+      throw captureError(path, "could not inspect its own data (for example, a revoked Proxy)")
+    }
+    if (array ? prototype !== Array.prototype : prototype !== Object.prototype && prototype !== null) {
+      throw captureError(path, "has a non-plain prototype")
+    }
+    try {
+      members = Object.create(null)
+      for (const key of Reflect.ownKeys(input)) {
+        const descriptor = Object.getOwnPropertyDescriptor(input, key)
+        if (descriptor === undefined) throw new TypeError()
+        Object.defineProperty(members, key, { value: descriptor, enumerable: true })
+      }
+    } catch {
+      throw captureError(path, "could not inspect its own data descriptors")
+    }
+    snapshot = { path, copy: array ? [] : {}, members }
+    snapshots.set(input, snapshot)
   }
+  const { copy, members } = snapshot
   ancestors.add(input)
   try {
-    if (Array.isArray(input)) {
-      const descriptors = Object.getOwnPropertyDescriptors(input)
-      for (const key of Reflect.ownKeys(descriptors)) {
+    if (Array.isArray(copy)) {
+      const length: number = members.length!.value
+      if (!Number.isSafeInteger(length) || length < 0 || length > 0xffffffff) {
+        throw captureError(path, "has an invalid array length")
+      }
+      for (const key of Reflect.ownKeys(members)) {
         if (key === "length") continue
-        if (typeof key === "symbol" || !/^(0|[1-9]\d*)$/.test(key) || Number(key) >= input.length) {
+        if (typeof key === "symbol" || !/^(0|[1-9]\d*)$/.test(key) || Number(key) >= length) {
           throw captureError(path, `has unsupported array key ${String(key)}`)
         }
       }
-      const items: Array<string> = []
-      for (let index = 0; index < input.length; index++) {
-        const descriptor = descriptors[String(index)]
+      for (let index = 0; index < length; index++) {
+        const descriptor = members[String(index)]
         if (descriptor === undefined) throw captureError(`${path}[${index}]`, "is an array hole")
         if (!("value" in descriptor)) throw captureError(`${path}[${index}]`, "is an accessor")
-        items.push(canonicalCapture(descriptor.value, `${path}[${index}]`, ancestors, depth + 1))
+        if (!descriptor.enumerable) throw captureError(`${path}[${index}]`, "is non-enumerable")
+        snapshotCapture(descriptor.value, `${path}[${index}]`, ancestors, depth + 1, snapshots)
       }
-      return `["array",[${items.join(",")}]]`
+    } else {
+      for (const key of Reflect.ownKeys(members)) {
+        if (typeof key === "symbol") throw captureError(path, `has symbol key ${String(key)}`)
+        const descriptor = members[key]!
+        if (!("value" in descriptor)) throw captureError(`${path}.${key}`, "is an accessor")
+        if (!descriptor.enumerable) throw captureError(`${path}.${key}`, "is non-enumerable")
+        snapshotCapture(descriptor.value, `${path}.${key}`, ancestors, depth + 1, snapshots)
+      }
     }
-    const members = Object.getOwnPropertyDescriptors(input)
-    const keys = Reflect.ownKeys(members)
-    const symbol = keys.find((key) => typeof key === "symbol")
-    if (symbol !== undefined) throw captureError(path, `has symbol key ${String(symbol)}`)
-    const encoded = (keys as Array<string>).sort().map((key) => {
-      const descriptor = members[key]!
-      if (!("value" in descriptor)) throw captureError(`${path}.${key}`, "is an accessor")
-      return `${JSON.stringify(key)}:${canonicalCapture(descriptor.value, `${path}.${key}`, ancestors, depth + 1)}`
-    })
-    return `["object",{${encoded.join(",")}}]`
   } finally {
     ancestors.delete(input)
   }
 }
 
-/** @private */
-const freezeCapture = (input: unknown, seen: WeakSet<object>): void => {
-  if (typeof input !== "object" || input === null || seen.has(input)) return
-  seen.add(input)
-  for (const descriptor of Object.values(Object.getOwnPropertyDescriptors(input))) {
-    /* v8 ignore else -- canonicalCapture rejects every accessor before freezing starts */
-    if ("value" in descriptor) freezeCapture(descriptor.value, seen)
+/**
+ * Probe originals only after structural admission. Reverse discovery order
+ * probes children before parents and rejects a Proxy before cloning an earlier
+ * object that its traps could have changed. Never retain the host's clone.
+ *
+ * @private
+ */
+const refuseExotic = (
+  snapshots: globalThis.Map<object, CaptureSnapshot>,
+  clone: typeof globalThis.structuredClone
+): void => {
+  if (typeof clone !== "function") throw captureError("$", "requires structuredClone to refuse Proxies")
+  for (const [input, { path }] of [...snapshots].reverse()) {
+    let cloned: object
+    try {
+      cloned = clone(input)
+    } catch {
+      throw captureError(path, "cannot be structured-cloned (for example, a Proxy)")
+    }
+    // Some brands, such as Error, have no side-effect-free JavaScript brand
+    // check. The host reveals them on its clone, never on caller input.
+    if (!Array.isArray(cloned) && Object.getPrototypeOf(cloned) !== Object.prototype) {
+      throw captureError(path, "clones as a built-in object")
+    }
   }
-  Object.freeze(input)
+}
+
+/** @private */
+const freezeCapture = (snapshots: globalThis.Map<object, CaptureSnapshot>): void => {
+  for (const { copy, members } of snapshots.values()) {
+    // Canonical key insertion order also makes enumeration of equal copies
+    // agree, even when callers inserted their record keys in different orders.
+    for (const key of Object.keys(members).sort()) {
+      const descriptor = members[key]!
+      Object.defineProperty(copy, key, {
+        value: snapshots.get(descriptor.value)?.copy ?? descriptor.value,
+        enumerable: descriptor.enumerable!,
+        configurable: false,
+        writable: false
+      })
+    }
+    Object.freeze(copy)
+  }
+}
+
+/** Encodes only the owned frozen copy. @private */
+const canonicalCapture = (input: unknown): string => {
+  if (input === null) return "null"
+  switch (typeof input) {
+    case "boolean":
+      return input ? "true" : "false"
+    case "number":
+      return Object.is(input, -0) ? "[\"number\",\"-0\"]" : `["number",${JSON.stringify(input)}]`
+    case "string":
+      return `["string",${JSON.stringify(input)}]`
+    default:
+      return Array.isArray(input)
+        ? `["array",[${input.map(canonicalCapture).join(",")}]]`
+        : `["object",{${
+          Object.keys(input as object).sort().map((key) =>
+            `${JSON.stringify(key)}:${canonicalCapture((input as Record<string, unknown>)[key])}`
+          ).join(",")
+        }}]`
+  }
+}
+
+/**
+ * A separate scope keeps the wrapper free of admission maps and originals.
+ * The callback receives only the frozen copy as its explicit this receiver.
+ *
+ * @private
+ */
+const capturedOperation = <Args extends ReadonlyArray<unknown>, A>(
+  operation: (...args: Args) => A,
+  copy: object,
+  metadata: CapturedMetadata
+): (...args: Args) => A => {
+  const wrapped = (...args: Args): A => Reflect.apply(operation, copy, args)
+  capturedMetadata.set(wrapped, metadata)
+  return wrapped
 }
 
 /**
@@ -266,28 +404,25 @@ const freezeCapture = (input: unknown, seen: WeakSet<object>): void => {
  * @private
  * @slop
  */
-export const capture = <Args extends ReadonlyArray<unknown>, A>(
-  captures: Readonly<Record<string, unknown>>,
-  operation: (...args: Args) => A
+export const capture = <C extends Readonly<Record<string, unknown>>, Args extends ReadonlyArray<unknown>, A>(
+  captures: C,
+  operation: (this: Readonly<C>, ...args: Args) => A
 ): (...args: Args) => A => {
   if (typeof operation !== "function") throw new TypeError("Node.capture requires a function operation")
-  const metadata = (operation as CapturedFunction)[CapturedTypeId]
+  if (captures === null || typeof captures !== "object") throw captureError("$", "must be a record")
+  const metadata = capturedMetadata.get(operation)
   const source = metadata?.source ?? Function.prototype.toString.call(operation)
-  const outerCanonical = canonicalCapture(captures, "$", new WeakSet(), 0)
+  const clone = globalThis.structuredClone
+  const snapshots = new Map<object, CaptureSnapshot>()
+  snapshotCapture(captures, "$", new WeakSet(), 0, snapshots)
+  refuseExotic(snapshots, clone)
+  freezeCapture(snapshots)
+  const copy = snapshots.get(captures)!.copy
+  const outerCanonical = canonicalCapture(copy)
   const canonical = metadata === undefined
     ? outerCanonical
     : `["nested",${outerCanonical},${metadata.captures}]`
-  freezeCapture(captures, new WeakSet())
-  const wrapped = function(this: unknown, ...args: ReadonlyArray<unknown>): unknown {
-    return Reflect.apply(operation, this, args)
-  }
-  Object.defineProperty(wrapped, CapturedTypeId, {
-    configurable: false,
-    enumerable: false,
-    value: { source, captures: canonical } satisfies CapturedMetadata,
-    writable: false
-  })
-  return wrapped as (...args: Args) => A
+  return capturedOperation(operation, copy, { source, captures: canonical })
 }
 
 /**
@@ -321,7 +456,7 @@ const flows = new WeakMap<FlowCall, unknown>()
  */
 export const functionIdentity = (operation: unknown): OperationIdentity => {
   if (typeof operation !== "function") throw new TypeError("function identity requires a function")
-  const metadata = (operation as CapturedFunction)[CapturedTypeId]
+  const metadata = capturedMetadata.get(operation)
   const source = metadata?.source ?? Function.prototype.toString.call(operation)
   let ephemeral = ephemeralIdentities.get(operation)
   if (metadata === undefined && ephemeral === undefined) {

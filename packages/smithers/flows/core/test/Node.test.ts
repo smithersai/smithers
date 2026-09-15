@@ -1,5 +1,5 @@
 import { Option } from "effect"
-import { describe, expect, it } from "vitest"
+import { describe, expect, it, onTestFinished } from "vitest"
 import * as Annotations from "../src/Annotations.ts"
 import * as Effects from "../src/Effects.ts"
 import * as internal from "../src/internal/node.ts"
@@ -12,6 +12,16 @@ const declaration = Effects.make({
   mode: "hermetic",
   onConflict: "serialize"
 })
+
+// Hosts without structuredClone refuse object capture because they cannot
+// prove that an admitted ordinary-looking object is Proxy-free.
+const withoutExoticDetection = (): void => {
+  const clone = globalThis.structuredClone
+  Reflect.deleteProperty(globalThis, "structuredClone")
+  onTestFinished(() => {
+    globalThis.structuredClone = clone
+  })
+}
 
 describe("Node", () => {
   it("constructs succeed, all, and dynamic AST nodes", () => {
@@ -216,10 +226,12 @@ describe("Node", () => {
     expect(() => internal.functionIdentity(null)).toThrow(/requires a function/)
   })
 
-  it("includes declared closure captures in identity and freezes them", () => {
+  it("includes declared captures in identity and binds frozen copies", () => {
     const make = (offset: number) => {
       const captures = { offset, nested: { stable: true } }
-      const operation = Node.capture(captures, (value: number) => value + offset)
+      const operation = Node.capture(captures, function(value: number) {
+        return value + this.offset
+      })
       return { captures, operation, node: Node.map(Node.succeed(1), operation) }
     }
     const one = make(1)
@@ -235,9 +247,337 @@ describe("Node", () => {
     expect(identity(one.node)).not.toEqual(identity(two.node))
     expect(identity(one.node).algorithm).toBe("sha256-source-captures/v4")
     expect(Node.functionIdentity(one.operation)).toEqual(identity(one.node))
-    expect(Object.isFrozen(one.captures)).toBe(true)
-    expect(Object.isFrozen(one.captures.nested)).toBe(true)
+    expect(Object.isFrozen(one.captures)).toBe(false)
+    expect(Object.isFrozen(one.captures.nested)).toBe(false)
     expect(() => Node.capture({ value: Number.NaN }, () => undefined)).toThrow(/is not finite/)
+  })
+
+  it.each(
+    [
+      ["frozen outer with mutable inner", () => ({ config: Object.freeze({ nested: { value: 5 } }) })],
+      ["frozen root with object child", () => Object.freeze({ config: { value: 5 } })],
+      ["frozen array of records", () => ({ config: Object.freeze([{ value: 5 }]) })],
+      ["three-level frozen constant", () =>
+        Object.freeze({
+          config: Object.freeze({ nested: Object.freeze({ value: 5 }) })
+        })],
+      ["non-configurable non-writable member", () =>
+        Object.defineProperty({ mutable: true }, "config", {
+          value: { value: 5 },
+          enumerable: true,
+          configurable: false,
+          writable: false
+        })],
+      ["frozen null-prototype record", () =>
+        Object.freeze(Object.assign(Object.create(null), {
+          config: { value: 5 }
+        }))],
+      ["frozen-vs-plain twin identity parity", () => ({ config: Object.freeze({ nested: { value: 5 } }), tag: 1 })]
+    ] as const
+  )("captures caller-frozen data: %s", (_name, make) => {
+    const captures = make()
+    const plain = JSON.parse(JSON.stringify(captures)) as Record<string, unknown>
+    const prototype = Object.getPrototypeOf(captures)
+    const initiallyFrozen = Object.isFrozen(captures)
+    const originals: Array<readonly [object, boolean]> = []
+    const collect = (value: unknown): void => {
+      if (value === null || typeof value !== "object") return
+      originals.push([value, Object.isFrozen(value)])
+      for (const child of Object.values(value)) collect(child)
+    }
+    collect(captures)
+    const operation = function(this: Record<string, unknown>) {
+      return JSON.stringify(this)
+    }
+    const wrapped = Node.capture(captures, operation)
+
+    expect(JSON.parse(wrapped())).toEqual(plain)
+    expect(Node.functionIdentity(wrapped).algorithm).toBe("sha256-source-captures/v4")
+    expect(Node.functionIdentity(wrapped)).toEqual(Node.functionIdentity(Node.capture(plain, operation)))
+    expect(Node.functionIdentity(Node.capture(captures, operation))).toEqual(Node.functionIdentity(wrapped))
+    for (const [original, frozen] of originals) expect(Object.isFrozen(original)).toBe(frozen)
+    if (initiallyFrozen) expect(Object.getPrototypeOf(captures)).toBe(prototype)
+  })
+
+  it("captures an Immer-style auto-frozen tree with shared records and arrays", () => {
+    const item = Object.freeze({ value: 5 })
+    const config = Object.freeze({ selected: item, items: Object.freeze([item]) })
+    const state = Object.freeze({ config, version: 2 })
+    const operation = Node.capture({ state }, function() {
+      return this.state.config.items[0]!.value
+    })
+    const identity = Node.functionIdentity(operation)
+
+    expect(operation()).toBe(5)
+    expect(state.config).toBe(config)
+    expect(config.selected).toBe(config.items[0])
+    expect(Reflect.set(item, "value", 6)).toBe(false)
+    expect(operation()).toBe(5)
+    expect(Node.functionIdentity(operation)).toEqual(identity)
+    expect(Node.functionIdentity(Node.capture({ state }, operation)).algorithm).toBe("sha256-source-captures/v4")
+  })
+
+  it("still refuses frozen Proxies and frozen trees with accessors or custom prototypes", () => {
+    const exotic = new Proxy(Object.freeze({ child: Object.freeze({ value: 1 }) }), {})
+    expect(() => Node.capture(Object.freeze({ exotic }), () => exotic.child.value))
+      .toThrow(/capture at \$\.exotic cannot be structured-cloned/)
+    const custom = Object.freeze(Object.assign(Object.create({ inherited: 1 }), { value: 1 }))
+    expect(() => Node.capture(Object.freeze({ custom }), () => custom.value))
+      .toThrow(/capture at \$\.custom has a non-plain prototype/)
+    let reads = 0
+    const accessor = Object.freeze(Object.defineProperty({}, "value", { enumerable: true, get: () => ++reads }))
+    expect(() => Node.capture(Object.freeze({ accessor }), () => accessor))
+      .toThrow(/capture at \$\.accessor.value is an accessor/)
+    expect(reads).toBe(0)
+  })
+
+  it("refuses a Proxy after one descriptor snapshot and before locking anything", () => {
+    let reads = 0
+    const target = { x: 1 }
+    const captures = new Proxy(target, {
+      getOwnPropertyDescriptor(object, key) {
+        reads++
+        return Reflect.getOwnPropertyDescriptor(object, key)
+      }
+    })
+
+    expect(() => Node.capture(captures, () => captures.x)).toThrow(
+      /Node.capture: capture at \$ cannot be structured-cloned/
+    )
+    expect(reads).toBe(1)
+    expect(Object.isFrozen(target)).toBe(false)
+    expect(Object.getOwnPropertyDescriptor(target, "x")).toEqual({
+      value: 1,
+      enumerable: true,
+      configurable: true,
+      writable: true
+    })
+  })
+
+  it("names the exotic object itself, not the record that holds it", () => {
+    const nested = { deep: new Proxy({ value: 1 }, {}) }
+    const captures = { nested }
+
+    expect(() => Node.capture(captures, () => nested.deep.value)).toThrow(
+      new TypeError(
+        "Node.capture: capture at $.nested.deep cannot be structured-cloned (for example, a Proxy); " +
+          "captures must be finite, inert data"
+      )
+    )
+    expect(Object.isFrozen(captures)).toBe(false)
+  })
+
+  it("refuses the record and array Proxies whose own key order can still move", () => {
+    // Declared, read through a binding of the caller's own and left frozen,
+    // these two returned "1,2" and then "2,1" under one identity. A frozen
+    // ordinary object cannot do that, so refusing them at admission is what
+    // keeps identity and behavior together.
+    for (const target of [{ a: 1, b: 2 }, [1, 2]] as ReadonlyArray<object>) {
+      let reversed = false
+      const exotic = new Proxy(target, {
+        ownKeys: (object) => reversed ? Reflect.ownKeys(object).reverse() : Reflect.ownKeys(object)
+      })
+
+      expect(() => Node.capture({ exotic }, () => Object.values(exotic).join(","))).toThrow(
+        /Node.capture: capture at \$\.exotic cannot be structured-cloned/
+      )
+      reversed = true
+      expect(Object.isFrozen(target)).toBe(false)
+    }
+  })
+
+  it("refuses mutable custom array prototypes before capturing their behavior", () => {
+    const array = [1] as Array<number> & { x: number }
+    const prototype = { x: 1 }
+    Object.setPrototypeOf(array, prototype)
+    const operation = () => array.x
+    expect(operation()).toBe(1)
+    expect(() => Node.capture({ array }, operation)).toThrow(/capture at \$\.array has a non-plain prototype/)
+    prototype.x = 2
+    expect(operation()).toBe(2)
+    expect(Object.isFrozen(array)).toBe(false)
+  })
+
+  it("refuses inherited array accessors without evaluating them", () => {
+    let current = 1
+    let reads = 0
+    class MutableArray extends Array<number> {
+      get x() {
+        reads++
+        return current
+      }
+    }
+    const array = new MutableArray()
+    array.push(1)
+    const operation = () => array.x
+    expect(() => Node.capture({ array }, operation)).toThrow(/capture at \$\.array has a non-plain prototype/)
+    expect(reads).toBe(0)
+    expect(operation()).toBe(1)
+    current = 2
+    expect(operation()).toBe(2)
+    expect(Object.isFrozen(array)).toBe(false)
+  })
+
+  it("reads aliased descriptors once and array length without invoking get traps", () => {
+    let reads = 0
+    const shared = new Proxy({ value: 1 }, {
+      getOwnPropertyDescriptor(target, key) {
+        reads++
+        return Reflect.getOwnPropertyDescriptor(target, key)
+      }
+    })
+    let lengthReads = 0
+    const values = new Proxy([shared], {
+      get(target, key, receiver) {
+        if (key === "length") lengthReads++
+        return Reflect.get(target, key, receiver)
+      }
+    })
+    expect(() => Node.capture({ left: shared, right: shared, values }, () => undefined))
+      .toThrow(/cannot be structured-cloned/)
+    expect(reads).toBe(1)
+    expect(lengthReads).toBe(0)
+  })
+
+  it("rejects invalid array lengths supplied by a Proxy descriptor", () => {
+    for (const length of [Number.NaN, -1, 0x100000000]) {
+      const array = new Proxy([], {
+        getOwnPropertyDescriptor(target, key) {
+          return { ...Reflect.getOwnPropertyDescriptor(target, key), value: length }
+        }
+      })
+      expect(() => Node.capture({ array }, () => array.length)).toThrow(/has an invalid array length/)
+    }
+  })
+
+  it("copies enumerable prototype-like members as plain own data", () => {
+    const captures = Object.create(null)
+    const nested = { value: 1 }
+    Object.defineProperty(captures, "__proto__", { value: nested, enumerable: true, configurable: true })
+    const operation = Node.capture(captures, function() {
+      return this
+    })
+    const copy = operation()
+    expect(copy.__proto__.value).toBe(1)
+    expect(copy).not.toBe(captures)
+    expect(Object.getPrototypeOf(copy)).toBe(Object.prototype)
+    expect(Object.getPrototypeOf(captures)).toBe(null)
+    expect(Object.isFrozen(copy)).toBe(true)
+    expect(copy.__proto__).not.toBe(nested)
+    expect(Object.isFrozen(copy.__proto__)).toBe(true)
+    expect(Object.getOwnPropertyDescriptor(copy, "__proto__")?.enumerable).toBe(true)
+  })
+
+  it("refuses non-enumerable capture data and accessors without evaluating getters", () => {
+    let reads = 0
+    const accessor = Object.defineProperty({}, "hidden", { get: () => ++reads })
+    expect(() => Node.capture(accessor, () => undefined)).toThrow(/\$\.hidden is an accessor/)
+    expect(reads).toBe(0)
+    const hidden = Object.defineProperty({}, "hidden", { value: 1 })
+    expect(() => Node.capture(hidden, () => undefined)).toThrow(/\$\.hidden is non-enumerable/)
+    const values = Object.defineProperty([1], "0", { enumerable: false })
+    expect(() => Node.capture({ values }, () => undefined)).toThrow(/\$\.values\[0\] is non-enumerable/)
+  })
+
+  it("preserves shared references in frozen copies across repeated captures", () => {
+    const original = Object.assign(Object.create(null), { value: 1 })
+    const values = [original]
+    const captures = { left: original, right: original, values }
+    const operation = function(this: typeof captures) {
+      return this
+    }
+    const wrapped = Node.capture(captures, operation)
+    const copy = wrapped()
+    expect(copy.left).not.toBe(original)
+    expect(copy.left).toBe(copy.right)
+    expect(copy.values).not.toBe(values)
+    expect(copy.values[0]).toBe(copy.left)
+    expect(Object.getPrototypeOf(copy.left)).toBe(Object.prototype)
+    expect(Object.getPrototypeOf(copy.values)).toBe(Array.prototype)
+    expect(Object.isFrozen(copy.values)).toBe(true)
+    expect(Object.isFrozen(copy.left)).toBe(true)
+    const repeated = Node.capture(copy, operation)
+    expect(repeated()).toEqual(copy)
+    expect(Node.functionIdentity(repeated)).toEqual(Node.functionIdentity(wrapped))
+  })
+
+  it("refuses the earlier mutation, locking and ownKeys Proxy reproducers", () => {
+    const handlers: Array<ProxyHandler<{ value: number }>> = [
+      {
+        isExtensible: () => {
+          throw new Error("cannot inspect")
+        }
+      },
+      { setPrototypeOf: () => false },
+      { preventExtensions: () => false },
+      { defineProperty: () => true },
+      {
+        preventExtensions(target) {
+          Object.defineProperty(target, "extra", { value: 2 })
+          return Reflect.preventExtensions(target)
+        }
+      },
+      {
+        preventExtensions(target) {
+          Object.setPrototypeOf(target, { mutable: true })
+          return Reflect.preventExtensions(target)
+        }
+      },
+      {
+        preventExtensions(target) {
+          Object.defineProperty(target, "value", { get: () => 4, configurable: true })
+          return Reflect.preventExtensions(target)
+        }
+      }
+    ]
+    for (const handler of handlers) {
+      const target = { value: 1 }
+      const nested = new Proxy(target, handler)
+      expect(() => Node.capture({ nested }, () => nested.value)).toThrow(
+        /capture at \$\.nested cannot be structured-cloned/
+      )
+      expect(Object.getOwnPropertyDescriptor(target, "value")?.value).toBe(1)
+      expect(Object.isExtensible(target)).toBe(true)
+    }
+    let locking = false
+    const nested = new Proxy({ first: 1, second: 2 }, {
+      ownKeys: (object) => locking ? Reflect.ownKeys(object).reverse() : Reflect.ownKeys(object),
+      preventExtensions(object) {
+        locking = true
+        return Reflect.preventExtensions(object)
+      }
+    })
+    expect(() => Node.capture({ nested }, () => Object.keys(nested).join(",")))
+      .toThrow(/capture at \$\.nested cannot be structured-cloned/)
+    expect(locking).toBe(false)
+  })
+
+  it("refuses all object capture without structuredClone, including closure-alias Proxies", () => {
+    withoutExoticDetection()
+    expect(() => Node.capture({ plain: 1 }, () => undefined)).toThrow(/capture at \$ requires structuredClone/)
+    for (const target of [{ a: 1, b: 2 }, [1, 2]] as ReadonlyArray<object>) {
+      let reversed = false
+      const alias = new Proxy(target, {
+        ownKeys: (object) => reversed ? Reflect.ownKeys(object).reverse() : Reflect.ownKeys(object)
+      })
+      expect(() => Node.capture({ alias }, () => Object.values(alias).join(",")))
+        .toThrow(/capture at \$ requires structuredClone/)
+      reversed = true
+      expect(Object.isFrozen(target)).toBe(false)
+    }
+  })
+
+  it("leaves state the caller never declared to the caller's contract", () => {
+    // JavaScript cannot rebind the free variables of an existing function, so
+    // identity can only cover what the caller declares. Undeclared state is
+    // outside capture's own-data contract even on hosts with structuredClone.
+    let counter = 0
+    const undeclared = Node.capture({}, () => ++counter)
+    const identity = Node.functionIdentity(undeclared)
+
+    expect(undeclared()).toBe(1)
+    expect(undeclared()).toBe(2)
+    expect(Node.functionIdentity(undeclared)).toEqual(identity)
   })
 
   it("composes nested capture identity without erasing the inner operation", () => {
@@ -271,6 +611,10 @@ describe("Node", () => {
   it("rejects a malformed capture operation with the package-shaped message", () => {
     expect(() => Node.capture({}, "nope" as unknown as () => unknown))
       .toThrow(new TypeError("Node.capture requires a function operation"))
+    for (const value of [null, 1]) {
+      expect(() => Node.capture(value as unknown as Record<string, unknown>, () => undefined))
+        .toThrow(/capture at \$ must be a record/)
+    }
   })
 
   it("canonicalizes every supported capture shape and rejects ambiguous data", () => {
@@ -293,7 +637,7 @@ describe("Node", () => {
     const accessor = Object.defineProperty({}, "value", { enumerable: true, get: () => 1 })
     expect(() => identity(accessor)).toThrow(/is an accessor/)
     expect(() => identity({ [Symbol("key")]: 1 })).toThrow(/has symbol key/)
-    expect(() => identity({ date: new Date(0) })).toThrow(/non-plain prototype/)
+    expect(() => identity({ date: new Date(0) })).toThrow(/built-in internal slots/)
     expect(() => identity({ values: Array(1) })).toThrow(/is an array hole/)
     for (const value of [undefined, 1n, Symbol("value"), operation]) {
       expect(() => identity({ value })).toThrow(/has unsupported type/)
