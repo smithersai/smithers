@@ -1,3 +1,4 @@
+import { flowAction } from "../flows/FlowAction"
 /*
  * The /theme picker card: one swatch per palette, each tile painted in its own
  * palette's colors. Every color pair rides CSS light-dark(), which resolves
@@ -121,10 +122,9 @@ export const ThemePickerCardBody = ({
           type="button"
           role="option"
           aria-selected={selected}
-          data-flow="appearance.theme"
           aria-label={`Switch to the ${swatch.label} color theme`}
           style={swatchStyle(swatch, selected)}
-          onClick={() => onRunCommand("appearance.theme", swatch.key)}
+          {...flowAction(onRunCommand, "appearance.theme", swatch.key)}
         >
           <span style={{ display: "flex", gap: "4px" }} aria-hidden="true">
             <span style={dotStyle(swatch.light.brand, swatch.dark.brand)} />

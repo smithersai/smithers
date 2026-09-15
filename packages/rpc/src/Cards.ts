@@ -186,6 +186,10 @@ export const FORM_OPTION_PROVIDERS = [
 ] as const
 
 const cardBaseShape = {
+  /** A prepared view keeps its address while its data is loading. */
+  viewKey: z.string().optional(),
+  viewRepo: z.string().optional(),
+  loading: z.boolean().optional(),
   navigation: z.object({ index: z.number().int().nonnegative(), length: z.number().int().positive() }).optional(),
   id: z.string(),
   title: z.string(),

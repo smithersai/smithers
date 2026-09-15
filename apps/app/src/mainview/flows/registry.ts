@@ -191,6 +191,8 @@ export interface CatalogItem extends FlowMetadata {
  * what the catalog needs in order to render and rank it.
  */
 export interface FlowEntry<R = never> {
+  /** Data preparation only; never executes the flow or publishes a view. */
+  readonly prepare?: (payload: Record<string, unknown>) => Promise<void>
   /** Copied from the same declaration; avoids projecting schemas for a name lookup. */
   readonly declaredName?: string
   readonly binding: FlowBinding.Binding<R>

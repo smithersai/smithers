@@ -1,6 +1,9 @@
+import { ViewSkeleton } from "../ViewSkeleton"
+import { MarkdownEditorSurface } from "../ViewModules"
+import { flowAction } from "../flows/FlowAction"
 import { Badge, Button, FileTree } from "@smthrs/ui"
 import { ExternalLink, GitPullRequest, HardDrive, Server } from "lucide-react"
-import { lazy, Suspense, useId, useContext } from "react"
+import { Suspense, useId, useContext } from "react"
 import { parseOutline } from "@smthrs/ui/vault"
 import type { MarkdownEditorHandle } from "@smthrs/ui/adapters/markdown-editor"
 import type { Card, WorldDocument } from "../state/AppState"
@@ -10,9 +13,7 @@ import { ControllerContext } from "../ControllerContext"
 import { activeRepositoryId } from "../state/RepoContext"
 import { settledPill } from "./CardFamily"
 
-const MarkdownEditorSurface = lazy(() =>
-  import("../MarkdownEditorSurface").then((module) => ({ default: module.MarkdownEditorSurface }))
-)
+
 
 /*
  * The connect surface as an embedded card (§2c″ — the agent's connect form):
@@ -72,7 +73,7 @@ export const ConnectCardBody = ({
         <strong>Smithers Cloud repository</strong>
         <span>Import a GitHub repository into hosted workspace storage.</span>
       </span>
-      <Button size="sm" variant="outline" data-flow="repos.import" onClick={() => onRunCommand("repos.import")}>
+      <Button size="sm" variant="outline"  {...flowAction(onRunCommand, "repos.import")}>
         Import
       </Button>
     </li>
@@ -104,8 +105,8 @@ export const WorldCardBody = ({
   const controller = useContext(ControllerContext)
   if (card.payload.documents.length === 0) {
     return <div className="world-card-empty"><p>{card.payload.index && card.payload.index.page > 1 ? "No Wiki pages in this view." : "No Wiki yet."}</p>{card.payload.index !== undefined && card.payload.index.page > 1 ?
-      <Button size="sm" data-flow="wiki.cloud" onClick={() => onRunCommand("wiki.cloud", `${card.payload.index!.repo} ${card.payload.index!.page - 1}`)}>Previous page</Button> :
-      <Button size="sm" data-flow="wiki.create" onClick={() => onRunCommand("wiki.create", card.payload.index?.repo ?? (controller ? activeRepositoryId(controller.store) ?? undefined : undefined))}>Create Wiki</Button>}</div>
+      <Button size="sm"  {...flowAction(onRunCommand, "wiki.cloud", `${card.payload.index!.repo} ${card.payload.index!.page - 1}`)}>Previous page</Button> :
+      <Button size="sm"  {...flowAction(onRunCommand, "wiki.create", card.payload.index?.repo ?? (controller ? activeRepositoryId(controller.store) ?? undefined : undefined))}>Create Wiki</Button>}</div>
   }
   const documents = card.payload.documents.map((entry) => ({ entry, document: worldDocuments.find((document) =>
     entry.id === undefined ? document.path === entry.path : document.id === entry.id) }))
@@ -127,10 +128,8 @@ export const WorldCardBody = ({
           }}
         />
         {card.payload.index === undefined ? null : <div className="wiki-card-pages">
-          {card.payload.index.page <= 1 ? null : <Button size="sm" variant="ghost" data-flow="wiki.cloud" onClick={() =>
-            onRunCommand("wiki.cloud", `${card.payload.index!.repo} ${card.payload.index!.page - 1}`)}>Previous page</Button>}
-          {card.payload.index.hasNext ? <Button size="sm" variant="ghost" data-flow="wiki.cloud" onClick={() =>
-            onRunCommand("wiki.cloud", `${card.payload.index!.repo} ${card.payload.index!.page + 1}`)}>Next page</Button> : null}
+          {card.payload.index.page <= 1 ? null : <Button size="sm" variant="ghost"  {...flowAction(onRunCommand, "wiki.cloud", `${card.payload.index!.repo} ${card.payload.index!.page - 1}`)}>Previous page</Button>}
+          {card.payload.index.hasNext ? <Button size="sm" variant="ghost"  {...flowAction(onRunCommand, "wiki.cloud", `${card.payload.index!.repo} ${card.payload.index!.page + 1}`)}>Next page</Button> : null}
         </div>}
       </aside>
       <div className="world-card-doc">
@@ -138,21 +137,21 @@ export const WorldCardBody = ({
           <span className="world-card-path">{document?.path ?? entry.path}</span>
           <div className="wiki-card-views" aria-label="Wiki view">
             {(["outline", "document"] as const).map((mode) => <Button key={mode} size="sm" variant="ghost"
-              aria-pressed={view === mode} data-flow="wiki.card.view"
-              onClick={() => onRunCommand("wiki.card.view", `${card.id} ${mode}`)}>
+              aria-pressed={view === mode} 
+              {...flowAction(onRunCommand, "wiki.card.view", `${card.id} ${mode}`)}>
               {mode === "outline" ? "Outline" : "Document"}
             </Button>)}
           </div>
         </div>
         {document === undefined ? entry.cloud === undefined ? <p className="world-card-empty">This note is no longer available in {WIKI_DISPLAY_NAME}.</p> :
           <div className="wiki-card-outline"><h3>{entry.title}</h3><p>Page revision {entry.cloud.revision}</p>
-            <Button size="sm" data-flow="wiki.cloud.open" onClick={() => onRunCommand("wiki.cloud.open", `${entry.cloud!.slug} ${entry.cloud!.repo}`)}>Open page</Button>
+            <Button size="sm"  {...flowAction(onRunCommand, "wiki.cloud.open", `${entry.cloud!.slug} ${entry.cloud!.repo}`)}>Open page</Button>
           </div> : <>
           {cloud === undefined ? null : <div className="wiki-card-source">
             <span>Page revision {cloud.remoteRevision} · {cloud.remoteAuthor}</span>
             <span>{cloud.pending.length === 0 ? "No pending edits" : `${cloud.pending.length} pending edit${cloud.pending.length === 1 ? "" : "s"}`}</span>
-            {cloud.phase === "deleted" ? null : <Button size="sm" variant="ghost" data-flow="wiki.sync"
-              onClick={() => onRunCommand("wiki.sync", document.id)}>Refresh</Button>}
+            {cloud.phase === "deleted" ? null : <Button size="sm" variant="ghost" 
+              {...flowAction(onRunCommand, "wiki.sync", document.id)}>Refresh</Button>}
             {cloud.phase === "cached" ? <p>This is a saved copy. Refresh to resume collaboration.</p> : null}
             {cloud.error === null ? null : <p role="status">{cloud.error}</p>}
           </div>}
@@ -164,7 +163,7 @@ export const WorldCardBody = ({
               {cloud === undefined ? <p>Saved by {document.updatedBy} at app revision {document.revision}.</p> :
                 <p>Page {cloud.pageId} in {cloud.repo}. Recorded at {cloud.remoteUpdatedAt}.</p>}
             </details>
-          </div> : <Suspense fallback={<p className="smithers-card-note">Loading editor…</p>}>
+          </div> : <Suspense fallback={<ViewSkeleton />}>
             <MarkdownEditorSurface
               value={document.body}
               resetKey={document.id}

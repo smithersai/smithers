@@ -1,8 +1,11 @@
+import { ViewSkeleton } from "./ViewSkeleton"
+import { MarkdownEditorSurface, KnowledgeGraphSurface } from "./ViewModules"
+import { flowAction } from "./flows/FlowAction"
 import { Badge, Button, EmptyState, FileTree } from "@smthrs/ui"
 import { BacklinksPanel, OutlineView } from "@smthrs/ui/vault"
 import { useLiveQuery } from "@tanstack/react-db"
 import { BookOpen, Factory, Plus, Trash2, Waypoints } from "lucide-react"
-import { lazy, Suspense, useMemo } from "react"
+import { Suspense, useMemo } from "react"
 import { activeRepositoryId } from "./state/RepoContext"
 import { useController } from "./ControllerContext"
 import { stampFlows } from "./FlowStamp"
@@ -11,13 +14,9 @@ import type { WorldDocument } from "./state/AppState"
 import { ConfirmDialog, SurfaceHeader } from "./SurfaceChrome"
 import { linkGraphOf, linksOf, neighbourhoodOf } from "./wiki/VaultAdapter"
 
-const MarkdownEditorSurface = lazy(() =>
-  import("./MarkdownEditorSurface").then((module) => ({ default: module.MarkdownEditorSurface }))
-)
+
 /* The Wiki pane's graph mode renders over d3-force; it loads on first use like the editor. */
-const KnowledgeGraphSurface = lazy(() =>
-  import("./KnowledgeGraphSurface").then((module) => ({ default: module.KnowledgeGraphSurface }))
-)
+
 
 /*
  * The Wiki pane beside the chat: the notes, the open note's editor and link
@@ -79,8 +78,7 @@ export function WorldSurface({ documents }: { readonly documents: ReadonlyArray<
         <Button
           variant="ghost"
           size="sm"
-          data-flow="wiki.new-note"
-          onClick={() => controller.runCommand("wiki.new-note")}
+          {...flowAction(controller.runCommand, "wiki.new-note")}
         >
           <Plus size={14} aria-hidden="true" />
           New note
@@ -107,9 +105,8 @@ export function WorldSurface({ documents }: { readonly documents: ReadonlyArray<
             <Button
               variant="ghost"
               size="sm"
-              data-flow="factory.show"
               data-testid="wiki-factory"
-              onClick={() => controller.runCommand("factory.show")}
+              {...flowAction(controller.runCommand, "factory.show")}
             >
               <Factory size={14} aria-hidden="true" />
               Factory
@@ -147,7 +144,7 @@ export function WorldSurface({ documents }: { readonly documents: ReadonlyArray<
                   {graphPath === null ? WIKI_GRAPH_ALL_SCOPE : `Around ${graphPath}`}
                 </span>
               </div>
-              <Suspense fallback={<p className="smithers-card-note">Loading graph…</p>}>
+              <Suspense fallback={<ViewSkeleton />}>
                 <KnowledgeGraphSurface
                   notes={graph.notes}
                   links={graph.links}
@@ -175,10 +172,9 @@ export function WorldSurface({ documents }: { readonly documents: ReadonlyArray<
                       variant="ghost"
                       size="icon"
                       className="world-delete-btn"
-                      data-flow="wiki.delete"
                       aria-label={`Delete ${selected.title}`}
                       title="Delete note"
-                      onClick={() => controller.runCommand("wiki.delete", selected.id)}
+                      {...flowAction(controller.runCommand, "wiki.delete", selected.id)}
                     >
                       <Trash2 size={13} />
                     </Button>
@@ -186,7 +182,7 @@ export function WorldSurface({ documents }: { readonly documents: ReadonlyArray<
                 </div>
                 {/* Layout only: the editor releases Tab itself (§21.2, `escapeTabOrder`). */}
                 <div className="world-editor-region">
-                  <Suspense fallback={<p className="smithers-card-note">Loading editor…</p>}>
+                  <Suspense fallback={<ViewSkeleton />}>
                     <MarkdownEditorSurface
                       value={selected.body}
                       resetKey={selected.id}
@@ -203,7 +199,7 @@ export function WorldSurface({ documents }: { readonly documents: ReadonlyArray<
                 icon={<BookOpen size={20} />}
                 title={`No ${WIKI_DISPLAY_NAME} yet`}
                 description="Smithers will keep what it learns here."
-                action={<Button data-flow="wiki.create" onClick={() => controller.runCommand("wiki.create", activeRepositoryId(controller.store) ?? undefined)}>Create Wiki</Button>}
+                action={<Button  {...flowAction(controller.runCommand, "wiki.create", activeRepositoryId(controller.store) ?? undefined)}>Create Wiki</Button>}
               />
             )}
         </main>}

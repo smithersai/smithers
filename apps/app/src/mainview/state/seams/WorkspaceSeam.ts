@@ -1,3 +1,4 @@
+import { preparedView, type ViewAction } from "../PreparedView"
 import { refuseCloudSignIn, SIGN_OUT_REFUSAL } from "./CloudSignIn"
 import { actorSharedState } from "../ActorBindings"
 /*
@@ -172,7 +173,7 @@ export interface WorkspaceSeam {
   /** `workspace.delete <id> <name>`: the workspace's name typed back is the gate — a mismatch refuses, whoever invoked. */
   readonly deleteWorkspace: (workspaceId: string, confirmName: string) => Promise<string | void | { readonly value: string }>
   /** The card's body tab; hidden, card-button scoped. */
-  readonly setFacet: (workspaceId: string, facet: WorkspaceFacet) => Promise<string | void>
+  readonly setFacet: ViewAction<[workspaceId: string, facet: WorkspaceFacet]>
   /** `workspace.files [path] [workspaceId]`: the Files facet at one directory (`""` is the root). */
   readonly listFiles: (path?: string, workspaceId?: string) => Promise<string | void | { readonly value: string }>
   /** `workspace.file <path> [workspaceId]`: read one file out of the workspace and render the file card. */
@@ -859,7 +860,7 @@ export const createWorkspaceSeam = (ctx: SeamContext, deps: WorkspaceSeamDeps = 
    * override wins; otherwise the existing card's value stands, so a status
    * poll never blanks the snapshots the open loaded.
    */
-  const renderWorkspace = (workspace: CloudWorkspaceInput, overrides: Partial<CardAux> = {}): void => {
+  const workspaceCard = (workspace: CloudWorkspaceInput, overrides: Partial<CardAux> = {}): Card => {
     const id = cardIdOf(workspace.id)
     const existing = ctx.store.collections.cards.get(id)
     const prior = existing?.kind === "workspace" ? existing.payload : undefined
@@ -917,7 +918,10 @@ export const createWorkspaceSeam = (ctx: SeamContext, deps: WorkspaceSeamDeps = 
       ordinal: existing?.ordinal ?? ctx.nextOrdinal(),
       payload
     }
-    ctx.dispatch({ type: "card.upsert", actor: ctx.actor(), card })
+    return card
+  }
+  const renderWorkspace = (workspace: CloudWorkspaceInput, overrides: Partial<CardAux> = {}): void => {
+    ctx.dispatch({ type: "card.upsert", actor: ctx.actor(), card: workspaceCard(workspace, overrides) })
   }
 
   /*
@@ -1503,45 +1507,55 @@ export const createWorkspaceSeam = (ctx: SeamContext, deps: WorkspaceSeamDeps = 
     })
   }
 
-  const setFacet: WorkspaceSeam["setFacet"] = async (workspaceId, facet) => {
+  const setFacet = preparedView(ctx, (workspaceId: string, facet: WorkspaceFacet) => {
     const row = ctx.store.collections.cloudWorkspaces.get(workspaceId)
     if (row === undefined) return `Workspace ${workspaceId} is not loaded — /workspace.list refreshes the inventory`
-    /*
-     * Leaving the Desktop facet unmounts the iframe, so the credential it was
-     * showing has no consumer left: it is dropped here rather than lingering
-     * in memory behind a facet nobody is looking at. Selecting the Desktop
-     * facet does NOT mint — minting is `workspace.desktop`, a confirmed act,
-     * because it hands out a live machine's password.
-     */
-    if (facet !== "desktop") {
-      dropDesktopStream(workspaceId)
-      /* Leaving the facet supersedes a pending desktop_not_ready retry: nobody is looking at it. */
-      desktopMintEpochs.set(workspaceId, (desktopMintEpochs.get(workspaceId) ?? 0) + 1)
+    const existing = ctx.store.collections.cards.get(cardIdOf(row.id))
+    const path = existing?.kind === "workspace" ? existing.payload.filesPath ?? "" : ""
+    const placeholder = workspaceCard(row, { facet })
+    return { id: placeholder.id, title: placeholder.title, pane: workspaceId, placeholder,
+      key: JSON.stringify([placeholder.id, facet, facet === "files" ? path : undefined]),
+      project: card => {
+        if (card.kind !== "workspace") return card
+        const p = card.payload
+        // Preserve current lifecycle and desktop credentials; only the requested facet was prefetched.
+        return workspaceCard(row, { facet, ...(facet === "files" ? { files: p.files, filesPath: p.filesPath }
+          : facet === "services" ? { services: p.services } : facet === "egress" ? { egress: p.egress, egressCursor: p.egressCursor }
+          : facet === "snapshots" ? { snapshots: p.snapshots } : facet === "terminal" ? { sessions: p.sessions.map(session => ({ ...session, kind: session.kind ?? null, language: session.language ?? null })) } : {}) })
+      },
+      before: async () => {
+        if (facet !== "desktop") {
+          dropDesktopStream(workspaceId)
+          desktopMintEpochs.set(workspaceId, (desktopMintEpochs.get(workspaceId) ?? 0) + 1)
+        }
+      },
+      read: async () => {
+        let extra: Partial<CardAux> = { facet }
+        if (facet === "snapshots") {
+          const snapshots = await loadSnapshots(row.repoId)
+          if (snapshots === null) return "Workspace snapshots couldn't be loaded. Try again."
+          extra = { facet, snapshots }
+        } else if (facet === "terminal") {
+          const sessions = await loadSessions(row.repoId, row.id)
+          if (sessions === null) return "Workspace sessions couldn't be loaded. Try again."
+          extra = { facet, sessions }
+        } else if (facet === "files") {
+          const files = await loadFiles(row.repoId, row.id, path)
+          if ("error" in files) return files.error
+          extra = { facet, files, filesPath: path }
+        } else if (facet === "services") {
+          const services = await loadServices(row.repoId, row.id)
+          if ("error" in services) return services.error
+          extra = { facet, services }
+        } else if (facet === "egress") {
+          const page = await loadEgressPage(ctx, workspaceEgressPath(row.repoId, row.id))
+          if ("error" in page) return page.error
+          extra = { facet, egress: page.rows, egressCursor: page.nextCursor }
+        }
+        return { card: workspaceCard(row, extra) }
+      },
     }
-    if (facet === "snapshots") {
-      const snapshots = await loadSnapshots(row.repoId)
-      renderWorkspace(row, { facet, ...(snapshots === null ? {} : { snapshots }) })
-      return
-    }
-    if (facet === "terminal") {
-      const sessions = await loadSessions(row.repoId, row.id)
-      renderWorkspace(row, { facet, ...(sessions === null ? {} : { sessions }) })
-      return
-    }
-    /*
-     * The three facets plue#449 and the egress audit answer: opening one
-     * reads its route. The card renders what the route said, or the server's
-     * refusal verbatim — never an empty facet standing in for a failed read.
-     */
-    if (facet === "files") {
-      const card = ctx.store.collections.cards.get(cardIdOf(row.id))
-      const path = card?.kind === "workspace" ? card.payload.filesPath ?? "" : ""
-      return renderFiles(row, path, facet)
-    }
-    if (facet === "services") return renderServices(row, facet)
-    if (facet === "egress") return renderEgress(row, undefined, facet)
-    renderWorkspace(row, { facet })
-  }
+  })
 
   const listFiles: WorkspaceSeam["listFiles"] = async (path, workspaceId) => {
     const refusal = gate()

@@ -1,3 +1,4 @@
+import { flowAction } from "../flows/FlowAction"
 /*
  * The account card (factory mock 21, design session §6c): read-only seam
  * facts about the signed-in person, and the Sign out door. The GitHub login
@@ -71,7 +72,7 @@ export const AccountCardBody = ({
         </table>
       </>
     )}
-    <Button size="sm" variant="outline" data-flow="auth.sign-out" onClick={() => onRunCommand("auth.sign-out")}>
+    <Button size="sm" variant="outline"  {...flowAction(onRunCommand, "auth.sign-out")}>
       Sign out
     </Button>
   </div>

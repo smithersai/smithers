@@ -1,3 +1,4 @@
+import { preparedView, type ViewAction } from "../PreparedView"
 import { WORKFLOW_PROVISION_PATH } from "@smthrs/rpc/AgentApiRoutes"
 import type { Card } from "../AppState"
 import { sameApproval } from "../ApprovalReference"
@@ -25,7 +26,7 @@ export interface LaunchRefusal {
 
 export interface WorkflowController {
   readonly createWorkflow: (description: string, repo?: string) => Promise<string | void | { readonly value: string }>
-  readonly listWorkspaceWorkflows: (repo?: string, sourceCard?: string) => Promise<string | void | { readonly value: string }>
+  readonly listWorkspaceWorkflows: ViewAction<[repo?: string, sourceCard?: string]>
   /** The Flows pane: the surface switch, and the same listing that fills it. */
   readonly showFlows: () => Promise<string | void | { readonly value: string }>
   readonly runWorkflow: (name: string, repo?: string, input?: Record<string, unknown>, sourceCard?: string) => Promise<string | void | { readonly value: string }>
@@ -432,20 +433,19 @@ export const createWorkflowController = (
     return "error" in binding ? binding : { repo: target.repo, binding }
   }
 
-  const listWorkspaceWorkflows = async (repoArg?: string, sourceCard?: string): Promise<string | void | { readonly value: string }> => {
+  const listWorkspaceWorkflows = preparedView({ ...ctx, dispatch: store.dispatch, actor: () => ctx.commandActor, nextOrdinal: nextTranscriptOrdinal }, (repoArg?: string, sourceCard?: string) => {
     const guard = workflowIdentityGuard()
     if (guard !== undefined) return guard
     const target = workflowScope(repoArg, sourceCard)
     if ("error" in target) return target.error
     const { repo, binding } = target
-    const provisioned = await provisionWorkspace(repo, binding)
-    if (provisioned !== true) return provisioned
+    const id = binding.workspaceId === undefined ? `workflow-list-${repo}`
+      : `workflow-list@${encodeURIComponent(repo)}@${encodeURIComponent(binding.workspaceId)}`
+    return { id, title: `Flows: ${repo}`, before: () => provisionWorkspace(repo, binding), read: async () => {
     const list = await gateway.listFlows(repo, binding)
     if (list.status !== "ok") return list.message
     const workflows = list.value.map((flow) => ({ key: flow.flowId, description: flow.description,
       ...(flow.inputSchema === undefined ? {} : { inputSchema: flow.inputSchema }) }))
-    const id = binding.workspaceId === undefined ? `workflow-list-${repo}`
-      : `workflow-list@${encodeURIComponent(repo)}@${encodeURIComponent(binding.workspaceId)}`
     const existing = store.collections.cards.get(id)
     const card: Card = {
       id,
@@ -457,13 +457,13 @@ export const createWorkflowController = (
       payload: { repo, workflows, gatewayBindingVersion: 1,
         ...(binding.workspaceId === undefined ? {} : { workspaceId: binding.workspaceId }) }
     }
-    store.dispatch({ type: "card.upsert", actor: ctx.commandActor, card })
-    return {
+    return { card,
       value: workflows.length === 0
         ? `No flows on ${repo} yet.`
         : `Flows on ${repo}: ${workflows.map((workflow) => workflow.key).join(", ")}.`
     }
-  }
+    } }
+  })
 
   /*
    * Ask 5 (will, 2026-09-02): "where it says connect chat and world an option

@@ -1,3 +1,4 @@
+import { flowAction } from "../flows/FlowAction"
 import { useLiveQuery } from "@tanstack/react-db"
 import { StatusDetails } from "../StatusDetails"
 import { BookOpen, ChevronRight, Download, FolderGit2, History, KeyRound, Moon, Pencil, Plus, RotateCcw, Sun, Timer, UserRound, Volume2, VolumeX, Workflow, X } from "lucide-react"
@@ -186,9 +187,8 @@ export function ChromeBar({ identityInHeader = false }: { readonly identityInHea
         aria-label={tab.title}
         aria-describedby={tab.kind === "harness" || tab.kind === "terminal" && tab.workspaceId === undefined ? `status-${tab.id}` : undefined}
         title={tab.title}
-        data-flow="tab.select"
         data-tab-id={tab.id}
-        onClick={() => controller.runCommand("tab.select", tab.id)}
+        {...flowAction(controller.runCommand, "tab.select", tab.id)}
       >
         <span className="tab-title">{tab.title}</span>
         {(tab.kind === "harness" || tab.kind === "terminal" && tab.workspaceId === undefined) &&
@@ -199,9 +199,8 @@ export function ChromeBar({ identityInHeader = false }: { readonly identityInHea
         className="tab-close"
         aria-label={`Close ${tab.title}`}
         title="Close session"
-        data-flow="tab.close"
         data-testid={`tab-close-${tab.id}`}
-        onClick={() => controller.runCommand("tab.close", tab.id)}
+        {...flowAction(controller.runCommand, "tab.close", tab.id)}
       >
         <X size={12} aria-hidden="true" />
       </button>
@@ -221,9 +220,8 @@ export function ChromeBar({ identityInHeader = false }: { readonly identityInHea
           className="repo-caret"
           aria-expanded={root?.expanded === true}
           aria-label={root?.expanded === true ? `Collapse ${copy.label}` : `Expand ${copy.label}`}
-          data-flow="repo.tree"
           data-testid={`repo-tree-toggle-${copy.id}`}
-          onClick={() => controller.runCommand("repo.tree", copy.id)}
+          {...flowAction(controller.runCommand, "repo.tree", copy.id)}
         >
           <ChevronRight size={12} aria-hidden="true" />
         </button>
@@ -332,10 +330,9 @@ export function ChromeBar({ identityInHeader = false }: { readonly identityInHea
                   role="tab"
                   className="workspace-name"
                   aria-selected={activeTabId === MAIN_TAB_ID}
-                  data-flow="tab.select"
                   data-tab-id={MAIN_TAB_ID}
                   data-testid="workspace-name"
-                  onClick={() => controller.runCommand("tab.select", MAIN_TAB_ID)}
+                  {...flowAction(controller.runCommand, "tab.select", MAIN_TAB_ID)}
                 >
                   {workspaceName}
                 </button>
@@ -347,9 +344,8 @@ export function ChromeBar({ identityInHeader = false }: { readonly identityInHea
                   className="workspace-rename"
                   aria-label="Rename workspace"
                   aria-pressed={renameOpen}
-                  data-flow="workspace.rename.edit"
                   data-testid="workspace-rename"
-                  onClick={() => controller.runCommand("workspace.rename.edit")}
+                  {...flowAction(controller.runCommand, "workspace.rename.edit")}
                 >
                   <Pencil size={12} aria-hidden="true" />
                 </button>
@@ -363,9 +359,8 @@ export function ChromeBar({ identityInHeader = false }: { readonly identityInHea
                 <button
                   type="button"
                   className="repo-empty"
-                  data-flow="repo.open"
                   data-testid="repo-empty"
-                  onClick={() => controller.runCommand("repo.open")}
+                  {...flowAction(controller.runCommand, "repo.open")}
                 >
                   <FolderGit2 size={14} aria-hidden="true" />
                   <span>{SELECT_REPO_LABEL}</span>
@@ -407,10 +402,9 @@ export function ChromeBar({ identityInHeader = false }: { readonly identityInHea
                         className="repo-select"
                         aria-current={active ? "true" : undefined}
                         title={group.repoId}
-                        data-flow="repo.select"
                         data-testid={`repo-select-${groupKey}`}
                         disabled={!canSelectRepo}
-                        onClick={() => controller.runCommand("repo.select", selectToken)}
+                        {...flowAction(controller.runCommand, "repo.select", selectToken)}
                       >
                         <FolderGit2 size={14} aria-hidden="true" />
                         <span className="repo-name">{group.name}</span>
@@ -422,9 +416,8 @@ export function ChromeBar({ identityInHeader = false }: { readonly identityInHea
                             className="repo-add"
                             aria-label={`New session in ${single.label}`}
                             title={`New session in ${single.label}`}
-                            data-flow="tab.menu"
                             data-testid={`repo-add-${single.id}`}
-                            onClick={() => controller.runCommand("tab.menu", single.id)}
+                            {...flowAction(controller.runCommand, "tab.menu", single.id)}
                           >
                             <Plus size={12} aria-hidden="true" />
                           </button>
@@ -437,9 +430,8 @@ export function ChromeBar({ identityInHeader = false }: { readonly identityInHea
                             className="repo-unpin"
                             aria-label={`Unpin ${single.label}`}
                             title="Unpin repository"
-                            data-flow="repo.unpin"
                             data-testid={`repo-unpin-${single.id}`}
-                            onClick={() => controller.runCommand("repo.unpin", single.id)}
+                            {...flowAction(controller.runCommand, "repo.unpin", single.id)}
                           >
                             <X size={12} aria-hidden="true" />
                           </button>
@@ -468,10 +460,9 @@ export function ChromeBar({ identityInHeader = false }: { readonly identityInHea
                                     className="repo-select"
                                     aria-current={copyActive ? "true" : undefined}
                                     title={copy.path ?? copy.workspaceId ?? copy.id}
-                                    data-flow="repo.select"
                                     data-testid={`copy-select-${copy.id}`}
                                     disabled={!canSelectRepo}
-                                    onClick={() => controller.runCommand("repo.select", `${group.repoId}#${copy.id}`)}
+                                    {...flowAction(controller.runCommand, "repo.select", `${group.repoId}#${copy.id}`)}
                                   >
                                     <FolderGit2 size={12} aria-hidden="true" />
                                     <span className="repo-name">{copyLabel}</span>
@@ -484,9 +475,8 @@ export function ChromeBar({ identityInHeader = false }: { readonly identityInHea
                                         className="repo-add"
                                         aria-label={`New session in ${copy.label}`}
                                         title={`New session in ${copy.label}`}
-                                        data-flow="tab.menu"
                                         data-testid={`repo-add-${copy.id}`}
-                                        onClick={() => controller.runCommand("tab.menu", copy.id)}
+                                        {...flowAction(controller.runCommand, "tab.menu", copy.id)}
                                       >
                                         <Plus size={12} aria-hidden="true" />
                                       </button>
@@ -499,9 +489,8 @@ export function ChromeBar({ identityInHeader = false }: { readonly identityInHea
                                         className="repo-unpin"
                                         aria-label={`Unpin ${copy.label}`}
                                         title="Unpin repository"
-                                        data-flow="repo.unpin"
                                         data-testid={`repo-unpin-${copy.id}`}
-                                        onClick={() => controller.runCommand("repo.unpin", copy.id)}
+                                        {...flowAction(controller.runCommand, "repo.unpin", copy.id)}
                                       >
                                         <X size={12} aria-hidden="true" />
                                       </button>
@@ -541,9 +530,8 @@ export function ChromeBar({ identityInHeader = false }: { readonly identityInHea
             aria-expanded={menuOpen}
             aria-label="New session"
             title="New session"
-            data-flow="tab.menu"
             data-testid="tab-add"
-            onClick={() => controller.runCommand("tab.menu")}
+            {...flowAction(controller.runCommand, "tab.menu")}
           >
             <Plus size={14} aria-hidden="true" />
             <span>New session</span>
@@ -555,16 +543,15 @@ export function ChromeBar({ identityInHeader = false }: { readonly identityInHea
                 <div
                   className="tab-add-backdrop"
                   aria-hidden="true"
-                  onClick={() => controller.runCommand("tab.menu")}
+                  {...flowAction(controller.runCommand, "tab.menu")}
                 />
                 <div className="tab-add-menu" role="menu" aria-label="New session" data-testid="tab-add-menu">
                   {canOpenTerminal ? <button
                     type="button"
                     role="menuitem"
                     className="tab-add-item"
-                    data-flow="tab.terminal"
                     data-testid="tab-add-terminal"
-                    onClick={() => controller.runCommand("tab.terminal")}
+                    {...flowAction(controller.runCommand, "tab.terminal")}
                   >
                     <span>Terminal</span>
                   </button> : null}
@@ -581,10 +568,9 @@ export function ChromeBar({ identityInHeader = false }: { readonly identityInHea
                       className="tab-add-item"
                       disabled={!entry.available}
                       title={entry.available ? entry.role.purpose : entry.reason}
-                      data-flow="agent.role"
                       data-role={entry.role.id}
                       data-testid={`tab-add-role-${entry.role.id}`}
-                      onClick={() => controller.runCommand("agent.role", entry.role.id)}
+                      {...flowAction(controller.runCommand, "agent.role", entry.role.id)}
                     >
                       <span>{entry.title}</span>
                       <span className="tab-add-account">{entry.available ? entry.account : entry.reason}</span>
@@ -596,9 +582,8 @@ export function ChromeBar({ identityInHeader = false }: { readonly identityInHea
                       role="menuitem"
                       key={harness.id}
                       className="tab-add-item"
-                      data-flow="tab.harness"
                       data-testid={`tab-add-harness-${harness.id}`}
-                      onClick={() => controller.runCommand("tab.harness", harness.id)}
+                      {...flowAction(controller.runCommand, "tab.harness", harness.id)}
                     >
                       <span>{harness.displayName}</span>
                       <span className="tab-add-account">{harness.account?.email ?? harness.account?.label ?? ""}</span>
@@ -611,9 +596,8 @@ export function ChromeBar({ identityInHeader = false }: { readonly identityInHea
                       key={harness.id}
                       className="tab-add-item"
                       disabled
-                      data-flow="tab.harness"
                       data-testid={`tab-add-harness-${harness.id}`}
-                      onClick={() => controller.runCommand("tab.harness", harness.id)}
+                      {...flowAction(controller.runCommand, "tab.harness", harness.id)}
                     >
                       <span>{harness.displayName}</span>
                       <span className="tab-add-account">{harness.status}</span>
@@ -626,9 +610,8 @@ export function ChromeBar({ identityInHeader = false }: { readonly identityInHea
                         type="button"
                         role="menuitem"
                         className="tab-add-item"
-                        data-flow="agent.new"
                         data-testid="tab-add-new-agent"
-                        onClick={() => controller.runCommand("agent.new")}
+                        {...flowAction(controller.runCommand, "agent.new")}
                       >
                         <span>New agent…</span>
                       </button>
@@ -654,9 +637,8 @@ export function ChromeBar({ identityInHeader = false }: { readonly identityInHea
           <button
             type="button"
             className="chrome-action"
-            data-flow="auth.sign-in"
             data-testid="chrome-sign-in"
-            onClick={() => controller.runCommand("auth.sign-in")}
+            {...flowAction(controller.runCommand, "auth.sign-in")}
           >
             Sign in with GitHub
           </button>
@@ -667,9 +649,8 @@ export function ChromeBar({ identityInHeader = false }: { readonly identityInHea
             <button
               type="button"
               className="chrome-action chrome-action-download"
-              data-flow="app.download"
               data-testid="chrome-download"
-              onClick={() => controller.runCommand("app.download")}
+              {...flowAction(controller.runCommand, "app.download")}
             >
               <Download size={14} aria-hidden="true" />
               Download the app
@@ -682,9 +663,8 @@ export function ChromeBar({ identityInHeader = false }: { readonly identityInHea
             <button
               type="button"
               className="chrome-action chrome-action-wiki"
-              data-flow="wiki"
               data-testid="chrome-wiki"
-              onClick={() => controller.runCommand("wiki")}
+              {...flowAction(controller.runCommand, "wiki")}
             >
               <BookOpen size={14} aria-hidden="true" />
               Wiki
@@ -697,9 +677,8 @@ export function ChromeBar({ identityInHeader = false }: { readonly identityInHea
             <button
               type="button"
               className="chrome-action chrome-action-dispatcher"
-              data-flow="triggers.list"
               data-testid="chrome-dispatcher"
-              onClick={() => controller.runCommand("triggers.list")}
+              {...flowAction(controller.runCommand, "triggers.list")}
             >
               <Timer size={14} aria-hidden="true" />
               Dispatcher
@@ -712,9 +691,8 @@ export function ChromeBar({ identityInHeader = false }: { readonly identityInHea
             <button
               type="button"
               className="chrome-action chrome-action-flows"
-              data-flow="flows"
               data-testid="chrome-flows"
-              onClick={() => controller.runCommand("flows")}
+              {...flowAction(controller.runCommand, "flows")}
             >
               <Workflow size={14} aria-hidden="true" />
               Flows
@@ -727,9 +705,8 @@ export function ChromeBar({ identityInHeader = false }: { readonly identityInHea
             <button
               type="button"
               className="chrome-action chrome-action-secrets"
-              data-flow="secrets.list"
               data-testid="chrome-secrets"
-              onClick={() => controller.runCommand("secrets.list")}
+              {...flowAction(controller.runCommand, "secrets.list")}
             >
               <KeyRound size={14} aria-hidden="true" />
               Secrets
@@ -742,9 +719,8 @@ export function ChromeBar({ identityInHeader = false }: { readonly identityInHea
             <button
               type="button"
               className="chrome-action chrome-action-history"
-              data-flow="history.show"
               data-testid="chrome-history"
-              onClick={() => controller.runCommand("history.show")}
+              {...flowAction(controller.runCommand, "history.show")}
             >
               <History size={14} aria-hidden="true" />
               History
@@ -757,9 +733,8 @@ export function ChromeBar({ identityInHeader = false }: { readonly identityInHea
             <button
               type="button"
               className="chrome-action chrome-action-account"
-              data-flow="account.show"
               data-testid={identityInHeader ? "sidebar-account" : "chrome-account"}
-              onClick={() => controller.runCommand("account.show")}
+              {...flowAction(controller.runCommand, "account.show")}
             >
               <UserRound size={14} aria-hidden="true" />
               Account
@@ -787,10 +762,9 @@ export function ChromeBar({ identityInHeader = false }: { readonly identityInHea
           <button
             type="button"
             className="chrome-icon-action corner-reset-btn"
-            data-flow="admin.reset.ask"
             aria-label="Reset conversation"
             title="Reset conversation"
-            onClick={() => controller.runCommand("admin.reset.ask")}
+            {...flowAction(controller.runCommand, "admin.reset.ask")}
           >
             <RotateCcw size={14} aria-hidden="true" />
           </button>
@@ -799,10 +773,9 @@ export function ChromeBar({ identityInHeader = false }: { readonly identityInHea
       <button
         type="button"
         className="chrome-icon-action corner-theme-btn"
-        data-flow="appearance.dark-mode"
         aria-label="Toggle light and dark mode"
         title="Toggle light and dark mode"
-        onClick={() => controller.runCommand("appearance.dark-mode")}
+        {...flowAction(controller.runCommand, "appearance.dark-mode")}
       >
         {dark ? <Sun size={14} aria-hidden="true" /> : <Moon size={14} aria-hidden="true" />}
       </button>

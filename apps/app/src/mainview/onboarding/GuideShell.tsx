@@ -1,3 +1,4 @@
+import { flowAction } from "../flows/FlowAction"
 import { REEL_BUTTON } from "./reel.ts"
 import { scrollToGuideRead } from "./transcriptScroll"
 import { TranscriptMessage } from "../TranscriptMessage"
@@ -346,8 +347,7 @@ export function GuideShell({ children, clock = guideClock }: { children: ReactNo
           </div>
           <button
             aria-label={`Dismiss ${toast.title}`}
-            data-flow="toast.dismiss"
-            onClick={() => controller.runCommand("toast.dismiss", toast.id)}
+            {...flowAction(controller.runCommand, "toast.dismiss", toast.id)}
           >
             <X size={14} />
           </button>
@@ -540,7 +540,7 @@ export function GuideShell({ children, clock = guideClock }: { children: ReactNo
               <article key={message.id} className="message" data-testid="auth-prompt" data-chat-message-id={message.id}>
                 <p>{message.text}</p>
                 {message.answeredAction ? <p role="status">{message.answeredAction.answer}</p> :
-                <Button className="message-cta" data-flow="auth.sign-in" onClick={() => controller.runCommand("auth.sign-in", message.action?.args)}>
+                <Button className="message-cta"  {...flowAction(controller.runCommand, "auth.sign-in", message.action?.args)}>
                   {message.action?.label}
                 </Button>}
               </article>

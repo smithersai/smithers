@@ -1,3 +1,4 @@
+import { flowAction } from "../flows/FlowAction"
 /*
  * The repository's home pane (controller/onboarding.ts repo.home): the first
  * card a repository shows, above the welcome. Every block is rendered from
@@ -29,7 +30,7 @@ const Door = ({
   label,
   onRunCommand
 }: { readonly flow: FlowName; readonly args: string; readonly label: string } & HomeCardActions) => (
-  <Button variant="ghost" size="sm" data-flow={flow} data-testid={`home-${flow}`} onClick={() => onRunCommand(flow, args)}>
+  <Button variant="ghost" size="sm"  data-testid={`home-${flow}`} {...flowAction(onRunCommand, flow, args)}>
     {label}
   </Button>
 )

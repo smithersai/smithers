@@ -352,7 +352,9 @@ describe("recommend: the flow", () => {
 
 test("a background repository check regenerates suggestions using hidden observations", async () => {
   const worker = recorder([answer("repo-check", ["issues.list"])])
-  const { store } = await boot({ fetchImpl: worker.fetchImpl }, unavailableRepositories, true)
+  const { store, controller } = await boot({ fetchImpl: worker.fetchImpl }, unavailableRepositories, true)
+  store.dispatch({ type: "guide.visibility.changed", actor: "system", visible: true })
+  await controller.commands.run("onboarding.act", "start")
   await settle(12)
   const request = worker.recommends().at(-1)?.body
   expect(request).toBeDefined()
@@ -360,4 +362,35 @@ test("a background repository check regenerates suggestions using hidden observa
   expect(tail.some(entry => entry.role === "system" && entry.text.includes('"openIssues":2'))).toBe(true)
   expect(row(store)?.suggestions.some(suggestion => suggestion.flow === "issues.list")).toBe(true)
   expect([...store.collections.cards.values()].some(card => card.kind === "repo-update")).toBe(false)
+})
+
+test("a recommended read warms its exact arguments without opening a view, then the click reuses it", async () => {
+  const worker = recorder()
+  let reads = 0
+  let release!: () => void
+  const pending = new Promise<void>(resolve => { release = resolve })
+  const { store, controller } = await boot({ recommender: { enabled: false }, fetchImpl: async (input, init) => {
+    if (String(input).includes("/api/repos/will/demo/issues")) {
+      reads++
+      await pending
+      return json(200, [])
+    }
+    return worker.fetchImpl(input, init)
+  } })
+  signIn(store)
+  store.dispatch({ type: "repositories.loaded", actor: "system", repositories: [{ id: "will/demo", org: "will", ownerKind: "user", name: "demo", head: null }] })
+  await settle()
+  store.dispatch({ type: "recommendations.updated", actor: "system", revision: store.session().revision, source: "agent", suggestions: [
+    { id: "issues", label: "Issues", flow: "issues.list", args: "will/demo", emphasis: "primary" }
+  ] })
+  await settle()
+  expect(reads).toBe(1)
+  expect([...store.collections.cards.values()].some(card => card.id === "issues-will/demo")).toBe(false)
+  const click = controller.commands.run("issues.list", "will/demo")
+  await settle()
+  expect(store.collections.cards.get("issues-will/demo")?.loading).toBe(true)
+  release()
+  await click
+  expect(reads).toBe(1)
+  expect(store.collections.cards.get("issues-will/demo")).toMatchObject({ kind: "issue-list", loading: false })
 })

@@ -1,3 +1,4 @@
+import { preparedView, type ViewAction, type ViewResult, invalidatePreparedViews } from "../PreparedView"
 import { readRepositoryDetail } from "../RepositoryReadReceipts"
 import { practiceViewLanding, tutorialRepositoryRead, readRepositoryListError, type RepositoryForm } from "./tutorial2-issues_prs"
 import { publishRepoView, repoPaneCard } from "../EmbeddedHistory"
@@ -23,8 +24,8 @@ import { readErrorMessage, readResult } from "./SeamContext"
 
 export interface LandingsSeam {
   readonly setTab: (cardId: string, tab: "conversation" | "commits" | "checks" | "files") => Promise<string | void>
-  readonly listLandings: (repo?: string) => Promise<string | { readonly value: string }>
-  readonly viewLanding: (number: number, repo?: string) => Promise<string | { readonly value: string }>
+  readonly listLandings: ViewAction<[repo?: string]>
+  readonly viewLanding: ViewAction<[number: number, repo?: string]>
   readonly createLanding: (
     title: string,
     repo?: string,
@@ -355,11 +356,11 @@ export const createLandingsSeam = (ctx: SeamContext, renderRepositoryForm?: Repo
    * upsert the "pr" card. `stateOverride` lets a mutation pin the state the
    * platform just answered (a land pins "queued") over a racing re-read.
    */
-  const surfaceLanding = async (
+  const readLanding = async (
     repo: string,
     number: number,
     stateOverride?: string
-  ): Promise<string | { readonly value: string }> => {
+  ): Promise<ViewResult> => {
     let response: Response
     try {
       response = await ctx.http(`${landingsUrl(repo)}/${number}`)
@@ -391,7 +392,7 @@ export const createLandingsSeam = (ctx: SeamContext, renderRepositoryForm?: Repo
       ...(landing.createdAt !== null ? { createdAt: landing.createdAt } : {}),
       ...stack
     }
-    await publishRepoView(ctx, {
+    const card: Card = {
       id: `pr-${repo}-${number}`,
       kind: "pr",
       title: `#${number} ${landing.title} · ${repo}`,
@@ -399,8 +400,8 @@ export const createLandingsSeam = (ctx: SeamContext, renderRepositoryForm?: Repo
       createdAt: Date.now(),
       ordinal: ctx.nextOrdinal(),
       payload
-    })
-    return readResult([
+    }
+    return { card, ...readResult([
       `${payload.repo} · #${payload.number} ${payload.title} · ${payload.state}`,
       `Author: ${payload.author ?? "unknown"}`,
       payload.prBody,
@@ -408,16 +409,15 @@ export const createLandingsSeam = (ctx: SeamContext, renderRepositoryForm?: Repo
       ...payload.checks.map((check) => `Check: ${check.context} · ${check.state}`),
       ...(payload.commits ?? []).map((commit) => `Commit ${commit.changeId?.slice(0, 8) ?? ""}: ${commit.message.split("\n")[0] ?? ""}`),
       ...(payload.files ?? []).map((file) => `File: ${file.path} +${file.additions ?? 0} −${file.deletions ?? 0}`)
-    ].join("\n"))
+    ].join("\n")) }
   }
 
-  return {
-    setTab: async (cardId, tab) => {
-      const card = ctx.store.collections.cards.get(cardId)
-      if (card?.kind !== "pr") return "That pull request card is no longer available."
-      await ctx.dispatch({ type: "card.updated", actor: ctx.actor(), id: cardId, patch: { payload: { tab } } }).isPersisted.promise
-    },
-    listLandings: (repoArg) => tutorialRepositoryRead(ctx, "prs", repoArg, "all", renderRepositoryForm, async (repo) => {
+  const listView = preparedView(ctx, (repoArg?: string) => {
+    if (isPracticeRepo(repoArg)) return { run: async () => {} }
+    const target = resolveTargetRepo(ctx.store, repoArg)
+    if ("error" in target) return target.error
+    const repo = target.repo
+    return { id: `prs-${repo}`, title: `Pull requests · ${repo}`, pane: repo, read: async (): Promise<ViewResult> => {
       let response: Response
       try {
         // One bounded page. Omitting `state` lists every lifecycle state —
@@ -443,7 +443,7 @@ export const createLandingsSeam = (ctx: SeamContext, renderRepositoryForm?: Repo
           author,
           updatedAt
         }))
-      await publishRepoView(ctx, {
+      const card: Card = {
         id: `prs-${repo}`,
         kind: "pr-list",
         title: `Pull requests · ${repo}`,
@@ -451,18 +451,39 @@ export const createLandingsSeam = (ctx: SeamContext, renderRepositoryForm?: Repo
         createdAt: Date.now(),
         ordinal: ctx.nextOrdinal(),
         payload: { repo, landings }
-      })
-      return readResult(landings.length === 0
+      }
+      return { card, ...readResult(landings.length === 0
         ? `No pull requests in ${repo}.`
-        : `Pull requests · ${repo}\n${landings.map((landing) => `#${landing.number} ${landing.title} · ${landing.state}`).join("\n")}`)
-    }),
+        : `Pull requests · ${repo}\n${landings.map((landing) => `#${landing.number} ${landing.title} · ${landing.state}`).join("\n")}`) }
+    } }
+  })
+  const landingView = preparedView(ctx, (number: number, repoArg?: string, stateOverride?: string) => {
+    if (isPracticeRepo(repoArg)) return { run: async () => {} }
+    const target = resolveTargetRepo(ctx.store, repoArg)
+    if ("error" in target) return target.error
+    const repo = target.repo
+    return { id: `pr-${repo}-${number}`, title: `Pull request #${number} · ${repo}`, pane: repo,
+      key: JSON.stringify(["pr", repo, number, stateOverride]), read: () => readLanding(repo, number, stateOverride) }
+  })
+  const surfaceLanding = (repo: string, number: number, stateOverride?: string) => {
+    invalidatePreparedViews(ctx.store)
+    return landingView(number, repo, stateOverride)
+  }
 
-    viewLanding: async (number, repoArg) => {
+  return {
+    setTab: async (cardId, tab) => {
+      const card = ctx.store.collections.cards.get(cardId)
+      if (card?.kind !== "pr") return "That pull request card is no longer available."
+      await ctx.dispatch({ type: "card.updated", actor: ctx.actor(), id: cardId, patch: { payload: { tab } } }).isPersisted.promise
+    },
+    listLandings: Object.assign((repoArg?: string) => tutorialRepositoryRead(ctx, "prs", repoArg, "all", renderRepositoryForm, repo => listView(repo)), { preload: listView.preload }),
+
+    viewLanding: Object.assign(async (number: number, repoArg?: string) => {
       if (isPracticeRepo(repoArg)) return readRepositoryDetail(ctx, repoArg!, "pr", number, () => practiceViewLanding(ctx, number))
       const target = resolveTargetRepo(ctx.store, repoArg)
       if ("error" in target) return target.error
-      return readRepositoryDetail(ctx, target.repo, "pr", number, () => surfaceLanding(target.repo, number))
-    },
+      return readRepositoryDetail(ctx, target.repo, "pr", number, () => landingView(number, target.repo))
+    }, { preload: landingView.preload }),
 
     createLanding: async (title, repoArg, fromBookmark) => {
       const target = resolveTargetRepo(ctx.store, repoArg)

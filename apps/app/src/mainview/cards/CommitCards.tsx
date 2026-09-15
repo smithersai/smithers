@@ -1,3 +1,5 @@
+import { DiffSurface } from "../ViewModules"
+import { flowAction } from "../flows/FlowAction"
 /*
  * The commit cards: a repository's commits list ("commit-list", GitHub's
  * Commits page: rows grouped under "Commits on <day>") and one commit
@@ -20,7 +22,7 @@ import {
   CommitMetadata
 } from "@smthrs/ui"
 import type { CommitFileStatusKind } from "@smthrs/ui"
-import { lazy, Suspense } from "react"
+import { Suspense } from "react"
 import type { KeyboardEvent } from "react"
 import type { Card } from "../state/AppState"
 import type { CardFamily, RunCommand } from "./CardFamily"
@@ -33,14 +35,6 @@ import { Avatar, RelativeTime } from "./GithubParts"
  * carried is rendered verbatim instead, which is what DiffSurface itself falls
  * back to for a patch pierre cannot read.
  */
-const RawPatch = ({ patch }: { readonly path: string; readonly oldPath?: string | undefined; readonly patch: string }) => (
-  <pre className="world-card-path">{patch}</pre>
-)
-const DiffSurface = lazy(() =>
-  import("./DiffSurface")
-    .then((module) => ({ default: module.DiffSurface }))
-    .catch(() => ({ default: RawPatch }))
-)
 
 type CommitListCard = Extract<Card, { kind: "commit-list" }>
 type CommitCard = Extract<Card, { kind: "commit" }>
@@ -108,10 +102,9 @@ const ShaChip = ({ sha, onRunCommand }: { readonly sha: string; readonly onRunCo
   <button
     type="button"
     className="commit-sha"
-    data-flow="chat.copy-message"
     aria-label={`Copy full SHA ${sha}`}
     title={`Copy ${sha}`}
-    onClick={() => onRunCommand("chat.copy-message", sha)}
+    {...flowAction(onRunCommand, "chat.copy-message", sha)}
   >
     <code>{sha.slice(0, 7)}</code>
   </button>
@@ -143,8 +136,7 @@ export const CommitListBody = ({ card, onRunCommand }: { readonly card: CommitLi
                       type="button"
                       className="commit-row-open"
                       data-row-open
-                      data-flow="commits.read"
-                      onClick={() => onRunCommand("commits.read", `${refOf(commit)} ${repo}`)}
+                      {...flowAction(onRunCommand, "commits.read", `${refOf(commit)} ${repo}`)}
                     >
                       {commit.title}
                     </button>
@@ -206,8 +198,7 @@ export const CommitDetailBody = ({ card, onRunCommand }: { readonly card: Commit
                 type="button"
                 className="commit-sha"
                 data-row-open
-                data-flow="commits.read"
-                onClick={() => onRunCommand("commits.read", `${parent.changeId ?? parent.commitId} ${repo}`)}
+                {...flowAction(onRunCommand, "commits.read", `${parent.changeId ?? parent.commitId} ${repo}`)}
               >
                 <code>{(parent.commitId ?? parent.changeId ?? "").slice(0, 7)}</code>
               </button>

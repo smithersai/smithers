@@ -28,6 +28,7 @@ export const issuesFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> =
       filter: Schema.optional(Schema.Literals(["open", "closed", "all"])),
       repo: Schema.optional(Schema.String)
     }),
+    prepare: ({ filter, repo }) => actions.listIssues.preload?.(filter ?? "open", repo),
     handler: ({ filter, repo }) => actions.listIssues(filter ?? "open", repo)
   }),
   flow({
@@ -39,6 +40,7 @@ export const issuesFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> =
       filter: Schema.optional(Schema.Literals(["open", "closed", "all"])),
       repo: Schema.optional(Schema.String)
     }),
+    prepare: ({ filter, repo }) => actions.listIssues.preload?.(filter ?? "open", repo),
     handler: ({ filter, repo }) => actions.listIssues(filter ?? "open", repo)
   }),
   flow({
@@ -53,6 +55,7 @@ export const issuesFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> =
       ...NumberedTarget.fields,
       source: Schema.optional(Schema.Literals(["smithers-cloud", "github"]))
     }),
+    prepare: ({ number, repo, source }) => actions.viewIssue.preload?.(number, repo, source),
     handler: ({ number, repo, source }) => actions.viewIssue(number, repo, source)
   }),
   flow({

@@ -1,3 +1,4 @@
+import { flowAction } from "../flows/FlowAction"
 import { Badge, Button, Input, KpiStat, Skeleton, StatusPill } from "@smthrs/ui"
 import type { TargetDetail, TargetRunState, TargetsViewMode } from "@smthrs/rpc/Cards"
 import { TARGET_RUN_STATES, TARGETS_VIEW_MODES } from "@smthrs/rpc/Cards"
@@ -126,10 +127,9 @@ const TargetDrawer = ({
         <Button
           variant="ghost"
           size="icon"
-          data-flow="target.select"
           aria-label="Close details"
           title="Close details"
-          onClick={() => onRunCommand("target.select", flowArgs("target.select", { repoId }))}
+          {...flowAction(onRunCommand, "target.select", flowArgs("target.select", { repoId }))}
         >
           ×
         </Button>
@@ -160,12 +160,7 @@ const TargetDrawer = ({
             <Button
               variant="ghost"
               size="sm"
-              data-flow="target.source.open"
-              onClick={() =>
-                onRunCommand(
-                  "target.source.open",
-                  `${repoId} ${source.file}${source.line !== undefined ? `:${source.line}` : ""}`
-                )}
+              {...flowAction(onRunCommand, "target.source.open", `${repoId} ${source.file}${source.line !== undefined ? `:${source.line}` : ""}`)}
             >
               Open
             </Button>
@@ -219,8 +214,7 @@ const TargetDrawer = ({
                   <Button
                     variant="ghost"
                     size="sm"
-                    data-flow="target.runs.select"
-                    onClick={() => onRunCommand("target.runs.select", `${repoId} ${run.runId}`)}
+                    {...flowAction(onRunCommand, "target.runs.select", `${repoId} ${run.runId}`)}
                   >
                     Replay
                   </Button>
@@ -234,8 +228,7 @@ const TargetDrawer = ({
           ? (
             <Button
               size="sm"
-              data-flow="target.run"
-              onClick={() => onRunCommand("target.run", `${repoId} ${target.workspace} ${target.label}`)}
+              {...flowAction(onRunCommand, "target.run", `${repoId} ${target.workspace} ${target.label}`)}
             >
               Run
             </Button>
@@ -244,8 +237,7 @@ const TargetDrawer = ({
         <Button
           size="sm"
           variant="outline"
-          data-flow="target.graph"
-          onClick={() => onRunCommand("target.graph", `${repoId} ${target.label}`)}
+          {...flowAction(onRunCommand, "target.graph", `${repoId} ${target.label}`)}
         >
           Graph
         </Button>
@@ -254,14 +246,9 @@ const TargetDrawer = ({
             <Button
               size="sm"
               variant="ghost"
-              data-flow="agent.explain"
-              onClick={() =>
-                onRunCommand(
-                  "agent.explain",
-                  `The target ${target.label} failed on its last run (${timeLabel(row.lastRun?.startedAt ?? 0)}${
+              {...flowAction(onRunCommand, "agent.explain", `The target ${target.label} failed on its last run (${timeLabel(row.lastRun?.startedAt ?? 0)}${
                     row.lastRun?.exitCode !== undefined && row.lastRun?.exitCode !== null ? `, exit code ${row.lastRun.exitCode}` : ""
-                  }). Explain what this target does and the likely reasons it fails.`
-                )}
+                  }). Explain what this target does and the likely reasons it fails.`)}
             >
               Explain
             </Button>
@@ -402,9 +389,8 @@ export const TargetsCardBody = ({
         <Button
           size="sm"
           variant="ghost"
-          data-flow="target.history"
           data-testid="targets-history"
-          onClick={() => onRunCommand("target.history", repoId)}
+          {...flowAction(onRunCommand, "target.history", repoId)}
         >
           History
         </Button>
@@ -423,10 +409,9 @@ export const TargetsCardBody = ({
                 <Button
                   size="sm"
                   variant="outline"
-                  data-flow="target.run.pattern"
                   data-testid={`targets-run-pattern-${entry.id}`}
                   aria-label={`Run ${entry.verb} ${entry.pattern}`}
-                  onClick={() => onRunCommand("target.run.pattern", `${repoId} ${entry.workspace} ${entry.verb} ${entry.pattern}`)}
+                  {...flowAction(onRunCommand, "target.run.pattern", `${repoId} ${entry.workspace} ${entry.verb} ${entry.pattern}`)}
                 >
                   Run
                 </Button>
@@ -441,11 +426,10 @@ export const TargetsCardBody = ({
             type="button"
             key={candidate}
             className="targets-chip targets-mode"
-            data-flow="target.filter"
             data-chip="mode"
             data-testid={`targets-mode-${candidate}`}
             aria-pressed={mode === candidate}
-            onClick={() => onRunCommand("target.filter", flowArgs("target.filter", { repoId, mode: candidate }))}
+            {...flowAction(onRunCommand, "target.filter", flowArgs("target.filter", { repoId, mode: candidate }))}
           >
             {MODE_WORDS[candidate]}
           </button>
@@ -457,11 +441,10 @@ export const TargetsCardBody = ({
             type="button"
             key={kind}
             className="targets-chip"
-            data-flow="target.filter"
             data-chip="kind"
             data-testid={`targets-chip-kind-${kind}`}
             aria-pressed={view?.kinds?.includes(kind) === true}
-            onClick={() => onRunCommand("target.filter", flowArgs("target.filter", { repoId, kind }))}
+            {...flowAction(onRunCommand, "target.filter", flowArgs("target.filter", { repoId, kind }))}
           >
             {kind}
           </button>
@@ -472,11 +455,10 @@ export const TargetsCardBody = ({
             type="button"
             key={state}
             className="targets-chip"
-            data-flow="target.filter"
             data-chip="state"
             data-testid={`targets-chip-state-${state}`}
             aria-pressed={view?.states?.includes(state) === true}
-            onClick={() => onRunCommand("target.filter", flowArgs("target.filter", { repoId, state }))}
+            {...flowAction(onRunCommand, "target.filter", flowArgs("target.filter", { repoId, state }))}
           >
             {STATE_WORDS[state]}
           </button>
@@ -523,12 +505,11 @@ export const TargetsCardBody = ({
                     <button
                       type="button"
                       className="targets-star"
-                      data-flow={starredNow ? "target.unstar" : "target.star"}
                       data-testid={`targets-star-${label}`}
                       aria-pressed={starredNow}
                       aria-label={starredNow ? `Unstar ${label}` : `Star ${label}`}
                       title={starredNow ? "Unstar" : "Star"}
-                      onClick={() => onRunCommand(starredNow ? "target.unstar" : "target.star", `${repoId} ${label}`)}
+                      {...flowAction(onRunCommand, starredNow ? "target.unstar" : "target.star", `${repoId} ${label}`)}
                     >
                       {starredNow ? "★" : "☆"}
                     </button>
@@ -557,10 +538,9 @@ export const TargetsCardBody = ({
                             <button
                               type="button"
                               className="targets-table-select"
-                              data-flow="target.select"
                               data-testid={`targets-select-${target.label}`}
                               aria-expanded={selected}
-                              onClick={() => onRunCommand("target.select", flowArgs("target.select", selected ? { repoId } : { repoId, label: target.label }))}
+                              {...flowAction(onRunCommand, "target.select", flowArgs("target.select", selected ? { repoId } : { repoId, label: target.label }))}
                             >
                               <span className="targets-card-label">
                                 {target.label}
@@ -576,11 +556,10 @@ export const TargetsCardBody = ({
                             <button
                               type="button"
                               className="targets-table-select targets-group-toggle"
-                              data-flow="target.expand"
                               data-testid={`targets-expand-${group.name}`}
                               aria-expanded={isOpen}
                               aria-label={`${isOpen ? "Collapse" : "Expand"} ${group.label}`}
-                              onClick={() => onRunCommand("target.expand", `${repoId} ${group.label}`)}
+                              {...flowAction(onRunCommand, "target.expand", `${repoId} ${group.label}`)}
                             >
                               <span className="targets-card-label">
                                 <span className="targets-group-chevron" aria-hidden="true">{isOpen ? "▾" : "▸"}</span>
@@ -622,11 +601,10 @@ export const TargetsCardBody = ({
                             <Button
                               size="sm"
                               variant="outline"
-                              data-flow="target.run.set"
                               data-testid={`targets-run-set-${group.name}`}
                               aria-label={`Run ${pickedSet.size} of ${group.members.length} ${group.name} targets`}
                               disabled={pickedSet.size === 0}
-                              onClick={() => onRunCommand("target.run.set", `${repoId} ${group.label}`)}
+                              {...flowAction(onRunCommand, "target.run.set", `${repoId} ${group.label}`)}
                             >
                               Run {pickedSet.size === group.members.length ? "all" : pickedSet.size}
                             </Button>
@@ -635,10 +613,9 @@ export const TargetsCardBody = ({
                             <Button
                               size="sm"
                               variant="outline"
-                              data-flow="target.run"
                               data-testid={`targets-run-${target.label}`}
                               aria-label={`Run ${target.label}`}
-                              onClick={() => onRunCommand("target.run", `${repoId} ${target.workspace} ${target.label}`)}
+                              {...flowAction(onRunCommand, "target.run", `${repoId} ${target.workspace} ${target.label}`)}
                             >
                               Run
                             </Button>
@@ -648,10 +625,9 @@ export const TargetsCardBody = ({
                             <Button
                               size="sm"
                               variant="ghost"
-                              data-flow="target.timeline"
                               aria-label={`Timeline of the last run of ${target.label}`}
                               title="Timeline of the last run"
-                              onClick={() => onRunCommand("target.timeline", `${repoId} ${row.lastRun?.runId ?? ""}`)}
+                              {...flowAction(onRunCommand, "target.timeline", `${repoId} ${row.lastRun?.runId ?? ""}`)}
                             >
                               Timeline
                             </Button>
@@ -670,18 +646,16 @@ export const TargetsCardBody = ({
                           <button
                             type="button"
                             className="targets-chip"
-                            data-flow="target.pick"
                             data-testid={`targets-pick-all-${group.name}`}
-                            onClick={() => onRunCommand("target.pick", `${repoId} ${group.label} all`)}
+                            {...flowAction(onRunCommand, "target.pick", `${repoId} ${group.label} all`)}
                           >
                             all
                           </button>
                           <button
                             type="button"
                             className="targets-chip"
-                            data-flow="target.pick"
                             data-testid={`targets-pick-none-${group.name}`}
-                            onClick={() => onRunCommand("target.pick", `${repoId} ${group.label} none`)}
+                            {...flowAction(onRunCommand, "target.pick", `${repoId} ${group.label} none`)}
                           >
                             none
                           </button>
@@ -723,11 +697,9 @@ export const TargetsCardBody = ({
                           <button
                             type="button"
                             className="targets-table-select"
-                            data-flow="target.select"
                             data-testid={`targets-select-${member.target.label}`}
                             aria-expanded={memberSelected}
-                            onClick={() =>
-                              onRunCommand("target.select", flowArgs("target.select", memberSelected ? { repoId } : { repoId, label: member.target.label }))}
+                            {...flowAction(onRunCommand, "target.select", flowArgs("target.select", memberSelected ? { repoId } : { repoId, label: member.target.label }))}
                           >
                             <span className="targets-card-label">
                               {member.target.label}
@@ -760,11 +732,9 @@ export const TargetsCardBody = ({
                             <Button
                               size="sm"
                               variant="outline"
-                              data-flow="target.run"
                               data-testid={`targets-run-${member.target.label}`}
                               aria-label={`Run ${member.target.label}`}
-                              onClick={() =>
-                                onRunCommand("target.run", `${repoId} ${member.target.workspace} ${member.target.label}`)}
+                              {...flowAction(onRunCommand, "target.run", `${repoId} ${member.target.workspace} ${member.target.label}`)}
                             >
                               Run
                             </Button>
@@ -774,10 +744,9 @@ export const TargetsCardBody = ({
                               <Button
                                 size="sm"
                                 variant="ghost"
-                                data-flow="target.timeline"
                                 aria-label={`Timeline of the last run of ${member.target.label}`}
                                 title="Timeline of the last run"
-                                onClick={() => onRunCommand("target.timeline", `${repoId} ${member.lastRun?.runId ?? ""}`)}
+                                {...flowAction(onRunCommand, "target.timeline", `${repoId} ${member.lastRun?.runId ?? ""}`)}
                               >
                                 Timeline
                               </Button>
@@ -861,9 +830,8 @@ export const TargetRunCardBody = ({
             <Button
               size="sm"
               variant="ghost"
-              data-flow="target.timeline"
               data-testid={`target-run-timeline-${card.id}`}
-              onClick={() => onRunCommand("target.timeline", `${repoId} ${runId}`)}
+              {...flowAction(onRunCommand, "target.timeline", `${repoId} ${runId}`)}
             >
               Timeline
             </Button>
@@ -875,9 +843,8 @@ export const TargetRunCardBody = ({
             <Button
               size="sm"
               variant="ghost"
-              data-flow="agent.explain"
               data-testid={`target-run-explain-${card.id}`}
-              onClick={() => onRunCommand("agent.explain", explainText(label, output))}
+              {...flowAction(onRunCommand, "agent.explain", explainText(label, output))}
             >
               Explain
             </Button>
@@ -930,10 +897,8 @@ export const TargetRunCardBody = ({
                                       <Button
                                         size="sm"
                                         variant="ghost"
-                                        data-flow="agent.explain"
                                         data-testid={`target-run-explain-node-${node.label}`}
-                                        onClick={() =>
-                                          onRunCommand("agent.explain", explainText(node.label, captured !== "" ? captured : output))}
+                                        {...flowAction(onRunCommand, "agent.explain", explainText(node.label, captured !== "" ? captured : output))}
                                       >
                                         Explain
                                       </Button>
@@ -942,8 +907,7 @@ export const TargetRunCardBody = ({
                                           <Button
                                             size="sm"
                                             variant="ghost"
-                                            data-flow="target.timeline"
-                                            onClick={() => onRunCommand("target.timeline", `${repoId} ${runId}`)}
+                                            {...flowAction(onRunCommand, "target.timeline", `${repoId} ${runId}`)}
                                           >
                                             Timeline
                                           </Button>

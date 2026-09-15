@@ -23,6 +23,7 @@ export const notificationsFlows = (actions: CommandActions): ReadonlyArray<FlowE
     runtime: ["cloud"],
     requires: ["signed-in"],
     input: NoPayload,
+    prepare: () => actions.listNotifications.preload?.(),
     handler: () => actions.listNotifications()
   }),
   flow({

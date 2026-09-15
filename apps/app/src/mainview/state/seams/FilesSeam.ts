@@ -1,3 +1,4 @@
+import { preparedView, type ViewAction, type ViewResult } from "../PreparedView"
 /*
  * The repo files seam: GET /api/repos/{owner}/{repo}/contents[/path] lists a
  * directory ("file-list" card) or reads a file ("file" card, capped). A
@@ -33,8 +34,8 @@ import type { SeamContext } from "./SeamContext"
  * a confabulation waiting to happen.
  */
 export interface FilesSeam {
-  readonly listFiles: (path: string, repo?: string) => Promise<string | void | { readonly value: string }>
-  readonly readFile: (path: string, repo?: string, anchor?: FileAnchor) => Promise<string | void | { readonly value: string }>
+  readonly listFiles: ViewAction<[path: string, repo?: string]>
+  readonly readFile: ViewAction<[path: string, repo?: string, anchor?: FileAnchor]>
 }
 
 /**
@@ -328,9 +329,6 @@ export const createFilesSeam = (ctx: SeamContext): FilesSeam => {
     return path === "" ? base : `${base}/${encodeRepoPath(path)}`
   }
 
-  const upsert = async (card: Card): Promise<void> => {
-    await ctx.dispatch({ type: "card.upsert", actor: ctx.actor(), card }).isPersisted.promise
-  }
 
   /*
    * The 404 split: the platform answers a missing PATH inside an imported
@@ -357,14 +355,14 @@ export const createFilesSeam = (ctx: SeamContext): FilesSeam => {
   const localRequest = (repo: Repo, path: string, label: string, verb: "list" | "read") =>
     requestLocalFiles(ctx, repo, path, label, verb)
 
-  const listLocal = async (repo: Repo, path: string): Promise<string | { readonly value: string }> => {
+  const listLocal = async (repo: Repo, path: string): Promise<ViewResult> => {
     const normalized = normalizePath(path)
     const label = normalized === "" ? "/" : normalized
     const answer = await localRequest(repo, normalized, label, "list")
     if ("error" in answer) return answer.error
     if (answer.body.kind === "file") return `${normalized} in ${repo.name} is a file — run /files.read ${normalized} instead`
     const entries = sortEntries(answer.body.entries)
-    await upsert({
+    const card: Card = {
       id: `files-${repo.id}-${label}`,
       kind: "file-list",
       title: `Files · ${repo.name} · ${label}`,
@@ -379,15 +377,14 @@ export const createFilesSeam = (ctx: SeamContext): FilesSeam => {
         ...(answer.body.truncated === true ? { truncated: true } : {}),
         ...localAddressing(ctx.store, repo, normalized)
       }
-    })
-    return {
+    }
+    return { card,
       value: listingValue(repo.name, normalized, entries) +
         (answer.body.truncated === true ? "\n(the directory holds more entries than the listing cap; this is the first page by name)" : "")
     }
   }
 
-  const readLocal = async (repo: Repo, path: string, anchor: FileAnchor | undefined): Promise<string | { readonly value: string }> => {
-    const scope = captureFileLesson(ctx.store, repo.id)
+  const readLocal = async (repo: Repo, path: string, anchor: FileAnchor | undefined): Promise<ViewResult> => {
     const normalized = normalizePath(path)
     if (normalized === "") return "files.read needs a file path"
     const answer = await localRequest(repo, normalized, normalized, "read")
@@ -401,7 +398,7 @@ export const createFilesSeam = (ctx: SeamContext): FilesSeam => {
       ...localAddressing(ctx.store, repo, normalized),
       ...anchored(anchor)
     }
-    await upsert({
+    const card: Card = {
       id: localFileCardId(repo.id, normalized),
       kind: "file",
       title: `File · ${repo.name} · ${normalized}`,
@@ -409,12 +406,11 @@ export const createFilesSeam = (ctx: SeamContext): FilesSeam => {
       createdAt: Date.now(),
       ordinal: ctx.nextOrdinal(),
       payload
-    })
-    if (!payload.binary) await finishFileLesson(ctx, scope)
-    return { value: fileValue(repo.name, normalized, payload) }
+    }
+    return { card, value: fileValue(repo.name, normalized, payload) }
   }
 
-  return {
+  const readers: { listFiles: (path: string, repo?: string) => Promise<ViewResult>; readFile: (path: string, repo?: string, anchor?: FileAnchor) => Promise<ViewResult> } = {
     listFiles: async (pathArg, explicitRepoArg) => {
       const target = resolveFileTarget(ctx.store, pathArg, explicitRepoArg)
       if ("error" in target) return target.error
@@ -449,7 +445,7 @@ export const createFilesSeam = (ctx: SeamContext): FilesSeam => {
           return parsed === null ? [] : [parsed]
         })
       )
-      await upsert({
+      const card: Card = {
         id: `files-${repo}-${normalized === "" ? "/" : normalized}`,
         kind: "file-list",
         title: `Files · ${repo} · ${label}`,
@@ -457,17 +453,15 @@ export const createFilesSeam = (ctx: SeamContext): FilesSeam => {
         createdAt: Date.now(),
         ordinal: ctx.nextOrdinal(),
         payload: { repo, path: normalized, entries, ...cloudAddressing(ctx.store, repo, normalized) }
-      })
-      return { value: listingValue(repo, normalized, entries) }
+      }
+      return { card, value: listingValue(repo, normalized, entries) }
     },
 
     readFile: async (pathArg, explicitRepoArg, anchor) => {
-      if (isPracticeRepo(explicitRepoArg)) return practiceReadFile(ctx, pathArg, anchor)
       const target = resolveFileTarget(ctx.store, pathArg, explicitRepoArg)
       if ("error" in target) return target.error
       if (target.kind === "local") return readLocal(target.repo, target.path, anchor)
       const { repo, path: normalized } = target
-      const scope = captureFileLesson(ctx.store, repo)
       if (normalized === "") return "files.read needs a file path"
 
       let response: Response
@@ -507,8 +501,8 @@ export const createFilesSeam = (ctx: SeamContext): FilesSeam => {
        * Plain UTF-8 text (including word and hash lists) cannot have more
        * characters than bytes, so it keeps its declared encoding.
        */
-      const binaryCard = async (): Promise<{ readonly value: string }> => {
-        await upsert({
+      const binaryCard = async (): Promise<ViewResult> => {
+        const card: Card = {
           id: `file-${repo}-${normalized}`,
           kind: "file",
           title: `File · ${repo} · ${normalized}`,
@@ -516,8 +510,8 @@ export const createFilesSeam = (ctx: SeamContext): FilesSeam => {
           createdAt: Date.now(),
           ordinal: ctx.nextOrdinal(),
           payload: { repo, path: normalized, content: "", truncated: false, binary: true, ...cloudAddressing(ctx.store, repo, normalized) }
-        })
-        return { value: fileValue(repo, normalized, { content: "", truncated: false, binary: true }) }
+        }
+        return { card, value: fileValue(repo, normalized, { content: "", truncated: false, binary: true }) }
       }
       let content: string
       if (body.encoding === "base64") {
@@ -541,7 +535,7 @@ export const createFilesSeam = (ctx: SeamContext): FilesSeam => {
         ...cloudAddressing(ctx.store, repo, normalized),
         ...anchored(anchor)
       }
-      await upsert({
+      const card: Card = {
         id: `file-${repo}-${normalized}`,
         kind: "file",
         title: `File · ${repo} · ${normalized}`,
@@ -549,9 +543,29 @@ export const createFilesSeam = (ctx: SeamContext): FilesSeam => {
         createdAt: Date.now(),
         ordinal: ctx.nextOrdinal(),
         payload
-      })
-      await finishFileLesson(ctx, scope)
-      return { value: fileValue(repo, normalized, payload) }
+      }
+      return { card, value: fileValue(repo, normalized, payload) }
     }
+  }
+  const plan = (kind: "file" | "files", path: string, repo?: string, anchor?: FileAnchor) => {
+    if (kind === "file" && isPracticeRepo(repo)) return { run: () => practiceReadFile(ctx, path, anchor) }
+    const target = resolveFileTarget(ctx.store, path, repo)
+    if ("error" in target) return target.error
+    if (kind === "file" && !target.path) return "files.read needs a file path"
+    const repoId = target.kind === "local" ? target.repo.id : target.repo
+    const label = target.kind === "local" ? target.repo.name : target.repo
+    const id = `${kind}-${repoId}-${target.path || "/"}`
+    const scope = captureFileLesson(ctx.store, repoId)
+    return { id, title: `${kind === "file" ? "File" : "Files"} · ${label} · ${target.path || "/"}`, key: JSON.stringify([id, anchor]),
+      read: () => kind === "file" ? readers.readFile(path, repo, anchor) : readers.listFiles(path, repo),
+      after: kind === "file" ? async () => {
+        const card = ctx.store.collections.cards.get(id)
+        if (card?.kind === "file" && !card.payload.binary) await finishFileLesson(ctx, scope)
+      } : undefined,
+    }
+  }
+  return {
+    listFiles: preparedView(ctx, (path: string, repo?: string) => plan("files", path, repo)),
+    readFile: preparedView(ctx, (path: string, repo?: string, anchor?: FileAnchor) => plan("file", path, repo, anchor)),
   }
 }

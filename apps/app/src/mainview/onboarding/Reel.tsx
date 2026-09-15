@@ -1,3 +1,4 @@
+import { flowAction } from "../flows/FlowAction"
 import { useCallback } from "react"
 import { useLiveQuery } from "@tanstack/react-db"
 import { useController } from "../ControllerContext"
@@ -54,7 +55,7 @@ export function ReelShell({ clock = guideClock, actions = false }: { clock?: Gui
   if (guide.reelIndex !== undefined) return actions ? null : <Reel index={guide.reelIndex} epoch={guide.reelEpoch} demo={guide.reelDemo} dispatch={dispatch} clock={clock} />
   if (!actions) return null
   return <><GuideButton tabIndex={0} className="guide-primary" data-flow="onboarding.act" shortcut={GUIDE_KEYS.finish} onClick={() => dispatch("finish")}>{FINISH_BUTTON.label}</GuideButton>
-  <GuideButton tabIndex={0} ref={launchRef} className="guide-primary" data-flow="tut.more" shortcut={REEL_BUTTON.key} onClick={() => controller.runCommand(REEL_BUTTON.command)}>
+  <GuideButton tabIndex={0} ref={launchRef} className="guide-primary"  shortcut={REEL_BUTTON.key} {...flowAction(controller.runCommand, REEL_BUTTON.command)}>
     {REEL_BUTTON.label}
   </GuideButton></>
 }

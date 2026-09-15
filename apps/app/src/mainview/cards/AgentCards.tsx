@@ -1,3 +1,4 @@
+import { flowAction } from "../flows/FlowAction"
 import { Button, Markdown } from "@smthrs/ui"
 import type { Card } from "../state/AppState"
 import { findAgentRole } from "@smthrs/rpc/AgentRoles"
@@ -44,10 +45,9 @@ export const AgentsCardBody = ({
                   <Button
                     size="sm"
                     variant="outline"
-                    data-flow="agent.role"
                     data-testid={`agents-launch-${agent.id}`}
                     title={agent.purpose}
-                    onClick={() => onRunCommand("agent.role", agent.id)}
+                    {...flowAction(onRunCommand, "agent.role", agent.id)}
                   >
                     Launch
                   </Button>
@@ -56,9 +56,8 @@ export const AgentsCardBody = ({
               <Button
                 size="sm"
                 variant="outline"
-                data-flow="agent.new"
                 data-testid={`agents-edit-${agent.id}`}
-                onClick={() => onRunCommand("agent.new", agent.id)}
+                {...flowAction(onRunCommand, "agent.new", agent.id)}
               >
                 Edit
               </Button>
@@ -66,9 +65,8 @@ export const AgentsCardBody = ({
                 <Button
                   size="sm"
                   variant="outline"
-                  data-flow="agent.remove"
                   data-testid={`agents-remove-${agent.id}`}
-                  onClick={() => onRunCommand("agent.remove", agent.id)}
+                  {...flowAction(onRunCommand, "agent.remove", agent.id)}
                 >
                   Remove
                 </Button>
@@ -78,7 +76,7 @@ export const AgentsCardBody = ({
         ))}
       </ul>
       <div className="flow-run-actions">
-        <Button size="sm" data-flow="agent.new" data-testid="agents-new" onClick={() => onRunCommand("agent.new")}>
+        <Button size="sm"  data-testid="agents-new" {...flowAction(onRunCommand, "agent.new")}>
           New agent
         </Button>
       </div>
@@ -146,9 +144,8 @@ const AgentCardBody = ({
             <Button
               size="sm"
               variant="outline"
-              data-flow="tab.select"
               data-testid={`agent-open-tab-${tabId}`}
-              onClick={() => onRunCommand("tab.select", tabId)}
+              {...flowAction(onRunCommand, "tab.select", tabId)}
             >
               Open tab
             </Button>

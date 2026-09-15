@@ -1,3 +1,6 @@
+import { ViewSkeleton } from "../ViewSkeleton"
+import { DiffSurface } from "../ViewModules"
+import { flowAction } from "../flows/FlowAction"
 /*
  * The PR (landing) cards: the list ("pr-list") and the detail ("pr"), laid
  * out like GitHub's pull requests (ported from multi src/landings:
@@ -8,7 +11,7 @@
  * tab bar is local presentation state (setPrTab, allowlisted there).
  */
 import { Button, Markdown } from "@smthrs/ui"
-import { lazy, Suspense } from "react"
+import { Suspense } from "react"
 import { flowArgs } from "../flows/FlowArgs"
 import type { Card } from "../state/AppState"
 import type { CardFamily, RunCommand } from "./CardFamily"
@@ -33,7 +36,7 @@ import {
 import { Octicon } from "./Octicon"
 
 /* The diff renderer is heavy; like ChangeCards, load it only when a file is shown. */
-const DiffSurface = lazy(() => import("./DiffSurface").then((module) => ({ default: module.DiffSurface })))
+
 
 export interface LandingCardActions {
   readonly onRunCommand: RunCommand
@@ -73,9 +76,8 @@ const LandingListRow = ({ repo, landing, onRunCommand }: { readonly repo: string
       <button
         type="button"
         className="ghc-row-btn"
-        data-flow="prs.view"
         aria-label={`Open pull request #${landing.number}: ${landing.title}`}
-        onClick={() => onRunCommand("prs.view", `${landing.number} ${repo}`)}
+        {...flowAction(onRunCommand, "prs.view", `${landing.number} ${repo}`)}
       >
         <StateIcon display={prDisplay(landing.state, extra.draft)} />
         <span className="ghc-row-main">
@@ -222,7 +224,7 @@ const FilesTab = ({ files }: { readonly files: ReadonlyArray<LandingFile> | unde
           </header>
           {file.patch !== undefined ?
             (
-              <Suspense fallback={<p className="ghc-tab-empty">Loading diff…</p>}>
+              <Suspense fallback={<ViewSkeleton />}>
                 <DiffSurface path={file.path} oldPath={file.oldPath} patch={file.patch} />
               </Suspense>
             ) :
@@ -282,8 +284,7 @@ export const LandingCardBody = ({
             role="tab"
             className="ghc-tab"
             aria-selected={tab === name}
-            data-flow="prs.tab"
-            onClick={() => onRunCommand("prs.tab", flowArgs("prs.tab", { cardId: card.id, tab: name }))}
+            {...flowAction(onRunCommand, "prs.tab", flowArgs("prs.tab", { cardId: card.id, tab: name }))}
           >
             <Octicon name={icon} /> {label}
             {count !== undefined ? <span className="ghc-tab-count">{count}</span> : null}
@@ -354,24 +355,21 @@ export const LandingCardBody = ({
                 {actionable && <footer className="ghc-merge-foot">
                   {canLand && <Button
                     size="sm"
-                    data-flow="prs.land"
-                    onClick={() => onRunCommand("prs.land", `${number} ${repo}`)}
+                    {...flowAction(onRunCommand, "prs.land", `${number} ${repo}`)}
                   >
                     <Octicon name="git-merge" /> Land (queue merge)
                   </Button>}
                   <Button
                     size="sm"
                     variant="outline"
-                    data-flow="prs.review"
-                    onClick={() => onRunCommand("prs.review", `${number} approve ${repo}`)}
+                    {...flowAction(onRunCommand, "prs.review", `${number} approve ${repo}`)}
                   >
                     Approve
                   </Button>
                   <Button
                     size="sm"
                     variant="outline"
-                    data-flow="prs.review"
-                    onClick={() => onRunCommand("prs.review", `${number} request-changes ${repo}`)}
+                    {...flowAction(onRunCommand, "prs.review", `${number} request-changes ${repo}`)}
                   >
                     Request changes
                   </Button>

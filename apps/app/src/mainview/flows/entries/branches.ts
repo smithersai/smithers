@@ -19,6 +19,7 @@ export const branchesFlows = (actions: CommandActions): ReadonlyArray<FlowEntry>
     args: "[owner/repo]",
     requires: ["signed-in"],
     input: RepoTarget,
+    prepare: ({ repo }) => actions.listBookmarks.preload?.(repo),
     handler: ({ repo }) => actions.listBookmarks(repo)
   })
 ]

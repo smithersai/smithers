@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import { readdirSync, readFileSync } from "node:fs"
 import { fileURLToPath } from "node:url"
+import ts from "typescript"
 
 /*
  * The launch-law gate: every interactive affordance in the app routes through
@@ -11,7 +12,25 @@ import { fileURLToPath } from "node:url"
  * command behind it fails this test.
  */
 
-const read = (relative: string): string => readFileSync(fileURLToPath(new URL(relative, import.meta.url)), "utf8")
+const read = (relative: string): string => {
+  let source = readFileSync(fileURLToPath(new URL(relative, import.meta.url)), "utf8")
+  // Inspect the shared binding as its equivalent JSX, keeping every existing
+  // command and affordance check applicable to both binding spellings.
+  const tree = ts.createSourceFile(relative, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX)
+  const edits: Array<{ start: number; end: number; text: string }> = []
+  const visit = (node: ts.Node) => {
+    if (ts.isJsxSpreadAttribute(node) && ts.isCallExpression(node.expression) && node.expression.expression.getText(tree) === "flowAction") {
+      const [run, name, args] = node.expression.arguments
+      if (!run || !name) throw new Error("A flow binding needs its dispatcher and command")
+      const label = ts.isStringLiteral(name) ? JSON.stringify(name.text) : `{${name.getText(tree)}}`
+      edits.push({ start: node.getStart(tree), end: node.end, text: `data-flow=${label} onClick={() => ${run.getText(tree)}(${name.getText(tree)}${args ? `, ${args.getText(tree)}` : ""})}` })
+    }
+    ts.forEachChild(node, visit)
+  }
+  visit(tree)
+  for (const edit of edits.reverse()) source = source.slice(0, edit.start) + edit.text + source.slice(edit.end)
+  return source
+}
 
 /**
  * The registry source: the Flows.ts aggregator plus every namespace module
@@ -118,6 +137,7 @@ const PRESENTATION_ONLY = [
 // Indirections added with the focused guide and run cards. Scope each literal
 // to its component so a similarly named handler cannot inherit the exception.
 const DELEGATED_HANDLERS: Readonly<Record<string, readonly string[]>> = {
+  "../onboarding/GuideShell.tsx": ["onClick={advanceGuidance}"], // advances transient introductory help, without invoking a capability
   "../ToastAction.tsx": ["onAction(action)"], // ToastStack/App and GuideShell bind the typed action to runCommand(action.flow, action.args)
   "../HelpBubble.tsx": ["onClick={dismiss}"], // restores focus, then onDismiss() dismisses transient help
   "../InputModeMenu.tsx": ["open ? close() : setOpen(true)", "latest.current.onChange(value)"], // transient menu; selection is input.mode at both mounts
@@ -185,7 +205,7 @@ describe("launch-law parity: every affordance is a command", () => {
         .filter(([, count]) => count > 0)
     )
     expect(counts).toEqual({
-      "../onboarding/GuideShell.tsx": 11, // Includes skip/secondary actions and the footer/dialog dictation controls.
+      "../onboarding/GuideShell.tsx": 12, // Includes skip/secondary actions and the footer/dialog dictation controls.
       // The optional capability reel after the last lesson: its launch pill and its Back.
       "../onboarding/Reel.tsx": 4, // Delegates to the shared onboarding and existing app flows; the Command-K overlay is the summoned composer with no chrome of its own. The sidebar lists Wiki and Mythical history only — no Library entry.
       /*
@@ -208,7 +228,7 @@ describe("launch-law parity: every affordance is a command", () => {
       "../WorldSurface.tsx": 8,
       "../HelpBubble.tsx": 1,
       "../InputModeMenu.tsx": 2,
-      "../SessionNavigation.tsx": 3,
+      "../SessionNavigation.tsx": 2,
       "../cards/CodingVibeCard.tsx": 1,
       "../cards/LiveTutorialRunBody.tsx": 7,
       "../cards/RepositoryUpdateCard.tsx": 3,
@@ -399,7 +419,7 @@ describe("launch-law parity: every affordance is a command", () => {
       /* 27 = 26 + the footer's Account button, the button door of account.show (factory mock 21; renders where an identity seam exists). */
       /* 28 = 27 + the footer's History button, the button door of history.show (design session 2026-09-07 chrome; cloud host only). */
       /* 30 = 28 + the footer's Wiki and Flows buttons, the button doors of the `wiki` and `flows` surface switches (the chrome is exactly Wiki, Dispatcher, Flows, Secrets, History, Account). */
-      "../tabs/ChromeBar.tsx": 29,
+      "../tabs/ChromeBar.tsx": 30,
       /* The live-process close question: confirm through tab.close.confirm. */
       "../tabs/TabBodies.tsx": 1
     })

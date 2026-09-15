@@ -23,6 +23,7 @@ export const prsFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> => [
     runtimeAny: ["cloud", "local.repositories", "practice"],
     args: "[owner/repo]",
     input: RepoTarget,
+    prepare: ({ repo }) => actions.listLandings.preload?.(repo),
     handler: ({ repo }) => actions.listLandings(repo)
   }),
   flow({
@@ -31,6 +32,7 @@ export const prsFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> => [
     runtimeAny: ["cloud", "local.repositories", "practice"],
     args: "[owner/repo]",
     input: RepoTarget,
+    prepare: ({ repo }) => actions.listLandings.preload?.(repo),
     handler: ({ repo }) => actions.listLandings(repo)
   }),
   flow({
@@ -41,6 +43,7 @@ export const prsFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> => [
     args: "<number> [owner/repo]",
     requires: ["signed-in"],
     input: NumberedTarget,
+    prepare: ({ number, repo }) => actions.viewLanding.preload?.(number, repo),
     handler: ({ number, repo }) => actions.viewLanding(number, repo)
   }),
   flow({

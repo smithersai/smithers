@@ -1,3 +1,4 @@
+import { flowAction } from "../flows/FlowAction"
 /*
  * The factory card (factory.show): how a repository builds itself, in the
  * two sections the design session fixed (2026-09-07 §4, mock 3). Wiki: the
@@ -89,9 +90,8 @@ export const FactoryCardBody = ({
                   <Button
                     size="sm"
                     variant="outline"
-                    data-flow="files.read"
                     aria-label={`Open ${row.path}`}
-                    onClick={() => onRunCommand("files.read", fileArgs(row.path, repo))}
+                    {...flowAction(onRunCommand, "files.read", fileArgs(row.path, repo))}
                   >
                     Open
                   </Button>

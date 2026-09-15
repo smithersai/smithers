@@ -1,3 +1,4 @@
+import { preparedView, type ViewAction } from "../PreparedView"
 /*
  * The factory seam: factory.show, how a repository builds itself (Factory
  * design session 2026-09-07 §4 and §5, mock 3). The card has two sections
@@ -25,7 +26,7 @@ import { readErrorMessage, unreachableSentence } from "./SeamContext"
 import type { SeamContext } from "./SeamContext"
 
 export interface FactorySeam {
-  readonly showFactory: (repo?: string) => Promise<string | void | { readonly value: string }>
+  readonly showFactory: ViewAction<[repo?: string]>
 }
 
 type FactoryPayload = Extract<Card, { kind: "factory" }>["payload"]
@@ -130,10 +131,11 @@ export const createFactorySeam = (ctx: SeamContext): FactorySeam => {
     return [...rows, ...rootWorkspace]
   }
 
-  const showFactory = async (repoArg?: string): Promise<string | void | { readonly value: string }> => {
+  const showFactory = preparedView(ctx, (repoArg?: string) => {
     const target = resolveTargetRepo(ctx.store, repoArg)
     if ("error" in target) return target.error
     const { repo } = target
+    return { id: `factory-${repo}`, title: `Factory · ${repo}`, read: async () => {
     const [root, smithers] = await Promise.all([listDirectory(repo, ""), listDirectory(repo, ".smithers")])
     const payload: FactoryPayload = {
       repo,
@@ -155,9 +157,9 @@ export const createFactorySeam = (ctx: SeamContext): FactorySeam => {
       ordinal: ctx.nextOrdinal(),
       payload
     }
-    ctx.dispatch({ type: "card.upsert", actor: ctx.actor(), card })
-    return { value: factoryValue(payload) }
-  }
+    return { card, value: factoryValue(payload) }
+    } }
+  })
 
   return { showFactory }
 }

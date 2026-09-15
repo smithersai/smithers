@@ -1,3 +1,5 @@
+import { ViewSkeleton } from "./ViewSkeleton"
+import { flowAction } from "./flows/FlowAction"
 /*
  * The card shell: header (title and actionable status), the maximize and
  * frame controls, and the body from the kind's family renderer.
@@ -131,6 +133,7 @@ export const CardView = memo(function CardView({
         className="smithers-card"
         data-kind={card.kind}
         data-status={card.status}
+        aria-busy={card.loading === true}
         data-maximized={maximized}
         data-run-id={card.kind === "run-trace" ? card.payload.runId : undefined}
         data-testid={`card-${card.id}`}
@@ -144,10 +147,10 @@ export const CardView = memo(function CardView({
       >
         <header className="smithers-card-header">
           {hasLocalHistory && card.navigation && <nav className="card-local-history" aria-label="Frame history">
-            <button type="button" data-flow="card.history.back" aria-label="Back in frame" disabled={card.navigation.index === 0}
-              onClick={() => onRunCommand("card.history.back", card.id)}><ArrowLeft size={16} /></button>
-            <button type="button" data-flow="card.history.forward" aria-label="Forward in frame" disabled={card.navigation.index + 1 === card.navigation.length}
-              onClick={() => onRunCommand("card.history.forward", card.id)}><ArrowRight size={16} /></button>
+            <button type="button"  aria-label="Back in frame" disabled={card.navigation.index === 0}
+              {...flowAction(onRunCommand, "card.history.back", card.id)}><ArrowLeft size={16} /></button>
+            <button type="button"  aria-label="Forward in frame" disabled={card.navigation.index + 1 === card.navigation.length}
+              {...flowAction(onRunCommand, "card.history.forward", card.id)}><ArrowRight size={16} /></button>
           </nav>}
           <span className="smithers-card-title">{title}</span>
           {/* A family that has no status word for a card (a picker awaiting its human) renders no pill: "" is not a status. */}
@@ -249,7 +252,7 @@ export const CardView = memo(function CardView({
         </header>
         <div className="smithers-card-body">
           <CardBodyBoundary cardId={card.id} onRunCommand={onRunCommand}>
-          {renderCardBody(card, {
+          {card.loading && card.kind !== "workspace" ? <ViewSkeleton /> : renderCardBody(card, {
             onDecideApproval,
             onGrantConfirm,
             onGrantCancel,

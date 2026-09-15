@@ -1,3 +1,4 @@
+import { flowAction } from "../flows/FlowAction"
 import type { Card } from "../state/AppState"
 import type { CardFamily, RunCommand } from "./CardFamily"
 
@@ -43,9 +44,8 @@ export const CommitPickBody = ({ card, onRunCommand }: { readonly card: CommitPi
       <button
         type="button"
         className="commit-pick-open"
-        data-flow="change.open"
         disabled={chosen.length === 0}
-        onClick={() => onRunCommand("change.open", `${repo} ${chosen.map((row) => row.commitId).join(" ")}`)}
+        {...flowAction(onRunCommand, "change.open", `${repo} ${chosen.map((row) => row.commitId).join(" ")}`)}
       >
         Make the Change with {chosen.length} {chosen.length === 1 ? "commit" : "commits"}
       </button>

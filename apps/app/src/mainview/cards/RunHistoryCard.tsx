@@ -1,3 +1,4 @@
+import { flowAction } from "../flows/FlowAction"
 /*
  * The run history card (docs/LOCAL-APP.md "Cards: target graph"): the repo's
  * recorded runs as a table — root label, status, started, duration, and the
@@ -46,9 +47,8 @@ export const RunHistoryCardBody = ({
                 variant="ghost"
                 size="sm"
                 className="run-history-select"
-                data-flow="target.runs.select"
                 aria-pressed={selected === run.runId}
-                onClick={() => onRunCommand("target.runs.select", `${repoId} ${run.runId}`)}
+                {...flowAction(onRunCommand, "target.runs.select", `${repoId} ${run.runId}`)}
               >
                 {run.label}
               </Button>

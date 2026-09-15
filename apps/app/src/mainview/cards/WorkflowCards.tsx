@@ -1,3 +1,4 @@
+import { flowAction } from "../flows/FlowAction"
 import { LiveTutorialLimitSchema } from "../state/LiveTutorialLimit"
 /*
  * The workflow cards: the embedded run card (run-trace) with its trace body
@@ -144,9 +145,8 @@ export const WorkflowRunCardBody = ({
               variant={facet === "steps" ? "default" : "outline"}
               role="tab"
               aria-selected={facet === "steps"}
-              data-flow="runs.steps"
               data-testid={`flow-run-facet-steps-${runId}`}
-              onClick={() => onRunCommand("runs.steps", runId)}
+              {...flowAction(onRunCommand, "runs.steps", runId)}
             >
               Trace
             </Button>
@@ -155,9 +155,8 @@ export const WorkflowRunCardBody = ({
               variant={facet === "transcript" ? "default" : "outline"}
               role="tab"
               aria-selected={facet === "transcript"}
-              data-flow="runs.logs"
               data-testid={`flow-run-facet-transcript-${runId}`}
-              onClick={() => onRunCommand("runs.logs", runId)}
+              {...flowAction(onRunCommand, "runs.logs", runId)}
             >
               Transcript
             </Button>
@@ -168,9 +167,8 @@ export const WorkflowRunCardBody = ({
                   variant={facet === "events" ? "default" : "outline"}
                   role="tab"
                   aria-selected={facet === "events"}
-                  data-flow="runs.events"
                   data-testid={`flow-run-facet-events-${runId}`}
-                  onClick={() => onRunCommand("runs.events", runId)}
+                  {...flowAction(onRunCommand, "runs.events", runId)}
                 >
                   Events
                 </Button>
@@ -185,9 +183,8 @@ export const WorkflowRunCardBody = ({
                     <Button
                       size="sm"
                       variant="outline"
-                      data-flow="runs.resume"
                       data-testid={`flow-run-resume-${runId}`}
-                      onClick={() => onRunCommand("runs.resume", runId)}
+                      {...flowAction(onRunCommand, "runs.resume", runId)}
                     >
                       Resume
                     </Button>
@@ -211,9 +208,8 @@ export const WorkflowRunCardBody = ({
                 <Button
                   size="sm"
                   variant="outline"
-                  data-flow="runs.rerun"
                   data-testid={`flow-run-rerun-${runId}`}
-                  onClick={() => onRunCommand("runs.rerun", runId)}
+                  {...flowAction(onRunCommand, "runs.rerun", runId)}
                 >
                   Run again
                 </Button>
@@ -434,7 +430,7 @@ export const WorkflowListCardBody = ({
             </div>
             {issueContext && (workflow.key === "issue.repro" || workflow.key === "issue/repro") ?
               <Button size="sm" variant="outline" data-flow="issue.repro" onClick={() => sendRunCommand("issue.repro", flowArgs("issue.repro", { number: issueContext.number, repo }))}>Run repro</Button> :
-              <Button size="sm" variant="outline" data-flow="flow.run" onClick={() => onRunCommand("flow.run", flowArgs("flow.run", { name: workflow.key, input: issueContext ? { args: JSON.stringify({ issue: issueContext }) } : undefined }))}>Run</Button>}
+              <Button size="sm" variant="outline"  {...flowAction(onRunCommand, "flow.run", flowArgs("flow.run", { name: workflow.key, input: issueContext ? { args: JSON.stringify({ issue: issueContext }) } : undefined }))}>Run</Button>}
           </li>
         ))}
       </ul>

@@ -1,3 +1,4 @@
+import { flowAction } from "../flows/FlowAction"
 /* The notifications card: the list plus one mark-all-read act. */
 import { Badge, Button } from "@smthrs/ui"
 import { Bell, BellDot } from "lucide-react"
@@ -39,8 +40,7 @@ export const NotificationsCardBody = ({
         <Button
           size="sm"
           variant="outline"
-          data-flow="notifications.read"
-          onClick={() => onRunCommand("notifications.read")}
+          {...flowAction(onRunCommand, "notifications.read")}
         >
           Mark all read
         </Button>

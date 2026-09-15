@@ -1,3 +1,4 @@
+import { flowAction } from "./flows/FlowAction"
 import { useCallback, type CSSProperties } from "react"
 import { useLiveQuery } from "@tanstack/react-db"
 import { useController } from "./ControllerContext"
@@ -57,10 +58,10 @@ export function SessionNavigation() {
   return <>
     {sessions[0]?.inputMode === "vim" && <KeyboardNavigation />}
     <header className="session-navigation" aria-label="Smithers" data-keyboard-pane="Navigation" ref={mount} data-sidebar-open={open}>
-      <h1 aria-label="Smithers" style={{ margin: 0 }}><button type="button" className="guide-wordmark" aria-label="Smithers" aria-expanded={open} aria-controls={open ? "session-sidebar" : undefined} aria-keyshortcuts="W" data-flow="sidebar.toggle" onClick={() => controller.runCommand("sidebar.toggle")}><Mark /></button></h1>
+      <h1 aria-label="Smithers" style={{ margin: 0 }}><button type="button" className="guide-wordmark" aria-label="Smithers" aria-expanded={open} aria-controls={open ? "session-sidebar" : undefined} aria-keyshortcuts="W" {...flowAction(controller.runCommand, "sidebar.toggle")}><Mark /></button></h1>
       {/* Signed in, the header carries no account chrome; Account lives in the sidebar and /account.show. */}
       {identity?.state !== "signed-in" && controller.commands.find("auth.sign-in") !== undefined && <div className="session-identity">
-        <button type="button" className="chrome-action" data-testid="chrome-sign-in" data-flow="auth.sign-in" onClick={() => controller.runCommand("auth.sign-in")}>Sign in with GitHub</button>
+        <button type="button" className="chrome-action" data-testid="chrome-sign-in" {...flowAction(controller.runCommand, "auth.sign-in")}>Sign in with GitHub</button>
       </div>}
     </header>
     {open && <div id="session-sidebar" className="session-sidebar" data-keyboard-pane="Sidebar"><ChromeBar identityInHeader /></div>}

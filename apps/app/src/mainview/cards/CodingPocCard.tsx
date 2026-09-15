@@ -1,3 +1,4 @@
+import { flowAction } from "../flows/FlowAction"
 import { runSourceCommand } from "../flows/RunCommand"
 import type { Card } from "../state/AppState"
 import { codingPocOf } from "./CodingPoc"
@@ -18,13 +19,13 @@ export const CodingPocBody = ({ card, onRunCommand: sendRunCommand }: {
       <h4>Disposable prototype</h4>
       <p>Drafted and discarded. No build or tests ran.</p>
       <p>{first.length <= 240 ? first : `${first.slice(0, 240)}…`}</p>
-      <button type="button" className="run-trace-filter" data-flow="runs.trace.select"
-        onClick={() => onRunCommand("runs.trace.select", `${card.payload.runId} ${poc.spanId}`)}>
+      <button type="button" className="run-trace-filter" 
+        {...flowAction(onRunCommand, "runs.trace.select", `${card.payload.runId} ${poc.spanId}`)}>
         Inspect prototype execution
       </button>
       {card.payload.kind !== "prototype" && ["launching", "running", "waiting-approval", "reconnecting"].includes(card.payload.phase) ? (
-        <button type="button" className="run-trace-filter" data-flow="runs.steer"
-          onClick={() => onRunCommand("runs.steer", card.payload.runId)}>
+        <button type="button" className="run-trace-filter" 
+          {...flowAction(onRunCommand, "runs.steer", card.payload.runId)}>
           Give prototype feedback
         </button>
       ) : null}

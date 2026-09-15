@@ -1,3 +1,4 @@
+import { flowAction } from "../flows/FlowAction"
 import { useContext } from "react"
 import { InTutorial } from "../onboarding/transcriptScope"
 import { GuideButton } from "../onboarding/GuideButton"
@@ -38,8 +39,8 @@ export function LiveTutorialRunBody({ card, onRunCommand }: { card: Extract<Card
       <p>{plan.summary}</p>
       <ol>{plan.steps.map((step, index) => <li key={index}>{step}</li>)}</ol>
       {plan.files.length > 0 && <p className="live-tutorial-files">{plan.files.map(path => <code key={path}>{path}</code>)}</p>}
-      {card.status === "acted" ? <p className="live-tutorial-outcome">Implementation started</p> : <GuideButton className="guide-primary" data-flow="agent.change.start"
-        onClick={() => onRunCommand("agent.change.start", card.id)}>Start implementation</GuideButton>}
+      {card.status === "acted" ? <p className="live-tutorial-outcome">Implementation started</p> : <GuideButton className="guide-primary" 
+        {...flowAction(onRunCommand, "agent.change.start", card.id)}>Start implementation</GuideButton>}
     </section>}
     {!plan && run?.result && <div className="live-tutorial-result"><Markdown content={run.result} /></div>}
     {run?.tests && <p className="live-tutorial-check" data-passed={run.tests.exitCode === 0}>{run.tests.exitCode === 0 ? "✓ Tests passed" : reproducesBug ? "Tests failed (expected: reproduces the bug)" : "Tests failed"}</p>}
@@ -50,8 +51,8 @@ export function LiveTutorialRunBody({ card, onRunCommand }: { card: Extract<Card
         const selected = card.payload.selection === event.id
         const duration = event.finishedAt === undefined ? undefined : Math.max(0, event.finishedAt - event.startedAt) / 1000
         return <li key={event.id} data-status={event.status}>
-          <button type="button" data-flow="tutorial.live.inspect" aria-expanded={selected}
-            onClick={() => onRunCommand("tutorial.live.inspect", flowArgs("tutorial.live.inspect", { cardId: card.id, eventId: event.id }))}>
+          <button type="button"  aria-expanded={selected}
+            {...flowAction(onRunCommand, "tutorial.live.inspect", flowArgs("tutorial.live.inspect", { cardId: card.id, eventId: event.id }))}>
             <span className="live-event-mark" aria-label={event.status}>{event.status === "completed" ? "✓" : event.status === "failed" ? "!" : "·"}</span>
             <span>{event.label}</span><time>{duration === undefined ? "Running" : `${duration.toFixed(1)}s`}</time>
           </button>
@@ -60,10 +61,10 @@ export function LiveTutorialRunBody({ card, onRunCommand }: { card: Extract<Card
       })}
     </ol>}
     {failure && <p className="live-tutorial-error" role="alert">{failure}</p>}
-    {inTutorial && (expired || limit) && <GuideButton className="guide-primary" data-flow="onboarding.act" onClick={() => onRunCommand("onboarding.act", limit ? "skip-practice" : "restart")}>{limit ? "Continue without practice" : "Start new tutorial"}</GuideButton>}
-    {!expired && !limit && (failure || run?.phase === "failed") && <button type="button" className="guide-text-button" data-flow="tutorial.live.retry"
-      onClick={() => onRunCommand("tutorial.live.retry", card.id)}>{run === undefined || run.phase === "failed" ? "Retry" : "Reconnect"}</button>}
-    {run?.operation === "implement" && run.phase === "completed" && !failure && <button type="button" className="guide-primary" data-flow="files.implementation-diff"
-      onClick={() => onRunCommand("files.implementation-diff")}>View diff</button>}
+    {inTutorial && (expired || limit) && <GuideButton className="guide-primary"  {...flowAction(onRunCommand, "onboarding.act", limit ? "skip-practice" : "restart")}>{limit ? "Continue without practice" : "Start new tutorial"}</GuideButton>}
+    {!expired && !limit && (failure || run?.phase === "failed") && <button type="button" className="guide-text-button" 
+      {...flowAction(onRunCommand, "tutorial.live.retry", card.id)}>{run === undefined || run.phase === "failed" ? "Retry" : "Reconnect"}</button>}
+    {run?.operation === "implement" && run.phase === "completed" && !failure && <button type="button" className="guide-primary" 
+      {...flowAction(onRunCommand, "files.implementation-diff")}>View diff</button>}
   </div>
 }

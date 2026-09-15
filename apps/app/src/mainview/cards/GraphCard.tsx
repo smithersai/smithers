@@ -1,3 +1,4 @@
+import { flowAction } from "../flows/FlowAction"
 /*
  * The graph card (docs/LOCAL-APP.md "Cards: target graph"): the repository's
  * typed dependency DAG on the shared @smthrs/ui WorkflowCanvas, laid out
@@ -308,11 +309,7 @@ export const GraphNodeDrawer = ({
               <Button
                 variant="ghost"
                 size="sm"
-                onClick={() =>
-                  onRunCommand(
-                    "target.source.open",
-                    `${repoId} ${node.source?.file ?? ""}${node.source?.line !== undefined ? `:${node.source.line}` : ""}`
-                  )}
+                {...flowAction(onRunCommand, "target.source.open", `${repoId} ${node.source?.file ?? ""}${node.source?.line !== undefined ? `:${node.source.line}` : ""}`)}
               >
                 Open
               </Button>
@@ -321,7 +318,7 @@ export const GraphNodeDrawer = ({
         ) :
         null}
       <div className="graph-drawer-actions">
-        <Button size="sm" data-flow="target.run" onClick={() => onRunCommand("target.run", `${repoId} ${node.label}`)}>
+        <Button size="sm"  {...flowAction(onRunCommand, "target.run", `${repoId} ${node.label}`)}>
           Run
         </Button>
       </div>

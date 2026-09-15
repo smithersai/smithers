@@ -1142,6 +1142,7 @@ export type AppTransition =
   | { type: "notifications.read"; actor: Actor; receipts: Array<{ id: string; version: string }> }
   | { type: "notification.tagged"; actor: Actor; id: string; tag: string }
   | { type: "card.navigated"; actor: Actor; card: Card }
+  | { type: "card.view.loaded"; actor: Actor; card: Card }
   | { type: "card.history.moved"; actor: Actor; id: string; delta: -1 | 1 }
   | { type: "input.mode.changed"; actor: Actor; mode: InputMode }
   | { type: "dictation.changed"; actor: Actor; listening: boolean }
@@ -1286,7 +1287,7 @@ export type AppTransition =
   | {
     /* The search palette opens/closes (Cmd+K, Escape, Enter on an item); a close remembers the query. */
     type: "palette.toggled"
-    actor: "user"
+    actor: "user" | "system"
     open: boolean
     lastQuery?: string
   }

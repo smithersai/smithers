@@ -1,3 +1,4 @@
+import { flowAction } from "../flows/FlowAction"
 /*
  * The affected card (docs/LOCAL-APP.md "Cards: target graph"): the working
  * tree's changed files and the labels they re-key, each with its reason and
@@ -49,8 +50,7 @@ export const AffectedCardBody = ({
                   <Button
                     variant="ghost"
                     size="sm"
-                    data-flow="target.graph"
-                    onClick={() => onRunCommand("target.graph", `${repoId} ${entry.label}`)}
+                    {...flowAction(onRunCommand, "target.graph", `${repoId} ${entry.label}`)}
                   >
                     Show in graph
                   </Button>

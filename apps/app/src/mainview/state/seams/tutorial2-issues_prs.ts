@@ -63,7 +63,7 @@ export const mutatePracticeIssue = async (ctx: SeamContext, number: number, edit
 }
 
 /** issues.view on the practice repository: the bundled issue, then the lesson's `issue.opened`. */
-export async function practiceViewIssue(ctx: SeamContext, number: number): Promise<string | { readonly value: string }> {
+export async function practiceViewIssue(ctx: SeamContext, number: number): Promise<string | void | { readonly value: string }> {
   const payload = savedPracticeIssue(ctx, number) ?? practiceIssue(number)
   if (payload === undefined) return `No issue #${number} in ${PRACTICE_NAME}.`
   const playthrough = ctx.store.session().guide?.playthrough
@@ -76,7 +76,7 @@ export async function practiceViewIssue(ctx: SeamContext, number: number): Promi
 }
 
 /** prs.view on the practice repository: the bundled PR with its branch, commits and per-file patches. No lesson waits on it. */
-export async function practiceViewLanding(ctx: SeamContext, number: number): Promise<string | { readonly value: string }> {
+export async function practiceViewLanding(ctx: SeamContext, number: number): Promise<string | void | { readonly value: string }> {
   const payload = practicePr(number)
   if (payload === undefined) return `No pull request #${number} in ${PRACTICE_NAME}.`
   await publishRepoView(ctx, {
@@ -96,8 +96,8 @@ export async function tutorialRepositoryRead(
   explicit: string | undefined,
   filter: "open" | "closed" | "all",
   renderForm: RepositoryForm | undefined,
-  read: (repo: string) => Promise<string | { readonly value: string }>,
-): Promise<string | { readonly value: string }> {
+  read: (repo: string) => Promise<string | void | { readonly value: string }>,
+): Promise<string | void | { readonly value: string }> {
   if (isPracticeRepo(explicit)) return practiceRead(ctx, kind, filter)
   const session = ctx.store.session()
   const key = session.activeRepoKey
@@ -117,7 +117,7 @@ export async function tutorialRepositoryRead(
     return target.error
   }
   const { repo } = target
-  let result: string | { readonly value: string }
+  let result: string | void | { readonly value: string }
   if (local && "repo" in local) {
     const body = `This local-only repository has no hosted ${kind === "issues" ? "issue tracker" : "pull requests"}.`
     const common = { id: `${kind}-${repo}`, title: `${kind === "issues" ? "Issues" : "Pull requests"} · ${local.repo.name}`, body,
@@ -144,7 +144,7 @@ export async function tutorialRepositoryRead(
     (pane !== undefined && pane.kind === (kind === "issues" ? "issue-list" : "pr-list") ? pane : undefined)
   const refused = card?.kind === "issue-list" && (card.payload.github?.refusal || card.payload.github?.syncError || card.payload.github?.stale)
   const selected = local && "repo" in local ? local.repo.path : activeRepositoryId(ctx.store)
-  if (typeof result !== "string" && !refused && card && selected === repo && current.activeRepoKey === key &&
+  if (result !== undefined && typeof result !== "string" && !refused && card && selected === repo && current.activeRepoKey === key &&
     identity?.login === currentIdentity?.login && identity?.state === currentIdentity?.state &&
     guide?.step === current.guide?.step) {
     await finishLesson(ctx, signalOf(kind), guide?.playthrough)

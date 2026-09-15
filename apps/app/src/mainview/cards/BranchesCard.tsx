@@ -1,3 +1,4 @@
+import { flowAction } from "../flows/FlowAction"
 /*
  * The branches (bookmarks) card: bookmark name plus the short head commit.
  * A row opens that branch's commits (commits.list <branch> <owner/repo>);
@@ -28,9 +29,8 @@ export const BranchesCardBody = ({
                 type="button"
                 className="branches-row-open"
                 data-row-open
-                data-flow="commits.list"
                 aria-label={`Commits on ${bookmark.name}`}
-                onClick={() => onRunCommand("commits.list", `${bookmark.name} ${card.payload.repo}`)}
+                {...flowAction(onRunCommand, "commits.list", `${bookmark.name} ${card.payload.repo}`)}
               >
                 <GitBranch size={14} aria-hidden="true" />
                 <span className="world-card-title">{bookmark.name}</span>

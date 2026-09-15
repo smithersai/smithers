@@ -1,3 +1,4 @@
+import { flowAction } from "../flows/FlowAction"
 /*
  * The history card (Factory design session 2026-09-07 §3, mock 13): the
  * mythical history embedded in the chat. First-parent rows are epics with
@@ -74,9 +75,8 @@ export const HistoryCardBody = ({ card, onRunCommand, signedOut = false }: { rea
         <Button
           variant="ghost"
           size="sm"
-          data-flow="history.bootstrap"
           data-testid="history-bootstrap"
-          onClick={() => onRunCommand("history.bootstrap", repo)}
+          {...flowAction(onRunCommand, "history.bootstrap", repo)}
         >
           {signedOut ? "Sign in to bootstrap the mythical history" : "Bootstrap the mythical history"}
         </Button>
@@ -129,9 +129,8 @@ export const HistoryCardBody = ({ card, onRunCommand, signedOut = false }: { rea
             <Button
               variant="ghost"
               size="sm"
-              data-flow="history.fold"
               data-testid="history-fold"
-              onClick={() => onRunCommand("history.fold", repo)}
+              {...flowAction(onRunCommand, "history.fold", repo)}
             >
               Fold {payload.defaultBookmark ?? "the default bookmark"} into mythical
             </Button>

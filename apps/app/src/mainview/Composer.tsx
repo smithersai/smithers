@@ -1,3 +1,4 @@
+import { flowAction } from "./flows/FlowAction"
 import { Button, ChatComposer } from "@smthrs/ui"
 import { useLiveQuery } from "@tanstack/react-db"
 import {
@@ -828,8 +829,7 @@ function ComposerOrigin() {
                 <button
                   type="button"
                   className="composer-origin-branch"
-                  data-flow="change.view"
-                  onClick={() => controller.runCommand("change.view", pin.changeId ?? "")}
+                  {...flowAction(controller.runCommand, "change.view", pin.changeId ?? "")}
                 >
                   {` · rev ${newerSeq} exists · view`}
                 </button>

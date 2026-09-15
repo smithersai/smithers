@@ -99,6 +99,21 @@ Restated from the canon; nothing new.
 - **Copy.** Sentence case, no badges that are scores, mono meta rows for
   ids and timestamps, the ember/sediment/water/slate status mapping.
 
+## Responsive views
+
+A view opens immediately. `preparedView` owns the pending card, request sharing,
+short-lived preloads, failure state, and navigation races. Its `read` returns data;
+only activation publishes the card or runs `before`/`after`. `project` combines a
+prefetched result with current local state when the view also carries live facts.
+Never put a mutation, provisioning, a read receipt, or tutorial progress in `read`.
+
+A flow declares `prepare` beside its handler. Recommendations eagerly call it;
+`flowAction` binds the same name and arguments to click, pointer intent, and keyboard
+focus through one delegated listener. Existing runtime and prerequisite checks
+still apply. Prefetch failures stay silent and are retried on activation. Resource
+updates and mutations invalidate the bounded cache. Heavy renderers share their
+preloadable module with Suspense and display `ViewSkeleton` when still loading.
+
 ## 3. Surfaces
 
 Each row: the job, the card, its embedded and maximized anatomy, the flows, the

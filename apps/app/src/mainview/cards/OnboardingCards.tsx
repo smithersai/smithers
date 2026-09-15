@@ -1,3 +1,4 @@
+import { flowAction } from "../flows/FlowAction"
 /*
  * The repository welcome card and its three answers (controller/onboarding.ts).
  * Every button is the button door of a registered flow, dispatched through
@@ -36,7 +37,7 @@ const Door = ({
   label,
   onRunCommand
 }: { readonly flow: FlowName; readonly args?: string; readonly label: string } & OnboardingCardActions) => (
-  <Button variant="ghost" size="sm" data-flow={flow} data-testid={`onboarding-${flow}`} onClick={() => onRunCommand(flow, args)}>
+  <Button variant="ghost" size="sm"  data-testid={`onboarding-${flow}`} {...flowAction(onRunCommand, flow, args)}>
     {label}
   </Button>
 )

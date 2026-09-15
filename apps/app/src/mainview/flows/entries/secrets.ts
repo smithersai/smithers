@@ -19,6 +19,7 @@ export const secretsFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> 
     args: "[owner/repo]",
     requires: ["signed-in"],
     input: RepoTarget,
+    prepare: ({ repo }) => actions.listSecrets.preload?.(repo),
     handler: ({ repo }) => actions.listSecrets(repo)
   })
 ]

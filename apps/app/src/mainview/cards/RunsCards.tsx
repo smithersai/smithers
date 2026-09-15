@@ -1,3 +1,4 @@
+import { flowAction } from "../flows/FlowAction"
 /*
  * Lane runs — the run inbox and the approvals inbox cards.
  *
@@ -52,12 +53,12 @@ export const RunListCardBody = ({
   return (
     <div className="world-card-list">
       <div className="flow-run-actions">
-        <Button size="sm" variant={attention ? "default" : "outline"} data-flow="runs.attention"
-          onClick={() => onRunCommand("runs.attention", flowArgs("runs.attention", { sourceCard: card.id, repo }))}>Needs attention</Button>
-        <Button size="sm" variant="outline" data-flow="runs.list"
-          onClick={() => onRunCommand("runs.list", listArgs(card.payload.status))}>Refresh</Button>
-        {attention ? <Button size="sm" variant="outline" data-flow="runs.list"
-          onClick={() => onRunCommand("runs.list", listArgs())}>All runs</Button> : null}
+        <Button size="sm" variant={attention ? "default" : "outline"} 
+          {...flowAction(onRunCommand, "runs.attention", flowArgs("runs.attention", { sourceCard: card.id, repo }))}>Needs attention</Button>
+        <Button size="sm" variant="outline" 
+          {...flowAction(onRunCommand, "runs.list", listArgs(card.payload.status))}>Refresh</Button>
+        {attention ? <Button size="sm" variant="outline" 
+          {...flowAction(onRunCommand, "runs.list", listArgs())}>All runs</Button> : null}
       </div>
       {observationError === undefined ? null : <p className="sui-approval-error" role="alert">Some state could not be read: {observationError}</p>}
       {attention && card.payload.observedAt !== undefined ? <p className="smithers-card-note">{repo} · checked {clockLabel(card.payload.observedAt)}</p> : null}
@@ -65,8 +66,8 @@ export const RunListCardBody = ({
         {approvals.map(approval => <li key={`${approval.runId}:${approval.requestId}`} className="world-card-row">
           <span className="world-card-title">{approval.title}</span>
           <span className="world-card-path">run {approval.runId} · approval required</span>
-          <Button size="sm" variant="outline" data-flow="approvals.open"
-            onClick={() => onRunCommand("approvals.open", flowArgs("approvals.open", { runId: approval.runId, sourceCard: card.id }))}>Review request</Button>
+          <Button size="sm" variant="outline" 
+            {...flowAction(onRunCommand, "approvals.open", flowArgs("approvals.open", { runId: approval.runId, sourceCard: card.id }))}>Review request</Button>
         </li>)}
       </ul> : null}
       <p className="smithers-card-note" data-testid="run-list-counts">
@@ -80,8 +81,7 @@ export const RunListCardBody = ({
             <Button
               size="sm"
               variant={card.payload.status === undefined ? "default" : "outline"}
-              data-flow="runs.list"
-              onClick={() => onRunCommand("runs.list", listArgs())}
+              {...flowAction(onRunCommand, "runs.list", listArgs())}
             >
               All
             </Button>
@@ -90,9 +90,8 @@ export const RunListCardBody = ({
                 key={status}
                 size="sm"
                 variant={card.payload.status === status ? "default" : "outline"}
-                data-flow="runs.list"
                 data-testid={`run-list-chip-${status}`}
-                onClick={() => onRunCommand("runs.list", listArgs(status))}
+                {...flowAction(onRunCommand, "runs.list", listArgs(status))}
               >
                 {status}
               </Button>
@@ -119,9 +118,8 @@ export const RunListCardBody = ({
                 <Button
                   size="sm"
                   variant="outline"
-                  data-flow="runs.open"
                   data-testid={`runs-open-${run.runId}`}
-                  onClick={() => onRunCommand("runs.open", flowArgs("runs.open", { sourceCard: card.id, runId: run.runId }))}
+                  {...flowAction(onRunCommand, "runs.open", flowArgs("runs.open", { sourceCard: card.id, runId: run.runId }))}
                 >
                   Open
                 </Button>
@@ -135,9 +133,8 @@ export const RunListCardBody = ({
             <Button
               size="sm"
               variant="outline"
-              data-flow="flow.run.stop-all"
               data-testid="run-list-stop-all"
-              onClick={() => onRunCommand("flow.run.stop-all", `sourceCard=${card.id} ${repo}`)}
+              {...flowAction(onRunCommand, "flow.run.stop-all", `sourceCard=${card.id} ${repo}`)}
             >
               Stop all {liveCount}
             </Button>

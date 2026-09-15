@@ -181,14 +181,14 @@ describe("landings seam — prs.list", () => {
     expect(outcome.status === "executed" ? outcome.value : undefined).toBe("No pull requests in will/flows.")
   })
 
-  test("a 500 answers the platform's message as the honest error, and no card appears", async () => {
+  test("a 500 answers the platform's message as the honest error, and keeps the failed view visible", async () => {
     const { store, controller } = await ready(
       backend({ [LANDINGS]: json(500, { message: "the platform fell over" }) })
     )
     const outcome = await controller.commands.run("prs.list")
     expect(outcome.status).toBe("failed")
     if (outcome.status === "failed") expect(outcome.error).toBe("the platform fell over")
-    expect(store.collections.cards.get("prs-will/flows")).toBeUndefined()
+    expect(store.collections.cards.get("prs-will/flows")).toMatchObject({ status: "error", loading: false })
   })
 
   test("with no loaded repository the answer is the missing-repository form", async () => {

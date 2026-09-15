@@ -1,3 +1,4 @@
+import { flowAction } from "../flows/FlowAction"
 /*
  * The embedded run card's body: what the run did, in the order a reader
  * needs it.
@@ -190,7 +191,7 @@ export const RunTraceBody = ({
   const scrub = card.payload.liveTail === false ? (
     <span className="run-trace-scrub">
       {card.payload.cursorSeq !== undefined ? <span className="run-trace-cursor">At #{card.payload.cursorSeq}</span> : null}
-      <button type="button" className="run-trace-filter" data-flow="runs.trace.live" onClick={() => onRunCommand("runs.trace.live", runId)}>
+      <button type="button" className="run-trace-filter"  {...flowAction(onRunCommand, "runs.trace.live", runId)}>
         Latest
       </button>
     </span>
@@ -200,8 +201,8 @@ export const RunTraceBody = ({
   )
   return (
     <div className="run-trace" data-testid={`run-trace-${runId}`} data-kind={kind} data-view={planOnly ? "plan" : view}>
-      <Button size="sm" variant="outline" data-flow="runs.handoff"
-        onClick={() => onRunCommand("runs.handoff", runId)}>Prepare handoff</Button>
+      <Button size="sm" variant="outline" 
+        {...flowAction(onRunCommand, "runs.handoff", runId)}>Prepare handoff</Button>
       {kind === "prototype" ?
         (
           <p className="run-trace-banner" data-testid={`run-trace-banner-${runId}`}>
@@ -242,9 +243,8 @@ export const RunTraceBody = ({
               <button
                 type="button"
                 className="run-trace-filter run-trace-view"
-                data-flow="runs.trace.view"
                 aria-pressed={false}
-                onClick={() => onRunCommand("runs.trace.view", `${runId} timeline`)}
+                {...flowAction(onRunCommand, "runs.trace.view", `${runId} timeline`)}
               >
                 Timeline
               </button>
@@ -261,13 +261,12 @@ export const RunTraceBody = ({
                     <button
                       type="button"
                       className="run-turn"
-                      data-flow="runs.trace.select"
                       data-turn={turn.number}
                       aria-pressed={open}
                       aria-expanded={open}
                       aria-controls={open ? detailId : undefined}
                       title={turn.source === "model" ? "Recorded model text" : "Recorded journal activity"}
-                      onClick={() => onRunCommand("runs.trace.select", `${runId} ${turn.frame.id}`)}
+                      {...flowAction(onRunCommand, "runs.trace.select", `${runId} ${turn.frame.id}`)}
                     >
                       <span className="run-turn-number">{turn.number}</span>
                       <span className="run-turn-body">
@@ -298,12 +297,11 @@ export const RunTraceBody = ({
                     <button
                       type="button"
                       className="run-turn"
-                      data-flow="runs.trace.select"
                       data-engine-span={span.id}
                       aria-pressed={open}
                       aria-expanded={open}
                       aria-controls={open ? detailId : undefined}
-                      onClick={() => onRunCommand("runs.trace.select", `${runId} ${span.id}`)}
+                      {...flowAction(onRunCommand, "runs.trace.select", `${runId} ${span.id}`)}
                     >
                       <span className="run-turn-number"><span className="run-trace-dot" data-status={span.status} aria-hidden /></span>
                       <span className="run-turn-body">
@@ -331,9 +329,8 @@ export const RunTraceBody = ({
             <button
               type="button"
               className="run-trace-filter run-trace-view"
-              data-flow="runs.trace.view"
               aria-pressed={false}
-              onClick={() => onRunCommand("runs.trace.view", `${runId} turns`)}
+              {...flowAction(onRunCommand, "runs.trace.view", `${runId} turns`)}
             >
               Turns
             </button>
@@ -343,11 +340,10 @@ export const RunTraceBody = ({
                 key={id}
                 type="button"
                 className="run-trace-filter"
-                data-flow="runs.trace.filter"
                 data-filter={id}
                 data-on={filter === id}
                 aria-pressed={filter === id}
-                onClick={() => onRunCommand("runs.trace.filter", `${runId} ${id}`)}
+                {...flowAction(onRunCommand, "runs.trace.filter", `${runId} ${id}`)}
               >
                 {label}
               </button>
@@ -393,14 +389,13 @@ export const RunTraceBody = ({
                             <button
                               type="button"
                               className="run-trace-water-bar"
-                              data-flow="runs.trace.select"
                               data-instant={instant}
                               data-open={span.endedAt === undefined}
                               aria-label={summary}
                               aria-pressed={selected.id === span.id}
                               title={summary}
                               style={{ left: `${bar.left}%`, width: `${bar.width}%` }}
-                              onClick={() => onRunCommand("runs.trace.select", `${runId} ${span.id}`)}
+                              {...flowAction(onRunCommand, "runs.trace.select", `${runId} ${span.id}`)}
                             />
                           </span>
                         </li>
@@ -432,9 +427,8 @@ const PathCrumbs = ({ path, selected, runId, onRunCommand }: {
         {index > 0 ? <span aria-hidden>{" / "}</span> : null}
         <button
           type="button"
-          data-flow="runs.trace.select"
           aria-current={ancestor.id === selected.id ? "location" : undefined}
-          onClick={() => onRunCommand("runs.trace.select", `${runId} ${ancestor.id}`)}
+          {...flowAction(onRunCommand, "runs.trace.select", `${runId} ${ancestor.id}`)}
         >
           {ancestor.label}
         </button>
@@ -457,14 +451,13 @@ const CallTree = ({ rows, selected, model, runId, onRunCommand }: {
         <button
           type="button"
           className="run-trace-node"
-          data-flow="runs.trace.select"
           data-trace-span={span.id}
           data-kind={span.kind}
           data-status={span.status}
           data-depth={span.depth}
           aria-pressed={selected.id === span.id}
           style={{ paddingLeft: `${0.5 + span.depth * 0.875}rem` }}
-          onClick={() => onRunCommand("runs.trace.select", `${runId} ${span.id}`)}
+          {...flowAction(onRunCommand, "runs.trace.select", `${runId} ${span.id}`)}
         >
           <span className="run-trace-dot" data-status={span.status} aria-hidden />
           <span className="run-trace-label">{span.label}</span>
@@ -496,8 +489,7 @@ const ChildRunDoor = ({ span, repo, onRunCommand }: { readonly span: TraceSpan; 
       <button
         type="button"
         className="run-trace-filter"
-        data-flow="runs.open"
-        onClick={() => onRunCommand("runs.open", `${span.detail.childRunId} ${repo}`)}
+        {...flowAction(onRunCommand, "runs.open", `${span.detail.childRunId} ${repo}`)}
       >
         Inspect child run
       </button>

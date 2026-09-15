@@ -108,6 +108,7 @@ export interface Declaration<I extends Payload> extends FlowMetadata {
   readonly name: string
   readonly input: I
   /** The call identity is available for destination-side idempotency. */
+  readonly prepare?: (payload: I["Type"]) => void | Promise<void>
   readonly handler: (payload: I["Type"], signal: AbortSignal, call: Cell.Call) => CommandResult | Promise<CommandResult>
   /** Capability claims; the free `app:act` default when omitted. */
   readonly capabilities?: ReadonlyArray<string>
@@ -131,10 +132,14 @@ export interface Declaration<I extends Payload> extends FlowMetadata {
  * carries the argument hint; `metadata.summary` stays the human's catalog copy.
  */
 export const flow = <I extends Payload>(declaration: Declaration<I>): FlowEntry => {
-  const { name, input, handler, capabilities, userOnly, ...metadata } = declaration
+  const { name, input, handler, prepare, capabilities, userOnly, ...metadata } = declaration
   const described = metadata.args === undefined ? metadata.summary : `${metadata.summary} (args: ${metadata.args})`
   let binding: FlowEntry["binding"] | undefined
   return {
+    prepare: prepare === undefined ? undefined : async (payload) => {
+      const decoded = Schema.decodeUnknownSync(input)(payload)
+      await prepare(decoded)
+    },
     cooperativeCancellation: true,
     declaredName: name,
     // JSON schema projection and executable binding are needed on invocation

@@ -23,6 +23,7 @@ export const historyFlows = (actions: CommandActions & Partial<LibrarianRunsCont
     runtime: ["cloud"],
     args: "[owner/repo]",
     input: RepoTarget,
+    prepare: ({ repo }) => actions.showHistory.preload?.(repo),
     handler: ({ repo }) => actions.showHistory(repo)
   }),
   flow({

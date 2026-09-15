@@ -1,3 +1,4 @@
+import { flowAction } from "../flows/FlowAction"
 import { Button } from "@smthrs/ui"
 import type { KeyboardEvent } from "react"
 import type { Card } from "../state/AppState"
@@ -123,7 +124,7 @@ export const FlowFormCardBody = ({
       })}
       {settled ? null : (
         <div className="flow-run-actions">
-          <Button variant="ghost" size="sm" data-flow="card.dismiss" data-testid="flow-form-cancel" disabled={busy} onClick={() => onRunCommand("card.dismiss", card.id)}>
+          <Button variant="ghost" size="sm"  data-testid="flow-form-cancel" disabled={busy} {...flowAction(onRunCommand, "card.dismiss", card.id)}>
             Cancel
           </Button>
           <Button type="submit" size="sm" data-flow="form.submit" data-testid="flow-form-submit" disabled={!complete || busy}>

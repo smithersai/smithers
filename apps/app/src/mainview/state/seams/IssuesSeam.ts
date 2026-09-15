@@ -1,5 +1,5 @@
+import { preparedView, type ViewAction, type ViewResult, invalidatePreparedViews } from "../PreparedView"
 import { readRepositoryDetail } from "../RepositoryReadReceipts"
-import { publishIssueView, publishRepoView } from "../EmbeddedHistory"
 import { isPracticeRepo } from "../practice/PracticeRepository"
 import { mutatePracticeIssue, finishIssueLesson, practiceViewIssue, tutorialRepositoryRead, readRepositoryListError, type RepositoryForm } from "./tutorial2-issues_prs"
 /*
@@ -28,8 +28,8 @@ import type { SeamContext } from "./SeamContext"
 
 export interface IssuesSeam {
   /** Renders the list card and answers the rows as text (the model reads the value, never the card). */
-  readonly listIssues: (filter: "open" | "closed" | "all", repo?: string) => Promise<string | { readonly value: string }>
-  readonly viewIssue: (number: number, repo?: string, source?: "smithers-cloud" | "github") => Promise<string | { readonly value: string }>
+  readonly listIssues: ViewAction<[filter: "open" | "closed" | "all", repo?: string]>
+  readonly viewIssue: ViewAction<[number: number, repo?: string, source?: "smithers-cloud" | "github"]>
   readonly createIssue: (title: string, repo?: string) => Promise<string | void>
   readonly setIssueState: (
     number: number,
@@ -226,7 +226,7 @@ export const createIssuesSeam = (ctx: SeamContext, renderRepositoryForm?: Reposi
   const listFromGithubSource = async (
     repo: string,
     filter: "open" | "closed" | "all"
-  ): Promise<string | { readonly value: string }> => {
+  ): Promise<ViewResult> => {
     let response: Response
     try {
       response = await ctx.http(githubSourceIssuesPath(repo, filter))
@@ -245,7 +245,7 @@ export const createIssuesSeam = (ctx: SeamContext, renderRepositoryForm?: Reposi
       const parsed = parseGithubListRow(entry)
       return parsed === null ? [] : [parsed]
     })
-    await publishRepoView(ctx, {
+    const card: Card = {
       id: `issues-${repo}`,
       kind: "issue-list",
       title: `Issues · ${repo}`,
@@ -260,14 +260,14 @@ export const createIssuesSeam = (ctx: SeamContext, renderRepositoryForm?: Reposi
         syncError: response.headers.get("x-metadata-sync-error"),
         refusal: null
       } }
-    })
-    return readResult(issues.length === 0
+    }
+    return { card, ...readResult(issues.length === 0
       ? `No ${filter === "all" ? "" : `${filter} `}issues in ${repo} (read from GitHub).`
-      : issues.map((issue) => issueRowValue(issue, "github")).join("\n"))
+      : issues.map((issue) => issueRowValue(issue, "github")).join("\n")) }
   }
 
   /** GitHub has a separate tracker. Its supported metadata routes expose full issue bodies in the list. */
-  const showGithubIssue = async (repo: string, number: number): Promise<string | { readonly value: string }> => {
+  const readGithubIssue = async (repo: string, number: number): Promise<ViewResult> => {
     const listPath = githubSourceIssuesPath(repo, "all")
     let issue: Record<string, unknown> | undefined
     for (let page = 1; page <= 50; page += 1) {
@@ -303,20 +303,20 @@ export const createIssuesSeam = (ctx: SeamContext, renderRepositoryForm?: Reposi
     const payload = parseDetail({ ...issue, author: issue.user }, repo, number, comments)!
     payload.source = "github"
     payload.htmlUrl = `https://github.com/${repo}/issues/${number}`
-    await publishIssueView(ctx, {
+    const card: Card = {
       id: `issue-github-${repo}-${number}`, kind: "issue", title: `GitHub issue #${number} · ${repo}`,
       status: "active", createdAt: Date.now(), ordinal: ctx.nextOrdinal(), payload
-    })
-    return readResult([
+    }
+    return { card, ...readResult([
       `${repo} · GitHub #${number} ${payload.title} · ${payload.state}`,
       `Author: ${payload.author ?? "unknown"}`,
       `Labels: ${payload.labels.join(", ") || "none"}`, payload.issueBody,
       ...comments.map(comment => `Comment by ${comment.author ?? "unknown"}:\n${comment.commentBody}`)
-    ].join("\n"))
+    ].join("\n")) }
   }
 
   /** Fetches the issue AND its comments, then upserts the detail card. */
-  const showIssue = async (repo: string, number: number): Promise<string | { readonly value: string }> => {
+  const readIssue = async (repo: string, number: number): Promise<ViewResult> => {
     let issueResponse: Response
     try {
       issueResponse = await ctx.http(`${issuesPath(repo)}/${number}`)
@@ -358,7 +358,7 @@ export const createIssuesSeam = (ctx: SeamContext, renderRepositoryForm?: Reposi
     if (payload === null) {
       return `The backend answered issue #${number} in ${repo} with an unreadable payload`
     }
-    await publishIssueView(ctx, {
+    const card: Card = {
       id: `issue-${repo}-${number}`,
       kind: "issue",
       title: `Issue #${number} · ${repo}`,
@@ -366,8 +366,8 @@ export const createIssuesSeam = (ctx: SeamContext, renderRepositoryForm?: Reposi
       createdAt: Date.now(),
       ordinal: ctx.nextOrdinal(),
       payload
-    })
-    return readResult([
+    }
+    return { card, ...readResult([
       `${payload.repo} · #${payload.number} ${payload.title} · ${payload.state}`,
       `Author: ${payload.author ?? "unknown"}`,
       `Labels: ${payload.labels.join(", ") || "none"}`,
@@ -375,21 +375,15 @@ export const createIssuesSeam = (ctx: SeamContext, renderRepositoryForm?: Reposi
       payload.issueBody,
       ...payload.comments.map((comment) =>
         `Comment by ${comment.author ?? "unknown"}${comment.createdAt ? ` · ${comment.createdAt}` : ""}:\n${comment.commentBody}`)
-    ].join("\n"))
+    ].join("\n")) }
   }
 
-  /** Re-fetch after a successful mutation; a refresh failure still states the mutation happened. */
-  const refreshDetail = async (
-    done: string,
-    repo: string,
-    number: number
-  ): Promise<string | void> => {
-    const outcome = await showIssue(repo, number)
-    if (typeof outcome === "string") return `${done}, but refreshing the card failed: ${outcome}`
-  }
-
-  return {
-    listIssues: (filter, explicitRepo) => tutorialRepositoryRead(ctx, "issues", explicitRepo, filter, renderRepositoryForm, async (repo) => {
+  const listView = preparedView(ctx, (filter: "open" | "closed" | "all", repoArg?: string) => {
+    if (isPracticeRepo(repoArg)) return { run: async () => {} }
+    const target = resolveTargetRepo(ctx.store, repoArg)
+    if ("error" in target) return target.error
+    const repo = target.repo
+    return { id: `issues-${repo}`, title: `Issues · ${repo}`, key: JSON.stringify(["issues", repo, filter]), pane: repo, read: async (): Promise<ViewResult> => {
       // Plue 422s unknown states ("all" included) — omit the param to list every state.
       const query = filter === "all" ? "" : `?state=${filter}`
       let response: Response
@@ -422,7 +416,7 @@ export const createIssuesSeam = (ctx: SeamContext, renderRepositoryForm?: Reposi
        */
       const github = await readGithubIssues(repo, filter)
       const issues = [...native, ...github.issues]
-      await publishRepoView(ctx, {
+      const card: Card = {
         id: `issues-${repo}`,
         kind: "issue-list",
         title: `Issues · ${repo}`,
@@ -430,23 +424,47 @@ export const createIssuesSeam = (ctx: SeamContext, renderRepositoryForm?: Reposi
         createdAt: Date.now(),
         ordinal: ctx.nextOrdinal(),
         payload: { repo, filter, issues, ...(github.meta === undefined ? {} : { github: github.meta }) }
-      })
-      return readResult(issues.length === 0
+      }
+      return { card, ...readResult(issues.length === 0
         ? `No ${filter === "all" ? "" : `${filter} `}issues in ${repo}${github.meta?.refusal ? ` (GitHub: ${github.meta.refusal})` : ""}.`
-        : issues.map((issue) => issueRowValue(issue)).join("\n"))
-    }),
+        : issues.map((issue) => issueRowValue(issue)).join("\n")) }
+    } }
+  })
+  const issueView = preparedView(ctx, (number: number, repoArg?: string, source?: "smithers-cloud" | "github") => {
+    if (isPracticeRepo(repoArg)) return { run: async () => {} }
+    const target = resolveTargetRepo(ctx.store, repoArg)
+    if ("error" in target) return target.error
+    const repo = target.repo
+    return { id: `issue-${source === "github" ? "github-" : ""}${repo}-${number}`, title: `Issue #${number} · ${repo}`, pane: repo,
+      read: () => source === "github" ? readGithubIssue(repo, number) : readIssue(repo, number) }
+  })
+  const showIssue = (repo: string, number: number) => issueView(number, repo)
 
-    viewIssue: async (number, explicitRepo, source) => {
+  /** Re-fetch after a successful mutation; a refresh failure still states the mutation happened. */
+  const refreshDetail = async (
+    done: string,
+    repo: string,
+    number: number
+  ): Promise<string | void> => {
+    invalidatePreparedViews(ctx.store)
+    const outcome = await showIssue(repo, number)
+    if (typeof outcome === "string") return `${done}, but refreshing the card failed: ${outcome}`
+  }
+
+  return {
+    listIssues: Object.assign((filter: "open" | "closed" | "all", explicitRepo?: string) => tutorialRepositoryRead(ctx, "issues", explicitRepo, filter, renderRepositoryForm, (repo) => listView(filter, repo)), { preload: listView.preload }),
+
+    viewIssue: Object.assign(async (number: number, explicitRepo?: string, source?: "smithers-cloud" | "github") => {
       if (isPracticeRepo(explicitRepo)) return readRepositoryDetail(ctx, explicitRepo!, "issue", number, () => practiceViewIssue(ctx, number))
       const target = resolveTargetRepo(ctx.store, explicitRepo)
       if ("error" in target) return target.error
       if (source === "github") return readRepositoryDetail(ctx, target.repo, "issue", number,
-        () => showGithubIssue(target.repo, number), "github")
+        () => issueView(number, target.repo, "github"), "github")
       const playthrough = ctx.store.session().guide?.playthrough
       const shown = await readRepositoryDetail(ctx, target.repo, "issue", number, () => showIssue(target.repo, number))
-      if (typeof shown !== "string") await finishIssueLesson(ctx, playthrough)
+      if (shown !== undefined && typeof shown !== "string") await finishIssueLesson(ctx, playthrough)
       return shown
-    },
+    }, { preload: issueView.preload }),
 
     createIssue: async (title, explicitRepo) => {
       const target = resolveTargetRepo(ctx.store, explicitRepo)

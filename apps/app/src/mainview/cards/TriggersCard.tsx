@@ -1,3 +1,4 @@
+import { flowAction } from "../flows/FlowAction"
 /*
  * The dispatcher card (triggers.list; Factory design session 2026-09-07,
  * mock 2): the events a repository's rules wait for and the flows they
@@ -99,9 +100,8 @@ export const TriggerListCardBody = ({
       <Button
         variant="ghost"
         size="sm"
-        data-flow="triggers.register"
         data-testid="trigger-register"
-        onClick={() => onRunCommand("triggers.register", repo)}
+        {...flowAction(onRunCommand, "triggers.register", repo)}
       >
         Register a rule
       </Button>

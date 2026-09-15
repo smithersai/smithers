@@ -1,3 +1,5 @@
+import { ViewSkeleton } from "./ViewSkeleton"
+import { flowAction } from "./flows/FlowAction"
 import { Button } from "@smthrs/ui"
 import { Timer, Workflow } from "lucide-react"
 import { useMemo } from "react"
@@ -40,6 +42,7 @@ export function FlowsSurface({ cards }: { readonly cards: ReadonlyArray<Card> })
         ),
     [cards]
   )
+  const pending = cards.filter(card => card.kind === "status" && card.id.startsWith("workflow-list")).sort((a, b) => b.ordinal - a.ordinal)[0]
   const canListTriggers = controller.commands.find("triggers.list") !== undefined
   const runCommand = (name: string, commandArgs?: string) => controller.runCommand(name, commandArgs)
 
@@ -58,9 +61,8 @@ export function FlowsSurface({ cards }: { readonly cards: ReadonlyArray<Card> })
             <Button
               variant="ghost"
               size="sm"
-              data-flow="triggers.list"
               data-testid="flows-triggers"
-              onClick={() => controller.runCommand("triggers.list")}
+              {...flowAction(controller.runCommand, "triggers.list")}
             >
               <Timer size={14} aria-hidden="true" />
               Triggers
@@ -69,7 +71,7 @@ export function FlowsSurface({ cards }: { readonly cards: ReadonlyArray<Card> })
           null}
       </SurfaceHeader>
       <div className="flows-content">
-        {flowsCard === undefined ? null : <WorkflowListCardBody card={flowsCard} onRunCommand={runCommand} />}
+        {pending?.loading ? <ViewSkeleton /> : pending?.status === "error" ? <p>{pending.body}</p> : flowsCard === undefined ? null : <WorkflowListCardBody card={flowsCard} onRunCommand={runCommand} />}
         {triggersCard === undefined ? null : <TriggerListCardBody card={triggersCard} onRunCommand={runCommand} />}
       </div>
     </section>

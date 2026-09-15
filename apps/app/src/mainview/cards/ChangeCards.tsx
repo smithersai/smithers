@@ -1,3 +1,5 @@
+import { DiffSurface } from "../ViewModules"
+import { flowAction } from "../flows/FlowAction"
 import type React from "react"
 /*
  * The change and diff cards (lane change, ADR 0003 — the change is the
@@ -14,7 +16,7 @@ import type React from "react"
  */
 import { Button, StatusPill } from "@smthrs/ui"
 import { AlertTriangle, FileDiff, GitMerge, GitPullRequest, History, Split } from "lucide-react"
-import { lazy, Suspense } from "react"
+import { Suspense } from "react"
 import type { ChangeFacet, ChangeRevision, ChangeThread, LandingBlock } from "@smthrs/rpc/Changes"
 import type { Card } from "../state/AppState"
 import type { CardFamily, RunCommand } from "./CardFamily"
@@ -39,7 +41,7 @@ type ChangePayload = ChangeCard["payload"]
  * never imports the entry. The verbatim patch is the complete first state
  * while the chunk loads.
  */
-const DiffSurface = lazy(() => import("./DiffSurface").then((module) => ({ default: module.DiffSurface })))
+
 
 /** An absent auxiliary has no copy unless the server recorded a read failure. */
 const Unread = ({ field, reason }: { readonly field: string; readonly reason: string | null | undefined }) =>
@@ -211,9 +213,8 @@ const OpenComputer = ({
     <Button
       size="sm"
       variant="outline"
-      data-flow="change.open-computer"
       aria-label={`Open the computer that produced rev ${revision.seq}`}
-      onClick={() => onRunCommand("change.open-computer", `${changeId} ${snapshotId}`)}
+      {...flowAction(onRunCommand, "change.open-computer", `${changeId} ${snapshotId}`)}
     >
       Open the computer
     </Button>
@@ -272,9 +273,8 @@ const ChangeDiffFacet = ({ card, onRunCommand }: { readonly card: ChangeCard } &
                   <Button
                     size="sm"
                     variant="ghost"
-                    data-flow="change.pins"
                     aria-label="Show the whole diff, parent to current"
-                    onClick={() => onRunCommand("change.pins", flowArgs("change.pins", { changeId: payload.changeId, from: "parent", to: "current" }))}
+                    {...flowAction(onRunCommand, "change.pins", flowArgs("change.pins", { changeId: payload.changeId, from: "parent", to: "current" }))}
                   >
                     show all
                   </Button>
@@ -285,9 +285,8 @@ const ChangeDiffFacet = ({ card, onRunCommand }: { readonly card: ChangeCard } &
                 <Button
                   size="sm"
                   variant="ghost"
-                  data-flow="review.since-mine"
                   aria-label="Show the diff since my last review"
-                  onClick={() => onRunCommand("review.since-mine", payload.changeId)}
+                  {...flowAction(onRunCommand, "review.since-mine", payload.changeId)}
                 >
                   since my review
                 </Button>
@@ -308,9 +307,8 @@ const ChangeDiffFacet = ({ card, onRunCommand }: { readonly card: ChangeCard } &
                 <Button
                   variant="ghost"
                   size="sm"
-                  data-flow="change.diff"
                   aria-label={`Open the diff of ${file.path}`}
-                  onClick={() => onRunCommand("change.diff", flowArgs("change.diff", { changeId: payload.changeId, from, to, path: file.path }))}
+                  {...flowAction(onRunCommand, "change.diff", flowArgs("change.diff", { changeId: payload.changeId, from, to, path: file.path }))}
                 >
                   <span className="world-card-title">{file.path}</span>
                 </Button>
@@ -323,9 +321,8 @@ const ChangeDiffFacet = ({ card, onRunCommand }: { readonly card: ChangeCard } &
                     <Button
                       size="sm"
                       variant="outline"
-                      data-flow="change.split"
                       aria-label={`Split ${file.path} into a new change`}
-                      onClick={() => onRunCommand("change.split", `${payload.changeId} ${file.path}`)}
+                      {...flowAction(onRunCommand, "change.split", `${payload.changeId} ${file.path}`)}
                     >
                       <Split size={12} aria-hidden="true" /> Split
                     </Button>
@@ -448,9 +445,8 @@ const ChangeFindingsFacet = ({ card, onRunCommand }: { readonly card: ChangeCard
                         <Button
                           size="sm"
                           variant="outline"
-                          data-flow="findings.please-fix"
                           aria-label={`Dispatch the agent on finding ${finding.id}`}
-                          onClick={() => onRunCommand("findings.please-fix", `${payload.changeId} ${finding.id}`)}
+                          {...flowAction(onRunCommand, "findings.please-fix", `${payload.changeId} ${finding.id}`)}
                         >
                           Please fix
                         </Button>
@@ -458,9 +454,8 @@ const ChangeFindingsFacet = ({ card, onRunCommand }: { readonly card: ChangeCard
                           <Button
                             size="sm"
                             variant="ghost"
-                            data-flow="findings.not-useful"
                             aria-label={`Mark finding ${finding.id} not useful`}
-                            onClick={() => onRunCommand("findings.not-useful", `${payload.changeId} ${finding.id}`)}
+                            {...flowAction(onRunCommand, "findings.not-useful", `${payload.changeId} ${finding.id}`)}
                           >
                             Not useful
                           </Button>
@@ -512,9 +507,8 @@ const RequestReviewPicker = ({
               <Button
                 size="sm"
                 variant="outline"
-                data-flow="review.unrequest"
                 aria-label={`Dismiss review request ${request.id}`}
-                onClick={() => onRunCommand("review.unrequest", `${payload.changeId} ${request.id}`)}
+                {...flowAction(onRunCommand, "review.unrequest", `${payload.changeId} ${request.id}`)}
               >
                 Unrequest
               </Button>
@@ -558,9 +552,8 @@ const ChangeReviewFacet = ({ card, onRunCommand }: { readonly card: ChangeCard }
             <Button
               size="sm"
               variant="ghost"
-              data-flow="change.pins"
               aria-label="Show the whole diff, parent to current"
-              onClick={() => onRunCommand("change.pins", flowArgs("change.pins", { changeId: payload.changeId, from: "parent", to: "current" }))}
+              {...flowAction(onRunCommand, "change.pins", flowArgs("change.pins", { changeId: payload.changeId, from: "parent", to: "current" }))}
             >
               show all
             </Button>
@@ -620,9 +613,8 @@ const ChangeReviewFacet = ({ card, onRunCommand }: { readonly card: ChangeCard }
                   key={flow}
                   size="sm"
                   variant="outline"
-                  data-flow={flow}
                   aria-label={aria}
-                  onClick={() => onRunCommand(flow, `${payload.changeId} ${thread.id}`)}
+                  {...flowAction(onRunCommand, flow, `${payload.changeId} ${thread.id}`)}
                 >
                   {label}
                 </Button>
@@ -641,9 +633,8 @@ const ChangeReviewFacet = ({ card, onRunCommand }: { readonly card: ChangeCard }
                 key={login}
                 size="sm"
                 variant="ghost"
-                data-flow="review.request"
                 aria-label={`Request review from ${login}`}
-                onClick={() => onRunCommand("review.request", `${payload.changeId} ${login}`)}
+                {...flowAction(onRunCommand, "review.request", `${payload.changeId} ${login}`)}
               >
                 {login}
               </Button>
@@ -683,9 +674,8 @@ const ChangeHistoryFacet = ({ card, onRunCommand }: { readonly card: ChangeCard 
               <Button
                 size="sm"
                 variant="ghost"
-                data-flow="change.pins"
                 aria-label={`Diff rev ${revision.seq} to current`}
-                onClick={() => onRunCommand("change.pins", flowArgs("change.pins", { changeId: payload.changeId, from: String(revision.seq), to: "current" }))}
+                {...flowAction(onRunCommand, "change.pins", flowArgs("change.pins", { changeId: payload.changeId, from: String(revision.seq), to: "current" }))}
               >
                 Diff to current
               </Button>
@@ -748,9 +738,8 @@ const ChangeOwnersFacet = ({ card, onRunCommand }: { readonly card: ChangeCard }
                         key={candidate}
                         size="sm"
                         variant="outline"
-                        data-flow="review.request"
                         aria-label={`Request review of ${touched.path} from ${candidate}`}
-                        onClick={() => onRunCommand("review.request", `${card.payload.changeId} ${candidate}`)}
+                        {...flowAction(onRunCommand, "review.request", `${card.payload.changeId} ${candidate}`)}
                       >
                         {candidate}
                       </Button>
@@ -771,9 +760,8 @@ const ChangeOwnersFacet = ({ card, onRunCommand }: { readonly card: ChangeCard }
               key={login}
               size="sm"
               variant="ghost"
-              data-flow="review.request"
               aria-label={`Request review from ${login}`}
-              onClick={() => onRunCommand("review.request", `${card.payload.changeId} ${login}`)}
+              {...flowAction(onRunCommand, "review.request", `${card.payload.changeId} ${login}`)}
             >
               {login}
             </Button>
@@ -887,12 +875,12 @@ const ReviewEvidence = ({ card, onRunCommand }: { readonly card: ChangeCard } & 
     <h4>Review evidence</h4>
     {rows.map(([facet, label, detail]) => <div key={facet} className="world-card-row">
       <span className="world-card-title">{label}</span><span className="world-card-path">{detail}</span>
-      <Button size="sm" variant="outline" data-flow="change.facet"
-        onClick={() => onRunCommand("change.facet", flowArgs("change.facet", { changeId: p.changeId, facet }))}>Inspect {label.toLowerCase()}</Button>
+      <Button size="sm" variant="outline" 
+        {...flowAction(onRunCommand, "change.facet", flowArgs("change.facet", { changeId: p.changeId, facet }))}>Inspect {label.toLowerCase()}</Button>
     </div>)}
     {p.unread?.walkthrough === undefined ? null : <p className="world-card-path">Walkthrough not read: {p.unread.walkthrough}</p>}
-    {(p.reviews ?? []).some(review => review.reviewerKind !== "agent") ? <Button size="sm" variant="outline" data-flow="review.since-mine"
-      onClick={() => onRunCommand("review.since-mine", p.changeId)}>Diff since my review</Button> : null}
+    {(p.reviews ?? []).some(review => review.reviewerKind !== "agent") ? <Button size="sm" variant="outline" 
+      {...flowAction(onRunCommand, "review.since-mine", p.changeId)}>Diff since my review</Button> : null}
   </section>
 }
 
@@ -988,9 +976,8 @@ export const ChangeCardBody = ({
                 <Button
                   size="sm"
                   variant="outline"
-                  data-flow="change.resolve"
                   aria-label={`Dispatch an agent to resolve the conflict in ${conflict.path}`}
-                  onClick={() => onRunCommand("change.resolve", flowArgs("change.resolve", { changeId: payload.changeId, path: conflict.path }))}
+                  {...flowAction(onRunCommand, "change.resolve", flowArgs("change.resolve", { changeId: payload.changeId, path: conflict.path }))}
                 >
                   Resolve
                 </Button>
@@ -1059,8 +1046,7 @@ export const ChangeCardBody = ({
             variant={name === facet ? "default" : "outline"}
             role="tab"
             aria-selected={name === facet}
-            data-flow="change.facet"
-            onClick={() => onRunCommand("change.facet", `${payload.changeId} ${name}`)}
+            {...flowAction(onRunCommand, "change.facet", `${payload.changeId} ${name}`)}
           >
             {label}
           </Button>
@@ -1070,10 +1056,9 @@ export const ChangeCardBody = ({
       <div className="world-card-row">
         <Button
           size="sm"
-          data-flow="change.land"
           aria-label={land.ariaLabel}
           disabled={land.blocked !== null}
-          onClick={() => onRunCommand("change.land", payload.changeId)}
+          {...flowAction(onRunCommand, "change.land", payload.changeId)}
         >
           <GitMerge size={12} aria-hidden="true" /> {land.label}
         </Button>
@@ -1084,9 +1069,8 @@ export const ChangeCardBody = ({
             <Button
               size="sm"
               variant="outline"
-              data-flow="change.split-ready"
               aria-label="Split the ready members into a new change"
-              onClick={() => onRunCommand("change.split-ready", payload.changeId)}
+              {...flowAction(onRunCommand, "change.split-ready", payload.changeId)}
             >
               <Split size={12} aria-hidden="true" /> Split ready
             </Button>
@@ -1097,9 +1081,8 @@ export const ChangeCardBody = ({
             <Button
               size="sm"
               variant="outline"
-              data-flow="change.revert"
               aria-label="Revert the landed change"
-              onClick={() => onRunCommand("change.revert", payload.changeId)}
+              {...flowAction(onRunCommand, "change.revert", payload.changeId)}
             >
               Revert
             </Button>
@@ -1108,9 +1091,8 @@ export const ChangeCardBody = ({
         <Button
           size="sm"
           variant="outline"
-          data-flow="change.diff"
           aria-label="Open the full diff card"
-          onClick={() => onRunCommand("change.diff", flowArgs("change.diff", { changeId: payload.changeId }))}
+          {...flowAction(onRunCommand, "change.diff", flowArgs("change.diff", { changeId: payload.changeId }))}
         >
           <GitPullRequest size={12} aria-hidden="true" /> Full diff
         </Button>
@@ -1146,7 +1128,7 @@ export const DiffCardBody = ({
               <li key={file.path} className="world-card-row">
                 <FileDiff size={14} aria-hidden="true" />
                 <span className="world-card-title">{file.path}</span>
-                {!file.isBinary && file.changeType !== "deleted" && payload.pin.commitId !== null ? <Button variant="ghost" size="sm" data-flow="files.open-diff" onClick={() => onRunCommand("files.open-diff", flowArgs("files.open-diff", { cardId: card.id, path: file.path }))}>Open file</Button> : null}
+                {!file.isBinary && file.changeType !== "deleted" && payload.pin.commitId !== null ? <Button variant="ghost" size="sm"  {...flowAction(onRunCommand, "files.open-diff", flowArgs("files.open-diff", { cardId: card.id, path: file.path }))}>Open file</Button> : null}
                 <span className="world-card-path">
                   {file.changeType} · +{file.additions} −{file.deletions}
                   {file.conflicted === true ? " · conflicted" : ""}
@@ -1177,8 +1159,7 @@ export const DiffCardBody = ({
               <Button
                 variant="ghost"
                 size="sm"
-                data-flow="change.diff"
-                onClick={() => onRunCommand("change.diff", flowArgs("change.diff", { changeId: payload.changeId, from: payload.from, to: payload.to, path: file.path }))}
+                {...flowAction(onRunCommand, "change.diff", flowArgs("change.diff", { changeId: payload.changeId, from: payload.from, to: payload.to, path: file.path }))}
               >
                 Read it
               </Button>

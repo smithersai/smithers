@@ -24,13 +24,13 @@ export const repoPaneCard = (ctx: SeamContext, repo: string) => {
 }
 
 /** Where a repo view lands: the overview-rooted pane when it exists, else the repo's most recent repo view. */
-const paneTarget = (ctx: SeamContext, repo: string) => {
+export const paneTarget = (ctx: SeamContext, repo: string) => {
   const pane = repoPaneCard(ctx, repo)
   if (pane) return pane
   const conversation = conversationTabIdOf(ctx.store.session())
   return [...ctx.store.collections.cards.values()]
-    .filter(row => (row.kind === "issue-list" || row.kind === "issue" || row.kind === "pr-list" || row.kind === "pr") &&
-      row.payload.repo === repo && inConversation(row, conversation))
+    .filter(row => (row.viewRepo === repo || ((row.kind === "issue-list" || row.kind === "issue" || row.kind === "pr-list" || row.kind === "pr") &&
+      row.payload.repo === repo)) && inConversation(row, conversation))
     .sort((a, b) => b.ordinal - a.ordinal)[0]
 }
 

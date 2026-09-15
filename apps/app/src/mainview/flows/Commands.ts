@@ -1,3 +1,4 @@
+import { preloadViewModule } from "../ViewModules"
 /*
  * The registry runtime: one dispatch path for every trigger.
  *
@@ -151,6 +152,7 @@ export interface CommandRegistry {
   /** The slash menu as a tree: leaves and namespace rows (registry.slashTree). */
   readonly slashTree: (needle: string) => Array<SlashRow<CatalogItem>>
   readonly recommended: () => CatalogItem
+  readonly preload?: (name: string, args?: string) => Promise<void>
   readonly run: (name: string, args?: string) => Promise<CommandOutcome>
   /**
    * `run` at the agent boundary (requirement axis): an unmet requirement is an
@@ -587,7 +589,16 @@ export const createCommandRegistry = (actions: CommandActions, agentActions: Com
 
   const callable = (): ReadonlyArray<FlowEntry> => entries().filter(modelInvocable)
 
+  const preload = async (name: string, args?: string): Promise<void> => {
+    const entry = find(name)
+    if (!entry) return
+    const parsed = payloadFor(nameOf(entry), args, entry.metadata.grammar, actions.knownRepositories())
+    if ("error" in parsed || unmetRequirements(entry.metadata, actions.snapshot()).length) return
+    try { await Promise.all([preloadViewModule(nameOf(entry), parsed.payload), entry.prepare?.(parsed.payload)]) } catch { /* Speculation must never interrupt the user. */ }
+  }
+
   const registry: CommandRegistry = {
+    preload,
     all: items,
     entries,
     find,

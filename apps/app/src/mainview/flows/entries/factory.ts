@@ -25,6 +25,7 @@ export const factoryFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> 
     runtime: ["cloud"],
     args: "[owner/repo]",
     input: RepoTarget,
+    prepare: ({ repo }) => actions.showFactory.preload?.(repo),
     handler: ({ repo }) => actions.showFactory(repo)
   })
 ]

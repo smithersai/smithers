@@ -1,3 +1,4 @@
+import { flowAction } from "./flows/FlowAction"
 import { Alert, AlertDescription, AlertTitle, Badge, Button, Separator } from "@smthrs/ui"
 import { useLiveQuery } from "@tanstack/react-db"
 import { FolderGit2, GitPullRequest, HardDrive, Plug, RefreshCw, Server, Trash2 } from "lucide-react"
@@ -260,8 +261,7 @@ export function ConnectorsSurface() {
                       <Button
                         size="sm"
                         variant="outline"
-                        data-flow="repos.import"
-                        onClick={() => controller.runCommand("repos.import")}
+                        {...flowAction(controller.runCommand, "repos.import")}
                       >
                         Import a repository
                       </Button>
@@ -292,8 +292,7 @@ export function ConnectorsSurface() {
                           <Button
                             variant="ghost"
                             size="sm"
-                            data-flow="connector.downgrade"
-                            onClick={() => controller.runCommand("connector.downgrade", connector.id)}
+                            {...flowAction(controller.runCommand, "connector.downgrade", connector.id)}
                           >
                             Make read-only
                           </Button>
@@ -304,8 +303,7 @@ export function ConnectorsSurface() {
                         size="icon"
                         aria-label={`Remove ${connector.name}`}
                         title={`Remove ${connector.name}`}
-                        data-flow="connector.remove.ask"
-                        onClick={() => controller.runCommand("connector.remove.ask", connector.id)}
+                        {...flowAction(controller.runCommand, "connector.remove.ask", connector.id)}
                       >
                         <Trash2 size={14} />
                       </Button>

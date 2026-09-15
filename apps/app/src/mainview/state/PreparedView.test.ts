@@ -1,0 +1,148 @@
+import { afterEach, expect, test } from "bun:test"
+import { createAppStore, type AppStore } from "./AppStore"
+import type { Card } from "./AppState"
+import { preparedView, invalidatePreparedViews, disposePreparedViews, type ViewResult } from "./PreparedView"
+import type { SeamContext } from "./seams/SeamContext"
+
+const stores: AppStore[] = []
+afterEach(async () => { for (const store of stores.splice(0)) await store.dispose?.() })
+async function setup() {
+  const values = new Map<string, string>()
+  const store = await createAppStore({ kind: "localStorage", storage: {
+    getItem: key => values.get(key) ?? null,
+    setItem: (key, value) => { values.set(key, value) },
+    removeItem: key => { values.delete(key) },
+  } })
+  stores.push(store)
+  const ctx: SeamContext = { store, dispatch: store.dispatch, baseUrl: "", actor: () => "user", nextOrdinal: store.nextOrdinal, http: async () => { throw Error("Unexpected request") } }
+  return { store, ctx }
+}
+const data = (id: string): ViewResult => ({ card: { id, kind: "status", title: id, status: "acted", createdAt: 1, ordinal: 1, payload: { note: id } }, value: id })
+function deferred<T>() {
+  let resolve!: (value: T) => void
+  const promise = new Promise<T>(yes => { resolve = yes })
+  return { promise, resolve }
+}
+
+test("hover and click share the whole read, with no card or history until activation", async () => {
+  const { ctx, store } = await setup()
+  const read = deferred<ViewResult>()
+  let calls = 0
+  const open = preparedView(ctx, () => ({ id: "a", title: "A", read: () => { calls++; return read.promise } }))
+  const warming = open.preload()
+  await Promise.resolve()
+  expect(calls).toBe(1)
+  expect(store.collections.cards.size).toBe(0)
+  const pending = open()
+  expect(store.collections.cards.get("a")?.loading).toBe(true)
+  read.resolve(data("a"))
+  await Promise.all([warming, pending])
+  expect(calls).toBe(1)
+  expect(store.collections.cards.get("a")).toMatchObject({ title: "a", loading: false })
+  expect(store.collections.cards.size).toBe(1)
+})
+
+test("a later navigation wins and frame history retains loaded destinations", async () => {
+  const { ctx, store } = await setup()
+  const home: Card = { id: "home", kind: "issue-list", title: "Issues", status: "active", ordinal: 1, createdAt: 1, payload: { repo: "will/demo", filter: "open", issues: [] } }
+  store.dispatch({ type: "card.upsert", actor: "user", card: home })
+  const a = deferred<ViewResult>(), b = deferred<ViewResult>()
+  const open = preparedView(ctx, (id: string) => ({ id, title: id, pane: "will/demo", read: () => id === "a" ? a.promise : b.promise }))
+  const first = open("a"), second = open("b")
+  expect(store.collections.cards.get("home")).toMatchObject({ title: "b", loading: true })
+  b.resolve(data("b")); await second
+  a.resolve(data("a")); await first
+  expect(store.collections.cards.get("home")).toMatchObject({ title: "b", loading: false })
+  expect(store.collections.cards.size).toBe(1)
+  const entries = store.collections.cardHistories.get("home")!.entries
+  expect(entries.at(-1)).toMatchObject({ title: "b", loading: false })
+})
+
+test("failed preloads are silent and activation retries", async () => {
+  const { ctx, store } = await setup()
+  let calls = 0
+  const open = preparedView(ctx, () => ({ id: "a", title: "A", read: async () => ++calls === 1 ? "Offline" : data("a") }))
+  await open.preload()
+  expect(store.collections.cards.size).toBe(0)
+  expect(await open()).toEqual({ value: "a" })
+  expect(calls).toBe(2)
+})
+
+test("Back stays put while a pending destination finishes, and Forward shows its loaded content", async () => {
+  const { ctx, store } = await setup()
+  const home: Card = { id: "home", kind: "issue-list", title: "Issues", status: "active", ordinal: 1, createdAt: 1, payload: { repo: "will/demo", filter: "open", issues: [] } }
+  store.dispatch({ type: "card.upsert", actor: "user", card: home })
+  const read = deferred<ViewResult>()
+  const open = preparedView(ctx, () => ({ id: "detail", title: "Detail", pane: "will/demo", read: () => read.promise }))
+  const pending = open()
+  store.dispatch({ type: "card.history.moved", actor: "user", id: "home", delta: -1 })
+  expect(store.collections.cards.get("home")?.title).toBe("Issues")
+  expect(store.collections.cards.get("home")?.loading).toBeUndefined()
+  read.resolve(data("Detail"))
+  await pending
+  expect(store.collections.cards.get("home")?.title).toBe("Issues")
+  store.dispatch({ type: "card.history.moved", actor: "user", id: "home", delta: 1 })
+  expect(store.collections.cards.get("home")).toMatchObject({ title: "Detail", loading: false })
+})
+
+test("disposing a controller prevents its late result from updating a view", async () => {
+  const { ctx, store } = await setup()
+  const read = deferred<ViewResult>()
+  const open = preparedView(ctx, () => ({ id: "a", title: "Loading", read: () => read.promise }))
+  const pending = open()
+  disposePreparedViews(store)
+  read.resolve(data("old")); await pending
+  expect(store.collections.cards.get("a")?.title).toBe("Loading")
+})
+
+test("speculative reads are bounded while a click can still load its destination", async () => {
+  const { ctx } = await setup()
+  const read = deferred<ViewResult>()
+  let calls = 0
+  const open = preparedView(ctx, (id: string) => ({ id, title: id, read: () => { calls++; return read.promise } }))
+  const warming = ["a", "b", "c", "d", "e"].map(id => open.preload(id))
+  await Promise.resolve()
+  expect(calls).toBe(4)
+  const pending = open("e")
+  await Promise.resolve(); await Promise.resolve()
+  expect(calls).toBe(5)
+  read.resolve(data("loaded"))
+  await Promise.all([...warming, pending])
+})
+
+test("invalidating an in-flight preload prevents reuse after a mutation", async () => {
+  const { ctx, store } = await setup()
+  const old = deferred<ViewResult>()
+  let calls = 0
+  const open = preparedView(ctx, () => ({ id: "a", title: "A", read: () => ++calls === 1 ? old.promise : Promise.resolve(data("new")) }))
+  const warming = open.preload()
+  await Promise.resolve()
+  invalidatePreparedViews(store)
+  await open()
+  old.resolve(data("old")); await warming
+  expect(store.collections.cards.get("a")?.title).toBe("new")
+  expect(calls).toBe(2)
+})
+
+test("changing repository while loading never publishes the old result", async () => {
+  const { ctx, store } = await setup()
+  const read = deferred<ViewResult>()
+  const open = preparedView(ctx, () => ({ id: "a", title: "A", read: () => read.promise }))
+  const pending = open()
+  store.dispatch({ type: "repositories.loaded", actor: "system", repositories: [{ id: "will/other", org: "will", ownerKind: "user", name: "other", head: null }] })
+  store.dispatch({ type: "repo.selected", actor: "user", id: "will/other" })
+  read.resolve(data("old")); await pending
+  expect(store.collections.cards.get("a")?.title).not.toBe("old")
+  expect(store.collections.cards.get("a")).toMatchObject({ loading: false, status: "error" })
+})
+
+test("preloading never provisions a workspace, and an error remains retryable", async () => {
+  const { ctx, store } = await setup()
+  let provisions = 0, reads = 0
+  const open = preparedView(ctx, () => ({ id: "a", title: "A", before: async () => { provisions++ }, read: async () => ++reads < 2 ? "Offline" : data("a") }))
+  await open.preload()
+  expect(provisions).toBe(0)
+  expect(await open()).toEqual({ value: "a" })
+  expect(provisions).toBe(1)
+  expect(store.collections.cards.get("a")?.loading).toBe(false)
+})

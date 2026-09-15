@@ -242,14 +242,14 @@ describe("history seam: the empty state", () => {
     expect(store.collections.cards.get("history-will/flows")).toBeUndefined()
   })
 
-  test("the read states its wait: a slow mirror puts \"Reading the mythical history…\" on the toast stack, and the card resolves it", async () => {
+  test("a slow mirror immediately displays a loading view, then replaces it with history", async () => {
     const titlesWhileReading: Array<string | null> = []
     const { store, controller } = await ready(
       backend({
         [REPO]: json(200, { default_bookmark: "main" }),
         [`${REPO}/git/refs`]: async () => {
           await new Promise((resolve) => setTimeout(resolve, 40))
-          titlesWhileReading.push(store.collections.toasts.get("toast-history.show")?.title ?? null)
+          titlesWhileReading.push(store.collections.cards.get("history-will/flows")?.loading ? "Loading history" : null)
           return json(200, [ref("refs/heads/main", "aaa3000000000000000000000000000000000003")])
         }
       }),
@@ -257,10 +257,9 @@ describe("history seam: the empty state", () => {
     )
     expect((await controller.commands.run("history.show")).status).toBe("executed")
     await settled()
-    expect(titlesWhileReading).toEqual(["Reading the mythical history…"])
+    expect(titlesWhileReading).toEqual(["Loading history"])
     const toast = store.collections.toasts.get("toast-history.show")
-    expect(toast?.status).toBe("ok")
-    expect(toast?.title).toBe("Mythical history read")
+    expect(toast).toBeUndefined()
     expect(historyCard(store).payload.mythical).toEqual({ state: "absent" })
   })
 })
@@ -511,7 +510,7 @@ describe("history seam: the mythical history", () => {
     const outcome = await controller.commands.run("history.show")
     expect(outcome.status).toBe("failed")
     if (outcome.status === "failed") expect(outcome.error).toBe("The history of will/flows couldn't be read: the mirror did not list its refs.")
-    expect(store.collections.cards.get("history-will/flows")).toBeUndefined()
+    expect(store.collections.cards.get("history-will/flows")).toMatchObject({ status: "error", loading: false })
   })
 })
 

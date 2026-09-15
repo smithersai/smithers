@@ -1,3 +1,4 @@
+import { flowAction } from "./flows/FlowAction"
 import { Button, ChatMessage, Markdown, Marker, Reasoning } from "@smthrs/ui"
 import { CheckCircle2, Copy, HelpCircle, RotateCcw } from "lucide-react"
 import { useState } from "react"
@@ -138,11 +139,8 @@ export function TranscriptMessage({ entry, streamingMessageId }: { entry: { kind
         (
           <Button
             className="message-cta"
-            data-flow={entry.message.action.flow}
             autoFocus={entry.message.id === "auth-state"}
-            onClick={() =>
-              // A confirm flow's button carries the agent's argument text.
-              controller.runCommand(entry.message.action?.flow ?? "", entry.message.action?.args)}
+            {...flowAction(controller.runCommand, entry.message.action?.flow ?? "", entry.message.action?.args)}
           >
             {entry.message.action.label}
           </Button>
@@ -161,7 +159,7 @@ export function TranscriptMessage({ entry, streamingMessageId }: { entry: { kind
               className="message-action"
               aria-label="Retry turn"
               title="Retry turn"
-              onClick={() => controller.runCommand("chat.retry")}
+              {...flowAction(controller.runCommand, "chat.retry")}
             >
               <RotateCcw size={12} />
             </Button>
@@ -174,14 +172,9 @@ export function TranscriptMessage({ entry, streamingMessageId }: { entry: { kind
               variant="ghost"
               size="icon"
               className="message-action"
-              data-flow="agent.explain"
               aria-label="Explain this"
               title="Explain this"
-              onClick={() =>
-                controller.runCommand(
-                  "agent.explain",
-                  `This turn failed: ${systemNoteLabel(entry.message)}. ${entry.message.text}`.trim()
-                )}
+              {...flowAction(controller.runCommand, "agent.explain", `This turn failed: ${systemNoteLabel(entry.message)}. ${entry.message.text}`.trim())}
             >
               <HelpCircle size={12} />
             </Button>

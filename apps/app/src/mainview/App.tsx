@@ -1,3 +1,4 @@
+import { flowAction } from "./flows/FlowAction"
 import { AVAILABLE_REPOS } from "../../../server/src/publicRepoCatalog"
 import { pathRepo } from "./RepoLink"
 import { TranscriptMessage } from "./TranscriptMessage"
@@ -422,12 +423,11 @@ function App() {
           <Suggestion
             className="smithers-suggestion"
             data-gold={suggestion.emphasis === "primary"}
-            data-flow={suggestion.flow}
             key={suggestion.id}
             suggestion={suggestion.label}
             title={suggestion.why}
             disabled={typing}
-            onClick={() => controller.runCommand(suggestion.flow, suggestion.args)}
+            {...flowAction(controller.runCommand, suggestion.flow, suggestion.args)}
           >
             <Sparkles size={12} />
             {suggestion.label}
@@ -572,8 +572,7 @@ function App() {
             (
               <Button
                 className="auth-shortcut"
-                data-flow={authAction.flow}
-                onClick={() => controller.runCommand(authAction.flow)}
+                {...flowAction(controller.runCommand, authAction.flow)}
               >
                 {authAction.label}
               </Button>
@@ -641,7 +640,7 @@ function App() {
       {/* Terminal, harness, and card tabs; hidden while inactive, never unmounted. */}
       <TabBodies />
       {composerHost === undefined && <footer data-keyboard-pane="Chat controls" className="app-chat-controls" aria-label="Chat controls">
-        <GuideButton data-flow="tut" onClick={() => controller.runCommand("tut")}>Replay introduction</GuideButton>
+        <GuideButton  {...flowAction(controller.runCommand, "tut")}>Replay introduction</GuideButton>
         <GuideButton shortcut={GUIDE_KEYS.chat} data-flow="chat.open" onClick={() => {
           controller.runCommand("chat.open")
           requestAnimationFrame(() => composerWrapRef.current?.querySelector("textarea")?.focus())

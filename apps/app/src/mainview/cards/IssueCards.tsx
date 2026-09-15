@@ -1,3 +1,4 @@
+import { flowAction } from "../flows/FlowAction"
 /*
  * The issues cards: the list ("issue-list") and the detail ("issue"), laid out
  * like GitHub's Issues (ported from multi src/issues: IssuesListView's
@@ -70,8 +71,7 @@ const IssueListRow = ({ repo, issue, onRunCommand }: { readonly repo: string; re
       <button
         type="button"
         className="ghc-row-btn"
-        data-flow="issues.view"
-        onClick={() => onRunCommand("issues.view", flowArgs("issues.view", { number: issue.number, repo, source: issue.source }))}
+        {...flowAction(onRunCommand, "issues.view", flowArgs("issues.view", { number: issue.number, repo, source: issue.source }))}
       >
         <StateIcon display={issueDisplay(issue.state)} />
         <span className="ghc-row-main">
@@ -217,11 +217,11 @@ export const IssueCardBody = ({
       {github ? <nav className="ghc-actions" aria-label="Issue actions">
         {githubHref ? <a href={githubHref} target="_blank" rel="noreferrer">Open on GitHub</a> : null}
       </nav> : <nav className="ghc-actions" aria-label="Issue actions">
-        <Button size="sm" variant="outline" data-flow="issue.flows" onClick={() => onRunCommand("issue.flows", flowArgs("issue.flows", { number, repo }))}>Issue flows</Button>
-        <Button size="sm" variant="outline" data-flow="issue.repro" onClick={() => onRunCommand("issue.repro", flowArgs("issue.repro", { number, repo }))}>Research / repro</Button>
-        <Button size="sm" variant="outline" data-flow="issue.poc" onClick={() => onRunCommand("issue.poc", flowArgs("issue.poc", { number, repo }))}>Proof of concept</Button>
-        <Button size="sm" data-flow="issue.implement" onClick={() => onRunCommand("issue.implement", flowArgs("issue.implement", { number, repo }))}>Implement</Button>
-        <Button size="sm" variant="outline" data-flow="issue.add-flow" onClick={() => onRunCommand("issue.add-flow", flowArgs("issue.add-flow", { number, repo }))}>Add flow</Button>
+        <Button size="sm" variant="outline"  {...flowAction(onRunCommand, "issue.flows", flowArgs("issue.flows", { number, repo }))}>Issue flows</Button>
+        <Button size="sm" variant="outline"  {...flowAction(onRunCommand, "issue.repro", flowArgs("issue.repro", { number, repo }))}>Research / repro</Button>
+        <Button size="sm" variant="outline"  {...flowAction(onRunCommand, "issue.poc", flowArgs("issue.poc", { number, repo }))}>Proof of concept</Button>
+        <Button size="sm"  {...flowAction(onRunCommand, "issue.implement", flowArgs("issue.implement", { number, repo }))}>Implement</Button>
+        <Button size="sm" variant="outline"  {...flowAction(onRunCommand, "issue.add-flow", flowArgs("issue.add-flow", { number, repo }))}>Add flow</Button>
       </nav>}
       <div className="ghc-detail-grid">
         <div className="ghc-detail-main">
@@ -241,8 +241,7 @@ export const IssueCardBody = ({
               <Button
                 variant="outline"
                 size="sm"
-                data-flow={toggleCommand}
-                onClick={() => onRunCommand(toggleCommand, `${number} ${repo}`)}
+                {...flowAction(onRunCommand, toggleCommand, `${number} ${repo}`)}
               >
                 <span className={state === "open" ? "ghc-tone-done" : "ghc-tone-open"}>
                   <Octicon name={state === "open" ? "issue-closed" : "issue-opened"} />
@@ -279,8 +278,7 @@ export const IssueCardBody = ({
                 <Button
                   variant="ghost"
                   size="sm"
-                  data-flow="issues.link-linear"
-                  onClick={() => onRunCommand("issues.link-linear", String(number))}
+                  {...flowAction(onRunCommand, "issues.link-linear", String(number))}
                 >
                   Link to Linear…
                 </Button>

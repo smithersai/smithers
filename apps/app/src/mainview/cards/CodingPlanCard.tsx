@@ -1,3 +1,4 @@
+import { flowAction } from "../flows/FlowAction"
 import { runSourceCommand } from "../flows/RunCommand"
 import type { Card } from "../state/AppState"
 import { codingEvidenceOf } from "./CodingPlan"
@@ -58,8 +59,7 @@ export const CodingPlanBody = ({ card, onRunCommand: sendRunCommand, workflowCat
           <button
             type="button"
             className="run-trace-filter"
-            data-flow="runs.trace.select"
-            onClick={() => onRunCommand("runs.trace.select", `${card.payload.runId} ${reviewFeedback.spanId}`)}
+            {...flowAction(onRunCommand, "runs.trace.select", `${card.payload.runId} ${reviewFeedback.spanId}`)}
           >
             Inspect review feedback
           </button>
@@ -73,23 +73,22 @@ export const CodingPlanBody = ({ card, onRunCommand: sendRunCommand, workflowCat
           </p>
           {outcome.blocked === null ? null : <p>{outcome.blocked.message}</p>}
           {vibeRequest === undefined ? null : canVibe ? (
-            <button type="button" className="run-trace-filter" data-flow="flow.run"
-              onClick={() => onRunCommand("flow.run", flowArgs("flow.run", {
+            <button type="button" className="run-trace-filter" 
+              {...flowAction(onRunCommand, "flow.run", flowArgs("flow.run", {
                 name: "coding/vibe", input: { requestExecutionId: vibeRequest.requestExecutionId }
               }))}>Vibe this change</button>
           ) : (
             <div>
               <p>Vibe is not available in this workspace's recorded flows.</p>
-              <button type="button" className="run-trace-filter" data-flow="flow.list"
-                onClick={() => onRunCommand("flow.list")}>Check available flows</button>
+              <button type="button" className="run-trace-filter" 
+                {...flowAction(onRunCommand, "flow.list")}>Check available flows</button>
             </div>
           )}
           {blockedSpanId === undefined ? null : (
             <button
               type="button"
               className="run-trace-filter"
-              data-flow="runs.trace.select"
-              onClick={() => onRunCommand("runs.trace.select", `${card.payload.runId} ${blockedSpanId}`)}
+              {...flowAction(onRunCommand, "runs.trace.select", `${card.payload.runId} ${blockedSpanId}`)}
             >
               Inspect failed execution
             </button>
@@ -125,7 +124,7 @@ export const CodingPlanBody = ({ card, onRunCommand: sendRunCommand, workflowCat
         card.status === "active" ? (
           <div className="coding-plan-door">
             {card.payload.error === undefined ? null : <p className="sui-approval-error" role="alert">{card.payload.error}</p>}
-            <button type="button" className="coding-plan-start" data-flow="agent.change.start" onClick={() => onRunCommand("agent.change.start", card.id)}>Start the change</button>
+            <button type="button" className="coding-plan-start"  {...flowAction(onRunCommand, "agent.change.start", card.id)}>Start the change</button>
           </div>
         ) : (
           <div className="coding-plan-door" data-testid={`coding-plan-started-${card.id}`}>
@@ -134,7 +133,7 @@ export const CodingPlanBody = ({ card, onRunCommand: sendRunCommand, workflowCat
               <span>{started === undefined ? "Started." : <>Started as run <code>{started.runId}</code>.</>}</span>
             </p>
             {started?.cardId === undefined ? null : (
-              <button type="button" className="run-trace-filter" data-flow="card.maximize" onClick={() => onRunCommand("card.maximize", started.cardId)}>
+              <button type="button" className="run-trace-filter"  {...flowAction(onRunCommand, "card.maximize", started.cardId)}>
                 Expand run
               </button>
             )}
@@ -150,10 +149,9 @@ export const CodingPlanBody = ({ card, onRunCommand: sendRunCommand, workflowCat
                 <button
                   type="button"
                   className="coding-plan-change"
-                  data-flow="runs.coding.select"
                   aria-expanded={selected?.id === entry.id}
                   aria-controls={detailsId}
-                  onClick={() => onRunCommand("runs.coding.select", `${card.payload.runId} ${entry.id}`)}
+                  {...flowAction(onRunCommand, "runs.coding.select", `${card.payload.runId} ${entry.id}`)}
                 >
                   <span className="coding-plan-number">{index + 1}</span>
                   <span>

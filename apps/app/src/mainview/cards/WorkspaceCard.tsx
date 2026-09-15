@@ -1,3 +1,5 @@
+import { ViewSkeleton } from "../ViewSkeleton"
+import { flowAction } from "../flows/FlowAction"
 import { fileArgs, parseFileArgs } from "../flows/FileArgs"
 /*
  * The workspace card (lane citc, ADR 0002; completed by lane L3): one
@@ -230,9 +232,8 @@ const WorkspaceDesktopBody = ({
           <Button
             size="sm"
             variant="outline"
-            data-flow="workspace.desktop.stop"
             aria-label="Stop waiting for the desktop box"
-            onClick={() => onRunCommand("workspace.desktop.stop", payload.workspaceId)}
+            {...flowAction(onRunCommand, "workspace.desktop.stop", payload.workspaceId)}
           >
             Stop waiting
           </Button>
@@ -242,9 +243,8 @@ const WorkspaceDesktopBody = ({
             <Button
               size="sm"
               variant="outline"
-              data-flow="workspace.resume"
               aria-label="Resume the workspace and open its desktop"
-              onClick={() => onRunCommand("workspace.resume", payload.workspaceId)}
+              {...flowAction(onRunCommand, "workspace.resume", payload.workspaceId)}
             >
               <Play size={12} aria-hidden="true" /> Resume
             </Button>
@@ -255,9 +255,8 @@ const WorkspaceDesktopBody = ({
             <Button
               size="sm"
               variant="outline"
-              data-flow="workspace.desktop"
               aria-label="Try the desktop session again"
-              onClick={() => onRunCommand("workspace.desktop", payload.workspaceId)}
+              {...flowAction(onRunCommand, "workspace.desktop", payload.workspaceId)}
             >
               <RefreshCw size={12} aria-hidden="true" /> Retry
             </Button>
@@ -276,15 +275,10 @@ const WorkspaceDesktopBody = ({
             <Button
               size="sm"
               variant="outline"
-              data-flow="workspace.open"
               aria-label="Open a new desktop box with the current image"
-              onClick={() =>
-                onRunCommand(
-                  "workspace.open",
-                  `${
+              {...flowAction(onRunCommand, "workspace.open", `${
                     payload.targetBookmark === null ? payload.repo : `${payload.targetBookmark} ${payload.repo}`
-                  } --kind desktop`
-                )}
+                  } --kind desktop`)}
             >
               <Play size={12} aria-hidden="true" /> Open a new box
             </Button>
@@ -319,8 +313,7 @@ const WorkspaceDesktopBody = ({
         <Button
           size="sm"
           variant="outline"
-          data-flow="workspace.desktop.rotate"
-          onClick={() => onRunCommand("workspace.desktop.rotate", payload.workspaceId)}
+          {...flowAction(onRunCommand, "workspace.desktop.rotate", payload.workspaceId)}
         >
           Rotate session
         </Button>
@@ -365,6 +358,8 @@ const WorkspaceFacetBody = ({
   readonly onRunCommand: WorkspaceCardActions["onRunCommand"]
 }) => {
   const { payload } = card
+  if (card.loading) return <ViewSkeleton />
+  if (card.status === "error" && card.body) return <p className="world-card-empty">{card.body}</p>
   if (facet === "desktop") return <WorkspaceDesktopBody payload={payload} onRunCommand={onRunCommand} />
   if (facet === "files") {
     if (payload.files === undefined) return null
@@ -433,8 +428,7 @@ const WorkspaceFacetBody = ({
             <Button
               size="sm"
               variant="outline"
-              data-flow="workspace.egress"
-              onClick={() => onRunCommand("workspace.egress", `${payload.workspaceId} ${payload.egressCursor ?? ""}`)}
+              {...flowAction(onRunCommand, "workspace.egress", `${payload.workspaceId} ${payload.egressCursor ?? ""}`)}
             >
               Load older
             </Button>
@@ -458,31 +452,24 @@ const WorkspaceFacetBody = ({
               <Button
                 size="sm"
                 variant="outline"
-                data-flow="workspace.snapshot.fork"
                 aria-label={`Fork a workspace from ${snapshot.name}`}
-                onClick={() => onRunCommand("workspace.snapshot.fork", `${snapshot.id} ${payload.workspaceId}`)}
+                {...flowAction(onRunCommand, "workspace.snapshot.fork", `${snapshot.id} ${payload.workspaceId}`)}
               >
                 Fork from
               </Button>
               <Button
                 size="sm"
                 variant="outline"
-                data-flow="workspace.template"
                 aria-label={`Create a template from ${snapshot.name}`}
-                onClick={() =>
-                  onRunCommand(
-                    "workspace.template",
-                    flowArgs("workspace.template", { snapshotId: snapshot.id, workspaceId: payload.workspaceId, name: snapshot.name })
-                  )}
+                {...flowAction(onRunCommand, "workspace.template", flowArgs("workspace.template", { snapshotId: snapshot.id, workspaceId: payload.workspaceId, name: snapshot.name }))}
               >
                 Make template
               </Button>
               <Button
                 size="sm"
                 variant="outline"
-                data-flow="workspace.snapshot.delete"
                 aria-label={`Delete snapshot ${snapshot.name}`}
-                onClick={() => onRunCommand("workspace.snapshot.delete", `${snapshot.id} ${payload.workspaceId}`)}
+                {...flowAction(onRunCommand, "workspace.snapshot.delete", `${snapshot.id} ${payload.workspaceId}`)}
               >
                 <Trash2 size={12} aria-hidden="true" /> Delete
               </Button>
@@ -533,9 +520,8 @@ const WorkspaceFacetBody = ({
         (
           <Button
             size="sm"
-            data-flow="workspace.terminal"
             {...(terminalRefusal === null ? {} : { variant: "outline" as const, "aria-label": "Try the terminal again" })}
-            onClick={() => onRunCommand("workspace.terminal", payload.workspaceId)}
+            {...flowAction(onRunCommand, "workspace.terminal", payload.workspaceId)}
           >
             {terminalRefusal === null ? "Open terminal" : <><RefreshCw size={12} aria-hidden="true" /> Retry</>}
           </Button>
@@ -553,9 +539,8 @@ const WorkspaceFacetBody = ({
                 <Button
                   size="sm"
                   variant="outline"
-                  data-flow="workspace.session.destroy"
                   aria-label={`Destroy session ${session.id}`}
-                  onClick={() => onRunCommand("workspace.session.destroy", `${session.id} ${payload.workspaceId}`)}
+                  {...flowAction(onRunCommand, "workspace.session.destroy", `${session.id} ${payload.workspaceId}`)}
                 >
                   Destroy
                 </Button>
@@ -612,9 +597,8 @@ export const WorkspaceCardBody = ({
             <Button
               size="sm"
               variant="ghost"
-              data-flow="chat.copy-message"
               aria-label={`Copy ${sshHost}`}
-              onClick={() => onRunCommand("chat.copy-message", sshHost)}
+              {...flowAction(onRunCommand, "chat.copy-message", sshHost)}
             >
               <Copy size={12} aria-hidden="true" /> Copy
             </Button>
@@ -663,15 +647,10 @@ export const WorkspaceCardBody = ({
                 key={kind}
                 size="sm"
                 variant="outline"
-                data-flow="workspace.open"
                 aria-label={`Open a ${kind} workspace`}
-                onClick={() =>
-                  onRunCommand(
-                    "workspace.open",
-                    `${
+                {...flowAction(onRunCommand, "workspace.open", `${
                       payload.targetBookmark === null ? payload.repo : `${payload.targetBookmark} ${payload.repo}`
-                    } --kind ${kind}`
-                  )}
+                    } --kind ${kind}`)}
               >
                 {kind} — {says}
               </Button>
@@ -710,8 +689,7 @@ export const WorkspaceCardBody = ({
             <Button
               size="sm"
               variant="outline"
-              data-flow="workspace.suspend"
-              onClick={() => onRunCommand("workspace.suspend", payload.workspaceId)}
+              {...flowAction(onRunCommand, "workspace.suspend", payload.workspaceId)}
             >
               <Square size={12} aria-hidden="true" /> Suspend
             </Button>
@@ -722,8 +700,7 @@ export const WorkspaceCardBody = ({
             <Button
               size="sm"
               variant="outline"
-              data-flow="workspace.resume"
-              onClick={() => onRunCommand("workspace.resume", payload.workspaceId)}
+              {...flowAction(onRunCommand, "workspace.resume", payload.workspaceId)}
             >
               <Play size={12} aria-hidden="true" /> Resume
             </Button>
@@ -732,16 +709,14 @@ export const WorkspaceCardBody = ({
         <Button
           size="sm"
           variant="outline"
-          data-flow="workspace.fork"
-          onClick={() => onRunCommand("workspace.fork", `${payload.workspaceId} ${payload.name}-fork`)}
+          {...flowAction(onRunCommand, "workspace.fork", `${payload.workspaceId} ${payload.name}-fork`)}
         >
           <Copy size={12} aria-hidden="true" /> Fork
         </Button>
         <Button
           size="sm"
           variant="outline"
-          data-flow="workspace.snapshot"
-          onClick={() => onRunCommand("workspace.snapshot", payload.workspaceId)}
+          {...flowAction(onRunCommand, "workspace.snapshot", payload.workspaceId)}
         >
           <Camera size={12} aria-hidden="true" /> Snapshot
         </Button>
@@ -768,9 +743,8 @@ export const WorkspaceCardBody = ({
             <Button
               size="sm"
               variant="outline"
-              data-flow="workspace.delete"
               disabled={deleteDraft !== payload.name}
-              onClick={() => onRunCommand("workspace.delete", `${payload.workspaceId} ${deleteDraft}`)}
+              {...flowAction(onRunCommand, "workspace.delete", `${payload.workspaceId} ${deleteDraft}`)}
             >
               Delete permanently
             </Button>

@@ -1,3 +1,4 @@
+import { preparedView, type ViewAction } from "../PreparedView"
 /*
  * The history seam: the mythical history of a repository (Factory design
  * session 2026-09-07 §3, mock 13), read through the Worker's public read seam
@@ -48,7 +49,7 @@ export type HistoryPayload = Extract<Card, { kind: "history" }>["payload"]
 type Mythical = HistoryPayload["mythical"]
 
 export interface HistorySeam {
-  readonly showHistory: (repo?: string) => Promise<string | void>
+  readonly showHistory: ViewAction<[repo?: string]>
   /** Bootstrap delegates to the run host; amend/fold remain unsupported. */
   readonly retellHistory: (door: "bootstrap" | "amend" | "fold", repo?: string) => Promise<string | void>
 }
@@ -441,9 +442,10 @@ export const createHistorySeam = (
   bootstrap?: (repo: string) => Promise<string | void>
 ): HistorySeam => {
   /* One history card per repository, re-surfaced at the end of the transcript on every show. */
-  const showHistory = async (repoArg?: string): Promise<string | void> => {
+  const showHistory = preparedView(ctx, (repoArg?: string) => {
     const target = resolveTargetRepo(ctx.store, repoArg)
     if ("error" in target) return target.error
+    return { id: `history-${target.repo}`, title: `Mythical history · ${target.repo}`, read: async () => {
     const payload = await readHistory(ctx, target.repo)
     if ("error" in payload) return payload.error
     const card: Card = {
@@ -455,8 +457,9 @@ export const createHistorySeam = (
       ordinal: ctx.nextOrdinal(),
       payload
     }
-    ctx.dispatch({ type: "card.upsert", actor: ctx.actor(), card })
-  }
+    return { card }
+    } }
+  })
 
   // Generation is delegated to the durable run host, never performed by a read seam.
   const retellHistory = async (door: "bootstrap" | "amend" | "fold", repoArg?: string): Promise<string | void> => {

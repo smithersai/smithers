@@ -1,3 +1,4 @@
+import { flowAction } from "../flows/FlowAction"
 /*
  * The search-results card (Search and Command Palette Spec 2026-09-07 §3,
  * §6): the rows one `search.*` flow answered, embedded in the chat at
@@ -38,10 +39,9 @@ const ActionButton = ({ action, onRunCommand }: { readonly action: SearchAction 
   <Button
     variant="ghost"
     size="sm"
-    data-flow={action.flow}
     data-role={action.role}
     data-testid={`search-action-${action.flow}`}
-    onClick={() => onRunCommand(runtimeFlowName(action.flow), action.args)}
+    {...flowAction(onRunCommand, runtimeFlowName(action.flow), action.args)}
   >
     {action.label}
   </Button>
@@ -60,9 +60,8 @@ export const SearchResultsCardBody = ({ card, onRunCommand }: { readonly card: S
         <Button
           variant="ghost"
           size="sm"
-          data-flow={payload.flow}
           data-testid="search-results-rerun"
-          onClick={() => onRunCommand(runtimeFlowName(payload.flow), payload.args)}
+          {...flowAction(onRunCommand, runtimeFlowName(payload.flow), payload.args)}
         >
           Search again
         </Button>

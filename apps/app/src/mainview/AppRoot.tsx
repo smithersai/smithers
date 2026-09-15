@@ -1,3 +1,4 @@
+import { ViewSkeleton } from "./ViewSkeleton"
 import { lazy, StrictMode, Suspense } from "react"
 import { prepareControllerBoot, ControllerProvider } from "./ControllerProvider"
 import { SessionNavigation, SessionNavigationFallback } from "./SessionNavigation"
@@ -56,7 +57,7 @@ export function AppRoot({
     <StrictMode>
       <StartupErrorBoundary onError={watchdog.handleRenderFailure}>
         <SessionShell navigation={<Suspense fallback={<SessionNavigationFallback />}><ControllerProvider boot={boot}><SessionNavigation /></ControllerProvider></Suspense>}>
-          <Suspense fallback={null}>
+          <Suspense fallback={<ViewSkeleton />}>
             <ControllerProvider boot={boot}>
               <MountedSignal onMounted={watchdog.markMounted} />
               <View />

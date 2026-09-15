@@ -1,3 +1,4 @@
+import { preparedView, type ViewAction } from "../PreparedView"
 /*
  * The agent-environment seam: GET/PUT /api/repos/{owner}/{repo}/
  * agent-environment. Environment VARS and the setup script read and write
@@ -11,9 +12,9 @@ import type { SeamContext } from "./SeamContext"
 import { readErrorMessage } from "./SeamContext"
 
 export interface EnvironmentSeam {
-  readonly viewEnvironment: (repo?: string) => Promise<string | void>
+  readonly viewEnvironment: ViewAction<[repo?: string]>
   /** `assignment` is one `NAME=value` pair; the seam validates the shape. */
-  readonly setEnvironmentVar: (assignment: string, repo?: string) => Promise<string | void>
+  readonly setEnvironmentVar: (assignment: string, repo?: string) => ReturnType<ViewAction<[repo?: string]>>
 }
 
 /** The variable-name shape the platform accepts (multi environmentStore.ts). */
@@ -169,7 +170,7 @@ export const createEnvironmentSeam = (ctx: SeamContext): EnvironmentSeam => {
    * The one env card per repo, re-surfaced at the transcript's end on every
    * read. Secrets are not this card's: /secrets.list renders their metadata.
    */
-  const upsertCard = (repo: string, config: EnvironmentConfig): void => {
+  const environmentCard = (repo: string, config: EnvironmentConfig): Card => {
     const card: Card = {
       id: `env-${repo}`,
       kind: "env",
@@ -183,18 +184,19 @@ export const createEnvironmentSeam = (ctx: SeamContext): EnvironmentSeam => {
         setupScript: config.setupScript === "" ? null : config.setupScript
       }
     }
-    ctx.dispatch({ type: "card.upsert", actor: ctx.actor(), card })
+    return card
   }
 
-  const viewEnvironment = async (repo?: string): Promise<string | void> => {
+  const viewEnvironment = preparedView(ctx, (repo?: string) => {
     const target = resolveTargetRepo(ctx.store, repo)
     if ("error" in target) return target.error
-    const config = await fetchEnvironment(target.repo)
-    if (typeof config === "string") return config
-    upsertCard(target.repo, config)
-  }
+    return { id: `env-${target.repo}`, title: `Agent environment · ${target.repo}`, read: async () => {
+      const config = await fetchEnvironment(target.repo)
+      return typeof config === "string" ? config : { card: environmentCard(target.repo, config) }
+    } }
+  })
 
-  const setEnvironmentVar = async (assignment: string, repo?: string): Promise<string | void> => {
+  const setEnvironmentVar = async (assignment: string, repo?: string): ReturnType<ViewAction<[repo?: string]>> => {
     const pair = parseAssignment(assignment)
     if (typeof pair === "string") return pair
     const target = resolveTargetRepo(ctx.store, repo)

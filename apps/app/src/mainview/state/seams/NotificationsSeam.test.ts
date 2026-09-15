@@ -234,7 +234,7 @@ describe("notifications.list", () => {
     expect(outcome.status).toBe("failed")
     if (outcome.status === "failed") expect(outcome.error).toContain("2 rows")
     await settled()
-    expect(store.collections.cards.get("notifications")).toBeUndefined()
+    expect(store.collections.cards.get("notifications")).toMatchObject({ status: "error", loading: false })
   })
 
   test("a genuinely empty inbox is still an empty card", async () => {
@@ -247,7 +247,7 @@ describe("notifications.list", () => {
     expect(notificationsCard(store)?.payload.items).toEqual([])
   })
 
-  test("a 500 answers the server's honest message and surfaces no card", async () => {
+  test("a 500 answers the server's honest message and keeps the failed view visible", async () => {
     const { store, controller } = await freshController(
       backend({ "/api/notifications/list": json(500, { message: "the notifications backfill is rebuilding" }) })
     )
@@ -257,7 +257,7 @@ describe("notifications.list", () => {
     expect(outcome.status).toBe("failed")
     if (outcome.status === "failed") expect(outcome.error).toBe("the notifications backfill is rebuilding")
     await settled()
-    expect(store.collections.cards.get("notifications")).toBeUndefined()
+    expect(store.collections.cards.get("notifications")).toMatchObject({ status: "error", loading: false })
   })
 
   test("a network throw answers the honest string, never a rejection", async () => {

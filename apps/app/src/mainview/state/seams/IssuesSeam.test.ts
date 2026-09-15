@@ -172,7 +172,7 @@ describe("issues seam — the list", () => {
       )
       const outcome = await controller.commands.run("issues.list")
       expect(outcome.status).toBe("failed")
-      expect(store.collections.cards.get("issues-will/flows")).toBeUndefined()
+      expect(store.collections.cards.get("issues-will/flows")).toMatchObject({ status: "error", loading: false })
     }
   })
   test("issues.list upserts the issue-list card with defensively parsed rows and asks state=open", async () => {
@@ -390,7 +390,7 @@ describe("issues seam — mutations re-fetch so the card states the new truth", 
 })
 
 describe("issues seam — honest failures, never throws", () => {
-  test("a 500 answers the backend's message as a failed outcome and upserts no card", async () => {
+  test("a 500 answers the backend's message as a failed outcome and keeps the failed view visible", async () => {
     const { store, controller } = await issuesController(
       backend({
         "GET /api/repos/will/flows/issues": json(500, { message: "the platform exploded" })
@@ -400,10 +400,10 @@ describe("issues seam — honest failures, never throws", () => {
     expect(outcome.status).toBe("failed")
     if (outcome.status === "failed") expect(outcome.error).toBe("the platform exploded")
     await settled()
-    expect(store.collections.cards.get("issues-will/flows")).toBeUndefined()
+    expect(store.collections.cards.get("issues-will/flows")).toMatchObject({ status: "error", loading: false })
   })
 
-  test("a network throw answers an honest string and upserts no card", async () => {
+  test("a network throw answers an honest string and keeps the failed view visible", async () => {
     // Only the issues routes throw; everything else 404s so startup seams stay honest.
     const throwingBackend: AppServices = {
       fetchImpl: async (input) => {
@@ -421,7 +421,7 @@ describe("issues seam — honest failures, never throws", () => {
       expect(outcome.error).toContain("socket hangup")
     }
     await settled()
-    expect(store.collections.cards.get("issue-will/flows-7")).toBeUndefined()
+    expect(store.collections.cards.get("issue-will/flows-7")).toMatchObject({ status: "error", loading: false })
   })
 
   test("with several loaded repositories and no argument, the answer is the missing-repository form", async () => {
@@ -544,7 +544,7 @@ describe("issues seam — source-only fallback (repo not imported)", () => {
     expect(calls).toContain("GET /api/user/github-repos/will/flows/issues?state=all")
   })
 
-  test("the GitHub source failing too answers the honest error and upserts no card", async () => {
+  test("the GitHub source failing too answers the honest error and keeps the failed view visible", async () => {
     const { store, controller } = await issuesController(
       backend({
         "GET /api/repos/will/flows/issues": json(404, { message: "repository not found" }),
@@ -559,7 +559,7 @@ describe("issues seam — source-only fallback (repo not imported)", () => {
       expect(outcome.error).toBe("GitHub answered 404 for will/flows")
     }
     await settled()
-    expect(store.collections.cards.get("issues-will/flows")).toBeUndefined()
+    expect(store.collections.cards.get("issues-will/flows")).toMatchObject({ status: "error", loading: false })
   })
 
   test("native issues.view on a 404 names the explicit GitHub door without switching trackers", async () => {
@@ -574,7 +574,7 @@ describe("issues seam — source-only fallback (repo not imported)", () => {
       expect(outcome.error).toContain("/issues.view 7 will/flows --source github")
     }
     expect(calls.some((call) => call.includes("/api/user/github-repos/"))).toBe(false)
-    expect(store.collections.cards.get("issue-will/flows-7")).toBeUndefined()
+    expect(store.collections.cards.get("issue-will/flows-7")).toMatchObject({ status: "error", loading: false })
   })
 
   test("mutations on a 404 answer the repos.import error and never write to the source", async () => {

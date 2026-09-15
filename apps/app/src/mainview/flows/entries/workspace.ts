@@ -207,6 +207,7 @@ export const workspaceFlows = (actions: CommandActions): ReadonlyArray<FlowEntry
       workspaceId: Schema.String,
       facet: Schema.Literals(["terminal", "files", "services", "snapshots", "egress", "desktop"])
     }),
+    prepare: ({ workspaceId, facet }) => actions.setWorkspaceFacet.preload?.(workspaceId, facet),
     handler: ({ workspaceId, facet }) => actions.setWorkspaceFacet(workspaceId, facet)
   }),
   /*

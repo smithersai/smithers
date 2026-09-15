@@ -1,3 +1,5 @@
+import { bindFlowPreloading } from "../flows/FlowAction"
+import { invalidatePreparedViews, disposePreparedViews } from "./PreparedView"
 import { openRequestedRepo } from "../RepoLink"
 import { createInputModeController } from "./controller/inputMode"
 import type { InputMode } from "./InputMode"
@@ -232,7 +234,7 @@ export interface AppController extends TutorialChangeController, IssueFlowsContr
     description: string,
     repo?: string
   ) => Promise<string | void | { readonly value: string }>
-  readonly listWorkspaceWorkflows: (repo?: string, sourceCard?: string) => Promise<string | void | { readonly value: string }>
+  readonly listWorkspaceWorkflows: WorkflowController["listWorkspaceWorkflows"]
   /** The dispatchers waiting on the repository (triggers.list): declared rules for every visitor, live rows when a box answered. */
   readonly listTriggers: TriggersSeam["listTriggers"]
   /** The register door (triggers.register): signed-in by requirement. */
@@ -779,7 +781,11 @@ export const createAppController = (
    * apply because boundedFetch wraps the tapped http.
    */
   const seamCtx: SeamContext = {
-    http: (input, init) => ctx.boundedFetch(input, init),
+    http: (input, init) => {
+      const write = init?.method && !["GET", "HEAD"].includes(init.method.toUpperCase()) && !input.endsWith("/api/repo/files")
+      if (write) invalidatePreparedViews(store)
+      return ctx.boundedFetch(input, init).finally(() => { if (write) invalidatePreparedViews(store) })
+    },
     baseUrl,
     store,
     dispatch: store.dispatch,
@@ -818,16 +824,6 @@ export const createAppController = (
     const result = await select(librarianRuns).bootstrapHistory(repo)
     return typeof result === "string" ? result : undefined
   }))
-  /*
-   * The mythical history read walks the mirror's change feed page by page
-   * (up to MAX_CHANGE_PAGES sequential requests) before it can state a
-   * thing: on a large repository that is many seconds with nothing on
-   * screen (probe 2026-09-07 on smithersai/smithers: the walk took ~15 s and
-   * read as a silent no-op). The 300ms toast law names the wait; the card
-   * lands when the walk settles, and a refusal resolves the same toast.
-   */
-  const showMythicalHistory: HistorySeam["showHistory"] = (repo) =>
-    withToast("history.show", "Reading the mythical history…", "Mythical history read", () => historySeam.showHistory(repo))
   const factorySeam = actors.pair(seamCtx, (context) => createFactorySeam(context))
   const triggersSeam = actors.pair(seamCtx, (context) => createTriggersSeam(context))
   const repoImportSeam = actors.pair(seamCtx, (context) => createRepoImportSeam(context))
@@ -1690,7 +1686,7 @@ export const createAppController = (
     viewEnvironment: environmentSeam.viewEnvironment,
     setEnvironmentVar: environmentSeam.setEnvironmentVar,
     listSecrets: secretsSeam.listSecrets,
-    showHistory: showMythicalHistory,
+    showHistory: historySeam.showHistory,
     retellHistory: historySeam.retellHistory,
     showFactory: factorySeam.showFactory,
     registerTrigger,
@@ -1825,6 +1821,15 @@ export const createAppController = (
     }
   }
   ctx.commands = commands
+  if (typeof document !== "undefined") ctx.onDispose(bindFlowPreloading(document, commands.preload!))
+  ctx.onDispose(() => disposePreparedViews(store))
+  for (const collection of [store.collections.identitySessions, store.collections.cloudWorkspaces, store.collections.changes, store.collections.repos, store.collections.repositories]) {
+    const subscription = collection.subscribeChanges(() => invalidatePreparedViews(store))
+    ctx.onDispose(() => subscription.unsubscribe())
+  }
+  for (const card of store.collections.cards.values()) {
+    if (card.loading) store.dispatch({ type: "card.upsert", actor: "system", card: { ...card, loading: false, status: "error", body: "Loading was interrupted. Open this view again to retry." } })
+  }
 
   // Enter the useful first lesson through the same durable flow as replay.
   // The start receipt makes the background repository read once per playthrough.

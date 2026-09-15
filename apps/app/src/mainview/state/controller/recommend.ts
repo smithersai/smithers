@@ -152,13 +152,21 @@ export const createRecommendController = (ctx: ControllerContext, deps: Recommen
   }
 
   const subscribe: RecommendController["subscribe"] = () => {
+    const warm = (suggestions: ReadonlyArray<{ flow: string; args?: string }>) => {
+      for (const suggestion of suggestions) void ctx.commands.preload?.(suggestion.flow, suggestion.args)
+    }
     const subscription = store.collections.transitions.subscribeChanges((changes) => {
       if (changes.some((change) => change.type === "insert" && isMaterialTransition(change.value.type))) schedule()
     })
+    const recommendations = store.collections.recommendations.subscribeChanges(changes => {
+      for (const change of changes) if (change.type !== "delete") warm(change.value.suggestions)
+    })
+    for (const row of store.collections.recommendations.values()) warm(row.suggestions)
     ctx.onDispose(() => {
       disposed = true
       if (debounce !== undefined) clearTimeout(debounce)
       subscription.unsubscribe()
+      recommendations.unsubscribe()
     })
   }
 

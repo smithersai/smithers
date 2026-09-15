@@ -1,3 +1,4 @@
+import { flowAction } from "../flows/FlowAction"
 /*
  * The lane-sync cards (ADR 0005): the connector-setup card (one kind serves
  * both handoffs — the Linear wizard authorize → team → repository → confirm,
@@ -128,8 +129,7 @@ const RepositoryPick = ({
           <Button
             variant={repository.id === cardRepo ? "outline" : "ghost"}
             size="sm"
-            data-flow="linear.connect.repo"
-            onClick={() => onRunCommand("linear.connect.repo", `${cardRepo} ${repository.id}`)}
+            {...flowAction(onRunCommand, "linear.connect.repo", `${cardRepo} ${repository.id}`)}
           >
             {repository.id}
           </Button>
@@ -165,10 +165,10 @@ const LinearSetupBody = ({ card, onRunCommand }: { readonly card: ConnectorSetup
           <p className="world-card-path">{`last sync ${ageLabel(integration.lastSyncAt)}`}</p> :
           null}
         <div className="world-card-row">
-          <Button size="sm" variant="outline" data-flow="linear.sync" onClick={() => onRunCommand("linear.sync", String(integration.id))}>
+          <Button size="sm" variant="outline"  {...flowAction(onRunCommand, "linear.sync", String(integration.id))}>
             <RefreshCw size={14} /> Sync now
           </Button>
-          <Button size="sm" variant="ghost" data-flow="linear.activity" onClick={() => onRunCommand("linear.activity", String(integration.id))}>
+          <Button size="sm" variant="ghost"  {...flowAction(onRunCommand, "linear.activity", String(integration.id))}>
             Activity
           </Button>
           <Button size="sm" variant="ghost" data-flow="linear.disconnect" onClick={() => setDisconnectArmed((armed) => !armed)}>
@@ -182,8 +182,7 @@ const LinearSetupBody = ({ card, onRunCommand }: { readonly card: ConnectorSetup
               <Button
                 size="sm"
                 variant="destructive"
-                data-flow="linear.disconnect"
-                onClick={() => onRunCommand("linear.disconnect", `${integration.id} ${integration.teamKey}`)}
+                {...flowAction(onRunCommand, "linear.disconnect", `${integration.id} ${integration.teamKey}`)}
               >
                 {`Disconnect ${integration.teamKey}`}
               </Button>
@@ -208,7 +207,7 @@ const LinearSetupBody = ({ card, onRunCommand }: { readonly card: ConnectorSetup
           {step.detail !== null ? <span className="world-card-path">{step.detail}</span> : null}
           {step.id === "authorize" && (step.state === "active" || step.state === "error") ?
             (
-              <Button size="sm" variant="outline" data-flow="linear.connect.open" onClick={() => onRunCommand("linear.connect.open", repo)}>
+              <Button size="sm" variant="outline"  {...flowAction(onRunCommand, "linear.connect.open", repo)}>
                 <ExternalLink size={14} /> Open Linear
               </Button>
             ) :
@@ -224,8 +223,7 @@ const LinearSetupBody = ({ card, onRunCommand }: { readonly card: ConnectorSetup
             <Button
               variant="ghost"
               size="sm"
-              data-flow="linear.connect.team"
-              onClick={() => onRunCommand("linear.connect.team", `${candidate.id} ${repo}`)}
+              {...flowAction(onRunCommand, "linear.connect.team", `${candidate.id} ${repo}`)}
             >
               {`${candidate.key} · ${candidate.name}`}
             </Button>
@@ -236,7 +234,7 @@ const LinearSetupBody = ({ card, onRunCommand }: { readonly card: ConnectorSetup
       {confirmReady ?
         (
           <div className="world-card-row">
-            <Button size="sm" data-flow="linear.connect.confirm" onClick={() => onRunCommand("linear.connect.confirm", repo)}>
+            <Button size="sm"  {...flowAction(onRunCommand, "linear.connect.confirm", repo)}>
               Connect
             </Button>
           </div>
@@ -269,15 +267,15 @@ const GitHubSetupBody = ({ card, onRunCommand }: { readonly card: ConnectorSetup
       <div className="world-card-row">
         {!connected && installUrl !== undefined ?
           (
-            <Button size="sm" variant="outline" data-flow="github.app.open" onClick={() => onRunCommand("github.app.open", repo)}>
+            <Button size="sm" variant="outline"  {...flowAction(onRunCommand, "github.app.open", repo)}>
               <ExternalLink size={14} /> Open GitHub
             </Button>
           ) :
           null}
-        <Button size="sm" variant="ghost" data-flow="github.app" disabled={heldUntil !== null} onClick={() => onRunCommand("github.app", repo)}>
+        <Button size="sm" variant="ghost"  disabled={heldUntil !== null} {...flowAction(onRunCommand, "github.app", repo)}>
           <RefreshCw size={14} /> {heldUntil === null ? "Re-check" : `Re-check after ${heldUntil}`}
         </Button>
-        <Button size="sm" variant="ghost" data-flow="github.reconcile" disabled={heldUntil !== null} onClick={() => onRunCommand("github.reconcile", repo)}>
+        <Button size="sm" variant="ghost"  disabled={heldUntil !== null} {...flowAction(onRunCommand, "github.reconcile", repo)}>
           {heldUntil === null ? "Reconcile" : `Reconcile after ${heldUntil}`}
         </Button>
       </div>
@@ -382,9 +380,8 @@ export const SyncOpsCardBody = ({ card, onRunCommand }: { readonly card: SyncOps
               <Button
                 size="sm"
                 variant="ghost"
-                data-flow={retryFlow}
                 aria-label={`Retry ${op.entity} ${op.entityId ?? op.id}`}
-                onClick={() => onRunCommand(retryFlow, retryArgs(op.id))}
+                {...flowAction(onRunCommand, retryFlow, retryArgs(op.id))}
               >
                 <RefreshCw size={14} /> Retry
               </Button>
@@ -396,7 +393,7 @@ export const SyncOpsCardBody = ({ card, onRunCommand }: { readonly card: SyncOps
       {ops.length > OP_LIMIT && expanded !== true ?
         (
           <div className="world-card-row">
-            <Button size="sm" variant="ghost" data-flow="sync.ops.show-more" onClick={() => onRunCommand("sync.ops.show-more", card.id)}>
+            <Button size="sm" variant="ghost"  {...flowAction(onRunCommand, "sync.ops.show-more", card.id)}>
               {`Show more (${ops.length - OP_LIMIT})`}
             </Button>
           </div>
@@ -406,7 +403,7 @@ export const SyncOpsCardBody = ({ card, onRunCommand }: { readonly card: SyncOps
       {hasOlder === true ?
         (
           <div className="world-card-row">
-            <Button size="sm" variant="ghost" data-flow="sync.ops.load-older" onClick={() => onRunCommand("sync.ops.load-older", card.id)}>
+            <Button size="sm" variant="ghost"  {...flowAction(onRunCommand, "sync.ops.load-older", card.id)}>
               Load older
             </Button>
           </div>

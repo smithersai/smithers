@@ -31,6 +31,7 @@ export const filesFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> =>
     args: "[path] [owner/repo]",
     requires: ["repo-source"],
     input: Schema.Struct({ path: Schema.String, repo: Schema.optional(Schema.String) }),
+    prepare: ({ path, repo }) => actions.listFiles.preload?.(path, repo),
     handler: ({ path, repo }) => actions.listFiles(path, repo)
   }),
   flow({
@@ -50,6 +51,7 @@ export const filesFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> =>
       line: Schema.optional(Schema.Number),
       column: Schema.optional(Schema.Number)
     }),
+    prepare: ({ path, repo, line, column }) => actions.readFile.preload?.(path, repo, line === undefined ? undefined : { line, ...(column === undefined ? {} : { column }) }),
     handler: ({ path, repo, line, column }) =>
       actions.readFile(path, repo, line === undefined ? undefined : { line, ...(column === undefined ? {} : { column }) })
   })

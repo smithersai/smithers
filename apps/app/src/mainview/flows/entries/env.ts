@@ -20,6 +20,7 @@ export const envFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> => [
     args: "[owner/repo]",
     requires: ["signed-in"],
     input: RepoTarget,
+    prepare: ({ repo }) => actions.viewEnvironment.preload?.(repo),
     handler: ({ repo }) => actions.viewEnvironment(repo)
   }),
   flow({

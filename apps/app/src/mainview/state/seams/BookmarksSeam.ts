@@ -1,3 +1,4 @@
+import { preparedView, type ViewAction } from "../PreparedView"
 /*
  * The bookmarks seam (jj branches): GET /api/repos/{owner}/{repo}/bookmarks
  * renders the "branches" card. Bookmarks are also the source choices a
@@ -11,7 +12,7 @@ import type { SeamContext } from "./SeamContext"
 import { readErrorMessage } from "./SeamContext"
 
 export interface BookmarksSeam {
-  readonly listBookmarks: (repo?: string) => Promise<string | void>
+  readonly listBookmarks: ViewAction<[repo?: string]>
 }
 
 /** One parsed bookmark (multi Bookmark): the change id is the landing-stack identity. */
@@ -94,10 +95,11 @@ export const fetchAllBookmarks = async (
 }
 
 export const createBookmarksSeam = (ctx: SeamContext): BookmarksSeam => ({
-  listBookmarks: async (repoArg) => {
+  listBookmarks: preparedView(ctx, (repoArg?: string) => {
     const target = resolveTargetRepo(ctx.store, repoArg)
     if ("error" in target) return target.error
     const repo = target.repo
+    return { id: `branches-${repo}`, title: `Branches · ${repo}`, read: async () => {
     const result = await fetchAllBookmarks(ctx, repo)
     if ("error" in result) return result.error
     const card: Card = {
@@ -117,6 +119,7 @@ export const createBookmarksSeam = (ctx: SeamContext): BookmarksSeam => ({
         }))
       }
     }
-    ctx.dispatch({ type: "card.upsert", actor: ctx.actor(), card })
-  }
+    return { card }
+    } }
+  })
 })

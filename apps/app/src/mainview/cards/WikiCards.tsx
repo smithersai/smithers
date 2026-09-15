@@ -1,3 +1,6 @@
+import { ViewSkeleton } from "../ViewSkeleton"
+import { KnowledgeGraphSurface } from "../ViewModules"
+import { flowAction } from "../flows/FlowAction"
 /*
  * The Wiki's link cards (Librarian L5): the rail of one note as a card
  * (`wiki-links`) and the knowledge graph as a card (`wiki-graph`). The
@@ -9,7 +12,7 @@
  * listed under Unresolved with no door: there is nothing to open.
  */
 import { Button } from "@smthrs/ui"
-import { lazy, Suspense } from "react"
+import { Suspense } from "react"
 import type { Card } from "../state/AppState"
 import { WIKI_DISPLAY_NAME, WIKI_GRAPH_ALL_SCOPE } from "../state/AppState"
 import type { CardFamily, RunCommand } from "./CardFamily"
@@ -22,9 +25,7 @@ export interface WikiCardActions {
   readonly onRunCommand: RunCommand
 }
 
-const KnowledgeGraphSurface = lazy(() =>
-  import("../KnowledgeGraphSurface").then((module) => ({ default: module.KnowledgeGraphSurface }))
-)
+
 
 const NoteRows = ({
   label,
@@ -50,9 +51,8 @@ const NoteRows = ({
                 <Button
                   variant="ghost"
                   size="sm"
-                  data-flow="wiki.open"
                   data-testid={`wiki-open-${row.path}`}
-                  onClick={() => onRunCommand("wiki.open", row.path)}
+                  {...flowAction(onRunCommand, "wiki.open", row.path)}
                 >
                   {row.title}
                 </Button>
@@ -74,9 +74,8 @@ export const WikiLinksCardBody = ({ card, onRunCommand }: { readonly card: WikiL
         <Button
           variant="ghost"
           size="sm"
-          data-flow="wiki.open"
           data-testid="wiki-links-open"
-          onClick={() => onRunCommand("wiki.open", payload.path)}
+          {...flowAction(onRunCommand, "wiki.open", payload.path)}
         >
           Open
         </Button>
@@ -113,9 +112,8 @@ export const WikiGraphCardBody = ({ card, onRunCommand }: { readonly card: WikiG
         <Button
           variant="ghost"
           size="sm"
-          data-flow="wiki.graph"
           data-testid="wiki-graph-rerun"
-          onClick={() => onRunCommand("wiki.graph", payload.path ?? undefined)}
+          {...flowAction(onRunCommand, "wiki.graph", payload.path ?? undefined)}
         >
           Refresh
         </Button>
@@ -124,7 +122,7 @@ export const WikiGraphCardBody = ({ card, onRunCommand }: { readonly card: WikiG
         <p className="world-card-empty" data-testid="wiki-graph-empty">{WIKI_DISPLAY_NAME} is empty so far.</p> :
         (
           <div className="wiki-graph-canvas">
-            <Suspense fallback={<p className="smithers-card-note">Loading graph…</p>}>
+            <Suspense fallback={<ViewSkeleton />}>
               <KnowledgeGraphSurface
                 notes={payload.notes.map((note) => ({
                   path: note.path,

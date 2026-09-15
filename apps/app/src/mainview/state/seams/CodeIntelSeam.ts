@@ -67,7 +67,7 @@ export interface CodeIntelSeamOptions {
    * answer patches it — a hover with no card to show it on is nothing the
    * human can see.
    */
-  readonly readFile: FilesSeam["readFile"]
+  readonly readFile: (...args: Parameters<FilesSeam["readFile"]>) => ReturnType<FilesSeam["readFile"]>
   /**
    * How long a first request may run before the card states the server is
    * starting (the 300 ms law): the host spawns on first use and tsserver

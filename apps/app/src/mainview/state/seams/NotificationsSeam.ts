@@ -1,3 +1,4 @@
+import { preparedView, type ViewAction } from "../PreparedView"
 /*
  * The notifications seam: GET /api/notifications/list and
  * PUT /api/notifications/mark-read. Reference: multi
@@ -8,8 +9,8 @@ import type { SeamContext } from "./SeamContext"
 import { readErrorMessage } from "./SeamContext"
 
 export interface NotificationsSeam {
-  readonly listNotifications: () => Promise<string | void>
-  readonly markNotificationsRead: () => Promise<string | void>
+  readonly listNotifications: ViewAction<[]>
+  readonly markNotificationsRead: () => ReturnType<ViewAction<[]>>
 }
 
 /** One page is plenty for a transcript card; the platform caps pages anyway. */
@@ -72,7 +73,7 @@ const parseNotificationList = (body: unknown): ParsedList => {
 }
 
 export const createNotificationsSeam = (ctx: SeamContext): NotificationsSeam => {
-  const listNotifications = async (): Promise<string | void> => {
+  const listNotifications = preparedView(ctx, () => ({ id: "notifications", title: "Notifications", read: async () => {
     // The reference's query params: `all` includes read rows (the card shows
     // both and counts the unread), `limit` bounds the page.
     const query = new URLSearchParams()
@@ -109,10 +110,10 @@ export const createNotificationsSeam = (ctx: SeamContext): NotificationsSeam => 
         items
       }
     }
-    ctx.dispatch({ type: "card.upsert", actor: ctx.actor(), card })
-  }
+    return { card }
+  } }))
 
-  const markNotificationsRead = async (): Promise<string | void> => {
+  const markNotificationsRead = async (): ReturnType<ViewAction<[]>> => {
     let response: Response
     try {
       response = await ctx.http(`${ctx.baseUrl}/api/notifications/mark-read`, { method: "PUT" })

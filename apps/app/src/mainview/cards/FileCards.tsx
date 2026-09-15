@@ -1,3 +1,6 @@
+import { ViewSkeleton } from "../ViewSkeleton"
+import { MarkdownEditorSurface, CodeSurface } from "../ViewModules"
+import { flowAction } from "../flows/FlowAction"
 import { fileArgs } from "../flows/FileArgs"
 /*
  * The repo file cards: a directory listing ("file-list") whose rows open
@@ -8,7 +11,7 @@ import { fileArgs } from "../flows/FileArgs"
  */
 import { Button } from "@smthrs/ui"
 import { FileText, Folder } from "lucide-react"
-import { Component, lazy, Suspense, useContext } from "react"
+import { Component, Suspense, useContext } from "react"
 import type { ReactNode } from "react"
 import { useLiveQuery } from "@tanstack/react-db"
 import type { Card } from "../state/AppState"
@@ -23,9 +26,7 @@ import { settledPill } from "./CardFamily"
  * use (will, 2026-09-01), read only: nothing writes a repository file back.
  * The adapter is heavy, so it loads only when a markdown card is on screen.
  */
-const MarkdownEditorSurface = lazy(() =>
-  import("../MarkdownEditorSurface").then((module) => ({ default: module.MarkdownEditorSurface }))
-)
+
 
 /*
  * Code intelligence L1 (docs/code-intel/PLAN.md §1): a code file renders
@@ -33,7 +34,7 @@ const MarkdownEditorSurface = lazy(() =>
  * pierre and the grammars land in an async chunk that never imports the
  * entry. The plain block is the complete first state while the chunk loads.
  */
-const CodeSurface = lazy(() => import("./CodeSurface").then((module) => ({ default: module.CodeSurface })))
+
 
 /*
  * A lazy viewer whose chunk fails to load (an old tab after a deploy, or the
@@ -214,8 +215,7 @@ export const FileCardAddressLine = ({
             <Button
               variant="ghost"
               size="sm"
-              data-flow={refreshCommand}
-              onClick={() => onRunCommand(refreshCommand, refreshArgs)}
+              {...flowAction(onRunCommand, refreshCommand, refreshArgs)}
             >
               refresh
             </Button>
@@ -280,8 +280,7 @@ export const FileListCardBody = ({
                     <Button
                       variant="ghost"
                       size="sm"
-                      data-flow="files.list"
-                      onClick={() => onRunCommand("files.list", fileArgs(childPath(path, entry.name), card.payload.localRepoId ?? repo))}
+                      {...flowAction(onRunCommand, "files.list", fileArgs(childPath(path, entry.name), card.payload.localRepoId ?? repo))}
                     >
                       <Folder size={12} aria-hidden="true" />
                       <span className="world-card-title">{entry.name}</span>
@@ -291,8 +290,7 @@ export const FileListCardBody = ({
                     <Button
                       variant="ghost"
                       size="sm"
-                      data-flow="files.read"
-                      onClick={() => onRunCommand("files.read", fileArgs(childPath(path, entry.name), card.payload.localRepoId ?? repo))}
+                      {...flowAction(onRunCommand, "files.read", fileArgs(childPath(path, entry.name), card.payload.localRepoId ?? repo))}
                     >
                       <FileText size={12} aria-hidden="true" />
                       <span className="world-card-title">{entry.name}</span>
@@ -364,7 +362,7 @@ export const FileCardBody = ({
         (
           <div className="world-card-doc" data-file-markdown="">
             <LazyViewerBoundary fallback={<pre className="world-card-path" data-viewer-fallback="">{card.payload.content}</pre>}>
-              <Suspense fallback={<p className="smithers-card-note">Loading editor…</p>}>
+              <Suspense fallback={<ViewSkeleton />}>
                 <MarkdownEditorSurface
                   value={card.payload.content}
                   resetKey={`${card.id}:${contentKey(card.payload.content)}`}

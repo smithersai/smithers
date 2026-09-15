@@ -1,0 +1,126 @@
+import { conversationTabIdOf, type Card } from "./AppState"
+import type { SeamContext } from "./seams/SeamContext"
+import { paneTarget } from "./EmbeddedHistory"
+
+export type ViewResult = string | { readonly card: Card; readonly value?: string }
+export type ViewAction<A extends unknown[]> = ((...args: A) => Promise<string | void | { readonly value: string }>) & {
+  readonly preload?: (...args: A) => Promise<void>
+}
+interface DirectView { readonly run: () => Promise<string | void | { readonly value: string }> }
+interface ViewPlan {
+  readonly id: string
+  readonly title: string
+  readonly placeholder?: Card
+  readonly project?: (card: Card) => Card
+  /** Include every input that changes the read, including filters and revisions. */
+  readonly key?: string
+  readonly pane?: string
+  readonly read: () => Promise<ViewResult>
+  readonly before?: () => Promise<string | void | true>
+  readonly after?: () => void | Promise<void>
+}
+
+const scopes = new WeakMap<SeamContext["store"], {
+  cache: Map<string, { promise: Promise<ViewResult>; expires: number; settled: boolean }>
+  active: Map<string, symbol>
+}>()
+const stateFor = (ctx: SeamContext) => {
+  let state = scopes.get(ctx.store)
+  if (!state) scopes.set(ctx.store, state = { cache: new Map(), active: new Map() })
+  return state
+}
+const scopeOf = (ctx: SeamContext) => JSON.stringify([
+  ctx.store.collections.identitySessions.get("identity"),
+  ctx.store.session().activeRepoKey,
+  ctx.store.session().activeWorkspaceId,
+  ctx.store.session().activeBranchId,
+  conversationTabIdOf(ctx.store.session()),
+  ctx.store.session().guide?.playthrough,
+])
+
+/** Mutations and identity changes discard speculative reads, including in-flight results. */
+export function disposePreparedViews(store: SeamContext["store"]) {
+  scopes.get(store)?.active.clear()
+  scopes.delete(store)
+}
+
+export function invalidatePreparedViews(store: SeamContext["store"]) {
+  scopes.get(store)?.cache.clear()
+}
+
+/** One read feeds intent preloading and activation. Only activation publishes application state. */
+export function preparedView<A extends unknown[]>(ctx: SeamContext, resolve: (...args: A) => ViewPlan | DirectView | string): ViewAction<A> & { readonly preload: (...args: A) => Promise<void> } {
+  const state = stateFor(ctx)
+  const request = (plan: ViewPlan, scope: string) => {
+    const key = JSON.stringify([scope, plan.key ?? plan.id])
+    const existing = state.cache.get(key)
+    if (existing && (!existing.settled || existing.expires > Date.now())) return existing.promise
+    const promise = Promise.resolve().then(plan.read)
+    {
+      const entry = { promise, expires: Date.now() + 15_000, settled: false }
+      state.cache.delete(key)
+      state.cache.set(key, entry)
+      while (state.cache.size > 30) state.cache.delete(state.cache.keys().next().value!)
+      void promise.then(result => {
+        entry.settled = true
+        entry.expires = Date.now() + 15_000
+        if (typeof result === "string" && state.cache.get(key) === entry) state.cache.delete(key)
+      }, () => { entry.settled = true; if (state.cache.get(key) === entry) state.cache.delete(key) })
+    }
+    return promise
+  }
+  const run = async (...args: A) => {
+    const plan = resolve(...args)
+    if (typeof plan === "string") return plan
+    if ("run" in plan) return plan.run()
+    const scope = scopeOf(ctx)
+    let activeScope = scope
+    const actor = ctx.actor()
+    const previous = (plan.pane ? paneTarget(ctx, plan.pane) : undefined) ?? ctx.store.collections.cards.get(plan.id)
+    const id = previous?.id ?? plan.id
+    const key = plan.key ?? plan.id
+    const token = Symbol()
+    state.active.set(id, token)
+    const valid = () => state.active.get(id) === token && scopeOf(ctx) === activeScope && ctx.store.collections.cards.has(id)
+    const current = () => valid() && ctx.store.collections.cards.get(id)?.viewKey === key
+    const common = { id, title: plan.title, viewKey: key, viewRepo: plan.pane, navigation: previous?.navigation, createdAt: previous?.createdAt ?? Date.now(), ordinal: plan.pane && previous ? previous.ordinal : ctx.nextOrdinal(), tabId: previous?.tabId }
+    const pending: Card = previous?.viewKey === key && !previous.loading && previous.status !== "error"
+      ? { ...previous, ...common }
+      : plan.placeholder ? { ...plan.placeholder, ...common, loading: true } : { ...common, kind: "status", status: "active", loading: true, payload: {} }
+    ctx.dispatch({ type: previous && !previous.loading && previous.viewKey !== key && plan.pane ? "card.navigated" : "card.upsert", actor, card: pending })
+    // The first card creates its frame's workspace and branch synchronously.
+    activeScope = scopeOf(ctx)
+    try {
+      const ready = await plan.before?.()
+      const result = typeof ready === "string" ? ready : await request(plan, scope)
+      if (!valid()) return
+      if (typeof result === "string") {
+        ctx.dispatch({ type: "card.view.loaded", actor, card: { ...pending, loading: false, status: "error", body: result } })
+        return current() ? result : undefined
+      }
+      const navigation = ctx.store.collections.cards.get(id)?.navigation
+      const card = plan.project?.(result.card) ?? result.card
+      await ctx.dispatch({ type: "card.view.loaded", actor, card: { ...card, body: card.body, ...common, title: card.title, navigation, loading: false } }).isPersisted.promise
+      if (!current()) return
+      await plan.after?.()
+      return result.value === undefined ? undefined : { value: result.value }
+    } catch (error) {
+      if (valid()) ctx.dispatch({ type: "card.view.loaded", actor, card: { ...pending, loading: false, status: "error", body: "This view couldn't be loaded. Try opening it again." } })
+      throw error
+    } finally {
+      const interrupted = ctx.store.collections.cards.get(id)
+      if (state.active.get(id) === token && scopeOf(ctx) !== activeScope && interrupted?.loading && interrupted.viewKey === key) {
+        ctx.dispatch({ type: "card.view.loaded", actor, card: { ...interrupted, loading: false, status: "error", body: "Loading was interrupted. Open this view again to retry." } })
+      }
+      if (state.active.get(id) === token) state.active.delete(id)
+      if (!state.active.has(id)) state.cache.delete(JSON.stringify([scope, key]))
+    }
+  }
+  return Object.assign(run, { preload: async (...args: A) => {
+    const plan = resolve(...args)
+    if (typeof plan !== "string" && !("run" in plan)) {
+      if ([...state.cache.values()].filter(entry => !entry.settled).length >= 4) return
+      await request(plan, scopeOf(ctx)).catch(() => {})
+    }
+  } })
+}

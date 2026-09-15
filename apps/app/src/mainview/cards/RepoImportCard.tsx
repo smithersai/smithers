@@ -1,3 +1,4 @@
+import { flowAction } from "../flows/FlowAction"
 /*
  * The repo-import card: one upserted job card, phase starting → running →
  * done | failed. The frame's StatusPill wears the coarse state; the body
@@ -59,8 +60,7 @@ export const RepoImportCardBody = ({
             <Button
               size="sm"
               variant="outline"
-              data-flow="issues.list"
-              onClick={() => onRunCommand("issues.list", repository ? `${repository.owner}/${repository.name}` : repo)}
+              {...flowAction(onRunCommand, "issues.list", repository ? `${repository.owner}/${repository.name}` : repo)}
             >
               Show issues
             </Button>

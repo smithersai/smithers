@@ -27,6 +27,40 @@ async function setup(page: Page, local = false, refused = false) {
   await slash(page, `/repo.select ${local ? "local:/tmp/play" : "will/repo"}`)
   return hostedReads
 }
+
+for (const intent of ["hover", "focus"] as const) test(`${intent} prepares an issue and click shows its frame before the response`, async ({ page }) => {
+  await setup(page)
+  await slash(page, "/onboarding.act finish")
+  await expect(page.locator(".guide-shell")).toHaveCount(0)
+  await page.keyboard.press("Control+k")
+  const issue = { id: 100, number: 1, title: "Slow issue", body: "Loaded issue body", state: "open", labels: [], assignees: [], author: { id: 1, login: "will" }, comment_count: 0 }
+  await page.route("**/api/repos/will/repo/issues?*", route => route.fulfill(json([issue])))
+  let reads = 0
+  let release!: () => void
+  const pending = new Promise<void>(resolve => { release = resolve })
+  await page.route("**/api/repos/will/repo/issues/1", async route => {
+    reads++
+    await pending
+    await route.fulfill(json(issue))
+  })
+  await page.route("**/api/repos/will/repo/issues/1/comments*", route => route.fulfill(json([])))
+  await page.getByTestId("composer-input").fill("/issues will/repo")
+  await page.keyboard.press("Enter")
+  const frame = page.locator('.smithers-card[data-kind="issue-list"]')
+  const row = frame.locator('[data-flow="issues.view"]').first()
+  await row[intent]()
+  await expect.poll(() => reads).toBe(1)
+  await expect(frame).toBeVisible()
+  if (intent === "focus") await page.keyboard.press("Enter")
+  else await row.click()
+  const loading = page.locator('.smithers-card[aria-busy="true"]')
+  await expect(loading.getByRole("status", { name: "Loading view" })).toBeVisible()
+  expect(reads).toBe(1)
+  release()
+  await expect(page.locator('.smithers-card[data-kind="issue"]')).toContainText("Loaded issue body")
+  expect(reads).toBe(1)
+})
+
 for (const door of ["issues", "prs"]) {
   const step = 1
   test(`/${door} reads selected repository on an empty response`, async ({ page }) => {

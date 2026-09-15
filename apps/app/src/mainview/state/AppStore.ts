@@ -1318,7 +1318,7 @@ const initializeAppStore = async (resolved: ResolvedPersistence, options: { read
     commitDraft()
     // The transition journal persists its input as well as the card collection.
     // Redact before either writer or the verbose trace can observe env values.
-    if (transition.type === "card.upsert" && transition.card.kind === "env") {
+    if ((transition.type === "card.upsert" || transition.type === "card.view.loaded") && transition.card.kind === "env") {
       transition = { ...transition, card: CardSchema.parse(transition.card) }
     } else if (transition.type === "card.updated" &&
       (transition.patch.kind ?? collections.cards.get(transition.id)?.kind) === "env") {
@@ -2234,7 +2234,7 @@ const initializeAppStore = async (resolved: ResolvedPersistence, options: { read
           const row = { id: currentCard.id, index, entries: bounded }
           if (history) collections.cardHistories.update(row.id, draft => { Object.assign(draft, row) })
           else collections.cardHistories.insert(row)
-          collections.cards.update(row.id, draft => { Object.assign(draft, bounded[index], { navigation: { index, length: bounded.length } }) })
+          collections.cards.update(row.id, draft => { Object.assign(draft, { loading: undefined, viewKey: undefined, viewRepo: undefined }, bounded[index], { navigation: { index, length: bounded.length } }) })
           for (const frame of collections.frames.values()) {
             if (frame.cardId !== row.id || frame.snapshot !== undefined || frame.branchId !== activeBranchId) continue
             collections.frames.update(frame.id, draft => { draft.stateRevision = revision; draft.updatedAt = createdAt; draft.revision = revision })
@@ -2251,7 +2251,7 @@ const initializeAppStore = async (resolved: ResolvedPersistence, options: { read
           const entries = [...history.entries]
           entries[history.index] = { ...card, navigation: undefined }
           collections.cardHistories.update(transition.id, draft => { draft.index = index; draft.entries = entries })
-          collections.cards.update(transition.id, draft => { Object.assign(draft, entries[index], { navigation: { index, length: entries.length } }) })
+          collections.cards.update(transition.id, draft => { Object.assign(draft, { loading: undefined, viewKey: undefined, viewRepo: undefined }, entries[index], { navigation: { index, length: entries.length } }) })
           for (const frame of collections.frames.values()) {
             if (frame.cardId !== transition.id || frame.snapshot !== undefined || frame.branchId !== activeBranchId) continue
             collections.frames.update(frame.id, draft => { draft.stateRevision = revision; draft.updatedAt = createdAt; draft.revision = revision })
@@ -2298,6 +2298,7 @@ const initializeAppStore = async (resolved: ResolvedPersistence, options: { read
           break
         }
         case "repo.update.published":
+        case "card.view.loaded":
         case "card.upsert": {
           if (transition.type === "repo.update.published") for (const row of transition.notifications) {
             if (collections.repositoryNotifications.has(row.id)) collections.repositoryNotifications.update(row.id, draft => { Object.assign(draft, row) })
@@ -2333,6 +2334,13 @@ const initializeAppStore = async (resolved: ResolvedPersistence, options: { read
             const incoming = transition.card.kind === "approval" ? transition.card : undefined
             if (incoming === undefined || approvalGateKey(incoming) === approvalGateKey(decided)) return
           }
+          if (transition.type === "card.view.loaded" && collections.cards.get(transition.card.id)?.viewKey !== transition.card.viewKey) {
+            const history = collections.cardHistories.get(transition.card.id)
+            if (history) collections.cardHistories.update(history.id, draft => {
+              draft.entries = draft.entries.map(entry => entry.viewKey === transition.card.viewKey ? { ...transition.card, navigation: undefined } : entry)
+            })
+            return
+          }
           let card = transition.card
           if (isApprovalRequest(card)) {
             // A refreshed inbox may add/remove rows, but a surviving request
@@ -2357,8 +2365,12 @@ const initializeAppStore = async (resolved: ResolvedPersistence, options: { read
             if (existing.kind !== card.kind || !current.guide?.transcript?.[card.id]?.owned || (chat && current.guide?.transcript?.[card.id]?.source !== "chat")) {
               recordGuideCard(card, chat ? nextOrdinal(collections) : undefined)
             }
-            collections.cards.update(card.id, (draft) => { Object.assign(draft, card) })
+            collections.cards.update(card.id, (draft) => { Object.assign(draft, { loading: undefined, viewKey: undefined, viewRepo: undefined }, card) })
           }
+          const history = collections.cardHistories.get(card.id)
+          if (history) collections.cardHistories.update(card.id, draft => {
+            draft.entries[draft.index] = { ...card, navigation: undefined }
+          })
           const frame = ensureCardFrame(card.id)
           // A recorded frame keeps the revision it was maximized at; live card state is the card row.
           if (frame.snapshot === undefined) {

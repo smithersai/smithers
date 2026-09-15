@@ -1,3 +1,4 @@
+import { preparedView, type ViewAction } from "../PreparedView"
 /*
  * The secrets seam: the secrets a repository's sessions may use, read off the
  * agent-environment document (GET /api/repos/{owner}/{repo}/agent-environment,
@@ -13,7 +14,7 @@ import type { SeamContext } from "./SeamContext"
 import { readResult } from "./SeamContext"
 
 export interface SecretsSeam {
-  readonly listSecrets: (repo?: string) => Promise<string | { readonly value: string }>
+  readonly listSecrets: ViewAction<[repo?: string]>
 }
 
 export const createSecretsSeam = (ctx: SeamContext): SecretsSeam => {
@@ -22,9 +23,10 @@ export const createSecretsSeam = (ctx: SeamContext): SecretsSeam => {
    * on every list. Leaving it at its old ordinal would answer the command with
    * a silent no-op.
    */
-  const listSecrets = async (repo?: string): Promise<string | { readonly value: string }> => {
+  const listSecrets = preparedView(ctx, (repo?: string) => {
     const target = resolveTargetRepo(ctx.store, repo)
     if ("error" in target) return target.error
+    return { id: `secrets-${target.repo}`, title: `Secrets · ${target.repo}`, read: async () => {
     const config = await readEnvironment(ctx, target.repo)
     if (typeof config === "string") return config
     const card: Card = {
@@ -45,15 +47,15 @@ export const createSecretsSeam = (ctx: SeamContext): SecretsSeam => {
         }))
       }
     }
-    ctx.dispatch({ type: "card.upsert", actor: ctx.actor(), card })
-    return readResult(card.payload.secrets.length === 0
+    return { card, ...readResult(card.payload.secrets.length === 0
       ? `No secrets in ${card.payload.repo}.`
       : [
         `Secrets · ${card.payload.repo}`,
         ...card.payload.secrets.map((secret) =>
           `${secret.name} · hosts: ${secret.hosts.join(", ") || "none"} · headers: ${secret.matchHeaders.join(", ") || "none"} · updated: ${secret.updatedAt ?? "unknown"}`)
-      ].join("\n"))
-  }
+      ].join("\n")) }
+    } }
+  })
 
   return { listSecrets }
 }
