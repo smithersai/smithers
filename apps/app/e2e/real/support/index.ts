@@ -93,7 +93,10 @@ export const realApi = async (
 ): Promise<APIResponse> => {
   const target = new URL(path, page.url())
   requireSameOrigin(page, target)
-  const token = await page.locator('meta[name="smithers-local-session"]').getAttribute("content")
+  // Cloud pages use their browser session and do not carry the local host's
+  // session tag. Read the optional tag without waiting for one to appear.
+  const token = await page.evaluate(() =>
+    document.querySelector('meta[name="smithers-local-session"]')?.getAttribute("content") ?? null)
   return page.context().request.fetch(target.toString(), {
     method,
     ...(token ? { headers: { "x-smithers-local-session": token } } : {}),
