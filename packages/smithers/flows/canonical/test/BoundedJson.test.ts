@@ -333,3 +333,75 @@ describe("bounded JSON admission", () => {
     expect(Object.isFrozen(array[0])).toBe(true)
   })
 })
+
+describe("shared canonical and strict tree admission", () => {
+  const strictLimits: BoundedJson.StrictLimits = {
+    maxBytes: 1_024,
+    maxDepth: 8,
+    maxMembers: 16,
+    maxNodes: 32,
+    maxStringBytes: 128,
+    maxKeyBytes: 64
+  }
+  const admissions = [
+    (value: unknown) => BoundedJson.admit(value, strictLimits),
+    (value: unknown) => BoundedJson.admitStrict(value, strictLimits),
+    (value: unknown) => BoundedJson.admitStrict(value, strictLimits, { ordinaryRecords: true, boundedText: true })
+  ]
+
+  it("shares scalar, descriptor, byte, and detachment rules across all policies", () => {
+    let reads = 0
+    const accessor = Object.defineProperty({}, "secret", { enumerable: true, get: () => ++reads })
+    for (const admit of admissions) {
+      for (const value of [null, false, -0, "é😀\n", [], { "123": [null, { text: "ok" }] }]) {
+        const result = admit(value)
+        expect(result).toMatchObject({ ok: true, value })
+        if (result.ok && typeof value === "object" && value !== null) {
+          expect(result.value).not.toBe(value)
+          expect(Object.isFrozen(result.value)).toBe(true)
+        }
+      }
+      for (const value of [Infinity, undefined, "\ud800", "x".repeat(129), accessor, [accessor], Array(1)]) {
+        expect(admit(value).ok).toBe(false)
+      }
+    }
+    expect(reads).toBe(0)
+  })
+
+  it("preserves the deliberate differences between canonical values and strict trees", () => {
+    const shared = { a: 1 }
+    for (
+      const value of [
+        [shared, shared],
+        Object.defineProperty({}, "hidden", { value: 1 }),
+        Object.defineProperty([1], "hidden", { value: 1 }),
+        { constructor: 1 }
+      ]
+    ) {
+      expect(BoundedJson.admit(value, strictLimits).ok).toBe(true)
+      expect(BoundedJson.admitStrict(value, strictLimits).ok).toBe(false)
+    }
+    expect(BoundedJson.admitStrict({}, { ...strictLimits, maxDepth: 0 }).ok).toBe(false)
+    expect(BoundedJson.admit({}, { ...strictLimits, maxDepth: 0 }).ok).toBe(true)
+    for (const ordinaryRecords of [false, true]) {
+      const result = BoundedJson.admitStrict({}, strictLimits, { ordinaryRecords })
+      expect(result.ok && Object.getPrototypeOf(result.value)).toBe(ordinaryRecords ? Object.prototype : null)
+    }
+  })
+
+  it("distinguishes array indices, numeric object keys, and redacted rejected keys", () => {
+    expect(BoundedJson.admitStrict({ "0": [undefined] }, strictLimits))
+      .toMatchObject({ ok: false, path: "$[\"0\"][0]" })
+    expect(BoundedJson.admitStrict({ "\ud800": 1 }, strictLimits, { boundedText: true }))
+      .toMatchObject({ ok: false, path: "$[key:0]", complaint: "has an ill-formed property name" })
+  })
+
+  it("honors configured deep limits without depending on the JavaScript call stack", () => {
+    let value: unknown = null
+    for (let depth = 0; depth < 2_000; depth++) value = [value]
+    const deepLimits = { ...strictLimits, maxDepth: 2_000, maxNodes: 2_001, maxMembers: 2_000, maxBytes: 4_004 }
+    expect(BoundedJson.admit(value, deepLimits).ok).toBe(true)
+    expect(BoundedJson.admitStrict(value, deepLimits).ok).toBe(true)
+    expect(BoundedJson.admitStrict(value, { ...deepLimits, maxDepth: 1_999 }).ok).toBe(false)
+  })
+})
