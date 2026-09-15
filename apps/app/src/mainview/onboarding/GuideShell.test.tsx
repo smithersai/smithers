@@ -647,7 +647,7 @@ test("Mode opens on release and selecting Dictation does not open Chat", async (
 }, 5_000)
 
 
-test("a running tutorial suggestion cannot dispatch through a click or shortcut", async () => {
+test("a running tutorial suggestion opens chat by click and shortcut", async () => {
   let controller!: ReturnType<typeof createAppController>
   const host = await mountGuide(4, still, {}, c => { controller = c })
   await controller.store.dispatch({ type: "card.upsert", actor: "system", card: {
@@ -658,14 +658,14 @@ test("a running tutorial suggestion cannot dispatch through a click or shortcut"
   await settle()
   const calls: string[] = []
   spyOn(controller, "runCommand").mockImplementation(name => { calls.push(name); return true })
-  const button = host.querySelector<HTMLButtonElement>('.guide-actions [data-flow="issue.repro"]')!
-  expect(button.disabled).toBe(true)
-  expect(text(button)).toContain("Researching issue")
+  const button = host.querySelector<HTMLButtonElement>('.guide-actions [data-flow="chat.open"]')!
+  expect(button.disabled).toBe(false)
+  expect(text(button)).toContain("Chat while it runs")
   button.click()
   const shell = host.querySelector<HTMLElement>(".guide-shell")!
   shell.dispatchEvent(new KeyboardEvent("keydown", { key: "r", bubbles: true }))
   shell.dispatchEvent(new KeyboardEvent("keyup", { key: "r", bubbles: true }))
-  expect(calls).not.toContain("issue.repro")
+  expect(calls).toEqual(["chat.open", "chat.open"])
 }, 5_000)
 
 for (const declined of [[], ["login"], ["install"]]) {

@@ -5,11 +5,11 @@ import type { GuideAction } from "./lessons"
 import { completedGuideAction } from "./advance"
 import { activeLiveTutorialLimit } from "../state/LiveTutorialLimit"
 
-const liveActions: Readonly<Record<string, { operation: LiveTutorialOperation; busy: string; retry: string; complete: string; completion: string }>> = {
-  "issue.repro": { operation: "research", busy: "Researching issue…", retry: "Retry repro", complete: "Research complete", completion: "issue.researched" },
-  "issue.implement": { operation: "plan", busy: "Preparing plan…", retry: "Retry plan", complete: "Plan ready", completion: "plan.ready" },
-  "agent.change.start": { operation: "implement", busy: "Implementing fix…", retry: "Retry implementation", complete: "Implementation ready", completion: "commits.made" },
-  "change.open": { operation: "change", busy: "Creating Change…", retry: "Retry Change", complete: "Change ready", completion: "change.opened" },
+const liveActions: Readonly<Record<string, { operation: LiveTutorialOperation; retry: string; complete: string; completion: string }>> = {
+  "issue.repro": { operation: "research", retry: "Retry repro", complete: "Research complete", completion: "issue.researched" },
+  "issue.implement": { operation: "plan", retry: "Retry plan", complete: "Plan ready", completion: "plan.ready" },
+  "agent.change.start": { operation: "implement", retry: "Retry implementation", complete: "Implementation ready", completion: "commits.made" },
+  "change.open": { operation: "change", retry: "Retry Change", complete: "Change ready", completion: "change.opened" },
 }
 
 /** This page load: a GitHub App check persisted by an earlier load is not in flight here. */
@@ -50,7 +50,7 @@ export function guideActionState(action: GuideAction, cards: readonly Card[], gu
   if (failure?.toLowerCase().includes("expired")) return { ...action, label: "Start new tutorial", flow: "onboarding.act", args: "restart" }
   if (card.payload.phase === "failed" || run?.phase === "failed") return { ...action, label: operation.retry, flow: "tutorial.live.retry", args: card.id }
   if (failure) return { ...action, label: run ? "Reconnect to run" : operation.retry, flow: "tutorial.live.retry", args: card.id }
-  if (card.payload.phase === "launching" || card.payload.phase === "running") return { ...action, label: operation.busy, disabled: true, busy: true }
+  if (card.payload.phase === "launching" || card.payload.phase === "running") return { ...action, label: "Chat while it runs", flow: "chat.open", args: undefined }
   if (card.payload.phase === "completed" && guide.completed?.includes(operation.completion)) return { ...action, label: operation.complete, disabled: true }
   return action
 }

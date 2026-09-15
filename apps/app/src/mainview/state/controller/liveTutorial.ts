@@ -2,6 +2,7 @@ import { LIVE_TUTORIAL_API, LiveTutorialRunSchema, type LiveTutorialOperation, t
 import type { Card } from "../AppState"
 import { conversationTabIdOf } from "../AppState"
 import type { ControllerContext } from "./context"
+import { TOAST_SUPERSEDED } from "./failures"
 import { PRACTICE_CARD, PRACTICE_REPO } from "../practice/PracticeRepository"
 import { lessonCompletion } from "../../onboarding/completion"
 import { PRACTICE_DIFF_CARD } from "../seams/DiffFilesSeam"
@@ -24,9 +25,16 @@ export const liveSnapshotOf = (card: Card | undefined): LiveTutorialRun | undefi
 /** Anonymous tutorial runs use the same durable card/flow dispatcher as connected repositories. */
 export function createLiveTutorialController(ctx: ControllerContext, nextOrdinal: () => number) {
   let disposed = false
-  const pending = new Map<string, Promise<string | { value: string }>>()
+  const pending = new Map<string, Promise<unknown>>()
+  const sleepers = new Map<ReturnType<typeof setTimeout>, () => void>()
   const timers = new Set<ReturnType<typeof setTimeout>>()
-  ctx.onDispose(() => { disposed = true; for (const timer of timers) clearTimeout(timer); timers.clear() })
+  ctx.onDispose(() => {
+    disposed = true
+    for (const timer of timers) clearTimeout(timer)
+    timers.clear()
+    for (const [timer, wake] of sleepers) { clearTimeout(timer); wake() }
+    sleepers.clear()
+  })
   const readCard = (id: string): RunCard | undefined => { const card = ctx.store.collections.cards.get(id); return card?.kind === "run-trace" ? card : undefined }
   const current = (id: string, request: Request) => !disposed && requestOf(readCard(id))?.idempotencyKey === request.idempotencyKey && (ctx.store.session().guide?.playthrough ?? 0) === request.playthrough
   const finish = async (signal: string, playthrough: number) => {
@@ -105,25 +113,21 @@ export function createLiveTutorialController(ctx: ControllerContext, nextOrdinal
       input: { ...card.payload.input, liveTutorialLimit: limit } } })
     if (limit) scheduleLimitExpiry(id, request, limit)
   }
-  const poll = (id: string, request: Request, runId: string) => {
-    if (!current(id, request)) return
-    const timer = setTimeout(() => {
-      timers.delete(timer)
-      if (!current(id, request)) return
-      void (async () => {
-        const response = await ctx.boundedFetch(`${ctx.baseUrl}${LIVE_TUTORIAL_API}/run/${encodeURIComponent(runId)}`, { credentials: "include" })
-        if (!response.ok) throw Error(await ctx.errorMessageOf(response, "The live run could not be checked. Reconnect to resume watching it."))
-        const run = LiveTutorialRunSchema.parse(await response.json())
-        await publish(id, request, run)
-        if (run.phase === "queued" || run.phase === "running") poll(id, request, runId)
-      })().catch(error => failObservation(id, request, error))
-    }, 1000)
-    timers.add(timer)
-  }
-  const send = (id: string, request: Request): Promise<string | { value: string }> => {
+  // The entire remote lifecycle belongs to the background task, including polling.
+  const pause = () => new Promise<void>(resolve => {
+    const timer = setTimeout(() => { sleepers.delete(timer); resolve() }, 1000)
+    sleepers.set(timer, resolve)
+  })
+  const send = (id: string, request: Request): Promise<unknown> => {
     const existing = pending.get(request.idempotencyKey)
     if (existing) return existing
-    const work = (async () => {
+    const titles = {
+      research: ["Researching issue…", "Research complete"], poc: ["Prototyping fix…", "Prototype ready"],
+      plan: ["Preparing plan…", "Plan ready"], implement: ["Implementing fix…", "Implementation ready"],
+      change: ["Creating Change…", "Change ready"],
+    } as const
+    const [title, doneTitle] = titles[request.operation]
+    const work = ctx.withToast(`tutorial.${request.idempotencyKey}`, title, doneTitle, async () => {
       try {
         const { operation, conversation: _, ...body } = request
         const response = await ctx.boundedFetch(`${ctx.baseUrl}${LIVE_TUTORIAL_API}/${operation}`, { method: "POST", credentials: "include", headers: { "content-type": "application/json" }, body: JSON.stringify(body) })
@@ -138,12 +142,21 @@ export function createLiveTutorialController(ctx: ControllerContext, nextOrdinal
             ...(typeof payload?.message === "string" && payload.message.length <= 1000 ? { message: payload.message } : {}), ...(Number.isFinite(retryAt) ? { retryAt } : {}) })
         }
         if (!response.ok) throw Error(await ctx.errorMessageOf(response, "The live tutorial workspace could not start."))
-        const run = LiveTutorialRunSchema.parse(await response.json())
+        let run = LiveTutorialRunSchema.parse(await response.json())
+        if (!current(id, request)) return TOAST_SUPERSEDED
         await publish(id, request, run)
-        if (run.phase === "queued" || run.phase === "running") poll(id, request, run.runId)
+        while (run.phase === "queued" || run.phase === "running") {
+          await pause()
+          if (!current(id, request)) return TOAST_SUPERSEDED
+          const response = await ctx.boundedFetch(`${ctx.baseUrl}${LIVE_TUTORIAL_API}/run/${encodeURIComponent(run.runId)}`, { credentials: "include" })
+          if (!response.ok) throw Error(await ctx.errorMessageOf(response, "The live run could not be checked. Reconnect to resume watching it."))
+          run = LiveTutorialRunSchema.parse(await response.json())
+          if (!current(id, request)) return TOAST_SUPERSEDED
+          await publish(id, request, run)
+        }
         return run.phase === "failed" ? run.error ?? "The live run failed." : { value: `Live ${operation} ${run.phase === "completed" ? "completed" : "started"}.` }
-      } catch (error) { await failObservation(id, request, error); return error instanceof Error ? error.message : String(error) }
-    })()
+      } catch (error) { if (!current(id, request)) return TOAST_SUPERSEDED; await failObservation(id, request, error); return error instanceof Error ? error.message : String(error) }
+    })
     pending.set(request.idempotencyKey, work)
     void work.finally(() => pending.delete(request.idempotencyKey))
     return work
@@ -160,7 +173,8 @@ export function createLiveTutorialController(ctx: ControllerContext, nextOrdinal
       && old?.payload.phase !== "failed" && snapshot?.phase !== "failed") {
       if (operation !== "change" || JSON.stringify(prior.commitIds) === JSON.stringify(options.commitIds)) {
         if (snapshot?.phase === "completed") { await publish(id, prior, snapshot); return { value: `The live ${operation} is already complete.` } }
-        return send(id, prior)
+        void send(id, prior)
+        return { value: `Live ${operation} requested in the background. You can keep chatting.` }
       }
     }
     const request: Request = { ...options, operation, playthrough, idempotencyKey: crypto.randomUUID(), conversation: conversationTabIdOf(ctx.store.session()) }
@@ -168,7 +182,8 @@ export function createLiveTutorialController(ctx: ControllerContext, nextOrdinal
       status: "active", createdAt: old?.createdAt ?? Date.now(), ordinal: old?.ordinal ?? nextOrdinal(), payload: { repo: PRACTICE_REPO,
         runId: `pending-${request.idempotencyKey}`, workflow: `issue.${operation}`, kind: operation === "plan" ? "change-plan" : operation === "implement" ? "change" : operation,
         phase: "launching", steps: [], result: null, lastSeq: 0, input: { liveTutorial: request } } })
-    return send(id, request)
+    void send(id, request)
+    return { value: `Live ${operation} requested in the background. You can keep chatting.` }
   }
   return {
     inspect: async (cardId: string, eventId: string): Promise<string | void> => {
@@ -205,7 +220,7 @@ export function createLiveTutorialController(ctx: ControllerContext, nextOrdinal
             await publish(card.id, request, snapshot, true).catch(error => failObservation(card.id, request, error))
             continue
           }
-          await send(card.id, request)
+          void send(card.id, request)
         }
       })()
     },

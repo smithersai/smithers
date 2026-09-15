@@ -60,3 +60,16 @@ Each setup action shows Preparing while its launch is in flight, disables duplic
 A completed repository import offers **Show issues**, which opens the imported repository through the existing product session. This works even when no workspace ID was returned and does not send a GitHub-signed-in user into the separate legacy Cloud workspace sign-in flow.
 
 Chat opens with C (Command/Control K remains an alias). M selects Normal, Vim, or Dictation mode without opening Chat. Vim uses H/J/K/L to move focus; Dictation starts microphone capture on the next Chat open. Selecting Normal or Vim stops dictation. Back is B, Sound is S, and navigation is W. Sound on/off lives in the left sidebar during the tutorial; its S shortcut also works with the sidebar closed. Lesson keys reserve C/M/H/J/K/L: Make the Change is G, GitHub login is A, Wiki is U, and Mythical history is Y. All button shortcuts highlight on press and activate only on the final held input’s release.
+
+
+## Background work and instant chat
+
+The permanent interaction contract is in the root `AGENTS.md`: chat acknowledges
+immediately, and slow work runs in the background with shared toast notifications.
+The live practice research, prototype, plan, implementation, and Change commands
+persist their request and return before the launch network request finishes.
+The toast follows both launch and remote execution, resolving only from the real
+result. The running lesson action becomes **Chat while it runs**, usable by click
+or its existing shortcut. Dependent lessons still require real completion receipts;
+a background request never counts as a successful result. Reload reconnects the
+same idempotent request, and retry/failure details remain in the embedded run card.

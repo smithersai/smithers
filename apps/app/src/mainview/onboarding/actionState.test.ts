@@ -38,9 +38,9 @@ test("a known quota refusal offers continuation until its deadline, then an expl
   expect(guideActionState(action, [rejected], initialGuide())).toMatchObject({ label: "Retry repro", flow: "tutorial.live.retry", args: "research" })
 })
 
-test("current live operation disables duplicate launches and offers retry after failure", () => {
+test("current live operation offers chat while background work runs and retry after failure", () => {
   for (const phase of ["launching", "running"]) {
-    expect(guideActionState(action, [card(phase)], initialGuide())).toMatchObject({ label: "Researching issue…", busy: true, disabled: true })
+    expect(guideActionState(action, [card(phase)], initialGuide())).toMatchObject({ label: "Chat while it runs", flow: "chat.open", args: undefined })
   }
   expect(guideActionState(action, [card("failed")], initialGuide())).toMatchObject({ label: "Retry repro", flow: "tutorial.live.retry", args: "research" })
   expect(guideActionState(action, [card("completed")], { ...initialGuide(), completed: ["issue.researched"] })).toMatchObject({ label: "Research complete", disabled: true })

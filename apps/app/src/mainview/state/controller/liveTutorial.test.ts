@@ -7,6 +7,7 @@ import { createLiveTutorialController, liveSnapshotOf } from "./liveTutorial"
 import { PRACTICE_CARD, PRACTICE_REPO } from "../practice/PracticeRepository"
 import { createDiffFilesSeam, PRACTICE_DIFF_CARD } from "../seams/DiffFilesSeam"
 import { createGuideController } from "./guide"
+import { createFailureController } from "./failures"
 import type { LiveTutorialRun } from "@smthrs/rpc/LiveTutorial"
 const base = "a".repeat(40), sha = "b".repeat(40)
 const plan = { id: "live-plan-id", title: "Fix the missing greeting", summary: "Handle absent and empty names", baseCommitId: base, steps: ["Reproduce both cases", "Implement fallback", "Run the tests"], files: ["src/hello.ts"] }
@@ -21,29 +22,44 @@ async function setup(answer: (operation: LiveTutorialRun["operation"], body: Rec
   const calls: Array<{ operation: string; body: Record<string, unknown> }> = []
   const dispose: Array<() => void> = []
   const ctx = { store, commandActor: "user", baseUrl: "", onDispose: (fn: () => void) => { dispose.push(fn) }, boundedFetch: async (url: string, init: RequestInit) => {
-    const operation = url.split("/").at(-1)! as LiveTutorialRun["operation"]
-    const body = JSON.parse(String(init.body))
+    const operation = url.split("/").at(-1)!.replace(/^run-/, "") as LiveTutorialRun["operation"]
+    const body = init.body ? JSON.parse(String(init.body)) : {}
     calls.push({ operation, body })
     const result = await answer(operation, body)
     return result instanceof Response ? result : Response.json(result, { status: 202 })
   }, errorMessageOf: async () => "Unavailable" } as unknown as ControllerContext
+  Object.assign(ctx, { toastRuns: new Map(), toastDebounceMs: 5, toastAutoDismissMs: 10_000, unref: () => {} })
+  const failures = createFailureController(ctx)
+  const background: Promise<unknown>[] = []
+  ctx.withToast = ((...args: Parameters<typeof failures.withToast>) => {
+    const work = failures.withToast(...args)
+    background.push(work)
+    return work
+  }) as typeof ctx.withToast
   const live = createLiveTutorialController(ctx, store.nextOrdinal)
+  // Existing receipt tests wait explicitly for background settlement; command callers do not.
+  const finished = Object.fromEntries(Object.entries(live).map(([name, method]) => [name, async (...args: unknown[]) => {
+    const before = background.length
+    const result = await (method as (...args: unknown[]) => unknown)(...args)
+    const outcomes = await Promise.all(background.slice(before))
+    return outcomes.at(-1) ?? result
+  }])) as unknown as typeof live
   const step = async (step: number) => { await store.dispatch({ type: "guide.changed", actor: "user", guide: { ...(store.session().guide ?? initialGuide()), step } }).isPersisted.promise }
-  return { store, storage, calls, ctx, live, step, dispose: () => dispose.forEach(fn => fn()) }
+  return { store, storage, calls, ctx, live, finished, background, step, dispose: () => dispose.forEach(fn => fn()) }
 }
 
 test("a quota-rejected launch persists its deadline, never reconnects on reload, and can leave practice honestly", async () => {
   const retryAt = Date.now() + 60_000
   const t = await setup(async () => Response.json({ code: "turn_rate_limited", retryAt: new Date(retryAt).toISOString() }, { status: 429 }))
   await t.step(4)
-  expect(await t.live.research()).toContain("did not start")
+  expect(await t.finished.research()).toContain("did not start")
   const rejected = [...t.store.collections.cards.values()].find(card => card.kind === "run-trace")!
   if (rejected.kind !== "run-trace") throw Error("Expected rejected research")
   expect(rejected.payload.phase).toBe("stopped")
   expect(rejected.status).toBe("active")
   expect(rejected.payload.input?.liveTutorialLimit).toEqual({ kind: "rate-limit", code: "turn_rate_limited", retryAt })
   expect(liveSnapshotOf(rejected)).toBeUndefined()
-  expect(await t.live.retry(rejected.id)).toContain("continue without practice")
+  expect(await t.finished.retry(rejected.id)).toContain("continue without practice")
   expect(t.calls).toHaveLength(1)
   t.dispose()
   await t.store.settled?.()
@@ -67,10 +83,10 @@ test("a quota refusal keeps the Worker's reason for whose budget ran out", async
   const message = "Practice agent runs for everyone have reached their daily limit."
   const t = await setup(async () => Response.json({ code: "turn_rate_limited", message, retryAt: new Date(Date.now() + 60_000).toISOString() }, { status: 429 }))
   await t.step(4)
-  expect(await t.live.research()).toContain("for everyone")
+  expect(await t.finished.research()).toContain("for everyone")
   const rejected = [...t.store.collections.cards.values()].find(card => card.kind === "run-trace")!
   expect(rejected.kind === "run-trace" && (rejected.payload.input?.liveTutorialLimit as { message?: string }).message).toBe(message)
-  expect(await t.live.retry(rejected.id)).toContain("for everyone")
+  expect(await t.finished.retry(rejected.id)).toContain("for everyone")
   t.dispose()
   await t.store.settled?.()
   await t.store.dispose?.()
@@ -82,7 +98,7 @@ test("a limit deadline exposes an explicit retry without automatically spending 
     ? Response.json({ retryAt: new Date(Date.now() + 150).toISOString() }, { status: 429 })
     : complete(operation))
   await t.step(4)
-  await t.live.research()
+  await t.finished.research()
   const rejected = [...t.store.collections.cards.values()].find(card => card.kind === "run-trace")!
   for (let tick = 0; tick < 100; tick++) {
     const current = t.store.collections.cards.get(rejected.id)
@@ -94,7 +110,7 @@ test("a limit deadline exposes an explicit retry without automatically spending 
   t.live.resume()
   await new Promise(resolve => setTimeout(resolve, 20))
   expect(attempts).toBe(1)
-  expect(await t.live.retry(rejected.id)).toEqual({ value: "Live research completed." })
+  expect(await t.finished.retry(rejected.id)).toEqual({ value: "Live research completed." })
   expect(attempts).toBe(2)
   expect(t.calls[1]!.body.idempotencyKey).not.toBe(t.calls[0]!.body.idempotencyKey)
   expect(t.store.session().guide?.completed).toContain("issue.researched")
@@ -104,7 +120,7 @@ test("a limit deadline exposes an explicit retry without automatically spending 
 test("rate limits without a JSON deadline use the server Retry-After header", async () => {
   const before = Date.now()
   const t = await setup(async () => new Response("Busy", { status: 429, headers: { "Retry-After": "120" } }))
-  await t.live.research()
+  await t.finished.research()
   const rejected = [...t.store.collections.cards.values()].find(card => card.kind === "run-trace")!
   const receipt = rejected.kind === "run-trace" ? rejected.payload.input?.liveTutorialLimit as { retryAt: number } : undefined
   expect(receipt?.retryAt).toBeGreaterThanOrEqual(before + 120_000)
@@ -114,12 +130,12 @@ test("rate limits without a JSON deadline use the server Retry-After header", as
 test("anonymous live plan→implementation uses real results once, and diff/file/Change preserve those revisions", async () => {
   const t = await setup()
   await t.step(5)
-  expect(await t.live.plan()).toEqual({ value: "Live plan completed." })
+  expect(await t.finished.plan()).toEqual({ value: "Live plan completed." })
   expect(t.store.session().guide?.completed).toContain("plan.ready")
   expect(t.store.collections.identitySessions.get("identity")?.state).not.toBe("signed-in")
   await t.step(6)
-  await t.live.implement(PRACTICE_CARD.plan)
-  await t.live.implement(PRACTICE_CARD.plan)
+  await t.finished.implement(PRACTICE_CARD.plan)
+  await t.finished.implement(PRACTICE_CARD.plan)
   expect(t.calls.filter(call => call.operation === "implement")).toHaveLength(1)
   expect(t.calls.find(call => call.operation === "implement")?.body.planId).toBe(plan.id)
   const picker = t.store.collections.cards.get(PRACTICE_CARD.commits)
@@ -135,7 +151,7 @@ test("anonymous live plan→implementation uses real results once, and diff/file
     payload: { repo: PRACTICE_REPO, path: "src/server.ts", content: "// HTTP server", truncated: false },
   } }).isPersisted.promise
   await t.step(7)
-  await t.live.showDiff()
+  await t.finished.showDiff()
   await t.step(8)
   const files = createDiffFilesSeam({ store: t.store, dispatch: t.store.dispatch, actor: () => "user", nextOrdinal: t.store.nextOrdinal, baseUrl: "", http: async () => { throw Error("must use actual saved run files") } })
   await files.openDiffFile(PRACTICE_DIFF_CARD, "src/hello.ts")
@@ -143,7 +159,7 @@ test("anonymous live plan→implementation uses real results once, and diff/file
   expect(file?.kind === "file" && file.payload.readAt?.commitId).toBe(sha)
   expect(file?.kind === "file" && file.payload.content).toContain('name || "world"')
   await t.step(9)
-  await t.live.createChange([sha])
+  await t.finished.createChange([sha])
   expect(t.store.collections.cards.get(PRACTICE_CARD.commits)?.kind).toBe("change")
   await createGuideController(t.ctx).guideAct("back")
   const restored = t.store.collections.cards.get(PRACTICE_CARD.commits)
@@ -179,8 +195,8 @@ test("anonymous live plan→implementation uses real results once, and diff/file
 })
 test("failed tests never complete implementation or invent commits", async () => {
   const t = await setup(async operation => operation === "implement" ? { ...complete(operation), tests: { command: "node --test", exitCode: 1, output: "missing name failed" } } : complete(operation))
-  await t.step(5); await t.live.plan(); await t.step(6)
-  expect(typeof await t.live.implement(PRACTICE_CARD.plan)).toBe("string")
+  await t.step(5); await t.finished.plan(); await t.step(6)
+  expect(typeof await t.finished.implement(PRACTICE_CARD.plan)).toBe("string")
   expect(t.store.session().guide?.completed).not.toContain("commits.made")
   expect(t.store.collections.cards.has(PRACTICE_CARD.commits)).toBe(false)
   t.dispose()
@@ -193,7 +209,7 @@ test("a response from an earlier playthrough cannot complete a restarted tutoria
   const request = t.live.plan()
   await t.store.settled?.()
   await t.store.dispatch({ type: "guide.changed", actor: "user", guide: { ...initialGuide(), playthrough: 2 } }).isPersisted.promise
-  release(); await request
+  release(); await request; await Promise.all(t.background)
   expect(t.store.session().guide?.completed).not.toContain("plan.ready")
   expect(liveSnapshotOf(t.store.collections.cards.get(PRACTICE_CARD.plan))).toBeUndefined()
   t.dispose()
@@ -202,7 +218,7 @@ test("a response from an earlier playthrough cannot complete a restarted tutoria
 test("reload reconnects a lost response with its persisted request key", async () => {
   const t = await setup(async () => { throw Error("Connection lost after the server accepted the run") })
   await t.step(5)
-  await t.live.plan()
+  await t.finished.plan()
   const requestKey = t.calls[0]!.body.idempotencyKey
   t.dispose()
   const restored = await createAppStore({ kind: "localStorage", storage: t.storage })
@@ -224,7 +240,7 @@ test("reload reconnects a lost response with its persisted request key", async (
 
 test("reload reconciles a saved completed snapshot before its guide and artifact effects persisted", async () => {
   const t = await setup()
-  await t.step(5); await t.live.plan(); await t.step(6); await t.live.implement(PRACTICE_CARD.plan)
+  await t.step(5); await t.finished.plan(); await t.step(6); await t.finished.implement(PRACTICE_CARD.plan)
   await t.store.dispatch({ type: "guide.changed", actor: "user", guide: { ...t.store.session().guide!, step: 6, completed: t.store.session().guide!.completed!.filter(signal => signal !== "commits.made") } }).isPersisted.promise
   const interrupted = t.store.collections.cards.get(PRACTICE_CARD.run)!
   if (interrupted.kind !== "run-trace") throw Error("expected implementation run")
@@ -234,7 +250,7 @@ test("reload reconciles a saved completed snapshot before its guide and artifact
   for(let i=0;i<30&&!t.store.session().guide?.completed?.includes("commits.made");i++)await new Promise(resolve=>setTimeout(resolve,10))
   expect(t.store.session().guide?.completed).toContain("commits.made")
   expect(t.calls.length).toBe(beforeCalls)
-  await t.step(9);await t.live.createChange([sha])
+  await t.step(9);await t.finished.createChange([sha])
   t.live.resume()
   await new Promise(resolve=>setTimeout(resolve,30))
   expect(t.store.collections.cards.get(PRACTICE_CARD.commits)?.kind).toBe("change")
@@ -255,3 +271,78 @@ test("reload reconciles a saved completed snapshot before its guide and artifact
   expect(t.calls.length).toBe(beforeCalls + 1)
   t.dispose()
 })
+
+for (const operation of ["research", "poc", "plan"] as const) {
+  test(`${operation} acknowledges before launch resolves and shows a background toast`, async () => {
+    let release!: () => void
+    const gate = new Promise<void>(resolve => { release = resolve })
+    const t = await setup(async op => { await gate; return complete(op) })
+    const result = await Promise.race([t.live[operation](), new Promise(resolve => setTimeout(() => resolve("blocked"), 100))])
+    expect(result).toEqual({ value: `Live ${operation} requested in the background. You can keep chatting.` })
+    await t.live[operation]()
+    expect(t.calls).toHaveLength(1)
+    await new Promise(resolve => setTimeout(resolve, 15))
+    expect([...t.store.collections.toasts.values()].map(toast => toast.status)).toEqual(["running"])
+    release()
+    await Promise.all(t.background)
+    expect([...t.store.collections.toasts.values()].map(toast => toast.status)).toEqual(["ok"])
+    t.dispose()
+  })
+}
+
+test("background launch failure resolves the running toast honestly", async () => {
+  let release!: () => void
+  const gate = new Promise<void>(resolve => { release = resolve })
+  const t = await setup(async () => { await gate; throw Error("Connection lost") })
+  await t.live.research()
+  await new Promise(resolve => setTimeout(resolve, 15))
+  release()
+  await Promise.all(t.background)
+  const toast = [...t.store.collections.toasts.values()][0]!
+  expect(toast.status).toBe("failed")
+  expect(toast.detail).toBe("Connection lost")
+  t.dispose()
+})
+
+for (const phase of ["completed", "failed"] as const) {
+  test(`remote ${phase} settles the toast only after execution, not launch acknowledgement`, async () => {
+    let release!: () => void
+    const gate = new Promise<void>(resolve => { release = resolve })
+    let calls = 0
+    const t = await setup(async operation => {
+      if (++calls === 1) return { ...complete(operation), phase: "running" }
+      await gate
+      return { ...complete(operation), phase, ...(phase === "failed" ? { error: "Research failed" } : {}) }
+    })
+    await t.step(4)
+    await t.live.research()
+    await new Promise(resolve => setTimeout(resolve, 30))
+    expect([...t.store.collections.toasts.values()][0]?.status).toBe("running")
+    expect(t.store.session().guide?.completed).not.toContain("issue.researched")
+    await t.live.research()
+    expect(t.calls).toHaveLength(1)
+    release()
+    await Promise.all(t.background)
+    expect([...t.store.collections.toasts.values()][0]?.status).toBe(phase === "completed" ? "ok" : "failed")
+    expect(t.store.session().guide?.completed?.includes("issue.researched") ?? false).toBe(phase === "completed")
+    t.dispose()
+  })
+}
+
+for (const operation of ["implement", "change"] as const) {
+  test(`${operation} also returns while its launch is unresolved`, async () => {
+    let release!: () => void
+    const gate = new Promise<void>(resolve => { release = resolve })
+    const t = await setup(async op => { if (op === operation) await gate; return complete(op) })
+    await t.finished.plan()
+    if (operation === "change") await t.finished.implement(PRACTICE_CARD.plan)
+    const start = () => operation === "implement" ? t.live.implement(PRACTICE_CARD.plan) : t.live.createChange([sha])
+    const result = await Promise.race([start(), new Promise(resolve => setTimeout(() => resolve("blocked"), 100))])
+    expect(result).toEqual({ value: `Live ${operation} requested in the background. You can keep chatting.` })
+    await start()
+    expect(t.calls.filter(call => call.operation === operation)).toHaveLength(1)
+    release()
+    await Promise.all(t.background)
+    t.dispose()
+  })
+}
