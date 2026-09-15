@@ -15,7 +15,8 @@ schema.
 
 ## What is checked
 
-The validator is dependency-free and supports exactly five keywords:
+Output schemas are compiled once at catalog load. Type unions use Effect
+Schema, with compatibility checks for exactly five supported keywords:
 
 | Keyword      | Behavior                                                                                                                     |
 | ------------ | ---------------------------------------------------------------------------------------------------------------------------- |
@@ -26,8 +27,9 @@ The validator is dependency-free and supports exactly five keywords:
 | `enum`       | The value must equal one of the declared values, compared by JSON value rather than by reference.                            |
 
 Validation recurses through `properties` and `items`, so a schema three levels
-deep is checked three levels deep. Enum membership is indexed once from the
-frozen catalog, including composite JSON values. Index construction and result
+deep is checked three levels deep. Types, required names, child validators and
+enum membership indexes are retained from the frozen catalog, including
+composite JSON enum values. Compilation and result
 validation yield between bounded work slices so host timers and Effect
 interruption can run during large checks. The request timeout still covers the
 transport request. An outer Effect timeout can also interrupt result validation.
@@ -35,7 +37,9 @@ transport request. An outer Effect timeout can also interrupt result validation.
 ## What is ignored
 
 Every other keyword. `minLength`, `pattern`, `additionalProperties`, `oneOf`,
-`$ref`, and the rest are skipped.
+`$ref`, and the rest are skipped. `integer` accepts every number for which
+`Number.isInteger` is true, including values outside the safe-integer range.
+This compatibility contract is narrower than a general JSON Schema importer.
 
 This is a deliberate choice, not an oversight: a partial validator that rejected
 data for a constraint it does not implement would be worse than one that admits

@@ -366,35 +366,16 @@ const asToolPage = (
   return Result.succeed({ nextCursor })
 }
 
-type JsonSchemaType = "null" | "boolean" | "object" | "array" | "number" | "string" | "integer"
-
-const jsonSchemaTypes: ReadonlySet<string> = new Set([
-  "null",
-  "boolean",
-  "object",
-  "array",
-  "number",
-  "string",
-  "integer"
-])
-
-const matchesJsonSchemaType = (value: unknown, type: JsonSchemaType): boolean => {
-  switch (type) {
-    case "null":
-      return value === null
-    case "boolean":
-      return typeof value === "boolean"
-    case "object":
-      return isRecord(value)
-    case "array":
-      return Array.isArray(value)
-    case "number":
-      return typeof value === "number"
-    case "string":
-      return typeof value === "string"
-    case "integer":
-      return typeof value === "number" && Number.isInteger(value)
-  }
+// Container guards deliberately inspect only the shape; traversal below owns
+// cooperative interruption. Schema.Int excludes unsafe integers, unlike JSON Schema.
+const outputTypes = {
+  null: Schema.Null,
+  boolean: Schema.Boolean,
+  object: Schema.declare(isRecord),
+  array: Schema.declare(Array.isArray),
+  number: Schema.Number,
+  string: Schema.String,
+  integer: Schema.Number.check(Schema.makeFilter(Number.isInteger))
 }
 
 // Every traversal step consumes a slice slot, including enum-key construction.
@@ -429,83 +410,74 @@ const enumKey = function*(value: unknown): Generator<void, string> {
   return JSON.stringify(value)
 }
 
-type EnumIndexes = WeakMap<Record<string, unknown>, ReadonlySet<string>>
-
-const indexEnums = function*(schema: Record<string, unknown>, indexes: EnumIndexes): Generator<void, void> {
-  yield
-  if (Array.isArray(schema.enum)) {
-    const index = new Set<string>()
-    for (const member of schema.enum) index.add(yield* enumKey(member))
-    indexes.set(schema, index)
-  }
-  if (isRecord(schema.properties)) {
-    for (const property of Object.values(schema.properties)) {
-      yield
-      if (isRecord(property)) yield* indexEnums(property, indexes)
-    }
-  }
-  if (isRecord(schema.items)) yield* indexEnums(schema.items, indexes)
-}
+type OutputValidator = (value: unknown, path: string) => Generator<void, JsonIssue | undefined>
 
 /**
- * Validates the MCP structured-output subset this package can implement
- * without another schema dependency: `type`, `required`, `properties`,
- * single-schema `items`, and `enum`. Every other keyword is ignored because a
- * partial validator must not turn an unsupported constraint into a false
- * rejection.
+ * Compile the supported output-schema subset once per catalog. Effect Schema
+ * owns type unions; this cooperative compatibility traversal retains composite
+ * enums, own-property requirements and ignored unsupported keywords. Importing
+ * the whole document would enforce constraints this client does not support.
  */
-const validateStructuredContent = function*(
-  value: unknown,
-  schema: Record<string, unknown>,
-  path: string,
-  indexes: EnumIndexes
-): Generator<void, JsonIssue | undefined> {
+const compileOutputSchema = function*(schema: Record<string, unknown>): Generator<void, OutputValidator> {
   yield
-  const index = indexes.get(schema)
-  if (index !== undefined && !index.has(yield* enumKey(value))) {
-    return { path, reason: "expected a declared enum value" }
-  }
-
-  const declaredTypes = Array.isArray(schema.type) ? schema.type : [schema.type]
-  const types: Array<JsonSchemaType> = []
-  for (const candidate of declaredTypes) {
+  const types = new Set<keyof typeof outputTypes>()
+  for (const candidate of Array.isArray(schema.type) ? schema.type : [schema.type]) {
     yield
-    if (
-      typeof candidate === "string" && jsonSchemaTypes.has(candidate) && !types.includes(candidate as JsonSchemaType)
-    ) {
-      types.push(candidate as JsonSchemaType)
+    if (typeof candidate === "string" && Object.hasOwn(outputTypes, candidate)) {
+      types.add(candidate as keyof typeof outputTypes)
     }
   }
-  if (types.length > 0 && !types.some((type) => matchesJsonSchemaType(value, type))) {
-    return { path, reason: `expected ${types.join(" or ")}` }
+  const accepts = Schema.is(
+    types.size === 0 ? Schema.Unknown : Schema.Union([...types].map((type) => outputTypes[type]))
+  )
+  const typeReason = `expected ${[...types].join(" or ")}`
+  let enumIndex: Set<string> | undefined
+  if (Array.isArray(schema.enum)) {
+    enumIndex = new Set()
+    for (const member of schema.enum) enumIndex.add(yield* enumKey(member))
   }
+  const required: Array<string> = []
+  if (Array.isArray(schema.required)) {
+    for (const key of schema.required) {
+      yield
+      if (typeof key === "string") required.push(key)
+    }
+  }
+  const properties: Array<readonly [string, OutputValidator]> = []
+  if (isRecord(schema.properties)) {
+    for (const [key, property] of Object.entries(schema.properties)) {
+      yield
+      if (isRecord(property)) properties.push([key, yield* compileOutputSchema(property)])
+    }
+  }
+  const items = isRecord(schema.items) ? yield* compileOutputSchema(schema.items) : undefined
 
-  if (isRecord(value)) {
-    if (Array.isArray(schema.required)) {
-      for (const key of schema.required) {
-        yield
-        if (typeof key === "string" && !Object.hasOwn(value, key)) {
-          return { path: `${path}.${key}`, reason: "required property is missing" }
-        }
-      }
+  return function*(value, path) {
+    yield
+    if (enumIndex !== undefined && !enumIndex.has(yield* enumKey(value))) {
+      return { path, reason: "expected a declared enum value" }
     }
-    if (isRecord(schema.properties)) {
-      for (const [key, propertySchema] of Object.entries(schema.properties)) {
+    if (!accepts(value)) return { path, reason: typeReason }
+    if (isRecord(value)) {
+      for (const key of required) {
         yield
-        if (!Object.hasOwn(value, key) || !isRecord(propertySchema)) continue
-        const issue = yield* validateStructuredContent(value[key], propertySchema, `${path}.${key}`, indexes)
+        if (!Object.hasOwn(value, key)) return { path: `${path}.${key}`, reason: "required property is missing" }
+      }
+      for (const [key, validate] of properties) {
+        yield
+        if (!Object.hasOwn(value, key)) continue
+        const issue = yield* validate(value[key], `${path}.${key}`)
         if (issue !== undefined) return issue
       }
     }
-  }
-
-  if (Array.isArray(value) && isRecord(schema.items)) {
-    for (const [index, item] of value.entries()) {
-      const issue = yield* validateStructuredContent(item, schema.items, `${path}[${index}]`, indexes)
-      if (issue !== undefined) return issue
+    if (Array.isArray(value) && items !== undefined) {
+      for (const [index, item] of value.entries()) {
+        const issue = yield* items(item, `${path}[${index}]`)
+        if (issue !== undefined) return issue
+      }
     }
+    return undefined
   }
-  return undefined
 }
 
 const asToolResult = function*(
@@ -513,7 +485,7 @@ const asToolResult = function*(
   result: unknown,
   outputSchema: Record<string, unknown> | undefined,
   diagnostic: (source: "invalid-response", detail: unknown) => void,
-  indexes: EnumIndexes
+  validate: OutputValidator | undefined
 ): Generator<void, Result.Result<ToolResult, McpError>> {
   if (!isRecord(result)) {
     return Result.fail(invalidResponse(
@@ -562,8 +534,8 @@ const asToolResult = function*(
       ))
     }
     structuredContent = result.structuredContent
-    if (outputSchema !== undefined) {
-      const issue = yield* validateStructuredContent(structuredContent, outputSchema, "structuredContent", indexes)
+    if (validate !== undefined) {
+      const issue = yield* validate(structuredContent, "structuredContent")
       if (issue !== undefined) {
         diagnostic("invalid-response", { issue, outputSchema })
         return Result.fail(invalidResponse(
@@ -848,9 +820,11 @@ export const connect = (
           params = { cursor: page.nextCursor }
         }
         JsonLimits.freezeParsed(tools)
-        const enumIndexes: EnumIndexes = new WeakMap()
+        const validators = new Map<string, OutputValidator>()
         for (const tool of tools) {
-          if (tool.outputSchema !== undefined) yield* runJsonWork(indexEnums(tool.outputSchema, enumIndexes))
+          if (tool.outputSchema !== undefined) {
+            validators.set(tool.name, yield* runJsonWork(compileOutputSchema(tool.outputSchema)))
+          }
         }
 
         const callTool = (name: string, args: Record<string, unknown>): Effect.Effect<ToolResult, McpError> => {
@@ -875,7 +849,7 @@ export const connect = (
             transport.request("tools/call", { name, arguments: snapshot.success }),
             (result) =>
               Effect.flatMap(
-                runJsonWork(asToolResult(options.server, result, tool.outputSchema, diagnostic, enumIndexes)),
+                runJsonWork(asToolResult(options.server, result, tool.outputSchema, diagnostic, validators.get(name))),
                 (decoded) => decodeResponse(result, decoded)
               )
           )

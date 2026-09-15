@@ -1001,6 +1001,27 @@ describe("McpClient.connect", () => {
     expect(result.structuredContent).toEqual(structuredContent)
   })
 
+  it("retains unsafe integers and ignored keywords in compiled output schemas", async () => {
+    const structuredContent = { value: Number.MAX_SAFE_INTEGER + 1, extra: "" }
+    const result = await withFakeServer(
+      respondWithStructured({
+        type: ["object", "constructor", "__proto__"],
+        additionalProperties: false,
+        $ref: "#/unresolved",
+        oneOf: [{ type: "null" }],
+        properties: {
+          value: { type: "integer", maximum: 0 },
+          extra: { type: "string", minLength: 10, pattern: "^required$" }
+        }
+      }, structuredContent),
+      Effect.gen(function*() {
+        const client = yield* McpClient.connect({ server: "schema-compatibility", command: "mcp", args: [] })
+        return yield* client.callTool("add", {})
+      })
+    )
+    expect(result.structuredContent).toEqual(structuredContent)
+  })
+
   it.each([1.5, "not-an-integer"])("rejects %j against the integer outputSchema type", async (value) => {
     const error = await withFakeServer(
       respondWithStructured({
