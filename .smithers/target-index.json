@@ -11888,6 +11888,75 @@
       {
         "kind": "file",
         "path": "flows/tsconfig.json"
+      },
+      {
+        "kind": "file",
+        "path": ".smithers/coding-project.json"
+      },
+      {
+        "kind": "file",
+        "path": ".smithers/factory.json"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/README.md"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/agent/README.md"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/build/README.md"
+      },
+      {
+        "kind": "file",
+        "path": "apps/app/README.md"
+      },
+      {
+        "kind": "file",
+        "path": "apps/app/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "apps/app/docs/LOCAL-APP.md"
+      },
+      {
+        "kind": "file",
+        "path": "apps/app/src/mainview/cards/CodingPlan.ts"
+      },
+      {
+        "kind": "file",
+        "path": "apps/app/src/bun/SessionMonitor.ts"
+      },
+      {
+        "kind": "file",
+        "path": "apps/server/docs/EFFECT.md"
+      },
+      {
+        "kind": "file",
+        "path": "apps/server/src/index.ts"
+      },
+      {
+        "kind": "file",
+        "path": "apps/server/src/Environment.ts"
+      },
+      {
+        "kind": "file",
+        "path": "apps/server/src/Boundary.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/README.md"
+      },
+      {
+        "kind": "file",
+        "path": "docs/design/agent-flow-health.md"
+      },
+      {
+        "kind": "glob",
+        "pattern": "flows/checks/**/flow.mdx",
+        "exclude": []
       }
     ],
     "outputs": [],
@@ -12056,6 +12125,10 @@
       },
       {
         "kind": "file",
+        "path": "flows/test/coding-planning-sources.test.ts"
+      },
+      {
+        "kind": "file",
         "path": "flows/test/coding-project-config.test.ts"
       },
       {
@@ -12124,6 +12197,75 @@
       {
         "kind": "file",
         "path": "flows/tsconfig.json"
+      },
+      {
+        "kind": "file",
+        "path": ".smithers/coding-project.json"
+      },
+      {
+        "kind": "file",
+        "path": ".smithers/factory.json"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/README.md"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/agent/README.md"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/build/README.md"
+      },
+      {
+        "kind": "file",
+        "path": "apps/app/README.md"
+      },
+      {
+        "kind": "file",
+        "path": "apps/app/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "apps/app/docs/LOCAL-APP.md"
+      },
+      {
+        "kind": "file",
+        "path": "apps/app/src/mainview/cards/CodingPlan.ts"
+      },
+      {
+        "kind": "file",
+        "path": "apps/app/src/bun/SessionMonitor.ts"
+      },
+      {
+        "kind": "file",
+        "path": "apps/server/docs/EFFECT.md"
+      },
+      {
+        "kind": "file",
+        "path": "apps/server/src/index.ts"
+      },
+      {
+        "kind": "file",
+        "path": "apps/server/src/Environment.ts"
+      },
+      {
+        "kind": "file",
+        "path": "apps/server/src/Boundary.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/README.md"
+      },
+      {
+        "kind": "file",
+        "path": "docs/design/agent-flow-health.md"
+      },
+      {
+        "kind": "glob",
+        "pattern": "flows/checks/**/flow.mdx",
+        "exclude": []
       }
     ],
     "outputs": [],
@@ -12640,6 +12782,16 @@
         "exclude": []
       },
       {
+        "kind": "glob",
+        "pattern": "packages/rpc/src/plue-failure-codes.json",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "packages/rpc/scripts/*.mjs",
+        "exclude": []
+      },
+      {
         "kind": "file",
         "path": "packages/rpc/tsconfig.test.json"
       }
@@ -12724,6 +12876,16 @@
       {
         "kind": "glob",
         "pattern": "packages/rpc/src/**/*.ts",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "packages/rpc/src/plue-failure-codes.json",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "packages/rpc/scripts/*.mjs",
         "exclude": []
       },
       {
