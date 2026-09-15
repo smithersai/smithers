@@ -303,91 +303,110 @@ describe("Projections read-path failures", () => {
 })
 
 describe("Projections resource bounds", () => {
-  it.effect("stops reading at the first event past the per-run ceiling", () =>
+  it.effect("stops reading at the scan ceiling instead of refusing a long journal", () =>
     Effect.gen(function*() {
       let produced = 0
       const projections = make(control({
         list: () => Effect.succeed({ _tag: "runs", items: [run] }),
         watch: () =>
           Stream.iterate(1, (sequence) => sequence + 1).pipe(
-            Stream.take(Projections.maxEventsPerRun + 50),
+            Stream.take(Projections.maxEventsScanned + 50),
             Stream.map((sequence) => {
               produced += 1
-              return event(sequence, "control.test", null)
+              return event(sequence, "control.agent.turn-opened", { seat: "s" })
             })
           )
       }))
 
-      const failure = yield* Effect.flip(projections.snapshot({ _tag: "run-events", runId: run.runId }))
-      expect(failure.code).toBe("resource_limit")
-      expect(produced).toBe(Projections.maxEventsPerRun + 1)
+      const snapshot = yield* projections.snapshot({ _tag: "run-summary", runId: run.runId })
+      expect(produced).toBe(Projections.maxEventsScanned)
+      // Every scanned turn is counted, including the ones the window dropped.
+      expect((snapshot.rows[0] as { readonly turns: number }).turns).toBe(Projections.maxEventsScanned)
     }))
 
-  for (const offset of [-1, 0, 1]) {
-    for (const prefix of ["", "café😀\\\"\n"]) {
-      it.effect(`checks complete UTF-8 event and row encodings at N${offset >= 0 ? "+" : ""}${offset} (${JSON.stringify(prefix)})`, () =>
-        Effect.gen(function*() {
-          const bytes = (value: unknown) => new TextEncoder().encode(JSON.stringify(value)).byteLength
-          const target = Projections.maxProjectionBytes + offset
-          // Include two members: array delimiters, comma, escaped characters and
-          // multibyte text all contribute to the independently measured budget.
-          const history = [event(1, "control.test", prefix), event(2, "control.test", "")]
-          history[1] = event(2, "control.test", "x".repeat(target - bytes(history)))
-          const rows = [{ ...run, waitingReason: prefix }, { ...run, runId: "run-2", waitingReason: "" }]
-          const baseline = yield* make(
-            control({
-              list: (request) =>
-                Effect.succeed({
-                  _tag: "runs",
-                  items: request._tag === "runs" && request.filters?.runId
-                    ? rows.filter((run) => run.runId === request.filters?.runId)
-                    : rows
-                })
-            })
-          )
-            .snapshot({ _tag: "workspace-runs" })
-          const padding = "x".repeat(target - bytes(baseline.rows))
-          rows[1] = { ...rows[1]!, waitingReason: padding }
-          const expectedRows = [baseline.rows[0], { ...baseline.rows[1] as object, waitingReason: padding }]
-          expect(bytes(history)).toBe(target)
-          expect(bytes(expectedRows)).toBe(target)
-          const eventsProjection = make(control({
-            list: () => Effect.succeed({ _tag: "runs", items: [run] }),
-            watch: () => Stream.fromIterable(history)
-          }))
-          const rowsProjection = make(
-            control({
-              list: (request) =>
-                Effect.succeed({
-                  _tag: "runs",
-                  items: request._tag === "runs" && request.filters?.runId
-                    ? rows.filter((run) => run.runId === request.filters?.runId)
-                    : rows
-                })
-            })
-          )
-          if (offset <= 0) {
-            expect((yield* eventsProjection.snapshot({ _tag: "run-events", runId: run.runId })).rows).toEqual(history)
-            expect((yield* rowsProjection.snapshot({ _tag: "workspace-runs" })).rows).toEqual(expectedRows)
-          } else {
-            expect(yield* Effect.flip(eventsProjection.snapshot({ _tag: "run-events", runId: run.runId })))
-              .toMatchObject({
-                code: "resource_limit",
-                message: `Run event history exceeds ${Projections.maxProjectionBytes} encoded bytes`
-              })
-            expect(yield* Effect.flip(rowsProjection.snapshot({ _tag: "workspace-runs" })))
-              .toMatchObject({
-                code: "resource_limit",
-                message: `Projection rows exceed ${Projections.maxProjectionBytes} encoded bytes`
-              })
-          }
-        }))
-    }
-  }
-
-  it.effect("bounds encoded event histories and projected row sets", () =>
+  it.effect("pages run-events rather than answering one response per journal", () =>
     Effect.gen(function*() {
-      const oversizedEvents = make(control({
+      const history = Array.from(
+        { length: Projections.maxEventsPerPage * 2 + 7 },
+        (_, index) => event(index + 1, "control.test", null)
+      )
+      const selector = { _tag: "run-events" as const, runId: run.runId }
+      const projections = make(control({
+        list: () => Effect.succeed({ _tag: "runs", items: [run] }),
+        watch: (filter) => Stream.fromIterable(history.filter((item) => item.sequence > (filter.afterSequence ?? -1)))
+      }))
+
+      const collected: Array<ControlEvent> = []
+      let page = yield* projections.snapshot(selector)
+      let pages = 0
+      while (page.rows.length > 0) {
+        pages += 1
+        expect(page.rows.length).toBeLessThanOrEqual(Projections.maxEventsPerPage)
+        collected.push(...page.rows as ReadonlyArray<ControlEvent>)
+        page = yield* projections.snapshot(selector, page.cursor)
+      }
+      expect(pages).toBe(3)
+      expect(collected).toEqual(history)
+    }))
+
+  it.effect("keeps a run summary and a first events page for a twenty-mebibyte journal", () =>
+    Effect.gen(function*() {
+      // One wiki refresh whose planning attempt retried a model call nine
+      // times: nine journaled request/response bodies of two mebibytes each.
+      const body = "x".repeat(2 * 1024 * 1024)
+      const history: Array<ControlEvent> = [event(1, "control.run.running", {})]
+      for (let attempt = 0; attempt < 9; attempt += 1) {
+        history.push(event(history.length + 1, "control.agent.turn-opened", { seat: "claude", body }))
+        history.push(
+          event(history.length + 1, "control.agent.model-settled", {
+            usage: { inputTokens: 10, outputTokens: 5 },
+            response: body
+          })
+        )
+      }
+      expect(new TextEncoder().encode(JSON.stringify(history)).byteLength)
+        .toBeGreaterThan(20 * 1024 * 1024)
+      const projections = make(control({
+        list: () => Effect.succeed({ _tag: "runs", items: [run] }),
+        watch: (filter) => Stream.fromIterable(history.filter((item) => item.sequence > (filter.afterSequence ?? -1)))
+      }))
+
+      const summary = yield* projections.snapshot({ _tag: "run-summary", runId: run.runId })
+      const row = summary.rows[0] as { readonly turns: number; readonly inputTokens: number }
+      expect(row.turns).toBe(9)
+      expect(row.inputTokens).toBe(90)
+      const page = yield* projections.snapshot({ _tag: "run-events", runId: run.runId })
+      expect(page.rows).toHaveLength(history.length)
+      for (const candidate of page.rows as ReadonlyArray<ControlEvent>) {
+        expect(new TextEncoder().encode(JSON.stringify(candidate)).byteLength)
+          .toBeLessThanOrEqual(Projections.maxEventBytes)
+      }
+    }))
+
+  it.effect("folds the events a window drops into the counters a run card shows", () =>
+    Effect.gen(function*() {
+      // Each turn is inside the per-event budget, so nothing is clipped and the
+      // window alone decides what is retained.
+      const filler = "x".repeat(8_000)
+      const history = Array.from(
+        { length: 1_200 },
+        (_, index) => event(index + 1, "control.agent.turn-opened", { seat: "claude", filler })
+      )
+      expect(new TextEncoder().encode(JSON.stringify(history)).byteLength)
+        .toBeGreaterThan(Projections.maxProjectionBytes)
+      const projections = make(control({
+        list: () => Effect.succeed({ _tag: "runs", items: [run] }),
+        watch: () => Stream.fromIterable(history)
+      }))
+
+      const summary = yield* projections.snapshot({ _tag: "run-summary", runId: run.runId })
+      expect((summary.rows[0] as { readonly turns: number }).turns).toBe(history.length)
+      expect(summary.cursor.value).toBe(history.length)
+    }))
+
+  it.effect("clips an oversized payload instead of refusing the projection", () =>
+    Effect.gen(function*() {
+      const projections = make(control({
         list: () => Effect.succeed({ _tag: "runs", items: [run] }),
         watch: () => Stream.succeed(event(1, "control.test", "x".repeat(Projections.maxProjectionBytes)))
       }))
@@ -399,9 +418,12 @@ describe("Projections resource bounds", () => {
           })
       }))
 
-      expect(
-        (yield* Effect.flip(oversizedEvents.snapshot({ _tag: "run-events", runId: run.runId }))).code
-      ).toBe("resource_limit")
+      const page = yield* projections.snapshot({ _tag: "run-events", runId: run.runId })
+      const row = page.rows[0] as ControlEvent
+      expect(typeof row.payload).toBe("string")
+      expect(String(row.payload).length).toBeLessThan(Projections.maxEventBytes)
+      expect(String(row.payload).endsWith("\u2026")).toBe(true)
+      // A row set too large for the wire is still a refusal: rows go out whole.
       expect((yield* Effect.flip(oversizedRows.snapshot({ _tag: "workspace-runs" }))).code)
         .toBe("resource_limit")
     }))

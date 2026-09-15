@@ -2,39 +2,73 @@
 import { expect, it } from "@effect/vitest"
 import type { Service as ControlService } from "@smthrs/control/Control"
 import type { ControlEvent } from "@smthrs/control/ControlSchema"
-import { Effect, Exit, Stream } from "effect"
+import { Effect, Stream } from "effect"
 import * as Projections from "../src/Projections.ts"
 
+const bytes = (value: unknown): number => Buffer.byteLength(JSON.stringify(value), "utf8")
+
+const journalEvent = (sequence: number, payload: string): ControlEvent => ({
+  sequence,
+  kind: "control.test",
+  runId: "byte-oracle",
+  occurredAt: sequence,
+  payload
+})
+
 for (const offset of [-1, 0, 1]) {
-  it.effect(`mutation contract: complete event rows at byte limit ${offset}`, () =>
+  it.effect(`mutation contract: run-events pages at byte limit ${offset}`, () =>
     Effect.gen(function*() {
       // The public 4 MiB contract is independent of the implementation constant.
       const limit = 4 * 1024 * 1024
-      const rows: Array<ControlEvent> = [
-        { sequence: 1, kind: "control.test", runId: "byte-oracle", occurredAt: 1, payload: "café😀\"\n" },
-        { sequence: 2, kind: "control.test", runId: "byte-oracle", occurredAt: 2, payload: "" }
-      ]
-      const overhead = Buffer.byteLength(JSON.stringify(rows), "utf8")
-      rows[1] = { ...rows[1]!, payload: "x".repeat(limit + offset - overhead) }
-      expect(Buffer.byteLength(JSON.stringify(rows), "utf8")).toBe(limit + offset)
+      const target = limit + offset
+      // Each event stays inside the per-event budget, so nothing here is
+      // clipped and the oracle measures the page boundary alone.
+      const rows: Array<ControlEvent> = []
+      // Sizes accumulate rather than being re-measured over the whole array:
+      // an encoded array is its members plus one separator each after the first.
+      let total = 2
+      const push = (candidate: ControlEvent): void => {
+        total += bytes(candidate) + (rows.length === 0 ? 0 : 1)
+        rows.push(candidate)
+      }
+      push(journalEvent(1, "café😀\"\n"))
+      let sequence = 2
+      for (;;) {
+        const candidate = journalEvent(sequence, "x".repeat(8_000))
+        if (total + bytes(candidate) + 1 > target - 200) break
+        push(candidate)
+        sequence += 1
+      }
+      push(journalEvent(sequence, "x".repeat(target - total - bytes(journalEvent(sequence, "")) - 1)))
+      expect(bytes(rows)).toBe(target)
       const service = {
         list: () =>
           Effect.succeed({
             _tag: "runs",
             items: [{ runId: "byte-oracle", flowId: "fixture", status: "running", createdAt: 1, updatedAt: 2 }]
           }),
-        watch: () => Stream.fromIterable(rows)
+        watch: (filter: { readonly afterSequence?: number | undefined }) =>
+          Stream.fromIterable(
+            filter.afterSequence === undefined
+              ? rows
+              : rows.filter((row) => row.sequence > filter.afterSequence!)
+          )
       } as unknown as ControlService
       const projection = yield* Projections.make(service)
-      const outcome = yield* Effect.exit(projection.snapshot({ _tag: "run-events", runId: "byte-oracle" }))
+      const selector = { _tag: "run-events" as const, runId: "byte-oracle" }
+      const page = yield* projection.snapshot(selector)
+      expect(bytes(page.rows)).toBeLessThanOrEqual(limit)
       if (offset <= 0) {
-        expect(outcome._tag).toBe("Success")
-        if (Exit.isSuccess(outcome)) expect(outcome.value.rows).toEqual(rows)
+        expect(page.rows).toEqual(rows)
+        expect(page.cursor.value).toBe(rows.at(-1)?.sequence)
+        // A page at the head answers nothing more rather than refusing.
+        expect((yield* projection.snapshot(selector, page.cursor)).rows).toEqual([])
       } else {
-        expect(outcome._tag).toBe("Failure")
-        const refusal = yield* Effect.flip(projection.snapshot({ _tag: "run-events", runId: "byte-oracle" }))
-        expect(refusal.code).toBe("resource_limit")
-        expect(refusal.message).toBe(`Run event history exceeds ${limit} encoded bytes`)
+        // One byte over splits the read rather than refusing it, and the
+        // cursor the first page carries reaches the remainder.
+        expect(page.rows.length).toBe(rows.length - 1)
+        const rest = yield* projection.snapshot(selector, page.cursor)
+        expect([...page.rows, ...rest.rows]).toEqual(rows)
       }
     }))
 }

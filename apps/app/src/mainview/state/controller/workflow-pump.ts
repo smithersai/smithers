@@ -33,6 +33,28 @@ const PHASE_OF_STATUS: Readonly<Record<RunStatus, Extract<Card, { kind: "run-tra
 
 const TERMINAL_PHASES: ReadonlySet<string> = new Set(["completed", "failed", "cancelled"])
 
+/**
+ * How many journal pages one pump cycle reads.
+ *
+ * A `run-events` snapshot is a bounded PAGE, not the whole journal: the
+ * gateway answers at most its page ceiling and a cursor to continue from. A
+ * cycle therefore keeps asking until a page comes back short, which is how a
+ * run that journaled more than one page still reaches the card. The cap keeps
+ * one cycle bounded; a cycle that stops on it leaves the journal revision
+ * unacknowledged so the next cycle continues from the same cursor.
+ */
+const JOURNAL_PAGES_PER_CYCLE = 16
+
+/**
+ * How many rows make a page worth continuing from.
+ *
+ * The gateway does not put its page ceiling on the wire, so a reader tells a
+ * full page from a complete one by size. A steady pump reads a handful of
+ * events per cycle and stops after one call; a card catching up on a long run
+ * reads a page far above this and asks for the next one.
+ */
+const JOURNAL_PAGE_LOOKS_FULL = 256
+
 export const createWorkflowPumpController = (
   ctx: ControllerContext,
   nextTranscriptOrdinal: () => number
@@ -57,6 +79,42 @@ export const createWorkflowPumpController = (
    * stops; stop/retry are the human's next acts, both registered commands.
    */
   const RUN_QUIET_AFTER_MS = services.workflowQuietMs ?? 10 * 60 * 1000
+
+  type JournalAnswer = Awaited<ReturnType<typeof gateway.runEvents>>
+  type JournalRow = Extract<JournalAnswer, { status: "ok" }>["value"][number]
+  type JournalPages =
+    | { readonly status: "ok"; readonly value: ReadonlyArray<JournalRow>; readonly complete: boolean }
+    | { readonly status: "error"; readonly message: string; readonly complete: boolean }
+
+  /**
+   * One cycle's journal suffix, read as pages.
+   *
+   * `run-events` answers a bounded page and the cursor it reached, so a single
+   * call is the suffix only when the page came back short. A failed page keeps
+   * whatever earlier pages read and leaves the cycle incomplete, so the next
+   * one retries from the same cursor rather than skipping the gap.
+   */
+  const readJournalPages = async (
+    repo: string,
+    runId: string,
+    binding: Parameters<typeof gateway.runEvents>[2],
+    from: ProjectionCursor | undefined
+  ): Promise<JournalPages> => {
+    const rows: Array<JournalRow> = []
+    let cursor = from
+    for (let page = 0; page < JOURNAL_PAGES_PER_CYCLE; page += 1) {
+      const answer = await gateway.runEvents(repo, runId, binding, cursor)
+      if (answer.status !== "ok") {
+        return rows.length === 0
+          ? { status: "error", message: answer.message, complete: false }
+          : { status: "ok", value: rows, complete: false }
+      }
+      rows.push(...answer.value)
+      if (answer.value.length < JOURNAL_PAGE_LOOKS_FULL) return { status: "ok", value: rows, complete: true }
+      cursor = answer.cursor ?? cursor
+    }
+    return { status: "ok", value: rows, complete: false }
+  }
 
   const liveRunCards = (): Array<Extract<Card, { kind: "run-trace" }>> =>
     [...store.collections.cards.values()].filter(
@@ -304,7 +362,7 @@ export const createWorkflowPumpController = (
         // A native projection can append after its control verdict settled,
         // without changing the summary cursor. Its own marker closes this read.
         if (revision === undefined || revision !== journalRevision || projectionPending) {
-          const journal = await gateway.runEvents(repo, runId, binding, journalCursor)
+          const journal = await readJournalPages(repo, runId, binding, journalCursor)
           if (pump.stopped || ctx.runPumps.get(cardId) !== pump) return
           const current = store.committedRuntimeRun(runtimeRunKey(card.payload))
           // An inspection that won this race already replaced our prefix.
@@ -313,7 +371,10 @@ export const createWorkflowPumpController = (
             journalObservation = { mode: journalCursor === undefined ? "full" : "suffix", after: journalCursor, events: [...journal.value] }
             // Empty journals and a first sequence-zero event share cursor
             // 0:0. Keep reading until at least one row establishes a prefix.
-            journalRead = true
+            // A cycle that stopped on its page budget has not read the whole
+            // suffix, so it must not acknowledge the revision: the next cycle
+            // continues from the same cursor.
+            journalRead = journal.complete
             journalAdvanced = journal.value.length > 0
           } else if (journal.status !== "ok") eventReadError = journal.message
         }

@@ -203,13 +203,16 @@ const optional = <A>(key: string, value: A | undefined): Record<string, A> =>
  *
  * @param run the control-plane run summary
  * @param events that run's ordered control events
+ * @param now the instant the row is rendered at
+ * @param carry the digest of the events a bounded reader dropped before them
  * @since 1.0.0
  * @category projections
  */
 export const runSummary = (
   run: ControlSchema.RunSummary,
   events: ReadonlyArray<ControlSchema.ControlEvent>,
-  now: number = Math.max(run.updatedAt, events.at(-1)?.occurredAt ?? 0)
+  now: number = Math.max(run.updatedAt, events.at(-1)?.occurredAt ?? 0),
+  carry?: Diagnosis.Digest | undefined
 ): RunSummaryRow => {
   const projected = ControlFacts.fold(events, run)
   // Supplying a snapshot guarantees a run: uncovered facts retain that
@@ -236,7 +239,12 @@ export const runSummary = (
       roundOrdinal: root.roundOrdinal
     }
   }
-  const facts = { ...Diagnosis.digest(events), status: run.status }
+  // `carry` is the digest of the events a bounded reader dropped ahead of
+  // `events`. Combining it keeps turns, calls, edits and tokens exact for a run
+  // whose journal no longer fits one window, so the counters a run card shows
+  // describe the whole run and not just its tail.
+  const window = Diagnosis.digest(events)
+  const facts = { ...(carry === undefined ? window : Diagnosis.combine(carry, window)), status: run.status }
   return {
     runId: run.runId,
     flowId: run.flowId,

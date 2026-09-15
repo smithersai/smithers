@@ -116,7 +116,10 @@ test("four unchanged iterations read and dispatch a 20,000-row journal only once
   const events = Array.from({ length: 20_000 }, (_, i) => event(i + 1))
   const result = await poll(Array.from({ length: 4 }, () => ({ events, revision: 20_000 })))
   expect(result.rowsRequested).toBe(20_000)
-  expect(result.journalRequests).toHaveLength(1)
+  // One call reads the page and a second confirms it was the whole suffix,
+  // because a full-looking page means there may be another. The other three
+  // iterations read nothing at all.
+  expect(result.journalRequests).toHaveLength(2)
   expect(result.updates).toHaveLength(1)
   expect(result.card.payload.events).toHaveLength(20_000)
 })

@@ -494,7 +494,12 @@ describe("incremental journal snapshots", () => {
       expect((yield* projections.snapshot(selector, next.cursor)).rows).toEqual([])
       const wrongRun = { ...initial.cursor, runId: "another-run" }
       expect((yield* Effect.flip(projections.snapshot(selector, wrongRun))).code).toBe("malformed_request")
+      // A bounded page reads from the cursor, so a cursor past the head is
+      // indistinguishable from one at it: both answer an empty page rather
+      // than costing a whole-journal read to tell them apart.
       const future = { ...initial.cursor, value: next.cursor.value + 100 }
-      expect((yield* Effect.flip(projections.snapshot(selector, future))).code).toBe("malformed_request")
+      const ahead = yield* projections.snapshot(selector, future)
+      expect(ahead.rows).toEqual([])
+      expect(ahead.cursor.value).toBe(future.value)
     }).pipe(Effect.provide(stack())))
 })

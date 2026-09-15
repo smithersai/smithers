@@ -193,13 +193,18 @@ row's type.
 
 `Projection.Snapshot` accepts optional `after: ProjectionCursor` for
 `run-events` only. It returns rows strictly after that sequence and offset,
-with the current journal cursor. An unchanged journal returns no rows.
-The cursor must belong to the same selector and run and cannot be ahead of
-the journal. Other selectors with `after` return `malformed_request`.
-Omit `after` for the full snapshot and when no journal rows are retained:
-the empty cursor `0:0` also names the first sequence-zero event.
-This bounds transferred rows; the gateway still reconciles the full source
-journal before producing the suffix.
+with the cursor the read reached. An unchanged journal returns no rows, and so
+does a cursor at or past the journal's head. The cursor must belong to the same
+selector and run; other selectors with `after` return `malformed_request`.
+Omit `after` for the first page: the empty cursor `0:0` also names the first
+sequence-zero event.
+
+A `run-events` snapshot is a PAGE, not the whole journal. It carries at most
+`maxEventsPerPage` events and `maxProjectionBytes`, whichever binds first, and
+the cursor it answers with names the last event it carried. A reader pages by
+passing that cursor back until a page comes back empty. Every other selector
+answers rows whose size the selector bounds, so it reads the reconciled source
+and needs no paging.
 
 | Export               | Shape                                                                      |
 | -------------------- | -------------------------------------------------------------------------- |

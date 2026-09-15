@@ -338,8 +338,14 @@ describe("health through existing run projections", () => {
         })
         const durable = yield* control.watch({ runId: run.runId, follow: false }).pipe(Stream.runCollect)
         expect(durable.filter((item) => item.kind === Health.statusObservedEventType)).toHaveLength(19)
-        expect((yield* Effect.flip(projections.snapshot({ _tag: "run-events", runId: run.runId }))).code)
-          .toBe("resource_limit")
+        // The raw journal used to be unreadable at this size. It now answers a
+        // bounded page whose events are clipped to the per-event budget.
+        const page = yield* projections.snapshot({ _tag: "run-events", runId: run.runId })
+        expect(page.rows.length).toBeGreaterThan(0)
+        for (const row of page.rows) {
+          expect(new TextEncoder().encode(JSON.stringify(row)).byteLength)
+            .toBeLessThanOrEqual(Projections.maxEventBytes)
+        }
       }).pipe(Effect.provide(stack()), Effect.scoped, Effect.provide(TestClock.layer()))
     )
   })
@@ -537,10 +543,15 @@ describe("health through existing run projections", () => {
           10_049,
           10_050
         ])
-        // Raw event history retains its explicit resource boundary; only derived rows compact observations.
-        expect((yield* Effect.flip(projections.snapshot({ _tag: "run-events", runId: summary.runId }))).code).toBe(
-          "resource_limit"
-        )
+        // Raw event history pages instead of refusing: one bounded page, and a
+        // cursor that reaches the next one.
+        const eventsSelector = { _tag: "run-events" as const, runId: summary.runId }
+        const page = yield* projections.snapshot(eventsSelector)
+        expect(page.rows).toHaveLength(Projections.maxEventsPerPage)
+        expect(page.cursor.value).toBe(Projections.maxEventsPerPage)
+        const next = yield* projections.snapshot(eventsSelector, page.cursor)
+        expect(next.rows).toHaveLength(Projections.maxEventsPerPage)
+        expect(next.cursor.value).toBe(2 * Projections.maxEventsPerPage)
       }).pipe(Effect.provide(TestControl.layer()), Effect.scoped, Effect.provide(TestClock.layer()))
     )
   })

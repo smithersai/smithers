@@ -406,3 +406,59 @@ export const render = (subject: Subject, value: Digest): string => {
   }
   return lines.join("\n")
 }
+
+/**
+ * A digest of no events at all: the identity {@link combine} folds onto.
+ *
+ * @since 1.0.0
+ * @category constructors
+ */
+export const emptyDigest = (): Digest => digest([])
+
+/**
+ * Folds two digests of adjacent event ranges into the digest of both.
+ *
+ * `digest` is a left fold over an ordered range, so the digest of a whole
+ * journal is the digest of its prefix combined with the digest of its
+ * remainder. That identity is what lets a bounded reader keep exact counters
+ * for a run whose journal it cannot hold: it folds the events it drops into a
+ * carry digest and combines that carry with the digest of the window it kept.
+ *
+ * Counters add. Latest-wins fields take `later`'s reading when it has one, and
+ * keep `earlier`'s otherwise, which is what one fold over the concatenation
+ * would have produced. Refusal counts merge and re-sort. The span widens.
+ *
+ * @param earlier the digest of the earlier range
+ * @param later the digest of the range that follows it
+ * @since 1.0.0
+ * @category constructors
+ */
+export const combine = (earlier: Digest, later: Digest): Digest => {
+  const counts = new Map<string, number>()
+  for (const refusal of [...earlier.refusals, ...later.refusals]) {
+    counts.set(refusal.message, (counts.get(refusal.message) ?? 0) + refusal.count)
+  }
+  const earliest = (left: number | undefined, right: number | undefined): number | undefined =>
+    left === undefined ? right : right === undefined ? left : Math.min(left, right)
+  const latest = (left: number | undefined, right: number | undefined): number | undefined =>
+    left === undefined ? right : right === undefined ? left : Math.max(left, right)
+  return {
+    status: later.status ?? earlier.status,
+    cause: later.cause ?? earlier.cause,
+    seat: later.seat ?? earlier.seat,
+    turns: earlier.turns + later.turns,
+    calls: earlier.calls + later.calls,
+    callsFailed: earlier.callsFailed + later.callsFailed,
+    editsAttempted: earlier.editsAttempted + later.editsAttempted,
+    editsSucceeded: earlier.editsSucceeded + later.editsSucceeded,
+    refusals: [...counts.entries()]
+      .map(([message, count]) => ({ message, count }))
+      .sort((left, right) => right.count - left.count),
+    inputTokens: earlier.inputTokens + later.inputTokens,
+    outputTokens: earlier.outputTokens + later.outputTokens,
+    finalOutput: later.finalOutput ?? earlier.finalOutput,
+    parkedQuestion: later.parkedQuestion ?? earlier.parkedQuestion,
+    startedAt: earliest(earlier.startedAt, later.startedAt),
+    endedAt: latest(earlier.endedAt, later.endedAt)
+  }
+}

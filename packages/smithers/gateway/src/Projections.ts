@@ -36,6 +36,7 @@ import { Control } from "@smthrs/control/Control"
 import * as ControlSchema from "@smthrs/control/ControlSchema"
 import * as Health from "@smthrs/control/Health"
 import { Context, Effect, Layer, Schema, Stream } from "effect"
+import * as Diagnosis from "./Diagnosis.ts"
 import { GatewayError, settingRefusal } from "./GatewayError.ts"
 import * as GatewayProjection from "./GatewayProjection.ts"
 import * as GatewaySchema from "./GatewaySchema.ts"
@@ -69,7 +70,11 @@ export const heartbeatIntervalMillis = 30_000
 export const maxWorkspaceRuns = 500
 
 /**
- * The most journal events one run projection admits.
+ * The most journal events one run projection retains in its window.
+ *
+ * This is a retention ceiling, not a refusal. A run that journals more keeps
+ * its most recent {@link maxEventsPerRun} events and folds everything older
+ * into the carried digest that {@link maxProjectionBytes} describes.
  *
  * @since 1.0.0
  * @category models
@@ -77,12 +82,71 @@ export const maxWorkspaceRuns = 500
 export const maxEventsPerRun = 10_000
 
 /**
- * The largest encoded event history or projected row set one run admits.
+ * The most journal events one run projection reads before it stops reading.
+ *
+ * The window ceiling bounds memory; this bounds work. A projection folds every
+ * event it reads, so a run with a million of them would cost a million decodes
+ * on every snapshot however few it kept. Ten times the window is the honest
+ * compromise: every real run is far inside it, and a runaway one still answers
+ * rather than running the reader out of time.
+ *
+ * @since 1.0.0
+ * @category models
+ */
+export const maxEventsScanned = 100_000
+
+/**
+ * The most events one `run-events` snapshot page carries.
+ *
+ * `run-events` is the one selector whose rows are the journal itself, so it is
+ * the one selector a client must page rather than fold. A snapshot answers at
+ * most this many events and a cursor to ask for the next page from, so reading
+ * a long run costs one bounded response per page instead of one response the
+ * size of the whole run.
+ *
+ * @since 1.0.0
+ * @category models
+ */
+export const maxEventsPerPage = 1_000
+
+/**
+ * The largest encoded event window or projected row set one run admits.
+ *
+ * The row budget is a refusal: rows go on the wire, and a frame larger than
+ * this is one no client asked for. The window budget is retention: events
+ * older than the newest {@link maxProjectionBytes} are folded into a carried
+ * digest instead of being held, so the counters a run card shows stay exact
+ * while the memory one projection holds stays bounded.
  *
  * @since 1.0.0
  * @category models
  */
 export const maxProjectionBytes = 4 * 1024 * 1024
+
+/**
+ * The largest encoded form one retained journal event may take.
+ *
+ * A model request body, a response transcript, and a tool's captured output
+ * are all journaled inline, and any one of them can be megabytes. Nothing a
+ * projection reads out of a payload is long: a seat name, a flow name, an
+ * outcome, a token count, a first line. A retained event is therefore clipped
+ * to this budget rather than held whole, which is what keeps one wiki refresh
+ * that retried a model call nine times from costing a run card its whole
+ * history. `run-events` pages carry the same clipped events, so a reader that
+ * wants a full body reads it from the run's artifacts, not from a projection.
+ *
+ * @since 1.0.0
+ * @category models
+ */
+export const maxEventBytes = 16 * 1024
+
+/**
+ * The longest string a clipped payload keeps.
+ *
+ * Applied only to an event already over {@link maxEventBytes}, so an ordinary
+ * event reaches a projection byte for byte.
+ */
+const clippedTextPoints = 2_048
 
 /**
  * How long a workspace follower gathers events before folding one delta.
@@ -195,6 +259,17 @@ interface EventBuffer {
   readonly events: Array<ControlSchema.ControlEvent>
   readonly encodedBytes: number
   readonly lastPosition: CursorPosition
+  /**
+   * The digest of the events this buffer read and dropped to stay bounded.
+   *
+   * Undefined until something is dropped, so an ordinary run is folded exactly
+   * as it was before the window existed. A run card combines it with the
+   * digest of the retained window, so turns, calls, edits, tokens, and the run
+   * span describe every event read rather than only the ones still held.
+   */
+  readonly carry: Diagnosis.Digest | undefined
+  /** How many events the window dropped, for a reader that reports the cut. */
+  readonly dropped: number
 }
 
 const emptyEventBuffer = (compactHealth = false): EventBuffer => ({
@@ -202,10 +277,48 @@ const emptyEventBuffer = (compactHealth = false): EventBuffer => ({
   seen: false,
   events: [],
   encodedBytes: 2,
-  lastPosition: { value: 0, offset: 0 }
+  lastPosition: { value: 0, offset: 0 },
+  carry: undefined,
+  dropped: 0
 })
 
 const textEncoder = new TextEncoder()
+
+const encodedSize = (value: unknown): number => textEncoder.encode(JSON.stringify(value)).byteLength
+
+/**
+ * One payload with every long string cut to {@link clippedTextPoints}.
+ *
+ * Structure is preserved so a payload stays decodable: a clipped string is
+ * still a string, an object keeps its keys, and an array keeps its length.
+ * Only the text shrinks, and `Diagnosis.clip` marks the cut.
+ */
+const clipDeep = (value: unknown): unknown => {
+  if (typeof value === "string") return Diagnosis.clip(value, clippedTextPoints)
+  if (Array.isArray(value)) return value.map(clipDeep)
+  if (typeof value === "object" && value !== null) {
+    return Object.fromEntries(Object.entries(value).map(([key, member]) => [key, clipDeep(member)]))
+  }
+  return value
+}
+
+/**
+ * The retained form of one event: itself when it is small, a clipped copy when
+ * it is not.
+ *
+ * A payload that is still over the budget after clipping is replaced outright.
+ * That is a payload whose size is in its shape rather than in its text — tens
+ * of thousands of keys — and no projection reads such a shape.
+ */
+const retainedEvent = (event: ControlSchema.ControlEvent): ControlSchema.ControlEvent => {
+  if (encodedSize(event) <= maxEventBytes) return event
+  const clipped = { ...event, payload: clipDeep(event.payload) as ControlSchema.ControlEvent["payload"] }
+  if (encodedSize(clipped) <= maxEventBytes) return clipped
+  return {
+    ...event,
+    payload: { truncated: true, encodedBytes: encodedSize(event.payload) }
+  }
+}
 
 const decodeEvent = Schema.decodeUnknownSync(ControlSchema.ControlEvent)
 const decodeFrame = Schema.decodeUnknownSync(GatewaySchema.GatewayFrame)
@@ -232,14 +345,18 @@ const appendEvent = (
   message: string,
   run: ControlSchema.RunSummary
 ): Effect.Effect<EventBuffer, GatewayError> =>
-  Effect.flatMap(decodedEvent(candidate, message), (event) => {
-    if (state.seen && event.sequence < state.lastPosition.value) {
+  Effect.flatMap(decodedEvent(candidate, message), (decoded) => {
+    if (state.seen && decoded.sequence < state.lastPosition.value) {
       return Effect.fail(unavailable(message, undefined))
     }
+    // A payload larger than one projection reads is clipped before it is
+    // measured, so a journaled model body costs the window its own size and
+    // not the body's.
+    const event = retainedEvent(decoded)
     // `decodedEvent` has already rebuilt payload through `Schema.Json`, so it
     // contains neither accessors nor `toJSON` hooks and JSON encoding cannot
     // execute caller code here.
-    const bytes = textEncoder.encode(JSON.stringify(event)).byteLength
+    const bytes = encodedSize(event)
     let removedBytes = 0
     let keep = true
     if (state.compactHealth && event.kind === Health.statusObservedEventType) {
@@ -278,25 +395,37 @@ const appendEvent = (
         }
       }
     } else if (state.compactHealth && event.kind === "control.monitor.beat") keep = false
-    const count = state.events.length + (keep ? 1 : 0)
-    const encodedBytes = Math.max(2, state.encodedBytes - removedBytes) +
+    let encodedBytes = Math.max(2, state.encodedBytes - removedBytes) +
       (keep ? bytes + (state.events.length === 0 ? 0 : 1) : 0)
-    if (count > maxEventsPerRun) {
-      return Effect.fail(resourceLimit(`Run event history exceeds ${maxEventsPerRun} events`))
-    }
-    if (!Number.isSafeInteger(encodedBytes) || encodedBytes > maxProjectionBytes) {
-      return Effect.fail(resourceLimit(`Run event history exceeds ${maxProjectionBytes} encoded bytes`))
+    if (!Number.isSafeInteger(encodedBytes)) {
+      return Effect.fail(unavailable(message, undefined))
     }
     const offset = state.seen && event.sequence === state.lastPosition.value
       ? state.lastPosition.offset + 1
       : 0
     if (keep) state.events.push(event)
+    // The window is retention, not a refusal. A run whose journal outgrows it
+    // keeps its newest events and folds the rest into the carried digest, so a
+    // run card still answers with exact counters instead of the
+    // `resource_limit` a nine-retry model step used to earn.
+    let carry = state.carry
+    let dropped = state.dropped
+    while (state.events.length > maxEventsPerRun || encodedBytes > maxProjectionBytes) {
+      const evicted = state.events.shift()
+      /* v8 ignore next -- a clipped event is orders of magnitude inside the window, so one always fits. */
+      if (evicted === undefined) break
+      encodedBytes = Math.max(2, encodedBytes - encodedSize(evicted) - (state.events.length === 0 ? 0 : 1))
+      carry = Diagnosis.combine(carry ?? Diagnosis.emptyDigest(), Diagnosis.digest([evicted]))
+      dropped += 1
+    }
     return Effect.succeed({
       compactHealth: state.compactHealth,
       seen: true,
       events: state.events,
       encodedBytes,
-      lastPosition: { value: event.sequence, offset }
+      lastPosition: { value: event.sequence, offset },
+      carry,
+      dropped
     })
   })
 
@@ -379,13 +508,14 @@ const rowsOfRun = (
   source: {
     readonly run: ControlSchema.RunSummary
     readonly events: ReadonlyArray<ControlSchema.ControlEvent>
+    readonly carry?: Diagnosis.Digest | undefined
   },
   now: number
 ): ReadonlyArray<unknown> => {
   switch (selector._tag) {
     case "workspace-runs":
     case "run-summary":
-      return [GatewayProjection.runSummary(source.run, source.events, now)]
+      return [GatewayProjection.runSummary(source.run, source.events, now, source.carry)]
     case "run-tree":
       return GatewayProjection.runTree(source.run, source.events)
     case "run-events":
@@ -535,10 +665,96 @@ const makeService = (control: ControlService, heartbeatMillis: number, now: () =
     return Stream.runFoldEffect(
       control.watch({ runId, follow: false }).pipe(
         Stream.tapError((cause) => logReadFailure("read-events", cause)),
-        Stream.mapError((cause) => unavailable(message, cause))
+        Stream.mapError((cause) => unavailable(message, cause)),
+        // The window bounds what is held; this bounds what is read.
+        Stream.take(maxEventsScanned)
       ),
       () => emptyEventBuffer(compactHealth),
       (buffer, event) => appendEvent(buffer, event, `${message}: the control plane returned an invalid event`, run)
+    )
+  }
+
+  /**
+   * One bounded page of a run's journal, starting after `after`.
+   *
+   * This is the `run-events` read, and it is deliberately not the fold every
+   * other selector uses. The other selectors answer rows computed from a
+   * journal; `run-events` answers the journal, so its response grows with the
+   * run unless the read itself is bounded. It reads from the control plane's
+   * own cursor, keeps at most {@link maxEventsPerPage} events and
+   * {@link maxProjectionBytes}, and reports the position it reached so the
+   * caller asks for the next page from there.
+   *
+   * `afterSequence` replays the cursor's whole journal entry rather than
+   * starting inside it, because an entry expands into several events and their
+   * offsets are only countable from the entry's start. The replayed prefix is
+   * dropped here.
+   */
+  const runEventsPage = (
+    run: ControlSchema.RunSummary,
+    after: CursorPosition | undefined
+  ): Effect.Effect<
+    { readonly events: ReadonlyArray<ControlSchema.ControlEvent>; readonly lastPosition: CursorPosition },
+    GatewayError
+  > => {
+    const runId = run.runId
+    const message = `Reading the events of ${runId} failed`
+    interface Page {
+      readonly events: Array<ControlSchema.ControlEvent>
+      readonly bytes: number
+      readonly seen: CursorPosition | undefined
+      readonly last: CursorPosition | undefined
+      readonly full: boolean
+    }
+    const empty: Page = { events: [], bytes: 2, seen: undefined, last: undefined, full: false }
+    // Set when the page is full, so the next pull ends the stream instead of
+    // decoding the rest of a long journal into a page that cannot grow.
+    let stopped = false
+    return Stream.runFoldEffect(
+      control.watch({
+        runId,
+        ...(after === undefined || after.value === 0 ? {} : { afterSequence: after.value - 1 }),
+        follow: false
+      }).pipe(
+        Stream.tapError((cause) => logReadFailure("read-events", cause)),
+        Stream.mapError((cause) => unavailable(message, cause)),
+        Stream.take(maxEventsScanned),
+        Stream.takeWhile(() => !stopped)
+      ),
+      () => empty,
+      (page, candidate): Effect.Effect<Page, GatewayError> =>
+        page.full ? Effect.succeed(page) : Effect.flatMap(
+          decodedEvent(candidate, `${message}: the control plane returned an invalid event`),
+          (decoded) => {
+            // A journal that moves backward is a broken control plane, not a
+            // short page, and the fold refuses it exactly as the window does.
+            if (page.seen !== undefined && decoded.sequence < page.seen.value) {
+              return Effect.fail(unavailable(message, undefined))
+            }
+            const position: CursorPosition = {
+              value: decoded.sequence,
+              offset: page.seen?.value === decoded.sequence ? page.seen.offset + 1 : 0
+            }
+            const seen = position
+            if (after !== undefined && comparePosition(position, after) <= 0) {
+              return Effect.succeed({ ...page, seen })
+            }
+            const event = retainedEvent(decoded)
+            const bytes = page.bytes + encodedSize(event) + (page.events.length === 0 ? 0 : 1)
+            if (page.events.length > 0 && bytes > maxProjectionBytes) {
+              stopped = true
+              return Effect.succeed({ ...page, seen, full: true })
+            }
+            page.events.push(event)
+            stopped = page.events.length >= maxEventsPerPage
+            return Effect.succeed({ events: page.events, bytes, seen, last: position, full: stopped })
+          }
+        )
+    ).pipe(
+      Effect.map((page) => ({
+        events: page.events,
+        lastPosition: page.last ?? after ?? { value: 0, offset: 0 }
+      }))
     )
   }
 
@@ -655,18 +871,19 @@ const makeService = (control: ControlService, heartbeatMillis: number, now: () =
         const scope = resumeScope(selector, after)
         if (typeof scope !== "string") return yield* scope
       }
-      const source = yield* sourceOf(selector)
-      const position = cursorPositionOf(source)
-      if (after !== undefined && comparePosition(after, position) > 0) {
-        return yield* malformed("A snapshot cursor cannot be ahead of the run's journal")
+      // `run-events` answers the journal itself, so it pages rather than folds:
+      // one bounded read from the caller's cursor, and the position it reached
+      // to ask for the next page from. Every other selector answers rows whose
+      // size is bounded by the selector, so it folds the reconciled source.
+      if (selector._tag === "run-events") {
+        const run = yield* runOf(selector.runId)
+        const page = yield* runEventsPage(run, after)
+        const rows = yield* boundedRows(selector, page.events)
+        return yield* snapshotOf({ selector, cursor: cursorOf(selector, page.lastPosition), rows })
       }
-      const projected = after !== undefined && source._tag === "run"
-        ? positionedEvents(source.run.events)
-          .filter((entry) => comparePosition(entry.position, after) > 0)
-          .map((entry) => entry.event)
-        : rowsOf(selector, source, now())
-      const rows = yield* boundedRows(selector, projected)
-      return yield* snapshotOf({ selector, cursor: cursorOf(selector, position), rows })
+      const source = yield* sourceOf(selector)
+      const rows = yield* boundedRows(selector, rowsOf(selector, source, now()))
+      return yield* snapshotOf({ selector, cursor: cursorOf(selector, cursorPositionOf(source)), rows })
     })
 
   const snapshotFrames = (
@@ -700,13 +917,14 @@ const makeService = (control: ControlService, heartbeatMillis: number, now: () =
     event: ControlSchema.ControlEvent,
     events: ReadonlyArray<ControlSchema.ControlEvent>,
     turnsBefore: number,
-    duplicateCall: boolean
+    duplicateCall: boolean,
+    carry: Diagnosis.Digest | undefined
   ): Effect.Effect<ReadonlyArray<unknown>, GatewayError> => {
     if (selector._tag === "run-events") return Effect.succeed([event])
     if (selector._tag === "transcript") {
       return Effect.succeed(duplicateCall ? [] : transcriptAppend(event, turnsBefore))
     }
-    return Effect.succeed(rowsOfRun(selector, { run, events }, now()))
+    return Effect.succeed(rowsOfRun(selector, { run, events, carry }, now()))
   }
 
   interface RunFollowState {
@@ -722,6 +940,7 @@ const makeService = (control: ControlService, heartbeatMillis: number, now: () =
     readonly run: ControlSchema.RunSummary
     readonly event: ControlSchema.ControlEvent
     readonly events: ReadonlyArray<ControlSchema.ControlEvent>
+    readonly carry: Diagnosis.Digest | undefined
     readonly position: CursorPosition
     readonly turnsBefore: number
     readonly duplicateCall: boolean
@@ -759,7 +978,9 @@ const makeService = (control: ControlService, heartbeatMillis: number, now: () =
         seen: source.seen,
         events: source.events,
         encodedBytes: source.encodedBytes,
-        lastPosition: source.lastPosition
+        lastPosition: source.lastPosition,
+        carry: source.carry,
+        dropped: source.dropped
       })
       : bufferOf(seedEvents, `${message}: the cursor seed is invalid`, source.compactHealth, source.run)
     return Stream.unwrap(Effect.map(seed, (initial) =>
@@ -841,24 +1062,25 @@ const makeService = (control: ControlService, heartbeatMillis: number, now: () =
                             turns,
                             reportedCalls: state.reportedCalls
                           } satisfies RunFollowState,
-                          [{
-                            run,
-                            event,
-                            events: buffer.events,
-                            position,
-                            turnsBefore,
-                            duplicateCall,
-                            replaceTranscript
-                          }] satisfies ReadonlyArray<
-                            RunDelta
-                          >
+                          [
+                            {
+                              run,
+                              event,
+                              events: buffer.events,
+                              carry: buffer.carry,
+                              position,
+                              turnsBefore,
+                              duplicateCall,
+                              replaceTranscript
+                            }
+                          ] satisfies ReadonlyArray<RunDelta>
                         ] as const
                     )
                 )
               }
             )
         ),
-        Stream.mapEffect(({ run, event, events, position, turnsBefore, duplicateCall, replaceTranscript }) =>
+        Stream.mapEffect(({ carry, duplicateCall, event, events, position, replaceTranscript, run, turnsBefore }) =>
           replaceTranscript
             ? Effect.flatMap(boundedRows(selector, GatewayProjection.transcript(events)), (rows) =>
               Effect.forEach([
@@ -866,7 +1088,7 @@ const makeService = (control: ControlService, heartbeatMillis: number, now: () =
                 ...rows.map((row) => ({ _tag: "row", selector, cursor: cursorOf(selector, position), row })),
                 { _tag: "snapshot-end", selector, cursor: cursorOf(selector, position) }
               ], frameOf))
-            : Effect.flatMap(deltaRows(selector, run, event, events, turnsBefore, duplicateCall), (rows) =>
+            : Effect.flatMap(deltaRows(selector, run, event, events, turnsBefore, duplicateCall, carry), (rows) =>
               Effect.flatMap(boundedRows(selector, rows), (delta) =>
                 Effect.map(
                   frameOf({

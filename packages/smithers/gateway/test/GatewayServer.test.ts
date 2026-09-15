@@ -2024,26 +2024,22 @@ describe("gateway error vocabulary", () => {
         list: () => Effect.fail(new Unavailable({ code: "unavailable", feature: "list", ticket: "T-errors" })),
         watch: () => Stream.empty
       } as unknown as ControlService))
+      // Event histories are now windowed and paged rather than refused, so the
+      // remaining `resource_limit` path is a projected row set too large to put
+      // on the wire.
       const oversized = Effect.runSync(makeProjections({
         list: () =>
           Effect.succeed({
             _tag: "runs",
             items: [{
               runId: "oversized-run",
-              flowId: "system/test",
+              flowId: "x".repeat(maxProjectionBytes),
               status: "running",
               createdAt: 0,
               updatedAt: 0
             }]
           }),
-        watch: () =>
-          Stream.succeed({
-            sequence: 1,
-            kind: "control.run.accepted",
-            runId: "oversized-run",
-            occurredAt: 0,
-            payload: "x".repeat(maxProjectionBytes)
-          })
+        watch: () => Stream.empty
       } as unknown as ControlService))
       const table = [
         [
@@ -2060,7 +2056,7 @@ describe("gateway error vocabulary", () => {
         [
           "resource_limit",
           Effect.map(
-            Effect.flip(oversized.snapshot({ _tag: "run-events", runId: "oversized-run" })),
+            Effect.flip(oversized.snapshot({ _tag: "workspace-runs" })),
             (failure) => failure.code
           )
         ],
