@@ -366,6 +366,66 @@ describe("approval authority across every served mutation mount", () => {
   }
 })
 
+describe("submitting an answer rather than a grant", () => {
+  /**
+   * A `HumanTask` gate asks for a value, and the decision alone answers
+   * nothing. The mount routes an answer to `Control.signal`, addressed to the
+   * run the person opened and naming the wait point the approval row carries,
+   * because a nested human wait has no registered approval token for
+   * `Control.approve` to look up (run-3, `coding-clarification`).
+   *
+   * The proof is where the answer landed. This composition drives nothing, so
+   * the signal is recorded durably for a later executor start to replay — and
+   * the record carries the wait point's name and the words the person typed,
+   * which a grant has nowhere to put.
+   */
+  test("routes it to the signal command, not to the grant", () =>
+    Effect.gen(function*() {
+      const url = yield* baseUrl
+      const runId = yield* launched
+      const request = JSON.stringify({
+        _tag: "Request",
+        id: 1,
+        tag: "Approval.Submit",
+        payload: {
+          target: {
+            _tag: "Node",
+            runId,
+            requestId: "coding-clarification#1",
+            digest: "wait-token",
+            envelope: { capabilities: [], flows: [], budget: {} }
+          },
+          scope: "once",
+          idempotencyKey: `answer:${runId}:coding-clarification#1`,
+          decision: "approve",
+          answer: "the scheduler owns it"
+        },
+        headers: []
+      }) + "\n"
+      const body = yield* Effect.promise(async () => {
+        const response = await fetch(`${url}/projections`, {
+          method: "POST",
+          body: request,
+          headers: { authorization: "Bearer edge-secret", "content-type": "application/json" }
+        })
+        expect(response.status).toBe(200)
+        return response.text()
+      })
+
+      expect(body).toContain("\"Success\"")
+      const runtime = yield* ControlRuntime
+      expect(yield* runtime.deliveredSignals(runId)).toEqual([
+        { name: "coding-clarification#1", payload: "the scheduler owns it" }
+      ])
+      // No grant was taken for the answer: the only one is the plan grant that
+      // launched the run, so an answer decided nothing about capabilities.
+      expect((yield* runtime.grants).map((grant) => grant.tokenId)).toEqual(["plan-1"])
+    }).pipe(Effect.provide(served(
+      { host: "127.0.0.1", port: 0, credential: "edge-secret" },
+      delegatedBearer
+    ))))
+})
+
 describe("the RPC body a mount will act on", () => {
   it("accepts a framed request message and refuses a body that carries none", () => {
     const ndjson = RpcSerialization.ndjson

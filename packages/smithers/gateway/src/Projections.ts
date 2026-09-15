@@ -392,7 +392,7 @@ const rowsOfRun = (
     case "transcript":
       return GatewayProjection.transcript(source.events)
     case "approvals":
-      return GatewayProjection.approvals(source.events)
+      return GatewayProjection.approvals(source.events, source.run)
     case "node-output":
       return GatewayProjection.nodeOutput(source.events).filter((row) => row.nodeId === selector.nodeId)
   }
@@ -419,7 +419,20 @@ const transcriptAppend = (
 const eligibleForWorkspace = (selector: GatewaySchema.ProjectionSelector, source: RunSource): boolean =>
   selector._tag !== "approvals" ||
   source.run.status === "waiting-approval" &&
-    GatewayProjection.approvals(source.events).some((row) => row.status === "pending")
+    GatewayProjection.approvals(source.events, source.run).some((row) => row.status === "pending")
+
+/**
+ * Which open human wait a pending approval row is about, if it is about one.
+ *
+ * A nested wait is rolled onto the root AND onto every execution between, so
+ * one question reaches a workspace listing once per ancestor. The inbox is a
+ * list of questions, not of the runs that contain them, so it keeps the first
+ * row for each wait point. First is the outermost: the control plane lists
+ * runs in creation order and an ancestor exists before the execution it
+ * spawned.
+ */
+const waitIdentity = (row: GatewayProjection.ApprovalRow): string | undefined =>
+  row.waitRunId === undefined ? undefined : `${row.waitRunId}:${row.requestId}`
 
 /**
  * The rows a workspace selector projects across every run it read.
@@ -431,10 +444,23 @@ const rowsOfWorkspace = (
   selector: GatewaySchema.ProjectionSelector,
   runs: ReadonlyArray<RunSource>,
   now: number
-): ReadonlyArray<unknown> =>
-  selector._tag === "approvals"
-    ? runs.flatMap((source) => GatewayProjection.approvals(source.events).filter((row) => row.status === "pending"))
-    : runs.flatMap((source) => rowsOfRun(selector, source, now))
+): ReadonlyArray<unknown> => {
+  if (selector._tag !== "approvals") return runs.flatMap((source) => rowsOfRun(selector, source, now))
+  const seen = new Set<string>()
+  const rows: Array<GatewayProjection.ApprovalRow> = []
+  for (const source of runs) {
+    for (const row of GatewayProjection.approvals(source.events, source.run)) {
+      if (row.status !== "pending") continue
+      const identity = waitIdentity(row)
+      if (identity !== undefined) {
+        if (seen.has(identity)) continue
+        seen.add(identity)
+      }
+      rows.push(row)
+    }
+  }
+  return rows
+}
 
 /** The rows a selector projects from the facts one read produced. */
 const rowsOf = (

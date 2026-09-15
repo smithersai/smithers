@@ -415,16 +415,23 @@ describe("Approval.Submit", () => {
 
   /**
    * The handler adds no failure of its own, so the mount's union has to be the
-   * one `Approve` and `Deny` declare, member for member and without repeats:
+   * one the commands it adapts declare, member for member and without repeats:
    * a member listed twice reads as two recovery branches to a client that
    * generates its handlers from the schema.
+   *
+   * There are three commands, not two. A gate that asks a question is answered
+   * through `Signal`, which adds exactly one failure a grant cannot raise:
+   * `NoMatchingWait`, for a question answered after the run moved on.
    */
-  it("declares exactly the failures ControlRpcs declares for Approve and Deny, once each", () => {
+  it("declares exactly the failures ControlRpcs declares for Approve, Deny, and Signal, once each", () => {
     const submit = declaredFailures("Approval.Submit")
+    const answered = (command: string) =>
+      [...new Set([...declaredFailures(command), ...declaredFailures("Signal")])].sort()
     expect(new Set(submit).size).toBe(submit.length)
-    expect([...submit].sort()).toEqual([...declaredFailures("Approve")].sort())
-    expect([...submit].sort()).toEqual([...declaredFailures("Deny")].sort())
+    expect([...submit].sort()).toEqual(answered("Approve"))
+    expect([...submit].sort()).toEqual(answered("Deny"))
     expect(submit).toContain("Unauthorized")
+    expect(submit).toContain("NoMatchingWait")
   })
 })
 

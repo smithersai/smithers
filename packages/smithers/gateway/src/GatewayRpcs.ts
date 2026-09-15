@@ -43,7 +43,21 @@ export type Decision = typeof Decision.Type
  */
 export const SubmitApprovalInput = Schema.Struct({
   ...ControlSchema.ApprovalPayload.fields,
-  decision: Decision
+  decision: Decision,
+  /**
+   * The answer to a question, for a gate that asks one.
+   *
+   * Most gates are a grant: approve or deny, and the decision IS the payload.
+   * A `HumanTask` gate asks for a value — prose, a choice, a JSON object — and
+   * the decision alone answers nothing. Present exactly when the row being
+   * submitted is one of those, in which case `target.requestId` names the wait
+   * point and this is what is delivered to it. A denial carries no answer: the
+   * question is refused, not answered.
+   *
+   * Additive on purpose: a client that never asks a person anything submits
+   * exactly what it submitted before.
+   */
+  answer: Schema.optional(Schema.Json)
 })
 
 /**
@@ -77,12 +91,17 @@ export type SubmitApprovalOutput = typeof SubmitApprovalOutput.Type
 
 /**
  * The failures `Approval.Submit` can answer with: exactly the union
- * `@smthrs/control` `Control.approve` and `Control.deny` declare, because the
- * handler is a transport adapter over those two commands and adds no failure of
- * its own. A member neither command raises would be a recovery branch no
- * client's code could ever reach.
+ * `@smthrs/control` `Control.approve`, `Control.deny`, and — for a gate that
+ * asks a question — `Control.signal` declare, because the handler is a
+ * transport adapter over those commands and adds no failure of its own. A
+ * member none of them raises would be a recovery branch no client's code could
+ * ever reach.
+ *
+ * `NoMatchingWait` is the one an answer adds: the question was answered after
+ * the run moved on, or somebody else answered it first.
  */
 const submitErrors = Schema.Union([
+  ControlError.NoMatchingWait,
   ControlError.PlanDigestMismatch,
   ControlError.EnvelopeMismatch,
   ControlError.AlreadyResolved,

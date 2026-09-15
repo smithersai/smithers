@@ -115,6 +115,17 @@ export type RunTreeRow = typeof RunTreeRow.Type
  */
 export const ApprovalRow = Schema.Struct({
   runId: Schema.String,
+  /**
+   * The execution holding the wait, when this gate is a question a person owes
+   * an answer to and it is held below `runId`.
+   *
+   * `runId` is the run a person opened and the run a decision is addressed to;
+   * a `HumanTask` in a nested flow parks its own execution, and the two are
+   * different runs. Present only on such a gate, so a reader can tell a
+   * question rolled up from a tree from one the named run raised itself, and
+   * an inbox can list one question once however many ancestors carry it.
+   */
+  waitRunId: Schema.optional(Schema.String),
   requestId: Schema.String,
   title: Schema.String,
   request: Schema.Json,
@@ -373,11 +384,82 @@ export const runTree = (
   }))
 
 /**
+ * The declared question of a human wait, as far as it can be read.
+ *
+ * `request` is whatever the wait wrote about itself, which for `HumanTask` is
+ * `{task, name, kind, prompt, attempt, maxAttempts}`. A wait that declared
+ * nothing — an older park, or a plugin's own — still produces a row, because a
+ * gate a person cannot see is a run that waits forever; it just has less to
+ * render.
+ */
+const questionOf = (wait: ControlSchema.PendingWait): Record<string, unknown> => Diagnosis.asRecord(wait.request)
+
+/**
+ * One pending row for a human wait held anywhere in a run's tree.
+ *
+ * `runId` is the ROOT: this is the run a person opened, and the run a decision
+ * is addressed to. `waitRunId` is the execution actually holding it, because a
+ * client routes by run and the control plane routes within the tree.
+ *
+ * `requestId` is the wait point's own name (`coding-clarification#1`), which is
+ * unique within a tree, stable across a re-read, and the name a `Signal`
+ * addresses. The token travels in the request too, for a client that would
+ * rather submit the exact durable address back.
+ */
+const humanWaitRow = (
+  run: ControlSchema.RunSummary,
+  wait: ControlSchema.PendingWait
+): ApprovalRow => {
+  const question = questionOf(wait)
+  const name = wait.name ?? Diagnosis.asString(question["name"]) ?? wait.token
+  const requestId = wait.attempt === undefined ? name : `${name}#${wait.attempt}`
+  const prompt = Diagnosis.asString(question["prompt"])
+  return {
+    runId: run.runId,
+    waitRunId: wait.runId,
+    requestId,
+    title: prompt ?? `Answer needed — ${name}`,
+    request: {
+      ...question,
+      kind: Diagnosis.asString(question["kind"]) ?? "ask",
+      name,
+      ...(wait.attempt === undefined ? {} : { attempt: wait.attempt }),
+      ...(wait.flowId === undefined ? {} : { waitFlowId: wait.flowId }),
+      token: wait.token
+    },
+    payload: {
+      target: {
+        _tag: "Node",
+        runId: run.runId,
+        requestId,
+        digest: wait.token,
+        // A human answer grants no capabilities: the envelope a decision binds
+        // to is the empty one, the same shape a flow with none carries.
+        envelope: { capabilities: [], flows: [], budget: {} }
+      },
+      scope: "once",
+      idempotencyKey: `answer:${run.runId}:${requestId}`
+    },
+    requestedAt: wait.createdAt,
+    status: "pending"
+  }
+}
+
+/**
  * Folds one run's events into its approval rows.
  *
  * A request opens a pending row carrying the submit-ready payload; the
  * matching `control.approval.approved` or `control.approval.denied` closes it
  * without discarding the request, so a decided gate stays readable.
+ *
+ * A HUMAN wait journals nothing, so the summary supplies it instead. A
+ * `HumanTask` parks its execution and declares the question on the parked row;
+ * `@smthrs/control` rolls the open ones in a run tree onto the root as
+ * `pendingWaits`, and each becomes a pending row here. Without this the
+ * approvals inbox folded an empty journal and reported no pending gates for a
+ * run whose whole tree was waiting on a person (run-3,
+ * `coding-clarification`). These rows come first because they are the ones
+ * still owed an answer.
  *
  * A decision names the gate it closed by `tokenId`. `@smthrs/control`
  * `SqlControlRuntime.lookupApproval` mints that token id from the target, and
@@ -392,9 +474,11 @@ export const runTree = (
  * @category projections
  */
 export const approvals = (
-  events: ReadonlyArray<ControlSchema.ControlEvent>
+  events: ReadonlyArray<ControlSchema.ControlEvent>,
+  run?: ControlSchema.RunSummary | undefined
 ): ReadonlyArray<ApprovalRow> => {
   const rows = new Map<string, ApprovalRow>()
+  for (const wait of run?.pendingWaits ?? []) rows.set(wait.token, humanWaitRow(run!, wait))
   for (const event of events) {
     const payload = Diagnosis.asRecord(event.payload)
     if (event.kind === "control.approval.requested") {

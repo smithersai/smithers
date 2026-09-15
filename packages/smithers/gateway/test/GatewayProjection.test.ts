@@ -178,6 +178,82 @@ describe("GatewayProjection.approvals", () => {
     idempotencyKey: "k"
   }
 
+  /**
+   * The nested `HumanTask` gate, as `@smthrs/control` rolls it onto the root.
+   *
+   * These rows come from the summary rather than the journal: a human wait
+   * journals nothing, which is why folding the root's events alone reported an
+   * empty inbox for a run whose whole tree was waiting on a person (run-3,
+   * `coding-clarification`).
+   */
+  const humanWait: ControlSchema.PendingWait = {
+    runId: "prepare-plan",
+    flowId: "coding/PreparePlan",
+    reason: "approval",
+    token: "wait-token",
+    name: "coding-clarification",
+    attempt: 1,
+    createdAt: 42,
+    request: {
+      task: "human",
+      name: "coding-clarification",
+      kind: "ask",
+      prompt: "Which service owns the retry budget?",
+      attempt: 1,
+      maxAttempts: 3
+    }
+  }
+
+  it("lists a human wait held by a nested execution as a gate of the root run", () => {
+    const rows = GatewayProjection.approvals([], { ...run, status: "waiting-approval", pendingWaits: [humanWait] })
+
+    expect(rows).toHaveLength(1)
+    const row = rows[0]!
+    // Addressed to the run a person opened; the execution holding the wait
+    // travels in the request, because a client routes by run.
+    expect(row.runId).toBe("run-1")
+    expect(row.requestId).toBe("coding-clarification#1")
+    expect(row.title).toBe("Which service owns the retry budget?")
+    expect(row.status).toBe("pending")
+    expect(row.requestedAt).toBe(42)
+    expect(row.waitRunId).toBe("prepare-plan")
+    expect(row.request).toMatchObject({
+      kind: "ask",
+      name: "coding-clarification",
+      attempt: 1,
+      maxAttempts: 3,
+      waitFlowId: "coding/PreparePlan",
+      token: "wait-token"
+    })
+    // Submitted back unchanged; `requestId` is what `Control.signal` routes on.
+    expect(row.payload.target).toMatchObject({ _tag: "Node", runId: "run-1", requestId: "coding-clarification#1" })
+  })
+
+  it("still renders a wait that declared no question", () => {
+    const rows = GatewayProjection.approvals([], {
+      ...run,
+      status: "waiting-approval",
+      pendingWaits: [{ runId: "child", reason: "approval", token: "bare", name: "sign-off", createdAt: 1 }]
+    })
+
+    expect(rows[0]).toMatchObject({
+      requestId: "sign-off",
+      waitRunId: "child",
+      title: "Answer needed — sign-off",
+      request: { kind: "ask", name: "sign-off", token: "bare" }
+    })
+  })
+
+  it("names a wait by its token when neither the token nor the question names it", () => {
+    const rows = GatewayProjection.approvals([], {
+      ...run,
+      status: "waiting-approval",
+      pendingWaits: [{ runId: "child", reason: "approval", token: "opaque", createdAt: 1 }]
+    })
+
+    expect(rows[0]?.requestId).toBe("opaque")
+  })
+
   it("titles a request with its question and falls back to the request id", () => {
     const rows = GatewayProjection.approvals([
       event("control.approval.requested", { runId: "run-1", requestId: "gate", question: "Ship?", payload }),

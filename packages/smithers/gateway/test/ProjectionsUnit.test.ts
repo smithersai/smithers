@@ -1872,3 +1872,100 @@ describe("Projections delta cost", () => {
       expect(sent).toEqual(GatewayProjection.transcript(history).slice(50))
     }))
 })
+
+describe("Projections approvals inbox over nested human waits", () => {
+  /**
+   * The run tree run-3 actually had: the root and two executions between it
+   * and the one holding the question. `@smthrs/control` rolls the wait onto
+   * every ancestor, so an inbox that took each run's rows at face value listed
+   * the same question three times.
+   */
+  const wait = {
+    runId: "prepare-plan",
+    reason: "approval",
+    token: "wait-token",
+    name: "coding-clarification",
+    attempt: 1,
+    createdAt: 42,
+    request: { task: "human", name: "coding-clarification", kind: "ask", prompt: "Which service?", maxAttempts: 3 }
+  } as const
+
+  const tree: ReadonlyArray<RunSummary> = ["run-3", "request", "prepare-plan"].map((runId, index) => ({
+    runId,
+    flowId: `coding/${runId}`,
+    status: "waiting-approval",
+    createdAt: index,
+    updatedAt: index,
+    pendingWaits: [wait]
+  }))
+
+  /** A fourth run holding one decided gate beside one still open. */
+  const decided: RunSummary = {
+    runId: "run-1",
+    flowId: "deploy",
+    status: "waiting-approval",
+    createdAt: 9,
+    updatedAt: 9
+  }
+  const secondGate = event(2, "control.approval.requested", {
+    runId: "run-1",
+    requestId: "gate-2",
+    question: "And this?",
+    payload: {
+      target: {
+        _tag: "Node",
+        runId: "run-1",
+        requestId: "gate-2",
+        digest: "d",
+        envelope: { capabilities: [], flows: [], budget: {} }
+      },
+      scope: "run",
+      idempotencyKey: "k2"
+    }
+  })
+  const listed = [...tree, decided]
+
+  const treeControl = control({
+    list: (request) =>
+      Effect.succeed(
+        {
+          _tag: "runs",
+          items: request._tag === "runs" && request.filters?.runId !== undefined
+            ? listed.filter((item) => item.runId === request.filters?.runId)
+            : [...listed]
+        } satisfies ListResponse
+      ),
+    watch: (filter) =>
+      filter.runId === "run-1"
+        ? Stream.fromIterable([
+          approvalRequested,
+          secondGate,
+          event(3, "control.approval.approved", { tokenId: "gate" })
+        ])
+        : Stream.empty
+  })
+
+  it.effect("lists the nested gate for the run an operator opened", () =>
+    Effect.gen(function*() {
+      const rows = (yield* make(treeControl).snapshot({ _tag: "approvals", runId: "run-3" })).rows
+      expect(rows).toMatchObject([{
+        runId: "run-3",
+        requestId: "coding-clarification#1",
+        title: "Which service?",
+        status: "pending"
+      }])
+    }))
+
+  it.effect("lists one question in the workspace inbox, not one per ancestor", () =>
+    Effect.gen(function*() {
+      const rows = (yield* make(treeControl).snapshot({ _tag: "approvals" })).rows
+      // The outermost run owns the question: the control plane lists runs in
+      // creation order and an ancestor exists before what it spawned. The
+      // decided gate beside it is not in the inbox at all — an inbox lists what
+      // is still owed, and a run card is where a settled gate stays readable.
+      expect(rows).toMatchObject([
+        { runId: "run-3", requestId: "coding-clarification#1" },
+        { runId: "run-1", requestId: "gate-2" }
+      ])
+    }))
+})

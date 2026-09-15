@@ -102,6 +102,22 @@ export const layerHandlers = GatewayRpcs.toLayer(
             idempotencyKey: input.idempotencyKey,
             principal
           }
+          // A gate that asked a question is answered, not granted. The row the
+          // client submits carries the answer, `target.runId` is the run the
+          // person opened, and `target.requestId` is the wait point's own name
+          // — which `Control.signal` routes into the run tree, to whichever
+          // execution is holding it. Without this the answer had nowhere to go:
+          // a nested `HumanTask` has no registered approval token, so
+          // `Control.approve` would refuse a gate that is genuinely open.
+          if (input.answer !== undefined && input.decision === "approve" && input.target._tag === "Node") {
+            const decision = yield* control.signal({
+              runId: input.target.runId,
+              signal: { name: input.target.requestId, payload: input.answer },
+              idempotencyKey: input.idempotencyKey,
+              principal
+            })
+            return { decision }
+          }
           const decision = input.decision === "approve"
             ? yield* control.approve(payload)
             : yield* control.deny(payload)
