@@ -266,6 +266,46 @@ test("a successful real process preserves exact output, exit, and its durable jo
   expect(journal.some((event) => event.type === "exit" && event.code === 0)).toBe(true)
 })
 
+test("a pattern run is a real server run with its own history and replay identity", scenario("targets.run-pattern-history-replay", {
+  capabilities: ["local.repositories", "local.targets"],
+  coverage: ["action:repo.open", "action:target.run.pattern", "action:target.history", "action:target.runs.select", "host:local", "path:success", "path:persistence", "door:slash", "door:button", "dimension:pattern-run", "dimension:real-process", "dimension:run-identity", "evidence:pattern-run-response-history-and-journal"],
+  description: "Run one deterministic target through the real pattern endpoint, require the pattern's own run label and output, then recover the same run from persisted history and replay."
+}), async ({ page, request }) => {
+  const repo = await createTargetFixture("targets-pattern")
+  await bootWorkbench(page)
+  const repoId = await openTargetFixture(page, request, repo)
+
+  const running = responseFor(page, "/api/targets/run")
+  await runCommand(page, `/target.run.pattern ${repoId} . test //:successful`)
+  const response = await running
+  expect(response.status()).toBe(200)
+  const accepted = await response.json() as { readonly runId?: unknown }
+  expect(typeof accepted.runId).toBe("string")
+  const runId = String(accepted.runId)
+
+  const run = runCard(page).filter({ hasText: "test //:successful" })
+  await expect(run).toBeVisible({ timeout: 90_000 })
+  await expect(run.locator(".target-run-card")).toHaveAttribute("data-run-status", "done")
+  await expect(run).toContainText("test //:successful")
+  await expect(run).toContainText("S07_SUCCESS_STDOUT_EXACT")
+  await expect(run).toContainText("S07_SUCCESS_STDERR_EXACT")
+
+  const recorded = await replay(page, request, runId)
+  expect(recorded.run).toMatchObject({ runId, label: "test //:successful", status: "done", exitCode: 0 })
+  expect(recorded.events.some((event) => event.type === "exit" && event.code === 0)).toBe(true)
+
+  await runCommand(page, `/target.history ${repoId}`)
+  const history = card(page, "run-history")
+  const row = history.locator(`[data-run-row="${runId}"]`)
+  await expect(row).toContainText("test //:successful")
+  await row.locator(".run-history-select").click()
+  const timeline = card(page, "run-timeline")
+  await expect(timeline).toBeVisible()
+  await expect(timeline.locator('[data-timeline-row="//:successful"]')).toHaveAttribute("data-status", /^(ran|hit)$/)
+  await timeline.locator('[data-timeline-row="//:successful"]').click()
+  await expect(timeline.locator('[data-testid^="run-timeline-log-"]')).toContainText("S07_SUCCESS_STDOUT_EXACT")
+})
+
 test("persisted history restores keyboard scrubbing and target-specific output", scenario("targets.history-replay-output-attribution", {
   capabilities: ["local.repositories", "local.targets"],
   coverage: ["action:repo.open", "action:target.list", "action:target.run", "action:target.history", "action:target.runs.select", "action:target.run.scrub", "host:local", "path:success", "path:persistence", "path:keyboard", "door:slash", "door:button", "door:user-only", "dimension:keyboard", "dimension:reload", "dimension:replay-scrubber", "dimension:target-output-attribution", "evidence:restored-history-timeline"],
