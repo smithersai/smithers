@@ -203,7 +203,12 @@ export const createTargetsController = (
     const id = targetsCardId(repoId)
     const card = store.collections.cards.get(id)
     if (card === undefined || card.kind !== "targets") return `There is no targets card for repository ${repoId}.`
-    patch(id, "targets", (current) => ({ payload: { ...current.payload, view: update(current.payload.view ?? {}) } }))
+    store.dispatch({
+      type: "card.updated",
+      actor: ctx.commandActor,
+      id,
+      patch: { payload: { ...card.payload, view: update(card.payload.view ?? {}) } }
+    })
   }
 
   const filterTargets: TargetsController["filterTargets"] = (repoId, change) =>

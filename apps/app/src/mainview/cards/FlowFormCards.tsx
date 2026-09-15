@@ -58,6 +58,14 @@ export const FlowFormCardBody = ({
         const testId = `flow-form-${field.name}`
         const listId = `flow-form-options-${card.id}-${field.name}`
         const options = field.options ?? []
+        const restoreDraft = (node: HTMLInputElement | HTMLTextAreaElement | null): void => {
+          if (node === null || node.value === text) return
+          // form.set normalizes whitespace before the durable row comes back.
+          // Keep that in-flight whitespace while this field owns focus, but
+          // replace materially different text when history changes branches.
+          if (node.ownerDocument.activeElement === node && node.value.trim() === text) return
+          node.value = text
+        }
         return (
           <label key={field.name} className="flow-form-row" data-field={field.name} data-kind={field.kind} data-required={field.required}>
             <span>{field.label}</span>
@@ -82,7 +90,7 @@ export const FlowFormCardBody = ({
               ) :
               field.kind === "textarea" ?
               <textarea aria-label={field.label}
-                data-testid={testId} defaultValue={text} placeholder={field.placeholder} rows={12} required={field.required} disabled={settled || busy}
+                data-testid={testId} ref={restoreDraft} defaultValue={text} placeholder={field.placeholder} rows={12} required={field.required} disabled={settled || busy}
                 onInput={event => commit(field.name, event.currentTarget.value)} /> :
               field.kind === "boolean" ?
               (
@@ -102,6 +110,7 @@ export const FlowFormCardBody = ({
                     step={field.kind === "number" ? "any" : undefined}
                     aria-label={field.label}
                     data-testid={testId}
+                    ref={restoreDraft}
                     defaultValue={text}
                     placeholder={field.placeholder}
                     required={field.required}

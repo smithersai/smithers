@@ -6,8 +6,10 @@ import { openSqliteRowStorage, ROW_TABLE_NAME } from "../chain/SqliteRowStorage"
 import { ENVELOPE_STORAGE_KEY } from "../chain/TransactionalStorage"
 import type { ChainEventRecord, ToolCallRecord, TransitionRecord } from "./AppState"
 import { createAppStore, MAX_TOOL_CALL_RECORDS, MAX_TRANSITION_RECORDS } from "./AppStore"
-import { DRAFT_RECOVERY_STORAGE_KEY, readDraftRecovery } from "./DraftRecovery"
+import { DRAFT_RECOVERY_STORAGE_KEY, readDraftRecovery, writeDraftRecovery } from "./DraftRecovery"
+import { ENTITY_RECOVERY_STORAGE_KEY, writeEntityRecovery } from "./EntityRecovery"
 import { memoryStorage } from "./TestFixtures"
+import { WIKI_RECOVERY_STORAGE_KEY, writeWikiRecovery } from "./WikiRecovery"
 
 /*
  * Ruling A, store level (docs/persistence.md): a dispatch is one atomic
@@ -37,6 +39,73 @@ const crashableStorage = (): StorageApi & { crashCommit: () => void; heal: () =>
 }
 
 describe("an atomic commit point per logical transition", () => {
+  test("boot replays a pending card, Wiki edit, and later draft against the original durable revision", async () => {
+    const recovery = memoryStorage()
+    const priorWindow = Object.getOwnPropertyDescriptor(globalThis, "window")
+    let store: Awaited<ReturnType<typeof createAppStore>> | undefined
+    const card = {
+      id: "pending-card", kind: "flow-form" as const, title: "Pending form", status: "active" as const, createdAt: 1, ordinal: 1,
+      payload: { flow: "wiki.open", via: "user" as const, fields: [], draft: { path: "Recovered.md" }, given: {} }
+    }
+    writeEntityRecovery(recovery, { key: `card:workspace-main:branch-main:${card.id}`, revision: 1,
+      value: { kind: "card", workspaceId: "workspace-main", branchId: "branch-main", id: card.id, card } })
+    writeWikiRecovery(recovery, 2, {
+      id: "world-home", path: "World.md", title: "World", body: "# Recovered Wiki\n", links: [], tags: [],
+      sources: ["user:world-editor"], confidence: 1
+    })
+    writeDraftRecovery(recovery, 3, "recovered later draft")
+    Object.defineProperty(globalThis, "window", { configurable: true, value: {
+      localStorage: recovery, matchMedia: () => ({ matches: false })
+    } })
+    try {
+      store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
+      const recoveredCard = store.collections.cards.get(card.id)
+      expect(recoveredCard?.kind).toBe("flow-form")
+      if (recoveredCard?.kind !== "flow-form") throw new Error("Recovered card did not retain its form projection")
+      expect(recoveredCard.payload.draft).toEqual({ path: "Recovered.md" })
+      expect(store.collections.worldDocuments.get("world-home")?.body).toBe("# Recovered Wiki\n")
+      expect(store.session().draft).toBe("recovered later draft")
+      expect(recovery.getItem(ENTITY_RECOVERY_STORAGE_KEY)).toBeNull()
+      expect(recovery.getItem(WIKI_RECOVERY_STORAGE_KEY)).toBeNull()
+      expect(recovery.getItem(DRAFT_RECOVERY_STORAGE_KEY)).toBeNull()
+    } finally {
+      await store?.dispose?.()
+      if (priorWindow !== undefined) Object.defineProperty(globalThis, "window", priorWindow)
+      else Reflect.deleteProperty(globalThis, "window")
+    }
+  })
+
+  test("a rejected card mutation rolls back its crash record instead of resurrecting on boot", async () => {
+    const recovery = memoryStorage()
+    const host = crashableStorage()
+    const priorWindow = Object.getOwnPropertyDescriptor(globalThis, "window")
+    let store: Awaited<ReturnType<typeof createAppStore>> | undefined
+    let reopened: Awaited<ReturnType<typeof createAppStore>> | undefined
+    Object.defineProperty(globalThis, "window", { configurable: true, value: {
+      localStorage: recovery, matchMedia: () => ({ matches: false })
+    } })
+    try {
+      store = await createAppStore({ kind: "localStorage", storage: host })
+      host.crashCommit()
+      await expect(store.dispatch({
+        type: "card.upsert", actor: "user",
+        card: {
+          id: "rejected-card", kind: "flow-form", title: "Rejected form", status: "active", createdAt: 1, ordinal: 1,
+          payload: { flow: "wiki.open", via: "user", fields: [], draft: {}, given: {} }
+        }
+      }).isPersisted.promise).rejects.toThrow("crash at the commit point")
+      expect(recovery.getItem(ENTITY_RECOVERY_STORAGE_KEY)).toBeNull()
+      host.heal()
+      reopened = await createAppStore({ kind: "localStorage", storage: host })
+      expect(reopened.collections.cards.get("rejected-card")).toBeUndefined()
+    } finally {
+      await reopened?.dispose?.()
+      await store?.dispose?.()
+      if (priorWindow !== undefined) Object.defineProperty(globalThis, "window", priorWindow)
+      else Reflect.deleteProperty(globalThis, "window")
+    }
+  })
+
   test("reopening releases an interrupted form submission and preserves its inputs", async () => {
     const host = memoryStorage()
     const store = await createAppStore({ kind: "localStorage", storage: host })

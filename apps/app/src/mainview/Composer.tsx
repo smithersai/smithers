@@ -1159,9 +1159,13 @@ export function Composer({
      * consume Enter; bare prose has already taken the button's submit path.
      */
     if (inputAnswer.parsed.mode === "flows") {
-      // Keep an unmatched slash name and its refusal visible. Arguments still
-      // reach the registered flow's normal submit/form path below.
+      // Hidden flows stay out of the menu, but a human may still invoke their
+      // exact registered name. Frame gestures and menu toggles use this path:
+      // hidden means unlisted, never nonexistent or unreachable by keyboard.
       if (inputQuery !== undefined && inputSlashRows.length === 0) {
+        if (controller.commands.find(inputQuery) !== undefined) {
+          runSlashCommand(inputQuery, inputDraft)
+        }
         event.preventDefault()
         return
       }

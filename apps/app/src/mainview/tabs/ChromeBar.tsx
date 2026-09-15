@@ -161,7 +161,11 @@ export function ChromeBar({ identityInHeader = false }: { readonly identityInHea
       copies
     }))
     .sort((left, right) => left.name.localeCompare(right.name))
-  const groups = [...tree, ...standalone].filter(repo => controller.repositoryApp === null || repo.repoId.toLowerCase() === controller.repositoryApp.toLowerCase())
+  const groups = [...tree, ...standalone].filter(repo =>
+    controller.repositoryApp === null ||
+    repo.repoId.toLowerCase() === controller.repositoryApp.toLowerCase() ||
+    repo.copies.some(copy => copy.id === activeCopyId)
+  )
   const copyIds = new Set(copyRows.map((copy) => copy.id))
   const sessionsUnder = (key: string): ReadonlyArray<TabRow> =>
     tabRows.filter((tab) => tab.kind !== "main" && tab.repoKey === key)

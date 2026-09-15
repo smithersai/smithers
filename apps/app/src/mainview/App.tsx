@@ -160,6 +160,7 @@ function AppContent() {
   // Beneath the tutorial, a repository route's entry cards stay with that route (onboarding/transcriptScope.ts).
   const inTutorial = useContext(InTutorial)
   const conversationRows = cardRows.filter((card) => inConversation(card, conversationTabId))
+  const guideChatCards = chatEntryIds(session.guideTranscript)
   /*
    * Three scopes: a running lesson shows the tutorial's own cards; the handoff
    * beat shows the repository the user ended on, minus the cards a chat turn
@@ -168,8 +169,8 @@ function AppContent() {
    */
   const conversationCards = inTutorial ? tutorialTranscript(conversationRows, session.guideTranscript)
     : composerHost !== undefined ?
-      workspaceTranscript(conversationRows, session.activeRepoKey ?? null, chatEntryIds(session.guideTranscript)) :
-      workspaceTranscript(conversationRows, null)
+      workspaceTranscript(conversationRows, session.activeRepoKey ?? null, guideChatCards) :
+      workspaceTranscript(conversationRows, null, new Set(), guideChatCards)
   /*
    * A stable array: CardView is memoized, and re-sorting the same rows into a
    * fresh array on every render would re-render every card body regardless.

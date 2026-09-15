@@ -52,9 +52,11 @@ export function guideTranscriptEntries(
  * beside the reply that made it, so the workspace beneath does not repeat it.
  */
 export const workspaceTranscript = <Row extends { id?: string; payload: object }>(
-  cards: ReadonlyArray<Row>, repo: string | null, chatCardIds: ReadonlySet<string> = new Set(),
+  cards: ReadonlyArray<Row>, repo: string | null, omittedCardIds: ReadonlySet<string> = new Set(),
+  explicitTutorialCardIds: ReadonlySet<string> = new Set(),
 ): Array<Row> =>
-  cards.filter(card => !isTutorialCard(card) && (card.id === undefined || !chatCardIds.has(card.id))
+  cards.filter(card => (!isTutorialCard(card) || (card.id !== undefined && explicitTutorialCardIds.has(card.id)))
+    && (card.id === undefined || !omittedCardIds.has(card.id))
     && (repo === null || !("repo" in card.payload) || typeof card.payload.repo !== "string" || card.payload.repo === repo))
 
 /** Practice frames retain their provenance even when an older payload lost its repo key. */

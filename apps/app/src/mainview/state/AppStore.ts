@@ -4,7 +4,7 @@ import { sameApproval } from "./ApprovalReference"
 import { StatusRollupSchema } from "@smthrs/rpc/Health"
 import { acceptStatus, expireStatus, exitedStatus } from "./HealthStatus"
 import { migrateGuideV3 } from "./controller/guide"
-import { isLessonCard } from "../onboarding/transcriptScope"
+import { isLessonCard, isTutorialCard } from "../onboarding/transcriptScope"
 import { resumeTutorial } from "../onboarding/resume"
 import { PRACTICE_REPO } from "./practice/PracticeRepository"
 import type { StandardSchemaV1 } from "@standard-schema/spec"
@@ -41,6 +41,7 @@ import {
   writeDraftRecovery
 } from "./DraftRecovery"
 import { clearWikiRecovery, readWikiRecovery, writeWikiRecovery } from "./WikiRecovery"
+import { clearEntityRecovery, readEntityRecoveries, writeEntityRecovery, type EntityRecoveryRecord } from "./EntityRecovery"
 import { archiveNotice, conversationNotes } from "./ConversationArchive"
 import { createWorkspaceViews, projectWorkspaceCard, snapshotCard } from "./WorkspaceViews"
 import { framePath } from "../runtime/FrameHistory"
@@ -1181,6 +1182,7 @@ const initializeAppStore = async (resolved: ResolvedPersistence, options: { read
   const draftRecoveryStorage = resolved.mode === "memory" ? undefined : bootRecordStorage()
   const draftRecovery = readDraftRecovery(draftRecoveryStorage)
   const wikiRecovery = readWikiRecovery(draftRecoveryStorage)
+  const entityRecoveries = readEntityRecoveries(draftRecoveryStorage)
   /* Validate persisted rows before creating collections. Compatible older
    * rows migrate; a newer store stays untouched. Only a successful open
    * advances the version stamp. */
@@ -1326,10 +1328,18 @@ const initializeAppStore = async (resolved: ResolvedPersistence, options: { read
       (transition.patch.kind ?? collections.cards.get(transition.id)?.kind) === "env") {
       transition = { ...transition, patch: CardPatchSchema.parse({ ...transition.patch, kind: "env" }) }
     }
+    const recoverableCardId = transition.actor === "user" &&
+      (transition.type === "card.upsert" || transition.type === "card.view.loaded" ||
+        transition.type === "card.updated" || transition.type === "card.removed" ||
+        transition.type === "card.navigated" || transition.type === "card.history.moved")
+      ? (transition.type === "card.upsert" || transition.type === "card.view.loaded" || transition.type === "card.navigated"
+          ? transition.card.id : transition.id)
+      : undefined
+    const recoverableCardBefore = recoverableCardId === undefined ? undefined : collections.cards.get(recoverableCardId)
     const current = session()
     const revision = current.revision + 1
     const createdAt = Date.now()
-    const recoveredDraftRaw = transition.type === "composer.changed"
+    const recoveredDraftRaw = transition.type === "composer.changed" && transition.actor === "user"
       ? writeDraftRecovery(draftRecoveryStorage, revision, transition.draft)
       : undefined
     const recoveredWikiRaw = transition.type === "world.document.upserted" && transition.actor === "user"
@@ -1416,8 +1426,8 @@ const initializeAppStore = async (resolved: ResolvedPersistence, options: { read
        * collection here.
        */
       const conversationTabId = conversationTabIdOf(current)
-      const recordGuideEntry = (id: string, source: "chat" | "lesson", ordinal?: number) => {
-        if (!current.guide || current.guide.finished || !current.guideVisible) return
+      const recordGuideEntry = (id: string, source: "chat" | "lesson", ordinal?: number, outsideGuide = false) => {
+        if (!current.guide || current.guide.finished || (!current.guideVisible && !outsideGuide)) return
         collections.sessions.update(SESSION_ID, draft => {
           if (draft.guide) (draft.guide.transcript ??= {})[id] = { step: current.guide!.step, source, owned: true,
             ...(ordinal === undefined ? {} : { ordinal }),
@@ -1431,7 +1441,9 @@ const initializeAppStore = async (resolved: ResolvedPersistence, options: { read
         const explicitWikiOrForm = card.kind === "world" || card.kind === "wiki-links" || card.kind === "wiki-graph" ||
           (card.kind === "flow-form" && card.payload.via === "user")
         const explicitChatAct = transition.actor === "user" && current.guide?.conversationOpen === true && explicitWikiOrForm
-        if (explicitChatAct || (current.phase === "responding" && tutorialTurn && fromTurn)) recordGuideEntry(card.id, "chat", ordinal)
+        const explicitPracticeAct = transition.actor === "user" && current.guideVisible !== true && isTutorialCard(card)
+        if (explicitPracticeAct) recordGuideEntry(card.id, "chat", ordinal, true)
+        else if (explicitChatAct || (current.phase === "responding" && tutorialTurn && fromTurn)) recordGuideEntry(card.id, "chat", ordinal)
         else if (current.guide && isLessonCard(card, current.guide)) recordGuideEntry(card.id, "lesson", ordinal)
       }
       const insertMessage = (row: Message): void => {
@@ -2263,6 +2275,47 @@ const initializeAppStore = async (resolved: ResolvedPersistence, options: { read
           for (const frame of collections.frames.values()) {
             if (frame.cardId !== transition.id || frame.snapshot !== undefined || frame.branchId !== activeBranchId) continue
             collections.frames.update(frame.id, draft => { draft.stateRevision = revision; draft.updatedAt = createdAt; draft.revision = revision })
+          }
+          break
+        }
+        case "card.recovered": {
+          const card = transition.card
+          if (card !== null && (card.id !== transition.id || card.kind === "env" || card.kind === "approval" || card.kind === "approvals-inbox" ||
+            (card.kind === "flow-form" && card.payload.flow === "env.set"))) return
+          const active = transition.workspaceId === activeWorkspaceId && transition.branchId === activeBranchId
+          if (!active) {
+            const branch = collections.branches.get(transition.branchId)
+            if (branch?.workspaceId !== transition.workspaceId || branch.snapshot === undefined) return
+            const cards = card === null
+              ? branch.snapshot.cards.filter(row => row.id !== transition.id)
+              : [...branch.snapshot.cards.filter(row => row.id !== transition.id), card]
+            collections.branches.update(branch.id, draft => { if (draft.snapshot) draft.snapshot = { ...draft.snapshot, cards } })
+            break
+          }
+          if (card === null) {
+            if (collections.cards.has(transition.id)) collections.cards.delete(transition.id)
+            break
+          }
+          if (transition.explicitTutorial === true) recordGuideEntry(card.id, "chat", card.ordinal, true)
+          if (collections.cards.has(card.id)) {
+            collections.cards.update(card.id, draft => { Object.assign(draft, card) })
+          } else {
+            collections.cards.insert(card)
+          }
+          if (transition.history !== undefined) {
+            if (collections.cardHistories.has(transition.history.id)) {
+              collections.cardHistories.update(transition.history.id, draft => { Object.assign(draft, transition.history) })
+            } else {
+              collections.cardHistories.insert(transition.history)
+            }
+          }
+          for (const frame of collections.frames.values()) {
+            if (frame.cardId !== card.id || frame.branchId !== activeBranchId || frame.snapshot !== undefined) continue
+            collections.frames.update(frame.id, draft => {
+              draft.stateRevision = revision
+              draft.updatedAt = createdAt
+              draft.revision = revision
+            })
           }
           break
         }
@@ -3421,46 +3474,123 @@ const initializeAppStore = async (resolved: ResolvedPersistence, options: { read
       // Retain it until an explicit archive/tombstone protocol exists.
     })
 
+    const recoveredEntities: Array<EntityRecoveryRecord> = []
+    // The session revision advances only when the reducer accepted the act.
+    // Record the final projection synchronously after that optimistic change,
+    // before an immediate reload can outrun the asynchronous OPFS flush.
+    if (session().revision === revision && recoverableCardId !== undefined) {
+      const card = collections.cards.get(recoverableCardId) ?? null
+      const kind = card?.kind ?? recoverableCardBefore?.kind
+      const history = collections.cardHistories.get(recoverableCardId)
+      const secretBearing = (row: Card): boolean => row.kind === "env" || row.kind === "approval" || row.kind === "approvals-inbox" ||
+        (row.kind === "flow-form" && row.payload.flow === "env.set")
+      if (kind !== undefined && (card === null || !secretBearing(card)) &&
+        (recoverableCardBefore === undefined || !secretBearing(recoverableCardBefore)) &&
+        (history === undefined || !history.entries.some(secretBearing))) {
+        const explicitTutorial = card !== null && isTutorialCard(card) && current.guideVisible !== true &&
+          session().guide?.transcript?.[recoverableCardId]?.source === "chat"
+        const saved = writeEntityRecovery(draftRecoveryStorage, {
+          key: `card:${current.activeWorkspaceId ?? DEFAULT_WORKSPACE_ID}:${current.activeBranchId ?? DEFAULT_BRANCH_ID}:${recoverableCardId}`,
+          revision,
+          value: { kind: "card", workspaceId: current.activeWorkspaceId ?? DEFAULT_WORKSPACE_ID,
+            branchId: current.activeBranchId ?? DEFAULT_BRANCH_ID, id: recoverableCardId, card,
+            ...(history === undefined ? {} : { history }),
+            ...(explicitTutorial ? { explicitTutorial: true as const } : {}) }
+        })
+        if (saved !== undefined) recoveredEntities.push(saved)
+      }
+    }
+    if (session().revision === revision && transition.actor === "user" &&
+      (transition.type === "target.starred" || transition.type === "target.unstarred")) {
+      const id = transition.type === "target.starred" ? transition.star.id : transition.id
+      const saved = writeEntityRecovery(draftRecoveryStorage, {
+        key: `target-star:${id}`,
+        revision,
+        value: { kind: "target-star", id, repoId: transition.repoId, star: collections.starredTargets.get(id) ?? null }
+      })
+      if (saved !== undefined) recoveredEntities.push(saved)
+    }
+
     if (transition.type === "app.reset") {
       void transaction.isPersisted.promise.catch(() => { resetTransaction = undefined })
     }
     if (recoveredDraftRaw !== undefined && !batchesDraftCommits) {
-      void transaction.isPersisted.promise.then(() => {
+      const clear = () => {
         clearDraftRecovery(draftRecoveryStorage, recoveredDraftRaw)
-      }, () => {})
+      }
+      void transaction.isPersisted.promise.then(clear, clear)
     }
     if (recoveredWikiRaw !== undefined) {
-      void transaction.isPersisted.promise.then(() => clearWikiRecovery(draftRecoveryStorage, recoveredWikiRaw), () => {})
+      const clear = () => clearWikiRecovery(draftRecoveryStorage, recoveredWikiRaw)
+      void transaction.isPersisted.promise.then(clear, clear)
+    }
+    if (recoveredEntities.length > 0) {
+      const clear = () => {
+        for (const recovered of recoveredEntities) clearEntityRecovery(draftRecoveryStorage, recovered)
+      }
+      void transaction.isPersisted.promise.then(clear, clear)
     }
     if (transition.type === "composer.changed" && batchesDraftCommits) {
       const pending = { transaction, revision, deadline: createdAt + DRAFT_COMMIT_MAX_MS, recoveryRaw: recoveredDraftRaw }
       pendingDraft = pending
-      void transaction.isPersisted.promise.then(() => {
+      const clear = () => {
         if (pending.recoveryRaw !== undefined) clearDraftRecovery(draftRecoveryStorage, pending.recoveryRaw)
-      }, () => {})
+      }
+      void transaction.isPersisted.promise.then(clear, clear)
       awaitTypingPause(pendingDraft.deadline)
     }
     return transaction
   }
 
-  if (draftRecovery !== undefined) {
-    const durable = session()
-    if (draftRecovery.revision > durable.revision) {
-      await dispatch({ type: "composer.changed", actor: "system", draft: draftRecovery.draft }).isPersisted.promise
-    } else {
-      // SQLite already contains this revision (or something newer). A record
-      // left by a page that died before its acknowledgement is no longer needed.
-      clearDraftRecovery(draftRecoveryStorage, draftRecovery.raw)
-    }
-  }
+  /*
+   * Admission is against the one revision SQLite actually loaded. Recovery
+   * replays create fresh revisions; comparing a later slot with that moving
+   * value could mistake an earlier replay for proof that the later entity was
+   * already durable. Merge the independent crash slots back into the writer's
+   * accepted order and keep the original durable boundary fixed throughout.
+   */
+  const durableRevision = session().revision
+  const pendingRecoveries = [
+    ...(draftRecovery === undefined ? [] : [{ kind: "draft" as const, revision: draftRecovery.revision, recovered: draftRecovery }]),
+    ...(wikiRecovery === undefined ? [] : [{ kind: "wiki" as const, revision: wikiRecovery.revision, recovered: wikiRecovery }]),
+    ...entityRecoveries.map(recovered => ({ kind: "entity" as const, revision: recovered.revision, recovered }))
+  ].sort((left, right) => left.revision - right.revision)
 
-  if (wikiRecovery !== undefined) {
-    if (wikiRecovery.revision > session().revision) {
-      await dispatch({ type: "world.document.upserted", actor: "system", document: wikiRecovery.document, select: false }).isPersisted.promise
-      clearWikiRecovery(draftRecoveryStorage, wikiRecovery.raw)
-    } else {
-      clearWikiRecovery(draftRecoveryStorage, wikiRecovery.raw)
+  for (const pending of pendingRecoveries) {
+    const clear = () => {
+      if (pending.kind === "draft") clearDraftRecovery(draftRecoveryStorage, pending.recovered.raw)
+      else if (pending.kind === "wiki") clearWikiRecovery(draftRecoveryStorage, pending.recovered.raw)
+      else clearEntityRecovery(draftRecoveryStorage, pending.recovered)
     }
+    /*
+     * DurableCollection serializes accepted transactions through one tail and
+     * persists the session revision with every entity atomically. A durable
+     * revision at or past the slot therefore proves that exact input landed.
+     */
+    if (pending.revision <= durableRevision) {
+      clear()
+      continue
+    }
+    if (pending.kind === "draft") {
+      await dispatch({ type: "composer.changed", actor: "system", draft: pending.recovered.draft }).isPersisted.promise
+    } else if (pending.kind === "wiki") {
+      await dispatch({ type: "world.document.upserted", actor: "system", document: pending.recovered.document, select: false }).isPersisted.promise
+    } else {
+      const recovered = pending.recovered
+      if (recovered.value.kind === "card") {
+        const change = { type: "card.recovered" as const, actor: "system" as const,
+          workspaceId: recovered.value.workspaceId, branchId: recovered.value.branchId,
+          id: recovered.value.id, card: recovered.value.card,
+          ...(recovered.value.history === undefined ? {} : { history: recovered.value.history }),
+          ...(recovered.value.explicitTutorial === true ? { explicitTutorial: true as const } : {}) }
+        await dispatch(change).isPersisted.promise
+      } else if (recovered.value.star === null) {
+        await dispatch({ type: "target.unstarred", actor: "system", repoId: recovered.value.repoId, id: recovered.value.id }).isPersisted.promise
+      } else {
+        await dispatch({ type: "target.starred", actor: "system", repoId: recovered.value.repoId, star: recovered.value.star }).isPersisted.promise
+      }
+    }
+    clear()
   }
 
   // A lost controller cannot finish an in-flight submission. Preserve the

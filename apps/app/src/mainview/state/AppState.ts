@@ -1141,6 +1141,7 @@ export type BillingAccount = z.infer<typeof BillingAccountSchema>
 export const PracticeIssueSchema = z.object({ id: z.string(), card: CardSchema })
 
 export const CardHistorySchema = z.object({ id: z.string(), index: z.number().int().nonnegative(), entries: z.array(CardSchema) })
+export type CardHistory = z.infer<typeof CardHistorySchema>
 
 export type AppTransition =
   | { type: "practice.issue.updated"; actor: Actor; id: string; card: Extract<Card, { kind: "issue" }> }
@@ -1151,6 +1152,8 @@ export type AppTransition =
   | { type: "card.navigated"; actor: Actor; card: Card }
   | { type: "card.view.loaded"; actor: Actor; card: Card }
   | { type: "card.history.moved"; actor: Actor; id: string; delta: -1 | 1 }
+  /** Boot-only restoration of one crash-recorded card projection and its local history. */
+  | { type: "card.recovered"; actor: "system"; workspaceId: string; branchId: string; id: string; card: Card | null; history?: CardHistory; explicitTutorial?: true }
   | { type: "input.mode.changed"; actor: Actor; mode: InputMode }
   | { type: "dictation.changed"; actor: Actor; listening: boolean }
   | { type: "composer.changed"; actor: Actor; draft: string }
@@ -1687,8 +1690,8 @@ export type AppTransition =
    * toggles a directory row; a first expand (or a retry of a failed one)
    * marks it loading, and the local route's answer lands as loaded or failed.
    */
-  | { type: "repo-tree.toggled"; actor: "user"; copyId: string; path: string; expanded: boolean }
-  | { type: "repo-tree.loading"; actor: "user"; copyId: string; path: string }
+  | { type: "repo-tree.toggled"; actor: Actor; copyId: string; path: string; expanded: boolean }
+  | { type: "repo-tree.loading"; actor: Actor; copyId: string; path: string }
   | { type: "repo-tree.loaded"; actor: "system"; copyId: string; path: string; entries: ReadonlyArray<RepoTreeEntry>; truncated: boolean }
   | { type: "repo-tree.failed"; actor: "system"; copyId: string; path: string; error: string }
   /* The repository's declared flows landed (or went absent: an empty list) from its factory projection. */
@@ -1697,8 +1700,8 @@ export type AppTransition =
   | { type: "workspace.renamed"; actor: Actor; name: string }
   | { type: "workspace.rename.toggled"; actor: "user"; open: boolean }
   /* A user's star on a target (targets card Featured view); `repoId` names the open card the mirror lands on. */
-  | { type: "target.starred"; actor: "user"; repoId: string; star: StarredTarget }
-  | { type: "target.unstarred"; actor: "user"; repoId: string; id: string }
+  | { type: "target.starred"; actor: Actor; repoId: string; star: StarredTarget }
+  | { type: "target.unstarred"; actor: Actor; repoId: string; id: string }
   | {
     /*
      * The next-step pills were regenerated (Recommend.ts): by the server's

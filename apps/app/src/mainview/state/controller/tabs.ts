@@ -308,13 +308,19 @@ export const createTabsController = (ctx: ControllerContext): TabsController => 
     if (card === undefined) return `There is no card with id ${cardId}.`
     const existing = orderedTabs().find((tab) => tab.kind === "card" && tab.cardId === cardId)
     if (existing !== undefined) {
-      store.dispatch({ type: "tab.selected", actor: "user", id: existing.id })
+      store.dispatch({ type: "tab.selected", actor: ctx.commandActor, id: existing.id })
     } else {
       store.dispatch({
         type: "tab.opened",
-        actor: "user",
+        actor: ctx.commandActor,
         tab: { id: `card-${cardId}`, kind: "card", title: card.title, cardId, ...activeRepoKey() }
       })
+    }
+    // This flow explicitly opens the card in the sidebar. The fullscreen shell
+    // only mounts session chrome while that durable surface is open, so reveal
+    // it as part of the same command instead of leaving the new tab invisible.
+    if (store.session().sidebarOpen !== true) {
+      store.dispatch({ type: "sidebar.toggled", actor: ctx.commandActor, open: true })
     }
     /*
      * The transcript's copy returns to its embedded form, but that is the
@@ -458,7 +464,12 @@ export const createTabsController = (ctx: ControllerContext): TabsController => 
       if (store.session().tabMenuOpen === true) return
     }
     const open = store.session().tabMenuOpen !== true
-    store.dispatch({ type: "tab.menu.toggled", actor: "user", open })
+    store.dispatch({ type: "tab.menu.toggled", actor: ctx.commandActor, open })
+    // The current shell projects this menu inside the sidebar. A direct slash
+    // or keyboard invocation must reveal the surface that owns the menu.
+    if (open && store.session().sidebarOpen !== true) {
+      store.dispatch({ type: "sidebar.toggled", actor: ctx.commandActor, open: true })
+    }
     if (open) void loadHarnesses()
   }
 

@@ -31,17 +31,23 @@ export const createSidebarController = (ctx: ControllerContext, seam: RepoTreeSe
     const path = normalizeTreePath(pathArg ?? "")
     const copy = collections.workingCopies.get(copyId)
     if (copy === undefined) return `There is no working copy with id ${copyId}.`
+    // repo.tree's projection lives in the fullscreen shell's sidebar. A
+    // slash or agent invocation must reveal the surface before changing its
+    // tree row, just as clicking the already-visible caret does.
+    if (store.session().sidebarOpen !== true) {
+      store.dispatch({ type: "sidebar.toggled", actor: ctx.commandActor, open: true })
+    }
     const row = collections.repoTree.get(repoTreeRowId(copyId, path))
     if (row !== undefined && row.expanded) {
-      store.dispatch({ type: "repo-tree.toggled", actor: "user", copyId, path, expanded: false })
+      store.dispatch({ type: "repo-tree.toggled", actor: ctx.commandActor, copyId, path, expanded: false })
       return
     }
     if (row !== undefined && row.state !== "failed") {
       // Loaded, or a load already in flight: the caret turns and the listing shows as it is.
-      store.dispatch({ type: "repo-tree.toggled", actor: "user", copyId, path, expanded: true })
+      store.dispatch({ type: "repo-tree.toggled", actor: ctx.commandActor, copyId, path, expanded: true })
       return
     }
-    store.dispatch({ type: "repo-tree.loading", actor: "user", copyId, path })
+    store.dispatch({ type: "repo-tree.loading", actor: ctx.commandActor, copyId, path })
     await seam.loadDirectory(copyId, path)
   }
 
