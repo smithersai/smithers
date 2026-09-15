@@ -4,7 +4,7 @@
  * Every Docker rule needs the same host facts before it can plan: the CLI
  * on PATH, a daemon that answers `docker info`, and a buildx builder that
  * supports the OCI exporter. This module resolves those once per plan
- * invocation through the shared host-probe cache and turns the declarations into argv: `docker run --rm` for supervised
+ * invocation through the shared host-probe cache and turns the declarations into argv: `docker create --rm` for supervised
  * services, `buildx build`/`buildx bake` writing an OCI archive into the
  * captured output directory, and an approval-gated `docker push` for the
  * outward effect. A silent daemon is a typed refusal, never a green no-op.
@@ -211,13 +211,17 @@ export const prepareOutputs = async (root: string, outDirs: ReadonlyArray<string
 }
 
 /**
- * Stable container name derived from a target label.
+ * Stable container name prefix within one invocation, target and directory.
+ * The supervisor appends a fresh nonce for each shared resource lifetime and
+ * captures its container ID. Consumers of the live resource share that ID.
  *
  * @category planning
  * @since 0.1.0
  */
-export const containerName = (label: string): string =>
-  `smthrs-${createHash("sha256").update(label).digest("hex").slice(0, 20)}`
+export const containerName = (label: string, cwd: string, invocationId: string): string =>
+  `smthrs-${
+    createHash("sha256").update(JSON.stringify([NodePath.resolve(cwd), label, invocationId])).digest("hex").slice(0, 32)
+  }`
 
 /**
  * Resolves one Docker service declaration into the supervisor's process spec.
@@ -226,6 +230,7 @@ export const containerName = (label: string): string =>
  * @since 0.1.0
  */
 export const serviceSpec = async (options: {
+  readonly invocationId: string
   readonly label: string
   readonly cwd: string
   readonly attrs: (typeof Docker.ServeAttrs)["Type"]
@@ -234,15 +239,16 @@ export const serviceSpec = async (options: {
 }): Promise<ServiceSupervisor.ServiceSpec | { readonly error: string }> => {
   const tool = await resolveDocker(options.environment, options.probes)
   if (!tool.ok) return { error: tool.refusal }
-  const name = containerName(options.label)
   const attrs = options.attrs
-  const argv: Array<string> = [tool.path, "run", "--rm", "--name", name]
+  // Creation options stay canonical across consumers. The supervisor supplies
+  // the unique name only when the refcounted resource is actually created.
+  const argv: Array<string> = [tool.path]
   for (const [container, host] of Object.entries(attrs.ports ?? {}).sort(([a], [b]) => a.localeCompare(b))) {
     // Bind loopback explicitly. An unqualified `-p host:container` publishes on
     // 0.0.0.0, which puts a developer fixture or a CI container on the LAN and
-    // on anything sharing the CI host's network. The rest of this machinery is
-    // already local-only — the HTTP readiness probe targets 127.0.0.1 — so the
-    // port mapping was the one place the posture was not stated.
+    // on anything sharing the CI host's network. The HTTP readiness probe
+    // already targets 127.0.0.1, so the port mapping was the one place the
+    // local-only posture was not stated.
     argv.push("-p", `127.0.0.1:${host}:${container}`)
   }
   for (const [key, value] of Object.entries(attrs.env ?? {}).sort(([a], [b]) => a.localeCompare(b))) {
@@ -253,24 +259,14 @@ export const serviceSpec = async (options: {
   }
   argv.push(attrs.tag === undefined ? attrs.image : `${attrs.image}:${attrs.tag}`)
   argv.push(...(attrs.command ?? []))
-  const readiness = attrs.readiness === undefined
-    ? undefined
-    : "exec" in attrs.readiness
-    ? { exec: [tool.path, "exec", name, ...attrs.readiness.exec], timeout: attrs.readiness.timeout }
-    : attrs.readiness
-  const init = (attrs.init ?? []).map((command) => [tool.path, "exec", name, ...command] as const)
   return {
     key: options.label,
     cwd: options.cwd,
+    docker: containerName(options.label, options.cwd, options.invocationId),
     argv: argv as [string, ...Array<string>],
-    readiness,
+    readiness: attrs.readiness,
     health: attrs.health,
     stop: attrs.stop,
-    // The name is deterministic per label, so a run that died without its
-    // finalizer leaves a container that would make the next `docker run`
-    // refuse with "name already in use". Removing it first is idempotent.
-    prepare: [[tool.path, "rm", "-f", name]],
-    init,
-    cleanup: [[tool.path, "rm", "-f", name]]
+    init: (attrs.init ?? []).map((command) => [...command] as [string, ...Array<string>])
   }
 }

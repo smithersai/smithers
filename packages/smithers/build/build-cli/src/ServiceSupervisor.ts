@@ -31,8 +31,9 @@ import * as Deferred from "effect/Deferred"
 import * as Effect from "effect/Effect"
 import * as RcMap from "effect/RcMap"
 import * as Schedule from "effect/Schedule"
-import type * as Scope from "effect/Scope"
+import * as Scope from "effect/Scope"
 import * as Stream from "effect/Stream"
+import { randomUUID } from "node:crypto"
 import * as NodeHttp from "node:http"
 import * as NodeHttps from "node:https"
 import * as NodeNet from "node:net"
@@ -107,6 +108,13 @@ export interface ServiceSpec {
   readonly key: string
   readonly cwd: string
   readonly argv: readonly [string, ...Array<string>]
+  /**
+   * Docker container name prefix, scoped to the invocation. When present,
+   * argv is the Docker executable followed by create options/image/command;
+   * exec readiness and init are container commands. Each shared lifetime gets
+   * a unique name, and all operations after creation address its returned ID.
+   */
+  readonly docker?: string | undefined
   readonly env?: Readonly<Record<string, string>> | undefined
   /** Destination-bound credentials exposed only as proxy placeholders. */
   readonly secrets?: ReadonlyArray<Secret.HttpCredential> | undefined
@@ -124,10 +132,9 @@ export interface ServiceSpec {
   readonly health?: Health | undefined
   readonly stop?: Stop | undefined
   /**
-   * Best-effort commands run before the process is spawned. A service whose
-   * runtime holds a name or a port outside the process tree — a Docker
-   * container name survives a hard-killed run — clears its own leftovers here
-   * so the previous run's death cannot fail this one.
+   * Best-effort commands run before the process is spawned. Hooks may touch
+   * only resources owned by this invocation; a matching target label or
+   * working directory does not establish ownership across commands.
    */
   readonly prepare?: ReadonlyArray<readonly [string, ...Array<string>]> | undefined
   /** Commands run after readiness and before the service is handed to consumers. */
@@ -448,6 +455,10 @@ const serviceSpecFields: { readonly [K in keyof ServiceSpec]-?: SpecField } = {
     snapshot: (value) => snapshotArray(value, "service spec argv"),
     canonical: (spec) => spec.argv
   },
+  docker: {
+    snapshot: (value) => inspectNested(value, "service spec docker"),
+    canonical: (spec) => spec.docker ?? null
+  },
   env: {
     snapshot: (value) => snapshotRecord(value, "service spec env", undefined),
     canonical: (spec) =>
@@ -601,6 +612,11 @@ const parseSpec = (caller: ServiceSpec): ParsedSpec => {
     throw new Error(`service ${spec.key} requires a non-empty argv of strings`)
   }
   if (spec.argv[0] === "") throw new Error(`service ${spec.key} argv[0] must name an executable`)
+  if (
+    spec.docker !== undefined && (typeof spec.docker !== "string" || !/^[a-zA-Z0-9][a-zA-Z0-9_.-]*$/.test(spec.docker))
+  ) {
+    throw new Error(`service ${spec.key} docker must be a valid container name prefix`)
+  }
   if (
     spec.env !== undefined && (
       typeof spec.env !== "object" || spec.env === null || Array.isArray(spec.env) ||
@@ -772,12 +788,19 @@ const processError = (cause: unknown): string => {
   return error instanceof Error ? error.message : String(error)
 }
 
-/** Runs one hook/probe with bounded pipes and verified scoped process cleanup. */
-const runServiceCommand = (
+/** Distinguishes an expired bound from the command's own failure. */
+class CommandTimeout extends Error {}
+
+/** Captures one bounded command; the caller's scope owns process cleanup. */
+const serviceCommand = (
   argv: ReadonlyArray<string>,
   context: ProbeContext,
   timeoutMs: number
-): Effect.Effect<{ readonly ok: boolean; readonly detail: string }> =>
+): Effect.Effect<
+  { readonly ok: boolean; readonly detail: string; readonly stdout: string; readonly timedOut: boolean },
+  never,
+  Scope.Scope
+> =>
   Effect.suspend(() => {
     const output: Array<Uint8Array> = []
     const error: Array<Uint8Array> = []
@@ -807,6 +830,8 @@ const runServiceCommand = (
       const detail = `${Buffer.concat(output).toString("utf8")}${Buffer.concat(error).toString("utf8")}`.trim()
       return {
         ok: status.code === 0,
+        timedOut: false,
+        stdout: Buffer.concat(output).toString("utf8"),
         detail: detail || (status.signal === null
           ? status.code === 0 ? "" : `command exited with code ${status.code}`
           : `command terminated by ${status.signal}`)
@@ -815,18 +840,25 @@ const runServiceCommand = (
     return program.pipe(
       Effect.timeoutOrElse({
         duration: timeoutMs,
-        orElse: () => Effect.fail(new Error(`the command timed out after ${timeoutMs}ms`))
+        orElse: () => Effect.fail(new CommandTimeout(`the command timed out after ${timeoutMs}ms`))
       }),
-      Effect.scoped,
       Effect.catch((cause) =>
         Effect.succeed({
           ok: false,
+          // Whatever the command managed to print can read like an ordinary
+          // refusal, so the caller has to be able to say the bound expired.
+          timedOut: cause instanceof CommandTimeout,
+          stdout: Buffer.concat(output).toString("utf8"),
           detail: `${Buffer.concat(output).toString("utf8")}${Buffer.concat(error).toString("utf8")}`.trim() ||
             processError(cause)
         })
       )
     )
   })
+
+/** Runs one hook/probe with bounded pipes and verified scoped process cleanup. */
+const runServiceCommand = (argv: ReadonlyArray<string>, context: ProbeContext, timeoutMs: number) =>
+  serviceCommand(argv, context, timeoutMs).pipe(Effect.scoped)
 
 /** Runs one readiness probe attempt; never fails, reports the miss reason. */
 const probeOnce = (
@@ -1085,12 +1117,75 @@ const runPrepare = (parsed: ParsedSpec, environment: Readonly<Record<string, str
 const runCleanup = (parsed: ParsedSpec, environment: Readonly<Record<string, string>>): Effect.Effect<void> =>
   runBestEffort(parsed, parsed.spec.cleanup, environment)
 
+/** Owns container removal before closing the create client's process scope. */
+const createDockerService = (
+  parsed: ParsedSpec,
+  environment: Readonly<Record<string, string>>
+): Effect.Effect<ParsedSpec, ServiceError, Scope.Scope> =>
+  Effect.gen(function*() {
+    const spec = parsed.spec
+    const docker = spec.argv[0]
+    const name = `${spec.docker}-${randomUUID().replaceAll("-", "")}`
+    const context = { cwd: spec.cwd, environment }
+    // Only the create client uses this inner scope. acquireRelease registers
+    // removal in the surrounding service scope before the client scope closes,
+    // so even a defect in client cleanup cannot leave a returned ID unowned.
+    // Acquisition and registration stay atomic with respect to interruption.
+    const created = yield* Effect.scopedWith((clientScope) =>
+      Effect.acquireRelease(
+        serviceCommand(
+          [docker, "create", "--rm", "--name", name, ...spec.argv.slice(1)],
+          context,
+          parsed.readinessTimeoutMs
+        ).pipe(
+          Scope.provide(clientScope),
+          Effect.map((result) => {
+            const id = result.stdout.trim()
+            return { ...result, id, target: /^[0-9a-f]{64}$/.test(id) ? id : name }
+          })
+        ),
+        (result) =>
+          // Failed commands can still return an ID. If it is unreadable, only
+          // this acquisition's unique name is safe; unparsed output is never
+          // a removal target. Late daemon completion remains best effort.
+          runServiceCommand([docker, "rm", "-f", result.target], context, parsed.stopGraceMs + stopSettleMs).pipe(
+            Effect.asVoid
+          )
+      )
+    )
+    const id = created.id
+    if (!created.ok || !/^[0-9a-f]{64}$/.test(id)) {
+      return yield* Effect.fail(
+        new ServiceError({
+          key: spec.key,
+          reason: "spawn-failed",
+          message: `service ${spec.key} container creation failed${
+            created.timedOut ? ` after ${parsed.readinessTimeoutMs}ms` : ""
+          }: ${created.detail || "Docker returned no container ID"}`,
+          outputTail: ""
+        })
+      )
+    }
+    return {
+      ...parsed,
+      spec: {
+        ...spec,
+        argv: [docker, "start", "--attach", id],
+        readiness: spec.readiness !== undefined && "exec" in spec.readiness
+          ? { ...spec.readiness, exec: [docker, "exec", id, ...spec.readiness.exec] }
+          : spec.readiness,
+        init: (spec.init ?? []).map((command) => [docker, "exec", id, ...command])
+      }
+    }
+  })
+
 /**
  * Spawns one service in its own process group, awaits readiness, and starts
  * the health loop, all inside the scope the `RcMap` provides for its key.
  */
-const startService = (parsed: ParsedSpec): Effect.Effect<RunningService, ServiceError, Scope.Scope> =>
+const startService = (initial: ParsedSpec): Effect.Effect<RunningService, ServiceError, Scope.Scope> =>
   Effect.gen(function*() {
+    let parsed = initial
     const key = parsed.spec.key
     const unhealthy = yield* Deferred.make<never, ServiceError>()
     const state: ServiceState = { stopping: false }
@@ -1122,9 +1217,16 @@ const startService = (parsed: ParsedSpec): Effect.Effect<RunningService, Service
     // Cleanup hooks run after the owned process scope closes, including when
     // readiness or startup fails. They use the same bounded process adapter.
     yield* Effect.addFinalizer(() => runCleanup(parsed, environment))
+    if (parsed.spec.docker !== undefined) {
+      parsed = yield* createDockerService(
+        { ...parsed, spec: { ...parsed.spec, argv: secretBoundary.argv } },
+        environment
+      )
+    }
+    const argv = parsed.spec.docker === undefined ? secretBoundary.argv : parsed.spec.argv
     const handle = yield* ScopedProcess.spawn({
-      command: secretBoundary.argv[0],
-      args: secretBoundary.argv.slice(1),
+      command: argv[0],
+      args: argv.slice(1),
       cwd: parsed.spec.cwd,
       env: serviceEnvironment(environment),
       stdin: "ignore",

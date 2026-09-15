@@ -1,4 +1,4 @@
-import { spawn, spawnSync } from "node:child_process"
+import { spawn } from "node:child_process"
 import { existsSync } from "node:fs"
 import * as Fs from "node:fs/promises"
 import * as NodeNet from "node:net"
@@ -8,6 +8,7 @@ import { afterAll, describe, expect, it } from "vitest"
 import * as AnvilExec from "../src/AnvilExec.ts"
 import * as DockerExec from "../src/DockerExec.ts"
 import * as PackageTree from "../src/PackageTree.ts"
+import { dockerAvailable } from "./helpers/DockerProbe.ts"
 import { serve } from "./helpers/ServeCli.ts"
 
 const fixture = NodePath.resolve(import.meta.dirname, "fixtures/chain-exec")
@@ -225,7 +226,7 @@ export const Package = S.Package({ targets: { artifacts, srcs } })
  * whose daemon is silent too, so a host with the binary and no daemon has to
  * skip for the same reason.
  */
-const engineAvailable = spawnSync("docker", ["info"], { stdio: "ignore" }).status === 0
+const engineAvailable = dockerAvailable()
 if (!engineAvailable) {
   console.warn(
     "Docker package execution tests SKIPPED: no container engine answered `docker info` on this host"
@@ -256,25 +257,60 @@ describe.skipIf(!engineAvailable)("Docker package execution", { concurrent: fals
 
   it("acquires, exec-probes, initializes, and releases a Docker service", async () => {
     const root = await workspace()
-    const result = await serve(root, ["//:dockerConsumer"])
-    expect(result.exitCode, result.logs).toBe(0)
-    expect(result.logs).toContain("service //:dockerService: ready")
-    expect(result.logs).toContain("service //:dockerServiceAlias: ready")
-    const name = DockerExec.containerName("//:dockerService")
     const docker = await DockerExec.resolveDocker()
     expect(docker.ok).toBe(true)
     if (docker.ok) {
-      const inspect = await new Promise<number>((resolve) => {
-        const child = spawn(docker.path, ["inspect", name], { stdio: "ignore" })
-        child.on("close", (code) => resolve(code ?? 1))
+      // Record the actual lifetime-owned names while forwarding every
+      // command to the real engine. Recomputing an old deterministic name
+      // would let the absence checks pass without observing either service.
+      const directory = await Fs.mkdtemp(NodePath.join(Os.tmpdir(), "smthrs-docker-record-"))
+      temporaryDirectories.push(directory)
+      const namesFile = NodePath.join(directory, "names")
+      const idsFile = NodePath.join(directory, "ids")
+      const cleanupFile = NodePath.join(directory, "cleanup")
+      const literal = (value: string) => `'${value.replaceAll("'", "'\\''")}'`
+      await Fs.writeFile(
+        NodePath.join(directory, "docker"),
+        `#!/bin/sh
+if [ "$1" = create ]; then printf '%s\\n' "$4" >> ${literal(namesFile)}; fi
+if [ "$1" = start ]; then printf '%s\\n' "$3" >> ${literal(idsFile)}; fi
+if [ "$1" = rm ]; then
+  printf 'rm %s\\n' "$3" >> ${literal(cleanupFile)}
+  exec ${literal(docker.path)} "$@" 2>> ${literal(cleanupFile)}
+fi
+exec ${literal(docker.path)} "$@"
+`,
+        { mode: 0o755 }
+      )
+      const result = await serve(root, ["//:dockerConsumer"], {
+        environment: {
+          ...process.env,
+          PATH: `${directory}${NodePath.delimiter}${process.env["PATH"] ?? ""}`
+        }
       })
-      expect(inspect).not.toBe(0)
-      const aliasName = DockerExec.containerName("//:dockerServiceAlias")
-      const aliasInspect = await new Promise<number>((resolve) => {
-        const child = spawn(docker.path, ["inspect", aliasName], { stdio: "ignore" })
-        child.on("close", (code) => resolve(code ?? 1))
-      })
-      expect(aliasInspect).not.toBe(0)
+      expect(result.exitCode, result.logs).toBe(0)
+      expect(result.logs).toContain("service //:dockerService: ready")
+      expect(result.logs).toContain("service //:dockerServiceAlias: ready")
+      const names = (await Fs.readFile(namesFile, "utf8")).trim().split("\n")
+      expect(names).toHaveLength(2)
+      expect(new Set(names).size).toBe(2)
+      const ids = (await Fs.readFile(idsFile, "utf8")).trim().split("\n")
+      const cleanup = await Fs.readFile(cleanupFile, "utf8")
+      expect(ids).toHaveLength(2)
+      expect(new Set(ids).size).toBe(2)
+      for (const id of ids) expect(id).toMatch(/^[0-9a-f]{64}$/)
+      expect(cleanup.split("\n").filter((line) => line.startsWith("rm ")).map((line) => line.slice(3)).sort()).toEqual(
+        [...ids].sort()
+      )
+      for (const name of names) {
+        expect(name).toMatch(/^smthrs-[0-9a-f]{32}-[0-9a-f]{32}$/)
+        const inspect = await new Promise<number>((resolve, reject) => {
+          const child = spawn(docker.path, ["inspect", name], { stdio: "ignore" })
+          child.on("error", reject)
+          child.on("close", (code) => resolve(code ?? 1))
+        })
+        expect(inspect, `${name}\n${cleanup}`).not.toBe(0)
+      }
     }
   }, 120_000)
 
@@ -284,6 +320,20 @@ describe.skipIf(!engineAvailable)("Docker package execution", { concurrent: fals
     expect(result.exitCode).toBe(0)
     expect(result.output).toContain("approval required")
     expect(result.output).not.toContain("NotImplemented")
+  })
+})
+
+describe("Docker container identity", () => {
+  it("keeps the name prefix stable within an invocation and distinct across commands and workspaces", () => {
+    const first = NodePath.join(Os.tmpdir(), "smthrs-docker-first")
+    const second = NodePath.join(Os.tmpdir(), "smthrs-docker-second")
+    const name = DockerExec.containerName("//:service", first, "invocation-a")
+    expect(name).toMatch(/^smthrs-[0-9a-f]{32}$/)
+    expect(DockerExec.containerName("//:service", first, "invocation-b")).not.toBe(name)
+    expect(DockerExec.containerName("//:service", NodePath.join(first, "."), "invocation-a")).toBe(name)
+    expect(DockerExec.containerName("//:service", second, "invocation-a")).not.toBe(name)
+    expect(DockerExec.containerName("//:other", first, "invocation-a")).not.toBe(name)
+    expect(DockerExec.containerName("//:service", NodePath.relative(process.cwd(), first), "invocation-a")).toBe(name)
   })
 })
 
@@ -297,6 +347,7 @@ describe("Docker service spec", () => {
   it("publishes declared ports on loopback only", async () => {
     await withDockerStub({}, async () => {
       const spec = await DockerExec.serviceSpec({
+        invocationId: "spec-test",
         label: "//:dockerPorts",
         cwd: process.cwd(),
         attrs: { image: "alpine", ports: { "5432": 15_432, "6379": 16_379 } } as never
@@ -307,26 +358,29 @@ describe("Docker service spec", () => {
     })
   })
 
-  it("removes its own stale container before running and after stopping", async () => {
+  it("plans stable creation options and delegates container identity to the supervisor", async () => {
     await withDockerStub({}, async (docker) => {
       const spec = await DockerExec.serviceSpec({
+        invocationId: "spec-test",
         label: "//:dockerService",
         cwd: process.cwd(),
         attrs: { image: "alpine", command: ["sleep", "60"] } as never
       })
       if ("error" in spec) throw new Error(spec.error)
-      const name = DockerExec.containerName("//:dockerService")
-      expect(spec.argv.slice(1, 5)).toEqual(["run", "--rm", "--name", name])
+      const name = DockerExec.containerName("//:dockerService", process.cwd(), "spec-test")
+      expect(spec.docker).toBe(name)
+      expect(spec.argv[0]).toBe(docker)
       expect(spec.argv.at(-3)).toBe("alpine")
       expect(spec.argv.slice(-2)).toEqual(["sleep", "60"])
-      expect(spec.prepare).toEqual([[docker, "rm", "-f", name]])
-      expect(spec.cleanup).toEqual([[docker, "rm", "-f", name]])
+      expect(spec.prepare).toBeUndefined()
+      expect(spec.cleanup).toBeUndefined()
     })
   })
 
-  it("orders env and volumes, tags the image, and routes readiness and init through docker exec", async () => {
+  it("orders env and volumes, tags the image, and declares container readiness and init commands", async () => {
     await withDockerStub({}, async (docker) => {
       const spec = await DockerExec.serviceSpec({
+        invocationId: "spec-test",
         label: "//:dockerService",
         cwd: "/workspace",
         attrs: {
@@ -341,10 +395,12 @@ describe("Docker service spec", () => {
         } as never
       })
       if ("error" in spec) throw new Error(spec.error)
-      const name = DockerExec.containerName("//:dockerService")
+      const name = DockerExec.containerName("//:dockerService", "/workspace", "spec-test")
       // Both tables are emitted in key order, not declaration order, so one
       // table written two ways plans one argv.
-      expect(spec.argv.slice(5)).toEqual([
+      expect(spec.docker).toBe(name)
+      expect(spec.argv[0]).toBe(docker)
+      expect(spec.argv.slice(1)).toEqual([
         "-e",
         "PGDATA=/data",
         "-e",
@@ -355,8 +411,8 @@ describe("Docker service spec", () => {
         "/host/second:/second",
         "postgres:16"
       ])
-      expect(spec.readiness).toEqual({ exec: [docker, "exec", name, "pg_isready"], timeout: "60s" })
-      expect(spec.init).toEqual([[docker, "exec", name, "psql", "-c", "select 1"]])
+      expect(spec.readiness).toEqual({ exec: ["pg_isready"], timeout: "60s" })
+      expect(spec.init).toEqual([["psql", "-c", "select 1"]])
       expect(spec.health).toEqual({ exec: ["pg_isready"], interval: "5s" })
       expect(spec.stop).toEqual({ signal: "SIGTERM", grace: "3s" })
       expect(spec.cwd).toBe("/workspace")
@@ -366,6 +422,7 @@ describe("Docker service spec", () => {
   it("passes an HTTP readiness probe through without wrapping it in docker exec", async () => {
     await withDockerStub({}, async () => {
       const spec = await DockerExec.serviceSpec({
+        invocationId: "spec-test",
         label: "//:dockerHttp",
         cwd: process.cwd(),
         attrs: { image: "nginx", readiness: { http: "http://127.0.0.1:8080/health", timeout: "30s" } } as never
@@ -379,7 +436,12 @@ describe("Docker service spec", () => {
   it("carries the resolver's refusal when the CLI is present and its daemon is not", async () => {
     const silent = { image: "alpine" } as never
     await withDockerStub({ info: { output: "Cannot connect to the Docker daemon", exitCode: 1 } }, async () => {
-      const spec = await DockerExec.serviceSpec({ label: "//:dockerService", cwd: process.cwd(), attrs: silent })
+      const spec = await DockerExec.serviceSpec({
+        invocationId: "spec-test",
+        label: "//:dockerService",
+        cwd: process.cwd(),
+        attrs: silent
+      })
       expect(spec).toEqual({
         error: "docker daemon did not answer \"docker info\": Cannot connect to the Docker daemon"
       })
@@ -387,7 +449,12 @@ describe("Docker service spec", () => {
     // A daemon that says nothing at all still has to name why: the exit code
     // is the only fact left, and an empty refusal would read as no refusal.
     await withDockerStub({ info: { output: "", exitCode: 7 } }, async () => {
-      const spec = await DockerExec.serviceSpec({ label: "//:dockerService", cwd: process.cwd(), attrs: silent })
+      const spec = await DockerExec.serviceSpec({
+        invocationId: "spec-test",
+        label: "//:dockerService",
+        cwd: process.cwd(),
+        attrs: silent
+      })
       expect(spec).toEqual({ error: "docker daemon did not answer \"docker info\": exit 7" })
     })
   })
@@ -576,6 +643,7 @@ describe("Docker build, bake, and push plans", () => {
       expect(built.refusal).toBe(absent)
 
       const spec = await DockerExec.serviceSpec({
+        invocationId: "spec-test",
         label: "//:dockerService",
         cwd: process.cwd(),
         attrs: { image: "alpine" } as never

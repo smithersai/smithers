@@ -172,8 +172,26 @@ restoration before releasing the tree permit or deleting the shared stash.
 
 Every probe and hook runs in the service's own working directory under the
 same resolved environment the service process was given. Docker services
-publish their declared ports on `127.0.0.1` only. A service captures a bounded
-tail of its output, which is what a failure reports.
+publish their declared ports on `127.0.0.1` only. Each shared service lifetime
+gets a unique name: an invocation-scoped prefix plus a fresh acquisition nonce.
+The supervisor captures the ID returned by `docker create --rm` and registers
+its removal before closing the create client's process scope. If that client's
+cleanup fails, removal still runs and the cleanup defect is preserved, including
+any additional removal-client cleanup defect. It then starts and attaches to
+that ID. Readiness, initialization, and cleanup also address that ID.
+Delayed cleanup cannot delete a replacement, even within the same
+command, and consumers holding a live service still share it by refcount.
+`DockerExec.containerName(label, cwd, invocationId)` returns the stable prefix;
+`serviceSpec` requires the caller's fresh command invocation ID. Its Docker
+argv contains creation options, and its exec readiness/init contain container
+commands; the supervisor adds the operation and resource ID at acquisition.
+Preparation never deletes an existing container. When creation answers with no
+readable ID, cleanup falls back to the unique name that acquisition minted,
+which no other lifetime ever uses; a daemon that finishes that creation after
+the bound expires can still outlive the removal. A container left by a
+hard-killed command may require manual cleanup; a later command cannot assume
+it is abandoned. A service captures a
+bounded tail of its output, which is what a failure reports.
 
 Services live at most as long as the command's scope, and the supervisor holds
 an orphan backstop on the process signals. That backstop is why the process

@@ -23,6 +23,7 @@ import * as Cause from "effect/Cause"
 import * as Effect from "effect/Effect"
 import * as Exit from "effect/Exit"
 import { minimatch } from "minimatch"
+import { randomUUID } from "node:crypto"
 import * as NodeFs from "node:fs"
 import * as Fs from "node:fs/promises"
 import * as NodePath from "node:path"
@@ -293,6 +294,9 @@ export const executeEffect = (
     const reporter = Reporter.of(options)
     const log = reporter.note
     const startedAt = performance.now()
+    // Stable across consumers and candidate trees, fresh for each execute call,
+    // including concurrent commands embedded in the same Node process.
+    const serviceInvocationId = randomUUID()
     const store = yield* Effect.acquireRelease(
       joined(() =>
         openCache({
@@ -732,6 +736,7 @@ export const executeEffect = (
           const attrs = serveNode.lane.attrs
           return yield* joined(() =>
             DockerExec.serviceSpec({
+              invocationId: serviceInvocationId,
               label: key,
               cwd: Exec.resolveWorkspacePath(treeRoot, serveNode.cwd),
               attrs,
