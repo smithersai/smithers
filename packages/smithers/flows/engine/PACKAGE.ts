@@ -28,7 +28,11 @@ const dependencyPolicy = Smithers.DepsLint({
   sources: [Smithers.glob("src/**/*.ts"), Smithers.glob("test/**/*.ts")],
   deps: [lib],
   tool: "knip",
-  ignoreDependencies: ["eslint-plugin-jsdoc"],
+  ignoreDependencies: [
+    "eslint-plugin-jsdoc",
+    // scripts/build.mjs delegates to buildLibrary, which resolves esbuild from this package's manifest.
+    "esbuild"
+  ],
   ignoreBinaries: [],
   cwd: "packages/smithers/flows/engine"
 })
