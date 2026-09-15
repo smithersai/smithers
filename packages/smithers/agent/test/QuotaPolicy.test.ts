@@ -336,7 +336,7 @@ describe("the default classifier", () => {
     expect(
       Option.getOrUndefined(
         QuotaPolicy.makeDefault({ defaultWaitMillis: 30_000 }).classify(
-          new ModelError({ code: "quota_exceeded", message: "no quota left" }),
+          new ModelError({ code: "rate_limited", message: "slow down" }),
           1_000
         )
       )
@@ -392,6 +392,66 @@ describe("the default classifier", () => {
     expect(Option.getOrUndefined(park)).toEqual({ wakeAt: 4_000, source: "retry-after" })
   })
 
+  it("refuses to park an exhausted balance, which no wait restores", () => {
+    // The refusal that cost a real run eight minutes: nine attempts, sixty
+    // seconds apart, for an answer the first attempt already had.
+    const exhausted = new ModelError({
+      code: "quota_exceeded",
+      message: "You have no credits remaining",
+      providerCode: "credit_balance_exhausted"
+    })
+    expect(Option.isNone(classify(exhausted, 1_000))).toBe(true)
+    expect(QuotaPolicy.isTerminalRefusal(exhausted)).toBe(true)
+    expect(
+      Option.isNone(
+        classify(new ModelError({ code: "quota_exceeded", message: "Payment required", httpStatus: 402 }), 1_000)
+      )
+    ).toBe(true)
+  })
+
+  it("still parks a quota window the provider dated", () => {
+    // A subscription window says when it reopens. An empty balance says
+    // nothing, because there is nothing to say.
+    const park = classify(
+      new ModelError({ code: "quota_exceeded", message: "5-hour limit reached", resetAtEpochMillis: 9_000 }),
+      1_000
+    )
+    expect(Option.getOrUndefined(park)).toEqual({ wakeAt: 9_000, source: "reset" })
+    expect(
+      Option.getOrUndefined(
+        classify(new ModelError({ code: "quota_exceeded", message: "later", retryAfterMillis: 4_000 }), 1_000)
+      )
+    ).toEqual({ wakeAt: 5_000, source: "retry-after" })
+  })
+
+  it("calls a bad key, a missing model, and a refused request terminal", () => {
+    for (
+      const error of [
+        new ModelError({ code: "authentication", message: "invalid x-api-key", httpStatus: 401 }),
+        new ModelError({ code: "authentication", message: "permission denied", httpStatus: 403 }),
+        new ModelError({ code: "invalid_request", message: "model: claude-nope not found", httpStatus: 404 }),
+        new ModelError({ code: "no_route", message: "no provider serves this model" }),
+        new ModelError({ code: "content_policy", message: "refused" })
+      ]
+    ) {
+      expect(QuotaPolicy.isTerminalRefusal(error)).toBe(true)
+      expect(Option.isNone(classify(error, 1_000))).toBe(true)
+    }
+  })
+
+  it("keeps a rate limit and a server fault retryable", () => {
+    for (
+      const error of [
+        rateLimited,
+        new ModelError({ code: "rate_limited", message: "slow down", httpStatus: 429 }),
+        new ModelError({ code: "provider_internal", message: "overloaded", httpStatus: 529 }),
+        new ModelError({ code: "provider_internal", message: "boom", httpStatus: 503 })
+      ]
+    ) {
+      expect(QuotaPolicy.isTerminalRefusal(error)).toBe(false)
+    }
+  })
+
   it("classifies nothing that is not a quota refusal", () => {
     expect(
       Option.isNone(classify(new ModelError({ code: "provider_internal", message: "boom" }), 1_000))
@@ -421,7 +481,7 @@ describe("the default classifier", () => {
   })
 
   it("reads a decoded model error that carries only its code", () => {
-    const decoded = { _tag: "flows/model/ModelError", code: "quota_exceeded" }
+    const decoded = { _tag: "flows/model/ModelError", code: "rate_limited" }
     const park = QuotaPolicy.makeDefault({ defaultWaitMillis: 1_500 }).classify(decoded, 1_000)
 
     expect(Option.getOrUndefined(park)).toEqual({ wakeAt: 2_500, source: "default" })
@@ -747,6 +807,39 @@ describe("a quota refusal at a model-backed step", () => {
     expect(JSON.stringify(refused)).toContain("model_failed")
     expect(String((refused as { readonly cause?: unknown }).cause)).toContain("monthly quota exhausted")
     // A day is not a wait this composition takes, so the step never asked again.
+    expect(calls).toHaveLength(1)
+  }, 60_000)
+
+  it("fails an exhausted balance on the attempt that earned it", async () => {
+    // The production classifier, not a lowered ceiling: an account with no
+    // credits used to cost eight parks at the default minute before reporting
+    // the same failure the first attempt already had. `refusingOnce` answers
+    // on a second call, so one call is proof that none was made.
+    const calls: Array<string> = []
+    const exit = await Effect.runPromise(
+      Effect.exit(
+        ReviewFlow.execute({ diff: "-  old\n+  new" }, { executionId: "quota-exhausted" }).pipe(
+          Effect.provide(
+            memory(
+              refusingOnce(
+                new ModelError({
+                  code: "quota_exceeded",
+                  message: "You have no credits remaining",
+                  providerCode: "credit_balance_exhausted"
+                }),
+                calls
+              ),
+              QuotaPolicy.layerDefault()
+            )
+          )
+        )
+      )
+    )
+
+    expect(Exit.isFailure(exit)).toBe(true)
+    const refused = Exit.isFailure(exit) ? Cause.squash(exit.cause) : undefined
+    // The provider's own words reach the run card.
+    expect(String((refused as { readonly cause?: unknown }).cause)).toContain("You have no credits remaining")
     expect(calls).toHaveLength(1)
   }, 60_000)
 

@@ -118,7 +118,9 @@ concurrency or number of memory-only runs.
 **What happened.** One of three things: the composition bound
 `QuotaPolicy.layerUnclassified()`, the refusal's deadline was beyond
 `maxWaitMillis` (default one hour), or the refusal was not quota-shaped
-(`rate_limited`, `quota_exceeded`, or HTTP 429).
+(`rate_limited`, a dated `quota_exceeded`, or HTTP 429). An exhausted balance,
+a bad key, and a model the provider does not serve are terminal: they fail on
+the attempt that earned them rather than parking.
 
 **What to change.** Bind `QuotaPolicy.layerDefault()` and raise
 `maxWaitMillis` if the provider's windows are genuinely long. A run that parks

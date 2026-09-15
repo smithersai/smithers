@@ -245,6 +245,58 @@ const isQuotaRefusal = (error: ModelError): boolean =>
   quotaCodes.has(error.code) || error.httpStatus === 429 || error.httpStatus === 529
 
 /**
+ * The codes that describe the request or the account rather than a window.
+ *
+ * A bad key does not become a good key by waiting, a model that does not exist
+ * does not appear, and a refused prompt is not refused because the provider was
+ * busy. Retrying one of these is pure latency charged to the person watching
+ * the run, so the classifier answers `None` and the typed `ModelError` reaches
+ * the run card with the provider's own message.
+ *
+ * @category classification
+ * @since 0.1.0
+ */
+const terminalCodes: ReadonlySet<string> = new Set([
+  "authentication",
+  "invalid_request",
+  "no_route",
+  "content_policy",
+  "context_overflow",
+  "invalid_provider_output"
+])
+
+/**
+ * Statuses that are terminal whatever the provider's code says.
+ *
+ * `402` is the one that matters: payment required means the account has no
+ * balance, and a balance is restored by a person, not by a timer.
+ */
+const terminalStatuses: ReadonlySet<number> = new Set([400, 401, 402, 403, 404, 405, 409, 410, 413, 422])
+
+/**
+ * Whether a refusal can never be waited out.
+ *
+ * Exhausted credit is the case this exists for. `quota_exceeded` covers both an
+ * account that has run out of money and a subscription window that has closed,
+ * and the two are told apart by whether the provider named a deadline: a window
+ * that reopens says when (`resetAtEpochMillis` or `retryAfterMillis`), and an
+ * empty balance says nothing because there is nothing to say. A run that parked
+ * eight times at the default minute on `credit_balance_exhausted` — "You have no
+ * credits remaining" — spent eight minutes to reach the failure it had in hand
+ * at the first attempt.
+ *
+ * @param error the normalized provider failure
+ * @since 0.1.0
+ * @category classification
+ */
+export const isTerminalRefusal = (error: ModelError): boolean => {
+  if (error.httpStatus !== undefined && terminalStatuses.has(error.httpStatus)) return true
+  if (terminalCodes.has(error.code)) return true
+  if (error.code !== "quota_exceeded") return false
+  return error.resetAtEpochMillis === undefined && error.retryAfterMillis === undefined
+}
+
+/**
  * The `ModelError` a failure is, or wraps.
  *
  * A refusal reaches a model-backed step already wrapped: the cell controller
@@ -304,6 +356,9 @@ export const makeDefault = (config: Config = {}): Service => {
       const model = modelErrorOf(error)
       if (Option.isNone(model) || !isQuotaRefusal(model.value)) return Option.none()
       const refusal = model.value
+      // An exhausted balance, a bad key, or a request the provider will refuse
+      // again is not a window. It fails on the attempt that earned it.
+      if (isTerminalRefusal(refusal)) return Option.none()
       const park: Park = refusal.resetAtEpochMillis !== undefined
         ? { wakeAt: refusal.resetAtEpochMillis, source: "reset" }
         : refusal.retryAfterMillis !== undefined

@@ -671,6 +671,20 @@ answers `None` and the original `ModelError` propagates, because a run parked
 for a day is indistinguishable from a run that hung. A deadline already past is
 a park of zero, not a refusal to park.
 
+A TERMINAL refusal never parks, however the deadline reads. `isTerminalRefusal`
+names them: an exhausted balance (`quota_exceeded` with neither
+`resetAtEpochMillis` nor `retryAfterMillis`, or HTTP 402), a bad key
+(`authentication`, HTTP 401/403), a model or request the provider will refuse
+again (`invalid_request`, `no_route`, `content_policy`, `context_overflow`,
+`invalid_provider_output`, and the 4xx statuses), and the step fails on the
+attempt that earned it with the provider's own message. A `quota_exceeded` that
+DOES name a reset is a subscription window, and still parks. `rate_limited`,
+HTTP 429 and HTTP 529 keep their bounded wait.
+
+```ts
+const isTerminalRefusal: (error: ModelError) => boolean
+```
+
 ### QuotaPolicy.Config, QuotaPolicy.defaultWaitMillis, QuotaPolicy.maxWaitMillis
 
 ```ts
