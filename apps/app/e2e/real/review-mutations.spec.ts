@@ -29,7 +29,9 @@ anonymousTest(
     description: "Exercise every mutation command that is exposed from ChangeCards while signed out. Each command must render the real auth door and emit no POST or PUT request.",
     coverage: [
       "action:change.split", "action:change.split-ready", "action:change.resolve",
+      "action:change.land", "action:change.revert", "action:change.pins", "action:change.checks", "action:change.open-computer",
       "action:review.done", "action:review.ack", "action:review.reopen", "action:auth.prompt",
+      "action:findings.please-fix", "action:findings.not-useful",
       "host:production", "path:permission", "door:slash", "dimension:no-mutation", "dimension:mutation-auth-matrix",
       "evidence:real-session-and-network-methods"
     ]
@@ -48,9 +50,16 @@ anonymousTest(
       "/change.split qupxosqw docs/guide.md",
       "/change.split-ready qupxosqw",
       "/change.resolve qupxosqw src/app.ts",
+      "/change.land qupxosqw",
+      "/change.revert qupxosqw",
+      "/change.pins qupxosqw parent current",
+      "/change.checks qupxosqw 1",
+      "/change.open-computer qupxosqw snapshot-e2e",
       "/review.done qupxosqw 3",
       "/review.ack qupxosqw 3",
-      "/review.reopen qupxosqw 3"
+      "/review.reopen qupxosqw 3",
+      "/findings.please-fix qupxosqw 7",
+      "/findings.not-useful qupxosqw 7"
     ]
     for (const input of commands) {
       await openChat(page)

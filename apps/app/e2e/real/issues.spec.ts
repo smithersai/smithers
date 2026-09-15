@@ -18,6 +18,34 @@ test.use({ actionTimeout: 20_000 })
 const tutorialTest = test.extend({ trace: "off", video: "off" })
 
 test(
+  "the real practice issue exposes its flow catalog through slash and card doors and restores it after reload",
+  scenario("issues.practice-flow-catalog-doors-persistence", {
+    capabilities: [],
+    description: "Open the shipped practice issue through the real browser host, inspect its installed workflow catalog through the slash command and rendered button, and verify the catalog remains readable after reload.",
+    coverage: [
+      "action:issues.view", "action:issue.flows", "host:local", "path:success", "path:persistence", "path:keyboard",
+      "door:slash", "door:button", "dimension:practice-repository", "dimension:flow-catalog", "dimension:reload", "dimension:keyboard",
+      "evidence:rendered-workflow-list-and-durable-card"
+    ]
+  }),
+  async ({ page }) => {
+    const issue = await openPracticeIssue(page)
+    await runSlash(page, `/issue.flows 3 ${PRACTICE_REPO}`)
+    const catalog = page.getByTestId("card-practice-issue-flows-3")
+    await expect(catalog).toBeVisible()
+    await expect(catalog).toHaveAttribute("data-kind", "workflow-list")
+    const before = await catalog.textContent()
+    expect(before).toMatch(/repro|research|implement/i)
+
+    await issue.getByRole("button", { name: "Issue flows", exact: true }).focus()
+    await issue.getByRole("button", { name: "Issue flows", exact: true }).press("Enter")
+    await expect(catalog).toBeVisible()
+    await page.reload({ waitUntil: "domcontentloaded" })
+    await expect(page.getByTestId("card-practice-issue-flows-3")).toContainText(/repro|research|implement/i)
+  }
+)
+
+test(
   "practice issue comments and state changes survive a reload and remain keyboard operable",
   scenario("issues.practice-comment-close-reopen-persistence", {
     capabilities: [],
