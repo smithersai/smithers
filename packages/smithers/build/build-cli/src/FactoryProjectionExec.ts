@@ -14,8 +14,8 @@
  * @since 1.0.0
  */
 import type { Action, FlowRuntime } from "@smthrs/flow"
-import * as Discovery from "@smthrs/registry/Discovery"
 import { inputDocument } from "@smthrs/registry/Descriptor"
+import * as Discovery from "@smthrs/registry/Discovery"
 import * as Factory from "@smthrs/targets/Factory"
 import * as FlowCatalog from "@smthrs/targets/FlowCatalog"
 import * as GeneratedFile from "@smthrs/targets/GeneratedFile"

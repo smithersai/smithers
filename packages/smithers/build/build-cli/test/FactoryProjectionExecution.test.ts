@@ -142,7 +142,9 @@ describe("FactoryProjection through the CLI", () => {
       capabilities: ["fs:read:**", "proc:spawn:git *"],
       model: "openai:gpt-5.6-sol",
       modelInvocable: true,
-      inputSchema: expect.objectContaining({ schema: expect.objectContaining({ properties: { args: { type: "string" } } }) })
+      inputSchema: expect.objectContaining({
+        schema: expect.objectContaining({ properties: { args: { type: "string" } } })
+      })
     })
     expect(projection.flows[1]).toMatchObject({ modelInvocable: false, model: null })
     expect(projection.flows[2]).toMatchObject({ kind: "skill", path: "flows/ops/deploy/SKILL.md" })
