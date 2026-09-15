@@ -3,7 +3,7 @@ import { afterAll, describe, expect, test } from "bun:test"
 import { flushSync } from "react-dom"
 import { createRoot } from "react-dom/client"
 import type { Card } from "../state/AppState"
-import { AgentModelsCardBody, AgentsCardBody } from "./AgentCards"
+import { agentCardFamily, AgentModelsCardBody, AgentsCardBody } from "./AgentCards"
 
 /*
  * Agents as data (custom-agents.md): the Agents card's rows and acts, and
@@ -137,5 +137,104 @@ describe("the models card", () => {
     expect([...host.querySelectorAll("li")].map((row) => row.textContent)).toEqual(["kimi-for-coding/k3", "cerebras/gpt-oss-120b"])
     const empty = mount(<AgentModelsCardBody card={{ ...card, payload: { ...card.payload, models: [], reason: "opencode models exited 2: no credential" } }} />)
     expect(empty.textContent).toBe("opencode models exited 2: no credential")
+  })
+})
+
+/*
+ * The agent card's cloud variant (UI-COVERAGE-GAPS.md "agents · Cloud agent
+ * sessions"): the session's header, its SSE-fed transcript rows, and the Stop
+ * door while the session is active. Rendered through the family's entry, so
+ * the variant dispatch is what the test covers.
+ */
+describe("the agent card's cloud variant", () => {
+  type AgentCard = Extract<Card, { kind: "agent" }>
+  type CloudPayload = Extract<AgentCard["payload"], { readonly cloud: true }>
+  const cloudCard = (payload: CloudPayload): AgentCard => ({
+    ...base,
+    id: "agent-session-sess-1",
+    kind: "agent",
+    title: "Fix the retry loop · will/smithers",
+    payload
+  })
+  const render = (card: AgentCard, onRunCommand: (name: string, args?: string) => void = () => {}): HTMLElement =>
+    mount(<>{agentCardFamily.agent.render(card, { onRunCommand } as never)}</>)
+  const transcript: CloudPayload["transcript"] = [
+    { id: 41, role: "user", sequence: 1, createdAt: "2026-09-14T09:00:01Z", parts: [{ type: "text", text: "Fix the retry loop" }] },
+    {
+      id: 42,
+      role: "assistant",
+      sequence: 2,
+      createdAt: "2026-09-14T09:00:20Z",
+      parts: [
+        { type: "tool_call", text: `{"name":"Read","arguments":{"path":"src/index.ts"}}` },
+        { type: "text", text: "The loop never decrements." }
+      ]
+    }
+  ]
+
+  test("the header carries session · repository · provider · state, and the transcript its rows", () => {
+    const { calls, onRunCommand } = recorder()
+    const host = render(cloudCard({
+      cloud: true,
+      displayName: "Fix the retry loop",
+      sessionId: "sess-1",
+      repo: "will/smithers",
+      provider: "codex",
+      workspaceId: "ws-1",
+      state: "active",
+      task: "Fix the retry loop",
+      transcript
+    }), onRunCommand)
+    expect(host.querySelector("[data-testid=agent-session-header]")?.textContent)
+      .toBe("session sess-1 · will/smithers · codex · active")
+    const rows = [...host.querySelectorAll<HTMLElement>("[data-testid=agent-session-transcript] > li")]
+    expect(rows).toHaveLength(2)
+    expect(rows[0]?.dataset.role).toBe("user")
+    expect(rows[0]?.textContent).toContain("Fix the retry loop")
+    expect(rows[1]?.textContent).toContain("tool_call:")
+    expect(rows[1]?.textContent).toContain("The loop never decrements.")
+    /* Stop while active, bound to the flow with the session id. */
+    const stop = host.querySelector("[data-testid=agent-session-stop-sess-1]")
+    expect(stop?.getAttribute("data-flow")).toBe("agent.session.stop")
+    click(host, "[data-testid=agent-session-stop-sess-1]")
+    expect(calls).toEqual([["agent.session.stop", "sess-1"]])
+  })
+
+  test("a terminal session offers no Stop, and an unknown provider renders nothing in its place", () => {
+    const host = render(cloudCard({
+      cloud: true,
+      displayName: "Fix the retry loop",
+      sessionId: "sess-1",
+      repo: "will/smithers",
+      provider: null,
+      workspaceId: null,
+      state: "completed",
+      transcript: []
+    }))
+    expect(host.querySelector("[data-testid=agent-session-header]")?.textContent).toBe("session sess-1 · will/smithers · completed")
+    expect(host.querySelector("[data-flow]")).toBeNull()
+    expect(host.querySelector("[data-testid=agent-session-transcript]")).toBeNull()
+  })
+
+  test("the last act's refusal stays on the card, and the pill is the session's state in the card words", () => {
+    const host = render(cloudCard({
+      cloud: true,
+      displayName: "Fix the retry loop",
+      sessionId: "sess-1",
+      repo: "will/smithers",
+      provider: "claude",
+      workspaceId: null,
+      state: "active",
+      transcript: [],
+      error: "agent session already has an active run"
+    }))
+    expect(host.querySelector("[role=alert]")?.textContent).toBe("agent session already has an active run")
+    const pill = (state: string): string => agentCardFamily.agent.pill(cloudCard({
+      cloud: true, displayName: "", sessionId: "sess-1", repo: "will/smithers", provider: null, workspaceId: null, state, transcript: []
+    }))
+    expect(pill("active")).toBe("running")
+    expect(pill("completed")).toBe("done")
+    expect(pill("failed")).toBe("failed")
+    expect(pill("cancelled")).toBe("stopped")
   })
 })

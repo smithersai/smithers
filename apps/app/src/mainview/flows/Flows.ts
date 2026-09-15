@@ -31,6 +31,7 @@ import type { CommandActions } from "./entries/Declare"
 import { accountFlows } from "./entries/account"
 import { adminOperatorFlows, adminResetFlows, adminToolFlows } from "./entries/admin"
 import { agentEditFlows, agentFlows, tutorialChangeFlows } from "./entries/agent"
+import { agentSessionFlows } from "./entries/agentSession"
 import { appFlows } from "./entries/app"
 import { appearanceFlows } from "./entries/appearance"
 import { approvalFlows } from "./entries/approval"
@@ -175,6 +176,8 @@ export const baseFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> => 
   ...chatReloadFlows(actions),
   ...tabHarnessFlows(actions),
   ...agentFlows(actions),
+  /* The cloud agent sessions (UI-COVERAGE-GAPS.md "agents · Cloud agent sessions"), in the agent namespace. */
+  ...agentSessionFlows(actions),
   ...tutorialChangeFlows(actions),
   ...changeOpenFlows(actions),
   ...formFlows(actions),

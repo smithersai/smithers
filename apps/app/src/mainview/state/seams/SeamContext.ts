@@ -19,6 +19,15 @@ export type SeamFetch = (input: string, init?: RequestInit) => Promise<Response>
 
 export interface SeamContext {
   readonly http: SeamFetch
+  /**
+   * The unbounded streaming door: the tapped fetch WITHOUT boundedFetch's
+   * body buffering and deadline (state/controller/context.ts), for long-lived
+   * SSE reads (the agent session transcript stream). A stream through `http`
+   * would buffer until the server closed and deliver nothing. Optional: a
+   * seam that can stream must read its REST fallback honestly when the door
+   * is absent.
+   */
+  readonly stream?: SeamFetch
   readonly baseUrl: string
   readonly store: AppStore
   readonly dispatch: AppStore["dispatch"]

@@ -114,6 +114,76 @@ export const AgentModelsCardBody = ({ card }: { readonly card: AgentModelsCard }
 }
 
 /*
+ * The cloud variant (UI-COVERAGE-GAPS.md "agents · Cloud agent sessions"): a
+ * cloud agent session that Smithers Cloud runs in a sandbox — the header
+ * carries session · repository · provider · state, the transcript rows append
+ * off the session's SSE stream (the seam owns the stream; the card projects
+ * its payload), and the footer's Stop is agent.session.stop (the flow
+ * confirms for the agent door). There is no composer in the card: a
+ * follow-up is the app's own /agent.session.say.
+ */
+type AgentCard = Extract<Card, { kind: "agent" }>
+type AgentCloudCard = Omit<AgentCard, "payload"> & {
+  readonly payload: Extract<AgentCard["payload"], { readonly cloud: true }>
+}
+
+const CloudAgentCardBody = ({
+  card,
+  onRunCommand
+}: {
+  readonly card: AgentCloudCard
+  readonly onRunCommand: RunCommand
+}) => {
+  const { displayName, sessionId, repo, provider, state, task, transcript, error } = card.payload
+  const live = state === "active"
+  return (
+    <div className="agent-card" data-phase={state} data-cloud="true">
+      <p className="smithers-card-note" data-testid="agent-session-header">
+        session {sessionId} · {repo}{provider === null ? "" : ` · ${provider}`} · {state}
+      </p>
+      {task !== undefined && task !== displayName ? <p className="smithers-card-note agent-card-task">Task: {task}</p> : null}
+      {transcript.length === 0 ? null : (
+        <ol className="world-card-list" data-testid="agent-session-transcript">
+          {transcript.map((row) => (
+            <li key={row.id} className="world-card-row" data-role={row.role}>
+              <span className="world-card-path">{row.role}</span>
+              <span className="workflow-list-text">
+                {row.parts.map((part, index) =>
+                  part.type === "text"
+                    ? <Markdown key={index} className="smithers-card-markdown" content={part.text} />
+                    : <span key={index} className="world-card-path">{part.type}: {part.text}</span>
+                )}
+              </span>
+            </li>
+          ))}
+        </ol>
+      )}
+      {error !== undefined ?
+        (
+          <p className="sui-approval-error" role="alert">
+            {error}
+          </p>
+        ) :
+        null}
+      {live ?
+        (
+          <div className="flow-run-actions">
+            <Button
+              size="sm"
+              variant="outline"
+              data-testid={`agent-session-stop-${sessionId}`}
+              {...flowAction(onRunCommand, "agent.session.stop", sessionId)}
+            >
+              Stop
+            </Button>
+          </div>
+        ) :
+        null}
+    </div>
+  )
+}
+
+/*
  * A subagent launched from the `+` menu (docs/LOCAL-APP.md "Tabs"): which
  * harness, where it runs, whether it is still running, and the way back to
  * its tab — a registered flow (tab.select), so the card never owns the tab.
@@ -125,6 +195,7 @@ const AgentCardBody = ({
   readonly card: Extract<Card, { kind: "agent" }>
   readonly onRunCommand: RunCommand
 }) => {
+  if ("cloud" in card.payload) return <CloudAgentCardBody card={{ ...card, payload: card.payload }} onRunCommand={onRunCommand} />
   const { displayName, cwd, phase, exitCode, tabId, roleId, task } = card.payload
   // The purpose rode the card at launch (a custom agent's is in no table); older cards fall back to the built-in row.
   const purpose = card.payload.purpose ?? (roleId === undefined ? undefined : findAgentRole(roleId)?.purpose)
@@ -185,8 +256,17 @@ export const agentCardFamily: CardFamily<"agent" | "explain" | "agents" | "agent
      * otherwise. A null exit code is the unknown outcome (Cards.ts: "null when
      * unknown (the tab was closed)"), so it wears the neutral "stopped" the
      * body already reads out — never a green Done nobody can vouch for.
+     * The cloud variant's pill is plue's session status in the same words.
      */
     pill: (card) => {
+      if ("cloud" in card.payload) {
+        const state = card.payload.state
+        if (state === "active") return "running"
+        if (state === "completed") return "done"
+        if (state === "failed") return "failed"
+        if (state === "cancelled") return "stopped"
+        return state
+      }
       if (card.payload.phase === "running") return "running"
       if (card.payload.exitCode === null) return "stopped"
       return card.payload.exitCode === 0 ? "done" : "failed"

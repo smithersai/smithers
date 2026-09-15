@@ -128,6 +128,16 @@ const AGENT_ROWS: ReadonlyArray<{ readonly name: string; readonly args?: string;
   { name: "agent.list", confirm: false },
   { name: "agent.new", confirm: false },
   { name: "agent.models", args: "codex", confirm: false },
+  /*
+   * The cloud agent sessions (UI-COVERAGE-GAPS.md "agents · Cloud agent
+   * sessions"): the reads are free; launching a sandbox agent, steering it
+   * with a follow-up (dispatches its next run) and stopping it all confirm.
+   */
+  { name: "agent.session.new", args: "will/smithers codex fix the retry loop", confirm: true },
+  { name: "agent.session.list", confirm: false },
+  { name: "agent.session.view", args: "sess-1", confirm: false },
+  { name: "agent.session.say", args: "sess-1 hello there", confirm: true },
+  { name: "agent.session.stop", args: "sess-1", confirm: true },
   { name: "agent.create", args: "reviewer codex gpt-5.6-terra Reviews diffs", confirm: true },
   { name: "agent.edit", args: "explainer --purpose Explains briefly", confirm: true },
   { name: "agent.remove", args: "reviewer", confirm: true },

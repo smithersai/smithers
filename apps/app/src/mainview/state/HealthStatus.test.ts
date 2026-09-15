@@ -75,7 +75,14 @@ test("one controller deadline expires hidden tabs and cards durably while offlin
     payload: { repo: "o/r", runs: [{ runId: "run-1", flowId: "test", status: "running", createdAt: now, turns: 0, calls: 0,
       statusRollup: { ...fresh, subjectId: "run:run-1" } }] } } }).isPersisted.promise
   await store.dispatch({ type: "pty.status.observed", actor: "system", sessionId: "pty-1", status: fresh }).isPersisted.promise
-  const agent = () => { const card = store.collections.cards.get("agent"); if (card?.kind !== "agent") throw new Error("agent missing"); return card }
+  /* The local variant: the cloud payload carries no PTY phase. */
+  const agent = () => {
+    const card = store.collections.cards.get("agent")
+    if (card?.kind !== "agent") throw new Error("agent missing")
+    const payload = card.payload
+    if ("cloud" in payload) throw new Error("agent is the cloud variant")
+    return { ...card, payload }
+  }
   expect(agent().payload.statusRollup?.activity).toBe("working")
   await store.dispatch({ type: "pty.status.observed", actor: "system", sessionId: "pty-1", status: { ...fresh, state: "exited" } }).isPersisted.promise
   expect(agent().payload.phase).toBe("running")

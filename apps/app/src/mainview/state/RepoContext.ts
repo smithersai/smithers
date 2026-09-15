@@ -12,7 +12,8 @@ import type { CloudRepository } from "./AppState"
 import type { AppStore } from "./AppStore"
 import { cardContainsRun, runScopeFromCard, sameRunScope, type RunScope } from "./RunReference"
 
-const REPO_TOKEN = /^[\w.-]+\/[\w.-]+$/
+/** The `owner/repo` shape; exported for the grammars that take a LEADING repo token (agent.session.new). */
+export const REPO_TOKEN = /^[\w.-]+\/[\w.-]+$/
 /* The bundled practice repository's key (state/practice/PracticeRepository.ts): a target, never a hosted repo. */
 const PRACTICE_TOKEN = /^practice:[\w.-]+\/[\w.-]+$/
 

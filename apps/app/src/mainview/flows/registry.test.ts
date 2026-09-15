@@ -797,6 +797,12 @@ describe("command registry bindings", () => {
       // Agents as data (docs/workbench-lanes/custom-agents.md).
       "agent.list",
       "agent.new",
+      // The cloud agent sessions (UI-COVERAGE-GAPS.md "agents · Cloud agent sessions").
+      "agent.session.new",
+      "agent.session.list",
+      "agent.session.view",
+      "agent.session.say",
+      "agent.session.stop",
       "agent.change",
       "agent.change.start",
     "change.open",

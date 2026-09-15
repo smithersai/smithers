@@ -796,9 +796,10 @@ const closeTabRows = (
     if (tab.kind !== "harness") continue
     // Closing a subagent's tab stops its process; its card says so with no exit code to claim.
     for (const card of collections.cards.values()) {
-      if (card.kind === "agent" && card.payload.tabId === tab.id && card.payload.phase === "running") {
+      /* The cloud variant (Cards.ts agent payload union) has no local tab to stop for. */
+      if (card.kind === "agent" && !("cloud" in card.payload) && card.payload.tabId === tab.id && card.payload.phase === "running") {
         collections.cards.update(card.id, (draft) => {
-          if (draft.kind !== "agent") return
+          if (draft.kind !== "agent" || "cloud" in draft.payload) return
           draft.payload.phase = "exited"
           draft.payload.exitCode = null
           draft.status = "acted"
@@ -2833,10 +2834,11 @@ const initializeAppStore = async (resolved: ResolvedPersistence, options: { read
             })
           }
           for (const card of collections.cards.values()) {
-            if (card.kind !== "agent" || card.payload.sessionId !== transition.sessionId || !acceptStatus(card.payload.statusRollup, status)) continue
+            /* The cloud variant carries no PTY phase; a PTY status never names its session. */
+            if (card.kind !== "agent" || "cloud" in card.payload || card.payload.sessionId !== transition.sessionId || !acceptStatus(card.payload.statusRollup, status)) continue
             if (card.payload.phase === "running" && status.state === "exited") continue
             collections.cards.update(card.id, (draft) => {
-              if (draft.kind === "agent") draft.payload.statusRollup = draft.payload.phase === "exited"
+              if (draft.kind === "agent" && !("cloud" in draft.payload)) draft.payload.statusRollup = draft.payload.phase === "exited"
                 ? exitedStatus(transition.sessionId, draft.payload.exitCode, status, createdAt) : status
             })
           }
@@ -2881,9 +2883,10 @@ const initializeAppStore = async (resolved: ResolvedPersistence, options: { read
           }
           // The subagent card follows its process: exited, with the code the PTY reported.
           for (const card of collections.cards.values()) {
-            if (card.kind === "agent" && card.payload.sessionId === transition.sessionId) {
+            /* The cloud variant's session is no local PTY; a pty.exited never names it. */
+            if (card.kind === "agent" && !("cloud" in card.payload) && card.payload.sessionId === transition.sessionId) {
               collections.cards.update(card.id, (draft) => {
-                if (draft.kind !== "agent") return
+                if (draft.kind !== "agent" || "cloud" in draft.payload) return
                 draft.payload.phase = "exited"
                 draft.payload.exitCode = transition.code
                 draft.payload.statusRollup = exitedStatus(transition.sessionId, transition.code, draft.payload.statusRollup, createdAt)

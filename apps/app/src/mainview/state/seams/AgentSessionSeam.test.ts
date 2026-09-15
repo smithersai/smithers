@@ -1,0 +1,506 @@
+import type { StorageApi } from "@tanstack/db"
+import { describe, expect, test } from "bun:test"
+import { CLOUD_ROUTE_PREFIX } from "@smthrs/rpc/LocalApp"
+import { CardSchema } from "@smthrs/rpc/Cards"
+import { createAppStore } from "../AppStore"
+import type { AppStore } from "../AppStore"
+import { createAgentSessionSeam, DEGRADED_AGENT_SESSION_REFUSAL } from "./AgentSessionSeam"
+import type { SeamContext } from "./SeamContext"
+import { AGENT_SESSION_WIRE, sseFrame } from "./fixtures/AgentSessionWire"
+
+/*
+ * The agent sessions seam (UI-COVERAGE-GAPS.md "agents · Cloud agent
+ * sessions"): the gates, the create → first-message dispatch, the list
+ * listing, the view's read + live stream, the follow-up and the stop. Every
+ * route is a double in plue's own wire shape (fixtures/AgentSessionWire.ts,
+ * off internal/services/agent.go); the SSE stream is a controllable double of
+ * GET …/agent/sessions/{id}/stream's `agent.session` frames.
+ */
+
+const memoryStorage = (): StorageApi => {
+  const data = new Map<string, string>()
+  return {
+    getItem: (key) => data.get(key) ?? null,
+    setItem: (key, value) => void data.set(key, value),
+    removeItem: (key) => void data.delete(key)
+  }
+}
+
+const json = (status: number, body: unknown, headers: Record<string, string> = {}): Response =>
+  new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json", ...headers } })
+
+const SESSION_ID = "0c3d0c6e-2f6a-4b6e-9c2a-1c0a2b0e5f6a"
+const REPO = "will/smithers"
+
+/** A stream double with a live push channel: the SSE body plue's broker serves. */
+const liveStream = () => {
+  const encoder = new TextEncoder()
+  let controller!: ReadableStreamDefaultController<Uint8Array>
+  const body = new ReadableStream<Uint8Array>({ start: (opened) => { controller = opened } })
+  return {
+    response: new Response(body, { status: 200, headers: { "content-type": "text/event-stream" } }),
+    push: (frame: string) => controller.enqueue(encoder.encode(frame)),
+    close: () => controller.close()
+  }
+}
+
+/** A closed stream of the given frames. */
+const sseResponse = (frames: ReadonlyArray<string>): Response => {
+  const encoder = new TextEncoder()
+  const body = new ReadableStream<Uint8Array>({
+    start: (controller) => {
+      for (const frame of frames) controller.enqueue(encoder.encode(frame))
+      controller.close()
+    }
+  })
+  return new Response(body, { status: 200, headers: { "content-type": "text/event-stream" } })
+}
+
+type Route = Response | ((url: URL) => Response | Promise<Response>)
+
+const harness = async (
+  routes: Record<string, Route>,
+  options: { readonly signedIn?: boolean; readonly degraded?: boolean; readonly stream?: "live" | "closed" | Response } = {}
+) => {
+  const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
+  /** `METHOD path` per request, the query string dropped; the same with it. */
+  const requests: Array<string> = []
+  const urls: Array<string> = []
+  const bodies: Array<{ readonly key: string; readonly body: unknown }> = []
+  /** The stream door's calls: the path and the signal the seam attached. */
+  const streamCalls: Array<{ readonly path: string; readonly accept: string | null; readonly signal: AbortSignal | undefined }> = []
+  const live = liveStream()
+  const ctx: SeamContext = {
+    http: async (input, init) => {
+      const method = init?.method ?? "GET"
+      const stripped = input.startsWith(CLOUD_ROUTE_PREFIX) ? input.slice(CLOUD_ROUTE_PREFIX.length) : input
+      const url = new URL(stripped, "https://cloud.invalid/")
+      const path = url.pathname.slice(1)
+      const key = `${method} ${path}`
+      requests.push(key)
+      urls.push(`${key}${url.search}`)
+      if (typeof init?.body === "string") bodies.push({ key, body: JSON.parse(init.body) })
+      const route = routes[key] ?? routes[path]
+      if (route === undefined) return json(404, { message: `no route ${key}` })
+      return typeof route === "function" ? route(url) : route
+    },
+    stream: async (input, init) => {
+      const stripped = input.startsWith(CLOUD_ROUTE_PREFIX) ? input.slice(CLOUD_ROUTE_PREFIX.length) : input
+      const url = new URL(stripped, "https://cloud.invalid/")
+      const path = url.pathname.slice(1)
+      streamCalls.push({ path, accept: init?.headers === undefined ? null : new Headers(init.headers).get("accept"), signal: init?.signal ?? undefined })
+      if (options.stream instanceof Response) return options.stream
+      return options.stream === "closed" ? sseResponse([]) : live.response
+    },
+    baseUrl: "",
+    store,
+    dispatch: (transition) => store.dispatch(transition),
+    actor: () => "user",
+    nextOrdinal: () => 0
+  }
+  if (options.signedIn !== false) {
+    await store.dispatch({
+      type: "cloud.session.loaded",
+      actor: "system",
+      state: "signed-in",
+      username: "will",
+      expiresAt: null,
+      scopes: options.degraded === true ? "degraded" : null
+    })
+  }
+  await store.dispatch({
+    type: "repositories.loaded",
+    actor: "system",
+    repositories: [
+      { id: REPO, org: "will", ownerKind: "user", name: "smithers", head: { bookmark: "main", changeId: "qupxosqw", commitId: "c0ffee1" } }
+    ]
+  })
+  return { ctx, store, seam: createAgentSessionSeam(ctx), requests, urls, bodies, streamCalls, live }
+}
+
+const cardOf = (store: AppStore, sessionId = SESSION_ID) => store.collections.cards.get(`agent-session-${sessionId}`)
+
+/** The cloud-variant payload of the session's card, narrowed; undefined when the card is absent or not one. */
+const payloadOf = (store: AppStore, sessionId = SESSION_ID) => {
+  const card = cardOf(store, sessionId)
+  return card?.kind === "agent" && "cloud" in card.payload ? card.payload : undefined
+}
+
+/** Poll until the floating stream read lands, never a fixed sleep. */
+const until = async (holds: () => boolean): Promise<void> => {
+  const deadline = Date.now() + 2_000
+  while (!holds() && Date.now() < deadline) await new Promise((resolve) => setTimeout(resolve, 1))
+  expect(holds()).toBe(true)
+}
+
+describe("agent session seam gates", () => {
+  test("a signed-out session refuses every act with the sign-in step", async () => {
+    const { seam } = await harness({}, { signedIn: false })
+    expect(await seam.newSession(REPO, "codex", "fix the retry loop")).toBe("Sign in to Smithers Cloud to continue.")
+    expect(await seam.listSessions(REPO)).toBe("Sign in to Smithers Cloud to continue.")
+    expect(await seam.viewSession(SESSION_ID, REPO)).toBe("Sign in to Smithers Cloud to continue.")
+    expect(await seam.sayToSession(SESSION_ID, "hello")).toBe("Sign in to Smithers Cloud to continue.")
+    expect(await seam.stopSession(SESSION_ID, REPO)).toBe("Sign in to Smithers Cloud to continue.")
+  })
+
+  test("a degraded sign-in refuses every act with the enable wording", async () => {
+    const { seam } = await harness({}, { degraded: true })
+    for (const refusal of [
+      await seam.newSession(REPO, "codex", "fix the retry loop"),
+      await seam.listSessions(REPO),
+      await seam.viewSession(SESSION_ID, REPO),
+      await seam.sayToSession(SESSION_ID, "hello"),
+      await seam.stopSession(SESSION_ID, REPO)
+    ]) {
+      expect(refusal).toBe(DEGRADED_AGENT_SESSION_REFUSAL)
+      expect(refusal).toContain("sign in again to enable")
+    }
+  })
+})
+
+describe("agent.session.new", () => {
+  test("creates the session, posts the task as the dispatching user message, renders the card and streams it", async () => {
+    const session = AGENT_SESSION_WIRE.session()
+    const message = AGENT_SESSION_WIRE.message()
+    const { store, seam, requests, bodies, streamCalls } = await harness({
+      [`POST api/repos/${REPO}/agent/sessions`]: json(201, session),
+      [`POST api/repos/${REPO}/agent/sessions/${SESSION_ID}/messages`]: json(201, message)
+    })
+    const result = await seam.newSession(REPO, "codex", "Fix the retry loop")
+    expect(requests).toEqual([
+      `POST api/repos/${REPO}/agent/sessions`,
+      `POST api/repos/${REPO}/agent/sessions/${SESSION_ID}/messages`
+    ])
+    expect(bodies).toEqual([
+      { key: `POST api/repos/${REPO}/agent/sessions`, body: { title: "Fix the retry loop" } },
+      {
+        key: `POST api/repos/${REPO}/agent/sessions/${SESSION_ID}/messages`,
+        body: { role: "user", text: "Fix the retry loop", agent_provider: "codex" }
+      }
+    ])
+    const payload = payloadOf(store)
+    expect(payload).toMatchObject({
+      cloud: true,
+      sessionId: SESSION_ID,
+      repo: REPO,
+      provider: "codex",
+      state: "active",
+      task: "Fix the retry loop",
+      workspaceId: null
+    })
+    expect(payload?.transcript).toEqual([
+      { id: 41, role: "user", sequence: 1, createdAt: "2026-09-14T09:00:01Z", parts: [{ type: "text", text: "Fix the retry loop" }] }
+    ])
+    /* The persisted card must parse the wire model: the payload is the union's cloud member. */
+    expect(CardSchema.safeParse(cardOf(store)).success).toBe(true)
+    /* The transcript streams: the SSE door opened on the session's stream with the SSE accept. */
+    expect(streamCalls).toEqual([
+      { path: `api/repos/${REPO}/agent/sessions/${SESSION_ID}/stream`, accept: "text/event-stream", signal: expect.any(AbortSignal) }
+    ])
+    expect(typeof result).toBe("object")
+    expect(result).toMatchObject({ value: expect.stringContaining(SESSION_ID) })
+  })
+
+  test("a 403 answers the feature-gate refusal in the server's own words", async () => {
+    const { seam } = await harness({
+      [`POST api/repos/${REPO}/agent/sessions`]: json(403, { message: "feature not available" })
+    })
+    expect(await seam.newSession(REPO, "codex", "Fix the retry loop"))
+      .toBe("Agent sessions are not enabled here — the backend answered 403: feature not available")
+  })
+
+  test("a 404 is the server's own answer (the repository is not imported)", async () => {
+    const { seam } = await harness({
+      [`POST api/repos/${REPO}/agent/sessions`]: json(404, { message: "repository not found" })
+    })
+    expect(await seam.newSession(REPO, "codex", "Fix the retry loop")).toBe("repository not found")
+  })
+
+  test("a refused first message still renders the session card, with the refusal on it", async () => {
+    const { store, seam } = await harness({
+      [`POST api/repos/${REPO}/agent/sessions`]: json(201, AGENT_SESSION_WIRE.session()),
+      [`POST api/repos/${REPO}/agent/sessions/${SESSION_ID}/messages`]: json(400, { message: "agent_provider must be 'smithers' or 'codex'" })
+    })
+    const result = await seam.newSession(REPO, "claude", "Fix the retry loop")
+    expect(typeof result).toBe("string")
+    expect(result).toContain("agent_provider must be 'smithers' or 'codex'")
+    expect(payloadOf(store)?.error).toBe("agent_provider must be 'smithers' or 'codex'")
+    expect(payloadOf(store)?.state).toBe("active")
+  })
+})
+
+describe("agent.session.list", () => {
+  test("lists the repository's sessions as transcript rows, each naming its doors", async () => {
+    const { store, seam, urls } = await harness({
+      [`GET api/repos/${REPO}/agent/sessions`]: json(200, [
+        AGENT_SESSION_WIRE.session({ message_count: 3 }),
+        AGENT_SESSION_WIRE.session({ id: "9a8b7c6d-0000-4e6e-9c2a-1c0a2b0e5f6a", title: "", status: "completed", message_count: 1 }),
+        { broken: true }
+      ])
+    })
+    const result = await seam.listSessions(REPO)
+    expect(urls[0]).toBe(`GET api/repos/${REPO}/agent/sessions?limit=100`)
+    expect(typeof result).toBe("object")
+    const listing = (result as { value: string }).value
+    expect(listing).toContain(`Fix the retry loop · ${SESSION_ID} · active · 3 messages`)
+    expect(listing).toContain("(untitled) · 9a8b7c6d-0000-4e6e-9c2a-1c0a2b0e5f6a · completed · 1 message")
+    expect(listing).not.toContain("broken")
+    expect(listing).toContain(`/agent.session.view <id> ${REPO}`)
+    expect(listing).toContain(`/agent.session.stop <id> ${REPO}`)
+    /* The listing landed in the transcript, where the cardless list acts answer. */
+    const texts = [...store.collections.messages.values()].map((message) => message.text)
+    expect(texts.some((text) => text.includes(`Agent sessions on ${REPO}:`))).toBe(true)
+  })
+
+  test("an empty list names the one next step", async () => {
+    const { seam } = await harness({ [`GET api/repos/${REPO}/agent/sessions`]: json(200, []) })
+    const result = await seam.listSessions(REPO)
+    expect(result).toEqual({ value: `No agent sessions on ${REPO}. Start one with /agent.session.new ${REPO} <provider> <task>.` })
+  })
+
+  test("a 403 answers the feature-gate refusal", async () => {
+    const { seam } = await harness({ [`GET api/repos/${REPO}/agent/sessions`]: json(403, { message: "feature not available" }) })
+    expect(await seam.listSessions(REPO)).toBe("Agent sessions are not enabled here — the backend answered 403: feature not available")
+  })
+})
+
+describe("agent.session.view", () => {
+  const session = AGENT_SESSION_WIRE.session({ message_count: 2, workspace_id: "ws-agent-1" })
+  const messages = [
+    AGENT_SESSION_WIRE.message(),
+    AGENT_SESSION_WIRE.message({
+      id: 42,
+      role: "assistant",
+      sequence: 2,
+      parts: [
+        { part_index: 1, type: "text", content: { value: "The loop never decrements." } },
+        { part_index: 0, type: "tool_call", content: { name: "Read", arguments: { path: "src/index.ts" } } }
+      ],
+      created_at: "2026-09-14T09:00:20Z"
+    })
+  ]
+
+  test("re-reads the session and its messages into the card and streams it while active", async () => {
+    const { store, seam, urls, streamCalls } = await harness({
+      [`GET api/repos/${REPO}/agent/sessions/${SESSION_ID}`]: json(200, session),
+      [`GET api/repos/${REPO}/agent/sessions/${SESSION_ID}/messages`]: json(200, messages)
+    })
+    const result = await seam.viewSession(SESSION_ID, REPO)
+    expect(urls).toContain(`GET api/repos/${REPO}/agent/sessions/${SESSION_ID}/messages?limit=200`)
+    const payload = payloadOf(store)
+    expect(payload?.workspaceId).toBe("ws-agent-1")
+    expect(payload?.provider).toBeNull()
+    expect(payload?.transcript.map((row) => row.id)).toEqual([41, 42])
+    /* Parts read in part_index order; a tool part's object content is its compact JSON, like plue's own renderer. */
+    expect(payload?.transcript[1]?.parts).toEqual([
+      { type: "tool_call", text: `{"name":"Read","arguments":{"path":"src/index.ts"}}` },
+      { type: "text", text: "The loop never decrements." }
+    ])
+    expect(streamCalls.map((call) => call.path)).toEqual([`api/repos/${REPO}/agent/sessions/${SESSION_ID}/stream`])
+    expect(result).toMatchObject({ value: expect.stringContaining("streams the transcript live") })
+  })
+
+  test("a terminal session's card holds the transcript and opens no stream", async () => {
+    const { seam, streamCalls } = await harness({
+      [`GET api/repos/${REPO}/agent/sessions/${SESSION_ID}`]: json(200, { ...session, status: "completed" }),
+      [`GET api/repos/${REPO}/agent/sessions/${SESSION_ID}/messages`]: json(200, messages)
+    })
+    await seam.viewSession(SESSION_ID, REPO)
+    expect(streamCalls).toEqual([])
+  })
+
+  test("a viewed session keeps the provider its card already knew; the wire never states one", async () => {
+    const { store, seam } = await harness({
+      [`POST api/repos/${REPO}/agent/sessions`]: json(201, AGENT_SESSION_WIRE.session()),
+      [`POST api/repos/${REPO}/agent/sessions/${SESSION_ID}/messages`]: json(201, AGENT_SESSION_WIRE.message()),
+      [`GET api/repos/${REPO}/agent/sessions/${SESSION_ID}`]: json(200, session),
+      [`GET api/repos/${REPO}/agent/sessions/${SESSION_ID}/messages`]: json(200, messages)
+    }, { stream: "closed" })
+    await seam.newSession(REPO, "codex", "Fix the retry loop")
+    await seam.viewSession(SESSION_ID, REPO)
+    expect(payloadOf(store)?.provider).toBe("codex")
+  })
+
+  test("a 404 names the session and the repository in the server's words", async () => {
+    const { seam } = await harness({
+      [`GET api/repos/${REPO}/agent/sessions/${SESSION_ID}`]: json(404, { message: "agent session not found" })
+    })
+    expect(await seam.viewSession(SESSION_ID, REPO)).toBe(`Agent session ${SESSION_ID} on ${REPO}: agent session not found.`)
+  })
+
+  test("the repo resolves off the session's own card when no argument names one", async () => {
+    const { seam, urls } = await harness({
+      [`POST api/repos/${REPO}/agent/sessions`]: json(201, AGENT_SESSION_WIRE.session()),
+      [`POST api/repos/${REPO}/agent/sessions/${SESSION_ID}/messages`]: json(201, AGENT_SESSION_WIRE.message()),
+      [`GET api/repos/${REPO}/agent/sessions/${SESSION_ID}`]: json(200, session),
+      [`GET api/repos/${REPO}/agent/sessions/${SESSION_ID}/messages`]: json(200, messages)
+    }, { stream: "closed" })
+    await seam.newSession(REPO, "codex", "Fix the retry loop")
+    /* No argument names the repository: the bare act re-finds it on the session's card. */
+    await seam.viewSession(SESSION_ID)
+    expect(urls.at(-1)).toBe(`GET api/repos/${REPO}/agent/sessions/${SESSION_ID}/messages?limit=200`)
+  })
+})
+
+describe("agent.session.say", () => {
+  const seedViaNew = async (routes: Record<string, Route>, options?: { stream?: "live" | "closed" }) => {
+    const rig = await harness({
+      [`POST api/repos/${REPO}/agent/sessions`]: json(201, AGENT_SESSION_WIRE.session()),
+      [`POST api/repos/${REPO}/agent/sessions/${SESSION_ID}/messages`]: json(201, AGENT_SESSION_WIRE.message()),
+      ...routes
+    }, options)
+    await rig.seam.newSession(REPO, "codex", "Fix the retry loop")
+    return rig
+  }
+
+  test("posts the follow-up on the session's provider, appends its row, and streams the answer", async () => {
+    const followUp = AGENT_SESSION_WIRE.message({ id: 43, sequence: 2, parts: [{ part_index: 0, type: "text", content: { value: "And the off-by-one too" } }] })
+    const { store, seam, bodies } = await seedViaNew({
+      [`POST api/repos/${REPO}/agent/sessions/${SESSION_ID}/messages`]: (() => {
+        let calls = 0
+        return () => { calls += 1; return calls === 1 ? json(201, AGENT_SESSION_WIRE.message()) : json(201, followUp) }
+      })()
+    })
+    const result = await seam.sayToSession(SESSION_ID, "And the off-by-one too")
+    expect(bodies.at(-1)?.body).toEqual({ role: "user", text: "And the off-by-one too", agent_provider: "codex" })
+    expect(payloadOf(store)?.transcript.map((row) => row.id)).toEqual([41, 43])
+    expect(result).toMatchObject({ value: expect.stringContaining("(codex)") })
+  })
+
+  test("a 409 while a run is active is the server's own refusal, on the card too", async () => {
+    const { store, seam } = await seedViaNew({
+      [`POST api/repos/${REPO}/agent/sessions/${SESSION_ID}/messages`]: (() => {
+        let calls = 0
+        return () => {
+          calls += 1
+          return calls === 1 ? json(201, AGENT_SESSION_WIRE.message()) : json(409, { message: "agent session already has an active run" })
+        }
+      })()
+    })
+    const result = await seam.sayToSession(SESSION_ID, "one more")
+    expect(result).toBe("agent session already has an active run")
+    expect(payloadOf(store)?.error).toBe("agent session already has an active run")
+    /* A refused message appends no row. */
+    expect(payloadOf(store)?.transcript.map((row) => row.id)).toEqual([41])
+  })
+
+  test("a blank message refuses without a request", async () => {
+    const { seam, requests } = await harness({})
+    expect(await seam.sayToSession(SESSION_ID, "   ")).toBe("Write a message before sending it.")
+    expect(requests).toEqual([])
+  })
+
+  test("without a card or an active repository, the refusal names the view door", async () => {
+    const { store, seam } = await harness({})
+    await store.dispatch({
+      type: "repositories.loaded",
+      actor: "system",
+      repositories: [
+        { id: REPO, org: "will", ownerKind: "user", name: "smithers", head: { bookmark: "main", changeId: "q", commitId: "c" } },
+        { id: "will/force", org: "will", ownerKind: "user", name: "force", head: { bookmark: "main", changeId: "q", commitId: "c" } }
+      ]
+    })
+    const result = await seam.sayToSession(SESSION_ID, "hello")
+    expect(result).toBe(`Smithers doesn't know which repository agent session ${SESSION_ID} is on — view it first with /agent.session.view ${SESSION_ID} <owner/repo>.`)
+  })
+})
+
+describe("agent.session.stop", () => {
+  test("DELETEs the session, marks the card cancelled, and drops the stream", async () => {
+    const { store, seam, requests, streamCalls } = await harness({
+      [`POST api/repos/${REPO}/agent/sessions`]: json(201, AGENT_SESSION_WIRE.session()),
+      [`POST api/repos/${REPO}/agent/sessions/${SESSION_ID}/messages`]: json(201, AGENT_SESSION_WIRE.message()),
+      [`DELETE api/repos/${REPO}/agent/sessions/${SESSION_ID}`]: new Response(null, { status: 204 })
+    })
+    await seam.newSession(REPO, "codex", "Fix the retry loop")
+    expect(streamCalls).toHaveLength(1)
+    const result = await seam.stopSession(SESSION_ID)
+    expect(requests.at(-1)).toBe(`DELETE api/repos/${REPO}/agent/sessions/${SESSION_ID}`)
+    expect(payloadOf(store)?.state).toBe("cancelled")
+    expect(streamCalls[0]?.signal?.aborted).toBe(true)
+    expect(result).toEqual({ value: `Agent session ${SESSION_ID} stopped.` })
+  })
+
+  test("stopping a settled session deletes its record and keeps the word it earned", async () => {
+    const { store, seam } = await harness({
+      [`GET api/repos/${REPO}/agent/sessions/${SESSION_ID}`]: json(200, AGENT_SESSION_WIRE.session({ status: "completed", message_count: 1 })),
+      [`GET api/repos/${REPO}/agent/sessions/${SESSION_ID}/messages`]: json(200, [AGENT_SESSION_WIRE.message()]),
+      [`DELETE api/repos/${REPO}/agent/sessions/${SESSION_ID}`]: new Response(null, { status: 204 })
+    })
+    await seam.viewSession(SESSION_ID, REPO)
+    const result = await seam.stopSession(SESSION_ID, REPO)
+    expect(payloadOf(store)?.state).toBe("completed")
+    expect(result).toEqual({ value: `Agent session ${SESSION_ID} was already completed — its record is deleted.` })
+  })
+
+  test("a 404 is the server's own answer, and the card keeps its state", async () => {
+    const { store, seam } = await harness({
+      [`POST api/repos/${REPO}/agent/sessions`]: json(201, AGENT_SESSION_WIRE.session()),
+      [`POST api/repos/${REPO}/agent/sessions/${SESSION_ID}/messages`]: json(201, AGENT_SESSION_WIRE.message()),
+      [`DELETE api/repos/${REPO}/agent/sessions/${SESSION_ID}`]: json(404, { message: "agent session not found" })
+    }, { stream: "closed" })
+    await seam.newSession(REPO, "codex", "Fix the retry loop")
+    expect(await seam.stopSession(SESSION_ID)).toBe("agent session not found")
+    expect(payloadOf(store)?.state).toBe("active")
+    expect(payloadOf(store)?.error).toBe("agent session not found")
+  })
+})
+
+describe("the transcript stream", () => {
+  const seed = async () => {
+    const rig = await harness({
+      [`POST api/repos/${REPO}/agent/sessions`]: json(201, AGENT_SESSION_WIRE.session()),
+      [`POST api/repos/${REPO}/agent/sessions/${SESSION_ID}/messages`]: json(201, AGENT_SESSION_WIRE.message())
+    })
+    await rig.seam.newSession(REPO, "codex", "Fix the retry loop")
+    return rig
+  }
+
+  test("a message event appends its row, a replayed one dedupes, and a terminal status ends the stream", async () => {
+    const { store, live, streamCalls } = await seed()
+    const assistant = AGENT_SESSION_WIRE.message({
+      id: 42,
+      role: "assistant",
+      sequence: 2,
+      parts: [{ part_index: 0, type: "text", content: { value: "Fixed." } }]
+    })
+    /* A keep-alive comment and the message, then the REPLAY of the same id (Last-Event-ID reconnect), then the terminal status. */
+    live.push(`:ka\n\n${sseFrame(AGENT_SESSION_WIRE.messageEvent(assistant), { id: 42 })}`)
+    await until(() => payloadOf(store)?.transcript.length === 2)
+    expect(payloadOf(store)?.transcript[1]).toEqual({
+      id: 42, role: "assistant", sequence: 2, createdAt: "2026-09-14T09:00:01Z", parts: [{ type: "text", text: "Fixed." }]
+    })
+    live.push(sseFrame(AGENT_SESSION_WIRE.messageEvent(assistant), { id: 42 }))
+    await new Promise((resolve) => setTimeout(resolve, 10))
+    expect(payloadOf(store)?.transcript.map((row) => row.id)).toEqual([41, 42])
+    live.push(sseFrame(AGENT_SESSION_WIRE.statusEvent("completed")))
+    await until(() => payloadOf(store)?.state === "completed")
+    await until(() => streamCalls[0]?.signal?.aborted === true)
+  })
+
+  test("frames parse across chunk boundaries; another session's event and a malformed payload drop", async () => {
+    const { store, live } = await seed()
+    const frame = sseFrame(AGENT_SESSION_WIRE.messageEvent(AGENT_SESSION_WIRE.message({ id: 44, role: "assistant", sequence: 3, parts: [{ part_index: 0, type: "text", content: { value: "Across the split." } }] })), { id: 44 })
+    const cut = Math.floor(frame.length / 2)
+    live.push(frame.slice(0, cut))
+    await new Promise((resolve) => setTimeout(resolve, 10))
+    expect(payloadOf(store)?.transcript.map((row) => row.id)).toEqual([41])
+    live.push(frame.slice(cut))
+    live.push(sseFrame(AGENT_SESSION_WIRE.messageEvent(AGENT_SESSION_WIRE.message({ id: 45 }), "another-session")))
+    live.push("event: agent.session\ndata: {not json\n\n")
+    await until(() => payloadOf(store)?.transcript.length === 2)
+    expect(payloadOf(store)?.transcript.map((row) => row.id)).toEqual([41, 44])
+  })
+
+  test("a stream that answers no SSE opens nothing and the card keeps its read", async () => {
+    const { store, seam, streamCalls } = await harness({
+      [`POST api/repos/${REPO}/agent/sessions`]: json(201, AGENT_SESSION_WIRE.session()),
+      [`POST api/repos/${REPO}/agent/sessions/${SESSION_ID}/messages`]: json(201, AGENT_SESSION_WIRE.message())
+    }, { stream: json(502, { message: "upstream" }) })
+    await seam.newSession(REPO, "codex", "Fix the retry loop")
+    expect(streamCalls).toHaveLength(1)
+    await new Promise((resolve) => setTimeout(resolve, 10))
+    expect(payloadOf(store)?.transcript.map((row) => row.id)).toEqual([41])
+    expect(payloadOf(store)?.state).toBe("active")
+  })
+})

@@ -16,7 +16,8 @@
 import { splitRunSource, takesRunSource } from "./RunCommand"
 import { parseFileArgs } from "./FileArgs"
 import { isTraceFilter, TRACE_FILTER_IDS } from "../cards/RunTrace"
-import { splitTrailingRepo } from "../state/RepoContext"
+import { isAgentProvider } from "../state/seams/AgentSessionSeam"
+import { REPO_TOKEN, splitTrailingRepo } from "../state/RepoContext"
 import type { KnownRepositories } from "../state/RepoContext"
 
 /** A parsed invocation, or the honest refusal that names what is missing. */
@@ -1075,6 +1076,52 @@ const GRAMMAR: Readonly<Record<string, Grammar>> = {
   },
   "agent.remove": (args) => required("id", args, "agent.remove needs an agent id"),
   "agent.models": (args) => required("harness", args, "agent.models needs a harness id: /agent.models opencode"),
+  /*
+   * The cloud agent sessions (entries/agentSession.ts). `new` reads its line
+   * as [owner/repo] [provider] [task…], each position OPTIONAL: a token that
+   * is not repo-shaped stays in the task's text, a second token that names no
+   * provider is not consumed as one — what the line could not give, the form
+   * asks for (THE FORM LAW). The task keeps its spacing (it is the session's
+   * first message).
+   */
+  "agent.session.new": (args) => {
+    let rest = trimmed(args)
+    const payload: Record<string, unknown> = {}
+    const head = /^\S+/.exec(rest)?.[0]
+    if (head === undefined) return ok({})
+    if (REPO_TOKEN.test(head)) {
+      payload["repo"] = head
+      rest = rest.slice(head.length).trim()
+    }
+    const next = /^\S+/.exec(rest)?.[0]
+    if (next !== undefined && isAgentProvider(next)) {
+      payload["provider"] = next
+      rest = rest.slice(next.length).trim()
+    }
+    if (rest !== "") payload["task"] = rest
+    return ok(payload)
+  },
+  "agent.session.list": (args) => repoOnly("agent.session.list", args),
+  "agent.session.view": (args, known) => {
+    const { rest, repo } = splitTrailingRepo(args, known)
+    const sessionId = rest.trim()
+    if (sessionId === "" || /\s/.test(sessionId)) return no("agent.session.view needs a session id: /agent.session.view <id> [owner/repo]")
+    return ok(repo === undefined ? { sessionId } : { sessionId, repo })
+  },
+  /* `<id> <text…>`: the text is the rest of the line, spacing intact — no trailing repo is split off a message. */
+  "agent.session.say": (args) => {
+    const [sessionId] = tokensOf(args)
+    if (sessionId === undefined) return no("agent.session.say needs a session id")
+    const text = restAfter(args, 1)
+    if (text === "") return no("agent.session.say needs the message text")
+    return ok({ sessionId, text })
+  },
+  "agent.session.stop": (args, known) => {
+    const { rest, repo } = splitTrailingRepo(args, known)
+    const sessionId = rest.trim()
+    if (sessionId === "" || /\s/.test(sessionId)) return no("agent.session.stop needs a session id: /agent.session.stop <id> [owner/repo]")
+    return ok(repo === undefined ? { sessionId } : { sessionId, repo })
+  },
   "tab.card": (args) => required("cardId", args, "tab.card needs the card id"),
   "tab.select": (args) => required("tab", args, "tab.select needs a tab id or a position 1-9"),
   "tab.read": (args) => required("tab", args, "tab.read needs a tab id"),

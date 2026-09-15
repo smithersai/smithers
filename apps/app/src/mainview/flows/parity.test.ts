@@ -340,8 +340,8 @@ describe("launch-law parity: every affordance is a command", () => {
       "../cards/RunHistoryCard.tsx": 1,
       "../cards/AffectedCard.tsx": 1,
       // Agents as data (custom-agents.md): Launch, Edit, Remove, New agent.
-      /* 5 = the Agents card's Launch / Edit / Remove and New agent, + the subagent card's Open tab. */
-      "../cards/AgentCards.tsx": 5,
+      /* 6 = the Agents card's Launch / Edit / Remove and New agent, the subagent card's Open tab, + the cloud session card's Stop (agent.session.stop). */
+      "../cards/AgentCards.tsx": 6,
       "../cards/AnonymousCeilingCard.tsx": 1,
       // THE FORM LAW (flow-forms.md): the generic form's Cancel (card.dismiss) and Submit (form.submit); fields commit on blur/change.
       "../cards/FlowFormCards.tsx": 2,

@@ -121,8 +121,10 @@ import type { NotificationsSeam } from "./seams/NotificationsSeam"
 import { createRepositoriesSeam } from "./seams/RepositoriesSeam"
 import { createWorkspaceSeam } from "./seams/WorkspaceSeam"
 import { createEgressSeam } from "./seams/EgressSeam"
+import { createAgentSessionSeam } from "./seams/AgentSessionSeam"
 import type { WorkspaceSeam } from "./seams/WorkspaceSeam"
 import type { EgressSeam } from "./seams/EgressSeam"
+import type { AgentSessionSeam } from "./seams/AgentSessionSeam"
 import { createChangeSeam } from "./seams/ChangeSeam"
 import type { ChangeSeam } from "./seams/ChangeSeam"
 import type { RepositoriesSeam } from "./seams/RepositoriesSeam"
@@ -584,6 +586,16 @@ export interface AppController extends TutorialChangeController, IssueFlowsContr
   readonly listEnvironmentImages: WorkspaceSeam["listEnvironmentImages"]
   readonly listSessionEgress: EgressSeam["listSessionEgress"]
   /*
+   * The cloud agent sessions (UI-COVERAGE-GAPS.md "agents · Cloud agent
+   * sessions"): a Codex/Claude/Smithers agent run by Smithers Cloud in a
+   * sandbox, on a repository — the web app's answer to a local harness tab.
+   */
+  readonly newAgentSession: AgentSessionSeam["newSession"]
+  readonly listAgentSessions: AgentSessionSeam["listSessions"]
+  readonly viewAgentSession: AgentSessionSeam["viewSession"]
+  readonly sayToAgentSession: AgentSessionSeam["sayToSession"]
+  readonly stopAgentSession: AgentSessionSeam["stopSession"]
+  /*
    * Lane change (ADR 0003): the change is the unit — the change and diff
    * cards behind the `/api/cloud/*` proxy (state/seams/ChangeSeam.ts).
    */
@@ -786,6 +798,8 @@ export const createAppController = (
       if (write) invalidatePreparedViews(store)
       return ctx.boundedFetch(input, init).finally(() => { if (write) invalidatePreparedViews(store) })
     },
+    /* The streaming door: the tapped fetch without the bounded body read, for the seams' SSE reads. */
+    stream: (input, init) => ctx.http(input, init),
     baseUrl,
     store,
     dispatch: store.dispatch,
@@ -861,6 +875,8 @@ export const createAppController = (
   const repositoriesSeam = actors.pair(seamCtx, (context) => createRepositoriesSeam(context))
   /* Lane citc: the cloud workspaces; its settle watches die with the controller. */
   const workspaceSeam = actors.pair(seamCtx, (context) => createWorkspaceSeam(context))
+  /* The cloud agent sessions; their transcript streams die with the controller. */
+  const agentSessionSeam = actors.pair(seamCtx, (context) => createAgentSessionSeam(context))
   /*
    * The palette's seam reads the registry it is registered in: the thunk
    * resolves once `commands` exists below, and nothing calls it during
@@ -870,6 +886,7 @@ export const createAppController = (
     createSearchSeam(context, { registry: () => commands, refreshWorkspaces: select(workspaceSeam.refreshWorkspaces) }))
   const egressSeam = actors.pair(seamCtx, (context) => createEgressSeam(context))
   ctx.onDispose(workspaceSeam.dispose)
+  ctx.onDispose(agentSessionSeam.dispose)
   /* Lane change: the change/diff cards and their acts. */
   /* Lane L1: a revision's snapshot forks into a computer whose card the workspace seam renders. */
   const changeSeam = actors.pair(seamCtx, (context, select) => createChangeSeam(context, { viewWorkspace: select(workspaceSeam.viewWorkspace) }))
@@ -1763,6 +1780,12 @@ export const createAppController = (
     activeRepository: () => activeRepositoryId(store),
     listEnvironmentImages: workspaceSeam.listEnvironmentImages,
     listSessionEgress: egressSeam.listSessionEgress,
+    /* The cloud agent sessions (the `agent.session.*` flows' seam). */
+    newAgentSession: agentSessionSeam.newSession,
+    listAgentSessions: agentSessionSeam.listSessions,
+    viewAgentSession: agentSessionSeam.viewSession,
+    sayToAgentSession: agentSessionSeam.sayToSession,
+    stopAgentSession: agentSessionSeam.stopSession,
     viewChange: changeSeam.viewChange,
     diffChange: changeSeam.diffChange,
     landChange: changeSeam.landChange,

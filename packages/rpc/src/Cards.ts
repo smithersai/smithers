@@ -2194,28 +2194,79 @@ const CurrentCardSchema = z.discriminatedUnion("kind", [
    * (LOCAL-APP.md "Tabs"): the harness runs in its own tab, and this card is
    * the conversation's record of it — which harness, where, whether it is
    * still running, and the way back to its tab.
+   *
+   * The CLOUD variant (UI-COVERAGE-GAPS.md "agents · Cloud agent sessions";
+   * plue's /api/repos/{o}/{r}/agent/sessions family): the same card for a
+   * cloud agent session that Smithers Cloud runs in a sandbox — it carries
+   * the session's repository, provider and workspace instead of a cwd and
+   * tab, and its transcript rows append off the session's SSE stream instead
+   * of a PTY tab. `cloud: true` discriminates it; a local card never carries
+   * the key.
    */
   z.object({
     ...cardBaseShape,
     kind: z.literal("agent"),
-    payload: z.object({
-      statusRollup: StatusRollupSchema.optional(),
-      harnessId: z.enum(HARNESS_IDS),
-      displayName: z.string(),
-      /** The named role the agent was launched as (AgentRoles.ts); absent for a raw harness. */
-      roleId: AgentRoleIdSchema.optional(),
-      /** The role's purpose at launch (a custom agent's is not in any table); absent on cards written before custom agents. */
-      purpose: z.string().optional(),
-      /** The task it was delegated, when it was launched with one. */
-      task: z.string().optional(),
-      /** The tab the agent runs in; the tab id is the PTY session id. */
-      tabId: z.string(),
-      sessionId: z.string(),
-      cwd: z.string(),
-      phase: z.enum(["running", "exited"]),
-      /** The process exit code once it has exited; null when unknown (the tab was closed). */
-      exitCode: z.number().nullable()
-    })
+    payload: z.union([
+      z.object({
+        statusRollup: StatusRollupSchema.optional(),
+        harnessId: z.enum(HARNESS_IDS),
+        displayName: z.string(),
+        /** The named role the agent was launched as (AgentRoles.ts); absent for a raw harness. */
+        roleId: AgentRoleIdSchema.optional(),
+        /** The role's purpose at launch (a custom agent's is not in any table); absent on cards written before custom agents. */
+        purpose: z.string().optional(),
+        /** The task it was delegated, when it was launched with one. */
+        task: z.string().optional(),
+        /** The tab the agent runs in; the tab id is the PTY session id. */
+        tabId: z.string(),
+        sessionId: z.string(),
+        cwd: z.string(),
+        phase: z.enum(["running", "exited"]),
+        /** The process exit code once it has exited; null when unknown (the tab was closed). */
+        exitCode: z.number().nullable()
+      }),
+      z.object({
+        /** Marks the Smithers Cloud variant; absent on every local card. */
+        cloud: z.literal(true),
+        statusRollup: StatusRollupSchema.optional(),
+        /** The session's title (its first task) or "Agent session" when plue holds none. */
+        displayName: z.string(),
+        sessionId: z.string(),
+        /** `owner/repo` — the session's routes are repository-scoped, so the card carries the routing fact. */
+        repo: z.string(),
+        /*
+         * The agent the run executes (plue's `agent_provider` on the dispatching
+         * message). Null when the session was first met through a read: the wire
+         * carries the provider per message, never on the session DTO, and a
+         * guessed provider is a lie the header would repeat.
+         */
+        provider: z.enum(["codex", "claude", "smithers"]).nullable(),
+        /** The kind=agent workspace the run executes in (RFD-004); null until the session DTO names one. */
+        workspaceId: z.string().nullable(),
+        /** plue's session status word, verbatim: active, completed, failed, cancelled. */
+        state: z.string(),
+        /** The task the session was opened with, when the flow carried one. */
+        task: z.string().optional(),
+        /*
+         * The transcript rows the messages read and the SSE stream have
+         * delivered, oldest first, capped by the seam (the card is the live
+         * window, never the record — plue holds the transcript). One row per
+         * message; a part is its type beside the text the seam read out of it.
+         */
+        transcript: z.array(
+          z.object({
+            /** plue's message id; the stream replay's dedupe key. */
+            id: z.number().int(),
+            role: z.string(),
+            sequence: z.number().int(),
+            createdAt: z.string().nullable(),
+            parts: z.array(z.object({ type: z.string(), text: z.string() }))
+          })
+        ),
+        /** The last act's honest refusal, kept on the card. */
+        error: z.string().optional()
+      })
+    ])
   }),
   /*
    * The explainer's answer (AgentRoles.ts "explainer"): `explain <what>` runs
