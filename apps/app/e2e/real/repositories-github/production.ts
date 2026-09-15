@@ -255,15 +255,86 @@ export const waitForImportJobId = async (
   return terminal
 }
 
-/** Remove the imported Smithers Cloud mirror, including its repository host data. */
+export type OwnedWorkspaceCleanup = {
+  readonly workspaceId: string
+  readonly initialStatus: string
+  readonly deleteStatus: number
+  readonly finalStatus: number
+}
+
+/** Delete provider VMs while their repository-scoped metadata still exists. */
+export const drainOwnedCloudWorkspaces = async (
+  page: Page,
+  request: APIRequestContext,
+  repo: string
+): Promise<ReadonlyArray<OwnedWorkspaceCleanup>> => {
+  if (!/^codeplanesmithers\/smithers-e2e-import-[a-z0-9-]+$/.test(repo)) {
+    throw new Error(`Refusing workspace cleanup outside the owned E2E namespace: ${repo}`)
+  }
+  expect((await readAuthenticatedSession(page))?.login, "workspace cleanup must retain the fixture owner identity").toBe("codeplanesmithers")
+  const path = cloudRepoPath(repo, "/workspaces")
+  const deleted: OwnedWorkspaceCleanup[] = []
+  const seen = new Set<string>()
+  // Delete the first page, then read it again. Advancing an offset while
+  // removing rows would skip workspaces shifted out of a later page.
+  for (let batch = 0; batch < 10; batch += 1) {
+    const response = await realApi(page, request, "GET", `${path}?limit=100`)
+    if (response.status() === 404 && deleted.length === 0) return deleted
+    expect(response.status(), `List owned workspaces for ${repo}`).toBe(200)
+    const rows = await response.json() as unknown
+    expect(Array.isArray(rows), "the real workspace inventory must be an array").toBe(true)
+    if ((rows as unknown[]).length === 0) return deleted
+    const failures: unknown[] = []
+    for (const value of rows as Array<{ readonly id?: unknown; readonly status?: unknown }>) {
+      try {
+        expect(typeof value?.id, "workspace inventory id").toBe("string")
+        const workspaceId = value.id as string
+        expect(workspaceId).toMatch(/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i)
+        expect(seen.has(workspaceId), `deleted workspace ${workspaceId} must leave the inventory`).toBe(false)
+        const workspacePath = `${path}/${encodeURIComponent(workspaceId)}`
+        let initialStatus = ""
+        await expect.poll(async () => {
+          const current = await realApi(page, request, "GET", workspacePath)
+          if (current.status() === 404) { initialStatus = "absent"; return initialStatus }
+          expect(current.status(), `Inspect owned workspace ${workspaceId}`).toBe(200)
+          const row = await current.json() as { readonly id?: unknown; readonly status?: unknown }
+          expect(row.id).toBe(workspaceId)
+          expect(typeof row.status).toBe("string")
+          initialStatus = row.status as string
+          return initialStatus
+        }, { timeout: 180_000, intervals: [1_000, 2_000, 5_000] }).toMatch(/^(running|suspended|stopped|failed|absent)$/)
+        // Pending/starting VMs may still be created by a detached provisioner.
+        // Do not remove their repository or metadata while that is unresolved.
+        const deletion = await realApi(page, request, "DELETE", workspacePath)
+        expect([204, 404], `Delete provider workspace ${workspaceId}`).toContain(deletion.status())
+        let finalStatus = 0
+        await expect.poll(async () => {
+          finalStatus = (await realApi(page, request, "GET", workspacePath)).status()
+          return finalStatus
+        }, { timeout: 30_000, intervals: [500, 1_000, 2_000] }).toBe(404)
+        deleted.push({ workspaceId, initialStatus, deleteStatus: deletion.status(), finalStatus })
+        seen.add(workspaceId)
+      } catch (error) {
+        failures.push(new Error(`Owned workspace ${String(value?.id)} on ${repo} did not reach verified deletion.`, { cause: error }))
+      }
+    }
+    if (failures.length > 0) {
+      throw new AggregateError(failures, `Preserving ${repo}: workspace cleanup is incomplete; completed deletions: ${JSON.stringify(deleted)}`)
+    }
+  }
+  throw new Error(`Preserving ${repo}: its workspace inventory did not drain within ten bounded batches.`)
+}
+
+/** Remove owned provider workspaces before repository storage and DB metadata. */
 export const deleteOwnedCloudRepository = async (
   page: Page,
   request: APIRequestContext,
   repo: string
-): Promise<{ readonly deleteStatus: number; readonly finalStatus: number }> => {
-  if (!repo.startsWith("codeplanesmithers/smithers-e2e-import-")) {
+): Promise<{ readonly deleteStatus: number; readonly finalStatus: number; readonly workspaces: ReadonlyArray<OwnedWorkspaceCleanup> }> => {
+  if (!/^codeplanesmithers\/smithers-e2e-import-[a-z0-9-]+$/.test(repo)) {
     throw new Error(`Refusing to delete a Smithers Cloud repository outside the owned E2E namespace: ${repo}`)
   }
+  const workspaces = await drainOwnedCloudWorkspaces(page, request, repo)
   const path = cloudRepoPath(repo)
   const deletion = await realApi(page, request, "DELETE", path)
   expect([204, 404]).toContain(deletion.status())
@@ -272,5 +343,5 @@ export const deleteOwnedCloudRepository = async (
     finalStatus = (await realApi(page, request, "GET", path)).status()
     return finalStatus
   }, { timeout: 30_000, intervals: [500, 1_000, 2_000] }).toBe(404)
-  return { deleteStatus: deletion.status(), finalStatus }
+  return { deleteStatus: deletion.status(), finalStatus, workspaces }
 }
