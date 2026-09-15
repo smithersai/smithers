@@ -223,6 +223,10 @@ describe("ci conformance", () => {
     // which is the only concession the network costs. The alias is pinned so
     // the roster stays exact, not because it is a second enforcement path.
     //
+    // `commit` invokes the repository's checked commit helper and `deploy`
+    // delegates to the server workspace. Both are operator aliases, outside
+    // the recursive check/test/lint fan-out pinned here.
+    //
     // `release:*` are operator entry points into the `flows` workspace's
     // release-support program (release.yml and release-auth.yml call the same
     // module). They run nothing in CI's package-graph gates and fan nothing
