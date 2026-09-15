@@ -3,6 +3,8 @@ import { closeComposer, command, expect, realApi } from "./support/test"
 import { expectFlowOutcome } from "./repositories-github/local"
 import { attachProductionJson, bootProductionRepository, cloudRepoPath } from "./repositories-github/production"
 import { workflowTest } from "./flow-execution/fixture"
+import { bootWorkbench, createTargetFixture, openTargetFixture, runCommand } from "./targets-graph/fixture"
+import { test } from "./support"
 
 /*
  * These cases deliberately use the imported provider fixture. The fixture
@@ -99,6 +101,49 @@ workflowTest(
       expect((await readSeen).status()).toBe(200)
     }
     await attachProductionJson(testInfo, "workspace-provider-facets", observed)
+  }
+)
+
+test(
+  "the local workspace heading renames through the real keyboard editor and survives cancel and reload",
+  scenario("workspace.rename-editor-cancel-reload", {
+    capabilities: ["local.repositories"],
+    description: "Open a disposable real repository, use the rendered workspace heading editor, verify Escape leaves the durable name unchanged, then commit a name and read it back after reload.",
+    coverage: [
+      "action:repo.open", "action:workspace.rename.edit", "action:workspace.rename",
+      "host:local", "path:success", "path:keyboard", "path:persistence", "door:button",
+      "dimension:inline-editor", "dimension:escape-cancel", "dimension:reload", "dimension:keyboard",
+      "evidence:heading-readback"
+    ]
+  }),
+  async ({ page, request }) => {
+    const repo = await createTargetFixture(`workspace-rename-${Date.now()}`)
+    await bootWorkbench(page)
+    await openTargetFixture(page, request, repo)
+
+    const heading = page.getByTestId("workspace-name")
+    await expect(heading).toHaveText("Workspace")
+    await page.getByTestId("workspace-rename").click()
+    const editor = page.getByTestId("workspace-name-input")
+    await expect(editor).toBeVisible()
+    await editor.fill("discarded name")
+    await editor.press("Escape")
+    await expect(page.getByTestId("workspace-name")).toHaveText("Workspace")
+
+    await page.getByTestId("workspace-rename").click()
+    await page.getByTestId("workspace-name-input").fill("Durable E2E Workspace")
+    await page.getByTestId("workspace-name-input").press("Enter")
+    await expect(page.getByTestId("workspace-name")).toHaveText("Durable E2E Workspace")
+
+    // A real app reload must recover the persisted store event, rather than
+    // merely retaining the mounted React state.
+    await page.reload()
+    await expect(page.getByTestId("workspace-name")).toHaveText("Durable E2E Workspace")
+
+    // Exercise the blank-name boundary through the visible composer and prove
+    // it cannot erase the previously committed heading.
+    await runCommand(page, "/workspace.rename    ")
+    await expect(page.getByTestId("workspace-name")).toHaveText("Durable E2E Workspace")
   }
 )
 
