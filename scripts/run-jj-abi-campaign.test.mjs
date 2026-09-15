@@ -1,15 +1,28 @@
 import assert from "node:assert/strict"
 import { execFile, spawn } from "node:child_process"
 import { createHash } from "node:crypto"
+import { createWriteStream, watch } from "node:fs"
 import { chmod, copyFile, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
+import { createServer } from "node:net"
 import { tmpdir } from "node:os"
-import { join } from "node:path"
+import { dirname, join } from "node:path"
 import test from "node:test"
 import { promisify } from "node:util"
-import { setTimeout as delay } from "node:timers/promises"
+import { runInNewContext } from "node:vm"
 import { campaignConfiguration, expectedDiff, runCampaign, verifyCampaign, verifyParser } from "./run-jj-abi-campaign.mjs"
 
 const configuration = { seed: 0, cases: 1, steps: 1 }
+
+// The executable derives its root from this helper. Copy both so these
+// process tests reach the isolated campaign rather than failing at import.
+const copyCampaign = async (root) => {
+  await mkdir(join(root, "scripts"))
+  for (const file of ["run-jj-abi-campaign.mjs", "workspace-packages.mjs"]) {
+    await copyFile(new URL(file, import.meta.url), join(root, "scripts", file))
+  }
+  return join(root, "scripts", "run-jj-abi-campaign.mjs")
+}
+
 const fixture = () => {
   const before = "seed 0 step 0 value 1013904223\n"
   const operation = { index: 0, first: { ok: { changeId: "klmnopqrstuv" } }, second: { ok: { changeId: "lmnopqrstuvw" } }, diff: { ok: { diff: expectedDiff(before) } }, failure: { err: { code: "invalid_ref", command: "jj restore --from kkkkkkkkkkkk", message: 'revision "kkkkkkkkkkkk" doesn\'t exist' } }, restore: { ok: {} }, health: { ok: { diff: "" } }, restoredText: before }
@@ -118,10 +131,8 @@ test("campaign preserves existing evidence and refuses reuse before spawning a t
 test("missing real WASM artifact fails the executable campaign before native or WASM work can be claimed", async () => {
   const root = await mkdtemp(join(tmpdir(), "smithers-abi-missing-wasm-"))
   try {
-    await mkdir(join(root, "scripts"))
-    const executable = join(root, "scripts", "run-jj-abi-campaign.mjs")
+    const executable = await copyCampaign(root)
     const evidence = join(root, "evidence")
-    await copyFile(new URL("./run-jj-abi-campaign.mjs", import.meta.url), executable)
     await assert.rejects(promisify(execFile)(process.execPath, [executable], {
       env: { ...process.env, SMITHERS_ABI_SEED: "0", SMITHERS_ABI_CASES: "1", SMITHERS_ABI_STEPS: "1", SMITHERS_ABI_ARTIFACT_DIR: evidence }
     }), /ENOENT/)
@@ -133,14 +144,27 @@ test("missing real WASM artifact fails the executable campaign before native or 
   } finally { await rm(root, { recursive: true, force: true }) }
 })
 
-const eventually = async (condition, description) => {
-  const deadline = Date.now() + 10000
-  while (Date.now() < deadline) {
-    if (await condition()) return
-    await delay(20)
+// Subscribe before checking so an atomic ready-file rename cannot fall
+// between the observation and the wait. The test's cancellation closes it.
+const whenCreated = (path, signal) => new Promise((resolve, reject) => {
+  signal.throwIfAborted()
+  // Callback-style watch subscribes synchronously. An async iterator would
+  // not subscribe until next(), leaving a gap after a failed initial read.
+  const changes = watch(dirname(path), { signal }, () => { void check() })
+  const failed = (error) => { changes.close(); reject(error) }
+  changes.once("error", failed)
+  changes.once("close", () => { if (signal.aborted) reject(signal.reason) })
+  async function check() {
+    try {
+      const contents = await readFile(path, "utf8")
+      changes.close()
+      resolve(contents)
+    } catch (error) {
+      if (error.code !== "ENOENT") failed(error)
+    }
   }
-  assert.fail(`Timed out waiting for ${description}`)
-}
+  void check()
+})
 const alive = async (pid) => {
   try { process.kill(pid, 0) }
   catch (error) { if (error.code === "ESRCH") return false; throw error }
@@ -152,38 +176,172 @@ const alive = async (pid) => {
   return true
 }
 
+// IPC establishes readiness; the interval keeps the descendant alive after
+// its leader disconnects. Inherited pipes make successful campaign completion
+// wait for worker death. The negative control closes those pipes so leader-only
+// cleanup can settle, and reads SMITHERS_ORPHAN_FILE: the worker publishes its
+// pid there only from a tick that runs after it observed the disconnect, and
+// publishes the sibling .exited path from its exit handler. Racing the two
+// decides whether the descendant outlived its leader without any sleep.
+const writeTier = async (cargo, workerStdio = "inherit") => {
+  await writeFile(cargo, `#!${process.execPath}\nconst {spawn}=require('node:child_process');const fs=require('node:fs');process.on('SIGTERM',()=>{});const worker=spawn(process.execPath,['-e',"const fs=require('node:fs');process.on('SIGTERM',()=>{});process.on('message',()=>{});const orphan=process.env.SMITHERS_ORPHAN_FILE;let disconnected=false;process.on('disconnect',()=>{disconnected=true});process.on('exit',()=>{if(orphan)fs.writeFileSync(orphan+'.exited',String(process.pid))});setInterval(()=>{if(!disconnected||!orphan)return;fs.writeFileSync(orphan+'.tmp',String(process.pid));fs.renameSync(orphan+'.tmp',orphan)},50);process.send('ready')"],{stdio:['ignore','${workerStdio}','${workerStdio}','ipc']});worker.once('message',()=>{const path=process.env.SMITHERS_OWNED_PID_FILE;fs.writeFileSync(path+'.tmp',JSON.stringify({leader:process.pid,worker:worker.pid}));fs.renameSync(path+'.tmp',path)});\n`)
+  await chmod(cargo, 0o755)
+}
+
+const assertRetired = async (pids) => {
+  assert.equal(await alive(pids.leader), false, "owned tier survived campaign exit")
+  assert.equal(await alive(pids.worker), false, "owned descendant survived campaign exit")
+}
+
+// Use the actual production runner with its group flag disabled. The negative
+// control must fail the same liveness oracle used by the executable tests.
+const rejectLeaderOnlyCleanup = async (context) => {
+  const root = await mkdtemp(join(tmpdir(), "smithers-abi-negative-"))
+  const controller = new AbortController()
+  let pids
+  let completion
+  try {
+    const source = await readFile(new URL("run-jj-abi-campaign.mjs", import.meta.url), "utf8")
+    const runner = source.match(/const run = ([\s\S]+?)\n\nexport const runCampaign/)[1]
+    const flag = 'const grouped = process.platform !== "win32"'
+    assert.equal(runner.split(flag).length, 2, "negative control must replace exactly one group flag")
+    const run = runInNewContext(
+      `(${runner.replace(flag, "const grouped = false")})`,
+      { spawn, createWriteStream, process, setTimeout, clearTimeout, Error }
+    )
+    const cargo = join(root, "cargo")
+    const pidPath = join(root, "pids.json")
+    const orphanPath = join(root, "orphan")
+    await writeTier(cargo, "ignore")
+    const interrupted = new Error("negative control interruption")
+    completion = run(cargo, [], root, { ...process.env, SMITHERS_OWNED_PID_FILE: pidPath, SMITHERS_ORPHAN_FILE: orphanPath }, join(root, "tier.log"), controller.signal)
+      .then(() => assert.fail("interrupted runner succeeded"), (error) => assert.equal(error, interrupted))
+    pids = JSON.parse(await whenCreated(pidPath, context.signal))
+    controller.abort(interrupted)
+    await completion
+    assert.equal(await alive(pids.leader), false)
+    // Race the worker's post-disconnect tick against its own exit record. The
+    // tick can only be written by a worker that is still executing after its
+    // leader died, so winning that race is the barrier; a worker that merely
+    // held the IPC channel loses it by exiting, and says so instead of hanging.
+    const barrier = new AbortController()
+    const settled = AbortSignal.any([context.signal, barrier.signal])
+    const survived = whenCreated(orphanPath, settled)
+    const exited = whenCreated(`${orphanPath}.exited`, settled)
+    let outcome
+    try {
+      outcome = await Promise.race([survived.then((pid) => Number(pid)), exited.then(() => null)])
+    } finally {
+      barrier.abort(new Error("descendant liveness barrier settled"))
+      await Promise.allSettled([survived, exited])
+    }
+    assert.equal(outcome, pids.worker, "owned descendant exited with its leader instead of surviving it")
+    assert.equal(await alive(pids.worker), true, "negative control needs an independently live worker")
+    await assert.rejects(assertRetired(pids), /owned descendant survived campaign exit/)
+  } finally {
+    if (pids) {
+      for (const pid of Object.values(pids)) {
+        try { process.kill(pid, "SIGKILL") }
+        catch (error) { if (error.code !== "ESRCH") throw error }
+      }
+    }
+    controller.abort()
+    await completion
+    await rm(root, { recursive: true, force: true })
+  }
+}
+
+const verifyCompletionCleanup = async (context) => {
+  const root = await mkdtemp(join(tmpdir(), "smithers-abi-completion-"))
+  const controller = new AbortController()
+  let socket
+  let completion
+  const connected = Promise.withResolvers()
+  const outcome = Promise.withResolvers()
+  const server = createServer((connection) => {
+    socket = connection
+    socket.on("data", () => outcome.resolve("worker executed after run resolved"))
+    socket.once("close", () => outcome.resolve("worker connection closed"))
+    socket.on("error", (error) => {
+      if (error.code !== "ECONNRESET" && error.code !== "EPIPE") outcome.reject(error)
+    })
+    connected.resolve()
+  })
+  const cancelled = () => { socket?.destroy(); server.close() }
+  context.signal.addEventListener("abort", cancelled, { once: true })
+  try {
+    await new Promise((resolve, reject) => {
+      server.once("error", reject)
+      server.listen(0, "127.0.0.1", resolve)
+    })
+    const source = await readFile(new URL("run-jj-abi-campaign.mjs", import.meta.url), "utf8")
+    const runner = source.match(/const run = ([\s\S]+?)\n\nexport const runCampaign/)[1]
+    const run = runInNewContext(`(${runner})`, { spawn, createWriteStream, process, setTimeout, clearTimeout, Error })
+    // The socket keeps the worker alive independently of IPC and stdio. Its
+    // connect acknowledgement lets the leader exit successfully without a sleep.
+    const worker = `const net=require('node:net');const socket=net.createConnection({port:Number(process.env.SMITHERS_WORKER_PORT),host:'127.0.0.1'},()=>process.send('ready'));socket.on('data',()=>socket.write('pong'));`
+    const leader = `const {spawn}=require('node:child_process');const fs=require('node:fs');const worker=spawn(process.execPath,['-e',${JSON.stringify(worker)}],{stdio:['ignore','ignore','ignore','ipc']});worker.once('message',()=>{fs.writeFileSync(process.env.SMITHERS_WORKER_PID,String(worker.pid));process.exit(0)});`
+    completion = run(process.execPath, ["-e", leader], root, {
+      ...process.env,
+      SMITHERS_WORKER_PORT: String(server.address().port),
+      SMITHERS_WORKER_PID: join(root, "worker.pid")
+    }, join(root, "tier.log"), AbortSignal.any([context.signal, controller.signal]))
+    await completion
+    await connected.promise
+    // Only the test writes the ping, strictly after production run() resolves.
+    // A pong proves post-completion execution; socket closure proves retirement
+    // without confusing a dead process awaiting reap with a running worker.
+    socket.write("ping", () => {})
+    assert.equal(await outcome.promise, "worker connection closed")
+  } finally {
+    context.signal.removeEventListener("abort", cancelled)
+    controller.abort()
+    await completion?.catch(() => {})
+    socket?.destroy()
+    await new Promise((resolve) => server.close(resolve))
+    try {
+      const pid = Number(await readFile(join(root, "worker.pid"), "utf8"))
+      process.kill(pid, "SIGKILL")
+    } catch (error) { if (error.code !== "ENOENT" && error.code !== "ESRCH") throw error }
+    await rm(root, { recursive: true, force: true })
+  }
+}
+
 for (const signal of ["SIGINT", "SIGTERM"]) {
-  test(`${signal} interrupts a real running tier, retires its process group and records interruption`, { skip: process.platform === "win32", timeout: 20000 }, async () => {
+  test(`${signal} interrupts a real running tier, retires its process group and records interruption`, { skip: process.platform === "win32", timeout: 20000 }, async (context) => {
+    if (signal === "SIGINT") {
+      await context.test("normal completion retires an independently live worker before run resolves", verifyCompletionCleanup)
+      await context.test("descendant oracle rejects production run with leader-only cleanup", rejectLeaderOnlyCleanup)
+    }
     const root = await mkdtemp(join(tmpdir(), "smithers-abi-interruption-"))
     let parent
     let pids
+    const startup = new AbortController()
     try {
-      await mkdir(join(root, "scripts"))
+      const executable = await copyCampaign(root)
       await mkdir(join(root, "bin"))
       await mkdir(join(root, "packages/smithers/flows/jj/wasm"), { recursive: true })
       await writeFile(join(root, "packages/smithers/flows/jj/wasm/flows_jj.wasm"), "fixture bytes, never instantiated")
-      const executable = join(root, "scripts", "run-jj-abi-campaign.mjs")
       const evidence = join(root, "evidence")
       const pidPath = join(root, "owned-processes.json")
-      await copyFile(new URL("./run-jj-abi-campaign.mjs", import.meta.url), executable)
       const cargo = join(root, "bin", "cargo")
-      await writeFile(cargo, `#!${process.execPath}\nconst {spawn}=require('node:child_process');const fs=require('node:fs');process.on('SIGTERM',()=>{});const worker=spawn(process.execPath,['-e',"process.on('SIGTERM',()=>{});setInterval(()=>{},1000)"],{stdio:'ignore'});fs.writeFileSync(process.env.SMITHERS_OWNED_PID_FILE,JSON.stringify({leader:process.pid,worker:worker.pid}));setInterval(()=>{},1000);\n`)
-      await chmod(cargo, 0o755)
+      // The worker acknowledges its installed signal handler over IPC. Only
+      // then does the leader publish readiness, without a startup sleep.
+      await writeTier(cargo)
       parent = spawn(process.execPath, [executable], { stdio: ["ignore", "pipe", "pipe"], env: { ...process.env, PATH: `${join(root, "bin")}:${process.env.PATH}`, SMITHERS_OWNED_PID_FILE: pidPath, SMITHERS_ABI_SEED: "0", SMITHERS_ABI_CASES: "1", SMITHERS_ABI_STEPS: "1", SMITHERS_ABI_ARTIFACT_DIR: evidence } })
       let output = ""
       parent.stdout.on("data", (bytes) => { output += bytes })
       parent.stderr.on("data", (bytes) => { output += bytes })
       const completion = new Promise((resolve, reject) => { parent.once("error", reject); parent.once("close", (code, stoppedBy) => resolve({ code, stoppedBy })) })
-      await eventually(async () => {
-        try { pids = JSON.parse(await readFile(pidPath, "utf8")); return true }
-        catch (error) { if (error.code === "ENOENT") return false; throw error }
-      }, "owned tier and descendant startup")
+      pids = JSON.parse(await Promise.race([
+        whenCreated(pidPath, AbortSignal.any([context.signal, startup.signal])),
+        completion.then((result) => assert.fail(`Campaign exited before tier readiness: ${JSON.stringify(result)}\n${output}`))
+      ]))
       assert.equal(await alive(pids.leader), true)
       assert.equal(await alive(pids.worker), true)
       parent.kill(signal)
-      await eventually(() => parent.exitCode !== null, "runner interruption exit")
       assert.deepEqual(await completion, { code: signal === "SIGINT" ? 130 : 143, stoppedBy: null }, output)
-      await eventually(async () => !(await alive(pids.leader)) && !(await alive(pids.worker)), "owned tier and descendant exit")
+      await assertRetired(pids)
       const report = JSON.parse(await readFile(join(evidence, "campaign.json"), "utf8"))
       assert.equal(report.status, "interrupted")
       assert.equal(report.signal, signal)
@@ -192,6 +350,7 @@ for (const signal of ["SIGINT", "SIGTERM"]) {
       await assert.rejects(readFile(join(evidence, "native.json")), { code: "ENOENT" })
       await assert.rejects(readFile(join(evidence, "wasm.log")), { code: "ENOENT" })
     } finally {
+      startup.abort()
       if (parent && parent.exitCode === null) parent.kill("SIGKILL")
       if (pids) {
         try { process.kill(-pids.leader, "SIGKILL") }
