@@ -86,7 +86,25 @@ describe("one project, from init to gc", processBudget, () => {
     expect(scaffolded).toMatchObject({ flow: { name: "hello", created: true } })
     expect(scaffolded.created).toEqual(expect.arrayContaining(["WORKSPACE.ts", "PACKAGE.ts"]))
     expect(existsSync(join(project, "flows", "hello", "flow.mdx"))).toBe(true)
-    expect(json("ls")).toEqual({ _tag: "flows", items: [{ flowId: "hello", description: expect.any(String) }] })
+    // Catalog entries expose the declared input contract so callers can form
+    // a valid plan request before executing the scaffolded flow.
+    expect(json("ls")).toEqual({
+      _tag: "flows",
+      items: [{
+        flowId: "hello",
+        description: expect.any(String),
+        inputSchema: {
+          dialect: "draft-2020-12",
+          schema: {
+            type: "object",
+            properties: { args: { type: "string" } },
+            required: ["args"],
+            additionalProperties: true
+          },
+          definitions: {}
+        }
+      }]
+    })
   })
 
   it("parks an unapproved plan with the parked exit status", () => {
