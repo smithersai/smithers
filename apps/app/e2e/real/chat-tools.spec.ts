@@ -312,7 +312,7 @@ test("repository switching routes successive model reads to the selected filesys
   capabilities: ["agent", "local.repositories"],
   coverage: ["action:repo.open", "action:repo.select", "action:files.read", "action:chat.send", "host:local", "path:success", "door:slash", "door:agent", "dimension:repository-context", "evidence:disk-and-model-tool-context"],
   description: "Read distinct same-named files through the real model after each UI repository selection, requiring both answers and tool calls to agree with the selected filesystem."
-}), async ({ page, request }, testInfo) => {
+}), async ({ page }, testInfo) => {
   const stamp = Date.now()
   const firstText = "The orchard grows apricots.\n"
   const secondText = "The harbor shelters narwhals.\n"

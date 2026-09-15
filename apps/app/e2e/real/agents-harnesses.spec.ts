@@ -350,17 +350,18 @@ test("delegation completes a harmless prompt in a real harness and its session c
   // satisfy the proof that this provider actually completed the task.
   const marker = "323"
   await command(page, `/agent.delegate ${id} Calculate seventeen times nineteen. Reply using decimal digits only. Do not use tools.`)
-  let sessionId: string | undefined
+  let discoveredSessionId: string | undefined
   await expect.poll(async () => {
     const response = await realApi(page, request, "GET", "/api/pty")
     if (!response.ok()) return response.status()
     const body = await response.json() as {
       readonly sessions: ReadonlyArray<{ readonly sessionId: string; readonly roleId?: string }>
     }
-    sessionId = body.sessions.find((session) => session.roleId === id)?.sessionId
-    return sessionId
+    discoveredSessionId = body.sessions.find((session) => session.roleId === id)?.sessionId
+    return discoveredSessionId
   }, { message: "the slash delegation creates its real role PTY" }).toMatch(/^pty-/)
-  if (sessionId === undefined) throw new Error("The real delegation created no session.")
+  if (discoveredSessionId === undefined) throw new Error("The real delegation created no session.")
+  const sessionId = discoveredSessionId
   registerOwnedPty(sessionId)
 
   const listed = await realApi(page, request, "GET", "/api/pty")
