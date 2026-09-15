@@ -3,6 +3,7 @@ import { createAppStore } from "../AppStore"
 import { initialGuide } from "../AppState"
 import { createGitHubSeam, GITHUB_APP_INSTALL_URL, INSTALL_VERIFY_PATH } from "./GitHubSeam"
 import type { SeamContext } from "./SeamContext"
+import { guideActionState } from "../../onboarding/actionState"
 
 /*
  * Onboarding SCRIPT v4 beat 11: the GitHub App's setup-URL return is verified
@@ -215,4 +216,69 @@ test("returning to the install lesson re-verifies after an earlier empty check",
   expect(f.requested).toEqual([INSTALL_VERIFY_PATH, INSTALL_VERIFY_PATH])
   expect(f.store.session().guide?.said?.["github.app.installed"]).toBe("I can see ada/hello.")
   await f.store.dispose?.()
+})
+
+/*
+ * Browsers only open a popup within the click's user activation (~5 s in
+ * Chromium). Verifying pages the whole inventory first, so the install page
+ * is reserved in the click and navigated once the check says to install.
+ */
+const slowInstall = async () => {
+  const f = await setup(() => Response.json({ repos: [] }))
+  await signIn(f.store)
+  const answers: Array<(response: Response) => void> = []
+  Object.assign(f.ctx, { http: (input: RequestInfo | URL) => { f.requested.push(String(input)); return new Promise<Response>(resolve => answers.push(resolve)) } })
+  const popup = { opener: {} as unknown, closed: false, location: { href: "about:blank" }, close() { popup.closed = true } }
+  const opened: Array<unknown[]> = []
+  const original = Object.getOwnPropertyDescriptor(globalThis, "window")
+  const target = Object.assign(new EventTarget(), { open: (...args: unknown[]) => { opened.push(args); return blocked ? null : popup } })
+  let blocked = false
+  Object.defineProperty(globalThis, "window", { configurable: true, value: target })
+  const restore = () => { if (original) Object.defineProperty(globalThis, "window", original); else Reflect.deleteProperty(globalThis, "window") }
+  return { ...f, answers, popup, opened, restore, block: () => { blocked = true } }
+}
+
+test("the install pill reserves GitHub's page within the click, shows the check, and checks once", async () => {
+  const f = await slowInstall()
+  try {
+    const first = f.seam.openInstall()
+    expect(f.opened).toEqual([["about:blank", "_blank"]])
+    expect(f.popup.opener).toBeNull()
+    await settle()
+    const action = { label: "Install the GitHub App", key: "a", flow: "github.app.open" }
+    expect(guideActionState(action, [], f.store.session().guide!)).toMatchObject({ label: "Checking GitHub…", disabled: true, busy: true })
+    const second = f.seam.openInstall()
+    await settle()
+    expect(f.requested).toEqual([INSTALL_VERIFY_PATH])
+    expect(f.opened).toHaveLength(1)
+    f.answers[0]!(Response.json({ repos: [] }))
+    await Promise.all([first, second])
+    expect(f.popup.location.href).toBe(`${GITHUB_APP_INSTALL_URL}?state=onboarding%3A0`)
+    expect(f.popup.closed).toBe(false)
+    expect(guideActionState(action, [], f.store.session().guide!)).toEqual(action)
+  } finally { f.restore(); await f.store.dispose?.() }
+})
+
+test("an existing installation closes the reserved page and finishes the lesson", async () => {
+  const f = await slowInstall()
+  try {
+    const pending = f.seam.openInstall()
+    await settle()
+    f.answers[0]!(Response.json({ repos: [{ fullName: "ada/hello", installationId: 42 }] }))
+    await pending
+    expect(f.popup.closed).toBe(true)
+    expect(f.popup.location.href).toBe("about:blank")
+    expect(f.store.session().guide?.said?.["github.app.installed"]).toBe("I can see ada/hello.")
+  } finally { f.restore(); await f.store.dispose?.() }
+})
+
+test("a blocked install page says so instead of doing nothing", async () => {
+  const f = await slowInstall()
+  f.block()
+  try {
+    const pending = f.seam.openInstall()
+    await settle()
+    f.answers[0]!(Response.json({ repos: [] }))
+    expect(await pending).toContain("blocked the GitHub install page")
+  } finally { f.restore(); await f.store.dispose?.() }
 })

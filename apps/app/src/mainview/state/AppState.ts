@@ -678,6 +678,8 @@ export const GuideSchema = z.object({
   pick: z.array(z.number().int().positive()).optional(),
   notice: z.string().optional(),
   noticeDetail: z.string().optional(),
+  /** The page load whose GitHub App check is in flight; another load's value is a reload, never a busy button. */
+  installCheck: z.string().optional(),
   /** Launch intent is durable before provisioning; a reload can report an interrupted attempt. */
   librarianLaunches: z.array(z.object({
     kind: z.enum(["wiki", "history"]),

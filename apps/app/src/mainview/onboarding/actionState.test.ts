@@ -2,7 +2,7 @@ import { expect, test } from "bun:test"
 import type { Card } from "../state/AppState"
 import { initialGuide } from "../state/AppState"
 import { LIBRARIAN_LAUNCH_OWNER } from "../state/LibrarianLaunch"
-import { guideActionState } from "./actionState"
+import { guideActionState, INSTALL_CHECK_OWNER } from "./actionState"
 import { GUIDE_STAGES } from "./lessons"
 
 test("completed live actions remain usable after Back even if their run expired or has not hydrated", () => {
@@ -98,4 +98,13 @@ test("older durable failures still project a concise retry action", () => {
     notice: "Create Wiki didn't start: upstream failed", librarianLaunches: [{ kind: "wiki", repo: "will/demo",
       scope: JSON.stringify(["will/demo", null, null, null, null, 0]), phase: "failed", startedAt: 1, reason: "upstream failed" }] }))
     .toMatchObject({ label: "Retry Wiki" })
+})
+
+test("the install pill is busy only while this page's GitHub check is in flight", () => {
+  const install = { label: "Install the GitHub App", key: "a", flow: "github.app.open" }
+  const guide = { ...initialGuide(), step: 11 }
+  expect(guideActionState(install, [], { ...guide, installCheck: INSTALL_CHECK_OWNER })).toMatchObject({ label: "Checking GitHub…", disabled: true, busy: true })
+  // A check persisted by an earlier page load never leaves a dead button.
+  expect(guideActionState(install, [], { ...guide, installCheck: "old-page" })).toEqual(install)
+  expect(guideActionState(install, [], guide)).toEqual(install)
 })

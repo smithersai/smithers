@@ -300,11 +300,14 @@ test("the whole tutorial walks every beat, keyboard first, through asynchronous 
   await shoot(page, 11)
   const beforeInstallUrl = page.url()
   const popupReady = page.context().waitForEvent("page")
+  // Real accounts take seconds to verify; the popup must still open within the key press's activation.
+  host.verifyDelayMs = 6_000
   await page.keyboard.press("a")
-  await pumpUntil(page, "GitHub install page opens", async () => host.installed)
+  await expect(page.locator('.guide-primary[data-flow="github.app.open"]')).toHaveAttribute("aria-busy", "true")
   const installPage = await popupReady
-  await installPage.waitForLoadState("domcontentloaded")
-  expect(installPage.url()).toContain("github.com/apps/smitherspreviewrelease/installations/new")
+  await pumpUntil(page, "GitHub install page opens", async () => host.installed)
+  host.verifyDelayMs = 0
+  await installPage.waitForURL(/github\.com\/apps\/smitherspreviewrelease\/installations\/new/)
   await installPage.close()
   await page.bringToFront()
   await page.evaluate(() => window.dispatchEvent(new Event("focus")))

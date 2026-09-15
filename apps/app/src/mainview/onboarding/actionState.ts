@@ -12,9 +12,14 @@ const liveActions: Readonly<Record<string, { operation: LiveTutorialOperation; b
   "change.open": { operation: "change", busy: "Creating Change…", retry: "Retry Change", complete: "Change ready", completion: "change.opened" },
 }
 
+/** This page load: a GitHub App check persisted by an earlier load is not in flight here. */
+export const INSTALL_CHECK_OWNER = crypto.randomUUID()
+
 /** The suggestion and its shortcut share the current persisted run's state. */
 export function guideActionState(action: GuideAction, cards: readonly Card[], guide: GuideState): GuideAction & { disabled?: boolean; busy?: boolean } {
   if (completedGuideAction(action, guide)) return { ...action, flow: "onboarding.act", args: "next" }
+  // Verifying pages the whole GitHub inventory; without a label the pill looks dead for seconds.
+  if (action.flow === "github.app.open" && guide.installCheck === INSTALL_CHECK_OWNER) return { ...action, label: "Checking GitHub…", disabled: true, busy: true }
   const background = action.flow === LIBRARIAN_COMMANDS.wiki ? "wiki" : action.flow === LIBRARIAN_COMMANDS.history ? "history" : undefined
   if (background && legacyLibrarianFailure(guide)?.kind === background) return { ...action, label: background === "wiki" ? "Retry Wiki" : "Retry Mythical history" }
   const launch = background && librarianLaunchFor(guide, background)

@@ -3,6 +3,7 @@ import { formFieldsFor } from "../../flows/FlowForms"
 import { GitHubInstallationInput, GitHubInstallationForm } from "../../flows/entries/github"
 import { lessonCompletion } from "../../onboarding/completion"
 import { GUIDE_STAGES } from "../../onboarding/lessons"
+import { INSTALL_CHECK_OWNER } from "../../onboarding/actionState"
 import { actorSharedState } from "../ActorBindings"
 /*
  * The GitHub seam (lane sync, ADR 0005; lane L5 against the live routes),
@@ -471,10 +472,13 @@ export const createGitHubSeam = (ctx: SeamContext, deps: GitHubSeamDeps = {}): G
     else void verifyInstall(installationId)
     return true
   }
+  /* The install pill's check, one at a time: a second press joins it instead of paging the inventory again. */
+  const installCheck = actorSharedState(ctx, "install-check", () => ({ current: undefined as Promise<string | void> | undefined }))
   const installChecks = actorSharedState(ctx, "install-checks", () => ({ current: "" }))
   const settleInstallLesson: GitHubSeam["settleInstallLesson"] = async () => {
     if (!installLesson()) { installChecks.current = ""; return }
-    if (adoption.current !== undefined) return
+    // The pill's check already reads the inventory; its busy write must not start a second read.
+    if (adoption.current !== undefined || installCheck.current !== undefined) return
     // Inventory membership alone does not prove that this App is installed.
     const repos = [...ctx.store.collections.repositories.values()].filter((repository) => repository.catalog !== true)
     if (ctx.store.collections.identitySessions.get("identity")?.state !== "signed-in") return
@@ -483,12 +487,39 @@ export const createGitHubSeam = (ctx: SeamContext, deps: GitHubSeamDeps = {}): G
     installChecks.current = key
     await verifyInstall()
   }
+  const markInstallCheck = async (owner: string | undefined): Promise<void> => {
+    const guide = ctx.store.session().guide
+    if (guide === undefined || guide.installCheck === owner) return
+    await ctx.dispatch({ type: "guide.changed", actor: "system", guide: { ...guide, installCheck: owner } }).isPersisted.promise
+  }
   /** GitHub's own chooser: the tutorial's install lesson, where the user has no repository yet. */
-  const openChooser = async (): Promise<string | void> => {
-    if (ctx.store.collections.identitySessions.get("identity")?.state !== "signed-in") return "Log in to GitHub first; the install page asks as you."
-    if (await verifyInstall() !== "empty" || !installLesson()) return
-    // `onboarding:<playthrough>`: GitHub echoes it back; a colon keeps it out of the app's id-prefix vocabulary (conformance/LiteralPin).
-    const url = `${GITHUB_APP_INSTALL_URL}?state=${encodeURIComponent(`onboarding:${ctx.store.session().guide?.playthrough ?? 0}`)}`
+  const openChooser = (): Promise<string | void> => {
+    if (ctx.store.collections.identitySessions.get("identity")?.state !== "signed-in") return Promise.resolve("Log in to GitHub first; the install page asks as you.")
+    if (installCheck.current !== undefined) return installCheck.current
+    /*
+     * A browser opens a popup only within the click's user activation (about
+     * five seconds in Chromium), and verifying a real inventory takes longer.
+     * Reserve the page now, as signIn does, and navigate it once the check
+     * says to install. The native door needs no activation.
+     */
+    const popup = deps.openExternal === undefined && typeof window !== "undefined" ? window.open("about:blank", "_blank") : null
+    if (popup) popup.opener = null
+    const run = checkThenOpen(popup).finally(() => { installCheck.current = undefined })
+    installCheck.current = run
+    return run
+  }
+  const checkThenOpen = async (popup: Window | null): Promise<string | void> => {
+    let url: string | undefined
+    try {
+      await markInstallCheck(INSTALL_CHECK_OWNER)
+      if (await verifyInstall() !== "empty" || !installLesson()) return
+      // `onboarding:<playthrough>`: GitHub echoes it back; a colon keeps it out of the app's id-prefix vocabulary (conformance/LiteralPin).
+      url = `${GITHUB_APP_INSTALL_URL}?state=${encodeURIComponent(`onboarding:${ctx.store.session().guide?.playthrough ?? 0}`)}`
+    } finally {
+      await markInstallCheck(undefined)
+      // An adopted installation, a refusal, or a stale lesson: nothing to install, so no blank tab stays behind.
+      if (url === undefined) popup?.close()
+    }
     // Recheck the verified inventory when the person returns to this tab,
     // even if GitHub's configured setup URL belongs to another app host.
     if (typeof window !== "undefined") window.addEventListener("focus", () => { void verifyInstall() }, { once: true })
@@ -500,7 +531,10 @@ export const createGitHubSeam = (ctx: SeamContext, deps: GitHubSeamDeps = {}): G
     }
     // GitHub owns the App's configured setup URL. Keep this tutorial tab and
     // its origin intact even when that callback lands on another Smithers host.
-    if (typeof window !== "undefined") window.open(url, "_blank", "noopener")
+    if (typeof window === "undefined") return
+    if (popup === null) return "Your browser blocked the GitHub install page. Allow pop-ups for this site, then try again."
+    if (popup.closed) return "The GitHub install page was closed before it loaded. Try again."
+    popup.location.href = url
   }
 
   const openInstall: GitHubSeam["openInstall"] = async (explicit) => {

@@ -39,6 +39,8 @@ export interface TutorialHost {
   readonly livePolls: Array<string>
   /** How many times the page asked the server to verify an install. */
   verifyCalls: number
+  /** Latency on the verify route: real accounts page the whole inventory, which takes seconds. */
+  verifyDelayMs: number
   signedIn: boolean
   installed: boolean
 }
@@ -58,6 +60,7 @@ export const stubTutorialHost = async (page: Page, _origin: string): Promise<Tut
     live: [],
     livePolls: [],
     verifyCalls: 0,
+    verifyDelayMs: 0,
     signedIn: false,
     installed: false
   }
@@ -125,8 +128,9 @@ export const stubTutorialHost = async (page: Page, _origin: string): Promise<Tut
     host.installed = true
     return route.fulfill({ status: 200, contentType: "text/html", body: "<p>Installed. Return to Smithers.</p>" })
   })
-  await page.route("**/api/user/github-app/installations**", (route) => {
+  await page.route("**/api/user/github-app/installations**", async (route) => {
     host.verifyCalls += 1
+    if (host.verifyDelayMs > 0) await new Promise(resolve => setTimeout(resolve, host.verifyDelayMs))
     return route.fulfill(json({ repos: host.installed ? [{ fullName: INSTALLED_REPO, pushedAt: "2026-09-09T10:00:00Z" }] : [] }))
   })
   await page.route("**/api/cloud/api/user/repos", (route) => route.fulfill(json({
