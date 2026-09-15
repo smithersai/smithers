@@ -366,6 +366,53 @@ export const Cancellation = Schema.Struct({
 export type Cancellation = typeof Cancellation.Type
 
 /**
+ * One open wait somewhere in a run tree that a person has to end.
+ *
+ * A run that calls another flow parks the CHILD execution, not the run an
+ * operator named. `run-3` of `coding/request` sat at `waiting-reason: event`
+ * while the question a person owed an answer to — `coding-clarification` —
+ * was parked three executions below it on `coding/PreparePlan`. Every reader
+ * that asked the named run what it was waiting on was therefore told "an
+ * event", which is true of that one row and false of the run tree: nothing
+ * was going to arrive, because the run was waiting on a human.
+ *
+ * This is the wait as the ROOT of the tree reports it. `runId` is the
+ * execution actually holding it, which is what a decision has to be routed
+ * to; `token` is the durable wait address, submitted back unchanged;
+ * `request` is what the wait declared about itself, which for a `HumanTask`
+ * is `{kind, name, prompt, attempt, maxAttempts}`.
+ *
+ * @since 1.0.0
+ * @category models
+ */
+export const PendingWait = Schema.Struct({
+  /** The execution parked on this wait, which may be the root run itself. */
+  runId: RunId,
+  /** The flow that execution is running. */
+  flowId: Schema.optional(FlowId),
+  /** The supervisor vocabulary this wait parked under, always `approval` here. */
+  reason: Schema.String,
+  /** The durable wait address a decision is routed to. */
+  token: Schema.String,
+  /** The wait point's own name, when the token addresses a named one. */
+  name: Schema.optional(Schema.String),
+  /** Which attempt of a re-asked question this is, counting from 1. */
+  attempt: Schema.optional(Schema.Number),
+  /** What the wait declared about itself, absent when it declared nothing. */
+  request: Schema.optional(Schema.Json),
+  /** When the execution holding this wait was created. */
+  createdAt: Schema.Number
+})
+
+/**
+ * One open wait somewhere in a run tree that a person has to end.
+ *
+ * @since 1.0.0
+ * @category models
+ */
+export type PendingWait = typeof PendingWait.Type
+
+/**
  * A compact summary for run listings and status projections.
  *
  * @since 0.1.0
@@ -436,6 +483,15 @@ export const RunSummary = Schema.Struct({
   parkedBy: Schema.optional(Schema.String),
   /** Who cancelled this run, why, and on whose behalf. Absent until one did. */
   cancellation: Schema.optional(Cancellation),
+  /**
+   * Open human waits anywhere in this run's tree, nearest execution first.
+   *
+   * Present only when there is at least one, so a run nobody owes an answer
+   * carries no field rather than an empty array. `status` rolls up with it:
+   * a run any of whose descendants is parked on `approval` reports
+   * `waiting-approval`, which is what the existing inbox filters select on.
+   */
+  pendingWaits: Schema.optional(Schema.Array(PendingWait)),
   createdAt: Schema.Number,
   updatedAt: Schema.Number
 })

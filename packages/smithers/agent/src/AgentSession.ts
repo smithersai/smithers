@@ -945,6 +945,45 @@ export const readExecution = (
 const waitPointName = (signal: string): string => `WaitFor/${signal}`
 
 /**
+ * Whether a parked wait point is the one a signal names.
+ *
+ * Two spellings are accepted, because a re-asked question has one name and
+ * many wait points. `WaitFor.action` parks on `WaitFor/<name>`, and each
+ * attempt of a `HumanTask` parks on its own `WaitFor/<name>#<attempt>`
+ * (`@smthrs/flow` `HumanTask`). A person answering `coding-clarification`
+ * knows the question's name and has no reason to know it is on its second
+ * attempt, so the bare name matches whichever attempt is currently open —
+ * and only one ever is, because an attempt's park ends before the next
+ * begins.
+ */
+const namesWaitPoint = (deferredName: string, signal: string): boolean => {
+  const exact = waitPointName(signal)
+  if (deferredName === exact) return true
+  if (!deferredName.startsWith(`${exact}#`)) return false
+  const attempt = Number(deferredName.slice(exact.length + 1))
+  return Number.isSafeInteger(attempt) && attempt > 0
+}
+
+/** Reads a recorded wake token, reporting an unreadable one as a store fault. */
+const parseWakeToken = (
+  runId: string,
+  token: string
+): Effect.Effect<DurableDeferred.TokenParsed, PersistenceError> =>
+  Schema.decodeEffect(DurableDeferred.TokenParsed.FromString)(token).pipe(
+    Effect.mapError((cause) =>
+      new PersistenceError({
+        operation: "AgentSession.deliverSignal",
+        message: `The wake token recorded for ${runId} is not a durable deferred token`,
+        cause
+      })
+    )
+  )
+
+/** The wait point a durable token addresses, or nothing when it names none. */
+const waitPointOf = (deferredName: string): string | undefined =>
+  deferredName.startsWith("WaitFor/") ? deferredName.slice("WaitFor/".length) : undefined
+
+/**
  * Completes the `WaitFor` wait point a run is parked on with a signal's
  * payload.
  *
@@ -976,24 +1015,37 @@ export const deliverSignal = (
   Effect.gen(function*() {
     const state = yield* DurableEngineState.DurableEngineState
     const control = yield* Effect.serviceOption(ControlRuntime)
+    // Every open wait in the run TREE, not only the named run's own row. A
+    // flow that calls another flow parks the child execution, so `run-3` of
+    // `coding/request` sat on an `event` wait while the question a person had
+    // to answer was parked three executions below it; addressing the run an
+    // operator knows about answered `/control/NoMatchingWait` for a wait that
+    // was wide open (`DurableEngineState.waitingTree`).
+    const open = yield* state.waitingTree(input.runId)
     let token = input.token ?? null
+    let reason = "event"
     if (token === null) {
-      const waiting = yield* state.waiting(input.runId)
-      if (Option.isNone(waiting)) return "unknown" as const
-      const row = waiting.value
-      if (row.reason !== "event" || row.token === null) return "no-match" as const
-      token = row.token
+      const matched = yield* Effect.findFirst(open, (row) =>
+        row.token === null ? Effect.succeed(false) : Effect.map(
+          parseWakeToken(input.runId, row.token),
+          (parsed) => namesWaitPoint(parsed.deferredName, input.signal.name)
+        ))
+      if (Option.isNone(matched)) {
+        // No open wait anywhere in the tree is `unknown`: another process may
+        // own the run, or it may not have parked yet. An open wait that this
+        // signal does not name is `no-match`, which is the refusal.
+        return open.length === 0 ? "unknown" as const : "no-match" as const
+      }
+      token = matched.value.token!
+      reason = matched.value.reason
+    } else {
+      // A bound retry carries its token and must complete under the same
+      // reason the park declared, or the compare-and-swap finds no row.
+      const parked = open.find((row) => row.token === token)
+      if (parked !== undefined) reason = parked.reason
     }
-    const parsed = yield* Schema.decodeEffect(DurableDeferred.TokenParsed.FromString)(token).pipe(
-      Effect.mapError((cause) =>
-        new PersistenceError({
-          operation: "AgentSession.deliverSignal",
-          message: `The wake token recorded for ${input.runId} is not a durable deferred token`,
-          cause
-        })
-      )
-    )
-    if (parsed.deferredName !== waitPointName(input.signal.name)) return "no-match" as const
+    const parsed = yield* parseWakeToken(input.runId, token)
+    if (!namesWaitPoint(parsed.deferredName, input.signal.name)) return "no-match" as const
     // First binding wins in control.db. A crash before or after completion
     // retries this exact token; the command can never move to a later wait.
     if (input.commandId !== undefined) {
@@ -1015,14 +1067,17 @@ export const deliverSignal = (
     const previous = yield* state.deferred(bound)
     if (Option.isSome(previous)) return completionMatches(previous.value) ? "delivered" as const : "no-match" as const
     const engine = yield* FlowRuntime.FlowRuntime
-    const outcome = yield* engine.deferredDoneIfWaiting(WaitFor.deferred(input.signal.name), {
-      flowName: bound.flowName,
-      executionId: bound.executionId,
-      deferredName: bound.deferredName,
-      reason: "event",
-      token,
-      exit: Exit.succeed(input.signal.payload)
-    })
+    const outcome = yield* engine.deferredDoneIfWaiting(
+      WaitFor.deferred(waitPointOf(bound.deferredName) ?? input.signal.name),
+      {
+        flowName: bound.flowName,
+        executionId: bound.executionId,
+        deferredName: bound.deferredName,
+        reason,
+        token,
+        exit: Exit.succeed(input.signal.payload)
+      }
+    )
     // Completion rechecks the concrete token in the engine transaction. A
     // competing resolver may have won; the durable stored result is the proof.
     const completed = yield* state.deferred(bound)

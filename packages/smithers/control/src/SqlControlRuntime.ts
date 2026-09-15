@@ -83,6 +83,7 @@ import {
   Envelope,
   GrantScope,
   type IdempotencyKey,
+  type PendingWait,
   PlanCard,
   Principal,
   Receipt,
@@ -210,6 +211,76 @@ const missingTable = (table: string) => (cause: unknown): boolean => {
 }
 
 const terminal = (status: RunStatus): boolean => status === "cancelled" || status === "completed" || status === "failed"
+
+/**
+ * The waiting reason a human wait parks under.
+ *
+ * `HumanTask` and the agent's own `ask` both declare it
+ * (`FlowRuntime.annotateWaiting({ reason: "approval" })`), so it is the one
+ * value that separates "somebody has to answer this" from every other park.
+ */
+const humanWaitReason = "approval"
+
+/**
+ * The deepest nesting the wait walk climbs.
+ *
+ * It matches `@smthrs/engine-store` `waitingTreeMaxDepth` and exists for the
+ * same reason: authored nesting is a handful of executions deep, and the cap
+ * bounds the read of a tree whose edges were corrupted outside the engine.
+ */
+const maxWaitTreeDepth = 64
+
+/** Whether a failure means this database has no engine execution columns yet. */
+const missingWaitTreeColumns = (cause: unknown): boolean =>
+  missingTable("flows_runs")(cause) ||
+  causeMessages(cause).includes("execution_parent_id") ||
+  causeMessages(cause).includes("waiting_request")
+
+/**
+ * The wait point a durable token addresses, as a person reads it.
+ *
+ * A `HumanTask` attempt is its own wait point named `WaitFor/<task>#<attempt>`
+ * (`@smthrs/flow` `HumanTask`), and a plain `WaitFor` gate is
+ * `WaitFor/<name>`. Splitting the two out of the token is what lets a client
+ * address an answer by the name a person was asked under rather than by a
+ * base64 blob, and lets an inbox say which of three attempts is open.
+ *
+ * A token this plane cannot parse names nothing extra; the token itself still
+ * travels, so the wait stays answerable.
+ */
+const waitPointOf = (token: string): { readonly name?: string; readonly attempt?: number } => {
+  let decoded: unknown
+  try {
+    decoded = JSON.parse(globalThis.atob(token))
+  } catch {
+    return {}
+  }
+  const deferredName = Array.isArray(decoded) && typeof decoded[2] === "string" ? decoded[2] : undefined
+  if (deferredName === undefined || !deferredName.startsWith("WaitFor/")) return {}
+  const point = deferredName.slice("WaitFor/".length)
+  const marker = point.lastIndexOf("#")
+  if (marker < 0) return { name: point }
+  const attempt = Number(point.slice(marker + 1))
+  return Number.isSafeInteger(attempt) && attempt > 0
+    ? { name: point.slice(0, marker), attempt }
+    : { name: point }
+}
+
+/**
+ * The question a park declared, as JSON, or nothing.
+ *
+ * The column is the wait's own text under a `json_valid` check, so text that
+ * does not parse is text nothing wrote: it reads as a park that declared no
+ * question rather than failing the listing it appears in.
+ */
+const declaredRequest = (value: string | null): { readonly request?: typeof Schema.Json.Type } => {
+  if (value === null) return {}
+  try {
+    return { request: JSON.parse(value) as typeof Schema.Json.Type }
+  } catch {
+    return {}
+  }
+}
 
 /** The `RunStore` status the control plane's status projects onto. */
 const storeStatus = (status: RunStatus): RunStore.RunStatus => {
@@ -521,6 +592,8 @@ const makeRuntime = (
       readonly spawnedBy: ReadonlyMap<string, string>
       /** What each parked run is waiting for, by run id. */
       readonly waitingFor: ReadonlyMap<string, string>
+      /** Open human waits in each run's tree, by the run that contains them. */
+      readonly humanWaits: ReadonlyMap<string, ReadonlyArray<PendingWait>>
       /** Who cancelled each cancelled run, by run id. */
       readonly cancellations: ReadonlyMap<string, Cancellation>
       /** The outstanding resume delegation of each run that has one. */
@@ -574,8 +647,17 @@ const makeRuntime = (
         const waitingReason = ancestry.waitingFor.get(row.runId)
         const cancellation = ancestry.cancellations.get(row.runId)
         const pendingResume = ancestry.pendingResumes.get(row.runId)
+        const pendingWaits = ancestry.humanWaits.get(row.runId)
         return {
           ...base,
+          // A run tree with an open human wait is waiting on a human, however
+          // the row that holds the wait is nested. Rolling the status up here
+          // is what lets every existing `status: "waiting-approval"` filter —
+          // the gateway inbox, `smithers approvals list`, the diagnosis card —
+          // find a `HumanTask` parked on a descendant.
+          ...(pendingWaits === undefined || terminal(base.status)
+            ? {}
+            : { status: "waiting-approval" as const, pendingWaits }),
           ...(pendingResume === undefined ? {} : { pendingResume }),
           ...(parentRunId === undefined ? {} : { parentRunId }),
           ...(lineageId === undefined ? {} : { lineageId }),
@@ -665,6 +747,85 @@ const makeRuntime = (
     `.pipe(
         Effect.map((rows) => new Map(rows.map((row) => [row.runId, row.waitingReason])) as ReadonlyMap<string, string>),
         Effect.mapError(persistence("read waiting reasons"))
+      )
+
+    /**
+     * Open human waits in each run's tree, by every run that contains one.
+     *
+     * The walk goes UP, not down. Approval parks are rare and run trees are
+     * shallow, so starting from the parked rows and climbing
+     * `execution_parent_id` costs one recursion step per parked run per
+     * nesting level; starting from every run in scope and descending would
+     * re-walk the whole forest to find the same few rows. A wait therefore
+     * appears under its own execution AND under every ancestor of it, which
+     * is exactly what "does this run tree owe anybody an answer" asks.
+     *
+     * The scope filters the ANCESTOR, not the parked row: a listing wants the
+     * waits of the runs it is about to return, wherever those waits are held.
+     *
+     * Missing column, missing evidence, as with the fork markers: a control
+     * plane over a database whose engine block predates `execution_parent_id`
+     * observes no nested waits rather than failing every listing.
+     */
+    const humanWaits = (scope: IndexScope): Effect.Effect<
+      ReadonlyMap<string, ReadonlyArray<PendingWait>>,
+      PersistenceError
+    > =>
+      sql<{
+        readonly ancestorId: string
+        readonly runId: string
+        readonly flowId: string | null
+        readonly waitingReason: string
+        readonly waitingToken: string | null
+        readonly waitingRequest: string | null
+        readonly createdAtMs: number
+        readonly depth: number
+      }>`
+      WITH RECURSIVE human_waits(waitRunId, ancestorId, depth) AS (
+        SELECT run_id, run_id, 0 FROM flows_runs
+        WHERE waiting_reason = ${humanWaitReason}
+          AND status NOT IN ('completed', 'failed', 'cancelled')
+        UNION
+        SELECT human_waits.waitRunId, step.execution_parent_id, human_waits.depth + 1
+        FROM flows_runs step JOIN human_waits ON step.run_id = human_waits.ancestorId
+        WHERE step.execution_parent_id IS NOT NULL AND human_waits.depth < ${maxWaitTreeDepth}
+      )
+      SELECT
+        human_waits.ancestorId AS "ancestorId",
+        human_waits.depth AS "depth",
+        parked.run_id AS "runId",
+        parked.execution_flow AS "flowId",
+        parked.waiting_reason AS "waitingReason",
+        parked.waiting_token AS "waitingToken",
+        parked.waiting_request AS "waitingRequest",
+        parked.created_at_ms AS "createdAtMs"
+      FROM human_waits JOIN flows_runs parked ON parked.run_id = human_waits.waitRunId
+      WHERE ${within("human_waits.ancestorId", scope)}
+      ORDER BY human_waits.ancestorId, human_waits.depth, parked.created_at_ms, parked.run_id
+    `.pipe(
+        Effect.map((rows) => {
+          const index = new Map<string, Array<PendingWait>>()
+          for (const row of rows) {
+            if (row.waitingToken === null) continue
+            const waits = index.get(row.ancestorId) ?? []
+            waits.push({
+              runId: row.runId,
+              reason: row.waitingReason,
+              token: row.waitingToken,
+              createdAt: row.createdAtMs,
+              ...(row.flowId === null ? {} : { flowId: row.flowId }),
+              ...waitPointOf(row.waitingToken),
+              ...declaredRequest(row.waitingRequest)
+            })
+            index.set(row.ancestorId, waits)
+          }
+          return index
+        }),
+        Effect.catchIf(
+          missingWaitTreeColumns,
+          () => Effect.succeed(new Map<string, ReadonlyArray<PendingWait>>())
+        ),
+        Effect.mapError(persistence("read nested human waits"))
       )
 
     /**
@@ -831,6 +992,7 @@ const makeRuntime = (
           forked: forkedRunIds(scope),
           spawnedBy: spawnedBy(scope),
           waitingFor: waitingFor(scope),
+          humanWaits: humanWaits(scope),
           cancellations: cancellations(scope),
           pendingResumes: pendingResumeIndex(scope)
         }),
@@ -996,7 +1158,11 @@ const makeRuntime = (
 
     // Match summaryFrom's durable fields in SQL. Only the selected ids are
     // decoded or expanded into ancestry; one extra key determines continuation.
-    const runPageKeys = (request: RunQuery, includeSpawn: boolean = true): Effect.Effect<
+    const runPageKeys = (
+      request: RunQuery,
+      includeSpawn: boolean = true,
+      includeWaitRollup: boolean = true
+    ): Effect.Effect<
       ReadonlyArray<RunCursor>,
       PersistenceError
     > => {
@@ -1008,8 +1174,20 @@ const makeRuntime = (
         OR json_type(runs.state_json, '$.status') IS NOT NULL)`
       const flowId = sql`CASE WHEN ${controlState} THEN json_extract(runs.state_json, '$.flowId')
         ELSE json_extract(runs.state_json, '$.flowName') END`
-      const status = sql`CASE WHEN ${controlState} THEN json_extract(runs.state_json, '$.status')
+      const ownStatus = sql`CASE WHEN ${controlState} THEN json_extract(runs.state_json, '$.status')
         ELSE CASE runs.status WHEN 'pending' THEN 'accepted' WHEN 'suspended' THEN 'parked' ELSE runs.status END END`
+      // The listing filter has to agree with the summary the listing returns.
+      // `summaryFrom` rolls a run tree's open human waits up onto the root's
+      // status, so the SQL that decides which runs a `status:
+      // "waiting-approval"` page contains must roll them up too — otherwise
+      // the inbox filter skips exactly the rows the inbox is for, which is how
+      // run-3 stayed invisible while parked on `coding-clarification`.
+      const status = includeWaitRollup
+        ? sql`CASE
+          WHEN runs.status NOT IN ('completed', 'failed', 'cancelled')
+            AND runs.run_id IN (SELECT ancestorId FROM human_wait_ancestry)
+          THEN 'waiting-approval' ELSE ${ownStatus} END`
+        : ownStatus
       const storedParent = sql`CASE WHEN ${controlState} THEN json_extract(runs.state_json, '$.parentRunId') END`
       const storedLineage = sql`CASE WHEN ${controlState} THEN json_extract(runs.state_json, '$.lineageId') END`
       const parent = includeSpawn
@@ -1028,7 +1206,22 @@ const makeRuntime = (
         conditions.push(sql`(${source}, ${sequence}, runs.created_at_ms, runs.run_id) >
           (${after.source}, ${after.sequence}, ${after.createdAt}, ${after.runId})`)
       }
+      // Computed once for the whole page rather than per row: the set of runs
+      // with an open human wait at or below them, climbed from the few parked
+      // rows instead of descended from every run.
+      const waitAncestry = includeWaitRollup
+        ? sql`WITH RECURSIVE human_wait_ancestry(ancestorId, depth) AS (
+          SELECT run_id, 0 FROM flows_runs
+          WHERE waiting_reason = ${humanWaitReason}
+            AND status NOT IN ('completed', 'failed', 'cancelled')
+          UNION
+          SELECT step.execution_parent_id, human_wait_ancestry.depth + 1
+          FROM flows_runs step JOIN human_wait_ancestry ON step.run_id = human_wait_ancestry.ancestorId
+          WHERE step.execution_parent_id IS NOT NULL AND human_wait_ancestry.depth < ${maxWaitTreeDepth}
+        )`
+        : sql.literal("")
       return sql<RunCursor>`
+        ${waitAncestry}
         SELECT runs.run_id AS "runId", ${source} AS source, ${sequence} AS sequence,
                runs.created_at_ms AS "createdAt"
         FROM flows_runs AS runs LEFT JOIN control_runs AS indexed ON indexed.run_id = runs.run_id
@@ -1038,7 +1231,13 @@ const makeRuntime = (
       `.pipe(
         Effect.catchIf(
           (error) => includeSpawn && filters?.parentRunId !== undefined && missingTable("flows_run_parents")(error),
-          () => runPageKeys(request, false)
+          () => runPageKeys(request, false, includeWaitRollup)
+        ),
+        // A database whose engine block predates `execution_parent_id` has no
+        // nesting to roll up, so the page is the one it would have been.
+        Effect.catchIf(
+          (error) => includeWaitRollup && missingWaitTreeColumns(error),
+          () => runPageKeys(request, includeSpawn, false)
         ),
         Effect.mapError(persistence("query runs"))
       )

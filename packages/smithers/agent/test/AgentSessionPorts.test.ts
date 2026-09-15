@@ -330,11 +330,18 @@ describe("AgentSession.drainRecordedSignals", () => {
   })
 })
 
-/** A durable state whose one run is parked exactly as the case describes. */
+/**
+ * A durable state whose one run is parked exactly as the case describes.
+ *
+ * Both reads are stubbed: `deliverSignal` routes through `waitingTree` so a
+ * wait held by a nested execution is reachable from the run an operator named,
+ * and `waiting` is still what the observation ports read.
+ */
 const waitingAs = (reason: string, token: string | null) =>
   Layer.succeed(DurableEngineState.DurableEngineState)({
     ...DurableEngineState.makeMemory(),
-    waiting: (runId: string) => Effect.succeedSome({ runId, reason, wakeAt: null, token })
+    waiting: (runId: string) => Effect.succeedSome({ runId, reason, wakeAt: null, token }),
+    waitingTree: (runId: string) => Effect.succeed([{ runId, reason, wakeAt: null, token }])
   } as DurableEngineState.Service)
 
 describe("the ports when a store answers badly", () => {
@@ -372,10 +379,12 @@ describe("the ports when a store answers badly", () => {
     expect(record).toEqual({ _tag: "Terminal", status: "cancelled" })
   })
 
-  it("refuses a signal to a run parked on something a signal cannot supply", async () => {
+  it("refuses a signal to a park that names no wait point to complete", async () => {
     const observed = await Effect.runPromise(
       Effect.all([
-        // An approval park: waiting for a person, not for a message.
+        // An approval park with no token. The REASON no longer refuses a
+        // signal — a human wait is answered through exactly this path — but a
+        // park that recorded no wait address still names nothing to complete.
         AgentSession.deliverSignal({ runId: "ports-approval", signal: { name: "approval", payload: null } }).pipe(
           Effect.provide(Layer.merge(waitingAs("approval", null), FlowEngine.layerMemory))
         ),
