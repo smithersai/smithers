@@ -176,6 +176,40 @@ describe("durable persistence against a normalized row host", () => {
     expect(large.storedCount).toBe(405)
     expect(large.appendedRows).toEqual(large.appended)
   })
+  /*
+   * The run pump re-reads a run every three seconds and re-dispatches the card
+   * it already holds, payload and all. A smithers.sh profile wiped to 0 bytes
+   * at 13:55Z on 2026-09-15 held 567,535,882 bytes by 16:50Z with nothing but
+   * that polling running. A row the store already holds costs nothing to store
+   * again.
+   */
+  test("an update that changes nothing writes nothing", async () => {
+    const { sqlite, host, executed } = await normalizedFixture()
+    const persistence = createCollectionPersistence({ storage: host.storage, batch: host, flush: host.flush, rows: host })
+    const collection = createCollection(durableCollectionOptions(persistence, spec))
+    await collection.preload()
+    await collection.insert({ id: "one", label: "first" }).isPersisted.promise
+    await host.flush()
+    const writes = () => executed.filter((entry) => entry.sql.includes(`INSERT INTO ${ROW_TABLE_NAME}`)).length
+    const before = writes()
+
+    for (let cycle = 0; cycle < 5; cycle += 1) {
+      await collection.update("one", (draft) => { draft.label = "first" }).isPersisted.promise
+    }
+    await host.flush()
+    expect(writes()).toBe(before)
+
+    // A real change still writes, and the row is the changed one.
+    await collection.update("one", (draft) => { draft.label = "second" }).isPersisted.promise
+    await host.flush()
+    expect(writes()).toBe(before + 1)
+    expect(sqlite.query(`SELECT row_key, value FROM ${ROW_TABLE_NAME}`).all()).toEqual([
+      { row_key: "s:one", value: JSON.stringify({ id: "one", label: "second" }) }
+    ])
+    await collection.cleanup()
+    await host.close()
+  })
+
   test("row deltas update and delete historical unprefixed SQLite keys", async () => {
     const { sqlite, host } = await normalizedFixture()
     host.storage.setItem("smithers-mvp.widgets", JSON.stringify({

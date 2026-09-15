@@ -225,6 +225,51 @@ const transitionPayload = (transition: AppTransition): string => {
   return JSON.stringify(payload, (key, value) => key === "authorizationId" ? undefined : value)
 }
 
+/*
+ * What one journalled transition may cost on disk.
+ *
+ * The transition journal is a diagnostic tail — DevtoolsPanel's dump, `/debug
+ * events`, and the shallow scalar fields state/Diagnostics.ts reads — and
+ * nothing replays it. But MAX_TRANSITION_RECORDS keeps 500 of them, so every
+ * byte a record carries is paid five hundred times over, and the record
+ * carries the transition's WHOLE input.
+ *
+ * The run pump (controller/workflow-pump.ts `patchRunCard`) re-dispatches a run
+ * card's entire payload — its full engine event list — on every poll. At one
+ * run-summary/run-events cycle every three seconds that wrote the payload again
+ * each time: a smithers.sh profile wiped to 0 bytes at 13:55Z on 2026-09-15 held
+ * 567,535,882 bytes by 16:50Z, about 190 MB/h, with ~500 journal rows of about
+ * a megabyte each. Bounding the record is the fix at the writer; the 64 MiB
+ * PersistenceBudget ceiling stays a ceiling, not a steady state.
+ */
+export const MAX_TRANSITION_PAYLOAD_BYTES = 2_048
+/** Kept head of an elided string; long enough for an id, a path or an error line. */
+const ELIDED_STRING_CHARS = 256
+/** Kept head of an elided array; long enough to see what kind of rows it held. */
+const ELIDED_ARRAY_ITEMS = 2
+
+/**
+ * The payload a journal record stores. Small payloads are kept whole. A large
+ * one keeps its shape and its short scalar fields — the key, title, status,
+ * name, id, message and detail every diagnostic read looks at — and elides the
+ * long strings and long arrays that made it large, naming what was dropped.
+ */
+export const journalPayload = (payload: string): string => {
+  if (payload.length <= MAX_TRANSITION_PAYLOAD_BYTES) return payload
+  const elided = JSON.stringify(JSON.parse(payload) as unknown, (_key, value: unknown) => {
+    if (typeof value === "string" && value.length > ELIDED_STRING_CHARS) {
+      return `${value.slice(0, ELIDED_STRING_CHARS)}… [${value.length - ELIDED_STRING_CHARS} chars elided]`
+    }
+    if (Array.isArray(value) && value.length > ELIDED_ARRAY_ITEMS) {
+      return [...value.slice(0, ELIDED_ARRAY_ITEMS), `… [${value.length - ELIDED_ARRAY_ITEMS} items elided]`]
+    }
+    return value
+  })
+  // A payload still over the bound after elision is wide, not deep. Record the
+  // one fact a diagnostic can still use: how big the act's input actually was.
+  return elided.length <= MAX_TRANSITION_PAYLOAD_BYTES ? elided : JSON.stringify({ elided: payload.length })
+}
+
 /** The id prefix of every verbose trace line, so switching off can remove them all. */
 export const TRACE_MESSAGE_PREFIX = "message-trace-"
 export const VERBOSE_ON_TEXT = "Verbose on — showing every flow, including hidden and background ones"
@@ -1517,7 +1562,7 @@ const initializeAppStore = async (resolved: ResolvedPersistence, options: AppSto
       if (recoveryRaw !== undefined) pendingDraft.recoveryRaw = recoveryRaw
       transaction.mutate(() => {
         collections.sessions.update(SESSION_ID, (draft) => { draft.draft = text })
-        collections.transitions.update(`transition-${revision}`, (record) => { record.payload = payload })
+        collections.transitions.update(`transition-${revision}`, (record) => { record.payload = journalPayload(payload) })
       })
       awaitTypingPause(deadline)
       return transaction
@@ -3655,7 +3700,7 @@ const initializeAppStore = async (resolved: ResolvedPersistence, options: AppSto
         revision,
         actor: transition.actor,
         type: transition.type,
-        payload: transitionPayload(transition),
+        payload: journalPayload(transitionPayload(transition)),
         createdAt
       })
       /*

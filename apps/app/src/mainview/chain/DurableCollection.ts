@@ -153,6 +153,14 @@ export const createCollectionPersistence = (options: {
             // its original row is not; never persist that stale derived state.
             throw new StaleDurableMutationError(id, mutation.key)
           }
+          /*
+           * An update that changes nothing costs nothing. The run pump re-reads
+           * a run every three seconds and re-dispatches the card it already
+           * holds; without this, each identical re-read rewrote the row and
+           * every byte of its payload (chain/PersistenceBudget.ts). The row on
+           * disk already IS this value, so skipping is not a deferred write.
+           */
+          if (prior !== undefined && mutation.type === "update" && comparableJson(prior.data) === comparableJson(mutation.modified)) continue
           applied.push({ rows, key, prior })
           const delta: DurableRowDelta = mutation.type === "delete"
             ? { key, versionKey: undefined, data: undefined }

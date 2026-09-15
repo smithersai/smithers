@@ -476,6 +476,28 @@ Diagnostic compaction is part of the same dispatch as the append. The store
 keeps the newest 500 transition records and 250 tool-call records. Entity
 collections are not time-trimmed.
 
+A transition record is also bounded in size. It stores the transition's input,
+and 500 of them are kept, so every byte a record carries is paid five hundred
+times over. `MAX_TRANSITION_PAYLOAD_BYTES` (2 KiB) caps one record: a larger
+payload keeps its shape and its short scalar fields — the key, title, status,
+name, id, message and detail every diagnostic read looks at — and elides the
+long strings and long arrays that made it large, naming what was dropped. A
+payload still too wide after elision is stored as `{"elided": <bytes>}`.
+
+This is the writer's half of the growth the load budget was catching. The run
+pump (`controller/workflow-pump.ts`) re-dispatches a run card's whole payload —
+its full engine event list — on every poll, and the journal stored those bytes
+verbatim. A smithers.sh profile wiped to 0 bytes at 13:55Z on 2026-09-15 held
+567,535,882 bytes by 16:50Z, about 190 MB/h, with nothing running but a client
+polling run-summary / run-events every ~3 s for a handful of runs. Two bounds
+close it: the record cap above, and `DurableCollection.ts` skipping a durable
+write for a row whose content did not change, so an unchanged re-read costs
+nothing. The pump likewise does not dispatch a patch that changes nothing.
+Measured against a 264,769-byte run card: 270,879 bytes of store per idle poll
+cycle before, 889 after, and a store that stops growing once the journal's 500
+records have turned over. The 64 MiB load budget is a ceiling, not a steady
+state.
+
 `chainEvents` is bounded by bytes, not by count, and never row by row. Both
 active and completed chain journals must retain their full prefixes: without
 them a resume can repeat model calls or external effects. So the journal is

@@ -90,11 +90,19 @@ export const createWorkflowPumpController = (
   ): void => {
     const card = store.collections.cards.get(cardId)
     if (card === undefined || card.kind !== "run-trace") return
+    const payload = { ...card.payload, ...patch }
+    /*
+     * A poll that learned nothing writes nothing. This patch carries the run's
+     * WHOLE payload — its full engine event list — and the pump re-reads every
+     * three seconds, so an unchanged re-read used to journal that payload again
+     * on every cycle (state/AppStore.ts MAX_TRANSITION_PAYLOAD_BYTES).
+     */
+    if ((status === undefined || status === card.status) && JSON.stringify(payload) === JSON.stringify(card.payload)) return
     store.dispatch({
       type: "card.updated",
       actor: "system",
       id: cardId,
-      patch: { payload: { ...card.payload, ...patch }, ...(status === undefined ? {} : { status }) }
+      patch: { payload, ...(status === undefined ? {} : { status }) }
     })
   }
 
