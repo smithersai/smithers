@@ -794,7 +794,9 @@ export const layer: Layer.Layer<
             ? registered.map((descriptor) => ({
               flowId: descriptor.name,
               description: descriptor.description,
-              ...(inputDocument(descriptor.input) === undefined ? {} : { inputSchema: inputDocument(descriptor.input)! })
+              ...(inputDocument(descriptor.input) === undefined
+                ? {}
+                : { inputSchema: inputDocument(descriptor.input)! })
             }))
             : yield* runtime.listFlows
           const result = page(available, bounds)

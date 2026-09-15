@@ -164,14 +164,24 @@ describe("ControlLive listings", () => {
   })
 
   it("lists declared markdown inputs without evaluating a flow module", async () => {
-    const listed = await run(Effect.flatMap(Control, control => control.list({ _tag: "flows" })), live({
-      registry: Registry.layerNoop({ list: () => Effect.succeed([
-        { ...descriptor("review", "Review the working copy"), input: new SchemaRefMarkdownArgs({}) }
-      ]) })
-    }))
-    expect(listed).toMatchObject({ _tag: "flows", items: [{ flowId: "review",
-      inputSchema: { schema: { properties: { args: { type: "string" } }, required: ["args"] } }
-    }] })
+    const listed = await run(
+      Effect.flatMap(Control, (control) => control.list({ _tag: "flows" })),
+      live({
+        registry: Registry.layerNoop({
+          list: () =>
+            Effect.succeed([
+              { ...descriptor("review", "Review the working copy"), input: new SchemaRefMarkdownArgs({}) }
+            ])
+        })
+      })
+    )
+    expect(listed).toMatchObject({
+      _tag: "flows",
+      items: [{
+        flowId: "review",
+        inputSchema: { schema: { properties: { args: { type: "string" } }, required: ["args"] } }
+      }]
+    })
   })
 
   it("carries registry discovery warnings beside every flow page", async () => {
