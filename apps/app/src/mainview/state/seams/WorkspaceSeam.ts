@@ -1,3 +1,4 @@
+import { Effect, Exit, Fiber, FiberMap, Layer, ManagedRuntime, Schedule, Scope } from "effect"
 import { preparedView, type ViewAction } from "../PreparedView"
 import { refuseCloudSignIn, SIGN_OUT_REFUSAL } from "./CloudSignIn"
 import { actorSharedState } from "../ActorBindings"
@@ -211,7 +212,7 @@ export interface WorkspaceSeam {
    * head exactly as it was rather than blanking it.
    */
   readonly applyStatusEvent: (workspaceId: string, event: unknown) => void
-  /** Stop every watch timer, and drop any minted desktop credential. */
+  /** Stop owned reads, polls and waits, and drop any minted desktop credential. */
   readonly dispose: () => void
 }
 
@@ -645,22 +646,25 @@ export const createWorkspaceSeam = (ctx: SeamContext, deps: WorkspaceSeamDeps = 
     return `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(name)}${rest}`
   }
 
-  const { timers, watching, watchPolls, desktopMintEpochs, terminalOpenEpochs, lifecycle, workspaceEpochs, sleepers } = actorSharedState(ctx, "workspace", () => ({
-    timers: new Set<ReturnType<typeof setTimeout>>(),
-    watching: new Map<string, () => boolean>(),
-    watchPolls: new Map<string, number>(),
-    desktopMintEpochs: new Map<string, number>(),
-    terminalOpenEpochs: new Map<string, number>(),
-    lifecycle: { disposed: false, reads: new AbortController() },
-    workspaceEpochs: new Map<string, number>(),
-    sleepers: new Map<ReturnType<typeof setTimeout>, { readonly workspaceId: string; readonly finish: (elapsed: boolean) => void }>()
-  }))
-  const { url: cloud, get: getJson, send: sendJson } = createCloudClient({
-    baseUrl: ctx.baseUrl,
-    http: (input, init) => ctx.http(input, (init?.method ?? "GET") === "GET"
-      ? { ...init, signal: lifecycle.reads.signal }
-      : init)
+  const { runtime, watching, sleepers, desktopMintEpochs, terminalOpenEpochs, lifecycle, workspaceEpochs } = actorSharedState(ctx, "workspace", () => {
+    const runtime = ManagedRuntime.make(Layer.empty)
+    const [watching, sleepers] = Effect.runSync(Effect.all([
+      FiberMap.make<string, void>(),
+      FiberMap.make<{ readonly workspaceId: string }, void>()
+    ]).pipe(Scope.provide(runtime.scope)))
+    return {
+      runtime, watching, sleepers,
+      desktopMintEpochs: new Map<string, number>(),
+      terminalOpenEpochs: new Map<string, number>(),
+      lifecycle: { disposed: false },
+      workspaceEpochs: new Map<string, number>()
+    }
   })
+  const { url: cloud, get, send: sendJson } = createCloudClient(ctx)
+  const read = (path: string, label?: string) => Effect.tryPromise({
+    try: (signal) => get(path, label, signal), catch: cloudUnreachable
+  }).pipe(Effect.catch((failure) => Effect.succeed(failure)))
+  const getJson = (path: string, label?: string) => runtime.runPromise(read(path, label)).catch(cloudUnreachable)
 
   /** The lifetime and authorization captured before an await must still own its answer. */
   const currentOperation = (workspaceId?: string): (() => boolean) => {
@@ -678,44 +682,23 @@ export const createWorkspaceSeam = (ctx: SeamContext, deps: WorkspaceSeamDeps = 
   /** 5s cadence × 120 = ten minutes, the provisioning ceiling the workspaces spec names. */
   const MAX_WATCH_POLLS = 120
 
-  const after = (ms: number, work: () => void): void => {
-    if (lifecycle.disposed) return
-    const timer = setTimeout(() => {
-      timers.delete(timer)
-      work()
-    }, ms)
-    timers.add(timer)
+  const sleep = (ms: number, workspaceId: string): Promise<boolean> => {
+    if (lifecycle.disposed) return Promise.resolve(false)
+    return runtime.runPromiseExit(Effect.flatMap(
+      FiberMap.run(sleepers, { workspaceId }, Effect.sleep(ms)), Fiber.join
+    )).then(Exit.isSuccess)
   }
 
-  /** Clearing a retry timer must also release the command awaiting it. */
-  const sleep = (ms: number, workspaceId: string): Promise<boolean> => new Promise((resolve) => {
-    if (lifecycle.disposed) { resolve(false); return }
-    const finish = (elapsed: boolean): void => {
-      clearTimeout(timer)
-      timers.delete(timer)
-      sleepers.delete(timer)
-      resolve(elapsed)
-    }
-    const timer = setTimeout(() => finish(true), ms)
-    timers.add(timer)
-    sleepers.set(timer, { workspaceId, finish })
-  })
-
   const cancelSleeps = (workspaceId?: string): void => {
-    for (const sleeper of sleepers.values()) {
-      if (workspaceId === undefined || sleeper.workspaceId === workspaceId) sleeper.finish(false)
+    for (const [key] of sleepers) {
+      if (workspaceId === undefined || key.workspaceId === workspaceId) runtime.runFork(FiberMap.remove(sleepers, key))
     }
   }
 
   const dispose = (): void => {
     if (lifecycle.disposed) return
     lifecycle.disposed = true
-    lifecycle.reads.abort()
-    cancelSleeps()
-    for (const timer of timers) clearTimeout(timer)
-    timers.clear()
-    watching.clear()
-    watchPolls.clear()
+    void runtime.dispose()
     /* The controller is going away, so no facet can be mounted: the credential goes with it. */
     dropDesktopStream()
     desktopMintEpochs.clear()
@@ -951,11 +934,11 @@ export const createWorkspaceSeam = (ctx: SeamContext, deps: WorkspaceSeamDeps = 
   /* ---- the list load (listWorkspaces, delete's aftermath, a 404 mid-watch) ---- */
 
   /** One page of a list route: its body and the next page's seam path (cursor form), or the honest error. */
-  const getListPage = async (
+  const getListPage = (
     pagePath: string,
     routePath: string
-  ): Promise<{ readonly body: unknown; readonly next: string | null; readonly total: number | null } | { readonly error: string }> => {
-    const answer = await getJson(pagePath, routePath)
+  ): Effect.Effect<{ readonly body: unknown; readonly next: string | null; readonly total: number | null } | { readonly error: string }> => Effect.gen(function*() {
+    const answer = yield* read(pagePath, routePath)
     if ("error" in answer) return answer
     const { response } = answer
     const totalHeader = response.headers.get("x-total-count")
@@ -965,7 +948,7 @@ export const createWorkspaceSeam = (ctx: SeamContext, deps: WorkspaceSeamDeps = 
       next: nextPageOf(response.headers.get("link"), routePath),
       total: totalHeader !== null && Number.isInteger(total) && total >= 0 ? total : null
     }
-  }
+  })
 
   /*
    * The whole list, every page: `?limit=100` and the Link header's next page
@@ -973,10 +956,10 @@ export const createWorkspaceSeam = (ctx: SeamContext, deps: WorkspaceSeamDeps = 
    * is an error, never an empty scope replace that would drop every loaded
    * workspace and its tree row.
    */
-  const loadList = async (
+  const loadListEffect = (
     repo?: string,
     current = currentOperation()
-  ): Promise<ReadonlyArray<CloudWorkspaceInput> | string> => {
+  ): Effect.Effect<ReadonlyArray<CloudWorkspaceInput> | string> => Effect.gen(function*() {
     const path = repo === undefined ? "/user/workspaces" : repoPath(repo, "/workspaces")
     const raw: Array<unknown> = []
     let next: string | null = `${path}?limit=${LIST_PAGE_LIMIT}`
@@ -985,7 +968,7 @@ export const createWorkspaceSeam = (ctx: SeamContext, deps: WorkspaceSeamDeps = 
       if (seen.has(next)) break
       seen.add(next)
       if (!current()) return SIGN_OUT_REFUSAL
-      const answer = await getListPage(next, path)
+      const answer: Effect.Success<ReturnType<typeof getListPage>> = yield* getListPage(next, path)
       if (!current()) return SIGN_OUT_REFUSAL
       if ("error" in answer) return answer.error
       const rows = arrayOf(answer.body, "workspaces")
@@ -1046,7 +1029,11 @@ export const createWorkspaceSeam = (ctx: SeamContext, deps: WorkspaceSeamDeps = 
       ...(repo === undefined ? {} : { repoId: repo })
     })
     return workspaces
-  }
+  })
+  const loadList = (...args: Parameters<typeof loadListEffect>) => runtime.runPromise(loadListEffect(...args)).catch((cause) => {
+    if (lifecycle.disposed) return SIGN_OUT_REFUSAL
+    throw cause
+  })
 
   /* ---- the settle watch ---- */
 
@@ -1055,53 +1042,31 @@ export const createWorkspaceSeam = (ctx: SeamContext, deps: WorkspaceSeamDeps = 
    * gone). A failed poll is not a fact — the watch simply tries again; a 404
    * IS a fact, and the honest answer is to re-read the repository's list.
    */
-  const poll = async (workspaceId: string, current: () => boolean): Promise<void> => {
-    const stop = (): void => {
-      if (watching.get(workspaceId) !== current) return
-      watching.delete(workspaceId)
-      watchPolls.delete(workspaceId)
-    }
-    const active = (): boolean => {
-      if (current() && watching.get(workspaceId) === current) return true
-      stop()
+  const poll = (workspaceId: string, current: () => boolean) => Effect.gen(function*() {
+    const row = ctx.store.collections.cloudWorkspaces.get(workspaceId)
+    if (row === undefined || !current()) return false
+    const answer = yield* read(repoPath(row.repoId, `/workspaces/${encodeURIComponent(workspaceId)}`))
+    if (!current()) return false
+    if (answer.status === 404) {
+      yield* loadListEffect(row.repoId, current)
       return false
     }
-    const row = ctx.store.collections.cloudWorkspaces.get(workspaceId)
-    // Gone from the collection, signed out, or superseded: nothing remains to settle.
-    if (row === undefined || !active()) { stop(); return }
-    // A workspace wedged in pending/starting is not polled for the life of the app: the watch gives up after MAX_WATCH_POLLS and the card keeps the last fact.
-    const polled = (watchPolls.get(workspaceId) ?? 0) + 1
-    watchPolls.set(workspaceId, polled)
-    if (polled > MAX_WATCH_POLLS) { stop(); return }
-    let response: Response
-    try {
-      response = await ctx.http(cloud(repoPath(row.repoId, `/workspaces/${encodeURIComponent(workspaceId)}`)), { signal: lifecycle.reads.signal })
-    } catch {
-      if (active()) after(pollMs, () => void poll(workspaceId, current))
-      return
-    }
-    if (!active()) return
-    if (response.status === 404) {
-      await loadList(row.repoId, active)
-      stop()
-      return
-    }
-    if (response.ok) {
-      const parsed = parseWorkspaceWire(await response.json().catch(() => null), row.repoId)
-      if (!active()) return
+    if (!("error" in answer)) {
+      const parsed = parseWorkspaceWire(answer.body, row.repoId)
       if (parsed !== null) {
         ctx.dispatch({ type: "workspace.updated", actor: "system", workspace: parsed })
-        if (!UNSETTLED.has(parsed.status)) { stop(); return }
+        if (!UNSETTLED.has(parsed.status)) return false
       }
     }
-    if (active()) after(pollMs, () => void poll(workspaceId, current))
-  }
+    return true
+  }).pipe(
+    Effect.repeat({ times: MAX_WATCH_POLLS - 1, while: (pending) => pending, schedule: Schedule.spaced(pollMs) }),
+    Effect.asVoid
+  )
 
   const watch = (workspaceId: string): void => {
-    if (lifecycle.disposed || watching.has(workspaceId)) return
-    const current = currentOperation(workspaceId)
-    watching.set(workspaceId, current)
-    void poll(workspaceId, current)
+    if (lifecycle.disposed) return
+    runtime.runFork(FiberMap.run(watching, workspaceId, poll(workspaceId, currentOperation(workspaceId)), { onlyIfMissing: true }))
   }
 
   /* ---- the acts ---- */
@@ -1445,8 +1410,7 @@ export const createWorkspaceSeam = (ctx: SeamContext, deps: WorkspaceSeamDeps = 
     /* Invalidate reads and both session phases before removing the workspace. */
     workspaceEpochs.set(workspace.id, (workspaceEpochs.get(workspace.id) ?? 0) + 1)
     terminalOpenEpochs.set(workspace.id, (terminalOpenEpochs.get(workspace.id) ?? 0) + 1)
-    watching.delete(workspace.id)
-    watchPolls.delete(workspace.id)
+    runtime.runFork(FiberMap.remove(watching, workspace.id))
     cancelSleeps(workspace.id)
     /* A retry loop for a computer that no longer exists has nothing to mint. */
     desktopMintEpochs.set(workspace.id, (desktopMintEpochs.get(workspace.id) ?? 0) + 1)

@@ -68,13 +68,14 @@ export const createCloudClient = (ctx: Pick<SeamContext, "http" | "baseUrl">) =>
     method: string,
     path: string,
     body?: Record<string, unknown>,
-    label = path
+    label = path,
+    signal?: AbortSignal
   ): Promise<CloudResult> => {
     let response: Response
     try {
       response = await ctx.http(
         url(path),
-        method === "GET" ? undefined : {
+        method === "GET" ? (signal === undefined ? undefined : { signal }) : {
           method,
           ...(body === undefined ? {} : { headers: { "content-type": "application/json" }, body: JSON.stringify(body) })
         }
@@ -92,5 +93,5 @@ export const createCloudClient = (ctx: Pick<SeamContext, "http" | "baseUrl">) =>
     }
     return { body: await response.json().catch(() => null), status: response.status, response }
   }
-  return { url, get: (path: string, label?: string) => request("GET", path, undefined, label), send: request }
+  return { url, get: (path: string, label?: string, signal?: AbortSignal) => request("GET", path, undefined, label, signal), send: request }
 }

@@ -2409,7 +2409,7 @@ describe("workspace seam lifecycle cancellation", () => {
     })
   }
 
-  for (const operation of ["terminal retry", "desktop retry", "terminal settle"] as const) {
+  for (const operation of ["terminal retry", "desktop retry", "terminal settle", "both retries"] as const) {
     for (const cancellation of ["dispose", "delete"] as const) {
       test(`${cancellation} settles a pending ${operation} sleep`, async () => {
         const { ctx, store, seam: unused, dispatched } = await harness({
@@ -2423,7 +2423,9 @@ describe("workspace seam lifecycle cancellation", () => {
         })
         const seam = createWorkspaceSeam(ctx, { pollMs: 60_000 })
         await seedWorkspace(store)
-        const pending = operation === "desktop retry" ? seam.openDesktop("ws-1") : seam.openTerminal("ws-1")
+        const pending = operation === "both retries"
+          ? Promise.all([seam.openDesktop("ws-1"), seam.openTerminal("ws-1")])
+          : operation === "desktop retry" ? seam.openDesktop("ws-1") : seam.openTerminal("ws-1")
         try {
           await wait(10)
           if (cancellation === "dispose") seam.dispose()
