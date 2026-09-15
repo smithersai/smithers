@@ -502,7 +502,8 @@ authenticatedTest(
       const catalog = page.locator('.smithers-card[data-kind="workflow-list"]').filter({ hasText: fixture.repo }).last()
       await expect(catalog).toBeVisible()
       await expect(catalog).toContainText(marker)
-      const issueFlowNames = await catalog.locator(".workflow-list-row strong").allTextContents()
+      const issueFlowNames = (await catalog.locator(".workflow-list-text > strong, .workflow-list-text > span").allTextContents())
+        .filter((name) => /^issue[./]/.test(name))
       expect(issueFlowNames.some((name) => /^issue[./]/.test(name))).toBe(true)
 
       const registry = await realApi(page, request, "POST", "/api/workflow/rpc", {
