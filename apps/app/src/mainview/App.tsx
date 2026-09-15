@@ -399,7 +399,7 @@ function AppContent() {
   const showingArrival = latestReadId !== undefined && latestReadId === welcomeReadId
 
   /*
-   * The composer's one home. Summoned in the chat column when the app stands
+   * The composer's one home. Summoned beside the active tab when the app stands
    * alone; hidden while the guide owns the window (the UI is full-screen
    * without a composer by default); summoned through a portal into the
    * guide's bottom Chat dock; GuideShell projects the same chat messages above it.
@@ -621,8 +621,6 @@ function AppContent() {
           </MessageScrollerProvider>
           </div>
 
-          {composerHost ? createPortal(composerWrap, composerHost) : composerWrap}
-
         </div>
 
         {session.surface === "world" ?
@@ -642,6 +640,8 @@ function AppContent() {
 
       {/* Terminal, harness, and card tabs; hidden while inactive, never unmounted. */}
       <TabBodies />
+      {/* Keep Chat reachable while a terminal or another tab owns the view. */}
+      {composerHost ? createPortal(composerWrap, composerHost) : composerWrap}
       {composerHost === undefined && <footer data-keyboard-pane="Chat controls" className="app-chat-controls" aria-label="Chat controls">
         <GuideButton  {...flowAction(controller.runCommand, "tut")}>Replay introduction</GuideButton>
         <GuideButton shortcut={GUIDE_KEYS.chat} data-flow="chat.open" onClick={() => {

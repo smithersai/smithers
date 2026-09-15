@@ -1,5 +1,5 @@
 import { GlobalRegistrator } from "@happy-dom/global-registrator"
-import { afterAll, afterEach, describe, expect, test } from "bun:test"
+import { afterAll, afterEach, describe, expect, spyOn, test } from "bun:test"
 import { flushSync } from "react-dom"
 import { createRoot } from "react-dom/client"
 import type { AppBootstrap } from "@smthrs/rpc/AppBootstrap"
@@ -111,6 +111,22 @@ const localController = async (harnesses: ReadonlyArray<unknown> = []) => {
 }
 
 describe("the optional full composer header: the repository selector and where it lives", () => {
+  test("Chat stays visible beside an active terminal without changing tabs", async () => {
+    const { store, controller } = await localController()
+    const attach = spyOn(controller.pty, "attach").mockImplementation(() => () => {})
+    mounted.push(() => attach.mockRestore())
+    await persisted(store, { type: "tab.opened", actor: "user", tab: {
+      id: "cloud-terminal", kind: "terminal", title: "Terminal", sessionId: "cloud", cwd: "/home/developer/workspace"
+    } })
+    const view = mount(controller, "minimal")
+    await view.act(() => controller.runCommand("chat.open"))
+    const composer = view.host.querySelector<HTMLElement>(".composer-wrap")
+    expect(composer).not.toBeNull()
+    expect(composer?.closest("[hidden]")).toBeNull()
+    expect(byTestId(view.host, "tab-body-main")?.hidden).toBe(true)
+    expect(store.session().activeTabId).toBe("cloud-terminal")
+  })
+
   test("no repository: the selector says Select a repo, no origin chip, and the chrome has no duplicate", async () => {
     const { controller } = await localController()
     const view = mount(controller)
