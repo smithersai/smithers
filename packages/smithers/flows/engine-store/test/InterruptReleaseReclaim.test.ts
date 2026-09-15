@@ -1,3 +1,4 @@
+import type { DurableWriter } from "@smthrs/database/DurableWriter"
 import { opaqueHandlerBody } from "./fixtures/OpaqueHandlerBody.ts"
 /**
  * Pins issue #39: a run released by a non-cancel interruption (process
@@ -53,7 +54,10 @@ const provideJournal = <A, E, R>(
   ) as Effect.Effect<
     A,
     E,
-    Exclude<R, Journal.Journal | RunStore.RunStore | DurableEngineState.DurableEngineState | Scope.Scope>
+    Exclude<
+      R,
+      DurableWriter | Journal.Journal | RunStore.RunStore | DurableEngineState.DurableEngineState | Scope.Scope
+    >
   >
 
 /** Interrupts a run mid-action via driver-scope close and returns the row. */

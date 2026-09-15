@@ -1,3 +1,4 @@
+import type { DurableWriter } from "@smthrs/database/DurableWriter"
 import { opaqueHandlerBody } from "./fixtures/OpaqueHandlerBody.ts"
 /**
  * Pins issue #11: a durably recorded cancellation request
@@ -56,7 +57,10 @@ const provideJournal = <A, E, R>(
   ) as Effect.Effect<
     A,
     E,
-    Exclude<R, Journal.Journal | RunStore.RunStore | DurableEngineState.DurableEngineState | Scope.Scope>
+    Exclude<
+      R,
+      DurableWriter | Journal.Journal | RunStore.RunStore | DurableEngineState.DurableEngineState | Scope.Scope
+    >
   >
 
 describe("durable cancellation", () => {

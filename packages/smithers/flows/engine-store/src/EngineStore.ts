@@ -8,6 +8,7 @@
  * @since 0.1.0
  */
 import { Sha256 } from "@smthrs/crypto"
+import type { DurableWriter } from "@smthrs/database/DurableWriter"
 import { FlowEngine } from "@smthrs/engine"
 import { type Action, Flow, FlowRuntime } from "@smthrs/flow"
 import { FileBoundary } from "@smthrs/flow/FileBoundary"
@@ -90,6 +91,7 @@ type PublicRequirements =
   // requirement of the composition (`packages/smithers/flows/engine/docs/api.md`).
   | Crypto.Crypto
   | DurableEngineState.DurableEngineState
+  | DurableWriter
   | Journal.Journal
   | Jj.Jj
   | OwnerIdentity.OwnerIdentity
@@ -106,7 +108,8 @@ const isBoundaryMetadata = Schema.is(FileBoundary)
  *
  * Registrations and active fibers are scoped in memory. Run identity, encoded
  * payload, results, deferred completions, clocks, actions, and ownership
- * are persisted by the supplied layers.
+ * are persisted by the supplied layers. Supply the same DurableWriter used
+ * by the journal and run store so cancellation can retain complete failures.
  *
  * @since 0.1.0
  * @category constructors

@@ -5,6 +5,7 @@
  *
  * @since 0.1.0
  */
+import { DatabaseError, DurableWriter } from "@smthrs/database/DurableWriter"
 import { FlowEngine } from "@smthrs/engine"
 import { Flow, FlowRuntime } from "@smthrs/flow"
 import { Journal } from "@smthrs/journal"
@@ -32,8 +33,28 @@ import * as ExitEncoding from "./ExitEncoding.ts"
 import * as JournalRecords from "./JournalRecords.ts"
 import * as RunCoordinator from "./RunCoordinator.ts"
 import * as RunLifecycle from "./RunLifecycle.ts"
+import * as StateTransaction from "./StateTransaction.ts"
 
 const RunStateJson = Schema.fromJsonString(RunState)
+
+/**
+ * Re-channels every typed reason of a cause as a defect, identity intact.
+ *
+ * A boundary whose declared error type cannot describe what happened has two
+ * honest options: widen the type, or stop calling the failure typed. Casting
+ * the cause is the third, dishonest one — it left a raw `DatabaseError`
+ * escaping an `Effect<void, CancelRequestFailed>`. Demotion keeps the error
+ * object, every other reason and every interruption, and no caller can
+ * mistake the result for a failure its handler declared.
+ */
+const asDefects = <E>(cause: Cause.Cause<E>): Cause.Cause<never> =>
+  Cause.fromReasons(
+    cause.reasons.map((reason) =>
+      Cause.isFailReason(reason)
+        ? Cause.makeDieReason(reason.error).annotate(Cause.reasonAnnotations(reason))
+        : reason
+    )
+  )
 
 /**
  * Raised when a flow (directly or through mutual ancestry) attempts to
@@ -279,12 +300,14 @@ export const make = (
   never,
   | Crypto.Crypto
   | DurableEngineState.DurableEngineState
+  | DurableWriter
   | Journal.Journal
   | RunStore.RunStore
   | Scope.Scope
 > =>
   Effect.gen(function*() {
     const journal = yield* Journal.Journal
+    const writer = yield* DurableWriter
     const store = yield* RunStore.RunStore
     const engineState = yield* DurableEngineState.DurableEngineState
     const lifecycle = RunLifecycle.make(store, engineState)
@@ -581,6 +604,13 @@ export const make = (
       )
 
     /**
+     * The package's ordered state-and-journal boundary: engine state first,
+     * the journal's write transaction inside it. See
+     * {@link StateTransaction.make} for the order and what it guarantees.
+     */
+    const transactState = StateTransaction.make(engineState, journal)
+
+    /**
      * Commits a run-row transition and the decision describing it in ONE write
      * transaction, reporting the store outcome.
      *
@@ -592,12 +622,18 @@ export const make = (
      * (`reference/temporal/service/history/workflow/transaction_impl.go`);
      * this is the same unit of work for a run transition.
      *
-     * The decision is emitted only for a `Transitioned` outcome — a lost CAS
+     * The decision is emitted only for a `Transitioned` outcome: a lost CAS
      * changed nothing, and its `claim-lost`/`activation-lost` records are
      * emitted by the caller, outside the transaction, so they survive.
      *
+     * `waiting` parks before the CAS releases ownership, inside this same
+     * transaction. A refused park or transition FAILS the transaction, so SQL
+     * rolls back and the memory state's serialized snapshot is restored too.
+     * Only outside both boundaries is the refusal returned as an outcome.
+     * No former owner reads or clears a replacement's waiting marker.
+     *
      * `afterTransitioned` is the seam for work that must commit WITH the
-     * transition or not at all — today, ending the run's linked children on a
+     * transition or not at all: today, ending the run's linked children on a
      * terminal exit. It runs only after a successful CAS, so a lost fence
      * touches nothing, and inside the transaction, so a crash between the two
      * writes rolls both back.
@@ -608,10 +644,17 @@ export const make = (
       stateJson: string,
       decision: unknown,
       guard?: RunStore.TransitionGuard | undefined,
-      afterTransitioned?: Effect.Effect<void> | undefined
+      afterTransitioned?: Effect.Effect<void> | undefined,
+      waiting?: DurableEngineState.Waiting | undefined
     ): Effect.Effect<RunStore.TransitionOutcome> =>
-      journal.transact(
+      transactState(
         Effect.gen(function*() {
+          if (waiting !== undefined) {
+            const parked = yield* engineState.park(runId, waiting, dependencies.owner)
+            if (parked._tag === "NotFound") {
+              return yield* Effect.fail({ _tag: "TransitionRefused" as const, outcome: parked })
+            }
+          }
           const transitioned = yield* store.transitionOwned(
             runId,
             dependencies.owner,
@@ -619,7 +662,9 @@ export const make = (
             stateJson,
             guard
           ).pipe(Effect.orDie)
-          if (transitioned._tag !== "Transitioned") return transitioned
+          if (transitioned._tag !== "Transitioned") {
+            return yield* Effect.fail({ _tag: "TransitionRefused" as const, outcome: transitioned })
+          }
           // The decision carries the state it committed, so run state at a
           // frame is DERIVED by replaying decisions rather than read off the
           // run row's current `state_json`
@@ -630,7 +675,10 @@ export const make = (
           if (afterTransitioned !== undefined) yield* afterTransitioned
           return transitioned
         })
-      ).pipe(Effect.orDie)
+      ).pipe(
+        Effect.catchTag("TransitionRefused", ({ outcome }) => Effect.succeed(outcome)),
+        Effect.orDie
+      )
 
     const abandon = (runId: string, claimedAtMs: number): Effect.Effect<void> =>
       store.abandonClaim(runId, dependencies.owner, claimedAtMs).pipe(
@@ -816,10 +864,11 @@ export const make = (
      * incidental. A late admission inherits by reading the parent row after it
      * has created the child row (`inheritParentCancellation`), so a walk that
      * ran before the parent was marked could miss an edge whose admission also
-     * missed the mark. Under the SQL engine state both sides are one serialized
-     * transaction each and the order is redundant; under
-     * `DurableEngineState.makeMemory`, whose `transaction` is a pass-through,
-     * it is the only thing closing that interleaving. It is pinned by test.
+     * missed the mark. Both the SQL engine state and
+     * `DurableEngineState.makeMemory` serialize their transactions. The memory
+     * implementation snapshots and restores its maps on failure; the shared
+     * writer transaction supplies the run-store write boundary. The ordering
+     * also lets a child admitted within the cascade inherit cancellation.
      */
     const requestCancelDescendants = (
       runId: string,
@@ -970,11 +1019,11 @@ export const make = (
      * not committed yet, in which case it commits after this transaction and
      * its own cascade sees the edge. There is no third interleaving, so no
      * ephemeral hand-off flag and no timing-based retry is involved. The
-     * argument rests on two things: the store's serialized writes, and the
-     * order inside `requestCancelDescendants` — a cancellation marks its own
-     * run before it walks the edge table, which is what keeps the two sides
-     * from missing each other even where `DurableEngineState.transaction` is
-     * the in-memory pass-through and only the run-row writes serialize.
+     * argument rests on the store's serialized writes and the order inside
+     * `requestCancelDescendants`: a cancellation marks its own run before it
+     * walks the edge table. Memory durable-state transactions also serialize
+     * access and restore their snapshots on failure; they do not provide
+     * persistence across process crashes.
      *
      * Nesting falls out of this: the inherited request is written to the
      * child's own row, so a grandchild admitted later reads a cancel-requested
@@ -1040,7 +1089,7 @@ export const make = (
           cancellation: { interruptedAtMs }
         })
         let cascaded: ReadonlyArray<string> = []
-        yield* journal.transact(
+        yield* transactState(
           Effect.gen(function*() {
             yield* store.acknowledgeCancel(runId, dependencies.owner, interruptedAtMs).pipe(Effect.orDie)
             const transitioned = yield* store.transitionOwned(
@@ -1160,7 +1209,7 @@ export const make = (
       } | undefined
     ): Effect.Effect<void> =>
       Effect.gen(function*() {
-        // Park before releasing ownership (`park` is owner-fenced). The
+        // Park atomically with releasing ownership (`park` is owner-fenced). The
         // durable waiting row is what makes a released run visible to the
         // parked-run sweeper: without it nothing ever re-drives the run and
         // a durable `requestCancel` against it is write-only forever
@@ -1180,8 +1229,7 @@ export const make = (
             new Flow.Suspended({ cause: round.instance.cause })
           )).encoded
           : undefined
-        const parked = yield* engineState.park(runId, waiting, dependencies.owner)
-        const transitioned = yield* transitionAndRecord(
+        yield* transitionAndRecord(
           runId,
           "suspended",
           yield* encodeState(
@@ -1189,24 +1237,11 @@ export const make = (
               ? withoutResult(state)
               : { ...withoutResult(state), result: suspension }
           ),
-          { decision: "interrupt-released", owner: dependencies.owner }
+          { decision: "interrupt-released", owner: dependencies.owner },
+          undefined,
+          undefined,
+          waiting
         )
-        // The successful arm is the generator's terminal fallthrough; V8 emits
-        // no executable location for that synthetic branch.
-        /* v8 ignore else */
-        if (transitioned._tag !== "Transitioned") {
-          // Fence lost between park and release: the run is someone else's
-          // (or already settled), so our marker is bogus. Clear it only if it
-          // is still the one we just wrote — a new owner may have parked a
-          // real waiting reason in between.
-          if (parked._tag === "Parked") {
-            const current = yield* engineState.waiting(runId)
-            if (Option.isSome(current) && current.value.reason === waiting.reason) {
-              yield* engineState.wake(runId)
-            }
-          }
-          return
-        }
       })
 
     /**
@@ -1467,7 +1502,7 @@ export const make = (
         const cancelled = { _tag: "HandoffCancelled" } as const
         const fenceLost = { _tag: "HandoffFenceLost" } as const
         const committed = yield* Effect.result(
-          engineState.transaction(Effect.gen(function*() {
+          transactState(Effect.gen(function*() {
             // The next round's id is DERIVED from (lineage, ordinal), so a
             // re-drive finds the exact row it already opened. Only an
             // identical create is tolerated; a collision in flow, payload,
@@ -1516,7 +1551,7 @@ export const make = (
             return yield* Effect.fail(
               transitioned._tag === "GuardFailed" ? cancelled : fenceLost
             )
-          }))
+          })).pipe(Effect.catchTag("@smthrs/journal/JournalError", Effect.die))
         )
         if (Result.isFailure(committed)) {
           if (committed.failure._tag === "HandoffCancelled") {
@@ -1695,20 +1730,23 @@ export const make = (
           // The activation transition carries the cancel guard: a run whose
           // cancellation was durably requested while it was parked must cancel
           // here instead of re-executing flow side effects (issue #27).
-          const cleared = yield* store.transitionOwned(
-            executionId,
-            dependencies.owner,
-            "running",
-            yield* encodeState(activeState),
-            { cancelRequested: "absent" }
-          ).pipe(Effect.orDie)
+          const cleared = yield* transactState(Effect.gen(function*() {
+            const transitioned = yield* store.transitionOwned(
+              executionId,
+              dependencies.owner,
+              "running",
+              yield* encodeState(activeState),
+              { cancelRequested: "absent" }
+            ).pipe(Effect.orDie)
+            // Only a successful owner fence permits clearing a previous wait.
+            // Commit both together so takeover cannot interleave before wake.
+            if (transitioned._tag === "Transitioned") yield* engineState.wake(executionId)
+            return transitioned
+          })).pipe(Effect.orDie)
           if (cleared._tag === "GuardFailed") {
             return yield* cancelOwned(executionId, withoutResult(state))
           }
           if (cleared._tag !== "Transitioned") return
-          // A run that re-enters execution is no longer waiting: clear any
-          // parked waiting-reason payload (idempotent when none exists).
-          yield* engineState.wake(executionId)
 
           const payload = yield* (Schema.decodeUnknownEffect(
             Schema.toCodecJson(registration.flow.payloadSchema)
@@ -1818,11 +1856,6 @@ export const make = (
                 ? ActionPersistence.evidenceQuarantined(result.exit.cause)
                 : undefined
               if (quarantine !== undefined) {
-                yield* engineState.park(
-                  executionId,
-                  { reason: "quarantine", token: quarantine.keyDigest },
-                  dependencies.owner
-                )
                 const parked = yield* transitionAndRecord(
                   executionId,
                   "suspended",
@@ -1833,7 +1866,9 @@ export const make = (
                     keyDigest: quarantine.keyDigest,
                     owner: dependencies.owner
                   },
-                  { cancelRequested: "absent" }
+                  { cancelRequested: "absent" },
+                  undefined,
+                  { reason: "quarantine", token: quarantine.keyDigest }
                 )
                 if (parked._tag === "GuardFailed") {
                   yield* cancelOwned(executionId, activeState)
@@ -1868,10 +1903,11 @@ export const make = (
                 : Exit.isSuccess(result.exit)
                 ? "completed"
                 : "failed"
+              let waiting: DurableEngineState.Waiting | undefined
               if (status === "suspended") {
-                // Park while this process still owns the row (`park` is
-                // owner-fenced; the suspended transition below releases
-                // ownership). The reason is derived from durable state: a pending
+                // Park atomically with the suspended transition while this
+                // process still owns the row (`park` is owner-fenced). The
+                // reason is derived from durable state: a pending
                 // clock row means a timer wake with a known deadline; anything
                 // else waits on an external event (deferred completion). This is
                 // what makes `waitingRuns` sweepers and the 0004 partial index
@@ -1882,7 +1918,7 @@ export const make = (
                 // derivation stays the fallback.
                 const declared = instance.waiting
                 const pendingClocks = yield* engineState.pendingClocks({ executionId })
-                const waiting: DurableEngineState.Waiting = declared !== undefined
+                waiting = declared !== undefined
                   ? declared
                   : pendingClocks.length > 0
                   ? {
@@ -1890,7 +1926,6 @@ export const make = (
                     wakeAt: Math.min(...pendingClocks.map((clock) => clock.dueAtMs))
                   }
                   : { reason: "event" }
-                yield* engineState.park(executionId, waiting, dependencies.owner)
               }
               // Finalize is guarded on `cancel_requested_at_ms` inside the same
               // CAS: a cancellation request that raced past the last poll turns
@@ -1912,7 +1947,8 @@ export const make = (
                     executionId,
                     yield* Clock.currentTimeMillis.pipe(Effect.map(Math.floor))
                   )
-                })
+                }),
+                waiting
               ).pipe(
                 // The park becomes durable the instant this transition commits, so
                 // the flag that records it is set in the transition's own exit
@@ -2376,21 +2412,48 @@ export const make = (
         // typed instead, so the caller can retry against a state that is still
         // truthful — the run is still running and still cancellable.
         const nowMs = yield* Clock.currentTimeMillis.pipe(Effect.map(Math.floor))
-        const requested = yield* Effect.result(journal.transact(
+        // The package's one lock order, the same one every settlement takes:
+        // engine state first, then the journal. The descendant walk reads
+        // engine state while holding the SQL writer, so the alternative would
+        // deadlock against any fiber that ordered the two boundaries the
+        // other way.
+        const requested = yield* transactState(
           Effect.gen(function*() {
             yield* store.requestCancel(executionId, nowMs)
             return [executionId, ...yield* requestCancelDescendants(executionId, nowMs)]
+          }),
+          // Capture the shared writer directly. SqlJournal.transact catches a
+          // selected failure and can discard the rest of a composite cause.
+          (write) => Effect.flatMap(Effect.exit(writer.write(write)), (exit) => exit)
+        ).pipe(
+          Effect.catchCause((cause) => {
+            // A composite is never a retryable CancelRequestFailed: retain
+            // every original reason, including defect identity and interruption.
+            const failure = (error: { readonly message: string }) =>
+              new FlowRuntime.CancelRequestFailed({
+                code: "cancel_request_failed",
+                executionId,
+                reason: error.message
+              })
+            if (cause.reasons.length === 1) {
+              const reason = cause.reasons[0]!
+              if (Cause.isDieReason(reason) && reason.defect instanceof DatabaseError) {
+                return Effect.fail(failure(reason.defect))
+              }
+              // The typed channel is the normalized writer/store/journal union.
+              if (Cause.isFailReason(reason)) {
+                return Effect.fail(failure(reason.error))
+              }
+            }
+            // A composite is not the retryable request failure the typed
+            // channel promises, so every typed reason is re-channelled as a
+            // defect rather than cast through `CancelRequestFailed`. The error
+            // objects, the accompanying defects and the interruptions all
+            // survive; only the channel changes, and it changes to the one the
+            // declared type actually admits.
+            return Effect.failCause(asDefects(cause))
           })
-        ))
-        if (Result.isFailure(requested)) {
-          return yield* Effect.fail(
-            new FlowRuntime.CancelRequestFailed({
-              code: "cancel_request_failed",
-              executionId,
-              reason: requested.failure.message
-            })
-          )
-        }
+        )
         // Only after the durable write succeeds may the ephemeral surface say
         // this instance was interrupted or stop its drive fiber. If the write
         // failed, changing either would make a typed failure observably mutate
@@ -2402,7 +2465,7 @@ export const make = (
         // request write fails. `requestCancel` is first-writer-wins, so the
         // owning driver's own cascade later writes nothing.
         yield* journal.whenCommitted(Effect.gen(function*() {
-          for (const targetId of requested.success) {
+          for (const targetId of requested) {
             const instance = liveInstances.get(targetId)
             if (instance !== undefined) instance.interrupted = true
             // Publication only sends the request. Awaiting user finalizers

@@ -1,3 +1,4 @@
+import type { DurableWriter } from "@smthrs/database/DurableWriter"
 import { opaqueHandlerBody } from "./fixtures/OpaqueHandlerBody.ts"
 /**
  * Pins issue #26: a drive-fiber interruption that is not an operator
@@ -58,7 +59,10 @@ const provideJournal = <A, E, R>(
   ) as Effect.Effect<
     A,
     E,
-    Exclude<R, Journal.Journal | RunStore.RunStore | DurableEngineState.DurableEngineState | Scope.Scope>
+    Exclude<
+      R,
+      DurableWriter | Journal.Journal | RunStore.RunStore | DurableEngineState.DurableEngineState | Scope.Scope
+    >
   >
 
 describe("shutdown releases instead of cancelling (issue #26)", () => {

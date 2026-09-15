@@ -16,6 +16,7 @@ import { Jj } from "@smthrs/kernel"
 import { Node } from "@smthrs/plan"
 import { AttemptStore, RunStore } from "@smthrs/run-store"
 import { CacheStore } from "@smthrs/step-cache"
+import * as Deferred from "effect/Deferred"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
 import * as Option from "effect/Option"
@@ -209,14 +210,40 @@ describe("succeeded-row corruption quarantines its evidence and heals on resume 
       evidenceCorrupt = true
       const parked = yield* run(
         Effect.gen(function*() {
-          const engine = yield* makeEngine
+          const store = yield* RunStore.RunStore
+          const following = yield* Deferred.make<void>()
+          const continueFollowing = yield* Deferred.make<void>()
+          let claims = 0
+          const engine = yield* makeEngine.pipe(Effect.provideService(
+            RunStore.RunStore,
+            RunStore.makeNoop({
+              ...store,
+              claim: (...args) =>
+                Effect.gen(function*() {
+                  claims++
+                  if (claims === 2) {
+                    // Discard starts a background lineage follower. Hold its next
+                    // round before the real claim so this process observes its
+                    // first quarantine, not a row/marker split across two rounds.
+                    // Closing this process interrupts the barrier; process 3 below
+                    // performs the actual recovery with the unwrapped store.
+                    // This proves the first park, not persistence in a live
+                    // process: the follower can currently resume quarantine.
+                    yield* Deferred.succeed(following, undefined)
+                    yield* Deferred.await(continueFollowing)
+                  }
+                  return yield* store.claim(...args)
+                })
+            })
+          ))
           yield* engine.register(QuarantineFlow, () => sealed as never)
           yield* engine.execute(QuarantineFlow, {
             executionId: "quarantine-run",
             payload: {},
             discard: true
           })
-          const store = yield* RunStore.RunStore
+          yield* Deferred.await(following)
+          expect(claims).toBe(2)
           const journal = yield* Journal.Journal
           yield* journal.flush
           const page = yield* journal.entries({ runId: "quarantine-run" as never, limit: 50 })

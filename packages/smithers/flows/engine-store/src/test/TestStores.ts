@@ -52,7 +52,8 @@ export const database = Layer.provideMerge(Migrations.layer, TestDatabase.layer)
 /**
  * Provides the production SQLite journal, run, attempt, and cache services
  * over one in-memory database. Migrations run before any durable service is
- * exposed.
+ * exposed. The shared writer remains exposed for the engine cancellation
+ * boundary, which must inspect its complete Exit before error normalization.
  *
  * `OwnerIdentity.layer` rides along: it is not a store, but it is the other
  * service `EngineStore.make` requires and has no in-memory variant to choose
@@ -74,7 +75,8 @@ export const layer = (options?: TestStoresOptions) =>
     CacheStore.layer,
     PlanStore.layer,
     PlanInputStore.layer,
-    PlanMergeStore.layer
+    PlanMergeStore.layer,
+    Layer.effect(DurableWriter.DurableWriter, DurableWriter.DurableWriter)
   ).pipe(Layer.provide(database), Layer.merge(OwnerIdentity.layer))
 
 /**

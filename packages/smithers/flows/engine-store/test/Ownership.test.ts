@@ -1,4 +1,5 @@
 import { describe, expect, it } from "@effect/vitest"
+import type { DurableWriter } from "@smthrs/database/DurableWriter"
 import { Flow, FlowRuntime } from "@smthrs/flow"
 import { Journal } from "@smthrs/journal"
 import { Node } from "@smthrs/plan"
@@ -89,7 +90,10 @@ const provideJournal = <A, E, R>(
   ) as Effect.Effect<
     A,
     E,
-    Exclude<R, Journal.Journal | RunStore.RunStore | DurableEngineState.DurableEngineState | Scope.Scope>
+    Exclude<
+      R,
+      DurableWriter | Journal.Journal | RunStore.RunStore | DurableEngineState.DurableEngineState | Scope.Scope
+    >
   >
 
 describe("RunDriver ownership", () => {

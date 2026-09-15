@@ -10,7 +10,7 @@
  *
  * @since 0.1.0
  */
-import { DatabaseError, DurableWriter } from "@smthrs/database/DurableWriter"
+import { afterCommit, DatabaseError, DurableWriter } from "@smthrs/database/DurableWriter"
 import type { OwnerId } from "@smthrs/run-store/Ownership"
 import * as Cause from "effect/Cause"
 import * as Context from "effect/Context"
@@ -545,8 +545,34 @@ export interface Service {
    * fiber as a savepoint of the outer one. What it cannot offer is
    * durability: a process crash mid-transaction loses the whole state, not
    * only the uncommitted part.
+   *
+   * **Lock order.** A caller that needs this transaction AND the journal's
+   * write transaction opens this one OUTSIDE. The SQL implementation cannot
+   * tell the difference, because both are the same `DurableWriter`
+   * transaction and either nests as a savepoint of the other; the memory twin
+   * has a permit of its own, and a fiber that holds the journal's writer
+   * while waiting for that permit deadlocks against a fiber doing the
+   * opposite. Interruption is not a way out of that cycle: both boundaries
+   * are acquired at the caller's own interruptibility, so a settlement that
+   * masked interruption to finish its write keeps waiting. The same
+   * rule applies to every single operation above, each of which takes the
+   * permit for itself: inside an open journal transaction, call them only
+   * under an enclosing `transaction` on the same fiber.
    */
-  readonly transaction: <A, E, R>(effect: Effect.Effect<A, E, R>) => Effect.Effect<A, E, R>
+  readonly transaction: <A, E, R>(
+    effect: Effect.Effect<A, E, R>,
+    options?: {
+      /**
+       * Receives an idempotent memory commit effect. A coordinating durable
+       * transaction may run it after COMMIT, before publishing or capturing
+       * state. This accepts the snapshot and releases its gate; subsequent
+       * publication failures cannot restore the old snapshot. Without an
+       * external boundary, returning successfully commits as usual. SQL owns
+       * its commit boundary and does not need this callback.
+       */
+      readonly onCommit: (commit: Effect.Effect<void>) => void
+    }
+  ) => Effect.Effect<A, E, R>
 }
 
 /**
@@ -818,6 +844,30 @@ const decodeSweep = <A>(
     }
     return decoded
   })
+
+/**
+ * Demotes a write boundary's storage failures to defects, reason by reason.
+ *
+ * `transaction` declares the BODY's error type, and the shared writer adds
+ * `DatabaseError` to it. A sole storage failure is already a defect; a
+ * composite one used to be cast back through the declared channel, which let
+ * a raw `DatabaseError` surface as a typed failure of a type that never
+ * admits one. Re-channelling keeps the error object, its annotations, the
+ * other reasons and the interruptions intact while making the declared type
+ * true. Every other reason is passed through UNCHANGED rather than rebuilt,
+ * so a body failure keeps its own identity and spans.
+ */
+const dieOnDatabaseError = <E>(cause: Cause.Cause<E | DatabaseError>): Cause.Cause<E> =>
+  Cause.fromReasons(
+    cause.reasons.map((reason) =>
+      Cause.isFailReason(reason) && reason.error instanceof DatabaseError
+        ? Cause.makeDieReason(reason.error).annotate(Cause.reasonAnnotations(reason))
+        // Narrowing a generic union by `instanceof` is beyond the checker, but
+        // the guard above is the proof: what is left is a defect, an
+        // interruption, or a failure whose error is not a `DatabaseError`.
+        : reason as Cause.Reason<E>
+    )
+  )
 
 /**
  * Constructs the database-backed durable-state implementation.
@@ -1474,15 +1524,53 @@ export const make: Effect.Effect<Service, never, DurableWriter | SqlClient.SqlCl
     `).pipe(Effect.orDie, Effect.asVoid)
   )
 
+  // Keep state-first ordering. This gate and DurableWriter's shared permit are
+  // both taken at the caller's interruptibility, so an interruptible caller can
+  // still be cancelled while queued, including behind a journal-only write that
+  // skips this gate.
+  // A nested SQL transaction already owns the connection and bypasses this gate.
+  const transactionGate = Semaphore.makeUnsafe(1)
   const transaction: Service["transaction"] = <A, E, R>(
     effect: Effect.Effect<A, E, R>
   ): Effect.Effect<A, E, R> =>
-    writer.write(effect).pipe(
-      Effect.catchIf(
-        (error): error is DatabaseError => error instanceof DatabaseError,
-        (error) => Effect.die(error)
+    Effect.flatMap(Effect.serviceOption(sql.transactionService), (enclosing) => {
+      const write = (body: Effect.Effect<A, E, R>) =>
+        writer.write(body).pipe(
+          Effect.catchCause((cause) => {
+            // Only a sole storage failure is normalized. A composite keeps every
+            // reason for the caller to diagnose, and its storage failures are
+            // demoted to defects one by one rather than cast through the
+            // declared error type: `transaction` promises the BODY's failures,
+            // so a `DatabaseError` arriving as a typed failure would be a lie
+            // the compiler could not catch. Defect identity is unchanged.
+            if (cause.reasons.length === 1) {
+              const reason = cause.reasons[0]!
+              if (Cause.isFailReason(reason) && reason.error instanceof DatabaseError) {
+                return Effect.die(reason.error)
+              }
+            }
+            return Effect.failCause(dieOnDatabaseError<E>(cause))
+          })
+        )
+      if (Option.isSome(enclosing)) return write(effect)
+      return Effect.uninterruptibleMask((restore) =>
+        Effect.gen(function*() {
+          yield* restore(transactionGate.take(1))
+          let released = false
+          const release = Effect.suspend(() => {
+            if (released) return Effect.void
+            released = true
+            return transactionGate.release(1).pipe(Effect.asVoid)
+          })
+          return yield* restore(write(Effect.gen(function*() {
+            // Release at COMMIT, before publication can read through another
+            // transaction. A failed write instead releases in ensuring below.
+            yield* afterCommit(release, sql)
+            return yield* effect
+          }))).pipe(Effect.ensuring(release))
+        })
       )
-    )
+    })
 
   const runParents: Service["runParents"] = Effect.fn("DurableEngineState.runParents")((childId) =>
     sql<RunParentDatabaseRow>`
@@ -2007,11 +2095,14 @@ export const makeMemory = (options: MemoryOptions = {}): Service => {
   }
 
   const transaction: Service["transaction"] = <A, E, R>(
-    effect: Effect.Effect<A, E, R>
+    effect: Effect.Effect<A, E, R>,
+    options?: { readonly onCommit: (commit: Effect.Effect<void>) => void }
   ): Effect.Effect<A, E, R> =>
-    Effect.flatMap(Effect.fiberId, (fiberId) => {
-      const run = Effect.uninterruptibleMask((restore) =>
-        Effect.suspend(() => {
+    Effect.flatMap(Effect.fiberId, (fiberId) =>
+      Effect.uninterruptibleMask((restore) =>
+        Effect.gen(function*() {
+          const nested = (transactionDepth.get(fiberId) ?? 0) > 0
+          if (!nested) yield* restore(gate.take(1))
           const before = {
             deferreds: new Map(deferreds),
             consumedDeferreds: new Map(consumedDeferreds),
@@ -2021,9 +2112,24 @@ export const makeMemory = (options: MemoryOptions = {}): Service => {
             parentSeq
           }
           transactionDepth.set(fiberId, (transactionDepth.get(fiberId) ?? 0) + 1)
-          return restore(effect).pipe(
+          let committed = false
+          let closed = false
+          const close = Effect.suspend(() => {
+            if (closed) return Effect.void
+            closed = true
+            const depth = transactionDepth.get(fiberId)! - 1
+            if (depth === 0) transactionDepth.delete(fiberId)
+            else transactionDepth.set(fiberId, depth)
+            return nested ? Effect.void : gate.release(1).pipe(Effect.asVoid)
+          })
+          const commit = Effect.sync(() => {
+            committed = true
+          }).pipe(Effect.andThen(close))
+          return yield* Effect.sync(() => options?.onCommit(commit)).pipe(
+            Effect.andThen(restore(effect)),
             Effect.catchCause((cause) =>
               Effect.sync(() => {
+                if (committed) return
                 restoreMap(deferreds, before.deferreds)
                 restoreMap(consumedDeferreds, before.consumedDeferreds)
                 restoreMap(clocks, before.clocks)
@@ -2032,16 +2138,10 @@ export const makeMemory = (options: MemoryOptions = {}): Service => {
                 parentSeq = before.parentSeq
               }).pipe(Effect.andThen(Effect.failCause(cause)))
             ),
-            Effect.ensuring(Effect.sync(() => {
-              const depth = transactionDepth.get(fiberId)! - 1
-              if (depth === 0) transactionDepth.delete(fiberId)
-              else transactionDepth.set(fiberId, depth)
-            }))
+            Effect.ensuring(close)
           )
         })
-      )
-      return (transactionDepth.get(fiberId) ?? 0) > 0 ? run : gate.withPermit(run)
-    })
+      ))
 
   return DurableEngineState.of({
     deferred: (address) => guard(unguarded.deferred(address)),

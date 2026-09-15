@@ -1,4 +1,5 @@
 import { describe, expect, it } from "@effect/vitest"
+import type { DurableWriter } from "@smthrs/database/DurableWriter"
 import { Flow, FlowRuntime } from "@smthrs/flow"
 import { Journal } from "@smthrs/journal"
 import { Node } from "@smthrs/plan"
@@ -53,6 +54,7 @@ const provideJournal = <A, E, R>(
     E,
     Exclude<
       R,
+      | DurableWriter
       | Journal.Journal
       | RunStore.RunStore
       | DurableEngineState.DurableEngineState

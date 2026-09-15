@@ -49,9 +49,10 @@ const program = Effect.gen(function*() {
 }).pipe(Effect.provide(engineLayer))
 ```
 
-`engineLayer` still needs the storage it composes: `Journal`, `RunStore`,
+`engineLayer` still needs the storage it composes: `DurableWriter`, `Journal`, `RunStore`,
 `AttemptStore`, `CacheStore`, `DurableEngineState`, `StepBoundary`, `Jj`,
-`OwnerIdentity`, Effect's `Crypto`, and a `Scope`. A missing one is an unmet
+`OwnerIdentity`, Effect's `Crypto`, and a `Scope`. Supply the same `DurableWriter`
+used by the journal and run store. A missing service is an unmet
 requirement in the layer's type, so a bad composition fails to compile rather
 than at run time. Run the schema migrations before any SQL-backed service reads
 the database, and provide `OwnerIdentity.layer` unless the host mints its own

@@ -1,19 +1,24 @@
 import { describe, expect, it } from "@effect/vitest"
+import { DurableWriter } from "@smthrs/database/DurableWriter"
 import { FlowEngine } from "@smthrs/engine"
 import { Flow, FlowRuntime } from "@smthrs/flow"
 import { Journal } from "@smthrs/journal"
 import { Node } from "@smthrs/plan"
 import { Ownership, RunStore } from "@smthrs/run-store"
 import * as Cause from "effect/Cause"
+import * as Clock from "effect/Clock"
 import * as Deferred from "effect/Deferred"
 import * as Effect from "effect/Effect"
 import * as Exit from "effect/Exit"
 import * as Fiber from "effect/Fiber"
 import * as Option from "effect/Option"
+import * as PubSub from "effect/PubSub"
 import * as Schema from "effect/Schema"
 import * as Scope from "effect/Scope"
 import { TestClock } from "effect/testing"
+import * as SqlClient from "effect/unstable/sql/SqlClient"
 import * as DurableEngineState from "../src/DurableEngineState.ts"
+import * as ActionPersistence from "../src/internal/ActionPersistence.ts"
 import * as JournalRecords from "../src/internal/JournalRecords.ts"
 import * as RunDriver from "../src/internal/RunDriver.ts"
 import * as TestStores from "../src/test/TestStores.ts"
@@ -70,7 +75,10 @@ const provideJournal = <A, E, R>(
   ) as Effect.Effect<
     A,
     E,
-    Exclude<R, Journal.Journal | RunStore.RunStore | DurableEngineState.DurableEngineState | Scope.Scope>
+    Exclude<
+      R,
+      DurableWriter | Journal.Journal | RunStore.RunStore | DurableEngineState.DurableEngineState | Scope.Scope
+    >
   >
 
 const storeError = (code: RunStore.RunStoreErrorCode, method: string) =>
@@ -991,7 +999,10 @@ const provideJournalWithTestClock = <A, E, R>(
   ) as Effect.Effect<
     A,
     E,
-    Exclude<R, Journal.Journal | RunStore.RunStore | DurableEngineState.DurableEngineState | Scope.Scope>
+    Exclude<
+      R,
+      DurableWriter | Journal.Journal | RunStore.RunStore | DurableEngineState.DurableEngineState | Scope.Scope
+    >
   >
 
 describe("RunDriver parked-cancel sweep", () => {
@@ -1064,87 +1075,353 @@ describe("RunDriver parked-cancel sweep", () => {
 })
 
 /**
- * A drive-fiber interruption parks a `released` marker so the parked-run
- * sweeper can re-drive the run. When the release transition then loses its
- * fence, that marker must be cleaned up — but only while it is still ours.
+ * The old three cleanup cases now pin transaction rollback, preservation of
+ * a replacement's committed marker, and refusal of an obsolete owner's park.
+ * Every store outcome below comes from the production SQLite adapters. Memory
+ * state reads its owner view from those same rows before attempting a park.
  */
-describe("RunDriver released-marker cleanup", () => {
-  const interruptDuringRelease = (
-    stateOverrides: (base: DurableEngineState.Service) => Partial<DurableEngineState.Service>
-  ) =>
-    provideJournal(Effect.gen(function*() {
+describe("RunDriver atomic waiting markers", () => {
+  it.effect("takes the memory-state transaction before a cancellation's writer transaction", () =>
+    withCrypto(provideJournal(Effect.gen(function*() {
       const store = yield* RunStore.RunStore
-      const baseState = yield* DurableEngineState.DurableEngineState
-      const state = DurableEngineState.makeMemory()
-      const wrapped: DurableEngineState.Service = { ...state, ...stateOverrides(state) }
-      const fenceLost = RunStore.makeNoop({
-        ...store,
-        transitionOwned: (runId, claimant, status, persisted, guard) =>
-          status === "suspended"
-            ? store.transitionOwned(runId, { hostId: "other", pid: 2, nonce: "other" }, status, persisted, guard)
-            : store.transitionOwned(runId, claimant, status, persisted, guard)
-      })
-      const driverScope = yield* Scope.make()
-      const driver = yield* makeDriver().pipe(
-        Effect.provideService(RunStore.RunStore, fenceLost),
-        Effect.provideService(DurableEngineState.DurableEngineState, wrapped),
-        Effect.provideService(Scope.Scope, driverScope)
-      )
-      void baseState
-      const running = yield* Deferred.make<void>()
-      yield* driver.register(
-        EdgeFlow,
-        () => Deferred.succeed(running, undefined).pipe(Effect.andThen(Effect.never))
-      )
-      const fiber = yield* driver.execute(EdgeFlow, {
-        executionId: "release-marker",
-        payload: {},
-        discard: true
-      }).pipe(Effect.forkChild({ startImmediately: true }))
-      yield* Deferred.await(running)
-      // A shutdown/lease interruption has no durable operator-cancel request,
-      // so it settles through the reclaimable release path under test.
-      yield* Scope.close(driverScope, Exit.void)
-      yield* Fiber.await(fiber)
-      return {
-        waiting: yield* state.waiting("release-marker"),
-        row: yield* store.get("release-marker")
+      const state = yield* DurableEngineState.DurableEngineState
+      const writer = yield* DurableWriter
+      let depth = 0
+      const cancellationDepths: Array<number> = []
+      const wrapped: DurableEngineState.Service = {
+        ...state,
+        transaction: (effect, options) =>
+          state.transaction(
+            Effect.sync(() => depth++).pipe(
+              Effect.andThen(effect),
+              Effect.ensuring(Effect.sync(() => depth--))
+            ),
+            options
+          )
       }
-    }))
+      const observed: DurableWriter["Service"] = {
+        write: (effect) =>
+          Effect.suspend(() => {
+            cancellationDepths.push(depth)
+            return writer.write(effect)
+          })
+      }
+      const driver = yield* makeDriver().pipe(
+        Effect.provideService(DurableEngineState.DurableEngineState, wrapped),
+        Effect.provideService(DurableWriter, observed)
+      )
+      yield* store.create("cancel-lock-order", stateJson(EdgeFlow._tag))
+      yield* driver.interrupt(EdgeFlow, "cancel-lock-order")
+      expect(cancellationDepths).toEqual([1])
+      expect((yield* store.get("cancel-lock-order")).cancelRequestedAtMs).not.toBeNull()
+    }))))
 
-  it.effect("clears its own released marker when the release transition loses the fence", () =>
-    Effect.gen(function*() {
-      const result = yield* withCrypto(interruptDuringRelease(() => ({})))
+  const replacementOwner: Ownership.OwnerId = { hostId: "replacement", pid: 8, nonce: "replacement" }
+  const executionId = "release-marker"
+  const released = { reason: "released" } as const
+  const identical = { reason: "approval", token: "same-token", wakeAt: 42_000 } as const
 
-      expect(Option.isNone(result.waiting)).toBe(true)
-      expect(result.row.status).toBe("running")
-    }))
+  for (const implementation of ["sql", "memory"] as const) {
+    const scenario = (options: {
+      readonly replacement?: DurableEngineState.Waiting
+      readonly ownWaiting?: DurableEngineState.Waiting | undefined
+      readonly mode?: "release" | "suspend" | "quarantine"
+      readonly refuseTransition?: boolean
+      readonly recover?: boolean
+    }) =>
+      withCrypto(
+        Effect.gen(function*() {
+          const store = yield* RunStore.RunStore
+          const journal = yield* Journal.Journal
+          const sql = yield* SqlClient.SqlClient
+          const sqlState = yield* DurableEngineState.DurableEngineState
+          const views = new Map<string, DurableEngineState.MemoryRunView>()
+          const base = implementation === "sql" ? sqlState : DurableEngineState.makeMemory({
+            runs: (runId) => Option.fromNullishOr(views.get(runId)),
+            listRuns: () => views.entries()
+          })
+          const state: DurableEngineState.Service = {
+            ...base,
+            park: (runId, waiting, claimant) =>
+              store.get(runId).pipe(
+                Effect.tap((row) => Effect.sync(() => views.set(runId, row))),
+                Effect.andThen(base.park(runId, waiting, claimant)),
+                Effect.orDie
+              )
+          }
+          const snapshot = Effect.gen(function*() {
+            const rows = yield* sql`SELECT * FROM flows_runs WHERE run_id = ${executionId}`
+            return JSON.stringify({ row: rows[0], waiting: yield* state.waiting(executionId) })
+          })
+          const takeover = Effect.gen(function*() {
+            const row = yield* store.get(executionId)
+            const expected = { status: row.status, owner: row.owner, heartbeatAtMs: row.heartbeatAtMs }
+            expect(row.owner).toEqual(owner)
+            const nowMs = row.heartbeatAtMs! + 31_000
+            const clock = yield* Clock.Clock
+            const claim = yield* store.steal(executionId, expected, replacementOwner, nowMs, {
+              expectedOwner: owner,
+              checkedAtMs: nowMs,
+              kind: "lease-expired"
+            }).pipe(Effect.provideService(Clock.Clock, {
+              ...clock,
+              currentTimeMillis: Effect.succeed(nowMs),
+              currentTimeMillisUnsafe: () => nowMs,
+              currentTimeNanos: Effect.succeed(BigInt(nowMs) * 1_000_000n),
+              currentTimeNanosUnsafe: () => BigInt(nowMs) * 1_000_000n
+            }))
+            expect(claim._tag).toBe("Claimed")
+            if (claim._tag !== "Claimed") return yield* Effect.die("replacement claim lost")
+            expect(yield* store.activate(executionId, replacementOwner, claim.claimedAtMs, expected))
+              .toEqual({ _tag: "Activated" })
+            yield* state.transaction(journal.transact(Effect.gen(function*() {
+              expect((yield* state.park(executionId, options.replacement!, replacementOwner))._tag).toBe("Parked")
+              expect(yield* store.transitionOwned(executionId, replacementOwner, "suspended", row.stateJson))
+                .toEqual({ _tag: "Transitioned" })
+            })))
+          })
+          const atBoundary = yield* Deferred.make<void>()
+          const continueSettlement = yield* Deferred.make<void>()
+          const running = yield* Deferred.make<void>()
+          const continueBody = yield* Deferred.make<void>()
+          let armed = false
+          let resumed = false
+          let boundary: "transaction" | "park" | undefined
+          let transactionDepth = 0
+          const parkDepths: Array<number> = []
+          const wakeDepths: Array<number> = []
+          const cleanupCalls: Array<string> = []
+          const pause = (where: "transaction" | "park") =>
+            Effect.gen(function*() {
+              if (!armed) return
+              armed = false
+              boundary = where
+              yield* Deferred.succeed(atBoundary, undefined)
+              yield* Deferred.await(continueSettlement)
+              resumed = true
+            })
+          const wrappedState: DurableEngineState.Service = {
+            ...state,
+            transaction: (effect, options) =>
+              pause("transaction").pipe(Effect.andThen(state.transaction(
+                Effect.sync(() => transactionDepth++).pipe(
+                  Effect.andThen(effect),
+                  Effect.ensuring(Effect.sync(() => transactionDepth--))
+                ),
+                options
+              ))),
+            park: (runId, waiting, claimant) =>
+              Effect.gen(function*() {
+                parkDepths.push(transactionDepth)
+                const parked = yield* state.park(runId, waiting, claimant)
+                // On the old implementation this is the first boundary and the
+                // park has already committed. The atomic implementation pauses
+                // before its transaction, so a replacement commits independently.
+                yield* pause("park")
+                return parked
+              }),
+            waiting: (runId) =>
+              Effect.suspend(() => {
+                if (resumed) cleanupCalls.push("waiting")
+                return state.waiting(runId)
+              }),
+            wake: (runId) =>
+              Effect.suspend(() => {
+                wakeDepths.push(transactionDepth)
+                if (resumed) cleanupCalls.push("wake")
+                return state.wake(runId)
+              })
+          }
+          let refused = false
+          let suspendedTransitions = 0
+          const wrappedStore: RunStore.Service = {
+            ...store,
+            transitionOwned: (runId, claimant, status, persisted, guard) =>
+              Effect.gen(function*() {
+                if (status === "suspended") suspendedTransitions++
+                if (options.refuseTransition && status === "suspended" && !refused) {
+                  refused = true
+                  // Real fence loss inside the transaction, after its park. This
+                  // speculative release and marker must both roll back when the
+                  // driver's subsequent owner CAS fails, even with memory state.
+                  expect(yield* store.transitionOwned(runId, claimant, status, persisted, guard))
+                    .toEqual({ _tag: "Transitioned" })
+                }
+                return yield* store.transitionOwned(runId, claimant, status, persisted, guard)
+              })
+          }
+          const driverScope = yield* Scope.make()
+          const driver = yield* makeDriver().pipe(
+            Effect.provideService(RunStore.RunStore, wrappedStore),
+            Effect.provideService(DurableEngineState.DurableEngineState, wrappedState),
+            Scope.provide(driverScope)
+          )
+          yield* driver.register(EdgeFlow, () =>
+            Effect.gen(function*() {
+              const instance = yield* FlowRuntime.FlowInstance
+              if (options.ownWaiting !== undefined) {
+                instance.waiting = options.ownWaiting
+                if ((options.mode ?? "release") === "release") instance.suspended = true
+              }
+              yield* Deferred.succeed(running, undefined)
+              yield* Deferred.await(continueBody)
+              if (options.mode === "suspend") return yield* Flow.suspend(instance)
+              if (options.mode === "quarantine") {
+                return yield* Effect.die(
+                  new ActionPersistence.AttemptEvidenceQuarantined({
+                    code: "attempt_evidence_quarantined",
+                    keyDigest: "quarantined-key",
+                    attempt: 1,
+                    path: "output",
+                    recordedDigest: "recorded",
+                    measuredDigest: "measured"
+                  })
+                )
+              }
+              return yield* Effect.never
+            }))
+          // resume joins one drive without leaving execute's additional wake.
+          yield* store.create(executionId, stateJson(EdgeFlow._tag))
+          const driving = yield* driver.resume(EdgeFlow, executionId).pipe(Effect.forkChild({ startImmediately: true }))
+          yield* Deferred.await(running)
+          armed = options.replacement !== undefined
+          const settling = yield* ((options.mode ?? "release") === "release"
+            ? Scope.close(driverScope, Exit.void)
+            : Deferred.succeed(continueBody, undefined).pipe(Effect.andThen(Fiber.join(driving))))
+            .pipe(Effect.forkChild({ startImmediately: true }))
+          let before: string | undefined
+          if (options.replacement !== undefined) {
+            yield* Deferred.await(atBoundary)
+            yield* takeover
+            before = yield* snapshot
+            yield* Deferred.succeed(continueSettlement, undefined)
+          }
+          yield* Fiber.join(settling)
+          yield* Fiber.await(driving)
+          const after = yield* snapshot
+          if (options.replacement !== undefined) {
+            expect(after).toBe(before)
+            expect(cleanupCalls).toEqual([])
+            expect(suspendedTransitions).toBe(0)
+          }
+          const row = yield* store.get(executionId)
+          const waiting = yield* state.waiting(executionId)
+          const swept = yield* state.waitingRuns({ reason: "released" })
+          const decisions = yield* decisionsFor(executionId)
+          yield* Scope.close(driverScope, Exit.void)
+          let recovered: RunStore.RunRow | undefined
+          if (options.recover) {
+            const recovery = yield* RunDriver.make({
+              owner: { ...replacementOwner, nonce: "sweeper" },
+              journalSource: "replacement-recovery",
+              engine: Effect.succeed(fakeEngine)
+            }).pipe(Effect.provideService(DurableEngineState.DurableEngineState, state))
+            let executions = 0
+            yield* recovery.register(EdgeFlow, () =>
+              Effect.sync(() => {
+                executions++
+                return "recovered"
+              }))
+            // Subscribe before advancing the injected clock. The completed
+            // decision is published after the real sweep's transaction commits.
+            const subscription = yield* journal.changes
+            yield* TestClock.adjust(Ownership.heartbeatInterval)
+            while (true) {
+              const change = yield* PubSub.take(subscription)
+              if (
+                change.runId === executionId && change.eventType === "flows.engine.run-decision" &&
+                (change.payload as { status?: string }).status === "completed"
+              ) break
+            }
+            recovered = yield* store.get(executionId)
+            expect(executions).toBe(1)
+            expect(recovered.status).toBe("completed")
+            expect(JSON.parse(recovered.stateJson).result).toMatchObject({ _tag: "Complete" })
+            expect(Option.isNone(yield* state.waiting(executionId))).toBe(true)
+          }
+          return {
+            before,
+            after,
+            row,
+            waiting,
+            swept,
+            decisions,
+            cleanupCalls,
+            boundary,
+            parkDepths,
+            wakeDepths,
+            recovered
+          }
+        }).pipe(Effect.provide(TestStores.layerAt(":memory:")), Effect.scoped)
+      )
 
-  it.effect("keeps a waiting row a new owner parked in the meantime", () =>
-    Effect.gen(function*() {
-      const result = yield* withCrypto(interruptDuringRelease((state) => ({
-        waiting: (runId) =>
-          // A new owner re-parked the run on a real waiting reason between our
-          // park and our failed transition.
-          runId === "release-marker"
-            ? Effect.succeedSome({ runId, reason: "event", wakeAt: null, token: null })
-            : state.waiting(runId)
-      })))
+    it.effect(`${implementation}: rolls back its own released marker when the release transition loses the fence`, () =>
+      Effect.gen(function*() {
+        const result = yield* scenario({ refuseTransition: true })
+        expect(Option.isNone(result.waiting)).toBe(true)
+        expect(result.row.status).toBe("running")
+        expect(result.row.owner).toEqual(owner)
+        expect(result.decisions).not.toContain("interrupt-released")
+        expect(result.parkDepths).toEqual([1])
+      }))
 
-      // Our cleanup must not delete someone else's waiting row.
-      expect(Option.isSome(result.waiting)).toBe(true)
-    }))
+    for (
+      const [name, marker, ownWaiting] of [
+        ["same reason", { reason: "released", token: "replacement-marker" }, undefined],
+        ["identical released payload", released, undefined],
+        ["identical token and wakeAt", identical, identical],
+        ["different reason", { reason: "event", token: "replacement-marker" }, undefined]
+      ] as const
+    ) {
+      it.effect(`${implementation}: keeps a waiting row a new owner parked in the meantime (${name})`, () =>
+        Effect.gen(function*() {
+          const result = yield* scenario({ replacement: marker, ownWaiting, recover: marker.reason === "released" })
+          expect(result.boundary).toBe("transaction")
+          expect(result.after).toBe(result.before)
+          expect(result.row.status).toBe("suspended")
+          expect(result.waiting).toEqual(Option.some({
+            runId: executionId,
+            reason: marker.reason,
+            token: "token" in marker ? marker.token : null,
+            wakeAt: "wakeAt" in marker ? marker.wakeAt : null
+          }))
+          expect(result.cleanupCalls).toEqual([])
+          expect(result.decisions).not.toContain("interrupt-released")
+          if (marker.reason === "released") expect(result.swept.map((row) => row.runId)).toContain(executionId)
+        }))
+    }
 
-  it.effect("does not touch the waiting row when its own park was refused", () =>
-    Effect.gen(function*() {
-      const result = yield* withCrypto(interruptDuringRelease((state) => ({
-        park: (runId, waiting, owner) =>
-          waiting.reason === "released"
-            // The park was fenced out, so there is no marker of ours to clear.
-            ? Effect.succeed({ _tag: "NotFound" as const })
-            : state.park(runId, waiting, owner)
-      })))
+    it.effect(`${implementation}: does not touch the waiting row when its own park was refused`, () =>
+      Effect.gen(function*() {
+        const result = yield* scenario({ replacement: identical })
+        expect(result.after).toBe(result.before)
+        expect(result.cleanupCalls).toEqual([])
+        expect(result.decisions).not.toContain("interrupt-released")
+      }))
 
-      expect(Option.isNone(result.waiting)).toBe(true)
-    }))
+    for (const mode of ["release", "suspend", "quarantine"] as const) {
+      it.effect(`${implementation}: atomically parks and suspends its own ${mode}`, () =>
+        Effect.gen(function*() {
+          const result = yield* scenario({ mode })
+          expect(result.row.status).toBe("suspended")
+          expect(result.row.owner).toBeNull()
+          expect(Option.isSome(result.waiting) && result.waiting.value.reason)
+            .toBe(mode === "release" ? "released" : mode === "suspend" ? "event" : "quarantine")
+          expect(result.parkDepths).toEqual([1])
+          expect(result.wakeDepths).toEqual([1])
+        }))
+
+      if (mode !== "release") {
+        it.effect(`${implementation}: ${mode} cannot overwrite a replacement's identical marker`, () =>
+          Effect.gen(function*() {
+            const marker = mode === "suspend" ? identical : { reason: "quarantine", token: "quarantined-key" }
+            const result = yield* scenario({ mode, ownWaiting: marker, replacement: marker })
+            expect(result.after).toBe(result.before)
+            expect(result.row.status).toBe("suspended")
+            expect(result.parkDepths).toEqual([1])
+            expect(result.cleanupCalls).toEqual([])
+          }))
+      }
+    }
+  }
 })

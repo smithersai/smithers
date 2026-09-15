@@ -87,7 +87,7 @@ handoffs; explicit cancellation still cascades to linked children.
 
 ### Required services
 
-`Journal`, `RunStore`, `AttemptStore`, `CacheStore`, Effect's `Crypto`,
+`Journal`, `DurableWriter`, `RunStore`, `AttemptStore`, `CacheStore`, Effect's `Crypto`,
 `DurableEngineState`, kernel `Jj`, `StepBoundary`, `OwnerIdentity`, and a
 `Scope`. A composition failure is an unmet `Requirements` type at compile time,
 so there is no run-time composition error to handle.
@@ -150,6 +150,12 @@ Full model: [Ownership and fencing](./concepts/ownership-and-fencing.md) and
 Durable deferreds, clocks, waiting rows, and the run parent DAG. A successful
 mutation means the row is durable, so callers may journal and schedule a wake
 only after the mutation returns.
+
+Work that needs both this state and the journal opens `transaction` OUTSIDE
+`Journal.transact`, never the other way around. The SQL implementation shares
+the journal's writer and cannot tell the difference, but `makeMemory` has a
+permit of its own, and taking the journal's writer first while waiting for that
+permit deadlocks against a fiber doing the opposite.
 
 | Export                           | Signature                                                      | Meaning                                                                       |
 | -------------------------------- | -------------------------------------------------------------- | ----------------------------------------------------------------------------- |

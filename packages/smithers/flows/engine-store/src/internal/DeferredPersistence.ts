@@ -17,6 +17,7 @@ import * as Schedule from "effect/Schedule"
 import type * as Scope from "effect/Scope"
 import * as DurableEngineState from "../DurableEngineState.ts"
 import * as JournalRecords from "./JournalRecords.ts"
+import * as StateTransaction from "./StateTransaction.ts"
 
 /**
  * Reasons passed to the single claim-gated resume scheduler.
@@ -148,6 +149,12 @@ export const make = (
   Effect.gen(function*() {
     const state = yield* DurableEngineState.DurableEngineState
     const journal = yield* Journal.Journal
+    /**
+     * The package's ordered state-and-journal boundary: engine state first,
+     * the journal's write transaction inside it. See
+     * {@link StateTransaction.make} for the order and what it guarantees.
+     */
+    const transactState = StateTransaction.make(state, journal)
     const timers = yield* FiberMap.make<string>()
     const fireRetryPolicy = dependencies.fireRetryPolicy ?? defaultFireRetryPolicy
 
@@ -178,8 +185,8 @@ export const make = (
         // announced. The lossy flush below stays outside — it waits on the
         // journal's writer fiber, which would deadlock against the write
         // transaction this holds.
-        const admission = yield* journal.transact(
-          state.transaction(Effect.gen(function*() {
+        const admission = yield* transactState(
+          Effect.gen(function*() {
             if (expectedWaiting !== undefined) {
               const waiting = yield* state.waiting(options.executionId)
               if (
@@ -222,7 +229,7 @@ export const make = (
               })
             ).pipe(Effect.orDie)
             return { _tag: "Admitted" as const, completion }
-          }))
+          })
         ).pipe(Effect.orDie)
         if (admission._tag === "NotWaiting") return "NotWaiting"
         const row = admission.completion.row
@@ -316,7 +323,7 @@ export const make = (
         // The clock row and its schedule record commit as one unit, so a
         // crash between them can no longer arm a durable timer the journal
         // never announced (or announce one that was rolled back).
-        const scheduled = yield* journal.transact(
+        const scheduled = yield* transactState(
           Effect.gen(function*() {
             const scheduled = yield* state.scheduleClock({
               flowName: flow._tag,

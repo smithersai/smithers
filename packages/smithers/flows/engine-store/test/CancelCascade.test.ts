@@ -1,3 +1,4 @@
+import type { DurableWriter } from "@smthrs/database/DurableWriter"
 /**
  * A durable cancellation must reach the linked children of the run it
  * cancelled, and must release the flow scope a parked run retained.
@@ -71,7 +72,10 @@ const provide = <A, E, R>(
   ) as Effect.Effect<
     A,
     E,
-    Exclude<R, Journal.Journal | RunStore.RunStore | DurableEngineState.DurableEngineState | Scope.Scope>
+    Exclude<
+      R,
+      DurableWriter | Journal.Journal | RunStore.RunStore | DurableEngineState.DurableEngineState | Scope.Scope
+    >
   >
 
 const state = (executionId: string) =>

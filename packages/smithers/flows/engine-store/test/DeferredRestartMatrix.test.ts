@@ -249,7 +249,10 @@ describe("registration after a deferred was consumed", () => {
                 yield* engine.execute(flow, { executionId, payload: {}, discard: true })
               }
               yield* complete("consumed")
-              yield* engine.execute(flow, { executionId: "consumed", payload: {}, discard: true })
+              // Direct state completion does not send a wake. execute can join
+              // a sweep's drain that read the deferred before completion; resume
+              // queues a successor and awaits it before this engine shuts down.
+              yield* engine.resume(flow, "consumed")
             }))
             expect(Option.getOrThrow(yield* state.waiting("consumed")).reason).toBe("approval")
             expect(Option.getOrThrow(yield* state.waiting("unobserved")).reason).toBe("event")
