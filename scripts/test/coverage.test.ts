@@ -2,6 +2,7 @@ import assert from "node:assert/strict"
 import { readdirSync, readFileSync, statSync } from "node:fs"
 import { join, relative, resolve } from "node:path"
 import { describe, it } from "node:test"
+import { pathToFileURL } from "node:url"
 import { readWorkspaceInventory } from "../readWorkspaceInventory.ts"
 
 describe("coverage conformance", () => {
@@ -196,12 +197,24 @@ describe("coverage conformance", () => {
   const assertCoverageDenominator = (name: string, source: string) => {
     const coverage = block(source, "coverage")
     assert.notEqual(coverage, null, `packages/${name}/vitest.config.ts has no readable coverage block`)
-    assert.match(
-      coverage!,
-      name === "smithers/flows/platform-bun"
-        ? /\benabled:\s*!process\.versions\.bun\s*,/
-        : /\benabled:\s*true/
-    )
+    if (name === "smithers/flows/flow" && coverage!.includes("enabled: coversWholeSuite(")) {
+      // Flow's declared full-suite target still enforces coverage. Only an
+      // explicitly filtered developer run opts out through the helper whose
+      // full-suite behavior is exercised below. Pin the parser and wiring,
+      // so an unrelated dynamic expression cannot disable the gate.
+      assert.ok(source.includes('import { parseCLI } from "vitest/node"'))
+      assert.ok(source.includes('import { coversWholeSuite } from "./test/CoverageGate.ts"'))
+      assert.ok(coverage!.includes(
+        'enabled: coversWholeSuite(parseCLI(["vitest", ...process.argv.slice(2)], { allowUnknownOptions: true })),\n'
+      ))
+    } else {
+      assert.match(
+        coverage!,
+        name === "smithers/flows/platform-bun"
+          ? /\benabled:\s*!process\.versions\.bun\s*,/
+          : /\benabled:\s*true/
+      )
+    }
     assert.match(coverage!, /\bprovider:\s*"v8"/)
     assert.doesNotMatch(coverage!, /\b(?:include|exclude):\s*\[[^\]]*\]\s*\.map\(/)
     const included = [...(/\binclude\s*:\s*\[([^\]]*)\]/.exec(coverage ?? "")?.[1] ?? "")
@@ -263,6 +276,26 @@ describe("coverage conformance", () => {
     ) {
       assert.throws(() => assertCoverageDenominator("testing", `test: { include: ["src/**"] }, ${mutated}`))
     }
+  })
+
+  it("keeps flow's parsed full-suite invocations under the coverage gate", async () => {
+    const directory = join(packagesDir, "smithers/flows/flow")
+    const { coversWholeSuite } = await import(pathToFileURL(join(directory, "test/CoverageGate.ts")).href)
+    // Resolve the same parser as the package's config, without loading that
+    // config with this Node test runner's own file-selection arguments.
+    const { createRequire } = await import("node:module")
+    const require = createRequire(join(directory, "package.json"))
+    const { parseCLI } = await import(pathToFileURL(require.resolve("vitest/node")).href)
+    for (const args of [[], ["run"], ["run", "--maxWorkers=1"], ["run", "--coverage"]]) {
+      assert.equal(coversWholeSuite(parseCLI(["vitest", ...args], { allowUnknownOptions: true })), true)
+    }
+    const source = configs.find((config) => config.name === "smithers/flows/flow")!.source
+    assertCoverageDenominator("smithers/flows/flow", source)
+    for (const changed of [
+      source.replace("enabled: coversWholeSuite(", "enabled: false && coversWholeSuite("),
+      source.replace('parseCLI(["vitest", ...process.argv.slice(2)]', 'parseCLI(["vitest", "test/Only.test.ts"]'),
+      source.replace('from "./test/CoverageGate.ts"', 'from "./test/AnotherGate.ts"')
+    ]) assert.throws(() => assertCoverageDenominator("smithers/flows/flow", changed))
   })
 
   it("requires the exact HostContract handoff to retain its full destination gate", () => {
@@ -489,16 +522,16 @@ describe("coverage conformance", () => {
       // The agent package's former hints (FlowEngineLike's canonicalization
       // mappers and AgentSession's process-loss fallbacks) were removed with
       // the code that needed them in 81b218ce7; the entries leave with them.
-      // Canonical capture rejects accessor properties before recursively
-      // freezing the captured object graph, so the descriptor walk only sees
-      // data properties in both identity implementations.
+      // Capture reads each own descriptor once and freezes the detached copy
+      // it built from those values; the original is never rewritten. Its
+      // admission, Proxy refusal and freezing paths are covered without hints.
+      // Plan's former walk no longer carries a hint.
       // Graph's guards defend invariants established by the same build:
       // every node has key material, recorded dependency targets exist, and
       // reachability suppresses duplicate dependencies before conflict edges
       // are added. They remain hard failures if a future pass breaks those
       // invariants.
       "smithers/flows/core/src/Graph.ts": 3,
-      "smithers/flows/core/src/internal/node.ts": 1,
       // The YAML parser always attaches a position to parser issues and a
       // mapping always converts to a non-null object. Both guards keep the
       // redacted diagnostic path total across future parser upgrades.
@@ -526,7 +559,6 @@ describe("coverage conformance", () => {
       // fallthrough; V8 emits no executable location for that synthetic
       // branch, so the `else` on the owned transition can never be covered.
       "smithers/flows/engine-store/src/internal/RunDriver.ts": 1,
-      "smithers/flows/engine/src/FlowEngine/make.ts": 1,
       // The guest runner is resolved beside this module, and only a built
       // `dist` copy answers to the `.js` extension the arm covers.
       "smithers/flows/src/SandboxedFlow.ts": 1,
@@ -534,14 +566,15 @@ describe("coverage conformance", () => {
       // names none outside `DigestAlgorithm`, so the rejection translation is
       // unreachable from the engine.
       "smithers/flows/src/internal/SandboxedFlowGuest.ts": 1,
-      // ECMAScript arrays expose a uint32 own `length`; Proxy invariants do
-      // not permit the descriptor-backed boundary walk to observe any other
-      // shape. These guards keep future reflection changes fail-closed.
       // Projection rows, selectors, cursors, and tags are decoded before the
       // internal frame and snapshot objects are assembled. Re-decoding those
       // same admitted fields cannot fail; the catches remain fail-closed if a
       // future assembly step adds an unvalidated member.
-      "smithers/gateway/src/Projections.ts": 4,
+      // The fifth guard belongs to workspace refresh: only stale followed
+      // runs enter its Set, admission sets their observed position, and no
+      // source is removed until that Set is refreshed once per run. Cache
+      // eviction removes verdicts only, never followed sources.
+      "smithers/gateway/src/Projections.ts": 5,
       // `fenced`'s `info` and `body` groups are mandatory (outside any
       // alternation or quantifier), so they participate in every match; the
       // fallbacks only discharge the optional type on
@@ -575,27 +608,30 @@ describe("coverage conformance", () => {
       // comparison arm's `else` and the fallthrough after every pair
       // returned are both unreachable by construction.
       "smithers/flows/plan/src/FileSet.ts": 2,
-      "smithers/flows/plan/src/internal/node.ts": 1,
       // The planned-value placeholder's proxy target is callable only so the
       // `apply` trap fires; the target body itself is unreachable by
       // construction because every application enters the trap.
       "smithers/flows/plan/src/Planned.ts": 1,
-      // The plugin boundary uses the same ECMAScript array-length invariant
-      // as the fs boundary above, retaining a defensive refusal for a future
-      // host-reflection change.
+      // AttemptStore's insert conflict and row lookup share one serialized
+      // write transaction, so the conflicting attempt cannot disappear.
       "smithers/flows/run-store/src/AttemptStore.ts": 1,
-      "smithers/flows/run-store/src/RunStore.ts": 3,
+      // RunStore's two reflection hints left with the shared JSON admission
+      // helper. Its remaining hint covers V8's synthetic generator branch;
+      // RunStore.test.ts asserts successful, missing and stale-owner CAS
+      // outcomes through the real SQLite adapter.
+      "smithers/flows/run-store/src/RunStore.ts": 1,
       // Provider processes can only originate from each provider's `spawn`,
       // which records the opaque handle before returning it. These guards
       // turn a future provenance violation into a typed unknown-process error.
       "smithers/flows/sandbox/src/AwsSandbox/make.ts": 1,
-      "smithers/flows/sandbox/src/ContainerSandbox/make.ts": 1,
+      // Container and Kubernetes now share execSession's process registry.
+      // The same spawn-before-kill provenance guarantee needs one hint here.
+      "smithers/flows/sandbox/src/internal/execSession.ts": 1,
       // Session paths are absolute beneath an absolute root, so parent
       // creation is skipped only for the filesystem root. The second guard is
       // the same opaque-process provenance check as the remote providers.
       "smithers/flows/sandbox/src/DirectorySandbox/make.ts": 2,
       "smithers/flows/sandbox/src/JustBashSandbox/make.ts": 1,
-      "smithers/flows/sandbox/src/KubernetesSandbox/make.ts": 1,
       // `spawn` is the only source of a `RemoteProcess`, and it records every
       // one it returns, so the scripted provider's kill lookup cannot miss.
       "smithers/flows/sandbox/src/RemoteChildProcessSpawner/TestRemote.ts": 1,
