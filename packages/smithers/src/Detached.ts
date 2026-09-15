@@ -73,6 +73,22 @@ export const admissionLine = (nonce: string, runId: string): string =>
   `SMITHERS_DETACHED_ADMISSION=run:${nonce} runId=${runId}`
 
 /**
+ * The run-id shapes admitted onto a log filename.
+ *
+ * The id is parsed out of the child's combined stdout/stderr — a stream that
+ * workflow code, agent transcripts, and tool output all write to — so it is
+ * untrusted input at a path boundary: it becomes the filename the pending log
+ * is renamed onto, and the name any earlier log at that path is moved aside
+ * under. One filename component is the whole contract: alphanumerics, dot,
+ * underscore and dash, starting alphanumeric, bounded so the `.log` and
+ * `.superseded-<nonce>.log` suffixes stay inside filename limits. Anything
+ * else (`../`, absolute, separator-bearing) would rename files outside the
+ * log directory and is treated as no admission line at all. Every id the
+ * control plane mints (`run-<sequence>`, uuids) fits this shape.
+ */
+const filenameSafeRunId = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/
+
+/**
  * Reads the run id out of a log tail that contains this nonce's admission
  * line, or `undefined` when it does not.
  *
@@ -86,7 +102,7 @@ export const admittedRunId = (tail: string, nonce: string): string | undefined =
   const rest = tail.slice(start + marker.length)
   const end = rest.search(/\s/)
   const runId = end < 0 ? rest : rest.slice(0, end)
-  return runId === "" ? undefined : runId
+  return filenameSafeRunId.test(runId) ? runId : undefined
 }
 
 /**

@@ -82,6 +82,28 @@ describe("the admission line", () => {
   it("reads a run id at the very end of the log", () => {
     expect(Detached.admittedRunId("SMITHERS_DETACHED_ADMISSION=run:n runId=run-9", "n")).toBe("run-9")
   })
+
+  it("refuses a run id that is not one safe filename component", () => {
+    // The log the run id is parsed out of is the child's whole stdout/stderr:
+    // workflow output, agent transcripts, and tool output all share it. A
+    // forged line carrying a path-shaped id must never reach `renameSync`,
+    // where it would move the log — and any file already at the target —
+    // outside the log directory.
+    const forged = (runId: string) => `SMITHERS_DETACHED_ADMISSION=run:n runId=${runId}`
+    expect(Detached.admittedRunId(forged("../escape"), "n")).toBeUndefined()
+    expect(Detached.admittedRunId(forged("../../etc/passwd"), "n")).toBeUndefined()
+    expect(Detached.admittedRunId(forged("/absolute"), "n")).toBeUndefined()
+    expect(Detached.admittedRunId(forged(".."), "n")).toBeUndefined()
+    expect(Detached.admittedRunId(forged("nested/name"), "n")).toBeUndefined()
+    expect(Detached.admittedRunId(forged("back\\slash"), "n")).toBeUndefined()
+    expect(Detached.admittedRunId(forged(`.hidden`), "n")).toBeUndefined()
+    expect(Detached.admittedRunId(forged(`a${"x".repeat(128)}`), "n")).toBeUndefined()
+    // The shapes real control planes mint still pass.
+    expect(Detached.admittedRunId(forged("run-42"), "n")).toBe("run-42")
+    expect(Detached.admittedRunId(forged("018f3c9e-7b2a-7f3e-9c4d-2a1b0e5f6a7d"), "n")).toBe(
+      "018f3c9e-7b2a-7f3e-9c4d-2a1b0e5f6a7d"
+    )
+  })
 })
 
 describe("the log tail", () => {
@@ -134,6 +156,24 @@ describe("launching", () => {
     expect(existsSync(rejected.logFile)).toBe(false)
     // Discarding a log that is already gone is not an error.
     expect(() => Detached.discard(rejected)).not.toThrow()
+  }, 30_000)
+
+  it("does not rename the log onto a forged run id that escapes the log directory", async () => {
+    const root = project()
+    // Anything the child writes lands in this log — including untrusted agent
+    // output — so the admission parse is an untrusted-input boundary. A forged
+    // line with a traversal id must be ignored, not turned into a rename that
+    // drops the log outside `.flows/logs`.
+    const entry = child(
+      `process.stderr.write("SMITHERS_DETACHED_ADMISSION=run:" + process.env.SMITHERS_INTERNAL_DETACHED_ADMISSION + " runId=../escaped\\n")
+       process.exit(0)`
+    )
+
+    const result = await Detached.launch({ root, payload: "{}", entry, intervalMs: 10 })
+
+    expect(Detached.isLaunched(result)).toBe(false)
+    expect((result as Detached.Rejected).reason).toContain("exited before admission")
+    expect(existsSync(join(root, ".flows", "escaped.log"))).toBe(false)
   }, 30_000)
 
   it("terminates a child that is alive but silent past the grace window", async () => {
