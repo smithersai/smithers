@@ -100,15 +100,18 @@ apps/observability/data/
 
 # `.smithers/` holds the workspace declaration (WORKSPACE.ts), the factory
 # declaration beside it (FACTORY.ts), the two files `//:factoryProjection`
-# projects from it (factory.json, home.json), and the target index
-# `//:targetIndex` generates (target-index.json), all of which are source.
-# Only run state written beside them is ignored.
+# projects from it (factory.json, home.json), the target index
+# `//:targetIndex` generates (target-index.json), and the Cloud machine
+# expression Smithers Cloud builds this repository's image from
+# (environment.nix), all of which are source. Only run state written beside
+# them is ignored.
 /.smithers/*
 !/.smithers/WORKSPACE.ts
 !/.smithers/FACTORY.ts
 !/.smithers/factory.json
 !/.smithers/home.json
 !/.smithers/target-index.json
+!/.smithers/environment.nix
 **/.smithers/*.db
 **/.smithers/*.db-*
 **/.smithers/runs/
