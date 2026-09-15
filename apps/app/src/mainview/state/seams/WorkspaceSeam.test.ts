@@ -316,6 +316,17 @@ describe("workspace seam gates", () => {
 })
 
 describe("workspace seam list", () => {
+  test("unnamed running workspaces remain available in repository and user lists", async () => {
+    const { store, seam } = await harness({
+      "api/repos/will/smithers/workspaces": json(200, [{ ...WS_RUNNING, name: "", slug: "" }]),
+      "api/user/workspaces": json(200, [{ ...USER_ROW, workspace_title: "" }])
+    })
+    await seam.listWorkspaces("will/smithers")
+    expect(workspacesOf(store)).toContainEqual(expect.objectContaining({ id: "ws-1", name: "ws-1", status: "running" }))
+    await seam.listWorkspaces()
+    expect(copiesOf(store)).toContainEqual(expect.objectContaining({ workspaceId: "ws-1", label: "ws-1", state: "running" }))
+  })
+
   /*
    * Critique finding 3: plue's per-user route answers UserWorkspaceRow
    * (workspace_id, repository_owner/name, workspace_title, state), which

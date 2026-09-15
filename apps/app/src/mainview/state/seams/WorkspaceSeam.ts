@@ -474,7 +474,7 @@ const parseWorkspaceWire = (value: unknown, fallbackRepo?: string): CloudWorkspa
   if (!isRecord(value)) return null
   const id = str(value.id)
   const repoId = str(value.repo_full_name) ?? fallbackRepo ?? null
-  const name = str(value.name) ?? str(value.slug)
+  const name = str(value.name) ?? str(value.slug) ?? id
   if (id === null || repoId === null || name === null || !isWorkspaceStatus(value.status)) return null
   return {
     id,
@@ -551,7 +551,7 @@ const parseUserWorkspaceWire = (value: unknown): CloudWorkspaceInput | null => {
   const id = str(value.workspace_id)
   const owner = str(value.repository_owner)
   const repoName = str(value.repository_name)
-  const name = str(value.workspace_title)
+  const name = str(value.workspace_title) ?? id
   if (id === null || owner === null || repoName === null || name === null || !isWorkspaceStatus(value.state)) return null
   return {
     id,
