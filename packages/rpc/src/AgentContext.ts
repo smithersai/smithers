@@ -118,25 +118,44 @@ export const AgentRuntimeWorldDocumentSchema = z.object({
 export type AgentRuntimeWorldDocument = z.infer<typeof AgentRuntimeWorldDocumentSchema>
 
 /**
+ * Bounded repository observations gathered by repo.update; never a displayed
+ * card. Every list and string is capped so one noisy repository cannot grow a
+ * turn without bound, and `truncated` says a cap was reached.
+ *
+ * @since 1.0.0
+ * @category schemas
+ */
+export const AgentRepositoryUpdateSchema = z.object({
+  repo: z.string().max(250),
+  checkedAt: z.number(),
+  branch: z.string().max(250).optional(),
+  openIssues: z.number().nullable(),
+  openPrs: z.number().nullable(),
+  problems: z.array(z.string().max(250)).max(10),
+  items: z.array(z.object({
+    source: z.string().max(80),
+    kind: z.enum(["issue", "pr", "notification"]),
+    number: z.number().optional(),
+    title: z.string().max(250),
+    state: z.string().max(80),
+    tags: z.array(z.string().max(80)).max(5)
+  })).max(20),
+  truncated: z.boolean()
+})
+/**
+ * The decoded value accepted by {@link AgentRepositoryUpdateSchema}.
+ *
+ * @since 1.0.0
+ * @category models
+ */
+export type AgentRepositoryUpdate = z.infer<typeof AgentRepositoryUpdateSchema>
+
+/**
  * Validates agent runtime context values at the RPC boundary.
  *
  * @since 1.0.0
  * @category schemas
  */
-/** Bounded repository observations gathered by repo.update; never a displayed card. */
-export const AgentRepositoryUpdateSchema = z.object({
-  repo: z.string().max(250), checkedAt: z.number(), branch: z.string().max(250).optional(),
-  openIssues: z.number().nullable(), openPrs: z.number().nullable(),
-  problems: z.array(z.string().max(250)).max(10),
-  items: z.array(z.object({
-    source: z.string().max(80), kind: z.enum(["issue", "pr", "notification"]),
-    number: z.number().optional(), title: z.string().max(250), state: z.string().max(80),
-    tags: z.array(z.string().max(80)).max(5)
-  })).max(20),
-  truncated: z.boolean()
-})
-export type AgentRepositoryUpdate = z.infer<typeof AgentRepositoryUpdateSchema>
-
 export const AgentRuntimeContextSchema = z.object({
   repositoryUpdate: AgentRepositoryUpdateSchema.optional(),
   version: z.literal(AGENT_RUNTIME_CONTEXT_VERSION),

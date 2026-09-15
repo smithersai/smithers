@@ -4,9 +4,6 @@
  * @since 1.0.0
  */
 import { z } from "zod"
-import { PLUE_FAULTS } from "./PlueFailureCodes.ts"
-import { REFUSAL_ORIGINS } from "./Refusal.ts"
-import { StatusRollupSchema } from "./Health.ts"
 import { AgentRoleIdSchema, AgentRoleModelSchema } from "./AgentRoles.ts"
 import {
   ChangeAnalyzerRunSchema,
@@ -28,9 +25,12 @@ import {
 } from "./Changes.ts"
 import { FactoryRuleSchema } from "./FactoryProjection.ts"
 import { GatewayWorkspaceIdSchema } from "./GatewayWorkspace.ts"
+import { StatusRollupSchema } from "./Health.ts"
 import { HomeBlockSchema } from "./HomePane.ts"
 import { HARNESS_IDS, RepoSchema, TargetSchema } from "./LocalApp.ts"
 import { LSP_DIAGNOSTICS_CAP, LspDiagnosticSchema, LspHoverSchema } from "./LocalLsp.ts"
+import { PLUE_FAULTS } from "./PlueFailureCodes.ts"
+import { REFUSAL_ORIGINS } from "./Refusal.ts"
 import {
   AffectedCardPayloadSchema,
   CiMatrixCardPayloadSchema,
@@ -190,10 +190,6 @@ const cardBaseShape = {
   viewKey: z.string().optional(),
   viewRepo: z.string().optional(),
   loading: z.boolean().optional(),
-  navigation: z.object({ index: z.number().int().nonnegative(), length: z.number().int().positive() }).optional(),
-  id: z.string(),
-  title: z.string(),
-  body: z.string().optional(),
   status: z.enum(["active", "acted", "error"]),
   createdAt: z.number(),
   ordinal: z.number().int().nonnegative(),
@@ -658,12 +654,33 @@ const CommitSummarySchema = z.object({
  * @category schemas
  */
 const CurrentCardSchema = z.discriminatedUnion("kind", [
-  z.object({ ...cardBaseShape, kind: z.literal("repo-update"), payload: z.object({
-    repo: z.string(), scope: z.string(), checkedAt: z.number(), summary: z.string(), branch: z.string().optional(),
-    openIssues: z.number().int().nonnegative().nullable(), openPrs: z.number().int().nonnegative().nullable(), problems: z.array(z.string()),
-    items: z.array(z.object({ id: z.string(), version: z.string(), source: z.string().optional(), kind: z.enum(["issue", "pr", "notification"]), number: z.number().int().optional(),
-      title: z.string(), state: z.string(), tags: z.array(z.string()), read: z.boolean() }))
-  }) }),
+  z.object({
+    ...cardBaseShape,
+    kind: z.literal("repo-update"),
+    payload: z.object({
+      repo: z.string(),
+      scope: z.string(),
+      checkedAt: z.number(),
+      summary: z.string(),
+      branch: z.string().optional(),
+      openIssues: z.number().int().nonnegative().nullable(),
+      openPrs: z.number().int().nonnegative().nullable(),
+      problems: z.array(z.string()),
+      items: z.array(
+        z.object({
+          id: z.string(),
+          version: z.string(),
+          source: z.string().optional(),
+          kind: z.enum(["issue", "pr", "notification"]),
+          number: z.number().int().optional(),
+          title: z.string(),
+          state: z.string(),
+          tags: z.array(z.string()),
+          read: z.boolean()
+        })
+      )
+    })
+  }),
   /* The tutorial's ranked repository chooser and its local-creation receipt. */
   z.object({
     ...cardBaseShape,
@@ -1016,7 +1033,12 @@ const CurrentCardSchema = z.discriminatedUnion("kind", [
       issueContext: z.object({ number: z.number(), title: z.string() }).optional(),
       research: z.string().optional(),
       workflows: z.array(
-        z.object({ key: z.string(), description: z.string().nullable(), prompt: z.string().optional(), inputSchema: z.unknown().optional() })
+        z.object({
+          key: z.string(),
+          description: z.string().nullable(),
+          prompt: z.string().optional(),
+          inputSchema: z.unknown().optional()
+        })
       )
     })
   }),
@@ -2202,6 +2224,20 @@ const CurrentCardSchema = z.discriminatedUnion("kind", [
    * tab, and its transcript rows append off the session's SSE stream instead
    * of a PTY tab. `cloud: true` discriminates it; a local card never carries
    * the key.
+   * plan facts and an optional live run overlay, one run's timeline with its
+   * critical path, the run history with replay, the diff-affected set, and
+   * the generated CI matrix.
+   */
+  z.object({ ...cardBaseShape, kind: z.literal("graph"), payload: GraphCardPayloadSchema }),
+  z.object({ ...cardBaseShape, kind: z.literal("run-timeline"), payload: RunTimelineCardPayloadSchema }),
+  z.object({ ...cardBaseShape, kind: z.literal("run-history"), payload: RunHistoryCardPayloadSchema }),
+  z.object({ ...cardBaseShape, kind: z.literal("affected"), payload: AffectedCardPayloadSchema }),
+  z.object({ ...cardBaseShape, kind: z.literal("ci-matrix"), payload: CiMatrixCardPayloadSchema }),
+  /*
+   * An agent launched from the `+` menu as a subagent of the conversation
+   * (LOCAL-APP.md "Tabs"): the harness runs in its own tab, and this card is
+   * the conversation's record of it — which harness, where, whether it is
+   * still running, and the way back to its tab.
    */
   z.object({
     ...cardBaseShape,
@@ -2267,7 +2303,6 @@ const CurrentCardSchema = z.discriminatedUnion("kind", [
         error: z.string().optional()
       })
     ])
-  }),
   /*
    * The explainer's answer (AgentRoles.ts "explainer"): `explain <what>` runs
    * a side turn that asks for the explainer role, and this card is where the
