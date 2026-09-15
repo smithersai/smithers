@@ -7,11 +7,13 @@
  * reads. The appearance bootstrap is copied from that index.html and stays an
  * inline script on purpose: a deferred stamp paints the wrong theme first.
  */
+import project from "../data/project.json"
 import { metaTags } from "virtual:smithers-build-stamp"
 interface Props {
   title: string
+  description?: string
 }
-const { title } = Astro.props
+const { title, description = project.description } = Astro.props
 ---
 
 <!doctype html>
@@ -23,6 +25,15 @@ const { title } = Astro.props
     <link rel="icon" type="image/png" href="/favicon.png" />
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
     <title>{title}</title>
+    <meta name="description" content={description} />
+    <meta property="og:title" content={title} />
+    <meta property="og:description" content={description} />
+    <meta property="og:type" content="website" />
+    <meta property="og:image" content={new URL("/media/og.png", Astro.site)} />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content={title} />
+    <meta name="twitter:description" content={description} />
+    <meta name="twitter:image" content={new URL("/media/og.png", Astro.site)} />
     {metaTags.map((attrs) => <meta name={attrs.name} content={attrs.content} />)}
     <script is:inline>
       (function (window, document) {

@@ -87,6 +87,8 @@ export default defineConfig({
       // Google Fonts rather than an npm package so the docs add no dependency,
       // and src/styles/starlight.css names a system stack behind each one.
       head: [
+        { tag: "meta", attrs: { property: "og:image", content: "https://smithers.sh/media/og.png" } },
+        { tag: "meta", attrs: { name: "twitter:image", content: "https://smithers.sh/media/og.png" } },
         { tag: "link", attrs: { rel: "preconnect", href: "https://fonts.googleapis.com" } },
         { tag: "link", attrs: { rel: "preconnect", href: "https://fonts.gstatic.com", crossorigin: true } },
         {
