@@ -219,3 +219,14 @@ test("native memory and a real SQLite clarification resume across hosts and reje
   await assert.rejects(host.runPromise(gather(options, input)), /Stale wiki page/)
   t.diagnostic("Real JJ history, verified artifact checks, durable SQLite wait and reopened replay passed; model decisions were scripted.")
 })
+
+
+test("each edit atom retains the original task and acceptance criteria", () => {
+  const request = { prompt: "Add ## Purpose mentioning disposable production tests; preserve the title.", feedback: "Keep the introduction." }
+  const proposed = draft("native-3", [null])
+  const plan = finalize(request, context, proposed)
+  const planned = plan.changes[0]!.atoms[0]!
+  assert.deepEqual(JSON.parse(planned.intent), { request: request.prompt, feedback: request.feedback,
+    change: proposed.changes[0]!.intent, atom: proposed.changes[0]!.atoms[0]!.intent })
+  assert.deepEqual(planned.writes, proposed.changes[0]!.atoms[0]!.writes)
+})

@@ -223,6 +223,11 @@ export const finalize = (input: typeof PlanningInput.Type, context: PlanningCont
     }
     return {
       ...change,
+      // The edit leaf receives the atom, not the full Plan. Preserve the user's
+      // acceptance criteria even when the planner reduces its intent to "edit".
+      atoms: change.atoms.map(atom => ({ ...atom, intent: JSON.stringify({
+        request: input.prompt, feedback: input.feedback, change: change.intent, atom: atom.intent
+      }) })),
       implementation: context.implementation, implementationDigest: context.implementationDigest,
       checks: [...change.checks.map(id => {
         const check = checks.get(id)
