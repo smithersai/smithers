@@ -577,7 +577,7 @@ function AppContent() {
             null}
 
           <div className="sui-chat-transcript smithers-transcript" data-slot="chat-transcript"
-            data-repository-missing={missingBootRepository !== undefined && entries.length === 1 || undefined}
+            data-repository-missing={missingBootRepository !== null && entries.length === 1 || undefined}
             data-testid="transcript" data-keyboard-pane="Conversation" role="log" aria-label="Conversation" aria-busy={typing}>
           <MessageScrollerProvider key={`${conversationTabId ?? "main"}:${session.activeRepoKey ?? ""}`} scrollAnchor="bottom"
             initialMessageId={initialReadId}

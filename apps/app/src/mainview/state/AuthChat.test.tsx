@@ -194,6 +194,7 @@ describe("auth is a conversation state — the chat is the only page", () => {
 
     const { host, markup } = mount(controller)
     const messages = [...host.querySelectorAll<HTMLElement>(".smithers-chat-message")]
+    expect(host.querySelector('[data-testid="transcript"]')?.hasAttribute("data-repository-missing")).toBe(false)
     expect(messages.map((message) => message.textContent?.includes(WEB_OPENING))).toEqual([true])
     const cta = messages[0]?.querySelector<HTMLButtonElement>(".message-cta")
     expect(cta?.dataset.flow).toBe("auth.sign-in")
@@ -304,6 +305,7 @@ describe("auth is a conversation state — the chat is the only page", () => {
 
     const { host, markup } = mount(controller)
     const messages = [...host.querySelectorAll<HTMLElement>(".smithers-chat-message")]
+    expect(host.querySelector('[data-testid="transcript"]')?.hasAttribute("data-repository-missing")).toBe(false)
     expect(messages.map((message) => message.textContent?.includes(WEB_OPENING))).toEqual([true])
     expect(markup()).not.toContain("You are exploring")
     expect(controller.commands.state().publicRepo).toBe(false)
