@@ -5,6 +5,7 @@ import { join } from "node:path"
 import { test } from "node:test"
 import { runMutations, verifyOutcome } from "./check-mutations.mjs"
 import { mutants } from "./mutations/manifest.mjs"
+import { repoRoot } from "./workspace-packages.mjs"
 
 test("mutation evidence refuses surviving, unloaded, empty, interrupted and infrastructure failures", () => {
   const mutant = { id: "fixture", test: "behavior oracle" }
@@ -29,6 +30,14 @@ test("the mutation manifest names a behavioral assertion for every unique site",
     assert.ok(mutant.test.length > 10)
     assert.notEqual(mutant.original, mutant.replacement)
     assert.doesNotMatch(mutant.package, /control|sync|jj|engine-store|run-store|journal/)
+  }
+})
+
+test("every declared mutation still names exactly one current source site", () => {
+  for (const mutant of mutants) {
+    const path = join(repoRoot, mutant.package, mutant.source)
+    assert.equal(readFileSync(path, "utf8").split(mutant.original).length - 1, 1,
+      `${mutant.id}: ${mutant.source} must contain its mutation site exactly once`)
   }
 })
 
