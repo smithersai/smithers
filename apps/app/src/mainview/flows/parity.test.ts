@@ -143,6 +143,7 @@ const DELEGATED_HANDLERS: Readonly<Record<string, readonly string[]>> = {
   "../InputModeMenu.tsx": ["open ? close() : setOpen(true)", "latest.current.onChange(value)"], // transient menu; selection is input.mode at both mounts
   "../cards/LiveTutorialRunBody.tsx": ["scoped("], // runSourceCommand(card.id, onRunCommand) keeps the source frame
   "../cards/WorkflowCards.tsx": ["sendRunCommand("], // the original onRunCommand prop, before the frame wrapper
+  "../cards/ApprovalAnswer.tsx": ["onAnswer(", "onClick={send}"], // the answer is a value, not a flow argument; both mounts bind onAnswer to the controller
 }
 
 const routesThroughRegistry = (context: string): boolean =>
@@ -256,6 +257,14 @@ describe("launch-law parity: every affordance is a command", () => {
       "../ChatCards.tsx": 10,
       /* The turn's approval card: approve and deny. */
       "../cards/ApprovalCard.tsx": 2,
+      /*
+       * The answer box for a gate that asks a question rather than for a
+       * grant: Yes, No, one per select option, and Send answer. They carry a
+       * VALUE — what the person wrote — which no flow argument string can hold,
+       * so they call the controller's answerApproval through the card's own
+       * onAnswer prop rather than runCommand.
+       */
+      "../cards/ApprovalAnswer.tsx": 4,
       /* The admin grant confirm: Post the grant and Cancel. */
       "../cards/BillingCards.tsx": 2,
       /* The access-request queue's Approve. */

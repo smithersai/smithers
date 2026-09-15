@@ -70,7 +70,8 @@ export interface WorkflowController {
     cardId: string,
     requestId: string,
     decision: "approved" | "denied",
-    runId?: string
+    runId?: string,
+    answer?: unknown
   ) => Promise<void>
 }
 
@@ -608,7 +609,8 @@ export const createWorkflowController = (
     cardId: string,
     requestId: string,
     decision: "approved" | "denied",
-    runId?: string
+    runId?: string,
+    answer?: unknown
   ): Promise<void> => {
     const card = store.collections.cards.get(cardId)
     if (card === undefined || card.kind !== "approvals-inbox") return
@@ -637,7 +639,8 @@ export const createWorkflowController = (
       trusted.payload.repo,
       row.approval as Parameters<typeof gateway.submitApproval>[1],
       decision === "approved" ? "approve" : "deny",
-      binding
+      binding,
+      answer
     )
     if (submitted.status !== "ok" || submitted.value.decision._tag === "Terminal") {
       const observed = await gateway.approvals(trusted.payload.repo, row.runId, binding)

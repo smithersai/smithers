@@ -1,6 +1,10 @@
 /*
  * The approval card: a capability the run asked the human to allow. The
  * decision rides onDecideApproval; the stamp says what was decided and when.
+ *
+ * A card carrying a QUESTION is the other shape: a HumanTask parked the run on
+ * something only a person knows, so the card renders the prompt and a box for
+ * the answer, and the answer rides the same callback.
  */
 import {
   Confirmation,
@@ -12,6 +16,7 @@ import {
 } from "@smthrs/ui"
 import type { ApprovalState } from "@smthrs/ui"
 import type { Card } from "../state/AppState"
+import { ApprovalAnswerForm } from "./ApprovalAnswer"
 import { timeLabel as clockLabel } from "../Timestamps"
 import type { CardFamily } from "./CardFamily"
 
@@ -20,7 +25,7 @@ const ApprovalCardBody = ({
   onDecideApproval
 }: {
   readonly card: Extract<Card, { kind: "approval" }>
-  readonly onDecideApproval: (id: string, decision: "approved" | "denied") => void
+  readonly onDecideApproval: (id: string, decision: "approved" | "denied", answer?: unknown) => void
 }) => {
   const payload = card.payload
   const pending = payload.pending === true
@@ -41,18 +46,29 @@ const ApprovalCardBody = ({
           <li>{payload.capability}</li>
         </ul>
       </ConfirmationRequest>
-      {pending ? <p className="sui-approval-pending">Sending your decision…</p> : (
-        <ConfirmationActions>
-          <ConfirmationAction
-            decision="approve"
-            onDecide={() => onDecideApproval(card.id, "approved")}
+      {pending ? <p className="sui-approval-pending">Sending your decision…</p> : payload.question !== undefined ?
+        (
+          /* A gate that asks a question rather than for a grant: the run is
+           * stuck on something only a person knows, and approve/deny answer
+           * none of it. */
+          <ApprovalAnswerForm
+            question={payload.question}
+            disabled={false}
+            onAnswer={(answer) => onDecideApproval(card.id, "approved", answer)}
           />
-          <ConfirmationAction
-            decision="deny"
-            onDecide={() => onDecideApproval(card.id, "denied")}
-          />
-        </ConfirmationActions>
-      )}
+        ) :
+        (
+          <ConfirmationActions>
+            <ConfirmationAction
+              decision="approve"
+              onDecide={() => onDecideApproval(card.id, "approved")}
+            />
+            <ConfirmationAction
+              decision="deny"
+              onDecide={() => onDecideApproval(card.id, "denied")}
+            />
+          </ConfirmationActions>
+        )}
       {card.status === "error" && payload.error !== undefined ?
         (
           <p className="sui-approval-error" role="alert">

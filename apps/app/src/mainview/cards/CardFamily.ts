@@ -30,7 +30,14 @@ export type CardOf<K extends Card["kind"]> = Extract<Card, { kind: K }>
  * CardView mount; the body never owns application state.
  */
 export interface CardActions {
-  readonly onDecideApproval: (id: string, decision: "approved" | "denied") => void
+  /**
+   * Decide a gate, or ANSWER one.
+   *
+   * `answer` is present only for a gate that asks a question — a HumanTask
+   * waiting on a person — where approve and deny say nothing the run can use.
+   * It carries what the person wrote, already shaped for the question's kind.
+   */
+  readonly onDecideApproval: (id: string, decision: "approved" | "denied", answer?: unknown) => void
   readonly onGrantConfirm: (id: string) => void
   readonly onGrantCancel: (id: string) => void
   readonly onQueueApprove: (login: string) => void

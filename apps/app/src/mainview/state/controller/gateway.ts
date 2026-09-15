@@ -266,20 +266,32 @@ export const createGatewaySeam = (transport: GatewayTransport) => {
       decodeApprovalRows(await projection(repo, { _tag: "approvals", runId }, binding)),
 
     /**
-     * Decide one gate.
+     * Decide one gate — or answer one.
      *
      * The payload the projection published goes back unchanged, so the client
      * never reconstructs authority. One call records the decision AND resumes
      * the run it unblocked: there is no second resume for a lost answer to
      * strand.
+     *
+     * `answer` is what a person wrote for a gate that asked a question rather
+     * than for a grant, and it travels with the same payload.
      */
     submitApproval: async (
       repo: string,
       approval: ApprovalRow["payload"],
       decision: "approve" | "deny",
-      binding?: GatewayWorkspaceBinding
+      binding?: GatewayWorkspaceBinding,
+      answer?: unknown
     ): Promise<GatewayResult<SubmitApprovalOutput>> => {
-      const result = await call(repo, "Approval.Submit", { ...approval, decision }, binding)
+      const result = await call(
+        repo,
+        "Approval.Submit",
+        // A gate that asks a question is answered, not granted: the workspace
+        // routes the value to the wait point the row names. A denial refuses
+        // the question and carries nothing.
+        { ...approval, decision, ...(answer === undefined || decision === "deny" ? {} : { answer }) },
+        binding
+      )
       if (result.status !== "ok") return result
       const decoded = Schema.decodeUnknownOption(SubmitApprovalOutput)(result.value)
       if (Option.isNone(decoded)) return { status: "error", code: "invalid_approval_receipt", message: "The workspace returned an unreadable approval receipt. Check this approval before trying again." }

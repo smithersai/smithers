@@ -762,6 +762,20 @@ const CurrentCardSchema = z.discriminatedUnion("kind", [
        * never reconstructs the authority it is exercising.
        */
       approval: z.record(z.string(), z.unknown()).optional(),
+      /*
+       * A gate that asks a QUESTION rather than for a grant: a HumanTask
+       * waiting on a person. Approve and Deny answer nothing here, so the card
+       * renders the prompt and a box to answer it in. Absent on a capability
+       * gate, which is decided and not answered.
+       */
+      question: z.object({
+        kind: z.enum(["ask", "confirm", "select", "json"]),
+        prompt: z.string(),
+        name: z.string().optional(),
+        options: z.array(z.string()).optional(),
+        attempt: z.number().int().positive().optional(),
+        maxAttempts: z.number().int().positive().optional()
+      }).optional(),
       /** The loaded repository whose per-user gateway the run lives on. */
       repo: z.string().optional(),
       /** Owning gateway; omission keeps legacy cards unbound. */
@@ -1176,6 +1190,22 @@ const CurrentCardSchema = z.discriminatedUnion("kind", [
           title: z.string(),
           approval: z.record(z.string(), z.unknown()),
           requestedAt: z.number(),
+          /*
+           * A gate that asks a QUESTION rather than for a grant: a HumanTask
+           * waiting on a person. Approve and Deny answer nothing here, so the
+           * row carries what the run asked — the kind of answer it wants, the
+           * prompt, the choices, and how much of the attempt budget is left —
+           * and the card renders a box to answer it in. Absent on an ordinary
+           * capability gate, which is decided and not answered.
+           */
+          question: z.object({
+            kind: z.enum(["ask", "confirm", "select", "json"]),
+            prompt: z.string(),
+            name: z.string().optional(),
+            options: z.array(z.string()).optional(),
+            attempt: z.number().int().positive().optional(),
+            maxAttempts: z.number().int().positive().optional()
+          }).optional(),
           decision: z.enum(["approved", "denied"]).optional(),
           /** When the decision was submitted, never when the gate was raised; absent until one is made, so a row states only the time it knows. */
           decidedAt: z.number().optional(),

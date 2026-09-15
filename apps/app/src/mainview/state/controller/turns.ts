@@ -59,7 +59,8 @@ export interface TurnControllerDependencies {
     cardId: string,
     requestId: string,
     decision: "approved" | "denied",
-    runId?: string
+    runId?: string,
+    answer?: unknown
   ) => Promise<void>
 }
 
@@ -68,7 +69,7 @@ export interface TurnController {
   readonly send: (text: string) => void
   readonly reset: () => void
   readonly stop: () => void
-  readonly decideApproval: (id: string, decision: "approved" | "denied") => void
+  readonly decideApproval: (id: string, decision: "approved" | "denied", answer?: unknown) => void
   readonly retryLastTurn: () => string | void
 }
 
@@ -1025,10 +1026,10 @@ export const createTurnController = (
     })
   }
 
-  const decideApproval = (id: string, decision: "approved" | "denied"): void => {
+  const decideApproval = (id: string, decision: "approved" | "denied", answer?: unknown): void => {
     const rowTarget = parseApprovalActionId(id)
     if (rowTarget !== undefined) {
-      void forwardInboxApprovalDecision(rowTarget.cardId, rowTarget.requestId, decision, rowTarget.runId)
+      void forwardInboxApprovalDecision(rowTarget.cardId, rowTarget.requestId, decision, rowTarget.runId, answer)
       return
     }
     /*

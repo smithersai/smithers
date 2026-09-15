@@ -23,6 +23,7 @@ import { traceFromJournal } from "../../cards/RunTrace"
 import { codingPlanOf } from "../../cards/CodingPlan"
 import type { CommandResult } from "../../flows/Flows"
 import type { Card } from "../AppState"
+import { questionOf } from "../../cards/ApprovalQuestion"
 import { sameApproval } from "../ApprovalReference"
 import { reconcileRunApprovals } from "./approval-reconciliation"
 import type { ControllerContext } from "./context"
@@ -636,6 +637,7 @@ export const createRunsController = (
             title: row.title,
             approval: row.payload as Record<string, unknown>,
             requestedAt: row.requestedAt,
+            ...(questionOf(row) === undefined ? {} : { question: questionOf(row)! }),
             ...(before?.decision === undefined ? {} : { decision: before.decision }),
             ...(before?.decidedAt === undefined ? {} : { decidedAt: before.decidedAt }),
             ...(before?.decisionError === undefined ? {} : { decisionError: before.decisionError })
@@ -695,6 +697,7 @@ export const createRunsController = (
           runId,
           requestId: approval.requestId,
           approval: approval.payload as Record<string, unknown>,
+          ...(questionOf(approval) === undefined ? {} : { question: questionOf(approval)! }),
           repo, ...binding, gatewayBindingVersion: 1
         }
       }

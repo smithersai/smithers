@@ -217,6 +217,14 @@ export interface AppController extends TutorialChangeController, IssueFlowsContr
   /** `wiki.heading <line>`: bring the open note's heading at that source line into view. */
   readonly jumpToHeading: (line: string) => string | void
   readonly decideApproval: (id: string, decision: "approved" | "denied") => void
+  /**
+   * Answer a gate that asked a question rather than for a grant.
+   *
+   * A HumanTask parks its run on something only a person knows, so approve and
+   * deny answer nothing: the value the person wrote is what resumes the run.
+   * It is its own method because a value cannot ride a flow's argument string.
+   */
+  readonly answerApproval: (id: string, answer: unknown) => void
   readonly retryLastTurn: () => string | void
   readonly inspectLiveTutorial: (cardId: string, eventId: string) => Promise<string | void>
   readonly retryLiveTutorial: (cardId: string) => Promise<string | { value: string }>
@@ -1538,6 +1546,7 @@ export const createAppController = (
     selectWikiCardDocument,
     setWikiCardView,
     decideApproval,
+    answerApproval: (id: string, answer: unknown) => decideApproval(id, "approved", answer),
     retryLastTurn,
     clearConversation,
     openBrowser,

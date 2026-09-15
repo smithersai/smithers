@@ -8,12 +8,15 @@ import { flowAction } from "../flows/FlowAction"
  * two. The approvals inbox (approvals.list) carries each pending gate with
  * the submit-ready envelope the gateway published; a decision dispatches the
  * same approval.approve / approval.deny flows a per-run approval card uses,
- * addressed by the inbox card, run and request together.
+ * addressed by the inbox card, run and request together. A row that carries a
+ * QUESTION — a HumanTask waiting on a person — gets an answer box instead of
+ * the two buttons, because approve and deny tell that run nothing.
  */
 import { Button, Confirmation, ConfirmationAccepted, ConfirmationAction, ConfirmationActions, ConfirmationRejected, ConfirmationRequest } from "@smthrs/ui"
 import { StatusDetails } from "../StatusDetails"
 import type { Card } from "../state/AppState"
 import { approvalActionId, approvalRowKey } from "../state/ApprovalReference"
+import { ApprovalAnswerForm } from "./ApprovalAnswer"
 import { timeLabel as clockLabel } from "../Timestamps"
 import type { CardFamily, RunCommand } from "./CardFamily"
 import { settledPill } from "./CardFamily"
@@ -150,7 +153,7 @@ export const ApprovalsInboxCardBody = ({
   onDecideApproval
 }: {
   readonly card: Extract<Card, { kind: "approvals-inbox" }>
-  readonly onDecideApproval: (id: string, decision: "approved" | "denied") => void
+  readonly onDecideApproval: (id: string, decision: "approved" | "denied", answer?: unknown) => void
 }) => {
   const { repo, approvals } = card.payload
   if (approvals.length === 0) {
@@ -180,7 +183,18 @@ export const ApprovalsInboxCardBody = ({
                 <li>run {approval.runId} · {clockLabel(approval.requestedAt)}</li>
               </ul>
             </ConfirmationRequest>
-            {approval.decision === undefined && approval.pending !== true ?
+            {approval.decision !== undefined || approval.pending === true ?
+              null :
+              approval.question !== undefined ?
+              (
+                /* A gate that asks a question: the run needs a value, not a
+                 * grant, so the row gets the box the answer is typed into. */
+                <ApprovalAnswerForm
+                  question={approval.question}
+                  disabled={false}
+                  onAnswer={(answer) => onDecideApproval(rowId, "approved", answer)}
+                />
+              ) :
               (
                 <ConfirmationActions>
                   <ConfirmationAction
@@ -192,8 +206,7 @@ export const ApprovalsInboxCardBody = ({
                     onDecide={() => onDecideApproval(rowId, "denied")}
                   />
                 </ConfirmationActions>
-              ) :
-              null}
+              )}
             {approval.decisionError !== undefined ?
               (
                 <p className="sui-approval-error" role="alert">

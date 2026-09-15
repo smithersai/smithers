@@ -3,6 +3,7 @@ import type { ProjectionCursor } from "@smthrs/gateway/GatewaySchema"
 import type { Card } from "../AppState"
 import type { ControllerContext } from "./context"
 import type { ApprovalRow, RunStatus, RunSummaryRow } from "./gateway"
+import { questionOf } from "../../cards/ApprovalQuestion"
 import { engineProjectionPending } from "../../cards/EngineTrace"
 import { reconcileRunApprovals } from "./approval-reconciliation"
 import { expireStatus } from "../HealthStatus"
@@ -135,6 +136,7 @@ export const createWorkflowPumpController = (
           // The submit-ready envelope the gateway published: the decision goes
           // back with it unchanged, so no client reconstructs authority.
           approval: approval.payload as Record<string, unknown>,
+          ...(questionOf(approval) === undefined ? {} : { question: questionOf(approval)! }),
           repo, gatewayBindingVersion: 1, ...(workspaceId === undefined ? {} : { workspaceId })
         }
       }
