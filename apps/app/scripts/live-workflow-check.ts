@@ -90,10 +90,12 @@ check("a real signed-in session on canary", typeof login === "string", JSON.stri
 /* ---- 1. the watched set is the universe ---- */
 const watched = await page.evaluate(async () => {
   const response = await fetch("/api/identity/watched")
-  return await response.json().catch(() => null)
+  return { status: response.status, body: await response.json().catch(() => null) }
 })
-const selected = ((watched as { selected?: Array<string> } | null)?.selected ?? null) as Array<string> | null
-check("the watched set reads through the app origin", Array.isArray(selected), JSON.stringify(watched))
+const watchedBody = watched.body as { selected?: Array<string> } | null
+const selected = (watchedBody?.selected ?? null) as Array<string> | null
+const watchedAvailable = watched.status === 200 && Array.isArray(selected)
+check("the watched set reads through the app origin", watchedAvailable, `HTTP ${watched.status} ${JSON.stringify(watched.body)}`)
 note(`watched: ${JSON.stringify(selected)}`)
 
 /*
@@ -101,8 +103,13 @@ note(`watched: ${JSON.stringify(selected)}`)
  * gateway only exists for a repo that also lives on Smithers Cloud, so prefer
  * a watched repo and let WORKFLOW_REPO override for the live proof.
  */
-const target = process.env.WORKFLOW_REPO ?? selected?.[0] ?? ""
-check("a target repo is available", target !== "", target)
+const requestedTarget = process.env.WORKFLOW_REPO
+const target = requestedTarget ?? selected?.[0] ?? ""
+const targetIsWatched = selected?.some((repo) => repo.toLowerCase() === target.toLowerCase()) ?? false
+const targetAvailable = watchedAvailable && target !== "" && targetIsWatched
+check("a target repo is available in the watched set", targetAvailable, target || "none")
+if (!watchedAvailable) note(`workflow provisioning skipped: the identity watched-set route returned HTTP ${watched.status}`)
+else if (!targetIsWatched) note(`workflow provisioning skipped: target ${target || "none"} is not in the watched set`)
 note(`target repo: ${target}`)
 
 const post = (path: string, body: unknown) =>
@@ -118,6 +125,12 @@ const post = (path: string, body: unknown) =>
     [path, body] as const
   )
 
+if (!targetAvailable) {
+  // A missing watched set is a deployment/authentication failure. Never turn
+  // it into a misleading 400 by POSTing { repo: "" }, and never let an
+  // override bypass the user's durable watched-repository authority.
+  note("no workflow resource calls were attempted because no authorized target was available")
+} else {
 /* ---- 2. provision-or-resume, live, through the wave-11b token door ---- */
 const first = await post("/api/workflow/provision", { repo: target })
 let firstBody: { status?: string; gatewayId?: string; message?: string } = {}
@@ -336,6 +349,7 @@ if (runCards > 0) {
     /I started a create-workflow run|Smithers started a create-workflow run/.test(finalTranscript),
     finalTranscript.replace(/\s+/g, " ").slice(-300)
   )
+}
 }
 
 check(
