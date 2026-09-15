@@ -641,6 +641,7 @@ test(
     const rejectedResponse = await rejected
     expect(rejectedResponse.status()).toBeGreaterThanOrEqual(400)
     expect(rejectedResponse.status()).toBeLessThan(500)
+    expect(rejectedResponse.request().postDataJSON()).toEqual({ path: missing })
     await expectFlowOutcome(page, "repo.open", "", "failed")
     const failedTrace = page.locator(".tool-act-line").filter({ hasText: "You ran /repo.open → failed" }).last()
     await expect(failedTrace).toContainText(/does not exist or cannot be read/i)
@@ -648,6 +649,7 @@ test(
     expect(afterInvalidResponse.status()).toBe(200)
     const afterInvalid = await afterInvalidResponse.json() as { readonly repos?: ReadonlyArray<unknown> }
     expect(afterInvalid.repos).toEqual(before.repos)
+    expect(afterInvalid.repos?.some((repo) => JSON.stringify(repo).includes(missing))).toBe(false)
     await attachJson(testInfo, "folder-cancel-invalid", {
       cancelledPrompt,
       missing,

@@ -350,15 +350,19 @@ anonymousTest(
     const mutations: string[] = []
     page.on("request", (request) => {
       const url = new URL(request.url())
-      if (request.method() === "POST" && /\/repos\/[^/]+\/[^/]+\/landings$/.test(url.pathname)) mutations.push(url.pathname)
+      if (request.method() !== "GET" && /\/repos\/[^/]+\/[^/]+\/landings(?:\/|$)/.test(url.pathname)) {
+        mutations.push(`${request.method()} ${url.pathname}`)
+      }
     })
     await page.goto("/codeplanesmithers/canary-sandbox", { waitUntil: "domcontentloaded" })
     expect(await readAuthenticatedSession(page)).toBeUndefined()
     await page.getByRole("button", { name: "Chat", exact: true }).click()
     await expect(page.getByTestId("composer-input")).toBeVisible()
     await command(page, "/prs.create")
+    await expectFlowOutcome(page, "prs.create", "", "failed")
     await expect(page.locator('button[data-flow="auth.sign-in"]:visible').last()).toBeVisible()
     await expect(page.getByTestId("transcript")).toContainText(/sign in/i)
+    await expect(landingDetail(page, 1)).toHaveCount(0)
     expect(mutations).toEqual([])
     await attachPullRequestEvidence(testInfo, "signed-out-create", { session: null, signInVisible: true, mutations })
   }
