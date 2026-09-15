@@ -12,7 +12,7 @@ import { guideForwardAction } from "./navigation"
 import { useLiveQuery } from "@tanstack/react-db"
 import { Fragment, useCallback, useRef, useState, type ReactNode, type CSSProperties } from "react"
 import { flushSync } from "react-dom"
-import { Check, Mic, Volume2, VolumeX, X } from "lucide-react"
+import { Check, Mic, X } from "lucide-react"
 import { useController } from "../ControllerContext"
 import { initialGuide, conversationTabIdOf, inConversation, type Card, type Message } from "../state/AppState"
 import { useCardRows } from "../state/useCardRows"
@@ -625,15 +625,6 @@ export function GuideShell({ children, clock = guideClock }: { children: ReactNo
         </section>
       {/* The footer shares the shell's column with the dock. */}
       <footer data-keyboard-pane="Tutorial controls" className="guide-footer">
-        <GuideButton
-          data-flow="onboarding.act"
-          onClick={runCommandSound}
-          shortcut={GUIDE_KEYS.sound}
-          aria-label={guide.sound ? "Mute tutorial sounds" : "Enable tutorial sounds"}
-        >
-          {guide.sound ? <Volume2 size={15} /> : <VolumeX size={15} />}
-          <span>Sound {guide.sound ? "on" : "off"}</span>
-        </GuideButton>
         {/* Background runs stay in the chrome after the tutorial ends (SCRIPT v4 beat 12): the footer is the chrome the terminal keeps. */}
         {librarianRuns.length > 0 && stage >= GUIDE_BRIDGE && (
           <span className="guide-run-chips" aria-label="Background runs">

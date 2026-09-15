@@ -13,6 +13,7 @@ import { PRACTICE_CARD, PRACTICE_REPO, practiceChange, practicePicker, practiceS
 import type { GuideClock } from "./advance"
 import { GuideShell } from "./GuideShell"
 import App from "../App"
+import { SessionNavigation } from "../SessionNavigation"
 import { GUIDE_KEYS, guideShortcut } from "./GuideButton"
 import { GUIDE_BRIDGE, GUIDE_LAST_STEP, GUIDE_STAGES, GUIDE_RESERVED_KEYS, lessonMessage, lessonText } from "./lessons"
 
@@ -60,17 +61,19 @@ const unavailableRepositories: NativeRepositories = {
 
 const text = (node: Element | null): string => (node?.textContent ?? "").replace(/\s+/g, " ").trim()
 
-const mountGuide = async (step: number, clock?: GuideClock, answers: Record<string, unknown> = { heard: "", project: "" }, observe?: (controller: ReturnType<typeof createAppController>) => void | Promise<void>, children = <div />): Promise<HTMLElement> => {
+const mountGuide = async (step: number, clock?: GuideClock, answers: Record<string, unknown> = { heard: "", project: "" }, observe?: (controller: ReturnType<typeof createAppController>) => void | Promise<void>, children = <div />, navigation = false): Promise<HTMLElement> => {
   const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
   const controller = createAppController(store, unavailableRepositories, silentAgent)
   await observe?.(controller)
   await store.dispatch({ type: "guide.changed", actor: "user", guide: { ...initialGuide(), step, ...answers } }).isPersisted.promise
   const host = document.createElement("div")
+  if (navigation) host.className = "session-shell"
   document.body.append(host)
   const root = createRoot(host)
   flushSync(() =>
     root.render(
       <ControllerTestProvider controller={controller}>
+        {navigation && <SessionNavigation />}
         <GuideShell clock={clock}>
           {children}
         </GuideShell>
@@ -427,11 +430,13 @@ test("Skip practice lands on an honest bridge without narrating unreached lesson
 
 test("overlapping tutorial shortcuts highlight together and only the final release dispatches", async () => {
   const calls: Array<[string, string?]> = []
-  const host = await mountGuide(1, still, {}, c => {
+  const host = await mountGuide(1, still, {}, async c => {
+    await c.commands.run("sidebar.toggle")
     spyOn(c, "runCommand").mockImplementation((name, args) => { calls.push([name, args]); return true })
-  })
+  }, <div />, true)
   const tutorial = host.querySelector<HTMLElement>('[aria-keyshortcuts="i"]')!
-  const sound = host.querySelector<HTMLElement>('[aria-keyshortcuts="s"]')!
+  const sound = host.querySelector<HTMLElement>('.session-sidebar [aria-keyshortcuts="s"]')!
+  expect(host.querySelector('.guide-footer [aria-keyshortcuts="s"]')).toBeNull()
   const key = (type: string, key: string, repeat = false) => document.dispatchEvent(new KeyboardEvent(type, { key, bubbles: true, cancelable: true, repeat }))
   key('keydown', 'i')
   key('keydown', 's')
@@ -505,9 +510,9 @@ test("lesson keys cannot collide with Back, Mode, Sound, or Vim navigation", () 
   expect(GUIDE_STAGES.flatMap(lesson => lesson.kind === 'do' ? lesson.actions : []).find(action => action.flow === 'wiki.create')?.key).toBe('u')
 }, 5_000)
 
-test("Show issues, Chat, Sound, and Mode share a keycap control; Back starts at the next lesson", async () => {
+test("Show issues, Chat, and Mode share a keycap control; Back starts at the next lesson", async () => {
   const host = await mountGuide(1, still)
-  for (const shortcut of ['i', 'c Meta+K Control+K', 's', 'm']) {
+  for (const shortcut of ['i', 'c Meta+K Control+K', 'm']) {
     const button = host.querySelector<HTMLButtonElement>(`button[aria-keyshortcuts="${shortcut}"]`)!
     expect(button !== null).toBe(true)
     expect(button.classList.contains('guide-button')).toBe(true)
