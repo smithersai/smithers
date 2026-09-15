@@ -402,6 +402,7 @@ export const checkRealE2E = ({ realDir, flowNameFile, resultsFile, now, requireC
             findings.push({ severity: "error", code: "malformed-run", file: resultsFile, line: 1, message: "Every run requires scenario, verified host, explicit status, exact revision, and timestamps" })
           }
           for (const run of runs) {
+            if (run.status !== "passed") findings.push({ severity: "error", code: "unsuccessful-attempt", file: resultsFile, line: 1, message: `${run.scenarioId} on ${run.host} had a ${run.status} attempt; a passing retry does not establish reliable coverage` })
             const declaration = scenarios.find((scenario) => scenario.id === run.scenarioId)
             if (!declaration) findings.push({ severity: "error", code: "undeclared-run", file: resultsFile, line: 1, message: `Run ${run.scenarioId} does not match a declared scenario` })
             else if (!declaration.hosts.includes(run.host)) findings.push({ severity: "error", code: "undeclared-run-host", file: resultsFile, line: 1, message: `Run ${run.scenarioId} claims undeclared host ${run.host}` })
@@ -427,7 +428,8 @@ export const checkRealE2E = ({ realDir, flowNameFile, resultsFile, now, requireC
   for (const door of DOORS) if (!scenarios.some((scenario) => scenario.doors.includes(door))) gaps.push({ kind: "door", value: door })
   for (const scenario of scenarios) for (const host of scenario.hosts) {
     if (expectedHost && host !== expectedHost) continue
-    if (!runs.some((run) => run.scenarioId === scenario.id && run.host === host && run.status === "passed" && (!expectedRevision || run.revision === expectedRevision) && (!expectedHost || run.host === expectedHost))) gaps.push({ kind: "execution", value: host, scenarioId: scenario.id })
+    const attempts = runs.filter((run) => run.scenarioId === scenario.id && run.host === host && (!expectedRevision || run.revision === expectedRevision) && (!expectedHost || run.host === expectedHost))
+    if (attempts.length === 0 || attempts.some((run) => run.status !== "passed")) gaps.push({ kind: "execution", value: host, scenarioId: scenario.id })
   }
   if (requireComplete && gaps.length) findings.push({ severity: "error", code: "incomplete-coverage", file: realDir, line: 1, message: `${gaps.length} declared/action/dimension/execution gaps remain` })
   return { ok: !findings.some((finding) => finding.severity === "error"), generatedAt: now ?? new Date().toISOString(), declaredActions: actions, scenarios, runs, gaps, findings }
@@ -438,7 +440,7 @@ export const formatGateReport = (report: GateReport, root: string): string => {
   const reviews = report.findings.filter((finding) => finding.severity === "review")
   const lines = [
     `real E2E quality gate: ${report.ok ? "PASS" : "FAIL"}`,
-    `${report.declaredActions.length} built-in actions; ${report.scenarios.length} scenarios; ${report.runs.filter((run) => run.status === "passed").length} executed passes; ${report.gaps.length} visible gaps`,
+    `${report.declaredActions.length} built-in actions; ${report.scenarios.length} scenarios; ${report.runs.filter((run) => run.status === "passed").length} passed attempts; ${report.runs.filter((run) => run.status !== "passed").length} unsuccessful attempts; ${report.gaps.length} visible gaps`,
     `${errors.length} errors; ${reviews.length} manual-review findings`
   ]
   for (const finding of report.findings) lines.push(`${finding.severity.toUpperCase()} ${finding.code} ${relative(root, finding.file)}:${finding.line} ${finding.message}`)

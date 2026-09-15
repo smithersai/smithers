@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test"
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
 import { tmpdir } from "node:os"
-import { checkRealE2E, declaredFlowNames, executableImportClosure } from "./gate"
+import { checkRealE2E, declaredFlowNames, executableImportClosure, formatGateReport } from "./gate"
 
 const roots: string[] = []
 const fixture = (): { root: string; real: string; flows: string } => {
@@ -88,6 +88,22 @@ export const searchFlows = (actions) => [
     const report = checkRealE2E({ realDir: real, flowNameFile: flows, resultsFile: results })
     expect(report.gaps.some((gap) => gap.kind === "execution")).toBe(false)
     expect(report.gaps).toContainEqual({ kind: "action", value: "chat.send" })
+  })
+
+  test.each(["failed", "timedOut", "interrupted", "skipped"])("a passed retry cannot erase an earlier %s attempt", (status) => {
+    const { root, real, flows } = fixture()
+    writeFileSync(join(real, "repo.spec.ts"), valid)
+    const results = join(root, "results.json")
+    const attempt = { scenarioId: "repo.open.success", host: "local", revision: "a".repeat(40), startedAt: "2026-09-14T00:00:00Z", finishedAt: "2026-09-14T00:00:01Z" }
+    writeFileSync(results, JSON.stringify({ suiteStatus: "passed", reporterErrors: [], runs: [
+      { ...attempt, status },
+      { ...attempt, status: "passed", startedAt: "2026-09-14T00:00:02Z", finishedAt: "2026-09-14T00:00:03Z" }
+    ] }))
+    const report = checkRealE2E({ realDir: real, flowNameFile: flows, resultsFile: results, expectedRevision: attempt.revision, expectedHost: "local" })
+    expect(report.ok).toBe(false)
+    expect(report.findings.map((finding) => finding.code)).toContain("unsuccessful-attempt")
+    expect(report.gaps).toContainEqual({ kind: "execution", value: "local", scenarioId: "repo.open.success" })
+    expect(formatGateReport(report, root)).toContain("1 passed attempts; 1 unsuccessful attempts")
   })
 
   test("fails malformed or incomplete reporter evidence instead of treating it as no runs", () => {
