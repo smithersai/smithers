@@ -23,6 +23,13 @@ import {
   recordBackend
 } from "../chain/SchemaVersion"
 import { openSqliteRowStorage } from "../chain/SqliteRowStorage"
+import {
+  EMPTY_PERSISTED_LOAD,
+  PERSISTED_LOAD_TOAST_KEY,
+  PERSISTED_LOAD_TOAST_TITLE,
+  persistedLoadNotice
+} from "../chain/PersistenceBudget"
+import type { PersistedLoadReport } from "../chain/PersistenceBudget"
 import type { SqliteRowDatabase } from "../chain/SqliteRowStorage"
 import { readSqliteRecovery, StorageRecoveryError } from "../chain/StorageRecovery"
 import type { RecoveryTable, StorageRecoverySnapshot, EnumerableRecoveryStorage } from "../chain/StorageRecovery"
@@ -319,6 +326,10 @@ export type PersistenceBackend =
     readonly readRecovery?: () => Promise<ReadonlyArray<RecoveryTable>>
     /** Normalized row writes. Older injected hosts only accept whole collections. */
     readonly applyRows?: DurableRowSink["applyRows"]
+    /** Normalized row reads, so no collection is materialized as one string. */
+    readonly readRows?: DurableRowSink["readRows"]
+    /** What the bounded load admitted (chain/PersistenceBudget.ts). */
+    readonly load?: PersistedLoadReport
   }
   | {
     readonly kind: "localStorage"
@@ -600,7 +611,9 @@ export const resolvePersistence = async (host: BrowserPersistenceHost = {
       flush: sqlite.flush,
       close: sqlite.close,
       readRecovery: sqlite.readRecovery,
-      applyRows: sqlite.applyRows
+      applyRows: sqlite.applyRows,
+      readRows: sqlite.readRows,
+      load: sqlite.loadReport
     },
     mode: "opfs",
     degraded: false
@@ -664,6 +677,12 @@ export interface AppStore {
   /** Immutable runtime request; legacy model-authored cards have no authority. */
   readonly approvalRequest: (id: string) => ApprovalRequest | undefined
   readonly persistenceMode: PersistenceMode
+  /**
+   * What the bounded load admitted this launch. A non-zero `skipped` means
+   * older rows stayed on disk rather than failing the boot outright
+   * (chain/PersistenceBudget.ts); the store says so and the boot toasts it.
+   */
+  readonly persistedLoad: PersistedLoadReport
   /**
    * True when the store holding this user's data could not be opened, so the
    * session runs on memory and saves nothing. A surface that shows a
@@ -1200,8 +1219,12 @@ const initializeAppStore = async (resolved: ResolvedPersistence, options: { read
   /* A normalized host takes row deltas, so an append costs its own rows rather
    * than the whole retained collection. Whole-collection JSON stays the
    * localStorage envelope's format, and any host without row writes. */
+  const loadReport = (resolvedBackend.kind === "opfs" ? resolvedBackend.load : undefined) ?? EMPTY_PERSISTED_LOAD
   const rowSink = resolvedBackend.kind === "opfs" && resolvedBackend.applyRows !== undefined
-    ? { applyRows: resolvedBackend.applyRows }
+    ? {
+      applyRows: resolvedBackend.applyRows,
+      ...(resolvedBackend.readRows === undefined ? {} : { readRows: resolvedBackend.readRows })
+    }
     : undefined
   const collectionPersistence = createCollectionPersistence({
     storage: storageOf(resolvedBackend) ?? memoryStorage(),
@@ -3726,6 +3749,29 @@ const initializeAppStore = async (resolved: ResolvedPersistence, options: { read
     }).isPersisted.promise
   }
 
+  /*
+   * A partial load is a boot that survived, not a boot that failed: the store
+   * refused to hand the launch more than one collection's budget, older rows
+   * are still on disk, and the recovery download reaches them. Say so once, in
+   * the same durable transition vocabulary every other system notice uses.
+   */
+  if (loadReport.skipped > 0) {
+    await dispatch({
+      type: "toast.shown",
+      actor: "system",
+      key: PERSISTED_LOAD_TOAST_KEY,
+      title: PERSISTED_LOAD_TOAST_TITLE
+    }).isPersisted.promise
+    await dispatch({
+      type: "toast.resolved",
+      actor: "system",
+      key: PERSISTED_LOAD_TOAST_KEY,
+      status: "failed",
+      title: PERSISTED_LOAD_TOAST_TITLE,
+      detail: persistedLoadNotice(loadReport)
+    }).isPersisted.promise
+  }
+
   // A hidden page may never run the typing-pause timer; commit what was typed.
   const page = typeof window === "undefined" || typeof window.addEventListener !== "function" ? undefined : window
   page?.addEventListener("pagehide", commitDraft)
@@ -3736,6 +3782,7 @@ const initializeAppStore = async (resolved: ResolvedPersistence, options: { read
     dispatch,
     approvalRequest,
     persistenceMode: resolved.mode,
+    persistedLoad: loadReport,
     persistenceDegraded: resolved.degraded,
     session,
     nextOrdinal: () => nextOrdinal(collections),

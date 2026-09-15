@@ -120,6 +120,35 @@ collection envelope path.
 The store remains the only write authority: UI components project collections
 and mutations enter through the controller/dispatcher.
 
+## Bounded load
+
+`chain/PersistenceBudget.ts` holds the one size bound, with the reason: V8 caps
+a JavaScript string at about 512 MiB, and the loader used to hand TanStack each
+collection as one JSON string. A profile with 890 MB of OPFS SQLite could not
+start at all — `prepare runtime and persisted state: Invalid string length`,
+with a recovery download as the only offered action.
+
+`SqliteRowStorage.ts` therefore reads rows in chunks of 512, newest first
+(descending rowid), and admits at most `PERSISTED_COLLECTION_BUDGET_BYTES`
+(64 MiB) per collection. Rows below that line stay on disk: they are not
+parsed, not deleted, and the recovery download still reaches them. Skipping is
+a size decision, so it never consults the row-recovery policy or the quarantine
+table, and a skipped row still counts as physically present so the legacy
+importer cannot reinsert an older copy underneath it.
+
+`openSqliteRowStorage` returns a `loadReport` naming the loaded and skipped
+counts per collection. A partial load logs one structured warning (collection
+ids and counts, never row content), is readable as `store.persistedLoad`, and
+boot resolves a `store.truncated` toast with "Recovered N of M persisted
+segments; older history is available in the recovery file." Boot completes.
+
+A truncated journal lineage is not replayed as if it were whole:
+`CollectionJournal.ts` already refuses a lineage whose sequence has a hole.
+
+`DurableCollection.ts` reads through the host's `readRows` when it has one, so
+a normalized host is never serialized to a string and parsed straight back. The
+localStorage envelope and older injected hosts keep the string view.
+
 Each durable commit is serialized with the others. A failed commit rolls back
 optimistic collection state; queued transitions derived from that failed state
 also reject. Each mutation checks its original row against durable data, so a

@@ -1,5 +1,11 @@
 import type { StorageApi } from "@tanstack/db"
 import type { DurableRowDelta } from "./DurableCollection"
+import {
+  EMPTY_PERSISTED_LOAD,
+  PERSISTED_COLLECTION_BUDGET_BYTES,
+  PERSISTED_LOAD_CHUNK_ROWS
+} from "./PersistenceBudget"
+import type { PersistedCollectionLoad, PersistedLoadReport } from "./PersistenceBudget"
 import { PERSISTED_KEY_PREFIX, SCHEMA_VERSION_STORAGE_KEY } from "./SchemaVersion"
 import { InvalidSchemaStampError, parseSchemaStamp } from "./SchemaStamp"
 import { sqliteRecoveryCopyId } from "./RecoveryCopy"
@@ -39,11 +45,23 @@ export interface SqliteRowStorage {
   readonly close: () => Promise<void>
   /** A raw committed snapshot serialized with writes; never invokes row validators or repairs. */
   readonly readRecovery: (maxBytes?: number) => Promise<ReadonlyArray<RecoveryTable>>
+  /**
+   * One collection's loaded rows, handed over as rows. A caller that wants the
+   * collection never has to materialize it as one string (PersistenceBudget.ts).
+   */
+  readonly readRows: (collectionId: string) => ReadonlyMap<string, StoredItem>
+  /** What the bounded load admitted, and what it left on disk for recovery. */
+  readonly loadReport: PersistedLoadReport
 }
 
 export interface SqliteRowStorageOptions {
   readonly collections: ReadonlyArray<LegacyCollectionSpec>
   readonly schemaVersion: number
+  /**
+   * Bytes one collection may load (PersistenceBudget.ts). Tests pass a small
+   * one; the product uses the single documented budget.
+   */
+  readonly budgetBytes?: number
 }
 
 export class FutureSqliteSchemaError extends Error {
@@ -244,6 +262,15 @@ export const openSqliteRowStorage = async (
 
   const specs = new Map(options.collections.map((collection) => [collection.id, collection]))
   const byCollection = new Map<string, Map<string, StoredItem>>()
+  const budget = options.budgetBytes ?? PERSISTED_COLLECTION_BUDGET_BYTES
+  const spent = new Map<string, { loaded: number; skipped: number; loadedBytes: number; skippedBytes: number }>()
+  const accounting = (collectionId: string) => {
+    const existing = spent.get(collectionId)
+    if (existing !== undefined) return existing
+    const fresh = { loaded: 0, skipped: 0, loadedBytes: 0, skippedBytes: 0 }
+    spent.set(collectionId, fresh)
+    return fresh
+  }
   // The sources validated below are the sources this transaction will change.
   // No concurrent writer may replace one while an async decoder is suspended.
   await database.execute("BEGIN IMMEDIATE")
@@ -272,46 +299,78 @@ export const openSqliteRowStorage = async (
       ? undefined
       : await readLegacyRows(database, options)
 
-    const persistedRows = await database.execute<{
-      readonly collection_id?: unknown
-      readonly row_key?: unknown
-      readonly version_key?: unknown
-      readonly value?: unknown
-    }>(`SELECT collection_id, row_key, version_key, value FROM ${ROW_TABLE_NAME}`)
+    /*
+     * The bounded, chunked load (PersistenceBudget.ts). Rows arrive newest
+     * first (descending rowid is insertion order) in pages, so no statement
+     * result and no decoded value ever approaches the 512 MiB string ceiling.
+     * A collection that has spent its budget stops admitting the older rows
+     * below the cursor: they stay on disk, unparsed and undeleted, reachable
+     * through the recovery download. Skipping is a size decision, never a
+     * validation one, so it does not consult the row-recovery policy.
+     */
     const presentRows = new Set<string>()
     const invalid: Array<{ readonly collectionId: string; readonly rowKey: string; readonly raw: string }> = []
     const normalized: Array<{ readonly collectionId: string; readonly rowKey: string; readonly versionKey: string; readonly raw: string; readonly encoded: string }> = []
-    for (const row of persistedRows) {
-      if (typeof row.collection_id !== "string") throw new UnreadableSqliteStateError("normalized row")
-      const spec = specs.get(row.collection_id)
-      if (spec === undefined) continue
-      if (
-        typeof row.row_key !== "string" ||
-        typeof row.version_key !== "string" ||
-        typeof row.value !== "string"
-      ) {
-        assertRowRecoveryPolicy(spec, 1)
-        throw new UnreadableSqliteStateError("normalized row")
+    let cursor = Number.MAX_SAFE_INTEGER
+    for (;;) {
+      const chunk = await database.execute<{
+        readonly rid?: unknown
+        readonly collection_id?: unknown
+        readonly row_key?: unknown
+        readonly version_key?: unknown
+        readonly value?: unknown
+      }>(
+        `SELECT rowid AS rid, collection_id, row_key, version_key, value FROM ${ROW_TABLE_NAME}
+         WHERE rowid < ? ORDER BY rowid DESC LIMIT ?`,
+        [cursor, PERSISTED_LOAD_CHUNK_ROWS]
+      )
+      if (chunk.length === 0) break
+      for (const row of chunk) {
+        if (typeof row.rid !== "number" || !Number.isSafeInteger(row.rid)) throw new UnreadableSqliteStateError("normalized row")
+        cursor = row.rid
+        if (typeof row.collection_id !== "string") throw new UnreadableSqliteStateError("normalized row")
+        const spec = specs.get(row.collection_id)
+        if (spec === undefined) continue
+        if (
+          typeof row.row_key !== "string" ||
+          typeof row.version_key !== "string" ||
+          typeof row.value !== "string"
+        ) {
+          assertRowRecoveryPolicy(spec, 1)
+          throw new UnreadableSqliteStateError("normalized row")
+        }
+        // A skipped row is still physically present: the legacy importer must
+        // not reinsert an older copy of it underneath this launch.
+        presentRows.add(JSON.stringify([row.collection_id, row.row_key]))
+        const size = row.row_key.length + row.value.length
+        const account = accounting(row.collection_id)
+        if (account.loadedBytes + size > budget) {
+          account.skipped += 1
+          account.skippedBytes += size
+          continue
+        }
+        account.loaded += 1
+        account.loadedBytes += size
+        let data: unknown
+        try {
+          data = JSON.parse(row.value)
+        } catch {
+          invalid.push({ collectionId: row.collection_id, rowKey: row.row_key, raw: row.value })
+          continue
+        }
+        // Validator/key-check exceptions refuse the open, not the row. Only
+        // explicit schema issues can justify removing it into quarantine.
+        const decoded = await decodeStoredRow(spec.schema, data)
+        if (!decoded.valid || (spec.validateKey !== undefined && !spec.validateKey(row.row_key, decoded.data))) {
+          invalid.push({ collectionId: row.collection_id, rowKey: row.row_key, raw: row.value })
+          continue
+        }
+        const rows = byCollection.get(row.collection_id) ?? new Map<string, StoredItem>()
+        rows.set(row.row_key, { versionKey: row.version_key, data: decoded.data })
+        byCollection.set(row.collection_id, rows)
+        if (decoded.changed) normalized.push({ collectionId: row.collection_id, rowKey: row.row_key, versionKey: row.version_key, raw: row.value, encoded: decoded.encoded })
       }
-      presentRows.add(JSON.stringify([row.collection_id, row.row_key]))
-      let data: unknown
-      try {
-        data = JSON.parse(row.value)
-      } catch {
-        invalid.push({ collectionId: row.collection_id, rowKey: row.row_key, raw: row.value })
-        continue
-      }
-      // Validator/key-check exceptions refuse the open, not the row. Only
-      // explicit schema issues can justify removing it into quarantine.
-      const decoded = await decodeStoredRow(spec.schema, data)
-      if (!decoded.valid || (spec.validateKey !== undefined && !spec.validateKey(row.row_key, decoded.data))) {
-        invalid.push({ collectionId: row.collection_id, rowKey: row.row_key, raw: row.value })
-        continue
-      }
-      const rows = byCollection.get(row.collection_id) ?? new Map<string, StoredItem>()
-      rows.set(row.row_key, { versionKey: row.version_key, data: decoded.data })
-      byCollection.set(row.collection_id, rows)
-      if (decoded.changed) normalized.push({ collectionId: row.collection_id, rowKey: row.row_key, versionKey: row.version_key, raw: row.value, encoded: decoded.encoded })
+      if (chunk.length < PERSISTED_LOAD_CHUNK_ROWS) break
     }
 
     for (const row of [...(legacy?.rejected ?? []), ...invalid]) {
@@ -365,6 +424,27 @@ export const openSqliteRowStorage = async (
   } catch (error) {
     await database.execute("ROLLBACK")
     throw error
+  }
+
+  const partial: Array<PersistedCollectionLoad> = []
+  let loadedRows = 0
+  let skippedRows = 0
+  for (const [collectionId, account] of spent) {
+    loadedRows += account.loaded
+    skippedRows += account.skipped
+    if (account.skipped > 0) partial.push({ collectionId, ...account })
+  }
+  const loadReport: PersistedLoadReport = skippedRows === 0
+    ? { ...EMPTY_PERSISTED_LOAD, loaded: loadedRows, budgetBytes: budget }
+    : { loaded: loadedRows, skipped: skippedRows, budgetBytes: budget, collections: partial }
+  if (skippedRows > 0) {
+    // Structured, private-safe: collection ids and counts, never row content.
+    console.warn("Smithers: the persisted store is larger than one launch loads; older rows stayed on disk.", {
+      budgetBytes: budget,
+      loaded: loadedRows,
+      skipped: skippedRows,
+      collections: partial
+    })
   }
 
   // The scheduled view of every declared collection, held as rows so a commit
@@ -619,5 +699,8 @@ export const openSqliteRowStorage = async (
     try { await flush() } finally { await database.close?.() }
   }
 
-  return { storage, beginBatch, commitBatch, abortBatch, applyRows, flush, close, readRecovery }
+  /** A copy, so a reader can never alias the scheduled rows a commit advances. */
+  const readRows = (collectionId: string): ReadonlyMap<string, StoredItem> => new Map(rowsView(collectionId) ?? [])
+
+  return { storage, beginBatch, commitBatch, abortBatch, applyRows, flush, close, readRecovery, readRows, loadReport }
 }

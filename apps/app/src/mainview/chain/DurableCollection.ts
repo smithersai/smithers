@@ -23,6 +23,14 @@ export interface DurableRowDelta {
 /** A host that stores rows individually, so a commit costs its own rows only. */
 export interface DurableRowSink {
   readonly applyRows: (collectionId: string, deltas: ReadonlyArray<DurableRowDelta>) => void
+  /**
+   * The host's rows, handed over as rows. Without it a collection is read by
+   * serializing the whole host view to JSON and parsing it straight back — the
+   * round trip that made a large store exceed V8's string ceiling and fail
+   * boot outright (chain/PersistenceBudget.ts). Optional: the localStorage
+   * envelope and older injected hosts keep the string view.
+   */
+  readonly readRows?: (collectionId: string) => ReadonlyMap<string, StoredItem>
 }
 
 interface PersistedTransaction {
@@ -62,7 +70,13 @@ export class StaleDurableMutationError extends Error {
   }
 }
 
-const readRows = (storage: StorageApi, id: string): Map<string, StoredItem> => {
+/**
+ * TanStack's historical loader also accepts unprefixed string keys. Normalize
+ * them before mutation lookup and the next durable rewrite.
+ */
+const normalizedRowKey = (key: string): string => key.startsWith("s:") || key.startsWith("n:") ? key : rowKey(key)
+
+const readStringRows = (storage: StorageApi, id: string): Map<string, StoredItem> => {
   const raw = storage.getItem(storageKey(id))
   if (raw === null) return new Map()
   const parsed: unknown = JSON.parse(raw)
@@ -72,11 +86,20 @@ const readRows = (storage: StorageApi, id: string): Map<string, StoredItem> => {
     if (typeof value !== "object" || value === null || !("versionKey" in value) || typeof value.versionKey !== "string" || !("data" in value)) {
       throw new Error(`Invalid persisted row ${id}/${key}.`)
     }
-    // TanStack's historical loader also accepts unprefixed string keys.
-    // Normalize them before mutation lookup and the next durable rewrite.
-    const encodedKey = key.startsWith("s:") || key.startsWith("n:") ? key : rowKey(key)
-    rows.set(encodedKey, { versionKey: value.versionKey, data: value.data })
+    rows.set(normalizedRowKey(key), { versionKey: value.versionKey, data: value.data })
   }
+  return rows
+}
+
+/** Rows from the host that stores rows, else from its whole-collection string. */
+const readRows = (
+  options: { readonly storage: StorageApi; readonly rows?: DurableRowSink },
+  id: string
+): Map<string, StoredItem> => {
+  const direct = options.rows?.readRows
+  if (direct === undefined) return readStringRows(options.storage, id)
+  const rows = new Map<string, StoredItem>()
+  for (const [key, value] of direct(id)) rows.set(normalizedRowKey(key), value)
   return rows
 }
 
@@ -99,7 +122,7 @@ export const createCollectionPersistence = (options: {
   const projection = (id: string): Map<string, StoredItem> => {
     const known = projected.get(id)
     if (known !== undefined) return known
-    const rows = readRows(options.storage, id)
+    const rows = readRows(options, id)
     projected.set(id, rows)
     return rows
   }
@@ -119,7 +142,7 @@ export const createCollectionPersistence = (options: {
         for (const mutation of mutations) {
           const id = mutation.collection.id
           const rows = options.rows === undefined
-            ? localRows.get(id) ?? readRows(options.storage, id)
+            ? localRows.get(id) ?? readRows(options, id)
             : projection(id)
           localRows.set(id, rows)
           const key = rowKey(mutation.key)
@@ -179,7 +202,7 @@ export const createCollectionPersistence = (options: {
     register: (id) => {
       registered.add(id)
       // Re-read: a caller may have replaced the stored collection since boot.
-      const rows = readRows(options.storage, id)
+      const rows = readRows(options, id)
       if (options.rows !== undefined) projected.set(id, rows)
       return [...rows.values()].map((row) => row.data)
     },
