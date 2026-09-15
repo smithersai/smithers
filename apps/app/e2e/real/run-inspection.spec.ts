@@ -1,0 +1,478 @@
+import { scenario } from "./coverage/types"
+import { closeComposer, command, expect, realApi, test } from "./support/test"
+import { authenticatedTest } from "./auth-permissions/profile"
+import {
+  attachProductionJson,
+  bootProductionRepository,
+  cloudRepoPath,
+  enableProductionVerbose,
+  PRODUCTION_REPO,
+  readJson
+} from "./repositories-github/production"
+import { workflowTest } from "./flow-execution/fixture"
+import { acceptedRunId, exactRunId, gatewayCall, runSummary, waitForTerminalRun, type RunTracker } from "./flow-execution/production"
+import {
+  bootRunWorkbench,
+  productionRepository,
+  runCard,
+  runCards,
+  waitForGatewayProcedure,
+  workflowRpcPosts
+} from "./run-inspection/ui"
+
+test.setTimeout(120_000)
+test.use({ actionTimeout: 20_000 })
+authenticatedTest.setTimeout(180_000)
+authenticatedTest.use({ actionTimeout: 30_000 })
+workflowTest.setTimeout(12 * 60_000)
+workflowTest.use({ actionTimeout: 30_000 })
+
+type ProjectionRow = Readonly<Record<string, unknown>>
+
+const projectionRows = (answer: { readonly payload?: unknown }): ReadonlyArray<ProjectionRow> => {
+  const rows = (answer.payload as { readonly rows?: unknown } | undefined)?.rows
+  expect(Array.isArray(rows), "the gateway projection must carry a rows array").toBe(true)
+  return rows as ReadonlyArray<ProjectionRow>
+}
+
+const bootOwnedWorkflow = async (page: Parameters<typeof bootProductionRepository>[0], repo: string): Promise<void> => {
+  await bootProductionRepository(page, repo)
+  await enableProductionVerbose(page)
+}
+
+const createFlowRun = async (
+  page: Parameters<typeof bootProductionRepository>[0],
+  repo: string,
+  marker: string,
+  tracker: RunTracker
+): Promise<{ readonly card: ReturnType<typeof runCards>; readonly runId: string }> => {
+  const accepted = acceptedRunId(page, repo, tracker)
+  await command(page, `/flow.create create a flow named ${marker} that accepts one text input and returns that text unchanged ${repo}`)
+  const runId = await accepted
+  await closeComposer(page)
+  const card = runCard(page, runId)
+  expect(await exactRunId(card)).toBe(runId)
+  return { card, runId }
+}
+
+test("signed-out run inspection parks durably before any workspace RPC", scenario("runs.permission-open-durable", {
+  capabilities: ["identity", "cloud"],
+  coverage: [
+    "action:runs.open", "action:auth.prompt", "host:production", "path:permission", "path:persistence",
+    "door:slash", "dimension:signed-out-run-id", "dimension:no-workspace-rpc", "dimension:reload",
+    "evidence:auth-session-sign-in-card-and-network"
+  ],
+  description: "Ask to inspect a named run while signed out, require a durable sign-in step, and prove the browser never asks a workspace gateway about that run."
+}), async ({ page, request }) => {
+  await bootRunWorkbench(page)
+  const session = await realApi(page, request, "GET", "/api/auth/session")
+  expect(session.status()).toBe(200)
+  expect(await session.json()).toEqual({ status: "signed-out" })
+  const rpc = workflowRpcPosts(page)
+
+  const requestedRun = `owned-but-absent-${Date.now()}`
+  await command(page, `/runs.open ${requestedRun} ${productionRepository}`)
+  const signIn = page.locator('button[data-flow="auth.sign-in"]:visible').last()
+  await expect(signIn).toBeVisible()
+  await expect(runCards(page)).toHaveCount(0)
+  expect(rpc).toEqual([])
+
+  await page.reload({ waitUntil: "domcontentloaded" })
+  await expect(page.locator('button[data-flow="auth.sign-in"]:visible').last()).toBeVisible()
+  await expect(runCards(page)).toHaveCount(0)
+  expect(await (await realApi(page, request, "GET", "/api/auth/session")).json()).toEqual({ status: "signed-out" })
+  expect(rpc).toEqual([])
+})
+
+test("signed-out run attention cannot enumerate workspace state", scenario("runs.permission-attention-no-enumeration", {
+  capabilities: ["identity", "cloud"],
+  coverage: [
+    "action:runs.attention", "action:auth.prompt", "host:production", "path:permission", "door:slash",
+    "dimension:signed-out-attention", "dimension:no-workspace-enumeration",
+    "evidence:sign-in-card-and-absent-projection-rpc"
+  ],
+  description: "Open the attention inbox while signed out and require authentication to stop before any workspace-runs or approvals projection is requested."
+}), async ({ page, request }) => {
+  await bootRunWorkbench(page)
+  expect(await (await realApi(page, request, "GET", "/api/auth/session")).json()).toEqual({ status: "signed-out" })
+  const rpc = workflowRpcPosts(page)
+
+  await command(page, `/runs.attention ${productionRepository}`)
+  await expect(page.locator('button[data-flow="auth.sign-in"]:visible').last()).toBeVisible()
+  await expect(page.locator('.smithers-card[data-kind="run-list"]')).toHaveCount(0)
+  await expect(page.locator('.smithers-card[data-kind="approvals-inbox"]')).toHaveCount(0)
+  expect(rpc).toEqual([])
+})
+
+authenticatedTest("the canary GitHub App is installed before an owned workflow fixture is attempted", scenario("runs.github-app-fixture-readiness", {
+  capabilities: ["identity", "cloud"],
+  coverage: [
+    "action:github.app", "host:production", "path:success", "door:slash",
+    "dimension:owned-workflow-prerequisite", "dimension:github-app-installed",
+    "evidence:ui-card-and-status-readback"
+  ],
+  description: "Read the existing canary repository's GitHub App state through the UI and API so a private workflow fixture is never knowingly attempted while installation wiring is unavailable."
+}), async ({ page, request }, testInfo) => {
+  await bootProductionRepository(page)
+  await enableProductionVerbose(page)
+  const statusPath = cloudRepoPath(PRODUCTION_REPO, "/github-app-status")
+  const statusResponse = page.waitForResponse((response) =>
+    response.request().method() === "GET" && new URL(response.url()).pathname === statusPath)
+  await command(page, `/github.app ${PRODUCTION_REPO}`)
+  expect((await statusResponse).status()).toBe(200)
+  const status = await readJson<{
+    readonly github_app_installed?: unknown
+    readonly github_app_configured?: unknown
+    readonly installation_id?: unknown
+  }>(page, request, statusPath)
+  await attachProductionJson(testInfo, "run-fixture-github-app-readiness", { repo: PRODUCTION_REPO, status })
+  await closeComposer(page)
+  const card = page.locator('.smithers-card[data-kind="connector-setup"]').last()
+  await expect(card).toBeVisible()
+  await expect(card).toContainText(/GitHub App installed.*configured/)
+  expect(status.github_app_installed).toBe(true)
+  expect(status.github_app_configured).toBe(true)
+  expect(typeof status.installation_id).toBe("number")
+})
+
+workflowTest("a completed provider run exposes its real trace, transcript, events, handoff, and durable selection", scenario("runs.inspect-completed-trace-durable", {
+  capabilities: ["identity", "cloud"],
+  coverage: [
+    "action:flow.create", "action:runs.steps", "action:runs.logs", "action:runs.events",
+    "action:runs.trace.view", "action:runs.trace.filter", "action:runs.trace.select", "action:runs.trace.live", "action:runs.handoff",
+    "host:production", "path:success", "path:persistence", "path:keyboard", "door:slash", "door:button",
+    "dimension:real-provider", "dimension:completed-run", "dimension:keyboard", "dimension:timeline", "dimension:transcript",
+    "dimension:raw-events", "dimension:handoff", "dimension:live-tail", "dimension:reload", "evidence:gateway-projections-and-durable-card"
+  ],
+  description: "Run the real create-flow provider to completion, compare the embedded inspection facets with gateway projections, then reload its persisted trace selection and editable handoff."
+}), async ({ page, request, workflowRepo }, testInfo) => {
+  const repo = workflowRepo.repo
+  await bootOwnedWorkflow(page, repo)
+  const marker = `s16-inspect-${Date.now().toString(36)}`
+  const launched = await createFlowRun(page, repo, marker, workflowRepo)
+
+  const terminal = await waitForTerminalRun(page, request, repo, launched.runId, 9 * 60_000, workflowRepo.workspaceId)
+  expect(terminal.status).toBe("completed")
+  const card = runCard(page, launched.runId)
+  await expect(card.getByTestId(`run-outcome-${launched.runId}`)).toHaveAttribute("data-phase", "completed", { timeout: 60_000 })
+
+  const eventsAnswer = await gatewayCall(page, request, repo, "Projection.Snapshot", {
+    selector: { _tag: "run-events", runId: launched.runId }
+  }, workflowRepo.workspaceId)
+  const transcriptAnswer = await gatewayCall(page, request, repo, "Projection.Snapshot", {
+    selector: { _tag: "transcript", runId: launched.runId }
+  }, workflowRepo.workspaceId)
+  const events = projectionRows(eventsAnswer)
+  const transcript = projectionRows(transcriptAnswer)
+  expect(events.length, "a completed real engine run must have a journal").toBeGreaterThan(0)
+  expect(transcript.length, "the provider-backed run must record at least one transcript row").toBeGreaterThan(0)
+
+  const trace = card.getByTestId(`run-trace-${launched.runId}`)
+  const timeline = trace.getByRole("button", { name: "Timeline", exact: true })
+  await timeline.focus()
+  await expect(timeline).toBeFocused()
+  await timeline.press("Enter")
+  await expect(trace).toHaveAttribute("data-view", "timeline")
+  const tree = trace.getByRole("list", { name: "Call tree" })
+  await expect(tree.locator("[data-trace-span]")).not.toHaveCount(0)
+  const all = trace.locator('[data-filter="all"]')
+  const model = trace.locator('[data-filter="model"]')
+  await model.click()
+  await expect(model).toHaveAttribute("data-on", "true")
+  await all.click()
+  await expect(all).toHaveAttribute("data-on", "true")
+
+  const selectable = tree.locator('[data-trace-span]:not([data-kind="run"])').first()
+  await expect(selectable).toBeVisible()
+  const selectedSpan = await selectable.getAttribute("data-trace-span")
+  expect(selectedSpan).toBeTruthy()
+  await selectable.focus()
+  await selectable.press("Enter")
+  await expect(selectable).toHaveAttribute("aria-pressed", "true")
+  await expect(card.getByTestId(`run-trace-pane-${launched.runId}`)).toHaveAttribute("data-span", selectedSpan!)
+
+  await card.getByTestId(`flow-run-facet-transcript-${launched.runId}`).click()
+  const transcriptList = card.getByTestId(`flow-run-transcript-${launched.runId}`)
+  await expect(transcriptList.locator("li")).toHaveCount(transcript.length)
+
+  await card.getByTestId(`flow-run-facet-events-${launched.runId}`).click()
+  const eventList = card.getByTestId(`flow-run-events-${launched.runId}`)
+  await expect(eventList.locator("li")).toHaveCount(events.length)
+  const firstEventKind = events.map((event) => event.kind).find((kind): kind is string => typeof kind === "string")
+  expect(firstEventKind, "the projected journal must name its event kinds").toBeDefined()
+  await expect(eventList).toContainText(firstEventKind!)
+
+  await card.getByTestId(`flow-run-facet-steps-${launched.runId}`).click()
+  await card.getByRole("button", { name: "Prepare handoff", exact: true }).click()
+  const handoff = page.locator('form[data-flow-name="chat.copy-message"]').last()
+  await expect(handoff).toBeVisible()
+  const handoffText = handoff.locator("textarea")
+  await expect(handoffText).toHaveValue(new RegExp(`Repository: ${repo.replace("/", "\\/")}`))
+  await expect(handoffText).toHaveValue(new RegExp(`Run: ${launched.runId}`))
+  await expect(handoffText).toHaveValue(/Run phase: completed/)
+
+  await page.reload({ waitUntil: "domcontentloaded" })
+  const restored = runCard(page, launched.runId)
+  await expect(restored).toBeVisible()
+  await expect(restored.getByTestId(`run-trace-${launched.runId}`)).toHaveAttribute("data-view", "timeline")
+  await expect(restored.getByTestId(`run-trace-pane-${launched.runId}`)).toHaveAttribute("data-span", selectedSpan!)
+  const latest = restored.getByRole("button", { name: "Latest", exact: true })
+  await latest.focus()
+  await expect(latest).toBeFocused()
+  await latest.press("Enter")
+  await expect(latest).toBeHidden()
+  await page.reload({ waitUntil: "domcontentloaded" })
+  await expect(runCard(page, launched.runId).getByRole("button", { name: "Latest", exact: true })).toBeHidden()
+  await attachProductionJson(testInfo, "completed-run-inspection", {
+    repo, marker, runId: launched.runId, terminal, selectedSpan, events, transcript
+  })
+})
+
+workflowTest("live message, thinking, and tool steering persist as real control events across reconnect", scenario("runs.live-steering-durable-reconnect", {
+  capabilities: ["identity", "cloud"],
+  coverage: [
+    "action:flow.create", "action:runs.steer", "action:runs.thinking", "action:runs.tools",
+    "host:production", "path:success", "path:persistence", "door:slash",
+    "dimension:real-provider", "dimension:live-run", "dimension:durable-reconnect",
+    "dimension:message-steer", "dimension:thinking-steer", "dimension:tools-steer",
+    "evidence:accepted-rpc-and-durable-control-events"
+  ],
+  description: "Launch an owned provider run, steer its live engine through three typed UI commands, prove their exact server-authored event ids, then reconnect to the same persisted run."
+}), async ({ page, request, workflowRepo }, testInfo) => {
+  const repo = workflowRepo.repo
+  await bootOwnedWorkflow(page, repo)
+  const marker = `s16-steer-${Date.now().toString(36)}`
+  const launched = await createFlowRun(page, repo, marker, workflowRepo)
+  const liveStatuses = new Set(["accepted", "running", "parked", "waiting-approval"])
+  let liveBefore: ReturnType<typeof runSummary> = undefined
+  await expect.poll(async () => {
+    const answer = await gatewayCall(page, request, repo, "Projection.Snapshot", {
+      selector: { _tag: "run-summary", runId: launched.runId }
+    }, workflowRepo.workspaceId)
+    liveBefore = runSummary(answer)
+    return typeof liveBefore?.status === "string" && liveStatuses.has(liveBefore.status)
+  }, { timeout: 60_000, intervals: [250, 500, 1_000] }).toBe(true)
+
+  const steer = async (
+    commandText: string,
+    expected: Readonly<Record<string, unknown>>
+  ): Promise<{
+    readonly messageId: string
+    readonly idempotencyKey: string
+    readonly request: Readonly<Record<string, unknown>>
+  }> => {
+    const responsePromise = waitForGatewayProcedure(page, "Steer", repo)
+    await command(page, commandText)
+    const response = await responsePromise
+    const requestBody = response.request().postDataJSON() as {
+      readonly repo?: unknown
+      readonly workspaceId?: unknown
+      readonly payload?: {
+        readonly runId?: unknown
+        readonly idempotencyKey?: unknown
+        readonly message?: Readonly<Record<string, unknown>>
+      }
+    }
+    const message = requestBody.payload?.message
+    const messageId = message?.messageId
+    expect(typeof messageId).toBe("string")
+    const messagePrefix = `steer-${launched.runId}-`
+    expect(messageId).toMatch(new RegExp(`^${messagePrefix.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}.+`))
+    const nonce = String(messageId).slice(messagePrefix.length)
+    const idempotencyKey = `steer:${launched.runId}:${nonce}`
+    expect(requestBody.repo).toBe(repo)
+    if (workflowRepo.workspaceId !== undefined) expect(requestBody.workspaceId).toBe(workflowRepo.workspaceId)
+    expect(requestBody.payload).toMatchObject({ runId: launched.runId, message: expected })
+    expect(requestBody.payload?.idempotencyKey).toBe(idempotencyKey)
+    expect(response.status()).toBe(200)
+    expect(await response.json()).toMatchObject({
+      ok: true,
+      payload: { _tag: "Accepted", receiptId: idempotencyKey, runId: launched.runId }
+    })
+    return { messageId: String(messageId), idempotencyKey, request: requestBody }
+  }
+
+  const message = await steer(`/runs.steer ${launched.runId} preserve the exact ${marker} flow contract`, {
+    runId: launched.runId, kind: "Message", body: `preserve the exact ${marker} flow contract`
+  })
+  const thinking = await steer(`/runs.thinking ${launched.runId} low`, {
+    runId: launched.runId, kind: "Thinking", thinking: "low"
+  })
+  const tools = await steer(`/runs.tools ${launched.runId} bash`, {
+    runId: launched.runId, kind: "Tools", toolNames: ["bash"]
+  })
+  const accepted = [message, thinking, tools]
+
+  let controlEvents: ReadonlyArray<ProjectionRow> = []
+  await expect.poll(async () => {
+    const answer = await gatewayCall(page, request, repo, "Projection.Snapshot", {
+      selector: { _tag: "run-events", runId: launched.runId }
+    }, workflowRepo.workspaceId)
+    controlEvents = projectionRows(answer).filter((event) => event.kind === "control.steer.enqueued")
+    const ids = controlEvents.map((event) => (event.payload as ProjectionRow | undefined)?.messageId)
+    return ids
+  }, { timeout: 60_000, intervals: [250, 500, 1_000] }).toEqual(expect.arrayContaining(accepted.map((entry) => entry.messageId)))
+  for (const entry of accepted) {
+    const persisted = controlEvents.find((event) =>
+      (event.payload as ProjectionRow | undefined)?.messageId === entry.messageId
+    )
+    expect(persisted, `server journal must record steer ${entry.messageId}`).toBeDefined()
+    const payload = persisted!.payload as ProjectionRow
+    const requestMessage = ((entry.request.payload as ProjectionRow).message as ProjectionRow)
+    expect(payload).toMatchObject({
+      runId: launched.runId,
+      messageId: entry.messageId,
+      kind: requestMessage.kind,
+      createdAt: requestMessage.createdAt
+    })
+  }
+
+  await page.reload({ waitUntil: "domcontentloaded" })
+  const restored = runCard(page, launched.runId)
+  await expect(restored).toBeVisible()
+  expect(await exactRunId(restored)).toBe(launched.runId)
+  const afterReconnect = await gatewayCall(page, request, repo, "Projection.Snapshot", {
+    selector: { _tag: "run-summary", runId: launched.runId }
+  }, workflowRepo.workspaceId)
+  expect(runSummary(afterReconnect)?.runId).toBe(launched.runId)
+  await attachProductionJson(testInfo, "live-steering-reconnect", {
+    repo, marker, runId: launched.runId, liveBefore, accepted, controlEvents,
+    afterReconnect: runSummary(afterReconnect)
+  })
+})
+
+workflowTest("run again creates a second real execution and both appear in the server-backed completed list", scenario("runs.rerun-completed-list-open", {
+  capabilities: ["identity", "cloud"],
+  coverage: [
+    "action:flow.create", "action:runs.rerun", "action:runs.list", "action:runs.open", "host:production",
+    "path:success", "path:keyboard", "door:slash", "door:button", "dimension:real-provider",
+    "dimension:rerun-new-id", "dimension:completed-filter", "dimension:keyboard", "dimension:server-backed-list",
+    "evidence:two-terminal-projections-and-run-list"
+  ],
+  description: "Complete an owned provider run, keyboard-run it again from its card, prove a distinct accepted id executes, and open both exact ids from the completed run list."
+}), async ({ page, request, workflowRepo }, testInfo) => {
+  const repo = workflowRepo.repo
+  await bootOwnedWorkflow(page, repo)
+  const marker = `s16-rerun-${Date.now().toString(36)}`
+  const first = await createFlowRun(page, repo, marker, workflowRepo)
+  const firstTerminal = await waitForTerminalRun(page, request, repo, first.runId, 9 * 60_000, workflowRepo.workspaceId)
+  expect(firstTerminal.status).toBe("completed")
+  const firstCard = runCard(page, first.runId)
+  await expect(firstCard.getByTestId(`run-outcome-${first.runId}`)).toHaveAttribute("data-phase", "completed", { timeout: 60_000 })
+
+  const rerunResponse = acceptedRunId(page, repo, workflowRepo)
+  const rerun = firstCard.getByTestId(`flow-run-rerun-${first.runId}`)
+  await rerun.focus()
+  await expect(rerun).toBeFocused()
+  await rerun.press("Enter")
+  const secondRunId = await rerunResponse
+  expect(secondRunId).not.toBe(first.runId)
+  await expect(runCard(page, secondRunId)).toBeVisible({ timeout: 60_000 })
+  const secondTerminal = await waitForTerminalRun(page, request, repo, secondRunId, 9 * 60_000, workflowRepo.workspaceId)
+  expect(secondTerminal.status).toBe("completed")
+  expect(secondTerminal.flowId).toBe(firstTerminal.flowId)
+
+  await command(page, `/runs.list completed ${firstTerminal.flowId} ${repo}`)
+  await closeComposer(page)
+  const list = page.locator('.smithers-card[data-kind="run-list"]').last()
+  await expect(list).toBeVisible()
+  await expect(list.getByTestId(`runs-open-${first.runId}`)).toBeVisible()
+  await expect(list.getByTestId(`runs-open-${secondRunId}`)).toBeVisible()
+  await list.getByTestId(`runs-open-${first.runId}`).click()
+  await expect(runCard(page, first.runId)).toBeVisible()
+
+  const listed = await gatewayCall(page, request, repo, "Projection.Snapshot", { selector: { _tag: "workspace-runs" } }, workflowRepo.workspaceId)
+  const ids = projectionRows(listed).filter((row) => row.status === "completed" && row.flowId === firstTerminal.flowId).map((row) => row.runId)
+  expect(ids).toEqual(expect.arrayContaining([first.runId, secondRunId]))
+  await attachProductionJson(testInfo, "rerun-completed-list", {
+    repo, marker, first: firstTerminal, second: secondTerminal, completedIds: ids
+  })
+})
+
+workflowTest("stop all cancels two live owned runs, leaves a terminal sibling unchanged, and terminal resume is refused", scenario("runs.stop-all-owned-live-scope", {
+  capabilities: ["identity", "cloud"],
+  coverage: [
+    "action:flow.create", "action:runs.list", "action:flow.run.stop-all", "action:runs.resume",
+    "action:flow.run.stop",
+    "host:production", "path:error",
+    "door:slash", "door:button", "dimension:real-provider", "dimension:multiple-live-runs",
+    "dimension:owned-workspace-scope", "dimension:terminal-sibling", "dimension:terminal-drain",
+    "evidence:pre-and-post-workspace-projections"
+  ],
+  description: "Cancel one owned run, launch two more, stop the private workspace through its run-list button, prove both live ids cancel while the terminal sibling stays unchanged, and require the gateway's typed refusal when the UI tries to resume a terminal id."
+}), async ({ page, request, workflowRepo }, testInfo) => {
+  const repo = workflowRepo.repo
+  await bootOwnedWorkflow(page, repo)
+  const terminalSibling = await createFlowRun(page, repo, `s16-terminal-${Date.now().toString(36)}`, workflowRepo)
+  await terminalSibling.card.getByTestId(`flow-run-stop-${terminalSibling.runId}`).click()
+  const terminalBefore = await waitForTerminalRun(page, request, repo, terminalSibling.runId, 180_000, workflowRepo.workspaceId)
+  expect(terminalBefore.status).toBe("cancelled")
+
+  const first = await createFlowRun(page, repo, `s16-stop-a-${Date.now().toString(36)}`, workflowRepo)
+  const second = await createFlowRun(page, repo, `s16-stop-b-${Date.now().toString(36)}`, workflowRepo)
+  expect(new Set([terminalSibling.runId, first.runId, second.runId]).size).toBe(3)
+
+  let beforeWorkspaceRows: ReadonlyArray<ProjectionRow> = []
+  let beforeRows: ReadonlyArray<ProjectionRow> = []
+  await expect.poll(async () => {
+    const before = await gatewayCall(page, request, repo, "Projection.Snapshot", { selector: { _tag: "workspace-runs" } }, workflowRepo.workspaceId)
+    beforeWorkspaceRows = projectionRows(before)
+    beforeRows = beforeWorkspaceRows.filter((row) => row.runId === first.runId || row.runId === second.runId)
+    return beforeRows.map((row) => row.runId)
+  }, { timeout: 60_000, intervals: [500, 1_000, 2_000] }).toEqual(expect.arrayContaining([first.runId, second.runId]))
+  const liveStatuses = new Set(["accepted", "running", "parked", "waiting-approval"])
+  const liveIds = beforeRows.filter((row) => typeof row.status === "string" && liveStatuses.has(row.status)).map((row) => String(row.runId))
+  expect(liveIds, "both exact owned runs must still be live to exercise multi-run stop-all").toEqual(
+    expect.arrayContaining([first.runId, second.runId])
+  )
+  expect(liveIds).toHaveLength(2)
+
+  await command(page, `/runs.list ${repo}`)
+  await closeComposer(page)
+  const list = page.locator('.smithers-card[data-kind="run-list"]').last()
+  await expect(list).toBeVisible()
+  for (const runId of liveIds) await expect(list.getByTestId(`runs-open-${runId}`)).toBeVisible()
+  const stopAll = list.getByTestId("run-list-stop-all")
+  await expect(stopAll).toHaveText(`Stop all ${liveIds.length}`)
+  await stopAll.click()
+
+  const stopped = []
+  for (const runId of liveIds) {
+    const terminal = await waitForTerminalRun(page, request, repo, runId, 180_000, workflowRepo.workspaceId)
+    expect(terminal.status, `run ${runId} was live at the stop-all snapshot`).toBe("cancelled")
+    stopped.push(terminal)
+    await expect(runCard(page, runId).getByTestId(`run-outcome-${runId}`)).toHaveAttribute("data-phase", "cancelled", { timeout: 60_000 })
+  }
+  const after = await gatewayCall(page, request, repo, "Projection.Snapshot", { selector: { _tag: "workspace-runs" } }, workflowRepo.workspaceId)
+  const afterWorkspaceRows = projectionRows(after)
+  const afterRows = afterWorkspaceRows.filter((row) => liveIds.includes(String(row.runId)))
+  expect(afterRows).toHaveLength(liveIds.length)
+  expect(afterRows.every((row) => row.status === "cancelled")).toBe(true)
+  const terminalAfter = await gatewayCall(page, request, repo, "Projection.Snapshot", {
+    selector: { _tag: "run-summary", runId: terminalSibling.runId }
+  }, workflowRepo.workspaceId)
+  expect(runSummary(terminalAfter)).toMatchObject({ runId: terminalSibling.runId, status: "cancelled" })
+
+  const terminalRunId = liveIds[0]!
+  const resumeResponse = waitForGatewayProcedure(page, "Resume", repo)
+  await command(page, `/runs.resume ${terminalRunId}`)
+  const refusedResponse = await resumeResponse
+  expect(refusedResponse.status()).toBe(200)
+  const refused = await refusedResponse.json() as {
+    readonly ok?: unknown
+    readonly error?: { readonly message?: unknown; readonly detail?: unknown }
+  }
+  expect(refused.ok, "the gateway must refuse resuming a terminal run").toBe(false)
+  expect(typeof refused.error?.message).toBe("string")
+  expect(JSON.stringify(refused.error?.detail), "the resume refusal must retain the gateway's typed Terminal fault").toMatch(/terminal/i)
+  await expect(page.getByTestId("transcript")).toContainText(String(refused.error!.message))
+  const stillTerminal = await gatewayCall(page, request, repo, "Projection.Snapshot", {
+    selector: { _tag: "run-summary", runId: terminalRunId }
+  }, workflowRepo.workspaceId)
+  expect(runSummary(stillTerminal)?.status).toBe("cancelled")
+  await attachProductionJson(testInfo, "stop-all-owned-runs", {
+    repo, acceptedIds: [terminalSibling.runId, first.runId, second.runId], terminalBefore,
+    liveIds, beforeRows, beforeWorkspaceRows, stopped, afterRows, afterWorkspaceRows,
+    terminalAfter: runSummary(terminalAfter), resumeRefusal: refused
+  })
+})
