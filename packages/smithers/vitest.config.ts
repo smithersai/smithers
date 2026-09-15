@@ -11,6 +11,10 @@ export default defineConfig({
     include: ["test/**/*.test.ts"],
     exclude: [...configDefaults.exclude, "test/faults/**"],
     environment: "node",
+    // Files launch real CLI hosts, SQLite engines, and child process trees.
+    // Bound that fanout so the default coverage gate does not multiply host
+    // startup contention by the machine's core count.
+    fileParallelism: false,
     // House convention (see packages/smithers/flows/journal/vitest.config.ts): a finite 30 s
     // wall-clock budget so correct suites survive coverage-instrumented load
     // while a genuine hang still fails the run.
@@ -44,9 +48,9 @@ export default defineConfig({
       //
       // the release policy asks every package for 100, and this package is
       // the one that cannot reach it from inside the process being measured.
-      // What a command line promises is what a PROCESS does — its exit status,
+      // What a command line promises is what a PROCESS does: its exit status,
       // its stderr, the `.flows/` it leaves behind, the second `smithers` it
-      // refuses — so `Bin.test.ts`, `BinTeardown.test.ts`,
+      // refuses. So `Bin.test.ts`, `BinTeardown.test.ts`,
       // `TwoProcessClaim.test.ts`, `CrossProcessCancel.test.ts`,
       // `EndToEnd.test.ts` and the MCP stdio round trip spawn the real
       // executable and assert against it. v8 attributes that execution to the

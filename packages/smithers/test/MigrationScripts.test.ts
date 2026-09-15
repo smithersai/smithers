@@ -1,10 +1,12 @@
 /** Migrated script bytes cross a real shell and the public bin before SQL assertions. */
+import * as NodeDatabase from "@smthrs/database/node/NodeDatabase"
 import { rewriteManifest } from "@smthrs/migrate/flow/Archive"
+import { Effect } from "effect"
+import * as SqlClient from "effect/unstable/sql/SqlClient"
 import { spawn } from "node:child_process"
 import { cp, mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { DatabaseSync } from "node:sqlite"
 import { fileURLToPath } from "node:url"
 import { afterEach, describe, expect, it } from "vitest"
 
@@ -106,19 +108,28 @@ describe.skipIf(process.platform === "win32")("migrated scripts through the publ
     expect(receipt.detached === true).toBe(detached)
     if (detached) expect(receipt.logFile).toBe(join(root, ".flows", "logs", `${receipt.runId}.log`))
 
-    const db = new DatabaseSync(join(root, ".flows", "control.db"), { readOnly: true })
-    try {
-      const rows = db.prepare("SELECT card_json, decoded_input_json FROM control_plans").all()
-      expect(rows).toHaveLength(1)
-      expect(JSON.parse(String(rows[0]!.decoded_input_json))).toEqual(expectedInput)
-      expect(JSON.parse(String(rows[0]!.card_json)).flowId).toBe("simple-workflow")
-      const runs = db.prepare("SELECT run_id FROM control_runs").all()
-      expect(runs).toHaveLength(1)
-      expect(String(runs[0]!.run_id)).toMatch(/^run-/)
-      if (detached) expect(runs[0]!.run_id).toBe(receipt.runId)
-      else expect(result.stdout).toContain(String(runs[0]!.run_id))
-    } finally {
-      db.close()
-    }
+    // Detached admission does not join the child process. Its SQLite stores
+    // can still be opening or closing when this reader starts. Use the same
+    // read-only adapter and bounded open-lock
+    // handling as the host, rather than a raw zero-wait schema read.
+    const { rows, runs } = await Effect.runPromise(
+      Effect.gen(function*() {
+        const sql = yield* SqlClient.SqlClient
+        return {
+          rows: yield* sql`SELECT card_json, decoded_input_json FROM control_plans`,
+          runs: yield* sql`SELECT run_id FROM control_runs`
+        }
+      }).pipe(Effect.provide(NodeDatabase.layer({
+        filename: join(root, ".flows", "control.db"),
+        sqlite: { readonly: true }
+      })))
+    )
+    expect(rows).toHaveLength(1)
+    expect(JSON.parse(String(rows[0]!.decoded_input_json))).toEqual(expectedInput)
+    expect(JSON.parse(String(rows[0]!.card_json)).flowId).toBe("simple-workflow")
+    expect(runs).toHaveLength(1)
+    expect(String(runs[0]!.run_id)).toMatch(/^run-/)
+    if (detached) expect(runs[0]!.run_id).toBe(receipt.runId)
+    else expect(result.stdout).toContain(String(runs[0]!.run_id))
   })
 })

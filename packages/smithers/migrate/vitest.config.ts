@@ -5,6 +5,10 @@ import { defineConfig } from "vitest/config"
 export default defineConfig({
   test: {
     environment: "node",
+    // Migration journeys start real verification processes and checkpoint
+    // whole fixture trees. Run files serially to bound their process and disk
+    // contention without extending any migration's execution budget.
+    fileParallelism: false,
     // House convention (see packages/smithers/flows/patterns/vitest.config.ts): a finite
     // wall-clock budget so correct suites survive coverage-instrumented load
     // while a genuine hang still fails the run. Scanner tests copy fixture

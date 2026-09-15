@@ -186,6 +186,49 @@ describe("operator memory", () => {
     expect((await invoke(root, ["notes", "add", "bad tags", "--tag", "invalid"])).code).toBe(1)
   })
 
+  it("persists standalone supersession without mutating notes or bypassing the replacement's status gate", async () => {
+    const root = fixture()
+    expect((await invoke(root, ["notes", "add", "amber original guide", "--note-id", "original"])).code).toBe(0)
+    const original = await invoke(root, ["notes", "get", "original"])
+    expect(original.code, original.output).toBe(0)
+
+    const refused = await invoke(root, ["notes", "supersede", "original", "missing"])
+    expect(refused.code, refused.output).toBe(1)
+    expect(refused.data.code).toBe("operator_failed")
+    expect((await invoke(root, ["notes", "get", "original"])).data).toEqual(original.data)
+    expect((await invoke(root, ["recall", "amber"])).data.map((row: { key: string }) => row.key)).toEqual(["original"])
+
+    expect(
+      (await invoke(root, [
+        "notes",
+        "add",
+        "amber replacement guide",
+        "--note-id",
+        "replacement",
+        "--status",
+        "pending"
+      ])).code
+    ).toBe(0)
+    // Each invocation opens and closes the real SQLite store. Repeating the
+    // command must retain one durable edge, while a pending replacement must
+    // leave the accepted original visible to a later recall.
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const replaced = await invoke(root, ["notes", "supersede", "original", "replacement"])
+      expect(replaced.code, replaced.output).toBe(0)
+      expect(replaced.data).toEqual({ superseded: "original", replacement: "replacement" })
+    }
+    expect((await invoke(root, ["recall", "amber"])).data.map((row: { key: string }) => row.key)).toEqual(["original"])
+    expect((await invoke(root, ["notes", "status", "replacement", "accepted"])).code).toBe(0)
+    for (const method of ["keyword", "fts"]) {
+      expect((await invoke(root, ["recall", "amber", "--method", method])).data.map((row: { key: string }) => row.key))
+        .toEqual(["replacement"])
+    }
+    expect((await invoke(root, ["notes", "get", "original"])).data).toEqual(original.data)
+    expect((await invoke(root, ["notes", "list", "--include-superseded"])).data).toHaveLength(2)
+    expect((await invoke(root, ["notes", "status", "replacement", "rejected"])).code).toBe(0)
+    expect((await invoke(root, ["recall", "amber"])).data.map((row: { key: string }) => row.key)).toEqual(["original"])
+  })
+
   it("compacts persisted history atomically while preserving retained messages", async () => {
     const root = fixture()
     expect((await invoke(root, ["threads", "create", "--thread-id", "history", "--title", "Review"])).code).toBe(0)

@@ -3,7 +3,7 @@ import { Control } from "@smthrs/control/Control"
 import type { PlanCard } from "@smthrs/control/ControlSchema"
 import { ModelError } from "@smthrs/model/ModelError"
 import { RequestExecutor } from "@smthrs/model/RequestExecutor"
-import { Cause, Effect, Exit, Layer } from "effect"
+import { Cause, Deferred, Effect, Exit, Layer } from "effect"
 import { RpcSerialization } from "effect/unstable/rpc"
 import { readFileSync } from "node:fs"
 import * as Application from "../../src/Application.ts"
@@ -12,6 +12,7 @@ import * as NodeControl from "../../src/NodeControl.ts"
 const [action, root, cardFile] = process.argv.slice(2)
 if (root === undefined) throw new Error("Expected an action and project root")
 const captured: Array<{ model: string; original: boolean; changed: boolean }> = []
+const dispatched = Deferred.makeUnsafe<void>()
 const registry = NodeControl.layerRegistry(root)
 const engine = NodeControl.engineDurable(root, registry)
 const transport = Layer.succeed(RequestExecutor, {
@@ -23,8 +24,10 @@ const transport = Layer.succeed(RequestExecutor, {
         original: body.includes("ORIGINAL_APPROVED_PROMPT"),
         changed: body.includes("CHANGED_UNAPPROVED_PROMPT")
       })
-      return Effect.fail(
-        new ModelError({ code: "invalid_request", message: "Offline test stopped before network dispatch" })
+      return Deferred.succeed(dispatched, undefined).pipe(
+        Effect.andThen(Effect.fail(
+          new ModelError({ code: "invalid_request", message: "Offline test stopped before network dispatch" })
+        ))
       )
     })
 })
@@ -33,6 +36,9 @@ const executor = action === "plan" ? undefined : NodeControl.layerExecutor(regis
   grants: NodeControl.layerGrantStore(root),
   requestExecutor: transport
 })
+// The parent starts its operation deadline at this barrier, after the fresh
+// process has loaded modules and constructed the layer declarations.
+process.stdout.write(`APPROVAL_CONTENT_READY:${process.uptime()}\n`)
 const result = await Effect.runPromise(
   Effect.gen(function*() {
     const control = yield* Control
@@ -54,7 +60,9 @@ const result = await Effect.runPromise(
       const failure = Cause.squash(exit.cause) as { readonly _tag?: string; readonly message?: string }
       return { pid: process.pid, card, error: { _tag: failure._tag, message: failure.message }, captured }
     }
-    for (let i = 0; i < 200 && captured.length === 0; i++) yield* Effect.sleep("25 millis")
+    // Admission forks the executor. Its transport is the barrier proving that
+    // the approved bytes reached the provider, regardless of host scheduling.
+    yield* Deferred.await(dispatched)
     const receipt = exit.value
     if ("runId" in receipt && receipt.runId !== undefined) {
       yield* control.cancel({ runId: receipt.runId, idempotencyKey: "fixture-cleanup" })

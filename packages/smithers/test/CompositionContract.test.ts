@@ -20,6 +20,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { DatabaseSync } from "node:sqlite"
 import { afterEach, describe, expect, it } from "vitest"
+import { settledKind } from "../src/internal/EngineJournalSupervisor.ts"
 
 const roots = new Set<string>()
 const agents = new Set<MockAgent>()
@@ -101,15 +102,22 @@ const run = (ordinal: number) =>
     if (receipt._tag !== "Accepted" || receipt.runId === undefined) {
       return yield* Effect.die("expected an accepted run")
     }
-    for (let attempt = 0; attempt < 1_200; attempt++) {
-      const page = yield* control.list({ _tag: "runs", filters: { runId: receipt.runId } })
-      if (page._tag === "runs") {
-        const summary = page.items[0]
-        if (summary !== undefined && terminal.has(summary.status)) return summary
-      }
-      yield* Effect.sleep("10 millis")
+    // AgentSession emits the control lifecycle event inside its handler, before
+    // the native wrapper commits its terminal state. list projects that native
+    // state, so await the supervisor's post-commit settlement instead. watch
+    // replays committed events before following new ones and cannot miss a
+    // settlement that happened before this subscription.
+    yield* control.watch({ runId: receipt.runId, follow: true }).pipe(
+      Stream.filter((event) => event.kind === settledKind),
+      Stream.take(1),
+      Stream.runDrain
+    )
+    const page = yield* control.list({ _tag: "runs", filters: { runId: receipt.runId } })
+    if (page._tag === "runs") {
+      const summary = page.items[0]
+      if (summary !== undefined && terminal.has(summary.status)) return summary
     }
-    return yield* Effect.die(`run ${receipt.runId} did not settle`)
+    return yield* Effect.die(`run ${receipt.runId} settled its native journal without a terminal summary`)
   })
 
 const calls = (agent: MockAgent): number => agent.getCallHistory()?.calls().length ?? 0

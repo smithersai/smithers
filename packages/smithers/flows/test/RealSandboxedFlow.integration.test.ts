@@ -21,6 +21,7 @@ import { spawnSync } from "node:child_process"
 import { accessSync, constants } from "node:fs"
 import { afterAll } from "vitest"
 import * as SandboxedFlow from "../src/SandboxedFlow.ts"
+import { docker } from "./DockerProbe.ts"
 import { Inspector, Sum } from "./fixtures/sandboxed-child.ts"
 
 const entry = new URL("./fixtures/sandboxed-child.ts", import.meta.url)
@@ -37,26 +38,24 @@ const spawner = Effect.gen(function*() {
 // Session keys are suite-unique so a concurrently running vitest worker
 // cannot collide on container names. A normal completion removes the
 // container; the force-removal below covers a run that died mid-acquire.
-const engineAvailable = spawnSync("docker", ["info"], { stdio: "ignore" }).status === 0
+const engineAvailable = docker(["info"]).status === 0
 const containerKeys = {
   node: `flows-sandboxed-it-${process.pid}-node`,
   bare: `flows-sandboxed-it-${process.pid}-bare`
 }
 afterAll(() => {
   if (!engineAvailable) return
-  const names = spawnSync("docker", ["ps", "--all", "--format", "{{.Names}}"]).stdout?.toString() ?? ""
+  const names = docker(["ps", "--all", "--format", "{{.Names}}"]).stdout ?? ""
   for (const name of names.split("\n")) {
     if (name.includes(`flows-sandboxed-it-${process.pid}-`)) {
-      spawnSync("docker", ["rm", "--force", name], { stdio: "ignore" })
+      docker(["rm", "--force", name])
     }
   }
 })
 
-// `docker start` is the one variable step: about a second on an idle engine
-// and thirty seconds with many containers resident on the development
-// machine, while every other engine call stays near 50ms. The budget is sized
-// for the loaded engine, and it also covers carrying a megabyte-scale bundle
-// through the exec transport.
+// Acquisition and transport share the existing integration deadline. Even
+// `docker create` can stall on a loaded daemon; that remains a test failure,
+// and the bounded prerequisite/cleanup probes keep its diagnosis observable.
 const containerBudget = 240_000
 
 describe.skipIf(!engineAvailable)("SandboxedFlow inside a real container", () => {
@@ -100,7 +99,7 @@ describe.skipIf(!engineAvailable)("SandboxedFlow inside a real container", () =>
             timeout: containerBudget
           })
         )
-        expect(failure.code).toBe("guest_failed")
+        expect(failure.code, failure.message).toBe("guest_failed")
         expect(failure.message).toContain("no runnable `node`")
       }),
     containerBudget
@@ -115,10 +114,10 @@ const microvmProbeBudget = 300_000
  * Why this host cannot boot a microVM, or `undefined` when it can. The gate is
  * the one `@smthrs/sandbox`'s `RealMicrosandbox.integration.test.ts` states, and
  * for the same reason: a runnable platform binary is not the capability, so
- * each platform is asked for its hypervisor — `/dev/kvm` on Linux,
+ * each platform is asked for its hypervisor: `/dev/kvm` on Linux,
  * Hypervisor.framework on macOS, where `kern.hv_vmm_present` also says whether
  * this machine is itself a guest whose Virtualization Framework host gives it no
- * nested virtualization — and a host that answers yes to all of them boots one
+ * nested virtualization. A host that answers yes to all of them boots one
  * microVM to prove it. libkrun's `VmSetup(VmCreate)` is the hypervisor refusing
  * to create a VM; that exact refusal names the missing capability and skips,
  * while any other failure leaves the suite to run and report it.
